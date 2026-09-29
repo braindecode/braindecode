@@ -647,6 +647,7 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         """Replace the linear classification head for a new ``n_outputs``."""
         self._n_outputs = n_outputs
         self.final_layer = nn.Linear(self.final_layer.in_features, n_outputs)
+        self._update_init_kwargs(n_outputs=n_outputs)
 
     def forward(
         self,
