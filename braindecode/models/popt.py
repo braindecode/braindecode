@@ -28,6 +28,7 @@ import torch
 import torch.nn as nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules.popt_modules import (
     _PopTHead,
     _PopTInputEmbedding,
@@ -198,27 +199,25 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
         no usable positions, electrodes fall back to distinct sequential indices
         on every axis. All indices are clamped to ``[0, max_len - 1]``.
         """
-        n_chans = self.n_chans
-        loc = None
         # chs_info is optional; the public property raises when unset, so read
         # the underlying attribute directly.
         chs_info = getattr(self, "_chs_info", None)
-        if chs_info is not None:
-            try:
-                loc = torch.tensor(
-                    np.asarray([ch["loc"][:3] for ch in chs_info]), dtype=torch.float
-                )
-            except (KeyError, TypeError, ValueError):
-                loc = None
-        if loc is None or not torch.isfinite(loc).all() or loc.abs().sum() == 0:
+        loc = extract_channel_locations_from_chs_info(
+            chs_info, num_channels=self.n_chans
+        )
+        # The shared helper already rejects a missing, malformed or all-zero
+        # ``chs_info``. It stops at the first unusable channel and does not screen
+        # NaNs, so PopT additionally requires one finite row per electrode.
+        if loc is None or loc.shape[0] != self.n_chans or not np.isfinite(loc).all():
             # Fallback: distinct sequential positions on each axis.
-            idx = torch.arange(n_chans, dtype=torch.long)
+            idx = torch.arange(self.n_chans, dtype=torch.long)
             coords = idx.unsqueeze(1).repeat(1, 3)
         else:
+            loc_t = torch.as_tensor(loc, dtype=torch.float)
             if self.coord_units == "raw":
-                coords = loc.round().long()
+                coords = loc_t.round().long()
             else:
-                coords = (loc * 1000.0).round().long()
+                coords = (loc_t * 1000.0).round().long()
                 coords = coords - coords.min(dim=0, keepdim=True).values
         return coords.clamp(0, self.max_len - 1)
 
