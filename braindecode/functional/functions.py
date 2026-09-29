@@ -12,6 +12,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from . import _real_dft
+
 
 def square(x):
     return x * x
@@ -165,6 +167,9 @@ def hilbert_freq(x: torch.Tensor, forward_fourier: bool = True) -> torch.Tensor:
     https://github.com/scipy/scipy/blob/v1.14.1/scipy/signal/_signaltools.py#L2287-L2394
 
     """
+    if _real_dft.needs_real_dft(x):
+        return _real_dft.hilbert_freq_real(x, forward_fourier).to(x.dtype)
+
     input_dtype = x.dtype
     # ``view_as_complex`` does not accept bfloat16 real/imaginary pairs.  The
     # HPU path can produce bfloat16 Fourier coefficients under autocast, so do
