@@ -74,6 +74,7 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`Labram` - Large Brain Model with pre-trained weights
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
+    - :class:`MIRepNet` - Motor-imagery pre-trained model
     - :class:`BENDR` - Foundation model with pre-trained weights
     - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
     - :class:`EEGPT` - Pretrained transformer for universal EEG
@@ -136,6 +137,7 @@ interface for all EEG models and can derive variable names when needed.
      AXON
      AttentionBaseNet
      AttnSleep
+     BaRISTA
      BDTCN
      BENDR
      BIOT
@@ -146,6 +148,7 @@ interface for all EEG models and can derive variable names when needed.
      ContraWR
      CTNet
      DGCNN
+     DIVER1
      Deep4Net
      DeepSleepNet
      EEGConformer
@@ -175,6 +178,7 @@ interface for all EEG models and can derive variable names when needed.
      LUNA
      MEDFormer
      MetaNeuromotorHand
+     MSCFormer
      MSVTNet
      PBT
      REVE
@@ -196,6 +200,11 @@ interface for all EEG models and can derive variable names when needed.
      TSception
      USleep
      ZUNA
+
+DIVER-1 recording metadata
+==========================
+
+.. autofunction:: braindecode.models.diver1.channel_metadata_from_chs_info
 
 Modules
 

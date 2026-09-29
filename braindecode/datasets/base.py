@@ -5,6 +5,7 @@
 #          Simon Brandt <simonbrandt@protonmail.com>
 #          David Sabbagh <dav.sabbagh@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -1398,6 +1399,9 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 df = ds._windows.metadata
             else:
                 df = ds.metadata
+            if isinstance(df, pd.DataFrame):
+                # copy so the description columns stay out of the dataset
+                df = df.copy()
             for k, v in ds.description.items():
                 df[k] = v
             all_dfs.append(df)

@@ -1,10 +1,13 @@
 import numpy as np
 import pytest
 import torch
+from scipy.signal import hilbert
 
 from braindecode.functional import (
+    _real_dft,
     hilbert_freq,
     plv_time,
+    rotate_pairs,
     sinusoidal_positional_encoding,
 )
 
@@ -40,6 +43,19 @@ def test_hilbert_freq_constant_signal():
     # Imaginary parts should be close to zero
     assert torch.allclose(output[..., 1], torch.zeros_like(output[..., 1]), atol=1e-5), \
         "Imaginary part should be zero for constant input"
+
+
+@pytest.mark.parametrize("seq_len", [7, 8, 101, 128])
+def test_hilbert_freq_matches_scipy(seq_len):
+    """hilbert_freq keeps the input length and matches scipy.signal.hilbert
+    for odd and even lengths."""
+    t = np.arange(seq_len)
+    x = np.stack([np.sin(0.3 * t) + 0.1 * t, np.cos(1.7 * t) - 0.05 * t])
+    output = hilbert_freq(torch.from_numpy(x), forward_fourier=True)
+    assert output.shape == (2, seq_len, 2)
+    expected = hilbert(x, axis=-1)
+    np.testing.assert_allclose(output[..., 0].numpy(), expected.real, atol=1e-10)
+    np.testing.assert_allclose(output[..., 1].numpy(), expected.imag, atol=1e-10)
 
 
 def test_plv_time_shape():
@@ -170,3 +186,80 @@ def test_sinusoidal_positional_encoding_odd_dim_truncates_contiguously():
     assert pe_odd.shape == (50, 15)
     assert pe_odd.is_contiguous()
     assert torch.equal(pe_odd, sinusoidal_positional_encoding(50, 16)[:, :15])
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64, torch.bfloat16])
+@pytest.mark.parametrize("shape", [(8,), (2, 3, 8), (2, 0, 8)])
+def test_rotate_pairs(dtype, shape):
+    x = torch.randn(shape, dtype=dtype).transpose(0, -1).contiguous().transpose(0, -1)
+    x.requires_grad_()
+    expected = torch.stack((-x[..., 1::2], x[..., 0::2]), dim=-1).flatten(-2)
+    actual = rotate_pairs(x)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    torch.testing.assert_close(torch.jit.script(rotate_pairs)(x), expected, rtol=0, atol=0)
+    weights = torch.randn_like(actual)
+    grad = torch.autograd.grad((actual * weights).sum(), x)[0]
+    ref_grad = torch.autograd.grad((expected * weights).sum(), x)[0]
+    torch.testing.assert_close(grad, ref_grad, rtol=0, atol=0)
+
+
+def test_rotate_pairs_rejects_odd_width():
+    with pytest.raises(RuntimeError):
+        rotate_pairs(torch.zeros(2, 3))
+
+
+@pytest.mark.parametrize("n", [7, 8, 120, 121])
+def test_real_rfft_and_irfft_match_torch_fft(n):
+    """The matmul-based one-sided DFT (used on devices without complex
+    tensors) matches ``torch.fft.rfft``/``irfft`` to float64 precision."""
+    x = torch.randn(3, 5, n, dtype=torch.float64)
+    real, imag = _real_dft.real_rfft(x)
+    ref = torch.fft.rfft(x, dim=-1)
+    torch.testing.assert_close(real, ref.real, rtol=0, atol=1e-10)
+    torch.testing.assert_close(imag, ref.imag, rtol=0, atol=1e-10)
+    back = _real_dft.real_irfft(real, imag, n=n)
+    torch.testing.assert_close(
+        back, torch.fft.irfft(ref, n=n, dim=-1), rtol=0, atol=1e-10
+    )
+
+
+@pytest.mark.parametrize("forward_fourier,n", [(True, 120), (True, 121), (False, 120)])
+def test_hilbert_freq_real_dft_path_matches_complex_path(monkeypatch, forward_fourier, n):
+    """Forcing the real-valued DFT path (as on HPU) reproduces the
+    ``torch.fft``-based path exactly, for odd and even lengths and for both
+    ``forward_fourier`` values."""
+    x = torch.randn(4, 6, n, dtype=torch.float64)
+    if not forward_fourier:
+        x = torch.view_as_real(torch.fft.rfft(x, dim=-1))
+    expected = hilbert_freq(x, forward_fourier)
+    monkeypatch.setattr(_real_dft, "needs_real_dft", lambda t: True)
+    actual = hilbert_freq(x, forward_fourier)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=1e-10)
+
+
+def test_real_dft_path_ignores_bf16_autocast(monkeypatch):
+    """The real-valued DFT path used on HPU must not be run in bfloat16 by an
+    ambient autocast context: both the forward values and the gradients must
+    match the same path computed with autocast disabled."""
+    x = torch.randn(2, 4, 120, requires_grad=True)
+    monkeypatch.setattr(_real_dft, "needs_real_dft", lambda t: True)
+
+    fp32 = hilbert_freq(x, True)
+    fp32.square().sum().backward()
+    fp32_grad = x.grad.clone()
+    x.grad = None
+
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        mixed = hilbert_freq(x, True)
+    mixed.square().sum().backward()
+
+    torch.testing.assert_close(mixed.float(), fp32, rtol=0, atol=1e-6)
+    torch.testing.assert_close(x.grad, fp32_grad, rtol=0, atol=1e-6)
+
+
+def test_real_dft_basis_rejects_lengths_that_overflow_the_phase_index():
+    # Check the accepted boundary without allocating its quadratic-size basis.
+    cosine, sine = _real_dft.real_dft_basis(65536, device="meta", dtype=torch.float32)
+    assert cosine.shape == sine.shape == (32769, 65536)
+    with pytest.raises(ValueError, match="65536"):
+        _real_dft.real_dft_basis(65537, device="cpu", dtype=torch.float32)

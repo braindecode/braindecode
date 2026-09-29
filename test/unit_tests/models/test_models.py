@@ -35,6 +35,7 @@ from braindecode.models import (
     ATCNet,
     AttentionBaseNet,
     AttnSleep,
+    BaRISTA,
     BrainBERT,
     BrainModule,
     Brant,
@@ -4499,3 +4500,95 @@ def test_brainbert_mapping_targets():
     model = BrainBERT(n_chans=1, n_outputs=2, n_times=2048)
     state = model.state_dict()
     assert model.mapping and all(target in state for target in model.mapping.values())
+
+
+_BARISTA_SMALL = dict(patch_size=32, d_model=16, n_layers=1, num_heads=2, cnn_depth=1)
+
+
+def _barista_model(spatial_scale, n_chans=4, pooling="mean", **kwargs):
+    return BaRISTA(
+        n_outputs=2,
+        n_chans=n_chans,
+        n_times=128,
+        spatial_scale=spatial_scale,
+        pooling=pooling,
+        **_BARISTA_SMALL,
+        **kwargs,
+    ).eval()
+
+
+@pytest.mark.parametrize(
+    "spatial_scale, indices",
+    [("parcels", [1, 5, 120, 0]), ("lobes", [0, 3, 20, 7]), ("none", None)],
+)
+def test_barista_region_scales(spatial_scale, indices):
+    model = _barista_model(spatial_scale, spatial_indices=indices)
+    assert model(torch.randn(3, 4, 128)).shape == (3, 2)
+
+
+def test_barista_forward_indices_other_montage():
+    """Mean pooling lets one model read recordings with other montages."""
+    model = _barista_model("parcels", spatial_indices=[1, 2, 3, 4])
+    out = model(torch.randn(2, 6, 128), spatial_indices=torch.tensor([1, 2, 3, 4, 5, 6]))
+    assert out.shape == (2, 2)
+
+
+@pytest.mark.parametrize("bad", [[1, 2, 3, 121], [1, 2, 3, -1]])
+def test_barista_forward_rejects_out_of_range_indices(bad):
+    model = _barista_model("parcels", spatial_indices=[1, 2, 3, 4])
+    with pytest.raises(ValueError, match=r"\[0, 121\)"):
+        model(torch.randn(1, 4, 128), spatial_indices=torch.tensor(bad))
+
+
+def test_barista_learned_pooling_needs_construction_grid():
+    model = _barista_model("parcels", pooling="learned", spatial_indices=[1, 2, 3, 4])
+    with pytest.raises(ValueError, match="pooling='mean'"):
+        model(torch.randn(1, 6, 128), spatial_indices=torch.tensor([1, 2, 3, 4, 5, 6]))
+
+
+def test_barista_coords_fallback_uses_left_inferior_posterior_order():
+    info = mne.create_info(["a"], 256.0, "seeg")
+    info["chs"][0]["loc"][:3] = [0.010, 0.020, 0.030]  # RAS metres
+    model = BaRISTA(
+        n_outputs=2, chs_info=info["chs"], n_times=128, pooling="mean", **_BARISTA_SMALL
+    )
+    left, inferior, posterior = model.spatial_emb.default_indices[0].tolist()
+    centre = model.spatial_emb.tables[0].num_embeddings // 2
+    assert (left, inferior, posterior) == (centre - 10, centre - 30, centre - 20)
+
+
+def test_mscformer_default_attention_scale_matches_original_source():
+    """MSCFormer's default attention scale must reproduce the released
+    source's ``embed_dim ** -0.5`` logit scaling.
+
+    The original MSCFormer code divides attention logits by
+    ``sqrt(emb_size)`` for every head, not by ``sqrt(head_dim)`` (braindecode's
+    more common default for :class:`~braindecode.modules.MultiHeadAttention`).
+    The two only coincide when ``num_heads == 1``; with the paper's defaults
+    (``num_heads=8``, ``emb_size=48``) they differ by ``sqrt(num_heads)``. A
+    state-dict-matched parity check against the original implementation gives
+    a max abs logit diff of about 2e-7 with this default, versus about 0.035
+    with ``head_dim ** -0.5``.
+    """
+    from braindecode.models.mscformer import MSCFormer
+
+    model = MSCFormer(n_outputs=4, n_chans=22, n_times=1000)
+    expected_scale = model.embed_dim**-0.5
+    assert model.embed_dim == 48
+    for block in model.trans.layers:
+        assert block.attention.module.scale == pytest.approx(expected_scale)
+
+    custom_scale = 0.25
+    model_custom = MSCFormer(
+        n_outputs=4, n_chans=22, n_times=1000, attention_scale=custom_scale
+    )
+    for block in model_custom.trans.layers:
+        assert block.attention.module.scale == pytest.approx(custom_scale)
+
+
+@pytest.mark.parametrize("bad_scale", [0.0, -1.0])
+def test_mscformer_rejects_non_positive_attention_scale(bad_scale):
+    from braindecode.models.mscformer import MSCFormer
+
+    with pytest.raises(ValueError, match="attention_scale"):
+        MSCFormer(n_outputs=4, n_chans=22, n_times=1000, attention_scale=bad_scale)

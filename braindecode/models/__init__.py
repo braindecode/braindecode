@@ -4,6 +4,7 @@ from .atcnet import ATCNet
 from .attentionbasenet import AttentionBaseNet
 from .attn_sleep import AttnSleep
 from .axon import AXON
+from .barista import BaRISTA
 from .base import EEGModuleMixin
 from .bendr import BENDR, InterpolatedBENDR
 from .biot import BIOT, InterpolatedBIOT
@@ -18,6 +19,7 @@ from .dance import DANCE
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
 from .dgcnn import DGCNN
+from .diver1 import DIVER1
 from .eegconformer import EEGConformer
 from .eegdino import EEGDINO
 from .eeginception_erp import EEGInceptionERP
@@ -41,6 +43,8 @@ from .labram import InterpolatedLaBraM, Labram
 from .luna import LUNA
 from .medformer import MEDFormer
 from .meta_neuromotor import MetaNeuromotorHand
+from .mirepnet import MIRepNet
+from .mscformer import MSCFormer
 from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
 from .neuropose import NeuroPose
@@ -88,6 +92,7 @@ __all__ = [
     "AXON",
     "AttnSleep",
     "AttentionBaseNet",
+    "BaRISTA",
     "EEGModuleMixin",
     "BIOT",
     "BENDR",
@@ -99,6 +104,7 @@ __all__ = [
     "DANCE",
     "Deep4Net",
     "DeepSleepNet",
+    "DIVER1",
     "BrainModule",
     "Brant",
     "EEGConformer",
@@ -135,6 +141,8 @@ __all__ = [
     "extract_channel_locations_from_chs_info",
     "positions_from_chs_info",
     "MEDFormer",
+    "MIRepNet",
+    "MSCFormer",
     "MSVTNet",
     "MVPFormer",
     "PBT",

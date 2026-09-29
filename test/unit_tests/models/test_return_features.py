@@ -11,20 +11,28 @@ from braindecode.models import (
     EEGDINO,
     EEGPT,
     REVE,
+    BaRISTA,
     BrainBERT,
     Brant,
     CBraMod,
     InterpolatedBENDR,
     InterpolatedLaBraM,
     Labram,
+    MIRepNet,
     SignalJEPA,
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
     SignalJEPA_PreLocal,
     STEEGFormer,
 )
+from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
-from braindecode.models.util import _get_signal_params, models_mandatory_parameters
+from braindecode.models.util import (
+    _get_signal_params,
+    interpolated_models_dict,
+    models_dict,
+    models_mandatory_parameters,
+)
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
 # Window length per model, from the registry.
@@ -93,6 +101,13 @@ _MODELS = [
         False,
         id="InterpolatedBENDR",
     ),
+    pytest.param(
+        BaRISTA,
+        N_CHANS,
+        {"chs_info": _chs(), "patch_size": 200},
+        False,
+        id="BaRISTA",
+    ),
     pytest.param(BIOT, N_CHANS, {}, False, id="BIOT"),
     pytest.param(Brant, N_CHANS, {"sfreq": 250.0}, False, id="Brant"),
     pytest.param(BrainBERT, N_CHANS, {}, False, id="BrainBERT"),
@@ -131,6 +146,18 @@ _MODELS = [
         {"chs_info": _chs()},
         False,
         id="SignalJEPA_PreLocal",
+    ),
+    pytest.param(
+        MIRepNet,
+        N_CHANS,
+        {
+            "embed_dim": 16,
+            "num_layers": 2,
+            "num_heads": 4,
+            "feedforward_expansion": 2,
+        },
+        False,
+        id="MIRepNet",
     ),
 ]
 
@@ -217,3 +244,105 @@ def test_reset_head(cls, nc, kw, has_cls):
         out = model(torch.randn(BATCH, nc, n_times))
     assert model.n_outputs == 10
     assert out.shape[-1] == 10
+
+
+# -- reset_head must leave a model that can be saved and loaded back --
+
+_ALL_MODELS = {**models_dict, **interpolated_models_dict}
+_REGISTRY = {name: sp for name, _, sp in models_mandatory_parameters}
+# Every registered model that overrides reset_head, including the interpolated
+# wrappers that inherit it from their backbone.
+_RESET_HEAD_CASES = [
+    name
+    for name in _REGISTRY
+    if _ALL_MODELS[name].reset_head is not EEGModuleMixin.reset_head
+]
+
+
+def _build_registered(name, **kwargs):
+    """Build a model from its full registry test parameters, in eval mode.
+
+    All signal parameters are passed so that no layer is built lazily: the
+    Hugging Face loader cannot load weights into uninitialized parameters.
+    """
+    signal_params = _get_signal_params(_REGISTRY[name])
+    return _ALL_MODELS[name](**signal_params, **kwargs).eval()
+
+
+@pytest.mark.parametrize("name", _RESET_HEAD_CASES)
+def test_reset_head_updates_config(name):
+    model = _build_registered(name)
+    n_outputs = model.n_outputs + 3
+    model.reset_head(n_outputs)
+    assert model.n_outputs == n_outputs
+    assert model.get_config()["n_outputs"] == n_outputs
+
+
+@pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
+@pytest.mark.parametrize("name", _RESET_HEAD_CASES)
+def test_reset_head_model_reloads_after_saving(name, tmp_path):
+    model = _build_registered(name)
+    model.reset_head(model.n_outputs + 3)
+    model.save_pretrained(tmp_path)
+
+    reloaded = _ALL_MODELS[name].from_pretrained(tmp_path)
+    torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
+
+
+@pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
+@pytest.mark.parametrize("name", ["EEGDINO", "EEGPT"])  # heads with dropout
+def test_from_pretrained_new_n_outputs_is_deterministic_in_eval(name, tmp_path):
+    saved = _build_registered(name)
+    saved.save_pretrained(tmp_path)
+    n_outputs = saved.n_outputs + 3
+
+    model = _ALL_MODELS[name].from_pretrained(tmp_path, n_outputs=n_outputs).eval()
+    assert model.get_config()["n_outputs"] == n_outputs
+    assert not any(module.training for module in model.modules())
+    signal_params = _get_signal_params(_REGISTRY[name])
+    x = torch.randn(BATCH, signal_params["n_chans"], signal_params["n_times"])
+    with torch.no_grad():
+        assert torch.equal(model(x), model(x))
+
+
+@pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
+@pytest.mark.parametrize(
+    "name, kwargs",
+    [
+        pytest.param("BENDR", {"final_layer": False}, id="BENDR"),
+        pytest.param("CBraMod", {"return_encoder_output": True}, id="CBraMod"),
+        pytest.param("EEGDINO", {"return_encoder_output": True}, id="EEGDINO"),
+    ],
+)
+def test_reset_head_on_feature_extractor_reloads_as_classifier(name, kwargs, tmp_path):
+    model = _build_registered(name, **kwargs)
+    model.reset_head(N_OUTPUTS)
+    model.save_pretrained(tmp_path)
+
+    reloaded = _ALL_MODELS[name].from_pretrained(tmp_path)
+    torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
+    signal_params = _get_signal_params(_REGISTRY[name])
+    x = torch.randn(BATCH, signal_params["n_chans"], signal_params["n_times"])
+    with torch.no_grad():
+        assert reloaded(x).shape == (BATCH, N_OUTPUTS)
+
+
+@pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
+@pytest.mark.parametrize("via_pretrained", [False, True])
+def test_labram_reset_to_zero_reloads_as_identity(tmp_path, via_pretrained):
+    model = Labram(n_chans=2, n_times=200, n_outputs=2, num_layers=1, num_heads=10)
+    if via_pretrained:
+        model.save_pretrained(tmp_path / "positive")
+        model = Labram.from_pretrained(tmp_path / "positive", n_outputs=0)
+    else:
+        model.reset_head(0)
+
+    assert isinstance(model.final_layer, torch.nn.Identity)
+    assert model.n_outputs == model.get_config()["n_outputs"] == 0
+    from_config = Labram.from_config(model.get_config())
+    assert isinstance(from_config.final_layer, torch.nn.Identity)
+    model.save_pretrained(tmp_path / "encoder")
+    reloaded = Labram.from_pretrained(tmp_path / "encoder")
+    assert reloaded.n_outputs == 0
+    assert isinstance(reloaded.final_layer, torch.nn.Identity)
+    torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
