@@ -1,6 +1,8 @@
 # Authors: Julien Gadonneix <juliengado.2001@gmail.com>
 #
 # License: Apache-2.0
+# Adapted from https://github.com/bentang18/MAPA (Apache-2.0).
+# Copyright 2026 Ben Tang, Zachary Spalding, and Gregory B. Cogan
 """MAPA: masked autoencoding of iEEG with anatomical priors.
 
 Reimplementation of MAPA (Tang, Spalding & Cogan, 2026), "Pretraining for
@@ -26,6 +28,7 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode.functional import rotate_pairs
 from braindecode.models.base import EEGModuleMixin
 
 # The reference LayerNorm eps, from ``models/attention.py``.
@@ -624,7 +627,7 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         ):
             return cache[2]
         layout = _build_token_layout(indices, n_frames, self.space_rope)
-        self._layout_cache = (n_frames, indices, layout)
+        self._layout_cache = (n_frames, indices.clone(), layout)
         return layout
 
     def _resolve_labels(self, contact_labels: list[str] | None) -> list[str]:
@@ -989,12 +992,6 @@ def _rotary_table(
     )
 
 
-def _rotate_half(x: torch.Tensor) -> torch.Tensor:
-    """Swap and negate within each adjacent pair of features."""
-    paired = x.unflatten(-1, (-1, 2))
-    return torch.stack([-paired[..., 1], paired[..., 0]], dim=-1).flatten(-2)
-
-
 def _init_transformer_weights(module: nn.Module) -> None:
     """Initialize one module the way V-JEPA 2 does.
 
@@ -1295,8 +1292,8 @@ class _WithinArrayBlock(nn.Module):
         key = self.split_heads(key)
         value = self.split_heads(value)
 
-        query = query * cos + _rotate_half(query) * sin
-        key = key * cos + _rotate_half(key) * sin
+        query = query * cos + rotate_pairs(query) * sin
+        key = key * cos + rotate_pairs(key) * sin
 
         # Padded contacts are blocked as keys, so they cannot reach a real
         # token; their own rows are computed and then dropped by the caller.

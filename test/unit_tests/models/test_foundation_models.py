@@ -1794,3 +1794,12 @@ def test_mapa_session_normalization_rejects_bad_input(shape, match):
 def test_mapa_raw_normalization_rejects_a_spectrogram(mapa_model):
     with pytest.raises(ValueError, match="normalization='session'"):
         mapa_model(torch.randn(1, len(MAPA_SUBJECT_A), 20, 32))
+
+
+def test_mapa_metadata_cache_owns_its_snapshot(mapa_model):
+    indices = MAPA.sensor_indices(MAPA_SUBJECT_A)
+    first = mapa_model._token_layout(indices, mapa_model.n_frames)
+    indices[0, 2] = 3
+    changed = mapa_model._token_layout(indices, mapa_model.n_frames)
+    assert changed is not first
+    assert (changed.token_region == 3).any()
