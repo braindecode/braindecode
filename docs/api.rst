@@ -66,6 +66,8 @@ interface for all EEG models and can derive variable names when needed.
     .. currentmodule:: braindecode.models
 
     - :class:`BIOT` - Foundation model with pre-trained weights
+    - :class:`BrainBERT` - Intracranial (sEEG/iEEG) foundation model with pre-trained
+      weights
     - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
     - :class:`CodeBrain` - Scalable EEG pre-training with temporal and spectral code
       prediction
@@ -73,6 +75,7 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
     - :class:`MAPA` - Masked autoencoder for intracranial EEG with anatomical priors
+    - :class:`MIRepNet` - Motor-imagery pre-trained model
     - :class:`BENDR` - Foundation model with pre-trained weights
     - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
     - :class:`EEGPT` - Pretrained transformer for universal EEG
@@ -134,15 +137,18 @@ interface for all EEG models and can derive variable names when needed.
      ATCNet
      AttentionBaseNet
      AttnSleep
+     BaRISTA
      BDTCN
      BENDR
      BIOT
+     BrainBERT
      BrainModule
      CBraMod
      CodeBrain
      ContraWR
      CTNet
      DGCNN
+     DIVER1
      Deep4Net
      DeepSleepNet
      EEGConformer
@@ -173,6 +179,7 @@ interface for all EEG models and can derive variable names when needed.
      MAPA
      MEDFormer
      MetaNeuromotorHand
+     MSCFormer
      MSVTNet
      PBT
      REVE
@@ -194,6 +201,11 @@ interface for all EEG models and can derive variable names when needed.
      TSception
      USleep
      ZUNA
+
+DIVER-1 recording metadata
+==========================
+
+.. autofunction:: braindecode.models.diver1.channel_metadata_from_chs_info
 
 Modules
 

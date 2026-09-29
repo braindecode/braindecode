@@ -16,16 +16,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from mne.datasets.utils import _get_path
 from torch import nn
-
-# Safe import for older PyTorch versions (Support for Intel-based Macs)
-try:
-    from torch.nn.attention import SDPBackend, sdpa_kernel
-
-    HAS_SDPA = True
-except ImportError:
-    HAS_SDPA = False
-    SDPBackend = None
-    sdpa_kernel = None
+from torch.nn import RMSNorm
 
 from braindecode.models.base import EEGModuleMixin
 
@@ -356,6 +347,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
         self._build_head(n_outputs)
 
     def get_positions(self, channel_names: list[str]) -> torch.Tensor:
@@ -521,25 +513,11 @@ class GEGLU(nn.Module):
         return F.gelu(gates) * x
 
 
-class RMSNorm(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
-        super().__init__()
-        self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
-
-    def _norm(self, x: torch.Tensor) -> torch.Tensor:
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        output = self._norm(x.float()).type_as(x)
-        return output * self.weight
-
-
 class FeedForward(nn.Module):
     def __init__(self, dim: int, hidden_dim: int, geglu: bool):
         super().__init__()
         self.net = nn.Sequential(
-            RMSNorm(dim),
+            RMSNorm(dim, eps=1e-6),
             nn.Linear(dim, hidden_dim * 2 if geglu else hidden_dim, bias=False),
             GEGLU() if geglu else nn.GELU(),
             nn.Linear(hidden_dim, dim, bias=False),
@@ -554,59 +532,6 @@ class FeedForward(nn.Module):
 #################################################################################
 
 
-class ClassicalAttention(nn.Module):
-    def __init__(self, heads: int, use_sdpa: bool | None = None):
-        super().__init__()
-        self.heads = heads
-
-        if use_sdpa is None:
-            self.use_sdpa = HAS_SDPA
-        elif use_sdpa is True and not HAS_SDPA:
-            logger.warning(
-                "SDPA (Scaled Dot Product Attention) was requested, but it is not "
-                "available in your current PyTorch version. Falling back to naive "
-                "implementation. Please upgrade to PyTorch >= 2.2 for SDPA support."
-            )
-            self.use_sdpa = False
-        else:
-            self.use_sdpa = use_sdpa
-
-    def forward(self, qkv: torch.Tensor) -> torch.Tensor:
-        # Split concatenated QKV into separate tensors
-        # qkv shape: (batch, seq_len, 3 * heads * head_dim)
-        q, k, v = qkv.chunk(3, dim=-1)
-
-        # Reshape for multi-head attention: split last dim into (heads, head_dim)
-        # (batch, seq_len, heads * head_dim) -> (batch, heads, seq_len, head_dim)
-        q, k, v = (
-            rearrange(
-                t,
-                "batch seq (heads dim) -> batch heads seq dim",
-                heads=self.heads,
-            )
-            for t in (q, k, v)
-        )
-
-        if self.use_sdpa:  # SDPA Implementation
-            with sdpa_kernel(
-                [
-                    SDPBackend.FLASH_ATTENTION,
-                    SDPBackend.EFFICIENT_ATTENTION,
-                    SDPBackend.MATH,
-                ]
-            ):
-                out = F.scaled_dot_product_attention(q, k, v)
-        else:  # Naive Implementation
-            _, _, scale = q.shape[-2], q.device, q.shape[-1] ** -0.5
-            dots = torch.matmul(q, k.transpose(-1, -2)) * scale
-            attn = nn.Softmax(dim=-1)(dots)
-            out = torch.matmul(attn, v)
-
-        # Merge heads back: (batch, heads, seq_len, head_dim) -> (batch, seq_len, heads * head_dim)
-        out = rearrange(out, "batch heads seq dim -> batch seq (heads dim)")
-        return out
-
-
 class Attention(nn.Module):
     """
     Multi-head self-attention layer with RMSNorm.
@@ -616,16 +541,21 @@ class Attention(nn.Module):
         super().__init__()
         inner_dim = head_dim * heads
         self.heads = heads
-        self.norm = RMSNorm(dim)
+        self.norm = RMSNorm(dim, eps=1e-6)
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
         self.to_out = nn.Linear(inner_dim, dim, bias=False)
-
-        self.attend = ClassicalAttention(self.heads, use_sdpa=True)
 
     def forward(self, x):
         x = self.norm(x)
         qkv = self.to_qkv(x)
-        out = self.attend(qkv)
+        q, k, v = (
+            rearrange(
+                t, "batch seq (heads dim) -> batch heads seq dim", heads=self.heads
+            )
+            for t in qkv.chunk(3, dim=-1)
+        )
+        out = F.scaled_dot_product_attention(q, k, v)
+        out = rearrange(out, "batch heads seq dim -> batch seq (heads dim)")
         return self.to_out(out)
 
 
@@ -703,6 +633,12 @@ class FourierEmb4D(nn.Module):
         self.margin = margin
 
     def forward(self, positions_: torch.Tensor) -> torch.Tensor:
+        # In float32 with autocast off: Intel Gaudi (HPU) autocast also downcasts
+        # the position * frequency products to bf16 before sin/cos (~3 % off).
+        with torch.autocast(device_type=positions_.device.type, enabled=False):
+            return self._embed(positions_.float()).to(positions_.dtype)
+
+    def _embed(self, positions_: torch.Tensor) -> torch.Tensor:
         positions = positions_.clone()
         positions[:, :, -1] *= self.increment_time
         input_shape = positions.shape

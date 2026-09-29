@@ -301,9 +301,14 @@ def create_windows_from_events(
         emits a ``DeprecationWarning`` and this parameter will be removed in
         version 2.0.
     mapping: dict(str: int)
-        Mapping from event description to numerical target value. Must be
-        provided when any of ``trial_start_offset_samples``,
+        Mapping from event description to numerical target value. If None, the
+        event descriptions of all datasets are numbered from 0 in dataset
+        order, with descriptions sorted within each dataset. This mapping is
+        shared by every dataset regardless of ``n_jobs``. Must be provided
+        when any of ``trial_start_offset_samples``,
         ``trial_stop_offset_samples``, or ``window_stride_samples`` is a dict.
+        Multiple descriptions may share a target. In that case, MNE event IDs
+        are distinct from the class targets stored in window metadata.
     preload: bool
         If True, preload the data of the Epochs objects. This is useful to
         reduce disk reading overhead when returning windows in a training
@@ -427,7 +432,8 @@ def create_windows_from_events(
     # If user did not specify mapping, we extract all events from all datasets
     # and map them to increasing integers starting from 0
     infer_mapping = mapping is None
-    mapping = dict() if infer_mapping else mapping
+    if infer_mapping:
+        mapping = _infer_mapping(concat_ds)
     infer_window_size_stride = window_size_samples is None
 
     if drop_bad_windows is not None:
@@ -638,6 +644,16 @@ def create_fixed_length_windows(
     return BaseConcatDataset(list_of_windows_ds)
 
 
+def _infer_mapping(concat_ds):
+    # built once here so parallel workers do not each start counting from 0
+    mapping: dict[str, int] = dict()
+    for ds in concat_ds.datasets:
+        for event_name in np.unique(ds.raw.annotations.description):
+            if event_name not in mapping:
+                mapping[event_name] = len(mapping)
+    return mapping
+
+
 def _create_windows_from_events(
     ds,
     infer_mapping,
@@ -666,8 +682,9 @@ def _create_windows_from_events(
     ds : RawDataset
         Dataset containing continuous data and description.
     infer_mapping : bool
-        If True, extract all events from all datasets and map them to
-        increasing integers starting from 0.
+        If True, add the event descriptions of ``ds`` missing from ``mapping``
+        to it with increasing integers. `create_windows_from_events` already
+        fills the mapping from all datasets before calling this function.
     infer_window_size_stride : bool
         If True, infer the stride from the original trial size of the first
         trial and trial_start_offset_samples and trial_stop_offset_samples.
@@ -695,7 +712,14 @@ def _create_windows_from_events(
             }
         )
 
-    events, events_id = mne.events_from_annotations(ds.raw, mapping, verbose=verbose)
+    # MNE requires unique event IDs even when annotations share a training target.
+    event_mapping = mapping
+    if len(set(mapping.values())) < len(mapping):
+        event_mapping = {name: i for i, name in enumerate(mapping)}
+    events, events_id = mne.events_from_annotations(
+        ds.raw, event_mapping, verbose=verbose
+    )
+    targets = {code: mapping[name] for name, code in events_id.items()}
     onsets = events[:, 0]
     ann = ds.raw.annotations
     filtered_annotations = [
@@ -880,7 +904,7 @@ def _create_windows_from_events(
             ],
             "i_start_in_trial": starts,
             "i_stop_in_trial": stops,
-            "target": description,
+            "target": [targets[code] for code in description],
         }
     )
     if extras is not None:

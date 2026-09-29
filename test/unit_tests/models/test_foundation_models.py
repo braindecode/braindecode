@@ -4,6 +4,7 @@
 
 import json
 import os
+from contextlib import nullcontext
 from pathlib import Path
 from urllib.error import URLError
 
@@ -23,10 +24,23 @@ try:
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
+from braindecode.models import (
+    DIVER1,
+    LUNA,
+    MAPA,
+    REVE,
+    ZUNA,
+    CBraMod,
+    CodeBrain,
+    Labram,
+    STEEGFormer,
+    steegformer,
+)
+from braindecode.models.diver1 import _STCPE, channel_metadata_from_chs_info
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
-from braindecode.models.reve import RevePositionBank
+from braindecode.models.reve import Attention, FourierEmb4D, RevePositionBank
+from braindecode.util import resolve_montage_name
 
 _ORIGINAL_TORCH_CAT = torch.cat
 
@@ -726,6 +740,82 @@ def test_zuna_builds_rotary_frequency_table_natively(axis_dim):
 
 
 # ==============================================================================
+# Tests for ZUNA's on_non_divisible option
+# ==============================================================================
+
+_ZUNA_SMALL = dict(n_outputs=2, sfreq=250.0, dim=64, n_layers=1, n_heads=2, head_dim=32)
+
+
+def _zuna_chs_info():
+    info = mne.create_info(["Fz", "Cz", "Pz", "C3", "C4", "O1"], 250.0, "eeg")
+    info.set_montage("standard_1020")
+    return info["chs"]
+
+
+def test_zuna_rejects_non_divisible_n_times_by_default():
+    """The default ``on_non_divisible="error"`` keeps the previous behavior."""
+    with pytest.raises(ValueError, match="divisible"):
+        ZUNA(chs_info=_zuna_chs_info(), n_times=1000, **_ZUNA_SMALL)
+
+
+def test_zuna_rejects_invalid_on_non_divisible():
+    """An unknown ``on_non_divisible`` value raises, even for a divisible n_times."""
+    with pytest.raises(ValueError, match="on_non_divisible"):
+        ZUNA(
+            chs_info=_zuna_chs_info(),
+            n_times=1024,
+            on_non_divisible="bogus",
+            **_ZUNA_SMALL,
+        )
+
+
+def test_zuna_pad_equals_explicit_zero_padding():
+    """``"pad"`` matches the same weights built with a padded ``n_times``."""
+    torch.manual_seed(0)
+    padded = ZUNA(
+        chs_info=_zuna_chs_info(), n_times=1000, on_non_divisible="pad", **_ZUNA_SMALL
+    ).eval()
+    reference = ZUNA(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL).eval()
+    reference.load_state_dict(padded.state_dict())
+    x = torch.randn(2, 6, 1000)
+    torch.testing.assert_close(
+        padded(x), reference(torch.nn.functional.pad(x, (0, 24))), rtol=0, atol=0
+    )
+
+
+def test_zuna_crop_drops_trailing_samples():
+    """``"crop"`` matches the same weights built with a cropped ``n_times``."""
+    torch.manual_seed(0)
+    cropped = ZUNA(
+        chs_info=_zuna_chs_info(), n_times=1000, on_non_divisible="crop", **_ZUNA_SMALL
+    ).eval()
+    reference = ZUNA(chs_info=_zuna_chs_info(), n_times=992, **_ZUNA_SMALL).eval()
+    reference.load_state_dict(cropped.state_dict())
+    x = torch.randn(2, 6, 1000)
+    torch.testing.assert_close(cropped(x), reference(x[..., :992]), rtol=0, atol=0)
+
+
+def test_reve_attention_matches_explicit_attention():
+    attention = Attention(dim=16, heads=2, head_dim=8)
+    x = torch.randn(2, 5, 16, requires_grad=True)
+    q, k, v = (
+        t.reshape(2, 5, 2, 8).transpose(1, 2)
+        for t in attention.to_qkv(attention.norm(x)).chunk(3, dim=-1)
+    )
+    weights = (q @ k.transpose(-1, -2) / 8**0.5).softmax(dim=-1)
+    expected = attention.to_out((weights @ v).transpose(1, 2).reshape(2, 5, 16))
+    actual = attention(x)
+    torch.testing.assert_close(actual, expected)
+    parameters = (x, *attention.parameters())
+    actual_grads = torch.autograd.grad(
+        actual.square().sum(), parameters, retain_graph=True
+    )
+    expected_grads = torch.autograd.grad(expected.square().sum(), parameters)
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+# ==============================================================================
 # Tests for LUNA Large Variant
 # ==============================================================================
 
@@ -1174,6 +1264,30 @@ def test_reve_position_bank_corrupt_cache_redownloads(tmp_path, monkeypatch):
     assert bank.get_all_positions() == list(config.keys())
 
 
+def test_reve_fourier_emb_4d_computes_in_float32():
+    """Intel Gaudi (HPU) autocast feeds sin/cos bf16 position x frequency products.
+
+    CPU autocast leaves elementwise ``mul`` alone, so bf16 positions reproduce it.
+    ``_embed`` is the unguarded computation.
+    """
+    torch.manual_seed(0)
+    electrodes = torch.randn(2, 16, 3)
+    positions = FourierEmb4D.add_time_patch(
+        electrodes / electrodes.norm(dim=-1, keepdim=True), 3
+    )
+    module = FourierEmb4D(dimension=64, freqs=4)
+    reference = module._embed(positions)
+    assert torch.equal(module(positions), reference)
+
+    def rel_error(out):
+        return ((out.float() - reference).norm() / reference.norm()).item()
+
+    bf16 = positions.to(torch.bfloat16)
+    out = module(bf16)
+    assert out.dtype == torch.bfloat16
+    assert rel_error(out) < 0.01 < 0.02 < rel_error(module._embed(bf16))
+
+
 # ==============================================================================
 # Tests for CBraMod Model
 # ==============================================================================
@@ -1231,3 +1345,452 @@ def test_codebrain_return_features():
     # features shape: (batch, n_chans, seq_len, out_channels)
     assert out["features"].shape == (2, 19, 30, 200)
     assert out["cls_token"] is None
+
+
+@pytest.fixture
+def diver1_model():
+    info = mne.create_info([f"A{i}" for i in range(6)], 500.0, "seeg")
+    for i, ch in enumerate(info["chs"]):
+        ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
+    return DIVER1(
+        n_outputs=4, chs_info=info["chs"], n_times=1000, sfreq=500.0,
+        pooling="mean", d_model=64, n_layers=2,
+    ).eval()
+
+
+@pytest.mark.parametrize(
+    "kind,located,slots", [("ecog", True, [1., 0.]), ("eeg", False, [0., -1.])]
+)
+def test_diver1_channel_metadata(kind, located, slots):
+    info = mne.create_info(["A0", "A1"], 500.0, kind)
+    if located:
+        for i, ch in enumerate(info["chs"]):
+            ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
+    metadata = channel_metadata_from_chs_info(info["chs"])
+    assert metadata.shape == (2, 5)
+    torch.testing.assert_close(metadata[:, 3:], torch.tensor([slots, slots]))
+    if located:
+        torch.testing.assert_close(metadata[1, :3], torch.tensor([10., 20., -30.]))
+    else:
+        assert torch.isnan(metadata[:, :3]).all()
+
+
+@pytest.mark.parametrize("kind, slots", [("eeg", [0, -1]), ("ecog", [1, 0]), ("seeg", [1, 2]), ("dbs", [1, 2])])
+def test_diver1_channel_metadata_from_chs_info(kind, slots):
+    """Standalone metadata retains MNE units and DIVER-1 type slots."""
+    info = mne.create_info(["A1", "A2"], 500.0, kind)
+    info["chs"][0]["loc"][:3] = [0.01, 0.02, -0.03]
+    metadata = channel_metadata_from_chs_info(info["chs"])
+    torch.testing.assert_close(metadata[0, :3], torch.tensor([10.0, 20.0, -30.0]))
+    assert torch.isnan(metadata[1, :3]).all()
+    assert metadata[:, 3:].tolist() == [slots, slots]
+    with pytest.raises(ValueError, match="cannot determine"):
+        channel_metadata_from_chs_info([dict(kind="unknown")])
+
+
+def test_diver1_channel_metadata_rejects_unknown_modality():
+    info = mne.create_info(["A0", "A1"], 500.0, "misc")
+    with pytest.raises(ValueError, match="cannot determine the recording modality"):
+        channel_metadata_from_chs_info(info["chs"])
+
+
+def test_diver1_montage_switching_and_permutation(diver1_model):
+    model = diver1_model
+    other = mne.create_info([f"B{i}" for i in range(9)], 500.0, "ecog")
+    for i, ch in enumerate(other["chs"]):
+        ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
+    metadata = channel_metadata_from_chs_info(other["chs"])
+    xa, xb = torch.randn(2, 6, 1000), torch.randn(2, 9, 1000)
+    perm = torch.tensor([4, 0, 3, 1, 5, 2])
+    with torch.no_grad():
+        first_a, first_b = model(xa), model(xb, metadata)
+        assert first_b.shape == (2, 4)
+        torch.testing.assert_close(model(xb, metadata), first_b)
+        torch.testing.assert_close(model(xa), first_a)
+        torch.testing.assert_close(model(xa, model.default_chan_metadata), first_a)
+        torch.testing.assert_close(
+            model(xa[:, perm], model.default_chan_metadata[perm]), first_a,
+            atol=1e-5, rtol=1e-5,
+        )
+
+
+@pytest.mark.parametrize(
+    "metadata,pooling,match",
+    [
+        (None, "mean", "built for 6 channels but got input with 9"),
+        (torch.zeros(3, 5), "mean", r"shape \(9, 5\)"),
+        (torch.zeros(9, 4), "mean", r"shape \(9, 5\)"),
+        (torch.full((9, 5), 7.0), "mean", "modality column"),
+        (torch.zeros(9, 5).index_fill_(1, torch.tensor([4]), 3.), "mean", "sub-modality"),
+        (torch.zeros(9, 5), "flatten", "pooling='flatten'"),
+    ],
+)
+def test_diver1_rejects_incompatible_montage(diver1_model, metadata, pooling, match):
+    model = diver1_model
+    if pooling == "flatten":
+        model = DIVER1(
+            n_outputs=4, chs_info=model.chs_info, n_times=1000, sfreq=500.0,
+            pooling=pooling, d_model=64, n_layers=2,
+        ).eval()
+    with pytest.raises(ValueError, match=match):
+        model(torch.randn(1, 9, 1000), metadata)
+
+
+@pytest.mark.parametrize("n_outputs", [0, 5])
+def test_diver1_reset_head_preserves_zero_outputs(diver1_model, n_outputs):
+    diver1_model.reset_head(n_outputs)
+    assert diver1_model.final_layer.out_features == n_outputs
+    assert diver1_model.get_config()["n_outputs"] == n_outputs
+
+
+def test_diver1_stcpe_preserves_low_precision_overlap(monkeypatch):
+    # BF16 fold accumulates 257 overlapping ones to 256, not scalar 257.
+    model = _STCPE(8, 4, 257, torch.nn.SiLU, 1).bfloat16().eval()
+    original_fold = torch.nn.functional.fold
+    calls = []
+
+    def capture_fold(*args, **kwargs):
+        out = original_fold(*args, **kwargs)
+        calls.append(out)
+        return out
+
+    monkeypatch.setattr(torch.nn.functional, "fold", capture_fold)
+    x = torch.randn(1, 1, 1, 8, dtype=torch.bfloat16, requires_grad=True)
+    actual = model(x)
+    assert len(calls) == 2
+    folded, overlap = calls
+    torch.testing.assert_close(overlap, torch.full_like(overlap, 256))
+    expected = model.up(model.unfold_features(folded / overlap))
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    actual_grad = torch.autograd.grad(actual.sum(), x, retain_graph=True)[0]
+    expected_grad = torch.autograd.grad(expected.sum(), x)[0]
+    torch.testing.assert_close(actual_grad, expected_grad, rtol=0, atol=0)
+
+
+
+@pytest.mark.parametrize("patch_size", [50, 500])
+@pytest.mark.parametrize("out_size", [8, 16, 32])
+def test_diver1_cnn_out_size(patch_size, out_size, tmp_path):
+    """Output-size HPO preserves token width and survives config/Hub cloning."""
+    info = mne.create_info(["A0", "A1"], 500.0, "seeg")
+    kwargs = dict(
+        chs_info=info["chs"], n_outputs=2, n_times=2 * patch_size - 1,
+        patch_size=patch_size, d_model=64, n_layers=1, pooling="mean",
+        cnn_out_size=out_size,
+    )
+    torch.manual_seed(21)
+    model = DIVER1(**kwargs).eval()
+    init_rng = torch.get_rng_state()
+    assert model.cnn_out_size == out_size
+    assert model.get_config()["cnn_out_size"] == out_size
+    padded = 1 << (patch_size - 1).bit_length()
+    assert model.patch_cnn.proj_in[0].stride == (1, padded // out_size)
+    assert model.patch_cnn.proj_in[0].out_channels == 64 // out_size
+    # The pre-existing explicit-stride path remains exactly equivalent.
+    kwargs.pop("cnn_out_size")
+    torch.manual_seed(21)
+    legacy = DIVER1(**kwargs, cnn_stride=padded // out_size).eval()
+    assert torch.equal(init_rng, torch.get_rng_state())
+    assert model.state_dict().keys() == legacy.state_dict().keys()
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(value, legacy.state_dict()[key], rtol=0, atol=0)
+    x = torch.randn(1, 2, 2 * patch_size - 1, requires_grad=True)
+    tokens = model.patch_cnn(model.patch_tokenizer(x))
+    assert tokens.shape == (1, 2, 2, 64)
+    actual = model(x)
+    assert actual.shape == (1, 2)
+    torch.testing.assert_close(actual, legacy(x), rtol=0, atol=0)
+    actual.sum().backward()
+    assert torch.isfinite(x.grad).all()
+    # Standard module deepcopy, config reconstruction, and local Hub roundtrip.
+    import copy
+
+    cloned = copy.deepcopy(model)
+    rebuilt = DIVER1.from_config(model.get_config()).eval()
+    rebuilt.load_state_dict(model.state_dict(), strict=True)
+    model.save_pretrained(tmp_path)
+    restored = DIVER1.from_pretrained(tmp_path).eval()
+    scripted = torch.jit.script(model)
+    for candidate in (cloned, rebuilt, restored, scripted):
+        torch.testing.assert_close(candidate(x), actual, rtol=0, atol=0)
+    for candidate in (cloned, rebuilt, restored):
+        assert candidate.get_config()["cnn_out_size"] == out_size
+
+
+@pytest.mark.parametrize(
+    "options,match",
+    [
+        ({"cnn_out_size": 0}, "positive integer divisor"),
+        ({"cnn_out_size": -8}, "positive integer divisor"),
+        ({"cnn_out_size": 3}, "positive integer divisor"),
+        ({"cnn_out_size": 1024}, "positive integer divisor"),
+        ({"cnn_out_size": 8.0}, "positive integer divisor"),
+        ({"cnn_out_size": True}, "positive integer divisor"),
+        ({"cnn_out_size": 32, "d_model": 48, "num_heads": 2}, "d_model.*divisible"),
+        ({"cnn_out_size": 8, "cnn_stride": 64}, "mutually exclusive"),
+        ({"cnn_out_size": 8, "cnn_stride": 32}, "mutually exclusive"),
+    ],
+)
+def test_diver1_cnn_out_size_validation(options, match):
+    info = mne.create_info(["A0", "A1"], 500.0, "seeg")
+    kwargs = dict(chs_info=info["chs"], n_outputs=2, n_times=500, d_model=64, n_layers=1)
+    with pytest.raises(ValueError, match=match):
+        DIVER1(**(kwargs | options))
+
+
+def test_diver1_mup_attention_scale():
+    """The released DIVER-1 checkpoints need attention scaled by 1 / head_dim."""
+    info = mne.create_info(["C3", "Cz", "C4"], 500.0, "eeg")
+    info.set_montage("standard_1020")
+    for mup in (True, False):
+        model = DIVER1(
+            chs_info=info["chs"], n_outputs=2, n_times=1000, mup_attention=mup
+        )
+        attention = [m for m in model.modules() if hasattr(m, "head_dim")]
+        assert attention
+        for module in attention:
+            assert module.scale == (1.0 / module.head_dim if mup else None)
+
+
+@pytest.fixture
+def steeg_vocab(monkeypatch):
+    """Use an offline vocabulary; keep the model's real 145-slot capacity."""
+    names = ["Fp1", "Fp2", "Cz", "Oz", "T7", "T8", "Pz", "Fz"]
+    monkeypatch.setattr(steegformer, "_channel_order", lambda: names)
+    monkeypatch.setattr(
+        steegformer,
+        "_channel_index",
+        lambda: {n.upper(): i for i, n in enumerate(names)},
+    )
+    return names
+
+
+@pytest.mark.parametrize(
+    "names, explicit, expected, warning",
+    [
+        (["oz", "FP1", "Cz"], None, [3, 0, 2], None),
+        (["E1", "fp1", "E2"], None, [3, 0, 5], "nearest 10-05 site"),
+        (["E1", "fp1", "E2"], [5, 4, 3], [5, 4, 3], None),
+    ],
+    ids=["known-names", "mixed-positions", "explicit-override"],
+)
+@pytest.mark.filterwarnings("error")
+def test_steegformer_channel_mapping(steeg_vocab, names, explicit, expected, warning):
+    info = mne.create_info(["Oz", "Cz", "T8"], 250, "eeg")
+    info.set_montage(
+        mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
+    )
+    chs = [dict(ch, ch_name=name) for ch, name in zip(info["chs"], names)]
+    # Unknown electrodes are slightly displaced; fp1 must ignore its Cz position.
+    chs[0]["loc"][:3] += [0.003, 0, 0.002]
+    chs[2]["loc"][:3] += [0, 0.004, -0.003]
+    with pytest.warns(UserWarning, match=warning) if warning else nullcontext():
+        model = STEEGFormer(
+            n_chans=3,
+            n_outputs=2,
+            n_times=64,
+            chs_info=chs,
+            chan_pos_idx=explicit,
+            embed_dim=32,
+            depth=1,
+            num_heads=2,
+        )
+    assert model.channel_indices.tolist() == expected
+
+
+@pytest.mark.parametrize(
+    "n_chans, fallback, n_chans_pos",
+    [
+        (3, "unlocated", 145),
+        (146, "unlocated", 145),
+        (256, "hydrocel", 145),
+        (3, "absent", 145),
+        (146, "absent", 145),
+        (3, "unpublished", 256),
+        (257, "unpublished", 256),
+        (3, "unavailable", 145),
+        (146, "unavailable", 145),
+    ],
+)
+def test_steegformer_montage_fallback(
+    steeg_vocab, monkeypatch, n_chans, fallback, n_chans_pos
+):
+    info = mne.create_info([f"E{i + 1}" for i in range(n_chans)], 250, "eeg")
+    if fallback == "hydrocel":
+        info.set_montage(mne.channels.make_standard_montage("GSN-HydroCel-256"))
+    if fallback == "unavailable":
+        def unavailable():
+            raise OSError("offline")
+
+        monkeypatch.setattr(steegformer, "_channel_index", unavailable)
+    overflow = n_chans > n_chans_pos and fallback != "hydrocel"
+    expectation = (
+        pytest.raises(ValueError, match="identity mapping.*chan_pos_idx")
+        if overflow
+        else pytest.warns(
+            UserWarning,
+            match="nearest 10-05 site" if fallback == "hydrocel" else "identity",
+        )
+    )
+    with expectation:
+        model = STEEGFormer(
+            n_chans=n_chans,
+            n_outputs=2,
+            n_times=64,
+            chs_info=None if fallback == "absent" else info["chs"],
+            n_chans_pos=n_chans_pos,
+            embed_dim=32,
+            depth=1,
+            num_heads=2,
+        )
+    if not overflow:
+        if fallback == "hydrocel":
+            slots = model.channel_indices
+            assert slots.shape == (256,)
+            assert 0 <= int(slots.min()) <= int(slots.max()) < len(steeg_vocab)
+        else:
+            assert model.channel_indices.tolist() == list(range(n_chans))
+
+
+# ==============================================================================
+# Tests for MAPA Model
+# ==============================================================================
+
+
+MAPA_SUBJECT_A = ["LA1", "LA2", "LA5", "LB3", "LB7"]
+MAPA_SUBJECT_B = ["RH2", "RH3", "RH8", "LT1", "LT2", "LT3", "LT4", "RX5"]
+
+
+@pytest.fixture
+def mapa_model():
+    return MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+    ).eval()
+
+
+def test_mapa_sensor_indices_reads_array_and_contact_number():
+    indices = MAPA.sensor_indices(MAPA_SUBJECT_A, ["ctx-lh-insula"] + [None] * 4)
+    assert indices.tolist() == [
+        [0, 1, 7],
+        [0, 2, 74],
+        [0, 5, 74],
+        [1, 3, 74],
+        [1, 7, 74],
+    ]
+
+
+@pytest.mark.parametrize("n_times", [448, 2048, 4096])
+def test_mapa_one_model_reads_another_subject(mapa_model, n_times):
+    """A montage and a window the mapa_model was not built for both go through."""
+    x = torch.randn(2, len(MAPA_SUBJECT_B), n_times)
+    with torch.no_grad():
+        y = mapa_model(x, MAPA.sensor_indices(MAPA_SUBJECT_B))
+    assert y.shape == (2, 4)
+
+
+def test_mapa_channel_order_does_not_change_the_output(mapa_model):
+    perm = torch.tensor([4, 0, 3, 1, 2])
+    x = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    with torch.no_grad():
+        expected = mapa_model(x)
+        permuted = mapa_model(x[:, perm], mapa_model.default_sensor_indices[perm])
+    torch.testing.assert_close(expected, permuted, atol=1e-5, rtol=1e-5)
+
+
+def test_mapa_switching_subjects_does_not_leak_between_calls(mapa_model):
+    """The cached token layout must not survive a change of montage."""
+    xa = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    xb = torch.randn(2, len(MAPA_SUBJECT_B), 2048)
+    indices_b = MAPA.sensor_indices(MAPA_SUBJECT_B)
+    with torch.no_grad():
+        first_a, first_b = mapa_model(xa), mapa_model(xb, indices_b)
+        again_b, again_a = mapa_model(xb, indices_b), mapa_model(xa)
+    torch.testing.assert_close(first_a, again_a)
+    torch.testing.assert_close(first_b, again_b)
+
+
+def test_mapa_flatten_pooling_stays_tied_to_its_montage():
+    mapa_model = MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+        pooling="flatten",
+    ).eval()
+    with pytest.raises(ValueError, match="pooling='flatten'"):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_B), 2048), MAPA.sensor_indices(MAPA_SUBJECT_B))
+
+
+@pytest.mark.parametrize(
+    "sensor_indices,match",
+    [
+        (None, "got input with 8 channels"),
+        (torch.zeros(3, 3, dtype=torch.long), r"shape \(8, 3\)"),
+        (torch.zeros(8, 3), "must hold integers"),
+        (torch.full((8, 3), 75), "region slots below 75"),
+        (torch.full((8, 3), -1), "must be non-negative"),
+    ],
+)
+def test_mapa_bad_sensor_indices_are_rejected(mapa_model, sensor_indices, match):
+    with pytest.raises(ValueError, match=match):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_B), 2048), sensor_indices)
+
+
+def test_mapa_window_shorter_than_one_slow_token_is_rejected(mapa_model):
+    with pytest.raises(ValueError, match="at least 448 samples"):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_A), 256))
+
+
+def _mapa_session_model(**kwargs):
+    return MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=32,
+        sfreq=32,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+        normalization="session",
+        **kwargs,
+    ).eval()
+
+
+def test_mapa_session_normalization_matches_window_normalization_on_its_bands(mapa_model):
+    """Handed the bands window normalization computes, session mode is identical."""
+    session = _mapa_session_model()
+    session.load_state_dict(mapa_model.state_dict())
+    x = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    frames = torch.cat(mapa_model.frontend._stft_bands(x), dim=2)
+    with torch.no_grad():
+        torch.testing.assert_close(session(frames), mapa_model(x))
+
+
+def test_mapa_session_normalization_reads_another_subject():
+    frames = torch.randn(2, len(MAPA_SUBJECT_B), 20, 64)
+    with torch.no_grad():
+        y = _mapa_session_model()(frames, MAPA.sensor_indices(MAPA_SUBJECT_B))
+    assert y.shape == (2, 4)
+
+
+@pytest.mark.parametrize(
+    "shape,match",
+    [
+        ((1, 5, 2048), "takes a spectrogram"),
+        ((1, 5, 19, 32), "takes a spectrogram"),
+        ((1, 5, 20, 4), "at least 8 frames"),
+    ],
+)
+def test_mapa_session_normalization_rejects_bad_input(shape, match):
+    with pytest.raises(ValueError, match=match):
+        _mapa_session_model()(torch.randn(shape))
+
+
+def test_mapa_raw_normalization_rejects_a_spectrogram(mapa_model):
+    with pytest.raises(ValueError, match="normalization='session'"):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_A), 20, 32))
