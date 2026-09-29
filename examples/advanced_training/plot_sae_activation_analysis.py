@@ -86,20 +86,22 @@ from braindecode.visualization import (
 )
 
 ######################################################################
-# All figures share one style, set here once. The trained SAE is drawn in
-# orange, the native decoder in near-black and every control in warm grey.
-# Each title states what its figure shows and is computed from the numbers
-# it reports, and numbers are set in a monospace font. The fonts fall back
-# to DejaVu, which ships with matplotlib.
+# All figures share one style, set here once, with the colors of the
+# Braindecode documentation: the trained SAE (and, later, the class a
+# feature was picked for) in the brand blue, the native decoder in ink and
+# every control in muted slate. Each title states what its figure shows and
+# is computed from the numbers it reports. The fonts fall back to DejaVu,
+# which ships with matplotlib.
 
-INK, ACCENT, MUTED, SUBTLE = "#1d272a", "#c3680e", "#a8a397", "#6f6f6f"
-WARM = LinearSegmentedColormap.from_list("warm", ["white", "#f6e3cf", "#db8a48"])
-DIVERGE = LinearSegmentedColormap.from_list("diverge", ["#4e728a", "white", ACCENT])
+INK, ACCENT, SUBTLE, AMBER = "#14181f", "#3a6c97", "#5e6878", "#b46a2c"
+MUTED = (0.37, 0.41, 0.47, 0.45)  # SUBTLE at 45% opacity, for controls
+BLUES = LinearSegmentedColormap.from_list("blues", ["white", "#dde7f0", ACCENT])
+DIVERGE = LinearSegmentedColormap.from_list("diverge", [AMBER, "white", ACCENT])
 plt.rcParams.update(
     {
         "font.family": "sans-serif",
-        "font.sans-serif": ["Helvetica Neue", "Helvetica", "Arial", "DejaVu Sans"],
-        "font.monospace": ["Menlo", "DejaVu Sans Mono"],
+        "font.sans-serif": ["Inter", "Helvetica Neue", "Arial", "DejaVu Sans"],
+        "font.monospace": ["JetBrains Mono", "Menlo", "DejaVu Sans Mono"],
         "font.size": 9,
         "text.color": INK,
         "figure.dpi": 110,
@@ -111,17 +113,17 @@ plt.rcParams.update(
         "axes.titleweight": "bold",
         "axes.titlelocation": "left",
         "axes.labelcolor": SUBTLE,
-        "axes.edgecolor": "#b4b4b4",
+        "axes.edgecolor": "#d6d9de",
         "axes.spines.top": False,
         "axes.spines.right": False,
         "axes.grid": True,
         "axes.grid.axis": "y",
         "axes.axisbelow": True,
-        "grid.color": "#e8e6e1",
-        "xtick.color": "#b4b4b4",
-        "ytick.color": "#b4b4b4",
-        "xtick.labelcolor": "#646464",
-        "ytick.labelcolor": "#646464",
+        "grid.color": "#e6e8eb",
+        "xtick.color": "#d6d9de",
+        "ytick.color": "#d6d9de",
+        "xtick.labelcolor": SUBTLE,
+        "ytick.labelcolor": SUBTLE,
         "ytick.major.size": 0,
         "legend.frameon": False,
     }
@@ -443,8 +445,8 @@ for name, pred in predictions.items():
 
 ######################################################################
 # The figure puts the table next to the reconstruction error. The native
-# decoder (black) uses the exact layer output. The trained SAE (orange) is
-# the result, and the two controls (grey) show what an uninformative
+# decoder (ink) uses the exact layer output. The trained SAE (blue) is
+# the result, and the two controls (slate) show what an uninformative
 # substitute costs. For the training-mean control, the FVU is the error of
 # predicting zero in the standardized coordinates. The dotted line is chance
 # (25%).
@@ -467,7 +469,6 @@ fig, axes = plt.subplots(1, 3, figsize=(9, 3), sharey=True)
 for column, (ax, title) in enumerate(zip(axes, panels)):
     values = [score[column] for score in scores.values()]
     top = max(1.0, *values)
-    ax.barh(list(scores), top, height=0.6, color="#f3f1ec")  # light track
     ax.barh(list(scores), values, height=0.6, color=[INK, ACCENT, MUTED, MUTED])
     for row, value in enumerate(values):
         ax.text(
@@ -504,24 +505,26 @@ plt.show()
 # the most frequent change.
 
 fig, axes = plt.subplots(1, 2, figsize=(9.2, 4))
-ConfusionMatrixDisplay.from_predictions(
-    y_test,
-    baseline_pred,
-    display_labels=pretty,
-    ax=axes[0],
-    colorbar=False,
-    cmap=WARM,
-    text_kw={"family": "monospace", "color": INK},
-)
-changes = ConfusionMatrixDisplay.from_predictions(
-    baseline_pred,
-    predictions["trained SAE"],
-    display_labels=pretty,
-    ax=axes[1],
-    colorbar=False,
-    cmap=WARM,
-    text_kw={"family": "monospace", "color": INK},
-).confusion_matrix * (1 - np.eye(len(LABELS), dtype=int))
+displays = [
+    ConfusionMatrixDisplay.from_predictions(
+        truth,
+        pred,
+        display_labels=pretty,
+        ax=ax,
+        colorbar=False,
+        cmap=BLUES,
+        text_kw={"family": "monospace"},
+    )
+    for truth, pred, ax in (
+        (y_test, baseline_pred, axes[0]),
+        (baseline_pred, predictions["trained SAE"], axes[1]),
+    )
+]
+for display in displays:  # ink on light cells, white on dark ones
+    matrix = display.confusion_matrix
+    for text, value in zip(display.text_.ravel(), matrix.ravel()):
+        text.set_color("white" if value > 0.8 * matrix.max() else INK)
+changes = displays[1].confusion_matrix * (1 - np.eye(len(LABELS), dtype=int))
 axes[0].set(
     title=f"Native decoder: {baseline_accuracy:.1%} balanced accuracy",
     xlabel="Predicted class",
@@ -605,12 +608,20 @@ heat = class_means[:, selected_features].T
 heat = heat / heat.max(1, keepdims=True).clip(min=1e-6)
 
 fig, ax = plt.subplots(figsize=(5.6, 4.6))
-ax.imshow(heat, cmap=WARM, vmin=0, vmax=1, aspect="auto")
+ax.imshow(heat, cmap=BLUES, vmin=0, vmax=1, aspect="auto")
 for (row, column), value in np.ndenumerate(heat):
-    ax.text(column, row, f"{value:.2f}", ha="center", va="center", family="monospace")
+    ax.text(
+        column,
+        row,
+        f"{value:.2f}",
+        ha="center",
+        va="center",
+        family="monospace",
+        color="white" if value > 0.8 else INK,  # stays legible on dark cells
+    )
 for row, column in enumerate(picked_for):  # inset, so neighbouring boxes never touch
     ax.add_patch(
-        Rectangle((column - 0.42, row - 0.42), 0.84, 0.84, fill=False, ec=INK, lw=1.2)
+        Rectangle((column - 0.42, row - 0.42), 0.84, 0.84, fill=False, ec=AMBER, lw=1.6)
     )
 ax.hlines(
     np.arange(n_per_class, len(heat), n_per_class) - 0.5,
@@ -629,8 +640,8 @@ ax.tick_params(length=0)
 ax.spines[:].set_visible(False)
 ax.grid(False)
 ax.set_title(
-    "Mean test code per class, each row scaled to its maximum.\n"
-    "Outline: the class it was picked for on the training session.",
+    "Mean test code per class, each row scaled to its maximum;\n"
+    "outline: the class it was picked for",
     color=SUBTLE,
     weight="normal",
 )
@@ -652,14 +663,12 @@ plt.show()
 # Because each activation vector is one pooling window, the codes also
 # have a time course within the trial, and each window can be traced back
 # to the EEG it summarizes. For the top feature selected for left-hand and
-# for right-hand imagery, a *feature card* shows five views of the test
-# session, with the class the feature was picked for in orange:
+# for right-hand imagery, a *feature card* shows four views of the test
+# session, with the class the feature was picked for in blue:
 #
 # * **Trial-mean code**: one dot per trial and the class mean as a bar.
-# * **Code when active**: the distribution of the non-zero codes, and the
-#   share of time bins in which the feature is active. It tells whether the
-#   preference comes from firing more often or more strongly.
-# * **Time course**: the mean code over the trial (± standard error). Each
+# * **Time course**: the mean code over the trial (± standard error), for
+#   the class the feature was picked for and for the other classes pooled. Each
 #   time bin is placed at the centre of the input span it summarizes
 #   (temporal filter plus pooling window, about 0.4 s); the cue appears
 #   0.5 s after window onset. A preference that only emerges after the cue
@@ -700,67 +709,65 @@ for label in ("left_hand", "right_hand"):
     codes = test_codes_time[:, :, feature]  # (trials, time bins)
     trial_mean = test_window_codes[:, feature]
     is_target = y_test == target
-    colors = [ACCENT if c == target else MUTED for c in range(len(LABELS))]
     fig, ax = plt.subplot_mosaic(
-        [["strip", "hist", "time", "time"], ["trials", "trials", "trials", "topo"]],
+        [["strip", "time", "time", "topo"], ["trials", "trials", "trials", "trials"]],
         figsize=(10.5, 6.2),
-        height_ratios=[1, 1.35],
+        height_ratios=[1, 1.45],
     )
 
-    for c, color in enumerate(colors):  # one dot per trial, the class mean as a bar
+    for c in range(len(LABELS)):  # one dot per trial, the class mean as a bar
         values = trial_mean[y_test == c]
         jitter = (np.arange(len(values)) * 0.618) % 1 - 0.5  # deterministic spread
-        ax["strip"].scatter(c + 0.4 * jitter, values, s=7, color=color, lw=0)
-        ax["strip"].hlines(values.mean(), c - 0.3, c + 0.3, color=INK, lw=1.6)
+        color = ACCENT if c == target else MUTED
+        ax["strip"].scatter(c + 0.4 * jitter, values, s=6, color=color, lw=0)
+        ax["strip"].hlines(values.mean(), c - 0.3, c + 0.3, color=INK, lw=1.4)
     ax["strip"].set_xticks(range(len(LABELS)), [p.replace(" ", "\n") for p in pretty])
     ax["strip"].set(title="Trial-mean code", ylabel="SAE code")
 
-    own, others = codes[is_target], codes[~is_target]
-    bins = np.linspace(0, codes.max(), 25)
-    ax["hist"].hist(others[others > 0], bins, density=True, color=MUTED)
-    ax["hist"].hist(own[own > 0], bins, density=True, histtype="step", color=ACCENT)
-    ax["hist"].set(
-        title=f"Active in {(own > 0).mean():.0%} of {pretty[target]} bins\n"
-        f"and in {(others > 0).mean():.0%} of the others",
-        xlabel="SAE code when active",
-        ylabel="density",
-    )
-
-    for c in sorted(range(len(LABELS)), key=lambda c: c == target):  # target on top
-        trials = codes[y_test == c]
+    for trials, color, name in (
+        (codes[~is_target], SUBTLE, "other classes"),
+        (codes[is_target], ACCENT, pretty[target]),
+    ):
         mean_c, sem_c = trials.mean(0), trials.std(0) / np.sqrt(len(trials))
         ax["time"].fill_between(
-            time_axis, mean_c - sem_c, mean_c + sem_c, color=colors[c], alpha=0.2, lw=0
+            time_axis, mean_c - sem_c, mean_c + sem_c, color=color, alpha=0.18, lw=0
         )
-        ax["time"].plot(time_axis, mean_c, color=colors[c], lw=2 if c == target else 1)
-    for row, name in enumerate((pretty[target], "other classes")):
-        ax["time"].text(
-            0.99,
-            0.98 - 0.09 * row,
+        ax["time"].plot(time_axis, mean_c, color=color, lw=1.8)
+        ax["time"].annotate(  # direct label at the line end instead of a legend
             name,
-            color=(ACCENT, SUBTLE)[row],
+            (time_axis[-1], mean_c[-1]),
+            xytext=(4, 0),
+            textcoords="offset points",
+            color=color,
             weight="bold",
-            ha="right",
-            va="top",
-            transform=ax["time"].transAxes,
+            va="center",
         )
-    ax["time"].axvline(0, color=INK, lw=0.8, ls=":")
+    ax["time"].axvline(0, color=SUBTLE, lw=0.8, ls=":")
     ax["time"].set(
-        title="Mean code over the trial (± s.e.m.)", xlabel="Time from cue (s)"
+        title="Mean code over the trial (± s.e.m.)",
+        xlabel="Time from cue (s)",
+        xlim=(time_axis[0], time_axis[-1] + 0.9),  # room for the labels
     )
 
     for row, trial in enumerate(np.argsort(-trial_mean)[:3]):  # most active trials
         base = -5 * row
         extent = (time_axis[0] - half_bin, time_axis[-1] + half_bin, base - 2, base + 2)
         ax["trials"].imshow(
-            codes[trial][None], extent=extent, cmap=WARM, vmin=0, vmax=codes.max()
+            codes[trial][None],
+            extent=extent,
+            cmap=BLUES,
+            vmin=0,
+            vmax=codes.max(),
+            alpha=0.7,  # keeps the EEG traces readable on the darkest bins
         )
         traces = base + trace_offsets + eeg[trial, shown] / trace_scale
         ax["trials"].plot(eeg_time, traces.T, color=INK, lw=0.5)
-        caption = f"trial {trial} · {pretty[y_test[trial]]} · mean code "
-        caption += f"{trial_mean[trial]:.2f}"
         ax["trials"].text(
-            eeg_time[0], base + 2.1, caption, family="monospace", fontsize=8
+            eeg_time[0],
+            base + 2.1,
+            f"trial {trial} · {pretty[y_test[trial]]}",
+            color=SUBTLE,
+            fontsize=8,
         )
     ax["trials"].set(
         title="Most active test trials: EEG input, shaded by the code in each bin",
@@ -776,20 +783,21 @@ for label in ("left_hand", "right_hand"):
 
     r = r_regression(post_cue_power, trial_mean)  # one Pearson r per channel
     limit = np.abs(r).max()
-    mne.viz.plot_topomap(
+    image, _ = mne.viz.plot_topomap(
         r,
         info,
         axes=ax["topo"],
         cmap=DIVERGE,
         vlim=(-limit, limit),
         contours=0,
+        sensors=False,
         show=False,
     )
-    ax["topo"].set(
-        title="Association with channel power",
-        xlabel=f"r with post-cue log-power (|r| ≤ {limit:.2f}),\n"
-        "orange r > 0, blue r < 0:\nan association, not a source map",
-    )
+    bar = fig.colorbar(image, ax=ax["topo"], orientation="horizontal", shrink=0.7)
+    bar.set_ticks([-limit, 0, limit], labels=[f"{-limit:.2f}", "0", f"{limit:.2f}"])
+    bar.outline.set_visible(False)
+    bar.set_label("r with post-cue log-power\n(association, not a source map)")
+    ax["topo"].set_title("Association with channel power")
     ratio = trial_mean[is_target].mean() / max(trial_mean[~is_target].mean(), 1e-6)
     fig.suptitle(
         f"Feature #{feature}, picked for {pretty[target]} on the training session, is "
