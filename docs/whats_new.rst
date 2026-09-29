@@ -28,6 +28,10 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add a bounded model-agnostic SAE activation analysis tutorial
+  using optional SAE Lens, without adding an SAE implementation to Braindecode
+  (:gh:`1152` by `Vandit Shah`_ and `Bruno Aristimunha`_)
+
 - Add :class:`braindecode.models.Brant`, a braindecode-native port of the Brant
   foundation model for intracranial (sEEG/iEEG) signals (Zhang et al., NeurIPS
   2023), including in-model spectral features and the shared configuration,
@@ -113,10 +117,6 @@ Enhancements
   :func:`braindecode.visualization.run_with_activation_substitution` to read or
   replace a submodule's output during a forward pass
   (:gh:`1138` by `Vandit Shah`_)
-
-- Add :class:`braindecode.visualization.SparseAutoencoder`, a Top-K sparse
-  autoencoder that decomposes a layer's activations into a sparse combination of
-  learned directions (:gh:`1152` by `Vandit Shah`_)
 
 - Preserve the recording-local row of each canonical MNE annotation as
   ``i_trial_in_dataset`` in event-window metadata, keeping it aligned with
