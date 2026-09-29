@@ -151,6 +151,14 @@ you should be aware that the Braindecode models must all follow certain conventi
 otherwise, your model will fail some tests.
 Please follow the detailed guide on *Adding a model to Braindecode* provided at
 [the end of this document](#adding-a-model-to-braindecode).
+When opening a pull request, use the
+[New model checklist](https://github.com/braindecode/braindecode/compare?expand=1&template=add_new_model.md)
+for model contributions. Select `master` as the base and your fork/branch as the head;
+on a branch-specific compare URL, append `?quick_pull=1&template=add_new_model.md`
+(or `&template=add_new_model.md` if it already has query parameters).
+The general template loads automatically for other contributions; GitHub selects the
+model template via the `template` query parameter, not an automatic template chooser.
+Templates become available after they are merged into the default branch.
 
 #### Write Tests
 
