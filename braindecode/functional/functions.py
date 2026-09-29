@@ -470,3 +470,21 @@ def sinusoidal_positional_encoding(n_positions: int, dim: int) -> torch.Tensor:
     # ``.contiguous()`` so an odd-``dim`` truncation owns tight storage -- a
     # non-contiguous view over the padded width breaks safetensors buffer saving.
     return pe[:, :dim].contiguous()
+
+
+def rotate_pairs(x: torch.Tensor) -> torch.Tensor:
+    """Rotate adjacent feature pairs from ``(a, b)`` to ``(-b, a)``.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Tensor of shape ``(..., features)`` with an even final dimension.
+
+    Returns
+    -------
+    torch.Tensor
+        Same shape, device and dtype as ``x``. Frequencies, positional indexing
+        and mixed-precision policy are left to the caller.
+    """
+    pairs = x.unflatten(-1, (-1, 2))
+    return torch.stack((-pairs[..., 1], pairs[..., 0]), dim=-1).flatten(-2)

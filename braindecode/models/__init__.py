@@ -18,6 +18,7 @@ from .dance import DANCE
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
 from .dgcnn import DGCNN
+from .diver1 import DIVER1
 from .eegconformer import EEGConformer
 from .eegdino import EEGDINO
 from .eeginception_erp import EEGInceptionERP
@@ -101,6 +102,7 @@ __all__ = [
     "DANCE",
     "Deep4Net",
     "DeepSleepNet",
+    "DIVER1",
     "BrainModule",
     "Brant",
     "EEGConformer",

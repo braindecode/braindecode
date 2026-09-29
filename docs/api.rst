@@ -147,6 +147,7 @@ interface for all EEG models and can derive variable names when needed.
      ContraWR
      CTNet
      DGCNN
+     DIVER1
      Deep4Net
      DeepSleepNet
      EEGConformer
@@ -198,6 +199,11 @@ interface for all EEG models and can derive variable names when needed.
      TSception
      USleep
      ZUNA
+
+DIVER-1 recording metadata
+==========================
+
+.. autofunction:: braindecode.models.diver1.channel_metadata_from_chs_info
 
 Modules
 

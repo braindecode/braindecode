@@ -28,6 +28,11 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
+  model with pretrained encoders and support for varying montages through
+  :func:`braindecode.models.diver1.channel_metadata_from_chs_info`
+  (:gh:`1170` by `Julien Gadonneix`_).
+
 - :class:`braindecode.models.ZUNA` accepts an ``n_times`` that is not a multiple of
   ``fine_time_pts`` through the new ``on_non_divisible`` option (``"pad"`` or ``"crop"``),
   forwarded to the shared :class:`braindecode.modules.PatchTokenizer`; the default
@@ -127,6 +132,7 @@ Bug fixes
   is 1, which made :class:`braindecode.models.ShallowFBCSPNet` and
   :class:`braindecode.models.Deep4Net` unusable on single-channel data
   (:gh:`1154` by `Julien Gadonneix`_).
+
 
 - Fix :meth:`braindecode.models.base.EEGModuleMixin.reset_head` leaving the
   saved configuration on the previous head, so a model saved after changing its

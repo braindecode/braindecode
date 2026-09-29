@@ -25,6 +25,7 @@ except ImportError:
     HAS_SAFETENSORS = False
 
 from braindecode.models import (
+    DIVER1,
     LUNA,
     REVE,
     ZUNA,
@@ -34,6 +35,7 @@ from braindecode.models import (
     STEEGFormer,
     steegformer,
 )
+from braindecode.models.diver1 import _STCPE, channel_metadata_from_chs_info
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
 from braindecode.models.reve import Attention, FourierEmb4D, RevePositionBank
@@ -1342,6 +1344,211 @@ def test_codebrain_return_features():
     # features shape: (batch, n_chans, seq_len, out_channels)
     assert out["features"].shape == (2, 19, 30, 200)
     assert out["cls_token"] is None
+
+
+@pytest.fixture
+def diver1_model():
+    info = mne.create_info([f"A{i}" for i in range(6)], 500.0, "seeg")
+    for i, ch in enumerate(info["chs"]):
+        ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
+    return DIVER1(
+        n_outputs=4, chs_info=info["chs"], n_times=1000, sfreq=500.0,
+        pooling="mean", d_model=64, n_layers=2,
+    ).eval()
+
+
+@pytest.mark.parametrize(
+    "kind,located,slots", [("ecog", True, [1., 0.]), ("eeg", False, [0., -1.])]
+)
+def test_diver1_channel_metadata(kind, located, slots):
+    info = mne.create_info(["A0", "A1"], 500.0, kind)
+    if located:
+        for i, ch in enumerate(info["chs"]):
+            ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
+    metadata = channel_metadata_from_chs_info(info["chs"])
+    assert metadata.shape == (2, 5)
+    torch.testing.assert_close(metadata[:, 3:], torch.tensor([slots, slots]))
+    if located:
+        torch.testing.assert_close(metadata[1, :3], torch.tensor([10., 20., -30.]))
+    else:
+        assert torch.isnan(metadata[:, :3]).all()
+
+
+@pytest.mark.parametrize("kind, slots", [("eeg", [0, -1]), ("ecog", [1, 0]), ("seeg", [1, 2]), ("dbs", [1, 2])])
+def test_diver1_channel_metadata_from_chs_info(kind, slots):
+    """Standalone metadata retains MNE units and DIVER-1 type slots."""
+    info = mne.create_info(["A1", "A2"], 500.0, kind)
+    info["chs"][0]["loc"][:3] = [0.01, 0.02, -0.03]
+    metadata = channel_metadata_from_chs_info(info["chs"])
+    torch.testing.assert_close(metadata[0, :3], torch.tensor([10.0, 20.0, -30.0]))
+    assert torch.isnan(metadata[1, :3]).all()
+    assert metadata[:, 3:].tolist() == [slots, slots]
+    with pytest.raises(ValueError, match="cannot determine"):
+        channel_metadata_from_chs_info([dict(kind="unknown")])
+
+
+def test_diver1_channel_metadata_rejects_unknown_modality():
+    info = mne.create_info(["A0", "A1"], 500.0, "misc")
+    with pytest.raises(ValueError, match="cannot determine the recording modality"):
+        channel_metadata_from_chs_info(info["chs"])
+
+
+def test_diver1_montage_switching_and_permutation(diver1_model):
+    model = diver1_model
+    other = mne.create_info([f"B{i}" for i in range(9)], 500.0, "ecog")
+    for i, ch in enumerate(other["chs"]):
+        ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
+    metadata = channel_metadata_from_chs_info(other["chs"])
+    xa, xb = torch.randn(2, 6, 1000), torch.randn(2, 9, 1000)
+    perm = torch.tensor([4, 0, 3, 1, 5, 2])
+    with torch.no_grad():
+        first_a, first_b = model(xa), model(xb, metadata)
+        assert first_b.shape == (2, 4)
+        torch.testing.assert_close(model(xb, metadata), first_b)
+        torch.testing.assert_close(model(xa), first_a)
+        torch.testing.assert_close(model(xa, model.default_chan_metadata), first_a)
+        torch.testing.assert_close(
+            model(xa[:, perm], model.default_chan_metadata[perm]), first_a,
+            atol=1e-5, rtol=1e-5,
+        )
+
+
+@pytest.mark.parametrize(
+    "metadata,pooling,match",
+    [
+        (None, "mean", "built for 6 channels but got input with 9"),
+        (torch.zeros(3, 5), "mean", r"shape \(9, 5\)"),
+        (torch.zeros(9, 4), "mean", r"shape \(9, 5\)"),
+        (torch.full((9, 5), 7.0), "mean", "modality column"),
+        (torch.zeros(9, 5).index_fill_(1, torch.tensor([4]), 3.), "mean", "sub-modality"),
+        (torch.zeros(9, 5), "flatten", "pooling='flatten'"),
+    ],
+)
+def test_diver1_rejects_incompatible_montage(diver1_model, metadata, pooling, match):
+    model = diver1_model
+    if pooling == "flatten":
+        model = DIVER1(
+            n_outputs=4, chs_info=model.chs_info, n_times=1000, sfreq=500.0,
+            pooling=pooling, d_model=64, n_layers=2,
+        ).eval()
+    with pytest.raises(ValueError, match=match):
+        model(torch.randn(1, 9, 1000), metadata)
+
+
+@pytest.mark.parametrize("n_outputs", [0, 5])
+def test_diver1_reset_head_preserves_zero_outputs(diver1_model, n_outputs):
+    diver1_model.reset_head(n_outputs)
+    assert diver1_model.final_layer.out_features == n_outputs
+    assert diver1_model.get_config()["n_outputs"] == n_outputs
+
+
+def test_diver1_stcpe_preserves_low_precision_overlap(monkeypatch):
+    # BF16 fold accumulates 257 overlapping ones to 256, not scalar 257.
+    model = _STCPE(8, 4, 257, torch.nn.SiLU, 1).bfloat16().eval()
+    original_fold = torch.nn.functional.fold
+    calls = []
+
+    def capture_fold(*args, **kwargs):
+        out = original_fold(*args, **kwargs)
+        calls.append(out)
+        return out
+
+    monkeypatch.setattr(torch.nn.functional, "fold", capture_fold)
+    x = torch.randn(1, 1, 1, 8, dtype=torch.bfloat16, requires_grad=True)
+    actual = model(x)
+    assert len(calls) == 2
+    folded, overlap = calls
+    torch.testing.assert_close(overlap, torch.full_like(overlap, 256))
+    expected = model.up(model.unfold_features(folded / overlap))
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    actual_grad = torch.autograd.grad(actual.sum(), x, retain_graph=True)[0]
+    expected_grad = torch.autograd.grad(expected.sum(), x)[0]
+    torch.testing.assert_close(actual_grad, expected_grad, rtol=0, atol=0)
+
+
+
+@pytest.mark.parametrize("patch_size", [50, 500])
+@pytest.mark.parametrize("out_size", [8, 16, 32])
+def test_diver1_cnn_out_size(patch_size, out_size, tmp_path):
+    """Output-size HPO preserves token width and survives config/Hub cloning."""
+    info = mne.create_info(["A0", "A1"], 500.0, "seeg")
+    kwargs = dict(
+        chs_info=info["chs"], n_outputs=2, n_times=2 * patch_size - 1,
+        patch_size=patch_size, d_model=64, n_layers=1, pooling="mean",
+        cnn_out_size=out_size,
+    )
+    torch.manual_seed(21)
+    model = DIVER1(**kwargs).eval()
+    init_rng = torch.get_rng_state()
+    assert model.cnn_out_size == out_size
+    assert model.get_config()["cnn_out_size"] == out_size
+    padded = 1 << (patch_size - 1).bit_length()
+    assert model.patch_cnn.proj_in[0].stride == (1, padded // out_size)
+    assert model.patch_cnn.proj_in[0].out_channels == 64 // out_size
+    # The pre-existing explicit-stride path remains exactly equivalent.
+    kwargs.pop("cnn_out_size")
+    torch.manual_seed(21)
+    legacy = DIVER1(**kwargs, cnn_stride=padded // out_size).eval()
+    assert torch.equal(init_rng, torch.get_rng_state())
+    assert model.state_dict().keys() == legacy.state_dict().keys()
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(value, legacy.state_dict()[key], rtol=0, atol=0)
+    x = torch.randn(1, 2, 2 * patch_size - 1, requires_grad=True)
+    tokens = model.patch_cnn(model.patch_tokenizer(x))
+    assert tokens.shape == (1, 2, 2, 64)
+    actual = model(x)
+    assert actual.shape == (1, 2)
+    torch.testing.assert_close(actual, legacy(x), rtol=0, atol=0)
+    actual.sum().backward()
+    assert torch.isfinite(x.grad).all()
+    # Standard module deepcopy, config reconstruction, and local Hub roundtrip.
+    import copy
+
+    cloned = copy.deepcopy(model)
+    rebuilt = DIVER1.from_config(model.get_config()).eval()
+    rebuilt.load_state_dict(model.state_dict(), strict=True)
+    model.save_pretrained(tmp_path)
+    restored = DIVER1.from_pretrained(tmp_path).eval()
+    scripted = torch.jit.script(model)
+    for candidate in (cloned, rebuilt, restored, scripted):
+        torch.testing.assert_close(candidate(x), actual, rtol=0, atol=0)
+    for candidate in (cloned, rebuilt, restored):
+        assert candidate.get_config()["cnn_out_size"] == out_size
+
+
+@pytest.mark.parametrize(
+    "options,match",
+    [
+        ({"cnn_out_size": 0}, "positive integer divisor"),
+        ({"cnn_out_size": -8}, "positive integer divisor"),
+        ({"cnn_out_size": 3}, "positive integer divisor"),
+        ({"cnn_out_size": 1024}, "positive integer divisor"),
+        ({"cnn_out_size": 8.0}, "positive integer divisor"),
+        ({"cnn_out_size": True}, "positive integer divisor"),
+        ({"cnn_out_size": 32, "d_model": 48, "num_heads": 2}, "d_model.*divisible"),
+        ({"cnn_out_size": 8, "cnn_stride": 64}, "mutually exclusive"),
+        ({"cnn_out_size": 8, "cnn_stride": 32}, "mutually exclusive"),
+    ],
+)
+def test_diver1_cnn_out_size_validation(options, match):
+    info = mne.create_info(["A0", "A1"], 500.0, "seeg")
+    kwargs = dict(chs_info=info["chs"], n_outputs=2, n_times=500, d_model=64, n_layers=1)
+    with pytest.raises(ValueError, match=match):
+        DIVER1(**(kwargs | options))
+
+
+def test_diver1_mup_attention_scale():
+    """The released DIVER-1 checkpoints need attention scaled by 1 / head_dim."""
+    info = mne.create_info(["C3", "Cz", "C4"], 500.0, "eeg")
+    info.set_montage("standard_1020")
+    for mup in (True, False):
+        model = DIVER1(
+            chs_info=info["chs"], n_outputs=2, n_times=1000, mup_attention=mup
+        )
+        attention = [m for m in model.modules() if hasattr(m, "head_dim")]
+        assert attention
+        for module in attention:
+            assert module.scale == (1.0 / module.head_dim if mup else None)
 
 
 @pytest.fixture
