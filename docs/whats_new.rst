@@ -32,6 +32,38 @@ Enhancements
   and cover its one-token-per-temporal-patch behavior
   (:gh:`1155` by `Bruno Aristimunha`_).
 
+- Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
+  model with pretrained encoders and support for varying montages through
+  :func:`braindecode.models.diver1.channel_metadata_from_chs_info`
+  (:gh:`1170` by `Julien Gadonneix`_).
+
+- :class:`braindecode.models.ZUNA` accepts an ``n_times`` that is not a multiple of
+  ``fine_time_pts`` through the new ``on_non_divisible`` option (``"pad"`` or ``"crop"``),
+  forwarded to the shared :class:`braindecode.modules.PatchTokenizer`; the default
+  ``"error"`` keeps the previous behaviour (:gh:`1190` by `Bruno Aristimunha`_).
+
+- Add :class:`braindecode.models.MSCFormer`, a multi-scale convolutional
+  transformer network for motor imagery decoding from Zhao et al. (2025),
+  adapted from the reference implementation to reuse braindecode's shared
+  attention and feed-forward blocks. The default attention logit scale
+  reproduces the released source's ``embed_dim ** -0.5`` (numerically
+  verified against the original code, max abs logit diff < 1e-6) and is
+  configurable via ``attention_scale`` (:gh:`1186` by `Li Qing`_).
+
+- Add :class:`braindecode.models.BaRISTA`, an intracranial EEG foundation model
+  whose spatial encoding scale is a free choice: electrodes are tokenized
+  channel-wise and space enters as a single learned embedding selected by the
+  electrode coordinate, its atlas parcel or its lobe, before a joint
+  space-time transformer encoder with rotary temporal embeddings
+  (:gh:`1173` by `Julien Gadonneix`_).
+
+- Add :class:`braindecode.models.Brant`, a braindecode-native port of the Brant
+  foundation model for intracranial (sEEG/iEEG) signals (Zhang et al., NeurIPS
+  2023), including in-model spectral features and the shared configuration,
+  feature-return, and head-reset APIs. The official pretrained weights load from
+  ``braindecode/brant-pretrained`` (all tensors verified identical to the
+  official release) (:gh:`1100` by `Adam Mounir`_).
+
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
@@ -41,17 +73,51 @@ Enhancements
   parallelism, preserving the test cases and gallery training workloads
   (:gh:`1161` by `Bruno Aristimunha`_).
 
+- Add :class:`braindecode.models.BrainBERT`, a self-supervised foundation model
+  for intracranial (sEEG/iEEG) signals from Wang et al. (ICLR 2023), with
+  pretrained weights (:gh:`1104` by `Adam Mounir`_).
+
+- Add pull request templates, including an exhaustive checklist for new model
+  contributions covering implementation conventions, registration,
+  documentation, and benchmarking (:gh:`1169` by `Li Qing`_).
+
 Requirements
 ============
 
 - Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
-  RMS normalization in REVE and ZUNA now uses PyTorch's implementation while
-  retaining float32 accumulation. Intel macOS is no longer supported because
+  REVE and ZUNA now import PyTorch's RMSNorm layer directly, preserving their
+  explicit epsilon values. Intel macOS is no longer supported because
   PyTorch stopped providing its binary packages after 2.2.
   (:gh:`1174` by `Bruno Aristimunha`_)
 
 Bug fixes
 ==========
+
+- Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU), part 2 of
+  :gh:`1183`: :class:`braindecode.modules.GeneralizedGaussianFilter` and
+  :func:`braindecode.functional.hilbert_freq` now use a real-valued DFT on
+  devices without complex tensors, computed in float32 with autocast disabled
+  (a bf16 matmul DFT gave phase-locking features 20% off and wrong-direction
+  filter gradients). CPU and CUDA keep ``torch.fft``
+  (:gh:`1193` by `Bruno Aristimunha`_)
+- Compute the 4-D Fourier position embedding of :class:`braindecode.models.REVE`
+  in float32 with autocast disabled. Intel Gaudi (HPU) autocast downcasts the
+  position × frequency products to bf16 before sin/cos (embedding ~3 % off on
+  Gaudi2); CPU/CUDA results are unchanged
+  (:gh:`1192` by `Bruno Aristimunha`_)
+- Fix :class:`braindecode.models.MVPFormer` on Intel Gaudi (HPU): the
+  channel-relative shift is now a single ``torch.gather`` and the grouped-query
+  key repeat works on a contiguous copy. On HPU the previous advanced indexing
+  back-propagated through a host-side ``index_put_`` with wrong gradients (and
+  took 108 s per 30 s-window training step), and the repeat scrambled the
+  relative keys (features 14-39 % off). CPU and CUDA results are bit-identical
+  (:gh:`1189` by `Bruno Aristimunha`_)
+- Fix the positional encoder of :class:`braindecode.models.SignalJEPA` and
+  :class:`braindecode.models.SignalJEPA_Contextual` on Intel Gaudi (HPU): the
+  time table is now a non-persistent buffer that follows ``.to(device)``, and the
+  encoding is built with ``torch.cat`` instead of strided in-place writes (the
+  temporal part was 73 % off on Gaudi2). State-dict keys and CPU/CUDA outputs are
+  unchanged (:gh:`1191` by `Bruno Aristimunha`_)
 
 - Preserve shared class targets when creating MNE epochs from different event
   annotations, as in sleep staging. MNE event IDs remain unique.
@@ -72,11 +138,91 @@ Bug fixes
   (:gh:`1154` by `Julien Gadonneix`_).
 
 
+- Fix :meth:`braindecode.models.base.EEGModuleMixin.reset_head` leaving the
+  saved configuration on the previous head, so a model saved after changing its
+  number of outputs could not be loaded back. Eighteen models (BENDR, BIOT,
+  CBraMod, EEGDINO, EEGPT, Labram, MetaNeuromotorHand, MVPFormer, REVE,
+  STEEGFormer, ZUNA, the three SignalJEPA classifiers and the Interpolated
+  BENDR, BIOT, EEGPT and LaBraM wrappers) now record the new ``n_outputs``, and
+  BENDR, CBraMod and EEGDINO built as feature extractors now also record that
+  they became classifiers, instead of reloading without their trained head.
+  Existing head-reset train/eval behavior is unchanged
+  (:gh:`1181` by `Raghav Rathi`_).
+- Make :func:`braindecode.preprocessing.create_windows_from_events` infer the
+  event mapping once for the whole dataset before the recordings are windowed.
+  With ``mapping=None`` and ``n_jobs`` above one, every worker numbered the
+  event descriptions of its own recording from zero, so the same description
+  could receive different integer targets across recordings. By `Sarthak
+  Tayal`_.
+
+- Make :func:`braindecode.datautil.load_concat_dataset` restore the
+  ``targets_from`` and ``last_target_only`` settings of a saved
+  :class:`braindecode.datasets.EEGWindowsDataset`. The loader looked the stored
+  settings up under the name ``WindowsDataset`` while the windowers record them
+  under ``EEGWindowsDataset``, so a dataset windowed with
+  ``targets_from="channels"`` came back reading its targets from the metadata.
+  By `Sarthak Tayal`_.
+
+- Make :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` work on a
+  copy of the metadata of each dataset. The description columns were written
+  into the metadata frame of the dataset itself, replacing any column sharing a
+  name with a description key such as ``target``. By `Sarthak Tayal`_.
+
+- Make :func:`braindecode.preprocessing.create_windows_from_events` accept a
+  ``mapping`` that sends several event descriptions to the same target when the
+  windows are stored as :class:`mne.Epochs`, for example to merge sleep stages
+  3 and 4. ``mne.Epochs`` rejects an ``event_id`` with repeated values since
+  MNE 1.13, so annotations now receive distinct event IDs while their shared
+  targets remain in the window metadata. By `Sarthak Tayal`_.
+
+- Fix :class:`braindecode.models.STEEGFormer` on high-density sensor nets whose
+  electrodes are numbered rather than named for a 10-20 site (e.g. EGI
+  HydroCel ``E1`` ... ``E256``). A channel name outside the montage vocabulary
+  used to switch the whole montage to the identity mapping, which is
+  meaningless and raised ``chan_pos_idx values must be in [0, 145)`` above 145
+  channels. Such channels now take the slot of the nearest 10-05 site from
+  their ``chs_info`` position, while named channels keep their own slot. Without
+  positions, the identity fallback is kept, and a clear error is raised when it
+  cannot fit (:gh:`1185` by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU) and under
+  ``torch.jit.trace``: :class:`braindecode.modules.GeneralizedGaussianFilter`
+  now clamps its parameters in place under ``torch.no_grad()`` instead of
+  reassigning ``.data``, and :func:`braindecode.functional.hilbert_freq`
+  computes the complex FFT step in float32 for bfloat16 inputs, so the phase
+  features work under bfloat16 autocast (:gh:`1183` by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.modules.MaxNormParametrize` failing on Intel Gaudi
+  (HPU), which affects every model with a max-norm weight constraint
+  (e.g. :class:`braindecode.models.EEGNet`,
+  :class:`braindecode.models.ATCNet`). The row rescale is now written out
+  instead of calling ``Tensor.renorm``; values and gradients are unchanged
+  (:gh:`1184` by `Bruno Aristimunha`_).
+- Fix :func:`braindecode.functional.hilbert_freq` with ``forward_fourier=True``
+  returning one sample fewer than the input for odd-length signals and
+  doubling the Nyquist coefficient for even-length ones. It now matches
+  :func:`scipy.signal.hilbert` for both.
+  :func:`braindecode.functional.plv_time` on time-domain input uses the
+  corrected transform (:gh:`1188` by `Arthur031221`_).
+
+- Fix :class:`braindecode.modules.MaxNormParametrize` producing ``NaN`` outputs
+  or gradients for zero or very small float16 rows after :gh:`1184`; the
+  norm and scale are computed in float32 for float16/bfloat16 inputs,
+  while float64 precision is preserved. Safe denominators prevent invalid
+  intermediate gradients, and rows at or below ``max_norm`` are unchanged.
+  Empty tensors pass through and a negative ``max_norm`` raises, as
+  ``Tensor.renorm`` does (:gh:`1187` by `Bruno Aristimunha`_).
+
+
 Current 1.8.0 (2026-08-31)
 ===============================
 
 Enhancements
 ============
+
+- Add :class:`braindecode.models.MIRepNet`, the released downstream
+  convolutional-Transformer encoder and classification head for motor-imagery
+  EEG, with pre-trained weights re-hosted at
+  `braindecode/mirepnet-pretrained <https://huggingface.co/braindecode/mirepnet-pretrained>`_
+  (:gh:`1126` by `Bruno Aristimunha`_).
 
 - Add a reusable temporal-distributed separable convolution encoder to
   :mod:`braindecode.modules`, and centralize output-head replacement for models using
@@ -1757,3 +1903,5 @@ Authors
 .. _Aditya Singh: https://github.com/adityasingh2400
 .. _Julien Gadonneix: https://github.com/julien-gadonneix
 .. _Li Qing: https://github.com/qinxwew
+.. _Arthur031221: https://github.com/Arthur031221
+.. _Raghav Rathi: https://github.com/raghav-rathi

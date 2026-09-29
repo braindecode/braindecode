@@ -1,6 +1,7 @@
 """Convenience functions for storing and loading of windows datasets."""
 
 # Authors: Lukas Gemein <l.gemein@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -270,7 +271,9 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
     else:
         window_kwargs = _load_kwargs_json("window_kwargs", sub_dir)
         windows_ds_kwargs = [
-            kwargs[1] for kwargs in window_kwargs if kwargs[0] == "WindowsDataset"
+            kwargs[1]
+            for kwargs in window_kwargs
+            if kwargs[0] in ("WindowsDataset", "EEGWindowsDataset")
         ]
         windows_ds_kwargs = windows_ds_kwargs[0] if len(windows_ds_kwargs) == 1 else {}
         if is_raw:
