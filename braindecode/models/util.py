@@ -953,7 +953,7 @@ def resolve_channel_indices(
     return cast(list[int], indices)
 
 
-def positions_from_chs_info(chs_info) -> np.ndarray:
+def positions_from_chs_info(chs_info):
     """``(n_chans, 2)`` electrode xy normalized to ``[0, 1]`` per axis.
 
     Takes the raw 3D sensor coordinates ``ch["loc"][:3]``, keeps ``xy`` and
@@ -965,15 +965,26 @@ def positions_from_chs_info(chs_info) -> np.ndarray:
 
     Parameters
     ----------
-    chs_info : list of dict
+    chs_info : list of dict or torch.Tensor
         MNE-style channel info dicts, each with a ``"loc"`` array whose first
-        three entries are the head-frame ``x, y, z`` coordinates.
+        three entries are the head-frame ``x, y, z`` coordinates, or a floating
+        coordinate tensor of shape ``(n_chans, 3)`` in consistent units.
 
     Returns
     -------
-    numpy.ndarray
-        ``(n_chans, 2)`` float positions in ``[0, 1]``.
+    numpy.ndarray or torch.Tensor
+        ``(n_chans, 2)`` float positions in ``[0, 1]``. Dictionary inputs retain
+        the NumPy float64 result. Tensor inputs preserve device and dtype and
+        support autograd and TorchScript. This does not return raw xyz or
+        convert metres to millimetres.
     """
+    if isinstance(chs_info, torch.Tensor):
+        xy = chs_info[:, :2]
+        # Preserve the floor and backward intermediates at small half spans.
+        if xy.dtype == torch.float16 or xy.dtype == torch.bfloat16:
+            xy = xy.float()
+        mn, mx = xy.amin(dim=0), xy.amax(dim=0)
+        return ((xy - mn) / (mx - mn).clamp_min(1e-9)).to(chs_info.dtype)
     xyz = np.array([ch["loc"][:3] for ch in chs_info], dtype=float)
     xy = xyz[:, :2]
     mn, mx = xy.min(axis=0), xy.max(axis=0)
@@ -981,7 +992,20 @@ def positions_from_chs_info(chs_info) -> np.ndarray:
 
 
 def has_valid_locations(chs_info) -> bool:
-    """``True`` if ``chs_info`` carries finite, non-all-zero electrode locations."""
+    """Whether a montage has finite, not approximately all-zero locations.
+
+    ``chs_info`` accepts MNE channel dictionaries or a coordinate tensor of
+    shape ``(n_chans, 3)``. Coordinates retain their input units. The result is
+    a montage-wide Python bool, not a per-channel mask; zero rows are allowed
+    when another row is nonzero. The all-zero tolerance is ``1e-8``.
+    For a TorchScript-compatible per-row check, use :func:`valid_location_mask`.
+    """
+    if isinstance(chs_info, torch.Tensor):
+        return bool(
+            chs_info.numel() > 0
+            and torch.isfinite(chs_info).all()
+            and chs_info.abs().max().item() > 1e-8
+        )
     if chs_info is None:
         return False
     try:
@@ -993,6 +1017,27 @@ def has_valid_locations(chs_info) -> bool:
     if np.allclose(xyz, 0.0):
         return False
     return True
+
+
+def valid_location_mask(locations: torch.Tensor) -> torch.Tensor:
+    """Flag finite, exactly nonzero coordinate rows without changing their units.
+
+    Parameters
+    ----------
+    locations : torch.Tensor
+        Coordinates of shape ``(..., 3)``, in any consistent coordinate frame
+        and units (e.g. xyz in metres or millimetres, not normalized xy).
+
+    Returns
+    -------
+    torch.Tensor
+        Boolean mask of shape ``(..., 1)`` on the input device. Unlike
+        :func:`has_valid_locations`, this tests each row against exact zero,
+        not an approximate montage-wide zero. Supports TorchScript.
+    """
+    return torch.isfinite(locations).all(dim=-1, keepdim=True) & (locations != 0).any(
+        dim=-1, keepdim=True
+    )
 
 
 # Canonical MNE channel-type name for the electrode kinds braindecode models

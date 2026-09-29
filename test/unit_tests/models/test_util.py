@@ -8,14 +8,18 @@ import inspect
 import mne
 import numpy as np
 import pytest
+import torch
 from sklearn.preprocessing import OneHotEncoder
 
 from braindecode import models
 from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
+    has_valid_locations,
     interpolated_models_dict,
     models_dict,
+    positions_from_chs_info,
     resolve_channel_indices,
+    valid_location_mask,
 )
 from braindecode.modules.util import (
     _pad_shift_array,
@@ -172,3 +176,54 @@ def test_resolve_channel_indices_invalid_geometry(loc, frame):
             [prefix, *chs], ["Cz"], montage="standard_1005"
         ) is None
     assert resolve_channel_indices(chs, ["Cz"], montage="standard_1005") is None
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32, torch.float64, torch.bfloat16])
+def test_coordinate_helpers_tensor_contracts(dtype):
+    xyz = torch.tensor(
+        [[0, 0, 0], [1e-9, 0, 0], [1, 2, 3], [float("nan"), 1, 1],
+         [float("inf"), 1, 1]], dtype=dtype
+    )
+    mask = valid_location_mask(xyz)
+    expected = torch.tensor([[False], [bool(xyz[1, 0] != 0)], [True], [False], [False]])
+    torch.testing.assert_close(mask, expected)
+    assert mask.device == xyz.device
+    torch.testing.assert_close(torch.jit.script(valid_location_mask)(xyz), mask)
+    assert not has_valid_locations(xyz)
+    assert has_valid_locations(xyz[:3])
+    assert not has_valid_locations(xyz[:2])
+    assert not has_valid_locations(xyz[:0])
+    boundary = torch.tensor([[1e-8, 0, 0]], dtype=dtype)
+    assert has_valid_locations(boundary) == has_valid_locations(
+        [{"loc": boundary[0].tolist()}]
+    )
+
+    positions = torch.tensor([[1, 2, 3], [3, 2, 4], [2, 2, 0]], dtype=dtype,
+                             requires_grad=True)
+    normalized = positions_from_chs_info(positions)
+    torch.testing.assert_close(normalized, torch.tensor([[0, 0], [1, 0], [.5, 0]], dtype=dtype))
+    assert normalized.device == positions.device
+    assert normalized.dtype == dtype
+    torch.testing.assert_close(torch.jit.script(positions_from_chs_info)(positions), normalized)
+    normalized.sum().backward()
+    assert torch.isfinite(positions.grad).all()
+    for normalize in (positions_from_chs_info, torch.jit.script(positions_from_chs_info)):
+        small = torch.tensor([[0., 0., 0.], [1e-5, 0., 0.]], dtype=dtype,
+                             requires_grad=True)
+        normalize(small).sum().backward()
+        torch.testing.assert_close(small.grad, torch.zeros_like(small))
+
+
+def test_coordinate_helpers_preserve_dictionary_defaults():
+    for locations, expected in [([], False), ([[0, 0, 0]], False),
+                                ([[1e-9, 0, 0]], False),
+                                ([[0, 0, 0], [1, 2, 3]], True),
+                                ([[float("nan"), 0, 1]], False)]:
+        chs = [{"loc": xyz} for xyz in locations]
+        assert has_valid_locations(chs) is expected
+    for chs in [None, [{}], [{"loc": None}], [{"loc": 1}]]:
+        assert has_valid_locations(chs) is False
+    chs = [{"loc": [1, 2, 3]}, {"loc": [3, 2, 4]}, {"loc": [2, 2, 0]}]
+    result = positions_from_chs_info(chs)
+    assert result.dtype == np.float64
+    np.testing.assert_array_equal(result, [[0, 0], [1, 0], [.5, 0]])

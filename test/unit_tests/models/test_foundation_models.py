@@ -25,6 +25,7 @@ except ImportError:
     HAS_SAFETENSORS = False
 
 from braindecode.models import (
+    DIVER1,
     LUNA,
     REVE,
     ZUNA,
@@ -34,6 +35,7 @@ from braindecode.models import (
     STEEGFormer,
     steegformer,
 )
+from braindecode.models.diver1 import _STCPE
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
 from braindecode.models.reve import Attention, FourierEmb4D, RevePositionBank
@@ -1344,12 +1346,116 @@ def test_codebrain_return_features():
     assert out["cls_token"] is None
 
 
+@pytest.fixture
+def diver1_model():
+    info = mne.create_info([f"A{i}" for i in range(6)], 500.0, "seeg")
+    for i, ch in enumerate(info["chs"]):
+        ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
+    return DIVER1(
+        n_outputs=4, chs_info=info["chs"], n_times=1000, sfreq=500.0,
+        pooling="mean", d_model=64, n_layers=2,
+    ).eval()
+
+
+@pytest.mark.parametrize(
+    "kind,located,slots", [("ecog", True, [1., 0.]), ("eeg", False, [0., -1.])]
+)
+def test_diver1_channel_metadata(kind, located, slots):
+    info = mne.create_info(["A0", "A1"], 500.0, kind)
+    if located:
+        for i, ch in enumerate(info["chs"]):
+            ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
+    metadata = DIVER1.channel_metadata(info["chs"])
+    assert metadata.shape == (2, 5)
+    torch.testing.assert_close(metadata[:, 3:], torch.tensor([slots, slots]))
+    if located:
+        torch.testing.assert_close(metadata[1, :3], torch.tensor([10., 20., -30.]))
+    else:
+        assert torch.isnan(metadata[:, :3]).all()
+
+
+def test_diver1_channel_metadata_rejects_unknown_modality():
+    info = mne.create_info(["A0", "A1"], 500.0, "misc")
+    with pytest.raises(ValueError, match="cannot determine the recording modality"):
+        DIVER1.channel_metadata(info["chs"])
+
+
+def test_diver1_montage_switching_and_permutation(diver1_model):
+    model = diver1_model
+    other = mne.create_info([f"B{i}" for i in range(9)], 500.0, "ecog")
+    for i, ch in enumerate(other["chs"]):
+        ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
+    metadata = DIVER1.channel_metadata(other["chs"])
+    xa, xb = torch.randn(2, 6, 1000), torch.randn(2, 9, 1000)
+    perm = torch.tensor([4, 0, 3, 1, 5, 2])
+    with torch.no_grad():
+        first_a, first_b = model(xa), model(xb, metadata)
+        assert first_b.shape == (2, 4)
+        torch.testing.assert_close(model(xb, metadata), first_b)
+        torch.testing.assert_close(model(xa), first_a)
+        torch.testing.assert_close(model(xa, model.default_chan_metadata), first_a)
+        torch.testing.assert_close(
+            model(xa[:, perm], model.default_chan_metadata[perm]), first_a,
+            atol=1e-5, rtol=1e-5,
+        )
+
+
+@pytest.mark.parametrize(
+    "metadata,pooling,match",
+    [
+        (None, "mean", "built for 6 channels but got input with 9"),
+        (torch.zeros(3, 5), "mean", r"shape \(9, 5\)"),
+        (torch.zeros(9, 4), "mean", r"shape \(9, 5\)"),
+        (torch.full((9, 5), 7.0), "mean", "modality column"),
+        (torch.zeros(9, 5).index_fill_(1, torch.tensor([4]), 3.), "mean", "sub-modality"),
+        (torch.zeros(9, 5), "flatten", "pooling='flatten'"),
+    ],
+)
+def test_diver1_rejects_incompatible_montage(diver1_model, metadata, pooling, match):
+    model = diver1_model
+    if pooling == "flatten":
+        model = DIVER1(
+            n_outputs=4, chs_info=model.chs_info, n_times=1000, sfreq=500.0,
+            pooling=pooling, d_model=64, n_layers=2,
+        ).eval()
+    with pytest.raises(ValueError, match=match):
+        model(torch.randn(1, 9, 1000), metadata)
+
+
+@pytest.mark.parametrize("n_outputs", [0, 5])
+def test_diver1_reset_head_preserves_zero_outputs(diver1_model, n_outputs):
+    diver1_model.reset_head(n_outputs)
+    assert diver1_model.final_layer.out_features == n_outputs
+    assert diver1_model.get_config()["n_outputs"] == n_outputs
+
+
+def test_diver1_stcpe_preserves_low_precision_overlap(monkeypatch):
+    # BF16 fold accumulates 257 overlapping ones to 256, not scalar 257.
+    model = _STCPE(8, 4, 257, torch.nn.SiLU, 1).bfloat16().eval()
+    original_fold = torch.nn.functional.fold
+    calls = []
+
+    def capture_fold(*args, **kwargs):
+        out = original_fold(*args, **kwargs)
+        calls.append(out)
+        return out
+
+    monkeypatch.setattr(torch.nn.functional, "fold", capture_fold)
+    x = torch.randn(1, 1, 1, 8, dtype=torch.bfloat16, requires_grad=True)
+    actual = model(x)
+    assert len(calls) == 2
+    folded, overlap = calls
+    torch.testing.assert_close(overlap, torch.full_like(overlap, 256))
+    expected = model.up(model.unfold_features(folded / overlap))
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    actual_grad = torch.autograd.grad(actual.sum(), x, retain_graph=True)[0]
+    expected_grad = torch.autograd.grad(expected.sum(), x)[0]
+    torch.testing.assert_close(actual_grad, expected_grad, rtol=0, atol=0)
+
+
+
 def test_diver1_mup_attention_scale():
     """The released DIVER-1 checkpoints need attention scaled by 1 / head_dim."""
-    import mne
-
-    from braindecode.models import DIVER1
-
     info = mne.create_info(["C3", "Cz", "C4"], 500.0, "eeg")
     info.set_montage("standard_1020")
     for mup in (True, False):

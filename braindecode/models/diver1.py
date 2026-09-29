@@ -19,7 +19,6 @@ Braindecode Adaptation: Julien Gadonneix
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
 
 import torch
 import torch.nn.functional as F
@@ -31,6 +30,7 @@ from braindecode.models.util import (
     INTRACRANIAL_CH_TYPES,
     channel_types_from_chs_info,
     extract_channel_locations_from_chs_info,
+    valid_location_mask,
 )
 from braindecode.modules import PatchTokenizer
 
@@ -53,51 +53,18 @@ _N_MODALITIES = len(_MODALITIES)
 _N_SUBTYPES = len(_SUBTYPES)
 
 
-def _label_indices(
-    labels: Sequence[str], vocabulary: Sequence[str]
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Index per-channel ``labels`` into ``vocabulary``, flagging the known ones.
-
-    Labels outside the vocabulary are given index 0 and a zero flag, which
-    :class:`_ChannelMetaEmbedding` uses to zero their embedding out.
-
-    Parameters
-    ----------
-    labels : sequence of str
-        One label per channel.
-    vocabulary : sequence of str
-        Embedding slots, in order.
-
-    Returns
-    -------
-    indices : torch.Tensor
-        ``(n_chans,)`` long tensor of slots.
-    known : torch.Tensor
-        ``(n_chans, 1)`` float mask of the labels found in ``vocabulary``.
-    """
-    known = [label in vocabulary for label in labels]
-    indices = torch.tensor(
-        [vocabulary.index(lab) if k else 0 for lab, k in zip(labels, known)],
-        dtype=torch.long,
-    )
-    return indices, torch.tensor(known, dtype=torch.float32).unsqueeze(-1)
-
-
 def _split_channel_metadata(
     metadata: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Split a ``(n_chans, 5)`` metadata tensor into the embedding's inputs.
 
     Coordinates that are non-finite or exactly zero (MNE's two ways of spelling
-    "no montage", as in ``has_valid_locations``) and negative sub-modality slots
+    "no montage") and negative sub-modality slots
     stand for unknown, and are returned as a zero flag so that
     :class:`_ChannelMetaEmbedding` zeroes the corresponding term out.
     """
     coords = metadata[:, :3]
-    coords_known = (
-        torch.isfinite(coords).all(dim=-1, keepdim=True)
-        & (coords != 0).any(dim=-1, keepdim=True)
-    ).to(coords.dtype)
+    coords_known = valid_location_mask(coords).to(coords.dtype)
     type_idx = metadata[:, 3].long()
     subtype = metadata[:, 4].long()
     subtype_known = (subtype >= 0).to(coords.dtype).unsqueeze(-1)
@@ -593,6 +560,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         """Replace the linear classification head for a new ``n_outputs``."""
         self._n_outputs = n_outputs
         self.final_layer = nn.Linear(self.final_layer.in_features, n_outputs)
+        self._update_init_kwargs(n_outputs=n_outputs)
 
     @staticmethod
     def channel_metadata(chs_info: list[dict]) -> torch.Tensor:
@@ -644,16 +612,20 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"intracranial type ({sorted(INTRACRANIAL_CH_TYPES)}). Set the "
                 f"channel kinds in chs_info accordingly."
             )
-        type_idx, _ = _label_indices([_TYPE_TO_MODALITY[t] for t in types], _MODALITIES)
-        subtype_idx, subtype_known = _label_indices(
-            [_TYPE_TO_SUBTYPE.get(t, "unknown") for t in types], _SUBTYPES
+        # An unknown sub-modality has no slot of its own; -1 spells it out.
+        slots = torch.tensor(
+            [
+                (
+                    _MODALITIES.index(_TYPE_TO_MODALITY[t]),
+                    _SUBTYPES.index(_TYPE_TO_SUBTYPE[t])
+                    if t in _TYPE_TO_SUBTYPE
+                    else -1,
+                )
+                for t in types
+            ],
+            dtype=coords.dtype,
         )
-        # An unknown sub-modality has no slot of its own; a negative index is
-        # what spells it out in the packed tensor.
-        subtype = torch.where(subtype_known.squeeze(-1) > 0, subtype_idx, -1)
-        return torch.cat(
-            [coords, type_idx.unsqueeze(-1), subtype.unsqueeze(-1)], dim=-1
-        ).to(coords.dtype)
+        return torch.cat([coords, slots], dim=-1)
 
     def forward(
         self, x: torch.Tensor, chan_metadata: torch.Tensor | None = None
@@ -873,8 +845,7 @@ class _PatchCNN(nn.Module):
         x = F.pad(x, self.pad)
         x = self.fold_grid(x)
         x = self.proj_in(x)
-        x = self.unfold_grid(x)
-        return x
+        return self.unfold_grid(x)
 
 
 class _SpectralEmbedding(nn.Module):
@@ -902,9 +873,7 @@ class _SpectralEmbedding(nn.Module):
         # rfft is not implemented for half precision: compute it in float32 and
         # cast the amplitudes back.
         spectrum = torch.fft.rfft(x.float(), dim=-1, norm="forward")
-        amplitude = spectrum.abs()
-        amplitude = amplitude.to(x.dtype)
-        return self.spectral_proj(amplitude)
+        return self.spectral_proj(spectrum.abs().to(x.dtype))
 
 
 class _ChannelMetaEmbedding(nn.Module):
@@ -945,8 +914,8 @@ class _ChannelMetaEmbedding(nn.Module):
     ) -> torch.Tensor:
         """Embed ``(n_chans, 3)`` coordinates and type indices into ``d_model``."""
         position = self.coord_emb(coords) * coords_known
-        modality = self.type_emb(type_idx) + self.subtype_emb(subtype_idx) * (
-            subtype_known
+        modality = (
+            self.type_emb(type_idx) + self.subtype_emb(subtype_idx) * subtype_known
         )
         return torch.cat([position, modality], dim=-1)
 
@@ -1005,13 +974,10 @@ class _SinusoidalCoordEmbedding(nn.Module):
         angles = (xyz * self.scale).unsqueeze(-1) / self.dim_t
         # Every wavelength is read out twice, as a sine and as a cosine, and
         # the stack puts the two of them side by side.
-        sin = angles.sin()
-        cos = angles.cos()
-        pairs = torch.stack([sin, cos], dim=-1)
+        pairs = torch.stack([angles.sin(), angles.cos()], dim=-1)
         # Flatten the three axes and their features into one vector, then pad.
         emb = pairs.flatten(start_dim=-3)
-        emb = F.pad(emb, (0, self.padding))
-        return emb
+        return F.pad(emb, (0, self.padding))
 
 
 class _STCPE(nn.Module):
@@ -1152,9 +1118,7 @@ class _STCPE(nn.Module):
             padding=self.padding,
         )
         averaged = folded / overlap
-        out = self.unfold_features(averaged)
-        out = self.up(out)
-        return out
+        return self.up(self.unfold_features(averaged))
 
 
 class _AnyVariateEncoder(nn.Module):
@@ -1420,10 +1384,5 @@ class _SwiGLUFeedForward(nn.Module):
         self.dropout2 = nn.Dropout(drop_prob)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        gate = self.fc_gate(x)
-        gate = self.activation(gate)
-        hidden = gate * self.fc1(x)
-        hidden = self.dropout1(hidden)
-        out = self.fc2(hidden)
-        out = self.dropout2(out)
-        return out
+        hidden = self.activation(self.fc_gate(x)) * self.fc1(x)
+        return self.dropout2(self.fc2(self.dropout1(hidden)))
