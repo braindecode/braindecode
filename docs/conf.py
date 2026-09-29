@@ -21,6 +21,7 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
+import importlib.util
 import inspect
 import os
 import os.path as op
@@ -318,6 +319,11 @@ sphinx_gallery_conf = {
     ),
     "within_subsection_order": FileNameSortKey,
 }
+
+# Keep optional SAE tutorials visible as source without requiring the heavy
+# SAE Lens stack for ordinary docs builds. Installing it enables execution.
+if importlib.util.find_spec("sae_lens") is None:
+    sphinx_gallery_conf["filename_pattern"] = r"^(?!.*plot_sae_).*/plot"
 
 # -- Options for HTML output ----------------------------------------------
 
