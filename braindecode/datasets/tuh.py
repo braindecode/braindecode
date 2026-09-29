@@ -815,7 +815,8 @@ def _get_header(*args, **kwargs):
     for paths_dict in [_TUH_EEG_PATHS, _TUH_EEG_ABNORMAL_PATHS, _TUH_EEG_EVENTS_PATHS]:
         for version_dict in paths_dict.values():
             all_paths.update(version_dict)
-    return all_paths[args[0]]
+    # Mock keys use POSIX separators; pathlib emits backslashes on Windows.
+    return all_paths[os.fspath(args[0]).replace("\\", "/")]
 
 
 _TUH_EEG_PATHS = {
