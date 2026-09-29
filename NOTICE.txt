@@ -61,7 +61,6 @@ non-profit purposes only. Commercial use requires an agreement with the USC
 Stevens Center for Innovation.
 
 - `braindecode/models/barista.py`
-- `scripts/convert_barista_weights.py`
 - `docs/_static/model/barista.jpeg` (original overview figure)
 
 This software is Copyright © 2025 The University of Southern California. All Rights Reserved.

@@ -102,37 +102,27 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
 
     **Pre-trained weights**
 
-    ``scripts/convert_barista_weights.py`` downloads and converts all three
-    released encoders from a pinned source revision, checking each file's
-    SHA-256 hash. It renames tensors, combines the gated projections and checks
-    encoder tokens against the released forward equations on float32 CPU
-    inputs. The check uses explicit PyTorch attention in place of xformers;
-    it does not test downstream accuracy or mixed-precision equivalence.
-
-    The converted encoders are published as ``braindecode/BaRISTA-coords``,
-    ``braindecode/BaRISTA-parcels`` and ``braindecode/BaRISTA-lobes``, each with
-    the conversion script that produced it. Load one and supply the montage
-    indices of the batch:
+    The three released encoders are published as ``braindecode/BaRISTA-coords``,
+    ``braindecode/BaRISTA-parcels`` and ``braindecode/BaRISTA-lobes``. Each
+    repository also holds ``convert_barista_weights.py``, the script that
+    produced it: it downloads the release from a pinned source revision, checks
+    the SHA-256 hash, renames tensors, combines the gated projections and checks
+    encoder tokens against the released forward equations on float32 CPU inputs
+    (explicit PyTorch attention in place of xformers; downstream accuracy and
+    mixed precision are not tested). Load one and supply the montage indices of
+    the batch:
 
     .. code-block:: python
 
         model = BaRISTA.from_pretrained("braindecode/BaRISTA-parcels", n_chans=64)
         logits = model(x, spatial_indices=parcel_indices)
 
-    They pool by mean, so one encoder serves any montage and window length. To
-    rebuild them, run the script from a Braindecode checkout with the ``hub``
-    extra installed; it saves one local Hub directory per scale and a JSON
-    check report, and ``--push-to`` uploads them:
-
-    .. code-block:: console
-
-        python scripts/convert_barista_weights.py --output-dir barista-converted
-
-    The releases contain no downstream head. Pooling and classifier weights in
+    They pool by mean, so one encoder serves any montage and window length.
+    The releases contain no downstream head: pooling and classifier weights in
     the converted models are newly initialized and require fine-tuning.
 
-    USC Academic License (non-commercial; see ``NOTICE.txt``). For commercial
-    use, contact the USC Stevens Center for Innovation.
+    `License <https://github.com/ShanechiLab/BaRISTA/blob/master/LICENSE.md>`_
+    (non-commercial).
 
     Parameters
     ----------
