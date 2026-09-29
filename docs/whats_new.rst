@@ -31,7 +31,7 @@ Enhancements
 - :class:`braindecode.models.ZUNA` accepts an ``n_times`` that is not a multiple of
   ``fine_time_pts`` through the new ``on_non_divisible`` option (``"pad"`` or ``"crop"``),
   forwarded to the shared :class:`braindecode.modules.PatchTokenizer`; the default
-  ``"error"`` keeps the previous behaviour (:gh:`NNNN` by `Bruno Aristimunha`_).
+  ``"error"`` keeps the previous behaviour (:gh:`1190` by `Bruno Aristimunha`_).
 
 - Add :class:`braindecode.models.BaRISTA`, an intracranial EEG foundation model
   whose spatial encoding scale is a free choice: electrodes are tokenized
