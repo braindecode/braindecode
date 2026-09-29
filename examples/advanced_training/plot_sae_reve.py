@@ -104,48 +104,40 @@ from braindecode.preprocessing import (
 from braindecode.util import set_random_seeds
 
 ######################################################################
-# All figures share one style, set here once. The result is drawn in
-# orange, the native model in black, controls in grey, and the pretrained
-# blocks that finish an edited forward pass in blue. Each title states what
-# its figure shows and is computed from the numbers it reports, and numbers
-# are set in a monospace font. The fonts fall back to DejaVu, which comes
-# with matplotlib.
+# The figures use the colors of the Braindecode documentation: the result
+# in blue, the native model in ink, controls in muted slate, and the
+# pretrained blocks that finish an edited forward pass (and the other
+# classes' feature sets) in amber.
 
-INK, ACCENT, MUTED, SUBTLE = "#1d272a", "#c3680e", "#a8a397", "#6f6f6f"
-STEEL = "#4e728a"
-WARM = LinearSegmentedColormap.from_list("warm", ["white", "#f6e3cf", "#db8a48"])
-DIVERGE = LinearSegmentedColormap.from_list("diverge", [STEEL, "white", ACCENT])
+INK, ACCENT, SUBTLE, AMBER = "#14181f", "#3a6c97", "#5e6878", "#b46a2c"
+MUTED = (0.37, 0.41, 0.47, 0.45)  # SUBTLE at 45% opacity
+BLUES = LinearSegmentedColormap.from_list("blues", ["white", "#dde7f0", ACCENT])
+DIVERGE = LinearSegmentedColormap.from_list("diverge", [AMBER, "white", ACCENT])
+# sphinx_gallery_start_ignore
 plt.rcParams.update(
     {
-        "font.family": "sans-serif",
-        "font.sans-serif": ["Helvetica Neue", "Helvetica", "Arial", "DejaVu Sans"],
-        "font.monospace": ["Menlo", "DejaVu Sans Mono"],
         "font.size": 9,
-        "text.color": INK,
-        "figure.dpi": 110,
-        "figure.titlesize": 11,
-        "figure.titleweight": "bold",
-        "figure.constrained_layout.use": True,
-        "savefig.bbox": "tight",
         "axes.titlesize": 9.5,
+        "figure.constrained_layout.use": True,
+        "figure.titleweight": "bold",
         "axes.titleweight": "bold",
         "axes.titlelocation": "left",
-        "axes.labelcolor": SUBTLE,
-        "axes.edgecolor": "#b4b4b4",
         "axes.spines.top": False,
         "axes.spines.right": False,
+        "axes.edgecolor": "#d6d9de",
+        "axes.labelcolor": SUBTLE,
         "axes.grid": True,
         "axes.grid.axis": "y",
         "axes.axisbelow": True,
-        "grid.color": "#e8e6e1",
-        "xtick.color": "#b4b4b4",
-        "ytick.color": "#b4b4b4",
-        "xtick.labelcolor": "#646464",
-        "ytick.labelcolor": "#646464",
+        "grid.color": "#e6e8eb",
+        "xtick.color": "#d6d9de",
+        "ytick.color": "#d6d9de",
+        "xtick.labelcolor": SUBTLE,
+        "ytick.labelcolor": SUBTLE,
         "ytick.major.size": 0,
-        "legend.frameon": False,
     }
 )
+# sphinx_gallery_end_ignore
 
 ######################################################################
 # Loading and preparing the data
@@ -316,9 +308,9 @@ print(f"REVE-base: {n_params / 1e6:.1f} M parameters, {n_blocks} blocks")
 #
 # The figure shows where each step acts. Blocks 1–18 run once, and their
 # output is cached. The SAE reads and edits the stream at block 18
-# (orange), in one of two ways: the first test replaces the tokens by their
+# (blue), in one of two ways: the first test replaces the tokens by their
 # reconstruction, and the second takes away only the decoded contribution of
-# the removed features. ``run_blocks`` then applies only the blue blocks
+# the removed features. ``run_blocks`` then applies only the amber blocks
 # again, once per edit. The lower panel shows why a hook cannot do this: what a
 # submodule returns is the update, and the stream itself only exists in the
 # loop. After training the head, we check that ``run_blocks`` reproduces
@@ -328,7 +320,7 @@ block = 18
 fig, (ax, ax_block) = plt.subplots(2, 1, figsize=(10.5, 5.2), height_ratios=[1.3, 1])
 box = dict(boxstyle="round,pad=0.35", lw=0.8)
 arrow = dict(arrowstyle="-|>", color=ACCENT, lw=1)
-ax.plot([-0.4, n_blocks + 1.3], [0, 0], color="#b4b4b4", lw=1, zorder=0)
+ax.plot([-0.4, n_blocks + 1.3], [0, 0], color="#d6d9de", lw=1, zorder=0)
 for x, text in (
     (-1.5, "EEG window\n88 tokens"),
     (n_blocks + 2.5, "final_layer\n4 logits"),
@@ -341,16 +333,16 @@ for b in range(n_blocks + 1):
         b + 0.5, -0.6, b, ha="center", family="monospace", fontsize=7.5, color=color
     )
 for b in range(1, n_blocks + 1):
-    fc, ec, color = ("#f3f1ec", "#b4b4b4", SUBTLE)  # blocks the edit never reruns
+    fc, ec, color = ("#f6f7f8", "#d6d9de", SUBTLE)  # blocks the edit never reruns
     if b >= block:
         fc, ec, color = (
-            (ACCENT, ACCENT, "white") if b == block else ("white", STEEL, STEEL)
+            (ACCENT, ACCENT, "white") if b == block else ("white", AMBER, AMBER)
         )
     style = box | {"fc": fc, "ec": ec}
     ax.text(b, 0, b, ha="center", va="center", fontsize=7.5, color=color, bbox=style)
 for start, end, color, text in (  # what each function computes, and how often
     (0.6, block + 0.4, SUBTLE, "token_streams: model(x, return_output=True), once"),
-    (block + 0.6, n_blocks + 3.3, STEEL, f"run_blocks(tokens, {block + 1}), per edit"),
+    (block + 0.6, n_blocks + 3.3, AMBER, f"run_blocks(tokens, {block + 1}), per edit"),
 ):
     ax.annotate(
         "",
@@ -382,7 +374,7 @@ ax.text(
     "SAE: encode, edit codes, decode",
     ha="center",
     va="center",
-    bbox=box | {"fc": "#f6e3cf", "ec": ACCENT},
+    bbox=box | {"fc": "#dde7f0", "ec": ACCENT},
 )
 ax.annotate(
     "",
@@ -407,9 +399,9 @@ ax.set_title(
 ax.axis("off")
 
 steps = ("stream b-1", "Attention", "+", "FeedForward", "+", "stream b")
-modules = box | {"fc": "#f3f1ec", "ec": "#b4b4b4"}
+modules = box | {"fc": "#f6f7f8", "ec": "#d6d9de"}
 additions = box | {"boxstyle": "circle,pad=0.15", "fc": "white", "ec": INK}
-ax_block.plot([0.6, 9.6], [0, 0], color="#b4b4b4", lw=1, zorder=0)
+ax_block.plot([0.6, 9.6], [0, 0], color="#d6d9de", lw=1, zorder=0)
 for x, label in zip(range(0, 12, 2), steps):
     frame = additions if label == "+" else modules if label[0].isupper() else None
     ax_block.text(x, 0, label, ha="center", va="center", bbox=frame)
@@ -521,7 +513,7 @@ print(
 # ``b - 1`` to ``run_blocks`` from block ``b + 1``. Only the validation
 # windows are used, because this check informs a modelling choice. The
 # figure shows the complement, the share of decisions that change, with the
-# block the SAE reads in orange.
+# block the SAE reads in blue.
 
 with torch.no_grad():
     unchanged = np.array(
@@ -544,22 +536,19 @@ fig, ax = plt.subplots(figsize=(8.5, 3.2))
 ax.bar(
     blocks, changed, width=0.7, color=[ACCENT if b == block else MUTED for b in blocks]
 )
-for b, value in zip(blocks, changed):
-    color = ACCENT if b == block else SUBTLE
-    ax.text(
-        b,
-        value + 0.015,
-        f"{value:.0%}",
-        ha="center",
-        va="bottom",
-        family="monospace",
-        fontsize=7.5,
-        color=color,
-    )
+ax.text(  # label only the block the SAE reads; the axis gives the others
+    block,
+    changed[block - 1] + 0.015,
+    f"{changed[block - 1]:.0%}",
+    ha="center",
+    va="bottom",
+    family="monospace",
+    color=ACCENT,
+)
 ax.set(
     xticks=blocks,
     ylim=(0, 1),
-    xlabel=f"Skipped block (orange: block {block}, read by the SAE)",
+    xlabel=f"Skipped block (blue: block {block}, read by the SAE)",
     ylabel="Validation decisions changed",
 )
 ax.yaxis.set_major_formatter("{x:.0%}")
@@ -756,7 +745,7 @@ for name, pred in substituted_pred.items():
 
 ######################################################################
 # The figure shows the table next to the reconstruction error. The native
-# model (black) uses the exact tokens, the trained SAE (orange) is the result
+# model (black) uses the exact tokens, the trained SAE (blue) is the result
 # and the two controls (grey) show what an uninformative substitute costs.
 # For the mean tokens, the FVU is the error of predicting zero in the
 # standardized coordinates. The vertical line marks chance (25%).
@@ -782,7 +771,6 @@ fig, axes = plt.subplots(1, 3, figsize=(10, 2.5), sharey=True)
 for column, (ax, title) in enumerate(zip(axes, panels)):
     values = [score[column] for score in scores.values()]
     top = max(1.0, *values)
-    ax.barh(list(scores), top, height=0.6, color="#f3f1ec")  # light track
     ax.barh(list(scores), values, height=0.6, color=[INK, ACCENT, MUTED, MUTED])
     for i, value in enumerate(values):
         ax.text(
@@ -844,9 +832,12 @@ for ax, (reference, pred) in zip(
         display_labels=pretty,
         ax=ax,
         colorbar=False,
-        cmap=WARM,
-        text_kw={"family": "monospace", "color": INK},
+        cmap=BLUES,
+        text_kw={"family": "monospace"},
     )
+    matrix = display.confusion_matrix  # ink on light cells, white on dark ones
+    for text, value in zip(display.text_.ravel(), matrix.ravel()):
+        text.set_color("white" if value > 0.8 * matrix.max() else INK)
     ax.grid(False)
     ax.spines[:].set_visible(False)
 axes[0].set(
@@ -901,7 +892,7 @@ for label, features in zip(LABELS, selected):
 # tokens: channel by channel, four patches each, so a feature's mean code per
 # channel is a topographic map. For the top feature of each class, we average
 # its test-session code over the four patches and show the mean over the test
-# trials of that class *minus* the mean over the other test trials: orange
+# trials of that class *minus* the mean over the other test trials: blue
 # channels are where the feature fires more for its class. Each map has its
 # own symmetric color scale, in code units; its limit and the peak channel
 # are given under the map. Because Euclidean alignment mixes channels, a
@@ -933,6 +924,7 @@ for class_id, (ax, label) in enumerate(zip(axes, pretty)):
         cmap=DIVERGE,
         vlim=(-limit, limit),
         contours=0,
+        sensors=False,
         extrapolate="local",
     )
     peak = raw_info["chs"][contrast.argmax()]  # loc[0] > 0: right hemisphere
@@ -946,7 +938,7 @@ fig.suptitle(
     ha="left",
 )
 fig.supxlabel(
-    "Test session; orange: more active on the class's trials; each map has its own "
+    "Test session; blue: more active on the class's trials; each map has its own "
     "scale. An association, not a source map:\nchannels are aligned virtual "
     "channels at the electrode positions, and the maps describe the encoder.",
     x=0.01,
@@ -1056,8 +1048,8 @@ for row in effects:
 ######################################################################
 # The left panel shows every value behind the table, one row per class, on
 # the trials of that class: the drop caused by the class's own features
-# (orange), by each of the 20 random feature sets (grey dots) and by each of
-# the other classes' sets (open blue markers). Its right column gives the
+# (blue), by each of the 20 random feature sets (grey dots) and by each of
+# the other classes' sets (open amber markers). Its right column gives the
 # specificity contrast, the drop caused by the own set minus the largest drop
 # caused by any control: it is positive only when no control comes close, and
 # a control that exceeds the own set is named. The right panel shows every
@@ -1084,7 +1076,7 @@ for c, effect in enumerate(effects):
             textcoords="offset points",
             ha="center",
             fontsize=7.5,
-            color=STEEL,
+            color=AMBER,
         )
     ax.text(
         1,
@@ -1094,11 +1086,11 @@ for c, effect in enumerate(effects):
         ha="right",
         va="center",
         family="monospace",
-        color=INK if contrast[c] > 0 else ACCENT,
+        color=INK if contrast[c] > 0 else AMBER,
         weight="normal" if contrast[c] > 0 else "bold",
     )
     ax.scatter(random_drops[:, c], c + jitter, s=10, color=MUTED, lw=0)
-    ax.scatter(other_sets, [c] * len(other_sets), s=30, fc="white", ec=STEEL, lw=1.2)
+    ax.scatter(other_sets, [c] * len(other_sets), s=30, fc="white", ec=AMBER, lw=1.2)
     ax.scatter(effect["own"], c, s=55, color=ACCENT, zorder=3)
     ax.text(
         effect["own"],
@@ -1112,7 +1104,7 @@ for c, effect in enumerate(effects):
 for i, (text, color) in enumerate(
     (
         (f"own {n_selected} features", ACCENT),
-        ("each other class's set", STEEL),
+        ("each other class's set", AMBER),
         (f"{n_random} random sets", SUBTLE),
     )
 ):
@@ -1135,11 +1127,11 @@ ax.text(
     fontsize=7.5,
     color=SUBTLE,
 )
-ax.axvline(0, color="#b4b4b4", lw=0.8)
+ax.axvline(0, color="#d6d9de", lw=0.8)
 ax.set(
     yticks=positions,
     yticklabels=pretty,
-    ylim=(len(LABELS) - 0.5, -1.3),
+    ylim=(len(LABELS) - 0.5, -1.6),
     xlim=(min(drop_matrix.min(), random_drops.min()) - 0.02, drop_matrix.max() + 0.07),
     xlabel="Drop in p(class) on the test trials of the class",
     title=f"Removing {n_selected} SAE features at block {block}",
@@ -1150,7 +1142,7 @@ ax.grid(axis="x")
 limit = np.abs(drop_matrix).max()
 ax_matrix.imshow(drop_matrix, cmap=DIVERGE, vmin=-limit, vmax=limit)
 for (row, column), value in np.ndenumerate(drop_matrix):
-    color = "white" if abs(value) > 0.9 * limit else INK
+    color = "white" if abs(value) > 0.6 * limit else INK
     ax_matrix.text(
         column,
         row,
