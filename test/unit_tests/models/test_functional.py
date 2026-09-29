@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import torch
+from scipy.signal import hilbert
 
 from braindecode.functional import (
     hilbert_freq,
@@ -40,6 +41,19 @@ def test_hilbert_freq_constant_signal():
     # Imaginary parts should be close to zero
     assert torch.allclose(output[..., 1], torch.zeros_like(output[..., 1]), atol=1e-5), \
         "Imaginary part should be zero for constant input"
+
+
+@pytest.mark.parametrize("seq_len", [7, 8, 101, 128])
+def test_hilbert_freq_matches_scipy(seq_len):
+    """hilbert_freq keeps the input length and matches scipy.signal.hilbert
+    for odd and even lengths."""
+    t = np.arange(seq_len)
+    x = np.stack([np.sin(0.3 * t) + 0.1 * t, np.cos(1.7 * t) - 0.05 * t])
+    output = hilbert_freq(torch.from_numpy(x), forward_fourier=True)
+    assert output.shape == (2, seq_len, 2)
+    expected = hilbert(x, axis=-1)
+    np.testing.assert_allclose(output[..., 0].numpy(), expected.real, atol=1e-10)
+    np.testing.assert_allclose(output[..., 1].numpy(), expected.imag, atol=1e-10)
 
 
 def test_plv_time_shape():

@@ -28,6 +28,11 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.ZUNA` accepts an ``n_times`` that is not a multiple of
+  ``fine_time_pts`` through the new ``on_non_divisible`` option (``"pad"`` or ``"crop"``),
+  forwarded to the shared :class:`braindecode.modules.PatchTokenizer`; the default
+  ``"error"`` keeps the previous behaviour (:gh:`1190` by `Bruno Aristimunha`_).
+
 - Add :class:`braindecode.models.MSCFormer`, a multi-scale convolutional
   transformer network for motor imagery decoding from Zhao et al. (2025),
   adapted from the reference implementation to reuse braindecode's shared
@@ -63,6 +68,10 @@ Enhancements
   for intracranial (sEEG/iEEG) signals from Wang et al. (ICLR 2023), with
   pretrained weights (:gh:`1104` by `Adam Mounir`_).
 
+- Add pull request templates, including an exhaustive checklist for new model
+  contributions covering implementation conventions, registration,
+  documentation, and benchmarking (:gh:`1169` by `Li Qing`_).
+
 Requirements
 ============
 
@@ -74,6 +83,25 @@ Requirements
 
 Bug fixes
 ==========
+
+- Compute the 4-D Fourier position embedding of :class:`braindecode.models.REVE`
+  in float32 with autocast disabled. Intel Gaudi (HPU) autocast downcasts the
+  position × frequency products to bf16 before sin/cos (embedding ~3 % off on
+  Gaudi2); CPU/CUDA results are unchanged
+  (:gh:`1192` by `Bruno Aristimunha`_)
+- Fix :class:`braindecode.models.MVPFormer` on Intel Gaudi (HPU): the
+  channel-relative shift is now a single ``torch.gather`` and the grouped-query
+  key repeat works on a contiguous copy. On HPU the previous advanced indexing
+  back-propagated through a host-side ``index_put_`` with wrong gradients (and
+  took 108 s per 30 s-window training step), and the repeat scrambled the
+  relative keys (features 14-39 % off). CPU and CUDA results are bit-identical
+  (:gh:`1189` by `Bruno Aristimunha`_)
+- Fix the positional encoder of :class:`braindecode.models.SignalJEPA` and
+  :class:`braindecode.models.SignalJEPA_Contextual` on Intel Gaudi (HPU): the
+  time table is now a non-persistent buffer that follows ``.to(device)``, and the
+  encoding is built with ``torch.cat`` instead of strided in-place writes (the
+  temporal part was 73 % off on Gaudi2). State-dict keys and CPU/CUDA outputs are
+  unchanged (:gh:`1191` by `Bruno Aristimunha`_)
 
 - Preserve shared class targets when creating MNE epochs from different event
   annotations, as in sleep staging. MNE event IDs remain unique.
@@ -151,6 +179,12 @@ Bug fixes
   :class:`braindecode.models.ATCNet`). The row rescale is now written out
   instead of calling ``Tensor.renorm``; values and gradients are unchanged
   (:gh:`1184` by `Bruno Aristimunha`_).
+- Fix :func:`braindecode.functional.hilbert_freq` with ``forward_fourier=True``
+  returning one sample fewer than the input for odd-length signals and
+  doubling the Nyquist coefficient for even-length ones. It now matches
+  :func:`scipy.signal.hilbert` for both.
+  :func:`braindecode.functional.plv_time` on time-domain input uses the
+  corrected transform (:gh:`1188` by `Arthur031221`_).
 
 - Fix :class:`braindecode.modules.MaxNormParametrize` producing ``NaN`` outputs
   or gradients for zero or very small float16 rows after :gh:`1184`; the
@@ -1852,4 +1886,5 @@ Authors
 .. _Aditya Singh: https://github.com/adityasingh2400
 .. _Julien Gadonneix: https://github.com/julien-gadonneix
 .. _Li Qing: https://github.com/qinxwew
+.. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
