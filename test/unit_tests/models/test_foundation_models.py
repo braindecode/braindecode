@@ -4,6 +4,7 @@
 
 import json
 import os
+from contextlib import nullcontext
 from pathlib import Path
 from urllib.error import URLError
 
@@ -23,10 +24,19 @@ try:
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
+from braindecode.models import (
+    LUNA,
+    REVE,
+    CBraMod,
+    CodeBrain,
+    Labram,
+    STEEGFormer,
+    steegformer,
+)
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
 from braindecode.models.reve import Attention, RevePositionBank
+from braindecode.util import resolve_montage_name
 
 _ORIGINAL_TORCH_CAT = torch.cat
 
@@ -1251,3 +1261,103 @@ def test_codebrain_return_features():
     # features shape: (batch, n_chans, seq_len, out_channels)
     assert out["features"].shape == (2, 19, 30, 200)
     assert out["cls_token"] is None
+
+
+@pytest.fixture
+def steeg_vocab(monkeypatch):
+    """Use an offline vocabulary; keep the model's real 145-slot capacity."""
+    names = ["Fp1", "Fp2", "Cz", "Oz", "T7", "T8", "Pz", "Fz"]
+    monkeypatch.setattr(steegformer, "_channel_order", lambda: names)
+    monkeypatch.setattr(
+        steegformer,
+        "_channel_index",
+        lambda: {n.upper(): i for i, n in enumerate(names)},
+    )
+    return names
+
+
+@pytest.mark.parametrize(
+    "names, explicit, expected, warning",
+    [
+        (["oz", "FP1", "Cz"], None, [3, 0, 2], None),
+        (["E1", "fp1", "E2"], None, [3, 0, 5], "nearest 10-05 site"),
+        (["E1", "fp1", "E2"], [5, 4, 3], [5, 4, 3], None),
+    ],
+    ids=["known-names", "mixed-positions", "explicit-override"],
+)
+@pytest.mark.filterwarnings("error")
+def test_steegformer_channel_mapping(steeg_vocab, names, explicit, expected, warning):
+    info = mne.create_info(["Oz", "Cz", "T8"], 250, "eeg")
+    info.set_montage(
+        mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
+    )
+    chs = [dict(ch, ch_name=name) for ch, name in zip(info["chs"], names)]
+    # Unknown electrodes are slightly displaced; fp1 must ignore its Cz position.
+    chs[0]["loc"][:3] += [0.003, 0, 0.002]
+    chs[2]["loc"][:3] += [0, 0.004, -0.003]
+    with pytest.warns(UserWarning, match=warning) if warning else nullcontext():
+        model = STEEGFormer(
+            n_chans=3,
+            n_outputs=2,
+            n_times=64,
+            chs_info=chs,
+            chan_pos_idx=explicit,
+            embed_dim=32,
+            depth=1,
+            num_heads=2,
+        )
+    assert model.channel_indices.tolist() == expected
+
+
+@pytest.mark.parametrize(
+    "n_chans, fallback, n_chans_pos",
+    [
+        (3, "unlocated", 145),
+        (146, "unlocated", 145),
+        (256, "hydrocel", 145),
+        (3, "absent", 145),
+        (146, "absent", 145),
+        (3, "unpublished", 256),
+        (257, "unpublished", 256),
+        (3, "unavailable", 145),
+        (146, "unavailable", 145),
+    ],
+)
+def test_steegformer_montage_fallback(
+    steeg_vocab, monkeypatch, n_chans, fallback, n_chans_pos
+):
+    info = mne.create_info([f"E{i + 1}" for i in range(n_chans)], 250, "eeg")
+    if fallback == "hydrocel":
+        info.set_montage(mne.channels.make_standard_montage("GSN-HydroCel-256"))
+    if fallback == "unavailable":
+        def unavailable():
+            raise OSError("offline")
+
+        monkeypatch.setattr(steegformer, "_channel_index", unavailable)
+    overflow = n_chans > n_chans_pos and fallback != "hydrocel"
+    expectation = (
+        pytest.raises(ValueError, match="identity mapping.*chan_pos_idx")
+        if overflow
+        else pytest.warns(
+            UserWarning,
+            match="nearest 10-05 site" if fallback == "hydrocel" else "identity",
+        )
+    )
+    with expectation:
+        model = STEEGFormer(
+            n_chans=n_chans,
+            n_outputs=2,
+            n_times=64,
+            chs_info=None if fallback == "absent" else info["chs"],
+            n_chans_pos=n_chans_pos,
+            embed_dim=32,
+            depth=1,
+            num_heads=2,
+        )
+    if not overflow:
+        if fallback == "hydrocel":
+            slots = model.channel_indices
+            assert slots.shape == (256,)
+            assert 0 <= int(slots.min()) <= int(slots.max()) < len(steeg_vocab)
+        else:
+            assert model.channel_indices.tolist() == list(range(n_chans))

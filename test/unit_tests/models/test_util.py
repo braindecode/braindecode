@@ -5,19 +5,23 @@
 
 import inspect
 
+import mne
 import numpy as np
 import pytest
 from sklearn.preprocessing import OneHotEncoder
 
 from braindecode import models
 from braindecode.models.util import (
+    extract_channel_locations_from_chs_info,
     interpolated_models_dict,
     models_dict,
+    resolve_channel_indices,
 )
 from braindecode.modules.util import (
     _pad_shift_array,
     aggregate_probas,
 )
+from braindecode.util import resolve_montage_name
 
 
 @pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64])
@@ -111,3 +115,60 @@ def test_interpolated_models_dict():
     # No interpolated models leaked into ``models_dict``.
     for model_cls in models_dict.values():
         assert getattr(model_cls, "_TARGET_CHS_INFO", None) is None
+
+
+@pytest.mark.parametrize("metric", ["cosine", "euclidean", "manhattan"])
+def test_resolve_channel_indices_transformed_head_geometry(metric):
+    """Independent MNE head coordinates expose native/head reference mismatches."""
+    montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
+    # Drop aliases sharing coordinates, so every expected slot is unambiguous.
+    sites = {
+        tuple(xyz): name for name, xyz in montage.get_positions()["ch_pos"].items()
+    }
+    names = list(sites.values())
+    info = mne.create_info(names, 250, "eeg")
+    info.set_montage(montage)
+    head = np.array([ch["loc"][:3] for ch in info["chs"]])
+    assert not np.allclose(list(sites), head)
+    chs = [dict(ch, ch_name=f"sensor-{i}") for i, ch in enumerate(info["chs"])]
+    assert resolve_channel_indices(
+        chs, names, montage="standard_1005", metric=metric
+    ) == list(range(len(names)))
+
+
+@pytest.mark.parametrize(
+    "loc, frame",
+    [
+        ("missing", "head"),
+        (None, "head"),
+        (1.0, "head"),
+        ("invalid", "head"),
+        ([[0.1], [0.2, 0.3]], "head"),
+        ([0.1, 0.2], "head"),
+        ([[0.1, 0.2, 0.3]], "head"),
+        ([0, 0, 0], "head"),
+        ([np.nan, 0, 1], "head"),
+        ([0.01, 0.02, 0.1], "mri"),
+        ([0.01, 0.02, 0.1], 0),
+    ],
+    ids=[
+        "missing", "none", "scalar", "string", "ragged", "short", "matrix",
+        "zero", "nonfinite", "mri", "unknown-frame",
+    ],
+)
+def test_resolve_channel_indices_invalid_geometry(loc, frame):
+    chs = [{"ch_name": "unknown", "loc": loc, "coord_frame": frame}]
+    if isinstance(loc, str) and loc == "missing":
+        chs[0].pop("loc")
+    # Malformed locations stop extraction, preserving any valid prefix.
+    malformed = not (
+        isinstance(loc, list) and len(loc) == 3 and np.isscalar(loc[0])
+    )
+    if frame == "head" and malformed:
+        assert extract_channel_locations_from_chs_info(chs) is None
+        prefix = {"ch_name": "other", "loc": [0.01, 0.02, 0.1]}
+        assert extract_channel_locations_from_chs_info([prefix, *chs]).shape == (1, 3)
+        assert resolve_channel_indices(
+            [prefix, *chs], ["Cz"], montage="standard_1005"
+        ) is None
+    assert resolve_channel_indices(chs, ["Cz"], montage="standard_1005") is None
