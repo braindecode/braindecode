@@ -86,36 +86,27 @@ from braindecode.visualization import (
 )
 
 ######################################################################
-# All figures share one style, set here once, with the colors of the
-# Braindecode documentation: the trained SAE (and, later, the class a
-# feature was picked for) in the brand blue, the native decoder in ink and
-# every control in muted slate. Each title states what its figure shows and
-# is computed from the numbers it reports. The fonts fall back to DejaVu,
-# which ships with matplotlib.
+# The figures use the colors of the Braindecode documentation: the result
+# (the trained SAE, or the class a feature was picked for) in blue, the
+# native decoder in ink and every control in muted slate.
 
 INK, ACCENT, SUBTLE, AMBER = "#14181f", "#3a6c97", "#5e6878", "#b46a2c"
-MUTED = (0.37, 0.41, 0.47, 0.45)  # SUBTLE at 45% opacity, for controls
+MUTED = (0.37, 0.41, 0.47, 0.45)  # SUBTLE at 45% opacity
 BLUES = LinearSegmentedColormap.from_list("blues", ["white", "#dde7f0", ACCENT])
 DIVERGE = LinearSegmentedColormap.from_list("diverge", [AMBER, "white", ACCENT])
+# sphinx_gallery_start_ignore
 plt.rcParams.update(
     {
-        "font.family": "sans-serif",
-        "font.sans-serif": ["Inter", "Helvetica Neue", "Arial", "DejaVu Sans"],
-        "font.monospace": ["JetBrains Mono", "Menlo", "DejaVu Sans Mono"],
         "font.size": 9,
-        "text.color": INK,
-        "figure.dpi": 110,
-        "figure.titlesize": 11,
-        "figure.titleweight": "bold",
-        "figure.constrained_layout.use": True,
-        "savefig.bbox": "tight",
         "axes.titlesize": 9.5,
+        "figure.constrained_layout.use": True,
+        "figure.titleweight": "bold",
         "axes.titleweight": "bold",
         "axes.titlelocation": "left",
-        "axes.labelcolor": SUBTLE,
-        "axes.edgecolor": "#d6d9de",
         "axes.spines.top": False,
         "axes.spines.right": False,
+        "axes.edgecolor": "#d6d9de",
+        "axes.labelcolor": SUBTLE,
         "axes.grid": True,
         "axes.grid.axis": "y",
         "axes.axisbelow": True,
@@ -125,9 +116,9 @@ plt.rcParams.update(
         "xtick.labelcolor": SUBTLE,
         "ytick.labelcolor": SUBTLE,
         "ytick.major.size": 0,
-        "legend.frameon": False,
     }
 )
+# sphinx_gallery_end_ignore
 
 ######################################################################
 # Loading and preparing the data
@@ -678,7 +669,7 @@ plt.show()
 #   code, with the background shaded by the code in each pooling window.
 #   C3, Cz and C4 are shown by convention only: no feature reads a single
 #   channel, and the shading is smeared by the 0.4-s span of a bin.
-# * **Association with channel power**: the Pearson correlation, over test
+# * **Channel-power correlation**: the Pearson correlation, over test
 #   trials, between the trial-mean code and the post-cue log-power of each
 #   channel (:func:`~sklearn.feature_selection.r_regression` again). It is
 #   an association, not a source map. The layer is a nonlinear function
@@ -797,7 +788,7 @@ for label in ("left_hand", "right_hand"):
     bar.set_ticks([-limit, 0, limit], labels=[f"{-limit:.2f}", "0", f"{limit:.2f}"])
     bar.outline.set_visible(False)
     bar.set_label("r with post-cue log-power\n(association, not a source map)")
-    ax["topo"].set_title("Association with channel power")
+    ax["topo"].set_title("Channel-power correlation")
     ratio = trial_mean[is_target].mean() / max(trial_mean[~is_target].mean(), 1e-6)
     fig.suptitle(
         f"Feature #{feature}, picked for {pretty[target]} on the training session, is "
