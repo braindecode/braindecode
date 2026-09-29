@@ -165,18 +165,37 @@ def hilbert_freq(x: torch.Tensor, forward_fourier: bool = True) -> torch.Tensor:
     https://github.com/scipy/scipy/blob/v1.14.1/scipy/signal/_signaltools.py#L2287-L2394
 
     """
+    input_dtype = x.dtype
+    # ``view_as_complex`` does not accept bfloat16 real/imaginary pairs.  The
+    # HPU path can produce bfloat16 Fourier coefficients under autocast, so do
+    # the complex-valued part in float32 and restore the real-valued contract
+    # at the boundary.  Promoting before the FFT also covers backends that do
+    # not implement bfloat16 FFT kernels.
+    if input_dtype == torch.bfloat16:
+        x = x.float()
+
     if forward_fourier:
+        seq_len = x.shape[-1]
         x = torch.fft.rfft(x, norm=None, dim=-1)
         x = torch.view_as_real(x)
+    else:
+        # The one-sided spectrum does not record whether the signal length
+        # was odd or even, so assume an even length here.
+        seq_len = 2 * (x.shape[-2] - 1)
     x = x * 2.0
     x[..., 0, :] = x[..., 0, :] / 2.0  # Don't multiply the DC-term by 2
+    if forward_fourier and seq_len % 2 == 0:
+        # Nor the Nyquist term, which only exists for even lengths
+        x[..., -1, :] = x[..., -1, :] / 2.0
     x = F.pad(
-        x, [0, 0, 0, x.shape[-2] - 2]
+        x, [0, 0, 0, seq_len - x.shape[-2]]
     )  # Fill Fourier coefficients to retain shape
     x = torch.view_as_complex(x)
     x = torch.fft.ifft(x, norm=None, dim=-1)  # returns complex signal
     x = torch.view_as_real(x)
 
+    if input_dtype == torch.bfloat16:
+        x = x.to(input_dtype)
     return x
 
 

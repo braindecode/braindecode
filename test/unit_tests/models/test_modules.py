@@ -15,6 +15,7 @@ from scipy.signal import fftconvolve as fftconvolve_scipy
 from scipy.signal import freqz
 from scipy.signal import lfilter as lfilter_scipy
 from torch import nn
+from torch.nn.utils.parametrize import register_parametrization
 
 from braindecode.functional import drop_path
 from braindecode.models.ifnet import _SpatioTemporalFeatureBlock
@@ -31,6 +32,7 @@ from braindecode.modules import (
     GeneralizedGaussianFilter,
     LinearWithConstraint,
     MaxNormLinear,
+    MaxNormParametrize,
     SafeLog,
     SqueezeAndExcitation,
     TDSConvEncoder,
@@ -1091,6 +1093,48 @@ def test_filter_construction_clamping():
     assert shape_clamped >= 2.0, "shape should be clamped to a minimum of 2.0"
 
 
+def test_filter_construction_clamping_keeps_parameter_storage_and_gradients():
+    """Clamping updates parameters in place while keeping them differentiable."""
+    filter_layer = GeneralizedGaussianFilter(
+        in_channels=1,
+        out_channels=1,
+        sequence_length=256,
+        sample_rate=100.0,
+    )
+    with torch.no_grad():
+        filter_layer.f_mean.fill_(1.1)
+        filter_layer.bandwidth.fill_(0.001)
+        filter_layer.shape.fill_(1.5)
+
+    parameters = (
+        filter_layer.f_mean,
+        filter_layer.bandwidth,
+        filter_layer.shape,
+    )
+    data_ptrs = tuple(parameter.data_ptr() for parameter in parameters)
+
+    filter_layer.construct_filters().sum().backward()
+
+    assert tuple(parameter.data_ptr() for parameter in parameters) == data_ptrs
+    assert all(parameter.grad is not None for parameter in parameters)
+
+
+def test_traced_filter_runs_without_parameter_mutation():
+    """A traced filter must not replay eager parameter clamping."""
+    filter_layer = GeneralizedGaussianFilter(
+        in_channels=1,
+        out_channels=1,
+        sequence_length=128,
+        sample_rate=100.0,
+    ).eval()
+    input_tensor = torch.randn(2, 1, 128)
+    expected = filter_layer(input_tensor)
+
+    traced_filter = torch.jit.trace(filter_layer, input_tensor)
+
+    torch.testing.assert_close(traced_filter(input_tensor), expected)
+
+
 def test_forward_pass_output_shape():
     """
     Test that the forward pass returns the correct output shape.
@@ -1393,6 +1437,58 @@ def test_multi_head_attention_forward_shape():
     assert out.shape == (2, 10, 32)
 
 
+def test_multi_head_attention_explicit_scale_matches_manual_attention():
+    from braindecode.modules import MultiHeadAttention
+
+    torch.manual_seed(1126)
+    scale = 8**-0.5
+    mha = MultiHeadAttention(
+        emb_size=8,
+        num_heads=2,
+        dropout=0.0,
+        scale=scale,
+    ).eval()
+    x = torch.randn(1, 3, 8)
+
+    queries = mha.rearrange_stack(mha.queries(x))
+    keys = mha.rearrange_stack(mha.keys(x))
+    values = mha.rearrange_stack(mha.values(x))
+    attention = torch.softmax(
+        torch.matmul(queries, keys.transpose(-2, -1)) * scale,
+        dim=-1,
+    )
+    expected = mha.projection(
+        mha.rearrange_unstack(torch.matmul(attention, values))
+    )
+
+    torch.testing.assert_close(mha(x), expected)
+
+
+def test_multi_head_attention_supports_torch_2_0_sdpa(monkeypatch):
+    import braindecode.modules.attention as attention
+    from braindecode.modules import MultiHeadAttention
+
+    received_queries = []
+
+    def legacy_sdpa(query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False):
+        received_queries.append(query)
+        return value
+
+    monkeypatch.setattr(attention.F, "scaled_dot_product_attention", legacy_sdpa)
+    mha = MultiHeadAttention(emb_size=8, num_heads=2).eval()
+    x = torch.randn(1, 3, 8)
+    queries = mha.rearrange_stack(mha.queries(x))
+
+    mha(x)
+    mha.scale = 8**-0.5
+    mha(x)
+
+    torch.testing.assert_close(received_queries[0], queries)
+    torch.testing.assert_close(
+        received_queries[1], queries * (mha.scale * mha.head_dim**0.5)
+    )
+
+
 def test_multi_head_attention_bool_mask():
     from braindecode.modules import MultiHeadAttention
 
@@ -1491,3 +1587,107 @@ def test_gated_linear_unit_geglu_semantics():
     out = glu(x)
     assert out.shape == (2, 4, 5)
     assert torch.equal(out, value * torch.nn.functional.gelu(gate))
+
+
+@pytest.mark.parametrize("shape", [(8, 4), (16, 22, 1, 25), (40, 1, 13)])
+@pytest.mark.parametrize("max_norm", [0.25, 1.0, 5.0])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_max_norm_parametrize_matches_renorm(shape, max_norm, dtype):
+    """The explicit rescale must match ``Tensor.renorm`` values and gradients."""
+    torch.manual_seed(0)
+    weight_ref = torch.randn(*shape, dtype=dtype, requires_grad=True)
+    weight = weight_ref.detach().clone().requires_grad_()
+
+    expected = weight_ref.renorm(p=2, dim=0, maxnorm=max_norm)
+    output = MaxNormParametrize(max_norm)(weight)
+    torch.testing.assert_close(output, expected)
+
+    grad_output = torch.randn_like(expected)
+    (expected * grad_output).sum().backward()
+    (output * grad_output).sum().backward()
+    torch.testing.assert_close(weight.grad, weight_ref.grad)
+
+    row_norms = output.detach().reshape(shape[0], -1).norm(dim=1)
+    assert (row_norms <= max_norm + 1e-6).all()
+
+
+def test_max_norm_parametrize_does_not_call_renorm():
+    """``renorm`` breaks on Intel Gaudi (HPU), so the forward must avoid it."""
+    conv = nn.Conv1d(4, 8, kernel_size=3)
+    register_parametrization(conv, "weight", MaxNormParametrize(0.5))
+    with patch.object(
+        torch.Tensor, "renorm", side_effect=AssertionError("renorm called")
+    ):
+        output = conv(torch.randn(2, 4, 16))
+    assert output.shape == (2, 8, 14)
+    row_norms = conv.weight.detach().reshape(8, -1).norm(dim=1)
+    assert (row_norms <= 0.5 + 1e-6).all()
+
+
+@pytest.mark.parametrize(
+    "dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64]
+)
+def test_max_norm_parametrize_is_scriptable(dtype, tmp_path):
+    """Save/load preserves the dtype-dependent rescale and empty-input branch."""
+    module = MaxNormParametrize(0.5)
+    path = tmp_path / "maxnorm.pt"
+    torch.jit.script(module).save(str(path))
+    scripted = torch.jit.load(str(path))
+    for shape in [(8, 4, 1, 3), (0, 3), (3, 0)]:
+        weight = torch.randn(shape, dtype=dtype)
+        torch.testing.assert_close(scripted(weight), module(weight))
+
+
+@pytest.mark.parametrize(
+    "dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64]
+)
+@pytest.mark.parametrize("max_norm", [0.0, 1.0])
+def test_max_norm_parametrize_boundary_values_and_gradients(dtype, max_norm):
+    """Zero, tiny, below/at/above-limit rows agree with a full-precision reference."""
+    weight = torch.tensor(
+        [
+            [0.0, 0.0],
+            [1e-5, 0.0],
+            [0.5, 0.0],
+            [1.0, 0.0],
+            [1.0 + 1e-8, 0.0],
+            [3.0, 4.0],
+        ],
+        dtype=dtype,
+        requires_grad=True,
+    )
+    reference_dtype = torch.float64 if dtype == torch.float64 else torch.float32
+    weight_ref = weight.detach().to(reference_dtype).requires_grad_()
+    expected = weight_ref.renorm(p=2, dim=0, maxnorm=max_norm)
+    output = MaxNormParametrize(max_norm)(weight)
+    assert output.dtype == dtype
+    torch.testing.assert_close(output, expected.to(dtype))
+    # Nonuniform upstream derivatives exercise tangential as well as radial terms.
+    grad_output = torch.tensor([0.25, -0.5], dtype=dtype).expand_as(weight)
+    (output * grad_output).sum().backward()
+    (expected * grad_output.to(reference_dtype)).sum().backward()
+    assert torch.isfinite(output).all()
+    assert torch.isfinite(weight.grad).all()
+    torch.testing.assert_close(weight.grad, weight_ref.grad.to(dtype))
+    if max_norm == 1.0:
+        torch.testing.assert_close(output[:4], weight[:4], rtol=0, atol=0)
+        torch.testing.assert_close(weight.grad[:4], grad_output[:4], rtol=0, atol=0)
+        if dtype == torch.float64:
+            assert output[4].norm() <= max_norm
+
+
+@pytest.mark.parametrize(
+    "dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64]
+)
+@pytest.mark.parametrize("shape", [(0, 3), (3, 0), (2, 0, 4)])
+def test_max_norm_parametrize_empty_matches_renorm(dtype, shape):
+    weight = torch.empty(shape, dtype=dtype, requires_grad=True)
+    output = MaxNormParametrize(1.0)(weight)
+    torch.testing.assert_close(output, weight.renorm(p=2, dim=0, maxnorm=1.0))
+    output.sum().backward()
+    torch.testing.assert_close(weight.grad, torch.zeros_like(weight))
+
+
+def test_max_norm_parametrize_rejects_negative_limit():
+    with pytest.raises(ValueError, match="max_norm must be >= 0"):
+        MaxNormParametrize(-1.0)

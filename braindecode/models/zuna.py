@@ -12,7 +12,7 @@ import torch
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
-from torch.nn import functional
+from torch.nn import RMSNorm, functional
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
@@ -131,13 +131,15 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         default is ``64``.
     fine_time_pts : int, optional
         Number of fine time points per token (the encoder input dimension).
-        ``n_times`` must be divisible by this value. The default is ``32``, or
-        0.125 seconds for data sampled at 256 Hz.
+        ``n_times`` must be divisible by this value unless ``on_non_divisible``
+        is ``"pad"`` or ``"crop"``. The default is ``32``, or 0.125 seconds for
+        data sampled at 256 Hz.
     latent_dim : int, optional
         Per-token output dimension of the encoder. The default is ``32``.
     max_seqlen : int, optional
         Length of the rotary frequency table. It must be at least
-        ``max(pos_bins, n_times // fine_time_pts)``. The default is ``256``.
+        ``max(pos_bins, the number of temporal patches)``. The default is
+        ``256``.
     rope_theta : float, optional
         Base period of the rotary positional embedding. The default is
         ``10000.0``.
@@ -163,6 +165,11 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     activation : type[nn.Module], optional
         Feed-forward activation class. The default is
         :class:`torch.nn.SiLU`.
+    on_non_divisible : {"error", "pad", "crop"}, optional
+        How to handle an ``n_times`` that is not a multiple of ``fine_time_pts``,
+        passed to :class:`braindecode.modules.PatchTokenizer`: ``"error"`` raises,
+        ``"pad"`` right-pads the last patch with zeros, ``"crop"`` drops the
+        trailing samples. The default is ``"error"``.
 
     Notes
     -----
@@ -215,6 +222,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         sandwich_norm: bool = True,
         qk_norm: bool = True,
         activation: type[nn.Module] = nn.SiLU,
+        on_non_divisible: str = "error",
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -229,7 +237,11 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # Variables
         self.num_channels = self.n_chans
         self.latent_dim = latent_dim
-        coarse_time_points = self.n_times // fine_time_pts
+        if on_non_divisible == "pad":
+            # PatchTokenizer right-pads the last partial patch at forward time.
+            coarse_time_points = -(-self.n_times // fine_time_pts)
+        else:
+            coarse_time_points = self.n_times // fine_time_pts
         rotary_axis_dim = head_dim // 4
 
         # Checks
@@ -252,7 +264,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             PatchTokenizer(
                 patch_size=fine_time_pts,
                 n_times=self.n_times,
-                on_non_divisible="error",
+                on_non_divisible=on_non_divisible,
             ),
             Rearrange(
                 "batch channel temporal_patch sample "
@@ -330,6 +342,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head for a new number of outputs."""
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
         self.final_layer = nn.Sequential(
             Rearrange("batch channel latent -> batch (channel latent)"),
             nn.Linear(self.num_channels * self.latent_dim, n_outputs),
@@ -399,16 +412,6 @@ class _RotaryPositionEmbedding(nn.Module):
         return query, key
 
 
-class _RMSNorm(nn.RMSNorm):
-    """Native RMSNorm with the reference's float32 accumulation and output dtype."""
-
-    def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
-        normalized = functional.rms_norm(
-            input_tensor.float(), self.normalized_shape, eps=self.eps
-        )
-        return normalized.type_as(self.weight) * self.weight
-
-
 class _Attention(nn.Module):
     def __init__(
         self,
@@ -429,8 +432,8 @@ class _Attention(nn.Module):
         self.wk = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
         self.wv = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
         self.wo = nn.Linear(n_heads * head_dim, embedding_dim, bias=False)
-        self.q_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
-        self.k_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
+        self.q_norm = RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
+        self.k_norm = RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
         self.rotary_embedding = _RotaryPositionEmbedding()
 
     def forward(
@@ -517,13 +520,13 @@ class _TransformerBlock(nn.Module):
             ffn_dim_multiplier=ffn_dim_multiplier,
             activation=activation,
         )
-        self.attention_norm = _RMSNorm(embedding_dim, eps=norm_eps)
-        self.ffn_norm = _RMSNorm(embedding_dim, eps=norm_eps)
+        self.attention_norm = RMSNorm(embedding_dim, eps=norm_eps)
+        self.ffn_norm = RMSNorm(embedding_dim, eps=norm_eps)
         self.attention_norm_post = (
-            _RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
+            RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
         )
         self.ffn_norm_post = (
-            _RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
+            RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
         )
 
     def forward(
@@ -579,7 +582,7 @@ class _ZUNAEncoder(nn.Module):
             )
             for _ in range(n_layers)
         )
-        self.norm = _RMSNorm(dim, eps=norm_eps)
+        self.norm = RMSNorm(dim, eps=norm_eps)
         self.output = nn.Linear(dim, output_dim, bias=False)
 
         # Buffers
