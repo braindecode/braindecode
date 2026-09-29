@@ -89,6 +89,32 @@ Bug fixes
   new head now follows the model's train/eval mode, so ``from_pretrained(...,
   n_outputs=...)`` no longer leaves dropout active in eval mode
   (:gh:`1181` by `Raghav Rathi`_).
+- Make :func:`braindecode.preprocessing.create_windows_from_events` infer the
+  event mapping once for the whole dataset before the recordings are windowed.
+  With ``mapping=None`` and ``n_jobs`` above one, every worker numbered the
+  event descriptions of its own recording from zero, so the same description
+  could receive different integer targets across recordings. By `Sarthak
+  Tayal`_.
+
+- Make :func:`braindecode.datautil.load_concat_dataset` restore the
+  ``targets_from`` and ``last_target_only`` settings of a saved
+  :class:`braindecode.datasets.EEGWindowsDataset`. The loader looked the stored
+  settings up under the name ``WindowsDataset`` while the windowers record them
+  under ``EEGWindowsDataset``, so a dataset windowed with
+  ``targets_from="channels"`` came back reading its targets from the metadata.
+  By `Sarthak Tayal`_.
+
+- Make :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` work on a
+  copy of the metadata of each dataset. The description columns were written
+  into the metadata frame of the dataset itself, replacing any column sharing a
+  name with a description key such as ``target``. By `Sarthak Tayal`_.
+
+- Make :func:`braindecode.preprocessing.create_windows_from_events` accept a
+  ``mapping`` that sends several event descriptions to the same target when the
+  windows are stored as :class:`mne.Epochs`, for example to merge sleep stages
+  3 and 4. ``mne.Epochs`` rejects an ``event_id`` with repeated values since
+  MNE 1.13, so annotations now receive distinct event IDs while their shared
+  targets remain in the window metadata. By `Sarthak Tayal`_.
 
 - Fix :class:`braindecode.models.STEEGFormer` on high-density sensor nets whose
   electrodes are numbered rather than named for a 10-20 site (e.g. EGI
