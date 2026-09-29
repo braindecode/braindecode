@@ -28,10 +28,6 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
-- Add a bounded model-agnostic SAE activation analysis tutorial
-  using optional SAE Lens, without adding an SAE implementation to Braindecode
-  (:gh:`1152` by `Vandit Shah`_ and `Bruno Aristimunha`_)
-
 - Add :class:`braindecode.models.Brant`, a braindecode-native port of the Brant
   foundation model for intracranial (sEEG/iEEG) signals (Zhang et al., NeurIPS
   2023), including in-model spectral features and the shared configuration,
@@ -51,6 +47,10 @@ Enhancements
 - Add :class:`braindecode.models.BrainBERT`, a self-supervised foundation model
   for intracranial (sEEG/iEEG) signals from Wang et al. (ICLR 2023), with
   pretrained weights (:gh:`1104` by `Adam Mounir`_).
+
+- Add a bounded model-agnostic SAE activation analysis tutorial
+  using optional SAE Lens, without adding an SAE implementation to Braindecode
+  (:gh:`1152` by `Vandit Shah`_ and `Bruno Aristimunha`_)
 
 Requirements
 ============
