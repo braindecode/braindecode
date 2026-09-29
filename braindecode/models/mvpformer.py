@@ -467,9 +467,11 @@ class _MVPAttention(nn.Module):
     # -- shape helpers (segment = "time"/position axis, channel axis) ----------
     @staticmethod
     def _repeat_kv(x, n_rep):
-        # grouped-query attention: replicate each kv head into ``n_rep`` query heads
+        # grouped-query attention: replicate each kv head into ``n_rep`` query heads.
+        # Repeat a contiguous copy: on Intel Gaudi (HPU) the einops repeat of the
+        # permuted singleton-axis relative keys returns scrambled values.
         return repeat(
-            x,
+            x.contiguous(),
             "batch kv_head segment channel head_dim "
             "-> batch (kv_head group) segment channel head_dim",
             group=n_rep,
@@ -506,8 +508,11 @@ class _MVPAttention(nn.Module):
 
     @staticmethod
     def _rel_shift_chan(x):
-        # Relative shift along the channel axis (symmetric distance). Index
-        # tensors are built on x.device with long dtype for GPU-safe indexing.
+        # Relative shift along the channel axis (symmetric distance), as a single
+        # ``torch.gather`` whose backward is a ``scatter_add``. Advanced indexing
+        # would backpropagate through ``index_put_(accumulate=True)``, which Intel
+        # Gaudi (HPU) runs on the host, slowly and with wrong gradients. Index
+        # tensors are built on x.device with long dtype.
         device = x.device
         chan_size = x.shape[-1]
         if chan_size > 1:
@@ -528,8 +533,9 @@ class _MVPAttention(nn.Module):
         shifting_idxes = (chan_size - 1 - shifting_idxes).repeat(
             x.shape[-2] // chan_size, 1
         )
-        rows = torch.arange(x.size(-2), device=device).unsqueeze(1)
-        return x[..., rows, shifting_idxes]
+        return torch.gather(
+            x, -1, shifting_idxes.expand(*x.shape[:-2], *shifting_idxes.shape)
+        )
 
     def _split_heads(self, tensor, num_heads):
         return rearrange(
