@@ -4,15 +4,16 @@ Sparse feature interventions in a pretrained REVE
 =================================================
 
 This tutorial takes the pretrained :class:`~braindecode.models.REVE` EEG
-foundation model, keeps its encoder frozen and trains only its linear
+foundation model [1]_, keeps its encoder frozen and trains only its linear
 classification head on one subject of the BCI Competition IV 2a motor-imagery
 dataset (BNCI2014_001 via MOABB). It then fits a Top-K sparse autoencoder
 (SAE) to the token embeddings of one transformer block with
 `SAE Lens <https://github.com/decoderesearch/SAELens>`_, and *intervenes* on
 the learned features while the model classifies a session recorded on
-another day. Braindecode supplies the data pipeline and the pretrained model;
-SAE Lens supplies the dictionary, its Top-K activation, losses and training
-loop.
+another day. Braindecode supplies the data pipeline, the pretrained model and
+the classifier wrapper, MOABB the Euclidean alignment, SAE Lens the
+dictionary with its Top-K activation, losses and training loop, and
+scikit-learn the metrics.
 
 .. topic:: What is different about REVE's tokens?
 
@@ -37,19 +38,15 @@ All numbers come from a single subject, a frozen encoder and a short SAE run.
 They describe this run, not REVE or motor imagery in general, and support no
 scientific claim.
 
-Install the optional dependency with ``pip install 'braindecode[sae]'`` (or
-``pip install sae-lens==6.51.3`` in a source checkout). SAE Lens brings a
-language-model dependency stack, but no language model or pretrained SAE is
-used here. The REVE-base weights (``brain-bzh/reve-base``, about 277 MB) are
-downloaded from the Hugging Face Hub the first time the example runs. They are
-distributed under the REVE Responsible Use License, which you accept by
-downloading them. REVE's electrode position bank is a small file that is
-cached in the MNE data directory.
-
-.. note::
-
-   Documentation builds without SAE Lens render this source without executing
-   it. Install the optional dependency to run the example and generate figures.
+This example needs the optional SAE Lens dependency, installed with
+``pip install 'braindecode[sae]'`` (or ``pip install sae-lens==6.51.3`` in a
+source checkout), and MOABB 1.6 or later for Euclidean alignment. SAE Lens
+brings a language-model dependency stack, but no language model or pretrained
+SAE is used here. The REVE-base weights (``brain-bzh/reve-base``, about
+277 MB) are downloaded from the Hugging Face Hub the first time the example
+runs. They are distributed under the REVE Responsible Use License, which you
+accept by downloading them. REVE's electrode position bank is a small file
+that is cached in the MNE data directory.
 
 .. contents:: This example covers:
    :local:
@@ -62,12 +59,27 @@ cached in the MNE data directory.
 
 import copy
 
+import einops
 import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import torch
-from torch.nn import functional as F
+from moabb.datasets.preprocessing import EuclideanAlignment
+from sae_lens.config import LoggingConfig, SAETrainerConfig
+from sae_lens.saes.topk_sae import TopKTrainingSAE, TopKTrainingSAEConfig
+from sae_lens.training.sae_trainer import SAETrainer
+from sklearn.feature_selection import r_regression
+from sklearn.metrics import (
+    ConfusionMatrixDisplay,
+    accuracy_score,
+    balanced_accuracy_score,
+    r2_score,
+)
+from sklearn.preprocessing import scale as standard_scale
+from skorch.helper import SliceDataset
+from skorch.utils import to_tensor
 
+from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 from braindecode.models import REVE
 from braindecode.preprocessing import (
@@ -76,15 +88,6 @@ from braindecode.preprocessing import (
     preprocess,
 )
 from braindecode.util import set_random_seeds
-
-try:
-    from sae_lens.config import LoggingConfig, SAETrainerConfig
-    from sae_lens.saes.topk_sae import TopKTrainingSAE, TopKTrainingSAEConfig
-    from sae_lens.training.sae_trainer import SAETrainer
-except ImportError as error:
-    raise ImportError(
-        "This optional tutorial requires: pip install sae-lens==6.51.3"
-    ) from error
 
 ######################################################################
 # Loading and preparing the data
@@ -107,16 +110,10 @@ dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 #
 # REVE was pretrained on EEG band-passed between 0.5 and 99.5 Hz, sampled at
 # 200 Hz, z-scored per channel over each recording and clipped at 15 standard
-# deviations. We apply the same steps to every run. The z-score uses only the
-# run's own signal, and no label.
-
-
-def standardize_and_clip(data):
-    """Z-score each channel of one recording and clip at 15 SD."""
-    mean = data.mean(axis=1, keepdims=True)
-    std = data.std(axis=1, keepdims=True)
-    return np.clip((data - mean) / std, -15.0, 15.0)
-
+# deviations. We apply the same steps to every run: the channel-wise z-score
+# is scikit-learn's :func:`~sklearn.preprocessing.scale` and the clipping is
+# :func:`numpy.clip`. The z-score uses only the run's own signal, and no
+# label.
 
 preprocess(
     dataset,
@@ -124,82 +121,79 @@ preprocess(
         Preprocessor("pick_types", eeg=True, meg=False, stim=False),
         Preprocessor("filter", l_freq=0.5, h_freq=99.5),
         Preprocessor("resample", sfreq=200),
-        Preprocessor(standardize_and_clip),
+        Preprocessor(standard_scale, channel_wise=True),
+        Preprocessor(lambda data: np.clip(data, -15, 15)),
     ],
 )
 
 ######################################################################
-# Windowing and split
-# ~~~~~~~~~~~~~~~~~~~
+# Windowing and Euclidean alignment
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # Each window covers the 4-s motor-imagery period that MOABB defines after
-# the cue (800 samples at 200 Hz). The first four runs of session
-# ``"0train"`` form the fit split, its last two runs the validation split,
-# and session ``"1test"`` the test split.
+# the cue (800 samples at 200 Hz).
+#
+# The spatial covariance of the EEG drifts between sessions. As in the REVE
+# evaluation on this dataset, we apply Euclidean alignment (EA) [2]_ with
+# MOABB's `EuclideanAlignment
+# <https://moabb.neurotechx.com/docs/generated/moabb.datasets.preprocessing.EuclideanAlignment.html>`_.
+# Every window of a session is multiplied by the inverse square root of the
+# session's mean spatial covariance, so that the windows of each session have
+# an identity mean covariance. Junqueira et al. [3]_ evaluated EA
+# systematically with deep learning models for EEG decoding. We use the sample
+# covariance (``estimator="scm"``), as in [2]_. MOABB's default Ledoit-Wolf
+# shrinkage is meant for short or noisy trials, and 800 samples of 22 channels
+# are neither.
+#
+# The alignment is fitted once per session on that session's windows,
+# without their labels: ``fit_transform`` on the training session (fit and
+# validation runs together), and separately on the test session. The head and
+# the SAE are fitted on the training session only, so no statistic of the
+# test session enters their fitting. For the test session the alignment is
+# transductive: its windows are aligned with statistics computed on all of
+# them, as in REVE's evaluation.
 
-raw_info = dataset.datasets[0].raw.info
 windows_dataset = create_windows_from_events(
     dataset,
     trial_start_offset_samples=0,
     trial_stop_offset_samples=0,
     preload=True,
 )
-description = windows_dataset.description
-in_training_session = description["session"] == "0train"
-in_last_two_runs = description["run"].isin(["4", "5"])
-splits = windows_dataset.split(
-    {
-        "fit": description.index[in_training_session & ~in_last_two_runs].tolist(),
-        "validation": description.index[
-            in_training_session & in_last_two_runs
-        ].tolist(),
-        "test": description.index[~in_training_session].tolist(),
-    }
+sessions = windows_dataset.split("session")
+x_train, x_test = (
+    EuclideanAlignment(estimator="scm")
+    .fit_transform(SliceDataset(sessions[name], idx=0))
+    .astype(np.float32)
+    for name in ("0train", "1test")
+)
+
+######################################################################
+# Splits
+# ~~~~~~
+#
+# The first four runs of session ``"0train"`` form the fit split, its last
+# two runs the validation split, and session ``"1test"`` the test split. The
+# labels and run numbers come from the windows' metadata, and skorch's
+# :func:`~skorch.utils.to_tensor` turns the aligned arrays into tensors.
+
+train_metadata = sessions["0train"].get_metadata()
+in_validation = train_metadata["run"].isin(["4", "5"]).to_numpy()
+y_train = train_metadata["target"].to_numpy()
+y_fit, y_val = y_train[~in_validation], y_train[in_validation]
+y_test = sessions["1test"].get_metadata()["target"].to_numpy()
+x_fit, x_val, x_test = to_tensor(
+    [x_train[~in_validation], x_train[in_validation], x_test], device="cpu"
 )
 
 # BCI IV 2a labels in MOABB's alphabetical order; the position is the class id.
 LABELS = ("feet", "left_hand", "right_hand", "tongue")
-
-
-def to_tensors(windows):
-    x = torch.as_tensor(np.stack([x for x, *_ in windows]), dtype=torch.float32)
-    y = torch.as_tensor([y for _, y, _ in windows])
-    return x, y
-
-
-x_fit, y_fit = to_tensors(splits["fit"])
-x_val, y_val = to_tensors(splits["validation"])
-x_test, y_test = to_tensors(splits["test"])
+pretty = [label.replace("_", " ") for label in LABELS]
 n_chans, n_times = x_fit.shape[1:]
+raw_info = dataset.datasets[0].raw.info
 print(
     f"Windows: fit {len(x_fit)}, validation {len(x_val)}, test {len(x_test)}; "
     f"each {n_chans} channels x {n_times} samples"
 )
-
-######################################################################
-# Euclidean alignment
-# ~~~~~~~~~~~~~~~~~~~
-#
-# The spatial covariance of the EEG drifts between sessions. As in the REVE
-# evaluation on this dataset, we apply Euclidean alignment (He and Wu, 2020):
-# the windows of each session are whitened with that session's mean spatial
-# covariance, so that their average covariance becomes the identity. This
-# uses the windows of the session but none of their labels. For the test
-# session it is transductive: the test windows are aligned with statistics
-# computed on all of them.
-
-
-def euclidean_alignment(x):
-    """Whiten windows (windows, channels, times) with their mean covariance."""
-    covariance = torch.einsum("nct,ndt->cd", x, x) / (x.shape[0] * x.shape[2])
-    eigenvalues, eigenvectors = torch.linalg.eigh(covariance)
-    whitening = eigenvectors @ torch.diag(eigenvalues.rsqrt()) @ eigenvectors.T
-    return whitening @ x
-
-
-training_session = euclidean_alignment(torch.cat([x_fit, x_val]))
-x_fit, x_val = training_session[: len(x_fit)], training_session[len(x_fit) :]
-x_test = euclidean_alignment(x_test)
 
 ######################################################################
 # The pretrained REVE with a frozen encoder
@@ -231,19 +225,118 @@ n_params = sum(parameter.numel() for parameter in model.parameters())
 print(f"REVE-base: {n_params / 1e6:.1f} M parameters, {n_blocks} blocks")
 
 ######################################################################
-# Token streams
-# ~~~~~~~~~~~~~
+# Reading and editing the token stream
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# :func:`~braindecode.visualization.capture_activations` and
-# :func:`~braindecode.visualization.run_with_activation_substitution` read and
-# replace the *output of a submodule*. In REVE, each block adds the outputs
-# of its attention and feed-forward layers to the token stream inside the
-# encoder's loop, so no submodule returns the stream after a block. Instead,
-# ``model(x, return_output=True)`` returns the stream entering the first
-# block and the stream after each of the 22 blocks, and ``run_blocks`` below
-# continues a forward pass from any block by reusing the pretrained layers in
-# the same loop. Starting from a block's output also avoids recomputing the
-# blocks before it for every edit.
+# The SAE works on REVE's *token stream*: the ``(windows, 88, 512)`` tensor
+# that every block reads and rewrites. We number the streams by block: stream
+# 0 is the patch embeddings plus the positional encoding, which enter block 1,
+# and stream ``b`` is the output of block ``b``. The head reads stream 22.
+#
+# Braindecode's :func:`~braindecode.visualization.capture_activations` and
+# :func:`~braindecode.visualization.run_with_activation_substitution` read
+# and replace the *output of a submodule* through a forward hook. They cannot
+# reach REVE's stream, because of how a block is written. The loop in
+# ``TransformerBackbone.forward`` runs ``x = attn(x) + x`` and then
+# ``x = ff(x) + x``. The attention and feed-forward modules return only the
+# update that is added, and the residual additions that produce the stream
+# happen in the loop, not in a submodule. A hook on ``ff`` therefore
+# captures an update, not the tokens after the block. If a pre-hook replaced
+# the input of the next block instead, that block's skip connection
+# (``+ x``) would still add the original tokens.
+#
+# We therefore work with the stream directly, with two small functions that
+# use only REVE's own API and pretrained layers:
+#
+# * ``token_streams`` calls ``model(x, return_output=True)``, which returns
+#   all 23 streams, in batches, and keeps the ones we ask for;
+# * ``run_blocks`` resumes the forward pass from a stream. It applies the
+#   remaining pretrained blocks with the same two residual additions, then
+#   the head. Resuming from block 18's output means that no edit needs to
+#   recompute blocks 1–18.
+#
+# The figure shows where each step acts. After training the head, we check
+# that ``run_blocks`` reproduces ``model(x)``.
+
+block = 18
+fig, (ax, ax_block) = plt.subplots(
+    2, 1, figsize=(11, 5), gridspec_kw={"height_ratios": [1.3, 1]}
+)
+box = dict(boxstyle="round,pad=0.3", ec="black", lw=0.8)
+arrow = dict(arrowstyle="-|>", color="black", lw=1)
+ax.plot([-0.4, n_blocks + 1.3], [0, 0], color="black", lw=1, zorder=0)
+ax.text(
+    -1.4, 0, "EEG window\n88 tokens", ha="center", va="center", bbox=box | {"fc": "w"}
+)
+ax.text(-1.4, -0.55, "stream b:", ha="center", fontsize=7, color="#777777")
+ax.text(0.5, -0.55, "0", ha="center", fontsize=7, color="#777777")
+for b in range(1, n_blocks + 1):
+    color = "#D55E00" if b == block else "#56B4E9" if b > block else "#DDDDDD"
+    ax.text(b, 0, b, ha="center", va="center", fontsize=7, bbox=box | {"fc": color})
+    ax.text(b + 0.5, -0.55, b, ha="center", fontsize=7, color="#777777")
+ax.text(
+    n_blocks + 2.4,
+    0,
+    "final_layer\n4 logits",
+    ha="center",
+    va="center",
+    bbox=box | {"fc": "w"},
+)
+ax.text(
+    9,
+    0.7,
+    "token_streams: model(x, return_output=True) gives streams 0-22",
+    ha="center",
+)
+ax.text(21.3, 0.7, "run_blocks(tokens, 19)", ha="center", color="#0072B2")
+ax.annotate("", xy=(block + 0.5, -1.55), xytext=(block + 0.5, -0.75), arrowprops=arrow)
+ax.text(block - 2.2, -1.15, f"tokens after block {block}", ha="center", va="center")
+ax.text(
+    block + 2,
+    -1.95,
+    "SAE: encode, edit codes, decode",
+    ha="center",
+    va="center",
+    bbox=box | {"fc": "#F5C9A8"},
+)
+ax.annotate(
+    "",
+    xy=(block + 1, -0.35),
+    xytext=(block + 3.4, -1.6),
+    arrowprops=arrow | {"connectionstyle": "arc3,rad=0.3", "color": "#0072B2"},
+)
+ax.set(xlim=(-2.6, n_blocks + 3.6), ylim=(-2.5, 1.1))
+ax.set_title("Where the tutorial reads and edits REVE's token stream", fontsize=10)
+ax.axis("off")
+steps = ("stream b-1", "Attention", "+", "FeedForward", "+", "stream b")
+step_boxes = {
+    "Attention": box | {"fc": "#DDDDDD"},
+    "FeedForward": box | {"fc": "#DDDDDD"},
+    "+": box | {"boxstyle": "circle,pad=0.15", "fc": "w"},
+}
+ax_block.plot([0.6, 9.6], [0, 0], color="black", lw=1, zorder=0)
+for x, label in zip(range(0, 12, 2), steps):
+    ax_block.text(x, 0, label, ha="center", va="center", bbox=step_boxes.get(label))
+for start, end in ((0.9, 4), (4.7, 8)):
+    ax_block.annotate(
+        "",
+        xy=(end, 0.15),
+        xytext=(start, 0.05),
+        arrowprops=arrow | {"connectionstyle": "arc3,rad=-0.3"},
+    )
+ax_block.text(
+    5,
+    -0.8,
+    "Both additions happen in TransformerBackbone.forward, not in a submodule:\n"
+    "a forward hook on Attention or FeedForward sees only the update it returns.",
+    ha="center",
+    va="center",
+    fontsize=9,
+)
+ax_block.set(xlim=(-1, 11), ylim=(-1.3, 0.9))
+ax_block.set_title("Inside block b: x = attn(x) + x, then x = ff(x) + x", fontsize=10)
+ax_block.axis("off")
+fig.tight_layout()
 
 
 def token_streams(x, keep, batch_size=32):
@@ -268,10 +361,10 @@ def run_blocks(tokens, first):
 ######################################################################
 # We keep the output of block 18, where the dictionary will be fitted (the
 # choice is explained below), and of the last block, which the head reads.
+# For the validation windows we keep every stream, for the block check below.
 
-block = 18
 fit_tokens = token_streams(x_fit, keep=(block, n_blocks))
-val_tokens = token_streams(x_val, keep=(n_blocks,))
+val_tokens = token_streams(x_val, keep=range(n_blocks + 1))
 test_tokens = token_streams(x_test, keep=(block, n_blocks))
 
 ######################################################################
@@ -280,36 +373,40 @@ test_tokens = token_streams(x_test, keep=(block, n_blocks))
 #
 # Because the encoder is frozen, the last block's tokens are computed once
 # and only ``final_layer`` (a layer normalization of the flattened tokens and
-# a linear layer) is trained, on the fit windows with full-batch AdamW. This
-# takes a few seconds on a CPU. We then check that continuing the forward
-# pass from block 18 reproduces the model's own output.
+# a linear layer) is trained. :class:`~braindecode.EEGClassifier` trains it on
+# the cached fit tokens with full-batch AdamW, which takes a few seconds on a
+# CPU. We report balanced accuracy with scikit-learn. Every class has as many
+# trials as the others in each split, so it equals plain accuracy here.
 
+model.final_layer.requires_grad_(True)
+head = EEGClassifier(
+    model.final_layer,
+    optimizer=torch.optim.AdamW,
+    optimizer__lr=1e-3,
+    optimizer__weight_decay=0.1,
+    batch_size=len(x_fit),
+    max_epochs=300,
+    train_split=None,
+    classes=list(range(len(LABELS))),
+    device="cpu",
+    verbose=0,
+)
+head.fit(fit_tokens[n_blocks], y_fit)
+model.requires_grad_(False).eval()
 
-def accuracy(logits, y):
-    return (logits.argmax(1) == y).float().mean().item()
-
-
-head = model.final_layer
-head.requires_grad_(True)
-optimizer = torch.optim.AdamW(head.parameters(), lr=1e-3, weight_decay=0.1)
-torch.manual_seed(0)
-for _ in range(300):
-    optimizer.zero_grad()
-    F.cross_entropy(head(fit_tokens[n_blocks]), y_fit).backward()
-    optimizer.step()
-head.requires_grad_(False)
-
+val_pred = head.predict(val_tokens[n_blocks])
 with torch.no_grad():
-    fit_accuracy = accuracy(head(fit_tokens[n_blocks]), y_fit)
-    val_logits = head(val_tokens[n_blocks])
-    baseline_logits = head(test_tokens[n_blocks])
+    baseline_logits = model.final_layer(test_tokens[n_blocks])
     difference = run_blocks(test_tokens[block][:8], block + 1) - model(x_test[:8])
-baseline_pred = baseline_logits.argmax(1)
-baseline_accuracy = accuracy(baseline_logits, y_test)
-print(f"Largest difference to model(x): {difference.abs().max():.1e}")
+baseline_pred = baseline_logits.argmax(1).numpy()
 print(
-    f"Accuracy (chance 25%): fit {fit_accuracy:.1%}, "
-    f"validation {accuracy(val_logits, y_val):.1%}, test {baseline_accuracy:.1%}"
+    f"Largest difference between run_blocks and model(x): {difference.abs().max():.1e}"
+)
+print(
+    "Balanced accuracy (chance 25%): "
+    f"fit {balanced_accuracy_score(y_fit, head.predict(fit_tokens[n_blocks])):.1%}, "
+    f"validation {balanced_accuracy_score(y_val, val_pred):.1%}, "
+    f"test {balanced_accuracy_score(y_test, baseline_pred):.1%}"
 )
 
 ######################################################################
@@ -317,27 +414,18 @@ print(
 # --------------------------------------
 #
 # We skip one block at a time, i.e. pass its input unchanged to the next
-# block, and count how many validation predictions stay the same. Only the
-# validation windows are used, because this check informs a modelling choice.
+# block, and count how many validation predictions stay the same: skipping
+# block ``b`` means feeding stream ``b - 1`` to ``run_blocks`` from block
+# ``b + 1``. Only the validation windows are used, because this check informs
+# a modelling choice.
 
-
-def skip_block_predictions(x, batch_size=32):
-    """Predictions when each block in turn is skipped."""
-    predictions = {b: [] for b in range(1, n_blocks + 1)}
-    with torch.no_grad():
-        for batch in x.split(batch_size):
-            streams = model(batch, return_output=True)
-            for b in predictions:
-                # streams[b - 1] enters block b; skipping b feeds it to b + 1.
-                predictions[b].append(run_blocks(streams[b - 1], b + 1).argmax(1))
-    return {b: torch.cat(parts) for b, parts in predictions.items()}
-
-
-val_pred = val_logits.argmax(1)
-skipped = skip_block_predictions(x_val)
-unchanged = np.array(
-    [(pred == val_pred).float().mean().item() for pred in skipped.values()]
-)
+with torch.no_grad():
+    unchanged = np.array(
+        [
+            accuracy_score(val_pred, run_blocks(val_tokens[b - 1], b + 1).argmax(1))
+            for b in range(1, n_blocks + 1)
+        ]
+    )
 for start in range(0, n_blocks, 11):
     print(
         "Unchanged when skipped: "
@@ -373,22 +461,26 @@ fig.tight_layout()
 # The choices below were made on the validation runs only, before the test
 # session was used, in runs that are not part of this example:
 #
-# * **Model setup.** With Euclidean alignment, the frozen encoder with this
-#   flattening head reached 52–59% validation accuracy across the training
-#   lengths and initializations we tried, against 45–49% for the
-#   attention-pooling head (``attention_pooling=True``); without alignment,
-#   31–38% and 27–32%. Also fine-tuning the last two blocks, tried before we
-#   added the alignment, reached at most 31% and costs much more on a CPU.
+# * **Model setup.** With Euclidean alignment and the 300 training epochs
+#   used here, the frozen encoder with this flattening head reached 58–64%
+#   validation accuracy over three head initializations. The
+#   attention-pooling head (``attention_pooling=True``) reached 45–50%. Over
+#   all the training lengths we tried (50–300 epochs, and up to 1000 for
+#   attention pooling), the ranges were 47–64% and 45–50%. Without
+#   alignment they were 31–38% and 27–32%. Fine-tuning the last two blocks
+#   as well, tried without alignment, reached at most 31% and costs much more
+#   on a CPU.
 # * **Block.** We fitted SAEs with 2048 features and ``k=32`` to the outputs
 #   of blocks 6, 10, 14 and 18, i.e. blocks followed by at least four others,
 #   so that an edit has to pass through attention layers before reaching the
-#   head. Feeding their reconstructions back into the model kept 53%, 44%,
-#   55% and 73% of the validation decisions, so we use block 18.
+#   head. Feeding their reconstructions back into the model kept 46%, 42%,
+#   53% and 73% of the validation decisions, so we use block 18.
 # * **Dictionary size.** At block 18, 2048 features with ``k=16``, 2048 with
-#   ``k=32`` and 4096 with ``k=32`` kept 69%, 73% and 75% of the validation
-#   decisions. We use 2048 features and ``k=32``: 4096 features agreed on
-#   only two more of the 96 validation windows, while doubling the training
-#   time and leaving 182 features inactive on those windows.
+#   ``k=32`` and 4096 with ``k=32`` kept 67%, 73% and 79% of the validation
+#   decisions. We fixed in advance that a larger dictionary had to be more
+#   than two points better to be preferred. 4096 features agreed on six more
+#   of the 96 validation windows, so we use them, although they take about
+#   twice as long to train and 201 of them were inactive on those windows.
 #
 # The number of features removed per class (32) and of random control sets
 # (20) were fixed in advance.
@@ -400,8 +492,9 @@ fig.tight_layout()
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # Every token of block 18 is one training row. The per-coordinate mean and
-# standard deviation come from the fit tokens only, so SAE Lens's own
-# ``normalize_activations`` is switched off.
+# standard deviation come from the fit tokens only. The SAE and every edit
+# below are torch operations, so we keep these statistics as tensors and
+# switch off SAE Lens's own ``normalize_activations``.
 
 d_in = fit_tokens[block].shape[-1]
 n_tokens = fit_tokens[block].shape[1]
@@ -410,23 +503,20 @@ fit_rows = fit_tokens[block].reshape(-1, d_in)
 mean = fit_rows.mean(0)
 std = fit_rows.std(0, correction=0).clamp_min(1e-6)
 fit_scaled = (fit_rows - mean) / std
+test_scaled = (test_tokens[block].reshape(-1, d_in) - mean) / std
 print(f"Fit tokens: {tuple(fit_rows.shape)} ({n_tokens} per window)")
-
-
-def standardize(tokens):
-    """(windows, tokens, dim) -> standardized (windows * tokens, dim)."""
-    return (tokens.reshape(-1, d_in) - mean) / std
-
 
 ######################################################################
 # Training the Top-K SAE
 # ~~~~~~~~~~~~~~~~~~~~~~
 #
-# SAE Lens's :class:`~sae_lens.training.sae_trainer.SAETrainer` consumes an
-# iterator of tensor batches. We learn 2048 features (four times the token
-# width) with at most ``k=32`` active per token, for 3000 updates on batches
-# of 256 tokens sampled with replacement. A copy made before training serves
-# as an untrained control with the same initialization.
+# SAE Lens's :class:`~sae_lens.training.sae_trainer.SAETrainer` consumes any
+# iterator of tensor batches; its own activation store needs a language
+# model, so a three-line generator samples fit tokens with replacement. We
+# learn 4096 features (eight times the token width) with at most ``k=32``
+# active per token, for 3000 updates on batches of 256 tokens. A copy made
+# before training serves as an untrained control with the same
+# initialization.
 
 batch_size = 256
 n_updates = 3000
@@ -443,7 +533,7 @@ def activation_batches():
 sae = TopKTrainingSAE(
     TopKTrainingSAEConfig(
         d_in=d_in,
-        d_sae=4 * d_in,
+        d_sae=8 * d_in,
         k=k_active,
         device="cpu",
         dtype="float32",
@@ -477,26 +567,29 @@ _ = sae.eval()
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # The fraction of variance unexplained (FVU) is 0 for a perfect
-# reconstruction and 1 for predicting the mean. We compute it on the test
-# tokens in the standardized coordinates, for the trained and the untrained
-# dictionary.
+# reconstruction and 1 for predicting the mean. It is one minus the
+# coefficient of determination pooled over the 512 coordinates, i.e.
+# :func:`~sklearn.metrics.r2_score` with ``multioutput="variance_weighted"``.
+# We compute it on the test tokens in the standardized coordinates, for the
+# trained and the untrained dictionary. The codes of the test tokens and of
+# the fit tokens, averaged per window, are kept for the analyses below.
 
-
-def fvu(target, reconstruction):
-    residual = (target - reconstruction).square().sum()
-    return (residual / (target - target.mean(0)).square().sum()).item()
-
-
+to_windows = "(window token) feature -> window feature"
 with torch.no_grad():
-    test_scaled = standardize(test_tokens[block])
     test_codes = sae.encode(test_scaled)
-    fvu_trained = fvu(test_scaled, sae.decode(test_codes))
-    fvu_untrained = fvu(
-        test_scaled, untrained_sae.decode(untrained_sae.encode(test_scaled))
-    )
-    fit_codes = sae.encode(fit_scaled)
-active_on_fit = (fit_codes != 0).any(0)
-print(f"Test FVU: trained {fvu_trained:.3f}, untrained {fvu_untrained:.3f}")
+    reconstructions = {
+        "trained": sae.decode(test_codes),
+        "untrained": untrained_sae.decode(untrained_sae.encode(test_scaled)),
+    }
+    fit_window_codes = einops.reduce(
+        sae.encode(fit_scaled), to_windows, "mean", token=n_tokens
+    ).numpy()
+fvu = {
+    name: 1 - r2_score(test_scaled, rows, multioutput="variance_weighted")
+    for name, rows in reconstructions.items()
+}
+active_on_fit = (fit_window_codes > 0).any(0)  # Top-K codes are non-negative
+print(f"Test FVU: trained {fvu['trained']:.3f}, untrained {fvu['untrained']:.3f}")
 print(f"Mean active features per token: {(test_codes != 0).sum(-1).float().mean():.1f}")
 print(f"Features never active on the fit windows: {(~active_on_fit).sum()}")
 
@@ -505,66 +598,82 @@ print(f"Features never active on the fit windows: {(~active_on_fit).sum()}")
 # ----------------------------------------------
 #
 # We replace the output of block 18 by the dictionary's reconstruction, undo
-# the standardization and let blocks 19–22 and the head finish the forward
-# pass. We compare the trained SAE with the untrained one and with setting
-# every token to its fit mean. Agreement is the fraction of test predictions
-# that match those of the unedited model.
+# the standardization and let ``run_blocks`` finish the forward pass through
+# blocks 19–22 and the head. We compare the trained SAE with the untrained
+# one and with setting every token to its fit mean. Agreement is the fraction
+# of test predictions that match those of the unedited model, i.e.
+# :func:`~sklearn.metrics.accuracy_score` with the native predictions as the
+# reference.
 
+substituted_tokens = {
+    f"{name} SAE": (rows * std + mean).reshape(test_tokens[block].shape)
+    for name, rows in reconstructions.items()
+}
+substituted_tokens["tokens := fit mean"] = mean.expand(test_tokens[block].shape)
+with torch.no_grad():
+    substituted_pred = {
+        name: run_blocks(tokens, block + 1).argmax(1).numpy()
+        for name, tokens in substituted_tokens.items()
+    }
+print(f"{'substitution':>22s}  bal. acc.  agreement")
+print(
+    f"{'none (native model)':>22s}  {balanced_accuracy_score(y_test, baseline_pred):9.1%}  {1.0:9.1%}"
+)
+for name, pred in substituted_pred.items():
+    print(
+        f"{name:>22s}  {balanced_accuracy_score(y_test, pred):9.1%}  "
+        f"{accuracy_score(baseline_pred, pred):9.1%}"
+    )
 
-def reconstruct_with(dictionary):
-    def substitute(tokens):
-        rows = dictionary.decode(dictionary.encode(standardize(tokens)))
-        return (rows * std + mean).reshape(tokens.shape)
+######################################################################
+# The confusion matrices show which decisions change. On the left, the
+# native model against the true test labels. On the right, the native
+# predictions against the predictions with the trained SAE's reconstruction:
+# its diagonal holds the windows whose decision is unchanged, and their share
+# is the agreement above.
 
-    return substitute
-
-
-def edited_logits(substitute):
-    with torch.no_grad():
-        return run_blocks(substitute(test_tokens[block]), block + 1)
-
-
-print(f"{'substitution':>22s}  accuracy  agreement")
-print(f"{'none (native model)':>22s}  {baseline_accuracy:8.1%}  {1.0:9.1%}")
-for name, substitute in {
-    "trained SAE": reconstruct_with(sae),
-    "untrained SAE": reconstruct_with(untrained_sae),
-    "tokens := fit mean": lambda tokens: mean.expand(tokens.shape).clone(),
-}.items():
-    logits = edited_logits(substitute)
-    agreement = (logits.argmax(1) == baseline_pred).float().mean().item()
-    print(f"{name:>22s}  {accuracy(logits, y_test):8.1%}  {agreement:9.1%}")
+fig, axes = plt.subplots(1, 2, figsize=(9.5, 4))
+ConfusionMatrixDisplay.from_predictions(
+    y_test, baseline_pred, display_labels=pretty, ax=axes[0], colorbar=False
+)
+ConfusionMatrixDisplay.from_predictions(
+    baseline_pred,
+    substituted_pred["trained SAE"],
+    display_labels=pretty,
+    ax=axes[1],
+    colorbar=False,
+)
+axes[0].set(title="Native model", xlabel="Predicted class", ylabel="True class")
+axes[1].set(
+    title="Trained SAE substituted at block 18",
+    xlabel="Prediction with reconstruction",
+    ylabel="Native prediction",
+)
+fig.tight_layout()
 
 ######################################################################
 # Where on the scalp do class-selective features fire?
 # ----------------------------------------------------
 #
 # We average each window's codes over its tokens and compute, on the **fit**
-# windows, a selectivity index per feature and class: the difference between
-# the class mean and the mean of the other classes, divided by the standard
+# windows, the selectivity of every feature for every class: the Pearson
+# correlation between the feature's mean code and the indicator of the class
+# (the point-biserial correlation, :func:`~sklearn.feature_selection.r_regression`).
+# For a given class it ranks the features like the difference between the
+# class mean and the mean of the other classes, divided by the standard
 # deviation over all windows. The 32 most selective features per class are
 # chosen there, and only then examined on the test session.
 
-
-def per_window(codes):
-    return codes.reshape(-1, n_tokens, codes.shape[-1])
-
-
-fit_window_codes = per_window(fit_codes).mean(1)
-selectivity = torch.stack(
+selectivity = np.stack(
     [
-        (
-            fit_window_codes[y_fit == class_id].mean(0)
-            - fit_window_codes[y_fit != class_id].mean(0)
-        )
-        / fit_window_codes.std(0).clamp_min(1e-6)
+        r_regression(fit_window_codes, y_fit == class_id)
         for class_id in range(len(LABELS))
     ]
 )
 n_selected = 32
-selected = selectivity.topk(n_selected, dim=1).indices  # (classes, n_selected)
-for label, features in zip(LABELS, selected.tolist()):
-    print(f"Top five selected for {label:>10s}: {features[:5]}")
+selected = np.argsort(-selectivity, axis=1)[:, :n_selected]  # (classes, n_selected)
+for label, features in zip(LABELS, selected):
+    print(f"Top five selected for {label:>10s}: {features[:5].tolist()}")
 
 ######################################################################
 # REVE orders the tokens channel by channel, four patches each, so a
@@ -577,15 +686,20 @@ for label, features in zip(LABELS, selected.tolist()):
 # channel placed at the electrode's position, not the raw electrode. The maps
 # describe what this frozen encoder encodes, not a validated neural source.
 
-test_token_codes = per_window(test_codes).reshape(len(x_test), n_chans, n_patches, -1)
+channel_codes = einops.reduce(
+    test_codes,
+    "(window chan patch) feature -> window chan feature",
+    "mean",
+    chan=n_chans,
+    patch=n_patches,
+).numpy()
 fig, axes = plt.subplots(1, len(LABELS), figsize=(11, 3.2))
-for class_id, (ax, label) in enumerate(zip(axes, LABELS)):
-    feature = selected[class_id, 0].item()
-    channel_codes = test_token_codes[:, :, :, feature].mean(2)  # (trials, chans)
-    contrast = (
-        channel_codes[y_test == class_id].mean(0)
-        - channel_codes[y_test != class_id].mean(0)
-    ).numpy()
+for class_id, (ax, label) in enumerate(zip(axes, pretty)):
+    feature = selected[class_id, 0]
+    in_class = y_test == class_id
+    contrast = channel_codes[in_class, :, feature].mean(0) - channel_codes[
+        ~in_class, :, feature
+    ].mean(0)
     limit = max(np.abs(contrast).max(), 1e-6)
     image, _ = mne.viz.plot_topomap(
         contrast,
@@ -598,7 +712,7 @@ for class_id, (ax, label) in enumerate(zip(axes, LABELS)):
         extrapolate="local",
     )
     fig.colorbar(image, ax=ax, shrink=0.6, pad=0.02)
-    ax.set_title(f"#{feature}, selected for {label.replace('_', ' ')}", fontsize=9)
+    ax.set_title(f"#{feature}, selected for {label}", fontsize=9)
 fig.suptitle(
     "Test session: class minus other classes, most selective feature per class",
     fontsize=10,
@@ -609,18 +723,20 @@ fig.tight_layout()
 # When we ran this example, the feature selected for left hand fired more
 # over the right sensorimotor area and the one selected for right hand over
 # the left, as expected from the contralateral organization of hand motor
-# imagery. The map of the feature selected for feet showed only weak,
-# scattered differences (note its much smaller color scale). One feature
-# per class from one subject is suggestive at most.
+# imagery. The feature selected for tongue fired more over lateral sites of
+# both hemispheres, and the map of the feature selected for feet showed only
+# weak, scattered differences (note its much smaller color scale). One
+# feature per class from one subject is suggestive at most.
 #
 # Intervening on class-selective features
 # ---------------------------------------
 #
 # To remove a set of features we do not replace the tokens by the SAE
 # reconstruction, which would add the reconstruction error to the edit.
-# Instead we subtract only the removed features' decoded contribution from the
-# original tokens. With an empty set this returns the native tokens exactly,
-# so any change in the output is caused by the removed features.
+# Instead we zero those features in the test codes computed above and
+# subtract only their decoded contribution from the original tokens. With an
+# empty set this returns the native tokens exactly, so any change in the
+# output is caused by the removed features.
 #
 # For each class we remove its 32 selected features and measure the drop in
 # the model's probability for that class on the test trials of that class.
@@ -635,45 +751,32 @@ fig.tight_layout()
 # is also reported. Each set is evaluated once on all test windows.
 
 
-def remove_features(features):
-    def substitute(tokens):
-        codes = sae.encode(standardize(tokens))
-        kept = codes.clone()
-        kept[:, features] = 0
-        contribution = (sae.decode(codes) - sae.decode(kept)) * std
-        return tokens - contribution.reshape(tokens.shape)
-
-    return substitute
-
-
-baseline_prob = baseline_logits.softmax(1)
+baseline_prob = baseline_logits.softmax(1).numpy()
 class_trials = [y_test == class_id for class_id in range(len(LABELS))]
 
 
 def probability_drops(features):
-    """Edited probabilities and the drop of p(c) on the trials of each class c."""
-    prob = edited_logits(remove_features(features)).softmax(1)
+    """Remove ``features`` at block 18; return p and the drop of p(c) on class c."""
+    kept = test_codes.clone()
+    kept[:, features] = 0
+    with torch.no_grad():
+        removed = (reconstructions["trained"] - sae.decode(kept)) * std
+        tokens = test_tokens[block] - removed.reshape(test_tokens[block].shape)
+        prob = run_blocks(tokens, block + 1).softmax(1).numpy()
     drop = baseline_prob - prob
-    return prob, np.array(
-        [drop[t, c].mean().item() for c, t in enumerate(class_trials)]
-    )
+    return prob, np.array([drop[t, c].mean() for c, t in enumerate(class_trials)])
 
 
 # drop_matrix[j, c]: drop of p(c) on class-c trials after removing class j's set
 selected_probs, drop_matrix = zip(*(probability_drops(s) for s in selected))
 drop_matrix = np.stack(drop_matrix)
 
-candidate_features = active_on_fit.nonzero().squeeze(1)
-generator = torch.Generator().manual_seed(0)
+rng = np.random.default_rng(0)
 n_random = 20
 random_drops = np.stack(
     [
         probability_drops(
-            candidate_features[
-                torch.randperm(len(candidate_features), generator=generator)[
-                    :n_selected
-                ]
-            ]
+            rng.choice(np.flatnonzero(active_on_fit), n_selected, replace=False)
         )[1]
         for _ in range(n_random)
     ]
@@ -691,12 +794,9 @@ for class_id, (label, trials) in enumerate(zip(LABELS, class_trials)):
             "random max": random_drops[:, class_id].max(),
             "own, other trials": (
                 baseline_prob[~trials, class_id] - prob[~trials, class_id]
-            )
-            .mean()
-            .item(),
-            "flipped": (
-                (prob[trials].argmax(1) != baseline_pred[trials]).float().mean().item()
-            ),
+            ).mean(),
+            "flipped": 1
+            - accuracy_score(baseline_pred[trials], prob[trials].argmax(1)),
         }
     )
 
@@ -720,7 +820,6 @@ for row in effects:
 # class *j*, column *c* is the drop of p(*c*) on the trials of class *c*. A
 # class-specific effect would appear as a diagonal that stands out.
 
-pretty = [label.replace("_", " ") for label in LABELS]
 positions = np.arange(len(LABELS))
 fig, (ax, ax_matrix) = plt.subplots(
     1, 2, figsize=(11, 3.8), gridspec_kw={"width_ratios": [1.5, 1]}
@@ -774,21 +873,21 @@ fig.tight_layout()
 # -----------------------------
 #
 # * **What this run shows.** When we ran this example on a laptop CPU, the
-#   frozen REVE with its trained head reached 76% on the test session (chance
-#   25%). Its validation accuracy, on the last two runs of the training
-#   session, was only 56%: single-subject estimates on a few runs vary a
-#   lot. Substituting the trained SAE's reconstruction at block 18 kept
-#   about 80% of the test decisions, against 34% for the untrained
+#   frozen REVE with its trained head reached 76% balanced accuracy on the
+#   test session (chance 25%). Its validation accuracy, on the last two runs
+#   of the training session, was only 58%: single-subject estimates on a few
+#   runs vary a lot. Substituting the trained SAE's reconstruction at block
+#   18 kept 86% of the test decisions, against 34% for the untrained
 #   dictionary and for mean tokens (both at chance accuracy). Removing the
 #   32 features selected for left hand, right hand or tongue lowered the
-#   probability of that class on its own test trials by about 0.1–0.2. That
-#   is more than each of the 20 random sets (at most about 0.05) and roughly
-#   three to five times the drop on the other classes' trials, while
-#   removing the other classes' sets slightly raised it on average. For feet
-#   the drop was small (about 0.03) and close to the largest random sets.
-#   The SAE is trained in float32, so these numbers change slightly with the
-#   machine and the number of threads; the accuracy and the block check did
-#   not change in our runs.
+#   probability of that class on its own test trials by 0.14–0.20. That is
+#   more than each of the 20 random sets (at most 0.024) and 2.4–4.4 times
+#   the drop on the other classes' trials, while removing the other classes'
+#   sets changed it by less than 0.02 on average. For feet the drop (0.06)
+#   also exceeded every random set, but removing the features selected for
+#   tongue lowered p(feet) more (0.10), so the feet features are not
+#   specific to feet. The SAE is trained in float32, so these numbers change
+#   slightly with the machine and the number of threads.
 # * **Read the substitution table first.** If the trained SAE's
 #   reconstruction does not preserve the model's decisions much better than
 #   the untrained and mean-token controls, feature-level conclusions are not
@@ -812,13 +911,18 @@ fig.tight_layout()
 # References
 # ----------
 #
-# * El Ouahidi et al. (2025), `REVE: A Foundation Model for EEG - Adapting to
-#   Any Setup with Large-Scale Pretraining on 25,000 Subjects
-#   <https://arxiv.org/abs/2510.21585>`_, NeurIPS, introduce REVE.
-# * He and Wu (2020), `Transfer Learning for Brain-Computer Interfaces: A
-#   Euclidean Space Data Alignment Approach
-#   <https://arxiv.org/abs/1808.05464>`_, IEEE Transactions on Biomedical
-#   Engineering, introduce Euclidean alignment.
+# .. [1] El Ouahidi, Y., et al. (2025). *REVE: A Foundation Model for EEG -
+#        Adapting to Any Setup with Large-Scale Pretraining on 25,000
+#        Subjects.* NeurIPS. https://arxiv.org/abs/2510.21585
+# .. [2] He, H., & Wu, D. (2020). *Transfer Learning for Brain-Computer
+#        Interfaces: A Euclidean Space Data Alignment Approach.* IEEE
+#        Transactions on Biomedical Engineering, 67(2), 399–410.
+#        DOI: 10.1109/TBME.2019.2913914
+# .. [3] Junqueira, B., Aristimunha, B., Chevallier, S., & de Camargo, R. Y.
+#        (2024). *A systematic evaluation of Euclidean alignment with deep
+#        learning for EEG decoding.* Journal of Neural Engineering, 21(3),
+#        036038. DOI: 10.1088/1741-2552/ad4f18
+#
 # * `SAE Lens documentation <https://jbloomaus.github.io/SAELens/>`_ describes
 #   the external dictionary and tensor-batch trainer APIs used here (tested
 #   with 6.51.3).
