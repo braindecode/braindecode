@@ -1,6 +1,7 @@
 # Authors: Mahir Jain (mahir@mannas.ai)
 #
 # License: Apache-2.0
+# Reference implementation and weights: https://huggingface.co/NeuroDX/axon-eeg (Apache-2.0).
 """AXON: an axis-factorized EEG foundation model."""
 
 import math
@@ -20,7 +21,7 @@ from braindecode.util import resolve_montage_name
 _METRES_TO_CM = 100.0
 
 
-class AXON(EEGModuleMixin, nn.Module):
+class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
     r"""AXON, an axis-factorized EEG foundation model from Jain et al. (2026) [axon2026]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel`
@@ -223,6 +224,7 @@ class AXON(EEGModuleMixin, nn.Module):
         """
         self._n_outputs = n_outputs
         self.final_layer = self._build_head(n_outputs)
+        self._update_init_kwargs(n_outputs=n_outputs)
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         """Encode EEG into the grid of token embeddings.

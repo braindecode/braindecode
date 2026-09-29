@@ -1447,6 +1447,15 @@ def test_axon_warns_on_non_200_hz():
         AXON(chs_info=_axon_chs(), n_outputs=2, sfreq=250.0, **_AXON_SMALL)
 
 
+def test_axon_reset_head_updates_config():
+    """``reset_head`` must propagate to ``get_config`` for save/restore."""
+    model = _axon_model(_axon_chs())
+    model.reset_head(7)
+    assert model.final_layer[-1].out_features == 7
+    assert model.get_config()["n_outputs"] == 7
+    assert AXON.from_config(model.get_config()).n_outputs == 7
+
+
 # ==============================================================================
 # Tests for DIVER-1 Model
 # ==============================================================================

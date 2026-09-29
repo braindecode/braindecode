@@ -48,6 +48,7 @@ The following components are licensed under the MIT License:
 
 The following components are licensed under the Apache License 2.0:
 
+- `braindecode/models/axon.py`
 - `braindecode/models/mvpformer.py`
 - `braindecode/models/zuna.py`
 - `braindecode/models/luna.py`
