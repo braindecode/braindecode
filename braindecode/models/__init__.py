@@ -40,6 +40,7 @@ from .labram import InterpolatedLaBraM, Labram
 from .luna import LUNA
 from .medformer import MEDFormer
 from .meta_neuromotor import MetaNeuromotorHand
+from .mirepnet import MIRepNet
 from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
 from .neuropose import NeuroPose
@@ -133,6 +134,7 @@ __all__ = [
     "extract_channel_locations_from_chs_info",
     "positions_from_chs_info",
     "MEDFormer",
+    "MIRepNet",
     "MSVTNet",
     "MVPFormer",
     "PBT",
