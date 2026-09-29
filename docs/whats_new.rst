@@ -75,7 +75,7 @@ Bug fixes
   in float32 with autocast disabled. Intel Gaudi (HPU) autocast downcasts the
   position × frequency products to bf16 before sin/cos (embedding ~3 % off on
   Gaudi2); CPU/CUDA results are unchanged
-  (:gh:`NNNN` by `Bruno Aristimunha`_)
+  (:gh:`1192` by `Bruno Aristimunha`_)
 
 - Preserve shared class targets when creating MNE epochs from different event
   annotations, as in sleep staging. MNE event IDs remain unique.
