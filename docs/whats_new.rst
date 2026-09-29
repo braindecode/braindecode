@@ -28,10 +28,20 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+<<<<<<< HEAD
 - Add :class:`braindecode.models.AXON`, an axis-factorized EEG foundation
   model whose layers mix a temporal and a spatial attention path with a
   per-token gate, with pretrained weights on the Hugging Face Hub
   (:gh:`1182` by `Mahir Jain`_).
+=======
+- Add :class:`braindecode.models.Brant`, a braindecode-native port of the Brant
+  foundation model for intracranial (sEEG/iEEG) signals (Zhang et al., NeurIPS
+  2023), including in-model spectral features and the shared configuration,
+  feature-return, and head-reset APIs. The official pretrained weights load from
+  ``braindecode/brant-pretrained`` (all tensors verified identical to the
+  official release) (:gh:`1100` by `Adam Mounir`_).
+
+>>>>>>> origin/master
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
@@ -74,6 +84,27 @@ Bug fixes
   is 1, which made :class:`braindecode.models.ShallowFBCSPNet` and
   :class:`braindecode.models.Deep4Net` unusable on single-channel data
   (:gh:`1154` by `Julien Gadonneix`_).
+
+- Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU) and under
+  ``torch.jit.trace``: :class:`braindecode.modules.GeneralizedGaussianFilter`
+  now clamps its parameters in place under ``torch.no_grad()`` instead of
+  reassigning ``.data``, and :func:`braindecode.functional.hilbert_freq`
+  computes the complex FFT step in float32 for bfloat16 inputs, so the phase
+  features work under bfloat16 autocast (:gh:`1183` by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.modules.MaxNormParametrize` failing on Intel Gaudi
+  (HPU), which affects every model with a max-norm weight constraint
+  (e.g. :class:`braindecode.models.EEGNet`,
+  :class:`braindecode.models.ATCNet`). The row rescale is now written out
+  instead of calling ``Tensor.renorm``; values and gradients are unchanged
+  (:gh:`1184` by `Bruno Aristimunha`_).
+
+- Fix :class:`braindecode.modules.MaxNormParametrize` producing ``NaN`` outputs
+  or gradients for zero or very small float16 rows after :gh:`1184`; the
+  norm and scale are computed in float32 for float16/bfloat16 inputs,
+  while float64 precision is preserved. Safe denominators prevent invalid
+  intermediate gradients, and rows at or below ``max_norm`` are unchanged.
+  Empty tensors pass through and a negative ``max_norm`` raises, as
+  ``Tensor.renorm`` does (:gh:`1187` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)

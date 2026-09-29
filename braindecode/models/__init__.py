@@ -9,6 +9,7 @@ from .bendr import BENDR, InterpolatedBENDR
 from .biot import BIOT, InterpolatedBIOT
 from .brainbert import BrainBERT
 from .brainmodule import BrainModule
+from .brant import Brant
 from .cbramod import CBraMod
 from .codebrain import CodeBrain
 from .contrawr import ContraWR
@@ -99,6 +100,7 @@ __all__ = [
     "Deep4Net",
     "DeepSleepNet",
     "BrainModule",
+    "Brant",
     "EEGConformer",
     "EEGDINO",
     "EEGPT",
