@@ -76,6 +76,19 @@ Bug fixes
   position × frequency products to bf16 before sin/cos (embedding ~3 % off on
   Gaudi2); CPU/CUDA results are unchanged
   (:gh:`1192` by `Bruno Aristimunha`_)
+- Fix :class:`braindecode.models.MVPFormer` on Intel Gaudi (HPU): the
+  channel-relative shift is now a single ``torch.gather`` and the grouped-query
+  key repeat works on a contiguous copy. On HPU the previous advanced indexing
+  back-propagated through a host-side ``index_put_`` with wrong gradients (and
+  took 108 s per 30 s-window training step), and the repeat scrambled the
+  relative keys (features 14-39 % off). CPU and CUDA results are bit-identical
+  (:gh:`1189` by `Bruno Aristimunha`_)
+- Fix the positional encoder of :class:`braindecode.models.SignalJEPA` and
+  :class:`braindecode.models.SignalJEPA_Contextual` on Intel Gaudi (HPU): the
+  time table is now a non-persistent buffer that follows ``.to(device)``, and the
+  encoding is built with ``torch.cat`` instead of strided in-place writes (the
+  temporal part was 73 % off on Gaudi2). State-dict keys and CPU/CUDA outputs are
+  unchanged (:gh:`1191` by `Bruno Aristimunha`_)
 
 - Preserve shared class targets when creating MNE epochs from different event
   annotations, as in sleep staging. MNE event IDs remain unique.

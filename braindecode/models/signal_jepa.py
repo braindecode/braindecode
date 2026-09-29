@@ -1429,8 +1429,14 @@ class _PosEncoder(nn.Module):
             "default_ch_idxs", ch_idxs.to(torch.long), persistent=False
         )
 
-        # Pre-computed tensor for positional encoding on the time dimension:
-        self.encoding_time = torch.zeros(0, dtype=torch.float32, requires_grad=False)
+        # Pre-computed tensor for positional encoding on the time dimension, a
+        # non-persistent buffer so that it follows ``.to(device)``:
+        self.encoding_time: torch.Tensor
+        self.register_buffer(
+            "encoding_time",
+            torch.zeros(0, dtype=torch.float32, requires_grad=False),
+            persistent=False,
+        )
 
     def _check_encoding_time(self, n_times: int):
         if self.encoding_time.size(0) < n_times:
@@ -1468,20 +1474,30 @@ class _PosEncoder(nn.Module):
         assert n_chans_times % n_chans == 0
         n_times = n_chans_times // n_chans
 
-        pos_encoding = local_features.new_empty(
-            (batch_size_chs, n_chans, n_times, emb_dim)
-        )
+        # Built with torch.cat rather than strided in-place writes into a
+        # new_empty buffer, which Intel Gaudi (HPU) silently dropped.
         # Channel pos. encoding
-        pos_encoding[:, :, :, : self.spat_dim] = self.pos_encoder_spat(ch_idxs)[
-            :, :, None, :
-        ]
+        spat_encoding = self.pos_encoder_spat(ch_idxs)[:, :, None, :].expand(
+            batch_size_chs, n_chans, n_times, self.spat_dim
+        )
         # Temporal pos. encoding
         self._check_encoding_time(n_times)
-        _ = pos_encoding[:, :, :, self.spat_dim : self.spat_dim + self.time_dim].copy_(
-            self.encoding_time[None, None, :n_times, :],
+        time_encoding = self.encoding_time[:n_times].to(
+            device=local_features.device, dtype=local_features.dtype
         )
+        time_encoding = time_encoding[None, None].expand(
+            batch_size_chs, n_chans, n_times, self.time_dim
+        )
+        parts = [spat_encoding.to(local_features.dtype), time_encoding]
+        n_rest = emb_dim - self.spat_dim - self.time_dim
+        if n_rest > 0:
+            # Entries new_empty used to leave uninitialised.
+            parts.append(
+                local_features.new_zeros(batch_size_chs, n_chans, n_times, n_rest)
+            )
+        pos_encoding = torch.cat(parts, dim=-1)
 
-        return pos_encoding.view(batch_size, n_chans_times, emb_dim)
+        return pos_encoding.reshape(batch_size, n_chans_times, emb_dim)
 
 
 def _n_times_out(conv_layers_spec, n_times):
