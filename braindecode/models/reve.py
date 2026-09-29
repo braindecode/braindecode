@@ -633,6 +633,12 @@ class FourierEmb4D(nn.Module):
         self.margin = margin
 
     def forward(self, positions_: torch.Tensor) -> torch.Tensor:
+        # In float32 with autocast off: Intel Gaudi (HPU) autocast also downcasts
+        # the position * frequency products to bf16 before sin/cos (~3 % off).
+        with torch.autocast(device_type=positions_.device.type, enabled=False):
+            return self._embed(positions_.float()).to(positions_.dtype)
+
+    def _embed(self, positions_: torch.Tensor) -> torch.Tensor:
         positions = positions_.clone()
         positions[:, :, -1] *= self.increment_time
         input_shape = positions.shape
