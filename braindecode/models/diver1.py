@@ -65,7 +65,9 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
     ``chs_info`` supplies the default montage. Its ``"kind"`` must identify EEG
     or an intracranial type: SEEG/DBS imply depth electrodes, ECoG implies grids;
     strips cannot be inferred. ``"loc"`` coordinates are converted from metres
-    to millimetres for PopT's sinusoidal encoding. Missing, non-finite or exactly
+    to millimetres for PopT's sinusoidal encoding, without transforming their
+    coordinate frame (for example, head coordinates are not converted to MNI).
+    Missing, non-finite or exactly
     zero coordinates and unknown subtypes contribute zero embeddings. Disabling
     ``use_position_emb`` removes both coordinate and type embeddings.
 
@@ -106,7 +108,9 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
     ----------
     patch_size : int
         Number of samples per temporal patch, default 500 (1 s at the paper's
-        500 Hz; the other published variant is 50).
+        500 Hz; the other published variant is 50). Patches shorter than 9 samples
+        require an explicit ``cnn_stride`` or ``cnn_out_size`` because the
+        reference default requests 16 output positions.
     d_model : int
         Token embedding dimension, default 256 (the Tiny variant).
     n_layers : int
@@ -123,7 +127,15 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Stride of the first (strided) convolution of the patch encoder.
         Defaults to the reference setting: the padded patch length divided by 8
         for ``patch_size >= 100`` and by 16 below, i.e. 64 for the 1 s variant
-        and 4 for the 0.1 s variant.
+        and 4 for the 0.1 s variant. Cannot be combined with ``cnn_out_size``.
+    cnn_out_size : int, optional
+        Number of temporal output positions in each patch CNN, for example
+        8, 16 or 32. Must be a positive divisor of both the next-power-of-two
+        padded patch length and ``d_model``. Sets the first convolution's stride
+        to ``padded_length // cnn_out_size`` and its feature width to
+        ``d_model // cnn_out_size``; the final token width remains ``d_model``.
+        If None, preserve ``cnn_stride`` and its reference defaults above.
+        Cannot be combined with ``cnn_stride``.
     cnn_kernel_size : int
         Kernel width of the first convolution of the patch encoder; must be odd.
         The remaining ``cnn_depth - 1`` convolutions use width 3 and stride 1.
@@ -187,6 +199,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         mup_attention: bool = True,
         drop_prob: float = 0.1,
         activation: type[nn.Module] = nn.SiLU,
+        cnn_out_size: int | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -238,6 +251,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.pooling = pooling
         self.drop_prob = drop_prob
         self.activation = activation
+        self.cnn_out_size = cnn_out_size
 
         # EEGModuleMixin signal properties are unavailable inside TorchScript.
         self.n_chans_grid = self.n_chans
@@ -253,6 +267,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             stride=cnn_stride,
             kernel_size=cnn_kernel_size,
             depth=cnn_depth,
+            out_size=cnn_out_size,
         )
 
         self.spectral_emb = (
@@ -379,8 +394,12 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         tokens = self.patch_cnn(tokens)
         if self.spectral_emb is not None:
             # Preserve the reference's float32 FFT even for float64 tokens.
-            spectrum = torch.fft.rfft(tokens.float(), dim=-1, norm="forward")
-            tokens = tokens + self.spectral_emb(spectrum.abs().to(tokens.dtype))
+            fft_input = tokens.float()
+            spectrum = torch.fft.rfft(fft_input, dim=-1, norm="forward")
+            amplitude = spectrum.abs()
+            amplitude = amplitude.to(tokens.dtype)
+            spectral_emb = self.spectral_emb(amplitude)
+            tokens = tokens + spectral_emb
         if self.chan_emb is not None:
             chan_emb = self.chan_emb(metadata)
             tokens = tokens + chan_emb[None, :, None, :]
@@ -432,6 +451,7 @@ class _PatchCNN(nn.Sequential):
         stride: int | None = None,
         kernel_size: int = 63,
         depth: int = 3,
+        out_size: int | None = None,
     ):
         super().__init__()
         if kernel_size % 2 == 0:
@@ -440,6 +460,20 @@ class _PatchCNN(nn.Sequential):
             raise ValueError(f"cnn_depth must be at least 1, got {depth}.")
 
         padded = 1 << (patch_size - 1).bit_length()
+        if out_size is not None:
+            if stride is not None:
+                raise ValueError("cnn_out_size and cnn_stride are mutually exclusive.")
+            if (
+                isinstance(out_size, bool)
+                or not isinstance(out_size, int)
+                or out_size < 1
+                or padded % out_size
+            ):
+                raise ValueError(
+                    f"cnn_out_size ({out_size}) must be a positive integer divisor "
+                    f"of the padded patch length ({padded})."
+                )
+            stride = padded // out_size
         if stride is None:
             # Reference output lengths: 8 for 1 s patches, 16 for 0.1 s.
             stride = padded // (8 if patch_size >= 100 else 16)
@@ -533,16 +567,21 @@ class _SinusoidalCoordEmbedding(nn.Module):
     ):
         super().__init__()
         n_dim = 3
-        self.n_feats = d_model // n_dim // 2 * 2
+        features_per_axis = d_model // n_dim
+        pairs_per_axis = features_per_axis // 2
+        self.n_feats = pairs_per_axis * 2
         self.padding = d_model - self.n_feats * n_dim
         self.scale = scale * 2.0 * math.pi
         dim_t = torch.arange(0, self.n_feats, 2, dtype=torch.float32)
-        dim_t = temperature ** (dim_t / self.n_feats)
+        dim_t = dim_t / self.n_feats
+        dim_t = temperature**dim_t
         self.register_buffer("dim_t", dim_t, persistent=False)
 
     def forward(self, xyz: torch.Tensor) -> torch.Tensor:
         """Encode coordinates of shape ``(..., 3)`` into ``(..., d_model)``."""
-        angles = (xyz * self.scale).unsqueeze(-1) / self.dim_t
+        angles = xyz * self.scale
+        angles = angles.unsqueeze(-1)
+        angles = angles / self.dim_t
         pairs = torch.stack([angles.sin(), angles.cos()], dim=-1)
         emb = pairs.flatten(start_dim=-3)
         return F.pad(emb, (0, self.padding))

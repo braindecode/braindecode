@@ -357,8 +357,13 @@ class FeedForwardBlock(nn.Sequential):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.gated:
-            hidden = self.activation(self.fc_gate(x)) * self.fc1(x)
-            return self.dropout2(self.fc2(self.dropout1(hidden)))
+            gate = self.fc_gate(x)
+            gate = self.activation(gate)
+            value = self.fc1(x)
+            hidden = gate * value
+            hidden = self.dropout1(hidden)
+            hidden = self.fc2(hidden)
+            return self.dropout2(hidden)
         else:
             for module in self:
                 x = module(x)

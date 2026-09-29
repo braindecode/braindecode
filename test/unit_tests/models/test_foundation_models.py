@@ -1467,6 +1467,76 @@ def test_diver1_stcpe_preserves_low_precision_overlap(monkeypatch):
 
 
 
+@pytest.mark.parametrize("patch_size", [50, 500])
+@pytest.mark.parametrize("out_size", [8, 16, 32])
+def test_diver1_cnn_out_size(patch_size, out_size, tmp_path):
+    """Output-size HPO preserves token width and survives config/Hub cloning."""
+    info = mne.create_info(["A0", "A1"], 500.0, "seeg")
+    kwargs = dict(
+        chs_info=info["chs"], n_outputs=2, n_times=2 * patch_size - 1,
+        patch_size=patch_size, d_model=64, n_layers=1, pooling="mean",
+        cnn_out_size=out_size,
+    )
+    torch.manual_seed(21)
+    model = DIVER1(**kwargs).eval()
+    init_rng = torch.get_rng_state()
+    assert model.cnn_out_size == out_size
+    assert model.get_config()["cnn_out_size"] == out_size
+    padded = 1 << (patch_size - 1).bit_length()
+    assert model.patch_cnn.proj_in[0].stride == (1, padded // out_size)
+    assert model.patch_cnn.proj_in[0].out_channels == 64 // out_size
+    # The pre-existing explicit-stride path remains exactly equivalent.
+    kwargs.pop("cnn_out_size")
+    torch.manual_seed(21)
+    legacy = DIVER1(**kwargs, cnn_stride=padded // out_size).eval()
+    assert torch.equal(init_rng, torch.get_rng_state())
+    assert model.state_dict().keys() == legacy.state_dict().keys()
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(value, legacy.state_dict()[key], rtol=0, atol=0)
+    x = torch.randn(1, 2, 2 * patch_size - 1, requires_grad=True)
+    tokens = model.patch_cnn(model.patch_tokenizer(x))
+    assert tokens.shape == (1, 2, 2, 64)
+    actual = model(x)
+    assert actual.shape == (1, 2)
+    torch.testing.assert_close(actual, legacy(x), rtol=0, atol=0)
+    actual.sum().backward()
+    assert torch.isfinite(x.grad).all()
+    # Standard module deepcopy, config reconstruction, and local Hub roundtrip.
+    import copy
+
+    cloned = copy.deepcopy(model)
+    rebuilt = DIVER1.from_config(model.get_config()).eval()
+    rebuilt.load_state_dict(model.state_dict(), strict=True)
+    model.save_pretrained(tmp_path)
+    restored = DIVER1.from_pretrained(tmp_path).eval()
+    scripted = torch.jit.script(model)
+    for candidate in (cloned, rebuilt, restored, scripted):
+        torch.testing.assert_close(candidate(x), actual, rtol=0, atol=0)
+    for candidate in (cloned, rebuilt, restored):
+        assert candidate.get_config()["cnn_out_size"] == out_size
+
+
+@pytest.mark.parametrize(
+    "options,match",
+    [
+        ({"cnn_out_size": 0}, "positive integer divisor"),
+        ({"cnn_out_size": -8}, "positive integer divisor"),
+        ({"cnn_out_size": 3}, "positive integer divisor"),
+        ({"cnn_out_size": 1024}, "positive integer divisor"),
+        ({"cnn_out_size": 8.0}, "positive integer divisor"),
+        ({"cnn_out_size": True}, "positive integer divisor"),
+        ({"cnn_out_size": 32, "d_model": 48, "num_heads": 2}, "d_model.*divisible"),
+        ({"cnn_out_size": 8, "cnn_stride": 64}, "mutually exclusive"),
+        ({"cnn_out_size": 8, "cnn_stride": 32}, "mutually exclusive"),
+    ],
+)
+def test_diver1_cnn_out_size_validation(options, match):
+    info = mne.create_info(["A0", "A1"], 500.0, "seeg")
+    kwargs = dict(chs_info=info["chs"], n_outputs=2, n_times=500, d_model=64, n_layers=1)
+    with pytest.raises(ValueError, match=match):
+        DIVER1(**(kwargs | options))
+
+
 def test_diver1_mup_attention_scale():
     """The released DIVER-1 checkpoints need attention scaled by 1 / head_dim."""
     info = mne.create_info(["C3", "Cz", "C4"], 500.0, "eeg")
