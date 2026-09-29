@@ -46,8 +46,8 @@ Enhancements
   population model for intracranial (sEEG/iEEG) signals from Chau et al. (2024).
   It aggregates across electrodes from per-electrode features (e.g. frozen
   BrainBERT embeddings) plus their anatomical coordinates; the input embedding,
-  spatial position encoding and Transformer encoder are ported bit-exact from the
-  upstream reference. The official pretrained weights load from
+  spatial position encoding and Transformer encoder are ported weight-for-weight
+  from the upstream reference. The official pretrained weights load from
   ``braindecode/popt-pretrained`` (:gh:`1105` by `Adam Mounir`_).
 
 - Add :class:`braindecode.models.VEMG2Pose`,

@@ -267,10 +267,25 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
         """
         batch_size, n_chans, _ = x.shape
         if coords is None:
+            # The default coordinates are the ones derived from chs_info at
+            # construction, so they only describe that electrode set. A larger
+            # population needs its own coordinates: fail with a message that says
+            # so, rather than on a downstream shape mismatch.
+            n_known = self.electrode_coords.shape[0]
+            if n_chans != n_known:
+                raise ValueError(
+                    "x has "
+                    + str(n_chans)
+                    + " electrodes but the model carries coordinates for "
+                    + str(n_known)
+                    + ". Pass `coords` of shape (batch, "
+                    + str(n_chans)
+                    + ", 3) to decode a different electrode set."
+                )
             coords = self.electrode_coords.unsqueeze(0).expand(batch_size, -1, -1)
         if seq_id is None:
-            # Single population: all zeros, sized from the input so that padded
-            # batches with more electrodes than at construction also work.
+            # Single population. Sized from the input, so that an explicit
+            # ``coords`` covering a different electrode count still works.
             seq_id = torch.zeros(batch_size, n_chans, dtype=torch.long, device=x.device)
 
         h = self.input_embedding(x, coords, seq_id)
