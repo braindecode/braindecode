@@ -10,6 +10,8 @@ from braindecode.models import (
     EEGDINO,
     EEGPT,
     REVE,
+    BrainBERT,
+    Brant,
     CBraMod,
     InterpolatedBENDR,
     InterpolatedLaBraM,
@@ -21,8 +23,14 @@ from braindecode.models import (
     STEEGFormer,
 )
 from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
+from braindecode.models.util import _get_signal_params, models_mandatory_parameters
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
+# Window length per model, from the registry.
+_N_TIMES = {
+    name: _get_signal_params(sp)["n_times"]
+    for name, _, sp in models_mandatory_parameters
+}
 
 _REVE_CHS = [
     "Fp1",
@@ -78,6 +86,8 @@ _MODELS = [
         id="InterpolatedBENDR",
     ),
     pytest.param(BIOT, N_CHANS, {}, False, id="BIOT"),
+    pytest.param(Brant, N_CHANS, {"sfreq": 250.0}, False, id="Brant"),
+    pytest.param(BrainBERT, N_CHANS, {}, False, id="BrainBERT"),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
     pytest.param(EEGDINO, 16, {}, True, id="EEGDINO"),
     pytest.param(
@@ -119,10 +129,11 @@ _MODELS = [
 
 @pytest.mark.parametrize("cls, nc, kw, has_cls", _MODELS)
 def test_return_features(cls, nc, kw, has_cls):
-    model = cls(n_chans=nc, n_times=N_TIMES, n_outputs=N_OUTPUTS, **kw)
+    n_times = _N_TIMES[cls.__name__]
+    model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
     model.eval()
     with torch.no_grad():
-        out = model(torch.randn(BATCH, nc, N_TIMES), return_features=True)
+        out = model(torch.randn(BATCH, nc, n_times), return_features=True)
     assert isinstance(out, dict) and "features" in out and "cls_token" in out
     assert out["features"].shape[0] == BATCH
     if has_cls:
@@ -133,10 +144,11 @@ def test_return_features(cls, nc, kw, has_cls):
 
 @pytest.mark.parametrize("cls, nc, kw, has_cls", _MODELS)
 def test_default_forward_returns_tensor(cls, nc, kw, has_cls):
-    model = cls(n_chans=nc, n_times=N_TIMES, n_outputs=N_OUTPUTS, **kw)
+    n_times = _N_TIMES[cls.__name__]
+    model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
     model.eval()
     with torch.no_grad():
-        out = model(torch.randn(BATCH, nc, N_TIMES))
+        out = model(torch.randn(BATCH, nc, n_times))
     assert isinstance(out, torch.Tensor)
 
 
@@ -189,10 +201,11 @@ _RESET_MODELS = [p for p in _MODELS if p.id != "SignalJEPA"]
 
 @pytest.mark.parametrize("cls, nc, kw, has_cls", _RESET_MODELS)
 def test_reset_head(cls, nc, kw, has_cls):
-    model = cls(n_chans=nc, n_times=N_TIMES, n_outputs=N_OUTPUTS, **kw)
+    n_times = _N_TIMES[cls.__name__]
+    model = cls(n_chans=nc, n_times=n_times, n_outputs=N_OUTPUTS, **kw)
     model.reset_head(10)
     model.eval()
     with torch.no_grad():
-        out = model(torch.randn(BATCH, nc, N_TIMES))
+        out = model(torch.randn(BATCH, nc, n_times))
     assert model.n_outputs == 10
     assert out.shape[-1] == 10

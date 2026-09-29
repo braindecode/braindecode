@@ -16,6 +16,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from mne.datasets.utils import _get_path
 from torch import nn
+from torch.nn import RMSNorm
 
 from braindecode.models.base import EEGModuleMixin
 
@@ -511,22 +512,11 @@ class GEGLU(nn.Module):
         return F.gelu(gates) * x
 
 
-class RMSNorm(nn.RMSNorm):
-    """Native RMSNorm with float32 accumulation before casting back to the input."""
-
-    def __init__(self, dim: int, eps: float = 1e-6):
-        super().__init__(dim, eps=eps)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        output = F.rms_norm(x.float(), self.normalized_shape, eps=self.eps)
-        return output.type_as(x) * self.weight
-
-
 class FeedForward(nn.Module):
     def __init__(self, dim: int, hidden_dim: int, geglu: bool):
         super().__init__()
         self.net = nn.Sequential(
-            RMSNorm(dim),
+            RMSNorm(dim, eps=1e-6),
             nn.Linear(dim, hidden_dim * 2 if geglu else hidden_dim, bias=False),
             GEGLU() if geglu else nn.GELU(),
             nn.Linear(hidden_dim, dim, bias=False),
@@ -550,7 +540,7 @@ class Attention(nn.Module):
         super().__init__()
         inner_dim = head_dim * heads
         self.heads = heads
-        self.norm = RMSNorm(dim)
+        self.norm = RMSNorm(dim, eps=1e-6)
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
         self.to_out = nn.Linear(inner_dim, dim, bias=False)
 
