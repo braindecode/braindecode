@@ -19,6 +19,7 @@ Braindecode Adaptation: Julien Gadonneix
 from __future__ import annotations
 
 import math
+from collections import OrderedDict
 
 import torch
 import torch.nn.functional as F
@@ -34,56 +35,16 @@ from braindecode.models.util import (
 )
 from braindecode.modules import PatchTokenizer
 
-# Channel-modality vocabulary of the reference ``ChannelTypeEmbedding``: slot 0
-# is scalp EEG, slot 1 intracranial EEG.
-_MODALITIES = ("EEG", "iEEG")
-# Electrode sub-modality vocabulary of the reference ``ChannelSubTypeEmbedding``:
-# ECoG grids and strips, and SEEG depth electrodes.
-_SUBTYPES = ("grid", "strip", "depth")
-# Electrode sub-modality implied by each intracranial channel type. Unlike the
-# reference implementation, which reads it off a site-specific table of
-# electrode-group name prefixes, we key off the channel kind, so strips are
-# never inferred: no MNE kind tells them apart from grids.
-_TYPE_TO_SUBTYPE = {"seeg": "depth", "dbs": "depth", "ecog": "grid"}
-# Recording modality implied by each channel type.
-_TYPE_TO_MODALITY = {t: "iEEG" for t in INTRACRANIAL_CH_TYPES} | {"eeg": "EEG"}
-# Vocabulary sizes, as plain ints so that a scripted forward can check metadata
-# against them (TorchScript cannot read the tuples themselves).
-_N_MODALITIES = len(_MODALITIES)
-_N_SUBTYPES = len(_SUBTYPES)
-
-
-def _split_channel_metadata(
-    metadata: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Split a ``(n_chans, 5)`` metadata tensor into the embedding's inputs.
-
-    Coordinates that are non-finite or exactly zero (MNE's two ways of spelling
-    "no montage") and negative sub-modality slots
-    stand for unknown, and are returned as a zero flag so that
-    :class:`_ChannelMetaEmbedding` zeroes the corresponding term out.
-    """
-    coords = metadata[:, :3]
-    coords_known = valid_location_mask(coords).to(coords.dtype)
-    type_idx = metadata[:, 3].long()
-    subtype = metadata[:, 4].long()
-    subtype_known = (subtype >= 0).to(coords.dtype).unsqueeze(-1)
-    return (
-        torch.nan_to_num(coords),
-        coords_known,
-        type_idx,
-        subtype.clamp(min=0),
-        subtype_known,
-    )
+# Reference slots: modality EEG=0/iEEG=1; subtype grid=0/strip=1/depth=2.
+# MNE kinds cannot identify strips; -1 marks unknown subtypes.
+_TYPE_TO_SLOTS = {"eeg": (0, -1), "ecog": (1, 0), "seeg": (1, 2), "dbs": (1, 2)}
 
 
 def _check_channel_metadata(
     metadata: torch.Tensor,
     n_chans: int,
-    # Bound as defaults rather than read from the module: a scripted forward
-    # cannot reach global values, but it does capture default arguments.
-    n_modalities: int = _N_MODALITIES,
-    n_subtypes: int = _N_SUBTYPES,
+    n_modalities: int = 2,
+    n_subtypes: int = 3,
 ) -> None:
     """Reject metadata that does not describe the channels of this batch."""
     if metadata.dim() != 2 or metadata.shape[0] != n_chans or metadata.shape[1] != 5:
@@ -123,214 +84,61 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     .. versionadded:: 1.8.2
 
-    A self-supervised intracranial EEG (iEEG) foundation model for
-    variable-input recordings. Every electrode is cut into temporal patches and
-    the resulting ``(channel, time-patch)`` token grid is processed by *any-variate*
-    self-attention: all ``n_chans * n_patches`` tokens attend to each other, with
-    temporal order carried by RoPE and same- versus cross-channel structure
-    carried by a learned binary attention bias. Because the channel term depends
-    only on *whether* two tokens share an electrode -- never on the electrode
-    index -- the encoder is channel-permutation equivariant and works without
-    electrode metadata [Han2025]_.
+    Encodes a ``(channel, time-patch)`` grid with any-variate attention:
+    RMS-normalized queries and keys, temporal RoPE, a learned same/cross-channel
+    bias and SwiGLU blocks. Each patch passes through a strided CNN; the magnitude
+    spectrum of the **CNN token**, not the raw patch, is projected and added.
+    STCPE adds a local positional bias by encoding sliding temporal windows and
+    **averaging**, rather than summing, their overlapping outputs. These choices
+    follow the reference code and Table 7 where the paper's prose differs.
 
-    .. rubric:: Architecture Overview
-
-    The token grid is assembled additively,
-
-    .. math::
-        \mathbf{X} = \mathbf{Y}_{\mathrm{CNN}} + \mathbf{E}_{\mathrm{spectral}}
-        + [\mathbf{E}_{\mathrm{position}}, \mathbf{E}_{\mathrm{modality}}]
-        + \mathbf{E}_{\mathrm{STCPE}},
-
-    where :math:`[\cdot,\cdot]` is a concatenation along the feature axis, and is
-    then encoded by ``n_layers`` any-variate Transformer blocks. Three learned
-    register tokens (per-channel, per-patch, and a global one) are prepended to
-    the grid before the encoder. As in the reference implementation, their
-    encoder outputs are discarded afterwards: the registers only ever act
-    through attention, and the read-out uses the token grid itself.
-
-    .. rubric:: Macro Components
-
-    - **Patch encoding** (``DIVER1.patch_tokenizer``, ``DIVER1.patch_cnn``).
-      *Operations:* split each channel into non-overlapping patches of
-      ``patch_size`` samples, then apply a ``cnn_depth``-layer strided CNN
-      (Conv2d + GroupNorm + GELU) that maps every patch to a ``d_model`` token.
-      *Role:* turn a ``(n_chans, n_times)`` segment into an
-      ``(n_chans, n_patches, d_model)`` grid of local waveform features.
-    - **Spectral embedding** (``DIVER1.spectral_emb``). *Operations:* take the
-      magnitude of the real FFT of each token and project it back to
-      ``d_model``. *Role:* expose frequency content explicitly rather than
-      leaving it to be rediscovered by attention.
-    - **Position and modality embedding** (``DIVER1.chan_emb``).
-      *Operations:*
-      encode the MNI :math:`(x, y, z)` coordinate of each electrode with the
-      sinusoidal coordinate encoding of PopT, and concatenate it with a learned
-      electrode-type embedding (EEG/iEEG plus grid/strip/depth). *Role:* tell
-      the encoder where each electrode sits and what kind of contact it is,
-      when that metadata is available.
-    - **STCPE** (``DIVER1.stcpe``). *Operations:* project the grid down to
-      ``d_model // stcpe_ratio``, slide a ``stcpe_window``-wide temporal window
-      over it, run a one-layer any-variate Transformer inside each window,
-      average the overlapping window outputs and project back up. *Role:*
-      an input-conditioned local positional bias that is translation
-      equivariant in time and permutation equivariant in channels, replacing
-      the channel-axis convolutions of ACPE.
-    - **Any-variate encoder** (``DIVER1.encoder``). *Operations:* ``n_layers``
-      pre-norm blocks with RMSNorm, grouped-query-shaped attention with QK-norm,
-      rotary embeddings on the patch index, a learned binary same/cross-channel
-      attention bias per layer and head, and a SwiGLU feed-forward block.
-      *Role:* model direct cross-channel, cross-time interactions.
-    - **Read-out** (``DIVER1.final_layer``). *Operations:* flatten the
-      ``(n_chans, n_patches, d_model)`` token grid (or mean-pool it) and apply a
-      linear layer. *Role:* produce the class logits.
-
-    .. rubric:: Temporal, Spatial, and Spectral Encoding
-
-    - *Temporal:* non-overlapping patches of ``patch_size`` samples; patch order
-      enters the attention energy through rotary embeddings on the temporal
-      offset, plus the sliding-window STCPE bias.
-    - *Spatial (channels):* a sinusoidal encoding of the MNI electrode
-      coordinates and a learned electrode-type embedding at the input, and a
-      learned binary same/cross-channel bias inside every attention head.
-    - *Spectral:* the magnitude of the real FFT of each token, linearly
-      projected and added to the grid.
-
-    .. rubric:: Additional Mechanisms
-
-    Electrodes whose coordinates are unknown receive
-    :math:`\mathbf{E}_{\mathrm{position}} = \mathbf{0}`, and electrodes of
-    unknown sub-modality receive a zero sub-type embedding, so the model runs on
-    recordings with incomplete metadata (the paper's ablations show the
-    coordinate term contributes little). Set ``use_position_emb=False`` to drop
-    the coordinate and type terms entirely, which makes the whole model exactly
-    channel-permutation equivariant.
-
-    .. rubric:: Variants
-
-    The published variants differ only in width (``n_layers=12`` throughout),
-    and come at two temporal granularities, ``patch_size=500`` (DIVER-1-1s) and
-    ``patch_size=50`` (DIVER-1-0.1s), both at 500 Hz:
-
-    .. list-table::
-       :header-rows: 1
-
-       * - Variant
-         - ``d_model``
-         - ``num_heads``
-         - Table 4 parameters (1 s / 0.1 s)
-       * - Tiny
-         - 256
-         - 8
-         - 13.03M / 12.72M
-       * - Small
-         - 512
-         - 16
-         - 51.36M / 50.75M
-       * - Base
-         - 768
-         - 24
-         - 115.00M / 114.07M
-       * - Large
-         - 1024
-         - 32
-         - 203.95M / 202.70M
-       * - XL
-         - 2048
-         - 64
-         - 812.85M / 810.19M
-       * - XXL
-         - 3072
-         - 96
-         - 1.83B / 1.82B
-
-    Those are the paper's totals, which include the pretraining reconstruction
-    heads and mask token; this encoder-only port is correspondingly smaller
-    (12.67M rather than 13.03M for Tiny-1s, plus the classification head).
+    Three learned registers add a channel row, a patch column and their corner.
+    They participate in attention but are discarded before the linear read-out.
+    ``pooling="flatten"`` follows the paper's finetuning protocol;
+    ``pooling="mean"`` allows varying channel counts with a fixed patch count.
+    Pretraining masks, reconstruction heads, resampling and muP training are not
+    implemented; the released checkpoints' muP attention scaling is supported.
 
     .. rubric:: Channel metadata
 
-    All per-electrode metadata is read from ``chs_info``, so it must be passed
-    and its entries filled in:
+    ``chs_info`` supplies the default montage. Its ``"kind"`` must identify EEG
+    or an intracranial type: SEEG/DBS imply depth electrodes, ECoG implies grids;
+    strips cannot be inferred. ``"loc"`` coordinates are converted from metres
+    to millimetres for PopT's sinusoidal encoding. Missing, non-finite or exactly
+    zero coordinates and unknown subtypes contribute zero embeddings. Disabling
+    ``use_position_emb`` removes both coordinate and type embeddings.
 
-    - ``"kind"`` gives the recording modality. Intracranial kinds (SEEG, ECoG,
-      DBS) become ``"iEEG"`` and scalp EEG becomes ``"EEG"``. The modality is
-      never guessed, so a kind that is missing or identifies neither raises a
-      :class:`ValueError`.
-    - ``"kind"`` also gives the electrode sub-modality: SEEG and DBS map to
-      ``"depth"`` and ECoG to ``"grid"``. Strips cannot be told apart from
-      grids by kind alone, so they are never inferred, and an unresolved
-      sub-modality simply gets a zeroed embedding.
-    - ``"loc"`` gives the electrode coordinates, in metres as MNE stores them,
-      converted internally to the millimetres the sinusoidal encoding expects.
-      Coordinates that are missing, non-finite or exactly zero get a zeroed
-      coordinate embedding, which is how the paper handles unknown positions.
+    For another montage, pass :meth:`channel_metadata`'s result to
+    :meth:`forward`. All samples in a batch share this metadata. The encoder is
+    channel-permutation equivariant (the flattened head is not).
 
-    .. rubric:: One model, many subjects
+    .. rubric:: Published variants and weights
 
-    Because nothing the model is told about an electrode is subject-specific,
-    one instance encodes recordings from different subjects, with different
-    montages, without being rebuilt. The ``chs_info`` given to the constructor
-    describes one montage only, to give :meth:`forward` a default; to read
-    another recording, pass its metadata as the ``chan_metadata`` argument of
-    :meth:`forward`, which :meth:`channel_metadata` builds from that
-    recording's ``chs_info``. All the samples of one batch share it, so batch
-    by recording.
+    All variants use 12 layers and 32 features per head. Tiny, Small, Base,
+    Large, XL and XXL have widths 256, 512, 768, 1024, 2048 and 3072 respectively.
+    At 500 Hz, ``patch_size=500`` gives 1 s patches and ``patch_size=50`` gives
+    0.1 s patches. Paper parameter counts include pretraining-only heads and a
+    mask token; this port contains only the encoder and classification head.
 
-    Only ``pooling="flatten"`` is tied to a single montage, since its head
-    holds weights per token; ``pooling="mean"`` takes any number of channels.
-    The window length is fixed either way, as the read-out and the rotary
-    tables are sized for a patch count.
-
-    .. rubric:: Pre-trained weights
-
-    Both released encoders are on the Hugging Face Hub, all at 500 Hz:
-
-    - ``braindecode/DIVER-1-0.1s-tiny``: the iEEG encoder (``patch_size=50``,
-      ``d_model=256``, ``n_layers=12``), ``weights/ieeg_pretrained_weights.pt``;
-    - ``braindecode/DIVER-1-1s-small``: the joint iEEG and EEG encoder of paper
-      versions 1 and 2 (``patch_size=500``, ``d_model=512``, ``n_layers=12``),
-      ``weights/i_eeg_pretrained_weights.pt``.
-
-    ::
+    Released encoders are available as ``braindecode/DIVER-1-0.1s-tiny``
+    (iEEG, width 256) and ``braindecode/DIVER-1-1s-small`` (joint EEG/iEEG,
+    width 512) on Hugging Face::
 
         model = DIVER1.from_pretrained(
             "braindecode/DIVER-1-0.1s-tiny", chs_info=raw.info["chs"],
             n_times=500, n_outputs=2,
         )
 
-    ``scripts/convert_diver1_weights.py`` converts the official files; the
-    encoder features match the reference model exactly on CPU. The releases
-    have no classification head, so the head is initialized on load and needs
-    fine-tuning.
+    The classification head is initialized on load and needs fine-tuning.
+    Conversion utilities are distributed with the Hub checkpoints, not the
+    library. Encoder features have been checked against both released
+    checkpoints on CPU, with the reference's always-active attention dropout
+    disabled. This port disables attention dropout in eval mode.
 
     .. rubric:: License
 
-    The code is Apache-2.0, inherited from the MOIRAI / ``uni2ts`` code that the
-    reference encoder is adapted from. The released weights are MIT-licensed by
-    the DIVER Project.
-
-    .. note::
-        Numerical equivalence of the encoder features with the reference
-        implementation has been verified layer by layer, for both patch-size
-        variants, by transplanting a randomly initialised reference state dict,
-        and with both released checkpoints, whose encoder features match
-        exactly on CPU (``scripts/convert_diver1_weights.py``). The comparison requires
-        disabling the reference's attention dropout, which stays active in eval
-        mode there because ``dropout_p`` is passed straight to
-        :func:`~torch.nn.functional.scaled_dot_product_attention`; this port
-        gates it on ``self.training`` instead. Parameter counts match the
-        reference exactly, and Table 4 of [Han2025]_ once the pretraining-only
-        reconstruction heads and mask token are excluded (12.67M for the 1 s
-        Tiny encoder, 12.66M for 0.1 s).
-
-        Two points where the paper and the reference implementation disagree
-        were resolved in favour of the code and of Table 7:
-        :math:`\mathbf{E}_{\mathrm{spectral}}` is the FFT of the ``d_model``-dimensional
-        CNN token (FFT size ``d_model // 2 + 1``), not of the raw patch as the
-        prose suggests; and STCPE averages the overlapping windows rather than
-        summing them. The masked multi-domain reconstruction objective (MDRO),
-        the patch masking, the spatio-temporal resampling (STR) and the
-        :math:`\mu`-parameterization used for pretraining are out of scope.
+    Code is Apache-2.0 through the reference encoder's MOIRAI / ``uni2ts``
+    ancestry; released DIVER Project weights are MIT-licensed.
 
     Parameters
     ----------
@@ -373,11 +181,9 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         ``"mean"`` averages over channels and patches first, giving a head that
         is independent of ``n_chans``, which is what lets one instance read
         montages of any size.
-        is independent of ``n_chans`` and ``n_times``.
     mup_attention : bool
         Scale attention scores by ``1 / head_dim`` (the muP scaling the released
-        checkpoints were trained with, ``original_moirai_encoder.py:709`` in the
-        official code) instead of the standard ``1 / sqrt(head_dim)``. Keep it
+        checkpoints were trained with) instead of ``1 / sqrt(head_dim)``. Keep it
         ``True`` to load the pretrained weights.
     drop_prob : float
         Dropout rate used in the encoder and the spectral embedding.
@@ -396,14 +202,12 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     def __init__(
         self,
-        # --- signal-related (handled by EEGModuleMixin) ---
         n_outputs=None,
         n_chans=None,
         chs_info=None,
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
-        # --- model hyperparameters (defaults: DIVER-1-1s Tiny) ---
         patch_size: int = 500,
         d_model: int = 256,
         n_layers: int = 12,
@@ -432,8 +236,6 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        # Every per-electrode embedding is read from chs_info, so n_chans alone
-        # is not enough to build the model.
         if not self._chs_info:
             raise ValueError(
                 "DIVER1 reads the electrode modality, sub-modality and "
@@ -475,12 +277,9 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.drop_prob = drop_prob
         self.activation = activation
 
-        # Height of the token grid, kept as a plain int because
-        # EEGModuleMixin hides its signal properties from TorchScript, so a
-        # scripted forward cannot read self.n_chans.
+        # EEGModuleMixin signal properties are unavailable inside TorchScript.
         self.n_chans_grid = self.n_chans
-        # Patches are right-zero-padded when n_times is not a multiple of
-        # patch_size (braindecode's default), so round up.
+        # PatchTokenizer right-pads incomplete patches.
         self.n_patches = -(-self.n_times // patch_size)
         self.patch_tokenizer = PatchTokenizer(
             patch_size=patch_size, n_times=self.n_times
@@ -495,13 +294,18 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
 
         self.spectral_emb = (
-            _SpectralEmbedding(d_model, drop_prob) if use_spectral_emb else None
+            nn.Sequential(
+                OrderedDict(
+                    spectral_proj=nn.Sequential(
+                        nn.Linear(d_model // 2 + 1, d_model), nn.Dropout(drop_prob)
+                    )
+                )
+            )
+            if use_spectral_emb
+            else None
         )
 
-        # The montage read from chs_info is only the default: forward takes
-        # another recording's metadata directly, which is what lets one
-        # instance read subjects it was not built for. It rides along as a
-        # buffer, so it follows the module across devices.
+        # A device-aware default montage; forward can supply another recording.
         self.register_buffer(
             "default_chan_metadata",
             self.channel_metadata(self.chs_info),
@@ -523,17 +327,12 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             else None
         )
 
-        # Learned register tokens, prepended as an extra patch column
-        # (per-channel), an extra channel row (per-patch) and their corner (one
-        # global token). The reference initialises all three as 0.02 * N(0, 1)
-        # and reads none of them back, so they serve as attention sinks.
+        # Extra patch column, channel row and corner: attention-only registers.
         self.patch_register = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
         self.chan_register = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
         self.global_register = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
 
-        # Any-variate attention runs over the flattened (channel, patch) grid.
-        # Unflattening is keyed on the patch count, registers included, which
-        # is fixed, so that the channel count stays free.
+        # Fixed patch count (including registers), variable channel count.
         self.flatten_grid = Rearrange("batch chan patch dim -> batch (chan patch) dim")
         self.unflatten_grid = Rearrange(
             "batch (chan patch) dim -> batch chan patch dim", patch=self.n_patches + 1
@@ -566,12 +365,6 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
     def channel_metadata(chs_info: list[dict]) -> torch.Tensor:
         """Assemble one recording's electrode metadata for :meth:`forward`.
 
-        The modality is never guessed: the reference takes it as mandatory
-        metadata, and mislabelling scalp EEG as intracranial (or the reverse)
-        picks the wrong learned embedding slot. An undeterminable sub-modality
-        is tolerated with a zeroed embedding, as in the reference, and so is an
-        unknown position.
-
         Parameters
         ----------
         chs_info : list of dict
@@ -603,7 +396,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             dtype=torch.float32,
         )
         types = channel_types_from_chs_info(chs_info, num_channels=n_chans)
-        undetermined = sorted({t for t in types if t not in _TYPE_TO_MODALITY})
+        undetermined = sorted({t for t in types if t not in _TYPE_TO_SLOTS})
         if undetermined:
             raise ValueError(
                 f"DIVER1 cannot determine the recording modality of every "
@@ -612,19 +405,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"intracranial type ({sorted(INTRACRANIAL_CH_TYPES)}). Set the "
                 f"channel kinds in chs_info accordingly."
             )
-        # An unknown sub-modality has no slot of its own; -1 spells it out.
-        slots = torch.tensor(
-            [
-                (
-                    _MODALITIES.index(_TYPE_TO_MODALITY[t]),
-                    _SUBTYPES.index(_TYPE_TO_SUBTYPE[t])
-                    if t in _TYPE_TO_SUBTYPE
-                    else -1,
-                )
-                for t in types
-            ],
-            dtype=coords.dtype,
-        )
+        slots = torch.tensor([_TYPE_TO_SLOTS[t] for t in types], dtype=coords.dtype)
         return torch.cat([coords, slots], dim=-1)
 
     def forward(
@@ -662,9 +443,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         else:
             _check_channel_metadata(chan_metadata, n_chans)
             metadata = chan_metadata.to(device=x.device, dtype=x.dtype)
-        # Everything else adapts to the montage, but a flattened read-out is a
-        # fixed number of weights per token, so it can only ever serve the grid
-        # it was built for.
+        # A flattened head has weights tied to the construction-time montage.
         if self.pooling == "flatten" and n_chans != self.n_chans_grid:
             raise ValueError(
                 f"pooling='flatten' ties the read-out to the "
@@ -672,9 +451,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"{n_chans}. Build the model with pooling='mean' to encode "
                 f"montages of any size."
             )
-        # The rotary tables and (for ``pooling="flatten"``) the head are sized
-        # for a fixed patch count, so reject a different input length outright
-        # rather than silently zero-padding it to a different grid.
+        # Reject a different patch count before tokenization.
         if -(-x.shape[-1] // self.patch_size) != self.n_patches:
             raise ValueError(
                 f"DIVER1 was built for {self.n_patches} temporal patches of "
@@ -682,22 +459,15 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"samples; rebuild the model for this window length."
             )
 
-        # Build the token grid. Every term is added to the running grid, in the
-        # order of the reference ``Embedder``: the spectral and positional terms
-        # see the CNN output, and STCPE sees all of them (as in Eq. 1, which
-        # feeds it X).
+        # Reference order: CNN, spectrum, metadata, then input-conditioned STCPE.
         tokens = self.patch_tokenizer(x)
         tokens = self.patch_cnn(tokens)
         if self.spectral_emb is not None:
-            tokens = tokens + self.spectral_emb(tokens)
+            # Preserve the reference's float32 FFT even for float64 tokens.
+            spectrum = torch.fft.rfft(tokens.float(), dim=-1, norm="forward")
+            tokens = tokens + self.spectral_emb(spectrum.abs().to(tokens.dtype))
         if self.chan_emb is not None:
-            coords, coords_known, type_idx, subtype_idx, subtype_known = (
-                _split_channel_metadata(metadata)
-            )
-            # (n_chans, d_model), broadcast over batch and patches.
-            chan_emb = self.chan_emb(
-                coords, coords_known, type_idx, subtype_idx, subtype_known
-            )
+            chan_emb = self.chan_emb(metadata)
             tokens = tokens + chan_emb[None, :, None, :]
         if self.stcpe is not None:
             tokens = tokens + self.stcpe(tokens)
@@ -714,12 +484,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
         # Registers included, so one more than the input channel and patch counts.
         _, n_rows, n_cols, _ = tokens.shape
-        # Any-variate attention is over the flattened (channel, patch) grid; the
-        # two id vectors are what tells the attention which token is which. The
-        # reference carries them per sample, to support the variable-length
-        # subviews of pretraining; a braindecode batch always shares one montage
-        # and length, so a single shared pair of ids is equivalent and keeps the
-        # attention bias at (1, num_heads, seq, seq) instead of a per-sample copy.
+        # Shared montage/length: one pair of ids avoids per-sample bias copies.
         var_id = torch.arange(n_rows, device=x.device).repeat_interleave(n_cols)
         time_id = torch.arange(n_cols, device=x.device).repeat(n_rows)
         tokens = self.encoder(
@@ -728,8 +493,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             time_id=time_id,
         )
         tokens = self.unflatten_grid(tokens)
-        # Drop the register row and column, as the reference does: nothing reads
-        # their encoder outputs, not even its finetuning protocol.
+        # The reference discards register outputs, including during finetuning.
         tokens = tokens[:, 1:, 1:]
 
         if self.pooling == "flatten":
@@ -739,36 +503,11 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         return self.final_layer(pooled)
 
 
-class _PatchCNN(nn.Module):
-    """Strided CNN patch encoder mapping each patch to a ``d_model`` token.
+class _PatchCNN(nn.Sequential):
+    """Power-of-two padded patches encoded by Conv2d/GroupNorm/GELU.
 
-    Each patch is symmetrically zero-padded to the next power of two (500 to
-    512, 50 to 64), then a strided convolution reduces it to ``out_size``
-    positions of ``d_model // out_size`` channels, which are flattened into the
-    token. ``depth - 1`` width-3 convolutions refine the result at constant
-    length. With the defaults this reproduces Table 7 of [Han2025]_ exactly:
-    ``d_model / 8`` intermediate channels and stride 64 for ``patch_size=500``,
-    ``d_model / 16`` and stride 4 for ``patch_size=50``, kernels ``{63, 3, 3}``
-    and padding ``{31, 1, 1}``.
-
-    Parameters
-    ----------
-    n_patches : int
-        Number of temporal patches, needed to split the ``(chan patch)`` axis
-        back apart after the convolutions. Keying on the patch count rather
-        than the channel count leaves the channel count free at call time.
-    patch_size : int
-        Number of samples per patch.
-    d_model : int
-        Token embedding dimension.
-    stride : int, optional
-        Stride of the first convolution. Defaults to the padded patch length
-        divided by 8 (``patch_size >= 100``) or 16 (below).
-    kernel_size : int
-        Width of the first convolution; must be odd.
-    depth : int
-        Total number of convolution layers.
-    """
+    The fixed patch axis leaves the channel count free. GroupNorm uses the
+    output width as its group count (gcd fallback for narrow configurations)."""
 
     def __init__(
         self,
@@ -787,8 +526,7 @@ class _PatchCNN(nn.Module):
 
         padded = 1 << (patch_size - 1).bit_length()
         if stride is None:
-            # The divisor is the output length the reference keeps: 8 positions
-            # for the 1 s patch, 16 for the 0.1 s one, which 100 separates.
+            # Reference output lengths: 8 for 1 s patches, 16 for 0.1 s.
             stride = padded // (8 if patch_size >= 100 else 16)
         if stride < 1 or padded % stride:
             raise ValueError(
@@ -804,9 +542,7 @@ class _PatchCNN(nn.Module):
         hidden = d_model // out_size
 
         pad_total = padded - patch_size
-        self.pad = (pad_total // 2, pad_total - pad_total // 2)
-        # num_groups is out_size in the reference; fall back to the gcd so
-        # narrow configurations (hidden < out_size) stay constructible.
+        pad = (pad_total // 2, pad_total - pad_total // 2)
         n_groups = math.gcd(out_size, hidden)
 
         layers: list[nn.Module] = [
@@ -828,69 +564,23 @@ class _PatchCNN(nn.Module):
                 nn.GroupNorm(n_groups, hidden),
                 nn.GELU(),
             ]
-        # Every (channel, patch) pair is encoded independently, so the grid is
-        # folded into the height axis of a single-channel 2D convolution, which
-        # only ever slides along ``time``.
-        self.fold_grid = Rearrange("batch chan patch time -> batch 1 (chan patch) time")
-        self.proj_in = nn.Sequential(*layers)
-        # The ``hidden`` filters at each of the ``out`` surviving time positions
-        # are what makes up a token: ``d_model = hidden * out``.
-        self.unfold_grid = Rearrange(
-            "batch hidden (chan patch) out -> batch chan patch (hidden out)",
-            patch=n_patches,
+        # Named children preserve the released patch_cnn.proj_in.* keys.
+        self.add_module("pad", nn.ZeroPad2d(pad))
+        self.add_module(
+            "fold_grid", Rearrange("batch chan patch time -> batch 1 (chan patch) time")
         )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Map ``(batch, n_chans, n_patches, patch_size)`` to ``d_model`` tokens."""
-        x = F.pad(x, self.pad)
-        x = self.fold_grid(x)
-        x = self.proj_in(x)
-        return self.unfold_grid(x)
-
-
-class _SpectralEmbedding(nn.Module):
-    """Linear projection of the token magnitude spectrum (CBraMod-style).
-
-    Note that, as in the reference implementation and in Table 7 of [Han2025]_
-    (FFT size ``d_model // 2 + 1``), the FFT is taken over the ``d_model``
-    features of the CNN token, not over the raw patch samples.
-
-    Parameters
-    ----------
-    d_model : int
-        Token embedding dimension.
-    drop_prob : float
-        Dropout applied after the projection.
-    """
-
-    def __init__(self, d_model: int, drop_prob: float):
-        super().__init__()
-        self.spectral_proj = nn.Sequential(
-            nn.Linear(d_model // 2 + 1, d_model), nn.Dropout(drop_prob)
+        self.add_module("proj_in", nn.Sequential(*layers))
+        self.add_module(
+            "unfold_grid",
+            Rearrange(
+                "batch hidden (chan patch) out -> batch chan patch (hidden out)",
+                patch=n_patches,
+            ),
         )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # rfft is not implemented for half precision: compute it in float32 and
-        # cast the amplitudes back.
-        spectrum = torch.fft.rfft(x.float(), dim=-1, norm="forward")
-        return self.spectral_proj(spectrum.abs().to(x.dtype))
 
 
 class _ChannelMetaEmbedding(nn.Module):
-    r"""Per-electrode coordinate and type embedding, concatenated.
-
-    Reproduces :math:`[\mathbf{E}_{\mathrm{position}},
-    \mathbf{E}_{\mathrm{modality}}]`: a sinusoidal encoding of the MNI
-    coordinates over the leading features, and the sum of a recording-modality
-    and an electrode-sub-modality embedding over the trailing quarter
-    (Table 7 of [Han2025]_). Electrodes with unknown coordinates or unknown
-    sub-modality contribute zero to the corresponding term.
-
-    Parameters
-    ----------
-    d_model : int
-        Total width of the concatenated embedding.
-    """
+    """Concatenate PopT coordinates and modality/subtype embeddings."""
 
     def __init__(self, d_model: int):
         super().__init__()
@@ -901,108 +591,50 @@ class _ChannelMetaEmbedding(nn.Module):
                 f"got {d_model}."
             )
         self.coord_emb = _SinusoidalCoordEmbedding(d_model - d_type)
-        self.type_emb = nn.Embedding(len(_MODALITIES), d_type)
-        self.subtype_emb = nn.Embedding(len(_SUBTYPES), d_type)
+        self.type_emb = nn.Embedding(2, d_type)
+        self.subtype_emb = nn.Embedding(3, d_type)
 
-    def forward(
-        self,
-        coords: torch.Tensor,
-        coords_known: torch.Tensor,
-        type_idx: torch.Tensor,
-        subtype_idx: torch.Tensor,
-        subtype_known: torch.Tensor,
-    ) -> torch.Tensor:
-        """Embed ``(n_chans, 3)`` coordinates and type indices into ``d_model``."""
-        position = self.coord_emb(coords) * coords_known
+    def forward(self, metadata: torch.Tensor) -> torch.Tensor:
+        coords = metadata[:, :3]
+        coords_known = valid_location_mask(coords).to(coords.dtype)
+        subtype = metadata[:, 4].long()
+        subtype_known = (subtype >= 0).to(coords.dtype).unsqueeze(-1)
+        position = self.coord_emb(torch.nan_to_num(coords)) * coords_known
         modality = (
-            self.type_emb(type_idx) + self.subtype_emb(subtype_idx) * subtype_known
+            self.type_emb(metadata[:, 3].long())
+            + self.subtype_emb(subtype.clamp(min=0)) * subtype_known
         )
         return torch.cat([position, modality], dim=-1)
 
 
 class _SinusoidalCoordEmbedding(nn.Module):
-    r"""Sinusoidal encoding of 3D electrode coordinates, following PopT.
+    """PopT coordinate encoding: interleaved sin/cos per xyz axis.
 
-    Each of the three axes is encoded on its own, exactly as a Transformer
-    encodes a token position: the coordinate is divided by a geometric
-    progression of :math:`n / 2` wavelengths, and every resulting angle is read
-    out as a sine and a cosine,
-
-    .. math::
-        \mathbf{e}(p)_{2k} = \sin\left(\frac{s \, p}{\tau^{2k/n}}\right), \quad
-        \mathbf{e}(p)_{2k+1} = \cos\left(\frac{s \, p}{\tau^{2k/n}}\right),
-
-    for a coordinate :math:`p` in millimetres, with :math:`s = 2 \pi` ``scale``,
-    :math:`\tau` the ``temperature`` and :math:`n` features per axis. The
-    defaults make for a deliberately coarse bank: the shortest wavelength,
-    256 mm, is already wider than a head, and the rest stretch to hundreds of
-    metres, so they act as near-linear ramps. The code therefore says roughly
-    where in the brain an electrode sits rather than separating neighbouring
-    contacts. The three encodings are concatenated and right-padded with zeros
-    to ``d_model``.
-
-    Parameters
-    ----------
-    d_model : int
-        Output width of the encoding.
-    temperature : float
-        Base of the frequency progression. Defaults to PopT's setting.
-    scale : float
-        Multiplier applied to the coordinates before encoding; its inverse is
-        the shortest wavelength of the bank. Defaults to PopT's setting.
-    """
+    Coordinates are in millimetres; the shortest wavelength is 256 mm.
+    An even feature count per axis is padded to the requested width."""
 
     def __init__(
         self, d_model: int, temperature: float = 2000.0, scale: float = 1 / 256
     ):
         super().__init__()
         n_dim = 3
-        # An even number of features per axis, so that every wavelength gets
-        # both its sine and its cosine. What the three axes then leave short of
-        # d_model is made up by zero padding.
         self.n_feats = d_model // n_dim // 2 * 2
         self.padding = d_model - self.n_feats * n_dim
         self.scale = scale * 2.0 * math.pi
-        # The n_feats // 2 wavelengths of the bank, in geometric progression.
         dim_t = torch.arange(0, self.n_feats, 2, dtype=torch.float32)
         dim_t = temperature ** (dim_t / self.n_feats)
         self.register_buffer("dim_t", dim_t, persistent=False)
 
     def forward(self, xyz: torch.Tensor) -> torch.Tensor:
         """Encode coordinates of shape ``(..., 3)`` into ``(..., d_model)``."""
-        # One angle per (axis, wavelength) pair.
         angles = (xyz * self.scale).unsqueeze(-1) / self.dim_t
-        # Every wavelength is read out twice, as a sine and as a cosine, and
-        # the stack puts the two of them side by side.
         pairs = torch.stack([angles.sin(), angles.cos()], dim=-1)
-        # Flatten the three axes and their features into one vector, then pad.
         emb = pairs.flatten(start_dim=-3)
         return F.pad(emb, (0, self.padding))
 
 
 class _STCPE(nn.Module):
-    """Spatio-temporal conditional positional embedding.
-
-    Projects the token grid down to ``d_model // ratio``, runs a one-layer
-    any-variate Transformer over every ``window``-wide temporal window (all
-    channels at once), averages the overlapping window outputs, and projects
-    back up. Sliding windows make the bias translation equivariant in time and
-    the inner any-variate encoder makes it permutation equivariant in channels.
-
-    Parameters
-    ----------
-    d_model : int
-        Token embedding dimension of the grid.
-    ratio : int
-        Bottleneck ratio; the inner encoder runs at ``d_model // ratio``.
-    window : int
-        Width of the temporal window, in patches.
-    activation : type[nn.Module]
-        Activation layer class of the inner feed-forward block.
-    n_patches : int
-        Width of the token grid, which fixes how many windows cover it. The
-        height, i.e. the channel count, is read off the grid at call time.
-    """
+    """Encode full-height sliding windows and average overlapping outputs."""
 
     def __init__(
         self,
@@ -1029,16 +661,11 @@ class _STCPE(nn.Module):
             inner_heads -= 1
         self.window = window
         self.n_patches = n_patches
-        # Full-height, window-wide patches of the (channel, patch) grid. The
-        # height follows the input, so only the time axis is fixed here.
-        # Zero-padding by window - 1 keeps a window centred on every patch, so
-        # there are that many more windows than patches.
+        # Full-height windows, padded in time to include partial overlaps.
         self.stride = (1, 1)
         self.padding = (0, window - 1)
         self.n_windows = n_patches + window - 1
-        # The feature axis is folded into the batch so that unfold and fold only
-        # ever slide over time, and the window is full height so that every
-        # window holds all the channels.
+        # Fold features into batch; each temporal window spans every channel.
         self.fold_features = Rearrange(
             "batch chan patch dim -> (batch dim) 1 chan patch"
         )
@@ -1071,8 +698,6 @@ class _STCPE(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Map a token grid to a positional bias of the same shape."""
-        # A window spans the whole height of the grid, so its geometry follows
-        # the channel count of this batch.
         n_chans = x.shape[1]
         kernel_size = (n_chans, self.window)
         grid_size = (n_chans, self.n_patches)
@@ -1087,8 +712,6 @@ class _STCPE(nn.Module):
         )
         windows = self.windows_to_batch(unfolded)
 
-        # Inside a window, tokens are tagged by their channel and their offset
-        # from the start of the window.
         var_id = torch.arange(n_chans, device=x.device).repeat_interleave(self.window)
         time_id = torch.arange(self.window, device=x.device).repeat(n_chans)
         encoded = self.encoder(windows, var_id=var_id, time_id=time_id)
@@ -1101,9 +724,8 @@ class _STCPE(nn.Module):
             stride=self.stride,
             padding=self.padding,
         )
-        # Average rather than sum the overlapping windows, as the reference
-        # implementation does (the paper writes the un-normalised sum). The
-        # divisor counts how many windows cover each patch.
+        # Fold in the working dtype: a scalar window divisor changes BF16
+        # accumulation for large windows (e.g. 259 overlaps accumulate to 256).
         overlap = F.fold(
             torch.ones(
                 1,
@@ -1122,25 +744,7 @@ class _STCPE(nn.Module):
 
 
 class _AnyVariateEncoder(nn.Module):
-    """Stack of any-variate Transformer blocks over flattened grid tokens.
-
-    Parameters
-    ----------
-    d_model : int
-        Token embedding dimension.
-    n_layers : int
-        Number of blocks.
-    num_heads : int
-        Number of attention heads.
-    d_ff : int
-        Hidden dimension of the feed-forward blocks.
-    drop_prob : float
-        Dropout rate.
-    activation : type[nn.Module]
-        Activation layer class of the feed-forward blocks.
-    max_len : int
-        Largest temporal index the rotary tables must cover.
-    """
+    """Any-variate blocks with shared temporal RoPE and a final RMSNorm."""
 
     def __init__(
         self,
@@ -1154,9 +758,7 @@ class _AnyVariateEncoder(nn.Module):
         mup_attention: bool = True,
     ):
         super().__init__()
-        # The rotary tables are parameter-free, so all layers share one module
-        # (``shared_time_qk_proj=True`` upstream); the binary channel bias is
-        # learned and therefore per-layer.
+        # Share parameter-free RoPE; learned channel biases remain per-layer.
         self.rotary = _RotaryEmbedding(d_model // num_heads, max_len)
         self.layers = nn.ModuleList(
             [
@@ -1188,23 +790,7 @@ class _AnyVariateEncoder(nn.Module):
 
 
 class _AnyVariateEncoderLayer(nn.Module):
-    """Pre-norm block: any-variate self-attention then a SwiGLU feed-forward.
-
-    Parameters
-    ----------
-    d_model : int
-        Token embedding dimension.
-    num_heads : int
-        Number of attention heads.
-    d_ff : int
-        Hidden dimension of the feed-forward block.
-    drop_prob : float
-        Dropout rate.
-    activation : type[nn.Module]
-        Activation layer class of the feed-forward block.
-    rotary : _RotaryEmbedding
-        Shared rotary embedding applied to the queries and keys.
-    """
+    """Pre-norm attention and bias-free SwiGLU residual block."""
 
     def __init__(
         self,
@@ -1237,31 +823,10 @@ class _AnyVariateEncoderLayer(nn.Module):
 
 
 class _AnyVariateAttention(nn.Module):
-    """Self-attention with rotary temporal offsets and a binary channel bias.
+    """QK-normalized attention with temporal RoPE and learned channel bias.
 
-    Implements the attention energy of [Han2025]_,
-
-    .. math::
-        E_{ij,mn} = (\\mathbf{W}^Q \\mathbf{x}_{i,m})^\\top \\mathbf{R}_{i-j}
-        (\\mathbf{W}^K \\mathbf{x}_{j,n}) + u^{(1)} \\mathbb{1}_{\\{m = n\\}}
-        + u^{(2)} \\mathbb{1}_{\\{m \\neq n\\}},
-
-    with per-layer, per-head biases :math:`u^{(1)}, u^{(2)}`. Queries and keys
-    are RMS-normalised per head before the rotation (QK-norm). The reference
-    uses grouped-query attention configured with one head per group, i.e. plain
-    multi-head attention, which is what we implement.
-
-    Parameters
-    ----------
-    d_model : int
-        Token embedding dimension.
-    num_heads : int
-        Number of attention heads.
-    drop_prob : float
-        Attention dropout rate.
-    rotary : _RotaryEmbedding
-        Shared rotary embedding applied to the queries and keys.
-    """
+    The reference uses one head per query group, i.e. ordinary multi-head
+    attention. The two bias slots distinguish same from different channels."""
 
     def __init__(
         self,
@@ -1297,9 +862,7 @@ class _AnyVariateAttention(nn.Module):
         key = self.rotary(self.k_norm(self.split_heads(self.k_proj(x))), time_id)
         value = self.split_heads(self.v_proj(x))
 
-        # u(1) on the diagonal blocks (same electrode), u(2) off them. Only the
-        # same/different distinction enters, never the channel index, which is
-        # what makes the encoder channel-permutation equivariant.
+        # Bias slot 1 for same-channel pairs, slot 0 otherwise.
         same_channel = var_id.unsqueeze(-1) == var_id.unsqueeze(-2)
         weight = self.channel_bias.weight  # (2, num_heads)
         bias = torch.where(
@@ -1321,17 +884,7 @@ class _AnyVariateAttention(nn.Module):
 
 
 class _RotaryEmbedding(nn.Module):
-    """Interleaved rotary position embedding indexed by an explicit position id.
-
-    Parameters
-    ----------
-    head_dim : int
-        Dimension of an attention head; must be even.
-    max_len : int
-        Number of positions to tabulate.
-    base : float
-        Base of the geometric frequency progression.
-    """
+    """Interleaved RoPE indexed by explicit temporal positions."""
 
     def __init__(self, head_dim: int, max_len: int, base: float = 10000.0):
         super().__init__()
@@ -1345,32 +898,18 @@ class _RotaryEmbedding(nn.Module):
         self.register_buffer("cos", angles.cos(), persistent=False)
         self.register_buffer("sin", angles.sin(), persistent=False)
 
-    @staticmethod
-    def _rotate(x: torch.Tensor) -> torch.Tensor:
-        even, odd = x[..., 0::2], x[..., 1::2]
-        return torch.stack([-odd, even], dim=-1).flatten(start_dim=-2)
-
     def forward(self, x: torch.Tensor, position_id: torch.Tensor) -> torch.Tensor:
         """Rotate ``(batch, heads, seq, head_dim)`` by the angle of each position."""
         cos = self.cos[position_id].to(x.dtype)
         sin = self.sin[position_id].to(x.dtype)
-        return cos * x + sin * self._rotate(x)
+        direct = cos * x
+        even, odd = x[..., 0::2], x[..., 1::2]
+        rotated = torch.stack([-odd, even], dim=-1).flatten(start_dim=-2)
+        return direct + sin * rotated
 
 
 class _SwiGLUFeedForward(nn.Module):
-    """Gated-linear-unit feed-forward block, without biases.
-
-    Parameters
-    ----------
-    d_model : int
-        Input and output dimension.
-    d_ff : int
-        Hidden dimension.
-    drop_prob : float
-        Dropout applied to the hidden and output activations.
-    activation : type[nn.Module]
-        Activation layer class applied to the gate.
-    """
+    """Bias-free gated feed-forward with hidden and output dropout."""
 
     def __init__(
         self, d_model: int, d_ff: int, drop_prob: float, activation: type[nn.Module]

@@ -28,12 +28,8 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
-- Add :class:`braindecode.models.DIVER1`, an any-variate intracranial EEG
-  foundation model with full electrode-time attention, rotary temporal
-  offsets, a learned same/cross-channel attention bias and a sliding-window
-  spatio-temporal conditional positional embedding. With ``pooling="mean"``,
-  one instance encodes recordings from different subjects: pass the montage of
-  the batch to ``forward`` as ``chan_metadata``, built by
+- Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
+  model with pretrained encoders and support for varying montages through
   :meth:`braindecode.models.DIVER1.channel_metadata`
   (:gh:`1170` by `Julien Gadonneix`_).
 
