@@ -27,6 +27,7 @@ except ImportError:
 from braindecode.models import (
     LUNA,
     REVE,
+    ZUNA,
     CBraMod,
     CodeBrain,
     Labram,
@@ -733,6 +734,62 @@ def test_zuna_builds_rotary_frequency_table_natively(axis_dim):
     )
     expected = torch.outer(positions, inverse_frequencies).repeat_interleave(2, dim=1)
     torch.testing.assert_close(table, expected[:, :axis_dim])
+
+
+# ==============================================================================
+# Tests for ZUNA's on_non_divisible option
+# ==============================================================================
+
+_ZUNA_SMALL = dict(n_outputs=2, sfreq=250.0, dim=64, n_layers=1, n_heads=2, head_dim=32)
+
+
+def _zuna_chs_info():
+    info = mne.create_info(["Fz", "Cz", "Pz", "C3", "C4", "O1"], 250.0, "eeg")
+    info.set_montage("standard_1020")
+    return info["chs"]
+
+
+def test_zuna_rejects_non_divisible_n_times_by_default():
+    """The default ``on_non_divisible="error"`` keeps the previous behavior."""
+    with pytest.raises(ValueError, match="divisible"):
+        ZUNA(chs_info=_zuna_chs_info(), n_times=1000, **_ZUNA_SMALL)
+
+
+def test_zuna_rejects_invalid_on_non_divisible():
+    """An unknown ``on_non_divisible`` value raises, even for a divisible n_times."""
+    with pytest.raises(ValueError, match="on_non_divisible"):
+        ZUNA(
+            chs_info=_zuna_chs_info(),
+            n_times=1024,
+            on_non_divisible="bogus",
+            **_ZUNA_SMALL,
+        )
+
+
+def test_zuna_pad_equals_explicit_zero_padding():
+    """``"pad"`` matches the same weights built with a padded ``n_times``."""
+    torch.manual_seed(0)
+    padded = ZUNA(
+        chs_info=_zuna_chs_info(), n_times=1000, on_non_divisible="pad", **_ZUNA_SMALL
+    ).eval()
+    reference = ZUNA(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL).eval()
+    reference.load_state_dict(padded.state_dict())
+    x = torch.randn(2, 6, 1000)
+    torch.testing.assert_close(
+        padded(x), reference(torch.nn.functional.pad(x, (0, 24))), rtol=0, atol=0
+    )
+
+
+def test_zuna_crop_drops_trailing_samples():
+    """``"crop"`` matches the same weights built with a cropped ``n_times``."""
+    torch.manual_seed(0)
+    cropped = ZUNA(
+        chs_info=_zuna_chs_info(), n_times=1000, on_non_divisible="crop", **_ZUNA_SMALL
+    ).eval()
+    reference = ZUNA(chs_info=_zuna_chs_info(), n_times=992, **_ZUNA_SMALL).eval()
+    reference.load_state_dict(cropped.state_dict())
+    x = torch.randn(2, 6, 1000)
+    torch.testing.assert_close(cropped(x), reference(x[..., :992]), rtol=0, atol=0)
 
 
 def test_reve_attention_matches_explicit_attention():
