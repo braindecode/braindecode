@@ -33,7 +33,7 @@ Enhancements
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
   regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
 
-- Add a bounded LaBraM SAE intervention tutorial
+- Add a bounded pretrained-LaBraM SAE intervention tutorial on BNCI2014_001
   using optional SAE Lens, without adding an SAE implementation to Braindecode
   (:gh:`1120` by `Vandit Shah`_ and `Bruno Aristimunha`_)
 
