@@ -274,14 +274,24 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
             seq_id = torch.zeros(batch_size, n_chans, dtype=torch.long, device=x.device)
 
         h = self.input_embedding(x, coords, seq_id)
+        # Prepend a never-masked slot for the CLS token. Written into a new name
+        # rather than reassigning the optional argument, so that TorchScript
+        # keeps the narrowing from the ``is not None`` test.
+        padded_mask: torch.Tensor | None = None
         if key_padding_mask is not None:
-            cls_keep = torch.zeros(
-                batch_size, 1, dtype=torch.bool, device=key_padding_mask.device
-            )
-            key_padding_mask = torch.cat([cls_keep, key_padding_mask.bool()], dim=1)
+            cls_keep = torch.zeros(batch_size, 1, dtype=torch.bool, device=x.device)
+            # ``.to(torch.bool)`` rather than ``.bool()``: TorchScript's Tensor
+            # API does not expose the latter.
+            padded_mask = torch.cat([cls_keep, key_padding_mask.to(torch.bool)], dim=1)
         # (batch, 1 + n_chans, hidden_dim)
-        z = self.transformer_encoder(h, src_key_padding_mask=key_padding_mask)
+        z = self.transformer_encoder(h, src_key_padding_mask=padded_mask)
         cls_token = z[:, 0, :]
+        logits = self.final_layer(cls_token)
         if return_features:
+            # TorchScript prunes this branch at compile time, so the scripted
+            # forward stays monomorphic while eager mode keeps the feature dict
+            # (same pattern as :class:`~braindecode.models.Brant`).
+            if torch.jit.is_scripting():
+                return logits
             return {"features": cls_token, "cls_token": cls_token}
-        return self.final_layer(cls_token)
+        return logits
