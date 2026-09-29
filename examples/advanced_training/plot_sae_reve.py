@@ -3,19 +3,35 @@
 Sparse feature interventions in a pretrained REVE
 =================================================
 
-This tutorial takes the pretrained :class:`~braindecode.models.REVE` EEG
-foundation model [1]_, keeps its encoder frozen and trains only its linear
-classification head on one subject of the BCI Competition IV 2a motor-imagery
-dataset (BNCI2014_001 via MOABB). It then fits a Top-K sparse autoencoder
-(SAE) to the token embeddings of one transformer block with
-`SAE Lens <https://github.com/decoderesearch/SAELens>`_, and *intervenes* on
-the learned features while the model classifies a session recorded on
-another day. Braindecode supplies the data pipeline, the pretrained model and
-the classifier wrapper, MOABB the Euclidean alignment, SAE Lens the
-dictionary with its Top-K activation, losses and training loop, and
-scikit-learn the metrics.
+A sparse autoencoder (SAE) rewrites a network's activations as a sum of a few
+features taken from a learned dictionary. A dictionary can reconstruct the
+activations well and still be made of directions that the classifier never
+reads, so a good reconstruction alone does not tell whether the features
+matter. This tutorial tests whether a sparse dictionary fitted to a frozen
+pretrained EEG transformer can expose features that its classifier actually
+uses. To address this question, we run two tests on a session recorded on
+another day:
 
-.. topic:: What is different about REVE's tokens?
+1. **Does the dictionary preserve what the model computes?** We substitute
+   the reconstruction for the tokens of one block and count the decisions
+   that stay the same, against an untrained dictionary and mean tokens.
+2. **Does the model use the features selected for a class for that class?**
+   We remove the features most selective for a class and measure the drop in
+   the probability of that class, against random feature sets and the sets
+   selected for the other classes.
+
+We keep the encoder of the pretrained :class:`~braindecode.models.REVE` EEG
+foundation model [1]_ frozen and train only its linear classification head on
+one subject of the BCI Competition IV 2a motor-imagery dataset (BNCI2014_001
+via MOABB). We then fit a Top-K SAE to the token embeddings of one
+transformer block with `SAE Lens <https://github.com/decoderesearch/SAELens>`_
+and *intervene* on the learned features while the model classifies the test
+session. Braindecode supplies the data pipeline, the pretrained model and the
+classifier wrapper, MOABB the Euclidean alignment, SAE Lens the dictionary
+with its Top-K activation, losses and training loop, and scikit-learn the
+metrics.
+
+.. topic:: REVE's tokens carry a scalp position and a time
 
     REVE cuts every channel into 1-s patches and turns each (channel, patch)
     pair into one token. A 4D positional encoding, computed from the
@@ -23,20 +39,16 @@ scikit-learn the metrics.
     where and when each token was recorded. There is no classification
     token: the default head flattens the tokens of the last block and applies
     a linear layer, so every token of every block can reach the decision.
-    An SAE fitted to these tokens learns features that come with a *scalp
-    location* and a *time*, which we can draw as topographic maps. We then
-    ask a causal question: if we remove the features that were most
-    selective for a class, does the model become less confident in that
-    class, and more so than when removing random features or the features
-    selected for another class?
+    An SAE fitted to these tokens therefore learns features that come with a
+    *scalp location* and a *time*, which we can draw as topographic maps.
 
-We use three splits. The first four runs of the training session (*fit*)
-train the head and the dictionary. Its last two runs (*validation*) were used
-to choose the model setup, the block and the dictionary size. The test
-session, recorded on a different day, is used only for the final evaluation.
-All numbers come from a single subject, a frozen encoder and a short SAE run.
-They describe this run, not REVE or motor imagery in general, and support no
-scientific claim.
+We use three splits, and no choice depends on the test session. The first
+four runs of the training session (*fit*) train the head and the dictionary.
+Its last two runs (*validation*) were used to choose the model setup, the
+block and the dictionary size. The test session, recorded on a different day,
+is used only for the final evaluation. All numbers come from a single subject,
+a single seed, a frozen encoder and a short SAE run. They describe this run,
+not REVE or motor imagery in general, and support no scientific claim.
 
 This example needs the optional SAE Lens dependency, installed with
 ``pip install 'braindecode[sae]'`` (or ``pip install sae-lens==6.51.3`` in a
@@ -93,10 +105,11 @@ from braindecode.util import set_random_seeds
 
 ######################################################################
 # All figures share one style, set here once. The result is drawn in
-# orange, controls in warm grey, and the pretrained blocks that finish an
-# edited forward pass in blue. Each title states what its figure shows and
-# is computed from the numbers it reports, and numbers are set in a
-# monospace font. The fonts fall back to DejaVu, which ships with matplotlib.
+# orange, the native model in black, controls in grey, and the pretrained
+# blocks that finish an edited forward pass in blue. Each title states what
+# its figure shows and is computed from the numbers it reports, and numbers
+# are set in a monospace font. The fonts fall back to DejaVu, which comes
+# with matplotlib.
 
 INK, ACCENT, MUTED, SUBTLE = "#1d272a", "#c3680e", "#a8a397", "#6f6f6f"
 STEEL = "#4e728a"
@@ -179,14 +192,14 @@ preprocess(
 # the cue (800 samples at 200 Hz).
 #
 # The spatial covariance of the EEG drifts between sessions. As in the REVE
-# evaluation on this dataset, we apply Euclidean alignment (EA) [2]_ with
-# MOABB's `EuclideanAlignment
+# evaluation on this dataset, we reduce this drift with Euclidean alignment
+# (EA) [2]_, using MOABB's `EuclideanAlignment
 # <https://moabb.neurotechx.com/docs/generated/moabb.datasets.preprocessing.EuclideanAlignment.html>`_.
 # Every window of a session is multiplied by the inverse square root of the
 # session's mean spatial covariance, so that the windows of each session have
 # an identity mean covariance. Junqueira et al. [3]_ evaluated EA
 # systematically with deep learning models for EEG decoding. We use the sample
-# covariance (``estimator="scm"``), as in [2]_. MOABB's default Ledoit-Wolf
+# covariance (``estimator="scm"``), as in [2]_: MOABB's default Ledoit-Wolf
 # shrinkage is meant for short or noisy trials, and 800 samples of 22 channels
 # are neither.
 #
@@ -194,9 +207,10 @@ preprocess(
 # without their labels: ``fit_transform`` on the training session (fit and
 # validation runs together), and separately on the test session. The head and
 # the SAE are fitted on the training session only, so no statistic of the
-# test session enters their fitting. For the test session the alignment is
-# transductive: its windows are aligned with statistics computed on all of
-# them, as in REVE's evaluation.
+# test session enters their fitting. The alignment of the test session is,
+# however, transductive: its windows are aligned with statistics computed on
+# all of them, as in REVE's evaluation. An online decoder would have to
+# estimate these statistics from the trials seen so far.
 
 windows_dataset = create_windows_from_events(
     dataset,
@@ -300,11 +314,14 @@ print(f"REVE-base: {n_params / 1e6:.1f} M parameters, {n_blocks} blocks")
 #   the head. Resuming from block 18's output means that no edit needs to
 #   recompute blocks 1–18.
 #
-# The figure shows where each step acts: the SAE reads and writes the
-# stream at block 18 (orange), and ``run_blocks`` reruns only the blue
-# blocks. The lower panel shows why a hook cannot do this: what a submodule
-# returns is the update, and the stream itself only exists in the loop.
-# After training the head, we check that ``run_blocks`` reproduces
+# The figure shows where each step acts. Blocks 1–18 run once, and their
+# output is cached. The SAE reads and edits the stream at block 18
+# (orange), in one of two ways: the first test replaces the tokens by their
+# reconstruction, and the second takes away only the decoded contribution of
+# the removed features. ``run_blocks`` then applies only the blue blocks
+# again, once per edit. The lower panel shows why a hook cannot do this: what a
+# submodule returns is the update, and the stream itself only exists in the
+# loop. After training the head, we check that ``run_blocks`` reproduces
 # ``model(x)``.
 
 block = 18
@@ -331,21 +348,25 @@ for b in range(1, n_blocks + 1):
         )
     style = box | {"fc": fc, "ec": ec}
     ax.text(b, 0, b, ha="center", va="center", fontsize=7.5, color=color, bbox=style)
-ax.text(
-    0.5,
-    0.75,
-    "token_streams: model(x, return_output=True) returns streams 0-22",
-    family="monospace",
-    fontsize=8,
-)
-ax.text(
-    block + 0.6,
-    0.75,
-    f"run_blocks(tokens, {block + 1})",
-    family="monospace",
-    fontsize=8,
-    color=STEEL,
-)
+for start, end, color, text in (  # what each function computes, and how often
+    (0.6, block + 0.4, SUBTLE, "token_streams: model(x, return_output=True), once"),
+    (block + 0.6, n_blocks + 3.3, STEEL, f"run_blocks(tokens, {block + 1}), per edit"),
+):
+    ax.annotate(
+        "",
+        xy=(start, 0.55),
+        xytext=(end, 0.55),
+        arrowprops=dict(arrowstyle="|-|", color=color, lw=0.8, mutation_scale=3),
+    )
+    ax.text(
+        (start + end) / 2,
+        0.72,
+        text,
+        ha="center",
+        color=color,
+        fontsize=8,
+        family="monospace",
+    )
 ax.annotate("", xy=(block + 0.5, -1.55), xytext=(block + 0.5, -0.8), arrowprops=arrow)
 ax.text(
     block + 0.2,
@@ -369,7 +390,16 @@ ax.annotate(
     xytext=(block + 3.4, -1.6),
     arrowprops=arrow | {"connectionstyle": "arc3,rad=0.3"},
 )
-ax.set(xlim=(-2.8, n_blocks + 3.7), ylim=(-2.5, 1.1))
+ax.text(
+    block + 2,
+    -2.45,
+    "test 1: tokens := reconstruction\ntest 2: tokens − decoded removed features",
+    ha="center",
+    va="top",
+    fontsize=7.5,
+    color=ACCENT,
+)
+ax.set(xlim=(-2.8, n_blocks + 3.7), ylim=(-3.15, 1.1))
 ax.set_title(
     f"The SAE reads the tokens after block {block}, and run_blocks finishes the "
     "forward pass from its edit"
@@ -481,15 +511,17 @@ print(
 )
 
 ######################################################################
-# Which blocks influence the prediction?
-# --------------------------------------
+# Every block influences the decision
+# -----------------------------------
 #
-# We skip one block at a time, i.e. pass its input unchanged to the next
-# block, and count how many validation predictions stay the same: skipping
-# block ``b`` means feeding stream ``b - 1`` to ``run_blocks`` from block
-# ``b + 1``. Only the validation windows are used, because this check informs
-# a modelling choice. The figure shows the share of decisions that change,
-# with the block the SAE reads in orange.
+# To decide where the dictionary can be fitted, we first measure how much
+# each block contributes to the decision. We skip one block at a time, i.e.
+# pass its input unchanged to the next block, and count how many validation
+# predictions stay the same: skipping block ``b`` means feeding stream
+# ``b - 1`` to ``run_blocks`` from block ``b + 1``. Only the validation
+# windows are used, because this check informs a modelling choice. The
+# figure shows the complement, the share of decisions that change, with the
+# block the SAE reads in orange.
 
 with torch.no_grad():
     unchanged = np.array(
@@ -538,17 +570,20 @@ fig.suptitle(
     x=0.01,
     ha="left",
 )
+plt.show()
 
 ######################################################################
-# Every block matters to some extent: unlike a head that reads a single
-# classification token, REVE's flattening head sees every token of the last
-# block, and each block rewrites all tokens. When we ran this example,
-# skipping the first block changed about three quarters of the validation
-# decisions and skipping block 9 about two thirds, while each of the last
-# eight blocks still changed 12–22% of them.
+# No block can be skipped without changing some decisions. When we ran this
+# example, skipping the first block changed about three quarters of the
+# validation decisions and skipping block 9 about two thirds, while each of
+# the last eight blocks still changed 12–22% of them. The head explains why:
+# unlike a head that reads a single classification token, REVE's flattening
+# head sees every token of the last block, and each block rewrites all
+# tokens. An edit at block 18 thus passes through four more blocks, which can
+# strengthen or compensate for it, before it reaches the head.
 #
-# How the settings were chosen
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# The settings were fixed on the training session
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # The choices below were made on the validation runs only, before the test
 # session was used, in runs that are not part of this example:
@@ -575,7 +610,7 @@ fig.suptitle(
 #   twice as long to train and 201 of them were inactive on those windows.
 #
 # The number of features removed per class (32) and of random control sets
-# (20) were fixed in advance.
+# (20) were fixed in advance, so no setting depends on the test session.
 #
 # Fitting an SAE to the block-18 tokens
 # -------------------------------------
@@ -686,14 +721,16 @@ print(f"Mean active features per token: {(test_codes != 0).sum(-1).float().mean(
 print(f"Features never active on the fit windows: {(~active_on_fit).sum()}")
 
 ######################################################################
-# Substituting the reconstruction into the model
-# ----------------------------------------------
+# Test 1: the SAE reconstruction preserves most decisions
+# -------------------------------------------------------
 #
-# We replace the output of block 18 by the dictionary's reconstruction, undo
-# the standardization and let ``run_blocks`` finish the forward pass through
-# blocks 19–22 and the head. We compare the trained SAE with the untrained
-# one and with setting every token to its fit mean. Agreement is the fraction
-# of test predictions that match those of the unedited model, i.e.
+# To test whether the dictionary preserves what the model computes, we
+# replace the output of block 18 by the dictionary's reconstruction, undo the
+# standardization and let ``run_blocks`` finish the forward pass through
+# blocks 19–22 and the head. Two controls set the floor: the untrained
+# dictionary, which has the same initialization, and every token set to its
+# fit mean, which removes all information at block 18. Agreement is the
+# fraction of test predictions that match those of the unedited model, i.e.
 # :func:`~sklearn.metrics.accuracy_score` with the native predictions as the
 # reference.
 
@@ -718,20 +755,90 @@ for name, pred in substituted_pred.items():
     )
 
 ######################################################################
+# The figure shows the table next to the reconstruction error. The native
+# model (black) uses the exact tokens, the trained SAE (orange) is the result
+# and the two controls (grey) show what an uninformative substitute costs.
+# For the mean tokens, the FVU is the error of predicting zero in the
+# standardized coordinates. The vertical line marks chance (25%).
+
+predictions = {"native model": baseline_pred, **substituted_pred}
+zero = torch.zeros_like(test_scaled)  # the fit mean, in standardized coordinates
+errors = [0.0, fvu["trained"], fvu["untrained"]]
+errors.append(1 - r2_score(test_scaled, zero, multioutput="variance_weighted"))
+scores = {
+    name: (
+        error,
+        balanced_accuracy_score(y_test, pred),
+        accuracy_score(baseline_pred, pred),
+    )
+    for (name, pred), error in zip(predictions.items(), errors)
+}
+panels = (
+    "Reconstruction error (FVU)",
+    "Balanced accuracy",
+    "Agreement with native model",
+)
+fig, axes = plt.subplots(1, 3, figsize=(10, 2.5), sharey=True)
+for column, (ax, title) in enumerate(zip(axes, panels)):
+    values = [score[column] for score in scores.values()]
+    top = max(1.0, *values)
+    ax.barh(list(scores), top, height=0.6, color="#f3f1ec")  # light track
+    ax.barh(list(scores), values, height=0.6, color=[INK, ACCENT, MUTED, MUTED])
+    for i, value in enumerate(values):
+        ax.text(
+            top * 1.03,
+            i,
+            f"{value:.3f}" if column == 0 else f"{value:.1%}",
+            va="center",
+            family="monospace",
+            color=INK if i < 2 else SUBTLE,
+            weight="bold" if i == 1 else "normal",
+        )
+    ax.set(title=title, xlim=(0, top * 1.3), xticks=[])
+    ax.spines[["left", "bottom"]].set_visible(False)
+    ax.grid(False)
+for i, (name, pred) in enumerate(predictions.items()):
+    if len(np.unique(pred)) == 1:  # a control that predicts a single class
+        axes[2].text(
+            scores[name][2] + 0.02,
+            i,
+            f"all {pretty[pred[0]]}",
+            va="center",
+            fontsize=7.5,
+            color=SUBTLE,
+        )
+axes[0].invert_yaxis()
+axes[0].get_yticklabels()[1].set(color=INK, weight="bold")
+axes[1].axvline(1 / len(LABELS), color=INK, lw=0.8, ls=":")
+axes[1].text(1 / len(LABELS), 3.6, " chance", fontsize=7.5, color=SUBTLE, va="center")
+controls = max(score[2] for score in list(scores.values())[2:])
+fig.suptitle(
+    f"The SAE reconstruction keeps {scores['trained SAE'][2]:.0%} of test decisions; "
+    f"the untrained SAE and mean tokens keep at most {controls:.0%}",
+    x=0.01,
+    ha="left",
+)
+plt.show()
+
+######################################################################
+# When we ran this example, the reconstruction kept 86% of the test
+# decisions (72% balanced accuracy, against 76% for the native model),
+# although its FVU was 0.376. Both controls fell to chance and predicted a
+# single class, so their 34% agreement is only the share of that class among
+# the native predictions. The dictionary thus passes the first test: what
+# blocks 19–22 and the head need is largely preserved by the reconstruction.
+#
 # The confusion matrices show which decisions change. On the left, the
 # native model against the true test labels. On the right, the native
 # predictions against the predictions with the trained SAE's reconstruction:
-# its diagonal holds the windows whose decision is unchanged, and their share
-# is the agreement above. The title compares it with the two controls.
+# its diagonal holds the unchanged decisions, whose share is the agreement
+# above, and the title counts the others.
 
-agreement = {
-    name: accuracy_score(baseline_pred, p) for name, p in substituted_pred.items()
-}
 fig, axes = plt.subplots(1, 2, figsize=(9.2, 4))
 for ax, (reference, pred) in zip(
     axes, ((y_test, baseline_pred), (baseline_pred, substituted_pred["trained SAE"]))
 ):
-    ConfusionMatrixDisplay.from_predictions(
+    display = ConfusionMatrixDisplay.from_predictions(
         reference,
         pred,
         display_labels=pretty,
@@ -743,36 +850,37 @@ for ax, (reference, pred) in zip(
     ax.grid(False)
     ax.spines[:].set_visible(False)
 axes[0].set(
-    title=f"Native model: {balanced_accuracy_score(y_test, baseline_pred):.1%} "
-    "balanced accuracy",
+    title=f"Native model: {scores['native model'][1]:.1%} balanced accuracy",
     xlabel="Predicted class",
     ylabel="True class",
 )
 axes[1].set(
-    title=f"Trained SAE at block {block}: {agreement['trained SAE']:.1%} unchanged",
+    title=f"Trained SAE at block {block}: {scores['trained SAE'][2]:.1%} unchanged",
     xlabel="Prediction with reconstruction",
     ylabel="Native prediction",
 )
-controls = max(agreement["untrained SAE"], agreement["tokens := fit mean"])
+changes = display.confusion_matrix * (1 - np.eye(len(LABELS), dtype=int))
 fig.suptitle(
-    f"The trained SAE keeps {agreement['trained SAE']:.0%} of test decisions; the "
-    f"untrained SAE and mean tokens keep at most {controls:.0%}",
+    f"{changes.sum()} of {len(y_test)} test decisions change with the SAE, "
+    f"{changes.sum(0).max()} of them to {pretty[changes.sum(0).argmax()]}",
     x=0.01,
     ha="left",
 )
+plt.show()
 
 ######################################################################
-# Where on the scalp do class-selective features fire?
-# ----------------------------------------------------
+# Selecting class features on the fit windows
+# -------------------------------------------
 #
-# We average each window's codes over its tokens and compute, on the **fit**
-# windows, the selectivity of every feature for every class: the Pearson
-# correlation between the feature's mean code and the indicator of the class
-# (the point-biserial correlation, :func:`~sklearn.feature_selection.r_regression`).
-# For a given class it ranks the features like the difference between the
-# class mean and the mean of the other classes, divided by the standard
-# deviation over all windows. The 32 most selective features per class are
-# chosen there, and only then examined on the test session.
+# To find candidate features for each class, we average each window's codes
+# over its tokens and compute, on the **fit** windows, the selectivity of
+# every feature for every class: the Pearson correlation between the
+# feature's mean code and the indicator of the class (the point-biserial
+# correlation, :func:`~sklearn.feature_selection.r_regression`). For a given
+# class it ranks the features like the difference between the class mean and
+# the mean of the other classes, divided by the standard deviation over all
+# windows. The 32 most selective features per class are chosen there, and
+# only then examined on the test session.
 
 selectivity = np.stack(
     [
@@ -786,16 +894,20 @@ for label, features in zip(LABELS, selected):
     print(f"Top five selected for {label:>10s}: {features[:5].tolist()}")
 
 ######################################################################
-# REVE orders the tokens channel by channel, four patches each, so a
-# feature's mean code per channel is a topographic map. For the top feature
-# of each class, we average its test-session code over the four patches and
-# show the mean over the test trials of that class *minus* the mean over the
-# other test trials: orange channels are where the feature fires more for
-# its class. Each map has its own symmetric color scale, in code units; its
-# limit and the peak channel are printed under the map. Because
-# Euclidean alignment mixes channels, a channel here is an aligned virtual
-# channel placed at the electrode's position, not the raw electrode. The maps
-# describe what this frozen encoder encodes, not a validated neural source.
+# The hand features fire over the opposite hemisphere
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# To see where the selected features fire, we use the order of REVE's
+# tokens: channel by channel, four patches each, so a feature's mean code per
+# channel is a topographic map. For the top feature of each class, we average
+# its test-session code over the four patches and show the mean over the test
+# trials of that class *minus* the mean over the other test trials: orange
+# channels are where the feature fires more for its class. Each map has its
+# own symmetric color scale, in code units; its limit and the peak channel
+# are given under the map. Because Euclidean alignment mixes channels, a
+# channel here is an aligned virtual channel placed at the electrode's
+# position, not the raw electrode. The maps describe what this frozen encoder
+# encodes, not a validated neural source.
 
 channel_codes = einops.reduce(
     test_codes,
@@ -823,24 +935,26 @@ for class_id, (ax, label) in enumerate(zip(axes, pretty)):
         contours=0,
         extrapolate="local",
     )
-    peaks.append(raw_info["ch_names"][contrast.argmax()])
+    peak = raw_info["chs"][contrast.argmax()]  # loc[0] > 0: right hemisphere
+    peaks.append((peak["ch_name"], "right" if peak["loc"][0] > 0 else "left"))
     ax.set_title(f"#{feature} · {label}")
-    ax.set_xlabel(f"peak {peaks[-1]} · scale ±{limit:.2g}", family="monospace")
+    ax.set_xlabel(f"peak {peaks[-1][0]} · scale ±{limit:.2g}", family="monospace")
 fig.suptitle(
-    f"Class minus other classes: the top left-hand feature peaks at {peaks[1]}, "
-    f"the top right-hand one at {peaks[2]}",
+    f"The top left-hand feature peaks over the {peaks[1][1]} hemisphere "
+    f"({peaks[1][0]}), the top right-hand one over the {peaks[2][1]} ({peaks[2][0]})",
     x=0.01,
     ha="left",
 )
 fig.supxlabel(
-    "Test session; orange: more active on the class's trials. Each map has its own "
-    "scale. Channels are aligned virtual\nchannels at the electrode positions: the "
-    "maps describe the encoder, not a neural source.",
+    "Test session; orange: more active on the class's trials; each map has its own "
+    "scale. An association, not a source map:\nchannels are aligned virtual "
+    "channels at the electrode positions, and the maps describe the encoder.",
     x=0.01,
     ha="left",
     fontsize=8,
     color=SUBTLE,
 )
+plt.show()
 
 ######################################################################
 # When we ran this example, the feature selected for left hand fired more
@@ -848,27 +962,31 @@ fig.supxlabel(
 # the left, as expected from the contralateral organization of hand motor
 # imagery. The feature selected for tongue fired more over lateral sites of
 # both hemispheres, and the map of the feature selected for feet showed only
-# weak, scattered differences (note its much smaller color scale). One
-# feature per class from one subject is suggestive at most.
+# weak, scattered differences (note its much smaller color scale). These
+# maps associate a feature with a class; they do not show that the model
+# uses it, which is what the second test measures. One feature per class
+# from one subject is suggestive at most.
 #
-# Intervening on class-selective features
-# ---------------------------------------
+# Test 2: only the hand and tongue features are specific to their class
+# ---------------------------------------------------------------------
 #
-# To remove a set of features we do not replace the tokens by the SAE
-# reconstruction, which would add the reconstruction error to the edit.
-# Instead we zero those features in the test codes computed above and
+# To test whether the model uses the features selected for a class for that
+# class, we remove them and measure the drop in the model's probability for
+# that class on the test trials of that class. We do not replace the tokens
+# by the SAE reconstruction, which would add the reconstruction error to the
+# edit. Instead we zero those features in the test codes computed above and
 # subtract only their decoded contribution from the original tokens. With an
 # empty set this returns the native tokens exactly, so any change in the
 # output is caused by the removed features.
 #
-# For each class we remove its 32 selected features and measure the drop in
-# the model's probability for that class on the test trials of that class.
-# Two controls tell whether a drop is specific:
+# For each class we remove its 32 selected features. A drop is specific only
+# if it exceeds two controls, measured on the same trials:
 #
 # * **random features**: 20 sets of 32 features drawn from those active on
-#   the fit windows;
+#   the fit windows, which measure what removing any 32 features costs;
 # * **other classes' features**: the sets selected for the three other
-#   classes, measured on the same trials.
+#   classes, which measure whether the drop follows the class or any
+#   selected set.
 #
 # The drop that a class's own set causes on the trials of the *other* classes
 # is also reported. Each set is evaluated once on all test windows.
@@ -936,10 +1054,13 @@ for row in effects:
     )
 
 ######################################################################
-# The left panel shows every value behind the table, one row per class: the
-# drop caused by the class's own features (orange), by each of the 20 random
-# feature sets (grey dots) and by each of the other classes' sets (blue
-# circles), on the trials of that class. The right panel shows every
+# The left panel shows every value behind the table, one row per class, on
+# the trials of that class: the drop caused by the class's own features
+# (orange), by each of the 20 random feature sets (grey dots) and by each of
+# the other classes' sets (open blue markers). Its right column gives the
+# specificity contrast, the drop caused by the own set minus the largest drop
+# caused by any control: it is positive only when no control comes close, and
+# a control that exceeds the own set is named. The right panel shows every
 # combination: row *j* removes the features selected for class *j*, column
 # *c* is the drop of p(*c*) on the trials of class *c*. A class-specific
 # effect would appear as an outlined diagonal that stands out.
@@ -948,8 +1069,34 @@ for row in effects:
 positions = np.arange(len(LABELS))
 jitter = ((np.arange(n_random) * 0.618) % 1 - 0.5) * 0.35  # deterministic spread
 fig, (ax, ax_matrix) = plt.subplots(1, 2, figsize=(10.5, 4), width_ratios=[1.3, 1])
+best_control = [
+    max(random_drops[:, c].max(), np.delete(drop_matrix[:, c], c).max())
+    for c in positions
+]
+contrast = np.diag(drop_matrix) - best_control
 for c, effect in enumerate(effects):
     other_sets = np.delete(drop_matrix[:, c], c)
+    if contrast[c] <= 0 and other_sets.max() == best_control[c]:
+        ax.annotate(  # name the other class's set that beats the own set
+            f"{pretty[np.delete(positions, c)[other_sets.argmax()]]} set",
+            (other_sets.max(), c),
+            xytext=(0, 7),
+            textcoords="offset points",
+            ha="center",
+            fontsize=7.5,
+            color=STEEL,
+        )
+    ax.text(
+        1,
+        c,
+        f"{contrast[c]:+.3f}",
+        transform=ax.get_yaxis_transform(),
+        ha="right",
+        va="center",
+        family="monospace",
+        color=INK if contrast[c] > 0 else ACCENT,
+        weight="normal" if contrast[c] > 0 else "bold",
+    )
     ax.scatter(random_drops[:, c], c + jitter, s=10, color=MUTED, lw=0)
     ax.scatter(other_sets, [c] * len(other_sets), s=30, fc="white", ec=STEEL, lw=1.2)
     ax.scatter(effect["own"], c, s=55, color=ACCENT, zorder=3)
@@ -970,20 +1117,30 @@ for i, (text, color) in enumerate(
     )
 ):
     ax.text(
-        0.99,
+        0.01,
         0.98 - 0.075 * i,
         text,
         transform=ax.transAxes,
-        ha="right",
         va="top",
         color=color,
         weight="bold",
     )
+ax.text(
+    1,
+    0.98,
+    "own − best\ncontrol",
+    transform=ax.transAxes,
+    ha="right",
+    va="top",
+    fontsize=7.5,
+    color=SUBTLE,
+)
 ax.axvline(0, color="#b4b4b4", lw=0.8)
 ax.set(
     yticks=positions,
     yticklabels=pretty,
     ylim=(len(LABELS) - 0.5, -1.3),
+    xlim=(min(drop_matrix.min(), random_drops.min()) - 0.02, drop_matrix.max() + 0.07),
     xlabel="Drop in p(class) on the test trials of the class",
     title=f"Removing {n_selected} SAE features at block {block}",
 )
@@ -1030,46 +1187,74 @@ fig.suptitle(
     x=0.01,
     ha="left",
 )
+plt.show()
 
 ######################################################################
-# Interpretation and next steps
-# -----------------------------
+# When we ran this example, removing the 32 features selected for left hand,
+# right hand or tongue lowered the probability of that class on its own test
+# trials by 0.14–0.20. That is more than each of the 20 random sets (at most
+# 0.024) and 2.4–4.4 times the drop on the other classes' trials, while
+# removing the other classes' sets changed it by less than 0.02 on average.
+# For feet the drop (0.06) also exceeded every random set, but removing the
+# features selected for tongue lowered p(feet) more (0.10), so the feet
+# features are not specific to feet. Feet and tongue are also the two classes
+# most often confused by the native model (see the confusion matrices above),
+# which is consistent with, but does not show, a representation that the two
+# classes share. Overall, these results suggest that the model uses the
+# features selected for left hand, right hand and tongue specifically for
+# their class, whereas the feet features matter for feet less than the tongue
+# features do.
 #
-# * **What this run shows.** When we ran this example on a laptop CPU, the
+# What the two tests show
+# -----------------------
+#
+# Our results show that a sparse dictionary fitted to a frozen pretrained EEG
+# transformer can expose features that its classifier actually uses, for
+# three of the four classes of this subject and seed. First, the dictionary
+# preserves what the model computes: substituting its reconstruction at
+# block 18 kept 86% of the test decisions, against 34% for the untrained
+# dictionary and for mean tokens (both at chance accuracy).
+# Second, the model uses the features selected for left hand, right hand and
+# tongue for those classes: removing them lowered the probability of their
+# class more than every random set and every other class's set. The features
+# selected for feet passed the random control but not the other classes'
+# sets.
+#
+# These results are bounded in four ways:
+#
+# * **Interventions are statements about this model.** Selectivity and the
+#   scalp maps are associations. A set that lowers the probability of its
+#   class more than random sets and other classes' sets shows that this
+#   frozen REVE with its trained head uses those directions, on this subject
+#   and session. It does not show that the features correspond to a
+#   physiological process. Relating them to physiology requires spatial and
+#   spectral analyses, several subjects and seeds, and checks for artifacts;
+#   with Euclidean alignment, the spatial maps are also mixtures of
+#   electrodes.
+# * **One subject, one seed.** When we ran this example on a laptop CPU, the
 #   frozen REVE with its trained head reached 76% balanced accuracy on the
-#   test session (chance 25%). Its validation accuracy, on the last two runs
-#   of the training session, was only 58%: single-subject estimates on a few
-#   runs vary a lot. Substituting the trained SAE's reconstruction at block
-#   18 kept 86% of the test decisions, against 34% for the untrained
-#   dictionary and for mean tokens (both at chance accuracy). Removing the
-#   32 features selected for left hand, right hand or tongue lowered the
-#   probability of that class on its own test trials by 0.14–0.20. That is
-#   more than each of the 20 random sets (at most 0.024) and 2.4–4.4 times
-#   the drop on the other classes' trials, while removing the other classes'
-#   sets changed it by less than 0.02 on average. For feet the drop (0.06)
-#   also exceeded every random set, but removing the features selected for
-#   tongue lowered p(feet) more (0.10), so the feet features are not
-#   specific to feet. The SAE is trained in float32, so these numbers change
-#   slightly with the machine and the number of threads.
-# * **Read the substitution table first.** If the trained SAE's
-#   reconstruction does not preserve the model's decisions much better than
-#   the untrained and mean-token controls, feature-level conclusions are not
-#   supported.
-# * **Interventions are statements about this model.** A set that lowers
-#   the probability of its class more than random sets and other classes'
-#   sets shows that this frozen REVE with its trained head uses those
-#   directions, on this subject and session. It does not show that the
-#   features correspond to a physiological process. Relating them to
-#   physiology requires spatial and spectral analyses, several subjects and
-#   seeds, and checks for artifacts; with Euclidean alignment, the spatial
-#   maps are also mixtures of electrodes.
+#   test session (chance 25%), but only 58% on the validation runs.
+#   Single-subject estimates on a few runs vary a lot. The SAE is trained in
+#   float32, so these numbers change slightly with the machine and the number
+#   of threads.
+# * **The alignment of the test session is transductive.** It uses the
+#   statistics of all the test windows, as in REVE's evaluation, but no label
+#   and no choice: the block, the dictionary size, ``k``, the 32 features and
+#   the 20 random sets were fixed on the training session.
 # * **The effect of an edit depends on where it is made.** Later blocks can
 #   compensate for an edit, and the flattening head weighs every token with
 #   its own weights. Choose the block, the dictionary size, ``k`` and the
 #   number of features on validation data, never on the test session.
-# * **Budget.** A frozen encoder, a linear head and 3000 SAE updates on one
-#   subject keep this example to a few minutes on a CPU. Fine-tuning, more
-#   subjects and several seeds are needed before comparing layers or models.
+#
+# A frozen encoder, a linear head and 3000 SAE updates on one subject keep
+# this example to a few minutes on a CPU; fine-tuning, more subjects and
+# several seeds are needed before comparing layers or models. The present
+# procedure, however, carries over to other models. Read the substitution
+# test first: if the
+# reconstruction does not preserve the decisions much better than the
+# controls, feature-level conclusions are not supported. Then call a feature
+# set *used* for a class only when removing it lowers that class more than
+# random sets and the other classes' sets do.
 #
 # References
 # ----------
