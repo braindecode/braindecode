@@ -1,6 +1,6 @@
-# Authors: Adam Mounir
+# Authors: Adam Mounir <am91ris@gmail.com>
 #
-# License: MIT (upstream PopulationTransformer code)
+# License: BSD (3-clause)
 """PopulationTransformer: a self-supervised aggregator over intracranial electrodes.
 
 Port of PopulationTransformer (PopT, Chau et al. 2024) into a braindecode-native
@@ -15,10 +15,9 @@ its input is a set of per-electrode feature vectors (the frozen embeddings of a
 channel-level foundation model such as BrainBERT) plus each electrode's integer
 anatomical coordinates. A ``CLS`` token summarises the population after a stack
 of Transformer encoder layers. The input embedding, spatial position encoding and
-Transformer are ported weight-for-weight from the upstream reference (numerically
-equivalent, max abs difference about 1e-6 with the released checkpoint, verified by the ``test_encoder_is_bit_exact_with_upstream`` parity gate in
-``test/unit_tests/models/test_popt.py``); the classification head is a
-braindecode-native addition. The official checkpoint loads directly via
+Transformer are ported weight-for-weight from the upstream reference; the
+classification head is a braindecode-native addition. The official checkpoint
+loads directly via
 ``PopulationTransformer.from_pretrained("braindecode/popt-pretrained")``.
 """
 
