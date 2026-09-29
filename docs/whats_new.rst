@@ -76,7 +76,7 @@ Bug fixes
   time table is now a non-persistent buffer that follows ``.to(device)``, and the
   encoding is built with ``torch.cat`` instead of strided in-place writes (the
   temporal part was 73 % off on Gaudi2). State-dict keys and CPU/CUDA outputs are
-  unchanged (:gh:`NNNN` by `Bruno Aristimunha`_)
+  unchanged (:gh:`1191` by `Bruno Aristimunha`_)
 
 - Preserve shared class targets when creating MNE epochs from different event
   annotations, as in sleep staging. MNE event IDs remain unique.
