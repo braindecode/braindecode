@@ -77,7 +77,7 @@ Bug fixes
   back-propagated through a host-side ``index_put_`` with wrong gradients (and
   took 108 s per 30 s-window training step), and the repeat scrambled the
   relative keys (features 14-39 % off). CPU and CUDA results are bit-identical
-  (:gh:`NNNN` by `Bruno Aristimunha`_)
+  (:gh:`1189` by `Bruno Aristimunha`_)
 
 - Preserve shared class targets when creating MNE epochs from different event
   annotations, as in sleep staging. MNE event IDs remain unique.
