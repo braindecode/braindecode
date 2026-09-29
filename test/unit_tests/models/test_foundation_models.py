@@ -35,7 +35,7 @@ from braindecode.models import (
     STEEGFormer,
     steegformer,
 )
-from braindecode.models.diver1 import _STCPE
+from braindecode.models.diver1 import _STCPE, channel_metadata_from_chs_info
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
 from braindecode.models.reve import Attention, FourierEmb4D, RevePositionBank
@@ -1365,7 +1365,7 @@ def test_diver1_channel_metadata(kind, located, slots):
     if located:
         for i, ch in enumerate(info["chs"]):
             ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
-    metadata = DIVER1.channel_metadata(info["chs"])
+    metadata = channel_metadata_from_chs_info(info["chs"])
     assert metadata.shape == (2, 5)
     torch.testing.assert_close(metadata[:, 3:], torch.tensor([slots, slots]))
     if located:
@@ -1374,10 +1374,23 @@ def test_diver1_channel_metadata(kind, located, slots):
         assert torch.isnan(metadata[:, :3]).all()
 
 
+@pytest.mark.parametrize("kind, slots", [("eeg", [0, -1]), ("ecog", [1, 0]), ("seeg", [1, 2]), ("dbs", [1, 2])])
+def test_diver1_channel_metadata_from_chs_info(kind, slots):
+    """Standalone metadata retains MNE units and DIVER-1 type slots."""
+    info = mne.create_info(["A1", "A2"], 500.0, kind)
+    info["chs"][0]["loc"][:3] = [0.01, 0.02, -0.03]
+    metadata = channel_metadata_from_chs_info(info["chs"])
+    torch.testing.assert_close(metadata[0, :3], torch.tensor([10.0, 20.0, -30.0]))
+    assert torch.isnan(metadata[1, :3]).all()
+    assert metadata[:, 3:].tolist() == [slots, slots]
+    with pytest.raises(ValueError, match="cannot determine"):
+        channel_metadata_from_chs_info([dict(kind="unknown")])
+
+
 def test_diver1_channel_metadata_rejects_unknown_modality():
     info = mne.create_info(["A0", "A1"], 500.0, "misc")
     with pytest.raises(ValueError, match="cannot determine the recording modality"):
-        DIVER1.channel_metadata(info["chs"])
+        channel_metadata_from_chs_info(info["chs"])
 
 
 def test_diver1_montage_switching_and_permutation(diver1_model):
@@ -1385,7 +1398,7 @@ def test_diver1_montage_switching_and_permutation(diver1_model):
     other = mne.create_info([f"B{i}" for i in range(9)], 500.0, "ecog")
     for i, ch in enumerate(other["chs"]):
         ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
-    metadata = DIVER1.channel_metadata(other["chs"])
+    metadata = channel_metadata_from_chs_info(other["chs"])
     xa, xb = torch.randn(2, 6, 1000), torch.randn(2, 9, 1000)
     perm = torch.tensor([4, 0, 3, 1, 5, 2])
     with torch.no_grad():

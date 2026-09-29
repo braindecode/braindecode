@@ -30,7 +30,7 @@ Enhancements
 
 - Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
   model with pretrained encoders and support for varying montages through
-  :meth:`braindecode.models.DIVER1.channel_metadata`
+  :func:`braindecode.models.diver1.channel_metadata_from_chs_info`
   (:gh:`1170` by `Julien Gadonneix`_).
 
 - :class:`braindecode.models.ZUNA` accepts an ``n_times`` that is not a multiple of

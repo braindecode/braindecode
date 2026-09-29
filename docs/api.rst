@@ -199,6 +199,11 @@ interface for all EEG models and can derive variable names when needed.
      USleep
      ZUNA
 
+DIVER-1 recording metadata
+==========================
+
+.. autofunction:: braindecode.models.diver1.channel_metadata_from_chs_info
+
 Modules
 
 :py:mod:`braindecode.modules`:

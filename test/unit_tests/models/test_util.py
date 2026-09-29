@@ -13,7 +13,6 @@ from sklearn.preprocessing import OneHotEncoder
 
 from braindecode import models
 from braindecode.models.util import (
-    channel_metadata_from_chs_info,
     extract_channel_locations_from_chs_info,
     has_valid_locations,
     interpolated_models_dict,
@@ -228,20 +227,6 @@ def test_coordinate_helpers_preserve_dictionary_defaults():
     result = positions_from_chs_info(chs)
     assert result.dtype == np.float64
     np.testing.assert_array_equal(result, [[0, 0], [1, 0], [.5, 0]])
-
-
-@pytest.mark.parametrize("kind, slots", [("eeg", [0, -1]), ("ecog", [1, 0]), ("seeg", [1, 2]), ("dbs", [1, 2])])
-def test_channel_metadata_from_chs_info(kind, slots):
-    """Standalone metadata retains the model alias and MNE units/type slots."""
-    info = mne.create_info(["A1", "A2"], 500.0, kind)
-    info["chs"][0]["loc"][:3] = [0.01, 0.02, -0.03]
-    metadata = channel_metadata_from_chs_info(info["chs"])
-    torch.testing.assert_close(metadata[0, :3], torch.tensor([10.0, 20.0, -30.0]))
-    assert torch.isnan(metadata[1, :3]).all()
-    assert metadata[:, 3:].tolist() == [slots, slots]
-    torch.testing.assert_close(metadata, models.DIVER1.channel_metadata(info["chs"]), equal_nan=True, rtol=0, atol=0)
-    with pytest.raises(ValueError, match="cannot determine"):
-        channel_metadata_from_chs_info([dict(kind="unknown")])
 
 
 @pytest.mark.parametrize("fill_missing", [False, True])

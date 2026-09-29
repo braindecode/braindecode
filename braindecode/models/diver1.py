@@ -21,38 +21,12 @@ from torch import nn
 from braindecode.functional import rotate_pairs
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
-    channel_metadata_from_chs_info,
+    INTRACRANIAL_CH_TYPES,
+    channel_types_from_chs_info,
+    extract_channel_locations_from_chs_info,
     valid_location_mask,
 )
 from braindecode.modules import FeedForwardBlock, PatchTokenizer
-
-
-def _check_channel_metadata(
-    metadata: torch.Tensor,
-    n_chans: int,
-    n_modalities: int = 2,
-    n_subtypes: int = 3,
-) -> None:
-    """Reject metadata that does not describe the channels of this batch."""
-    if metadata.dim() != 2 or metadata.shape[0] != n_chans or metadata.shape[1] != 5:
-        raise ValueError(
-            f"chan_metadata must have shape ({n_chans}, 5), one row of "
-            f"(x, y, z, modality, sub-modality) per channel of the input, got "
-            f"{list(metadata.shape)}."
-        )
-    modality = metadata[:, 3]
-    if bool(((modality < 0) | (modality >= n_modalities)).any()):
-        raise ValueError(
-            f"The modality column of chan_metadata must hold slots in "
-            f"[0, {n_modalities}), got values from {float(modality.min())} to "
-            f"{float(modality.max())}."
-        )
-    if bool((metadata[:, 4] >= n_subtypes).any()):
-        raise ValueError(
-            f"The sub-modality column of chan_metadata must hold slots below "
-            f"{n_subtypes}, or a negative value for unknown, got up to "
-            f"{float(metadata[:, 4].max())}."
-        )
 
 
 class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -96,7 +70,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
     ``use_position_emb`` removes both coordinate and type embeddings.
 
     For another montage, pass
-    :func:`~braindecode.models.util.channel_metadata_from_chs_info`'s result to
+    :func:`~braindecode.models.diver1.channel_metadata_from_chs_info`'s result to
     :meth:`forward`. All samples in a batch share this metadata. The encoder is
     channel-permutation equivariant (the flattened head is not).
 
@@ -349,11 +323,6 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.final_layer = nn.Linear(self.final_layer.in_features, n_outputs)
         self._update_init_kwargs(n_outputs=n_outputs)
 
-    @staticmethod
-    def channel_metadata(chs_info: list[dict]) -> torch.Tensor:
-        """Alias for :func:`braindecode.models.util.channel_metadata_from_chs_info`."""
-        return channel_metadata_from_chs_info(chs_info)
-
     def forward(
         self, x: torch.Tensor, chan_metadata: torch.Tensor | None = None
     ) -> torch.Tensor:
@@ -366,7 +335,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         chan_metadata : torch.Tensor, optional
             ``(n_chans, 5)`` electrode metadata of the recording this batch
             comes from, one row of (x, y, z, modality, sub-modality) per
-            channel, as :meth:`channel_metadata` builds it from its
+            channel, as :func:`channel_metadata_from_chs_info` builds it from its
             ``chs_info``. Every sample of the batch shares it. Defaults to the
             montage given at construction, which only fits the
             construction-time channel count.
@@ -382,7 +351,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 raise ValueError(
                     f"DIVER1 was built for {self.n_chans_grid} channels but got "
                     f"input with {n_chans}; pass this recording's metadata as "
-                    f"chan_metadata, which DIVER1.channel_metadata builds from "
+                    f"chan_metadata, which channel_metadata_from_chs_info builds from "
                     f"its chs_info."
                 )
             metadata = self.default_chan_metadata
@@ -860,3 +829,78 @@ class _RotaryEmbedding(nn.Module):
         direct = cos * x
         rotated = rotate_pairs(x)
         return direct + sin * rotated
+
+
+def _check_channel_metadata(
+    metadata: torch.Tensor,
+    n_chans: int,
+    n_modalities: int = 2,
+    n_subtypes: int = 3,
+) -> None:
+    """Reject metadata that does not describe the channels of this batch."""
+    if metadata.dim() != 2 or metadata.shape[0] != n_chans or metadata.shape[1] != 5:
+        raise ValueError(
+            f"chan_metadata must have shape ({n_chans}, 5), one row of "
+            f"(x, y, z, modality, sub-modality) per channel of the input, got "
+            f"{list(metadata.shape)}."
+        )
+    modality = metadata[:, 3]
+    if bool(((modality < 0) | (modality >= n_modalities)).any()):
+        raise ValueError(
+            f"The modality column of chan_metadata must hold slots in "
+            f"[0, {n_modalities}), got values from {float(modality.min())} to "
+            f"{float(modality.max())}."
+        )
+    if bool((metadata[:, 4] >= n_subtypes).any()):
+        raise ValueError(
+            f"The sub-modality column of chan_metadata must hold slots below "
+            f"{n_subtypes}, or a negative value for unknown, got up to "
+            f"{float(metadata[:, 4].max())}."
+        )
+
+
+def channel_metadata_from_chs_info(chs_info: list[dict]) -> torch.Tensor:
+    """Build DIVER-1 coordinate and electrode-type metadata from MNE channel info.
+
+    Parameters
+    ----------
+    chs_info : list of dict
+        One MNE ``info["chs"]`` entry per channel, with ``kind`` and ``loc``.
+
+    Returns
+    -------
+    torch.Tensor
+        Float32 ``(n_chans, 5)`` tensor: xyz in millimetres, modality
+        (EEG=0, intracranial=1), and subtype (grid=0, strip=1, depth=2,
+        unknown=-1). MNE cannot identify strips. Missing coordinates are NaN.
+        These slots follow DIVER-1's vocabulary, not MNE kind codes.
+
+    Examples
+    --------
+    >>> import mne
+    >>> info = mne.create_info(["A1", "A2"], 500.0, "seeg")
+    >>> channel_metadata_from_chs_info(info["chs"])[:, 3:].tolist()
+    [[1.0, 2.0], [1.0, 2.0]]
+    """
+    # EEG/iEEG; grid/strip/depth. MNE cannot distinguish strips from grids.
+    type_to_slots = {"eeg": (0, -1), "ecog": (1, 0), "seeg": (1, 2), "dbs": (1, 2)}
+    n_chans = len(chs_info)
+    # Convert metres to millimetres; no coordinate-frame transform is performed.
+    coords = 1e3 * torch.as_tensor(
+        extract_channel_locations_from_chs_info(
+            chs_info, num_channels=n_chans, fill_missing=True
+        ),
+        dtype=torch.float32,
+    )
+    types = channel_types_from_chs_info(chs_info, num_channels=n_chans)
+    undetermined = sorted({t for t in types if t not in type_to_slots})
+    if undetermined:
+        raise ValueError(
+            f"DIVER1 cannot determine the recording modality of every "
+            f"channel: the chs_info 'kind' of some resolves to "
+            f"{undetermined}, which is neither scalp EEG nor an "
+            f"intracranial type ({sorted(INTRACRANIAL_CH_TYPES)}). Set the "
+            f"channel kinds in chs_info accordingly."
+        )
+    slots = torch.tensor([type_to_slots[t] for t in types], dtype=coords.dtype)
+    return torch.cat([coords, slots], dim=-1)
