@@ -131,13 +131,15 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         default is ``64``.
     fine_time_pts : int, optional
         Number of fine time points per token (the encoder input dimension).
-        ``n_times`` must be divisible by this value. The default is ``32``, or
-        0.125 seconds for data sampled at 256 Hz.
+        ``n_times`` must be divisible by this value unless ``on_non_divisible``
+        is ``"pad"`` or ``"crop"``. The default is ``32``, or 0.125 seconds for
+        data sampled at 256 Hz.
     latent_dim : int, optional
         Per-token output dimension of the encoder. The default is ``32``.
     max_seqlen : int, optional
         Length of the rotary frequency table. It must be at least
-        ``max(pos_bins, n_times // fine_time_pts)``. The default is ``256``.
+        ``max(pos_bins, the number of temporal patches)``. The default is
+        ``256``.
     rope_theta : float, optional
         Base period of the rotary positional embedding. The default is
         ``10000.0``.
@@ -163,6 +165,11 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     activation : type[nn.Module], optional
         Feed-forward activation class. The default is
         :class:`torch.nn.SiLU`.
+    on_non_divisible : {"error", "pad", "crop"}, optional
+        How to handle an ``n_times`` that is not a multiple of ``fine_time_pts``,
+        passed to :class:`braindecode.modules.PatchTokenizer`: ``"error"`` raises,
+        ``"pad"`` right-pads the last patch with zeros, ``"crop"`` drops the
+        trailing samples. The default is ``"error"``.
 
     Notes
     -----
@@ -215,6 +222,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         sandwich_norm: bool = True,
         qk_norm: bool = True,
         activation: type[nn.Module] = nn.SiLU,
+        on_non_divisible: str = "error",
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -229,7 +237,11 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # Variables
         self.num_channels = self.n_chans
         self.latent_dim = latent_dim
-        coarse_time_points = self.n_times // fine_time_pts
+        if on_non_divisible == "pad":
+            # PatchTokenizer right-pads the last partial patch at forward time.
+            coarse_time_points = -(-self.n_times // fine_time_pts)
+        else:
+            coarse_time_points = self.n_times // fine_time_pts
         rotary_axis_dim = head_dim // 4
 
         # Checks
@@ -252,7 +264,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             PatchTokenizer(
                 patch_size=fine_time_pts,
                 n_times=self.n_times,
-                on_non_divisible="error",
+                on_non_divisible=on_non_divisible,
             ),
             Rearrange(
                 "batch channel temporal_patch sample "
