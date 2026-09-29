@@ -3,14 +3,14 @@
 Sparse autoencoders on the activations of a motor-imagery decoder
 ==================================================================
 
-This tutorial trains a :class:`~braindecode.models.ShallowFBCSPNet` on one
+This tutorial trains a :class:`~braindecode.models.ShallowFBCSPNet` [1]_ on one
 subject of the BCI Competition IV 2a motor-imagery dataset (BNCI2014_001 via
 MOABB), captures the activations of one of its layers, and fits a sparse
 autoencoder (SAE) to those activations with
 `SAE Lens <https://github.com/decoderesearch/SAELens>`_. Braindecode supplies
 the data pipeline, the decoder and the activation capture/substitution hooks;
 SAE Lens supplies the dictionary, the Top-K activation, its losses and the
-training loop.
+training loop; scikit-learn supplies the metrics.
 
 .. topic:: Why fit a sparse autoencoder to EEG-model activations?
 
@@ -32,16 +32,11 @@ evaluate once on the *test session* recorded on a different day. All numbers
 come from a single subject and a short CPU training budget, so they describe
 this run only and support no scientific claim about motor imagery.
 
-Install the optional dependency with ``pip install 'braindecode[sae]'``
-(or ``pip install sae-lens==6.51.3`` in a source checkout). SAE Lens brings a
-substantial language-model dependency stack, but no language model or
-pretrained SAE is downloaded here; dictionaries trained on LLMs are not EEG
-dictionaries.
-
-.. note::
-
-   Documentation builds without SAE Lens render this source without executing
-   it. Install the optional dependency to run the example and generate figures.
+This example needs the optional SAE Lens dependency, installed with
+``pip install 'braindecode[sae]'`` (or ``pip install sae-lens==6.51.3`` in a
+source checkout). SAE Lens brings a substantial language-model dependency
+stack, but no language model or pretrained SAE is downloaded here;
+dictionaries trained on LLMs are not EEG dictionaries.
 
 .. contents:: This example covers:
    :local:
@@ -54,10 +49,23 @@ dictionaries.
 
 import copy
 
+import einops
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from numpy import multiply
+from sae_lens.config import LoggingConfig, SAETrainerConfig
+from sae_lens.saes.topk_sae import TopKTrainingSAE, TopKTrainingSAEConfig
+from sae_lens.training.sae_trainer import SAETrainer
+from sklearn.feature_selection import r_regression
+from sklearn.metrics import (
+    ConfusionMatrixDisplay,
+    accuracy_score,
+    balanced_accuracy_score,
+    r2_score,
+)
+from skorch.helper import SliceDataset
+from skorch.utils import to_tensor
 
 from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
@@ -73,15 +81,6 @@ from braindecode.visualization import (
     capture_activations,
     run_with_activation_substitution,
 )
-
-try:
-    from sae_lens.config import LoggingConfig, SAETrainerConfig
-    from sae_lens.saes.topk_sae import TopKTrainingSAE, TopKTrainingSAEConfig
-    from sae_lens.training.sae_trainer import SAETrainer
-except ImportError as error:
-    raise ImportError(
-        "This optional tutorial requires: pip install sae-lens==6.51.3"
-    ) from error
 
 ######################################################################
 # Loading and preparing the data
@@ -136,6 +135,11 @@ preprocess(
 # Splitting *before* any statistic is computed is what makes the held-out
 # numbers meaningful; overlapping windows from one recording must never
 # straddle the split.
+#
+# The labels come from the windows' metadata. The activation hooks below run
+# the decoder on one tensor, which skorch's :class:`~skorch.helper.SliceDataset`
+# and :func:`~skorch.utils.to_tensor` build from the windows
+# (288 windows × 22 channels × 1125 samples per session).
 
 sfreq = dataset.datasets[0].raw.info["sfreq"]
 windows_dataset = create_windows_from_events(
@@ -149,12 +153,13 @@ train_set, test_set = split_by_session["0train"], split_by_session["1test"]
 
 # BCI IV 2a labels in MOABB's alphabetical order; the position is the class id.
 LABELS = ("feet", "left_hand", "right_hand", "tongue")
+pretty = [label.replace("_", " ") for label in LABELS]
 
-# Dense tensors for the hooks below (288 windows × 22 channels × 1125 samples).
-x_train = torch.as_tensor(np.stack([x for x, *_ in train_set]), dtype=torch.float32)
-y_train = torch.as_tensor([y for _, y, _ in train_set])
-x_test = torch.as_tensor(np.stack([x for x, *_ in test_set]), dtype=torch.float32)
-y_test = torch.as_tensor([y for _, y, _ in test_set])
+device = "cpu"
+x_train = to_tensor(SliceDataset(train_set, idx=0), device=device)
+x_test = to_tensor(SliceDataset(test_set, idx=0), device=device)
+y_train = train_set.get_metadata()["target"].to_numpy()
+y_test = test_set.get_metadata()["target"].to_numpy()
 print(f"Train windows: {tuple(x_train.shape)}; test windows: {tuple(x_test.shape)}")
 
 ######################################################################
@@ -166,9 +171,9 @@ print(f"Train windows: {tuple(x_train.shape)}; test windows: {tuple(x_test.shape
 # ``train_split=None`` keeps the test session out of training entirely; on
 # a laptop CPU this takes a few tens of seconds. The SAE analysis below applies to
 # any trained network, so a stronger decoder would only make the features
-# more interesting to look at.
+# more interesting to look at. We report balanced accuracy with scikit-learn;
+# the test session has 72 trials per class, so it equals plain accuracy here.
 
-device = "cpu"
 set_random_seeds(seed=20240205, cuda=False)
 
 model = ShallowFBCSPNet(
@@ -195,11 +200,9 @@ classifier.fit(train_set, y=None)
 
 model = classifier.module_.eval()
 model.requires_grad_(False)
-with torch.no_grad():
-    baseline_logits = model(x_test)
-baseline_pred = baseline_logits.argmax(1)
-baseline_accuracy = (baseline_pred == y_test).float().mean().item()
-print(f"Test-session accuracy of the trained decoder: {baseline_accuracy:.1%}")
+baseline_pred = classifier.predict(test_set)
+baseline_accuracy = balanced_accuracy_score(y_test, baseline_pred)
+print(f"Test-session balanced accuracy of the trained decoder: {baseline_accuracy:.1%}")
 
 ######################################################################
 # Capturing activations from one layer
@@ -210,25 +213,21 @@ print(f"Test-session accuracy of the trained decoder: {baseline_accuracy:.1%}")
 # so that each activation vector is the log band-power of the 40 learned
 # filters in one pooling window: shape ``(windows, 40, 69, 1)``. Every
 # ``(window, time bin)`` pair is one SAE observation, so we move the
-# feature axis last and flatten the rest. The capture is detached; the SAE
-# never updates the decoder.
+# feature axis last and flatten the rest with :func:`einops.rearrange`. The
+# capture is detached; the SAE never updates the decoder.
 #
 # Per-coordinate standardization (mean and standard deviation fitted on
 # *training rows only*) puts filters with very different power scales on a
-# comparable footing. Because we do this ourselves, SAE Lens's internal
-# ``normalize_activations`` is switched off.
+# comparable footing. We keep these statistics as tensors because the
+# substitution hook below has to undo the scaling inside the forward pass,
+# and we switch off SAE Lens's internal ``normalize_activations``.
 
 layer = model.pool_nonlin_exp
-
-
-def to_rows(activation):
-    """(windows, features, time, 1) -> (windows * time, features)."""
-    return activation.movedim(1, -1).reshape(-1, activation.shape[1])
-
+to_rows = "window feature time 1 -> (window time) feature"
 
 with torch.no_grad():
     train_acts = capture_activations(model, x_train, layer).detach()
-train_rows = to_rows(train_acts)
+train_rows = einops.rearrange(train_acts, to_rows)
 mean = train_rows.mean(0)
 std = train_rows.std(0, correction=0).clamp_min(1e-6)
 train_scaled = (train_rows - mean) / std
@@ -241,15 +240,16 @@ print(f"Layer output: {tuple(train_acts.shape)}; training rows: {len(train_rows)
 # -----------------------------------
 #
 # SAE Lens's low-level :class:`~sae_lens.training.sae_trainer.SAETrainer`
-# accepts an iterator of tensor batches, so no tokenizer or language-model
-# runner is involved. We ask for a dictionary four times wider than the
-# layer (160 features) with at most ``k=8`` active features per
-# observation, and train for 2000 updates on batches sampled with
-# replacement. The library owns the optimizer, learning-rate schedule
-# (``lr_end`` is set explicitly), the norm-adjusted Top-K activation and
-# the auxiliary loss that revives inactive features. A copy taken *before*
-# training gives an untrained dictionary with the same initialization,
-# which we use as a control later.
+# accepts any iterator of tensor batches, so no tokenizer or language-model
+# runner is involved; its own activation store needs a language model, so a
+# three-line generator samples training rows with replacement. We ask for a
+# dictionary four times wider than the layer (160 features) with at most
+# ``k=8`` active features per observation, and train for 2000 updates. The
+# library owns the optimizer, learning-rate schedule (``lr_end`` is set
+# explicitly), the norm-adjusted Top-K activation and the auxiliary loss that
+# revives inactive features. A copy taken *before* training gives an
+# untrained dictionary with the same initialization, which we use as a
+# control later.
 
 batch_size = 128
 n_updates = 2000
@@ -303,29 +303,30 @@ _ = sae.eval()
 # ------------------------------------------
 #
 # The *fraction of variance unexplained* (FVU) compares the reconstruction
-# error with the variance of the activations around the training mean; 0 is
-# perfect, 1 is no better than predicting the mean. We report it in the
-# standardized coordinates the SAE was trained in and in the original
-# log-power units. The mean number of active features is at most ``k``
-# because Top-K rectifies the selected values.
-
-
-def fvu(target, reconstruction):
-    residual = (target - reconstruction).square().sum()
-    total = (target - target.mean(0)).square().sum()
-    return (residual / total).item()
-
+# error with the variance of the test activations around their mean; 0 is
+# perfect, 1 is no better than predicting the mean. It is one minus the
+# coefficient of determination pooled over the 40 coordinates, i.e.
+# :func:`~sklearn.metrics.r2_score` with ``multioutput="variance_weighted"``.
+# We report it in the standardized coordinates the SAE was trained in and in
+# the original log-power units. The mean number of active features is at most
+# ``k`` because Top-K rectifies the selected values.
 
 with torch.no_grad():
     test_acts = capture_activations(model, x_test, layer).detach()
-    test_rows = to_rows(test_acts)
+    test_rows = einops.rearrange(test_acts, to_rows)
     test_scaled = (test_rows - mean) / std
     test_codes = sae.encode(test_scaled)
     test_reconstructed = sae.decode(test_codes)
     untrained_reconstructed = untrained_sae.decode(untrained_sae.encode(test_scaled))
-fvu_scaled = fvu(test_scaled, test_reconstructed)
-fvu_original = fvu(test_rows, test_reconstructed * std + mean)
-fvu_untrained = fvu(test_scaled, untrained_reconstructed)
+fvu_scaled = 1 - r2_score(
+    test_scaled, test_reconstructed, multioutput="variance_weighted"
+)
+fvu_original = 1 - r2_score(
+    test_rows, test_reconstructed * std + mean, multioutput="variance_weighted"
+)
+fvu_untrained = 1 - r2_score(
+    test_scaled, untrained_reconstructed, multioutput="variance_weighted"
+)
 active_per_row = (test_codes != 0).sum(-1).float().mean().item()
 never_active = ((test_codes != 0).sum(0) == 0).float().mean().item()
 print(f"Test FVU (standardized): {fvu_scaled:.3f}")
@@ -345,28 +346,36 @@ print(f"Features never active on the test session: {never_active:.1%}")
 # the training-set scaling, encodes and decodes with the SAE, undoes the
 # scaling, and restores the original axes and dtype.
 #
-# We report test accuracy and *agreement* (the fraction of test windows whose
-# predicted class is unchanged) for three substitutions: the trained SAE,
-# the untrained SAE with the same initialization, and replacing the whole
-# layer with its training mean. If the trained SAE did not beat both
-# controls, its reconstruction would not be carrying the decision-relevant
-# information.
+# We report balanced test accuracy and *agreement*, the fraction of test
+# windows whose predicted class is unchanged, i.e.
+# :func:`~sklearn.metrics.accuracy_score` with the native predictions as the
+# reference. We do so for three substitutions: the trained SAE, the untrained
+# SAE with the same initialization, and replacing the whole layer with its
+# training mean. If the trained SAE did not beat both controls, its
+# reconstruction would not be carrying the decision-relevant information.
 
 
 def substitute_with(dictionary):
     def substitute(output):
-        flat = output.movedim(1, -1)
-        rows = flat.reshape(-1, d_in).to(mean)
-        codes = dictionary.encode((rows - mean) / std)
-        restored = dictionary.decode(codes) * std + mean
-        return restored.reshape(flat.shape).movedim(-1, 1).to(output)
+        rows = einops.rearrange(output, to_rows).to(mean)
+        restored = dictionary.decode(dictionary.encode((rows - mean) / std))
+        restored = restored * std + mean
+        return einops.rearrange(
+            restored,
+            "(window time) feature -> window feature time 1",
+            time=output.shape[2],
+        ).to(output)
 
     return substitute
 
 
 def mean_ablation(output):
-    flat = output.movedim(1, -1)
-    return mean.expand(flat.shape).movedim(-1, 1).to(output)
+    return einops.repeat(
+        mean,
+        "feature -> window feature time 1",
+        window=output.shape[0],
+        time=output.shape[2],
+    ).to(output)
 
 
 interventions = {
@@ -374,19 +383,44 @@ interventions = {
     "untrained SAE": substitute_with(untrained_sae),
     "layer := train mean": mean_ablation,
 }
-results = {}
+predictions = {}
 with torch.no_grad():
     for name, substitute in interventions.items():
         logits = run_with_activation_substitution(model, x_test, layer, substitute)
-        pred = logits.argmax(1)
-        results[name] = {
-            "accuracy": (pred == y_test).float().mean().item(),
-            "agreement": (pred == baseline_pred).float().mean().item(),
-        }
-print(f"{'intervention':>22s}  accuracy  agreement")
-print(f"{'none (native model)':>22s}  {baseline_accuracy:8.1%}  {1.0:9.1%}")
-for name, scores in results.items():
-    print(f"{name:>22s}  {scores['accuracy']:8.1%}  {scores['agreement']:9.1%}")
+        predictions[name] = logits.argmax(1).numpy()
+print(f"{'intervention':>22s}  bal. acc.  agreement")
+print(f"{'none (native model)':>22s}  {baseline_accuracy:9.1%}  {1.0:9.1%}")
+for name, pred in predictions.items():
+    print(
+        f"{name:>22s}  {balanced_accuracy_score(y_test, pred):9.1%}  "
+        f"{accuracy_score(baseline_pred, pred):9.1%}"
+    )
+
+######################################################################
+# The confusion matrices show which decisions change. On the left, the
+# native decoder against the true test labels. On the right, the native
+# predictions against the predictions with the trained SAE's reconstruction:
+# its diagonal holds the windows whose decision is unchanged, and their share
+# is the agreement above.
+
+fig, axes = plt.subplots(1, 2, figsize=(9.5, 4))
+ConfusionMatrixDisplay.from_predictions(
+    y_test, baseline_pred, display_labels=pretty, ax=axes[0], colorbar=False
+)
+ConfusionMatrixDisplay.from_predictions(
+    baseline_pred,
+    predictions["trained SAE"],
+    display_labels=pretty,
+    ax=axes[1],
+    colorbar=False,
+)
+axes[0].set(title="Native decoder", xlabel="Predicted class", ylabel="True class")
+axes[1].set(
+    title="Trained SAE substituted",
+    xlabel="Prediction with reconstruction",
+    ylabel="Native prediction",
+)
+fig.tight_layout()
 
 ######################################################################
 # Which features fire for which class?
@@ -395,34 +429,35 @@ for name, scores in results.items():
 # Codes are non-negative, so a feature's mean code per class summarizes
 # how strongly it responds to each condition. We average codes over the
 # time bins of each window, giving one ``(d_sae,)`` vector per trial, and
-# compute a *selectivity index* per feature and class on the **training**
-# session: the difference between the class mean and the mean over the
-# other classes, divided by the pooled standard deviation. The two most
-# selective features per class are chosen there; only then do we look at
-# how those features behave on the test session. Choosing features on the
-# evaluation data would make any apparent selectivity circular.
+# compute the selectivity of every feature for every class on the
+# **training** session: the Pearson correlation between the feature's mean
+# code and the indicator of the class (the point-biserial correlation,
+# :func:`~sklearn.feature_selection.r_regression`). For a given class it
+# ranks the features like the difference between the class mean and the mean
+# over the other classes, divided by the standard deviation over all trials.
+# The two most selective features per class are chosen there; only then do we
+# look at how those features behave on the test session. Choosing features on
+# the evaluation data would make any apparent selectivity circular.
 
-
-def per_window_codes(codes):
-    return codes.reshape(-1, n_time_bins, codes.shape[-1]).mean(1)
-
-
+to_windows = "(window time) feature -> window feature"
 with torch.no_grad():
     train_codes = sae.encode(train_scaled)
-train_window_codes = per_window_codes(train_codes)
-test_window_codes = per_window_codes(test_codes)
+train_window_codes = einops.reduce(
+    train_codes, to_windows, "mean", time=n_time_bins
+).numpy()
+test_window_codes = einops.reduce(
+    test_codes, to_windows, "mean", time=n_time_bins
+).numpy()
 
-n_features = train_window_codes.shape[1]
-selectivity = torch.zeros(len(LABELS), n_features)
-for class_id in range(len(LABELS)):
-    in_class = train_window_codes[y_train == class_id]
-    out_class = train_window_codes[y_train != class_id]
-    pooled_std = torch.cat([in_class, out_class]).std(0).clamp_min(1e-6)
-    selectivity[class_id] = (in_class.mean(0) - out_class.mean(0)) / pooled_std
-
+selectivity = np.stack(
+    [
+        r_regression(train_window_codes, y_train == class_id)
+        for class_id in range(len(LABELS))
+    ]
+)
 n_per_class = 2
 selected = {
-    label: selectivity[class_id].topk(n_per_class).indices.tolist()
+    label: np.argsort(-selectivity[class_id])[:n_per_class].tolist()
     for class_id, label in enumerate(LABELS)
 }
 print("Most class-selective features (chosen on the training session):")
@@ -439,16 +474,16 @@ for label, features in selected.items():
 # be explained away.
 
 selected_features = [f for features in selected.values() for f in features]
-class_means = torch.stack(
+class_means = np.stack(
     [test_window_codes[y_test == class_id].mean(0) for class_id in range(len(LABELS))]
 )  # (n_classes, d_sae)
 heat = class_means[:, selected_features].T
-heat = heat / heat.max(1, keepdim=True).values.clamp_min(1e-6)
+heat = heat / heat.max(1, keepdims=True).clip(min=1e-6)
 
 fig, ax = plt.subplots(figsize=(5.5, 4.2))
-image = ax.imshow(heat.numpy(), cmap="magma", vmin=0, vmax=1, aspect="auto")
+image = ax.imshow(heat, cmap="magma", vmin=0, vmax=1, aspect="auto")
 ax.set_xticks(range(len(LABELS)))
-ax.set_xticklabels([label.replace("_", " ") for label in LABELS])
+ax.set_xticklabels(pretty)
 ax.set_yticks(range(len(selected_features)))
 ax.set_yticklabels(
     [
@@ -480,20 +515,22 @@ bin_centre_samples = (
     + (model.filter_time_length - 1) / 2
 )
 time_axis = bin_centre_samples / sfreq - 0.5
-test_codes_time = test_codes.reshape(-1, n_time_bins, n_features)
+test_codes_time = einops.rearrange(
+    test_codes, "(window time) feature -> window time feature", time=n_time_bins
+).numpy()
 LABEL_COLORS = ("#0072B2", "#009E73", "#D55E00", "#CC79A7")
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 3.4), sharey=True)
 for ax, label in zip(axes, ("left_hand", "right_hand")):
     feature = selected[label][0]
-    for class_id, class_label in enumerate(LABELS):
+    for class_id, class_label in enumerate(pretty):
         trace = test_codes_time[y_test == class_id, :, feature].mean(0)
         ax.plot(
             time_axis,
-            trace.numpy(),
+            trace,
             color=LABEL_COLORS[class_id],
             lw=1.8,
-            label=class_label.replace("_", " "),
+            label=class_label,
         )
     ax.axvline(0, color="#888", ls=":", lw=1)
     ax.set_title(f"Feature #{feature}, selected for {label.replace('_', ' ')}")
@@ -528,10 +565,12 @@ fig.tight_layout()
 # References
 # ----------
 #
+# .. [1] Schirrmeister, R. T., et al. (2017). *Deep learning with
+#        convolutional neural networks for EEG decoding and
+#        visualization.* Human Brain Mapping, 38(11), 5391–5420.
+#        DOI: 10.1002/hbm.23730
+#
 # * `SAE Lens documentation <https://jbloomaus.github.io/SAELens/>`_ describes
 #   the external training and inference APIs used here (tested with 6.51.3).
 # * Makhzani and Frey, `k-Sparse Autoencoders
 #   <https://arxiv.org/abs/1312.5663>`_, motivate sparse dictionary learning.
-# * Schirrmeister et al. (2017), *Deep learning with convolutional neural
-#   networks for EEG decoding and visualization*, Human Brain Mapping,
-#   38(11), 5391–5420, introduce ShallowFBCSPNet.
