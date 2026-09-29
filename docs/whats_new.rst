@@ -86,8 +86,8 @@ Bug fixes
   BENDR, BIOT, EEGPT and LaBraM wrappers) now record the new ``n_outputs``, and
   BENDR, CBraMod and EEGDINO built as feature extractors now also record that
   they became classifiers, instead of reloading without their trained head. The
-  new head now follows the model's train/eval mode, so ``from_pretrained(...,
-  n_outputs=...)`` no longer leaves dropout active in eval mode
+  new head now preserves the model's current train/eval mode when
+  ``reset_head`` is called
   (:gh:`1181` by `Raghav Rathi`_).
 - Make :func:`braindecode.preprocessing.create_windows_from_events` infer the
   event mapping once for the whole dataset before the recordings are windowed.

@@ -268,7 +268,7 @@ def test_from_pretrained_new_n_outputs_is_deterministic_in_eval(name, tmp_path):
     saved.save_pretrained(tmp_path)
     n_outputs = saved.n_outputs + 3
 
-    model = _ALL_MODELS[name].from_pretrained(tmp_path, n_outputs=n_outputs)
+    model = _ALL_MODELS[name].from_pretrained(tmp_path, n_outputs=n_outputs).eval()
     assert model.get_config()["n_outputs"] == n_outputs
     assert not any(module.training for module in model.modules())
     signal_params = _get_signal_params(_REGISTRY[name])
