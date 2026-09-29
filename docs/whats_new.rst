@@ -71,6 +71,13 @@ Requirements
 Bug fixes
 ==========
 
+- Fix the positional encoder of :class:`braindecode.models.SignalJEPA` and
+  :class:`braindecode.models.SignalJEPA_Contextual` on Intel Gaudi (HPU): the
+  time table is now a non-persistent buffer that follows ``.to(device)``, and the
+  encoding is built with ``torch.cat`` instead of strided in-place writes (the
+  temporal part was 73 % off on Gaudi2). State-dict keys and CPU/CUDA outputs are
+  unchanged (:gh:`NNNN` by `Bruno Aristimunha`_)
+
 - Preserve shared class targets when creating MNE epochs from different event
   annotations, as in sleep staging. MNE event IDs remain unique.
   (:gh:`1174` by `Bruno Aristimunha`_)
