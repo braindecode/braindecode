@@ -347,6 +347,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
         self._build_head(n_outputs)
 
     def get_positions(self, channel_names: list[str]) -> torch.Tensor:

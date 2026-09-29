@@ -305,6 +305,7 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
         head_in = (
             self.d_model if self.pooling == "mean" else self.n_chans * self.d_model
         )

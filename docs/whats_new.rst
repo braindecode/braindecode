@@ -28,6 +28,13 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.BaRISTA`, an intracranial EEG foundation model
+  whose spatial encoding scale is a free choice: electrodes are tokenized
+  channel-wise and space enters as a single learned embedding selected by the
+  electrode coordinate, its atlas parcel or its lobe, before a joint
+  space-time transformer encoder with rotary temporal embeddings
+  (:gh:`1173` by `Julien Gadonneix`_).
+
 - Add :class:`braindecode.models.Brant`, a braindecode-native port of the Brant
   foundation model for intracranial (sEEG/iEEG) signals (Zhang et al., NeurIPS
   2023), including in-model spectral features and the shared configuration,
@@ -78,6 +85,52 @@ Bug fixes
   :class:`braindecode.models.Deep4Net` unusable on single-channel data
   (:gh:`1154` by `Julien Gadonneix`_).
 
+- Fix :meth:`braindecode.models.base.EEGModuleMixin.reset_head` leaving the
+  saved configuration on the previous head, so a model saved after changing its
+  number of outputs could not be loaded back. Eighteen models (BENDR, BIOT,
+  CBraMod, EEGDINO, EEGPT, Labram, MetaNeuromotorHand, MVPFormer, REVE,
+  STEEGFormer, ZUNA, the three SignalJEPA classifiers and the Interpolated
+  BENDR, BIOT, EEGPT and LaBraM wrappers) now record the new ``n_outputs``, and
+  BENDR, CBraMod and EEGDINO built as feature extractors now also record that
+  they became classifiers, instead of reloading without their trained head.
+  Existing head-reset train/eval behavior is unchanged
+  (:gh:`1181` by `Raghav Rathi`_).
+- Make :func:`braindecode.preprocessing.create_windows_from_events` infer the
+  event mapping once for the whole dataset before the recordings are windowed.
+  With ``mapping=None`` and ``n_jobs`` above one, every worker numbered the
+  event descriptions of its own recording from zero, so the same description
+  could receive different integer targets across recordings. By `Sarthak
+  Tayal`_.
+
+- Make :func:`braindecode.datautil.load_concat_dataset` restore the
+  ``targets_from`` and ``last_target_only`` settings of a saved
+  :class:`braindecode.datasets.EEGWindowsDataset`. The loader looked the stored
+  settings up under the name ``WindowsDataset`` while the windowers record them
+  under ``EEGWindowsDataset``, so a dataset windowed with
+  ``targets_from="channels"`` came back reading its targets from the metadata.
+  By `Sarthak Tayal`_.
+
+- Make :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` work on a
+  copy of the metadata of each dataset. The description columns were written
+  into the metadata frame of the dataset itself, replacing any column sharing a
+  name with a description key such as ``target``. By `Sarthak Tayal`_.
+
+- Make :func:`braindecode.preprocessing.create_windows_from_events` accept a
+  ``mapping`` that sends several event descriptions to the same target when the
+  windows are stored as :class:`mne.Epochs`, for example to merge sleep stages
+  3 and 4. ``mne.Epochs`` rejects an ``event_id`` with repeated values since
+  MNE 1.13, so annotations now receive distinct event IDs while their shared
+  targets remain in the window metadata. By `Sarthak Tayal`_.
+
+- Fix :class:`braindecode.models.STEEGFormer` on high-density sensor nets whose
+  electrodes are numbered rather than named for a 10-20 site (e.g. EGI
+  HydroCel ``E1`` ... ``E256``). A channel name outside the montage vocabulary
+  used to switch the whole montage to the identity mapping, which is
+  meaningless and raised ``chan_pos_idx values must be in [0, 145)`` above 145
+  channels. Such channels now take the slot of the nearest 10-05 site from
+  their ``chs_info`` position, while named channels keep their own slot. Without
+  positions, the identity fallback is kept, and a clear error is raised when it
+  cannot fit (:gh:`1185` by `Bruno Aristimunha`_).
 - Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU) and under
   ``torch.jit.trace``: :class:`braindecode.modules.GeneralizedGaussianFilter`
   now clamps its parameters in place under ``torch.no_grad()`` instead of
@@ -97,12 +150,26 @@ Bug fixes
   :func:`braindecode.functional.plv_time` on time-domain input uses the
   corrected transform (:gh:`1188` by `Arthur031221`_).
 
+- Fix :class:`braindecode.modules.MaxNormParametrize` producing ``NaN`` outputs
+  or gradients for zero or very small float16 rows after :gh:`1184`; the
+  norm and scale are computed in float32 for float16/bfloat16 inputs,
+  while float64 precision is preserved. Safe denominators prevent invalid
+  intermediate gradients, and rows at or below ``max_norm`` are unchanged.
+  Empty tensors pass through and a negative ``max_norm`` raises, as
+  ``Tensor.renorm`` does (:gh:`1187` by `Bruno Aristimunha`_).
+
 
 Current 1.8.0 (2026-08-31)
 ===============================
 
 Enhancements
 ============
+
+- Add :class:`braindecode.models.MIRepNet`, the released downstream
+  convolutional-Transformer encoder and classification head for motor-imagery
+  EEG, with pre-trained weights re-hosted at
+  `braindecode/mirepnet-pretrained <https://huggingface.co/braindecode/mirepnet-pretrained>`_
+  (:gh:`1126` by `Bruno Aristimunha`_).
 
 - Add a reusable temporal-distributed separable convolution encoder to
   :mod:`braindecode.modules`, and centralize output-head replacement for models using
@@ -1784,3 +1851,4 @@ Authors
 .. _Julien Gadonneix: https://github.com/julien-gadonneix
 .. _Li Qing: https://github.com/qinxwew
 .. _Arthur031221: https://github.com/Arthur031221
+.. _Raghav Rathi: https://github.com/raghav-rathi
