@@ -493,6 +493,7 @@ fig.suptitle(
     x=0.01,
     ha="left",
 )
+plt.show()
 
 ######################################################################
 # The confusion matrices show which decisions change. On the left, the
@@ -541,6 +542,7 @@ fig.suptitle(
     x=0.01,
     ha="left",
 )
+plt.show()
 
 ######################################################################
 # Which features fire for which class?
@@ -641,6 +643,7 @@ fig.suptitle(
     x=0.01,
     ha="left",
 )
+plt.show()
 
 ######################################################################
 # A closer look at two features
