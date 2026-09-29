@@ -28,14 +28,14 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
-- Add a bounded LaBraM SAE intervention tutorial
-  using optional SAE Lens, without adding an SAE implementation to Braindecode
-  (:gh:`1120` by `Vandit Shah`_ and `Bruno Aristimunha`_)
-
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
   regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
+
+- Add a bounded LaBraM SAE intervention tutorial
+  using optional SAE Lens, without adding an SAE implementation to Braindecode
+  (:gh:`1120` by `Vandit Shah`_ and `Bruno Aristimunha`_)
 
 - Improve CI test scheduling and run documentation examples with bounded
   parallelism, preserving the test cases and gallery training workloads
