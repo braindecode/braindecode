@@ -4,6 +4,7 @@ import torch
 from scipy.signal import hilbert
 
 from braindecode.functional import (
+    _real_dft,
     hilbert_freq,
     plv_time,
     sinusoidal_positional_encoding,
@@ -184,3 +185,58 @@ def test_sinusoidal_positional_encoding_odd_dim_truncates_contiguously():
     assert pe_odd.shape == (50, 15)
     assert pe_odd.is_contiguous()
     assert torch.equal(pe_odd, sinusoidal_positional_encoding(50, 16)[:, :15])
+
+
+@pytest.mark.parametrize("n", [7, 8, 120, 121])
+def test_real_rfft_and_irfft_match_torch_fft(n):
+    """The matmul-based one-sided DFT (used on devices without complex
+    tensors) matches ``torch.fft.rfft``/``irfft`` to float64 precision."""
+    x = torch.randn(3, 5, n, dtype=torch.float64)
+    real, imag = _real_dft.real_rfft(x)
+    ref = torch.fft.rfft(x, dim=-1)
+    torch.testing.assert_close(real, ref.real, rtol=0, atol=1e-10)
+    torch.testing.assert_close(imag, ref.imag, rtol=0, atol=1e-10)
+    back = _real_dft.real_irfft(real, imag, n=n)
+    torch.testing.assert_close(
+        back, torch.fft.irfft(ref, n=n, dim=-1), rtol=0, atol=1e-10
+    )
+
+
+@pytest.mark.parametrize("forward_fourier,n", [(True, 120), (True, 121), (False, 120)])
+def test_hilbert_freq_real_dft_path_matches_complex_path(monkeypatch, forward_fourier, n):
+    """Forcing the real-valued DFT path (as on HPU) reproduces the
+    ``torch.fft``-based path exactly, for odd and even lengths and for both
+    ``forward_fourier`` values."""
+    x = torch.randn(4, 6, n, dtype=torch.float64)
+    if not forward_fourier:
+        x = torch.view_as_real(torch.fft.rfft(x, dim=-1))
+    expected = hilbert_freq(x, forward_fourier)
+    monkeypatch.setattr(_real_dft, "needs_real_dft", lambda t: True)
+    actual = hilbert_freq(x, forward_fourier)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=1e-10)
+
+
+def test_real_dft_path_ignores_bf16_autocast(monkeypatch):
+    """The real-valued DFT path used on HPU must not be run in bfloat16 by an
+    ambient autocast context: both the forward values and the gradients must
+    match the same path computed with autocast disabled."""
+    x = torch.randn(2, 4, 120, requires_grad=True)
+    monkeypatch.setattr(_real_dft, "needs_real_dft", lambda t: True)
+
+    fp32 = hilbert_freq(x, True)
+    fp32.square().sum().backward()
+    fp32_grad = x.grad.clone()
+    x.grad = None
+
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        mixed = hilbert_freq(x, True)
+    mixed.square().sum().backward()
+
+    torch.testing.assert_close(mixed.float(), fp32, rtol=0, atol=1e-6)
+    torch.testing.assert_close(x.grad, fp32_grad, rtol=0, atol=1e-6)
+
+
+def test_real_dft_basis_rejects_lengths_that_overflow_the_phase_index():
+    _real_dft.real_dft_basis(65536, device="cpu", dtype=torch.float32)
+    with pytest.raises(ValueError, match="65536"):
+        _real_dft.real_dft_basis(65537, device="cpu", dtype=torch.float32)
