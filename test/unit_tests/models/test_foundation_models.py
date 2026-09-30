@@ -1529,6 +1529,76 @@ def test_sleepfm_stager_encodes_each_chunk_with_the_sleepfm_encoder():
     assert not missing.any()
 
 
+@pytest.mark.parametrize("n_valid", [16, 12], ids=["chunk_aligned", "inside_chunk"])
+def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
+    """The stager is the release's embedding step followed by its staging head.
+
+    The reference encodes every modality chunk by chunk with
+    :meth:`SleepFM.encode`, keeping only the valid patches, zero-pads the
+    embeddings to four modality slots and runs the staging head with the
+    temporal mask. Dropping the temporal mask from the head, or from the
+    encoder when the padding ends inside a chunk, breaks the match.
+    """
+    encoder = _small_sleepfm(max_seq_length=128).eval()
+    stager = _small_stager().eval()
+    shared = {
+        k: v for k, v in encoder.state_dict().items() if k in stager.state_dict()
+    }
+    shared.pop("final_layer.weight"), shared.pop("final_layer.bias")
+    stager.load_state_dict(shared, strict=False)
+    x = torch.randn(2, 3, 1280)
+    channel_mask = torch.tensor([[False, True, False], [False, False, False]])
+    temporal_mask = torch.zeros(2, 20, dtype=torch.bool)
+    temporal_mask[1, n_valid:] = True
+
+    def reference_embeddings(signal, mask):
+        per_sample = []
+        for sample, stop in enumerate((20, n_valid)):
+            chunks = [
+                encoder.encode(
+                    signal[sample : sample + 1, :, start * 64 : end * 64],
+                    mask[sample : sample + 1],
+                )[1][0]
+                for start in range(0, stop, 8)
+                for end in [min(start + 8, stop)]
+            ]
+            valid = torch.cat(chunks)
+            per_sample.append(torch.cat([valid, valid.new_zeros(20 - stop, 16)]))
+        return torch.stack(per_sample)
+
+    with torch.no_grad():
+        embeddings = torch.stack(
+            [
+                reference_embeddings(x[:, :2], channel_mask[:, :2]),
+                reference_embeddings(x[:, 2:], channel_mask[:, 2:]),
+                torch.zeros(2, 20, 16),
+                torch.zeros(2, 20, 16),
+            ],
+            dim=1,
+        )
+        modality_mask = torch.tensor([[False, False, True, True]] * 2)
+        features = stager.staging_head(embeddings, modality_mask, temporal_mask)
+        expected = stager.final_layer(features).transpose(1, 2)
+        output = stager(x, channel_mask, temporal_mask=temporal_mask)
+
+    torch.testing.assert_close(output[0], expected[0])
+    torch.testing.assert_close(output[1, :, :n_valid], expected[1, :, :n_valid])
+
+
+def test_sleepfm_masked_channels_do_not_reach_gradients():
+    """A non-finite masked channel leaves outputs and gradients finite."""
+    model = _small_stager().eval()
+    x = torch.randn(2, 3, 1280)
+    x[0, 1] = float("nan")
+    mask = torch.tensor([[False, True, False], [False, False, False]])
+
+    model(x, mask).sum().backward()
+
+    assert all(
+        torch.isfinite(p.grad).all() for p in model.parameters() if p.grad is not None
+    )
+
+
 def test_sleepfm_stager_groups_channels_by_modality():
     """Channels sharing a label are encoded together, in any order."""
     model = _small_stager().eval()
@@ -1685,6 +1755,10 @@ def test_sleepfm_pretrained_stager_loads():
     )
     reference = dict(SleepFMStager(**kwargs).named_parameters())
     model = SleepFMStager.from_pretrained(**kwargs).eval()
+    with pytest.warns(UserWarning, match="channel_modalities"):
+        SleepFMStager.from_pretrained(
+            **(kwargs | {"channel_modalities": None})
+        )
 
     with torch.no_grad():
         output = model(torch.randn(2, 3, 1280))

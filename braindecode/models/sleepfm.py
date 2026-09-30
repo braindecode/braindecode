@@ -415,7 +415,12 @@ class SleepFM(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
         mask = _prepare_channel_mask(channel_mask, x)
         n_patches = self.patch_embedding.n_patches(x.shape[-1])
         # Masked channels are kept out of the tokenizer, BatchNorm included.
-        patch_mask = repeat(mask, "batch chans -> batch chans patch", patch=n_patches)
+        # Without a mask nothing is left out, so the plain path is taken.
+        patch_mask = None
+        if channel_mask is not None:
+            patch_mask = repeat(
+                mask, "batch chans -> batch chans patch", patch=n_patches
+            )
         tokens = self.patch_embedding(x, patch_mask)
         # Channel pooling treats the channels of one patch as an unordered set.
         contextual_tokens = self._contextualize(self._pool_channels(tokens, mask))
@@ -486,8 +491,9 @@ class SleepFMStager(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
         ``["BAS", "BAS", "RESP", "EKG", "EMG"]``. The release groups brain
         activity (EEG, EOG), respiratory, ECG and EMG channels into ``"BAS"``,
         ``"RESP"``, ``"EKG"`` and ``"EMG"``; any labels work, channels sharing
-        a label are encoded together. ``None`` puts every channel in a single
-        modality.
+        a label are encoded together. Use strings or integers, so that the
+        configuration can be saved with ``save_pretrained``. ``None`` puts
+        every channel in a single modality.
     patch_size : int, default=640
         Number of samples per patch at 128 Hz.
     embed_dim : int, default=128
@@ -503,7 +509,9 @@ class SleepFMStager(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
         embeddings with dropout disabled.
     encoder_chunk_patches : int, default=60
         Number of patches the encoder sees at once (60 patches of 5 seconds,
-        i.e. 5 minutes, in the release).
+        i.e. 5 minutes, in the release). Values above 128 lengthen the
+        encoder's positional table, which then no longer loads from the
+        released weights.
     staging_num_heads : int, default=4
         Number of heads in the staging Transformer.
     staging_num_layers : int, default=1
@@ -536,9 +544,12 @@ class SleepFMStager(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
 
     Masked channels and padded patches are left out of the tokenizer's batch
     normalization, so in training mode neither the batch statistics nor the
-    running averages depend on the padding. The official pretraining code
-    normalizes its zero padding together with the signal; both agree whenever
-    nothing is masked, and always in eval mode.
+    running averages depend on the padding. For padded patches this is what
+    the release does, since it never encodes padded chunks. For masked
+    channels it is a deliberate deviation: the official pretraining code
+    normalizes zero-padded channels together with the real ones, so in
+    training its output depends on how many channels are padded. Both agree
+    whenever no channel is masked, and always in eval mode.
 
     A trailing group of fewer than ``encoder_chunk_patches`` patches is
     encoded as a shorter chunk, so every patch gets a prediction; the official
@@ -700,7 +711,13 @@ class SleepFMStager(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
 
     @classmethod
-    def from_pretrained(cls, *args, encoder_model_name_or_path=None, **kwargs):
+    def from_pretrained(
+        cls,
+        *args,
+        encoder_model_name_or_path=None,
+        encoder_revision=None,
+        **kwargs,
+    ):
         """Load the released sleep stager from the braindecode mirrors.
 
         ``pretrained_model_name_or_path`` defaults to
@@ -714,17 +731,33 @@ class SleepFMStager(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
         Transformer. When a checkpoint lacks exactly those weights they are
         read from ``encoder_model_name_or_path`` (a repo id or a local
         directory; default ``"braindecode/SleepFM"``, the released base
-        encoder), so the loaded model is complete. A checkpoint saved from a
-        :class:`SleepFMStager` already holds them and is loaded as is.
+        encoder), so the loaded model is complete, at ``encoder_revision``
+        (a revision of that repo, not of the stager's). A checkpoint saved
+        from a :class:`SleepFMStager` already holds them and is loaded as is.
+
+        The released staging head was trained on four modalities encoded
+        separately, so pass ``channel_modalities``; without it every channel
+        is encoded as one modality and a warning is raised.
         """
         if not args and kwargs.get("pretrained_model_name_or_path") is None:
             kwargs["pretrained_model_name_or_path"] = cls._HF_DEFAULT_REPO
         model = super().from_pretrained(*args, **kwargs)
         missing = model.__dict__.pop("_missing_encoder_keys", None)
         if missing:
+            if model.channel_modalities is None:
+                warnings.warn(
+                    "Loading the released SleepFM stager without "
+                    "channel_modalities: every channel is encoded as a single "
+                    "modality, whereas the release encodes BAS, RESP, EKG and "
+                    "EMG channels separately. Pass channel_modalities to "
+                    "reproduce it.",
+                    UserWarning,
+                    stacklevel=2,
+                )
             source = encoder_model_name_or_path or cls._HF_ENCODER_REPO
             state_dict = _read_safetensors(
                 source,
+                revision=encoder_revision,
                 cache_dir=kwargs.get("cache_dir"),
                 force_download=kwargs.get("force_download", False),
                 local_files_only=kwargs.get("local_files_only", False),
@@ -807,7 +840,10 @@ class SleepFMStager(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
             mask.index_select(1, self._channel_order).split(self._modality_sizes, 1),
         ):
             embedding, missing = self._encode_modality(
-                signal, modality_mask, patch_mask
+                signal,
+                modality_mask,
+                patch_mask,
+                mask_tokens=channel_mask is not None or patch_mask is not None,
             )
             embeddings.append(embedding)
             missing_modalities.append(missing)
@@ -835,20 +871,25 @@ class SleepFMStager(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
         x: torch.Tensor,
         channel_mask: torch.Tensor,
         patch_mask: torch.Tensor | None,
+        mask_tokens: bool = True,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Encode one modality chunk by chunk, as the release's embedding step.
 
         Returns the ``(batch, n_patches, embed_dim)`` embeddings, zero where
         the modality is missing or the patch is padded, and the ``(batch,)``
         mask of samples without any valid channel of this modality.
+        ``mask_tokens=False`` (nothing masked) skips the tokenizer's masked
+        path, whose gather is slower in training.
         """
         n_patches = self.patch_embedding.n_patches(x.shape[-1])
         missing = channel_mask.all(dim=1)
-        tokenizer_mask = repeat(
-            channel_mask, "batch chans -> batch chans patch", patch=n_patches
-        )
-        if patch_mask is not None:
-            tokenizer_mask = tokenizer_mask | patch_mask.unsqueeze(1)
+        tokenizer_mask = None
+        if mask_tokens:
+            tokenizer_mask = repeat(
+                channel_mask, "batch chans -> batch chans patch", patch=n_patches
+            )
+            if patch_mask is not None:
+                tokenizer_mask = tokenizer_mask | patch_mask.unsqueeze(1)
         tokens = self.patch_embedding(x, tokenizer_mask)
         # A sample without this modality is pooled unmasked, then zeroed.
         tokens = self._pool_channels(tokens, _without_fully_masked_rows(channel_mask))
@@ -903,6 +944,7 @@ class SleepFMStager(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
 
 def _read_safetensors(
     name_or_path: str | Path,
+    revision=None,
     cache_dir=None,
     force_download: bool = False,
     local_files_only: bool = False,
@@ -918,6 +960,7 @@ def _read_safetensors(
     path = huggingface_hub.hf_hub_download(
         repo_id=str(name_or_path),
         filename="model.safetensors",
+        revision=revision,
         cache_dir=cache_dir,
         force_download=force_download,
         local_files_only=local_files_only,
@@ -1033,7 +1076,10 @@ class _SleepFMTokenizer(nn.Module):
                         padded.logical_not(), self.tokenizer(x[valid])
                     )
             else:
-                # Running statistics make every patch independent here.
+                # Running statistics make every patch independent here. The
+                # input is zeroed first, so a non-finite value in a masked
+                # patch cannot reach the gradients either.
+                x = x.masked_fill(padded.unsqueeze(-1), 0.0)
                 tokens = self.tokenizer(x).masked_fill(padded, 0.0)
         return rearrange(
             tokens,

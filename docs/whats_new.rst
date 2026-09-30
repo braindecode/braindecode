@@ -33,7 +33,8 @@ Enhancements
   token-wise bidirectional-LSTM sleep-staging model, which runs the encoder per
   modality on 5-minute chunks as the released pipeline does and accepts a
   temporal padding mask. Both accept a variable channel mask, which also keeps
-  masked channels out of batch normalization in training, support
+  masked channels out of batch normalization in training (the official
+  pretraining code normalizes them with the real channels), support
   ``return_features`` and ``reset_head``, and load the
   authors' released checkpoints with ``from_pretrained()`` from the braindecode
   mirror. The paper's disease-prediction baselines are out of scope: they
