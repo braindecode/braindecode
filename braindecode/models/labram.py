@@ -324,7 +324,13 @@ class Labram(EEGModuleMixin, nn.Module):
     use_abs_pos_emb : bool (default=True)
         If True, use absolute position embedding.
     use_mean_pooling : bool (default=True)
-        If True, use mean pooling.
+        If True, the readout is ``fc_norm`` applied to the mean of the patch
+        tokens, as in the original fine-tuning. If False, the readout is the
+        [CLS] token after the final ``norm``; the original pretraining loss
+        never uses the [CLS] output. A pretraining checkpoint (with ``norm``
+        and without ``fc_norm`` or head, such as the released weights) loads
+        into a mean-pooling model as in the original fine-tuning script:
+        ``norm`` is unused and ``fc_norm`` keeps its initialization.
     init_scale : float (default=0.001)
         The initial scale to be used in the parameters of the model.
     neural_tokenizer : bool (default=True)
@@ -376,7 +382,7 @@ class Labram(EEGModuleMixin, nn.Module):
         norm_layer: type[nn.Module] = nn.LayerNorm,
         init_values=0.1,
         use_abs_pos_emb=True,
-        use_mean_pooling=False,
+        use_mean_pooling=True,
         init_scale=0.001,
         neural_tokenizer=True,
         attn_head_dim=None,
@@ -922,6 +928,23 @@ class Labram(EEGModuleMixin, nn.Module):
                     UserWarning,
                 )
             state_dict[key] = resized
+        # A pretraining checkpoint has the per-token final ``norm`` and no
+        # pooling ``fc_norm`` or head. As in the original fine-tuning script,
+        # a mean-pooling model leaves that ``norm`` unused and starts
+        # ``fc_norm`` from its initialization. A checkpoint with a head was
+        # fine-tuned with its own readout and is not converted.
+        if (
+            self.fc_norm is not None
+            and prefix + "cls_token" in state_dict
+            and not any(
+                k.startswith((prefix + "fc_norm.", prefix + "final_layer."))
+                for k in state_dict
+            )
+        ):
+            for k in [k for k in state_dict if k.startswith(prefix + "norm.")]:
+                del state_dict[k]
+            for name, value in self.fc_norm.state_dict().items():
+                state_dict[prefix + "fc_norm." + name] = value
         super()._load_from_state_dict(
             state_dict,
             prefix,

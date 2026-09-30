@@ -234,6 +234,61 @@ def test_labram_loads_time_embedding_saved_with_one_slot_per_patch():
         assert torch.allclose(reloaded(x, ch_names=names), expected, atol=1e-6)
 
 
+def test_labram_default_readout_is_mean_of_patch_tokens():
+    # The original LaBraM fine-tunes on LayerNorm(mean of the patch tokens)
+    # (use_mean_pooling=True in modeling_finetune.py and in
+    # run_class_finetuning.py); its pretraining loss never uses [CLS].
+    names = list(LABRAM_CHANNEL_ORDER[:3])
+    model = Labram(n_chans=3, n_times=800, n_outputs=0).eval()
+    seen = {}
+    model.blocks[-1].register_forward_hook(
+        lambda _module, _inputs, output: seen.update(tokens=output)
+    )
+    x = torch.randn(2, 3, 800)
+
+    with torch.no_grad():
+        features = model(x, ch_names=names)
+
+    patch_mean = seen["tokens"][:, 1:].mean(1)
+    expected = torch.nn.functional.layer_norm(patch_mean, (200,), eps=1e-6)
+    assert torch.allclose(features, expected, atol=1e-5)
+
+
+@pytest.mark.parametrize("with_token_norm", [True, False])
+def test_labram_mean_pooling_loads_pretraining_checkpoint(with_token_norm):
+    # The released weights come from pretraining: they hold the per-token
+    # final ``norm`` and no pooling ``fc_norm``. The original fine-tuning script
+    # leaves ``norm`` unused and starts ``fc_norm`` from its initialization.
+    # A strict load must do the same, also when the state dict was already
+    # filtered to the keys the model has (so without ``norm``).
+    pretraining = Labram(
+        n_chans=3, n_times=800, n_outputs=0, use_mean_pooling=False
+    ).state_dict()
+    if not with_token_norm:
+        pretraining = {
+            k: v for k, v in pretraining.items() if not k.startswith("norm.")
+        }
+    model = Labram(n_chans=3, n_times=800, n_outputs=0, use_mean_pooling=True)
+
+    model.load_state_dict(pretraining)
+
+    assert torch.equal(model.fc_norm.weight, torch.ones(200))
+    assert torch.equal(model.fc_norm.bias, torch.zeros(200))
+    assert torch.equal(model.cls_token, pretraining["cls_token"])
+
+
+def test_labram_mean_pooling_rejects_cls_finetuned_checkpoint():
+    # A checkpoint fine-tuned with the [CLS] readout has a head trained on
+    # [CLS]; it must not load silently into a mean-pooling model.
+    finetuned = Labram(
+        n_chans=3, n_times=800, n_outputs=2, use_mean_pooling=False
+    ).state_dict()
+    model = Labram(n_chans=3, n_times=800, n_outputs=2, use_mean_pooling=True)
+
+    with pytest.raises(RuntimeError, match="fc_norm"):
+        model.load_state_dict(finetuned)
+
+
 def test_labram_neural_tokenizer_initialization(model_tokenizer):
     """Test that the model initializes correctly in tokenizer mode."""
     assert model_tokenizer is not None
