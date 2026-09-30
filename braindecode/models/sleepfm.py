@@ -555,10 +555,11 @@ class SleepFMStager(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
     encoded as a shorter chunk, so every patch gets a prediction; the official
     embedding script drops it.
 
-    The model is pretrained end to end. :meth:`from_pretrained` reads the
-    tokenizer and the staging head from the ``braindecode/SleepFMStager``
-    mirror and the rest of the encoder from the ``braindecode/SleepFM``
-    mirror, both copies of the released checkpoints::
+    The model is pretrained end to end. :meth:`from_pretrained` reads it from
+    the ``braindecode/SleepFMStager`` mirror, a copy of the released
+    checkpoints; older revisions of that mirror hold only the tokenizer and
+    the staging head, and the rest of the encoder is then read from the
+    ``braindecode/SleepFM`` mirror::
 
         model = SleepFMStager.from_pretrained(
             n_chans=7,
@@ -579,8 +580,9 @@ class SleepFMStager(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
     """
 
     _HF_DEFAULT_REPO = "braindecode/SleepFMStager"
-    # The stager mirror holds the tokenizer and the staging head only; the
-    # other encoder weights are those of the released base model.
+    # Older revisions of the stager mirror hold the tokenizer and the staging
+    # head only; their other encoder weights are those of the released base
+    # model.
     _HF_ENCODER_REPO = "braindecode/SleepFM"
 
     def __init__(
@@ -721,14 +723,15 @@ class SleepFMStager(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
         """Load the released sleep stager from the braindecode mirrors.
 
         ``pretrained_model_name_or_path`` defaults to
-        ``"braindecode/SleepFMStager"``, which merges the tokenizer of the
+        ``"braindecode/SleepFMStager"``, which merges the encoder of the
         upstream ``model_base/best.pt`` with the upstream
         ``model_sleep_staging/best.pth`` head. The whole stager is pretrained,
         its five-class output layer included; pass ``n_outputs`` different
         from 5 to reinitialise that layer for another label set.
 
-        That mirror does not hold the encoder's channel pooling and temporal
-        Transformer. When a checkpoint lacks exactly those weights they are
+        Older revisions of that mirror hold only the tokenizer and the staging
+        head, not the encoder's channel pooling and temporal Transformer.
+        When a checkpoint lacks exactly those weights they are
         read from ``encoder_model_name_or_path`` (a repo id or a local
         directory; default ``"braindecode/SleepFM"``, the released base
         encoder), so the loaded model is complete, at ``encoder_revision``
@@ -742,18 +745,20 @@ class SleepFMStager(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
         if not args and kwargs.get("pretrained_model_name_or_path") is None:
             kwargs["pretrained_model_name_or_path"] = cls._HF_DEFAULT_REPO
         model = super().from_pretrained(*args, **kwargs)
+        # Warn whatever the checkpoint layout: a complete checkpoint loads the
+        # same staging head, which expects the modalities encoded separately.
+        if model.channel_modalities is None:
+            warnings.warn(
+                "Loading the released SleepFM stager without "
+                "channel_modalities: every channel is encoded as a single "
+                "modality, whereas the release encodes BAS, RESP, EKG and "
+                "EMG channels separately. Pass channel_modalities to "
+                "reproduce it.",
+                UserWarning,
+                stacklevel=2,
+            )
         missing = model.__dict__.pop("_missing_encoder_keys", None)
         if missing:
-            if model.channel_modalities is None:
-                warnings.warn(
-                    "Loading the released SleepFM stager without "
-                    "channel_modalities: every channel is encoded as a single "
-                    "modality, whereas the release encodes BAS, RESP, EKG and "
-                    "EMG channels separately. Pass channel_modalities to "
-                    "reproduce it.",
-                    UserWarning,
-                    stacklevel=2,
-                )
             source = encoder_model_name_or_path or cls._HF_ENCODER_REPO
             state_dict = _read_safetensors(
                 source,
@@ -798,8 +803,9 @@ class SleepFMStager(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module):
         }
         missing = set(model.state_dict()) - set(state_dict)
         if missing and missing == encoder_keys:
-            # Tokenizer + head checkpoint, as in the braindecode/SleepFMStager
-            # mirror: everything else must load, the encoder comes afterwards.
+            # Tokenizer + head checkpoint, as in older revisions of the
+            # braindecode/SleepFMStager mirror: everything else must load, the
+            # encoder comes afterwards.
             result = model.load_state_dict(state_dict, strict=False)
             if result.unexpected_keys:
                 raise RuntimeError(

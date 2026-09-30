@@ -5,6 +5,7 @@
 import copy
 import json
 import os
+import warnings
 from contextlib import nullcontext
 from pathlib import Path
 from urllib.error import URLError
@@ -1617,8 +1618,8 @@ def test_sleepfm_stager_groups_channels_by_modality():
 def test_sleepfm_stager_takes_missing_encoder_weights_from_sleepfm(tmp_path):
     """A tokenizer + head checkpoint is completed with a SleepFM encoder.
 
-    This is the layout of the ``braindecode/SleepFMStager`` mirror, which holds
-    no channel pooling or temporal Transformer.
+    This is the layout of older revisions of the ``braindecode/SleepFMStager``
+    mirror, which hold no channel pooling or temporal Transformer.
     """
     from safetensors.torch import save_file
 
@@ -1640,6 +1641,47 @@ def test_sleepfm_stager_takes_missing_encoder_weights_from_sleepfm(tmp_path):
     expected = encoder.state_dict() | head_only
     for key, value in loaded.state_dict().items():
         torch.testing.assert_close(value, expected[key], msg=key)
+
+
+@pytest.mark.skipif(not HAS_SAFETENSORS, reason="safetensors is required")
+@pytest.mark.parametrize("complete", [False, True], ids=["head_only", "complete"])
+def test_sleepfm_stager_warns_once_without_channel_modalities(tmp_path, complete):
+    """Loading without ``channel_modalities`` warns, whatever the layout.
+
+    The released mirror is either a tokenizer + head checkpoint completed from
+    the SleepFM encoder, or a complete stager; both load a staging head that
+    expects the modalities encoded separately.
+    """
+    from safetensors.torch import save_file
+
+    stager = _small_stager(channel_modalities=None)
+    stager.save_pretrained(tmp_path / "stager")
+    _small_sleepfm(max_seq_length=128).save_pretrained(tmp_path / "encoder")
+    if not complete:
+        head_only = {
+            k: v.contiguous()
+            for k, v in stager.state_dict().items()
+            if k.startswith(("patch_embedding.", "staging_head.", "final_layer."))
+        }
+        save_file(head_only, tmp_path / "stager" / "model.safetensors")
+
+    def modality_warnings(**kwargs):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            SleepFMStager.from_pretrained(
+                tmp_path / "stager",
+                encoder_model_name_or_path=tmp_path / "encoder",
+                **kwargs,
+            )
+        return [
+            w
+            for w in caught
+            if issubclass(w.category, UserWarning)
+            and "channel_modalities" in str(w.message)
+        ]
+
+    assert len(modality_warnings()) == 1
+    assert modality_warnings(channel_modalities=["A", "A", "B"]) == []
 
 
 @pytest.mark.parametrize(
