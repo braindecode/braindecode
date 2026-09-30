@@ -1,24 +1,13 @@
-# Authors: Adam Mounir <am91ris@gmail.com>
+# Authors: Christopher Wang, Geeling Chau (original implementation)
+#          Adam Mounir <am91ris@gmail.com> (braindecode adaptation)
 #
-# License: BSD (3-clause)
-"""PopulationTransformer: a self-supervised aggregator over intracranial electrodes.
-
-Port of PopulationTransformer (PopT, Chau et al. 2024) into a braindecode-native
-model. Upstream code and pretrained weights are released by the authors:
+# License: MIT
+# Adapted from https://github.com/czlwang/PopulationTransformer
+"""PopulationTransformer (PopT, Chau et al. 2024).
 
 * paper: https://arxiv.org/abs/2406.03044
 * code: https://github.com/czlwang/PopulationTransformer
 * weights: https://huggingface.co/PopulationTransformer/popt_brainbert_stft
-
-Unlike a per-channel encoder, PopT operates on a **population** of electrodes:
-its input is a set of per-electrode feature vectors (the frozen embeddings of a
-channel-level foundation model such as BrainBERT) plus each electrode's integer
-anatomical coordinates. A ``CLS`` token summarises the population after a stack
-of Transformer encoder layers. The input embedding, spatial position encoding and
-Transformer are ported weight-for-weight from the upstream reference, and the
-classification head is the upstream fine-tuning head (one linear layer on the
-``CLS`` token). The official checkpoint loads directly via
-``PopulationTransformer.from_pretrained("braindecode/popt-pretrained")``.
 """
 
 from __future__ import annotations
@@ -38,7 +27,7 @@ from braindecode.modules.popt_modules import (
 )
 
 
-class PopulationTransformer(EEGModuleMixin, nn.Module):
+class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
     r"""PopulationTransformer (PopT) from Chau et al. (2024) [PopT2024]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
@@ -165,7 +154,6 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
         if coord_units not in ("m", "raw"):
             raise ValueError(f"coord_units must be 'm' or 'raw', got {coord_units!r}.")
 
-        # The per-electrode feature vector plays the role of the "time" axis.
         self.input_dim = self.n_times
         self.hidden_dim = hidden_dim
         self.ffn_dim = ffn_dim
@@ -192,42 +180,22 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(
             encoder_layer, num_layers=n_layers
         )
-        # kept for weight parity with the upstream pretraining checkpoint; the
-        # classification path does not use it.
+        # Pre-training head, unused here; kept so the checkpoint loads strictly.
         self.spec_prediction_head = _PopTSpecPredictionHead(hidden_dim, self.input_dim)
-        # Upstream fine-tuning head: one linear layer on the CLS token.
         self.final_layer = nn.Linear(hidden_dim, self.n_outputs)
 
-        # Integer electrode coordinates / sequence ids, derived once from
-        # chs_info; broadcast over the batch at forward time. Buffers follow
-        # device moves and are regenerated per instance (persistent=False).
         self.register_buffer(
             "electrode_coords", self._coords_from_chs_info(), persistent=False
         )
 
     def _coords_from_chs_info(self) -> torch.Tensor:
-        """Build integer ``(n_chans, 3)`` electrode coordinates.
-
-        Coordinates are read from ``chs_info`` (each channel's ``loc[:3]``,
-        in metres as per the MNE convention unless ``coord_units='raw'``),
-        converted to millimetres and rounded (``'raw'``: rounded as they are).
-        They stay absolute unless ``shift_coords`` is set, which shifts each
-        axis so that its smallest index is 0. If ``chs_info`` is missing or
-        carries no usable positions, electrodes fall back to distinct
-        sequential indices on every axis. All indices are clamped to
-        ``[0, max_len - 1]``.
-        """
-        # chs_info is optional; the public property raises when unset, so read
-        # the underlying attribute directly.
+        """Integer ``(n_chans, 3)`` coordinates from ``chs_info``, or sequential ones."""
         chs_info = getattr(self, "_chs_info", None)
         loc = extract_channel_locations_from_chs_info(
             chs_info, num_channels=self.n_chans
         )
-        # The shared helper already rejects a missing, malformed or all-zero
-        # ``chs_info``. It stops at the first unusable channel and does not screen
-        # NaNs, so PopT additionally requires one finite row per electrode.
+        # The helper does not screen NaNs or partial montages.
         if loc is None or loc.shape[0] != self.n_chans or not np.isfinite(loc).all():
-            # Fallback: distinct sequential positions on each axis.
             idx = torch.arange(self.n_chans, dtype=torch.long)
             coords = idx.unsqueeze(1).repeat(1, 3)
         else:
@@ -255,17 +223,7 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
         return coords.clamp(0, self.max_len - 1)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
-        """Load a state dict, also accepting the earlier two-layer head.
-
-        ``braindecode/popt-pretrained`` (revision ``50b02d6``) was exported with
-        an earlier, braindecode-native head: ``LayerNorm`` then ``Linear``
-        (``final_layer.norm.*``, ``final_layer.fc.*``). That head was never
-        trained and is not part of the official checkpoint. Its linear layer is
-        mapped onto ``final_layer`` and its ``LayerNorm`` (identity weights in
-        the mirror) is dropped unconditionally, so that the mirror still loads
-        strictly. The remap applies when PopT is the module being loaded, not
-        when it is nested inside another module.
-        """
+        """Also accept the untrained ``final_layer.{norm,fc}`` head of the HF mirror."""
         remapped = OrderedDict()
         for key, value in state_dict.items():
             if key.startswith("final_layer.norm."):
@@ -321,45 +279,27 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
         """
         batch_size, n_chans, _ = x.shape
         if coords is None:
-            # The default coordinates are the ones derived from chs_info at
-            # construction, so they only describe that electrode set. A larger
-            # population needs its own coordinates: fail with a message that says
-            # so, rather than on a downstream shape mismatch.
             n_known = self.electrode_coords.shape[0]
             if n_chans != n_known:
                 raise ValueError(
-                    "x has "
-                    + str(n_chans)
-                    + " electrodes but the model carries coordinates for "
-                    + str(n_known)
-                    + ". Pass `coords` of shape (batch, "
-                    + str(n_chans)
-                    + ", 3) to decode a different electrode set."
+                    f"x has {n_chans} electrodes but the model has coordinates "
+                    f"for {n_known}; pass `coords` of shape (batch, {n_chans}, 3)."
                 )
             coords = self.electrode_coords.unsqueeze(0).expand(batch_size, -1, -1)
         if seq_id is None:
-            # Single population. Sized from the input, so that an explicit
-            # ``coords`` covering a different electrode count still works.
             seq_id = torch.zeros(batch_size, n_chans, dtype=torch.long, device=x.device)
 
         h = self.input_embedding(x, coords, seq_id)
-        # Prepend a never-masked slot for the CLS token. Written into a new name
-        # rather than reassigning the optional argument, so that TorchScript
-        # keeps the narrowing from the ``is not None`` test.
+        # New name (not reassigning the argument) keeps TorchScript's narrowing.
         padded_mask: torch.Tensor | None = None
         if key_padding_mask is not None:
             cls_keep = torch.zeros(batch_size, 1, dtype=torch.bool, device=x.device)
-            # ``.to(torch.bool)`` rather than ``.bool()``: TorchScript's Tensor
-            # API does not expose the latter.
             padded_mask = torch.cat([cls_keep, key_padding_mask.to(torch.bool)], dim=1)
-        # (batch, 1 + n_chans, hidden_dim)
         z = self.transformer_encoder(h, src_key_padding_mask=padded_mask)
         cls_token = z[:, 0, :]
         logits = self.final_layer(cls_token)
         if return_features:
-            # TorchScript prunes this branch at compile time, so the scripted
-            # forward stays monomorphic while eager mode keeps the feature dict
-            # (same pattern as :class:`~braindecode.models.Brant`).
+            # Scripted forward stays monomorphic (same pattern as Brant).
             if torch.jit.is_scripting():
                 return logits
             return {"features": cls_token, "cls_token": cls_token}

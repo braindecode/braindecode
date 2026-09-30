@@ -1,28 +1,13 @@
+# Authors: Christopher Wang, Geeling Chau (original implementation)
+#          Adam Mounir <am91ris@gmail.com> (braindecode adaptation)
+#
+# License: MIT
+# Adapted from https://github.com/czlwang/PopulationTransformer
 """Building blocks for :class:`braindecode.models.PopulationTransformer`.
 
-Faithful re-implementation of the upstream PopulationTransformer (PopT) reference
-code (``PopulationTransformer/models/pt_model_custom.py`` and
-``transformer_encoder_input.py``, https://github.com/czlwang/PopulationTransformer)
-as standalone braindecode modules — no new runtime dependency (the encoder is a
-stock :class:`torch.nn.TransformerEncoder`).
-
-PopT is a *population* aggregator: it does **not** consume a raw time signal but a
-set of per-electrode feature vectors (typically the frozen 768-d embeddings of a
-per-channel foundation model such as BrainBERT) together with each electrode's
-integer anatomical coordinates. A learnable-free sinusoidal spatial encoding
-(one embedding per X/Y/Z axis plus a sequence-id embedding, each ``hidden//4``
-wide) is added to a linear projection of the features; a ``CLS`` token is
-prepended and, after a stack of Transformer encoder layers, its output is the
-pooled population representation.
-
-Every module here maps its parameters 1:1 to the upstream
-``TransformerEncoderInput`` / ``SpecPredictionHead`` so the released checkpoint
-loads weight-for-weight. The only
-braindecode-native change is that the ``CLS`` feature row and the electrode
-coordinates are materialised **inside** the model so it keeps a standard
-``forward(x)`` signature. The classification head, the upstream fine-tuning
-head (one linear layer on the ``CLS`` token), lives in
-:class:`braindecode.models.PopulationTransformer`.
+Parameters map 1:1 to upstream ``TransformerEncoderInput`` and
+``SpecPredictionHead`` (``models/pt_model_custom.py``,
+``transformer_encoder_input.py``), so the released checkpoint loads as is.
 """
 
 from __future__ import annotations

@@ -42,13 +42,10 @@ Enhancements
   ``braindecode/brant-pretrained`` (all tensors verified identical to the
   official release) (:gh:`1100` by `Adam Mounir`_).
 
-- Add :class:`braindecode.models.PopulationTransformer`, a self-supervised
-  population model for intracranial (sEEG/iEEG) signals from Chau et al. (2024).
-  It aggregates across electrodes from per-electrode features (e.g. frozen
-  BrainBERT embeddings) plus their anatomical coordinates; the input embedding,
-  spatial position encoding and Transformer encoder are ported weight-for-weight
-  from the upstream reference. The official pretrained weights load from
-  ``braindecode/popt-pretrained`` (:gh:`1105` by `Adam Mounir`_).
+- Add :class:`braindecode.models.PopulationTransformer` (PopT, Chau et al. 2024),
+  an iEEG population model over per-electrode features and coordinates, with
+  pretrained weights at ``braindecode/popt-pretrained`` (:gh:`1105` by
+  `Adam Mounir`_).
 
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
