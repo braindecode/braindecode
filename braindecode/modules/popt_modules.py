@@ -18,9 +18,11 @@ pooled population representation.
 Every module here maps its parameters 1:1 to the upstream
 ``TransformerEncoderInput`` / ``SpecPredictionHead`` so the released checkpoint
 loads weight-for-weight. The only
-braindecode-native changes are (i) the ``CLS`` feature row and the electrode
+braindecode-native change is that the ``CLS`` feature row and the electrode
 coordinates are materialised **inside** the model so it keeps a standard
-``forward(x)`` signature, and (ii) the classification head.
+``forward(x)`` signature. The classification head, the upstream fine-tuning
+head (one linear layer on the ``CLS`` token), lives in
+:class:`braindecode.models.PopulationTransformer`.
 """
 
 from __future__ import annotations
@@ -198,28 +200,3 @@ class _PopTSpecPredictionHead(nn.Module):
         h = self.act_fn(h)
         h = self.layer_norm(h)
         return self.output(h)
-
-
-class _PopTHead(nn.Module):
-    """braindecode-native classification head on the ``CLS`` representation.
-
-    Upstream reads the ``CLS`` token and applies a single linear layer
-    (``cls_head``, ``hidden_dim -> 1``); here a LayerNorm precedes a linear layer
-    to ``n_outputs``, a minimal and standard braindecode choice that generalises
-    to any number of classes.
-
-    Parameters
-    ----------
-    hidden_dim : int
-        Transformer model width ``D``.
-    n_outputs : int
-        Number of decoding classes.
-    """
-
-    def __init__(self, hidden_dim: int, n_outputs: int):
-        super().__init__()
-        self.norm = nn.LayerNorm(hidden_dim)
-        self.fc = nn.Linear(hidden_dim, n_outputs)
-
-    def forward(self, cls_token: torch.Tensor) -> torch.Tensor:
-        return self.fc(self.norm(cls_token))

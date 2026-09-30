@@ -15,13 +15,16 @@ its input is a set of per-electrode feature vectors (the frozen embeddings of a
 channel-level foundation model such as BrainBERT) plus each electrode's integer
 anatomical coordinates. A ``CLS`` token summarises the population after a stack
 of Transformer encoder layers. The input embedding, spatial position encoding and
-Transformer are ported weight-for-weight from the upstream reference; the
-classification head is a braindecode-native addition. The official checkpoint
-loads directly via
+Transformer are ported weight-for-weight from the upstream reference, and the
+classification head is the upstream fine-tuning head (one linear layer on the
+``CLS`` token). The official checkpoint loads directly via
 ``PopulationTransformer.from_pretrained("braindecode/popt-pretrained")``.
 """
 
 from __future__ import annotations
+
+import warnings
+from collections import OrderedDict
 
 import numpy as np
 import torch
@@ -30,7 +33,6 @@ import torch.nn as nn
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules.popt_modules import (
-    _PopTHead,
     _PopTInputEmbedding,
     _PopTSpecPredictionHead,
 )
@@ -58,14 +60,17 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
     ``(batch, n_chans, n_times)`` input signature: ``n_chans`` is the number of
     electrodes and ``n_times`` is the upstream feature dimension (768 for
     BrainBERT ``stft`` features). Electrode coordinates are read from
-    ``chs_info`` (their ``loc``) and discretised to integer indices inside the
-    model; when no positions are available the electrodes fall back to distinct
-    sequential indices.
+    ``chs_info`` (their ``loc``) and discretised to absolute integer indices
+    inside the model, as upstream feeds them; when no positions are available
+    the electrodes fall back to distinct sequential indices.
 
-    The released ``popt_brainbert_stft`` checkpoint uses ``hidden_dim=512``,
-    ``ffn_dim=2048``, ``n_heads=8``, ``n_layers=6`` on ``n_times=768`` BrainBERT
-    features (~20.6M parameters). The defaults below are a modest, ready-to-run
-    configuration; pass the released values to reproduce it.
+    The ``CLS`` output goes through a single linear layer, as in the upstream
+    fine-tuning model (``PtDownstreamModel.linear_out``, one logit trained with
+    binary cross-entropy there; ``n_outputs=1`` reproduces it).
+
+    The defaults are the released ``popt_brainbert_stft`` configuration:
+    ``hidden_dim=512``, ``ffn_dim=2048``, ``n_heads=8``, ``n_layers=6``, used
+    on ``n_times=768`` BrainBERT features (~20M parameters).
 
     .. important::
        **Pre-trained weights available.** The official checkpoint is released by
@@ -75,37 +80,43 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
                "braindecode/popt-pretrained", n_outputs=2
            )
 
-       It uses the released configuration above; ``n_chans`` and ``n_outputs``
+       It uses the default configuration; ``n_chans`` and ``n_outputs``
        may be changed freely, as the population is pooled through the ``CLS``
-       token and the classification head is task-specific.
+       token and the classification head is task-specific (the checkpoint
+       carries no trained fine-tuning head).
 
     .. versionadded:: 1.8.2
 
     Parameters
     ----------
     hidden_dim : int, optional
-        Transformer model width ``D``. Must be divisible by 8. Default 128. The
-        released model uses 512.
+        Transformer model width ``D``. Must be divisible by 8. Default 512, as
+        the released model.
     ffn_dim : int, optional
-        Inner dimension of the Transformer feed-forward blocks. Default 256. The
-        released model uses 2048.
+        Inner dimension of the Transformer feed-forward blocks. Default 2048, as
+        the released model.
     n_layers : int, optional
-        Number of Transformer encoder layers. Default 2. Released model: 6.
+        Number of Transformer encoder layers. Default 6, as the released model.
     n_heads : int, optional
-        Number of attention heads. Default 4. Released model: 8.
+        Number of attention heads. Default 8, as the released model.
     max_len : int, optional
         Size of the coordinate table (largest addressable integer coordinate).
         Default 5000, as upstream.
     coord_units : {"m", "raw"}, optional
         How ``chs_info`` positions become integer coordinates. ``"m"`` (default)
-        treats them as MNE metres: millimetres, rounded and shifted per axis so
-        the smallest index is 0. This is **not** the coordinate space of the
-        pretrained checkpoint. ``"raw"`` uses the positions as they are
-        (rounded, no shift): use it with the released Brain Treebank integer
-        (left, inferior, posterior) coordinates, which NEMAR nm000253 stores
-        unconverted in ``x/y/z``, to match the pretrained model (upstream
-        ``pt_supervised_task_coords.py``). You can also pass ``coords`` to
-        :meth:`forward` directly.
+        treats them as MNE metres and rounds them to millimetres. ``"raw"``
+        rounds the positions as they are: use it when ``x/y/z`` already hold the
+        Brain Treebank integer (left, inferior, posterior) coordinates, as NEMAR
+        nm000253 stores them. Either way the indices are absolute, as upstream
+        feeds them (``pt_supervised_task_coords.py``) and as the pretrained
+        checkpoint expects. Indices outside ``[0, max_len - 1]`` are clamped,
+        with a warning. You can also pass ``coords`` to :meth:`forward`
+        directly.
+    shift_coords : bool, optional
+        If ``True``, shift each axis so that its smallest index is 0. Default
+        ``False``. Upstream does not shift, and the shift changes the position
+        encoding, and so the output of the pretrained model; use it only for
+        positions with negative values when training from scratch.
     activation : type[nn.Module], optional
         Feed-forward activation, given as a class. Default :class:`~torch.nn.GELU`.
     drop_prob : float, optional
@@ -130,12 +141,13 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
         sfreq=None,
         # model-specific parameters
         *,
-        hidden_dim: int = 128,
-        ffn_dim: int = 256,
-        n_layers: int = 2,
-        n_heads: int = 4,
+        hidden_dim: int = 512,
+        ffn_dim: int = 2048,
+        n_layers: int = 6,
+        n_heads: int = 8,
         max_len: int = 5000,
         coord_units: str = "m",
+        shift_coords: bool = False,
         activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.1,
     ):
@@ -159,6 +171,7 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
         self.n_heads = n_heads
         self.max_len = max_len
         self.coord_units = coord_units
+        self.shift_coords = shift_coords
 
         self.input_embedding = _PopTInputEmbedding(
             input_dim=self.input_dim,
@@ -180,7 +193,8 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
         # kept for weight parity with the upstream pretraining checkpoint; the
         # classification path does not use it.
         self.spec_prediction_head = _PopTSpecPredictionHead(hidden_dim, self.input_dim)
-        self.final_layer = _PopTHead(hidden_dim, self.n_outputs)
+        # Upstream fine-tuning head: one linear layer on the CLS token.
+        self.final_layer = nn.Linear(hidden_dim, self.n_outputs)
 
         # Integer electrode coordinates / sequence ids, derived once from
         # chs_info; broadcast over the batch at forward time. Buffers follow
@@ -193,11 +207,13 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
         """Build integer ``(n_chans, 3)`` electrode coordinates.
 
         Coordinates are read from ``chs_info`` (each channel's ``loc[:3]``,
-        in metres as per the MNE convention unless ``coord_units='raw'``), converted
-        to millimetres, rounded and shifted per axis so the smallest index is 0
-        (``'raw'``: rounded as they are). If ``chs_info`` is missing or carries
-        no usable positions, electrodes fall back to distinct sequential indices
-        on every axis. All indices are clamped to ``[0, max_len - 1]``.
+        in metres as per the MNE convention unless ``coord_units='raw'``),
+        converted to millimetres and rounded (``'raw'``: rounded as they are).
+        They stay absolute unless ``shift_coords`` is set, which shifts each
+        axis so that its smallest index is 0. If ``chs_info`` is missing or
+        carries no usable positions, electrodes fall back to distinct
+        sequential indices on every axis. All indices are clamped to
+        ``[0, max_len - 1]``.
         """
         # chs_info is optional; the public property raises when unset, so read
         # the underlying attribute directly.
@@ -214,18 +230,47 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
             coords = idx.unsqueeze(1).repeat(1, 3)
         else:
             loc_t = torch.as_tensor(loc, dtype=torch.float)
-            if self.coord_units == "raw":
-                coords = loc_t.round().long()
-            else:
-                coords = (loc_t * 1000.0).round().long()
+            if self.coord_units == "m":
+                loc_t = loc_t * 1000.0
+            coords = loc_t.round().long()
+            if self.shift_coords:
                 coords = coords - coords.min(dim=0, keepdim=True).values
+            if bool(((coords < 0) | (coords >= self.max_len)).any()):
+                warnings.warn(
+                    "Some electrode coordinates from chs_info fall outside "
+                    f"[0, {self.max_len - 1}] and are clamped. The pretrained "
+                    "model expects the non-negative integer (left, inferior, "
+                    "posterior) indices of the upstream data; pass `coords` to "
+                    "forward, or set `shift_coords=True` to train from scratch.",
+                    UserWarning,
+                    stacklevel=4,
+                )
         return coords.clamp(0, self.max_len - 1)
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Load a state dict, also accepting the earlier two-layer head.
+
+        ``braindecode/popt-pretrained`` (revision ``50b02d6``) was exported with
+        an earlier, braindecode-native head: ``LayerNorm`` then ``Linear``
+        (``final_layer.norm.*``, ``final_layer.fc.*``). That head was never
+        trained and is not part of the official checkpoint. Its linear layer is
+        mapped onto ``final_layer`` and its ``LayerNorm`` is dropped, so that
+        the mirror still loads strictly.
+        """
+        remapped = OrderedDict()
+        for key, value in state_dict.items():
+            if key.startswith("final_layer.norm."):
+                continue
+            if key.startswith("final_layer.fc."):
+                key = "final_layer." + key[len("final_layer.fc.") :]
+            remapped[key] = value
+        return super().load_state_dict(remapped, *args, **kwargs)
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""
-        old = next(self.final_layer.parameters())
+        old = self.final_layer.weight
         self._set_n_outputs(n_outputs)
-        self.final_layer = _PopTHead(self.hidden_dim, n_outputs).to(
+        self.final_layer = nn.Linear(self.hidden_dim, n_outputs).to(
             device=old.device, dtype=old.dtype
         )
 
