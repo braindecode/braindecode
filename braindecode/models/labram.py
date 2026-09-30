@@ -191,6 +191,11 @@ _LABRAM_TARGET_CHS_INFO = [
     for ch, loc in _LABRAM_TARGET_CHS_TUPLES
 ]
 LABRAM_CHANNEL_ORDER = [ch for ch, _ in _LABRAM_TARGET_CHS_TUPLES]
+
+#: Absolute time slots of the original LaBraM (``time_embed`` in its
+#: ``modeling_finetune.py``), whatever the window length. A window of P patches
+#: uses slots 0..P-1, and the released weights hold all 16 of them.
+_LABRAM_N_TIME_SLOTS = 16
 _LABRAM_CANONICAL_INDEX = {n.upper(): i for i, n in enumerate(LABRAM_CHANNEL_ORDER)}
 
 
@@ -498,8 +503,15 @@ class Labram(EEGModuleMixin, nn.Module):
         else:
             self.position_embedding = None
 
+        # The tokenizer keeps the original's absolute time slots, so the
+        # pretrained slots load at every window length; longer windows get
+        # extra slots. The decoder mode keeps one slot per patch plus one.
+        n_patches = self.patch_embed[0].n_patchs
+        n_time_slots = (
+            max(_LABRAM_N_TIME_SLOTS, n_patches) if neural_tokenizer else n_patches + 1
+        )
         self.temporal_embedding = nn.Parameter(
-            torch.zeros(1, self.patch_embed[0].n_patchs + 1, self.embed_dim),
+            torch.zeros(1, n_time_slots, self.embed_dim),
             requires_grad=True,
         )
         self.pos_drop = nn.Dropout(p=drop_prob)
@@ -676,7 +688,9 @@ class Labram(EEGModuleMixin, nn.Module):
         if self.neural_tokenizer:
             num_ch = n_input_chans  # Use actual input channels
             time_embed = self._adj_temporal_embedding(
-                num_ch=num_ch, batch_size=batch_size, dim_embed=temporal
+                num_ch=num_ch,
+                batch_size=batch_size,
+                n_patches=self.patch_embed[0].n_patchs,
             )
             x[:, 1:, :] += time_embed
         else:
@@ -831,19 +845,20 @@ class Labram(EEGModuleMixin, nn.Module):
         self._update_init_kwargs(n_outputs=n_outputs)
         self.reset_classifier(n_outputs)
 
-    def _adj_temporal_embedding(self, num_ch, batch_size, dim_embed=None):
+    def _adj_temporal_embedding(self, num_ch, batch_size, n_patches):
         """
         Adjust the dimensions of the time embedding to match the
-        number of channels or patches.
+        number of channels and patches.
 
         Parameters
         ----------
         num_ch : int
-            The number of channels or number of patches.
+            The number of channels.
         batch_size : int
             Batch size of the input data.
-        dim_embed : int
-            The embedding dimension (temporal feature dimension).
+        n_patches : int
+            The number of patches per channel. Patch ``p`` uses time slot
+            ``p``, as in the original implementation.
 
         Returns
         -------
@@ -851,13 +866,9 @@ class Labram(EEGModuleMixin, nn.Module):
             The adjusted time embedding to be added across the channels
             after the [CLS] token. (x[:, 1:, :] += time_embed)
         """
-        if dim_embed is None:
-            cut_dimension = self.patch_size
-        else:
-            cut_dimension = min(dim_embed, self.temporal_embedding.shape[1] - 1)
-
-        # Get the temporal embedding: (1, temporal_embedding_dim, emb_size)
-        # Slice to cut_dimension: (1, cut_dimension, emb_size)
+        # Get the temporal embedding: (1, n_time_slots, emb_size)
+        # Keep the first n_patches slots: (1, n_patches, emb_size)
+        cut_dimension = n_patches
         temporal_embedding = self.temporal_embedding[:, 0:cut_dimension, :]
 
         # Add a new dimension to the time embedding
@@ -873,6 +884,53 @@ class Labram(EEGModuleMixin, nn.Module):
         temporal_embedding = temporal_embedding.flatten(1, 2)
 
         return temporal_embedding
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        # Time slots are absolute positions: take every slot the checkpoint
+        # holds and keep the model's own values for the others. This loads the
+        # released 16 slots at any window length, and checkpoints saved when
+        # the embedding had one slot per patch plus one.
+        key = prefix + "temporal_embedding"
+        loaded = state_dict.get(key)
+        own = self.temporal_embedding
+        if (
+            self.neural_tokenizer
+            and isinstance(loaded, torch.Tensor)
+            and loaded.dim() == own.dim() == 3
+            and loaded.shape[0] == own.shape[0]
+            and loaded.shape[2] == own.shape[2]
+            and loaded.shape[1] != own.shape[1]
+        ):
+            n_copied = min(loaded.shape[1], own.shape[1])
+            resized = own.detach().clone()
+            resized[:, :n_copied] = loaded[:, :n_copied].to(resized)
+            n_used = self.patch_embed[0].n_patchs
+            if n_copied < n_used:
+                warn(
+                    f"The checkpoint holds {loaded.shape[1]} time slots but this "
+                    f"model uses {n_used} (one per patch); time slots "
+                    f"{n_copied} to {n_used - 1} keep their initialization.",
+                    UserWarning,
+                )
+            state_dict[key] = resized
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     def _adj_position_embedding(self, pos_embed_used, batch_size):
         """Copy/pasted from https://github.com/935963004/LaBraM/blob/c431221e6cfd23dbfa9950e0180682fb322b0548/modeling_finetune.py#L358-L362"""

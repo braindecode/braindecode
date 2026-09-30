@@ -153,6 +153,87 @@ def model_decoder(model_config_decoder):
 # ==============================================================================
 
 
+def _labram_embedded_tokens(model, x, ch_names):
+    """Tokens once the position and time embeddings are added (input of ``pos_drop``)."""
+    seen = {}
+    handle = model.pos_drop.register_forward_pre_hook(
+        lambda _module, args: seen.update(tokens=args[0].detach().clone())
+    )
+    with torch.no_grad():
+        model(x, ch_names=ch_names)
+    handle.remove()
+    return seen["tokens"]
+
+
+def _labram_numbered_time_slots(n_slots=16, emb_dim=200):
+    """A time embedding whose slot ``i`` holds the value ``i`` in every dimension."""
+    slots = torch.arange(n_slots, dtype=torch.float32).view(1, n_slots, 1)
+    return slots.expand(1, n_slots, emb_dim).clone()
+
+
+@pytest.mark.parametrize("n_times", [600, 800, 3000])
+def test_labram_uses_pretrained_time_slots_at_any_window(n_times):
+    # The original LaBraM keeps 16 absolute time slots whatever the window
+    # (``time_embed`` in modeling_finetune.py), and a window of P patches adds
+    # slot p to every token of patch p. The released weights hold those 16
+    # slots (saved at 15 s), so they must load into a model built for any
+    # window, and the slots it uses must be the first P ones.
+    names = list(LABRAM_CHANNEL_ORDER[:3])
+    released = Labram(n_chans=3, n_times=3000, n_outputs=0).state_dict()
+    released["temporal_embedding"] = _labram_numbered_time_slots()
+    model = Labram(n_chans=3, n_times=n_times, n_outputs=0).eval()
+
+    model.load_state_dict(released)
+
+    x = torch.randn(2, 3, n_times)
+    with_slots = _labram_embedded_tokens(model, x, names)
+    with torch.no_grad():
+        model.temporal_embedding.zero_()
+    without_slots = _labram_embedded_tokens(model, x, names)
+    added = with_slots - without_slots
+    n_patches = n_times // 200
+    # Tokens are channel-major: (channel, patch) -> channel * n_patches + patch.
+    per_patch = added[:, 1:].reshape(2, 3, n_patches, 200)
+    expected = torch.arange(n_patches, dtype=torch.float32).view(1, 1, n_patches, 1)
+    assert torch.allclose(per_patch, expected.expand_as(per_patch), atol=1e-5)
+    assert torch.equal(added[:, 0], torch.zeros(2, 200))  # [CLS] has no time slot
+
+
+def test_labram_long_window_keeps_pretrained_time_slots():
+    # A window longer than the 16 released slots still builds; the first 16
+    # slots come from the checkpoint, the others keep their initialization,
+    # and the user is told that some of the slots in use are not pretrained.
+    model = Labram(n_chans=3, n_times=6000, n_outputs=0)  # 30 patches
+    own = model.temporal_embedding.detach().clone()
+    released = Labram(n_chans=3, n_times=3000, n_outputs=0).state_dict()
+    released["temporal_embedding"] = _labram_numbered_time_slots()
+
+    with pytest.warns(UserWarning, match="time slots"):
+        model.load_state_dict(released)
+
+    loaded = model.temporal_embedding.detach()
+    assert torch.equal(loaded[:, :16], _labram_numbered_time_slots())
+    assert torch.equal(loaded[:, 16:30], own[:, 16:30])
+
+
+def test_labram_loads_time_embedding_saved_with_one_slot_per_patch():
+    # braindecode <= 1.8 sized the time embedding to the window (patches + 1
+    # slots). Such checkpoints must keep loading and give the same outputs.
+    names = list(LABRAM_CHANNEL_ORDER[:3])
+    saved = Labram(n_chans=3, n_times=800, n_outputs=2).eval()
+    state = saved.state_dict()
+    state["temporal_embedding"] = state["temporal_embedding"][:, :5]
+    x = torch.randn(2, 3, 800)
+    with torch.no_grad():
+        expected = saved(x, ch_names=names)
+
+    reloaded = Labram(n_chans=3, n_times=800, n_outputs=2).eval()
+    reloaded.load_state_dict(state)
+
+    with torch.no_grad():
+        assert torch.allclose(reloaded(x, ch_names=names), expected, atol=1e-6)
+
+
 def test_labram_neural_tokenizer_initialization(model_tokenizer):
     """Test that the model initializes correctly in tokenizer mode."""
     assert model_tokenizer is not None
