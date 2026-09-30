@@ -97,12 +97,6 @@ Requirements
 Bug fixes
 ==========
 
-- Keep the channel IDs of :class:`braindecode.models.EEGPT` (``chans_id``) out
-  of the state dict. They are rebuilt from ``chs_info``, and a checkpoint that
-  still stores them no longer overrides them: the released weights now load on
-  any montage and with the default channel projection, where they failed with a
-  size mismatch, and a montage with the same channel count no longer silently
-  takes the checkpoint's IDs (:gh:`1195` by `Bruno Aristimunha`_)
 - Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU), part 2 of
   :gh:`1183`: :class:`braindecode.modules.GeneralizedGaussianFilter` and
   :func:`braindecode.functional.hilbert_freq` now use a real-valued DFT on
@@ -220,6 +214,12 @@ Bug fixes
   intermediate gradients, and rows at or below ``max_norm`` are unchanged.
   Empty tensors pass through and a negative ``max_norm`` raises, as
   ``Tensor.renorm`` does (:gh:`1187` by `Bruno Aristimunha`_).
+- Keep the channel IDs of :class:`braindecode.models.EEGPT` (``chans_id``) out
+  of the state dict. They are rebuilt from ``chs_info``, and a checkpoint that
+  still stores them no longer overrides them: the released weights now load on
+  any montage and with the default channel projection, where they failed with a
+  size mismatch, and a montage with the same channel count no longer silently
+  takes the checkpoint's IDs (:gh:`1195` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)
