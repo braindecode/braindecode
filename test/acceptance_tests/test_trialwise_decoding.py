@@ -112,10 +112,33 @@ def test_trialwise_decoding():
     )
     clf.fit(train_set, y=None, epochs=6)
 
+    # This guards the training pipeline (labels, loss, optimizer, predict and
+    # scoring), not generalization. With 30 validation trials (one trial = 3.3%)
+    # and 6 epochs, valid accuracy is typically within a few trials of chance
+    # and the valid accuracy/loss first-vs-last checks fail for ~1 in 4 seeds,
+    # so a torch/BLAS/platform change flips them even though training is
+    # deterministic.
     assert_learning_history(
         clf.history,
         n_epochs=6,
-        loss_keys=("train_loss", "valid_loss"),
+        loss_keys=("train_loss",),
         accuracy_keys=("train_accuracy", "valid_accuracy"),
-        improving_accuracy_keys=("train_accuracy", "valid_accuracy"),
+        improving_accuracy_keys=("train_accuracy",),
     )
+    train_loss = np.asarray(clf.history[:, "train_loss"], dtype=float)
+    valid_loss = np.asarray(clf.history[:, "valid_loss"], dtype=float)
+    assert np.all(np.isfinite(valid_loss))
+    # Best/first train-loss ratio: worst of 160 seeds was 0.651.
+    assert train_loss.min() < 0.8 * train_loss[0]
+    # train_accuracy is scored on the full train set in eval mode after each
+    # epoch; >= 39/60 trials, the worst of 160 seeds was 43/60.
+    assert clf.history[-1, "train_accuracy"] >= 0.65
+
+    # The last history scores use the final weights on the train set and the
+    # predefined valid split, so they must match predicting both directly.
+    y_train = ds.y[train_set.indices]
+    train_acc = np.mean(clf.predict(train_set) == y_train)
+    np.testing.assert_allclose(train_acc, clf.history[-1, "train_accuracy"])
+    y_valid = ds.y[valid_set.indices]
+    valid_acc = np.mean(clf.predict(valid_set) == y_valid)
+    np.testing.assert_allclose(valid_acc, clf.history[-1, "valid_accuracy"])
