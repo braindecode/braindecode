@@ -69,6 +69,10 @@ Enhancements
   parallelism, preserving the test cases and gallery training workloads
   (:gh:`1161` by `Bruno Aristimunha`_).
 
+- Add a bounded SAE activation analysis tutorial on BCI IV 2a (BNCI2014_001)
+  using optional SAE Lens, without adding an SAE implementation to Braindecode
+  (:gh:`1152` by `Vandit Shah`_ and `Bruno Aristimunha`_)
+
 - Add :class:`braindecode.models.BrainBERT`, a self-supervised foundation model
   for intracranial (sEEG/iEEG) signals from Wang et al. (ICLR 2023), with
   pretrained weights (:gh:`1104` by `Adam Mounir`_).
