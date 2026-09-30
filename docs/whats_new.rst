@@ -94,6 +94,10 @@ Requirements
 Bug fixes
 ==========
 
+- :meth:`braindecode.EEGClassifier.predict_trials` and
+  :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
+  ``ValueError`` on trials of different lengths; they return a list with one
+  prediction array per trial (:gh:`1159` by `Bruno Aristimunha`_)
 - Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU), part 2 of
   :gh:`1183`: :class:`braindecode.modules.GeneralizedGaussianFilter` and
   :func:`braindecode.functional.hilbert_freq` now use a real-valued DFT on

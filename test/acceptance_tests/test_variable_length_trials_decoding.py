@@ -106,6 +106,12 @@ def test_variable_length_trials_cropped_decoding():
 
     # One prediction per window, including the windows of the shorter recording.
     assert clf.predict(train_set).shape == (len(train_set),)
+    # Trials of different lengths come back as one prediction array per trial.
+    trial_preds, trial_targets = clf.predict_trials(train_set)
+    n_samples = [ds.metadata["i_stop_in_trial"].max() for ds in train_set.datasets]
+    assert len(trial_preds) == len(trial_targets) == len(n_samples)
+    lengths = [preds.shape[1] for preds in trial_preds]
+    assert len(set(lengths)) > 1 and np.argmin(lengths) == np.argmin(n_samples)
     # The single valid recording is one trial made of all its windows.
     trial_preds, trial_targets = clf.predict_trials(valid_set)
     assert trial_preds.shape[:2] == (len(valid_set.datasets), 2)
