@@ -65,6 +65,10 @@ Enhancements
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
   regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
 
+- Add a bounded SAE intervention tutorial on a frozen pretrained REVE with
+  BNCI2014_001 using optional SAE Lens, without adding an SAE implementation
+  to Braindecode (:gh:`1120` by `Vandit Shah`_ and `Bruno Aristimunha`_)
+
 - Improve CI test scheduling and run documentation examples with bounded
   parallelism, preserving the test cases and gallery training workloads
   (:gh:`1161` by `Bruno Aristimunha`_).
