@@ -2,128 +2,124 @@
 #          Robin Tibor Schirrmeister
 #
 # License: BSD-3
-import mne
 import numpy as np
 import pytest
 import torch
-from mne.io import concatenate_raws
+from scipy.stats import binomtest
+from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
-from torch import optim
 
 from braindecode import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
 from braindecode.models import ShallowFBCSPNet
 from braindecode.training.losses import CroppedLoss
 from braindecode.util import set_random_seeds
-from test.acceptance_tests._history_assertions import assert_learning_history
+from test.acceptance_tests._bnci import SFREQ, load_left_right_trials, shuffled_labels
+
+SEED = 20170629
+N_EPOCHS = 10
+INPUT_WINDOW_SAMPLES = 300
+
+# Accuracy on the 144 trials of the second session over seed sweeps that varied
+# the weight-init/dropout and batch-order seeds separately and together: real
+# labels 0.826-0.882 (151 runs), shuffled-label control 0.382-0.590 (101 runs).
+# Both thresholds keep about 10 trials of margin.
+MIN_ACCURACY = 0.75
+MAX_CONTROL_ACCURACY = 0.66
+MAX_P_VALUE = 1e-3
 
 
-@pytest.mark.network
-def test_cropped_decoding():
-    # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
-    subject_id = 1
-    event_codes = [5, 6, 9, 10, 13, 14]
+@pytest.fixture(scope="module")
+def sessions():
+    # 144 trials (72 per class) per session, 22 channels, 0-4 s at 100 Hz.
+    X, y, session = load_left_right_trials(tmin=0.0, tmax=4.0)
+    assert len(np.unique(session)) == 2
+    train = session == np.unique(session)[0]
+    return X[train], y[train], X[~train], y[~train]
 
-    # This will download the files if you don't have them yet,
-    # and then return the paths to the files.
-    physionet_paths = mne.datasets.eegbci.load_data(
-        subject_id, event_codes, update_path=False
-    )
 
-    # Load each of the files
-    parts = [
-        mne.io.read_raw_edf(path, preload=True, stim_channel="auto", verbose="WARNING")
-        for path in physionet_paths
-    ]
-
-    # Concatenate them
-    raw = concatenate_raws(parts)
-
-    # Find the events in this dataset
-    events, _ = mne.events_from_annotations(raw)
-    # Use only EEG channels
-    eeg_channel_inds = mne.pick_types(
-        raw.info, meg=False, eeg=True, stim=False, eog=False, exclude="bads"
-    )
-
-    # Extract trials, only using EEG channels
-    epoched = mne.Epochs(
-        raw,
-        events,
-        dict(hands=2, feet=3),
-        tmin=1,
-        tmax=4.1,
-        proj=False,
-        picks=eeg_channel_inds,
-        baseline=None,
-        preload=True,
-    )
-    # Convert data from volt to millivolt
-    # Pytorch expects float32 for input and int64 for labels.
-    X = (epoched.get_data() * 1e6).astype(np.float32)
-    y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
-
-    # Set if you want to use GPU
-    # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
-    cuda = False
-    set_random_seeds(seed=20170629, cuda=cuda)
-
-    # This will determine how many crops are processed in parallel
-    input_window_samples = 450
-    n_classes = 2
-    in_chans = X.shape[1]
-    # final_conv_length determines the size of the receptive field of the ConvNet
+def fit_and_predict(
+    X_train, y_train, X_valid, y_valid, init_seed=SEED, shuffle_seed=SEED, lr=1e-3
+):
+    """Train on one session and predict the trials of the other one."""
+    set_random_seeds(init_seed, cuda=False)
     model = ShallowFBCSPNet(
-        n_chans=in_chans,
-        n_outputs=n_classes,
-        n_times=input_window_samples,
+        n_chans=X_train.shape[1],
+        n_outputs=2,
+        n_times=INPUT_WINDOW_SAMPLES,
         final_conv_length=12,
     )
     model.to_dense_prediction_model()
-
-    if cuda:
-        model.cuda()
-
-    # Perform forward pass to determine how many outputs per input
     n_preds_per_input = model.get_output_shape()[2]
 
-    train_set = create_from_X_y(
-        X[:60],
-        y[:60],
-        drop_last_window=False,
-        sfreq=100,
-        window_size_samples=input_window_samples,
-        window_stride_samples=n_preds_per_input,
-    )
+    def windows(X, y):
+        return create_from_X_y(
+            X,
+            y,
+            drop_last_window=False,
+            sfreq=SFREQ,
+            window_size_samples=INPUT_WINDOW_SAMPLES,
+            window_stride_samples=n_preds_per_input,
+        )
 
-    valid_set = create_from_X_y(
-        X[60:],
-        y[60:],
-        drop_last_window=False,
-        sfreq=100,
-        window_size_samples=input_window_samples,
-        window_stride_samples=n_preds_per_input,
-    )
-
-    train_split = predefined_split(valid_set)
-
+    train_set, valid_set = windows(X_train, y_train), windows(X_valid, y_valid)
     clf = EEGClassifier(
         model,
         cropped=True,
         criterion=CroppedLoss,
-        criterion__loss_function=torch.nn.functional.nll_loss,
-        optimizer=optim.Adam,
-        train_split=train_split,
+        criterion__loss_function=torch.nn.functional.cross_entropy,
+        optimizer=torch.optim.AdamW,
+        optimizer__lr=lr,
+        train_split=predefined_split(valid_set),
         batch_size=32,
-        callbacks=["accuracy"],
+        iterator_train__shuffle=True,
+        iterator_train__generator=torch.Generator().manual_seed(shuffle_seed),
+        callbacks=[
+            "accuracy",
+            # Annealing the lr keeps the final weights, which are the ones
+            # evaluated, from depending much on the last few batches.
+            ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=N_EPOCHS - 1)),
+        ],
         classes=[0, 1],
     )
+    clf.fit(train_set, y=None, epochs=N_EPOCHS)
 
-    clf.fit(train_set, y=None, epochs=4)
-    assert_learning_history(
-        clf.history,
-        n_epochs=4,
-        loss_keys=("train_loss", "valid_loss"),
-        accuracy_keys=("train_accuracy", "valid_accuracy"),
-        improving_accuracy_keys=("train_accuracy", "valid_accuracy"),
+    # Average the crop predictions of each trial, as the scoring callback does.
+    trial_preds, trial_targets = clf.predict_trials(valid_set)
+    y_pred = trial_preds.mean(axis=2).argmax(axis=1)
+    np.testing.assert_array_equal(trial_targets, y_valid)
+    np.testing.assert_allclose(
+        np.mean(y_pred == y_valid), clf.history[-1, "valid_accuracy"]
     )
+    assert len(clf.history) == N_EPOCHS
+    for key in ("train_loss", "valid_loss"):
+        # Cross-entropy is non-negative; a negative loss means log-probabilities
+        # and logits got mixed up.
+        assert np.all(np.asarray(clf.history[:, key]) >= 0)
+    return y_pred
+
+
+@pytest.mark.network
+def test_cropped_decoding(sessions, deterministic_algorithms):
+    X_train, y_train, X_valid, y_valid = sessions
+    y_pred = fit_and_predict(X_train, y_train, X_valid, y_valid)
+    n_correct = int(np.sum(y_pred == y_valid))
+    n_trials = len(y_valid)
+    accuracy = n_correct / n_trials
+
+    control_train = shuffled_labels(y_train, SEED)
+    control_valid = shuffled_labels(y_valid, SEED + 1)
+    control_accuracy = np.mean(
+        fit_and_predict(X_train, control_train, X_valid, control_valid) == control_valid
+    )
+
+    p_value = binomtest(n_correct, n_trials, 0.5, alternative="greater").pvalue
+    print(
+        f"held-out accuracy {accuracy:.4f} ({n_correct}/{n_trials}), p={p_value:.1e}; "
+        f"shuffled-label control {control_accuracy:.4f}"
+    )
+    assert accuracy >= MIN_ACCURACY, (accuracy, control_accuracy)
+    assert p_value < MAX_P_VALUE, p_value
+    # A label leak between the sessions would let the control score far above
+    # chance.
+    assert control_accuracy <= MAX_CONTROL_ACCURACY, (accuracy, control_accuracy)

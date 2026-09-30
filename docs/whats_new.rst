@@ -28,8 +28,10 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
-- Restore acceptance tests on supported Python versions using the current model
-  API and training-history checks (:gh:`1159` by `Bruno Aristimunha`_).
+- Restore acceptance tests on supported Python versions as seeded decoding
+  checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
+  control and a replicability check), run by a dedicated CI job
+  (:gh:`1159` by `Bruno Aristimunha`_).
 
 - Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
   model with pretrained encoders and support for varying montages through
