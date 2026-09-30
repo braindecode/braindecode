@@ -354,7 +354,7 @@ class SleepFM(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs: int):
         """Replace the trial-level output projection."""
-        self._n_outputs = n_outputs
+        self._set_n_outputs(n_outputs)
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
         return self
 
@@ -535,7 +535,7 @@ class SleepFMStager(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs: int):
         """Replace the token-wise sleep-staging output projection."""
-        self._n_outputs = n_outputs
+        self._set_n_outputs(n_outputs)
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
         return self
 
