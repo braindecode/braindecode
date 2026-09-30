@@ -107,11 +107,13 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
         treats them as MNE metres and rounds them to millimetres. ``"raw"``
         rounds the positions as they are: use it when ``x/y/z`` already hold the
         Brain Treebank integer (left, inferior, posterior) coordinates, as NEMAR
-        nm000253 stores them. Either way the indices are absolute, as upstream
-        feeds them (``pt_supervised_task_coords.py``) and as the pretrained
-        checkpoint expects. Indices outside ``[0, max_len - 1]`` are clamped,
-        with a warning. You can also pass ``coords`` to :meth:`forward`
-        directly.
+        nm000253 stores them. Either way the indices are absolute, not
+        shifted, as upstream feeds them (``pt_supervised_task_coords.py``).
+        They match the pretrained checkpoint only if the positions are already
+        in the upstream (left, inferior, posterior) space; MNE head-frame
+        positions (e.g. a standard montage) are **not** that space. Indices
+        outside ``[0, max_len - 1]`` are clamped, with a warning. You can also
+        pass ``coords`` to :meth:`forward` directly.
     shift_coords : bool, optional
         If ``True``, shift each axis so that its smallest index is 0. Default
         ``False``. Upstream does not shift, and the shift changes the position
@@ -236,12 +238,17 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
             if self.shift_coords:
                 coords = coords - coords.min(dim=0, keepdim=True).values
             if bool(((coords < 0) | (coords >= self.max_len)).any()):
+                hint = (
+                    "raise `max_len`"
+                    if self.shift_coords
+                    else "set `shift_coords=True` to train from scratch"
+                )
                 warnings.warn(
                     "Some electrode coordinates from chs_info fall outside "
                     f"[0, {self.max_len - 1}] and are clamped. The pretrained "
                     "model expects the non-negative integer (left, inferior, "
                     "posterior) indices of the upstream data; pass `coords` to "
-                    "forward, or set `shift_coords=True` to train from scratch.",
+                    f"forward, or {hint}.",
                     UserWarning,
                     stacklevel=4,
                 )
@@ -254,8 +261,10 @@ class PopulationTransformer(EEGModuleMixin, nn.Module):
         an earlier, braindecode-native head: ``LayerNorm`` then ``Linear``
         (``final_layer.norm.*``, ``final_layer.fc.*``). That head was never
         trained and is not part of the official checkpoint. Its linear layer is
-        mapped onto ``final_layer`` and its ``LayerNorm`` is dropped, so that
-        the mirror still loads strictly.
+        mapped onto ``final_layer`` and its ``LayerNorm`` (identity weights in
+        the mirror) is dropped unconditionally, so that the mirror still loads
+        strictly. The remap applies when PopT is the module being loaded, not
+        when it is nested inside another module.
         """
         remapped = OrderedDict()
         for key, value in state_dict.items():
