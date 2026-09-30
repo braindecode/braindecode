@@ -26,6 +26,7 @@ from braindecode.models import (
     REVE,
     SSTDPN,
     ZUNA,
+    Brant,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
@@ -89,6 +90,8 @@ _DIRECT_TORCHSCRIPT_MODELS = (
     "MEDFormer",
     "DGCNN",
     "ZUNA",
+    "Brant",
+    "BrainBERT",
 )
 
 _MODEL_CASES = {
@@ -181,7 +184,7 @@ def test_completeness__models_test_cases():
 def test_direct_torchscript_model_registry():
     """Every direct TorchScript case is unique and registered."""
     direct_models = set(_DIRECT_TORCHSCRIPT_MODELS)
-    assert len(_DIRECT_TORCHSCRIPT_MODELS) == 30
+    assert len(_DIRECT_TORCHSCRIPT_MODELS) == 32
     assert len(direct_models) == len(_DIRECT_TORCHSCRIPT_MODELS)
     assert direct_models <= all_models_dict.keys()
     assert direct_models <= _MODEL_CASES.keys()
@@ -363,6 +366,7 @@ def test_model_has_activation_parameter(model_class):
     named 'activation' or any parameter that starts with 'activation'.
     """
     if model_class in [
+        Brant,
         EEGMiner,
         REVE,
         EEGPT,
@@ -585,6 +589,9 @@ def test_model_torch_script(model):
         # forward() returns Dict[str, Tensor] (features) or Tensor (logits);
         # torch.jit.script rejects this polymorphic return type.
         "EEGDINO",
+        # forward() returns Dict[str, Tensor | None] (features) or Tensor (logits);
+        # torch.jit.script rejects this required polymorphic return type.
+        "MIRepNet",
         # wavelet encoder (conv1d + circular padding) + Dict/Tensor polymorphic
         # return; torch.jit.script rejects the polymorphic return type.
         "MVPFormer",

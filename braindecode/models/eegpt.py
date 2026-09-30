@@ -371,6 +371,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
         self.final_layer = _LinearConstraintProbe(
             **self.get_probe_params(),
             n_outputs=n_outputs,

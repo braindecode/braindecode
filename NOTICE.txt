@@ -50,6 +50,7 @@ The following components are licensed under the MIT License:
 - `braindecode/models/medformer.py`
 - `braindecode/models/tcformer.py`
 - `braindecode/models/ifnet.py`
+- `braindecode/models/mirepnet.py`
 
 ### Apache-2.0 Licensed Files
 
@@ -58,6 +59,16 @@ The following components are licensed under the Apache License 2.0:
 - `braindecode/models/mvpformer.py`
 - `braindecode/models/zuna.py`
 - `braindecode/models/luna.py`
+- `braindecode/models/brant.py`
+- `braindecode/models/diver1.py`
+- `braindecode/models/mscformer.py`
+
+### USC Academic License Files
+
+[License](https://github.com/ShanechiLab/BaRISTA/blob/master/LICENSE.md)
+
+- `braindecode/models/barista.py`
+- `docs/_static/model/barista.jpeg`
 
 ## License Links
 
@@ -66,6 +77,7 @@ The following components are licensed under the Apache License 2.0:
 - [CC BY-NC-SA 4.0 License](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 - [MIT License](https://opensource.org/licenses/MIT)
 - [Apache-2.0 License](https://www.apache.org/licenses/LICENSE-2.0)
+- [USC Academic License](https://github.com/ShanechiLab/BaRISTA/blob/master/LICENSE.md)
 
 ## Note
 
