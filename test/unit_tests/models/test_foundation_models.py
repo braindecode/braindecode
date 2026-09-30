@@ -431,6 +431,9 @@ def test_labram_neural_decoder_temporal_embeddings_match_time_patches(
         num_layers=0,
         num_heads=1,
         use_abs_pos_emb=False,
+        # The [CLS] readout ends in ``norm``, replaced by Identity below, so
+        # ``return_all_tokens`` gives the tokens as they enter the readout.
+        use_mean_pooling=False,
         neural_tokenizer=False,
     )
     batch_size = 2
