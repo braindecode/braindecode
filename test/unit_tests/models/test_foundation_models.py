@@ -2818,13 +2818,10 @@ def test_brainomni_released_checkpoint_strict_load_and_parity(tmp_path):
         torch.equal(model.state_dict()[key], value)
         for key, value in original_head.items()
     )
-    assert torch.any(
-        model.blocks[0].time_attn.rope_embedding_layer.rotate.imag != 0
-    )
-
-    # The released DeepSpeed export stores RoPE's derived complex cache as
-    # real-only. Both the pinned upstream run and public loader regenerate the
-    # mathematically defined cache before computing this signature.
+    # The released export stores RoPE's frequencies rounded to bfloat16 and its
+    # complex cache without the sine part. The public loader drops both and the
+    # port recomputes them in float32, as the freshly built upstream model does
+    # before pretraining; the pinned upstream signature below uses that path.
     model.tokenizer.pos.copy_(
         torch.tensor([[0.1, 0.2, 0.3, 0, 0, 0], [-0.2, 0.1, 0.4, 0, 0, 0]])
     )
@@ -2833,26 +2830,26 @@ def test_brainomni_released_checkpoint_strict_load_and_parity(tmp_path):
     assert feat.shape == (1, 16, 8, 256)
     expected = torch.tensor(
         [
-            0.00458572618663311,
-            -0.005507787223905325,
-            -0.02145325019955635,
-            -0.047605402767658234,
-            -0.05783329904079437,
-            0.04926654323935509,
-            -0.00911555252969265,
-            -0.03314506262540817,
-            -0.006572749465703964,
-            -0.22567233443260193,
-            -0.12159579992294312,
-            0.00981579814106226,
-            -0.04502265900373459,
-            -0.006218839902430773,
-            0.01613355241715908,
-            0.06309985369443893,
+            0.004591966513544321,
+            -0.005511901341378689,
+            -0.02144569717347622,
+            -0.047614686191082,
+            -0.057811133563518524,
+            0.04927004501223564,
+            -0.009117362089455128,
+            -0.033146947622299194,
+            -0.006567645352333784,
+            -0.2256787121295929,
+            -0.12158702313899994,
+            0.009830539114773273,
+            -0.045027319341897964,
+            -0.0062219384126365185,
+            0.016128726303577423,
+            0.06308680027723312,
         ]
     )
     torch.testing.assert_close(feat.flatten()[:16], expected, rtol=1e-5, atol=1e-5)
-    assert feat.sum().item() == pytest.approx(62.14745330810547, abs=1e-4)
+    assert feat.sum().item() == pytest.approx(62.13804626464844, abs=1e-4)
 
 
 @pytest.mark.network

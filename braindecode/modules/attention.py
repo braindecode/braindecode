@@ -23,7 +23,7 @@ from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
-from braindecode.functional import _get_gaussian_kernel1d
+from braindecode.functional import _get_gaussian_kernel1d, rotate_pairs
 
 
 class SqueezeAndExcitation(nn.Module):
@@ -1056,29 +1056,24 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
 
 
 class RotaryPositionalEmbedding(nn.Module):
-    """Complex-valued Rotary Position Embedding (RoPE) for transformer attention.
+    """Rotary Position Embedding (RoPE) for transformer attention.
 
-    Implements the RoPE scheme from Su et al. (2021) [rope2021]_, which encodes
-    position information by rotating query and key vectors in the complex plane.
-    Rotation frequencies are pre-computed and cached as buffers, and the cache
-    is regenerated when the module is cast to a different dtype (e.g. via
-    ``.half()`` or ``.bfloat16()``) because ``torch.polar`` only supports
-    ``float32/float64``.
+    Implements the RoPE scheme from Su et al. (2021) [rope2021]_: adjacent
+    feature pairs of queries and keys are rotated by a position-dependent
+    angle. The rotation is computed in float32 with real arithmetic
+    (:func:`~braindecode.functional.rotate_pairs`), so it has no complex
+    tensors, no cache to keep in sync and no state-dict entries.
 
     Parameters
     ----------
     n_dim : int
         Full attention dimension (``n_heads * head_dim``), **not** the per-head
         dimension. One inverse-frequency ladder is built over ``n_dim`` and then
-        split across heads (see :meth:`reshape_for_broadcast`), so each head gets a
-        different frequency band. This is load-bearing for checkpoint parity:
-        because this module has no learned parameters, changing ``n_dim`` to the
-        per-head size would silently alter pretrained numerics without tripping
-        ``from_pretrained(strict=True)``. The per-head size (``n_dim // n_heads``)
-        must be even.
-    init_seq_len : int
-        Initial sequence length for which the rotation cache is pre-computed.
-        The cache grows automatically when longer sequences are seen.
+        split across heads, so each head gets a different frequency band. This
+        is load-bearing for checkpoint parity: because this module has no
+        learned parameters, changing ``n_dim`` to the per-head size would
+        silently alter pretrained numerics without tripping a strict load. The
+        per-head size (``n_dim // n_heads``) must be even.
     base : int, optional
         Base for the inverse-frequency schedule.  Default: 10000.
 
@@ -1089,90 +1084,30 @@ class RotaryPositionalEmbedding(nn.Module):
        arXiv: https://arxiv.org/abs/2104.09864
     """
 
-    def __init__(self, n_dim, init_seq_len, base=10000):
+    def __init__(self, n_dim, base=10000):
         super().__init__()
         if n_dim <= 0 or n_dim % 2:
             raise ValueError(f"n_dim must be a positive even integer, got {n_dim}.")
-        if init_seq_len <= 0:
-            raise ValueError(
-                f"init_seq_len must be a positive integer, got {init_seq_len}."
-            )
         if base <= 0:
             raise ValueError(f"base must be positive, got {base}.")
-        self.register_buffer(
-            "freqs",
-            1.0 / (base ** (torch.arange(0, n_dim, 2)[: (n_dim // 2)].float() / n_dim)),
-        )
-        self._set_rotate_cache(init_seq_len)
+        self.n_dim = n_dim
+        self.base = base
 
-    def _set_rotate_cache(self, seq_len):
-        self.max_seq_len_cache = seq_len
-        t = torch.arange(seq_len, device=self.freqs.device).type_as(self.freqs)
-        rotate = torch.outer(t, self.freqs).float()
-        self.register_buffer("rotate", torch.polar(torch.ones_like(rotate), rotate))
+    def _cos_sin(self, seq: int, heads: int, device: torch.device):
+        """``(seq, heads, head_dim)`` cosines and sines, recomputed in float32.
 
-    def _apply(self, fn, recurse=True):
-        # Rotate cache is complex64; a real-dtype cast would drop imaginary part, so regenerate.
-        prev_dtype = self.rotate.dtype
-        result = super()._apply(fn, recurse=recurse)
-        if self.rotate.dtype != prev_dtype:
-            self._set_rotate_cache(self.max_seq_len_cache)
-        return result
-
-    def _load_from_state_dict(
-        self,
-        state_dict,
-        prefix,
-        local_metadata,
-        strict,
-        missing_keys,
-        unexpected_keys,
-        error_msgs,
-    ):
-        # ``rotate`` is a deterministic cache. DeepSpeed's ``zero_to_fp32.py``
-        # exported the released BrainOmni cache as float32, discarding its sine
-        # (imaginary) component. Runtime use can also grow the cache beyond its
-        # construction length. Load ``freqs`` normally, then rebuild either
-        # compatible representation from the authoritative frequency buffer.
-        rotate_key = prefix + "rotate"
-        exported_rotate = state_dict.get(rotate_key)
-        compatible_rotate = (
-            exported_rotate is not None
-            and exported_rotate.ndim == 2
-            and exported_rotate.shape[0] > 0
-            and exported_rotate.shape[1] == self.rotate.shape[1]
+        Recomputing (instead of caching a buffer) keeps the frequencies in
+        float32 even after ``.half()``/``.bfloat16()`` casts of the model.
+        """
+        exponent = torch.arange(0, self.n_dim, 2, device=device).float() / self.n_dim
+        freqs = 1.0 / (self.base**exponent)
+        positions = torch.arange(seq, device=device, dtype=torch.float32)
+        angles = torch.outer(positions, freqs)
+        angles = torch.repeat_interleave(angles, 2, dim=-1)
+        angles = rearrange(
+            angles, "seq (heads head_dim) -> seq heads head_dim", heads=heads
         )
-        repair_rotate = compatible_rotate and (
-            not torch.is_complex(exported_rotate)
-            or exported_rotate.shape != self.rotate.shape
-        )
-        if repair_rotate:
-            state_dict = state_dict.copy()
-            state_dict[rotate_key] = self.rotate
-        super()._load_from_state_dict(
-            state_dict,
-            prefix,
-            local_metadata,
-            strict,
-            missing_keys,
-            unexpected_keys,
-            error_msgs,
-        )
-        if repair_rotate:
-            self._set_rotate_cache(exported_rotate.shape[0])
-
-    def reshape_for_broadcast(self, x: torch.Tensor):
-        """x: (batch, seq, n_heads, head_dim); rotate cache: (seq, dim)."""
-        batch, seq, heads, head_dim = x.shape
-        if seq > self.max_seq_len_cache:
-            self._set_rotate_cache(seq)
-        rotate = self.rotate[:seq, :]
-        assert heads * head_dim == rotate.shape[1], (
-            f"RoPE cache shape mismatch: heads={heads}, head_dim={head_dim}, rotate.shape[1]={rotate.shape[1]}"
-        )
-        return rearrange(
-            rotate, "seq (heads head_dim) -> seq heads head_dim", heads=heads
-        ).unsqueeze(0)
+        return angles.cos(), angles.sin()
 
     def forward(self, q, k):
         """Apply rotary embeddings to query and key tensors.
@@ -1191,14 +1126,21 @@ class RotaryPositionalEmbedding(nn.Module):
         k_out : torch.Tensor
             Rotated key, same shape as ``k``.
         """
-        assert len(q.shape) == len(k.shape) == 4, (
-            f"Expected 4-D q and k, got q.ndim={len(q.shape)}, k.ndim={len(k.shape)}"
-        )
-        q_ = torch.view_as_complex(q.float().reshape(*q.shape[:-1], -1, 2))
-        k_ = torch.view_as_complex(k.float().reshape(*k.shape[:-1], -1, 2))
-        rotate = self.reshape_for_broadcast(q_)
-        q_out = torch.view_as_real(q_ * rotate).flatten(3)
-        k_out = torch.view_as_real(k_ * rotate).flatten(3)
+        if q.ndim != 4 or k.ndim != 4:
+            raise ValueError(
+                f"Expected 4-D q and k, got q.ndim={q.ndim}, k.ndim={k.ndim}."
+            )
+        _, seq, heads, head_dim = q.shape
+        if heads * head_dim != self.n_dim:
+            raise ValueError(
+                f"RoPE expects n_heads * head_dim == {self.n_dim}, got "
+                f"{heads} * {head_dim}."
+            )
+        cos, sin = self._cos_sin(seq, heads, q.device)
+        q_float = q.float()
+        k_float = k.float()
+        q_out = q_float * cos + rotate_pairs(q_float) * sin
+        k_out = k_float * cos + rotate_pairs(k_float) * sin
         return q_out.type_as(q), k_out.type_as(k)
 
 
@@ -1264,9 +1206,7 @@ class MultiHeadAttentionRoPE(nn.Module):
         self.proj = nn.Linear(n_dim, n_dim)
         self.rope = rope
         self.rope_embedding_layer = (
-            RotaryPositionalEmbedding(n_dim=n_dim, init_seq_len=240)
-            if self.rope
-            else nn.Identity()
+            RotaryPositionalEmbedding(n_dim=n_dim) if self.rope else nn.Identity()
         )
 
     def forward(self, x: torch.Tensor, mask=None):

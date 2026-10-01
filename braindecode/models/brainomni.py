@@ -23,7 +23,12 @@ from torch.nn.utils import weight_norm  # noqa: F401
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _geometry_from_chs_info
-from braindecode.modules import MultiHeadAttentionRoPE, PatchTokenizer, ResidualVQ
+from braindecode.modules import (
+    FeedForwardBlock,
+    MultiHeadAttentionRoPE,
+    PatchTokenizer,
+    ResidualVQ,
+)
 
 _TOKENIZER_CONFIG_RENAMES = {
     "n_dim": "emb_dim",
@@ -60,7 +65,7 @@ def _translate_opentslab_config(
     return translated
 
 
-class BrainTokenizer(EEGModuleMixin, nn.Module):
+class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
     r"""BrainTokenizer from Xiao et al. (2025) [brainomni]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
@@ -403,11 +408,9 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
             for key in state_dict
         )
         for key, value in state_dict.items():
-            new_key = key.replace("quantizer.rvq.", "quantizer.")
-            if new_key.startswith("decoder."):
-                new_key = "final_layer." + new_key.removeprefix("decoder.")
-            new_key = new_key.replace(".convtr.convtr.", ".convtr.")
-            new_key = new_key.replace(".conv.conv.", ".conv.")
+            new_key = _rename_official_key(key)
+            if new_key is None:
+                continue
             if new_key in remapped:
                 raise ValueError(
                     f"Checkpoint keys collide after remapping: {new_key!r}."
@@ -501,7 +504,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         return feat, indices
 
 
-class BrainOmni(EEGModuleMixin, nn.Module):
+class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
     r"""BrainOmni from Xiao et al. (2025) [brainomni]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
@@ -817,7 +820,7 @@ class BrainOmni(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs: int) -> None:
         """Re-create the classification head for ``n_outputs`` classes."""
-        self._n_outputs = n_outputs
+        self._set_n_outputs(n_outputs)
         reference = next(self.parameters())
         self.final_layer = self._make_head(n_outputs)
         self.final_layer.apply(_init_weights)
@@ -859,8 +862,10 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         The official artifact contains the Stage-2 mask-prediction head rather
         than a downstream classifier. Those three pretraining-only tensors are
         intentionally ignored; the downstream ``final_layer`` remains local.
-        The released DeepSpeed export also stores RoPE's derived cache without
-        its complex phase; loading regenerates that cache from its frequencies.
+        The released export also stores RoPE's frequencies (rounded to
+        bfloat16) and its derived cache (without the sine component). The port
+        has no RoPE buffers: those keys are dropped and the rotation is
+        recomputed in float32, as in a freshly built upstream model.
         """
         remapped = OrderedDict()
         metadata = getattr(state_dict, "_metadata", None)
@@ -874,13 +879,9 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         for key, value in state_dict.items():
             if official and (key == "mask_token" or key.startswith("predict_head.")):
                 continue
-            new_key = key.replace("tokenizer.quantizer.rvq.", "tokenizer.quantizer.")
-            if new_key.startswith("tokenizer.decoder."):
-                new_key = "tokenizer.final_layer." + new_key.removeprefix(
-                    "tokenizer.decoder."
-                )
-            new_key = new_key.replace(".convtr.convtr.", ".convtr.")
-            new_key = new_key.replace(".conv.conv.", ".conv.")
+            new_key = _rename_official_key(key)
+            if new_key is None:
+                continue
             if new_key in remapped:
                 raise ValueError(
                     f"Checkpoint keys collide after remapping: {new_key!r}."
@@ -896,6 +897,29 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         if metadata is not None:
             remapped._metadata = metadata
         return super().load_state_dict(remapped, *args, **kwargs)
+
+
+def _rename_official_key(key: str) -> str | None:
+    """Map an OpenTSLab state-dict key to this port's name, or ``None`` to drop it.
+
+    Native keys pass through unchanged. RoPE ``freqs``/``rotate`` are dropped:
+    the port recomputes them in float32 (the release stores ``freqs`` rounded
+    to bfloat16 and ``rotate`` without its sine component).
+    """
+    if key.endswith(("rope_embedding_layer.freqs", "rope_embedding_layer.rotate")):
+        return None
+    key = key.replace("quantizer.rvq.", "quantizer.")
+    if key.startswith("decoder."):
+        key = "final_layer." + key.removeprefix("decoder.")
+    key = key.replace("tokenizer.decoder.", "tokenizer.final_layer.")
+    key = key.replace(".convtr.convtr.", ".convtr.")
+    key = key.replace(".conv.conv.", ".conv.")
+    # Released FeedForward is Sequential(Linear, SELU, Linear, Dropout) under
+    # ``layer``; FeedForwardBlock numbers its linears 0 and 3.
+    key = key.replace("ff.layer.0.", "ff.0.").replace("ff.layer.2.", "ff.3.")
+    key = key.replace("aggregate_mlp.layer.0.", "aggregate_mlp.0.")
+    key = key.replace("aggregate_mlp.layer.2.", "aggregate_mlp.3.")
+    return key
 
 
 def _window_stride(window_length: int, overlap_ratio: float) -> int:
@@ -931,29 +955,6 @@ def _init_weights(module: nn.Module) -> None:
         nn.init.constant_(module.weight, 1.0)
 
 
-class _FeedForward(nn.Module):
-    """Two-layer feed-forward block (``Linear -> activation -> Linear -> dropout``)."""
-
-    def __init__(
-        self,
-        n_dim: int,
-        dropout: float,
-        expansion: int = 4,
-        activation: type[nn.Module] = nn.SELU,
-    ):
-        super().__init__()
-        hidden = expansion * n_dim
-        self.layer = nn.Sequential(
-            nn.Linear(n_dim, hidden),
-            activation(),
-            nn.Linear(hidden, n_dim),
-            nn.Dropout(dropout) if dropout != 0.0 else nn.Identity(),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.layer(x)
-
-
 class _SpatialTemporalBlock(nn.Module):
     """Spatial-temporal factored attention block from BrainOmni.
 
@@ -987,7 +988,8 @@ class _SpatialTemporalBlock(nn.Module):
             n_dim // 2, n_head // 2, dropout, causal=False, rope=False
         )
         self.pre_ff_norm = RMSNorm(n_dim, eps=1e-6)
-        self.ff = _FeedForward(n_dim, dropout)
+        # Released FeedForward: Linear -> SELU -> Linear -> Dropout (inner dropout off).
+        self.ff = FeedForwardBlock(n_dim, 4, 0.0, nn.SELU, output_drop_p=dropout)
 
     def forward(self, x: torch.Tensor, mask=None) -> torch.Tensor:
         x = x + self._attn_operator(self.pre_attn_norm(x))
@@ -1470,7 +1472,7 @@ class _SensorEmbedding(nn.Module):
             nn.SELU(),
             nn.Linear(n_dim // 2, n_dim),
         )
-        self.aggregate_mlp = _FeedForward(n_dim, 0.0)
+        self.aggregate_mlp = FeedForwardBlock(n_dim, 4, 0.0, nn.SELU)
         self.norm = RMSNorm(n_dim, eps=1e-6)
 
     def forward(self, pos: torch.Tensor, sensor_type: torch.Tensor) -> torch.Tensor:

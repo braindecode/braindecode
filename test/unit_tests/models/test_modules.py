@@ -1571,83 +1571,54 @@ def test_forward_pass_ifnet_output_shape():
     assert out.shape[0] == 2  # batch_size preserved
 
 
-def test_rotary_positional_embedding_output_shape():
-    """RotaryPositionalEmbedding: output shapes match inputs and values are finite."""
+def _complex_rope_reference(x, n_dim, base=10000):
+    """Released BrainOmni RoPE: one complex frequency ladder split across heads."""
+    freqs = 1.0 / (base ** (torch.arange(0, n_dim, 2)[: (n_dim // 2)].float() / n_dim))
+    angles = torch.outer(torch.arange(x.shape[1]).float(), freqs)
+    rotate = torch.polar(torch.ones_like(angles), angles)
+    rotate = rotate.reshape(x.shape[1], x.shape[2], -1).unsqueeze(0)
+    x_ = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
+    return torch.view_as_real(x_ * rotate).flatten(3).type_as(x)
+
+
+@pytest.mark.parametrize("seq", [1, 7, 300])
+def test_rotary_positional_embedding_matches_complex_reference(seq):
+    """Real-valued RoPE equals the released complex rotation, per-head bands included."""
     from braindecode.modules import RotaryPositionalEmbedding
 
-    n_dim = 16
-    n_heads = 4
-    init_seq_len = 64
-    batch, seq, head_dim = 2, 7, n_dim // n_heads
-
-    rope = RotaryPositionalEmbedding(
-        n_dim=head_dim * n_heads, init_seq_len=init_seq_len
-    )
-    q = torch.randn(batch, seq, n_heads, head_dim)
-    k = torch.randn(batch, seq, n_heads, head_dim)
+    n_heads, head_dim = 4, 8
+    rope = RotaryPositionalEmbedding(n_dim=n_heads * head_dim)
+    q = torch.randn(2, seq, n_heads, head_dim)
+    k = torch.randn(2, seq, n_heads, head_dim)
 
     q_out, k_out = rope(q, k)
 
-    assert q_out.shape == q.shape, f"q shape mismatch: {q_out.shape} != {q.shape}"
-    assert k_out.shape == k.shape, f"k shape mismatch: {k_out.shape} != {k.shape}"
-    assert torch.isfinite(q_out).all(), "q_out contains non-finite values"
-    assert torch.isfinite(k_out).all(), "k_out contains non-finite values"
+    torch.testing.assert_close(q_out, _complex_rope_reference(q, n_heads * head_dim))
+    torch.testing.assert_close(k_out, _complex_rope_reference(k, n_heads * head_dim))
+    torch.testing.assert_close(q_out.norm(dim=-1), q.norm(dim=-1))
 
 
-def test_rotary_positional_embedding_extends_cache_and_preserves_rotation():
-    """RoPE grows beyond its initial cache and keeps its complex phase on casts."""
+def test_rotary_positional_embedding_is_stateless_and_keeps_dtype():
+    """No buffers to cast or load; half inputs are rotated in float32."""
     from braindecode.modules import RotaryPositionalEmbedding
 
-    rope = RotaryPositionalEmbedding(n_dim=16, init_seq_len=4).half()
-    q = torch.randn(2, 9, 4, 4, dtype=torch.float16)
-    q_out, _ = rope(q, q)
+    rope = RotaryPositionalEmbedding(n_dim=16).half()
+    q = torch.randn(2, 9, 4, 4)
+    q_out, _ = rope(q.half(), q.half())
 
-    assert q_out.shape == q.shape
-    assert rope.max_seq_len_cache == 9
-    assert rope.rotate.is_complex()
-    assert torch.any(rope.rotate.imag != 0)
+    assert rope.state_dict() == {}
+    assert q_out.dtype == torch.float16
+    torch.testing.assert_close(
+        q_out.float(), _complex_rope_reference(q, 16), atol=1e-2, rtol=1e-2
+    )
 
 
-def test_rotary_positional_embedding_repairs_real_only_checkpoint_cache():
-    """DeepSpeed-exported BrainOmni caches lose the complex sine component."""
+def test_rotary_positional_embedding_rejects_mismatched_heads():
     from braindecode.modules import RotaryPositionalEmbedding
 
-    source = RotaryPositionalEmbedding(n_dim=16, init_seq_len=9)
-    exported = source.state_dict()
-    exported["rotate"] = exported["rotate"].real
-
-    target = RotaryPositionalEmbedding(n_dim=16, init_seq_len=9)
-    target.load_state_dict(exported, strict=True)
-
-    assert target.rotate.is_complex()
-    torch.testing.assert_close(target.rotate, source.rotate)
-
-
-def test_rotary_positional_embedding_loads_extended_cache():
-    """A runtime-grown derived cache must survive a strict state-dict roundtrip."""
-    from braindecode.modules import RotaryPositionalEmbedding
-
-    source = RotaryPositionalEmbedding(n_dim=16, init_seq_len=4)
-    source(torch.randn(1, 9, 4, 4), torch.randn(1, 9, 4, 4))
-
-    target = RotaryPositionalEmbedding(n_dim=16, init_seq_len=4)
-    target.load_state_dict(source.state_dict(), strict=True)
-
-    assert target.max_seq_len_cache == 9
-    torch.testing.assert_close(target.rotate, source.rotate)
-
-
-def test_rotary_positional_embedding_rejects_malformed_real_cache():
-    """The released-cache repair must not hide an incompatible checkpoint."""
-    from braindecode.modules import RotaryPositionalEmbedding
-
-    source = RotaryPositionalEmbedding(n_dim=16, init_seq_len=9)
-    exported = source.state_dict()
-    exported["rotate"] = exported["rotate"].real[:, :-1]
-
-    target = RotaryPositionalEmbedding(n_dim=16, init_seq_len=9)
-    with pytest.raises(RuntimeError, match="size mismatch for rotate"):
-        target.load_state_dict(exported, strict=True)
+    rope = RotaryPositionalEmbedding(n_dim=16)
+    with pytest.raises(ValueError, match="n_heads \\* head_dim"):
+        rope(torch.randn(1, 3, 2, 4), torch.randn(1, 3, 2, 4))
 
 
 @pytest.mark.parametrize(
