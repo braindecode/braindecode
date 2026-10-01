@@ -236,6 +236,15 @@ class CSBrain(EEGModuleMixin, nn.Module):
         groups. ``None`` keeps the input order inside each region. Most
         reference fine-tuning models (e.g. CHB-MIT, Siena, SEED-V) use a
         hand-made topological order, so they need this to match exactly.
+    head_hidden_dim : int | None, default=None
+        Width of the first hidden layer of the task head. ``None`` uses
+        ``n_patch * emb_dim``, the width of most reference fine-tuning heads
+        (e.g. 800 for 4 s and 2000 for 10 s windows at 200 Hz). Some
+        reference heads differ, e.g. SEED-V (1 s windows) uses 800; pass it
+        here to load those checkpoints. The first head layer has
+        ``n_chans * n_patch * emb_dim * head_hidden_dim`` weights, which grows
+        quadratically with the window length by default (about 2.3e9 for 64
+        channels and 30 s), so set a smaller width for long windows.
     return_encoder_output : bool, default=False
         If False (default), the projected encoder output is flattened and
         passed through the task head to produce class logits of size
@@ -270,6 +279,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         drop_prob: float = 0.1,
         brain_regions: Sequence[int] | None = None,
         channel_order: Sequence[int] | None = None,
+        head_hidden_dim: int | None = None,
         return_encoder_output: bool = False,
     ):
         super().__init__(
@@ -293,6 +303,14 @@ class CSBrain(EEGModuleMixin, nn.Module):
         # channel, taking precedence over name derivation) when given, else
         # derived from channel names; without either there is no reordering,
         # no region embedding and the inter-region attention is unmasked.
+        if brain_regions is not None and self._n_chans_or_none() not in (
+            None,
+            len(brain_regions),
+        ):
+            raise ValueError(
+                f"brain_regions has {len(brain_regions)} entries for "
+                f"{self._n_chans_or_none()} channels."
+            )
         if brain_regions is not None:
             ordered_regions, sorted_indices = order_regions(
                 brain_regions, channel_order
@@ -336,6 +354,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         self._patch_size = patch_size
         self._d_model = d_model
         self._drop_prob = drop_prob
+        self._head_hidden_dim = head_hidden_dim
         self._weights_init()
 
         if return_encoder_output:
@@ -343,15 +362,29 @@ class CSBrain(EEGModuleMixin, nn.Module):
         else:
             self.final_layer = self._make_task_head()
 
+    def _n_chans_or_none(self) -> int | None:
+        try:
+            return self.n_chans
+        except ValueError:
+            return None
+
+    def _n_times_or_none(self) -> int | None:
+        try:
+            return self.n_times
+        except ValueError:
+            return None
+
     def _make_task_head(self) -> nn.Sequential:
         # Three-layer MLP head of the reference fine-tuning models: flatten
         # (chans, patches, emb_dim) -> n_patch * emb_dim -> emb_dim -> n_outputs.
-        # Without n_times/n_chans the layers are lazy and the hidden width
-        # falls back to 4 * emb_dim, the reference value for 4 s windows.
-        if self._n_times is None or self._n_chans is None:
+        # n_chans / n_times may come from chs_info / input_window_seconds.
+        # Without them the layers are lazy and the hidden width falls back to
+        # 4 * emb_dim, the reference value for 4 s windows.
+        n_chans, n_times = self._n_chans_or_none(), self._n_times_or_none()
+        if n_times is None or n_chans is None:
             return nn.Sequential(
                 nn.Flatten(),
-                nn.LazyLinear(4 * self._emb_dim),
+                nn.LazyLinear(self._head_hidden_dim or 4 * self._emb_dim),
                 nn.ELU(),
                 nn.Dropout(self._drop_prob),
                 nn.LazyLinear(self._emb_dim),
@@ -359,11 +392,11 @@ class CSBrain(EEGModuleMixin, nn.Module):
                 nn.Dropout(self._drop_prob),
                 nn.LazyLinear(self.n_outputs),
             )
-        n_patch = self._n_times // self._patch_size
-        hidden = n_patch * self._emb_dim
+        n_patch = n_times // self._patch_size
+        hidden = self._head_hidden_dim or n_patch * self._emb_dim
         return nn.Sequential(
             nn.Flatten(),
-            nn.Linear(self._n_chans * hidden, hidden),
+            nn.Linear(n_chans * n_patch * self._emb_dim, hidden),
             nn.ELU(),
             nn.Dropout(self._drop_prob),
             nn.Linear(hidden, self._emb_dim),
@@ -373,8 +406,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         )
 
     def reset_head(self, n_outputs):
-        self._n_outputs = n_outputs
-        self._update_init_kwargs(n_outputs=n_outputs)
+        self._set_n_outputs(n_outputs)
         self._update_init_kwargs(return_encoder_output=False)
         self.final_layer = self._make_task_head()
 

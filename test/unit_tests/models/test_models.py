@@ -4750,6 +4750,38 @@ def test_csbrain_head_hidden_width_follows_patches(n_times, hidden):
     assert model.final_layer[-1].out_features == 5
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        dict(chs_info=[{"ch_name": n} for n in ("F3", "C3", "P3", "O1")], n_times=2000),
+        dict(n_chans=4, input_window_seconds=10.0, sfreq=200.0),
+    ],
+)
+def test_csbrain_head_width_follows_derived_shapes(kwargs):
+    """n_chans from chs_info and n_times from the window give the same head."""
+    model = CSBrain(n_outputs=2, n_layer=1, **kwargs)
+    assert model.final_layer[1].in_features == 4 * 2000
+    assert model.final_layer[1].out_features == 2000
+
+
+def test_csbrain_head_hidden_dim_overrides_the_reference_width():
+    """SEED-V's reference head is 62 * 1 * 200 -> 800 -> 200 -> 5."""
+    model = CSBrain(n_outputs=5, n_chans=62, n_times=200, head_hidden_dim=800, n_layer=1)
+    shapes = [tuple(m.weight.shape) for m in model.final_layer if hasattr(m, "weight")]
+    assert shapes == [(800, 62 * 200), (200, 800), (5, 200)]
+    model.reset_head(3)
+    assert model.final_layer[1].out_features == 800
+    assert model.n_outputs == 3
+    clone = CSBrain.from_config(model.get_config())
+    assert tuple(clone.final_layer[1].weight.shape) == (800, 62 * 200)
+    assert tuple(clone.final_layer[-1].weight.shape) == (3, 200)
+
+
+def test_csbrain_rejects_brain_regions_of_wrong_length():
+    with pytest.raises(ValueError, match="brain_regions has 3 entries for 4"):
+        CSBrain(n_outputs=2, n_chans=4, n_times=400, brain_regions=[0, 1, 2], n_layer=1)
+
+
 def test_csbrain_channel_order_reproduces_reference_topology():
     """``channel_order`` takes the reference's ``sorted_indices`` (CHB-MIT)."""
     regions = [0, 0, 2, 1, 0, 0, 2, 1, 0, 0, 4, 1, 0, 0, 4, 1]
