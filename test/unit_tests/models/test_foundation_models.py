@@ -26,6 +26,7 @@ except ImportError:
     HAS_SAFETENSORS = False
 
 from braindecode.models import (
+    AXON,
     DIVER1,
     LUNA,
     REVE,
@@ -1534,6 +1535,120 @@ def test_codebrain_return_features():
     # features shape: (batch, n_chans, seq_len, out_channels)
     assert out["features"].shape == (2, 19, 30, 200)
     assert out["cls_token"] is None
+
+
+# ==============================================================================
+# Tests for AXON Model
+# ==============================================================================
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_axon_pretrained_loads():
+    chs_info = [{"ch_name": n, "kind": "eeg"} for n in ["Fz", "C3", "Cz", "C4", "Pz"]]
+    model = AXON.from_pretrained(
+        "NeuroDX/axon-eeg", chs_info=chs_info, n_outputs=2, n_times=800
+    )
+    out = model(torch.randn(2, 5, 800))
+    assert out.shape == (2, 2)
+
+
+_AXON_SMALL = dict(embed_dim=64, depth=2, num_heads=4)
+_AXON_NAMES = ["Fp1", "Fp2", "F3", "F4", "C3", "Cz", "C4", "P3", "P4", "O1", "O2"]
+
+
+def _axon_chs(names=_AXON_NAMES):
+    info = mne.create_info(names, sfreq=200.0, ch_types="eeg")
+    info.set_montage(resolve_montage_name("standard_1005"), match_case=False)
+    return info["chs"]
+
+
+def _axon_model(chs_info, **kw):
+    torch.manual_seed(0)
+    return AXON(chs_info=chs_info, n_outputs=3, sfreq=200.0, **{**_AXON_SMALL, **kw}).eval()
+
+
+def test_axon_shapes_and_features():
+    model = _axon_model(_axon_chs())
+    x = torch.randn(2, len(_AXON_NAMES), 800)  # 4 patches of 1 s with 0.9 s stride
+    with torch.no_grad():
+        logits = model(x)
+        out = model(x, return_features=True)
+    assert logits.shape == (2, 3)
+    assert out["features"].shape == (2, 64)
+    assert out["tokens"].shape == (2, len(_AXON_NAMES), 4, 64)
+    assert out["cls_token"] is None
+    torch.testing.assert_close(model.encode(x), out["tokens"])
+
+
+def test_axon_channel_order_does_not_matter():
+    """Electrodes are identified by position, so permuting channels together
+    with chs_info must leave the pooled embedding unchanged."""
+    chs = _axon_chs()
+    model = _axon_model(chs)
+    perm = torch.randperm(len(_AXON_NAMES))
+    permuted = _axon_model([chs[i] for i in perm])
+    permuted.load_state_dict(model.state_dict())
+    x = torch.randn(2, len(_AXON_NAMES), 1000)
+    with torch.no_grad():
+        a = model(x, return_features=True)["features"]
+        b = permuted(x[:, perm], return_features=True)["features"]
+    torch.testing.assert_close(a, b, atol=1e-5, rtol=1e-5)
+
+
+def test_axon_positions_from_channel_names():
+    """Without 'loc', standard channel names resolve to the same positions."""
+    with_loc = _axon_model(_axon_chs())
+    without_loc = _axon_model([{"ch_name": n, "kind": "eeg"} for n in _AXON_NAMES])
+    torch.testing.assert_close(
+        with_loc.encoder.channel_positions, without_loc.encoder.channel_positions
+    )
+
+
+def test_axon_unknown_channel_without_position_raises():
+    chs = [{"ch_name": "Fp1", "kind": "eeg"}, {"ch_name": "NOT_A_CHANNEL", "kind": "eeg"}]
+    with pytest.raises(ValueError, match="NOT_A_CHANNEL"):
+        _axon_model(chs)
+
+
+def test_axon_weights_load_onto_another_montage():
+    """Channel positions are not stored in the weights."""
+    source = _axon_model(_axon_chs())
+    target = _axon_model(_axon_chs(["C3", "Cz", "C4", "FC3", "CP4"]))
+    target.load_state_dict(source.state_dict(), strict=True)
+    assert "encoder.channel_positions" not in source.state_dict()
+
+
+def test_axon_input_unit_does_not_matter():
+    """Microvolts and volts (MNE's default) give the same output."""
+    model = _axon_model(_axon_chs())
+    x_uv = 20.0 * torch.randn(2, len(_AXON_NAMES), 600) + 5.0
+    with torch.no_grad():
+        torch.testing.assert_close(model(x_uv), model(x_uv * 1e-6), atol=1e-4, rtol=1e-4)
+
+
+def test_axon_too_short_window_raises():
+    with pytest.raises(ValueError, match="patch_size"):
+        AXON(chs_info=_axon_chs(), n_outputs=2, n_times=100, **_AXON_SMALL)
+
+
+def test_axon_warns_on_non_200_hz():
+    with pytest.warns(UserWarning, match="200 Hz"):
+        AXON(chs_info=_axon_chs(), n_outputs=2, sfreq=250.0, **_AXON_SMALL)
+
+
+def test_axon_reset_head_updates_config():
+    """``reset_head`` must propagate to ``get_config`` for save/restore."""
+    model = _axon_model(_axon_chs())
+    model.reset_head(7)
+    assert model.final_layer[-1].out_features == 7
+    assert model.get_config()["n_outputs"] == 7
+    assert AXON.from_config(model.get_config()).n_outputs == 7
+
+
+# ==============================================================================
+# Tests for DIVER-1 Model
+# ==============================================================================
 
 
 @pytest.fixture

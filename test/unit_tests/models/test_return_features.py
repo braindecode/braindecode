@@ -5,6 +5,7 @@ import pytest
 import torch
 
 from braindecode.models import (
+    AXON,
     BENDR,
     BIOT,
     EEGDINO,
@@ -71,6 +72,13 @@ def _chs(names=None, n=N_CHANS):
 # (cls, n_chans, kwargs, has_cls)
 _MODELS = [
     pytest.param(EEGPT, N_CHANS, {}, False, id="EEGPT"),
+    pytest.param(
+        AXON,
+        N_CHANS,
+        {"chs_info": _chs(), "embed_dim": 64, "depth": 2, "num_heads": 4},
+        False,
+        id="AXON",
+    ),
     pytest.param(
         InterpolatedLaBraM,
         N_CHANS,

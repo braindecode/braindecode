@@ -28,6 +28,11 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.AXON`, an axis-factorized EEG foundation
+  model whose layers mix a temporal and a spatial attention path with a
+  per-token gate, with pretrained weights on the Hugging Face Hub
+  (:gh:`1182` by `Mahir Jain`_).
+
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
   control and a replicability check), run by a dedicated CI job
@@ -1947,5 +1952,6 @@ Authors
 .. _Aditya Singh: https://github.com/adityasingh2400
 .. _Julien Gadonneix: https://github.com/julien-gadonneix
 .. _Li Qing: https://github.com/qinxwew
+.. _Mahir Jain: https://github.com/mahirjain01
 .. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
