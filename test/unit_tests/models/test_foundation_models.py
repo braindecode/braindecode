@@ -2,6 +2,7 @@
 #
 # License: BSD-3
 
+import hashlib
 import json
 import os
 from contextlib import nullcontext
@@ -1993,3 +1994,94 @@ def test_mapa_metadata_cache_owns_its_snapshot(mapa_model):
     changed = mapa_model._token_layout(indices, mapa_model.n_frames)
     assert changed is not first
     assert (changed.token_region == 3).any()
+
+
+# The authors' Hub repository, pinned to the commit whose mapa_vits384.pt is
+# byte-identical to their GitHub release v0.1.0.
+MAPA_HUB_REPO = "bentang18/MAPA"
+MAPA_HUB_REVISION = "988efbf31a7d1f38533b848c993a719d6f900b1f"
+MAPA_CHECKPOINT_SHA256 = (
+    "2d236089a2f1a3cc2827e3f150c4a2ba14c51bbfaf0ce0888f84b92a6eb25a7a"
+)
+
+
+def _mapa_reference_windows():
+    """Two 1 s windows at 2048 Hz of four amplitude-modulated multi-tone channels."""
+    t = torch.arange(2048, dtype=torch.float64) / 2048
+    freqs = torch.tensor([3.0, 11.0, 23.0, 47.0, 95.0, 140.0], dtype=torch.float64)
+    rates = 0.75 * torch.arange(1, 7, dtype=torch.float64)
+    windows = []
+    for sample in range(2):
+        channels = []
+        for channel in range(4):
+            phase = 0.7 * channel + 1.3 * sample
+            carrier = torch.sin(2 * torch.pi * freqs[:, None] * t + phase)
+            envelope = 1 + 0.8 * torch.sin(2 * torch.pi * rates[:, None] * t + phase)
+            channels.append((carrier * envelope).sum(0))
+        windows.append(torch.stack(channels))
+    return torch.stack(windows).float()
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_mapa_released_checkpoint_reproduces_the_reference_features():
+    """The released mapa_vits384 loads and gives the authors' features.
+
+    The expected values were computed with the authors' code (bentang18/MAPA at
+    bf2b49e) on the same windows: its STFT and robust z-score, then
+    ``MapaEncoder.from_checkpoint`` and the mean over every token of the four
+    normed deep-supervision taps, which is what ``return_features`` pools.
+    """
+    hub = pytest.importorskip("huggingface_hub")
+    mne_data_dir = mne.get_config("MNE_DATA") or str(Path.home() / "mne_data")
+    try:
+        path = hub.hf_hub_download(
+            MAPA_HUB_REPO,
+            "mapa_vits384.pt",
+            revision=MAPA_HUB_REVISION,
+            cache_dir=str(Path(mne_data_dir) / "mapa_pretrained"),
+        )
+    except (URLError, OSError) as err:
+        pytest.skip(f"Could not download the MAPA checkpoint: {err}")
+    assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == (
+        MAPA_CHECKPOINT_SHA256
+    )
+
+    model = MAPA(
+        n_outputs=2,
+        n_chans=4,
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=["LA1", "LA2", "LA4", "LB1"],
+        regions=[
+            "ctx-lh-superiortemporal",
+            "ctx-lh-superiortemporal",
+            "Left-Hippocampus",
+            None,
+        ],
+    ).eval()
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    missing, unexpected = model.load_state_dict(checkpoint["model"], strict=False)
+    assert sorted(missing) == ["final_layer.bias", "final_layer.weight"]
+    assert unexpected == []
+
+    with torch.no_grad():
+        features = model(_mapa_reference_windows(), return_features=True)["features"]
+    # The first four dimensions of each of the four taps (blocks 3, 6, 9, 12).
+    expected = torch.tensor(
+        [
+            [-0.097404, -0.035431, -0.036317, -0.00045]
+            + [0.000488, -0.010021, -0.031613, -0.012514]
+            + [-0.000287, 0.000164, 0.001316, 0.00072]
+            + [0.009574, -0.119245, -0.004626, 0.019742],
+            [-0.108159, 0.016018, -0.037283, -0.000448]
+            + [0.000275, -0.013464, -0.029668, -0.011087]
+            + [-0.000288, 0.000152, 0.001267, 0.000396]
+            + [-0.000122, -0.127825, -0.006181, 0.038055],
+        ]
+    )
+    taps = features.unflatten(1, (4, -1))[..., :4].flatten(1)
+    torch.testing.assert_close(taps, expected, rtol=0, atol=1e-4)
+    torch.testing.assert_close(
+        features.norm(dim=1), torch.tensor([3.91526, 3.92401]), rtol=1e-4, atol=0
+    )
