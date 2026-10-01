@@ -338,14 +338,13 @@ class CSBrain(EEGModuleMixin, nn.Module):
             self.final_layer = self._make_task_head(None)
 
     def _weights_init(self):
+        # Same rule as the reference ``_weights_init`` (and CBraMod): only the
+        # Linear layers are re-initialised. The Conv2d layers keep PyTorch's
+        # default init; a fan-out Kaiming init on them makes the residual
+        # stream grow ~3x per layer (logits ~1e5 at 12 layers).
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-            elif isinstance(m, (nn.Conv1d, nn.Conv2d)):
-                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-            elif isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d)):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
 
     def forward(self, x, mask=None, return_features=False):
         x = self.rearrange(x)
@@ -358,7 +357,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
             emb = layer(emb)
         out = self.proj_out(emb)
         if return_features:
-            return {"features": out, "cls_token": None}
+            return {"features": out, "cls_token": None}  # nosec B105
         return self.final_layer(out)
 
 
