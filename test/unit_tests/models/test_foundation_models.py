@@ -2028,9 +2028,12 @@ def test_mapa_released_checkpoint_reproduces_the_reference_features():
     """The released mapa_vits384 loads and gives the authors' features.
 
     The expected values were computed with the authors' code (bentang18/MAPA at
-    bf2b49e) on the same windows: its STFT and robust z-score, then
-    ``MapaEncoder.from_checkpoint`` and the mean over every token of the four
-    normed deep-supervision taps, which is what ``return_features`` pools.
+    bf2b49e) on the same windows: its STFT and robust z-score fitted on each
+    window (the default ``normalization="window"``; the authors fit it on the
+    whole session), then ``MapaEncoder.from_checkpoint`` and the mean over every
+    token of the four normed deep-supervision taps, which is what
+    ``return_features`` pools. CI does not pass ``--run-network`` to the unit
+    tests; run it with ``pytest -k mapa_released --run-network``.
     """
     hub = pytest.importorskip("huggingface_hub")
     mne_data_dir = mne.get_config("MNE_DATA") or str(Path.home() / "mne_data")
