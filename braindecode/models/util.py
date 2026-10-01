@@ -565,6 +565,7 @@ models_mandatory_parameters: list[
         {"n_chans": 19, "n_times": 6000},
     ),
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
+    ("BrainTokenizer", ["chs_info", "n_times", "sfreq"], None),
     (
         "DIVER1",
         ["chs_info", "n_outputs", "n_times"],
@@ -613,6 +614,8 @@ non_classification_models = [
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
     "MetaNeuromotorHand",
     "EMG2QwertyNet",
+    # Returns a reconstruction tensor (VQ-VAE output), not class logits.
+    "BrainTokenizer",
     # Dense per-frame pose sequences (batch, T, n_joints), not logits.
     "VEMG2Pose",
     "NeuroPose",
