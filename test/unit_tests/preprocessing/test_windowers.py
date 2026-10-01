@@ -1796,6 +1796,33 @@ def test_event_source_index_nonzero_first_samp():
     assert pd.api.types.is_integer_dtype(direct_md["i_trial_in_dataset"])
 
 
+def test_event_windows_mapping_shares_target_with_mne_epochs():
+    # sleep staging merges stages 3 and 4 into one target, which mne.Epochs
+    # refuses as a duplicated event_id value
+    raw = _make_annotated_raw(
+        [0, 1, 2, 3], [1, 1, 1, 1], ["W", "N3", "N4", "R"], [1, 2, 3, 4], ["a"] * 4
+    )
+    kwargs = dict(
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        mapping={"W": 0, "N3": 1, "N4": 1, "R": 2},
+        preload=True,
+    )
+    direct = _event_windows([raw.copy()], use_mne_epochs=False, **kwargs)
+    epochs = _event_windows([raw.copy()], use_mne_epochs=True, **kwargs)
+    windows = epochs.datasets[0].windows
+    assert windows.event_id == {"W": 0, "N3": 1, "N4": 2, "R": 3}
+    np.testing.assert_array_equal(windows.events[:, 2], [0, 1, 2, 3])
+    np.testing.assert_array_equal(windows.metadata["target"], [0, 1, 1, 2])
+    np.testing.assert_array_equal(
+        direct.datasets[0].metadata["target"], windows.metadata["target"]
+    )
+    # Shared targets retain independently selectable annotation names.
+    assert len(windows["N3"]) == len(windows["N4"]) == 1
+    assert len(windows[["N3", "N4"]]) == 2
+
+
 @pytest.mark.parametrize("use_mne_epochs", [False, True])
 def test_event_source_index_reserved_extra(use_mne_epochs):
     raw = _make_annotated_raw(
@@ -2151,6 +2178,33 @@ def test_fixed_length_no_size_policy_is_moot(
         replacement_dataset.metadata,
     )
     assert deprecated_dataset.window_kwargs == replacement_dataset.window_kwargs
+
+
+def test_windows_from_events_infer_mapping_n_jobs(tmpdir_factory):
+    # every recording sees a different subset of the event types
+    descriptions = [5 * ["T0", "T1"], 5 * ["T1", "T2"], 10 * ["T2"]]
+    concat_ds = BaseConcatDataset(
+        [
+            RawDataset(
+                _get_raw(tmpdir_factory, description),
+                description=pd.Series({"file_id": i}),
+            )
+            for i, description in enumerate(descriptions)
+        ]
+    )
+    expected = [5 * [0, 1], 5 * [1, 2], 10 * [2]]
+    for n_jobs in [1, 2]:
+        windows = create_windows_from_events(
+            concat_ds=concat_ds,
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=0,
+            window_size_samples=100,
+            window_stride_samples=100,
+            on_last_window="overlap",
+            n_jobs=n_jobs,
+        )
+        for ds, targets in zip(windows.datasets, expected):
+            np.testing.assert_array_equal(ds.metadata["target"], targets)
 
 
 @pytest.mark.parametrize("use_mne_epochs", [False, True])

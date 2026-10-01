@@ -5,6 +5,7 @@
 import hashlib
 import json
 import os
+from contextlib import nullcontext
 from pathlib import Path
 from urllib.error import URLError
 
@@ -15,6 +16,7 @@ import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+import torch.nn as nn
 
 import braindecode.models.luna as luna_module
 import braindecode.models.zuna as zuna_module
@@ -34,13 +36,17 @@ except ImportError:
     HAS_SAFETENSORS = False
 
 from braindecode.models import (
+    DIVER1,
     LUNA,
     REVE,
+    ZUNA,
     BrainOmni,
     BrainTokenizer,
     CBraMod,
     CodeBrain,
     Labram,
+    STEEGFormer,
+    steegformer,
 )
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.brainomni import (
@@ -50,11 +56,13 @@ from braindecode.models.brainomni import (
     _SpatialTemporalBlock,
     _TokenizerEncoder,
 )
+from braindecode.models.diver1 import _STCPE, channel_metadata_from_chs_info
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
-from braindecode.models.reve import Attention, RevePositionBank, RMSNorm
+from braindecode.models.reve import Attention, FourierEmb4D, RevePositionBank
 from braindecode.models.util import _geometry_from_chs_info
 from braindecode.modules import Codebook, ResidualVQ
+from braindecode.util import resolve_montage_name
 
 _ORIGINAL_TORCH_CAT = torch.cat
 
@@ -165,6 +173,142 @@ def model_decoder(model_config_decoder):
 # ==============================================================================
 # Tests for Labram with neural_tokenizer=True (default)
 # ==============================================================================
+
+
+def _labram_embedded_tokens(model, x, ch_names):
+    """Tokens once the position and time embeddings are added (input of ``pos_drop``)."""
+    seen = {}
+    handle = model.pos_drop.register_forward_pre_hook(
+        lambda _module, args: seen.update(tokens=args[0].detach().clone())
+    )
+    with torch.no_grad():
+        model(x, ch_names=ch_names)
+    handle.remove()
+    return seen["tokens"]
+
+
+def _labram_numbered_time_slots(n_slots=16, emb_dim=200):
+    """A time embedding whose slot ``i`` holds the value ``i`` in every dimension."""
+    slots = torch.arange(n_slots, dtype=torch.float32).view(1, n_slots, 1)
+    return slots.expand(1, n_slots, emb_dim).clone()
+
+
+@pytest.mark.parametrize("n_times", [600, 800, 3000])
+def test_labram_uses_pretrained_time_slots_at_any_window(n_times):
+    # The original LaBraM keeps 16 absolute time slots whatever the window
+    # (``time_embed`` in modeling_finetune.py), and a window of P patches adds
+    # slot p to every token of patch p. The released weights hold those 16
+    # slots (saved at 15 s), so they must load into a model built for any
+    # window, and the slots it uses must be the first P ones.
+    names = list(LABRAM_CHANNEL_ORDER[:3])
+    released = Labram(n_chans=3, n_times=3000, n_outputs=0).state_dict()
+    released["temporal_embedding"] = _labram_numbered_time_slots()
+    model = Labram(n_chans=3, n_times=n_times, n_outputs=0).eval()
+
+    model.load_state_dict(released)
+
+    x = torch.randn(2, 3, n_times)
+    with_slots = _labram_embedded_tokens(model, x, names)
+    with torch.no_grad():
+        model.temporal_embedding.zero_()
+    without_slots = _labram_embedded_tokens(model, x, names)
+    added = with_slots - without_slots
+    n_patches = n_times // 200
+    # Tokens are channel-major: (channel, patch) -> channel * n_patches + patch.
+    per_patch = added[:, 1:].reshape(2, 3, n_patches, 200)
+    expected = torch.arange(n_patches, dtype=torch.float32).view(1, 1, n_patches, 1)
+    assert torch.allclose(per_patch, expected.expand_as(per_patch), atol=1e-5)
+    assert torch.equal(added[:, 0], torch.zeros(2, 200))  # [CLS] has no time slot
+
+
+def test_labram_long_window_keeps_pretrained_time_slots():
+    # A window longer than the 16 released slots still builds; the first 16
+    # slots come from the checkpoint, the others keep their initialization,
+    # and the user is told that some of the slots in use are not pretrained.
+    model = Labram(n_chans=3, n_times=6000, n_outputs=0)  # 30 patches
+    own = model.temporal_embedding.detach().clone()
+    released = Labram(n_chans=3, n_times=3000, n_outputs=0).state_dict()
+    released["temporal_embedding"] = _labram_numbered_time_slots()
+
+    with pytest.warns(UserWarning, match="time slots"):
+        model.load_state_dict(released)
+
+    loaded = model.temporal_embedding.detach()
+    assert torch.equal(loaded[:, :16], _labram_numbered_time_slots())
+    assert torch.equal(loaded[:, 16:30], own[:, 16:30])
+
+
+def test_labram_loads_time_embedding_saved_with_one_slot_per_patch():
+    # braindecode <= 1.8 sized the time embedding to the window (patches + 1
+    # slots). Such checkpoints must keep loading and give the same outputs.
+    names = list(LABRAM_CHANNEL_ORDER[:3])
+    saved = Labram(n_chans=3, n_times=800, n_outputs=2).eval()
+    state = saved.state_dict()
+    state["temporal_embedding"] = state["temporal_embedding"][:, :5]
+    x = torch.randn(2, 3, 800)
+    with torch.no_grad():
+        expected = saved(x, ch_names=names)
+
+    reloaded = Labram(n_chans=3, n_times=800, n_outputs=2).eval()
+    reloaded.load_state_dict(state)
+
+    with torch.no_grad():
+        assert torch.allclose(reloaded(x, ch_names=names), expected, atol=1e-6)
+
+
+def test_labram_default_readout_is_mean_of_patch_tokens():
+    # The original LaBraM fine-tunes on LayerNorm(mean of the patch tokens)
+    # (use_mean_pooling=True in modeling_finetune.py and in
+    # run_class_finetuning.py); its pretraining loss never uses [CLS].
+    names = list(LABRAM_CHANNEL_ORDER[:3])
+    model = Labram(n_chans=3, n_times=800, n_outputs=0).eval()
+    seen = {}
+    model.blocks[-1].register_forward_hook(
+        lambda _module, _inputs, output: seen.update(tokens=output)
+    )
+    x = torch.randn(2, 3, 800)
+
+    with torch.no_grad():
+        features = model(x, ch_names=names)
+
+    patch_mean = seen["tokens"][:, 1:].mean(1)
+    expected = torch.nn.functional.layer_norm(patch_mean, (200,), eps=1e-6)
+    assert torch.allclose(features, expected, atol=1e-5)
+
+
+@pytest.mark.parametrize("with_token_norm", [True, False])
+def test_labram_mean_pooling_loads_pretraining_checkpoint(with_token_norm):
+    # The released weights come from pretraining: they hold the per-token
+    # final ``norm`` and no pooling ``fc_norm``. The original fine-tuning script
+    # leaves ``norm`` unused and starts ``fc_norm`` from its initialization.
+    # A strict load must do the same, also when the state dict was already
+    # filtered to the keys the model has (so without ``norm``).
+    pretraining = Labram(
+        n_chans=3, n_times=800, n_outputs=0, use_mean_pooling=False
+    ).state_dict()
+    if not with_token_norm:
+        pretraining = {
+            k: v for k, v in pretraining.items() if not k.startswith("norm.")
+        }
+    model = Labram(n_chans=3, n_times=800, n_outputs=0, use_mean_pooling=True)
+
+    model.load_state_dict(pretraining)
+
+    assert torch.equal(model.fc_norm.weight, torch.ones(200))
+    assert torch.equal(model.fc_norm.bias, torch.zeros(200))
+    assert torch.equal(model.cls_token, pretraining["cls_token"])
+
+
+def test_labram_mean_pooling_rejects_cls_finetuned_checkpoint():
+    # A checkpoint fine-tuned with the [CLS] readout has a head trained on
+    # [CLS]; it must not load silently into a mean-pooling model.
+    finetuned = Labram(
+        n_chans=3, n_times=800, n_outputs=2, use_mean_pooling=False
+    ).state_dict()
+    model = Labram(n_chans=3, n_times=800, n_outputs=2, use_mean_pooling=True)
+
+    with pytest.raises(RuntimeError, match="fc_norm"):
+        model.load_state_dict(finetuned)
 
 
 def test_labram_neural_tokenizer_initialization(model_tokenizer):
@@ -293,6 +437,59 @@ def test_labram_neural_decoder_gradient_flow(model_decoder, n_chans, n_times):
     # Check that gradients exist
     assert model_decoder.cls_token.grad is not None
     assert any(p.grad is not None for p in model_decoder.blocks[0].parameters())
+
+
+def test_labram_neural_decoder_temporal_embeddings_match_time_patches(
+    chs_info, n_times
+):
+    """Decoder mode adds one temporal embedding per temporal patch token."""
+    model = Labram(
+        n_times=n_times,
+        chs_info=chs_info,
+        n_outputs=4,
+        patch_size=200,
+        embed_dim=4,
+        conv_in_channels=8,
+        num_layers=0,
+        num_heads=1,
+        use_abs_pos_emb=False,
+        # The [CLS] readout ends in ``norm``, replaced by Identity below, so
+        # ``return_all_tokens`` gives the tokens as they enter the readout.
+        use_mean_pooling=False,
+        neural_tokenizer=False,
+    )
+    batch_size = 2
+    x = torch.zeros(batch_size, len(chs_info), n_times)
+    input_chans = torch.arange(len(LABRAM_CHANNEL_ORDER) + 1)
+    model.norm = nn.Identity()
+    model.pos_drop = nn.Identity()
+
+    with torch.no_grad():
+        model.cls_token.zero_()
+        model.patch_embed[0].proj.weight.zero_()
+        model.patch_embed[0].proj.bias.zero_()
+        model.temporal_embedding.zero_()
+        expected_time_embed = torch.arange(
+            1,
+            model.patch_embed[0].n_patchs * model.embed_dim + 1,
+            dtype=model.temporal_embedding.dtype,
+        ).reshape(1, model.patch_embed[0].n_patchs, model.embed_dim)
+        model.temporal_embedding[:, 1:, :] = expected_time_embed
+
+    features = model.forward_features(
+        x, input_chans=input_chans, return_all_tokens=True
+    )
+
+    assert features.shape == (
+        batch_size,
+        model.patch_embed[0].n_patchs + 1,
+        model.embed_dim,
+    )
+    assert torch.equal(features[:, 0], torch.zeros_like(features[:, 0]))
+    assert torch.equal(
+        features[:, 1:],
+        expected_time_embed.expand(batch_size, -1, -1),
+    )
 
 
 # ==============================================================================
@@ -753,37 +950,60 @@ def test_zuna_builds_rotary_frequency_table_natively(axis_dim):
     torch.testing.assert_close(table, expected[:, :axis_dim])
 
 
-@pytest.mark.parametrize(
-    "norm_class, eps", [(RMSNorm, 1e-6), (zuna_module._RMSNorm, 1e-5)]
-)
-@pytest.mark.parametrize("input_dtype", [torch.float32, torch.float16, torch.bfloat16])
-@pytest.mark.parametrize("weight_dtype", [torch.float32, torch.float16, torch.bfloat16])
-def test_foundation_rms_norm_preserves_reference_precision(
-    norm_class, eps, input_dtype, weight_dtype
-):
-    norm = RMSNorm(dim=8) if norm_class is RMSNorm else norm_class(8, eps=eps)
-    norm = norm.to(weight_dtype)
-    weight = torch.linspace(0.5, 1.5, 8, dtype=weight_dtype, requires_grad=True)
-    norm.load_state_dict({"weight": weight.detach()}, strict=True)
-    # Squaring 1000 overflows float16; small values exercise the explicit eps.
-    x = torch.linspace(-1, 1, 24).reshape(3, 8)
-    x = (
-        (x * torch.tensor([1e-4, 1.0, 1000.0])[:, None])
-        .to(input_dtype)
-        .requires_grad_()
+# ==============================================================================
+# Tests for ZUNA's on_non_divisible option
+# ==============================================================================
+
+_ZUNA_SMALL = dict(n_outputs=2, sfreq=250.0, dim=64, n_layers=1, n_heads=2, head_dim=32)
+
+
+def _zuna_chs_info():
+    info = mne.create_info(["Fz", "Cz", "Pz", "C3", "C4", "O1"], 250.0, "eeg")
+    info.set_montage("standard_1020")
+    return info["chs"]
+
+
+def test_zuna_rejects_non_divisible_n_times_by_default():
+    """The default ``on_non_divisible="error"`` keeps the previous behavior."""
+    with pytest.raises(ValueError, match="divisible"):
+        ZUNA(chs_info=_zuna_chs_info(), n_times=1000, **_ZUNA_SMALL)
+
+
+def test_zuna_rejects_invalid_on_non_divisible():
+    """An unknown ``on_non_divisible`` value raises, even for a divisible n_times."""
+    with pytest.raises(ValueError, match="on_non_divisible"):
+        ZUNA(
+            chs_info=_zuna_chs_info(),
+            n_times=1024,
+            on_non_divisible="bogus",
+            **_ZUNA_SMALL,
+        )
+
+
+def test_zuna_pad_equals_explicit_zero_padding():
+    """``"pad"`` matches the same weights built with a padded ``n_times``."""
+    torch.manual_seed(0)
+    padded = ZUNA(
+        chs_info=_zuna_chs_info(), n_times=1000, on_non_divisible="pad", **_ZUNA_SMALL
+    ).eval()
+    reference = ZUNA(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL).eval()
+    reference.load_state_dict(padded.state_dict())
+    x = torch.randn(2, 6, 1000)
+    torch.testing.assert_close(
+        padded(x), reference(torch.nn.functional.pad(x, (0, 24))), rtol=0, atol=0
     )
-    reference_x = x.detach().clone().requires_grad_()
-    normalized = reference_x.float() * torch.rsqrt(
-        reference_x.float().square().mean(-1, keepdim=True) + eps
-    )
-    dtype = input_dtype if norm_class is RMSNorm else weight_dtype
-    expected = normalized.to(dtype) * weight
-    actual = norm(x)
-    torch.testing.assert_close(actual, expected)
-    actual.sum().backward()
-    expected.sum().backward()
-    torch.testing.assert_close(x.grad, reference_x.grad)
-    torch.testing.assert_close(norm.weight.grad, weight.grad)
+
+
+def test_zuna_crop_drops_trailing_samples():
+    """``"crop"`` matches the same weights built with a cropped ``n_times``."""
+    torch.manual_seed(0)
+    cropped = ZUNA(
+        chs_info=_zuna_chs_info(), n_times=1000, on_non_divisible="crop", **_ZUNA_SMALL
+    ).eval()
+    reference = ZUNA(chs_info=_zuna_chs_info(), n_times=992, **_ZUNA_SMALL).eval()
+    reference.load_state_dict(cropped.state_dict())
+    x = torch.randn(2, 6, 1000)
+    torch.testing.assert_close(cropped(x), reference(x[..., :992]), rtol=0, atol=0)
 
 
 def test_reve_attention_matches_explicit_attention():
@@ -1255,6 +1475,30 @@ def test_reve_position_bank_corrupt_cache_redownloads(tmp_path, monkeypatch):
     assert bank.get_all_positions() == list(config.keys())
 
 
+def test_reve_fourier_emb_4d_computes_in_float32():
+    """Intel Gaudi (HPU) autocast feeds sin/cos bf16 position x frequency products.
+
+    CPU autocast leaves elementwise ``mul`` alone, so bf16 positions reproduce it.
+    ``_embed`` is the unguarded computation.
+    """
+    torch.manual_seed(0)
+    electrodes = torch.randn(2, 16, 3)
+    positions = FourierEmb4D.add_time_patch(
+        electrodes / electrodes.norm(dim=-1, keepdim=True), 3
+    )
+    module = FourierEmb4D(dimension=64, freqs=4)
+    reference = module._embed(positions)
+    assert torch.equal(module(positions), reference)
+
+    def rel_error(out):
+        return ((out.float() - reference).norm() / reference.norm()).item()
+
+    bf16 = positions.to(torch.bfloat16)
+    out = module(bf16)
+    assert out.dtype == torch.bfloat16
+    assert rel_error(out) < 0.01 < 0.02 < rel_error(module._embed(bf16))
+
+
 # ==============================================================================
 # Tests for CBraMod Model
 # ==============================================================================
@@ -1312,6 +1556,311 @@ def test_codebrain_return_features():
     # features shape: (batch, n_chans, seq_len, out_channels)
     assert out["features"].shape == (2, 19, 30, 200)
     assert out["cls_token"] is None
+
+
+@pytest.fixture
+def diver1_model():
+    info = mne.create_info([f"A{i}" for i in range(6)], 500.0, "seeg")
+    for i, ch in enumerate(info["chs"]):
+        ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
+    return DIVER1(
+        n_outputs=4, chs_info=info["chs"], n_times=1000, sfreq=500.0,
+        pooling="mean", d_model=64, n_layers=2,
+    ).eval()
+
+
+@pytest.mark.parametrize(
+    "kind,located,slots", [("ecog", True, [1., 0.]), ("eeg", False, [0., -1.])]
+)
+def test_diver1_channel_metadata(kind, located, slots):
+    info = mne.create_info(["A0", "A1"], 500.0, kind)
+    if located:
+        for i, ch in enumerate(info["chs"]):
+            ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
+    metadata = channel_metadata_from_chs_info(info["chs"])
+    assert metadata.shape == (2, 5)
+    torch.testing.assert_close(metadata[:, 3:], torch.tensor([slots, slots]))
+    if located:
+        torch.testing.assert_close(metadata[1, :3], torch.tensor([10., 20., -30.]))
+    else:
+        assert torch.isnan(metadata[:, :3]).all()
+
+
+@pytest.mark.parametrize("kind, slots", [("eeg", [0, -1]), ("ecog", [1, 0]), ("seeg", [1, 2]), ("dbs", [1, 2])])
+def test_diver1_channel_metadata_from_chs_info(kind, slots):
+    """Standalone metadata retains MNE units and DIVER-1 type slots."""
+    info = mne.create_info(["A1", "A2"], 500.0, kind)
+    info["chs"][0]["loc"][:3] = [0.01, 0.02, -0.03]
+    metadata = channel_metadata_from_chs_info(info["chs"])
+    torch.testing.assert_close(metadata[0, :3], torch.tensor([10.0, 20.0, -30.0]))
+    assert torch.isnan(metadata[1, :3]).all()
+    assert metadata[:, 3:].tolist() == [slots, slots]
+    with pytest.raises(ValueError, match="cannot determine"):
+        channel_metadata_from_chs_info([dict(kind="unknown")])
+
+
+def test_diver1_channel_metadata_rejects_unknown_modality():
+    info = mne.create_info(["A0", "A1"], 500.0, "misc")
+    with pytest.raises(ValueError, match="cannot determine the recording modality"):
+        channel_metadata_from_chs_info(info["chs"])
+
+
+def test_diver1_montage_switching_and_permutation(diver1_model):
+    model = diver1_model
+    other = mne.create_info([f"B{i}" for i in range(9)], 500.0, "ecog")
+    for i, ch in enumerate(other["chs"]):
+        ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
+    metadata = channel_metadata_from_chs_info(other["chs"])
+    xa, xb = torch.randn(2, 6, 1000), torch.randn(2, 9, 1000)
+    perm = torch.tensor([4, 0, 3, 1, 5, 2])
+    with torch.no_grad():
+        first_a, first_b = model(xa), model(xb, metadata)
+        assert first_b.shape == (2, 4)
+        torch.testing.assert_close(model(xb, metadata), first_b)
+        torch.testing.assert_close(model(xa), first_a)
+        torch.testing.assert_close(model(xa, model.default_chan_metadata), first_a)
+        torch.testing.assert_close(
+            model(xa[:, perm], model.default_chan_metadata[perm]), first_a,
+            atol=1e-5, rtol=1e-5,
+        )
+
+
+@pytest.mark.parametrize(
+    "metadata,pooling,match",
+    [
+        (None, "mean", "built for 6 channels but got input with 9"),
+        (torch.zeros(3, 5), "mean", r"shape \(9, 5\)"),
+        (torch.zeros(9, 4), "mean", r"shape \(9, 5\)"),
+        (torch.full((9, 5), 7.0), "mean", "modality column"),
+        (torch.zeros(9, 5).index_fill_(1, torch.tensor([4]), 3.), "mean", "sub-modality"),
+        (torch.zeros(9, 5), "flatten", "pooling='flatten'"),
+    ],
+)
+def test_diver1_rejects_incompatible_montage(diver1_model, metadata, pooling, match):
+    model = diver1_model
+    if pooling == "flatten":
+        model = DIVER1(
+            n_outputs=4, chs_info=model.chs_info, n_times=1000, sfreq=500.0,
+            pooling=pooling, d_model=64, n_layers=2,
+        ).eval()
+    with pytest.raises(ValueError, match=match):
+        model(torch.randn(1, 9, 1000), metadata)
+
+
+@pytest.mark.parametrize("n_outputs", [0, 5])
+def test_diver1_reset_head_preserves_zero_outputs(diver1_model, n_outputs):
+    diver1_model.reset_head(n_outputs)
+    assert diver1_model.final_layer.out_features == n_outputs
+    assert diver1_model.get_config()["n_outputs"] == n_outputs
+
+
+def test_diver1_stcpe_preserves_low_precision_overlap(monkeypatch):
+    # BF16 fold accumulates 257 overlapping ones to 256, not scalar 257.
+    model = _STCPE(8, 4, 257, torch.nn.SiLU, 1).bfloat16().eval()
+    original_fold = torch.nn.functional.fold
+    calls = []
+
+    def capture_fold(*args, **kwargs):
+        out = original_fold(*args, **kwargs)
+        calls.append(out)
+        return out
+
+    monkeypatch.setattr(torch.nn.functional, "fold", capture_fold)
+    x = torch.randn(1, 1, 1, 8, dtype=torch.bfloat16, requires_grad=True)
+    actual = model(x)
+    assert len(calls) == 2
+    folded, overlap = calls
+    torch.testing.assert_close(overlap, torch.full_like(overlap, 256))
+    expected = model.up(model.unfold_features(folded / overlap))
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    actual_grad = torch.autograd.grad(actual.sum(), x, retain_graph=True)[0]
+    expected_grad = torch.autograd.grad(expected.sum(), x)[0]
+    torch.testing.assert_close(actual_grad, expected_grad, rtol=0, atol=0)
+
+
+
+@pytest.mark.parametrize("patch_size", [50, 500])
+@pytest.mark.parametrize("out_size", [8, 16, 32])
+def test_diver1_cnn_out_size(patch_size, out_size, tmp_path):
+    """Output-size HPO preserves token width and survives config/Hub cloning."""
+    info = mne.create_info(["A0", "A1"], 500.0, "seeg")
+    kwargs = dict(
+        chs_info=info["chs"], n_outputs=2, n_times=2 * patch_size - 1,
+        patch_size=patch_size, d_model=64, n_layers=1, pooling="mean",
+        cnn_out_size=out_size,
+    )
+    torch.manual_seed(21)
+    model = DIVER1(**kwargs).eval()
+    init_rng = torch.get_rng_state()
+    assert model.cnn_out_size == out_size
+    assert model.get_config()["cnn_out_size"] == out_size
+    padded = 1 << (patch_size - 1).bit_length()
+    assert model.patch_cnn.proj_in[0].stride == (1, padded // out_size)
+    assert model.patch_cnn.proj_in[0].out_channels == 64 // out_size
+    # The pre-existing explicit-stride path remains exactly equivalent.
+    kwargs.pop("cnn_out_size")
+    torch.manual_seed(21)
+    legacy = DIVER1(**kwargs, cnn_stride=padded // out_size).eval()
+    assert torch.equal(init_rng, torch.get_rng_state())
+    assert model.state_dict().keys() == legacy.state_dict().keys()
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(value, legacy.state_dict()[key], rtol=0, atol=0)
+    x = torch.randn(1, 2, 2 * patch_size - 1, requires_grad=True)
+    tokens = model.patch_cnn(model.patch_tokenizer(x))
+    assert tokens.shape == (1, 2, 2, 64)
+    actual = model(x)
+    assert actual.shape == (1, 2)
+    torch.testing.assert_close(actual, legacy(x), rtol=0, atol=0)
+    actual.sum().backward()
+    assert torch.isfinite(x.grad).all()
+    # Standard module deepcopy, config reconstruction, and local Hub roundtrip.
+    import copy
+
+    cloned = copy.deepcopy(model)
+    rebuilt = DIVER1.from_config(model.get_config()).eval()
+    rebuilt.load_state_dict(model.state_dict(), strict=True)
+    model.save_pretrained(tmp_path)
+    restored = DIVER1.from_pretrained(tmp_path).eval()
+    scripted = torch.jit.script(model)
+    for candidate in (cloned, rebuilt, restored, scripted):
+        torch.testing.assert_close(candidate(x), actual, rtol=0, atol=0)
+    for candidate in (cloned, rebuilt, restored):
+        assert candidate.get_config()["cnn_out_size"] == out_size
+
+
+@pytest.mark.parametrize(
+    "options,match",
+    [
+        ({"cnn_out_size": 0}, "positive integer divisor"),
+        ({"cnn_out_size": -8}, "positive integer divisor"),
+        ({"cnn_out_size": 3}, "positive integer divisor"),
+        ({"cnn_out_size": 1024}, "positive integer divisor"),
+        ({"cnn_out_size": 8.0}, "positive integer divisor"),
+        ({"cnn_out_size": True}, "positive integer divisor"),
+        ({"cnn_out_size": 32, "d_model": 48, "num_heads": 2}, "d_model.*divisible"),
+        ({"cnn_out_size": 8, "cnn_stride": 64}, "mutually exclusive"),
+        ({"cnn_out_size": 8, "cnn_stride": 32}, "mutually exclusive"),
+    ],
+)
+def test_diver1_cnn_out_size_validation(options, match):
+    info = mne.create_info(["A0", "A1"], 500.0, "seeg")
+    kwargs = dict(chs_info=info["chs"], n_outputs=2, n_times=500, d_model=64, n_layers=1)
+    with pytest.raises(ValueError, match=match):
+        DIVER1(**(kwargs | options))
+
+
+def test_diver1_mup_attention_scale():
+    """The released DIVER-1 checkpoints need attention scaled by 1 / head_dim."""
+    info = mne.create_info(["C3", "Cz", "C4"], 500.0, "eeg")
+    info.set_montage("standard_1020")
+    for mup in (True, False):
+        model = DIVER1(
+            chs_info=info["chs"], n_outputs=2, n_times=1000, mup_attention=mup
+        )
+        attention = [m for m in model.modules() if hasattr(m, "head_dim")]
+        assert attention
+        for module in attention:
+            assert module.scale == (1.0 / module.head_dim if mup else None)
+
+
+@pytest.fixture
+def steeg_vocab(monkeypatch):
+    """Use an offline vocabulary; keep the model's real 145-slot capacity."""
+    names = ["Fp1", "Fp2", "Cz", "Oz", "T7", "T8", "Pz", "Fz"]
+    monkeypatch.setattr(steegformer, "_channel_order", lambda: names)
+    monkeypatch.setattr(
+        steegformer,
+        "_channel_index",
+        lambda: {n.upper(): i for i, n in enumerate(names)},
+    )
+    return names
+
+
+@pytest.mark.parametrize(
+    "names, explicit, expected, warning",
+    [
+        (["oz", "FP1", "Cz"], None, [3, 0, 2], None),
+        (["E1", "fp1", "E2"], None, [3, 0, 5], "nearest 10-05 site"),
+        (["E1", "fp1", "E2"], [5, 4, 3], [5, 4, 3], None),
+    ],
+    ids=["known-names", "mixed-positions", "explicit-override"],
+)
+@pytest.mark.filterwarnings("error")
+def test_steegformer_channel_mapping(steeg_vocab, names, explicit, expected, warning):
+    info = mne.create_info(["Oz", "Cz", "T8"], 250, "eeg")
+    info.set_montage(
+        mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
+    )
+    chs = [dict(ch, ch_name=name) for ch, name in zip(info["chs"], names)]
+    # Unknown electrodes are slightly displaced; fp1 must ignore its Cz position.
+    chs[0]["loc"][:3] += [0.003, 0, 0.002]
+    chs[2]["loc"][:3] += [0, 0.004, -0.003]
+    with pytest.warns(UserWarning, match=warning) if warning else nullcontext():
+        model = STEEGFormer(
+            n_chans=3,
+            n_outputs=2,
+            n_times=64,
+            chs_info=chs,
+            chan_pos_idx=explicit,
+            embed_dim=32,
+            depth=1,
+            num_heads=2,
+        )
+    assert model.channel_indices.tolist() == expected
+
+
+@pytest.mark.parametrize(
+    "n_chans, fallback, n_chans_pos",
+    [
+        (3, "unlocated", 145),
+        (146, "unlocated", 145),
+        (256, "hydrocel", 145),
+        (3, "absent", 145),
+        (146, "absent", 145),
+        (3, "unpublished", 256),
+        (257, "unpublished", 256),
+        (3, "unavailable", 145),
+        (146, "unavailable", 145),
+    ],
+)
+def test_steegformer_montage_fallback(
+    steeg_vocab, monkeypatch, n_chans, fallback, n_chans_pos
+):
+    info = mne.create_info([f"E{i + 1}" for i in range(n_chans)], 250, "eeg")
+    if fallback == "hydrocel":
+        info.set_montage(mne.channels.make_standard_montage("GSN-HydroCel-256"))
+    if fallback == "unavailable":
+        def unavailable():
+            raise OSError("offline")
+
+        monkeypatch.setattr(steegformer, "_channel_index", unavailable)
+    overflow = n_chans > n_chans_pos and fallback != "hydrocel"
+    expectation = (
+        pytest.raises(ValueError, match="identity mapping.*chan_pos_idx")
+        if overflow
+        else pytest.warns(
+            UserWarning,
+            match="nearest 10-05 site" if fallback == "hydrocel" else "identity",
+        )
+    )
+    with expectation:
+        model = STEEGFormer(
+            n_chans=n_chans,
+            n_outputs=2,
+            n_times=64,
+            chs_info=None if fallback == "absent" else info["chs"],
+            n_chans_pos=n_chans_pos,
+            embed_dim=32,
+            depth=1,
+            num_heads=2,
+        )
+    if not overflow:
+        if fallback == "hydrocel":
+            slots = model.channel_indices
+            assert slots.shape == (256,)
+            assert 0 <= int(slots.min()) <= int(slots.max()) < len(steeg_vocab)
+        else:
+            assert model.channel_indices.tolist() == list(range(n_chans))
 
 
 # ==============================================================================

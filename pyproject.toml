@@ -78,6 +78,7 @@ moabb = ["moabb>=1.4.3"]
 eegprep = ["eegprep[eeglabio]>=0.2.23"]
 hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.0"]
 viz = ["captum>=0.7.0"]
+sae = ["sae-lens==6.51.3"]  # Optional gallery only; not part of core or all.
 tests = [
     'pytest<9.1',  # pytest 9.1.0 changed IdMaker's signature, which breaks pytest_cases 3.10.1 (crash at collection time). Remove the cap once pytest_cases supports pytest >=9.1.
     'pytest-cov',

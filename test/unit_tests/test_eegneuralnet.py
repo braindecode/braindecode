@@ -724,3 +724,35 @@ def test_drop_last_small_trainset_warns(
             warnings.simplefilter("always")
             net.fit(X, y=y)
         assert not any(match in str(w.message) for w in records)
+
+
+def _fit_regressor_on_dataset():
+    from braindecode.datasets import create_from_X_y
+
+    rng = np.random.RandomState(0)
+    X = rng.randn(8, 4, 250).astype("float32")
+    y = rng.randn(8).astype("float32")
+    dataset = create_from_X_y(X, y, drop_last_window=False, sfreq=100)
+    net = EEGRegressor(
+        ShallowFBCSPNet,
+        module__final_conv_length="auto",
+        train_split=None,
+        batch_size=8,
+        max_epochs=1,
+        verbose=0,
+    )
+    return net, dataset, net.fit(dataset, y=None)
+
+
+def test_eegregressor_loss_is_per_trial_mse_for_dataset_targets():
+    net, dataset, _ = _fit_regressor_on_dataset()
+    X_batch, y_batch = next(iter(net.get_iterator(net.get_dataset(dataset))))
+    y_pred = net.infer(X_batch).detach()
+    assert y_pred.shape == (8, 1) and y_batch.shape == (8,)
+    expected = ((y_pred.squeeze(1) - y_batch) ** 2).mean()
+    assert net.get_loss(y_pred, y_batch).item() == pytest.approx(expected.item())
+
+
+def test_eegregressor_fit_returns_self():
+    net, _, fitted = _fit_regressor_on_dataset()
+    assert fitted is net

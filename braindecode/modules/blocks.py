@@ -320,6 +320,19 @@ class FeedForwardBlock(nn.Sequential):
     activation : type[nn.Module], default=nn.GELU
         Activation function constructor.
 
+    hidden_features : int, optional
+        Hidden width, overriding ``expansion * emb_size`` when supplied.
+    gated : bool, default=False
+        Use a separate activated gate projection multiplied by the value
+        projection, rather than activating the value projection directly.
+        Gated blocks register named projections (``fc1``, ``fc_gate``, ``fc2``);
+        ungated blocks retain their sequential numeric child names.
+    bias : bool, default=True
+        Include a bias in each linear projection.
+    output_drop_p : float, default=0.0
+        Dropout probability after the output projection. The ungated default
+        does not add an output dropout module.
+
     Examples
     --------
     >>> import torch
@@ -331,15 +344,53 @@ class FeedForwardBlock(nn.Sequential):
     torch.Size([2, 10, 32])
     """
 
+    __constants__ = ["gated"]
+
     def __init__(
-        self, emb_size, expansion, drop_p, activation: type[nn.Module] = nn.GELU
+        self,
+        emb_size,
+        expansion,
+        drop_p,
+        activation: type[nn.Module] = nn.GELU,
+        *,
+        hidden_features: int | None = None,
+        gated: bool = False,
+        bias: bool = True,
+        output_drop_p: float = 0.0,
     ):
-        super().__init__(
-            nn.Linear(emb_size, expansion * emb_size),
-            activation(),
-            nn.Dropout(drop_p),
-            nn.Linear(expansion * emb_size, emb_size),
+        super().__init__()
+        self.gated = gated
+        hidden_features = (
+            expansion * emb_size if hidden_features is None else hidden_features
         )
+        if gated:
+            self.fc1 = nn.Linear(emb_size, hidden_features, bias=bias)
+            self.fc_gate = nn.Linear(emb_size, hidden_features, bias=bias)
+            self.fc2 = nn.Linear(hidden_features, emb_size, bias=bias)
+            self.activation = activation()
+            self.dropout1 = nn.Dropout(drop_p)
+            self.dropout2 = nn.Dropout(output_drop_p)
+        else:
+            self.add_module("0", nn.Linear(emb_size, hidden_features, bias=bias))
+            self.add_module("1", activation())
+            self.add_module("2", nn.Dropout(drop_p))
+            self.add_module("3", nn.Linear(hidden_features, emb_size, bias=bias))
+            if output_drop_p:
+                self.add_module("4", nn.Dropout(output_drop_p))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.gated:
+            gate = self.fc_gate(x)
+            gate = self.activation(gate)
+            value = self.fc1(x)
+            hidden = gate * value
+            hidden = self.dropout1(hidden)
+            hidden = self.fc2(hidden)
+            return self.dropout2(hidden)
+        else:
+            for module in self:
+                x = module(x)
+            return x
 
 
 class _TDSConv2dBlock(nn.Module):

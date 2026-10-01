@@ -237,6 +237,7 @@ class BIOT(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
         self.final_layer = _ClassificationHead(
             emb_size=self.embed_dim,
             n_outputs=n_outputs,

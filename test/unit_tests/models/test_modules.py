@@ -15,8 +15,9 @@ from scipy.signal import fftconvolve as fftconvolve_scipy
 from scipy.signal import freqz
 from scipy.signal import lfilter as lfilter_scipy
 from torch import nn
+from torch.nn.utils.parametrize import register_parametrization
 
-from braindecode.functional import drop_path
+from braindecode.functional import _real_dft, drop_path
 from braindecode.models.ifnet import _SpatioTemporalFeatureBlock
 from braindecode.models.labram import _SegmentPatch
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
@@ -27,10 +28,12 @@ from braindecode.modules import (
     CausalConv1d,
     CombinedConv,
     DropPath,
+    FeedForwardBlock,
     FilterBankLayer,
     GeneralizedGaussianFilter,
     LinearWithConstraint,
     MaxNormLinear,
+    MaxNormParametrize,
     SafeLog,
     SqueezeAndExcitation,
     TDSConvEncoder,
@@ -1091,6 +1094,48 @@ def test_filter_construction_clamping():
     assert shape_clamped >= 2.0, "shape should be clamped to a minimum of 2.0"
 
 
+def test_filter_construction_clamping_keeps_parameter_storage_and_gradients():
+    """Clamping updates parameters in place while keeping them differentiable."""
+    filter_layer = GeneralizedGaussianFilter(
+        in_channels=1,
+        out_channels=1,
+        sequence_length=256,
+        sample_rate=100.0,
+    )
+    with torch.no_grad():
+        filter_layer.f_mean.fill_(1.1)
+        filter_layer.bandwidth.fill_(0.001)
+        filter_layer.shape.fill_(1.5)
+
+    parameters = (
+        filter_layer.f_mean,
+        filter_layer.bandwidth,
+        filter_layer.shape,
+    )
+    data_ptrs = tuple(parameter.data_ptr() for parameter in parameters)
+
+    filter_layer.construct_filters().sum().backward()
+
+    assert tuple(parameter.data_ptr() for parameter in parameters) == data_ptrs
+    assert all(parameter.grad is not None for parameter in parameters)
+
+
+def test_traced_filter_runs_without_parameter_mutation():
+    """A traced filter must not replay eager parameter clamping."""
+    filter_layer = GeneralizedGaussianFilter(
+        in_channels=1,
+        out_channels=1,
+        sequence_length=128,
+        sample_rate=100.0,
+    ).eval()
+    input_tensor = torch.randn(2, 1, 128)
+    expected = filter_layer(input_tensor)
+
+    traced_filter = torch.jit.trace(filter_layer, input_tensor)
+
+    torch.testing.assert_close(traced_filter(input_tensor), expected)
+
+
 def test_forward_pass_output_shape():
     """
     Test that the forward pass returns the correct output shape.
@@ -1155,6 +1200,44 @@ def test_forward_pass_no_inverse_fourier():
     assert output.dtype == torch.float32 or output.dtype == torch.float64, (
         "Output should be real-valued tensor"
     )
+
+
+@pytest.mark.parametrize("sequence_length", [120, 121])
+@pytest.mark.parametrize("inverse_fourier", [True, False])
+def test_generalized_gaussian_filter_real_dft_path_matches(
+    monkeypatch, sequence_length, inverse_fourier
+):
+    """Forcing the real-valued DFT path (as on HPU) reproduces the
+    ``torch.fft``-based path exactly, for odd and even ``sequence_length`` and
+    for both ``inverse_fourier`` values, in outputs and in gradients."""
+    torch.manual_seed(0)
+    kwargs = dict(
+        in_channels=1,
+        out_channels=2,
+        sequence_length=sequence_length,
+        sample_rate=120,
+        inverse_fourier=inverse_fourier,
+        f_mean=(12.0, 28.0),
+        bandwidth=(10.0, 16.0),
+        shape=(2.0, 2.5),
+        group_delay=(20.0, 20.0),
+    )
+    x = torch.randn(4, 6, 1, sequence_length)
+
+    def run(force):
+        module = GeneralizedGaussianFilter(**kwargs)
+        if force:
+            monkeypatch.setattr(_real_dft, "needs_real_dft", lambda t: True)
+        out = module(x)
+        out.square().sum().backward()
+        monkeypatch.undo()
+        return out.detach(), [p.grad for p in module.parameters()]
+
+    ref_out, ref_grads = run(force=False)
+    out, grads = run(force=True)
+    torch.testing.assert_close(out, ref_out, rtol=1e-5, atol=1e-5)
+    for grad, ref_grad in zip(grads, ref_grads):
+        torch.testing.assert_close(grad, ref_grad, rtol=1e-4, atol=1e-5)
 
 
 def test_eca_invalid_kernel_size():
@@ -1391,6 +1474,58 @@ def test_multi_head_attention_forward_shape():
     x = torch.randn(2, 10, 32)
     out = mha(x)
     assert out.shape == (2, 10, 32)
+
+
+def test_multi_head_attention_explicit_scale_matches_manual_attention():
+    from braindecode.modules import MultiHeadAttention
+
+    torch.manual_seed(1126)
+    scale = 8**-0.5
+    mha = MultiHeadAttention(
+        emb_size=8,
+        num_heads=2,
+        dropout=0.0,
+        scale=scale,
+    ).eval()
+    x = torch.randn(1, 3, 8)
+
+    queries = mha.rearrange_stack(mha.queries(x))
+    keys = mha.rearrange_stack(mha.keys(x))
+    values = mha.rearrange_stack(mha.values(x))
+    attention = torch.softmax(
+        torch.matmul(queries, keys.transpose(-2, -1)) * scale,
+        dim=-1,
+    )
+    expected = mha.projection(
+        mha.rearrange_unstack(torch.matmul(attention, values))
+    )
+
+    torch.testing.assert_close(mha(x), expected)
+
+
+def test_multi_head_attention_supports_torch_2_0_sdpa(monkeypatch):
+    import braindecode.modules.attention as attention
+    from braindecode.modules import MultiHeadAttention
+
+    received_queries = []
+
+    def legacy_sdpa(query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False):
+        received_queries.append(query)
+        return value
+
+    monkeypatch.setattr(attention.F, "scaled_dot_product_attention", legacy_sdpa)
+    mha = MultiHeadAttention(emb_size=8, num_heads=2).eval()
+    x = torch.randn(1, 3, 8)
+    queries = mha.rearrange_stack(mha.queries(x))
+
+    mha(x)
+    mha.scale = 8**-0.5
+    mha(x)
+
+    torch.testing.assert_close(received_queries[0], queries)
+    torch.testing.assert_close(
+        received_queries[1], queries * (mha.scale * mha.head_dim**0.5)
+    )
 
 
 def test_multi_head_attention_bool_mask():
@@ -1676,3 +1811,179 @@ def test_gated_linear_unit_geglu_semantics():
     out = glu(x)
     assert out.shape == (2, 4, 5)
     assert torch.equal(out, value * torch.nn.functional.gelu(gate))
+
+
+@pytest.mark.parametrize("shape", [(8, 4), (16, 22, 1, 25), (40, 1, 13)])
+@pytest.mark.parametrize("max_norm", [0.25, 1.0, 5.0])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_max_norm_parametrize_matches_renorm(shape, max_norm, dtype):
+    """The explicit rescale must match ``Tensor.renorm`` values and gradients."""
+    torch.manual_seed(0)
+    weight_ref = torch.randn(*shape, dtype=dtype, requires_grad=True)
+    weight = weight_ref.detach().clone().requires_grad_()
+
+    expected = weight_ref.renorm(p=2, dim=0, maxnorm=max_norm)
+    output = MaxNormParametrize(max_norm)(weight)
+    torch.testing.assert_close(output, expected)
+
+    grad_output = torch.randn_like(expected)
+    (expected * grad_output).sum().backward()
+    (output * grad_output).sum().backward()
+    torch.testing.assert_close(weight.grad, weight_ref.grad)
+
+    row_norms = output.detach().reshape(shape[0], -1).norm(dim=1)
+    assert (row_norms <= max_norm + 1e-6).all()
+
+
+def test_max_norm_parametrize_does_not_call_renorm():
+    """``renorm`` breaks on Intel Gaudi (HPU), so the forward must avoid it."""
+    conv = nn.Conv1d(4, 8, kernel_size=3)
+    register_parametrization(conv, "weight", MaxNormParametrize(0.5))
+    with patch.object(
+        torch.Tensor, "renorm", side_effect=AssertionError("renorm called")
+    ):
+        output = conv(torch.randn(2, 4, 16))
+    assert output.shape == (2, 8, 14)
+    row_norms = conv.weight.detach().reshape(8, -1).norm(dim=1)
+    assert (row_norms <= 0.5 + 1e-6).all()
+
+
+@pytest.mark.parametrize(
+    "dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64]
+)
+def test_max_norm_parametrize_is_scriptable(dtype, tmp_path):
+    """Save/load preserves the dtype-dependent rescale and empty-input branch."""
+    module = MaxNormParametrize(0.5)
+    path = tmp_path / "maxnorm.pt"
+    torch.jit.script(module).save(str(path))
+    scripted = torch.jit.load(str(path))
+    for shape in [(8, 4, 1, 3), (0, 3), (3, 0)]:
+        weight = torch.randn(shape, dtype=dtype)
+        torch.testing.assert_close(scripted(weight), module(weight))
+
+
+@pytest.mark.parametrize(
+    "dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64]
+)
+@pytest.mark.parametrize("max_norm", [0.0, 1.0])
+def test_max_norm_parametrize_boundary_values_and_gradients(dtype, max_norm):
+    """Zero, tiny, below/at/above-limit rows agree with a full-precision reference."""
+    weight = torch.tensor(
+        [
+            [0.0, 0.0],
+            [1e-5, 0.0],
+            [0.5, 0.0],
+            [1.0, 0.0],
+            [1.0 + 1e-8, 0.0],
+            [3.0, 4.0],
+        ],
+        dtype=dtype,
+        requires_grad=True,
+    )
+    reference_dtype = torch.float64 if dtype == torch.float64 else torch.float32
+    weight_ref = weight.detach().to(reference_dtype).requires_grad_()
+    expected = weight_ref.renorm(p=2, dim=0, maxnorm=max_norm)
+    output = MaxNormParametrize(max_norm)(weight)
+    assert output.dtype == dtype
+    torch.testing.assert_close(output, expected.to(dtype))
+    # Nonuniform upstream derivatives exercise tangential as well as radial terms.
+    grad_output = torch.tensor([0.25, -0.5], dtype=dtype).expand_as(weight)
+    (output * grad_output).sum().backward()
+    (expected * grad_output.to(reference_dtype)).sum().backward()
+    assert torch.isfinite(output).all()
+    assert torch.isfinite(weight.grad).all()
+    torch.testing.assert_close(weight.grad, weight_ref.grad.to(dtype))
+    if max_norm == 1.0:
+        torch.testing.assert_close(output[:4], weight[:4], rtol=0, atol=0)
+        torch.testing.assert_close(weight.grad[:4], grad_output[:4], rtol=0, atol=0)
+        if dtype == torch.float64:
+            assert output[4].norm() <= max_norm
+
+
+@pytest.mark.parametrize(
+    "dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64]
+)
+@pytest.mark.parametrize("shape", [(0, 3), (3, 0), (2, 0, 4)])
+def test_max_norm_parametrize_empty_matches_renorm(dtype, shape):
+    weight = torch.empty(shape, dtype=dtype, requires_grad=True)
+    output = MaxNormParametrize(1.0)(weight)
+    torch.testing.assert_close(output, weight.renorm(p=2, dim=0, maxnorm=1.0))
+    output.sum().backward()
+    torch.testing.assert_close(weight.grad, torch.zeros_like(weight))
+
+
+def test_max_norm_parametrize_rejects_negative_limit():
+    with pytest.raises(ValueError, match="max_norm must be >= 0"):
+        MaxNormParametrize(-1.0)
+
+
+@pytest.mark.parametrize("gated", [False, True])
+@pytest.mark.parametrize("activation", [nn.GELU, nn.SiLU, nn.PReLU])
+@pytest.mark.parametrize("precision", ["float32", "float64", "autocast"])
+@pytest.mark.parametrize("mode", ["train", "eval", "mixed"])
+@pytest.mark.parametrize("drop_p", [0.0, 0.2])
+def test_feed_forward_block_compatibility(gated, activation, precision, mode, drop_p):
+    """Preserve historical initialization, checkpoints, modes and exact arithmetic."""
+    width = 13 if gated else 32
+    torch.manual_seed(17)
+    if gated:
+        reference = nn.Module()
+        reference.fc1 = nn.Linear(8, width, bias=False)
+        reference.fc_gate = nn.Linear(8, width, bias=False)
+        reference.fc2 = nn.Linear(width, 8, bias=False)
+        reference.activation = activation()
+        reference.dropout1 = nn.Dropout(drop_p)
+        reference.dropout2 = nn.Dropout(drop_p)
+    else:
+        reference = nn.Sequential(
+            nn.Linear(8, width), activation(), nn.Dropout(drop_p), nn.Linear(width, 8)
+        )
+    rng = torch.get_rng_state()
+    torch.manual_seed(17)
+    options = dict(hidden_features=width, gated=True, bias=False, output_drop_p=drop_p) if gated else {}
+    actual = FeedForwardBlock(8, 4, drop_p, activation, **options)
+    assert torch.equal(rng, torch.get_rng_state())
+    assert list(reference.state_dict()) == list(actual.state_dict())
+    for key, value in reference.state_dict().items():
+        torch.testing.assert_close(value, actual.state_dict()[key], rtol=0, atol=0)
+    actual.load_state_dict(reference.state_dict(), strict=True)
+    dtype = torch.float64 if precision == "float64" else torch.float32
+    for module in (reference, actual):
+        module.to(dtype).train(mode == "train")
+        if mode == "mixed":
+            (module.dropout1 if gated else module[2]).train()
+    assert {n: m.training for n, m in reference.named_modules()} == {
+        n: m.training for n, m in actual.named_modules()
+    }
+    x = torch.randn(2, 3, 8, dtype=dtype)
+    results = []
+    for module in (reference, actual):
+        xx = x.clone().requires_grad_()
+        torch.manual_seed(91)
+        with torch.autocast("cpu", dtype=torch.bfloat16, enabled=precision == "autocast"):
+            if module is reference and gated:
+                hidden = module.activation(module.fc_gate(xx)) * module.fc1(xx)
+                y = module.dropout2(module.fc2(module.dropout1(hidden)))
+            else:
+                y = module(xx)
+        y.square().sum().backward()
+        results.append((y, xx.grad, [p.grad for p in module.parameters()], torch.get_rng_state()))
+    for index in (0, 1, 3):
+        torch.testing.assert_close(results[0][index], results[1][index], rtol=0, atol=0)
+    for expected, observed in zip(results[0][2], results[1][2]):
+        torch.testing.assert_close(expected, observed, rtol=0, atol=0)
+    scripted = torch.jit.script(actual)
+    torch.manual_seed(91)
+    expected = actual(x)
+    torch.manual_seed(91)
+    torch.testing.assert_close(scripted(x), expected, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("gated", [False, True])
+def test_feed_forward_block_options(gated):
+    """Explicit width, projection bias and output dropout work in both modes."""
+    module = FeedForwardBlock(8, 4, 0.0, hidden_features=13, gated=gated, bias=False, output_drop_p=1.0)
+    assert all("bias" not in name for name in module.state_dict())
+    assert next(module.parameters()).shape == (13, 8)
+    assert torch.count_nonzero(module(torch.randn(2, 3, 8))) == 0
+    torch.jit.script(module)
