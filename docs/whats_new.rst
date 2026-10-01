@@ -141,6 +141,12 @@ Bug fixes
   temporal part was 73 % off on Gaudi2). State-dict keys and CPU/CUDA outputs are
   unchanged (:gh:`1191` by `Bruno Aristimunha`_)
 
+- Fix :class:`braindecode.EEGRegressor` training on datasets with one target per
+  trial: the ``(batch,)`` target is now reshaped to match a ``(batch, 1)``
+  prediction instead of being broadcast to ``(batch, batch)`` by the loss, and
+  :meth:`braindecode.EEGRegressor.fit` now returns ``self``
+  (:gh:`1180` by `Arthur031221`_).
+
 - Preserve shared class targets when creating MNE epochs from different event
   annotations, as in sleep staging. MNE event IDs remain unique.
   (:gh:`1174` by `Bruno Aristimunha`_)
