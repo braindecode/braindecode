@@ -28,6 +28,13 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Restore acceptance tests on supported Python versions as seeded decoding
+  checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
+  control and a replicability check), run by a dedicated CI job
+  (:gh:`1159` by `Bruno Aristimunha`_).
+- Clarify decoder temporal embedding indexing in :class:`braindecode.models.Labram`
+  and cover its one-token-per-temporal-patch behavior
+  (:gh:`1155` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.SleepFM`, a channel-agnostic multimodal PSG
   foundation encoder, and :class:`braindecode.models.SleepFMStager`, its
   token-wise bidirectional-LSTM sleep-staging model, which runs the encoder per
@@ -80,6 +87,10 @@ Enhancements
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
   regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
 
+- Add a bounded SAE intervention tutorial on a frozen pretrained REVE with
+  BNCI2014_001 using optional SAE Lens, without adding an SAE implementation
+  to Braindecode (:gh:`1120` by `Vandit Shah`_ and `Bruno Aristimunha`_)
+
 - Improve CI test scheduling and run documentation examples with bounded
   parallelism, preserving the test cases and gallery training workloads
   (:gh:`1161` by `Bruno Aristimunha`_).
@@ -96,6 +107,20 @@ Enhancements
   contributions covering implementation conventions, registration,
   documentation, and benchmarking (:gh:`1169` by `Li Qing`_).
 
+API and behavior changes
+========================
+
+- :class:`braindecode.models.Labram` defaults to ``use_mean_pooling=True``
+  again, the documented value and the readout of the original fine-tuning
+  (``fc_norm`` of the mean patch token). :gh:`931` had made the [CLS] output,
+  which the pretraining loss never uses, the default so that the pretraining
+  checkpoint loaded strictly. That checkpoint, such as the released weights,
+  now loads into the mean-pooling model as in the original fine-tuning script
+  (``norm`` unused, ``fc_norm`` initialized). Pass ``use_mean_pooling=False``
+  to keep the [CLS] readout, for instance to load a checkpoint fine-tuned with
+  it, which no longer loads into the default model
+  (:gh:`1155` by `Bruno Aristimunha`_).
+
 Requirements
 ============
 
@@ -108,6 +133,10 @@ Requirements
 Bug fixes
 ==========
 
+- :meth:`braindecode.EEGClassifier.predict_trials` and
+  :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
+  ``ValueError`` on trials of different lengths; they return a list with one
+  prediction array per trial (:gh:`1159` by `Bruno Aristimunha`_)
 - Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU), part 2 of
   :gh:`1183`: :class:`braindecode.modules.GeneralizedGaussianFilter` and
   :func:`braindecode.functional.hilbert_freq` now use a real-valued DFT on
@@ -133,6 +162,12 @@ Bug fixes
   encoding is built with ``torch.cat`` instead of strided in-place writes (the
   temporal part was 73 % off on Gaudi2). State-dict keys and CPU/CUDA outputs are
   unchanged (:gh:`1191` by `Bruno Aristimunha`_)
+
+- Fix :class:`braindecode.EEGRegressor` training on datasets with one target per
+  trial: the ``(batch,)`` target is now reshaped to match a ``(batch, 1)``
+  prediction instead of being broadcast to ``(batch, batch)`` by the loss, and
+  :meth:`braindecode.EEGRegressor.fit` now returns ``self``
+  (:gh:`1180` by `Arthur031221`_).
 
 - Preserve shared class targets when creating MNE epochs from different event
   annotations, as in sleep staging. MNE event IDs remain unique.
@@ -225,6 +260,14 @@ Bug fixes
   intermediate gradients, and rows at or below ``max_norm`` are unchanged.
   Empty tensors pass through and a negative ``max_norm`` raises, as
   ``Tensor.renorm`` does (:gh:`1187` by `Bruno Aristimunha`_).
+
+- Fix :class:`braindecode.models.Labram` so the released weights keep their
+  pretrained time embedding at every window length: it now holds the original
+  16 absolute time slots (patch ``p`` uses slot ``p``) instead of one slot per
+  patch plus one, which matched the released weights only for 15-patch windows.
+  Checkpoints saved with the previous layout load with identical outputs, and
+  windows longer than 16 patches warn that their extra slots keep their
+  initialization (:gh:`1155` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)
