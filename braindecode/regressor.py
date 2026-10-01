@@ -152,10 +152,11 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
 
         Returns
         -------
-        trial_predictions : np.ndarray
+        trial_predictions : np.ndarray | list of np.ndarray
             3-dimensional array (n_trials x n_classes x n_predictions), where
             the number of predictions depend on the chosen window size and the
-            receptive field of the network.
+            receptive field of the network. If trials have different lengths,
+            a list with one (n_classes x n_predictions) array per trial.
         trial_targets : np.ndarray
             Ground-truth targets from the dataset in a 2-dimensional array
             (n_trials x n_targets). Only returned when ``return_targets=True``.

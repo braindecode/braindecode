@@ -2,10 +2,7 @@
 #          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD-3
-import sys
-
 import numpy as np
-import pytest
 import torch
 from skorch.helper import predefined_split
 
@@ -21,13 +18,14 @@ from braindecode.preprocessing import (
 from braindecode.training import CroppedLoss
 from braindecode.util import set_random_seeds
 
+SEED = 20210726
+N_EPOCHS = 3
 
-@pytest.mark.skipif(sys.version_info != (3, 7), reason="Only for Python 3.7")
-def test_variable_length_trials_cropped_decoding():
-    cuda = False
-    set_random_seeds(seed=20210726, cuda=cuda)
 
-    # create fake tuh abnormal dataset
+def fit_variable_length(seed=SEED, lr=1e-3):
+    set_random_seeds(seed=seed, cuda=False)
+
+    # create fake tuh abnormal dataset (random signals)
     tuh = _TUHAbnormalMock(path="")
     # fake variable length trials by cropping first recording
     splits = tuh.split([[i] for i in range(len(tuh.datasets))])
@@ -54,60 +52,70 @@ def test_variable_length_trials_cropped_decoding():
     splits = variable_tuh_windows.split(
         [[i] for i in range(len(variable_tuh_windows.datasets))]
     )
-    variable_tuh_windows_train = BaseConcatDataset(
+    train_set = BaseConcatDataset(
         [splits[str(i)] for i in range(len(tuh.datasets) - 1)]
     )
-    variable_tuh_windows_valid = BaseConcatDataset([splits[str(len(tuh.datasets) - 1)]])
-    for x, y, ind in variable_tuh_windows_train:
-        break
-    train_split = predefined_split(variable_tuh_windows_valid)
+    valid_set = BaseConcatDataset([splits[str(len(tuh.datasets) - 1)]])
+    x, _, _ = train_set[0]
     n_classes = len(tuh.description.pathological.unique())
-    classes = list(range(n_classes))
     # initialize a model
     model = ShallowFBCSPNet(
-        in_chans=x.shape[0],
-        n_classes=n_classes,
+        n_chans=x.shape[0],
+        n_outputs=n_classes,
+        n_times=x.shape[1],
     )
     model.to_dense_prediction_model()
-    if cuda:
-        model.cuda()
 
     # create and train a classifier
     clf = EEGClassifier(
         model,
         cropped=True,
         criterion=CroppedLoss,
-        criterion__loss_function=torch.nn.functional.nll_loss,
+        criterion__loss_function=torch.nn.functional.cross_entropy,
         optimizer=torch.optim.Adam,
+        optimizer__lr=lr,
         batch_size=16,
         callbacks=["accuracy"],
-        train_split=train_split,
-        classes=classes,
+        train_split=predefined_split(valid_set),
+        classes=list(range(n_classes)),
     )
-    clf.fit(variable_tuh_windows_train, y=None, epochs=3)
+    clf.fit(train_set, y=None, epochs=N_EPOCHS)
+    return clf, train_set, valid_set
 
-    # make sure it does what we expect
+
+def test_variable_length_trials_cropped_decoding():
+    # The mock recordings are random noise, so there is nothing to generalize;
+    # this checks that variable-length recordings train and predict end to end.
+    clf, train_set, valid_set = fit_variable_length()
+    history = clf.history
+
+    assert len(history) == N_EPOCHS
+    for key in ("train_loss", "valid_loss"):
+        # Cross-entropy is non-negative; a negative loss means log-probabilities
+        # and logits got mixed up.
+        values = np.asarray(history[:, key])
+        assert np.all(np.isfinite(values)) and np.all(values >= 0)
+    for key in ("train_accuracy", "valid_accuracy"):
+        values = np.asarray(history[:, key])
+        assert np.all((values >= 0) & (values <= 1))
+
+    # The train set is tiny and gets memorized: over 200 seeds the last/first
+    # train-loss ratio was at most 0.47.
+    train_loss = np.asarray(history[:, "train_loss"])
+    assert train_loss[-1] < 0.75 * train_loss[0]
+
+    # One prediction per window, including the windows of the shorter recording.
+    assert clf.predict(train_set).shape == (len(train_set),)
+    # Trials of different lengths come back as one prediction array per trial.
+    trial_preds, trial_targets = clf.predict_trials(train_set)
+    n_samples = [ds.metadata["i_stop_in_trial"].max() for ds in train_set.datasets]
+    assert len(trial_preds) == len(trial_targets) == len(n_samples)
+    lengths = [preds.shape[1] for preds in trial_preds]
+    assert len(set(lengths)) > 1 and np.argmin(lengths) == np.argmin(n_samples)
+    # The single valid recording is one trial made of all its windows.
+    trial_preds, trial_targets = clf.predict_trials(valid_set)
+    assert trial_preds.shape[:2] == (len(valid_set.datasets), 2)
     np.testing.assert_allclose(
-        clf.history[:, "train_loss"],
-        np.array(
-            [
-                0.689495325088501,
-                0.1353449523448944,
-                0.006638816092163324,
-            ]
-        ),
-        rtol=1e-1,
-        atol=1e-1,
-    )
-    np.testing.assert_allclose(
-        clf.history[:, "valid_loss"],
-        np.array(
-            [
-                2.925871,
-                3.611423,
-                4.23494,
-            ]
-        ),
-        rtol=1e-1,
-        atol=1e-1,
+        np.mean(trial_preds.mean(axis=2).argmax(axis=1) == trial_targets),
+        history[-1, "valid_accuracy"],
     )

@@ -28,6 +28,10 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Restore acceptance tests on supported Python versions as seeded decoding
+  checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
+  control and a replicability check), run by a dedicated CI job
+  (:gh:`1159` by `Bruno Aristimunha`_).
 - Clarify decoder temporal embedding indexing in :class:`braindecode.models.Labram`
   and cover its one-token-per-temporal-patch behavior
   (:gh:`1155` by `Bruno Aristimunha`_).
@@ -115,6 +119,10 @@ Requirements
 Bug fixes
 ==========
 
+- :meth:`braindecode.EEGClassifier.predict_trials` and
+  :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
+  ``ValueError`` on trials of different lengths; they return a list with one
+  prediction array per trial (:gh:`1159` by `Bruno Aristimunha`_)
 - Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU), part 2 of
   :gh:`1183`: :class:`braindecode.modules.GeneralizedGaussianFilter` and
   :func:`braindecode.functional.hilbert_freq` now use a real-valued DFT on

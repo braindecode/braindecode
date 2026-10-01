@@ -419,10 +419,11 @@ def predict_trials(module, dataset, return_targets=True, batch_size=1, num_worke
 
     Returns
     -------
-        trial_predictions: np.ndarray
+        trial_predictions: np.ndarray | list of np.ndarray
             3-dimensional array (n_trials x n_classes x n_predictions), where
             the number of predictions depend on the chosen window size and the
-            receptive field of the network.
+            receptive field of the network. If trials have different lengths,
+            a list with one (n_classes x n_predictions) array per trial.
         trial_targets: np.ndarray
             Ground-truth targets from the dataset in a 2-dimensional array
             (n_trials x n_targets). Only returned when ``return_targets=True``.
@@ -468,7 +469,7 @@ def predict_trials(module, dataset, return_targets=True, batch_size=1, num_worke
         i_window_in_trials=torch.cat(all_inds[0::3]),
         i_stop_in_trials=torch.cat(all_inds[2::3]),
     )
-    preds_per_trial = np.array(preds_per_trial)
+    preds_per_trial = _stack_trials(preds_per_trial)
     if return_targets:
         if all_ys[0].shape == ():
             all_ys = np.array(all_ys)
@@ -481,9 +482,16 @@ def predict_trials(module, dataset, return_targets=True, batch_size=1, num_worke
                 i_window_in_trials=torch.cat(all_inds[0::3]),
                 i_stop_in_trials=torch.cat(all_inds[2::3]),
             )
-            ys_per_trial = np.array(ys_per_trial)
+            ys_per_trial = _stack_trials(ys_per_trial)
         return preds_per_trial, ys_per_trial
     return preds_per_trial
+
+
+def _stack_trials(per_trial):
+    """Stack equal-length trials into one array; keep variable-length trials a list."""
+    if len({trial.shape for trial in per_trial}) <= 1:
+        return np.array(per_trial)
+    return per_trial
 
 
 def f1_event(pred_events, gt_events, iou_threshold: float = 0.5) -> float:

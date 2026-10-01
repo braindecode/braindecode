@@ -3,20 +3,34 @@
 # License: BSD-3
 import platform
 from datetime import datetime
+from pathlib import PureWindowsPath
 from typing import Literal
 
 import pandas as pd
 import pytest
 
 from braindecode.datasets.tuh import (
+    _TUH_EEG_ABNORMAL_PATHS,
+    _TUH_EEG_EVENTS_PATHS,
+    _TUH_EEG_PATHS,
     TUHAbnormal,
     _create_description,
+    _get_header,
     _parse_description_from_file_path,
     _sort_chronologically,
     _TUHAbnormalMock,
     _TUHEventsMock,
     _TUHMock,
 )
+
+
+def test_mock_header_accepts_posix_and_windows_paths():
+    """All shared mock headers accept either separator on every host OS."""
+    for corpus in (_TUH_EEG_PATHS, _TUH_EEG_ABNORMAL_PATHS, _TUH_EEG_EVENTS_PATHS):
+        for headers in corpus.values():
+            for path, expected_header in headers.items():
+                assert _get_header(path) == expected_header
+                assert _get_header(str(PureWindowsPath(path))) == expected_header
 
 
 # Skip if OS is Windows
