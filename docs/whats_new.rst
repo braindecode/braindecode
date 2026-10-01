@@ -115,6 +115,11 @@ Requirements
 Bug fixes
 ==========
 
+- Route the attention of :class:`braindecode.models.EEGDINO` and
+  :class:`braindecode.models.Labram` through their ``qkv`` linear module
+  instead of reading its weight, so hooks and adapters on ``qkv`` (e.g. LoRA)
+  take effect; before, they were skipped silently. Outputs change only by
+  float rounding (:gh:`1194` by `Bruno Aristimunha`_)
 - Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU), part 2 of
   :gh:`1183`: :class:`braindecode.modules.GeneralizedGaussianFilter` and
   :func:`braindecode.functional.hilbert_freq` now use a real-valued DFT on

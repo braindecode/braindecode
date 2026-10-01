@@ -1337,7 +1337,11 @@ class _Attention(nn.Module):
                     self.v_bias,
                 )
             )
-        qkv = nn.functional.linear(input=x, weight=self.qkv.weight, bias=qkv_bias)
+        # Call the ``qkv`` module rather than ``linear`` on its weight, so hooks
+        # and adapters attached to it (e.g. LoRA) take part in the forward.
+        qkv = self.qkv(x)
+        if qkv_bias is not None:
+            qkv = qkv + qkv_bias
         qkv = qkv.reshape(B, N, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
         q, k, v = (
             qkv[0],

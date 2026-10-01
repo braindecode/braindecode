@@ -604,6 +604,35 @@ def test_labram_wrong_channel_count(model_tokenizer, n_times):
 # ==============================================================================
 
 
+@pytest.mark.parametrize("qkv_bias", [False, True])
+def test_labram_attention_calls_qkv_module(qkv_bias):
+    # Adapters such as LoRA hook or replace ``attn.qkv``; the attention has to call
+    # the module, not only read its weight, or they have no effect.
+    ch_names = list(LABRAM_CHANNEL_ORDER[:4])
+    model = Labram(n_chans=4, n_outputs=2, n_times=800, qkv_bias=qkv_bias).eval()
+    attentions = [block.attn for block in model.blocks]
+    if qkv_bias:  # non-zero biases, as in the checkpoint
+        for attn in attentions:
+            torch.nn.init.normal_(attn.q_bias)
+            torch.nn.init.normal_(attn.v_bias)
+    x = torch.randn(2, 4, 800)
+    reference = model(x, ch_names=ch_names)
+
+    calls = []
+    handles = [
+        attn.qkv.register_forward_hook(lambda *_: calls.append(None))
+        for attn in attentions
+    ]
+    assert torch.equal(model(x, ch_names=ch_names), reference)
+    assert len(calls) == len(attentions)
+    for handle in handles:
+        handle.remove()
+
+    for attn in attentions:  # an adapter that changes the projection
+        attn.qkv.register_forward_hook(lambda _m, _i, out: 2 * out)
+    assert not torch.allclose(model(x, ch_names=ch_names), reference)
+
+
 def test_labram_channel_order_constant_exported():
     """Test that LABRAM_CHANNEL_ORDER is exported and has expected format."""
     assert LABRAM_CHANNEL_ORDER is not None
