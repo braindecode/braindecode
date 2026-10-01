@@ -71,6 +71,8 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
     - :class:`CodeBrain` - Scalable EEG pre-training with temporal and spectral code
       prediction
+    - :class:`CSBrain` - Cross-scale spatiotemporal brain foundation model with
+      structured sparse attention
     - :class:`Labram` - Large Brain Model with pre-trained weights
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
@@ -145,6 +147,7 @@ interface for all EEG models and can derive variable names when needed.
      CBraMod
      CodeBrain
      ContraWR
+     CSBrain
      CTNet
      DGCNN
      DIVER1

@@ -36,6 +36,12 @@ Enhancements
   and cover its one-token-per-temporal-patch behavior
   (:gh:`1155` by `Bruno Aristimunha`_).
 
+- Add :class:`braindecode.models.CSBrain`, the cross-scale spatiotemporal brain
+  foundation model from Zhou et al. (NeurIPS 2025 Spotlight): multi-scale
+  temporal and per-region embeddings with structured sparse (inter-window and
+  inter-region) attention, channel names mapped to five anatomical regions or
+  an explicit ``brain_regions`` layout, verified bit-exact against the authors'
+  released pretrained checkpoint (:gh:`1196` by `Li Qing`_).
 - Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
   model with pretrained encoders and support for varying montages through
   :func:`braindecode.models.diver1.channel_metadata_from_chs_info`
