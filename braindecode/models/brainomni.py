@@ -25,6 +25,7 @@ from torch.nn import RMSNorm
 # Classic weight_norm keeps ``conv.weight_g``/``weight_v`` keys (checkpoint parity).
 from torch.nn.utils import weight_norm  # noqa: F401
 
+from braindecode.functional import rotate_pairs
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import FeedForwardBlock
@@ -35,6 +36,15 @@ _TOKENIZER_CONFIG_RENAMES = {
     "n_head": "tokenizer_num_heads",
     "dropout": "drop_prob",
 }
+_BRAINOMNI_CONFIG_RENAMES = {
+    "n_dim": "emb_dim",
+    "n_head": "tokenizer_num_heads",
+    "dropout": "tokenizer_drop_prob",
+    "lm_head": "num_heads",
+    "lm_depth": "depth",
+    "lm_dropout": "drop_prob",
+}
+_BRAINOMNI_PRETRAINING_KEYS = {"mask_ratio", "num_quantizers_used"}
 
 
 def _translate_opentslab_config(
@@ -490,18 +500,419 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         return feat, indices
 
 
-def _rename_official_key(key: str) -> str | None:
-    """Map an OpenTSLab state-dict key to this port's name.
+class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
+    r"""BrainOmni from Xiao et al. (2025) [brainomni]_.
 
-    Native keys pass through unchanged.
+    :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
+
+    ``BrainOmni`` is the downstream classifier of BrainOmni [brainomni]_. It
+    wraps a frozen :class:`BrainTokenizer` backbone with a stack of
+    spatial-temporal factored attention blocks (``_SpatialTemporalBlock``) and a
+    linear classification head, matching the ``DownstreamModel`` architecture of
+    the published BrainOmni codebase.
+
+    .. rubric:: Architecture Overview
+
+    The end-to-end path is::
+
+        (batch, n_chans, n_times) -> frozen BrainTokenizer -> projection ->
+        spatial-temporal blocks -> pool over time -> flatten sources ->
+        (batch, n_outputs)
+
+    The tokenizer slides over the input with stride
+    ``window_length * (1 - overlap_ratio)`` to produce a temporal sequence of
+    ``n_neuro`` neural-source embeddings per window, which the transformer then
+    processes. During fine-tuning ``projection``, ``blocks``, and
+    ``final_layer`` are trainable: :meth:`encode` reads the backbone through
+    :meth:`BrainTokenizer.tokenize`, which runs under :func:`torch.no_grad` in
+    ``eval`` mode, so the tokenizer's convolutions and VQ codebooks receive no
+    gradients and are never EMA-updated (no ``train`` override is needed).
+
+    .. rubric:: Macro Components
+
+    ``BrainOmni.tokenizer`` (:class:`BrainTokenizer`)
+        **Operations.** Frozen VQ-VAE backbone; :meth:`encode` calls
+        :meth:`BrainTokenizer.tokenize` to map the raw signal to quantized neural
+        tokens ``(batch, n_neuro, tokens, emb_dim)`` and adds the learned source
+        embeddings. **Role.** Montage-agnostic, fixed feature extractor.
+
+    ``BrainOmni.projection`` (:class:`~torch.nn.Linear` / :class:`~torch.nn.Identity`)
+        **Operations.** Projects ``emb_dim`` to ``lm_dim`` (identity when equal).
+        **Role.** Adapts token width to the transformer.
+
+    ``BrainOmni.blocks`` (``_SpatialTemporalBlock`` x ``depth``)
+        **Operations.** Each block splits the feature dimension in half and
+        applies temporal attention (RoPE, over windows/tokens) to one half and
+        spatial attention (no RoPE, over the ``n_neuro`` sources) to the other,
+        then a pre-norm feed-forward. The last block is held out for checkpoint
+        parity and skipped by :meth:`encode`. **Role.** Factored space-time
+        contextualization of the neural tokens.
+
+    ``BrainOmni.final_layer`` (:class:`~torch.nn.Sequential`)
+        **Operations.** ``Dropout -> Linear -> activation -> Linear`` over the
+        flattened ``n_neuro * lm_dim`` pooled representation. **Role.** The output
+        layer mapping to ``n_outputs`` (rebuilt by :meth:`reset_head`).
+
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Temporal:** RoPE temporal attention over the window/token axis; the
+      tokenizer's overlapping windows form the temporal sequence.
+    - **Spatial:** spatial attention over the ``n_neuro`` virtual-source axis,
+      inheriting the tokenizer's geometry-aware sensor mapping.
+    - **Spectral:** inherited implicitly from the tokenizer's SEANet
+      convolutional filterbank; no explicit spectral transform.
+
+    .. rubric:: Additional Mechanisms
+
+    - **Frozen backbone.** The tokenizer is hard-frozen via :func:`torch.no_grad`
+      inside :meth:`BrainTokenizer.tokenize`; ``projection``, ``blocks``, and
+      ``final_layer`` train.
+    - **L2-normalized embedding.** :meth:`encode` L2-normalizes the backbone
+      output, matching the upstream representation used for classification.
+
+    .. rubric:: Released Weights
+
+    .. important::
+
+        The authors publish MIT-licensed ``BrainOmni.pt`` artifacts in
+        ``OpenTSLab/BrainOmni`` on the Hugging Face Hub. They are plain PyTorch
+        Stage-2 state dicts, not Braindecode Hub repositories. Pass the parsed
+        accompanying config directly to :meth:`from_opentslab_config`, which
+        translates the six differing names and discards the pretraining-only
+        ``mask_ratio`` and ``num_quantizers_used`` values::
+
+            config = json.loads(Path(config_path).read_text())
+            model = BrainOmni.from_opentslab_config(
+                config,
+                chs_info=chs_info,
+                n_outputs=n_outputs,
+                n_times=512,
+                sfreq=256.0,
+            )
+            model.load_state_dict(
+                torch.load(checkpoint_path, weights_only=True), strict=True
+            )
+
+        The pretraining-only mask predictor in the checkpoint is discarded and
+        the classification ``final_layer`` remains freshly initialized, so
+        fine-tune or linear-probe before use.
+
+    .. versionadded:: 1.8
+
+    Parameters
+    ----------
+    n_outputs : int, optional
+        Number of downstream outputs.
+    n_chans : int, optional
+        Number of input channels. Inferred from ``chs_info`` when omitted.
+    chs_info : list of dict, optional
+        MNE channel information used to derive sensor geometry.
+    n_times : int, optional
+        Number of input samples.
+    input_window_seconds : float, optional
+        Input duration in seconds.
+    sfreq : float, optional
+        Sampling frequency in Hz. Released weights expect 256 Hz.
+    emb_dim : int
+        Tokenizer embedding dimension.
+    n_neuro : int
+        Number of virtual neural-source tokens (spatial dimension).
+    window_length : int
+        Analysis window length (samples) fed to the tokenizer.
+    overlap_ratio : float
+        Fractional overlap between consecutive tokenizer windows.
+        Note: ``BrainOmni`` defaults to ``0.25`` here, whereas
+        :meth:`BrainTokenizer.tokenize` defaults to ``0.0`` — features will
+        differ if the two are mixed manually without aligning this value.
+    n_filters : int
+        Base filter count for the SEANet encoder inside the tokenizer.
+    ratios : tuple of int
+        Downsampling ratios for the SEANet encoder.
+    kernel_size : int
+        Conv kernel size in the SEANet encoder.
+    last_kernel_size : int
+        Kernel size for the first and last SEANet conv layer.
+    tokenizer_num_heads : int
+        Attention heads in the tokenizer cross-attention blocks.
+    codebook_dim : int
+        Projected dimension inside each VQ codebook.
+    codebook_size : int
+        Number of entries per VQ codebook.
+    num_quantizers : int
+        Number of residual VQ stages.
+    rotation_trick : bool
+        Whether to use the rotation-trick STE for codebook updates.
+    quantize_optimize_method : str
+        Codebook optimisation strategy (``"ema"``).
+    tokenizer_drop_prob : float
+        Dropout probability in the tokenizer attention blocks. The released
+        tokenizer configuration uses ``0.0``.
+    lm_dim : int
+        Transformer hidden dimension.
+    num_heads : int
+        Number of attention heads in the transformer blocks.
+    depth : int
+        Total number of transformer blocks.  Note: the last block is
+        excluded from ``encode`` / ``forward`` (kept for checkpoint parity).
+    drop_prob : float
+        Dropout probability in the Stage-2 transformer. The released downstream
+        classification head uses a fixed dropout probability of ``0.1``.
+    activation : type[nn.Module]
+        Activation used in the classification head.
+
+    Notes
+    -----
+    The :class:`BrainTokenizer` backbone (convolutions and VQ codebooks) is
+    hard-frozen: :meth:`BrainTokenizer.tokenize` runs it under
+    :func:`torch.no_grad` in ``eval`` mode, so it receives no gradients and its
+    codebooks are never EMA-updated during fine-tuning. The optional
+    ``projection``, ``blocks``, and ``final_layer`` remain trainable.
+
+    References
+    ----------
+    .. [brainomni] Xiao, Q., Cui, Z., Zhang, C., Chen, S., Wu, W.,
+       Thwaites, A., Woolgar, A., Zhou, B., Zhang, C. (2025).
+       BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals.
+       NeurIPS 2025.
+       Online: https://arxiv.org/abs/2505.18185
     """
+
+    def __init__(
+        self,
+        # braindecode parameters
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        # model-specific parameters
+        *,
+        emb_dim: int = 256,
+        n_neuro: int = 16,
+        window_length: int = 512,
+        overlap_ratio: float = 0.25,
+        n_filters: int = 32,
+        ratios: tuple[int, ...] = (8, 4, 2),
+        kernel_size: int = 5,
+        last_kernel_size: int = 5,
+        tokenizer_num_heads: int = 4,
+        codebook_dim: int = 256,
+        codebook_size: int = 512,
+        num_quantizers: int = 4,
+        rotation_trick: bool = True,
+        quantize_optimize_method: str = "ema",
+        tokenizer_drop_prob: float = 0.0,
+        lm_dim: int = 256,
+        num_heads: int = 8,
+        depth: int = 12,
+        drop_prob: float = 0.1,
+        activation: type[nn.Module] = nn.SELU,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        _window_stride(window_length, overlap_ratio)
+        if num_heads <= 0 or num_heads % 2:
+            raise ValueError(f"num_heads must be positive and even, got {num_heads}.")
+        if lm_dim <= 0 or lm_dim % 2 or lm_dim % num_heads:
+            raise ValueError(
+                f"lm_dim ({lm_dim}) must be positive, even, and divisible by "
+                f"num_heads ({num_heads})."
+            )
+        if depth <= 0:
+            raise ValueError(f"depth must be positive, got {depth}.")
+        if not 0.0 <= tokenizer_drop_prob <= 1.0:
+            raise ValueError(
+                "tokenizer_drop_prob must satisfy 0 <= tokenizer_drop_prob <= 1, "
+                f"got {tokenizer_drop_prob}."
+            )
+        if not 0.0 <= drop_prob <= 1.0:
+            raise ValueError(
+                f"drop_prob must satisfy 0 <= drop_prob <= 1, got {drop_prob}."
+            )
+
+        self.lm_dim = lm_dim
+        self.n_neuro = n_neuro
+        self.overlap_ratio = overlap_ratio
+        self.tokenizer_drop_prob = tokenizer_drop_prob
+        self.drop_prob = drop_prob
+        self.activation = activation
+
+        self.tokenizer = BrainTokenizer(
+            chs_info=self.chs_info,
+            n_times=self.n_times,
+            sfreq=self.sfreq,
+            emb_dim=emb_dim,
+            n_neuro=n_neuro,
+            window_length=window_length,
+            n_filters=n_filters,
+            ratios=ratios,
+            kernel_size=kernel_size,
+            last_kernel_size=last_kernel_size,
+            tokenizer_num_heads=tokenizer_num_heads,
+            codebook_dim=codebook_dim,
+            codebook_size=codebook_size,
+            num_quantizers=num_quantizers,
+            rotation_trick=rotation_trick,
+            quantize_optimize_method=quantize_optimize_method,
+            drop_prob=tokenizer_drop_prob,
+            activation=activation,
+        )
+        self.projection: nn.Module = (
+            nn.Linear(emb_dim, lm_dim) if emb_dim != lm_dim else nn.Identity()
+        )
+        self.blocks = nn.ModuleList(
+            [
+                _SpatialTemporalBlock(lm_dim, num_heads, drop_prob, causal=False)
+                for _ in range(depth)
+            ]
+        )
+        self._head_in = n_neuro * lm_dim
+        self.final_layer = self._make_head(self.n_outputs)
+        self.apply(_init_weights)
+        self.tokenizer.requires_grad_(False)
+
+    @classmethod
+    def from_opentslab_config(cls, config: dict, **kwargs) -> BrainOmni:
+        """Construct from a released tiny/base ``model_cfg.json``.
+
+        Parameters
+        ----------
+        config : dict
+            Parsed official Stage-2 configuration. Pretraining-only mask values
+            are ignored and the input is not mutated.
+        **kwargs : dict
+            Braindecode metadata such as ``chs_info``, ``n_outputs``,
+            ``n_times``, and ``sfreq``, or explicit configuration overrides.
+
+        Returns
+        -------
+        BrainOmni
+            A downstream model configured for the accompanying checkpoint.
+        """
+        translated = _translate_opentslab_config(
+            config,
+            renames=_BRAINOMNI_CONFIG_RENAMES,
+            ignored=_BRAINOMNI_PRETRAINING_KEYS,
+        )
+        translated.update(kwargs)
+        return cls(**translated)
+
+    def _make_head(self, n_outputs: int) -> nn.Module:
+        return nn.Sequential(
+            nn.Dropout(0.1),
+            nn.Linear(self._head_in, self.lm_dim),
+            self.activation(),
+            nn.Linear(self.lm_dim, n_outputs),
+        )
+
+    def reset_head(self, n_outputs: int) -> None:
+        """Re-create the classification head for ``n_outputs`` classes."""
+        self._set_n_outputs(n_outputs)
+        reference = next(self.parameters())
+        self.final_layer = self._make_head(n_outputs)
+        self.final_layer.apply(_init_weights)
+        self.final_layer.to(device=reference.device, dtype=reference.dtype)
+
+    def _tokens(self, x: torch.Tensor) -> torch.Tensor:
+        """Tokenize ``x`` and project to ``lm_dim``.
+
+        Returns ``(batch, n_neuro, n_windows * n_tokens, lm_dim)`` with gradients stopped at the
+        tokenizer boundary.
+        """
+        feat, _ = self.tokenizer.tokenize(x, overlap_ratio=self.overlap_ratio)
+        neuro = self.tokenizer.encoder.neuros.detach().to(feat.dtype)
+        feat = feat + neuro.view(1, feat.shape[1], 1, -1)
+        return self.projection(feat)
+
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        """Backbone embedding: blocks[:-1] then L2-normalize (parity w/ upstream).
+
+        Returns ``(batch, n_neuro, n_windows * n_tokens, lm_dim)``.
+        """
+        h = self._tokens(x)
+        for block in self.blocks[:-1]:
+            h = block(h)
+        return F.normalize(h, p=2.0, dim=-1, eps=1e-6)
+
+    def forward(self, x: torch.Tensor, return_features: bool = False):
+        """Classify ``x`` or return the pooled pre-classifier features."""
+        feat = self.encode(x)  # (batch, n_neuro, n_windows * n_tokens, lm_dim)
+        feat = feat.mean(dim=2)  # pool over tokens -> (batch, n_neuro, lm_dim)
+        feat = feat.reshape(feat.shape[0], -1)  # (batch, n_neuro * lm_dim)
+        if return_features:
+            return {"features": feat, "cls_token": None}
+        return self.final_layer(feat)
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Load either native or official OpenTSLab BrainOmni weights.
+
+        The official artifact contains the Stage-2 mask-prediction head rather
+        than a downstream classifier. Those three pretraining-only tensors are
+        intentionally ignored; the downstream ``final_layer`` remains local.
+        The released export also stores RoPE's frequencies (rounded to
+        bfloat16) and its derived cache (without the sine component). The port
+        has no RoPE buffers: those keys are dropped and the rotation is
+        recomputed in float32, as in a freshly built upstream model.
+        """
+        remapped = OrderedDict()
+        metadata = getattr(state_dict, "_metadata", None)
+        own_state = self.state_dict()
+        official = any(
+            key == "mask_token"
+            or key.startswith("predict_head.")
+            or key.startswith("tokenizer.decoder.")
+            for key in state_dict
+        )
+        for key, value in state_dict.items():
+            if official and (key == "mask_token" or key.startswith("predict_head.")):
+                continue
+            new_key = _rename_official_key(key)
+            if new_key is None:
+                continue
+            if new_key in remapped:
+                raise ValueError(
+                    f"Checkpoint keys collide after remapping: {new_key!r}."
+                )
+            remapped[new_key] = value
+        if official:
+            for key in own_state:
+                if key.startswith("final_layer.") or key in {
+                    "tokenizer.pos",
+                    "tokenizer.sensor_type",
+                }:
+                    remapped[key] = own_state[key]
+        if metadata is not None:
+            remapped._metadata = metadata
+        return super().load_state_dict(remapped, *args, **kwargs)
+
+
+def _rename_official_key(key: str) -> str | None:
+    """Map an OpenTSLab state-dict key to this port's name, or ``None`` to drop it.
+
+    Native keys pass through unchanged. RoPE ``freqs``/``rotate`` are dropped:
+    the port recomputes them in float32 (the release stores ``freqs`` rounded
+    to bfloat16 and ``rotate`` without its sine component).
+    """
+    if key.endswith(("rope_embedding_layer.freqs", "rope_embedding_layer.rotate")):
+        return None
     key = key.replace("quantizer.rvq.", "quantizer.")
     if key.startswith("decoder."):
         key = "final_layer." + key.removeprefix("decoder.")
+    key = key.replace("tokenizer.decoder.", "tokenizer.final_layer.")
     key = key.replace(".convtr.convtr.", ".convtr.")
     key = key.replace(".conv.conv.", ".conv.")
     # Released FeedForward is Sequential(Linear, SELU, Linear, Dropout) under
     # ``layer``; FeedForwardBlock numbers its linears 0 and 3.
+    key = key.replace("ff.layer.0.", "ff.0.").replace("ff.layer.2.", "ff.3.")
     key = key.replace("aggregate_mlp.layer.0.", "aggregate_mlp.0.")
     key = key.replace("aggregate_mlp.layer.2.", "aggregate_mlp.3.")
     return key
@@ -616,6 +1027,184 @@ def _geometry_from_chs_info(chs_info):
 
     pos = np.concatenate([xyz, ori], axis=1).astype(np.float32)
     return _normalize_pos(pos, sensor_type), sensor_type
+
+
+class _SpatialTemporalBlock(nn.Module):
+    """Spatial-temporal factored attention block from BrainOmni.
+
+    Splits the feature dimension in half: one half is attended over the
+    temporal axis (per channel), the other over the spatial axis (per
+    time-step).  Both halves are concatenated and passed through a
+    feed-forward layer with pre-normalisation.
+
+    Parameters
+    ----------
+    n_dim : int
+        Total feature dimension (must be even).
+    n_head : int
+        Total number of attention heads (must be even).
+    dropout : float
+        Dropout probability for feed-forward and attention.
+    causal : bool
+        Whether to apply causal masking to the temporal attention.
+    """
+
+    def __init__(self, n_dim, n_head, dropout, causal):
+        super().__init__()
+        assert n_dim % 2 == 0 and n_head % 2 == 0, (
+            "n_dim and n_head must be even (split into spatial/temporal halves)"
+        )
+        self.pre_attn_norm = RMSNorm(n_dim, eps=1e-6)
+        self.time_attn = _MultiHeadAttentionRoPE(
+            n_dim // 2, n_head // 2, dropout, causal=causal, rope=True
+        )
+        self.spatial_attn = _MultiHeadAttentionRoPE(
+            n_dim // 2, n_head // 2, dropout, causal=False, rope=False
+        )
+        self.pre_ff_norm = RMSNorm(n_dim, eps=1e-6)
+        # Released FeedForward: Linear -> SELU -> Linear -> Dropout (inner dropout off).
+        self.ff = FeedForwardBlock(n_dim, 4, 0.0, nn.SELU, output_drop_p=dropout)
+
+    def forward(self, x: torch.Tensor, mask=None) -> torch.Tensor:
+        x = x + self._attn_operator(self.pre_attn_norm(x))
+        x = x + self.ff(self.pre_ff_norm(x))
+        return x
+
+    def _attn_operator(self, x):
+        batch, chans, tokens, dim = x.shape
+        # Upper half of feature dim attends over channels (spatial); lower half over windows (temporal).
+        xs = rearrange(
+            x[:, :, :, dim // 2 :], "batch chans tokens dim -> (batch tokens) chans dim"
+        )
+        xt = rearrange(
+            x[:, :, :, : dim // 2], "batch chans tokens dim -> (batch chans) tokens dim"
+        )
+        xs = self.spatial_attn(xs)
+        xt = self.time_attn(xt)
+        xs = rearrange(
+            xs, "(batch tokens) chans dim -> batch chans tokens dim", batch=batch
+        )
+        xt = rearrange(
+            xt, "(batch chans) tokens dim -> batch chans tokens dim", batch=batch
+        )
+        # Spatial first, temporal second: halves are swapped vs. input split (upstream parity).
+        return torch.cat([xs, xt], dim=-1)
+
+
+class _RotaryPositionalEmbedding(nn.Module):
+    """Stateless rotary position embedding (RoPE) of the released BrainOmni.
+
+    Adjacent feature pairs of queries and keys are rotated by a
+    position-dependent angle (Su et al., 2021), computed in float32 with real
+    arithmetic (:func:`~braindecode.functional.rotate_pairs`), so there is no
+    complex cache and no state-dict entry.
+
+    ``n_dim`` is the full attention dimension (``n_heads * head_dim``): one
+    inverse-frequency ladder is built over ``n_dim`` and split across heads, so
+    each head gets a different frequency band, as in the release. Using the
+    per-head size instead would change pretrained numerics without tripping a
+    strict load, because the module has no parameters.
+    """
+
+    def __init__(self, n_dim, base=10000):
+        super().__init__()
+        if n_dim <= 0 or n_dim % 2:
+            raise ValueError(f"n_dim must be a positive even integer, got {n_dim}.")
+        self.n_dim = n_dim
+        self.base = base
+
+    def _cos_sin(self, seq: int, heads: int, device: torch.device):
+        """``(seq, heads, head_dim)`` cosines and sines, recomputed in float32."""
+        exponent = torch.arange(0, self.n_dim, 2, device=device).float() / self.n_dim
+        freqs = 1.0 / (self.base**exponent)
+        positions = torch.arange(seq, device=device, dtype=torch.float32)
+        angles = torch.outer(positions, freqs)
+        angles = torch.repeat_interleave(angles, 2, dim=-1)
+        angles = rearrange(
+            angles, "seq (heads head_dim) -> seq heads head_dim", heads=heads
+        )
+        return angles.cos(), angles.sin()
+
+    def forward(self, q, k):
+        """Rotate ``q`` and ``k`` of shape ``(batch, seq, n_heads, head_dim)``."""
+        _, seq, heads, head_dim = q.shape
+        if heads * head_dim != self.n_dim:
+            raise ValueError(
+                f"RoPE expects n_heads * head_dim == {self.n_dim}, got "
+                f"{heads} * {head_dim}."
+            )
+        cos, sin = self._cos_sin(seq, heads, q.device)
+        q_float = q.float()
+        k_float = k.float()
+        q_out = q_float * cos + rotate_pairs(q_float) * sin
+        k_out = k_float * cos + rotate_pairs(k_float) * sin
+        return q_out.type_as(q), k_out.type_as(k)
+
+
+class _MultiHeadAttentionRoPE(nn.Module):
+    """Self-attention with a fused ``qkv`` projection and optional RoPE.
+
+    Mirrors the released BrainOmni attention (``qkv``/``proj`` key names kept
+    for checkpoint parity). SDPA dropout is gated by the training flag so
+    evaluation is deterministic.
+    """
+
+    def __init__(self, n_dim, n_head, dropout, causal: bool = False, rope=False):
+        super().__init__()
+        if n_dim % n_head:
+            raise ValueError(f"n_dim ({n_dim}) must be divisible by n_head ({n_head}).")
+        if rope and (n_dim // n_head) % 2:
+            raise ValueError(
+                f"RoPE head dimension must be even, got {n_dim // n_head}."
+            )
+        self.dropout = dropout
+        self.n_dim = n_dim
+        self.n_head = n_head
+        self.causal = causal
+        self.qkv = nn.Linear(n_dim, 3 * n_dim)
+        self.proj = nn.Linear(n_dim, n_dim)
+        self.rope = rope
+        self.rope_embedding_layer = (
+            _RotaryPositionalEmbedding(n_dim=n_dim) if rope else nn.Identity()
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        batch, seq, _ = x.shape
+        q, k, v = torch.split(self.qkv(x), split_size_or_sections=self.n_dim, dim=-1)
+        if self.rope:
+            q = q.view(batch, seq, self.n_head, -1)
+            k = k.view(batch, seq, self.n_head, -1)
+            q, k = self.rope_embedding_layer(q, k)
+            q = q.transpose(1, 2)
+            k = k.transpose(1, 2)
+        else:
+            q = rearrange(
+                q,
+                "batch seq (heads head_dim) -> batch heads seq head_dim",
+                heads=self.n_head,
+            )
+            k = rearrange(
+                k,
+                "batch seq (heads head_dim) -> batch heads seq head_dim",
+                heads=self.n_head,
+            )
+        v = rearrange(
+            v,
+            "batch seq (heads head_dim) -> batch heads seq head_dim",
+            heads=self.n_head,
+        )
+        output = (
+            F.scaled_dot_product_attention(
+                query=q,
+                key=k,
+                value=v,
+                dropout_p=self.dropout if self.training else 0.0,
+                is_causal=self.causal,
+            )
+            .transpose(1, 2)
+            .contiguous()
+        )
+        return self.proj(output.view(batch, seq, -1))
 
 
 def _safe_pad1d(
