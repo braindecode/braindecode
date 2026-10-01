@@ -31,10 +31,13 @@ REGION_TEMPORAL = 2
 REGION_OCCIPITAL = 3
 REGION_CENTRAL = 4
 
-# Map 10-20-style electrode prefixes to brain regions, longest prefix first.
-# This is the canonical full-montage assignment of the reference
-# implementation: FP/AF/F/FC -> frontal, C/CP -> central, FT/T/TP -> temporal,
-# P -> parietal, PO/O/I -> occipital.
+# Map 10-20-style electrode prefixes to brain regions, longest prefix first:
+# FP/AF/F/FC -> frontal, C/CP -> central, FT/T/TP -> temporal, P -> parietal,
+# PO/O/I -> occipital. This reproduces the reference layouts of PhysioNet-MI,
+# FACED, SHU-MI, CHB-MIT, Mumtaz2016, MentalArithmetic, ISRUC, HMC and TUSL.
+# The reference is not consistent across datasets: its BCI-IV-2a, SEED-V,
+# SEED-VIG and Siena layouts put FC in central and PO in parietal; pass
+# ``brain_regions`` to reproduce those.
 _REGION_PREFIXES: tuple[tuple[str, int], ...] = (
     ("FP", REGION_FRONTAL),
     ("AF", REGION_FRONTAL),
@@ -168,8 +171,9 @@ class CSBrain(EEGModuleMixin, nn.Module):
 
     Channel names (``chs_info``) are mapped to five anatomical regions
     (frontal / parietal / temporal / occipital / central) and reordered to be
-    contiguous; without usable channel names the model degenerates to a
-    single region and keeps full attention.
+    contiguous; unrecognised names fall into the central region. Without
+    ``chs_info`` (and without ``brain_regions``) the region embedding is
+    skipped and the inter-region attention is unmasked.
 
     Parameters
     ----------
@@ -294,20 +298,18 @@ class CSBrain(EEGModuleMixin, nn.Module):
 
         if return_encoder_output:
             self.final_layer = nn.Identity()
-        elif self._n_times is not None and self._n_chans is not None:
-            n_patch = self._n_times // patch_size
-            flat_dim = self._n_chans * n_patch * emb_dim
-            self.final_layer = self._make_task_head(flat_dim)
         else:
-            self.final_layer = self._make_task_head(None)
+            self.final_layer = self._make_task_head()
 
-    def _make_task_head(self, flat_dim: int | None) -> nn.Sequential:
-        # Two-layer MLP head with an emb_dim-sized bottleneck, following the
-        # reference implementation's fine-tuning head.
-        if flat_dim is None:
+    def _make_task_head(self) -> nn.Sequential:
+        # Three-layer MLP head of the reference fine-tuning models: flatten
+        # (chans, patches, emb_dim) -> n_patch * emb_dim -> emb_dim -> n_outputs.
+        # Without n_times/n_chans the layers are lazy and the hidden width
+        # falls back to 4 * emb_dim, the reference value for 4 s windows.
+        if self._n_times is None or self._n_chans is None:
             return nn.Sequential(
                 nn.Flatten(),
-                nn.LazyLinear(self._emb_dim * 4),
+                nn.LazyLinear(4 * self._emb_dim),
                 nn.ELU(),
                 nn.Dropout(self._drop_prob),
                 nn.LazyLinear(self._emb_dim),
@@ -315,12 +317,14 @@ class CSBrain(EEGModuleMixin, nn.Module):
                 nn.Dropout(self._drop_prob),
                 nn.LazyLinear(self.n_outputs),
             )
+        n_patch = self._n_times // self._patch_size
+        hidden = n_patch * self._emb_dim
         return nn.Sequential(
             nn.Flatten(),
-            nn.Linear(flat_dim, self._emb_dim * 4),
+            nn.Linear(self._n_chans * hidden, hidden),
             nn.ELU(),
             nn.Dropout(self._drop_prob),
-            nn.Linear(self._emb_dim * 4, self._emb_dim),
+            nn.Linear(hidden, self._emb_dim),
             nn.ELU(),
             nn.Dropout(self._drop_prob),
             nn.Linear(self._emb_dim, self.n_outputs),
@@ -330,12 +334,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         self._n_outputs = n_outputs
         self._update_init_kwargs(n_outputs=n_outputs)
         self._update_init_kwargs(return_encoder_output=False)
-        if self._n_times is not None and self._n_chans is not None:
-            n_patch = self._n_times // self._patch_size
-            flat_dim = self._n_chans * n_patch * self._emb_dim
-            self.final_layer = self._make_task_head(flat_dim)
-        else:
-            self.final_layer = self._make_task_head(None)
+        self.final_layer = self._make_task_head()
 
     def _weights_init(self):
         # Same rule as the reference ``_weights_init`` (and CBraMod): only the
