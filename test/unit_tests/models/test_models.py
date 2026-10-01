@@ -4748,3 +4748,33 @@ def test_csbrain_head_hidden_width_follows_patches(n_times, hidden):
     model.reset_head(5)
     assert model.final_layer[1].out_features == hidden
     assert model.final_layer[-1].out_features == 5
+
+
+def test_csbrain_channel_order_reproduces_reference_topology():
+    """``channel_order`` takes the reference's ``sorted_indices`` (CHB-MIT)."""
+    regions = [0, 0, 2, 1, 0, 0, 2, 1, 0, 0, 4, 1, 0, 0, 4, 1]
+    order = [1, 0, 8, 9, 13, 12, 4, 5, 3, 11, 15, 7, 2, 6, 10, 14]
+    model = CSBrain(
+        n_outputs=1,
+        n_chans=16,
+        n_times=400,
+        brain_regions=regions,
+        channel_order=order,
+        n_layer=1,
+    )
+    assert model.sorted_indices.tolist() == order
+    assert [v["channels"] for v in model.area_config.values()] == [8, 4, 2, 2]
+    assert model(torch.randn(2, 16, 400)).shape == (2, 1)
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        (dict(brain_regions=[0, 4, 1], channel_order=[0, 1, 1]), "permutation"),
+        (dict(brain_regions=[0, 4, 1], channel_order=[0, 1, 2]), "ascending"),
+        (dict(channel_order=[0, 1, 2]), "needs brain_regions"),
+    ],
+)
+def test_csbrain_rejects_invalid_channel_order(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        CSBrain(n_outputs=2, n_chans=3, n_times=400, n_layer=1, **kwargs)

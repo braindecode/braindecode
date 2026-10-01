@@ -85,18 +85,46 @@ def group_regions(regions: Sequence[int]):
     return ordered_regions, sorted_indices
 
 
-def derive_brain_regions(chs_info: Sequence[dict] | None):
+def order_regions(regions: Sequence[int], channel_order: Sequence[int] | None = None):
+    """Return ``(ordered_regions, sorted_indices)`` for an explicit order.
+
+    ``channel_order`` is the reference's ``sorted_indices``: a permutation of
+    the channels that groups them by ascending region id and sets the
+    electrode ring inside each region. ``None`` keeps the input order inside
+    each region (:func:`group_regions`).
+    """
+    regions = list(regions)
+    if channel_order is None:
+        return group_regions(regions)
+    sorted_indices = [int(i) for i in channel_order]
+    if sorted(sorted_indices) != list(range(len(regions))):
+        raise ValueError(
+            f"channel_order must be a permutation of the {len(regions)} "
+            f"input channels, got {sorted_indices}."
+        )
+    ordered_regions = [regions[i] for i in sorted_indices]
+    if ordered_regions != sorted(regions):
+        raise ValueError(
+            "channel_order must group the channels by ascending region id, "
+            f"got regions {ordered_regions} in that order."
+        )
+    return ordered_regions, sorted_indices
+
+
+def derive_brain_regions(
+    chs_info: Sequence[dict] | None, channel_order: Sequence[int] | None = None
+):
     """Split channel names into regions and build the (regions, order) pair.
 
     Returns ``(brain_regions, sorted_indices)`` where ``brain_regions[i]`` is
     the region of the channel that ends up at position ``i`` after reordering
-    by ``sorted_indices``. Without usable channel names every channel is
-    assigned to one single region, which degenerates the inter-region
-    attention to full attention over all channels.
+    by ``sorted_indices``. Unrecognised names all fall into the central
+    region; if no name is recognised, the group mask lets each electrode
+    attend only to itself in the inter-region attention.
     """
     names = [str(ch.get("ch_name", "")) for ch in (chs_info or [])]
     regions = [region_of_electrode(name) for name in names]
-    return group_regions(regions)
+    return order_regions(regions, channel_order)
 
 
 def make_area_config(brain_regions: Sequence[int]) -> dict[str, dict]:
@@ -200,6 +228,14 @@ class CSBrain(EEGModuleMixin, nn.Module):
         name-based derivation. Pass this to reproduce a dataset-specific
         region layout, e.g. the one used by the authors' released
         fine-tuning checkpoints.
+    channel_order : sequence of int | None, default=None
+        Permutation of the input channels applied before the region modules
+        (the reference's ``sorted_indices``). It must group the channels by
+        ascending region id; inside a region it sets the electrode ring of
+        the circular region convolution and the round-robin attention
+        groups. ``None`` keeps the input order inside each region. Most
+        reference fine-tuning models (e.g. CHB-MIT, Siena, SEED-V) use a
+        hand-made topological order, so they need this to match exactly.
     return_encoder_output : bool, default=False
         If False (default), the projected encoder output is flattened and
         passed through the task head to produce class logits of size
@@ -233,6 +269,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         temporal_kernel_sizes: Sequence[int] = (1, 3, 5),
         drop_prob: float = 0.1,
         brain_regions: Sequence[int] | None = None,
+        channel_order: Sequence[int] | None = None,
         return_encoder_output: bool = False,
     ):
         super().__init__(
@@ -254,24 +291,29 @@ class CSBrain(EEGModuleMixin, nn.Module):
 
         # Region structure: explicit ``brain_regions`` (one region id per input
         # channel, taking precedence over name derivation) when given, else
-        # derived from channel names; without either, the model degenerates to
-        # a single attention region (no reordering, no region embedding, full
-        # inter-region attention).
+        # derived from channel names; without either there is no reordering,
+        # no region embedding and the inter-region attention is unmasked.
         if brain_regions is not None:
-            ordered_regions, sorted_indices = group_regions(list(brain_regions))
-            self.register_buffer(
-                "sorted_indices", torch.as_tensor(sorted_indices, dtype=torch.long)
+            ordered_regions, sorted_indices = order_regions(
+                brain_regions, channel_order
             )
-            self.area_config = make_area_config(ordered_regions)
         elif self._chs_info:
-            ordered_regions, sorted_indices = derive_brain_regions(self._chs_info)
-            self.register_buffer(
-                "sorted_indices", torch.as_tensor(sorted_indices, dtype=torch.long)
+            ordered_regions, sorted_indices = derive_brain_regions(
+                self._chs_info, channel_order
             )
-            self.area_config = make_area_config(ordered_regions)
+        elif channel_order is not None:
+            raise ValueError("channel_order needs brain_regions or chs_info.")
         else:
+            ordered_regions, sorted_indices = None, None
+
+        if sorted_indices is None:
             self.sorted_indices = None
             self.area_config = {}
+        else:
+            self.register_buffer(
+                "sorted_indices", torch.as_tensor(sorted_indices, dtype=torch.long)
+            )
+            self.area_config = make_area_config(ordered_regions)
 
         self.temporal_embed = _CrossScaleTemporalEmbedding(
             d_model, d_model, kernel_sizes=tuple(temporal_kernel_sizes)
