@@ -12,6 +12,7 @@ import mne
 import pooch
 import pytest
 import torch
+import torch.nn as nn
 
 import braindecode.models.luna as luna_module
 import braindecode.models.zuna as zuna_module
@@ -152,6 +153,142 @@ def model_decoder(model_config_decoder):
 # ==============================================================================
 
 
+def _labram_embedded_tokens(model, x, ch_names):
+    """Tokens once the position and time embeddings are added (input of ``pos_drop``)."""
+    seen = {}
+    handle = model.pos_drop.register_forward_pre_hook(
+        lambda _module, args: seen.update(tokens=args[0].detach().clone())
+    )
+    with torch.no_grad():
+        model(x, ch_names=ch_names)
+    handle.remove()
+    return seen["tokens"]
+
+
+def _labram_numbered_time_slots(n_slots=16, emb_dim=200):
+    """A time embedding whose slot ``i`` holds the value ``i`` in every dimension."""
+    slots = torch.arange(n_slots, dtype=torch.float32).view(1, n_slots, 1)
+    return slots.expand(1, n_slots, emb_dim).clone()
+
+
+@pytest.mark.parametrize("n_times", [600, 800, 3000])
+def test_labram_uses_pretrained_time_slots_at_any_window(n_times):
+    # The original LaBraM keeps 16 absolute time slots whatever the window
+    # (``time_embed`` in modeling_finetune.py), and a window of P patches adds
+    # slot p to every token of patch p. The released weights hold those 16
+    # slots (saved at 15 s), so they must load into a model built for any
+    # window, and the slots it uses must be the first P ones.
+    names = list(LABRAM_CHANNEL_ORDER[:3])
+    released = Labram(n_chans=3, n_times=3000, n_outputs=0).state_dict()
+    released["temporal_embedding"] = _labram_numbered_time_slots()
+    model = Labram(n_chans=3, n_times=n_times, n_outputs=0).eval()
+
+    model.load_state_dict(released)
+
+    x = torch.randn(2, 3, n_times)
+    with_slots = _labram_embedded_tokens(model, x, names)
+    with torch.no_grad():
+        model.temporal_embedding.zero_()
+    without_slots = _labram_embedded_tokens(model, x, names)
+    added = with_slots - without_slots
+    n_patches = n_times // 200
+    # Tokens are channel-major: (channel, patch) -> channel * n_patches + patch.
+    per_patch = added[:, 1:].reshape(2, 3, n_patches, 200)
+    expected = torch.arange(n_patches, dtype=torch.float32).view(1, 1, n_patches, 1)
+    assert torch.allclose(per_patch, expected.expand_as(per_patch), atol=1e-5)
+    assert torch.equal(added[:, 0], torch.zeros(2, 200))  # [CLS] has no time slot
+
+
+def test_labram_long_window_keeps_pretrained_time_slots():
+    # A window longer than the 16 released slots still builds; the first 16
+    # slots come from the checkpoint, the others keep their initialization,
+    # and the user is told that some of the slots in use are not pretrained.
+    model = Labram(n_chans=3, n_times=6000, n_outputs=0)  # 30 patches
+    own = model.temporal_embedding.detach().clone()
+    released = Labram(n_chans=3, n_times=3000, n_outputs=0).state_dict()
+    released["temporal_embedding"] = _labram_numbered_time_slots()
+
+    with pytest.warns(UserWarning, match="time slots"):
+        model.load_state_dict(released)
+
+    loaded = model.temporal_embedding.detach()
+    assert torch.equal(loaded[:, :16], _labram_numbered_time_slots())
+    assert torch.equal(loaded[:, 16:30], own[:, 16:30])
+
+
+def test_labram_loads_time_embedding_saved_with_one_slot_per_patch():
+    # braindecode <= 1.8 sized the time embedding to the window (patches + 1
+    # slots). Such checkpoints must keep loading and give the same outputs.
+    names = list(LABRAM_CHANNEL_ORDER[:3])
+    saved = Labram(n_chans=3, n_times=800, n_outputs=2).eval()
+    state = saved.state_dict()
+    state["temporal_embedding"] = state["temporal_embedding"][:, :5]
+    x = torch.randn(2, 3, 800)
+    with torch.no_grad():
+        expected = saved(x, ch_names=names)
+
+    reloaded = Labram(n_chans=3, n_times=800, n_outputs=2).eval()
+    reloaded.load_state_dict(state)
+
+    with torch.no_grad():
+        assert torch.allclose(reloaded(x, ch_names=names), expected, atol=1e-6)
+
+
+def test_labram_default_readout_is_mean_of_patch_tokens():
+    # The original LaBraM fine-tunes on LayerNorm(mean of the patch tokens)
+    # (use_mean_pooling=True in modeling_finetune.py and in
+    # run_class_finetuning.py); its pretraining loss never uses [CLS].
+    names = list(LABRAM_CHANNEL_ORDER[:3])
+    model = Labram(n_chans=3, n_times=800, n_outputs=0).eval()
+    seen = {}
+    model.blocks[-1].register_forward_hook(
+        lambda _module, _inputs, output: seen.update(tokens=output)
+    )
+    x = torch.randn(2, 3, 800)
+
+    with torch.no_grad():
+        features = model(x, ch_names=names)
+
+    patch_mean = seen["tokens"][:, 1:].mean(1)
+    expected = torch.nn.functional.layer_norm(patch_mean, (200,), eps=1e-6)
+    assert torch.allclose(features, expected, atol=1e-5)
+
+
+@pytest.mark.parametrize("with_token_norm", [True, False])
+def test_labram_mean_pooling_loads_pretraining_checkpoint(with_token_norm):
+    # The released weights come from pretraining: they hold the per-token
+    # final ``norm`` and no pooling ``fc_norm``. The original fine-tuning script
+    # leaves ``norm`` unused and starts ``fc_norm`` from its initialization.
+    # A strict load must do the same, also when the state dict was already
+    # filtered to the keys the model has (so without ``norm``).
+    pretraining = Labram(
+        n_chans=3, n_times=800, n_outputs=0, use_mean_pooling=False
+    ).state_dict()
+    if not with_token_norm:
+        pretraining = {
+            k: v for k, v in pretraining.items() if not k.startswith("norm.")
+        }
+    model = Labram(n_chans=3, n_times=800, n_outputs=0, use_mean_pooling=True)
+
+    model.load_state_dict(pretraining)
+
+    assert torch.equal(model.fc_norm.weight, torch.ones(200))
+    assert torch.equal(model.fc_norm.bias, torch.zeros(200))
+    assert torch.equal(model.cls_token, pretraining["cls_token"])
+
+
+def test_labram_mean_pooling_rejects_cls_finetuned_checkpoint():
+    # A checkpoint fine-tuned with the [CLS] readout has a head trained on
+    # [CLS]; it must not load silently into a mean-pooling model.
+    finetuned = Labram(
+        n_chans=3, n_times=800, n_outputs=2, use_mean_pooling=False
+    ).state_dict()
+    model = Labram(n_chans=3, n_times=800, n_outputs=2, use_mean_pooling=True)
+
+    with pytest.raises(RuntimeError, match="fc_norm"):
+        model.load_state_dict(finetuned)
+
+
 def test_labram_neural_tokenizer_initialization(model_tokenizer):
     """Test that the model initializes correctly in tokenizer mode."""
     assert model_tokenizer is not None
@@ -278,6 +415,59 @@ def test_labram_neural_decoder_gradient_flow(model_decoder, n_chans, n_times):
     # Check that gradients exist
     assert model_decoder.cls_token.grad is not None
     assert any(p.grad is not None for p in model_decoder.blocks[0].parameters())
+
+
+def test_labram_neural_decoder_temporal_embeddings_match_time_patches(
+    chs_info, n_times
+):
+    """Decoder mode adds one temporal embedding per temporal patch token."""
+    model = Labram(
+        n_times=n_times,
+        chs_info=chs_info,
+        n_outputs=4,
+        patch_size=200,
+        embed_dim=4,
+        conv_in_channels=8,
+        num_layers=0,
+        num_heads=1,
+        use_abs_pos_emb=False,
+        # The [CLS] readout ends in ``norm``, replaced by Identity below, so
+        # ``return_all_tokens`` gives the tokens as they enter the readout.
+        use_mean_pooling=False,
+        neural_tokenizer=False,
+    )
+    batch_size = 2
+    x = torch.zeros(batch_size, len(chs_info), n_times)
+    input_chans = torch.arange(len(LABRAM_CHANNEL_ORDER) + 1)
+    model.norm = nn.Identity()
+    model.pos_drop = nn.Identity()
+
+    with torch.no_grad():
+        model.cls_token.zero_()
+        model.patch_embed[0].proj.weight.zero_()
+        model.patch_embed[0].proj.bias.zero_()
+        model.temporal_embedding.zero_()
+        expected_time_embed = torch.arange(
+            1,
+            model.patch_embed[0].n_patchs * model.embed_dim + 1,
+            dtype=model.temporal_embedding.dtype,
+        ).reshape(1, model.patch_embed[0].n_patchs, model.embed_dim)
+        model.temporal_embedding[:, 1:, :] = expected_time_embed
+
+    features = model.forward_features(
+        x, input_chans=input_chans, return_all_tokens=True
+    )
+
+    assert features.shape == (
+        batch_size,
+        model.patch_embed[0].n_patchs + 1,
+        model.embed_dim,
+    )
+    assert torch.equal(features[:, 0], torch.zeros_like(features[:, 0]))
+    assert torch.equal(
+        features[:, 1:],
+        expected_time_embed.expand(batch_size, -1, -1),
+    )
 
 
 # ==============================================================================
