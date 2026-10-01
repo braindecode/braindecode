@@ -853,7 +853,7 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         feat = feat.mean(dim=2)  # pool over tokens -> (batch, n_neuro, lm_dim)
         feat = feat.reshape(feat.shape[0], -1)  # (batch, n_neuro * lm_dim)
         if return_features:
-            return {"features": feat, "cls_token": None}
+            return {"features": feat, "cls_token": None}  # nosec B105
         return self.final_layer(feat)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
