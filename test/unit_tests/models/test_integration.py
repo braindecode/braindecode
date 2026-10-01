@@ -610,6 +610,9 @@ def test_model_torch_script(model):
         "InterpolatedEEGPT",
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
+        # VQ argmin dispatch and _encode_quantize method not scriptable.
+        "BrainOmni",
+        "BrainTokenizer",
         "STEEGFormer",
     ]
 

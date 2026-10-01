@@ -12,6 +12,7 @@ from braindecode.models import (
     REVE,
     BaRISTA,
     BrainBERT,
+    BrainOmni,
     Brant,
     CBraMod,
     InterpolatedBENDR,
@@ -104,6 +105,13 @@ _MODELS = [
     pytest.param(Brant, N_CHANS, {"sfreq": 250.0}, False, id="Brant"),
     pytest.param(BrainBERT, N_CHANS, {}, False, id="BrainBERT"),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
+    pytest.param(
+        BrainOmni,
+        N_CHANS,
+        {"chs_info": _chs(), "sfreq": 256.0},
+        False,
+        id="BrainOmni",
+    ),
     pytest.param(EEGDINO, 16, {}, True, id="EEGDINO"),
     pytest.param(
         STEEGFormer,

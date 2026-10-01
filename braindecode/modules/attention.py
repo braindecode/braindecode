@@ -9,8 +9,10 @@ AttentionBaseNet class.
 # Authors: Martin Wimpff <martin.wimpff@iss.uni-stuttgart.de>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
+#          Qian Xiao and OpenTSLab BrainOmni contributors
 #
-# License: BSD (3-clause)
+# License: BSD (3-clause); BrainOmni-derived RoPE modules are MIT licensed
+#          (see LICENSES/BrainOmni-MIT.txt)
 
 import math
 from typing import Optional
@@ -21,7 +23,7 @@ from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
-from braindecode.functional import _get_gaussian_kernel1d
+from braindecode.functional import _get_gaussian_kernel1d, rotate_pairs
 
 
 class SqueezeAndExcitation(nn.Module):
@@ -1051,3 +1053,247 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
     def _ff_block(self, x: Tensor) -> Tensor:
         x = self.linear2(self.dropout(self.activation(self.linear1(x))))
         return self.dropout2(x)
+
+
+class RotaryPositionalEmbedding(nn.Module):
+    """Rotary Position Embedding (RoPE) for transformer attention.
+
+    Implements the RoPE scheme from Su et al. (2021) [rope2021]_: adjacent
+    feature pairs of queries and keys are rotated by a position-dependent
+    angle. The rotation is computed in float32 with real arithmetic
+    (:func:`~braindecode.functional.rotate_pairs`), so it has no complex
+    tensors, no cache to keep in sync and no state-dict entries.
+
+    Parameters
+    ----------
+    n_dim : int
+        Full attention dimension (``n_heads * head_dim``), **not** the per-head
+        dimension. One inverse-frequency ladder is built over ``n_dim`` and then
+        split across heads, so each head gets a different frequency band. This
+        is load-bearing for checkpoint parity: because this module has no
+        learned parameters, changing ``n_dim`` to the per-head size would
+        silently alter pretrained numerics without tripping a strict load. The
+        per-head size (``n_dim // n_heads``) must be even.
+    base : int, optional
+        Base for the inverse-frequency schedule.  Default: 10000.
+
+    References
+    ----------
+    .. [rope2021] Su, J., Lu, Y., Pan, S., Murtadha, A., Wen, B., & Liu, Y. (2021).
+       RoFormer: Enhanced Transformer with Rotary Position Embedding.
+       arXiv: https://arxiv.org/abs/2104.09864
+    """
+
+    def __init__(self, n_dim, base=10000):
+        super().__init__()
+        if n_dim <= 0 or n_dim % 2:
+            raise ValueError(f"n_dim must be a positive even integer, got {n_dim}.")
+        if base <= 0:
+            raise ValueError(f"base must be positive, got {base}.")
+        self.n_dim = n_dim
+        self.base = base
+
+    def _cos_sin(self, seq: int, heads: int, device: torch.device):
+        """``(seq, heads, head_dim)`` cosines and sines, recomputed in float32.
+
+        Recomputing (instead of caching a buffer) keeps the frequencies in
+        float32 even after ``.half()``/``.bfloat16()`` casts of the model.
+        """
+        exponent = torch.arange(0, self.n_dim, 2, device=device).float() / self.n_dim
+        freqs = 1.0 / (self.base**exponent)
+        positions = torch.arange(seq, device=device, dtype=torch.float32)
+        angles = torch.outer(positions, freqs)
+        angles = torch.repeat_interleave(angles, 2, dim=-1)
+        angles = rearrange(
+            angles, "seq (heads head_dim) -> seq heads head_dim", heads=heads
+        )
+        return angles.cos(), angles.sin()
+
+    def forward(self, q, k):
+        """Apply rotary embeddings to query and key tensors.
+
+        Parameters
+        ----------
+        q : torch.Tensor
+            Query tensor of shape ``(batch, seq, n_heads, head_dim)``.
+        k : torch.Tensor
+            Key tensor of shape ``(batch, seq, n_heads, head_dim)``.
+
+        Returns
+        -------
+        q_out : torch.Tensor
+            Rotated query, same shape as ``q``.
+        k_out : torch.Tensor
+            Rotated key, same shape as ``k``.
+        """
+        if q.ndim != 4 or k.ndim != 4:
+            raise ValueError(
+                f"Expected 4-D q and k, got q.ndim={q.ndim}, k.ndim={k.ndim}."
+            )
+        _, seq, heads, head_dim = q.shape
+        if heads * head_dim != self.n_dim:
+            raise ValueError(
+                f"RoPE expects n_heads * head_dim == {self.n_dim}, got "
+                f"{heads} * {head_dim}."
+            )
+        cos, sin = self._cos_sin(seq, heads, q.device)
+        q_float = q.float()
+        k_float = k.float()
+        q_out = q_float * cos + rotate_pairs(q_float) * sin
+        k_out = k_float * cos + rotate_pairs(k_float) * sin
+        return q_out.type_as(q), k_out.type_as(k)
+
+
+class MultiHeadAttentionRoPE(nn.Module):
+    """Multi-head self-attention with fused QKV projection, optional RoPE, and causal masking.
+
+    Unlike :class:`MultiHeadAttention`, which uses three separate ``q``, ``k``,
+    ``v`` linear projections and has no positional encoding, this module uses a
+    single fused ``qkv`` projection and optionally applies
+    :class:`RotaryPositionalEmbedding` to the query and key tensors before
+    computing attention via ``F.scaled_dot_product_attention``.  Dropout is
+    gated by the training flag so that evaluation is fully deterministic.
+
+    Parameters
+    ----------
+    n_dim : int
+        Model / embedding dimension.  Must be divisible by ``n_head``.
+    n_head : int
+        Number of attention heads.
+    dropout : float
+        Dropout probability applied inside SDPA during training.
+    causal : bool, optional
+        Whether to apply causal (autoregressive) masking.  Default: ``False``.
+    rope : bool, optional
+        Whether to apply :class:`RotaryPositionalEmbedding` to queries and
+        keys.  When ``False`` the ``rope_embedding_layer`` is an
+        ``nn.Identity`` and positional information is not injected.
+        Default: ``False``.
+
+    References
+    ----------
+    .. [rope2021] Su, J., Lu, Y., Pan, S., Murtadha, A., Wen, B., & Liu, Y. (2021).
+       RoFormer: Enhanced Transformer with Rotary Position Embedding.
+       arXiv: https://arxiv.org/abs/2104.09864
+    """
+
+    def __init__(
+        self,
+        n_dim,
+        n_head,
+        dropout,
+        causal: bool = False,
+        rope: bool = False,
+    ):
+        super().__init__()
+        if n_dim <= 0:
+            raise ValueError(f"n_dim must be positive, got {n_dim}.")
+        if n_head <= 0:
+            raise ValueError(f"n_head must be positive, got {n_head}.")
+        if n_dim % n_head:
+            raise ValueError(f"n_dim ({n_dim}) must be divisible by n_head ({n_head}).")
+        if rope and (n_dim // n_head) % 2:
+            raise ValueError(
+                f"RoPE head dimension must be even, got {n_dim // n_head}."
+            )
+        if not 0.0 <= dropout <= 1.0:
+            raise ValueError(f"dropout must satisfy 0 <= dropout <= 1, got {dropout}.")
+        self.dropout = dropout
+        self.n_dim = n_dim
+        self.n_head = n_head
+        self.causal = causal
+        self.qkv = nn.Linear(n_dim, 3 * n_dim)
+        self.proj = nn.Linear(n_dim, n_dim)
+        self.rope = rope
+        self.rope_embedding_layer = (
+            RotaryPositionalEmbedding(n_dim=n_dim) if self.rope else nn.Identity()
+        )
+
+    def forward(self, x: torch.Tensor, mask=None):
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input of shape ``(batch, seq, n_dim)``.
+        mask : torch.Tensor, optional
+            Attention mask with shape ``(seq, seq)``, ``(batch, seq, seq)``,
+            or a shape broadcast-compatible with
+            ``(batch, n_head, seq, seq)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Output of shape ``(batch, seq, n_dim)``.
+        """
+        batch, seq, dim = x.shape
+        x = self.qkv(x)
+        q, k, v = torch.split(x, split_size_or_sections=self.n_dim, dim=-1)
+
+        if self.rope:
+            q = q.view(batch, seq, self.n_head, -1)
+            k = k.view(batch, seq, self.n_head, -1)
+            q, k = self.rope_embedding_layer(q, k)
+            q = q.transpose(1, 2)
+            k = k.transpose(1, 2)
+        else:
+            q = rearrange(
+                q,
+                "batch seq (heads head_dim) -> batch heads seq head_dim",
+                heads=self.n_head,
+            )
+            k = rearrange(
+                k,
+                "batch seq (heads head_dim) -> batch heads seq head_dim",
+                heads=self.n_head,
+            )
+
+        v = rearrange(
+            v,
+            "batch seq (heads head_dim) -> batch heads seq head_dim",
+            heads=self.n_head,
+        )
+
+        if mask is not None:
+            if mask.ndim == 2:
+                if mask.shape != (seq, seq):
+                    raise ValueError(
+                        f"A 2-D mask must have shape ({seq}, {seq}), got "
+                        f"{tuple(mask.shape)}."
+                    )
+            elif mask.ndim == 3:
+                if mask.shape != (batch, seq, seq):
+                    raise ValueError(
+                        f"A 3-D mask must have shape ({batch}, {seq}, {seq}), "
+                        f"got {tuple(mask.shape)}."
+                    )
+                mask = mask.unsqueeze(1)
+            elif mask.ndim == 4:
+                if (
+                    mask.shape[-2:] != (seq, seq)
+                    or mask.shape[0] not in (1, batch)
+                    or mask.shape[1] not in (1, self.n_head)
+                ):
+                    raise ValueError(
+                        "A 4-D mask must be broadcast-compatible with "
+                        f"({batch}, {self.n_head}, {seq}, {seq}), got "
+                        f"{tuple(mask.shape)}."
+                    )
+            else:
+                raise ValueError(f"mask must be 2-D, 3-D, or 4-D, got {mask.ndim}-D.")
+
+        # SDPA applies dropout regardless of train mode; gate it for deterministic eval.
+        output = (
+            F.scaled_dot_product_attention(
+                query=q,
+                key=k,
+                value=v,
+                attn_mask=mask,
+                dropout_p=self.dropout if self.training else 0.0,
+                is_causal=self.causal,
+            )
+            .transpose(1, 2)
+            .contiguous()
+        )
+        output = output.view(batch, seq, -1)
+        return self.proj(output)

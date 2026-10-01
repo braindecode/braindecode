@@ -9,6 +9,7 @@ from .bendr import BENDR, InterpolatedBENDR
 from .biot import BIOT, InterpolatedBIOT
 from .brainbert import BrainBERT
 from .brainmodule import BrainModule
+from .brainomni import BrainOmni, BrainTokenizer
 from .brant import Brant
 from .cbramod import CBraMod
 from .codebrain import CodeBrain
@@ -95,6 +96,8 @@ __all__ = [
     "BIOT",
     "BENDR",
     "BrainBERT",
+    "BrainOmni",
+    "BrainTokenizer",
     "CBraMod",
     "CodeBrain",
     "ContraWR",
