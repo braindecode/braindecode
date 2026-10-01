@@ -71,6 +71,18 @@ from braindecode.models import (
     USleep,
 )
 from braindecode.models.brainbert import _STFTSpectrogram
+from braindecode.models.csbrain import (
+    REGION_CENTRAL,
+    REGION_FRONTAL,
+    REGION_OCCIPITAL,
+    REGION_PARIETAL,
+    REGION_TEMPORAL,
+    CSBrain,
+    build_region_attention_mask,
+    derive_brain_regions,
+    make_area_config,
+    region_of_electrode,
+)
 from braindecode.models.eegpt import (
     _apply_rotary_emb,
     _Attention,
@@ -4592,3 +4604,147 @@ def test_mscformer_rejects_non_positive_attention_scale(bad_scale):
 
     with pytest.raises(ValueError, match="attention_scale"):
         MSCFormer(n_outputs=4, n_chans=22, n_times=1000, attention_scale=bad_scale)
+
+
+# ---------------------------------------------------------------------------
+# CSBrain
+# ---------------------------------------------------------------------------
+
+_CSBRAIN_2A_NAMES = (
+    "Fz FC3 FC1 FCz FC2 FC4 C5 C3 C1 Cz C2 C4 C6 CP3 CP1 CPz CP2 CP4 P1 Pz P2 POz"
+).split()
+
+
+def test_csbrain_region_of_electrode_prefixes():
+    assert region_of_electrode("Fpz") == REGION_FRONTAL
+    assert region_of_electrode("AF7") == REGION_FRONTAL
+    assert region_of_electrode("Fz") == REGION_FRONTAL
+    assert region_of_electrode("FC3") == REGION_FRONTAL
+    assert region_of_electrode("C3") == REGION_CENTRAL
+    assert region_of_electrode("CPz") == REGION_CENTRAL
+    assert region_of_electrode("P8") == REGION_PARIETAL
+    assert region_of_electrode("PO7") == REGION_OCCIPITAL
+    assert region_of_electrode("Oz") == REGION_OCCIPITAL
+    assert region_of_electrode("T7") == REGION_TEMPORAL
+    # Generic labels fall back to the central region instead of failing.
+    assert region_of_electrode("EEG 021") == REGION_CENTRAL
+    assert region_of_electrode("") == REGION_CENTRAL
+
+
+def test_csbrain_name_rule_matches_reference_physionet_layout():
+    """The name rule reproduces the reference PhysioNet-MI 64-channel layout
+    (``models/model_for_physio.py`` of yuchen2199/CSBrain)."""
+    names = (
+        "FC5 FC3 FC1 FCZ FC2 FC4 FC6 C5 C3 C1 CZ C2 C4 C6 CP5 CP3 CP1 CPZ CP2 "
+        "CP4 CP6 FP1 FPZ FP2 AF7 AF3 AFZ AF4 AF8 F7 F5 F3 F1 FZ F2 F4 F6 F8 "
+        "FT7 FT8 T7 T8 T9 T10 TP7 TP8 P7 P5 P3 P1 PZ P2 P4 P6 P8 PO7 PO3 POZ "
+        "PO4 PO8 O1 OZ O2 IZ"
+    ).split()
+    reference = [0] * 7 + [4] * 14 + [0] * 17 + [2] * 8 + [1] * 9 + [3] * 9
+    assert [region_of_electrode(n) for n in names] == reference
+
+
+def test_csbrain_derive_brain_regions_sorts_regions_contiguous():
+    chs_info = [{"ch_name": n, "kind": "eeg"} for n in _CSBRAIN_2A_NAMES]
+    ordered, sorted_indices = derive_brain_regions(chs_info)
+
+    # Regions are contiguous and ordered by identifier: frontal(6),
+    # parietal(3), occipital(1, POz), central(12).
+    area_config = make_area_config(ordered)
+    assert [area_config[k]["channels"] for k in sorted(area_config)] == [6, 3, 1, 12]
+    # The permutation keeps every channel once.
+    assert sorted(sorted_indices) == list(range(len(_CSBRAIN_2A_NAMES)))
+    # Inside a region the original order is preserved.
+    central = [_CSBRAIN_2A_NAMES[i] for i, r in zip(sorted_indices, ordered) if r == 4]
+    assert central == _CSBRAIN_2A_NAMES[6:18]
+
+
+def test_csbrain_brain_regions_reproduce_reference_2a_layout():
+    """``brain_regions`` reproduces the reference BCI-IV-2a layout and order."""
+    regions_2a = [0] + [4] * 17 + [1] * 4
+    model = CSBrain(
+        n_outputs=4,
+        n_chans=22,
+        n_times=800,
+        brain_regions=regions_2a,
+        n_layer=1,
+    )
+    # The reference topology keeps the input order inside each region.
+    assert model.sorted_indices.tolist() == [0, *range(18, 22), *range(1, 18)]
+    assert {k: v["channels"] for k, v in model.area_config.items()} == {
+        "region_0": 1,
+        "region_1": 4,
+        "region_4": 17,
+    }
+
+
+def test_csbrain_region_attention_mask_groups_electrodes():
+    # Two regions of 2 electrodes each -> 2 groups of 2.
+    area_config = {
+        "region_0": {"channels": 2, "slice": slice(0, 2)},
+        "region_4": {"channels": 2, "slice": slice(2, 4)},
+    }
+    mask = build_region_attention_mask(area_config, n_channels=4)
+    assert mask.shape == (4, 4)
+    # Each electrode attends to itself and exactly one electrode per region.
+    assert torch.all((mask == 0).sum(dim=1) == 2)
+    # Groups are symmetric (either both allowed or both blocked).
+    assert torch.equal(mask == 0, (mask == 0).T)
+
+
+def test_csbrain_without_channel_names_skips_region_structure():
+    model = CSBrain(n_outputs=2, n_chans=4, n_times=400, sfreq=200.0, n_layer=1)
+    assert model.sorted_indices is None
+    assert model.area_config == {}
+    assert model.encoder[0].region_attn_mask is None
+    assert model(torch.randn(2, 4, 400)).shape == (2, 2)
+
+
+def test_csbrain_forward_with_region_structure():
+    chs_info = [{"ch_name": n, "kind": "eeg"} for n in _CSBRAIN_2A_NAMES]
+    model = CSBrain(n_outputs=4, chs_info=chs_info, n_times=800, sfreq=200.0, n_layer=2)
+    assert model(torch.randn(2, 22, 800)).shape == (2, 4)
+    feats = model(torch.randn(1, 22, 800), return_features=True)
+    assert feats["features"].shape == (1, 22, 4, 200)
+
+
+def test_csbrain_masked_forward_replaces_patches():
+    model = CSBrain(n_outputs=2, n_chans=3, n_times=400, sfreq=200.0, n_layer=1)
+    mask = torch.zeros(1, 3, 2, dtype=torch.bool)
+    mask[:, :, 0] = True
+    assert model(torch.randn(1, 3, 400), mask=mask).shape == (1, 2)
+
+
+@pytest.mark.parametrize("batch_size", [1, 3])
+def test_csbrain_train_mode_small_batches(batch_size):
+    model = CSBrain(n_outputs=2, n_chans=3, n_times=400, sfreq=200.0, n_layer=1)
+    model.train()
+    assert model(torch.randn(batch_size, 3, 400)).shape == (batch_size, 2)
+
+
+def test_csbrain_init_keeps_residual_stream_bounded():
+    """Only Linear layers are re-initialised, as in the reference.
+
+    A fan-out Kaiming init on the Conv2d embeddings grew the residual stream
+    ~3x per layer (features ~1e6 at 12 layers), which made
+    ``test_model_compiled[CSBrain]`` flaky. With the reference init the
+    features stay around 1e2-1e3.
+    """
+    set_random_seeds(0, cuda=False)
+    model = CSBrain(n_outputs=2, n_chans=22, n_times=1000).eval()
+    with torch.no_grad():
+        feats = model(torch.randn(1, 22, 1000), return_features=True)["features"]
+    assert feats.abs().max() < 1e4
+
+
+@pytest.mark.parametrize("n_times, hidden", [(800, 800), (2000, 2000)])
+def test_csbrain_head_hidden_width_follows_patches(n_times, hidden):
+    """The reference head is ``n_chans * n_patch * 200 -> n_patch * 200 -> 200``."""
+    model = CSBrain(n_outputs=3, n_chans=4, n_times=n_times, sfreq=200.0, n_layer=1)
+    head = model.final_layer
+    assert head[1].in_features == 4 * hidden
+    assert head[1].out_features == hidden
+    assert head[4].out_features == 200
+    model.reset_head(5)
+    assert model.final_layer[1].out_features == hidden
+    assert model.final_layer[-1].out_features == 5
