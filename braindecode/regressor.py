@@ -10,6 +10,7 @@
 import warnings
 
 import numpy as np
+import torch
 from skorch.regressor import NeuralNetRegressor
 
 from .eegneuralnet import _EEGNeuralNet
@@ -229,7 +230,37 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
         if y is not None:
             if y.ndim == 1:
                 y = np.array(y).reshape(-1, 1)
-        super().fit(X=X, y=y, **kwargs)
+        return super().fit(X=X, y=y, **kwargs)
+
+    def get_loss(self, y_pred, y_true, *args, **kwargs):
+        """Return the loss for this batch.
+
+        A one-dimensional target of shape ``(batch,)`` is reshaped to
+        ``(batch, 1)`` when the prediction has shape ``(batch, 1)``, so that
+        the criterion compares each prediction with its own target instead of
+        broadcasting to ``(batch, batch)``.
+
+        Parameters
+        ----------
+        y_pred : torch tensor
+            Predicted target values.
+        y_true : torch tensor
+            True target values.
+
+        Returns
+        -------
+        loss : torch tensor
+            The loss value.
+        """
+        if (
+            isinstance(y_pred, torch.Tensor)
+            and isinstance(y_true, torch.Tensor)
+            and y_pred.ndim == 2
+            and y_pred.shape[1] == 1
+            and y_true.ndim == 1
+        ):
+            y_true = y_true.reshape(-1, 1)
+        return super().get_loss(y_pred, y_true, *args, **kwargs)
 
     @property
     def mode(self):
