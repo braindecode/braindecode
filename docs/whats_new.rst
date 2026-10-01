@@ -232,6 +232,12 @@ Bug fixes
   intermediate gradients, and rows at or below ``max_norm`` are unchanged.
   Empty tensors pass through and a negative ``max_norm`` raises, as
   ``Tensor.renorm`` does (:gh:`1187` by `Bruno Aristimunha`_).
+- Keep the channel IDs of :class:`braindecode.models.EEGPT` (``chans_id``) out
+  of the state dict. They are rebuilt from ``chs_info``, and a checkpoint that
+  still stores them no longer overrides them: the released weights now load on
+  any montage and with the default channel projection, where they failed with a
+  size mismatch, and a montage with the same channel count no longer silently
+  takes the checkpoint's IDs (:gh:`1195` by `Bruno Aristimunha`_).
 
 - Fix :class:`braindecode.models.Labram` so the released weights keep their
   pretrained time embedding at every window length: it now holds the original
