@@ -10,6 +10,8 @@ from pathlib import Path
 from urllib.error import URLError
 
 import mne
+from collections import OrderedDict
+
 import numpy as np
 import pooch
 import pytest
@@ -2448,6 +2450,38 @@ def test_braintokenizer_supports_documented_positive_ratios_and_windows(
     x = torch.randn(1, 2, window_length)
 
     assert model(x).shape == x.shape
+
+
+def test_brainomni_loads_official_key_layout_offline():
+    """Released Stage-2 key names (FeedForward ``layer``, RoPE buffers, pretraining
+    heads) load strictly into the port; covered without the Hub."""
+    source = _small_brainomni().eval()
+    official = OrderedDict()
+    for key, value in source.state_dict().items():
+        if key.startswith("final_layer."):
+            continue  # the release carries no classification head
+        for native, released in (
+            ("ff.0.", "ff.layer.0."),
+            ("ff.3.", "ff.layer.2."),
+            ("aggregate_mlp.0.", "aggregate_mlp.layer.0."),
+            ("aggregate_mlp.3.", "aggregate_mlp.layer.2."),
+        ):
+            key = key.replace(native, released)
+        official[key] = value.clone()
+    assert any(".ff.layer.2." in k for k in official)
+    assert any("aggregate_mlp.layer.0." in k for k in official)
+    official["encoder.0.attn.rope_embedding_layer.freqs"] = torch.zeros(4)
+    official["encoder.0.attn.rope_embedding_layer.rotate"] = torch.zeros(4, 2)
+    official["mask_token"] = torch.zeros(1, 1, 16)
+    official["predict_head.weight"] = torch.zeros(2, 16)
+
+    target = _small_brainomni().eval()
+    target.load_state_dict(official, strict=True)
+    restored = target.state_dict()
+    for key, value in source.state_dict().items():
+        if key.startswith("final_layer."):
+            continue
+        assert torch.equal(restored[key], value), key
 
 
 def test_brainomni_constructs_from_official_stage2_config():

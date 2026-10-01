@@ -911,7 +911,8 @@ def _rename_official_key(key: str) -> str | None:
     key = key.replace("quantizer.rvq.", "quantizer.")
     if key.startswith("decoder."):
         key = "final_layer." + key.removeprefix("decoder.")
-    key = key.replace("tokenizer.decoder.", "tokenizer.final_layer.")
+    elif key.startswith("tokenizer.decoder."):
+        key = "tokenizer.final_layer." + key.removeprefix("tokenizer.decoder.")
     key = key.replace(".convtr.convtr.", ".convtr.")
     key = key.replace(".conv.conv.", ".conv.")
     # Released FeedForward is Sequential(Linear, SELU, Linear, Dropout) under
