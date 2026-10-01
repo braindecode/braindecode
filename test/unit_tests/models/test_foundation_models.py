@@ -5,13 +5,12 @@
 import hashlib
 import json
 import os
+from collections import OrderedDict
 from contextlib import nullcontext
 from pathlib import Path
 from urllib.error import URLError
 
 import mne
-from collections import OrderedDict
-
 import numpy as np
 import pooch
 import pytest
