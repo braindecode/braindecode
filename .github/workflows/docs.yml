@@ -14,7 +14,9 @@ jobs:
   build_docs:
     runs-on: ubuntu-latest
     env:
-      DOCS_EXTRAS: docs,moabb,hub,eegprep,typing,viz
+      # `sae` (SAE Lens) lets the optional SAE tutorials execute. It is a
+      # docs-build install only: not a core dependency and not in `all`.
+      DOCS_EXTRAS: docs,moabb,hub,eegprep,typing,viz,sae
       HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
     steps:
       ## Install Braindecode
