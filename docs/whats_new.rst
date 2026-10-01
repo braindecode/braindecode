@@ -28,6 +28,10 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Clarify decoder temporal embedding indexing in :class:`braindecode.models.Labram`
+  and cover its one-token-per-temporal-patch behavior
+  (:gh:`1155` by `Bruno Aristimunha`_).
+
 - Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
   model with pretrained encoders and support for varying montages through
   :func:`braindecode.models.diver1.channel_metadata_from_chs_info`
@@ -84,6 +88,20 @@ Enhancements
 - Add pull request templates, including an exhaustive checklist for new model
   contributions covering implementation conventions, registration,
   documentation, and benchmarking (:gh:`1169` by `Li Qing`_).
+
+API and behavior changes
+========================
+
+- :class:`braindecode.models.Labram` defaults to ``use_mean_pooling=True``
+  again, the documented value and the readout of the original fine-tuning
+  (``fc_norm`` of the mean patch token). :gh:`931` had made the [CLS] output,
+  which the pretraining loss never uses, the default so that the pretraining
+  checkpoint loaded strictly. That checkpoint, such as the released weights,
+  now loads into the mean-pooling model as in the original fine-tuning script
+  (``norm`` unused, ``fc_norm`` initialized). Pass ``use_mean_pooling=False``
+  to keep the [CLS] readout, for instance to load a checkpoint fine-tuned with
+  it, which no longer loads into the default model
+  (:gh:`1155` by `Bruno Aristimunha`_).
 
 Requirements
 ============
@@ -214,6 +232,14 @@ Bug fixes
   intermediate gradients, and rows at or below ``max_norm`` are unchanged.
   Empty tensors pass through and a negative ``max_norm`` raises, as
   ``Tensor.renorm`` does (:gh:`1187` by `Bruno Aristimunha`_).
+
+- Fix :class:`braindecode.models.Labram` so the released weights keep their
+  pretrained time embedding at every window length: it now holds the original
+  16 absolute time slots (patch ``p`` uses slot ``p``) instead of one slot per
+  patch plus one, which matched the released weights only for 15-patch windows.
+  Checkpoints saved with the previous layout load with identical outputs, and
+  windows longer than 16 patches warn that their extra slots keep their
+  initialization (:gh:`1155` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)
