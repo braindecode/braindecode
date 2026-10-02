@@ -242,12 +242,29 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
         return nn.Sequential(*layers)
 
     def encode_eeg(self, X):
-        """Encode EEG windows as unit-normalized shared-space vectors."""
+        """Encode EEG windows as unit-normalized shared-space vectors.
+
+        Temporal encoder outputs are projected at each prediction step before
+        temporal pooling, matching the released EEG-CLIP implementation. This
+        ordering matters because the projection head contains nonlinear layers.
+        """
         features = self.eeg_encoder(X)
         if not isinstance(features, torch.Tensor):
             raise TypeError("eeg_encoder must return a torch.Tensor.")
         if features.ndim == 3:
-            features = features.mean(dim=-1)
+            if features.shape[1] != self.eeg_embedding_dim:
+                raise ValueError(
+                    f"EEG encoder returned {features.shape[1]} features; "
+                    f"eeg_embedding_dim={self.eeg_embedding_dim} was configured."
+                )
+            batch_size, _, n_predictions = features.shape
+            temporal_features = features.transpose(1, 2).reshape(
+                batch_size * n_predictions, self.eeg_embedding_dim
+            )
+            projected = self.final_layer(temporal_features)
+            projected = projected.reshape(batch_size, n_predictions, self.n_outputs)
+            projected = projected.mean(dim=1)
+            return F.normalize(projected, dim=-1)
         if features.ndim != 2:
             raise ValueError(
                 "eeg_encoder output must have shape (batch, features) or "
