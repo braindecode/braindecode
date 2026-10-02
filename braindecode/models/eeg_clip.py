@@ -186,8 +186,10 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
                 n_chans=self.n_chans,
                 n_times=self.n_times,
                 n_outputs=eeg_embedding_dim,
-                final_conv_length="auto",
+                final_conv_length=2,
+                stride_before_pool=True,
             )
+            eeg_encoder.to_dense_prediction_model()
         self.eeg_encoder = eeg_encoder
         self.text_encoder = text_encoder if text_encoder is not None else nn.Identity()
 
