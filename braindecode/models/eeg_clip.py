@@ -17,7 +17,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.deep4 import Deep4Net
 
 
-class EEGCLIP(EEGModuleMixin, nn.Module):
+class EEGCLIP(EEGModuleMixin, nn.Module, license="mit"):
     r"""Dual encoder for contrastive alignment of EEG and text.
 
     :bdg-danger:`Foundation Model` :bdg-success:`Convolution`
