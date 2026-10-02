@@ -32,7 +32,7 @@ Enhancements
   windows and text descriptions with a symmetric contrastive objective. It
   provides EEG/text embedding, similarity-logit, and zero-shot classification
   interfaces while allowing an optional text encoder to be supplied by the
-  user (:gh:`999` by `lindicaphxag-tech`_).
+  user (:gh:`1200` by `lindicaphxag-tech`_).
 
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
