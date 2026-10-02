@@ -60,10 +60,14 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
         Pooling used for token-sequence text outputs. ``"cls"`` selects the
         first token; ``"mean"`` computes a masked mean when an attention mask
         is supplied.
+    projection_layers : int
+        Number of fully connected layers in each projection head. The default
+        of three follows the architecture described in the EEG-CLIP paper.
     activation : type[nn.Module]
-        Activation used between the two linear layers in each projection head.
+        Activation used in non-final projection blocks. Defaults to ReLU, as in
+        the published EEG-CLIP architecture.
     drop_prob : float
-        Dropout probability in each projection head.
+        Dropout probability in non-final projection blocks.
     initial_temperature : float
         Initial temperature for cross-modal similarity logits. The inverse
         temperature is learned and capped at 100, following common CLIP
@@ -144,7 +148,8 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
         eeg_encoder=None,
         eeg_embedding_dim=128,
         text_pooling="cls",
-        activation: type[nn.Module] = nn.GELU,
+        projection_layers=3,
+        activation: type[nn.Module] = nn.ReLU,
         drop_prob=0.1,
         initial_temperature=0.07,
         chs_info=None,
@@ -165,10 +170,13 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
             raise ValueError("initial_temperature must be strictly positive.")
         if not 0 <= drop_prob < 1:
             raise ValueError("drop_prob must be in the interval [0, 1).")
+        if projection_layers < 1:
+            raise ValueError("projection_layers must be at least 1.")
 
         self.text_pooling = text_pooling
         self.text_embedding_dim = text_embedding_dim
         self.eeg_embedding_dim = eeg_embedding_dim
+        self.projection_layers = projection_layers
         self.activation = activation
         self.drop_prob = drop_prob
 
@@ -184,25 +192,54 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
         self.text_encoder = text_encoder if text_encoder is not None else nn.Identity()
 
         self.text_projection = self._make_projection(
-            text_embedding_dim, self.n_outputs, activation, drop_prob
+            text_embedding_dim,
+            self.n_outputs,
+            projection_layers,
+            activation,
+            drop_prob,
         )
         # Braindecode's integration checks (and skorch wrappers) expect the
         # EEG prediction head to be one of the final registered child modules.
         self.final_layer = self._make_projection(
-            eeg_embedding_dim, self.n_outputs, activation, drop_prob
+            eeg_embedding_dim,
+            self.n_outputs,
+            projection_layers,
+            activation,
+            drop_prob,
         )
         self.logit_scale = nn.Parameter(
             torch.tensor(math.log(1.0 / initial_temperature), dtype=torch.float32)
         )
 
     @staticmethod
-    def _make_projection(input_dim, output_dim, activation, drop_prob):
-        return nn.Sequential(
-            nn.Linear(input_dim, input_dim),
+    def _make_projection(
+        input_dim, output_dim, projection_layers, activation, drop_prob
+    ):
+        # The published EEG-CLIP architecture uses three fully connected
+        # projection layers with ReLU activations. The authors' released
+        # ProjectionHead additionally applies BatchNorm and dropout after each
+        # non-final layer. Keeping the depth configurable also makes the
+        # released two-layer configuration reproducible.
+        if projection_layers == 1:
+            return nn.Sequential(nn.Linear(input_dim, output_dim))
+
+        layers = [
+            nn.Linear(input_dim, output_dim),
+            nn.BatchNorm1d(output_dim),
             activation(),
             nn.Dropout(drop_prob),
-            nn.Linear(input_dim, output_dim),
-        )
+        ]
+        for _ in range(projection_layers - 2):
+            layers.extend(
+                [
+                    nn.Linear(output_dim, output_dim),
+                    nn.BatchNorm1d(output_dim),
+                    activation(),
+                    nn.Dropout(drop_prob),
+                ]
+            )
+        layers.append(nn.Linear(output_dim, output_dim))
+        return nn.Sequential(*layers)
 
     def encode_eeg(self, X):
         """Encode EEG windows as unit-normalized shared-space vectors."""
@@ -324,10 +361,18 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
         if n_outputs <= 0:
             raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
         text_projection = self._make_projection(
-            self.text_embedding_dim, n_outputs, self.activation, self.drop_prob
+            self.text_embedding_dim,
+            n_outputs,
+            self.projection_layers,
+            self.activation,
+            self.drop_prob,
         )
         final_layer = self._make_projection(
-            self.eeg_embedding_dim, n_outputs, self.activation, self.drop_prob
+            self.eeg_embedding_dim,
+            n_outputs,
+            self.projection_layers,
+            self.activation,
+            self.drop_prob,
         )
         # Match each replacement submodule's mode to the module it replaces.
         # This preserves eval mode and intentional mixed modes such as
