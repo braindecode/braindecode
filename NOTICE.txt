@@ -47,6 +47,8 @@ The following components are licensed under the MIT License:
 - `braindecode/modules/popt_modules.py`
 - `braindecode/models/brainomni.py`
 - `braindecode/modules/quantization.py`
+- `braindecode/models/seizure_transformer.py`
+- `docs/_static/model/seizure_transformer_arch.png`
 
 The `brainomni.py` file is a derivative of `OpenTSLab/BrainOmni` (MIT), whose
 SEANet codec derives from Meta's `facebookresearch/encodec` (MIT). The

@@ -183,6 +183,7 @@ interface for all EEG models and can derive variable names when needed.
     PopulationTransformer
      REVE
      SCCNet
+     SeizureTransformer
      ShallowFBCSPNet
      SignalJEPA
      SignalJEPA_Contextual
