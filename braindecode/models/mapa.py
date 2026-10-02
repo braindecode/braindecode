@@ -28,8 +28,9 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import rotate_pairs
+from braindecode.functional import rescale_parameter, rotate_pairs
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import FeedForwardBlock
 
 # The reference LayerNorm eps, from ``models/attention.py``.
 _LN_EPS = 1e-6
@@ -162,227 +163,148 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     .. versionadded:: 1.8.2
 
-    A masked-autoencoder foundation model for intracranial EEG whose defining
-    feature is that everything it is told about an electrode is anatomical:
-    the atlas region the contact falls in, and its ordinal position along the
-    array it was implanted on. Stereotactic coordinates, montage size and
-    channel order never reach the model. That is what lets one pretrained
-    encoder read a subject it has never seen, which is the paper's headline
-    result: a linear probe on frozen MAPA features needs about 164 labelled
-    trials to reach the accuracy that takes 3500 trials without pretraining
-    [Tang2026]_.
-
     .. rubric:: Architecture Overview
 
-    A token is a ``(contact, band, time)`` triple. Each channel is turned into
-    three magnitude spectrograms -- a slow, a mid and a fast band -- that share
-    one 32 Hz frame clock but are decimated to their own token rates, so one
-    slow token spans the eight frames that carry eight fast tokens. Every token
-    is projected by its band's own linear layer, tagged by a learned per-band
-    embedding, and offset by the learned embedding of its contact's atlas
-    region. Twelve identical pre-norm transformer blocks then attend over
-    contacts and time *jointly*, but only inside one array: attention never
-    crosses from one implanted array to another, because which contacts share
-    an array is a fact about the surgery rather than about the brain. Position
-    enters the attention as a two-axis rotary encoding, one axis for the
-    clinical contact number and one for the frame clock, so scores depend only
-    on differences along an array and on elapsed time.
+    MAPA is a masked-autoencoder foundation model for intracranial EEG whose
+    only knowledge of an electrode is anatomical: the atlas region of each
+    contact and its position along the implanted array. Coordinates, montage
+    size and channel order never reach the model, so one pretrained encoder
+    reads subjects it has never seen [Tang2026]_. It works in four stages:
+
+    1. Turn each channel into slow, mid and fast magnitude spectrograms on a
+       shared 32 Hz frame clock, robust z-scored and clipped.
+    2. Embed each ``(contact, band, time)`` token with its band's linear layer,
+       a per-band vector and the embedding of its contact's DKT region.
+    3. Apply twelve pre-norm transformer blocks whose attention spans contacts
+       and time jointly but never crosses from one array to another.
+    4. Pool the normed outputs of blocks 3, 6, 9 and 12 and classify them.
 
     .. rubric:: Macro Components
 
-    - **Frontend** (``MAPA.frontend``). *Operations:* three
-      Hann-window short-time Fourier transforms of the raw window, with FFT
-      lengths 1024, 256 and 128 and a shared hop of 64 samples; keep the
-      magnitude of an inclusive bin slice per band; robust z-score each contact
-      and bin; clip to the published caps; decimate each band by its own
-      stride. *Role:* produce the three normalized spectrograms the released
-      encoder consumes, from the raw voltage that braindecode passes around;
-      given a spectrogram normalized upstream, it only clips and decimates.
-    - **Per-band stem** (``MAPA.stem``). *Operations:* one weight-shared linear
-      layer per band maps that band's frequency bins to ``d_model``, and a
-      learned per-band vector is added. *Role:* embed a patch while keeping the
-      three bands distinguishable, with deliberately no frequency embedding and
-      no per-band normalization, either of which would restore the :math:`1/f`
-      dominance the robust z-score removes.
-    - **Region embedding** (``MAPA.encoder.region_embed``). *Operations:* look
-      up one learned vector per DKT region and add it to every token of the
-      contacts in that region, once, at the stack input. *Role:* the anatomical
-      identity that means the same thing in an unseen subject; it rides the
-      residual stream into every block, so no block injects it again.
-    - **Encoder** (``MAPA.encoder.blocks``). *Operations:* twelve pre-norm
-      blocks of within-array multi-head self-attention, with a two-axis rotary
-      encoding on the contact number and the frame clock, and a GELU
-      feed-forward block of ratio ``mlp_ratio``. *Role:* mix contacts and time
-      inside each array.
-    - **Read-out** (``MAPA.encoder.norms_block``, ``MAPA.final_layer``).
-      *Operations:* normalize the output of blocks 3, 6, 9 and 12 with their
-      own affine LayerNorm and concatenate them, then pool the token axes and
-      apply a linear classifier. *Role:* produce the class logits.
+    ``MAPA.frontend``
+        **Operations.** Hann STFTs of FFT length 1024, 256 and 128 with a
+        shared hop of 64 samples; an inclusive bin slice per band; a robust
+        z-score per contact and bin; the published caps; a decimation by 8, 2
+        and 1.
+
+        **Role.** Produce the inputs the released encoder consumes. Given a
+        spectrogram normalized upstream, it only clips and decimates.
+
+    ``MAPA.stem``
+        **Operations.** One linear layer per band maps its bins to ``d_model``,
+        and a learned per-band vector is added.
+
+        **Role.** Embed tokens while keeping the bands distinguishable. There is
+        no frequency embedding and no per-band normalization, which would
+        restore the :math:`1/f` dominance the robust z-score removes.
+
+    ``MAPA.encoder``
+        **Operations.** Add the learned region embedding once, then apply twelve
+        blocks of within-array self-attention, with a two-axis rotary encoding,
+        and a feed-forward block of ratio ``mlp_ratio``. With ``deep_sup``,
+        blocks 3, 6, 9 and 12 each get their own LayerNorm and are
+        concatenated.
+
+        **Role.** Mix contacts and time inside each array.
+
+    ``MAPA.final_layer``
+        **Operations.** Mean-pool or flatten the tokens, then apply a linear
+        layer.
+
+        **Role.** Adapt the frozen encoder to classification. It is not part of
+        the pretraining.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
-    - *Temporal:* a shared 32 Hz frame clock, on which the slow, mid and fast
-      bands carry one token every 8, 2 and 1 frames. Tokens of different bands
-      that land on the same lattice slot get the same rotary phase, so band
-      mixing aligns them in physical time.
-    - *Spatial:* the clinical contact number along the array, as one axis of
-      the rotary encoding, plus the additive region embedding. Attention is
-      block-diagonal over arrays. No coordinates are used anywhere.
-    - *Spectral:* explicit, and the only place the signal is band-limited: the
-      three STFT bands are the model's input representation.
+    - **Temporal:** a 32 Hz frame clock on which the slow, mid and fast bands
+      carry one token every 8, 2 and 1 frames. Tokens on the same slot share a
+      rotary phase.
+    - **Spatial:** the clinical contact number along the array, as one rotary
+      axis, plus the additive region embedding. Attention is block-diagonal
+      over arrays, and no coordinates are used.
+    - **Spectral:** the three STFT bands, spanning 2-14, 16-56 and 64-160 Hz at
+      2048 Hz, are the input representation.
 
-    .. rubric:: Electrode metadata
+    .. rubric:: Additional Mechanisms
 
-    MAPA needs two things per channel that braindecode does not carry as such.
+    *Electrode metadata.* The array and the contact number are read off the
+    clinical label (``"LA7"`` is contact 7 of array ``LA``), from
+    ``contact_labels`` or else the ``chs_info`` names. Contact numbers are kept
+    verbatim, gaps included, and a label without a trailing number is rejected.
+    With neither, the channels form one array numbered from 1, which is almost
+    certainly not the real montage. Regions must be exact names of
+    :data:`MAPA_DKT_REGIONS` and default to the reserved unassigned slot.
 
-    The first is the *array* a contact belongs to and its *number* along that
-    array, both of which are read off the clinical label: ``"LA7"`` is contact
-    7 of array ``LA``. Labels are taken from ``contact_labels`` when given and
-    from the ``chs_info`` channel names otherwise. Contact numbers are kept
-    verbatim, gaps included, so that dropping a bad contact leaves its
-    neighbours two apart rather than renumbering them: only differences along
-    an array are ever used, but they must be the real ones, and the direction
-    of the numbering must be the recording's. A label with no trailing number
-    is rejected, since it has no canonical position. When neither
-    ``contact_labels`` nor ``chs_info`` is available the channels are treated
-    as one array numbered from 1, which keeps the model constructible from
-    ``n_chans`` alone but encodes a montage that is almost certainly not the
-    real one.
+    *One model, many subjects.* The constructor's montage is only the default.
+    To read another recording, pass :meth:`forward` the ``sensor_indices`` that
+    :meth:`sensor_indices` builds from its labels and regions; all samples of a
+    batch share them. The token layout is cached until the montage or the
+    window length changes. Only ``pooling="flatten"`` is tied to one montage
+    and one window length.
 
-    The second is the atlas region, passed in ``regions``. This is an
-    anatomical lookup that braindecode does not perform, so it must be supplied
-    to get the transferable spatial prior; channels default to the reserved
-    "outside every region" slot, which is also what ``None`` selects
-    explicitly. Region names must be exact entries of
-    :data:`MAPA_DKT_REGIONS`, as the reference rejects near-misses rather than
-    letting a misspelling become silently unassigned.
+    *Sampling rate and window length.* The bands are FFT bin slices at 2048 Hz,
+    so resample to 2048 Hz. A window yields ``1 + n_times // 64`` frames,
+    truncated to a multiple of 8, which needs at least 448 samples. With
+    ``normalization="session"`` the input is the spectrogram itself
+    (``sfreq=32``, ``n_times`` in frames): the 20 retained bins, slow then mid
+    then fast, robust z-scored per contact and bin over the whole recording.
 
-    .. rubric:: One model, many subjects
-
-    Because nothing the model is told about an electrode is subject-specific,
-    one instance encodes recordings from different subjects, with different
-    montages and different window lengths, without being rebuilt. The
-    constructor arguments describe one montage only to give
-    :meth:`forward` a default; to read another recording, pass its metadata as
-    the ``sensor_indices`` argument of :meth:`forward`, which
-    :meth:`sensor_indices` builds from that recording's contact labels and
-    regions. All the samples of one batch share it, so batch by recording.
-
-    The token layout that metadata implies is kept between calls and rebuilt
-    only when the montage or the window length changes, which mirrors the
-    reference's ``prepare``: streaming the windows of one recording pays for it
-    once. Only ``pooling="flatten"`` is tied to a single montage, since its
-    head holds weights per token; ``pooling="mean"`` takes any number of
-    channels and any window length.
-
-    .. rubric:: Sampling frequency and window length
-
-    The band definitions are FFT bin slices at 2048 Hz, so a recording at
-    another rate puts different frequencies in each band and moves the frame
-    clock off 32 Hz; resample to 2048 Hz, as the reference does, rather than
-    relying on the warning this model emits. A window yields
-    ``1 + n_times // 64`` frames, truncated to a multiple of 8 so the slow band
-    holds a whole number of tokens, which needs at least 448 samples.
-
-    With ``normalization="session"`` the input is already on the frame clock:
-    ``sfreq`` is 32 Hz and ``n_times`` counts frames, likewise truncated to a
-    multiple of 8. Each frame stacks the 20 retained bins, slow then mid then
-    fast, of the three magnitude spectrograms (Hann window, centred, hop 64 at
-    2048 Hz), each robust z-scored per contact and bin over the whole
-    recording.
-
-    .. rubric:: Pre-trained weights
-
-    Four checkpoints are published, all pretrained on Brain Treebank: the
-    released ``mapa_vits384`` and the three spatial-encoding ablations, which
-    this port exposes as ``region_embed`` and ``space_rope``. They are not
-    downloaded here, but they transfer as-is: ``MAPA.stem`` and ``MAPA.encoder``
-    reproduce the reference module names, so the released
-    ``checkpoint["model"]`` loads with :meth:`~torch.nn.Module.load_state_dict`
-    under ``strict=False``, leaving only ``final_layer`` uninitialized. The
-    region table is indexed by the atlas rather than by a subject, so it
-    transfers along with the rest.
+    *Pretrained weights.* ``MAPA.stem`` and ``MAPA.encoder`` keep the reference
+    module names (the feed-forward ``fc1``/``fc2`` are renamed on load through
+    ``mapping``), so a released ``checkpoint["model"]`` (``mapa_vits384`` or
+    one of its three spatial ablations, ``region_embed`` and ``space_rope``
+    set to ``False`` alone or together) loads with
+    :meth:`~torch.nn.Module.load_state_dict` under ``strict=False``, leaving
+    only ``final_layer`` uninitialized. The default configuration has the
+    released 21,335,424 parameters, excluding the head.
 
     .. note::
-        Parameter counts match the released checkpoints exactly: 21,335,424
-        for the default configuration, excluding the classification head.
+        Differences from the reference implementation:
 
-        The reference runs attention through a jagged nested tensor on GPU and
-        a materialized block-diagonal mask on CPU, packing a whole session into
-        one ragged sequence. This port gathers the contacts of each array into
-        a padded array axis and masks the padding, which is equivalent because
-        the mask only ever blocks attention across arrays, and lets the whole
-        batch run through
-        :func:`~torch.nn.functional.scaled_dot_product_attention` unchanged.
-
-        The reference fits its robust z-score on a whole recording and then
-        slices windows out of the normalized spectrogram. A model fed raw
-        windows cannot, so ``normalization="window"`` fits the same median and
-        scaled median absolute deviation on the window itself. This departs
-        from the reference twice: for windows of a second or so the statistics
-        come from a few dozen frames rather than a whole session, which also
-        erases the window's overall power, and the spectrogram is computed per
-        window, with centre reflect-padding at the window edges.
-        ``normalization="none"`` feeds the raw STFT magnitude to the stem.
-        Only ``normalization="session"`` reproduces the reference inputs: it
-        takes windows of the spectrogram the caller computed and normalized
-        over the whole recording, and keeps only the caps and the decimation.
-
-        The features this model pools are the encoder's own output, the
-        concatenation of the four normed deep-supervision taps. The paper's
-        frozen evaluation instead reads block 12 straight off the residual
-        stream, before that norm, and fits a ridge probe on every token of
-        every contact. ``pooling="flatten"`` flattens the normed four-tap
-        concatenation, so it is not that read-out.
-
-        The masked autoencoding objective, its decoder, the anatomical
-        localization and the artifact detectors ("Guard 1" and "Guard 2") are
-        out of scope: this port is the frozen encoder and a classification
-        head. The input clipping ("Guard 3") is part of the model and is kept.
+        - Attention runs on arrays padded to a common size, with the padding
+          masked, rather than on one ragged sequence; the outputs are the same.
+        - ``normalization="window"`` fits the robust z-score on each window
+          rather than on the whole recording. Only ``normalization="session"``
+          reproduces the reference inputs.
+        - The pooled features are the normed four-tap concatenation, whereas
+          the paper's frozen evaluation reads block 12 before that norm.
+        - The pretraining objective and decoder, the anatomical localization
+          and the artifact detectors ("Guard 1" and "Guard 2") are out of
+          scope; the input clipping ("Guard 3") is kept.
 
     Parameters
     ----------
     contact_labels : list of str, optional
-        Clinical label of each channel, such as ``"LA7"``, from which the array
-        and the contact number are read. Defaults to the ``chs_info`` channel
-        names, then to a single array numbered from 1. Describes the montage
-        :meth:`forward` assumes when it is given none.
+        Clinical label of each channel, such as ``"LA7"``. Defaults to the
+        ``chs_info`` channel names, then to a single array numbered from 1.
     regions : list of str or int or None, optional
-        DKT region of each channel, either an exact name from
-        :data:`MAPA_DKT_REGIONS` or its integer slot, with ``None`` selecting
-        the reserved unassigned slot. Defaults to unassigned everywhere.
+        DKT region of each channel, as an exact name from
+        :data:`MAPA_DKT_REGIONS` or its integer slot; ``None`` selects the
+        reserved unassigned slot. Defaults to unassigned everywhere.
     d_model : int
-        Token embedding dimension, a multiple of 64, which is the head
-        dimension held fixed across the released widths. Default 384, the
-        released ``mapa_vits384``.
+        Token embedding dimension, a multiple of the head dimension 64.
+        Default 384, the released ``mapa_vits384``.
     mlp_ratio : int
         Hidden dimension of the feed-forward blocks, as a multiple of
         ``d_model``.
     region_embed : bool
         Whether the region embedding is used. ``False`` is the paper's
-        ``no_region`` ablation, and builds no table at all.
+        ``no_region`` ablation.
     space_rope : bool
         Whether the rotary encoding carries the contact number. ``False`` is
-        the paper's ``no_relpos`` ablation, which leaves attention
-        permutation-invariant over the contacts of an array.
+        the paper's ``no_relpos`` ablation.
     deep_sup : bool
-        Whether the encoder returns the concatenation of the four
-        deep-supervision taps, of width ``4 * d_model``, or a single terminal
-        LayerNorm of width ``d_model``.
+        Whether the encoder returns the four normed deep-supervision taps,
+        concatenated to width ``4 * d_model``, or one terminal LayerNorm.
     pooling : {"mean", "flatten"}
-        Token aggregation before the head. ``"mean"`` averages the tokens,
-        giving a head that depends on neither the montage nor the window
-        length, so one model reads any recording; ``"flatten"`` keeps every
-        token, as the paper's frozen linear probe does, at the cost of a head
-        that fits one montage and one window length only.
+        ``"mean"`` averages the tokens, so the head fits any montage and window
+        length; ``"flatten"`` keeps every token, so the head fits one only.
     normalization : {"window", "session", "none"}
         ``"window"`` robust z-scores the spectrograms of each raw window;
         ``"session"`` takes the spectrogram itself, normalized over the whole
-        recording upstream, as the reference does; ``"none"`` passes the raw
-        STFT magnitude to the stem.
+        recording upstream; ``"none"`` passes the raw STFT magnitude.
     activation : type[nn.Module]
-        Activation layer class of the feed-forward blocks, default
-        :class:`~torch.nn.GELU`.
+        Activation layer class of the feed-forward blocks.
 
     Examples
     --------
@@ -469,29 +391,20 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             sfreq = float(self.sfreq)
         except ValueError:
             sfreq = None
-        if normalization == "session":
-            if sfreq is not None and not math.isclose(sfreq, _FRAME_RATE):
-                warnings.warn(
-                    f"normalization='session' takes a spectrogram on MAPA's "
-                    f"{_FRAME_RATE} Hz frame clock, but sfreq is {sfreq} Hz, so "
-                    f"the tokens run at another rate. Pass sfreq={_FRAME_RATE} "
-                    f"and count n_times in frames.",
-                    UserWarning,
-                )
-        elif sfreq is not None and not math.isclose(sfreq, _SAMPLE_RATE):
+        expected = _FRAME_RATE if normalization == "session" else _SAMPLE_RATE
+        if sfreq is not None and not math.isclose(sfreq, expected):
             warnings.warn(
-                f"MAPA's frequency bands and its 32 Hz frame clock are defined "
-                f"at {_SAMPLE_RATE} Hz, but sfreq is {sfreq} Hz, so the bands "
-                f"cover other frequencies and the tokens another rate. "
-                f"Resample the recording to {_SAMPLE_RATE} Hz.",
+                f"With normalization={normalization!r}, MAPA expects sfreq="
+                f"{expected} Hz but got {sfreq} Hz: its bands are FFT bin slices "
+                f"at {_SAMPLE_RATE} Hz on a {_FRAME_RATE} Hz frame clock, so "
+                f"other rates shift the bands and the token rate.",
                 UserWarning,
             )
 
         self.n_frames = _frame_count(
             self.n_times, spectrogram=normalization == "session"
         )
-        self.band_lengths = _band_lengths(self.n_frames)
-        self.k_full = sum(self.band_lengths)
+        self.k_full = sum(_band_lengths(self.n_frames))
 
         self.frontend = _SpectrogramFrontend(normalization=normalization)
         self.stem = _PerBandStem(d_model=d_model, band_bins=_BAND_BINS)
@@ -503,6 +416,14 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             deep_sup=deep_sup,
             activation=activation,
         )
+        self.mapping = {
+            f"encoder.blocks.{i}.mlp.fc{fc}.{param}": (
+                f"encoder.blocks.{i}.mlp.{child}.{param}"
+            )
+            for i in range(_DEPTH)
+            for fc, child in ((1, 0), (2, 3))
+            for param in ("weight", "bias")
+        }
 
         # The montage resolved here is only the default: forward takes another
         # recording's metadata directly, which is what lets one instance read
@@ -580,30 +501,20 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             indices.is_floating_point()
             or indices.is_complex()
             or indices.dtype == torch.bool
+            or indices.shape != (n_chans, 3)
+            or bool((indices < 0).any())
+            or bool((indices[:, 2] >= _N_REGIONS).any())
         ):
-            raise ValueError(f"sensor_indices must hold integers, got {indices.dtype}.")
-        if indices.shape != (n_chans, 3):
             raise ValueError(
-                f"sensor_indices must have shape ({n_chans}, 3), one row of "
-                f"(array, contact number, region slot) per channel, got "
-                f"{tuple(indices.shape)}."
-            )
-        if bool((indices < 0).any()) or bool((indices[:, 2] >= _N_REGIONS).any()):
-            raise ValueError(
-                f"sensor_indices must be non-negative, with region slots below "
-                f"{_N_REGIONS}."
+                f"sensor_indices must hold integers of shape ({n_chans}, 3), one "
+                f"row of (array, contact number, region slot) per channel, and "
+                f"must be non-negative, with region slots below {_N_REGIONS}; got "
+                f"{indices.dtype} of shape {tuple(indices.shape)}."
             )
         return indices.to(device=x.device, dtype=torch.long)
 
     def _token_layout(self, indices: torch.Tensor, n_frames: int) -> _TokenLayout:
-        """Return the token layout of a montage, rebuilding it when it changes.
-
-        The construction-time layout is held as buffers and costs nothing to
-        reach. Any other is laid out on the spot and then kept until the
-        montage or the window length changes, which is what the reference's
-        ``prepare`` amounts to: streaming the windows of one recording builds
-        it once, and only moving to another subject pays for it again.
-        """
+        """Return the token layout of a montage, rebuilding it only when it changes."""
         if (
             indices is self.get_buffer("default_sensor_indices")
             and n_frames == self.n_frames
@@ -678,23 +589,17 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             Class logits of shape ``(batch, n_outputs)``.
         """
         spectrogram = self.normalization == "session"
-        if spectrogram and (x.ndim != 4 or x.shape[2] != sum(_BAND_BINS)):
+        if x.ndim != (4 if spectrogram else 3) or (
+            spectrogram and x.shape[2] != sum(_BAND_BINS)
+        ):
             raise ValueError(
                 f"normalization='session' takes a spectrogram of shape (batch, "
-                f"n_chans, {sum(_BAND_BINS)}, n_frames), the slow, mid and fast "
-                f"bins stacked in that order, but got {tuple(x.shape)}."
-            )
-        if not spectrogram and x.ndim != 3:
-            raise ValueError(
-                f"MAPA takes a raw signal of shape (batch, n_chans, n_times), but "
-                f"got {tuple(x.shape)}. A precomputed spectrogram needs "
-                f"normalization='session'."
+                f"n_chans, {sum(_BAND_BINS)}, n_frames), any other a raw signal of "
+                f"shape (batch, n_chans, n_times), but got {tuple(x.shape)} with "
+                f"normalization={self.normalization!r}."
             )
         indices = self._resolve_sensor_indices(sensor_indices, x)
         n_frames = _frame_count(x.shape[-1], spectrogram=spectrogram)
-        # Everything else adapts to the montage and the window, but a flattened
-        # read-out is a fixed number of weights per token, so it can only ever
-        # serve the grid it was built for.
         if self.pooling == "flatten" and (
             x.shape[1] != self.n_chans or n_frames != self.n_frames
         ):
@@ -735,23 +640,18 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
 
 def _frame_count(n_times: int, spectrogram: bool = False) -> int:
-    """Number of frames of the shared 32 Hz clock a window of this length gives.
-
-    ``n_times`` counts samples of the raw signal, or frames when the input is
-    already a ``spectrogram``.
-    """
+    """Usable frames of the 32 Hz clock in ``n_times`` samples (or frames)."""
     frames = n_times if spectrogram else 1 + n_times // _HOP
     n_frames = (frames // _FRAME_QUANTUM) * _FRAME_QUANTUM
     if n_frames < _FRAME_QUANTUM:
         minimum = (
             f"{_FRAME_QUANTUM} frames"
             if spectrogram
-            else f"{(_FRAME_QUANTUM - 1) * _HOP} samples, which is "
-            f"{_FRAME_QUANTUM} frames"
+            else f"{(_FRAME_QUANTUM - 1) * _HOP} samples"
         )
         raise ValueError(
-            f"MAPA needs a window of at least {minimum} of the 32 Hz clock and "
-            f"one token of the slow band, but got {n_times}."
+            f"MAPA needs a window of at least {minimum}, one token of the slow "
+            f"band, but got {n_times}."
         )
     return n_frames
 
@@ -764,27 +664,8 @@ def _band_lengths(n_frames: int) -> tuple[int, ...]:
 def _build_token_layout(
     sensor_indices: torch.Tensor, n_frames: int, space_rope: bool
 ) -> _TokenLayout:
-    """Lay the token grid out per array and build what attention reads.
-
-    Attention runs within an array, so the channels are regrouped into a
-    rectangle of arrays by contacts, padded to the largest array. The gather
-    plan, the rotary tables, the padding mask and the region of each token all
-    follow from that rectangle and from how many tokens a window carries.
-
-    Parameters
-    ----------
-    sensor_indices : torch.Tensor
-        ``(n_chans, 3)`` long tensor of (array, contact number, region slot).
-    n_frames : int
-        Length of the window in frames of the shared clock.
-    space_rope : bool
-        Whether the contact axis is rotary-encoded alongside time.
-
-    Returns
-    -------
-    _TokenLayout
-        Everything :meth:`MAPA.forward` needs to run this montage.
-    """
+    """Regroup the channels into arrays padded to the largest one, and build
+    the gather plan, padding mask, region ids and rotary tables of that grid."""
     device = sensor_indices.device
     n_chans = sensor_indices.shape[0]
     arrays, contacts, regions = sensor_indices.unbind(dim=1)
@@ -842,23 +723,8 @@ def _build_token_layout(
 
 
 def _parse_contact_labels(labels: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
-    """Read the array and the contact number off each clinical label.
-
-    Arrays are numbered in order of first appearance, and two labels sharing a
-    prefix share an array. The trailing number is kept verbatim, gaps included,
-    because only differences along an array are used and those differences are
-    the point.
-
-    Parameters
-    ----------
-    labels : list of str
-        Clinical label of each channel.
-
-    Returns
-    -------
-    tuple of torch.Tensor
-        ``(n_chans,)`` long tensors of array ids and contact numbers.
-    """
+    """Read the array id (by first appearance of the prefix) and the verbatim
+    contact number off each clinical label."""
     seen: dict[str, int] = {}
     arrays, contacts = [], []
     for label in labels:
@@ -882,23 +748,10 @@ def _parse_contact_labels(labels: list[str]) -> tuple[torch.Tensor, torch.Tensor
 def _resolve_regions(
     regions: list[str | int | None] | None, n_chans: int
 ) -> torch.Tensor:
-    """Resolve the atlas region of each channel to a slot of the region table.
+    """Map each channel's region to a slot of the region table.
 
-    Names must be exact entries of :data:`MAPA_DKT_REGIONS`: the reference
-    rejects anything else rather than letting a misspelling become silently
-    unassigned, since an unassigned contact is a meaningful state of its own.
-
-    Parameters
-    ----------
-    regions : list of str or int or None, optional
-        Region of each channel, or ``None`` for an unassigned montage.
-    n_chans : int
-        Number of channels the model was built for.
-
-    Returns
-    -------
-    torch.Tensor
-        ``(n_chans,)`` long tensor of slots.
+    Names must match :data:`MAPA_DKT_REGIONS` exactly, as in the reference, so
+    a misspelling cannot silently become unassigned.
     """
     if regions is None:
         return torch.full((n_chans,), _UNASSIGNED_REGION, dtype=torch.long)
@@ -932,11 +785,8 @@ def _resolve_regions(
 
 
 def _robust_z(x: torch.Tensor) -> torch.Tensor:
-    """Median-centre and MAD-scale each contact and frequency bin over time.
-
-    A bin whose scale falls under the floor is constant to numerical precision,
-    so it is zeroed rather than amplified.
-    """
+    """Median-centre and MAD-scale each contact and bin over time, zeroing
+    bins whose scale is below the floor."""
     median = x.median(dim=-1, keepdim=True).values
     sigma = _MAD_TO_SIGMA * (x - median).abs().median(dim=-1, keepdim=True).values
     z = (x - median) / sigma.clamp(min=_SIGMA_FLOOR)
@@ -946,33 +796,10 @@ def _robust_z(x: torch.Tensor) -> torch.Tensor:
 def _rotary_table(
     contact: torch.Tensor, time: torch.Tensor, head_dim: int, space_rope: bool
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Build the two-axis rotary table of a token grid.
+    """Cosine and sine tables of a rotary encoding whose head dimension is
+    split between the contact number and the frame-clock position.
 
-    The head dimension is split evenly between the position along the array and
-    the position on the frame clock, each on the standard rotary schedule.
-    Rotation is by absolute position, but the query-key score depends only on
-    the difference, which is the property that transfers: absolute position
-    along an array is not shared across subjects, only the ordering is.
-
-    Parameters
-    ----------
-    contact : torch.Tensor
-        Clinical contact number of each token.
-    time : torch.Tensor
-        Frame-clock position of each token.
-    head_dim : int
-        Attention head dimension, a multiple of 4.
-    space_rope : bool
-        Whether the contact axis carries position. When ``False`` its
-        frequencies are zeroed, which makes the contact half the identity
-        rotation and leaves attention permutation-invariant over the contacts
-        of an array, without touching the time half.
-
-    Returns
-    -------
-    tuple of torch.Tensor
-        The cosine and sine tables, of the grid's shape with ``head_dim``
-        appended.
+    Without ``space_rope`` the contact half is the identity rotation.
     """
     pairs = head_dim // 4
     exponents = torch.arange(pairs, dtype=torch.float32) / pairs
@@ -994,12 +821,7 @@ def _rotary_table(
 
 
 def _init_transformer_weights(module: nn.Module) -> None:
-    """Initialize one module the way V-JEPA 2 does.
-
-    Linear weights are truncated normal with zero bias, layer norms are the
-    identity, and embeddings are left alone: the two tables of this model are
-    added to the residual stream and start near zero instead.
-    """
+    """V-JEPA 2 initialization of linear layers and layer norms."""
     if isinstance(module, nn.Linear):
         nn.init.trunc_normal_(module.weight, std=_INIT_STD)
         if module.bias is not None:
@@ -1010,21 +832,8 @@ def _init_transformer_weights(module: nn.Module) -> None:
 
 
 class _SpectrogramFrontend(nn.Module):
-    """Take a raw window to the three bands the released encoder consumes.
-
-    One Hann short-time Fourier transform per band, all sharing a hop of 64
-    samples so that they land on one 32 Hz frame clock, of which each band
-    keeps an inclusive slice of rfft bins. The magnitudes are robust z-scored
-    per contact and bin, bounded by the published caps, and decimated to the
-    band's own token rate. A spectrogram normalized upstream skips straight to
-    the caps.
-
-    Parameters
-    ----------
-    normalization : {"window", "session", "none"}
-        Whether the magnitudes are robust z-scored on each window, arrive as a
-        spectrogram normalized over the session, or are left as they come.
-    """
+    """Per-band STFT magnitudes on a shared 32 Hz clock, robust z-scored,
+    capped and decimated to each band's token rate."""
 
     def __init__(self, normalization: str):
         super().__init__()
@@ -1035,13 +844,7 @@ class _SpectrogramFrontend(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> list[torch.Tensor]:
-        """Take a raw window, or a spectrogram, to one tensor per band.
-
-        The input is ``(batch, n_chans, n_times)``, or ``(batch, n_chans, 20,
-        n_frames)`` when ``normalization="session"``. Returns ``(batch,
-        n_chans, n_bins, n_tokens)`` tensors in the fixed slow, mid, fast
-        order.
-        """
+        """Return ``(batch, n_chans, n_bins, n_tokens)`` slow, mid, fast bands."""
         if self.normalization == "session":
             n_frames = _frame_count(x.shape[-1], spectrogram=True)
             bands = x[..., :n_frames].split(_BAND_BINS, dim=2)
@@ -1083,21 +886,8 @@ class _SpectrogramFrontend(nn.Module):
 
 
 class _PerBandStem(nn.Module):
-    """Project the three spectrogram bands into one token sequence per channel.
-
-    Each band keeps its own linear layer, whose separate weights are what
-    identify it, plus an additive per-band vector. There is deliberately no
-    frequency embedding and no per-band normalization: a per-band norm would
-    reintroduce the within-band :math:`1/f` dominance that the robust z-score
-    removes.
-
-    Parameters
-    ----------
-    d_model : int
-        Token embedding dimension.
-    band_bins : tuple of int
-        Number of frequency bins of each band.
-    """
+    """One linear projection plus an additive vector per band, with no
+    per-band norm, which would bring back the 1/f the z-score removes."""
 
     def __init__(self, d_model: int, band_bins: tuple[int, ...]):
         super().__init__()
@@ -1107,11 +897,7 @@ class _PerBandStem(nn.Module):
         nn.init.trunc_normal_(self.band_type_emb, std=_ADDITIVE_INIT_STD)
 
     def forward(self, bands: list[torch.Tensor]) -> torch.Tensor:
-        """Embed ``(batch, n_chans, n_bins, n_tokens)`` bands into one block.
-
-        Returns ``(batch, n_chans, k_full, d_model)``, the bands concatenated
-        in their fixed slow, mid, fast order.
-        """
+        """Return ``(batch, n_chans, k_full, d_model)`` tokens."""
         tokens = [
             proj(band.transpose(-1, -2)) + embedding
             for band, proj, embedding in zip(bands, self.projs, self.band_type_emb)
@@ -1120,24 +906,7 @@ class _PerBandStem(nn.Module):
 
 
 class _Encoder(nn.Module):
-    """Pre-norm stack of within-array attention blocks.
-
-    Parameters
-    ----------
-    d_model : int
-        Token embedding dimension.
-    n_heads : int
-        Number of attention heads.
-    mlp_ratio : int
-        Hidden dimension of the feed-forward blocks, as a multiple of
-        ``d_model``.
-    region_embed : bool
-        Whether the region table is built at all.
-    deep_sup : bool
-        Whether the output is the concatenation of the deep-supervision taps.
-    activation : type[nn.Module]
-        Activation layer class of the feed-forward blocks.
-    """
+    """Region embedding plus a pre-norm stack of within-array blocks."""
 
     def __init__(
         self,
@@ -1172,15 +941,10 @@ class _Encoder(nn.Module):
             None if deep_sup else nn.LayerNorm(d_model, eps=_LN_EPS)
         )
         self.apply(_init_transformer_weights)
-        self._rescale_blocks()
-
-    def _rescale_blocks(self) -> None:
-        """Damp the residual branches with depth, so their variance stays flat."""
-        for layer, module in enumerate(self.blocks):
+        for layer, module in enumerate(self.blocks, start=1):
             block = cast(_WithinArrayBlock, module)
-            scale = math.sqrt(2.0 * (layer + 1))
-            block.out.weight.data.div_(scale)
-            block.mlp.fc2.weight.data.div_(scale)
+            rescale_parameter(block.out.weight.data, layer)
+            rescale_parameter(block.mlp[3].weight.data, layer)
 
     def forward(
         self,
@@ -1207,22 +971,8 @@ class _Encoder(nn.Module):
 
 
 class _RegionIdentityEmbed(nn.Module):
-    """Learned embedding of the atlas region a contact falls in.
-
-    The vocabulary is fixed by the atlas rather than learned per subject, which
-    is what lets the table transfer to an unseen montage. It starts near zero
-    so the model grows into it instead of carrying a strong per-region prior
-    from the first step, and it is built at all only when it is used, so an
-    ablated model has no dead parameter to weight-decay.
-
-    Parameters
-    ----------
-    d_model : int
-        Token embedding dimension.
-    enabled : bool
-        Whether the table is built. When it is not, the module contributes
-        nothing.
-    """
+    """Near-zero-initialized embedding of the atlas region, built only when
+    ``enabled``."""
 
     def __init__(self, d_model: int, enabled: bool):
         super().__init__()
@@ -1237,27 +987,8 @@ class _RegionIdentityEmbed(nn.Module):
 
 
 class _WithinArrayBlock(nn.Module):
-    """Pre-norm block whose attention stays inside one array.
-
-    A token attends to every other token of its own array, over contacts and
-    time together rather than over each axis in turn, and to nothing outside
-    it: which contacts share an array is a fact about where the surgeon placed
-    the electrodes, not about the brain. Region identity is added once at the
-    stack input and rides the residual, so this block injects nothing of its
-    own.
-
-    Parameters
-    ----------
-    d_model : int
-        Token embedding dimension.
-    n_heads : int
-        Number of attention heads.
-    mlp_ratio : int
-        Hidden dimension of the feed-forward block, as a multiple of
-        ``d_model``.
-    activation : type[nn.Module]
-        Activation layer class of the feed-forward block.
-    """
+    """Pre-norm block attending jointly over the contacts and time of one
+    array."""
 
     def __init__(
         self,
@@ -1271,8 +1002,8 @@ class _WithinArrayBlock(nn.Module):
         self.qkv = nn.Linear(d_model, 3 * d_model, bias=True)
         self.out = nn.Linear(d_model, d_model, bias=True)
         self.norm2 = nn.LayerNorm(d_model, eps=_LN_EPS)
-        self.mlp = _FeedForward(
-            d_model=d_model, mlp_ratio=mlp_ratio, activation=activation
+        self.mlp = FeedForwardBlock(
+            emb_size=d_model, expansion=mlp_ratio, drop_p=0.0, activation=activation
         )
         self.split_heads = Rearrange(
             "batch array seq (heads dim) -> batch array heads seq dim", heads=n_heads
@@ -1303,26 +1034,3 @@ class _WithinArrayBlock(nn.Module):
         )
         x = x + self.out(self.merge_heads(attention))
         return x + self.mlp(self.norm2(x))
-
-
-class _FeedForward(nn.Module):
-    """Two-layer feed-forward block with a GELU in between.
-
-    Parameters
-    ----------
-    d_model : int
-        Token embedding dimension.
-    mlp_ratio : int
-        Hidden dimension, as a multiple of ``d_model``.
-    activation : type[nn.Module]
-        Activation layer class.
-    """
-
-    def __init__(self, d_model: int, mlp_ratio: int, activation: type[nn.Module]):
-        super().__init__()
-        self.fc1 = nn.Linear(d_model, d_model * mlp_ratio)
-        self.fc2 = nn.Linear(d_model * mlp_ratio, d_model)
-        self.act = activation()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.fc2(self.act(self.fc1(x)))
