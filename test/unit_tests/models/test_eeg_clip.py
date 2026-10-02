@@ -155,6 +155,30 @@ def test_eeg_clip_reset_head_preserves_mixed_projection_training_modes():
     assert [module.training for module in model.final_layer.modules()] == eeg_modes
 
 
+def test_eeg_clip_reset_head_preserves_projection_device_and_dtype():
+    model = _make_model().to(dtype=torch.float64)
+    text_device = next(model.text_projection.parameters()).device
+    eeg_device = next(model.final_layer.parameters()).device
+
+    model.reset_head(6)
+
+    assert {parameter.dtype for parameter in model.text_projection.parameters()} == {
+        torch.float64
+    }
+    assert {parameter.dtype for parameter in model.final_layer.parameters()} == {
+        torch.float64
+    }
+    assert next(model.text_projection.parameters()).device == text_device
+    assert next(model.final_layer.parameters()).device == eeg_device
+
+    output = model(
+        torch.randn(3, 3, 20, dtype=torch.float64),
+        text_inputs=torch.randint(0, 16, (3, 6)),
+    )
+    assert output["eeg_embeds"].dtype == torch.float64
+    assert output["text_embeds"].dtype == torch.float64
+
+
 def test_eeg_clip_custom_encoders_require_manual_config_round_trip():
     model = _make_model()
 
