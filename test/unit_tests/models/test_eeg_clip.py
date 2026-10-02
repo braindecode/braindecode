@@ -160,6 +160,27 @@ def test_eeg_clip_rejects_mismatched_attention_mask():
         model.encode_text(input_ids, attention_mask=torch.ones(2, 4))
 
 
+def test_eeg_clip_default_encoder_uses_dense_temporal_predictions():
+    model = EEGCLIP(
+        n_chans=3,
+        n_times=1000,
+        n_outputs=4,
+        eeg_embedding_dim=8,
+        text_embedding_dim=8,
+        drop_prob=0,
+    ).eval()
+
+    with torch.no_grad():
+        features = model.eeg_encoder(torch.randn(2, 3, 1000))
+        embeds = model.encode_eeg(torch.randn(2, 3, 1000))
+
+    assert features.ndim == 3
+    assert features.shape[:2] == (2, 8)
+    assert features.shape[-1] > 1
+    assert embeds.shape == (2, 4)
+    torch.testing.assert_close(embeds.norm(dim=-1), torch.ones(2))
+
+
 def test_eeg_clip_reset_head_updates_both_projection_dimensions():
     model = EEGCLIP(
         n_chans=3,
