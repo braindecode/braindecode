@@ -26,6 +26,7 @@ class _TinyTextEncoder(nn.Module):
 
 
 def _make_model(**kwargs):
+    kwargs.setdefault("drop_prob", 0)
     return EEGCLIP(
         n_chans=3,
         n_times=20,
@@ -34,7 +35,6 @@ def _make_model(**kwargs):
         eeg_embedding_dim=3,
         text_embedding_dim=8,
         text_encoder=_TinyTextEncoder(),
-        drop_prob=0,
         **kwargs,
     )
 
@@ -119,6 +119,18 @@ def test_eeg_clip_reset_head_updates_both_projection_dimensions():
     assert model.get_config()["n_outputs"] == 6
     assert output["eeg_embeds"].shape == (2, 6)
     assert output["text_embeds"].shape == (2, 6)
+
+
+def test_eeg_clip_reset_head_preserves_mixed_projection_training_modes():
+    model = _make_model(drop_prob=0.5).eval()
+    model.text_projection[2].train()  # Keep text-side MC dropout enabled.
+    text_modes = [module.training for module in model.text_projection.modules()]
+    eeg_modes = [module.training for module in model.final_layer.modules()]
+
+    model.reset_head(6)
+
+    assert [module.training for module in model.text_projection.modules()] == text_modes
+    assert [module.training for module in model.final_layer.modules()] == eeg_modes
 
 
 def test_eeg_clip_custom_encoders_require_manual_config_round_trip():

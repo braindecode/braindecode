@@ -323,12 +323,23 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
         """Reset both projection heads to a new shared embedding dimension."""
         if n_outputs <= 0:
             raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
-        self.text_projection = self._make_projection(
+        text_projection = self._make_projection(
             self.text_embedding_dim, n_outputs, self.activation, self.drop_prob
         )
-        self.final_layer = self._make_projection(
+        final_layer = self._make_projection(
             self.eeg_embedding_dim, n_outputs, self.activation, self.drop_prob
         )
+        # Match each replacement submodule's mode to the module it replaces.
+        # This preserves eval mode and intentional mixed modes such as
+        # Monte-Carlo dropout when changing the shared embedding dimension.
+        for old_head, new_head in (
+            (self.text_projection, text_projection),
+            (self.final_layer, final_layer),
+        ):
+            for old_module, new_module in zip(old_head.modules(), new_head.modules()):
+                new_module.training = old_module.training
+        self.text_projection = text_projection
+        self.final_layer = final_layer
         self._set_n_outputs(n_outputs)
 
     def get_config(self):
