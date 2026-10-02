@@ -16,6 +16,11 @@ class _MeanEEGEncoder(nn.Module):
         return X.mean(dim=-1)
 
 
+class _TemporalEEGEncoder(nn.Module):
+    def forward(self, X):
+        return X
+
+
 class _TinyTextEncoder(nn.Module):
     def __init__(self, vocab_size=16, embedding_dim=8):
         super().__init__()
@@ -53,6 +58,39 @@ def test_eeg_clip_encodes_paired_batches_and_returns_symmetric_logits():
     torch.testing.assert_close(output["logits_per_text"], output["logits_per_eeg"].T)
     torch.testing.assert_close(output["eeg_embeds"].norm(dim=-1), torch.ones(5))
     torch.testing.assert_close(output["text_embeds"].norm(dim=-1), torch.ones(5))
+
+
+def test_eeg_clip_projects_temporal_predictions_before_pooling():
+    model = EEGCLIP(
+        n_chans=2,
+        n_times=2,
+        n_outputs=2,
+        eeg_encoder=_TemporalEEGEncoder(),
+        eeg_embedding_dim=2,
+        text_embedding_dim=2,
+        projection_layers=2,
+        drop_prob=0,
+    ).eval()
+
+    with torch.no_grad():
+        first_linear = model.final_layer[0]
+        batch_norm = model.final_layer[1]
+        last_linear = model.final_layer[-1]
+        first_linear.weight.copy_(torch.eye(2))
+        first_linear.bias.zero_()
+        batch_norm.weight.fill_(1)
+        batch_norm.bias.zero_()
+        batch_norm.running_mean.zero_()
+        batch_norm.running_var.fill_(1)
+        last_linear.weight.copy_(torch.eye(2))
+        last_linear.bias.zero_()
+
+    X = torch.tensor([[[-1.0, 1.0], [0.0, 0.0]]])
+    actual = model.encode_eeg(X)
+
+    # Projecting each temporal prediction through ReLU before averaging keeps
+    # the positive second prediction. Averaging first would produce zero.
+    torch.testing.assert_close(actual, torch.tensor([[1.0, 0.0]]))
 
 
 def test_eeg_clip_masked_mean_pooling_ignores_padding():
