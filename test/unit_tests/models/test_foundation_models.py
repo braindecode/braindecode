@@ -2,6 +2,7 @@
 #
 # License: BSD-3
 
+import hashlib
 import json
 import os
 from contextlib import nullcontext
@@ -28,6 +29,7 @@ except ImportError:
 from braindecode.models import (
     DIVER1,
     LUNA,
+    MAPA,
     REVE,
     ZUNA,
     CBraMod,
@@ -1839,3 +1841,250 @@ def test_steegformer_montage_fallback(
             assert 0 <= int(slots.min()) <= int(slots.max()) < len(steeg_vocab)
         else:
             assert model.channel_indices.tolist() == list(range(n_chans))
+
+
+# ==============================================================================
+# Tests for MAPA Model
+# ==============================================================================
+
+
+MAPA_SUBJECT_A = ["LA1", "LA2", "LA5", "LB3", "LB7"]
+MAPA_SUBJECT_B = ["RH2", "RH3", "RH8", "LT1", "LT2", "LT3", "LT4", "RX5"]
+
+
+@pytest.fixture
+def mapa_model():
+    return MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+    ).eval()
+
+
+def test_mapa_sensor_indices_reads_array_and_contact_number():
+    indices = MAPA.sensor_indices(MAPA_SUBJECT_A, ["ctx-lh-insula"] + [None] * 4)
+    assert indices.tolist() == [
+        [0, 1, 7],
+        [0, 2, 74],
+        [0, 5, 74],
+        [1, 3, 74],
+        [1, 7, 74],
+    ]
+
+
+@pytest.mark.parametrize("n_times", [448, 2048, 4096])
+def test_mapa_one_model_reads_another_subject(mapa_model, n_times):
+    """A montage and a window the mapa_model was not built for both go through."""
+    x = torch.randn(2, len(MAPA_SUBJECT_B), n_times)
+    with torch.no_grad():
+        y = mapa_model(x, MAPA.sensor_indices(MAPA_SUBJECT_B))
+    assert y.shape == (2, 4)
+
+
+def test_mapa_channel_order_does_not_change_the_output(mapa_model):
+    perm = torch.tensor([4, 0, 3, 1, 2])
+    x = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    with torch.no_grad():
+        expected = mapa_model(x)
+        permuted = mapa_model(x[:, perm], mapa_model.default_sensor_indices[perm])
+    torch.testing.assert_close(expected, permuted, atol=1e-5, rtol=1e-5)
+
+
+def test_mapa_switching_subjects_does_not_leak_between_calls(mapa_model):
+    """The cached token layout must not survive a change of montage."""
+    xa = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    xb = torch.randn(2, len(MAPA_SUBJECT_B), 2048)
+    indices_b = MAPA.sensor_indices(MAPA_SUBJECT_B)
+    with torch.no_grad():
+        first_a, first_b = mapa_model(xa), mapa_model(xb, indices_b)
+        again_b, again_a = mapa_model(xb, indices_b), mapa_model(xa)
+    torch.testing.assert_close(first_a, again_a)
+    torch.testing.assert_close(first_b, again_b)
+
+
+def test_mapa_flatten_pooling_stays_tied_to_its_montage():
+    mapa_model = MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+        pooling="flatten",
+    ).eval()
+    with pytest.raises(ValueError, match="pooling='flatten'"):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_B), 2048), MAPA.sensor_indices(MAPA_SUBJECT_B))
+
+
+@pytest.mark.parametrize(
+    "sensor_indices,match",
+    [
+        (None, "got input with 8 channels"),
+        (torch.zeros(3, 3, dtype=torch.long), r"shape \(8, 3\)"),
+        (torch.zeros(8, 3), "must hold integers"),
+        (torch.full((8, 3), 75), "region slots below 75"),
+        (torch.full((8, 3), -1), "must be non-negative"),
+    ],
+)
+def test_mapa_bad_sensor_indices_are_rejected(mapa_model, sensor_indices, match):
+    with pytest.raises(ValueError, match=match):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_B), 2048), sensor_indices)
+
+
+def test_mapa_window_shorter_than_one_slow_token_is_rejected(mapa_model):
+    with pytest.raises(ValueError, match="at least 448 samples"):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_A), 256))
+
+
+def _mapa_session_model(**kwargs):
+    return MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=32,
+        sfreq=32,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+        normalization="session",
+        **kwargs,
+    ).eval()
+
+
+def test_mapa_session_normalization_matches_window_normalization_on_its_bands(mapa_model):
+    """Handed the bands window normalization computes, session mode is identical."""
+    session = _mapa_session_model()
+    session.load_state_dict(mapa_model.state_dict())
+    x = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    frames = torch.cat(mapa_model.frontend._stft_bands(x), dim=2)
+    with torch.no_grad():
+        torch.testing.assert_close(session(frames), mapa_model(x))
+
+
+def test_mapa_session_normalization_reads_another_subject():
+    frames = torch.randn(2, len(MAPA_SUBJECT_B), 20, 64)
+    with torch.no_grad():
+        y = _mapa_session_model()(frames, MAPA.sensor_indices(MAPA_SUBJECT_B))
+    assert y.shape == (2, 4)
+
+
+@pytest.mark.parametrize(
+    "shape,match",
+    [
+        ((1, 5, 2048), "takes a spectrogram"),
+        ((1, 5, 19, 32), "takes a spectrogram"),
+        ((1, 5, 20, 4), "at least 8 frames"),
+    ],
+)
+def test_mapa_session_normalization_rejects_bad_input(shape, match):
+    with pytest.raises(ValueError, match=match):
+        _mapa_session_model()(torch.randn(shape))
+
+
+def test_mapa_raw_normalization_rejects_a_spectrogram(mapa_model):
+    with pytest.raises(ValueError, match="normalization='session'"):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_A), 20, 32))
+
+
+def test_mapa_metadata_cache_owns_its_snapshot(mapa_model):
+    indices = MAPA.sensor_indices(MAPA_SUBJECT_A)
+    first = mapa_model._token_layout(indices, mapa_model.n_frames)
+    indices[0, 2] = 3
+    changed = mapa_model._token_layout(indices, mapa_model.n_frames)
+    assert changed is not first
+    assert (changed.token_region == 3).any()
+
+
+# The authors' Hub repository, pinned to the commit whose mapa_vits384.pt is
+# byte-identical to their GitHub release v0.1.0.
+MAPA_HUB_REPO = "bentang18/MAPA"
+MAPA_HUB_REVISION = "988efbf31a7d1f38533b848c993a719d6f900b1f"
+MAPA_CHECKPOINT_SHA256 = (
+    "2d236089a2f1a3cc2827e3f150c4a2ba14c51bbfaf0ce0888f84b92a6eb25a7a"
+)
+
+
+def _mapa_reference_windows():
+    """Two 1 s windows at 2048 Hz of four amplitude-modulated multi-tone channels."""
+    t = torch.arange(2048, dtype=torch.float64) / 2048
+    freqs = torch.tensor([3.0, 11.0, 23.0, 47.0, 95.0, 140.0], dtype=torch.float64)
+    rates = 0.75 * torch.arange(1, 7, dtype=torch.float64)
+    windows = []
+    for sample in range(2):
+        channels = []
+        for channel in range(4):
+            phase = 0.7 * channel + 1.3 * sample
+            carrier = torch.sin(2 * torch.pi * freqs[:, None] * t + phase)
+            envelope = 1 + 0.8 * torch.sin(2 * torch.pi * rates[:, None] * t + phase)
+            channels.append((carrier * envelope).sum(0))
+        windows.append(torch.stack(channels))
+    return torch.stack(windows).float()
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_mapa_released_checkpoint_reproduces_the_reference_features():
+    """The released mapa_vits384 loads and gives the authors' features.
+
+    The expected values were computed with the authors' code (bentang18/MAPA at
+    bf2b49e) on the same windows: its STFT and robust z-score fitted on each
+    window (the default ``normalization="window"``; the authors fit it on the
+    whole session), then ``MapaEncoder.from_checkpoint`` and the mean over every
+    token of the four normed deep-supervision taps, which is what
+    ``return_features`` pools. CI does not pass ``--run-network`` to the unit
+    tests; run it with ``pytest -k mapa_released --run-network``.
+    """
+    hub = pytest.importorskip("huggingface_hub")
+    mne_data_dir = mne.get_config("MNE_DATA") or str(Path.home() / "mne_data")
+    try:
+        path = hub.hf_hub_download(
+            MAPA_HUB_REPO,
+            "mapa_vits384.pt",
+            revision=MAPA_HUB_REVISION,
+            cache_dir=str(Path(mne_data_dir) / "mapa_pretrained"),
+        )
+    except (URLError, OSError) as err:
+        pytest.skip(f"Could not download the MAPA checkpoint: {err}")
+    assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == (
+        MAPA_CHECKPOINT_SHA256
+    )
+
+    model = MAPA(
+        n_outputs=2,
+        n_chans=4,
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=["LA1", "LA2", "LA4", "LB1"],
+        regions=[
+            "ctx-lh-superiortemporal",
+            "ctx-lh-superiortemporal",
+            "Left-Hippocampus",
+            None,
+        ],
+    ).eval()
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    missing, unexpected = model.load_state_dict(checkpoint["model"], strict=False)
+    assert sorted(missing) == ["final_layer.bias", "final_layer.weight"]
+    assert unexpected == []
+
+    with torch.no_grad():
+        features = model(_mapa_reference_windows(), return_features=True)["features"]
+    # The first four dimensions of each of the four taps (blocks 3, 6, 9, 12).
+    expected = torch.tensor(
+        [
+            [-0.097404, -0.035431, -0.036317, -0.00045]
+            + [0.000488, -0.010021, -0.031613, -0.012514]
+            + [-0.000287, 0.000164, 0.001316, 0.00072]
+            + [0.009574, -0.119245, -0.004626, 0.019742],
+            [-0.108159, 0.016018, -0.037283, -0.000448]
+            + [0.000275, -0.013464, -0.029668, -0.011087]
+            + [-0.000288, 0.000152, 0.001267, 0.000396]
+            + [-0.000122, -0.127825, -0.006181, 0.038055],
+        ]
+    )
+    taps = features.unflatten(1, (4, -1))[..., :4].flatten(1)
+    torch.testing.assert_close(taps, expected, rtol=0, atol=1e-4)
+    torch.testing.assert_close(
+        features.norm(dim=1), torch.tensor([3.91526, 3.92401]), rtol=1e-4, atol=0
+    )
