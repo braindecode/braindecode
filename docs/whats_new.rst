@@ -28,6 +28,12 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.EEGCLIP`, a dual encoder that aligns EEG
+  windows and text descriptions with a symmetric contrastive objective. It
+  provides EEG/text embedding, similarity-logit, and zero-shot classification
+  interfaces while allowing an optional text encoder to be supplied by the
+  user (:gh:`999` by `lindicaphxag-tech`_).
+
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
   control and a replicability check), run by a dedicated CI job
@@ -1949,3 +1955,4 @@ Authors
 .. _Li Qing: https://github.com/qinxwew
 .. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
+.. _lindicaphxag-tech: https://github.com/lindicaphxag-tech

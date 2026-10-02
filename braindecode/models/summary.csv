@@ -12,6 +12,7 @@ CTNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",26900,"CTNet(n_
 Deep4Net,General,Prediction,250,"n_chans, n_outputs, n_times",282879,"Deep4Net(n_chans=22, n_outputs=4, n_times=1000)","Convolution",EEG
 DeepSleepNet,Sleep Staging,Prediction,256,"n_chans, n_outputs",24744837,"DeepSleepNet(n_chans=1, n_outputs=5, n_times=7680, sfreq=256)","Convolution,Recurrent",EEG
 EEGConformer,General,Prediction,250,"n_chans, n_outputs, n_times",789572,"EEGConformer(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
+EEGCLIP,General,"Embedding, Prediction",250,"n_chans, n_outputs, n_times",1120555,"EEGCLIP(n_chans=21, n_outputs=64, n_times=1000)","Foundation Model,Convolution",EEG
 EEGPT,General,Prediction,256,"n_chans, n_outputs, n_times",25477635,"EEGPT(n_chans=58, n_outputs=4, n_times=1024)","Foundation Model,Attention/Transformer",EEG
 EEGInceptionERP,"ERP, SSVEP",Prediction,128,"n_chans, n_outputs",14926,"EEGInceptionERP(n_chans=8, n_outputs=2, n_times=128, sfreq=128)","Convolution",EEG
 EEGInceptionMI,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",558028,"EEGInceptionMI(n_chans=22, n_outputs=4, n_times=1000, n_convs=5, n_filters=12)","Convolution",EEG
