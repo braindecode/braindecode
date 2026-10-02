@@ -69,6 +69,25 @@ def test_eeg_clip_masked_mean_pooling_ignores_padding():
     torch.testing.assert_close(actual, expected)
 
 
+def test_eeg_clip_projection_matches_published_architecture():
+    model = _make_model()
+    for head in (model.text_projection, model.final_layer):
+        assert sum(isinstance(module, nn.Linear) for module in head) == 3
+        assert sum(isinstance(module, nn.BatchNorm1d) for module in head) == 2
+        assert sum(isinstance(module, nn.ReLU) for module in head) == 2
+        assert sum(isinstance(module, nn.Dropout) for module in head) == 2
+        assert head[-1].out_features == model.n_outputs
+
+
+def test_eeg_clip_projection_depth_is_configurable():
+    model = _make_model(projection_layers=2)
+    assert sum(isinstance(module, nn.Linear) for module in model.text_projection) == 2
+    assert sum(isinstance(module, nn.Linear) for module in model.final_layer) == 2
+
+    with pytest.raises(ValueError, match="projection_layers"):
+        _make_model(projection_layers=0)
+
+
 def test_eeg_clip_contrastive_loss_is_differentiable():
     model = _make_model()
     X = torch.randn(4, 3, 20)
@@ -123,7 +142,10 @@ def test_eeg_clip_reset_head_updates_both_projection_dimensions():
 
 def test_eeg_clip_reset_head_preserves_mixed_projection_training_modes():
     model = _make_model(drop_prob=0.5).eval()
-    model.text_projection[2].train()  # Keep text-side MC dropout enabled.
+    text_dropout = next(
+        module for module in model.text_projection.modules() if isinstance(module, nn.Dropout)
+    )
+    text_dropout.train()  # Keep text-side MC dropout enabled.
     text_modes = [module.training for module in model.text_projection.modules()]
     eeg_modes = [module.training for module in model.final_layer.modules()]
 
