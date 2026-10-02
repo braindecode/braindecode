@@ -381,6 +381,10 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
             (self.text_projection, text_projection),
             (self.final_layer, final_layer),
         ):
+            # Head replacement must not silently move a fine-tuned model back
+            # to CPU/float32. Match the existing projection's device and dtype,
+            # as other Braindecode reset_head implementations do.
+            new_head.to(next(old_head.parameters()))
             for old_module, new_module in zip(old_head.modules(), new_head.modules()):
                 new_module.training = old_module.training
         self.text_projection = text_projection
