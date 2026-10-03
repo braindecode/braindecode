@@ -31,7 +31,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
 
     The model is trained with paired batches using :meth:`forward_paired` and
     :meth:`contrastive_loss`. Its ordinary ``forward(X)`` intentionally
-    returns only normalized EEG embeddings so the model preserves Braindecode's
+    returns only projected EEG embeddings so the model preserves Braindecode's
     standard Tensor-valued inference contract (including skorch and TorchScript).
     Candidate text embeddings can be passed to :meth:`compute_logits` for
     zero-shot classification.
@@ -245,7 +245,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
         return nn.Sequential(*layers)
 
     def encode_eeg(self, X):
-        """Encode EEG windows as unit-normalized shared-space vectors.
+        """Encode EEG windows as shared-space projection vectors.
 
         Temporal encoder outputs are projected at each prediction step before
         temporal pooling, matching the released EEG-CLIP implementation. This
@@ -266,8 +266,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
             )
             projected = self.final_layer(temporal_features)
             projected = projected.reshape(batch_size, n_predictions, self.n_outputs)
-            projected = projected.mean(dim=1)
-            return F.normalize(projected, dim=-1)
+            return projected.mean(dim=1)
         if features.ndim != 2:
             raise ValueError(
                 "eeg_encoder output must have shape (batch, features) or "
@@ -278,7 +277,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
                 f"EEG encoder returned {features.shape[1]} features; "
                 f"eeg_embedding_dim={self.eeg_embedding_dim} was configured."
             )
-        return F.normalize(self.final_layer(features), dim=-1)
+        return self.final_layer(features)
 
     @staticmethod
     def _get_text_features(outputs):
@@ -301,7 +300,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
         )
 
     def encode_text(self, text_inputs, attention_mask=None, **text_kwargs):
-        """Encode text tokens or features as unit-normalized vectors."""
+        """Encode text tokens or features as shared-space projection vectors."""
         if isinstance(self.text_encoder, nn.Identity):
             outputs = text_inputs
         else:
@@ -333,7 +332,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
                 f"Text encoder returned {features.shape[1]} features; "
                 f"text_embedding_dim={expected_dim} was configured."
             )
-        return F.normalize(self.text_projection(features), dim=-1)
+        return self.text_projection(features)
 
     def compute_logits(self, eeg_embeds, text_embeds):
         """Return EEG-to-text and text-to-EEG similarity logits."""
@@ -341,8 +340,10 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
             raise ValueError("EEG and text embeddings must both be two-dimensional.")
         if eeg_embeds.shape[1] != text_embeds.shape[1]:
             raise ValueError("EEG and text embeddings must have the same dimension.")
-        eeg_embeds = F.normalize(eeg_embeds, dim=-1)
-        text_embeds = F.normalize(text_embeds, dim=-1)
+        # Match the released EEG-CLIP objective: projection vectors are fed
+        # directly to the scaled dot-product contrastive logits. Normalizing here
+        # would change both the training objective and the published zero-shot
+        # geometry.
         scale = self.logit_scale.clamp(max=math.log(100)).exp()
         logits_per_eeg = scale * eeg_embeds @ text_embeds.T
         return logits_per_eeg, logits_per_eeg.T
@@ -361,7 +362,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
         ) / 2
 
     def forward(self, X):
-        """Return normalized EEG embeddings.
+        """Return projected EEG embeddings.
 
         Keeping the standard forward path Tensor-valued makes EEGCLIP compatible
         with Braindecode's generic inference, skorch, export, and TorchScript
