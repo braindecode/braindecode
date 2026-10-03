@@ -37,8 +37,9 @@ def _tensor_leaves(value):
 
 
 def _build_case(model_name, required_params, signal_params):
-    signal = _get_signal_params(signal_params, required_params)
-    model = all_models_dict[model_name](**signal).eval()
+    signal = _get_signal_params(signal_params)
+    model_kwargs = _get_signal_params(signal_params, required_params)
+    model = all_models_dict[model_name](**model_kwargs).eval()
     x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
     return model, x
 
