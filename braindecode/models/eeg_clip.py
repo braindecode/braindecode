@@ -29,9 +29,10 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
     vectors or token sequences. This keeps text-model dependencies optional and
     lets users provide a clinical language model or precomputed text embeddings.
 
-    The model is trained with paired batches using :meth:`contrastive_loss`.
-    Its ordinary ``forward(X)`` returns normalized EEG embeddings, while
-    ``forward(X, text_inputs=...)`` also returns the paired similarity logits.
+    The model is trained with paired batches using :meth:`forward_paired` and
+    :meth:`contrastive_loss`. Its ordinary ``forward(X)`` intentionally
+    returns only normalized EEG embeddings so the model preserves Braindecode's
+    standard Tensor-valued inference contract (including skorch and TorchScript).
     Candidate text embeddings can be passed to :meth:`compute_logits` for
     zero-shot classification.
 
@@ -106,9 +107,9 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
             text_embedding_dim=text_encoder.config.hidden_size,
         )
         tokens = tokenizer(reports, padding=True, return_tensors="pt")
-        output = model(
+        output = model.forward_paired(
             eeg_batch,
-            text_inputs=tokens["input_ids"],
+            tokens["input_ids"],
             attention_mask=tokens["attention_mask"],
         )
         loss = model.contrastive_loss(
@@ -359,11 +360,20 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
             + F.cross_entropy(logits_per_text, labels)
         ) / 2
 
-    def forward(self, X, text_inputs=None, attention_mask=None, **text_kwargs):
-        """Return EEG embeddings or paired EEG/text embeddings and logits."""
+    def forward(self, X):
+        """Return normalized EEG embeddings.
+
+        Keeping the standard forward path Tensor-valued makes EEGCLIP compatible
+        with Braindecode's generic inference, skorch, export, and TorchScript
+        integrations. Use :meth:`forward_paired` for multimodal training.
+        """
+        return self.encode_eeg(X)
+
+    def forward_paired(
+        self, X, text_inputs, attention_mask=None, **text_kwargs
+    ):
+        """Return paired EEG/text embeddings and bidirectional similarity logits."""
         eeg_embeds = self.encode_eeg(X)
-        if text_inputs is None:
-            return eeg_embeds
         text_embeds = self.encode_text(
             text_inputs, attention_mask=attention_mask, **text_kwargs
         )
