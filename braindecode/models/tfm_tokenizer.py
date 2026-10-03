@@ -123,6 +123,8 @@ class _EMAVectorQuantizer(nn.Module):
 class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
     r"""Time-Frequency Motif (TFM) tokenizer for single-channel EEG motifs.
 
+    :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
+
     The model follows Pradeepkumar et al., *Tokenizing Single-Channel EEG with
     Time-Frequency Motif Learning* (ICLR 2026). It embeds each EEG channel
     independently through parallel frequency and temporal paths, combines the
@@ -177,14 +179,14 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
     >>> import torch
     >>> from braindecode.models import TFMTokenizer
     >>> model = TFMTokenizer(sfreq=200, codebook_size=256)
-    >>> out = model(torch.randn(2, 8, 1000))
+    >>> out = model.tokenize(torch.randn(2, 8, 1000))
     >>> out.token_ids.shape
     torch.Size([2, 8, 9])
     >>> x = torch.randn(2, 8, 1000)
     >>> spec = model.compute_spectrogram(x)
     >>> mask_a, mask_b = model.make_complementary_masks(spec)
-    >>> out_a = model(x, spectrogram_mask=mask_a)
-    >>> out_b = model(x, spectrogram_mask=mask_b)
+    >>> out_a = model.tokenize(x, spectrogram_mask=mask_a)
+    >>> out_b = model.tokenize(x, spectrogram_mask=mask_b)
     >>> loss = (out_a.reconstruction - spec).square().mean() + out_a.quantization_loss
 
     """
@@ -344,20 +346,6 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             "stft_window", torch.hann_window(self.window_size), persistent=False
         )
 
-    def _compute_spectrogram(self, x: torch.Tensor) -> torch.Tensor:
-        batch_size, n_chans, n_times = x.shape
-        flattened = x.reshape(batch_size * n_chans, n_times)
-        window = self.stft_window.to(device=x.device, dtype=x.dtype)
-        return torch.stft(
-            flattened,
-            n_fft=self.window_size,
-            hop_length=self.window_size // 2,
-            win_length=self.window_size,
-            window=window,
-            center=False,
-            return_complex=True,
-        ).abs()[:, : self.n_freqs]
-
     def compute_spectrogram(self, x: torch.Tensor) -> torch.Tensor:
         """Compute the reference STFT magnitude representation.
 
@@ -382,11 +370,21 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
                 f"Input must contain at least one second ({self.window_size} samples), "
                 f"got {x.shape[-1]} samples."
             )
-        batch_size, n_chans, _ = x.shape
-        spectrogram = self._compute_spectrogram(x)
+        batch_size, n_chans, n_times = x.shape
+        flattened = x.reshape(batch_size * n_chans, n_times)
+        window = self.stft_window.to(device=x.device, dtype=x.dtype)
+        spectrogram = torch.stft(
+            flattened,
+            n_fft=self.window_size,
+            hop_length=self.window_size // 2,
+            win_length=self.window_size,
+            window=window,
+            center=False,
+            return_complex=True,
+        ).abs()[:, : self.n_freqs]
         return spectrogram.reshape(batch_size, n_chans, self.n_freqs, -1)
 
-    def _encode(self, x: torch.Tensor, spectrogram: torch.Tensor) -> torch.Tensor:
+    def encode(self, x: torch.Tensor, spectrogram: torch.Tensor) -> torch.Tensor:
         batch_size, n_chans, _ = x.shape
         flattened = x.reshape(batch_size * n_chans, -1)
         n_frames = spectrogram.shape[-1]
@@ -476,7 +474,7 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         keep = keep.expand_as(spectrogram)
         return keep, ~keep
 
-    def forward(
+    def tokenize(
         self, x: torch.Tensor, spectrogram_mask: torch.Tensor | None = None
     ) -> TFMTokenizerOutput:
         """Encode EEG windows and reconstruct their unmasked magnitude spectra.
@@ -539,7 +537,7 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
                 )
             ).reshape(batch_size * n_chans, self.n_freqs, -1)
 
-        embeddings = self._encode(x, input_spectrogram)
+        embeddings = self.encode(x, input_spectrogram)
         codebook_vectors, token_ids = self.quantizer(embeddings)
         quantized = embeddings + (codebook_vectors - embeddings).detach()
         codebook_loss = F.mse_loss(codebook_vectors, embeddings.detach())
@@ -561,3 +559,15 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             quantization_loss,
             target_spectrogram,
         )
+
+    def forward(
+        self, x: torch.Tensor, spectrogram_mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Return the reconstructed magnitude spectrogram.
+
+        The structured self-supervised training outputs are available from
+        :meth:`tokenize`. Keeping the default forward path tensor-valued
+        preserves Braindecode's common model integration contract.
+        """
+        return self.tokenize(x, spectrogram_mask=spectrogram_mask).reconstruction
+
