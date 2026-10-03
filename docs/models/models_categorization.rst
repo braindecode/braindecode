@@ -183,7 +183,7 @@ categories can be found in the respective sections below.
 - In contrast, several methods employ **attention/transformer** modules
   (:bdg-info:`Attention/Transformer`) to capture longer-range dependencies efficiently,
   e.g., :class:`EEGConformer`, :class:`CTNet`, :class:`ATCNet`,
-  :class:`AttentionBaseNet`, and :class:`EEGPT`
+  :class:`AttentionBaseNet`, :class:`TMSANet`, and :class:`EEGPT`
   (:cite:label:`song2022eeg,zhao2024ctnet,altaheri2022atcnet`).
 - **SPD / Riemannian** (:bdg-dark:`SPD`) methods operate on covariance (or connectivity)
   matrices as points on the SPD manifold, combining layers such as BiMap, ReEig, and
