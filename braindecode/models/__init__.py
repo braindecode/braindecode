@@ -69,6 +69,7 @@ from .syncnet import SyncNet
 from .tcformer import TCFormer
 from .tcn import BDTCN, TCN
 from .tidnet import TIDNet
+from .tmsanet import TMSANet
 from .tsinception import TSception
 from .usleep import USleep
 from .util import (
@@ -163,6 +164,7 @@ __all__ = [
     "TCN",
     "TIDNet",
     "TSception",
+    "TMSANet",
     "USleep",
     "ZUNA",
     "build_model_config",
