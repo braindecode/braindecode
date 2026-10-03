@@ -119,6 +119,12 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.models.ShallowFBCSPNet` with
+  ``split_first_layer=False``, which attempted to initialize and remap
+  checkpoint keys through the split-only ``conv_time_spat`` module after the
+  CombinedConv refactor. The unsplit path now initializes and loads its direct
+  temporal convolution as before (by `lindicaphxag-tech`_).
+
 - :meth:`braindecode.EEGClassifier.predict_trials` and
   :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
   ``ValueError`` on trials of different lengths; they return a list with one
@@ -1949,3 +1955,5 @@ Authors
 .. _Li Qing: https://github.com/qinxwew
 .. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
+
+.. _lindicaphxag-tech: https://github.com/lindicaphxag-tech
