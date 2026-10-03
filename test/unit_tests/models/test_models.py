@@ -196,6 +196,23 @@ def test_deep4net(input_sizes):
     check_forward_pass(model, input_sizes)
 
 
+def test_deep4net_stride_before_pool_dense_geometry():
+    model = Deep4Net(
+        n_chans=21,
+        n_outputs=2,
+        n_times=1000,
+        final_conv_length=2,
+        stride_before_pool=True,
+    )
+
+    assert model.conv_time_spat.conv_spat.stride == (3, 1)
+
+    model.to_dense_prediction_model()
+
+    assert model.conv_time_spat.conv_spat.stride == (1, 1)
+    assert model.get_output_shape()[2] == 319
+
+
 def test_deep4net_load_state_dict(input_sizes):
     model = Deep4Net(
         input_sizes["n_channels"],
