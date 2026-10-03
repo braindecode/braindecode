@@ -340,10 +340,14 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
             raise ValueError("EEG and text embeddings must both be two-dimensional.")
         if eeg_embeds.shape[1] != text_embeds.shape[1]:
             raise ValueError("EEG and text embeddings must have the same dimension.")
-        # Match the released EEG-CLIP objective: projection vectors are fed
-        # directly to the scaled dot-product contrastive logits. Normalizing here
-        # would change both the training objective and the published zero-shot
-        # geometry.
+        # Match the released EEG-CLIP geometry: projection vectors are fed
+        # directly to the scaled dot-product logits. The released training and
+        # zero-shot paths do not L2-normalize these vectors.
+        #
+        # Keep the scale in log-space and exponentiate it here so it stays
+        # positive and has the usual inverse-temperature interpretation. The
+        # reference repository initializes the parameter in log-space as well,
+        # but its current ClipLoss multiplies by that raw log value.
         scale = self.logit_scale.clamp(max=math.log(100)).exp()
         logits_per_eeg = scale * eeg_embeds @ text_embeds.T
         return logits_per_eeg, logits_per_eeg.T
