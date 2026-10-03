@@ -83,6 +83,8 @@ class _EMAVectorQuantizer(nn.Module):
 
         self.embedding = nn.Embedding(codebook_size, embed_dim)
         nn.init.uniform_(self.embedding.weight, -1 / codebook_size, 1 / codebook_size)
+        # The codebook is an EMA state variable, not an optimizer-owned parameter.
+        self.embedding.weight.requires_grad_(False)
         self.register_buffer("cluster_size", torch.zeros(codebook_size))
         self.register_buffer("ema_weight", self.embedding.weight.detach().clone())
 
