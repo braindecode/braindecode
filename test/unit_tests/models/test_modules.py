@@ -271,6 +271,23 @@ def test_combined_conv(bias_time, bias_spat, in_chans, n_filters_time, n_filters
     assert (diff.abs().median() / sequential_out.abs().median()) < 1e-5
 
 
+def test_combined_conv_preserves_spatial_stride():
+    data = torch.rand([2, 1, 40, 3])
+    conv = CombinedConv(
+        in_chans=3,
+        n_filters_time=4,
+        n_filters_spat=5,
+        filter_time_length=5,
+        stride=(3, 1),
+    )
+
+    combined_out = conv(data)
+    sequential_out = conv.conv_spat(conv.conv_time(data))
+
+    assert conv.conv_spat.stride == (3, 1)
+    torch.testing.assert_close(combined_out, sequential_out, atol=1e-5, rtol=1e-5)
+
+
 @pytest.mark.parametrize(
     "hidden_features", [None, (10, 10), (50, 50, 50), [10, 10, 10]]
 )
