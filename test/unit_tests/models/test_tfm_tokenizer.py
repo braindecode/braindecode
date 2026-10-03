@@ -96,12 +96,10 @@ def test_tfm_tokenizer_ema_does_not_inflate_unseen_codebook_entries():
 
     # EMA centroids should move for selected codes, but never-selected codes
     # must stay available for future batches instead of being divided by eps.
-    torch.testing.assert_close(
-        model.quantizer.embedding.weight.detach()[~used],
-        before[~used],
-    )
-    assert torch.isfinite(model.quantizer.embedding.weight).all()
-    assert model.quantizer.embedding.weight.detach()[~used].norm(dim=1).max() < 0.01
+    after = model.quantizer.embedding.weight.detach()
+    torch.testing.assert_close(after[~used], before[~used])
+    assert torch.isfinite(after).all()
+    assert not torch.equal(after[used], before[used])
 
 
 def test_tfm_tokenizer_reference_defaults_match_released_2x2x8_variant():
