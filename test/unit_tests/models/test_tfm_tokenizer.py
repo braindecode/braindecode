@@ -130,6 +130,7 @@ def test_tfm_tokenizer_reconstruction_backpropagates_to_both_paths():
     assert model.frequency_patch_embedding[0].weight.grad is not None
     assert model.temporal_patch_embedding[0].weight.grad is not None
     assert model.quantizer.embedding.weight.grad is None
+    assert model.quantizer.embedding.weight.requires_grad is False
     assert torch.isfinite(model.frequency_patch_embedding[0].weight.grad).all()
     assert torch.isfinite(model.temporal_patch_embedding[0].weight.grad).all()
 
