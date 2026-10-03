@@ -142,7 +142,9 @@ class CombinedConv(nn.Module):
     bias_time: bool
         Whether to use bias in the temporal conv
     bias_spat: bool
-        Whether to use bias in the spatial conv
+        Whether to use bias in the spatial conv.
+    stride : int | tuple[int, int]
+        Stride applied by the spatial convolution. Default is 1.
 
     Examples
     --------
@@ -164,6 +166,7 @@ class CombinedConv(nn.Module):
         filter_time_length=25,
         bias_time=True,
         bias_spat=True,
+        stride=1,
     ):
         super().__init__()
         self.bias_time = bias_time
@@ -172,7 +175,11 @@ class CombinedConv(nn.Module):
             1, n_filters_time, (filter_time_length, 1), bias=bias_time, stride=1
         )
         self.conv_spat = nn.Conv2d(
-            n_filters_time, n_filters_spat, (1, in_chans), bias=bias_spat, stride=1
+            n_filters_time,
+            n_filters_spat,
+            (1, in_chans),
+            bias=bias_spat,
+            stride=stride,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -210,7 +217,12 @@ class CombinedConv(nn.Module):
 
         bias = calculated_bias
 
-        return F.conv2d(x, weight=combined_weight, bias=bias, stride=(1, 1))
+        return F.conv2d(
+            x,
+            weight=combined_weight,
+            bias=bias,
+            stride=self.conv_spat.stride,
+        )
 
 
 class CausalConv1d(nn.Conv1d):
