@@ -44,13 +44,24 @@ def _make_model(**kwargs):
     )
 
 
+def test_eeg_clip_standard_forward_is_tensor_valued():
+    model = _make_model().eval()
+    X = torch.randn(3, 3, 20)
+
+    output = model(X)
+
+    assert isinstance(output, torch.Tensor)
+    assert output.shape == (3, 4)
+    torch.testing.assert_close(output.norm(dim=-1), torch.ones(3))
+
+
 def test_eeg_clip_encodes_paired_batches_and_returns_symmetric_logits():
     model = _make_model()
     X = torch.randn(5, 3, 20)
     input_ids = torch.randint(0, 16, (5, 6))
     attention_mask = torch.ones_like(input_ids)
 
-    output = model(X, text_inputs=input_ids, attention_mask=attention_mask)
+    output = model.forward_paired(X, input_ids, attention_mask=attention_mask)
 
     assert output["eeg_embeds"].shape == (5, 4)
     assert output["text_embeds"].shape == (5, 4)
@@ -130,7 +141,7 @@ def test_eeg_clip_contrastive_loss_is_differentiable():
     model = _make_model()
     X = torch.randn(4, 3, 20)
     input_ids = torch.randint(0, 16, (4, 6))
-    output = model(X, text_inputs=input_ids)
+    output = model.forward_paired(X, input_ids)
 
     loss = model.contrastive_loss(output["eeg_embeds"], output["text_embeds"])
     loss.backward()
@@ -192,7 +203,7 @@ def test_eeg_clip_reset_head_updates_both_projection_dimensions():
     )
     model.reset_head(6)
 
-    output = model(torch.randn(2, 3, 1000), text_inputs=torch.randn(2, 8))
+    output = model.forward_paired(torch.randn(2, 3, 1000), torch.randn(2, 8))
     assert model.n_outputs == 6
     assert model.get_config()["n_outputs"] == 6
     assert output["eeg_embeds"].shape == (2, 6)
@@ -230,9 +241,9 @@ def test_eeg_clip_reset_head_preserves_projection_device_and_dtype():
     assert next(model.text_projection.parameters()).device == text_device
     assert next(model.final_layer.parameters()).device == eeg_device
 
-    output = model(
+    output = model.forward_paired(
         torch.randn(3, 3, 20, dtype=torch.float64),
-        text_inputs=torch.randint(0, 16, (3, 6)),
+        torch.randint(0, 16, (3, 6)),
     )
     assert output["eeg_embeds"].dtype == torch.float64
     assert output["text_embeds"].dtype == torch.float64
