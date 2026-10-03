@@ -92,9 +92,17 @@ def test_registered_model_runtime_contract(
 
     # A first forward may legitimately materialize lazy parameters. Once warm,
     # however, eval-mode inference must not mutate persistent model state.
+    # Reuse the permutation probe below as the second forward so the gate stays
+    # cheap even for large foundation models.
     state_before = _clone_state(model)
+
+    # Reordering independent samples must only reorder the corresponding
+    # outputs. This catches accidental batch-axis mixing that ordinary shape
+    # checks and single-sample tests cannot see.
+    permutation = torch.tensor([1, 0], device=x.device)
     with torch.no_grad():
-        repeated = model(x)
+        permuted = model(x.index_select(0, permutation))
+
     state_after = model.state_dict()
     assert state_before.keys() == state_after.keys()
     for name, expected_state in state_before.items():
@@ -107,17 +115,6 @@ def test_registered_model_runtime_contract(
             ),
         )
 
-    repeated_batched = _batched_tensor_leaves(repeated, x.shape[0])
-    assert len(repeated_batched) == len(batched)
-    for expected_leaf, actual_leaf in zip(batched, repeated_batched):
-        torch.testing.assert_close(actual_leaf, expected_leaf)
-
-    # Reordering independent samples must only reorder the corresponding
-    # outputs. This catches accidental batch-axis mixing that ordinary shape
-    # checks and single-sample tests cannot see.
-    permutation = torch.tensor([1, 0], device=x.device)
-    with torch.no_grad():
-        permuted = model(x.index_select(0, permutation))
     permuted_batched = _batched_tensor_leaves(permuted, x.shape[0])
     assert len(permuted_batched) == len(batched)
     for expected_leaf, actual_leaf in zip(batched, permuted_batched):
