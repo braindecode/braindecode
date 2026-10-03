@@ -23,7 +23,7 @@ def test_tfm_tokenizer_shapes_and_codebook_range():
     model = _small_tfm_tokenizer().eval()
     x = torch.randn(2, 3, 500)
 
-    output = model(x)
+    output = model.tokenize(x)
 
     assert output.reconstruction.shape == (2, 3, 100, 4)
     assert output.token_ids.shape == (2, 3, 4)
@@ -43,7 +43,7 @@ def test_tfm_tokenizer_uses_complementary_masks_and_keeps_full_target():
 
     assert mask_a.shape == mask_b.shape == target.shape
     assert torch.equal(mask_a ^ mask_b, torch.ones_like(mask_a))
-    output = model(x, spectrogram_mask=mask_a)
+    output = model.tokenize(x, spectrogram_mask=mask_a)
     torch.testing.assert_close(output.target_spectrogram, target)
 
 
@@ -51,7 +51,7 @@ def test_tfm_tokenizer_reconstruction_backpropagates_to_both_paths():
     model = _small_tfm_tokenizer()
     x = torch.randn(2, 2, 500)
 
-    output = model(x)
+    output = model.tokenize(x)
     (output.reconstruction.square().mean() + output.quantization_loss).backward()
 
     assert model.frequency_patch_embedding[0].weight.grad is not None
@@ -99,3 +99,14 @@ def test_tfm_tokenizer_rejects_sequences_longer_than_max_seq_len():
     model = _small_tfm_tokenizer(max_seq_len=32)
     with pytest.raises(ValueError, match="exceeding max_seq_len=32"):
         model(torch.randn(1, 1, 200 + 32 * 100))
+
+
+
+def test_tfm_tokenizer_default_forward_is_tensor_valued():
+    model = _small_tfm_tokenizer().eval()
+    x = torch.randn(2, 3, 500)
+
+    output = model(x)
+
+    assert isinstance(output, torch.Tensor)
+    assert output.shape == (2, 3, 100, 4)
