@@ -570,6 +570,10 @@ def test_model_torch_script(model):
 
     not_working_models = [
         "BIOT",
+        # TFMTokenizer uses the same third-party LinearAttentionTransformer as
+        # BIOT. Its forward signature accepts variadic **kwargs, which
+        # torch.jit.script cannot compile. torch.compile remains covered below.
+        "TFMTokenizer",
         "Labram",
         "EEGPT",
         "SSTDPN",
