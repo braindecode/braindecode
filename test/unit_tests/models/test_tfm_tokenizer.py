@@ -82,6 +82,28 @@ def test_tfm_tokenizer_ema_codebook_updates_only_in_training_mode():
     torch.testing.assert_close(model.quantizer.ema_weight, frozen_ema)
 
 
+def test_tfm_tokenizer_ema_does_not_inflate_unseen_codebook_entries():
+    torch.manual_seed(7)
+    model = _small_tfm_tokenizer(codebook_size=64)
+    before = model.quantizer.embedding.weight.detach().clone()
+
+    output = model.tokenize(torch.randn(1, 1, 200))
+
+    used = torch.zeros(model.codebook_size, dtype=torch.bool)
+    used[output.token_ids.unique()] = True
+    assert used.any()
+    assert (~used).any()
+
+    # EMA centroids should move for selected codes, but never-selected codes
+    # must stay available for future batches instead of being divided by eps.
+    torch.testing.assert_close(
+        model.quantizer.embedding.weight.detach()[~used],
+        before[~used],
+    )
+    assert torch.isfinite(model.quantizer.embedding.weight).all()
+    assert model.quantizer.embedding.weight.detach()[~used].norm(dim=1).max() < 0.01
+
+
 def test_tfm_tokenizer_reference_defaults_match_released_2x2x8_variant():
     model = TFMTokenizer(
         n_chans=3,
