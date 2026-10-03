@@ -270,9 +270,7 @@ class _TMSAAttention(nn.Module):
         global_attn = self.dropout(F.softmax(global_scores, dim=-1))
 
         attended = torch.matmul(local_attn, v) + torch.matmul(global_attn, v)
-        attended = attended.transpose(1, 2).contiguous().view(
-            batch, -1, self.inner_dim
-        )
+        attended = attended.transpose(1, 2).contiguous().view(batch, -1, self.inner_dim)
         return self.w_o(attended)
 
 
