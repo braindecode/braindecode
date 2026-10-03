@@ -262,9 +262,6 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
                 "embed_dim must be divisible by twice the number of frequency "
                 f"groups ({2 * self.n_freq_groups}), got {embed_dim}."
             )
-        if self.n_freqs // freq_patch_size > max_seq_len:
-            raise ValueError("max_seq_len is too short for the frequency encoder.")
-
         self.frequency_patch_embedding = nn.Sequential(
             nn.Conv1d(
                 1, embed_dim, kernel_size=freq_patch_size, stride=freq_patch_size
