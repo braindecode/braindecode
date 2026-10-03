@@ -548,11 +548,12 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         embeddings = self.encode(x, input_spectrogram)
         codebook_vectors, token_ids = self.quantizer(embeddings)
         quantized = embeddings + (codebook_vectors - embeddings).detach()
-        # Match the released training path: vec_quantizer_loss receives the
-        # straight-through quantized tensor. Both terms optimize the encoder
-        # representation; the dictionary itself remains EMA-only.
-        codebook_loss = F.mse_loss(quantized, embeddings.detach())
-        commitment_loss = F.mse_loss(quantized.detach(), embeddings)
+        # Keep the reference objective value while preserving EMA-only codebook
+        # semantics. Computing the codebook term from the straight-through tensor
+        # would send an encoder gradient opposite to the commitment term; at the
+        # reference commitment_cost=1.0 the two gradients cancel exactly.
+        codebook_loss = F.mse_loss(codebook_vectors, embeddings.detach())
+        commitment_loss = F.mse_loss(codebook_vectors.detach(), embeddings)
         quantization_loss = codebook_loss + self.commitment_cost * commitment_loss
         reconstruction = self.final_layer(self.decoder(quantized)).transpose(1, 2)
         n_frames = reconstruction.shape[-1]
