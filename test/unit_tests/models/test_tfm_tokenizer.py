@@ -137,6 +137,20 @@ def test_tfm_tokenizer_vq_loss_matches_reference_ema_plus_gradient_update():
         ({"drop_prob": 1.0}, "drop_prob must be in \\[0, 1\\)"),
     ],
 )
+def test_tfm_tokenizer_optimizer_step_updates_post_ema_codebook():
+    model = _small_tfm_tokenizer()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    x = torch.randn(2, 2, 500)
+
+    output = model.tokenize(x)
+    post_ema = model.quantizer.embedding.weight.detach().clone()
+    optimizer.zero_grad()
+    output.quantization_loss.backward()
+    optimizer.step()
+
+    assert model.quantizer.embedding.weight.grad is not None
+    assert not torch.equal(model.quantizer.embedding.weight.detach(), post_ema)
+
 def test_tfm_tokenizer_rejects_invalid_architecture(kwargs, message):
     with pytest.raises(ValueError, match=message):
         _small_tfm_tokenizer(**kwargs)
