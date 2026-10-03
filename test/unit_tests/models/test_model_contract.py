@@ -43,6 +43,20 @@ def _build_case(model_name, required_params, signal_params):
     return model, x
 
 
+def _clone_state(model):
+    """Clone persistent tensor state after any lazy first-forward setup."""
+    return {name: value.detach().clone() for name, value in model.state_dict().items()}
+
+
+def _batched_tensor_leaves(value, batch_size):
+    """Return tensor leaves whose leading dimension represents the batch."""
+    return [
+        leaf
+        for leaf in _tensor_leaves(value)
+        if leaf.ndim > 0 and leaf.shape[0] == batch_size
+    ]
+
+
 @pytest.mark.parametrize(
     "model_name,required_params,signal_params",
     models_mandatory_parameters,
@@ -64,7 +78,7 @@ def test_registered_model_runtime_contract(
     leaves = list(_tensor_leaves(output))
     assert leaves, f"{model_name} returned no tensor output"
 
-    batched = [leaf for leaf in leaves if leaf.ndim > 0 and leaf.shape[0] == x.shape[0]]
+    batched = _batched_tensor_leaves(output, x.shape[0])
     assert batched, (
         f"{model_name} returned no tensor leaf preserving batch dimension "
         f"{x.shape[0]}"
@@ -75,6 +89,46 @@ def test_registered_model_runtime_contract(
             assert torch.isfinite(leaf).all(), (
                 f"{model_name} emitted non-finite values in eval-mode forward"
             )
+
+    # A first forward may legitimately materialize lazy parameters. Once warm,
+    # however, eval-mode inference must not mutate persistent model state.
+    state_before = _clone_state(model)
+    with torch.no_grad():
+        repeated = model(x)
+    state_after = model.state_dict()
+    assert state_before.keys() == state_after.keys()
+    for name, expected_state in state_before.items():
+        torch.testing.assert_close(
+            state_after[name],
+            expected_state,
+            msg=lambda msg: (
+                f"{model_name} mutated persistent state {name!r} during "
+                f"eval-mode forward: {msg}"
+            ),
+        )
+
+    repeated_batched = _batched_tensor_leaves(repeated, x.shape[0])
+    assert len(repeated_batched) == len(batched)
+    for expected_leaf, actual_leaf in zip(batched, repeated_batched):
+        torch.testing.assert_close(actual_leaf, expected_leaf)
+
+    # Reordering independent samples must only reorder the corresponding
+    # outputs. This catches accidental batch-axis mixing that ordinary shape
+    # checks and single-sample tests cannot see.
+    permutation = torch.tensor([1, 0], device=x.device)
+    with torch.no_grad():
+        permuted = model(x.index_select(0, permutation))
+    permuted_batched = _batched_tensor_leaves(permuted, x.shape[0])
+    assert len(permuted_batched) == len(batched)
+    for expected_leaf, actual_leaf in zip(batched, permuted_batched):
+        torch.testing.assert_close(
+            actual_leaf,
+            expected_leaf.index_select(0, permutation),
+            msg=lambda msg: (
+                f"{model_name} is not batch-permutation equivariant in eval "
+                f"mode: {msg}"
+            ),
+        )
 
 
 @pytest.mark.parametrize(
