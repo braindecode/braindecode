@@ -249,12 +249,13 @@ def test_deep4net_stride_before_pool_dense_geometry():
         final_conv_length=2,
         stride_before_pool=True,
     ).eval()
-    model.to_dense_prediction_model()
-
-    out = model(torch.randn(2, 21, 1000))
 
     assert model.conv_time_spat.conv_spat.stride == (3, 1)
     assert model.pool.stride == (1, 1)
+
+    model.to_dense_prediction_model()
+    out = model(torch.randn(2, 21, 1000))
+
     assert out.shape == (2, 128, 319)
 
 
