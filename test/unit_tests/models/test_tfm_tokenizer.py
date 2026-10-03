@@ -107,10 +107,21 @@ def test_tfm_tokenizer_reconstruction_backpropagates_to_both_paths():
 
     assert model.frequency_patch_embedding[0].weight.grad is not None
     assert model.temporal_patch_embedding[0].weight.grad is not None
-    assert model.quantizer.embedding.weight.grad is not None
+    assert model.quantizer.embedding.weight.grad is None
     assert torch.isfinite(model.frequency_patch_embedding[0].weight.grad).all()
     assert torch.isfinite(model.temporal_patch_embedding[0].weight.grad).all()
-    assert torch.isfinite(model.quantizer.embedding.weight.grad).all()
+
+
+def test_tfm_tokenizer_vq_loss_keeps_codebook_ema_only():
+    model = _small_tfm_tokenizer()
+    x = torch.randn(2, 2, 500)
+
+    output = model.tokenize(x)
+    output.quantization_loss.backward()
+
+    assert model.frequency_patch_embedding[0].weight.grad is not None
+    assert model.temporal_patch_embedding[0].weight.grad is not None
+    assert model.quantizer.embedding.weight.grad is None
 
 
 @pytest.mark.parametrize(
