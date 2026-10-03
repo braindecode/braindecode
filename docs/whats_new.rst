@@ -28,6 +28,11 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add registry-wide model contract tests that automatically cover every registered
+  model, checking eval-mode input/state purity, finite batched outputs,
+  batch-permutation equivariance, and ``get_config`` + ``state_dict``
+  reconstruction (:gh:`1208` by `lindicaphxag-tech`_).
+
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
   control and a replicability check), run by a dedicated CI job
@@ -1949,3 +1954,5 @@ Authors
 .. _Li Qing: https://github.com/qinxwew
 .. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
+
+.. _lindicaphxag-tech: https://github.com/lindicaphxag-tech
