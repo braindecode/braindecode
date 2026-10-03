@@ -49,7 +49,6 @@ def test_tfm_tokenizer_uses_complementary_masks_and_keeps_full_target():
     torch.testing.assert_close(output.target_spectrogram, target)
 
 
-
 def test_tfm_tokenizer_masks_are_reference_shared_and_complementary():
     model = _small_tfm_tokenizer().eval()
     target = model.compute_spectrogram(torch.randn(3, 2, 500))
@@ -98,6 +97,7 @@ def test_tfm_tokenizer_reference_defaults_match_released_2x2x8_variant():
     assert model.freq_patch_size == 5
     assert model.commitment_cost == 1.0
 
+
 def test_tfm_tokenizer_reconstruction_backpropagates_to_both_paths():
     model = _small_tfm_tokenizer()
     x = torch.randn(2, 2, 500)
@@ -107,13 +107,12 @@ def test_tfm_tokenizer_reconstruction_backpropagates_to_both_paths():
 
     assert model.frequency_patch_embedding[0].weight.grad is not None
     assert model.temporal_patch_embedding[0].weight.grad is not None
-    assert model.quantizer.embedding.weight.grad is not None
-    assert torch.isfinite(model.quantizer.embedding.weight.grad).all()
+    assert model.quantizer.embedding.weight.grad is None
     assert torch.isfinite(model.frequency_patch_embedding[0].weight.grad).all()
     assert torch.isfinite(model.temporal_patch_embedding[0].weight.grad).all()
 
 
-def test_tfm_tokenizer_vq_loss_matches_reference_ema_plus_gradient_update():
+def test_tfm_tokenizer_vq_loss_matches_reference_ema_only_codebook_update():
     model = _small_tfm_tokenizer()
     x = torch.randn(2, 2, 500)
 
@@ -122,8 +121,22 @@ def test_tfm_tokenizer_vq_loss_matches_reference_ema_plus_gradient_update():
 
     assert model.frequency_patch_embedding[0].weight.grad is not None
     assert model.temporal_patch_embedding[0].weight.grad is not None
-    assert model.quantizer.embedding.weight.grad is not None
-    assert torch.isfinite(model.quantizer.embedding.weight.grad).all()
+    assert model.quantizer.embedding.weight.grad is None
+
+
+def test_tfm_tokenizer_optimizer_step_does_not_update_post_ema_codebook():
+    model = _small_tfm_tokenizer()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    x = torch.randn(2, 2, 500)
+
+    output = model.tokenize(x)
+    post_ema = model.quantizer.embedding.weight.detach().clone()
+    optimizer.zero_grad()
+    output.quantization_loss.backward()
+    optimizer.step()
+
+    assert model.quantizer.embedding.weight.grad is None
+    torch.testing.assert_close(model.quantizer.embedding.weight.detach(), post_ema)
 
 
 @pytest.mark.parametrize(
@@ -137,20 +150,6 @@ def test_tfm_tokenizer_vq_loss_matches_reference_ema_plus_gradient_update():
         ({"drop_prob": 1.0}, "drop_prob must be in \\[0, 1\\)"),
     ],
 )
-def test_tfm_tokenizer_optimizer_step_updates_post_ema_codebook():
-    model = _small_tfm_tokenizer()
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
-    x = torch.randn(2, 2, 500)
-
-    output = model.tokenize(x)
-    post_ema = model.quantizer.embedding.weight.detach().clone()
-    optimizer.zero_grad()
-    output.quantization_loss.backward()
-    optimizer.step()
-
-    assert model.quantizer.embedding.weight.grad is not None
-    assert not torch.equal(model.quantizer.embedding.weight.detach(), post_ema)
-
 def test_tfm_tokenizer_rejects_invalid_architecture(kwargs, message):
     with pytest.raises(ValueError, match=message):
         _small_tfm_tokenizer(**kwargs)
@@ -177,8 +176,6 @@ def test_tfm_tokenizer_rejects_sequences_longer_than_max_seq_len():
     model = _small_tfm_tokenizer(max_seq_len=32)
     with pytest.raises(ValueError, match="exceeding max_seq_len=32"):
         model(torch.randn(1, 1, 200 + 32 * 100))
-
-
 
 
 def test_tfm_tokenizer_config_round_trip_is_json_serializable():
