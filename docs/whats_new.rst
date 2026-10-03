@@ -119,6 +119,9 @@ Requirements
 Bug fixes
 ==========
 
+- Preserve ``Deep4Net``'s first-block temporal stride when using the merged
+  ``CombinedConv`` path with ``stride_before_pool=True``; dense-prediction
+  outputs now retain the historical temporal geometry (:gh:`1205` by `lindicaphxag-tech`_).
 - :meth:`braindecode.EEGClassifier.predict_trials` and
   :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
   ``ValueError`` on trials of different lengths; they return a list with one
@@ -1949,3 +1952,5 @@ Authors
 .. _Li Qing: https://github.com/qinxwew
 .. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
+
+.. _lindicaphxag-tech: https://github.com/lindicaphxag-tech
