@@ -1,3 +1,5 @@
+import json
+
 import pytest
 import torch
 
@@ -149,6 +151,50 @@ def test_tfm_tokenizer_rejects_sequences_longer_than_max_seq_len():
     with pytest.raises(ValueError, match="exceeding max_seq_len=32"):
         model(torch.randn(1, 1, 200 + 32 * 100))
 
+
+
+
+def test_tfm_tokenizer_config_round_trip_is_json_serializable():
+    model = TFMTokenizer(
+        n_chans=3,
+        n_outputs=2,
+        n_times=1000,
+        sfreq=200,
+        codebook_size=256,
+        activation=torch.nn.ReLU,
+    )
+
+    config = model.get_config()
+    json.dumps(config)
+    restored = TFMTokenizer.from_config(config)
+
+    assert restored.n_chans == model.n_chans
+    assert restored.n_times == model.n_times
+    assert restored.sfreq == model.sfreq
+    assert restored.codebook_size == model.codebook_size
+    assert restored.activation is torch.nn.ReLU
+
+
+def test_tfm_tokenizer_state_dict_preserves_ema_codebook_state():
+    model = _small_tfm_tokenizer()
+    model.tokenize(torch.randn(2, 2, 500))
+
+    restored = _small_tfm_tokenizer()
+    restored.load_state_dict(model.state_dict())
+
+    torch.testing.assert_close(
+        restored.quantizer.embedding.weight,
+        model.quantizer.embedding.weight,
+    )
+    torch.testing.assert_close(
+        restored.quantizer.cluster_size,
+        model.quantizer.cluster_size,
+    )
+    torch.testing.assert_close(
+        restored.quantizer.ema_weight,
+        model.quantizer.ema_weight,
+    )
+    assert "stft_window" not in model.state_dict()
 
 
 def test_tfm_tokenizer_default_forward_is_tensor_valued():
