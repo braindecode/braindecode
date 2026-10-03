@@ -178,6 +178,16 @@ def test_tfm_tokenizer_rejects_sequences_longer_than_max_seq_len():
         model(torch.randn(1, 1, 200 + 32 * 100))
 
 
+def test_tfm_tokenizer_temporal_limit_is_independent_of_frequency_tokens():
+    # sfreq=200 and freq_patch_size=5 produce 20 frequency tokens, but the
+    # frequency encoder has its own sequence limit. A four-frame temporal input
+    # is therefore valid with max_seq_len=4.
+    model = _small_tfm_tokenizer(max_seq_len=4).eval()
+    output = model(torch.randn(1, 1, 500))
+
+    assert output.shape == (1, 1, 100, 4)
+
+
 def test_tfm_tokenizer_config_round_trip_is_json_serializable():
     model = TFMTokenizer(
         n_chans=3,
