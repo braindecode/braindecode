@@ -128,7 +128,7 @@ class _EMAVectorQuantizer(nn.Module):
                 # cluster counts, normalizing an unseen code by eps would inflate
                 # its vector by ~1 / eps and make it effectively unreachable.
                 occupied = self.cluster_size > 0
-                self.embedding.weight[occupied].copy_(normalized[occupied])
+                self.embedding.weight[occupied] = normalized[occupied]
 
         return quantized, indices.view(x.shape[0], x.shape[1])
 
