@@ -86,11 +86,11 @@ class _EMAVectorQuantizer(nn.Module):
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         flat_x = x.reshape(-1, self.embed_dim)
-        # Keep a differentiable snapshot of the lookup table for the released
-        # VQ objective. The reference training path combines EMA updates with
-        # the code-book loss gradient; clone() preserves that gradient while
-        # allowing the live table to be updated safely under no_grad below.
-        codebook = self.embedding.weight.clone()
+        # The released tokenizer updates the codebook through EMA only.
+        # Nearest-neighbor lookup therefore treats the embedding table as
+        # non-differentiable; encoder gradients flow through the straight-
+        # through estimator applied after quantization.
+        codebook = self.embedding.weight.detach()
         distances = (
             flat_x.square().sum(dim=1, keepdim=True)
             - 2 * flat_x @ codebook.T
@@ -543,8 +543,8 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         codebook_vectors, token_ids = self.quantizer(embeddings)
         quantized = embeddings + (codebook_vectors - embeddings).detach()
         # Match the released training path: vec_quantizer_loss receives the
-        # straight-through quantized tensor, so both terms optimize the encoder
-        # representation while the dictionary itself remains EMA-only.
+        # straight-through quantized tensor. Both terms optimize the encoder
+        # representation; the dictionary itself remains EMA-only.
         codebook_loss = F.mse_loss(quantized, embeddings.detach())
         commitment_loss = F.mse_loss(quantized.detach(), embeddings)
         quantization_loss = codebook_loss + self.commitment_cost * commitment_loss
