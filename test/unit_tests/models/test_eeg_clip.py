@@ -52,7 +52,7 @@ def test_eeg_clip_standard_forward_is_tensor_valued():
 
     assert isinstance(output, torch.Tensor)
     assert output.shape == (3, 4)
-    torch.testing.assert_close(output.norm(dim=-1), torch.ones(3))
+    torch.testing.assert_close(output, model.encode_eeg(X))
 
 
 def test_eeg_clip_encodes_paired_batches_and_returns_symmetric_logits():
@@ -67,8 +67,11 @@ def test_eeg_clip_encodes_paired_batches_and_returns_symmetric_logits():
     assert output["text_embeds"].shape == (5, 4)
     assert output["logits_per_eeg"].shape == (5, 5)
     torch.testing.assert_close(output["logits_per_text"], output["logits_per_eeg"].T)
-    torch.testing.assert_close(output["eeg_embeds"].norm(dim=-1), torch.ones(5))
-    torch.testing.assert_close(output["text_embeds"].norm(dim=-1), torch.ones(5))
+    scale = model.logit_scale.clamp(max=torch.tensor(100.0).log()).exp()
+    torch.testing.assert_close(
+        output["logits_per_eeg"],
+        scale * output["eeg_embeds"] @ output["text_embeds"].T,
+    )
 
 
 def test_eeg_clip_projects_temporal_predictions_before_pooling():
@@ -98,10 +101,13 @@ def test_eeg_clip_projects_temporal_predictions_before_pooling():
 
     X = torch.tensor([[[-1.0, 1.0], [0.0, 0.0]]])
     actual = model.encode_eeg(X)
+    temporal = X.transpose(1, 2).reshape(-1, 2)
+    expected = model.final_layer(temporal).reshape(1, 2, 2).mean(dim=1)
+    pool_first = model.final_layer(X.mean(dim=-1))
 
-    # Projecting each temporal prediction through ReLU before averaging keeps
-    # the positive second prediction. Averaging first would produce zero.
-    torch.testing.assert_close(actual, torch.tensor([[1.0, 0.0]]))
+    # The released model projects each dense Deep4 prediction before averaging.
+    torch.testing.assert_close(actual, expected)
+    assert not torch.allclose(actual, pool_first)
 
 
 def test_eeg_clip_masked_mean_pooling_ignores_padding():
@@ -114,7 +120,7 @@ def test_eeg_clip_masked_mean_pooling_ignores_padding():
     expected_features = torch.stack(
         [encoded[0, :2].mean(dim=0), encoded[1, :1].mean(dim=0)]
     )
-    expected = nn.functional.normalize(model.text_projection(expected_features), dim=-1)
+    expected = model.text_projection(expected_features)
     torch.testing.assert_close(actual, expected)
 
 
@@ -135,6 +141,21 @@ def test_eeg_clip_projection_depth_is_configurable():
 
     with pytest.raises(ValueError, match="projection_layers"):
         _make_model(projection_layers=0)
+
+
+def test_eeg_clip_logits_match_released_scaled_dot_product():
+    model = _make_model().eval()
+    with torch.no_grad():
+        model.logit_scale.fill_(torch.log(torch.tensor(2.0)))
+
+    eeg = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    text = torch.tensor([[5.0, 6.0], [7.0, 8.0]])
+
+    logits_eeg, logits_text = model.compute_logits(eeg, text)
+    expected = 2.0 * eeg @ text.T
+
+    torch.testing.assert_close(logits_eeg, expected)
+    torch.testing.assert_close(logits_text, expected.T)
 
 
 def test_eeg_clip_contrastive_loss_is_differentiable():
@@ -189,7 +210,6 @@ def test_eeg_clip_default_encoder_uses_dense_temporal_predictions():
     assert features.shape[:2] == (2, 8)
     assert features.shape[-1] > 1
     assert embeds.shape == (2, 4)
-    torch.testing.assert_close(embeds.norm(dim=-1), torch.ones(2))
 
 
 def test_eeg_clip_reset_head_updates_both_projection_dimensions():
