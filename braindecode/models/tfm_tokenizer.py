@@ -54,7 +54,9 @@ class TFMTokenizerOutput(NamedTuple):
         L2-normalized pre-quantization embeddings with the same shape as
         ``quantized``.
     quantization_loss : torch.Tensor
-        Commitment loss for the exponential-moving-average codebook.
+        Vector-quantization objective combining codebook-distance and
+        commitment terms. Gradients train the encoder through the
+        straight-through path; the codebook itself is updated by EMA only.
     target_spectrogram : torch.Tensor
         Unmasked target magnitude spectra with shape ``(batch, channels,
         n_freqs, n_frames)``.
