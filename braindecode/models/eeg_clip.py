@@ -247,37 +247,11 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
     def encode_eeg(self, X):
         """Encode EEG windows as shared-space projection vectors.
 
-        Temporal encoder outputs are projected at each prediction step before
-        temporal pooling, matching the released EEG-CLIP implementation. This
-        ordering matters because the projection head contains nonlinear layers.
+        The standard forward path owns the EEG-only computation so it remains
+        self-contained for Braindecode's plain-module/TorchScript integration.
+        This helper is the eager multimodal API alias.
         """
-        features = self.eeg_encoder(X)
-        if not isinstance(features, torch.Tensor):
-            raise TypeError("eeg_encoder must return a torch.Tensor.")
-        if features.ndim == 3:
-            if features.shape[1] != self.eeg_embedding_dim:
-                raise ValueError(
-                    f"EEG encoder returned {features.shape[1]} features; "
-                    f"eeg_embedding_dim={self.eeg_embedding_dim} was configured."
-                )
-            batch_size, _, n_predictions = features.shape
-            temporal_features = features.transpose(1, 2).reshape(
-                batch_size * n_predictions, self.eeg_embedding_dim
-            )
-            projected = self.final_layer(temporal_features)
-            projected = projected.reshape(batch_size, n_predictions, self.n_outputs)
-            return projected.mean(dim=1)
-        if features.ndim != 2:
-            raise ValueError(
-                "eeg_encoder output must have shape (batch, features) or "
-                "(batch, features, time)."
-            )
-        if features.shape[1] != self.eeg_embedding_dim:
-            raise ValueError(
-                f"EEG encoder returned {features.shape[1]} features; "
-                f"eeg_embedding_dim={self.eeg_embedding_dim} was configured."
-            )
-        return self.final_layer(features)
+        return self.forward(X)
 
     @staticmethod
     def _get_text_features(outputs):
@@ -368,11 +342,39 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
     def forward(self, X):
         """Return projected EEG embeddings.
 
-        Keeping the standard forward path Tensor-valued makes EEGCLIP compatible
-        with Braindecode's generic inference, skorch, export, and TorchScript
-        integrations. Use :meth:`forward_paired` for multimodal training.
+        This Tensor-only path is self-contained because Braindecode's generic
+        integration converts models to a plain ``nn.Module`` before scripting.
+        Use :meth:`forward_paired` for multimodal training.
         """
-        return self.encode_eeg(X)
+        features = self.eeg_encoder(X)
+        if features.ndim == 3:
+            if features.shape[1] != self.eeg_embedding_dim:
+                raise ValueError(
+                    "EEG encoder feature dimension does not match "
+                    "eeg_embedding_dim."
+                )
+            batch_size = features.shape[0]
+            n_predictions = features.shape[2]
+            temporal_features = features.transpose(1, 2).reshape(
+                batch_size * n_predictions, self.eeg_embedding_dim
+            )
+            projected = self.final_layer(temporal_features)
+            projected = projected.reshape(
+                batch_size, n_predictions, self.n_outputs
+            )
+            return projected.mean(dim=1)
+
+        if features.ndim != 2:
+            raise ValueError(
+                "eeg_encoder output must have shape (batch, features) or "
+                "(batch, features, time)."
+            )
+        if features.shape[1] != self.eeg_embedding_dim:
+            raise ValueError(
+                "EEG encoder feature dimension does not match "
+                "eeg_embedding_dim."
+            )
+        return self.final_layer(features)
 
     def forward_paired(
         self, X, text_inputs, attention_mask=None, **text_kwargs
