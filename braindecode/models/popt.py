@@ -74,6 +74,20 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
        token and the classification head is task-specific (the checkpoint
        carries no trained fine-tuning head).
 
+    .. warning::
+       **Evaluate with a time-blocked split.** The paper's downstream results
+       use a random 80/10/10 split over word-aligned 5 s windows. Words are a
+       fraction of a second apart, so almost every test window overlaps a
+       training window, and labels that drift slowly in time leak into
+       training. Re-running the paper setup (7 subjects, 3 seeds) with
+       contiguous blocks of time, and dropping training windows that overlap
+       the test set, pretrained PopT goes from 0.79 to 0.51 ROC-AUC on Pitch
+       (chance) and from 0.89 to 0.64 on Volume. Onset (0.86 to 0.84) and
+       Speech (0.90 to 0.84) hold up, and pretraining still beats training
+       from scratch on Onset, Speech and Volume. The model and weights are
+       not affected; the issue is only in the evaluation. When fine-tuning,
+       split by blocks of time.
+
     .. versionadded:: 1.8.2
 
     Parameters
