@@ -59,11 +59,20 @@ class TMSANet(EEGModuleMixin, nn.Module, license="mit"):
         Activation used after the spatial convolution and in the feed-forward
         block.
 
+    Notes
+    -----
+    This implementation follows the released source code at
+    ``Whit3Zhao/TMSA-Net@c60882db35eeff860a5014df7b0f54dda6601c65``.
+    With all 45 reference state entries mapped, the default BCI-IV-2a
+    configuration matches the released implementation exactly for logits and
+    input gradients on a deterministic CPU parity assay.
+
     References
     ----------
     .. [tmsanet] Zhao, Q., Zhu, W. TMSA-Net: A novel attention mechanism
         for improved motor imagery EEG signal processing. Biomedical Signal
         Processing and Control 102, 107189 (2025).
+        https://doi.org/10.1016/j.bspc.2024.107189
     """
 
     def __init__(
