@@ -117,9 +117,16 @@ class _EMAVectorQuantizer(nn.Module):
                     / (total + self.codebook_size * self.eps)
                     * total
                 )
-                self.embedding.weight.copy_(
-                    self.ema_weight / smoothed_size.clamp_min(self.eps).unsqueeze(1)
+                normalized = (
+                    self.ema_weight
+                    / smoothed_size.clamp_min(self.eps).unsqueeze(1)
                 )
+                # Keep never-selected codes at their initialized locations until
+                # they receive their first assignment. With zero-initialized
+                # cluster counts, normalizing an unseen code by eps would inflate
+                # its vector by ~1 / eps and make it effectively unreachable.
+                occupied = self.cluster_size > 0
+                self.embedding.weight[occupied].copy_(normalized[occupied])
 
         return quantized, indices.view(x.shape[0], x.shape[1])
 
