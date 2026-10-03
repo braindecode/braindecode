@@ -86,10 +86,11 @@ class _EMAVectorQuantizer(nn.Module):
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         flat_x = x.reshape(-1, self.embed_dim)
-        # The released tokenizer updates the codebook exclusively through EMA.
-        # Detach lookup weights so the VQ loss cannot introduce an optimizer
-        # gradient into the embedding table.
-        codebook = self.embedding.weight.detach()
+        # Keep a differentiable snapshot of the lookup table for the released
+        # VQ objective. The reference training path combines EMA updates with
+        # the code-book loss gradient; clone() preserves that gradient while
+        # allowing the live table to be updated safely under no_grad below.
+        codebook = self.embedding.weight.clone()
         distances = (
             flat_x.square().sum(dim=1, keepdim=True)
             - 2 * flat_x @ codebook.T
