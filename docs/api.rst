@@ -182,6 +182,7 @@ interface for all EEG models and can derive variable names when needed.
      PBT
      REVE
      SCCNet
+     SeizureTransformer
      ShallowFBCSPNet
      SignalJEPA
      SignalJEPA_Contextual

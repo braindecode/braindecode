@@ -50,6 +50,7 @@ from .neuropose import NeuroPose
 from .patchedtransformer import PBT
 from .reve import REVE
 from .sccnet import SCCNet
+from .seizure_transformer import SeizureTransformer
 from .sensingdynamics import SensingDynamics
 from .shallow_fbcsp import ShallowFBCSPNet
 from .signal_jepa import (
@@ -146,6 +147,7 @@ __all__ = [
     "PBT",
     "REVE",
     "SCCNet",
+    "SeizureTransformer",
     "ShallowFBCSPNet",
     "SignalJEPA",
     "SignalJEPA_Contextual",

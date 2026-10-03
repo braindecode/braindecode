@@ -61,6 +61,11 @@ Enhancements
   space-time transformer encoder with rotary temporal embeddings
   (:gh:`1173` by `Julien Gadonneix`_).
 
+- Add :class:`braindecode.models.SeizureTransformer`, a dense sample-level EEG
+  seizure detector with a temporal U-Net and Transformer context, adapted from
+  the MIT-licensed reference implementation and compatible with its released
+  state-dict parameter names (:gh:`1199`).
+
 - Add :class:`braindecode.models.Brant`, a braindecode-native port of the Brant
   foundation model for intracranial (sEEG/iEEG) signals (Zhang et al., NeurIPS
   2023), including in-model spectral features and the shared configuration,

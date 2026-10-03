@@ -527,6 +527,11 @@ models_mandatory_parameters: list[
     ("BrainModule", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("Brant", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     (
+        "SeizureTransformer",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {"n_chans": 4, "n_times": 256, "sfreq": 256.0},
+    ),
+    (
         "BENDR",
         ["n_chans", "n_outputs", "n_times"],
         # Callable: BENDR now requires chs_info to match BENDR_CHANNEL_ORDER
@@ -620,6 +625,8 @@ non_classification_models = [
     # forward returns (batch, num_latents, n_outputs) dense per-token logits,
     # not class logits.
     "DANCE",
+    # Returns sample-level seizure logits (batch, n_outputs, n_times).
+    "SeizureTransformer",
 ]
 
 ################################################################
