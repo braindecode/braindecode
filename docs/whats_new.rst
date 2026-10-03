@@ -28,6 +28,12 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.TFMTokenizer`, a time-frequency motif tokenizer
+  that learns a discrete vocabulary from single-channel EEG and returns both token
+  IDs and reconstructed spectrograms for self-supervised pretraining. The implementation
+  follows Pradeepkumar et al. (ICLR 2026); it does not claim parity with the paper's
+  pretrained checkpoints or benchmark results.
+
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
   control and a replicability check), run by a dedicated CI job
