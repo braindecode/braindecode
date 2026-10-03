@@ -119,6 +119,13 @@ Requirements
 Bug fixes
 ==========
 
+- Restore :class:`braindecode.models.Deep4Net`'s historical
+  ``stride_before_pool=True`` geometry when the first temporal and spatial
+  convolutions are merged in :class:`braindecode.modules.CombinedConv`.
+  The merged layer now preserves the spatial-convolution stride, including
+  dense-prediction conversion, while its default unit-stride behavior is
+  unchanged. By `lindicaphxag-tech`_.
+
 - :meth:`braindecode.EEGClassifier.predict_trials` and
   :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
   ``ValueError`` on trials of different lengths; they return a list with one
@@ -1949,3 +1956,5 @@ Authors
 .. _Li Qing: https://github.com/qinxwew
 .. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
+
+.. _lindicaphxag-tech: https://github.com/lindicaphxag-tech
