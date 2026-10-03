@@ -162,10 +162,18 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         self.stride_before_pool = stride_before_pool
 
         min_n_times = self._get_min_n_times()
-        if self.n_times < min_n_times:
-            scaling_factor = self.n_times / min_n_times
+        resolved_n_times = self._n_times
+        if (
+            resolved_n_times is None
+            and self._input_window_seconds is not None
+            and self._sfreq is not None
+        ):
+            resolved_n_times = round(self._input_window_seconds * self._sfreq)
+
+        if resolved_n_times is not None and resolved_n_times < min_n_times:
+            scaling_factor = resolved_n_times / min_n_times
             warn(
-                f"n_times ({self.n_times}) is smaller than the minimum required "
+                f"n_times ({resolved_n_times}) is smaller than the minimum required "
                 f"({min_n_times}) for the current model parameters configuration. "
                 "Adjusting parameters to ensure compatibility."
                 "Reducing the kernel, pooling, and stride sizes accordingly."
