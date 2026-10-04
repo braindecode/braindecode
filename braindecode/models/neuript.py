@@ -60,8 +60,7 @@ def amplitude_aware_mask(
     ranks = torch.argsort(x, dim=-1, stable=True)
     max_start = n_times - n_mask
     centers = (
-        torch.rand((*x.shape[:2], 1), device=x.device, generator=generator)
-        * n_times
+        torch.rand((*x.shape[:2], 1), device=x.device, generator=generator) * n_times
     ).long()
     starts = (centers - n_mask // 2).clamp(min=0, max=max_start)
     selected_ranks = torch.arange(n_times, device=x.device).view(1, 1, -1)
@@ -170,9 +169,7 @@ class _TSAStage(nn.Module):
         spatial_position: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         batch, n_times, n_chans, dim = x.shape
-        time_residual = (
-            x.permute(0, 2, 1, 3).reshape(batch * n_chans, n_times, dim)
-        )
+        time_residual = x.permute(0, 2, 1, 3).reshape(batch * n_chans, n_times, dim)
         time_input = x if time_position is None else x + time_position[None, :, None, :]
         time = (
             self.time_norm(time_input)
