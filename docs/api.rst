@@ -196,8 +196,8 @@ interface for all EEG models and can derive variable names when needed.
      SyncNet
      TCFormer
      TIDNet
-     TSception
      TMSANet
+     TSception
      USleep
      ZUNA
 

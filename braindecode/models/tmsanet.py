@@ -4,6 +4,7 @@
 #          Weina Zhu
 #          (braindecode adaptation)
 # License: MIT
+# Adapted from https://github.com/Whit3Zhao/TMSA-Net
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import FeedForwardBlock
 
 
 class TMSANet(EEGModuleMixin, nn.Module, license="mit"):
@@ -24,6 +26,8 @@ class TMSANet(EEGModuleMixin, nn.Module, license="mit"):
     TMSA-Net combines multi-scale temporal convolutions, a spatial
     convolution across EEG channels, and a custom local/global attention
     block for motor-imagery classification.
+
+    `License <https://github.com/Whit3Zhao/TMSA-Net/blob/main/LICENSE>`_.
 
     A notable property of the released attention implementation is that the
     per-head width is computed with floor division,
@@ -274,31 +278,6 @@ class _TMSAAttention(nn.Module):
         return self.w_o(attended)
 
 
-class _TMSAFeedForward(nn.Module):
-    """Reference two-layer feed-forward block."""
-
-    def __init__(
-        self,
-        embed_dim: int,
-        fc_ratio: int,
-        drop_prob: float,
-        activation: type[nn.Module],
-    ):
-        super().__init__()
-        self.fc1 = nn.Linear(embed_dim, embed_dim * fc_ratio)
-        self.activation = activation()
-        self.dropout1 = nn.Dropout(drop_prob)
-        self.fc2 = nn.Linear(embed_dim * fc_ratio, embed_dim)
-        self.dropout2 = nn.Dropout(drop_prob)
-
-    def forward(self, x: Tensor) -> Tensor:
-        x = self.fc1(x)
-        x = self.activation(x)
-        x = self.dropout1(x)
-        x = self.fc2(x)
-        return self.dropout2(x)
-
-
 class _TMSATransformerBlock(nn.Module):
     """Pre-norm TMSA attention and feed-forward residual block."""
 
@@ -321,11 +300,12 @@ class _TMSATransformerBlock(nn.Module):
             att_drop_prob=att_drop_prob,
         )
         self.norm2 = nn.LayerNorm(embed_dim)
-        self.feed_forward = _TMSAFeedForward(
-            embed_dim=embed_dim,
-            fc_ratio=fc_ratio,
-            drop_prob=fc_drop_prob,
+        self.feed_forward = FeedForwardBlock(
+            emb_size=embed_dim,
+            expansion=fc_ratio,
+            drop_p=fc_drop_prob,
             activation=activation,
+            output_drop_p=fc_drop_prob,
         )
 
     def forward(self, x: Tensor) -> Tensor:
