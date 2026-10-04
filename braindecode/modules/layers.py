@@ -110,8 +110,8 @@ class TimeDistributed(nn.Module):
             Shape (batch_size, seq_len, output_size).
         """
         b, s, c, t = x.shape
-        out = self.module(x.view(b * s, c, t))
-        return out.view(b, s, -1)
+        out = self.module(x.reshape(b * s, c, t))
+        return out.reshape(b, s, -1)
 
 
 class DropPath(nn.Module):
