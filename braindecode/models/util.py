@@ -620,6 +620,8 @@ models_mandatory_parameters: list[
 # for classification models.
 ################################################################
 non_classification_models = [
+    # Returns reconstructed patches and discrete codes, not class logits.
+    "NeuroRVQTokenizer",
     "SignalJEPA",
     "InterpolatedSignalJEPA",
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.

@@ -10,12 +10,12 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin, huggingface_hub
-from braindecode.models.neurorvq import (
+from braindecode.models._neurorvq_components import (
     NEURORVQ_CHANNELS,
     _Block,
     _MultiScaleTemporalConv,
 )
+from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin, huggingface_hub
 
 _PRETRAINED_REPO_ID = "ntinosbarmpas/NeuroRVQ"
 _PRETRAINED_REVISION = "d944b87f44ae0ba2923b2f10d0518f23f6803b76"
