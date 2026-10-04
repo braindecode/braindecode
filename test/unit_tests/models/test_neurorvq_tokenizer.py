@@ -5,6 +5,7 @@
 import pytest
 import torch
 
+import braindecode.models.neurorvq_tokenizer as neurorvq_tokenizer
 from braindecode.models import NeuroRVQTokenizer
 from braindecode.models.neurorvq_tokenizer import _EMAVectorQuantizer
 
@@ -64,6 +65,24 @@ def test_neurorvq_tokenizer_loads_a_local_state_dict(tmp_path):
     for name, value in model.state_dict().items():
         torch.testing.assert_close(loaded.state_dict()[name], value)
 
+def test_neurorvq_tokenizer_pretrained_loading_requires_channel_metadata():
+    model = NeuroRVQTokenizer(
+        n_chans=3,
+        n_times=400,
+        sfreq=200,
+        channel_names=None,
+        out_chans=4,
+        num_heads=4,
+        encoder_depth=1,
+        decoder_depth=1,
+        n_code=16,
+        code_dim=16,
+        num_quantizers=2,
+    )
+
+    with pytest.raises(ValueError, match="requires channel_names or chs_info"):
+        model.load_pretrained_weights("checkpoint-is-not-read-before-validation.pt")
+
 
 def test_neurorvq_tokenizer_initializes_cold_codebooks_once():
     model = _small_tokenizer().eval()
@@ -99,6 +118,38 @@ def test_ema_quantizer_matches_normalized_ema_update():
     assert indices.tolist() == [0, 1]
     torch.testing.assert_close(quantizer.embedding.weight, expected)
     torch.testing.assert_close(quantizer.cluster_size, torch.tensor([0.5, 0.5]))
+
+def test_ema_quantizer_syncs_training_statistics_across_distributed_ranks(
+    monkeypatch,
+):
+    quantizer = _EMAVectorQuantizer(
+        n_codes=2, code_dim=2, decay=0.5, kmeans_init=False
+    ).train()
+    with torch.no_grad():
+        quantizer.embedding.weight.copy_(torch.eye(2))
+        quantizer.embedding.initted.fill_(True)
+
+    calls = []
+    monkeypatch.setattr(neurorvq_tokenizer.distributed, "is_available", lambda: True)
+    monkeypatch.setattr(neurorvq_tokenizer.distributed, "is_initialized", lambda: True)
+
+    def fake_all_reduce(value):
+        calls.append(tuple(value.shape))
+        value.mul_(2)
+
+    monkeypatch.setattr(
+        neurorvq_tokenizer.distributed, "all_reduce", fake_all_reduce
+    )
+    vectors = torch.tensor([[[[0.8, -0.6]], [[0.6, 0.8]]]])
+
+    _, _, indices = quantizer(vectors)
+
+    expected = torch.tensor([[0.9, 0.3], [-0.3, 0.9]])
+    expected = torch.nn.functional.normalize(expected, dim=-1)
+    assert indices.tolist() == [0, 1]
+    assert calls == [(2,), (2, 2)]
+    torch.testing.assert_close(quantizer.cluster_size, torch.tensor([1.0, 1.0]))
+    torch.testing.assert_close(quantizer.embedding.weight, expected)
 
 
 @pytest.mark.parametrize(

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import torch
+import torch.distributed as distributed
 import torch.nn.functional as F
 from torch import Tensor, nn
 
@@ -116,9 +117,13 @@ class _EMAVectorQuantizer(nn.Module):
         if self.training:
             with torch.no_grad():
                 counts = encodings.sum(0)
+                if distributed.is_available() and distributed.is_initialized():
+                    distributed.all_reduce(counts)
                 self.cluster_size.mul_(self.decay).add_(counts, alpha=1 - self.decay)
                 safe_counts = counts.masked_fill(counts == 0, 1.0)
                 embed_sum = vectors.T @ encodings
+                if distributed.is_available() and distributed.is_initialized():
+                    distributed.all_reduce(embed_sum)
                 means = _l2norm((embed_sum / safe_counts.unsqueeze(0)).T)
                 means = torch.where(counts[:, None] == 0, self.embedding.weight, means)
                 self.embedding.weight.mul_(self.decay).add_(means, alpha=1 - self.decay)
@@ -459,6 +464,9 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                 "The derived embedding width must be divisible by num_heads."
             )
 
+        self._has_explicit_channel_mapping = (
+            channel_names is not None or self._chs_info is not None
+        )
         if channel_names is None and self._chs_info is not None:
             channel_names = [ch["ch_name"] for ch in self._chs_info]
         if channel_names is None:
@@ -659,7 +667,18 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         )
 
     def load_pretrained_weights(self, checkpoint_path: str | None = None):
-        """Load the released EEG tokenizer checkpoint from a local path or Hub."""
+        """Load the released EEG tokenizer checkpoint from a local path or Hub.
+
+        Released spatial embeddings are electrode-specific, so the model must
+        have been constructed with ``channel_names`` or ``chs_info``.
+        """
+        if not self._has_explicit_channel_mapping:
+            raise ValueError(
+                "Loading pretrained NeuroRVQ tokenizer weights requires "
+                "channel_names or chs_info so input electrodes map to the "
+                "released spatial embedding slots. The implicit first-N channel "
+                "fallback is only supported for randomly initialized training."
+            )
         if checkpoint_path is None:
             if not HAS_HF_HUB:
                 raise ImportError(
