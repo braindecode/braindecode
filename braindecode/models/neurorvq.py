@@ -292,6 +292,8 @@ class _MultiScaleTemporalConv(nn.Module):
 class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     r"""NeuroRVQ-EEG foundation model from Barmpas et al. [neurorvq]_.
 
+    :bdg-success:`Convolution` :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`
+
     The model combines four temporal convolution scales with a shared
     Transformer encoder and learned channel/time embeddings. The released EEG
     checkpoint contains a 6M-parameter masked-token foundation model; this

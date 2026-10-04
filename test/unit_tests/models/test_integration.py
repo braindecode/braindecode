@@ -592,6 +592,9 @@ def test_model_torch_script(model):
         # forward() returns Dict[str, Tensor | None] (features) or Tensor (logits);
         # torch.jit.script rejects this required polymorphic return type.
         "MIRepNet",
+        # forward() returns Dict[str, Tensor | None] (features) or Tensor
+        # (logits), so torch.jit.script rejects this polymorphic return type.
+        "NeuroRVQ",
         # wavelet encoder (conv1d + circular padding) + Dict/Tensor polymorphic
         # return; torch.jit.script rejects the polymorphic return type.
         "MVPFormer",
