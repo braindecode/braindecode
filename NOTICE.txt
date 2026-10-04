@@ -43,6 +43,7 @@ The following components are licensed under the MIT License:
 - `braindecode/models/tcformer.py`
 - `braindecode/models/ifnet.py`
 - `braindecode/models/mirepnet.py`
+- `braindecode/models/tfm_tokenizer.py`
 
 ### Apache-2.0 Licensed Files
 
