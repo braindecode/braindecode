@@ -274,18 +274,16 @@ class CausalConv1d(nn.Conv1d):
         )
 
     def forward(self, X):
-        out = F.conv1d(
+        X = F.pad(X, (self.padding[0], 0))
+        return F.conv1d(
             X,
             self.weight,
             self.bias,
             stride=self.stride,
-            padding=self.padding,
+            padding=0,
             dilation=self.dilation,
             groups=self.groups,
         )
-        if self.padding[0] == 0:
-            return out
-        return out[..., : -self.padding[0]]
 
 
 class DepthwiseConv2d(torch.nn.Conv2d):
