@@ -119,6 +119,12 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.models.ShallowFBCSPNet` with
+  ``split_first_layer=False``, which attempted to initialize and remap
+  checkpoint keys through the split-only ``conv_time_spat`` module after the
+  CombinedConv refactor. The unsplit path now initializes and loads its direct
+  temporal convolution as before (:gh:`1212` by `lindicaphxag-tech`_).
+
 - Fix :class:`braindecode.modules.CausalConv1d` to use explicit left-only causal padding. This prevents ``kernel_size=1`` from producing an empty time axis and keeps strided/dilated convolutions aligned with the causal reference instead of over-cropping downsampled outputs (:gh:`1216` by `lindicaphxag-tech`_).
 - :meth:`braindecode.EEGClassifier.predict_trials` and
   :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
