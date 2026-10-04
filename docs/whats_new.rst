@@ -119,6 +119,8 @@ Requirements
 Bug fixes
 ==========
 
+- Make :class:`braindecode.modules.TimeDistributed` accept non-contiguous sequence batches by reshaping rather than requiring view-compatible strides. By `lindicaphxag-tech`_.
+
 - :meth:`braindecode.EEGClassifier.predict_trials` and
   :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
   ``ValueError`` on trials of different lengths; they return a list with one
@@ -1949,3 +1951,5 @@ Authors
 .. _Li Qing: https://github.com/qinxwew
 .. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
+
+.. _lindicaphxag-tech: https://github.com/lindicaphxag-tech
