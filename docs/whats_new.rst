@@ -119,6 +119,7 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.modules.CausalConv1d` to use explicit left-only causal padding. This prevents ``kernel_size=1`` from producing an empty time axis and keeps strided/dilated convolutions aligned with the causal reference instead of over-cropping downsampled outputs (:gh:`1216` by `lindicaphxag-tech`_).
 - :meth:`braindecode.EEGClassifier.predict_trials` and
   :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
   ``ValueError`` on trials of different lengths; they return a list with one
@@ -1956,3 +1957,5 @@ Authors
 .. _Li Qing: https://github.com/qinxwew
 .. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
+
+.. _lindicaphxag-tech: https://github.com/lindicaphxag-tech
