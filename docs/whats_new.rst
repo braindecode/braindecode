@@ -28,7 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
-- Add :class:`braindecode.models.TMSANet`, the motor-imagery convolution/attention model from Zhao and Zhu (2025). The port preserves the released non-divisible multi-head attention geometry (the default ``embed_dim=19`` and four heads use a 16-dimensional Q/K/V bottleneck) and the summed local/global attention branches; a pinned reference assay maps all 45 model-state entries with identical logits and input gradients. See :gh:`1201`. By `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_.
+- Add :class:`braindecode.models.TMSANet`, the motor-imagery convolution/attention model from Zhao and Zhu (2025). The port preserves the released non-divisible multi-head attention geometry (the default ``embed_dim=19`` and four heads use a 16-dimensional Q/K/V bottleneck) and the summed local/global attention branches; a pinned reference assay maps all 45 model-state entries with identical logits and input gradients. See :gh:`1209`. By `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_.
 
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
