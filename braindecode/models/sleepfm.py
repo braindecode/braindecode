@@ -196,9 +196,7 @@ class _SleepFMSequenceMixin:
         return self.transformer_encoder(tokens, src_key_padding_mask=key_padding_mask)
 
 
-class SleepFM(
-    EEGModuleMixin, _SleepFMSequenceMixin, nn.Module, license="cc-by-nc-4.0"
-):
+class SleepFM(EEGModuleMixin, _SleepFMSequenceMixin, nn.Module, license="cc-by-nc-4.0"):
     r"""Sleep foundation model for multimodal polysomnography.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
