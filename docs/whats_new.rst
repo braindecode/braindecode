@@ -28,6 +28,9 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Generate a version-scoped ``llms.txt`` and selected Markdown documentation
+  entry points with source-commit attribution and critical-page coverage checks.
+
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
   control and a replicability check), run by a dedicated CI job
@@ -109,6 +112,9 @@ API and behavior changes
 
 Requirements
 ============
+
+- Add ``sphinx-markdown-builder==0.6.11`` and ``pytest<9.1`` to the docs extra
+  for version-scoped Markdown exports and their offline contract tests.
 
 - Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
   REVE and ZUNA now import PyTorch's RMSNorm layer directly, preserving their
