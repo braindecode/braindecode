@@ -1252,6 +1252,20 @@ def test_cbam_invalid_kernel_size():
         CBAM(in_channels=4, reduction_rate=2, kernel_size=4)
 
 
+def test_causalconv1d_kernel_size_one_preserves_length():
+    """Kernel size one has zero causal padding, so cropping must be a no-op."""
+    torch.manual_seed(0)
+    causal = CausalConv1d(2, 3, kernel_size=1)
+    reference = nn.Conv1d(2, 3, kernel_size=1, padding=0)
+    reference.load_state_dict(causal.state_dict())
+    x = torch.randn(4, 2, 17)
+
+    out = causal(x)
+
+    assert out.shape == (4, 3, 17)
+    torch.testing.assert_close(out, reference(x))
+
+
 def test_causalconv1d_disallows_padding():
     """Padding argument is managed internally by CausalConv1d."""
     with pytest.raises(ValueError):
