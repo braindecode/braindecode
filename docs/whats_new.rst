@@ -28,6 +28,9 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Generate a version-scoped ``llms.txt`` and selected Markdown documentation
+  entry points with source-commit attribution and critical-page coverage checks.
+
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
   control and a replicability check), run by a dedicated CI job
