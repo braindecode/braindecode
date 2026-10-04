@@ -121,8 +121,8 @@ class _ProgressiveMoE(nn.Module):
         selected_load = torch.zeros(self.n_experts, device=x.device, dtype=logits.dtype)
         for expert_id, expert in enumerate(self.experts):
             token_ids, topk_slots = torch.where(indices == expert_id)
-            if token_ids.numel() == 0:
-                continue
+            # Avoid a data-dependent Python branch so torch.export can capture
+            # the variable-size expert batches. Empty batches are valid here.
             expert_values = expert(flat[token_ids])
             expert_weights = weights[token_ids, topk_slots].unsqueeze(-1)
             flat_out.index_add_(0, token_ids, expert_values * expert_weights)
@@ -204,6 +204,9 @@ class _TSAStage(nn.Module):
 class NeurIPT(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
     """NeurIPT EEG foundation-model architecture for downstream classification.
 
+    :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
+    :bdg-warning:`Mixture-of-Experts` :bdg-dark-line:`Channel`
+
     This paper-based implementation includes 3D electrode positional encoding,
     hierarchical two-stage time/channel attention, progressive Top-k MoE
     feed-forward blocks, and intra/inter-lobe pooling (IILP). It does not ship
@@ -261,6 +264,9 @@ class NeurIPT(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         Fraction of routed experts selected per token.
     dropout : float, default=0.1
         Dropout probability in attention and SwiGLU blocks.
+    drop_prob : float | None, default=None
+        Optional Braindecode-compatible alias for ``dropout``. When provided,
+        it overrides ``dropout``.
     channel_positions : Tensor | sequence | None
         Optional ``(n_chans, 3)`` electrode coordinates. If omitted, channel
         coordinates are read from ``chs_info``; when unavailable, spatial
@@ -289,6 +295,7 @@ class NeurIPT(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         expert_hidden_dim: int = 128,
         top_k_fraction: float = 0.5,
         dropout: float = 0.1,
+        drop_prob: float | None = None,
         channel_positions: Tensor | Sequence[Sequence[float]] | None = None,
         lobe_groups: Sequence[Sequence[int]] | None = None,
         activation: type[nn.Module] = nn.GELU,
@@ -302,6 +309,10 @@ class NeurIPT(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             sfreq=sfreq,
         )
         del activation  # The published backbone uses SwiGLU, not GELU.
+        if drop_prob is not None:
+            dropout = drop_prob
+        if not 0.0 <= dropout <= 1.0:
+            raise ValueError("dropout must be in [0, 1].")
         if n_heads < 1 or d_model < 1 or d_model % n_heads:
             raise ValueError("d_model must be divisible by n_heads.")
         if n_layers < 1:

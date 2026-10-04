@@ -24,6 +24,7 @@ CATEGORIZATION_BADGES = {
     "FilterBank": ":bdg-primary:`Filterbank`",  # Handle both cases
     "Interpretability": ":bdg-warning:`Interpretability`",
     "Foundation Model": ":bdg-danger:`Foundation Model`",
+    "Mixture-of-Experts": ":bdg-warning:`Mixture-of-Experts`",
     "Channel": ":bdg-dark-line:`Channel`",
     "Graph Neural Network": ":bdg-light:`Graph Neural Network`",
 }
@@ -119,7 +120,10 @@ def test_badge_format_consistency():
             # Only check categorization badges (ignore other potential badges)
             if any(cat_name.lower() in badge.lower() for cat_name in [
                 "convolution", "recurrent", "attention", "transformer", "filterbank",
-                "interpretability", "foundation model", "channel"
+                "interpretability",
+                "foundation model",
+                "channel",
+                "mixture-of-experts",
             ]):
                 assert badge in valid_badges, (
                     f"{model_name} has invalid badge format: {badge}\n"

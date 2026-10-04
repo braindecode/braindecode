@@ -281,7 +281,7 @@ def test_model_integration_full(model_name, required_params, signal_params):
         optimizer__lr=LEARNING_RATE,
         batch_size=BATCH_SIZE,
         max_epochs=EPOCH,
-        classes=[0, 1],
+        classes=np.arange(np.max(y) + 1),
         train_split=ValidSplit(valid_split, random_state=seed),
         verbose=0,
     )
@@ -332,7 +332,7 @@ def test_model_integration_full_last_layer(model_name, required_params, signal_p
         optimizer__lr=LEARNING_RATE,
         batch_size=BATCH_SIZE,
         max_epochs=EPOCH,
-        classes=[0, 1],
+        classes=np.arange(np.max(y) + 1),
         train_split=ValidSplit(valid_split, random_state=seed),
         verbose=0,
     )

@@ -97,6 +97,16 @@ def test_neuript_requires_unmerged_first_layer():
         _small_model(merge_factors=(2, 1))
 
 
+def test_neuript_drop_prob_alias_overrides_dropout():
+    model = _small_model(dropout=0.1, drop_prob=0.3)
+
+    assert model.layers[0].time_attn.dropout == 0.3
+    assert model.layers[0].time_moe.shared.dropout.p == 0.3
+
+    with pytest.raises(ValueError, match="dropout must be in "):
+        _small_model(drop_prob=1.1)
+
+
 def test_tsa_attention_residuals_bypass_layer_norm():
     class ZeroAttention(nn.Module):
         def forward(self, query, key, value, need_weights=True):
