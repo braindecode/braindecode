@@ -125,6 +125,9 @@ Requirements
 Bug fixes
 ==========
 
+- Preserve ``Deep4Net``'s first-block temporal stride when using the merged
+  ``CombinedConv`` path with ``stride_before_pool=True``; dense-prediction
+  outputs now retain the historical temporal geometry (:gh:`1205` by `lindicaphxag-tech`_).
 - Fix :class:`braindecode.modules.CausalConv1d` to use explicit left-only causal padding. This prevents ``kernel_size=1`` from producing an empty time axis and keeps strided/dilated convolutions aligned with the causal reference instead of over-cropping downsampled outputs (:gh:`1216` by `lindicaphxag-tech`_).
 - :meth:`braindecode.EEGClassifier.predict_trials` and
   :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a

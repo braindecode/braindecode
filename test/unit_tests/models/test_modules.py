@@ -248,7 +248,10 @@ def test_dense_spatial_filter_forward_collapse_false():
     "in_chans,n_filters_time,n_filters_spat",
     [(44, 40, 40), (1, 40, 40), (44, 40, 1), (44, 1, 1)],
 )
-def test_combined_conv(bias_time, bias_spat, in_chans, n_filters_time, n_filters_spat):
+@pytest.mark.parametrize("stride", [1, (3, 1)])
+def test_combined_conv(
+    bias_time, bias_spat, in_chans, n_filters_time, n_filters_spat, stride
+):
     batch_size = 64
     timepoints = 1000
 
@@ -259,6 +262,7 @@ def test_combined_conv(bias_time, bias_spat, in_chans, n_filters_time, n_filters
         n_filters_spat=n_filters_spat,
         bias_spat=bias_spat,
         bias_time=bias_time,
+        stride=stride,
     )
 
     combined_out = conv(data)

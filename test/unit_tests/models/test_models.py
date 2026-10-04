@@ -239,6 +239,26 @@ def test_deep4net_load_state_dict(input_sizes):
 
 
 
+
+def test_deep4net_stride_before_pool_dense_geometry():
+    """Keep the pre-CombinedConv stride semantics used by old checkpoints."""
+    model = Deep4Net(
+        n_chans=21,
+        n_outputs=128,
+        n_times=1000,
+        final_conv_length=2,
+        stride_before_pool=True,
+    ).eval()
+
+    assert model.conv_time_spat.conv_spat.stride == (3, 1)
+    assert model.pool.stride == (1, 1)
+
+    model.to_dense_prediction_model()
+    out = model(torch.randn(2, 21, 1000))
+
+    assert out.shape == (2, 128, 319)
+
+
 def test_hybridnet(input_sizes):
     model = HybridNet(
         input_sizes["n_channels"],
