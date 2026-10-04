@@ -56,6 +56,20 @@ def test_amplitude_aware_mask_selects_expected_count_and_is_reproducible():
     assert torch.all(first.sum(dim=-1) == 3)
 
 
+def test_amplitude_aware_mask_samples_percentile_centers():
+    x = torch.arange(10, dtype=torch.float32).view(1, 1, 10).expand(1, 4, 10)
+    seed = 23
+    generator = torch.Generator().manual_seed(seed)
+    actual = amplitude_aware_mask(x, mask_ratio=0.3, generator=generator)
+
+    percentile_generator = torch.Generator().manual_seed(seed)
+    centers = (torch.rand((1, 4, 1), generator=percentile_generator) * 10).floor()
+    starts = (centers.long() - 1).clamp(0, 7)
+    for channel, start in enumerate(starts.view(-1)):
+        expected = torch.arange(10).ge(start) & torch.arange(10).lt(start + 3)
+        assert torch.equal(actual[0, channel], expected)
+
+
 @pytest.mark.parametrize("shape", [(10, 3), (2, 4, 5, 6)])
 def test_amplitude_aware_mask_requires_bct_input(shape):
     with pytest.raises(ValueError, match="batch, channels, time"):

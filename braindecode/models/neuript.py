@@ -45,10 +45,11 @@ def amplitude_aware_mask(
 ) -> Tensor:
     """Sample per-channel contiguous amplitude-rank masks from an EEG batch.
 
-    For each trial and channel, a percentile interval of width ``mask_ratio``
-    is selected at a random location in the sorted amplitudes. The returned
-    boolean tensor has the same shape as ``x``. Ties are resolved by a stable
-    sort, keeping the selected count bounded by ``ceil(T * mask_ratio)``.
+    For each trial and channel, a percentile center is sampled uniformly and
+    an interval of width ``mask_ratio`` is selected around it in the sorted
+    amplitudes. Intervals near either boundary are shifted to preserve the
+    requested count. The returned boolean tensor has the same shape as ``x``.
+    Ties are resolved by a stable sort.
     """
     if x.ndim != 3:
         raise ValueError("x must have shape (batch, channels, time).")
@@ -58,15 +59,11 @@ def amplitude_aware_mask(
     n_mask = min(n_times, max(1, round(n_times * mask_ratio)))
     ranks = torch.argsort(x, dim=-1, stable=True)
     max_start = n_times - n_mask
-    if max_start:
-        starts = torch.randint(
-            max_start + 1,
-            (*x.shape[:2], 1),
-            device=x.device,
-            generator=generator,
-        )
-    else:
-        starts = torch.zeros((*x.shape[:2], 1), dtype=torch.long, device=x.device)
+    centers = (
+        torch.rand((*x.shape[:2], 1), device=x.device, generator=generator)
+        * n_times
+    ).long()
+    starts = (centers - n_mask // 2).clamp(min=0, max=max_start)
     selected_ranks = torch.arange(n_times, device=x.device).view(1, 1, -1)
     selected = (selected_ranks >= starts) & (selected_ranks < starts + n_mask)
     mask = torch.zeros_like(selected)
