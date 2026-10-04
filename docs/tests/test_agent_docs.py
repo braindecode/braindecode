@@ -182,7 +182,7 @@ def test_html_then_markdown_gallery_integration(tmp_path):
         '"""\nExample\n=======\n\nA no-data fixture.\n"""\n'
         'from pathlib import Path\np = Path("executions.txt")\n'
         'p.write_text(p.read_text() + "x" if p.exists() else "x")\nprint("ran")\n'
-        'import matplotlib.pyplot as plt\nplt.plot([0, 1], [0, 1])\n'
+        "import matplotlib.pyplot as plt\nplt.plot([0, 1], [0, 1])\n"
     )
     for builder in ("html", "markdown"):
         warnings = StringIO()
