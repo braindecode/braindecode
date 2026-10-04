@@ -509,6 +509,7 @@ models_mandatory_parameters: list[
             "n_outputs": 20,
         },
     ),
+    ("NeurIPT", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     (
         "SensingDynamics",
         ["n_chans", "n_outputs", "n_times", "sfreq"],

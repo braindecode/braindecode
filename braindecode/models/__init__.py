@@ -46,6 +46,7 @@ from .mirepnet import MIRepNet
 from .mscformer import MSCFormer
 from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
+from .neuript import NeurIPT, amplitude_aware_mask
 from .neuropose import NeuroPose
 from .patchedtransformer import PBT
 from .reve import REVE
@@ -120,7 +121,9 @@ __all__ = [
     "EEGTCNet",
     "DGCNN",
     "EMG2QwertyNet",
+    "NeurIPT",
     "NeuroPose",
+    "amplitude_aware_mask",
     "SensingDynamics",
     "VEMG2Pose",
     "FBCNet",

@@ -179,6 +179,8 @@ interface for all EEG models and can derive variable names when needed.
      MetaNeuromotorHand
      MSCFormer
      MSVTNet
+     NeurIPT
+     NeuroPose
      PBT
      REVE
      SCCNet
