@@ -325,8 +325,10 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     The tokenizer encodes EEG patches through four temporal scales, quantizes
     each scale with a separate residual vector quantizer, and reconstructs the
-    signal from amplitude and phase components. ``tokenize`` returns the
-    discrete code indices in ``(scale, quantizer, batch, channel_patch)`` order.
+    signal from amplitude and phase components. Its design follows
+    [neurorvq]_ and its source code is available at [neurorvqcode]_.
+    ``tokenize`` returns the discrete code indices in
+    ``(scale, quantizer, batch, channel_patch)`` order.
 
     Inputs must be sampled at 200 Hz, contain complete 200-sample patches, and
     use electrode labels from the released 104-channel montage. The model does
@@ -580,7 +582,12 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     @torch.no_grad()
     def tokenize(self, x: Tensor) -> Tensor:
-        """Return four-scale residual code indices without updating EMA state."""
+        """Return four-scale codes without applying EMA updates.
+
+        If a codebook has not been initialized, it is initialized once from the
+        input vectors with the source implementation's cosine k-means routine.
+        Load pretrained weights before extracting pretrained representations.
+        """
         if x.ndim != 3 or tuple(x.shape[1:]) != (self.n_chans, self.n_times):
             raise ValueError(
                 f"Expected input shape (batch, {self.n_chans}, {self.n_times}), "

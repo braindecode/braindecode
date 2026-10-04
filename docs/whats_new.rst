@@ -32,7 +32,8 @@ Enhancements
   four-scale residual vector quantization tokenizer with strict pretrained
   checkpoint loading, reconstruction, and discrete token extraction. It
   retains the source project's CC BY-NC 4.0 terms and 200 Hz input requirement
-  (:gh:`1201` by `lindicaphxag-tech`_).
+  (:gh:`1201` by `lindicaphxag-tech`_). An optional reference-parity script
+  checks codes, reconstruction, gradients, and EMA updates against the release.
 
 - Add :class:`braindecode.models.NeuroRVQ`, a channel-aware EEG foundation
   model with four-scale temporal patch embedding and a pretrained masked-token
