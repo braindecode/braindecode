@@ -621,3 +621,5 @@ texinfo_documents = [
 
 # Markdown siblings link to canonical HTML, including pages outside the curated index.
 markdown_uri_doc_suffix = ".html"
+# Preserve Sphinx IDs instead of depending on renderer-specific heading slugs.
+markdown_anchor_sections = True

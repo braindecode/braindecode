@@ -1,5 +1,6 @@
 """Keep Markdown assets and citations linked to authoritative HTML output."""
 
+from pathlib import PurePosixPath
 from urllib.parse import urlsplit
 
 from docutils import nodes
@@ -23,6 +24,18 @@ class AgentMarkdownTranslator(MarkdownTranslator):
                 )
         self.add(f"![{node.get('alt', 'image')}]({uri})")
         raise nodes.SkipNode
+
+    def visit_imgsgnode(self, node):
+        # Sphinx-Gallery copies responsive image variants directly to HTML's
+        # _images directory, outside Sphinx's ordinary image collector.
+        if node.get("srcset"):
+            uri = relative_uri(
+                self.builder.get_target_uri(self.builder.current_doc_name),
+                "_images/" + PurePosixPath(node["uri"]).name,
+            )
+            self.add(f"![{node.get('alt', 'image')}]({uri})")
+            raise nodes.SkipNode
+        self.visit_image(node)
 
     def visit_raw(self, node):
         # Raw HTML contains executable scripts and CSS, not Markdown prose.

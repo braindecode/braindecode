@@ -155,10 +155,10 @@ def test_html_then_markdown_gallery_integration(tmp_path):
         f"import sys\nsys.path.insert(0, {str(extension_dir)!r})\n"
         'extensions = ["sphinx_markdown_builder", "agent_markdown", '
         '"sphinx_gallery.gen_gallery", "sphinx_design", "sphinxcontrib.bibtex"]\n'
-        'markdown_uri_doc_suffix = ".html"\n'
+        'markdown_uri_doc_suffix = ".html"\nmarkdown_anchor_sections = True\n'
         'bibtex_bibfiles = ["refs.bib"]\n'
         'sphinx_gallery_conf = {"examples_dirs": "../examples", '
-        '"gallery_dirs": "auto_examples", "image_scrapers": (), '
+        '"gallery_dirs": "auto_examples", "image_scrapers": ("matplotlib",), '
         '"reset_modules": (), "download_all_examples": False}\n'
     )
     (source / "refs.bib").write_text(
@@ -182,6 +182,7 @@ def test_html_then_markdown_gallery_integration(tmp_path):
         '"""\nExample\n=======\n\nA no-data fixture.\n"""\n'
         'from pathlib import Path\np = Path("executions.txt")\n'
         'p.write_text(p.read_text() + "x" if p.exists() else "x")\nprint("ran")\n'
+        'import matplotlib.pyplot as plt\nplt.plot([0, 1], [0, 1])\n'
     )
     for builder in ("html", "markdown"):
         warnings = StringIO()
@@ -210,4 +211,8 @@ def test_html_then_markdown_gallery_integration(tmp_path):
     assert "Example reference" in index
     assert '<a id="id' in index
     assert "auto_examples/plot_test.html" in index
-    assert "ran" in (markdown / "auto_examples/plot_test.md").read_text()
+    tutorial = (markdown / "auto_examples/plot_test.md").read_text()
+    assert "ran" in tutorial
+    assert "../_images/sphx_glr_plot_test_001.png" in tutorial
+    assert (tmp_path / "html/_images/sphx_glr_plot_test_001.png").is_file()
+    assert '<a id="example"></a>' in tutorial

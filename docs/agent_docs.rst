@@ -40,9 +40,9 @@ Use a clean output directory for each source revision. The Markdown pass disable
 example execution; the preceding normal HTML build still has its usual dataset and model
 requirements. Publication fails if any curated HTML or Markdown page is missing or its
 Markdown is empty. Offline tests require pytest, Sphinx, sphinx-markdown-builder,
-sphinx-gallery, sphinx-design and sphinxcontrib-bibtex. The integration fixture builds
-HTML then Markdown with shared doctrees and checks that its tiny, data-free example
-executes only once:
+sphinx-gallery, sphinx-design, sphinxcontrib-bibtex and matplotlib. The integration
+fixture builds HTML then Markdown with shared doctrees and checks that its tiny,
+data-free example executes only once:
 
 ::
 
