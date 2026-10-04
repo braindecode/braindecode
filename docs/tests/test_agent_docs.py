@@ -143,8 +143,9 @@ def test_gallery_index_keeps_curated_navigation(corpus):
 
 def test_html_then_markdown_gallery_integration(tmp_path):
     """Exercise real extension nodes and shared doctrees without any datasets."""
-    import subprocess
-    import sys
+    from io import StringIO
+
+    from sphinx.application import Sphinx
 
     source, examples = tmp_path / "source", tmp_path / "examples"
     source.mkdir()
@@ -183,24 +184,20 @@ def test_html_then_markdown_gallery_integration(tmp_path):
         'p.write_text(p.read_text() + "x" if p.exists() else "x")\nprint("ran")\n'
     )
     for builder in ("html", "markdown"):
-        command = [
-            sys.executable,
-            "-m",
-            "sphinx",
-            "-b",
-            builder,
-            "-d",
+        warnings = StringIO()
+        app = Sphinx(
+            str(source),
+            str(source),
+            str(tmp_path / builder),
             str(tmp_path / "doctrees"),
-        ]
-        if builder == "markdown":
-            command += ["-D", "plot_gallery=0"]
-        result = subprocess.run(
-            command + [str(source), str(tmp_path / builder)],
-            capture_output=True,
-            text=True,
-            check=True,
+            builder,
+            confoverrides={"plot_gallery": 0} if builder == "markdown" else {},
+            status=StringIO(),
+            warning=warnings,
         )
-        assert "unknown node type" not in result.stderr
+        app.build()
+        assert app.statuscode == 0
+        assert "unknown node type" not in warnings.getvalue()
     assert (examples / "executions.txt").read_text() == "x"
     markdown = tmp_path / "markdown"
     page = (markdown / "nested/page.md").read_text()
