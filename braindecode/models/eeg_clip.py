@@ -347,8 +347,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
         if features.ndim == 3:
             if features.shape[1] != self.eeg_embedding_dim:
                 raise ValueError(
-                    "EEG encoder feature dimension does not match "
-                    "eeg_embedding_dim."
+                    "EEG encoder feature dimension does not match eeg_embedding_dim."
                 )
             batch_size = features.shape[0]
             n_predictions = features.shape[2]
@@ -356,9 +355,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
                 batch_size * n_predictions, self.eeg_embedding_dim
             )
             projected = self.final_layer(temporal_features)
-            projected = projected.reshape(
-                batch_size, n_predictions, self.n_outputs
-            )
+            projected = projected.reshape(batch_size, n_predictions, self.n_outputs)
             return projected.mean(dim=1)
 
         if features.ndim != 2:
@@ -368,14 +365,11 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
             )
         if features.shape[1] != self.eeg_embedding_dim:
             raise ValueError(
-                "EEG encoder feature dimension does not match "
-                "eeg_embedding_dim."
+                "EEG encoder feature dimension does not match eeg_embedding_dim."
             )
         return self.final_layer(features)
 
-    def forward_paired(
-        self, X, text_inputs, attention_mask=None, **text_kwargs
-    ):
+    def forward_paired(self, X, text_inputs, attention_mask=None, **text_kwargs):
         """Return paired EEG/text embeddings and bidirectional similarity logits."""
         eeg_embeds = self.encode_eeg(X)
         text_embeds = self.encode_text(
