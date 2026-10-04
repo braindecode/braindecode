@@ -269,6 +269,19 @@ def test_tcn(input_sizes):
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
 
+def test_tcn_with_unit_kernel(input_sizes):
+    model = TCN(
+        n_chans=input_sizes["n_channels"],
+        n_outputs=input_sizes["n_classes"],
+        n_filters=5,
+        n_blocks=2,
+        kernel_size=1,
+        drop_prob=0.0,
+    )
+
+    check_forward_pass(model, input_sizes, only_check_until_dim=2)
+
+
 def test_eegpt(input_sizes):
     channels_names = [
         'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'FPZ', 'FZ', 'CZ', 'CPZ', 'PZ', 'POZ', 'OZ'
