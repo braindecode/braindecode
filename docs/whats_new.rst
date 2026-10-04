@@ -28,6 +28,12 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.NeuroRVQ`, a channel-aware EEG foundation
+  model with four-scale temporal patch embedding and a pretrained masked-token
+  encoder. The port preserves the released architecture and identifies its
+  CC BY-NC 4.0 license and 200 Hz preprocessing requirements
+  (:gh:`1090` by `lindicaphxag-tech`_).
+
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
   control and a replicability check), run by a dedicated CI job

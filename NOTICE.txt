@@ -14,6 +14,11 @@ The following components are licensed under the Creative Commons Attribution-Non
 - `braindecode/models/eegminer.py`
 - `braindecode/models/meta_neuromotor.py`
 - `braindecode/models/brainmodule.py`
+- `braindecode/models/neurorvq.py`
+
+The `neurorvq.py` file adapts the EEG foundation model from
+`KonstantinosBarmpas/NeuroRVQ`, released under CC BY-NC 4.0. The source
+implementation and model checkpoint retain their noncommercial terms.
 
 As well as class later imported into the `braindecode.models.module` named as GeneralizedGaussianFilter.
 

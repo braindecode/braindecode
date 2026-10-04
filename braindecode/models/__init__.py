@@ -43,6 +43,7 @@ from .luna import LUNA
 from .medformer import MEDFormer
 from .meta_neuromotor import MetaNeuromotorHand
 from .mirepnet import MIRepNet
+from .neurorvq import NeuroRVQ
 from .mscformer import MSCFormer
 from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
@@ -140,6 +141,7 @@ __all__ = [
     "positions_from_chs_info",
     "MEDFormer",
     "MIRepNet",
+    "NeuroRVQ",
     "MSCFormer",
     "MSVTNet",
     "MVPFormer",
