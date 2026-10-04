@@ -98,10 +98,9 @@ class _EMAVectorQuantizer(nn.Module):
                     / (total + self.codebook_size * self.eps)
                     * total
                 )
-                normalized = (
-                    self.ema_weight
-                    / smoothed_size.clamp_min(self.eps).unsqueeze(1)
-                )
+                normalized = self.ema_weight / smoothed_size.clamp_min(
+                    self.eps
+                ).unsqueeze(1)
                 # Keep never-selected codes at their initialized locations until
                 # they receive their first assignment. With zero-initialized
                 # cluster counts, normalizing an unseen code by eps would inflate
@@ -563,4 +562,3 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         preserves Braindecode's common model integration contract.
         """
         return self.tokenize(x, spectrogram_mask=spectrogram_mask).reconstruction
-
