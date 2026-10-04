@@ -127,6 +127,26 @@ def test_registered_model_runtime_contract(
                 f"mode: {msg}"
             ),
         )
+    # Permutation equivariance alone cannot detect all cross-sample mixing: a
+    # symmetric batch aggregate can influence every output and still permute
+    # correctly. Keep sample 0 fixed, change only sample 1, and require sample
+    # 0's outputs to remain invariant.
+    composed_x = x.clone()
+    composed_x[1].mul_(-3.0).add_(1.0)
+    with torch.no_grad():
+        recomposed = model(composed_x)
+
+    recomposed_batched = _batched_tensor_leaves(recomposed, x.shape[0])
+    assert len(recomposed_batched) == len(batched)
+    for expected_leaf, actual_leaf in zip(batched, recomposed_batched):
+        torch.testing.assert_close(
+            actual_leaf[0],
+            expected_leaf[0],
+            msg=lambda msg: (
+                f"{model_name} leaked information across independent batch "
+                f"samples in eval mode: {msg}"
+            ),
+        )
 
 
 @pytest.mark.parametrize(
