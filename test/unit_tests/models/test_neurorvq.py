@@ -92,6 +92,7 @@ def test_neurorvq_default_channel_names_follow_reference_order(model_kwargs):
 
     assert model.channel_names == NEURORVQ_CHANNELS[:3]
 
+
 def test_neurorvq_pretrained_loading_requires_explicit_channel_mapping(
     model_kwargs,
 ):
