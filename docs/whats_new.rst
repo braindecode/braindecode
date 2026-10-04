@@ -113,6 +113,9 @@ API and behavior changes
 Requirements
 ============
 
+- Add ``sphinx-markdown-builder==0.6.11`` and ``pytest<9.1`` to the docs extra
+  for version-scoped Markdown exports and their offline contract tests.
+
 - Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
   REVE and ZUNA now import PyTorch's RMSNorm layer directly, preserving their
   explicit epsilon values. Intel macOS is no longer supported because

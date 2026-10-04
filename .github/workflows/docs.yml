@@ -86,7 +86,6 @@ jobs:
 
       - name: Build version-scoped agent documentation
         run: |
-          uv pip install --system "pytest<9.1"
           python -m pytest -q docs/tests/test_agent_docs.py
           # Reuse the completed HTML doctrees; never re-run gallery examples.
           sphinx-build -b markdown -d docs/_build/doctrees -D plot_gallery=0 docs docs/_build/markdown

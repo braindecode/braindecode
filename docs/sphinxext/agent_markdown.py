@@ -56,5 +56,5 @@ class AgentMarkdownTranslator(MarkdownTranslator):
 
 
 def setup(app):
-    app.set_translator("markdown", AgentMarkdownTranslator)
+    app.set_translator("markdown", AgentMarkdownTranslator, override=True)
     return {"version": "1.0", "parallel_read_safe": True, "parallel_write_safe": True}
