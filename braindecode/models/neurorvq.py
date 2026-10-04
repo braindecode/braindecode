@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 import torch
 import torch.nn.functional as F
@@ -168,7 +169,7 @@ class _Attention(nn.Module):
         dim: int,
         num_heads: int,
         qkv_bias: bool,
-        qk_norm: type[nn.Module] | None,
+        qk_norm: Callable[[int], nn.Module] | None,
         attn_drop: float,
         proj_drop: float,
     ):
@@ -196,7 +197,7 @@ class _Attention(nn.Module):
         qkv = F.linear(x, self.qkv.weight, qkv_bias)
         qkv = qkv.reshape(batch, seq_len, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
         q, k, v = qkv.unbind(0)
-        if self.q_norm is not None:
+        if self.q_norm is not None and self.k_norm is not None:
             q = self.q_norm(q).type_as(v)
             k = self.k_norm(k).type_as(v)
         attn = ((q * self.scale) @ k.transpose(-2, -1)).softmax(dim=-1)
@@ -212,7 +213,7 @@ class _Block(nn.Module):
         num_heads: int,
         mlp_ratio: float,
         qkv_bias: bool,
-        qk_norm: type[nn.Module] | None,
+        qk_norm: Callable[[int], nn.Module] | None,
         drop: float,
         attn_drop: float,
         drop_path: float,
