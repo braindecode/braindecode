@@ -77,6 +77,15 @@ def test_neurorvq_channel_slots_from_chs_info(model_kwargs):
     assert model.spatial_embedding_ix.tolist() == [41, 42, 36]
 
 
+def test_neurorvq_spatial_slots_preserve_upstream_zero_based_mapping(model_kwargs):
+    # Upstream create_embedding_ix uses zero-based electrode positions and then
+    # pads CLS with another 0. Keep that unusual checkpoint contract unchanged.
+    kwargs = model_kwargs | {"channel_names": ("a1", "a2", "f3")}
+    model = NeuroRVQ(**kwargs)
+
+    assert model.spatial_embedding_ix.tolist() == [0, 1, 41]
+
+
 def test_neurorvq_default_channel_names_follow_reference_order(model_kwargs):
     kwargs = model_kwargs | {"channel_names": None}
     model = NeuroRVQ(**kwargs)
