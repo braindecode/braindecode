@@ -18,6 +18,7 @@ from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import FeedForwardBlock
 
 log = logging.getLogger(__name__)
 
@@ -665,9 +666,13 @@ class _CSBrainEncoderLayer(nn.Module):
         )
         self.global_fc = nn.Linear(d_model, d_model)
 
-        self.linear1 = nn.Linear(d_model, dim_feedforward)
-        self.dropout = nn.Dropout(dropout)
-        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        self.ff_block = FeedForwardBlock(
+            emb_size=d_model,
+            expansion=1,
+            drop_p=dropout,
+            activation=activation,
+            hidden_features=dim_feedforward,
+        )
 
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
@@ -676,8 +681,6 @@ class _CSBrainEncoderLayer(nn.Module):
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
         self.dropout3 = nn.Dropout(dropout)
-        self.activation = activation()
-        self._activation_cls = activation
 
         self.area_config = area_config or {}
         if area_config:
@@ -746,5 +749,5 @@ class _CSBrainEncoderLayer(nn.Module):
     def _ff_block(self, x: Tensor) -> Tensor:
         B, C, T, Fea = x.shape
         x = x.permute(0, 2, 1, 3).reshape(B * T, C, Fea)
-        x = self.linear2(self.dropout(self.activation(self.linear1(x))))
+        x = self.ff_block(x)
         return x.reshape(B, T, C, Fea).permute(0, 2, 1, 3)
