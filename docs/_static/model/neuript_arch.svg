@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="620" viewBox="0 0 1600 620" role="img" aria-labelledby="title desc">
+  <title id="title">NeurIPT downstream classification path</title>
+  <desc id="desc">Pointwise EEG sample embedding, separate temporal and spatial positional encodings in the first TSA layer, hierarchical time and channel attention with progressive experts, regional pooling, and classification.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#526f91"/></marker>
+    <style>
+      text { font-family: Inter, Arial, sans-serif; fill: #24354b; }
+      .title { font-size: 34px; font-weight: 650; }
+      .sub { font-size: 18px; fill: #526781; }
+      .box { stroke: #7692b2; stroke-width: 2.5; rx: 22; }
+      .head { font-size: 23px; font-weight: 600; }
+      .body { font-size: 18px; }
+      .note { font-size: 17px; fill: #405a78; }
+      .arrow { stroke: #526f91; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1600" height="620" fill="#f7f9fc"/>
+  <text x="58" y="62" class="title">NeurIPT: downstream classification path</text>
+  <text x="58" y="96" class="sub">Paper-based implementation; no official checkpoint parity or benchmark reproduction is claimed.</text>
+
+  <rect x="52" y="170" width="228" height="154" class="box" fill="#e8f1ff"/>
+  <text x="166" y="215" text-anchor="middle" class="head">EEG window</text>
+  <text x="166" y="255" text-anchor="middle" class="body">(batch, channels, time)</text>
+
+  <line x1="284" y1="247" x2="322" y2="247" class="arrow"/>
+  <rect x="330" y="170" width="292" height="154" class="box" fill="#e8f6f0"/>
+  <text x="476" y="215" text-anchor="middle" class="head">Pointwise embedding</text>
+  <text x="476" y="255" text-anchor="middle" class="body">one token per sample</text>
+  <text x="476" y="285" text-anchor="middle" class="body">no temporal pooling</text>
+
+  <line x1="626" y1="247" x2="664" y2="247" class="arrow"/>
+  <rect x="672" y="150" width="360" height="194" class="box" fill="#fff2dc"/>
+  <text x="852" y="192" text-anchor="middle" class="head">Hierarchical TSA × L</text>
+  <text x="852" y="232" text-anchor="middle" class="body">time attention + progressive MoE</text>
+  <text x="852" y="264" text-anchor="middle" class="body">channel attention + progressive MoE</text>
+  <text x="852" y="310" text-anchor="middle" class="note">first layer adds time and electrode encodings separately</text>
+
+  <line x1="1036" y1="247" x2="1074" y2="247" class="arrow"/>
+  <rect x="1082" y="170" width="246" height="154" class="box" fill="#f1eaff"/>
+  <text x="1205" y="215" text-anchor="middle" class="head">IILP pooling</text>
+  <text x="1205" y="255" text-anchor="middle" class="body">optional channel groups</text>
+  <text x="1205" y="285" text-anchor="middle" class="body">global group by default</text>
+
+  <line x1="1332" y1="247" x2="1370" y2="247" class="arrow"/>
+  <rect x="1378" y="170" width="174" height="154" class="box" fill="#e8f1ff"/>
+  <text x="1465" y="215" text-anchor="middle" class="head">Linear head</text>
+  <text x="1465" y="255" text-anchor="middle" class="body">class logits</text>
+
+  <path d="M166 326 V414 H480" fill="none" stroke="#7692b2" stroke-width="2.5"/>
+  <rect x="52" y="414" width="980" height="142" class="box" fill="#ffffff"/>
+  <text x="78" y="458" class="head">Training utility (separate from forward): amplitude_aware_mask</text>
+  <text x="78" y="500" class="body">Samples per-trial, per-channel amplitude-rank intervals for masked pretraining workflows.</text>
+  <text x="1080" y="454" class="note">Attention cost grows with sequence length.</text>
+  <text x="1080" y="490" class="note">Choose the window size deliberately;</text>
+  <text x="1080" y="520" class="note">samples are never silently downsampled.</text>
+</svg>

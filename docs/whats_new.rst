@@ -30,11 +30,12 @@ Enhancements
 
 - Add :class:`braindecode.models.NeurIPT`, a paper-based EEG classifier with
   hierarchical time/channel attention, progressive mixture-of-experts blocks,
-  3D electrode encodings, and optional lobe-group pooling. The official model
-  source and checkpoints are unavailable, so this implementation does not
-  claim checkpoint parity or reproduce the paper's benchmark results. Inputs
-  longer than 256 samples are adaptively average-pooled by default to bound
-  attention cost (issue :gh:`1093`).
+  3D electrode encodings, and optional lobe-group pooling. Each input sample is
+  embedded independently to preserve transient timing, and temporal and
+  spatial encodings enter the first attention stages separately. The official
+  model source and checkpoints are unavailable, so this implementation does
+  not claim checkpoint parity or reproduce the paper's benchmark results
+  (issue :gh:`1093`).
 
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label

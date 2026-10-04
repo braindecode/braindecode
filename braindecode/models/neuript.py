@@ -164,10 +164,18 @@ class _TSAStage(nn.Module):
             dim, expert_hidden_dim, n_experts, top_k_fraction, dropout
         )
 
-    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(
+        self,
+        x: Tensor,
+        time_position: Tensor | None = None,
+        spatial_position: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor]:
         batch, n_times, n_chans, dim = x.shape
+        time_input = x if time_position is None else x + time_position[None, :, None, :]
         time = (
-            self.time_norm(x).permute(0, 2, 1, 3).reshape(batch * n_chans, n_times, dim)
+            self.time_norm(time_input)
+            .permute(0, 2, 1, 3)
+            .reshape(batch * n_chans, n_times, dim)
         )
         time_attn, _ = self.time_attn(time, time, time, need_weights=False)
         time = time + time_attn
@@ -175,7 +183,12 @@ class _TSAStage(nn.Module):
         time = time + time_update
         x = time.reshape(batch, n_chans, n_times, dim).permute(0, 2, 1, 3)
 
-        channel = self.channel_norm(x).reshape(batch * n_times, n_chans, dim)
+        channel_input = (
+            x if spatial_position is None else x + spatial_position[None, None, :, :]
+        )
+        channel = self.channel_norm(channel_input).reshape(
+            batch * n_times, n_chans, dim
+        )
         channel_attn, _ = self.channel_attn(
             channel, channel, channel, need_weights=False
         )
@@ -196,7 +209,7 @@ class NeurIPT(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
     recoverable implementation, so initialization and data benchmarks have not
     been validated against the authors' released model.
 
-    .. figure:: ../_static/model/neuript_arch.png
+    .. figure:: ../_static/model/neuript_arch.svg
        :align: center
        :alt: NeurIPT downstream path with electrode encoding, hierarchical
              time/channel attention, optional lobe pooling and a classifier.
@@ -233,10 +246,6 @@ class NeurIPT(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         Number of attention heads in each TSA stage.
     n_layers : int, default=6
         Number of hierarchical TSA layers.
-    max_tokens : int, default=256
-        Maximum temporal tokens passed to the transformer. Longer input windows
-        are reduced to this size with adaptive average pooling; the paper's
-        reported configuration uses 256 time points.
     merge_factors : sequence of int | None
         Temporal merge factor before each layer; defaults to the paper schedule
         ``(1, 4, 1, 2, 1, 2)`` truncated or extended with ones.
@@ -273,7 +282,6 @@ class NeurIPT(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         d_model: int = 96,
         n_heads: int = 8,
         n_layers: int = 6,
-        max_tokens: int = 256,
         merge_factors: Sequence[int] | None = None,
         n_experts: Sequence[int] | None = None,
         expert_hidden_dim: int = 128,
@@ -296,11 +304,8 @@ class NeurIPT(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             raise ValueError("d_model must be divisible by n_heads.")
         if n_layers < 1:
             raise ValueError("n_layers must be at least 1.")
-        if max_tokens < 1:
-            raise ValueError("max_tokens must be at least 1.")
         self.d_model = d_model
         self.n_layers = n_layers
-        self.max_tokens = max_tokens
         paper_merge = (1, 4, 1, 2, 1, 2)
         if merge_factors is None:
             merge_factors = (*paper_merge[:n_layers], *((1,) * max(0, n_layers - 6)))
@@ -310,6 +315,8 @@ class NeurIPT(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             raise ValueError(
                 "merge_factors must contain one positive integer per layer."
             )
+        if merge_factors[0] != 1:
+            raise ValueError("The first TSA layer must not merge temporal tokens.")
         paper_experts = (0, 2, 2, 4, 4, 6)
         if n_experts is None:
             n_experts = (*paper_experts[:n_layers], *((0,) * max(0, n_layers - 6)))
@@ -382,9 +389,7 @@ class NeurIPT(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         nn.init.xavier_uniform_(self.final_layer.weight)
         nn.init.zeros_(self.final_layer.bias)
 
-    def _embed(self, x: Tensor) -> Tensor:
-        if x.shape[-1] > self.max_tokens:
-            x = F.adaptive_avg_pool1d(x, self.max_tokens)
+    def _position_encodings(self, x: Tensor) -> tuple[Tensor, Tensor]:
         n_times = x.shape[-1]
         time = torch.arange(n_times, device=x.device, dtype=x.dtype)
         time_encoding = _sinusoidal_encoding(time, self.d_model)
@@ -399,8 +404,11 @@ class NeurIPT(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             ],
             dim=-1,
         )
-        projected = self.input_projection(x.permute(0, 2, 1).unsqueeze(-1))
-        return projected + time_encoding[None, :, None, :] + spatial[None, None, :, :]
+        return time_encoding, spatial
+
+    def _embed(self, x: Tensor) -> Tensor:
+        """Project each EEG sample independently, preserving temporal detail."""
+        return self.input_projection(x.permute(0, 2, 1).unsqueeze(-1))
 
     def _merge_time(self, x: Tensor, factor: int, merger: nn.Module) -> Tensor:
         if factor == 1:
@@ -421,11 +429,18 @@ class NeurIPT(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
                 f"got {tuple(x.shape)}."
             )
         hidden = self._embed(x)
+        time_position, spatial_position = self._position_encodings(x)
         layer_features = []
         auxiliary_losses = []
-        for factor, merger, layer in zip(self.merge_factors, self.mergers, self.layers):
+        for layer_idx, (factor, merger, layer) in enumerate(
+            zip(self.merge_factors, self.mergers, self.layers)
+        ):
             hidden = self._merge_time(hidden, factor, merger)
-            hidden, aux = layer(hidden)
+            hidden, aux = layer(
+                hidden,
+                time_position=time_position if layer_idx == 0 else None,
+                spatial_position=spatial_position if layer_idx == 0 else None,
+            )
             auxiliary_losses.append(aux)
             channel_means = hidden.mean(dim=1)
             regional = [

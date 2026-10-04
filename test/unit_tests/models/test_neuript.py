@@ -13,7 +13,7 @@ def _small_model(**kwargs):
         "d_model": 24,
         "n_heads": 4,
         "n_layers": 2,
-        "merge_factors": (2, 2),
+        "merge_factors": (1, 2),
         "n_experts": (0, 2),
         "expert_hidden_dim": 16,
         "channel_positions": torch.randn(4, 3),
@@ -69,8 +69,13 @@ def test_neuript_validates_channel_positions_and_lobe_groups():
         _small_model(lobe_groups=((0, 1), (1, 2)))
 
 
-def test_neuript_bounds_long_windows_to_max_tokens():
-    model = _small_model(max_tokens=8)
-    embedded = model._embed(torch.randn(2, 4, 17))
+def test_neuript_embeds_each_sample_without_temporal_pooling():
+    model = _small_model()
+    embedded = model._embed(torch.randn(2, 4, 31))
 
-    assert embedded.shape == (2, 8, 4, 24)
+    assert embedded.shape == (2, 31, 4, 24)
+
+
+def test_neuript_requires_unmerged_first_layer():
+    with pytest.raises(ValueError, match="first TSA layer"):
+        _small_model(merge_factors=(2, 1))
