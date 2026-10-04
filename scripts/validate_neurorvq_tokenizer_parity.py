@@ -191,6 +191,11 @@ def main() -> None:
     reference_parameters = dict(reference.named_parameters())
     port_parameters = dict(port.named_parameters())
     assert reference_parameters.keys() == port_parameters.keys()
+    expected_gradient_names = {
+        name
+        for name, parameter in reference_parameters.items()
+        if parameter.requires_grad
+    }
     gradient_errors = {}
     for name, reference_parameter in reference_parameters.items():
         port_parameter = port_parameters[name]
@@ -201,6 +206,10 @@ def main() -> None:
         gradient_errors[name] = (
             (reference_parameter.grad - port_parameter.grad).abs().max().item()
         )
+    assert gradient_errors.keys() == expected_gradient_names, (
+        "Some trainable parameters did not receive gradients: "
+        f"{sorted(expected_gradient_names - gradient_errors.keys())}"
+    )
     input_gradient_error = (signal_reference.grad - signal_port.grad).abs().max().item()
     gradient_error = max(gradient_errors.values(), default=0.0)
     reference_state = reference.state_dict()
