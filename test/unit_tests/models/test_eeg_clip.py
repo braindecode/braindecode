@@ -31,8 +31,28 @@ class _TinyTextEncoder(nn.Module):
         return SimpleNamespace(last_hidden_state=self.embedding(input_ids))
 
 
+class _BadTextEncoder(nn.Module):
+    def forward(self, input_ids):
+        return object()
+
+
+class _NonTensorFeaturesEncoder(nn.Module):
+    def forward(self, input_ids):
+        return {"last_hidden_state": object()}
+
+
+class _BadEEGEncoder(nn.Module):
+    def __init__(self, output):
+        super().__init__()
+        self.output = output
+
+    def forward(self, X):
+        return self.output
+
+
 def _make_model(**kwargs):
     kwargs.setdefault("drop_prob", 0)
+    text_encoder = kwargs.pop("text_encoder", _TinyTextEncoder())
     return EEGCLIP(
         n_chans=3,
         n_times=20,
@@ -40,7 +60,7 @@ def _make_model(**kwargs):
         eeg_encoder=_MeanEEGEncoder(),
         eeg_embedding_dim=3,
         text_embedding_dim=8,
-        text_encoder=_TinyTextEncoder(),
+        text_encoder=text_encoder,
         **kwargs,
     )
 
@@ -124,6 +144,63 @@ def test_eeg_clip_masked_mean_pooling_ignores_padding():
     torch.testing.assert_close(actual, expected)
 
 
+def test_eeg_clip_mean_pooling_without_mask_uses_all_tokens():
+    model = EEGCLIP(
+        n_chans=3,
+        n_times=20,
+        n_outputs=4,
+        eeg_encoder=_MeanEEGEncoder(),
+        eeg_embedding_dim=3,
+        text_embedding_dim=8,
+        text_pooling="mean",
+        drop_prob=0,
+    ).eval()
+    features = torch.randn(2, 5, 8)
+
+    actual = model.encode_text(features)
+
+    torch.testing.assert_close(actual, model.text_projection(features.mean(dim=1)))
+
+
+@pytest.mark.parametrize(
+    "outputs",
+    [
+        {"pooler_output": torch.randn(2, 8)},
+        SimpleNamespace(pooler_output=torch.randn(2, 8)),
+        (torch.randn(2, 8), "unused"),
+    ],
+    ids=["mapping-pooler", "attribute-pooler", "tuple-first"],
+)
+def test_eeg_clip_accepts_pooled_text_encoder_outputs(outputs):
+    class OutputEncoder(nn.Module):
+        def forward(self, input_ids):
+            return outputs
+
+    model = _make_model(text_encoder=OutputEncoder())
+    result = model.encode_text(torch.ones(2, dtype=torch.long))
+
+    assert result.shape == (2, model.n_outputs)
+
+
+def test_eeg_clip_rejects_unsupported_text_encoder_output():
+    model = _make_model(text_encoder=_BadTextEncoder())
+
+    with pytest.raises(TypeError, match="text_encoder must return"):
+        model.encode_text(torch.ones(2, dtype=torch.long))
+
+
+def test_eeg_clip_rejects_non_tensor_text_features_and_wrong_feature_dimension():
+    model = _make_model(text_encoder=_NonTensorFeaturesEncoder())
+
+    with pytest.raises(TypeError, match="must contain a torch.Tensor"):
+        model.encode_text(torch.ones(2, dtype=torch.long))
+    model.text_encoder = nn.Identity()
+    with pytest.raises(ValueError, match="Pooled text features"):
+        model.encode_text(torch.randn(2, 8, 3, 4))
+    with pytest.raises(ValueError, match="text_embedding_dim=8"):
+        model.encode_text(torch.randn(2, 7))
+
+
 def test_eeg_clip_projection_matches_published_architecture():
     model = _make_model()
     for head in (model.text_projection, model.final_layer):
@@ -143,6 +220,28 @@ def test_eeg_clip_projection_depth_is_configurable():
         _make_model(projection_layers=0)
 
 
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"text_pooling": "max"}, "text_pooling"),
+        ({"initial_temperature": 0}, "initial_temperature"),
+        ({"drop_prob": 1}, "drop_prob"),
+        ({"projection_layers": 0}, "projection_layers"),
+    ],
+)
+def test_eeg_clip_rejects_invalid_constructor_options(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        EEGCLIP(
+            n_chans=3,
+            n_times=20,
+            n_outputs=4,
+            eeg_encoder=_MeanEEGEncoder(),
+            eeg_embedding_dim=3,
+            text_embedding_dim=8,
+            **kwargs,
+        )
+
+
 def test_eeg_clip_logits_match_released_scaled_dot_product():
     model = _make_model().eval()
     with torch.no_grad():
@@ -156,6 +255,15 @@ def test_eeg_clip_logits_match_released_scaled_dot_product():
 
     torch.testing.assert_close(logits_eeg, expected)
     torch.testing.assert_close(logits_text, expected.T)
+
+
+def test_eeg_clip_logits_reject_incompatible_embedding_shapes():
+    model = _make_model()
+
+    with pytest.raises(ValueError, match="two-dimensional"):
+        model.compute_logits(torch.randn(2, 3, 1), torch.randn(2, 3))
+    with pytest.raises(ValueError, match="same dimension"):
+        model.compute_logits(torch.randn(2, 3), torch.randn(2, 4))
 
 
 def test_eeg_clip_logit_scale_initialization_matches_released_source():
@@ -189,6 +297,29 @@ def test_eeg_clip_requires_paired_non_empty_batches():
         model.contrastive_loss(eeg, text)
     with pytest.raises(ValueError, match="must not be empty"):
         model.contrastive_loss(eeg[:0], text[:0])
+
+
+@pytest.mark.parametrize(
+    "features, message",
+    [
+        (torch.randn(2, 3, 4, 5), r"shape \(batch, features\)"),
+        (torch.randn(2, 4), "feature dimension"),
+    ],
+    ids=["wrong-rank", "wrong-feature-dimension"],
+)
+def test_eeg_clip_rejects_invalid_eeg_encoder_output(features, message):
+    model = EEGCLIP(
+        n_chans=3,
+        n_times=20,
+        n_outputs=4,
+        eeg_encoder=_BadEEGEncoder(features),
+        eeg_embedding_dim=3,
+        text_embedding_dim=8,
+        drop_prob=0,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        model(torch.randn(2, 3, 20))
 
 
 def test_eeg_clip_rejects_mismatched_attention_mask():
@@ -237,10 +368,19 @@ def test_eeg_clip_reset_head_updates_both_projection_dimensions():
     assert output["text_embeds"].shape == (2, 6)
 
 
+def test_eeg_clip_reset_head_rejects_non_positive_dimension():
+    model = _make_model()
+
+    with pytest.raises(ValueError, match="n_outputs must be positive"):
+        model.reset_head(0)
+
+
 def test_eeg_clip_reset_head_preserves_mixed_projection_training_modes():
     model = _make_model(drop_prob=0.5).eval()
     text_dropout = next(
-        module for module in model.text_projection.modules() if isinstance(module, nn.Dropout)
+        module
+        for module in model.text_projection.modules()
+        if isinstance(module, nn.Dropout)
     )
     text_dropout.train()  # Keep text-side MC dropout enabled.
     text_modes = [module.training for module in model.text_projection.modules()]
@@ -281,3 +421,19 @@ def test_eeg_clip_custom_encoders_require_manual_config_round_trip():
 
     with pytest.raises(ValueError, match="cannot serialize custom encoder"):
         model.get_config()
+
+
+def test_eeg_clip_default_encoders_support_config_round_trip():
+    model = EEGCLIP(
+        n_chans=3,
+        n_times=1000,
+        n_outputs=4,
+        eeg_embedding_dim=8,
+        text_embedding_dim=8,
+        drop_prob=0,
+    )
+
+    config = model.get_config()
+
+    assert config["n_outputs"] == 4
+    assert config["text_embedding_dim"] == 8
