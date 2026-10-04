@@ -47,6 +47,7 @@ from .mscformer import MSCFormer
 from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
 from .neuropose import NeuroPose
+from .neurorvq_tokenizer import NeuroRVQTokenizer
 from .patchedtransformer import PBT
 from .reve import REVE
 from .sccnet import SCCNet
@@ -141,6 +142,7 @@ __all__ = [
     "MEDFormer",
     "MIRepNet",
     "MSCFormer",
+    "NeuroRVQTokenizer",
     "MSVTNet",
     "MVPFormer",
     "PBT",

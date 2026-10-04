@@ -28,6 +28,12 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.NeuroRVQTokenizer`, which ports the released
+  four-scale residual vector quantization tokenizer with strict pretrained
+  checkpoint loading, reconstruction, and discrete token extraction. It
+  retains the source project's CC BY-NC 4.0 terms and 200 Hz input requirement
+  (:gh:`1201` by `lindicaphxag-tech`_).
+
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
   control and a replicability check), run by a dedicated CI job
