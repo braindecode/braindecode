@@ -123,7 +123,7 @@ Bug fixes
   ``split_first_layer=False``, which attempted to initialize and remap
   checkpoint keys through the split-only ``conv_time_spat`` module after the
   CombinedConv refactor. The unsplit path now initializes and loads its direct
-  temporal convolution as before (:gh:`1206` by `lindicaphxag-tech`_).
+  temporal convolution as before (:gh:`1207` by `lindicaphxag-tech`_).
 
 - :meth:`braindecode.EEGClassifier.predict_trials` and
   :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
