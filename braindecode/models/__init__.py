@@ -43,11 +43,12 @@ from .luna import LUNA
 from .medformer import MEDFormer
 from .meta_neuromotor import MetaNeuromotorHand
 from .mirepnet import MIRepNet
-from .neurorvq import NeuroRVQ
 from .mscformer import MSCFormer
 from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
 from .neuropose import NeuroPose
+from .neurorvq import NeuroRVQ
+from .neurorvq_tokenizer import NeuroRVQTokenizer
 from .patchedtransformer import PBT
 from .reve import REVE
 from .sccnet import SCCNet
@@ -143,6 +144,7 @@ __all__ = [
     "MIRepNet",
     "NeuroRVQ",
     "MSCFormer",
+    "NeuroRVQTokenizer",
     "MSVTNet",
     "MVPFormer",
     "PBT",

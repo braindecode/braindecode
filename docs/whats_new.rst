@@ -28,6 +28,12 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.NeuroRVQTokenizer`, which ports the released
+  four-scale residual vector quantization tokenizer with strict pretrained
+  checkpoint loading, reconstruction, and discrete token extraction. It
+  retains the source project's CC BY-NC 4.0 terms and 200 Hz input requirement
+  (:gh:`1201` by `lindicaphxag-tech`_).
+
 - Add :class:`braindecode.models.NeuroRVQ`, a channel-aware EEG foundation
   model with four-scale temporal patch embedding and a pretrained masked-token
   encoder. The port preserves the released architecture and identifies its
