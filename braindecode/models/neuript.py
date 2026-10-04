@@ -114,6 +114,8 @@ class _ProgressiveMoE(nn.Module):
         shared = self.shared(x)
         if self.n_experts == 0:
             return shared, x.new_zeros(())
+        if self.router is None:
+            raise RuntimeError("A router is required when routed experts are enabled.")
 
         flat = x.reshape(-1, x.shape[-1])
         logits = self.router(flat)
