@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from braindecode.models import NeuroRVQTokenizer
+from braindecode.models import neurorvq_tokenizer
 from braindecode.models.neurorvq_tokenizer import _EMAVectorQuantizer
 
 
@@ -99,6 +100,43 @@ def test_ema_quantizer_matches_normalized_ema_update():
     assert indices.tolist() == [0, 1]
     torch.testing.assert_close(quantizer.embedding.weight, expected)
     torch.testing.assert_close(quantizer.cluster_size, torch.tensor([0.5, 0.5]))
+
+
+def test_ema_quantizer_syncs_training_statistics_across_distributed_ranks(
+    monkeypatch,
+):
+    quantizer = _EMAVectorQuantizer(
+        n_codes=2, code_dim=2, decay=0.5, kmeans_init=False
+    ).train()
+    with torch.no_grad():
+        quantizer.embedding.weight.copy_(torch.eye(2))
+        quantizer.embedding.initted.fill_(True)
+
+    calls = []
+
+    monkeypatch.setattr(neurorvq_tokenizer.distributed, "is_available", lambda: True)
+    monkeypatch.setattr(neurorvq_tokenizer.distributed, "is_initialized", lambda: True)
+
+    def fake_all_reduce(value):
+        calls.append(tuple(value.shape))
+        # Simulate two ranks with identical local statistics.
+        value.mul_(2)
+
+    monkeypatch.setattr(
+        neurorvq_tokenizer.distributed, "all_reduce", fake_all_reduce
+    )
+    vectors = torch.tensor([[[[0.8, -0.6]], [[0.6, 0.8]]]])
+
+    _, _, indices = quantizer(vectors)
+
+    expected = torch.tensor([[0.9, 0.3], [-0.3, 0.9]])
+    expected = torch.nn.functional.normalize(expected, dim=-1)
+    assert indices.tolist() == [0, 1]
+    assert calls == [(2,), (2, 2)]
+    # Global counts are doubled relative to the local one-example-per-code
+    # statistics. Doubling both counts and sums must not change the means.
+    torch.testing.assert_close(quantizer.cluster_size, torch.tensor([1.0, 1.0]))
+    torch.testing.assert_close(quantizer.embedding.weight, expected)
 
 
 @pytest.mark.parametrize(
