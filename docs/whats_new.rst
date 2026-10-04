@@ -121,6 +121,7 @@ Bug fixes
 
 - Make :class:`braindecode.modules.TimeDistributed` accept non-contiguous sequence batches by reshaping rather than requiring view-compatible strides. By `lindicaphxag-tech`_.
 
+- Fix :class:`braindecode.modules.CausalConv1d` to use explicit left-only causal padding. This prevents ``kernel_size=1`` from producing an empty time axis and keeps strided/dilated convolutions aligned with the causal reference instead of over-cropping downsampled outputs (:gh:`1216` by `lindicaphxag-tech`_).
 - :meth:`braindecode.EEGClassifier.predict_trials` and
   :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
   ``ValueError`` on trials of different lengths; they return a list with one
@@ -256,6 +257,13 @@ Bug fixes
   Checkpoints saved with the previous layout load with identical outputs, and
   windows longer than 16 patches warn that their extra slots keep their
   initialization (:gh:`1155` by `Bruno Aristimunha`_).
+
+- Fix cropped :class:`braindecode.EEGRegressor` training on a 1-D numpy ``y``
+  computing its loss on a ``(batch_size, batch_size)`` broadcast.
+  :meth:`braindecode.EEGRegressor.fit` reshapes such a ``y`` to
+  ``(n_trials, 1)``, and :class:`braindecode.training.CroppedLoss` squeezed the
+  time-averaged prediction to ``(batch_size,)``. It now keeps the output
+  dimension when the target is 2-D (:gh:`1198` by `Raghav Rathi`_).
 
 
 Current 1.8.0 (2026-08-31)
