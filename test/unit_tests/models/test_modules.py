@@ -1262,6 +1262,43 @@ def test_cbam_invalid_kernel_size():
         CBAM(in_channels=4, reduction_rate=2, kernel_size=4)
 
 
+@pytest.mark.parametrize(
+    "kernel_size,dilation,stride",
+    [
+        (1, 1, 1),
+        (3, 1, 2),
+        (3, 2, 2),
+    ],
+)
+def test_causalconv1d_matches_explicit_left_padding(kernel_size, dilation, stride):
+    """CausalConv1d must match a left-padded convolution for every stride."""
+    torch.manual_seed(0)
+    causal = CausalConv1d(
+        2,
+        3,
+        kernel_size=kernel_size,
+        dilation=dilation,
+        stride=stride,
+    )
+    x = torch.randn(4, 2, 17)
+    left_padding = (kernel_size - 1) * dilation
+
+    expected = torch.nn.functional.conv1d(
+        torch.nn.functional.pad(x, (left_padding, 0)),
+        causal.weight,
+        causal.bias,
+        stride=stride,
+        padding=0,
+        dilation=dilation,
+        groups=causal.groups,
+    )
+
+    out = causal(x)
+
+    assert out.shape[-1] == (x.shape[-1] - 1) // stride + 1
+    torch.testing.assert_close(out, expected)
+
+
 def test_causalconv1d_disallows_padding():
     """Padding argument is managed internally by CausalConv1d."""
     with pytest.raises(ValueError):
