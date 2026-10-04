@@ -70,9 +70,10 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
     drop_prob : float
         Dropout probability in non-final projection blocks.
     initial_temperature : float
-        Initial temperature for cross-modal similarity logits. The inverse
-        temperature is learned and capped at 100, following common CLIP
-        practice.
+        Initial temperature used to initialize the released EEG-CLIP logit-scale
+        parameter as ``log(1 / temperature)``. For reference fidelity, the
+        released implementation multiplies similarities by this learned raw
+        parameter rather than exponentiating it.
     chs_info : list | None
         Channel information passed to :class:`~braindecode.models.EEGModuleMixin`.
     input_window_seconds : float | None
@@ -314,16 +315,12 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
             raise ValueError("EEG and text embeddings must both be two-dimensional.")
         if eeg_embeds.shape[1] != text_embeds.shape[1]:
             raise ValueError("EEG and text embeddings must have the same dimension.")
-        # Match the released EEG-CLIP geometry: projection vectors are fed
-        # directly to the scaled dot-product logits. The released training and
-        # zero-shot paths do not L2-normalize these vectors.
-        #
-        # Keep the scale in log-space and exponentiate it here so it stays
-        # positive and has the usual inverse-temperature interpretation. The
-        # reference repository initializes the parameter in log-space as well,
-        # but its current ClipLoss multiplies by that raw log value.
-        scale = self.logit_scale.clamp(max=math.log(100)).exp()
-        logits_per_eeg = scale * eeg_embeds @ text_embeds.T
+        # Match the released EEG-CLIP implementation exactly: projection
+        # vectors are not L2-normalized, and ClipLoss multiplies their dot
+        # product by the learned raw logit_scale parameter. Although the
+        # parameter is initialized as log(1 / 0.07), the released source does
+        # not exponentiate it before computing logits.
+        logits_per_eeg = self.logit_scale * eeg_embeds @ text_embeds.T
         return logits_per_eeg, logits_per_eeg.T
 
     def contrastive_loss(self, eeg_embeds, text_embeds):

@@ -2,6 +2,7 @@
 #
 # License: BSD-3-Clause
 
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -67,10 +68,9 @@ def test_eeg_clip_encodes_paired_batches_and_returns_symmetric_logits():
     assert output["text_embeds"].shape == (5, 4)
     assert output["logits_per_eeg"].shape == (5, 5)
     torch.testing.assert_close(output["logits_per_text"], output["logits_per_eeg"].T)
-    scale = model.logit_scale.clamp(max=torch.tensor(100.0).log()).exp()
     torch.testing.assert_close(
         output["logits_per_eeg"],
-        scale * output["eeg_embeds"] @ output["text_embeds"].T,
+        model.logit_scale * output["eeg_embeds"] @ output["text_embeds"].T,
     )
 
 
@@ -146,7 +146,7 @@ def test_eeg_clip_projection_depth_is_configurable():
 def test_eeg_clip_logits_match_released_scaled_dot_product():
     model = _make_model().eval()
     with torch.no_grad():
-        model.logit_scale.fill_(torch.log(torch.tensor(2.0)))
+        model.logit_scale.fill_(2.0)
 
     eeg = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
     text = torch.tensor([[5.0, 6.0], [7.0, 8.0]])
@@ -156,6 +156,13 @@ def test_eeg_clip_logits_match_released_scaled_dot_product():
 
     torch.testing.assert_close(logits_eeg, expected)
     torch.testing.assert_close(logits_text, expected.T)
+
+
+def test_eeg_clip_logit_scale_initialization_matches_released_source():
+    model = _make_model(initial_temperature=0.07)
+
+    expected = torch.tensor(math.log(1.0 / 0.07), dtype=model.logit_scale.dtype)
+    torch.testing.assert_close(model.logit_scale.detach(), expected)
 
 
 def test_eeg_clip_contrastive_loss_is_differentiable():
