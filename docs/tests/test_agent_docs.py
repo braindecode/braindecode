@@ -133,3 +133,84 @@ def test_critical_pages_have_canonical_sources():
             ).is_file()
         else:
             assert (docs / (name + ".rst")).is_file()
+
+
+def test_gallery_index_keeps_curated_navigation(corpus):
+    agent_docs.publish(**corpus)
+    text = (corpus["html_root"] / "auto_examples/index.md").read_text()
+    assert "(model_building/plot_bcic_iv_2a_moabb_trial.html)" in text
+
+
+def test_html_then_markdown_gallery_integration(tmp_path):
+    """Exercise real extension nodes and shared doctrees without any datasets."""
+    import subprocess
+    import sys
+
+    source, examples = tmp_path / "source", tmp_path / "examples"
+    source.mkdir()
+    examples.mkdir()
+    extension_dir = Path(__file__).parents[1] / "sphinxext"
+    (source / "conf.py").write_text(
+        f"import sys\nsys.path.insert(0, {str(extension_dir)!r})\n"
+        'extensions = ["sphinx_markdown_builder", "agent_markdown", '
+        '"sphinx_gallery.gen_gallery", "sphinx_design", "sphinxcontrib.bibtex"]\n'
+        'markdown_uri_doc_suffix = ".html"\n'
+        'bibtex_bibfiles = ["refs.bib"]\n'
+        'sphinx_gallery_conf = {"examples_dirs": "../examples", '
+        '"gallery_dirs": "auto_examples", "image_scrapers": (), '
+        '"reset_modules": (), "download_all_examples": False}\n'
+    )
+    (source / "refs.bib").write_text(
+        "@article{one, author={A. Author}, title={Example reference}, "
+        "journal={Test}, year={2026}}\n"
+    )
+    (source / "index.rst").write_text(
+        "Test\n====\n\n.. toctree::\n\n   auto_examples/index\n   nested/page\n\n"
+        ".. button-ref:: nested/page\n    :ref-type: doc\n\n    Nested page\n\n"
+        ":cite:p:`one`\n\n.. bibliography::\n"
+    )
+    (source / "nested").mkdir()
+    (source / "nested/page.rst").write_text(
+        "Page\n====\n\n.. image:: ../sample.svg\n\n"
+        ".. py:class:: Example(n_chans)\n\n    :param int n_chans: Channels.\n\n"
+        ".. raw:: html\n\n    <script>unwanted_widget()</script>\n"
+    )
+    (source / "sample.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+    (examples / "README.txt").write_text("Examples\n========\n")
+    (examples / "plot_test.py").write_text(
+        '"""\nExample\n=======\n\nA no-data fixture.\n"""\n'
+        'from pathlib import Path\np = Path("executions.txt")\n'
+        'p.write_text(p.read_text() + "x" if p.exists() else "x")\nprint("ran")\n'
+    )
+    for builder in ("html", "markdown"):
+        command = [
+            sys.executable,
+            "-m",
+            "sphinx",
+            "-b",
+            builder,
+            "-d",
+            str(tmp_path / "doctrees"),
+        ]
+        if builder == "markdown":
+            command += ["-D", "plot_gallery=0"]
+        result = subprocess.run(
+            command + [str(source), str(tmp_path / builder)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert "unknown node type" not in result.stderr
+    assert (examples / "executions.txt").read_text() == "x"
+    markdown = tmp_path / "markdown"
+    page = (markdown / "nested/page.md").read_text()
+    assert "![image](../_images/sample.svg)" in page
+    assert (tmp_path / "html/_images/sample.svg").is_file()
+    assert "unwanted_widget" not in page
+    assert "n_chans" in page
+    index = (markdown / "index.md").read_text()
+    assert "nested/page.html" in index
+    assert "Example reference" in index
+    assert '<a id="id' in index
+    assert "auto_examples/plot_test.html" in index
+    assert "ran" in (markdown / "auto_examples/plot_test.md").read_text()

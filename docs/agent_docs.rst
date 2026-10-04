@@ -13,8 +13,11 @@ The curated index covers installation, model selection, API conventions, two
 model references, tutorials and citation. It is not a complete Markdown mirror.
 Each exported page identifies the package version, documentation URL and exact
 source commit. Internal document links deliberately point to HTML so that pages
-outside this selection remain accessible. Interactive tables and custom Sphinx
-content may not survive Markdown conversion; follow the canonical HTML link.
+outside this selection remain accessible. A small translator adapter preserves
+HTML image paths, bibliography anchors and gallery navigation, and omits raw HTML
+scripts/styles. Other unsupported nodes retain the converter's warnings rather
+than being silently accepted. Interactive tables and custom Sphinx content may
+not survive Markdown conversion; follow the canonical HTML link.
 
 Build and validation
 --------------------
@@ -32,8 +35,10 @@ After a successful normal HTML build, run from the repository root::
 Use a clean output directory for each source revision. The Markdown pass disables
 example execution; the preceding normal HTML build still has its usual dataset
 and model requirements. Publication fails if any curated HTML or Markdown page
-is missing or its Markdown is empty. Offline tests require only pytest, Sphinx
-and sphinx-markdown-builder::
+is missing or its Markdown is empty. Offline tests require pytest, Sphinx,
+sphinx-markdown-builder, sphinx-gallery, sphinx-design and sphinxcontrib-bibtex.
+The integration fixture builds HTML then Markdown with shared doctrees and
+checks that its tiny, data-free example executes only once::
 
     python -m pytest -q docs/tests/test_agent_docs.py
 

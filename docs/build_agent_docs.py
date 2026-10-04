@@ -52,6 +52,13 @@ def publish(markdown_root, html_root, *, site_url, version, revision):
         if not text:
             raise ValueError(f"Empty critical Markdown page: {name}")
         pages[name] = text
+    # Sphinx-Gallery's thumbnail-only index does not provide ordinary Markdown
+    # navigation. Keep the curated tutorial reachable without scraping raw HTML.
+    pages["auto_examples/index"] += (
+        "\n\n## Selected tutorial\n\n"
+        "- [Motor imagery tutorial]"
+        "(model_building/plot_bcic_iv_2a_moabb_trial.html)\n"
+    )
 
     source = f"https://github.com/braindecode/braindecode/tree/{revision}"
     attribution = (

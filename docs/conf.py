@@ -87,6 +87,7 @@ print(f"--- Sphinx is using sphinx_design version: {sphinx_design.__version__} -
 # ones.
 extensions = [
     "sphinx_markdown_builder",
+    "agent_markdown",
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
     "sphinx.ext.doctest",
