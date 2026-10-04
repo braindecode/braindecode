@@ -170,6 +170,9 @@ class _TSAStage(nn.Module):
         spatial_position: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         batch, n_times, n_chans, dim = x.shape
+        time_residual = (
+            x.permute(0, 2, 1, 3).reshape(batch * n_chans, n_times, dim)
+        )
         time_input = x if time_position is None else x + time_position[None, :, None, :]
         time = (
             self.time_norm(time_input)
@@ -177,7 +180,8 @@ class _TSAStage(nn.Module):
             .reshape(batch * n_chans, n_times, dim)
         )
         time_attn, _ = self.time_attn(time, time, time, need_weights=False)
-        time = time + time_attn
+        # LayerNorm feeds attention; the residual path preserves the signal.
+        time = time_residual + time_attn
         time_update, time_aux = self.time_moe(self.time_post_norm(time))
         time = time + time_update
         x = time.reshape(batch, n_chans, n_times, dim).permute(0, 2, 1, 3)
@@ -188,10 +192,12 @@ class _TSAStage(nn.Module):
         channel = self.channel_norm(channel_input).reshape(
             batch * n_times, n_chans, dim
         )
+        channel_residual = x.reshape(batch * n_times, n_chans, dim)
         channel_attn, _ = self.channel_attn(
             channel, channel, channel, need_weights=False
         )
-        channel = channel + channel_attn
+        # Keep the same pre-normalization residual semantics in the spatial stage.
+        channel = channel_residual + channel_attn
         channel_update, channel_aux = self.channel_moe(self.channel_post_norm(channel))
         channel = channel + channel_update
         x = channel.reshape(batch, n_times, n_chans, dim)

@@ -1,7 +1,9 @@
 import pytest
 import torch
+from torch import nn
 
 from braindecode.models import NeurIPT, amplitude_aware_mask
+from braindecode.models.neuript import _TSAStage
 
 
 def _small_model(**kwargs):
@@ -93,3 +95,37 @@ def test_neuript_embeds_each_sample_without_temporal_pooling():
 def test_neuript_requires_unmerged_first_layer():
     with pytest.raises(ValueError, match="first TSA layer"):
         _small_model(merge_factors=(2, 1))
+
+
+def test_tsa_attention_residuals_bypass_layer_norm():
+    class ZeroAttention(nn.Module):
+        def forward(self, query, key, value, need_weights=True):
+            return torch.zeros_like(query), None
+
+    class ZeroMoE(nn.Module):
+        def forward(self, x):
+            return torch.zeros_like(x), x.new_zeros(())
+
+    stage = _TSAStage(
+        dim=4,
+        n_heads=2,
+        expert_hidden_dim=8,
+        n_experts=0,
+        top_k_fraction=1.0,
+        dropout=0.0,
+    )
+    stage.time_norm = nn.Identity()
+    stage.time_attn = ZeroAttention()
+    stage.time_post_norm = nn.Identity()
+    stage.time_moe = ZeroMoE()
+    stage.channel_norm = nn.Identity()
+    stage.channel_attn = ZeroAttention()
+    stage.channel_post_norm = nn.Identity()
+    stage.channel_moe = ZeroMoE()
+
+    x = torch.randn(2, 3, 2, 4)
+    time_position = torch.full((3, 4), 2.0)
+    spatial_position = torch.full((2, 4), 3.0)
+    actual, _ = stage(x, time_position, spatial_position)
+
+    torch.testing.assert_close(actual, x)
