@@ -23,10 +23,10 @@ from braindecode.models.labram import _SegmentPatch
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 from braindecode.modules import (
     CBAM,
-    Chomp1d,
     ECA,
     MLP,
     CausalConv1d,
+    Chomp1d,
     CombinedConv,
     DropPath,
     FeedForwardBlock,
