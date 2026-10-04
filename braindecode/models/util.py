@@ -542,6 +542,11 @@ models_mandatory_parameters: list[
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("MIRepNet", ["n_chans", "n_outputs"], None),
+    (
+        "TFMTokenizer",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {"sfreq": 200.0, "n_times": 1000},
+    ),
     ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
     (
         "MVPFormer",
@@ -610,6 +615,8 @@ models_mandatory_parameters: list[
 non_classification_models = [
     "SignalJEPA",
     "InterpolatedSignalJEPA",
+    # Returns reconstructions and discrete tokens, not classification logits.
+    "TFMTokenizer",
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
     "MetaNeuromotorHand",
     "EMG2QwertyNet",

@@ -29,14 +29,19 @@ same way, following the braindecode's standards:
 - :fa:`info-circle` ``chs_info``: Information about each individual EEG channel. Refer
   to :class:`mne.Info` (see its ``"chs"`` field for details).
 
-All the models assume that the input data is a 3D tensor of shape ``(batch_size,
-n_chans, n_times)``, and some models also accept a 4D tensor of shape ``(batch_size,
-n_chans, n_times, n_epochs)``, in case of cropped model.
+All downstream decoding models assume that the input data is a 3D tensor of shape
+``(batch_size, n_chans, n_times)``, and some models also accept a 4D tensor of shape
+``(batch_size, n_chans, n_times, n_epochs)``, in case of cropped model.
 
-All the models are implemented as subclasses of
+Most downstream decoding models are implemented as subclasses of
 :py:class:`~braindecode.models.EEGModuleMixin`, which is a base class for all EEG models
 in Braindecode. The :class:`~braindecode.models.EEGModuleMixin` class provides a common
 interface for all EEG models and can derive variable names when needed.
+
+Self-supervised pretraining components may expose objective-specific outputs through
+dedicated methods. For example, :class:`~braindecode.models.TFMTokenizer` keeps a
+tensor-valued default forward path and exposes reconstruction targets, discrete motif
+IDs, quantized embeddings, and commitment loss through its ``tokenize()`` method.
 
 .. important::
 
@@ -194,6 +199,8 @@ interface for all EEG models and can derive variable names when needed.
      SSTDPN
      STEEGFormer
      SyncNet
+     TFMTokenizer
+     TFMTokenizerOutput
      TCFormer
      TIDNet
      TSception

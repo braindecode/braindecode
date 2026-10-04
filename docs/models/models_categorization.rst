@@ -202,8 +202,10 @@ categories can be found in the respective sections below.
 - **Foundation Model / Transformer** (:bdg-danger:`Foundation Model`) approaches
   pretrain attention-based encoders on diverse biosignals and fine-tune for EEG tasks;
   e.g., :class:`BIOT` (:cite:label:`yang2023biot`), :class:`Labram`
-  (:cite:label:`jiang2024large`), and :class:`EEGPT` (:cite:label:`eegpt2024`). These
-  typically need a heavily self-supervised pre-training before decoding.
+  (:cite:label:`jiang2024large`), :class:`EEGPT` (:cite:label:`eegpt2024`), and
+  :class:`TFMTokenizer` (:cite:label:`pradeepkumar2026tfm`). TFMTokenizer learns a
+  discrete vocabulary of time-frequency motifs for single-channel EEG. These methods use
+  self-supervised pre-training to support downstream decoding.
 
 We are continually expanding this collection and welcome contributions! If you have
 implemented a model relevant to EEG, ECoG, or MEG analysis, consider adding it to
