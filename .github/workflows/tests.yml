@@ -131,3 +131,44 @@ jobs:
         file: ./coverage.xml
         env_vars: OS,PYTHON
         token: ${{ secrets.CODECOV_TOKEN }}
+
+  # Real-data acceptance tests (marked network, so skipped by the jobs above).
+  # They train on BNCI2014_001 subject 1, which the ubuntu 3.12 job downloads too.
+  acceptance:
+    name: acceptance (ubuntu-latest, 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OMP_NUM_THREADS: "1"
+    steps:
+    - name: Checking Out Repository
+      uses: actions/checkout@v4
+    # Restore-only: reuse the ubuntu 3.12 test job's MNE data without saving a
+    # smaller cache under its key.
+    - name: Restore MNE Data Cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ~/mne_data
+        key: test-2-${{ runner.os }}-3.12
+        restore-keys: |
+          test-2-${{ runner.os }}-3.12-
+          test-2-${{ runner.os }}-
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        version: latest
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+    - name: Install Braindecode from Current Checkout
+      env:
+        UV_TORCH_BACKEND: cpu
+      run: uv pip install --system -e ".[${{ env.TEST_EXTRAS }}]"
+    - name: Show Library Versions
+      run: python -c "import braindecode, moabb, mne, numpy, torch; print(braindecode.__version__, moabb.__version__, mne.__version__, numpy.__version__, torch.__version__)"
+    - name: Materialize acceptance test data
+      run: python -c "from moabb.datasets import BNCI2014_001; BNCI2014_001().get_data([1])"
+    - name: Run Acceptance Tests
+      run: pytest test/acceptance_tests --run-network -n 0 -vv -rP --durations=0
