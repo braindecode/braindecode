@@ -283,6 +283,8 @@ class CausalConv1d(nn.Conv1d):
             dilation=self.dilation,
             groups=self.groups,
         )
+        if self.padding[0] == 0:
+            return out
         return out[..., : -self.padding[0]]
 
 
