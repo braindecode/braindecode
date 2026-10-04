@@ -57,7 +57,9 @@ class _EMAEmbedding(nn.Module):
         self.weight = nn.Parameter(weights, requires_grad=False)
         self.cluster_size = nn.Parameter(torch.zeros(n_codes), requires_grad=False)
         self.embed_avg = nn.Parameter(weights.clone(), requires_grad=False)
-        self.register_buffer("initted", torch.tensor([not kmeans_init]))
+        self.register_buffer(
+            "initted", torch.tensor([not kmeans_init], dtype=torch.float32)
+        )
 
     @torch.no_grad()
     def initialize(self, vectors: Tensor) -> None:

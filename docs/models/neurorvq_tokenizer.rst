@@ -47,7 +47,7 @@ Reference parity
 The optional script ``scripts/validate_neurorvq_tokenizer_parity.py`` compares
 the port with the released implementation using the pinned Hugging Face
 checkpoint. It checks eval-mode reconstructions and codes, then checks one
-training step, representative gradients, and EMA state. Run it from the
+training step, all trainable parameter and input gradients, and EMA state. Run it from the
 Braindecode repository root after cloning the reference repository and
 installing its Python dependencies:
 
@@ -58,8 +58,9 @@ installing its Python dependencies:
 
 The script downloads the pinned 304 MB checkpoint unless ``--checkpoint`` is
 provided. On the deterministic CPU input in the script, the port and reference
-matched exactly for eval outputs, discrete codes, train outputs, the selected
-encoder gradient, and all quantizer state after one update.
+matched exactly for eval and train outputs, discrete codes, input gradients,
+and all quantizer state after one update. The maximum absolute difference over
+345 trainable parameter gradients was below ``1e-14``.
 
 .. currentmodule:: braindecode.models
 

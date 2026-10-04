@@ -28,6 +28,7 @@ def _small_tokenizer():
 
 def test_neurorvq_tokenizer_reconstructs_and_emits_discrete_codes():
     model = _small_tokenizer().eval()
+    assert model.quantize_1.layers[0].embedding.initted.dtype == torch.float32
     signal = torch.randn(2, 3, 400)
 
     target, reconstruction = model(signal)
