@@ -23,6 +23,7 @@ from braindecode.models.labram import _SegmentPatch
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 from braindecode.modules import (
     CBAM,
+    Chomp1d,
     ECA,
     MLP,
     CausalConv1d,
@@ -78,6 +79,15 @@ def test_tds_blocks_layouts_and_torchscript(module_factory):
         torch.jit.script(batch_first)(batch_first_inputs),
         actual,
     )
+
+
+def test_chomp1d_zero_is_identity():
+    x = torch.randn(2, 3, 11)
+
+    out = Chomp1d(0)(x)
+
+    assert out.shape == x.shape
+    torch.testing.assert_close(out, x)
 
 
 def old_maxnorm(
