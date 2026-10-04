@@ -330,8 +330,10 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     channel_names : tuple of str, list of str, or None
         Ordered electrode names. Names are case-insensitive and must occur in
         the released 104-channel montage. If omitted, names are read from
-        ``chs_info``; without either, the input channels use the first entries
-        in the released channel order.
+        ``chs_info``; without either, randomly initialized models use the first
+        entries in the released channel order. Loading released pretrained
+        weights requires explicit ``channel_names`` or ``chs_info`` to avoid
+        silently assigning input electrodes to the wrong spatial embeddings.
     patch_size : int, default=200
         Samples per temporal patch. NeuroRVQ-EEG v1 requires 200.
     max_patches : int, default=256
@@ -453,6 +455,9 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         self.patch_size = patch_size
         self.max_patches = max_patches
         self.num_patches = self.n_times // patch_size
+        self._has_explicit_channel_mapping = (
+            channel_names is not None or self._chs_info is not None
+        )
         self.channel_names = self._resolve_channel_names(channel_names)
         channel_to_index = {name: i for i, name in enumerate(NEURORVQ_CHANNELS)}
         unknown = [name for name in self.channel_names if name not in channel_to_index]
@@ -589,8 +594,17 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         -----
         The source checkpoint also contains masked-token prediction heads that
         are not used by this downstream classifier. They are intentionally
-        ignored; all shared encoder tensors must load successfully.
+        ignored; all shared encoder tensors must load successfully. Pretrained
+        spatial embeddings are electrode-specific, so ``channel_names`` or
+        ``chs_info`` must have been provided when constructing the model.
         """
+        if not self._has_explicit_channel_mapping:
+            raise ValueError(
+                "Loading pretrained NeuroRVQ weights requires channel_names or "
+                "chs_info so input electrodes map to the released spatial "
+                "embedding slots. The implicit first-N channel fallback is only "
+                "supported for randomly initialized training."
+            )
         if checkpoint_path is None:
             if not HAS_HF_HUB:
                 raise ImportError(

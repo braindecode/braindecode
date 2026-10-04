@@ -92,6 +92,15 @@ def test_neurorvq_default_channel_names_follow_reference_order(model_kwargs):
 
     assert model.channel_names == NEURORVQ_CHANNELS[:3]
 
+def test_neurorvq_pretrained_loading_requires_explicit_channel_mapping(
+    model_kwargs,
+):
+    kwargs = model_kwargs | {"channel_names": None, "chs_info": None}
+    model = NeuroRVQ(**kwargs)
+
+    with pytest.raises(ValueError, match="requires channel_names or chs_info"):
+        model.load_pretrained_weights("checkpoint-is-not-read-before-validation.pt")
+
 
 def test_neurorvq_transformer_block_uses_sequential_residuals():
     block = _Block(
