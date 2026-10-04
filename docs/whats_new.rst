@@ -28,6 +28,10 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Restore acceptance tests on supported Python versions as seeded decoding
+  checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
+  control and a replicability check), run by a dedicated CI job
+  (:gh:`1159` by `Bruno Aristimunha`_).
 - Clarify decoder temporal embedding indexing in :class:`braindecode.models.Labram`
   and cover its one-token-per-temporal-patch behavior
   (:gh:`1155` by `Bruno Aristimunha`_).
@@ -121,6 +125,10 @@ Requirements
 Bug fixes
 ==========
 
+- :meth:`braindecode.EEGClassifier.predict_trials` and
+  :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
+  ``ValueError`` on trials of different lengths; they return a list with one
+  prediction array per trial (:gh:`1159` by `Bruno Aristimunha`_)
 - Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU), part 2 of
   :gh:`1183`: :class:`braindecode.modules.GeneralizedGaussianFilter` and
   :func:`braindecode.functional.hilbert_freq` now use a real-valued DFT on
@@ -146,6 +154,12 @@ Bug fixes
   encoding is built with ``torch.cat`` instead of strided in-place writes (the
   temporal part was 73 % off on Gaudi2). State-dict keys and CPU/CUDA outputs are
   unchanged (:gh:`1191` by `Bruno Aristimunha`_)
+
+- Fix :class:`braindecode.EEGRegressor` training on datasets with one target per
+  trial: the ``(batch,)`` target is now reshaped to match a ``(batch, 1)``
+  prediction instead of being broadcast to ``(batch, batch)`` by the loss, and
+  :meth:`braindecode.EEGRegressor.fit` now returns ``self``
+  (:gh:`1180` by `Arthur031221`_).
 
 - Preserve shared class targets when creating MNE epochs from different event
   annotations, as in sleep staging. MNE event IDs remain unique.
@@ -246,6 +260,13 @@ Bug fixes
   Checkpoints saved with the previous layout load with identical outputs, and
   windows longer than 16 patches warn that their extra slots keep their
   initialization (:gh:`1155` by `Bruno Aristimunha`_).
+
+- Fix cropped :class:`braindecode.EEGRegressor` training on a 1-D numpy ``y``
+  computing its loss on a ``(batch_size, batch_size)`` broadcast.
+  :meth:`braindecode.EEGRegressor.fit` reshapes such a ``y`` to
+  ``(n_trials, 1)``, and :class:`braindecode.training.CroppedLoss` squeezed the
+  time-averaged prediction to ``(batch_size,)``. It now keeps the output
+  dimension when the target is 2-D (:gh:`1198` by `Raghav Rathi`_).
 
 
 Current 1.8.0 (2026-08-31)
