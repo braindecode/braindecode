@@ -22,10 +22,10 @@ from braindecode.models.ifnet import _SpatioTemporalFeatureBlock
 from braindecode.models.labram import _SegmentPatch
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 from braindecode.modules import (
+    AvgPool2dWithConv,
     CBAM,
     ECA,
     MLP,
-    AvgPool2dWithConv,
     CausalConv1d,
     CombinedConv,
     DropPath,
