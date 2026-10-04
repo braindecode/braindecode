@@ -2,7 +2,7 @@
 
 This optional validation downloads or reads the 304 MB released checkpoint,
 then checks inference tokens, reconstruction, one training update, EMA buffers,
-and a representative encoder gradient on a deterministic CPU input.
+and every trainable parameter and input gradient on a deterministic CPU input.
 """
 
 from __future__ import annotations
@@ -174,28 +174,42 @@ def main() -> None:
     reference, port, temporal, spatial = _load_pair(checkpoint, args.neurorvq_source)
     reference.train()
     port.train()
-    reference_target, reference_reconstruction = reference(signal, temporal, spatial)
-    port_target, port_reconstruction = port(signal)
+    signal_reference = signal.detach().clone().requires_grad_()
+    signal_port = signal.detach().clone().requires_grad_()
+    reference_target, reference_reconstruction = reference(
+        signal_reference, temporal, spatial
+    )
+    port_target, port_reconstruction = port(signal_port)
     train_target_error = (reference_target - port_target).abs().max().item()
     train_reconstruction_error = (
         (reference_reconstruction - port_reconstruction).abs().max().item()
     )
-    reference_reconstruction.square().mean().backward()
-    port_reconstruction.square().mean().backward()
-    gradient_error = (
-        (
-            reference.encode_task_layer_1[0].weight.grad
-            - port.encode_task_layer_1[0].weight.grad
+    (
+        reference_target.square().mean() + reference_reconstruction.square().mean()
+    ).backward()
+    (port_target.square().mean() + port_reconstruction.square().mean()).backward()
+    reference_parameters = dict(reference.named_parameters())
+    port_parameters = dict(port.named_parameters())
+    assert reference_parameters.keys() == port_parameters.keys()
+    gradient_errors = {}
+    for name, reference_parameter in reference_parameters.items():
+        port_parameter = port_parameters[name]
+        assert reference_parameter.requires_grad == port_parameter.requires_grad
+        if reference_parameter.grad is None or port_parameter.grad is None:
+            assert reference_parameter.grad is port_parameter.grad is None, name
+            continue
+        gradient_errors[name] = (
+            (reference_parameter.grad - port_parameter.grad).abs().max().item()
         )
-        .abs()
-        .max()
-        .item()
-    )
+    input_gradient_error = (signal_reference.grad - signal_port.grad).abs().max().item()
+    gradient_error = max(gradient_errors.values(), default=0.0)
     reference_state = reference.state_dict()
     port_state = port.state_dict()
     quantizer_keys = [key for key in reference_state if key.startswith("quantize_")]
     ema_state_matches = all(
-        torch.equal(reference_state[key], port_state[key]) for key in quantizer_keys
+        reference_state[key].dtype == port_state[key].dtype
+        and torch.equal(reference_state[key], port_state[key])
+        for key in quantizer_keys
     )
 
     results = {
@@ -206,7 +220,9 @@ def main() -> None:
         "eval_codes_equal": codes_match,
         "train_target_max_abs": train_target_error,
         "train_reconstruction_max_abs": train_reconstruction_error,
-        "encoder_gradient_max_abs": gradient_error,
+        "trainable_parameter_gradient_max_abs": gradient_error,
+        "trainable_parameter_gradient_count": len(gradient_errors),
+        "input_gradient_max_abs": input_gradient_error,
         "ema_state_equal_after_one_step": ema_state_matches,
     }
     print(json.dumps(results, indent=2))
@@ -220,6 +236,7 @@ def main() -> None:
             train_target_error,
             train_reconstruction_error,
             gradient_error,
+            input_gradient_error,
         )
         < 1e-6
     ), "Numerical parity exceeded the 1e-6 tolerance."
