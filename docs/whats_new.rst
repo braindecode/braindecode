@@ -140,6 +140,12 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.models.CBraMod` building a ``LazyLinear`` head when the
+  geometry came from ``chs_info`` or ``input_window_seconds`` instead of ``n_chans`` /
+  ``n_times``; such a model could not be saved or loaded with ``from_pretrained``
+  ("uninitialized parameter"). The head is now a concrete ``Linear`` whenever the
+  geometry is known (:gh:`1233` by `Bruno Aristimunha`_).
+
 - Make :class:`braindecode.modules.TimeDistributed` accept non-contiguous sequence batches by reshaping rather than requiring view-compatible strides. By `lindicaphxag-tech`_.
 
 - Make :class:`braindecode.modules.Chomp1d` preserve the input when ``chomp_size=0`` instead of returning an empty time axis. This restores :class:`braindecode.models.TCN` with ``kernel_size=1``, whose causal padding is zero. By `lindicaphxag-tech`_.
