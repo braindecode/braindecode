@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin, huggingface_hub
+from braindecode.modules import MLP, DropPath
 
 _PRETRAINED_REPO_ID = "ntinosbarmpas/NeuroRVQ"
 _PRETRAINED_REVISION = "d944b87f44ae0ba2923b2f10d0518f23f6803b76"
@@ -132,37 +133,6 @@ NEURORVQ_CHANNELS = (
 )
 
 
-def _drop_path(x: Tensor, drop_prob: float, training: bool) -> Tensor:
-    if drop_prob == 0.0 or not training:
-        return x
-    keep_prob = 1.0 - drop_prob
-    shape = (x.shape[0],) + (1,) * (x.ndim - 1)
-    random_tensor = keep_prob + torch.rand(shape, dtype=x.dtype, device=x.device)
-    random_tensor.floor_()
-    return x.div(keep_prob) * random_tensor
-
-
-class _DropPath(nn.Module):
-    def __init__(self, drop_prob: float):
-        super().__init__()
-        self.drop_prob = drop_prob
-
-    def forward(self, x: Tensor) -> Tensor:
-        return _drop_path(x, self.drop_prob, self.training)
-
-
-class _Mlp(nn.Module):
-    def __init__(self, dim: int, hidden_dim: int, drop: float):
-        super().__init__()
-        self.fc1 = nn.Linear(dim, hidden_dim)
-        self.act = nn.GELU()
-        self.fc2 = nn.Linear(hidden_dim, dim)
-        self.drop = nn.Dropout(drop)
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.drop(self.fc2(self.drop(self.act(self.fc1(x)))))
-
-
 class _Attention(nn.Module):
     def __init__(
         self,
@@ -224,9 +194,17 @@ class _Block(nn.Module):
         super().__init__()
         self.norm1 = nn.LayerNorm(dim)
         self.attn = _Attention(dim, num_heads, qkv_bias, qk_norm, attn_drop, drop)
-        self.drop_path = _DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = nn.LayerNorm(dim)
-        self.mlp = _Mlp(dim, int(dim * mlp_ratio), drop)
+        # Single trailing dropout (vs. the released module's two, after the
+        # activation and after fc2): identical forward since drop_prob=0.0 by
+        # default, and both placements are no-ops whenever drop=0.
+        self.mlp = MLP(
+            in_features=dim,
+            hidden_features=(int(dim * mlp_ratio),),
+            out_features=dim,
+            drop=drop,
+        )
         self.gamma_1 = (
             nn.Parameter(init_values * torch.ones(dim)) if init_values > 0 else None
         )
@@ -308,6 +286,8 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     The upstream implementation and checkpoint are licensed CC BY-NC 4.0.
     This is a non-commercial research license.
+
+    `License <https://github.com/KonstantinosBarmpas/NeuroRVQ/blob/main/LICENSE>`_
 
     Load the published EEG foundation checkpoint (the task-specific
     classification head remains randomly initialized)::
@@ -536,7 +516,9 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         with torch.no_grad():
             for i, block in enumerate(self.blocks, start=1):
                 block.attn.proj.weight.div_(math.sqrt(2.0 * i))
-                block.mlp.fc2.weight.div_(math.sqrt(2.0 * i))
+                # block.mlp[2] is the MLP's output Linear (named fc2 upstream);
+                # see the mlp.fc1/mlp.fc2 -> mlp.0/mlp.2 key remap below.
+                block.mlp[2].weight.div_(math.sqrt(2.0 * i))
 
     def _features(self, x: Tensor) -> Tensor:
         if x.ndim != 3 or x.shape[1] != self.n_chans or x.shape[2] != self.n_times:
@@ -623,6 +605,7 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                 revision=_PRETRAINED_REVISION,
             )
         state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+        state_dict = _remap_mlp_state_dict_keys(state_dict)
         incompatible = self.load_state_dict(state_dict, strict=False)
         expected_missing = {
             "fc_norm.weight",
@@ -643,3 +626,23 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                 f"unexpected={sorted(unexpected)})."
             )
         return self
+
+
+def _remap_mlp_state_dict_keys(state_dict: dict) -> dict:
+    """Rename the released checkpoint's ``mlp.fc1``/``mlp.fc2`` keys.
+
+    The released checkpoint was produced against the upstream module, whose
+    feed-forward block names its two linear layers ``fc1``/``fc2``. The port
+    reuses :class:`braindecode.modules.MLP`, an ``nn.Sequential`` that names
+    the same two layers ``0``/``2``. Renaming here keeps the checkpoint format
+    untouched and isolates the key mapping to this one load path.
+    """
+    key_map = {".mlp.fc1.": ".mlp.0.", ".mlp.fc2.": ".mlp.2."}
+    renamed = {}
+    for key, value in state_dict.items():
+        for old, new in key_map.items():
+            if old in key:
+                key = key.replace(old, new)
+                break
+        renamed[key] = value
+    return renamed
