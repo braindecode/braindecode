@@ -95,6 +95,8 @@ typing = [
 ]
 
 docs = [
+    'pytest<9.1',  # Offline agent documentation contract tests; match the test extra.
+    'sphinx-markdown-builder==0.6.11',
     'sphinx_gallery>=0.17',
     'sphinx_rtd_theme',
     'sphinx-autodoc-typehints',

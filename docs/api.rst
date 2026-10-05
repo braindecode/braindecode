@@ -181,6 +181,7 @@ interface for all EEG models and can derive variable names when needed.
      MSCFormer
      MSVTNet
      PBT
+    PopulationTransformer
      REVE
      SCCNet
      ShallowFBCSPNet
