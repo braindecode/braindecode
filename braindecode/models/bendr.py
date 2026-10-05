@@ -289,16 +289,9 @@ class BENDR(EEGModuleMixin, nn.Module):
         # Keep these parameters if needed later, otherwise they are captured by the mixin
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        # Channel handling. When chs_info is absent (the usual n_chans=20
-        # path, incl. from_pretrained) or already matches BENDR_CHANNEL_ORDER
-        # exactly, the input goes straight into the encoder -- no tokenizer is
-        # built, so that path (every released checkpoint) is bit-identical and
-        # its state_dict keys are unchanged. A non-canonical montage is adapted
-        # to the 20 canonical BENDR channels by the shared ChannelTokenizer
-        # (fixed_order): a plain permutation becomes a one-hot, a montage with
-        # coordinates is interpolated with an MNE spline, and a coordinate-less
-        # montage falls back to a name match plus zero rows. This replaces the
-        # old hard error and the separate InterpolatedBENDR wrapper.
+        # No chs_info (incl. from_pretrained) or the canonical order: no
+        # tokenizer, so released checkpoints stay bit-identical. Any other
+        # montage is projected onto the 20 canonical channels.
         try:
             _chs_info = self.chs_info
         except ValueError:

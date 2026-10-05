@@ -44,9 +44,8 @@ is a projection matrix and :meth:`forward` applies it to ``(B, C, T)`` input.
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal, Optional, get_args
 
-import numpy as np
 import torch
 from torch import nn
 
@@ -71,21 +70,6 @@ def _canon_name(name: str) -> str:
     """Lower-case a channel name and resolve it through the alias table."""
     key = name.lower()
     return CHANNEL_NAME_ALIASES.get(key, key)
-
-
-def _has_valid_locations(chs_info: list[dict]) -> bool:
-    """True when the montage has finite, not approximately all-zero positions.
-
-    Local copy of :func:`braindecode.models.util.has_valid_locations` for the
-    dict case, kept here to avoid a ``modules -> models`` import cycle.
-    """
-    try:
-        xyz = np.asarray([ch["loc"][:3] for ch in chs_info], dtype=float)
-    except (KeyError, TypeError, ValueError):
-        return False
-    if xyz.size == 0 or not np.isfinite(xyz).all():
-        return False
-    return not np.allclose(xyz, 0.0)
 
 
 class ChannelTokenizer(nn.Module):
@@ -136,13 +120,7 @@ class ChannelTokenizer(nn.Module):
         method: str = "spline",
     ) -> None:
         super().__init__()
-        if strategy not in (
-            "names",
-            "coords",
-            "fixed_order",
-            "index_slots",
-            "agnostic",
-        ):
+        if strategy not in get_args(Strategy):
             raise ValueError(f"Unknown channel strategy {strategy!r}.")
         self.strategy = strategy
         # Registered (non-persistent) so they follow ``.to(device)`` yet stay
@@ -152,90 +130,60 @@ class ChannelTokenizer(nn.Module):
 
         if strategy == "agnostic":
             return
-
         if strategy == "names":
-            self.channel_indices = self._resolve_names(
-                src_chs_info, vocabulary, on_unknown
+            if src_chs_info is None or vocabulary is None:
+                raise ValueError(
+                    "strategy='names' requires src_chs_info and vocabulary."
+                )
+            self.channel_indices = _name_indices(
+                [ch["ch_name"] for ch in src_chs_info], vocabulary, on_unknown
             )
         elif strategy == "index_slots":
-            self.channel_indices = self._resolve_slots(src_chs_info, n_slots)
+            if src_chs_info is None or n_slots is None:
+                raise ValueError(
+                    "strategy='index_slots' requires src_chs_info and n_slots."
+                )
+            n = len(src_chs_info)
+            if n > n_slots:
+                raise ValueError(
+                    f"index_slots: got {n} channels but only {n_slots} positional "
+                    f"slots; the released weights use {n_slots}. Reduce the "
+                    f"channel count or use a model with a names/coords channel "
+                    f"strategy."
+                )
+            self.channel_indices = torch.arange(n, dtype=torch.long)
         else:  # coords / fixed_order
-            self.projection = self._resolve_projection(
-                strategy,
-                src_chs_info,
-                target_chs_info,
-                on_missing_loc,
-                method,
-            )
+            if src_chs_info is None or target_chs_info is None:
+                raise ValueError(
+                    f"strategy={strategy!r} requires src_chs_info and target_chs_info."
+                )
+            # Lazy: a top-level import would cycle modules -> models -> modules.
+            from braindecode.models.util import has_valid_locations
 
-    # -- resolution helpers ------------------------------------------------
-
-    @staticmethod
-    def _resolve_names(src_chs_info, vocabulary, on_unknown):
-        if src_chs_info is None or vocabulary is None:
-            raise ValueError("strategy='names' requires src_chs_info and vocabulary.")
-        lookup = {_canon_name(n): i for i, n in enumerate(vocabulary)}
-        out = []
-        for ch in src_chs_info:
-            j = lookup.get(_canon_name(ch["ch_name"]))
-            if j is None:
-                if on_unknown == "error":
-                    raise ValueError(
-                        f"Channel {ch['ch_name']!r} is not in the model "
-                        f"vocabulary ({len(vocabulary)} names) and no alias "
-                        f"matches. Pass on_unknown='zero' to map it to a zero "
-                        f"embedding, or supply a recognised channel name."
-                    )
-                j = -1  # caller must treat -1 as a zero embedding
-            out.append(j)
-        return torch.tensor(out, dtype=torch.long)
-
-    @staticmethod
-    def _resolve_slots(src_chs_info, n_slots):
-        if src_chs_info is None or n_slots is None:
-            raise ValueError(
-                "strategy='index_slots' requires src_chs_info and n_slots."
-            )
-        n = len(src_chs_info)
-        if n > n_slots:
-            raise ValueError(
-                f"index_slots: got {n} channels but only {n_slots} positional "
-                f"slots; the released weights use {n_slots}. Reduce the channel "
-                f"count or use a model with a names/coords channel strategy."
-            )
-        return torch.arange(n, dtype=torch.long)
-
-    @staticmethod
-    def _resolve_projection(
-        strategy, src_chs_info, target_chs_info, on_missing_loc, method
-    ):
-        if src_chs_info is None or target_chs_info is None:
-            raise ValueError(
-                f"strategy={strategy!r} requires src_chs_info and target_chs_info."
-            )
-        has_coords = _has_valid_locations(src_chs_info)
-        if not has_coords:
-            if strategy == "coords" and on_missing_loc == "error":
+            if has_valid_locations(src_chs_info):
+                # MNE spline, with a name-match short-circuit so a permutation
+                # is an exact one-hot.
+                self.projection = ChannelInterpolationLayer(
+                    src_chs_info, target_chs_info, mode="name_match", method=method
+                ).matrix
+            elif strategy == "coords" and on_missing_loc == "error":
                 raise ValueError(
                     "strategy='coords' with on_missing_loc='error': the montage "
                     "has no usable channel coordinates (all 'loc' are zero or "
                     "missing). Supply electrode positions or set "
                     "on_missing_loc='zero'."
                 )
-            # Names-only projection: one-hot for matched names, zero rows else.
-            return _name_match_matrix(src_chs_info, target_chs_info)
-        # Coordinates available: reuse the MNE-backed interpolation layer, with
-        # a name match short-circuit so a permutation is an exact one-hot.
-        layer = ChannelInterpolationLayer(
-            src_chs_info=src_chs_info,
-            tgt_chs_info=target_chs_info,
-            mode="name_match",
-            method=method,
-            trainable=False,
-        )
-        return layer.matrix.detach().clone()
-
-    # -- forward -----------------------------------------------------------
+            else:
+                # No coordinates: one-hot for matched names, zero rows else.
+                idx = _name_indices(
+                    [ch["ch_name"] for ch in target_chs_info],
+                    [ch["ch_name"] for ch in src_chs_info],
+                    "zero",
+                )
+                hit = idx >= 0
+                W = torch.zeros(len(target_chs_info), len(src_chs_info))
+                W[hit.nonzero().squeeze(1), idx[hit]] = 1.0
+                self.projection = W
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Project ``(B, C, T)`` input for coordinate/fixed-order strategies.
@@ -248,18 +196,20 @@ class ChannelTokenizer(nn.Module):
         return x
 
 
-def _name_match_matrix(src: list[dict], tgt: list[dict]) -> torch.Tensor:
-    """One-hot projection for matched names, zero rows for the rest.
-
-    ``(n_tgt, n_src)``; row ``i`` is a one-hot selecting the source channel
-    whose (alias-resolved) name equals target ``i``, or all-zeros when no
-    source name matches. Finite by construction -- used when the source has
-    no coordinates so an MNE spline is impossible.
-    """
-    name_to_src = {_canon_name(s["ch_name"]): i for i, s in enumerate(src)}
-    W = torch.zeros(len(tgt), len(src))
-    for i, t in enumerate(tgt):
-        j = name_to_src.get(_canon_name(t["ch_name"]))
-        if j is not None:
-            W[i, j] = 1.0
-    return W
+def _name_indices(names, vocabulary, on_unknown):
+    """Index of each (alias-resolved) name in ``vocabulary``; ``-1`` if absent."""
+    lookup = {_canon_name(n): i for i, n in enumerate(vocabulary)}
+    out = []
+    for name in names:
+        j = lookup.get(_canon_name(name))
+        if j is None:
+            if on_unknown == "error":
+                raise ValueError(
+                    f"Channel {name!r} is not in the model vocabulary "
+                    f"({len(vocabulary)} names) and no alias matches. Pass "
+                    f"on_unknown='zero' to map it to a zero embedding, or "
+                    f"supply a recognised channel name."
+                )
+            j = -1  # caller must treat -1 as a zero embedding
+        out.append(j)
+    return torch.tensor(out, dtype=torch.long)
