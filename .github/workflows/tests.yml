@@ -125,9 +125,10 @@ jobs:
 
     - name: Upload Coverage to Codecov
       uses: codecov/codecov-action@v4
+      continue-on-error: true
       if: ${{ matrix.run-coverage }}
       with:
-        fail_ci_if_error: true
+        fail_ci_if_error: false
         file: ./coverage.xml
         env_vars: OS,PYTHON
         token: ${{ secrets.CODECOV_TOKEN }}

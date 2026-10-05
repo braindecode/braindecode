@@ -111,6 +111,16 @@ Enhancements
 API and behavior changes
 ========================
 
+- :class:`braindecode.models.Labram`, :class:`braindecode.models.CBraMod` and
+  :class:`braindecode.models.LUNA` tokenize the time axis with the shared
+  :class:`braindecode.modules.PatchTokenizer` and accept a window that is not a
+  multiple of ``patch_size`` by right zero-padding the last patch (with a warning),
+  through a new ``on_non_divisible={"pad", "crop", "error"}`` argument; previously
+  such windows raised a reshape error. :class:`braindecode.models.ZUNA` now defaults to
+  ``on_non_divisible="pad"`` as well (it was ``"error"``). Outputs and state-dict keys
+  are unchanged for divisible windows, so released checkpoints load as before
+  (:gh:`1226` by `Bruno Aristimunha`_).
+
 - :class:`braindecode.models.Labram` defaults to ``use_mean_pooling=True``
   again, the documented value and the readout of the original fine-tuning
   (``fc_norm`` of the mean patch token). :gh:`931` had made the [CLS] output,
