@@ -192,6 +192,28 @@ def test_time_distributed():
     assert torch.allclose(out, out2, atol=1e-4, rtol=1e-4)
 
 
+def test_time_distributed_accepts_noncontiguous_input():
+    batch_size = 4
+    n_windows = 4
+    n_channels = 3
+    n_times = 10
+
+    contiguous = torch.randn(batch_size, n_windows, n_channels, n_times)
+    x = contiguous.transpose(0, 1)
+    assert x.shape == contiguous.shape
+    assert not x.is_contiguous()
+
+    model = TimeDistributed(nn.Identity())
+
+    out = model(x)
+
+    assert out.shape == (batch_size, n_windows, n_channels * n_times)
+    torch.testing.assert_close(
+        out,
+        x.reshape(batch_size, n_windows, n_channels * n_times),
+    )
+
+
 def test_reset_parameters():
     num_channels = 3
 

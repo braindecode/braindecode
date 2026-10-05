@@ -131,6 +131,7 @@ Bug fixes
 ==========
 
 - Fix :class:`braindecode.models.Deep4Net` with an explicit ``final_conv_length`` and no ``n_times``. The model now skips input-length auto-scaling when the input length is intentionally unspecified, matching the documented contract that only ``final_conv_length="auto"`` requires ``n_times``. By `lindicaphxag-tech`_.
+- Make :class:`braindecode.modules.TimeDistributed` accept non-contiguous sequence batches by reshaping rather than requiring view-compatible strides. By `lindicaphxag-tech`_.
 
 - Make :class:`braindecode.modules.Chomp1d` preserve the input when ``chomp_size=0`` instead of returning an empty time axis. This restores :class:`braindecode.models.TCN` with ``kernel_size=1``, whose causal padding is zero. By `lindicaphxag-tech`_.
 
