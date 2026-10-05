@@ -27,6 +27,7 @@ from torch import nn
 
 from braindecode.functional import rescale_parameter, rotate_pairs
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import dkt_region_slots
 from braindecode.modules import FeedForwardBlock
 
 # Blocks whose output carries a deep-supervision norm, following V-JEPA 2.1.
@@ -45,67 +46,16 @@ _BAND_BINS: tuple[int, ...] = tuple(k1 - k0 + 1 for _, _, k0, k1, _ in _BANDS)
 # The published "Guard 3" caps on the normalized inputs, per band.
 _INPUT_CLIP_Z: tuple[float, float, float] = (15.0, 15.0, 20.0)
 
-# The 31 DKT cortical parcels: the 34 Desikan-Killiany gyral labels minus the
-# three (bankssts, frontalpole, temporalpole) whose boundaries the DKT protocol
-# could not define reliably and reassigned to their neighbours.
-_DKT_CORTICAL_PARCELS: tuple[str, ...] = (
-    "caudalanteriorcingulate",
-    "caudalmiddlefrontal",
-    "cuneus",
-    "entorhinal",
-    "fusiform",
-    "inferiorparietal",
-    "inferiortemporal",
-    "insula",
-    "isthmuscingulate",
-    "lateraloccipital",
-    "lateralorbitofrontal",
-    "lingual",
-    "medialorbitofrontal",
-    "middletemporal",
-    "paracentral",
-    "parahippocampal",
-    "parsopercularis",
-    "parsorbitalis",
-    "parstriangularis",
-    "pericalcarine",
-    "postcentral",
-    "posteriorcingulate",
-    "precentral",
-    "precuneus",
-    "rostralanteriorcingulate",
-    "rostralmiddlefrontal",
-    "superiorfrontal",
-    "superiorparietal",
-    "superiortemporal",
-    "supramarginal",
-    "transversetemporal",
-)
-# The six aseg structures the atlas keeps, which DKT leaves untouched.
-_DKT_SUBCORTICAL_STRUCTURES: tuple[str, ...] = (
-    "Hippocampus",
-    "Amygdala",
-    "Caudate",
-    "Putamen",
-    "Pallidum",
-    "Thalamus-Proper",
-)
-
 #: FreeSurfer DKT region names, in the slot order of MAPA's region table.
 #:
 #: The 62 hemisphere-qualified cortical parcels come first, then the 12
 #: subcortical structures, which is the order that indexes the released region
 #: embedding. Slot ``len(MAPA_DKT_REGIONS)`` is the reserved slot given to a
-#: contact that falls outside every region.
-MAPA_DKT_REGIONS: tuple[str, ...] = tuple(
-    f"ctx-{hemisphere}-{parcel}"
-    for hemisphere in ("lh", "rh")
-    for parcel in _DKT_CORTICAL_PARCELS
-) + tuple(
-    f"{hemisphere}-{structure}"
-    for hemisphere in ("Left", "Right")
-    for structure in _DKT_SUBCORTICAL_STRUCTURES
-)
+#: contact that falls outside every region. The vocabulary itself lives in
+#: :func:`braindecode.models.util.dkt_region_slots`, whose names are the
+#: FreeSurfer labels MNE ships in its colour table, so MAPA owns only the
+#: reference to it, not the atlas data.
+MAPA_DKT_REGIONS: tuple[str, ...] = dkt_region_slots()
 
 
 class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):

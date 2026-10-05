@@ -1905,6 +1905,23 @@ def test_mapa_sensor_indices_reads_array_and_contact_number():
     ]
 
 
+def test_mapa_regions_are_freesurfer_labels_sourced_from_util():
+    """The region vocabulary is the shared util helper, anchored to MNE's LUT.
+
+    MAPA owns only the reference and the released slot order; the names are
+    standard FreeSurfer labels, so each must be a key of MNE's bundled colour
+    table (``mne.read_freesurfer_lut``, no download) rather than hard-coded in
+    the model file.
+    """
+    from braindecode.models.mapa import MAPA_DKT_REGIONS
+    from braindecode.models.util import dkt_region_slots
+
+    assert MAPA_DKT_REGIONS == dkt_region_slots()
+    assert len(MAPA_DKT_REGIONS) == 74
+    lut_names, _ = mne.read_freesurfer_lut()
+    assert set(MAPA_DKT_REGIONS) <= set(lut_names)
+
+
 @pytest.mark.parametrize("n_times", [448, 2048, 4096])
 def test_mapa_one_model_reads_another_subject(mapa_model, n_times):
     """A montage and a window the mapa_model was not built for both go through."""

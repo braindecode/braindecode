@@ -357,6 +357,82 @@ def _get_bendr_chs_info() -> list[dict]:
     return result
 
 
+# The 31 DKT cortical parcels: the 34 Desikan-Killiany gyral labels minus the
+# three (bankssts, frontalpole, temporalpole) whose boundaries the DKT protocol
+# could not define reliably and reassigned to their neighbours.
+_DKT_CORTICAL_PARCELS: tuple[str, ...] = (
+    "caudalanteriorcingulate",
+    "caudalmiddlefrontal",
+    "cuneus",
+    "entorhinal",
+    "fusiform",
+    "inferiorparietal",
+    "inferiortemporal",
+    "insula",
+    "isthmuscingulate",
+    "lateraloccipital",
+    "lateralorbitofrontal",
+    "lingual",
+    "medialorbitofrontal",
+    "middletemporal",
+    "paracentral",
+    "parahippocampal",
+    "parsopercularis",
+    "parsorbitalis",
+    "parstriangularis",
+    "pericalcarine",
+    "postcentral",
+    "posteriorcingulate",
+    "precentral",
+    "precuneus",
+    "rostralanteriorcingulate",
+    "rostralmiddlefrontal",
+    "superiorfrontal",
+    "superiorparietal",
+    "superiortemporal",
+    "supramarginal",
+    "transversetemporal",
+)
+# The six aseg structures the atlas keeps, which DKT leaves untouched.
+_DKT_SUBCORTICAL_STRUCTURES: tuple[str, ...] = (
+    "Hippocampus",
+    "Amygdala",
+    "Caudate",
+    "Putamen",
+    "Pallidum",
+    "Thalamus-Proper",
+)
+
+
+def dkt_region_slots() -> tuple[str, ...]:
+    """FreeSurfer DKT region names in a fixed anatomical slot order.
+
+    The 62 hemisphere-qualified cortical parcels come first (left hemisphere,
+    then right), then the 12 subcortical structures (left, then right). Every
+    name is a verbatim FreeSurfer label, i.e. a key of
+    :func:`mne.read_freesurfer_lut` (see ``test_dkt_region_slots_are_freesurfer``
+    labels, which anchors the vocabulary to MNE's bundled colour table without a
+    download). The selection (31 of 34 DKT gyri plus 6 aseg structures) and this
+    slot order are not encoded by the LUT, so braindecode owns them; a port such
+    as MAPA that was trained on this parcellation reuses the slot order as the
+    index into its released region embedding.
+
+    Returns
+    -------
+    tuple of str
+        The 74 region names, index ``i`` being embedding slot ``i``.
+    """
+    return tuple(
+        f"ctx-{hemisphere}-{parcel}"
+        for hemisphere in ("lh", "rh")
+        for parcel in _DKT_CORTICAL_PARCELS
+    ) + tuple(
+        f"{hemisphere}-{structure}"
+        for hemisphere in ("Left", "Right")
+        for structure in _DKT_SUBCORTICAL_STRUCTURES
+    )
+
+
 models_mandatory_parameters: list[
     tuple[str, list[SigArgName], dict[SigArgName, Any] | None | Any]
 ] = [
