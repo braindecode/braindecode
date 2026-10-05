@@ -269,6 +269,26 @@ def test_deep4net_load_state_dict(input_sizes):
 
 
 
+
+def test_deep4net_stride_before_pool_dense_geometry():
+    """Keep the pre-CombinedConv stride semantics used by old checkpoints."""
+    model = Deep4Net(
+        n_chans=21,
+        n_outputs=128,
+        n_times=1000,
+        final_conv_length=2,
+        stride_before_pool=True,
+    ).eval()
+
+    assert model.conv_time_spat.conv_spat.stride == (3, 1)
+    assert model.pool.stride == (1, 1)
+
+    model.to_dense_prediction_model()
+    out = model(torch.randn(2, 21, 1000))
+
+    assert out.shape == (2, 128, 319)
+
+
 def test_hybridnet(input_sizes):
     model = HybridNet(
         input_sizes["n_channels"],
@@ -296,6 +316,19 @@ def test_tcn(input_sizes):
         kernel_size=4,
         drop_prob=0.5,
     )
+    check_forward_pass(model, input_sizes, only_check_until_dim=2)
+
+
+def test_tcn_with_unit_kernel(input_sizes):
+    model = TCN(
+        n_chans=input_sizes["n_channels"],
+        n_outputs=input_sizes["n_classes"],
+        n_filters=5,
+        n_blocks=2,
+        kernel_size=1,
+        drop_prob=0.0,
+    )
+
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
 
@@ -703,6 +736,65 @@ def test_eegpt_return_attention_layer():
     assert out.shape[1] == model.num_heads
     assert out.shape[-1] == expected_seq_len
     assert out.shape[-2] == expected_seq_len
+
+
+def _eegpt(names, **kwargs):
+    from braindecode.models.eegpt import EEGPT
+
+    return EEGPT(
+        n_outputs=2,
+        n_times=600,
+        chs_info=[{"ch_name": name} for name in names],
+        chan_proj_type="none",
+        **kwargs,
+    ).eval()
+
+
+def test_eegpt_chans_id_is_not_saved():
+    # The channel IDs are derived from the montage at construction.
+    model = _eegpt(["C3", "CZ", "C4"])
+    assert "chans_id" not in model.state_dict()
+
+
+@pytest.mark.parametrize(
+    "target_names",
+    [
+        ["C3", "CZ", "C4"],  # fewer channels than the checkpoint
+        ["P4", "PZ", "CP2", "C4", "CZ", "C3"],  # same channels, other order
+    ],
+)
+def test_eegpt_checkpoint_keeps_the_model_channel_ids(target_names):
+    # Checkpoints saved before chans_id became non-persistent, like the released
+    # EEGPT weights, still store it. Loading one must neither fail on another
+    # montage nor replace the IDs of the model's channels by the checkpoint's.
+    source = _eegpt(["C3", "CZ", "C4", "CP2", "PZ", "P4"])
+    state_dict = dict(source.state_dict(), chans_id=source.chans_id.clone())
+    target = _eegpt(target_names)
+    expected = target.chans_id.clone()
+
+    target.load_state_dict(state_dict)
+
+    assert torch.equal(target.chans_id, expected)
+    assert torch.equal(
+        target.target_encoder.chan_embed.weight,
+        source.target_encoder.chan_embed.weight,
+    )
+
+
+def test_eegpt_checkpoint_loads_with_channel_projection():
+    # The default channel projection gives 19 channel IDs; the released
+    # checkpoint was saved without a projection and stores 62.
+    from braindecode.models.eegpt import EEGPT
+
+    source = _eegpt(["C3", "CZ", "C4", "CP2", "PZ", "P4"])
+    state_dict = dict(source.state_dict(), chans_id=source.chans_id.clone())
+    target = EEGPT(n_outputs=2, n_chans=6, n_times=600).eval()
+
+    incompatible = target.load_state_dict(state_dict, strict=False)
+
+    assert not incompatible.unexpected_keys
+    assert all(key.startswith("chan_proj.") for key in incompatible.missing_keys)
+    assert target.chans_id.shape == (1, 19)
 
 
 def test_eegpt_buffer_device():

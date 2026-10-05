@@ -30,10 +30,15 @@ class CroppedLoss(nn.Module):
         preds: torch.Tensor
             Model's prediction with shape (batch_size, n_classes, n_times).
         targets: torch.Tensor
-            Target labels with shape (batch_size, n_classes, n_times).
+            Targets with shape (batch_size,), or (batch_size, n_classes) for
+            regression. Mixup's ``(y_a, y_b, lam)`` is passed to
+            ``loss_function`` as is.
         """
         avg_preds = torch.mean(preds, dim=2)
-        avg_preds = avg_preds.squeeze(dim=1)
+        # 2-D targets already match the (batch_size, n_outputs) predictions.
+        # Everything else is squeezed as before, including Mixup's list target.
+        if not (isinstance(targets, torch.Tensor) and targets.ndim == 2):
+            avg_preds = avg_preds.squeeze(dim=1)
         return self.loss_function(avg_preds, targets)
 
 
