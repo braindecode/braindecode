@@ -33,6 +33,7 @@ from braindecode.models import (
     CBraMod,
     CodeBrain,
     Labram,
+    PopulationTransformer,
     STEEGFormer,
     steegformer,
 )
@@ -602,6 +603,35 @@ def test_labram_wrong_channel_count(model_tokenizer, n_times):
 # ==============================================================================
 # Tests for Labram Channel Reordering
 # ==============================================================================
+
+
+@pytest.mark.parametrize("qkv_bias", [False, True])
+def test_labram_attention_calls_qkv_module(qkv_bias):
+    # Adapters such as LoRA hook or replace ``attn.qkv``; the attention has to call
+    # the module, not only read its weight, or they have no effect.
+    ch_names = list(LABRAM_CHANNEL_ORDER[:4])
+    model = Labram(n_chans=4, n_outputs=2, n_times=800, qkv_bias=qkv_bias).eval()
+    attentions = [block.attn for block in model.blocks]
+    if qkv_bias:  # non-zero biases, as in the checkpoint
+        for attn in attentions:
+            torch.nn.init.normal_(attn.q_bias)
+            torch.nn.init.normal_(attn.v_bias)
+    x = torch.randn(2, 4, 800)
+    reference = model(x, ch_names=ch_names)
+
+    calls = []
+    handles = [
+        attn.qkv.register_forward_hook(lambda *_: calls.append(None))
+        for attn in attentions
+    ]
+    assert torch.equal(model(x, ch_names=ch_names), reference)
+    assert len(calls) == len(attentions)
+    for handle in handles:
+        handle.remove()
+
+    for attn in attentions:  # an adapter that changes the projection
+        attn.qkv.register_forward_hook(lambda _m, _i, out: 2 * out)
+    assert not torch.allclose(model(x, ch_names=ch_names), reference)
 
 
 def test_labram_channel_order_constant_exported():
@@ -1839,3 +1869,96 @@ def test_steegformer_montage_fallback(
             assert 0 <= int(slots.min()) <= int(slots.max()) < len(steeg_vocab)
         else:
             assert model.channel_indices.tolist() == list(range(n_chans))
+
+
+# ==============================================================================
+# Tests for PopulationTransformer (PopT)
+# ==============================================================================
+
+_POPT_SMALL = dict(hidden_dim=32, ffn_dim=64, n_layers=1, n_heads=4)
+# Brain Treebank-like absolute (left, inferior, posterior) integer indices.
+_POPT_LIP = [[57, 52, 62], [196, 155, 191], [120, 80, 100]]
+
+
+def _popt_chs_info(positions):
+    info = mne.create_info([f"E{i}" for i in range(len(positions))], 2048.0, "seeg")
+    for ch, xyz in zip(info["chs"], positions):
+        ch["loc"][:3] = xyz
+    return info["chs"]
+
+
+def test_popt_defaults_are_the_released_config():
+    """A default PopT has the shapes of the released ``popt_brainbert_stft``."""
+    model = PopulationTransformer(n_chans=4, n_outputs=2, n_times=768)
+    layer = model.transformer_encoder.layers[0]
+    assert model.hidden_dim == 512
+    assert len(model.transformer_encoder.layers) == 6
+    assert layer.self_attn.num_heads == 8
+    assert layer.linear1.out_features == 2048
+
+
+@pytest.mark.parametrize(
+    "coord_units, scale, shift_coords, expected",
+    [
+        ("m", 1e-3, False, _POPT_LIP),
+        ("raw", 1.0, False, _POPT_LIP),
+        ("m", 1e-3, True, [[0, 0, 0], [139, 103, 129], [63, 28, 38]]),
+    ],
+    ids=["metres", "raw", "opt-in-shift"],
+)
+def test_popt_chs_info_coords_are_absolute_by_default(
+    coord_units, scale, shift_coords, expected
+):
+    """Upstream feeds absolute indices; the per-axis shift is opt-in."""
+    chs_info = _popt_chs_info([[v * scale for v in xyz] for xyz in _POPT_LIP])
+    model = PopulationTransformer(
+        n_chans=3,
+        n_outputs=1,
+        n_times=16,
+        chs_info=chs_info,
+        coord_units=coord_units,
+        shift_coords=shift_coords,
+        **_POPT_SMALL,
+    )
+    assert model.electrode_coords.tolist() == expected
+
+
+def test_popt_out_of_range_coords_warn_and_clamp():
+    chs_info = _popt_chs_info([[-0.02, 0.01, 0.03], [0.04, -0.05, 0.06]])
+    with pytest.warns(UserWarning, match="clamped"):
+        model = PopulationTransformer(
+            n_chans=2, n_outputs=1, n_times=16, chs_info=chs_info, **_POPT_SMALL
+        )
+    assert model.electrode_coords.tolist() == [[0, 10, 30], [40, 0, 60]]
+
+
+def test_popt_head_is_upstream_linear_and_loads_legacy_head():
+    """The head is upstream's single linear layer on the CLS token.
+
+    The ``braindecode/popt-pretrained`` mirror stores an earlier
+    LayerNorm + Linear head (``final_layer.norm``/``final_layer.fc``); it still
+    loads strictly, onto the linear layer.
+    """
+    model = PopulationTransformer(n_chans=3, n_outputs=2, n_times=16, **_POPT_SMALL)
+    model.eval()
+    assert type(model.final_layer) is torch.nn.Linear
+    x = torch.randn(2, 3, 16)
+    cls_token = model(x, return_features=True)["cls_token"]
+    torch.testing.assert_close(model(x), model.final_layer(cls_token), rtol=0, atol=0)
+
+    legacy = {
+        k: v for k, v in model.state_dict().items() if not k.startswith("final_layer")
+    }
+    fc_weight, fc_bias = torch.randn(2, 32), torch.randn(2)
+    legacy.update(
+        {
+            "final_layer.norm.weight": torch.ones(32),
+            "final_layer.norm.bias": torch.zeros(32),
+            "final_layer.fc.weight": fc_weight,
+            "final_layer.fc.bias": fc_bias,
+        }
+    )
+    reloaded = PopulationTransformer(n_chans=3, n_outputs=2, n_times=16, **_POPT_SMALL)
+    reloaded.load_state_dict(legacy, strict=True)
+    torch.testing.assert_close(reloaded.final_layer.weight, fc_weight)
+    torch.testing.assert_close(reloaded.final_layer.bias, fc_bias)
