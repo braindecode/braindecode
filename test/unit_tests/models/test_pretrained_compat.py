@@ -48,8 +48,6 @@ from braindecode.models.biot import BIOT_CHANNEL_ORDER
 from braindecode.models.eegpt import EEGPT_19_CHANNELS
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 
-mne.set_log_level("ERROR")
-
 TEN_TWENTY = [
     "Fp1",
     "Fp2",
