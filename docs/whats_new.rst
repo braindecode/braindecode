@@ -88,6 +88,12 @@ Enhancements
   pretrained weights at ``braindecode/popt-pretrained`` (:gh:`1105` by
   `Adam Mounir`_).
 
+- Add :class:`braindecode.models.MIRepNet`, the released downstream
+  convolutional-Transformer encoder and classification head for motor-imagery
+  EEG, with pre-trained weights re-hosted at
+  `braindecode/mirepnet-pretrained <https://huggingface.co/braindecode/mirepnet-pretrained>`_
+  (:gh:`1146` by `Bruno Aristimunha`_).
+
 - Add a bounded SAE intervention tutorial on a frozen pretrained REVE with
   BNCI2014_001 using optional SAE Lens, without adding an SAE implementation
   to Braindecode (:gh:`1120` by `Vandit Shah`_ and `Bruno Aristimunha`_)
@@ -347,12 +353,6 @@ Current 1.8.0 (2026-08-31)
 
 Enhancements
 ============
-
-- Add :class:`braindecode.models.MIRepNet`, the released downstream
-  convolutional-Transformer encoder and classification head for motor-imagery
-  EEG, with pre-trained weights re-hosted at
-  `braindecode/mirepnet-pretrained <https://huggingface.co/braindecode/mirepnet-pretrained>`_
-  (:gh:`1126` by `Bruno Aristimunha`_).
 
 - Add a reusable temporal-distributed separable convolution encoder to
   :mod:`braindecode.modules`, and centralize output-head replacement for models using
