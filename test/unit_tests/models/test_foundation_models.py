@@ -724,9 +724,7 @@ def test_labram_forward_none_ch_names_wrong_count_raises(chs_info, n_outputs):
         model(x)
 
 
-def test_labram_forward_return_flags_remain_positional(
-    chs_info, n_outputs, n_chans
-):
+def test_labram_forward_return_flags_remain_positional(chs_info, n_outputs, n_chans):
     """Back-compat: return_* flags can still be passed positionally."""
     model = _small_labram_for_ch_names(chs_info, n_outputs)
     model.eval()
@@ -971,10 +969,20 @@ def _zuna_chs_info():
     return info["chs"]
 
 
-def test_zuna_rejects_non_divisible_n_times_by_default():
-    """The default ``on_non_divisible="error"`` keeps the previous behavior."""
+def test_zuna_pads_non_divisible_n_times_by_default():
+    """The default ``on_non_divisible="pad"`` accepts any window (with a warning);
+    ``"error"`` restores the strict behavior."""
+    with pytest.warns(UserWarning, match="not divisible"):
+        model = ZUNA(chs_info=_zuna_chs_info(), n_times=1000, **_ZUNA_SMALL)
+    out = model(torch.randn(1, len(_zuna_chs_info()), 1000))
+    assert torch.isfinite(out).all()
     with pytest.raises(ValueError, match="divisible"):
-        ZUNA(chs_info=_zuna_chs_info(), n_times=1000, **_ZUNA_SMALL)
+        ZUNA(
+            chs_info=_zuna_chs_info(),
+            n_times=1000,
+            on_non_divisible="error",
+            **_ZUNA_SMALL,
+        )
 
 
 def test_zuna_rejects_invalid_on_non_divisible():
@@ -1174,8 +1182,9 @@ def test_luna_channel_embed_batch_ordering(luna_base_config):
 
 def test_luna_mapping_includes_temperature_typo():
     # pretrained weights have typo key, mapping should handle it
-    model = LUNA(n_outputs=2, n_chans=22, n_times=1000, embed_dim=64,
-                 num_queries=4, depth=8)
+    model = LUNA(
+        n_outputs=2, n_chans=22, n_times=1000, embed_dim=64, num_queries=4, depth=8
+    )
     assert "cross_attn.temparature" in model.mapping
 
 
@@ -1537,7 +1546,6 @@ def test_cbramod_forward_pass():
 # ==============================================================================
 
 
-
 def test_codebrain_forward_pass():
     model = CodeBrain(n_chans=19, n_outputs=2, n_times=6000)
     x = torch.randn(2, 19, 6000)
@@ -1572,13 +1580,18 @@ def diver1_model():
     for i, ch in enumerate(info["chs"]):
         ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
     return DIVER1(
-        n_outputs=4, chs_info=info["chs"], n_times=1000, sfreq=500.0,
-        pooling="mean", d_model=64, n_layers=2,
+        n_outputs=4,
+        chs_info=info["chs"],
+        n_times=1000,
+        sfreq=500.0,
+        pooling="mean",
+        d_model=64,
+        n_layers=2,
     ).eval()
 
 
 @pytest.mark.parametrize(
-    "kind,located,slots", [("ecog", True, [1., 0.]), ("eeg", False, [0., -1.])]
+    "kind,located,slots", [("ecog", True, [1.0, 0.0]), ("eeg", False, [0.0, -1.0])]
 )
 def test_diver1_channel_metadata(kind, located, slots):
     info = mne.create_info(["A0", "A1"], 500.0, kind)
@@ -1589,12 +1602,15 @@ def test_diver1_channel_metadata(kind, located, slots):
     assert metadata.shape == (2, 5)
     torch.testing.assert_close(metadata[:, 3:], torch.tensor([slots, slots]))
     if located:
-        torch.testing.assert_close(metadata[1, :3], torch.tensor([10., 20., -30.]))
+        torch.testing.assert_close(metadata[1, :3], torch.tensor([10.0, 20.0, -30.0]))
     else:
         assert torch.isnan(metadata[:, :3]).all()
 
 
-@pytest.mark.parametrize("kind, slots", [("eeg", [0, -1]), ("ecog", [1, 0]), ("seeg", [1, 2]), ("dbs", [1, 2])])
+@pytest.mark.parametrize(
+    "kind, slots",
+    [("eeg", [0, -1]), ("ecog", [1, 0]), ("seeg", [1, 2]), ("dbs", [1, 2])],
+)
 def test_diver1_channel_metadata_from_chs_info(kind, slots):
     """Standalone metadata retains MNE units and DIVER-1 type slots."""
     info = mne.create_info(["A1", "A2"], 500.0, kind)
@@ -1628,8 +1644,10 @@ def test_diver1_montage_switching_and_permutation(diver1_model):
         torch.testing.assert_close(model(xa), first_a)
         torch.testing.assert_close(model(xa, model.default_chan_metadata), first_a)
         torch.testing.assert_close(
-            model(xa[:, perm], model.default_chan_metadata[perm]), first_a,
-            atol=1e-5, rtol=1e-5,
+            model(xa[:, perm], model.default_chan_metadata[perm]),
+            first_a,
+            atol=1e-5,
+            rtol=1e-5,
         )
 
 
@@ -1640,7 +1658,11 @@ def test_diver1_montage_switching_and_permutation(diver1_model):
         (torch.zeros(3, 5), "mean", r"shape \(9, 5\)"),
         (torch.zeros(9, 4), "mean", r"shape \(9, 5\)"),
         (torch.full((9, 5), 7.0), "mean", "modality column"),
-        (torch.zeros(9, 5).index_fill_(1, torch.tensor([4]), 3.), "mean", "sub-modality"),
+        (
+            torch.zeros(9, 5).index_fill_(1, torch.tensor([4]), 3.0),
+            "mean",
+            "sub-modality",
+        ),
         (torch.zeros(9, 5), "flatten", "pooling='flatten'"),
     ],
 )
@@ -1648,8 +1670,13 @@ def test_diver1_rejects_incompatible_montage(diver1_model, metadata, pooling, ma
     model = diver1_model
     if pooling == "flatten":
         model = DIVER1(
-            n_outputs=4, chs_info=model.chs_info, n_times=1000, sfreq=500.0,
-            pooling=pooling, d_model=64, n_layers=2,
+            n_outputs=4,
+            chs_info=model.chs_info,
+            n_times=1000,
+            sfreq=500.0,
+            pooling=pooling,
+            d_model=64,
+            n_layers=2,
         ).eval()
     with pytest.raises(ValueError, match=match):
         model(torch.randn(1, 9, 1000), metadata)
@@ -1686,15 +1713,19 @@ def test_diver1_stcpe_preserves_low_precision_overlap(monkeypatch):
     torch.testing.assert_close(actual_grad, expected_grad, rtol=0, atol=0)
 
 
-
 @pytest.mark.parametrize("patch_size", [50, 500])
 @pytest.mark.parametrize("out_size", [8, 16, 32])
 def test_diver1_cnn_out_size(patch_size, out_size, tmp_path):
     """Output-size HPO preserves token width and survives config/Hub cloning."""
     info = mne.create_info(["A0", "A1"], 500.0, "seeg")
     kwargs = dict(
-        chs_info=info["chs"], n_outputs=2, n_times=2 * patch_size - 1,
-        patch_size=patch_size, d_model=64, n_layers=1, pooling="mean",
+        chs_info=info["chs"],
+        n_outputs=2,
+        n_times=2 * patch_size - 1,
+        patch_size=patch_size,
+        d_model=64,
+        n_layers=1,
+        pooling="mean",
         cnn_out_size=out_size,
     )
     torch.manual_seed(21)
@@ -1752,7 +1783,9 @@ def test_diver1_cnn_out_size(patch_size, out_size, tmp_path):
 )
 def test_diver1_cnn_out_size_validation(options, match):
     info = mne.create_info(["A0", "A1"], 500.0, "seeg")
-    kwargs = dict(chs_info=info["chs"], n_outputs=2, n_times=500, d_model=64, n_layers=1)
+    kwargs = dict(
+        chs_info=info["chs"], n_outputs=2, n_times=500, d_model=64, n_layers=1
+    )
     with pytest.raises(ValueError, match=match):
         DIVER1(**(kwargs | options))
 
@@ -1838,6 +1871,7 @@ def test_steegformer_montage_fallback(
     if fallback == "hydrocel":
         info.set_montage(mne.channels.make_standard_montage("GSN-HydroCel-256"))
     if fallback == "unavailable":
+
         def unavailable():
             raise OSError("offline")
 
@@ -1962,3 +1996,52 @@ def test_popt_head_is_upstream_linear_and_loads_legacy_head():
     reloaded.load_state_dict(legacy, strict=True)
     torch.testing.assert_close(reloaded.final_layer.weight, fc_weight)
     torch.testing.assert_close(reloaded.final_layer.bias, fc_bias)
+
+
+_TEN_TWENTY = [
+    "Fp1",
+    "Fp2",
+    "F7",
+    "F3",
+    "Fz",
+    "F4",
+    "F8",
+    "T7",
+    "C3",
+    "Cz",
+    "C4",
+    "T8",
+    "P7",
+    "P3",
+    "Pz",
+    "P4",
+    "P8",
+    "O1",
+    "O2",
+]
+
+
+def _patch_models():
+    return [
+        (Labram, dict(n_chans=19, n_times=800, sfreq=200), 200),
+        (CBraMod, dict(n_chans=19, n_times=800, sfreq=200), 200),
+        (LUNA, dict(chs_info=_zuna_chs_info(), n_times=800, sfreq=200), 40),
+        (ZUNA, dict(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL), 32),
+    ]
+
+
+@pytest.mark.parametrize("cls,kwargs,patch_size", _patch_models())
+def test_non_divisible_window_padded_by_default(cls, kwargs, patch_size):
+    """A window that is not a multiple of patch_size pads (warning) and only
+    raises with on_non_divisible="error"; the tokenizer adds no parameters."""
+    kwargs = dict(kwargs, n_times=kwargs["n_times"] + 37, n_outputs=2)
+    with pytest.warns(UserWarning, match="not divisible"):
+        model = cls(**kwargs).eval()
+    n_chans = kwargs.get("n_chans") or len(kwargs["chs_info"])
+    x = torch.randn(1, n_chans, kwargs["n_times"])
+    with torch.no_grad():
+        out = model(x, ch_names=_TEN_TWENTY) if cls is Labram else model(x)
+    assert torch.isfinite(out).all()
+    assert not any("tokenizer" in k for k in model.state_dict())
+    with pytest.raises(ValueError, match="divisible"):
+        cls(**kwargs, on_non_divisible="error")
