@@ -48,6 +48,14 @@ class AvgPool2dWithConv(nn.Module):
         # that initializes parameters or something
         self._pool_weights = None
 
+    def _pool_weights_match_input(self, x, weight_shape):
+        return (
+            self._pool_weights is not None
+            and tuple(self._pool_weights.size()) == tuple(weight_shape)
+            and self._pool_weights.device == x.device
+            and self._pool_weights.dtype == x.dtype
+        )
+
     def forward(self, x):
         # Create weights for the convolution on demand:
         # size or type of x changed...
@@ -58,17 +66,10 @@ class AvgPool2dWithConv(nn.Module):
             self.kernel_size[0],
             self.kernel_size[1],
         )
-        if self._pool_weights is None or (
-            (tuple(self._pool_weights.size()) != tuple(weight_shape))
-            or (self._pool_weights.is_cuda != x.is_cuda)
-            or (self._pool_weights.data.type() != x.data.type())
-        ):
+        if not self._pool_weights_match_input(x, weight_shape):
             n_pool = np.prod(self.kernel_size)
             weights = np_to_th(np.ones(weight_shape, dtype=np.float32) / float(n_pool))
-            weights = weights.type_as(x)
-            if x.is_cuda:
-                weights = weights.cuda()
-            self._pool_weights = weights
+            self._pool_weights = weights.to(device=x.device, dtype=x.dtype)
 
         pooled = F.conv2d(
             x,
