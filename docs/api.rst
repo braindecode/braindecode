@@ -185,6 +185,7 @@ IDs, quantized embeddings, and commitment loss through its ``tokenize()`` method
      MSCFormer
      MSVTNet
      PBT
+    PopulationTransformer
      REVE
      SCCNet
      ShallowFBCSPNet
