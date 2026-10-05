@@ -130,6 +130,12 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.models.ShallowFBCSPNet` with
+  ``split_first_layer=False``, which attempted to initialize and remap
+  checkpoint keys through the split-only ``conv_time_spat`` module after the
+  CombinedConv refactor. The unsplit path now initializes and loads its direct
+  temporal convolution as before (:gh:`1212` by `lindicaphxag-tech`_).
+
 - Fix :class:`braindecode.models.Deep4Net` with
   ``split_first_layer=False``, which attempted to initialize and remap
   checkpoint keys through the split-only ``conv_time_spat`` module after the
