@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import torch
 
-from braindecode.training.losses import TimeSeriesLoss, mixup_criterion
+from braindecode.training.losses import CroppedLoss, TimeSeriesLoss, mixup_criterion
 
 
 def test_mixup_criterion():
@@ -51,6 +51,19 @@ def test_mixup_criterion_accepts_list_target():
 
     loss = mixup_criterion(preds, [y_a, y_b, lam])
     expected = -(lam * preds[:, 0] + (1 - lam) * preds[:, 1]).mean()
+    assert loss == pytest.approx(expected)
+
+
+def test_cropped_loss_accepts_mixup_target():
+    # Cropped training with Mixup hands CroppedLoss a (y_a, y_b, lam) list.
+    n_samples = 3
+    y_a = torch.zeros(n_samples, dtype=torch.int64)
+    y_b = torch.ones(n_samples, dtype=torch.int64)
+    lam = torch.arange(0.1, 1, 1 / n_samples)
+    preds = torch.Tensor(np.random.RandomState(42).randn(n_samples, 2, 4))
+
+    loss = CroppedLoss(mixup_criterion)(preds, [y_a, y_b, lam])
+    expected = mixup_criterion(preds.mean(dim=2), [y_a, y_b, lam])
     assert loss == pytest.approx(expected)
 
 
