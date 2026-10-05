@@ -130,7 +130,7 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
       stored. The reference checkpoint also stores an unused copy of the
       Transformer layer that is not part of this model.
 
-    .. versionadded:: 1.8.2
+    .. versionadded:: 1.9.0
 
     Parameters
     ----------
