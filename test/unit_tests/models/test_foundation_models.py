@@ -2056,11 +2056,13 @@ def test_cbramod_head_is_concrete_when_geometry_is_derived(tmp_path):
     model = CBraMod(
         chs_info=chs, input_window_seconds=4.0, sfreq=200, n_outputs=2, n_layer=1
     )
-    assert isinstance(model.final_layer[1], nn.Linear)
-    assert not isinstance(model.final_layer[1], nn.LazyLinear)
+    assert type(model.final_layer[1]) is nn.Linear  # LazyLinear subclasses Linear
     model.save_pretrained(tmp_path)
     loaded = CBraMod.from_pretrained(tmp_path)
     x = torch.randn(1, len(chs), 800)
     assert torch.allclose(model.eval()(x), loaded.eval()(x), atol=1e-5)
     # unknown geometry still falls back to a lazy head
     assert isinstance(CBraMod(n_outputs=2, n_layer=1).final_layer[1], nn.LazyLinear)
+    # n_times alone (no channels) still reaches the tokenizer's divisibility check
+    with pytest.raises(ValueError, match="divisible"):
+        CBraMod(n_times=1001, n_outputs=2, n_layer=1, on_non_divisible="error")

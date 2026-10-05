@@ -189,9 +189,13 @@ class CBraMod(EEGModuleMixin, nn.Module):
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
         # Shared tokenizer: (batch, n_chans, n_times) -> (batch, n_chans, n_patch, patch_size),
         # padding/cropping a non-divisible time axis at forward time.
+        try:
+            tokenizer_n_times = self.n_times
+        except ValueError:  # unknown length: nothing to check at construction
+            tokenizer_n_times = patch_size
         self.rearrange = PatchTokenizer(
             patch_size=patch_size,
-            n_times=self.n_times if self._knows_geometry() else patch_size,
+            n_times=tokenizer_n_times,
             on_non_divisible=on_non_divisible,
         )
         self._on_non_divisible = on_non_divisible
