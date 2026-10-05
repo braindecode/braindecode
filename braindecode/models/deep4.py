@@ -162,10 +162,18 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         self.stride_before_pool = stride_before_pool
 
         min_n_times = self._get_min_n_times()
-        if self.n_times < min_n_times:
-            scaling_factor = self.n_times / min_n_times
+        resolved_n_times = self._n_times
+        if (
+            resolved_n_times is None
+            and self._input_window_seconds is not None
+            and self._sfreq is not None
+        ):
+            resolved_n_times = round(self._input_window_seconds * self._sfreq)
+
+        if resolved_n_times is not None and resolved_n_times < min_n_times:
+            scaling_factor = resolved_n_times / min_n_times
             warn(
-                f"n_times ({self.n_times}) is smaller than the minimum required "
+                f"n_times ({resolved_n_times}) is smaller than the minimum required "
                 f"({min_n_times}) for the current model parameters configuration. "
                 "Adjusting parameters to ensure compatibility."
                 "Reducing the kernel, pooling, and stride sizes accordingly."
@@ -186,13 +194,18 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         # When padronize all layers,
         # add the old's parameters here
         self.mapping = {
-            "conv_time.weight": "conv_time_spat.conv_time.weight",
-            "conv_spat.weight": "conv_time_spat.conv_spat.weight",
-            "conv_time.bias": "conv_time_spat.conv_time.bias",
-            "conv_spat.bias": "conv_time_spat.conv_spat.bias",
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
             "conv_classifier.bias": "final_layer.conv_classifier.bias",
         }
+        if self.split_first_layer:
+            self.mapping.update(
+                {
+                    "conv_time.weight": "conv_time_spat.conv_time.weight",
+                    "conv_spat.weight": "conv_time_spat.conv_spat.weight",
+                    "conv_time.bias": "conv_time_spat.conv_time.bias",
+                    "conv_spat.bias": "conv_time_spat.conv_spat.bias",
+                }
+            )
 
         if self.stride_before_pool:
             conv_stride = self.pool_time_stride
@@ -212,9 +225,10 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
                     in_chans=self.n_chans,
                     n_filters_time=self.n_filters_time,
                     n_filters_spat=self.n_filters_spat,
-                    filter_time_length=filter_time_length,
+                    filter_time_length=self.filter_time_length,
                     bias_time=True,
                     bias_spat=not self.batch_norm,
+                    stride=(conv_stride, 1),
                 ),
             )
             n_filters_conv = self.n_filters_spat
@@ -318,14 +332,16 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
 
         # Initialization, xavier is same as in our paper...
         # was default from lasagne
-        init.xavier_uniform_(self.conv_time_spat.conv_time.weight, gain=1)
-        # maybe no bias in case of no split layer and batch norm
-        if self.split_first_layer or (not self.batch_norm):
-            init.constant_(self.conv_time_spat.conv_time.bias, 0)
         if self.split_first_layer:
+            init.xavier_uniform_(self.conv_time_spat.conv_time.weight, gain=1)
+            init.constant_(self.conv_time_spat.conv_time.bias, 0)
             init.xavier_uniform_(self.conv_time_spat.conv_spat.weight, gain=1)
             if not self.batch_norm:
                 init.constant_(self.conv_time_spat.conv_spat.bias, 0)
+        else:
+            init.xavier_uniform_(self.conv_time.weight, gain=1)
+            if not self.batch_norm:
+                init.constant_(self.conv_time.bias, 0)
         if self.batch_norm:
             init.constant_(self.bnorm.weight, 1)
             init.constant_(self.bnorm.bias, 0)
