@@ -88,7 +88,8 @@ class EEGPT(EEGModuleMixin, nn.Module):
         - *Role.* Maps raw spatio-temporal EEG patches into a sequence of latent tokens :math:`z`.
     - `EEGPT.chans_id` **(Channel Identification)**
         - *Operations.* A buffer containing channel indices mapped from the standard channel names provided
-          in ``chs_info`` [eegpt]_.
+          in ``chs_info`` [eegpt]_. It is rebuilt from the montage at construction and not stored in
+          checkpoints, so pretrained weights load on any montage.
         - *Role.* Provides the spatial identity for each input channel, allowing the model to look up
           the correct channel embedding vector :math:`\varsigma_i`.
     - **Local Spatio-Temporal Embedding** (Input Processing)
@@ -338,8 +339,12 @@ class EEGPT(EEGModuleMixin, nn.Module):
         else:
             self.channel_names = None  # type: ignore
 
+        # Derived from the montage above, so it is not saved in the state dict:
+        # loading a checkpoint must not replace the IDs of this model's channels.
         self.register_buffer(
-            "chans_id", self.target_encoder.prepare_chan_ids(self.channel_names)
+            "chans_id",
+            self.target_encoder.prepare_chan_ids(self.channel_names),
+            persistent=False,
         )
 
         self.flattened_encoder_output_dim = (
@@ -390,6 +395,13 @@ class EEGPT(EEGModuleMixin, nn.Module):
             "embed_num": self.embed_num,
             "embed_dim": self.embed_dim,
         }
+
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        # Checkpoints saved before ``chans_id`` became non-persistent (including
+        # the released EEGPT weights) still carry it. Drop it, so the IDs keep
+        # matching this model's montage and a different montage can load.
+        state_dict.pop(prefix + "chans_id", None)
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def forward(self, x, return_features=False):
         """

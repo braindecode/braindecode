@@ -756,3 +756,51 @@ def test_eegregressor_loss_is_per_trial_mse_for_dataset_targets():
 def test_eegregressor_fit_returns_self():
     net, _, fitted = _fit_regressor_on_dataset()
     assert fitted is net
+
+
+@pytest.mark.parametrize("from_dataset", [False, True], ids=["numpy", "dataset"])
+def test_eegregressor_cropped_loss_is_per_trial_mse(from_dataset):
+    # fit reshapes a 1-D numpy y to (n, 1), a dataset yields (n,) targets.
+    # Either way each time-averaged prediction must meet its own target.
+    from braindecode.datasets import create_from_X_y
+
+    n_trials, n_chans, n_times = 8, 4, 300
+    rng = np.random.RandomState(0)
+    X = rng.randn(n_trials, n_chans, n_times).astype("float32")
+    y = rng.randn(n_trials).astype("float32")
+    torch.manual_seed(0)
+    module = ShallowFBCSPNet(
+        n_chans=n_chans, n_outputs=1, n_times=n_times, final_conv_length=2
+    )
+    module.to_dense_prediction_model()
+    net = EEGRegressor(
+        module,
+        cropped=True,
+        criterion=CroppedLoss,
+        criterion__loss_function=torch.nn.functional.mse_loss,
+        train_split=None,
+        batch_size=n_trials,
+        max_epochs=1,
+        verbose=0,
+    )
+    if from_dataset:
+        data = create_from_X_y(
+            X,
+            y,
+            drop_last_window=False,
+            sfreq=100,
+            window_size_samples=n_times,
+            window_stride_samples=module.get_output_shape()[2],
+        )
+        net.fit(data, y=None)
+        dataset = net.get_dataset(data)
+    else:
+        net.fit(X, y)
+        dataset = net.get_dataset(X, y.reshape(-1, 1))
+    X_batch, y_batch = next(iter(net.get_iterator(dataset)))[:2]
+    with torch.no_grad():
+        y_pred = net.infer(X_batch)
+        loss = net.get_loss(y_pred, y_batch)
+    per_trial_pred = y_pred.mean(dim=2).reshape(-1)
+    expected = ((per_trial_pred - y_batch.reshape(-1).float()) ** 2).mean()
+    torch.testing.assert_close(loss, expected)
