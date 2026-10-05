@@ -19,6 +19,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.brainomni import (
     _geometry_from_chs_info,
     _MultiHeadAttentionRoPE,
+    _rename_official_key,
     _RotaryPositionalEmbedding,
     _SEANetDecoder,
     _SEANetEncoder,
@@ -868,6 +869,16 @@ def test_brainomni_official_stage2_keys_load():
     for key, value in source.state_dict().items():
         expected = head[key] if key.startswith("final_layer.") else value
         assert torch.equal(target.state_dict()[key], expected), key
+
+
+def test_brainomni_official_decoder_rename_is_anchored():
+    """Only a leading ``decoder.``/``tokenizer.decoder.`` is renamed."""
+    assert _rename_official_key("decoder.weight") == "final_layer.weight"
+    assert (
+        _rename_official_key("tokenizer.decoder.model.0.weight")
+        == "tokenizer.final_layer.model.0.weight"
+    )
+    assert _rename_official_key("head.tokenizer.decoder.w") == "head.tokenizer.decoder.w"
 
 
 def test_brainomni_checkpoint_key_remap_rejects_collisions():
