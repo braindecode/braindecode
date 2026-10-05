@@ -130,6 +130,8 @@ Requirements
 Bug fixes
 ==========
 
+- Make :class:`braindecode.modules.Chomp1d` preserve the input when ``chomp_size=0`` instead of returning an empty time axis. This restores :class:`braindecode.models.TCN` with ``kernel_size=1``, whose causal padding is zero. By `lindicaphxag-tech`_.
+
 - Preserve ``Deep4Net``'s first-block temporal stride when using the merged
   ``CombinedConv`` path with ``stride_before_pool=True``; dense-prediction
   outputs now retain the historical temporal geometry (:gh:`1205` by `lindicaphxag-tech`_).

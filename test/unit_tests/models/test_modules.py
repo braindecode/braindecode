@@ -26,6 +26,7 @@ from braindecode.modules import (
     ECA,
     MLP,
     CausalConv1d,
+    Chomp1d,
     CombinedConv,
     DropPath,
     FeedForwardBlock,
@@ -78,6 +79,15 @@ def test_tds_blocks_layouts_and_torchscript(module_factory):
         torch.jit.script(batch_first)(batch_first_inputs),
         actual,
     )
+
+
+def test_chomp1d_zero_is_identity():
+    x = torch.randn(2, 3, 11)
+
+    out = Chomp1d(0)(x)
+
+    assert out.shape == x.shape
+    torch.testing.assert_close(out, x)
 
 
 def old_maxnorm(
