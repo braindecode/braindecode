@@ -161,6 +161,70 @@ def test_shallow_fbcsp_net(input_sizes):
     check_forward_pass(model, input_sizes)
 
 
+
+def test_shallow_fbcsp_net_split_first_layer_without_batch_norm(input_sizes):
+    model = ShallowFBCSPNet(
+        input_sizes["n_channels"],
+        input_sizes["n_classes"],
+        input_sizes["n_in_times"],
+        final_conv_length="auto",
+        split_first_layer=True,
+        batch_norm=False,
+    )
+
+    assert torch.count_nonzero(model.conv_time_spat.conv_time.bias) == 0
+    assert torch.count_nonzero(model.conv_time_spat.conv_spat.bias) == 0
+
+
+def test_shallow_fbcsp_net_without_split_first_layer(input_sizes):
+    model = ShallowFBCSPNet(
+        input_sizes["n_channels"],
+        input_sizes["n_classes"],
+        input_sizes["n_in_times"],
+        final_conv_length="auto",
+        split_first_layer=False,
+    )
+
+    assert hasattr(model, "conv_time")
+    assert not hasattr(model, "conv_time_spat")
+    check_forward_pass(model, input_sizes)
+
+
+def test_shallow_fbcsp_net_without_split_first_layer_without_batch_norm(
+    input_sizes,
+):
+    model = ShallowFBCSPNet(
+        input_sizes["n_channels"],
+        input_sizes["n_classes"],
+        input_sizes["n_in_times"],
+        final_conv_length="auto",
+        split_first_layer=False,
+        batch_norm=False,
+    )
+
+    assert hasattr(model, "conv_time")
+    assert model.conv_time.bias is not None
+    assert torch.count_nonzero(model.conv_time.bias) == 0
+    check_forward_pass(model, input_sizes)
+
+
+def test_shallow_fbcsp_net_without_split_first_layer_loads_legacy_state_dict(
+    input_sizes,
+):
+    model = ShallowFBCSPNet(
+        input_sizes["n_channels"],
+        input_sizes["n_classes"],
+        input_sizes["n_in_times"],
+        final_conv_length="auto",
+        split_first_layer=False,
+    )
+    state_dict = OrderedDict()
+    for key, value in model.state_dict().items():
+        legacy_key = key.replace("final_layer.conv_classifier", "conv_classifier")
+        state_dict[legacy_key] = value.clone()
+
+    model.load_state_dict(state_dict)
+
 def test_shallow_fbcsp_net_load_state_dict(input_sizes):
     model = ShallowFBCSPNet(
         input_sizes["n_channels"],
@@ -194,6 +258,36 @@ def test_deep4net(input_sizes):
         final_conv_length="auto",
     )
     check_forward_pass(model, input_sizes)
+
+
+def test_deep4net_without_split_first_layer(input_sizes):
+    model = Deep4Net(
+        input_sizes["n_channels"],
+        input_sizes["n_classes"],
+        input_sizes["n_in_times"],
+        final_conv_length="auto",
+        split_first_layer=False,
+    )
+
+    assert hasattr(model, "conv_time")
+    assert not hasattr(model, "conv_time_spat")
+    check_forward_pass(model, input_sizes)
+
+
+def test_deep4net_without_split_first_layer_loads_legacy_state_dict(input_sizes):
+    model = Deep4Net(
+        input_sizes["n_channels"],
+        input_sizes["n_classes"],
+        input_sizes["n_in_times"],
+        final_conv_length="auto",
+        split_first_layer=False,
+    )
+    state_dict = OrderedDict()
+    for key, value in model.state_dict().items():
+        legacy_key = key.replace("final_layer.conv_classifier", "conv_classifier")
+        state_dict[legacy_key] = value.clone()
+
+    model.load_state_dict(state_dict)
 
 
 def test_deep4net_load_state_dict(input_sizes):
