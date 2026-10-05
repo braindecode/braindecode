@@ -31,3 +31,28 @@ def test_from_pretrained_local_roundtrip(tmp_path):
     x = torch.randn(1, 19, 1000)
     assert torch.allclose(model(x), reloaded(x), atol=1e-5)
     assert EEGDINO.from_pretrained(save_dir, n_outputs=6)(x).shape == (1, 6)
+
+
+def test_attention_calls_qkv_module():
+    # Adapters such as LoRA hook or replace ``attn.qkv``; the attention has to call
+    # the module, not only read its weight, or they have no effect.
+    model = EEGDINO(n_chans=19, n_outputs=2, n_times=1000).eval()
+    for layer in model.encoder_layers:  # non-zero biases, as in the checkpoint
+        torch.nn.init.normal_(layer.attn.q_bias)
+        torch.nn.init.normal_(layer.attn.v_bias)
+    x = torch.randn(2, 19, 1000)
+    reference = model(x)
+
+    calls = []
+    handles = [
+        layer.attn.qkv.register_forward_hook(lambda *_: calls.append(None))
+        for layer in model.encoder_layers
+    ]
+    assert torch.equal(model(x), reference)
+    assert len(calls) == len(model.encoder_layers)
+    for handle in handles:
+        handle.remove()
+
+    for layer in model.encoder_layers:  # an adapter that changes the projection
+        layer.attn.qkv.register_forward_hook(lambda _m, _i, out: 2 * out)
+    assert not torch.allclose(model(x), reference)

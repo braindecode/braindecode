@@ -182,6 +182,7 @@ interface for all EEG models and can derive variable names when needed.
      NeurIPT
      NeuroPose
      PBT
+    PopulationTransformer
      REVE
      SCCNet
      ShallowFBCSPNet

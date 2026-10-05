@@ -124,13 +124,18 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.drop_prob = drop_prob
 
         self.mapping = {
-            "conv_time.weight": "conv_time_spat.conv_time.weight",
-            "conv_spat.weight": "conv_time_spat.conv_spat.weight",
-            "conv_time.bias": "conv_time_spat.conv_time.bias",
-            "conv_spat.bias": "conv_time_spat.conv_spat.bias",
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
             "conv_classifier.bias": "final_layer.conv_classifier.bias",
         }
+        if self.split_first_layer:
+            self.mapping.update(
+                {
+                    "conv_time.weight": "conv_time_spat.conv_time.weight",
+                    "conv_spat.weight": "conv_time_spat.conv_spat.weight",
+                    "conv_time.bias": "conv_time_spat.conv_time.bias",
+                    "conv_spat.bias": "conv_time_spat.conv_spat.bias",
+                }
+            )
 
         self.add_module("ensuredims", Ensure4d())
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
@@ -203,14 +208,16 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.add_module("final_layer", module)
 
         # Initialization, xavier is same as in paper...
-        init.xavier_uniform_(self.conv_time_spat.conv_time.weight, gain=1)
-        # maybe no bias in case of no split layer and batch norm
-        if self.split_first_layer or (not self.batch_norm):
-            init.constant_(self.conv_time_spat.conv_time.bias, 0)
         if self.split_first_layer:
+            init.xavier_uniform_(self.conv_time_spat.conv_time.weight, gain=1)
+            init.constant_(self.conv_time_spat.conv_time.bias, 0)
             init.xavier_uniform_(self.conv_time_spat.conv_spat.weight, gain=1)
             if not self.batch_norm:
                 init.constant_(self.conv_time_spat.conv_spat.bias, 0)
+        else:
+            init.xavier_uniform_(self.conv_time.weight, gain=1)
+            if not self.batch_norm:
+                init.constant_(self.conv_time.bias, 0)
         if self.batch_norm:
             init.constant_(self.bnorm.weight, 1)
             init.constant_(self.bnorm.bias, 0)
