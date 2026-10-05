@@ -33,6 +33,8 @@ Enhancements
   provides EEG/text embedding, similarity-logit, and zero-shot classification
   interfaces while allowing an optional text encoder to be supplied by the
   user (:gh:`1200` by `lindicaphxag-tech`_).
+- Generate a version-scoped ``llms.txt`` and selected Markdown documentation
+  entry points with source-commit attribution and critical-page coverage checks.
 
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
@@ -73,6 +75,11 @@ Enhancements
   feature-return, and head-reset APIs. The official pretrained weights load from
   ``braindecode/brant-pretrained`` (all tensors verified identical to the
   official release) (:gh:`1100` by `Adam Mounir`_).
+
+- Add :class:`braindecode.models.PopulationTransformer` (PopT, Chau et al. 2024),
+  an iEEG population model over per-electrode features and coordinates, with
+  pretrained weights at ``braindecode/popt-pretrained`` (:gh:`1105` by
+  `Adam Mounir`_).
 
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
@@ -116,6 +123,9 @@ API and behavior changes
 Requirements
 ============
 
+- Add ``sphinx-markdown-builder==0.6.11`` and ``pytest<9.1`` to the docs extra
+  for version-scoped Markdown exports and their offline contract tests.
+
 - Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
   REVE and ZUNA now import PyTorch's RMSNorm layer directly, preserving their
   explicit epsilon values. Intel macOS is no longer supported because
@@ -125,6 +135,13 @@ Requirements
 Bug fixes
 ==========
 
+- Make :class:`braindecode.modules.TimeDistributed` accept non-contiguous sequence batches by reshaping rather than requiring view-compatible strides. By `lindicaphxag-tech`_.
+
+- Make :class:`braindecode.modules.Chomp1d` preserve the input when ``chomp_size=0`` instead of returning an empty time axis. This restores :class:`braindecode.models.TCN` with ``kernel_size=1``, whose causal padding is zero. By `lindicaphxag-tech`_.
+
+- Preserve ``Deep4Net``'s first-block temporal stride when using the merged
+  ``CombinedConv`` path with ``stride_before_pool=True``; dense-prediction
+  outputs now retain the historical temporal geometry (:gh:`1205` by `lindicaphxag-tech`_).
 - Fix :class:`braindecode.modules.CausalConv1d` to use explicit left-only causal padding. This prevents ``kernel_size=1`` from producing an empty time axis and keeps strided/dilated convolutions aligned with the causal reference instead of over-cropping downsampled outputs (:gh:`1216` by `lindicaphxag-tech`_).
 - :meth:`braindecode.EEGClassifier.predict_trials` and
   :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
@@ -253,6 +270,12 @@ Bug fixes
   intermediate gradients, and rows at or below ``max_norm`` are unchanged.
   Empty tensors pass through and a negative ``max_norm`` raises, as
   ``Tensor.renorm`` does (:gh:`1187` by `Bruno Aristimunha`_).
+- Keep the channel IDs of :class:`braindecode.models.EEGPT` (``chans_id``) out
+  of the state dict. They are rebuilt from ``chs_info``, and a checkpoint that
+  still stores them no longer overrides them: the released weights now load on
+  any montage and with the default channel projection, where they failed with a
+  size mismatch, and a montage with the same channel count no longer silently
+  takes the checkpoint's IDs (:gh:`1195` by `Bruno Aristimunha`_).
 
 - Fix :class:`braindecode.models.Labram` so the released weights keep their
   pretrained time embedding at every window length: it now holds the original

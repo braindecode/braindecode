@@ -422,6 +422,7 @@ models_mandatory_parameters: list[
         ["n_chans", "n_outputs", "n_times"],
         {"n_times": 2048, "sfreq": 2048.0},  # the pretraining rate, 1 s windows
     ),
+    ("PopulationTransformer", ["n_chans", "n_outputs", "n_times"], None),
     (
         "InterpolatedBIOT",
         ["chs_info", "n_outputs", "sfreq", "n_times"],
