@@ -26,6 +26,7 @@ from braindecode.modules import (
     ECA,
     MLP,
     CausalConv1d,
+    Chomp1d,
     CombinedConv,
     DropPath,
     FeedForwardBlock,
@@ -78,6 +79,15 @@ def test_tds_blocks_layouts_and_torchscript(module_factory):
         torch.jit.script(batch_first)(batch_first_inputs),
         actual,
     )
+
+
+def test_chomp1d_zero_is_identity():
+    x = torch.randn(2, 3, 11)
+
+    out = Chomp1d(0)(x)
+
+    assert out.shape == x.shape
+    torch.testing.assert_close(out, x)
 
 
 def old_maxnorm(
@@ -270,7 +280,10 @@ def test_dense_spatial_filter_forward_collapse_false():
     "in_chans,n_filters_time,n_filters_spat",
     [(44, 40, 40), (1, 40, 40), (44, 40, 1), (44, 1, 1)],
 )
-def test_combined_conv(bias_time, bias_spat, in_chans, n_filters_time, n_filters_spat):
+@pytest.mark.parametrize("stride", [1, (3, 1)])
+def test_combined_conv(
+    bias_time, bias_spat, in_chans, n_filters_time, n_filters_spat, stride
+):
     batch_size = 64
     timepoints = 1000
 
@@ -281,6 +294,7 @@ def test_combined_conv(bias_time, bias_spat, in_chans, n_filters_time, n_filters
         n_filters_spat=n_filters_spat,
         bias_spat=bias_spat,
         bias_time=bias_time,
+        stride=stride,
     )
 
     combined_out = conv(data)

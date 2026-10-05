@@ -62,6 +62,8 @@ class Chomp1d(nn.Module):
         return "chomp_size={}".format(self.chomp_size)
 
     def forward(self, x):
+        if self.chomp_size == 0:
+            return x.contiguous()
         return x[:, :, : -self.chomp_size].contiguous()
 
 
