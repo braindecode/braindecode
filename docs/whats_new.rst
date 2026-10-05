@@ -134,6 +134,11 @@ Requirements
 Bug fixes
 ==========
 
+- Route the attention of :class:`braindecode.models.EEGDINO` and
+  :class:`braindecode.models.Labram` through their ``qkv`` linear module
+  instead of reading its weight, so hooks and adapters on ``qkv`` (e.g. LoRA)
+  take effect; before, they were skipped silently. Outputs change only by
+  float rounding (:gh:`1194` by `Bruno Aristimunha`_)
 - Fix :class:`braindecode.modules.AvgPool2dWithConv` to invalidate cached pooling weights when the exact input device changes, preventing stale weights from being reused across CUDA devices or non-CUDA backends with the same dtype. By `lindicaphxag-tech`_.
 - Fix :class:`braindecode.models.ShallowFBCSPNet` with
   ``split_first_layer=False``, which attempted to initialize and remap
