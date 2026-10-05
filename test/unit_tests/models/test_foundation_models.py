@@ -1987,13 +1987,13 @@ def test_mapa_raw_normalization_rejects_a_spectrogram(mapa_model):
         mapa_model(torch.randn(1, len(MAPA_SUBJECT_A), 20, 32))
 
 
-def test_mapa_metadata_cache_owns_its_snapshot(mapa_model):
+def test_mapa_token_layout_tracks_the_montage(mapa_model):
     indices = MAPA.sensor_indices(MAPA_SUBJECT_A)
     first = mapa_model._token_layout(indices, mapa_model.n_frames)
     indices[0, 2] = 3
     changed = mapa_model._token_layout(indices, mapa_model.n_frames)
     assert changed is not first
-    assert (changed.token_region == 3).any()
+    assert (changed["token_region"] == 3).any()
 
 
 # The authors' Hub repository, pinned to the commit whose mapa_vits384.pt is

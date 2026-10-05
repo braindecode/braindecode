@@ -17,11 +17,8 @@ Braindecode Adaptation: Julien Gadonneix
 
 from __future__ import annotations
 
-import math
 import re
-import warnings
 from numbers import Integral
-from typing import NamedTuple, cast
 
 import torch
 import torch.nn.functional as F
@@ -32,47 +29,21 @@ from braindecode.functional import rescale_parameter, rotate_pairs
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import FeedForwardBlock
 
-# The reference LayerNorm eps, from ``models/attention.py``.
-_LN_EPS = 1e-6
-# Depth and head dimension are held fixed across the released widths, so the
-# head count follows from ``d_model`` alone.
-_DEPTH = 12
-_HEAD_DIM = 64
 # Blocks whose output carries a deep-supervision norm, following V-JEPA 2.1.
 _SUP_TAPS: tuple[int, ...] = (3, 6, 9, 12)
 
-# The frontend is defined at the reference's 2048 Hz, where a hop of 64 samples
-# puts every band on the same 32 Hz frame clock.
-_SAMPLE_RATE = 2048
-_FRAME_RATE = 32
-_HOP = _SAMPLE_RATE // _FRAME_RATE
 # Name, FFT length, first and last rfft bin (inclusive), and the decimation
-# stride on the shared frame clock, in the order slow, mid, fast. At 2048 Hz the
-# retained bins span 2-14 Hz, 16-56 Hz and 64-160 Hz.
+# stride on the shared 32 Hz frame clock, in the order slow, mid, fast. At the
+# reference's 2048 Hz (hop of 64 samples) the retained bins span 2-14 Hz,
+# 16-56 Hz and 64-160 Hz; the largest stride is the slow band's frame quantum.
 _BANDS: tuple[tuple[str, int, int, int, int], ...] = (
     ("slow", 1024, 1, 7, 8),
     ("mid", 256, 2, 7, 2),
     ("fast", 128, 4, 10, 1),
 )
 _BAND_BINS: tuple[int, ...] = tuple(k1 - k0 + 1 for _, _, k0, k1, _ in _BANDS)
-# The slow band is the coarsest, so a window must hold a whole number of its
-# tokens.
-_FRAME_QUANTUM = max(stride for *_, stride in _BANDS)
 # The published "Guard 3" caps on the normalized inputs, per band.
 _INPUT_CLIP_Z: tuple[float, float, float] = (15.0, 15.0, 20.0)
-
-# Robust z-score constants, from ``data/normalize.py``.
-_MAD_TO_SIGMA = 1.4826
-_SIGMA_FLOOR = 1e-6
-
-# Rotary bases: ordinal contact numbers are dense, time slots are not.
-_ROPE_BASE_CONTACT = 8.0
-_ROPE_BASE_TIME = 64.0
-
-# V-JEPA 2 initialization, and the near-zero std the reference gives to
-# everything that is *added* to the residual stream.
-_INIT_STD = 0.02
-_ADDITIVE_INIT_STD = 1e-6
 
 # The 31 DKT cortical parcels: the 34 Desikan-Killiany gyral labels minus the
 # three (bankssts, frontalpole, temporalpole) whose boundaries the DKT protocol
@@ -136,24 +107,6 @@ MAPA_DKT_REGIONS: tuple[str, ...] = tuple(
     for structure in _DKT_SUBCORTICAL_STRUCTURES
 )
 
-_N_REGIONS = len(MAPA_DKT_REGIONS) + 1
-_UNASSIGNED_REGION = len(MAPA_DKT_REGIONS)
-
-# Clinical electrode labels are an array name followed by a contact number.
-_LABEL_PATTERN = re.compile(r"^(.*?)(\d+)$")
-
-
-class _TokenLayout(NamedTuple):
-    """Where each token sits, for one montage and one window length."""
-
-    gather_idx: torch.Tensor
-    key_mask: torch.Tensor
-    token_region: torch.Tensor
-    scatter_idx: torch.Tensor
-    rope_cos: torch.Tensor
-    rope_sin: torch.Tensor
-    k_full: int
-
 
 class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     r"""MAPA from Tang, Spalding and Cogan (2026) [Tang2026]_.
@@ -172,88 +125,43 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     reads subjects it has never seen [Tang2026]_. It works in four stages:
 
     1. Turn each channel into slow, mid and fast magnitude spectrograms on a
-       shared 32 Hz frame clock, robust z-scored and clipped.
-    2. Embed each ``(contact, band, time)`` token with its band's linear layer,
-       a per-band vector and the embedding of its contact's DKT region.
-    3. Apply twelve pre-norm transformer blocks whose attention spans contacts
-       and time jointly but never crosses from one array to another.
-    4. Pool the normed outputs of blocks 3, 6, 9 and 12 and classify them.
+       shared 32 Hz frame clock, robust z-scored and clipped (``frontend``).
+    2. Embed each ``(contact, band, time)`` token with its band's linear layer
+       and a per-band vector (``stem``).
+    3. Add the embedding of each contact's DKT region, then apply twelve
+       pre-norm transformer blocks whose attention spans contacts and time
+       jointly but never crosses from one array to another (``encoder``).
+    4. Pool the normed outputs of blocks 3, 6, 9 and 12 and classify them
+       (``final_layer``).
 
-    .. rubric:: Macro Components
-
-    ``MAPA.frontend``
-        **Operations.** Hann STFTs of FFT length 1024, 256 and 128 with a
-        shared hop of 64 samples; an inclusive bin slice per band; a robust
-        z-score per contact and bin; the published caps; a decimation by 8, 2
-        and 1.
-
-        **Role.** Produce the inputs the released encoder consumes. Given a
-        spectrogram normalized upstream, it only clips and decimates.
-
-    ``MAPA.stem``
-        **Operations.** One linear layer per band maps its bins to ``d_model``,
-        and a learned per-band vector is added.
-
-        **Role.** Embed tokens while keeping the bands distinguishable. There is
-        no frequency embedding and no per-band normalization, which would
-        restore the :math:`1/f` dominance the robust z-score removes.
-
-    ``MAPA.encoder``
-        **Operations.** Add the learned region embedding once, then apply twelve
-        blocks of within-array self-attention, with a two-axis rotary encoding,
-        and a feed-forward block of ratio ``mlp_ratio``. With ``deep_sup``,
-        blocks 3, 6, 9 and 12 each get their own LayerNorm and are
-        concatenated.
-
-        **Role.** Mix contacts and time inside each array.
-
-    ``MAPA.final_layer``
-        **Operations.** Mean-pool or flatten the tokens, then apply a linear
-        layer.
-
-        **Role.** Adapt the frozen encoder to classification. It is not part of
-        the pretraining.
-
-    .. rubric:: Temporal, Spatial, and Spectral Encoding
-
-    - **Temporal:** a 32 Hz frame clock on which the slow, mid and fast bands
-      carry one token every 8, 2 and 1 frames. Tokens on the same slot share a
-      rotary phase.
-    - **Spatial:** the clinical contact number along the array, as one rotary
-      axis, plus the additive region embedding. Attention is block-diagonal
-      over arrays, and no coordinates are used.
-    - **Spectral:** the three STFT bands, spanning 2-14, 16-56 and 64-160 Hz at
-      2048 Hz, are the input representation.
+    Encoding is threefold: temporal (the 32 Hz frame clock, one rotary axis
+    shared by tokens on the same slot), spatial (the clinical contact number
+    along the array, the other rotary axis, plus the additive region
+    embedding; attention is block-diagonal over arrays and uses no coordinates)
+    and spectral (the three STFT bands at 2-14, 16-56 and 64-160 Hz).
 
     .. rubric:: Additional Mechanisms
 
     *Electrode metadata.* The array and the contact number are read off the
     clinical label (``"LA7"`` is contact 7 of array ``LA``), from
-    ``contact_labels`` or else the ``chs_info`` names. Contact numbers are kept
-    verbatim, gaps included, and a label without a trailing number is rejected.
-    With neither, the channels form one array numbered from 1, which is almost
-    certainly not the real montage. Regions must be exact names of
-    :data:`MAPA_DKT_REGIONS` and default to the reserved unassigned slot.
+    ``contact_labels`` or else the ``chs_info`` names, verbatim with gaps kept;
+    regions must be exact names of :data:`MAPA_DKT_REGIONS`.
 
     *One model, many subjects.* The constructor's montage is only the default.
     To read another recording, pass :meth:`forward` the ``sensor_indices`` that
     :meth:`sensor_indices` builds from its labels and regions; all samples of a
-    batch share them. The token layout is cached until the montage or the
-    window length changes. Only ``pooling="flatten"`` is tied to one montage
-    and one window length.
+    batch share them. Only ``pooling="flatten"`` is tied to one montage and one
+    window length.
 
-    *Sampling rate and window length.* The bands are FFT bin slices at 2048 Hz,
-    so resample to 2048 Hz. A window yields ``1 + n_times // 64`` frames,
-    truncated to a multiple of 8, which needs at least 448 samples. With
-    ``normalization="session"`` the input is the spectrogram itself
-    (``sfreq=32``, ``n_times`` in frames): the 20 retained bins, slow then mid
-    then fast, robust z-scored per contact and bin over the whole recording.
+    *Sampling rate and window length.* Resample to 2048 Hz. A window yields
+    ``1 + n_times // 64`` frames, truncated to a multiple of 8, so it needs at
+    least 448 samples. With ``normalization="session"`` the input is the
+    spectrogram itself (``sfreq=32``, ``n_times`` in frames): the 20 retained
+    bins, robust z-scored per contact and bin over the whole recording.
 
     *Pretrained weights.* ``MAPA.stem`` and ``MAPA.encoder`` keep the reference
     module names (the feed-forward ``fc1``/``fc2`` are renamed on load through
-    ``mapping``), so a released ``checkpoint["model"]`` (``mapa_vits384`` or
-    one of its three spatial ablations, ``region_embed`` and ``space_rope``
-    set to ``False`` alone or together) loads with
+    ``mapping``), so a released ``checkpoint["model"]`` loads with
     :meth:`~torch.nn.Module.load_state_dict` under ``strict=False``, leaving
     only ``final_layer`` uninitialized. The default configuration has the
     released 21,335,424 parameters, excluding the head.
@@ -365,10 +273,10 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        if d_model <= 0 or d_model % _HEAD_DIM:
+        if d_model <= 0 or d_model % 64:  # head dimension 64
             raise ValueError(
-                f"d_model must be a positive multiple of the head dimension "
-                f"{_HEAD_DIM}, got {d_model}."
+                f"d_model must be a positive multiple of the head dimension 64, "
+                f"got {d_model}."
             )
         if pooling not in ("mean", "flatten"):
             raise ValueError(f"pooling must be 'mean' or 'flatten', got {pooling!r}.")
@@ -376,6 +284,20 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             raise ValueError(
                 f"normalization must be 'window', 'session' or 'none', got "
                 f"{normalization!r}."
+            )
+        # The bands are FFT bin slices at 2048 Hz on a 32 Hz frame clock, so
+        # another rate would shift the bands and the token rate; session inputs
+        # are already the 32 Hz spectrogram. sfreq is advisory for the
+        # frontend, so it is validated only when it is known, and a wrong
+        # value is a hard error rather than a silent warning.
+        expected_sfreq = 32 if normalization == "session" else 2048
+        sfreq_known = self._sfreq is not None or (
+            self._input_window_seconds is not None and self._n_times is not None
+        )
+        if sfreq_known and float(self.sfreq) != expected_sfreq:
+            raise ValueError(
+                f"MAPA with normalization={normalization!r} needs sfreq="
+                f"{expected_sfreq} Hz, got {self.sfreq} Hz."
             )
 
         self.d_model = d_model
@@ -387,56 +309,60 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.normalization = normalization
         self.activation = activation
 
-        try:
-            sfreq = float(self.sfreq)
-        except ValueError:
-            sfreq = None
-        expected = _FRAME_RATE if normalization == "session" else _SAMPLE_RATE
-        if sfreq is not None and not math.isclose(sfreq, expected):
-            warnings.warn(
-                f"With normalization={normalization!r}, MAPA expects sfreq="
-                f"{expected} Hz but got {sfreq} Hz: its bands are FFT bin slices "
-                f"at {_SAMPLE_RATE} Hz on a {_FRAME_RATE} Hz frame clock, so "
-                f"other rates shift the bands and the token rate.",
-                UserWarning,
-            )
-
         self.n_frames = _frame_count(
             self.n_times, spectrogram=normalization == "session"
         )
-        self.k_full = sum(_band_lengths(self.n_frames))
+        self.k_full = sum(self.n_frames // stride for *_, stride in _BANDS)
 
         self.frontend = _SpectrogramFrontend(normalization=normalization)
         self.stem = _PerBandStem(d_model=d_model, band_bins=_BAND_BINS)
         self.encoder = _Encoder(
             d_model=d_model,
-            n_heads=d_model // _HEAD_DIM,
+            n_heads=d_model // 64,
             mlp_ratio=mlp_ratio,
             region_embed=region_embed,
             deep_sup=deep_sup,
             activation=activation,
         )
+        # The released feed-forward ``fc1``/``fc2`` map to ``FeedForwardBlock``
+        # children 0 and 3, so a checkpoint loads under these names.
         self.mapping = {
             f"encoder.blocks.{i}.mlp.fc{fc}.{param}": (
                 f"encoder.blocks.{i}.mlp.{child}.{param}"
             )
-            for i in range(_DEPTH)
+            for i in range(12)
             for fc, child in ((1, 0), (2, 3))
             for param in ("weight", "bias")
         }
 
         # The montage resolved here is only the default: forward takes another
         # recording's metadata directly, which is what lets one instance read
-        # subjects it was not built for. Its layout rides along as buffers, so
-        # it follows the module across devices and nothing has to be laid out
-        # at call time unless the montage or the window actually changes.
-        indices = self.sensor_indices(self._resolve_labels(contact_labels), regions)
-        self.register_buffer("default_sensor_indices", indices, persistent=False)
-        default_layout = _build_token_layout(indices, self.n_frames, space_rope)
-        for name, value in default_layout._asdict().items():
-            if isinstance(value, torch.Tensor):
-                self.register_buffer(name, value, persistent=False)
-        self._layout_cache: tuple[int, torch.Tensor, _TokenLayout] | None = None
+        # subjects it was not built for. It rides along as a buffer, so it
+        # follows the module across devices; the token layout is cheap and is
+        # rebuilt from it at call time.
+        if contact_labels is not None:
+            if len(contact_labels) != self.n_chans:
+                raise ValueError(
+                    f"contact_labels has {len(contact_labels)} labels but the "
+                    f"model has {self.n_chans} channels."
+                )
+            labels = [str(label) for label in contact_labels]
+        elif self._chs_info:
+            labels = [str(channel["ch_name"]) for channel in self.chs_info]
+        else:
+            labels = [f"A{contact + 1}" for contact in range(self.n_chans)]
+        self.register_buffer(
+            "default_sensor_indices",
+            self.sensor_indices(labels, regions),
+            persistent=False,
+        )
+        # Precompute the default montage's token layout as buffers, so it rides
+        # along across devices and the common forward path stays export-stable
+        # (the layout is rebuilt at call time only for a foreign montage).
+        layout = self._token_layout(self.default_sensor_indices, self.n_frames)
+        self._layout_names = tuple(k for k, v in layout.items() if torch.is_tensor(v))
+        for name in self._layout_names:
+            self.register_buffer(name, layout[name], persistent=False)
 
         feature_dim = d_model * (len(_SUP_TAPS) if deep_sup else 1)
         n_features = (
@@ -477,9 +403,61 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         [[0, 1, 74], [0, 3, 74], [1, 2, 74]]
         """
         labels = [str(label) for label in contact_labels]
-        arrays, contacts = _parse_contact_labels(labels)
+        # Array id by first appearance of the label prefix; contact number kept
+        # verbatim, gaps included.
+        seen: dict[str, int] = {}
+        arrays, contacts = [], []
+        for label in labels:
+            match = re.match(r"^(.*?)(\d+)$", label)
+            if match is None:
+                raise ValueError(
+                    f"MAPA reads the array and the contact number off the "
+                    f"clinical label, but {label!r} has no trailing number. "
+                    f"Pass clinical labels in contact_labels, and drop "
+                    f"non-neural channels beforehand."
+                )
+            arrays.append(seen.setdefault(match.group(1), len(seen)))
+            contacts.append(int(match.group(2)))
+
+        # Region names must match MAPA_DKT_REGIONS exactly, so a misspelling
+        # cannot silently become unassigned.
+        unassigned = len(MAPA_DKT_REGIONS)
+        if regions is None:
+            slots = [unassigned] * len(labels)
+        elif len(regions) != len(labels):
+            raise ValueError(
+                f"regions has {len(regions)} entries but there are "
+                f"{len(labels)} channels."
+            )
+        else:
+            lookup = {name: slot for slot, name in enumerate(MAPA_DKT_REGIONS)}
+            slots = []
+            for region in regions:
+                if region is None:
+                    slots.append(unassigned)
+                elif isinstance(region, Integral) and not isinstance(region, bool):
+                    if not 0 <= int(region) <= unassigned:
+                        raise ValueError(
+                            f"region slot {int(region)} is outside the "
+                            f"{unassigned + 1} slots of MAPA's region table."
+                        )
+                    slots.append(int(region))
+                elif isinstance(region, str) and region in lookup:
+                    slots.append(lookup[region])
+                else:
+                    raise ValueError(
+                        f"{region!r} is not a MAPA region. Names are the exact "
+                        f"FreeSurfer DKT entries of MAPA_DKT_REGIONS, such as "
+                        f"'ctx-lh-superiortemporal' or 'Left-Hippocampus'. Pass "
+                        f"None for a contact that falls outside every region."
+                    )
         return torch.stack(
-            [arrays, contacts, _resolve_regions(regions, len(labels))], dim=1
+            [
+                torch.tensor(arrays, dtype=torch.long),
+                torch.tensor(contacts, dtype=torch.long),
+                torch.tensor(slots, dtype=torch.long),
+            ],
+            dim=1,
         )
 
     def _resolve_sensor_indices(
@@ -497,68 +475,134 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 )
             return self.get_buffer("default_sensor_indices")
         indices = torch.as_tensor(sensor_indices)
+        n_regions = len(MAPA_DKT_REGIONS) + 1
         if (
             indices.is_floating_point()
             or indices.is_complex()
             or indices.dtype == torch.bool
             or indices.shape != (n_chans, 3)
             or bool((indices < 0).any())
-            or bool((indices[:, 2] >= _N_REGIONS).any())
+            or bool((indices[:, 2] >= n_regions).any())
         ):
             raise ValueError(
                 f"sensor_indices must hold integers of shape ({n_chans}, 3), one "
                 f"row of (array, contact number, region slot) per channel, and "
-                f"must be non-negative, with region slots below {_N_REGIONS}; got "
+                f"must be non-negative, with region slots below {n_regions}; got "
                 f"{indices.dtype} of shape {tuple(indices.shape)}."
             )
         return indices.to(device=x.device, dtype=torch.long)
 
-    def _token_layout(self, indices: torch.Tensor, n_frames: int) -> _TokenLayout:
-        """Return the token layout of a montage, rebuilding it only when it changes."""
+    def _rope(
+        self, contact: torch.Tensor, time: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Cosine and sine rotary tables, head dimension 64 split between the
+        contact number and the frame-clock slot.
+
+        The frequency grid is built on the input's device, so a foreign montage
+        works on accelerators too; without ``space_rope`` the contact half is
+        the identity rotation.
+        """
+        pairs = 64 // 4  # head dimension 64, a quarter per rotary pair-axis
+        exponents = torch.arange(pairs, device=contact.device) / pairs
+        # Ordinal contacts are dense, time slots are not, so the axes differ.
+        contact_freq = 1.0 / (8.0**exponents)
+        if not self.space_rope:
+            contact_freq = torch.zeros_like(contact_freq)
+        time_freq = 1.0 / (64.0**exponents)
+        angle = torch.cat(
+            [
+                contact[..., None].float() * contact_freq,
+                time[..., None].float() * time_freq,
+            ],
+            dim=-1,
+        )
+        return (
+            angle.cos().repeat_interleave(2, dim=-1),
+            angle.sin().repeat_interleave(2, dim=-1),
+        )
+
+    def _token_layout(self, indices: torch.Tensor, n_frames: int) -> dict:
+        """Regroup the channels into arrays padded to the largest one, and
+        return the gather plan, padding mask, region ids, rotary tables and the
+        per-contact token count of that grid."""
         if (
-            indices is self.get_buffer("default_sensor_indices")
+            getattr(self, "_layout_names", None) is not None
+            and indices is self.get_buffer("default_sensor_indices")
             and n_frames == self.n_frames
         ):
-            return _TokenLayout(
-                gather_idx=self.get_buffer("gather_idx"),
-                key_mask=self.get_buffer("key_mask"),
-                token_region=self.get_buffer("token_region"),
-                scatter_idx=self.get_buffer("scatter_idx"),
-                rope_cos=self.get_buffer("rope_cos"),
-                rope_sin=self.get_buffer("rope_sin"),
-                k_full=self.k_full,
-            )
-        cache = self._layout_cache
-        if (
-            cache is not None
-            and cache[0] == n_frames
-            and cache[1].shape == indices.shape
-            and cache[1].device == indices.device
-            and bool(torch.equal(cache[1], indices))
-        ):
-            return cache[2]
-        layout = _build_token_layout(indices, n_frames, self.space_rope)
-        self._layout_cache = (n_frames, indices.clone(), layout)
-        return layout
+            layout = {name: self.get_buffer(name) for name in self._layout_names}
+            layout["k_full"] = self.k_full
+            return layout
+        device = indices.device
+        n_chans = indices.shape[0]
+        arrays, contacts, regions = indices.unbind(dim=1)
+        band_lengths = [n_frames // stride for *_, stride in _BANDS]
+        k_full = sum(band_lengths)
 
-    def _resolve_labels(self, contact_labels: list[str] | None) -> list[str]:
-        """Return the clinical label of every channel."""
-        if contact_labels is not None:
-            if len(contact_labels) != self.n_chans:
-                raise ValueError(
-                    f"contact_labels has {len(contact_labels)} labels but the "
-                    f"model has {self.n_chans} channels."
-                )
-            return [str(label) for label in contact_labels]
-        if self._chs_info:
-            return [str(channel["ch_name"]) for channel in self.chs_info]
-        return [f"A{contact + 1}" for contact in range(self.n_chans)]
+        # Renumber the arrays contiguously, so any labelling of them works.
+        _, array_of_contact = torch.unique(arrays, return_inverse=True)
+        counts = torch.bincount(array_of_contact)
+        n_arrays, max_contacts = counts.numel(), int(counts.max())
+
+        # Row s holds the contacts of array s in input order, padded with
+        # contact 0, whose tokens are masked out of attention and dropped on
+        # the way back.
+        order = torch.argsort(array_of_contact, stable=True)
+        row = array_of_contact[order]
+        slot = (
+            torch.arange(n_chans, device=device)
+            - torch.cat([counts.new_zeros(1), counts.cumsum(0)[:-1]])[row]
+        )
+        gather_idx = torch.zeros(
+            (n_arrays, max_contacts), dtype=torch.long, device=device
+        )
+        valid = torch.zeros((n_arrays, max_contacts), dtype=torch.bool, device=device)
+        gather_idx[row, slot] = order
+        valid[row, slot] = True
+
+        # Position of each contact in the flattened, array-major token grid,
+        # which undoes the gather after the encoder.
+        scatter_idx = torch.empty(n_chans, dtype=torch.long, device=device)
+        scatter_idx[order] = row * max_contacts + slot
+
+        # Each contact carries the same block of tokens: the three bands in
+        # order, each at its own rate on the shared clock.
+        lattice = torch.cat(
+            [
+                torch.arange(length, device=device) * stride
+                for length, (*_, stride) in zip(band_lengths, _BANDS)
+            ]
+        )
+        cos, sin = self._rope(
+            contact=contacts[gather_idx].repeat_interleave(k_full, dim=1),
+            time=lattice.repeat(max_contacts).expand(n_arrays, -1),
+        )
+        return {
+            "gather_idx": gather_idx,
+            # Inserted axes broadcast the mask and the tables over the batch,
+            # the heads and the query length, keeping the key length last.
+            "key_mask": valid.repeat_interleave(k_full, dim=1)[None, :, None, None],
+            "token_region": regions[gather_idx].repeat_interleave(k_full, dim=1),
+            "scatter_idx": scatter_idx,
+            "rope_cos": cos[None, :, None],
+            "rope_sin": sin[None, :, None],
+            "k_full": k_full,
+        }
 
     def reset_head(self, n_outputs: int) -> None:
-        """Replace the linear classification head for a new ``n_outputs``."""
-        self._n_outputs = n_outputs
-        self.final_layer = nn.Linear(self.final_layer.in_features, n_outputs)
-        self._update_init_kwargs(n_outputs=n_outputs)
+        """Replace the linear classification head for a new ``n_outputs``.
+
+        The new head keeps the old one's device and dtype, and the value is
+        validated and recorded through the mixin's :meth:`_set_n_outputs`.
+        """
+        self._set_n_outputs(n_outputs)
+        old = self.final_layer
+        self.final_layer = nn.Linear(
+            old.in_features,
+            n_outputs,
+            device=old.weight.device,
+            dtype=old.weight.dtype,
+        )
 
     def forward(
         self,
@@ -589,13 +633,14 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             Class logits of shape ``(batch, n_outputs)``.
         """
         spectrogram = self.normalization == "session"
+        n_bins = sum(_BAND_BINS)
         if x.ndim != (4 if spectrogram else 3) or (
-            spectrogram and x.shape[2] != sum(_BAND_BINS)
+            spectrogram and x.shape[2] != n_bins
         ):
             raise ValueError(
                 f"normalization='session' takes a spectrogram of shape (batch, "
-                f"n_chans, {sum(_BAND_BINS)}, n_frames), any other a raw signal of "
-                f"shape (batch, n_chans, n_times), but got {tuple(x.shape)} with "
+                f"n_chans, {n_bins}, n_frames), any other a raw signal of shape "
+                f"(batch, n_chans, n_times), but got {tuple(x.shape)} with "
                 f"normalization={self.normalization!r}."
             )
         indices = self._resolve_sensor_indices(sensor_indices, x)
@@ -613,17 +658,17 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
         tokens = self.stem(self.frontend(x))
         # (batch, n_arrays, max_contacts * k_full, d_model), array-contiguous.
-        packed = tokens[:, layout.gather_idx].flatten(2, 3)
+        packed = tokens[:, layout["gather_idx"]].flatten(2, 3)
         encoded = self.encoder(
             packed,
-            layout.token_region,
-            layout.rope_cos,
-            layout.rope_sin,
-            layout.key_mask,
+            layout["token_region"],
+            layout["rope_cos"],
+            layout["rope_sin"],
+            layout["key_mask"],
         )
         # Back to one block of tokens per channel, in the input channel order.
-        encoded = encoded.unflatten(2, (-1, layout.k_full)).flatten(1, 2)
-        encoded = encoded[:, layout.scatter_idx]
+        encoded = encoded.unflatten(2, (-1, layout["k_full"])).flatten(1, 2)
+        encoded = encoded[:, layout["scatter_idx"]]
 
         if self.pooling == "mean":
             features = encoded.mean(dim=(1, 2))
@@ -641,13 +686,12 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
 def _frame_count(n_times: int, spectrogram: bool = False) -> int:
     """Usable frames of the 32 Hz clock in ``n_times`` samples (or frames)."""
-    frames = n_times if spectrogram else 1 + n_times // _HOP
-    n_frames = (frames // _FRAME_QUANTUM) * _FRAME_QUANTUM
-    if n_frames < _FRAME_QUANTUM:
+    frames = n_times if spectrogram else 1 + n_times // 64  # hop of 64 samples
+    quantum = max(stride for *_, stride in _BANDS)  # the slow band's token rate
+    n_frames = (frames // quantum) * quantum
+    if n_frames < quantum:
         minimum = (
-            f"{_FRAME_QUANTUM} frames"
-            if spectrogram
-            else f"{(_FRAME_QUANTUM - 1) * _HOP} samples"
+            f"{quantum} frames" if spectrogram else f"{(quantum - 1) * 64} samples"
         )
         raise ValueError(
             f"MAPA needs a window of at least {minimum}, one token of the slow "
@@ -656,174 +700,10 @@ def _frame_count(n_times: int, spectrogram: bool = False) -> int:
     return n_frames
 
 
-def _band_lengths(n_frames: int) -> tuple[int, ...]:
-    """Number of tokens each band lays on the shared clock."""
-    return tuple(n_frames // stride for *_, stride in _BANDS)
-
-
-def _build_token_layout(
-    sensor_indices: torch.Tensor, n_frames: int, space_rope: bool
-) -> _TokenLayout:
-    """Regroup the channels into arrays padded to the largest one, and build
-    the gather plan, padding mask, region ids and rotary tables of that grid."""
-    device = sensor_indices.device
-    n_chans = sensor_indices.shape[0]
-    arrays, contacts, regions = sensor_indices.unbind(dim=1)
-    band_lengths = _band_lengths(n_frames)
-    k_full = sum(band_lengths)
-
-    # Renumber the arrays contiguously, so any labelling of them works.
-    _, array_of_contact = torch.unique(arrays, return_inverse=True)
-    counts = torch.bincount(array_of_contact)
-    n_arrays, max_contacts = counts.numel(), int(counts.max())
-
-    # Row s holds the contacts of array s in input order, padded with contact
-    # 0, whose tokens are masked out of attention and dropped on the way back.
-    order = torch.argsort(array_of_contact, stable=True)
-    row = array_of_contact[order]
-    slot = (
-        torch.arange(n_chans, device=device)
-        - torch.cat([counts.new_zeros(1), counts.cumsum(0)[:-1]])[row]
-    )
-    gather_idx = torch.zeros((n_arrays, max_contacts), dtype=torch.long, device=device)
-    valid = torch.zeros((n_arrays, max_contacts), dtype=torch.bool, device=device)
-    gather_idx[row, slot] = order
-    valid[row, slot] = True
-
-    # Position of each contact in the flattened, array-major token grid, which
-    # undoes the gather after the encoder.
-    scatter_idx = torch.empty(n_chans, dtype=torch.long, device=device)
-    scatter_idx[order] = row * max_contacts + slot
-
-    # Each contact carries the same block of tokens: the three bands in order,
-    # each at its own rate on the shared clock.
-    lattice = torch.cat(
-        [
-            torch.arange(length, device=device) * stride
-            for length, (*_, stride) in zip(band_lengths, _BANDS)
-        ]
-    )
-    cos, sin = _rotary_table(
-        contact=contacts[gather_idx].repeat_interleave(k_full, dim=1),
-        time=lattice.repeat(max_contacts).expand(n_arrays, -1),
-        head_dim=_HEAD_DIM,
-        space_rope=space_rope,
-    )
-    return _TokenLayout(
-        gather_idx=gather_idx,
-        # Inserted axes broadcast the mask and the tables over the batch and
-        # the heads.
-        key_mask=valid.repeat_interleave(k_full, dim=1)[None, :, None, None],
-        token_region=regions[gather_idx].repeat_interleave(k_full, dim=1),
-        scatter_idx=scatter_idx,
-        rope_cos=cos[None, :, None],
-        rope_sin=sin[None, :, None],
-        k_full=k_full,
-    )
-
-
-def _parse_contact_labels(labels: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
-    """Read the array id (by first appearance of the prefix) and the verbatim
-    contact number off each clinical label."""
-    seen: dict[str, int] = {}
-    arrays, contacts = [], []
-    for label in labels:
-        match = _LABEL_PATTERN.match(label)
-        if match is None:
-            raise ValueError(
-                f"MAPA reads the array and the contact number off the clinical "
-                f"label, but {label!r} has no trailing number, so it has no "
-                f"position along an array. Pass clinical labels in "
-                f"contact_labels, and drop non-neural channels beforehand."
-            )
-        prefix, number = match.group(1), int(match.group(2))
-        arrays.append(seen.setdefault(prefix, len(seen)))
-        contacts.append(number)
-    return (
-        torch.tensor(arrays, dtype=torch.long),
-        torch.tensor(contacts, dtype=torch.long),
-    )
-
-
-def _resolve_regions(
-    regions: list[str | int | None] | None, n_chans: int
-) -> torch.Tensor:
-    """Map each channel's region to a slot of the region table.
-
-    Names must match :data:`MAPA_DKT_REGIONS` exactly, as in the reference, so
-    a misspelling cannot silently become unassigned.
-    """
-    if regions is None:
-        return torch.full((n_chans,), _UNASSIGNED_REGION, dtype=torch.long)
-    if len(regions) != n_chans:
-        raise ValueError(
-            f"regions has {len(regions)} entries but the model has {n_chans} channels."
-        )
-    lookup = {name: slot for slot, name in enumerate(MAPA_DKT_REGIONS)}
-    slots = []
-    for region in regions:
-        if region is None:
-            slots.append(_UNASSIGNED_REGION)
-        elif isinstance(region, Integral) and not isinstance(region, bool):
-            slot = int(region)
-            if not 0 <= slot < _N_REGIONS:
-                raise ValueError(
-                    f"region slot {slot} is outside the {_N_REGIONS} slots of "
-                    f"MAPA's region table."
-                )
-            slots.append(slot)
-        elif isinstance(region, str) and region in lookup:
-            slots.append(lookup[region])
-        else:
-            raise ValueError(
-                f"{region!r} is not a MAPA region. Names are the exact "
-                f"FreeSurfer DKT entries of MAPA_DKT_REGIONS, such as "
-                f"'ctx-lh-superiortemporal' or 'Left-Hippocampus'. Pass None "
-                f"for a contact that falls outside every region."
-            )
-    return torch.tensor(slots, dtype=torch.long)
-
-
-def _robust_z(x: torch.Tensor) -> torch.Tensor:
-    """Median-centre and MAD-scale each contact and bin over time, zeroing
-    bins whose scale is below the floor."""
-    median = x.median(dim=-1, keepdim=True).values
-    sigma = _MAD_TO_SIGMA * (x - median).abs().median(dim=-1, keepdim=True).values
-    z = (x - median) / sigma.clamp(min=_SIGMA_FLOOR)
-    return torch.where(sigma >= _SIGMA_FLOOR, z, torch.zeros_like(z))
-
-
-def _rotary_table(
-    contact: torch.Tensor, time: torch.Tensor, head_dim: int, space_rope: bool
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Cosine and sine tables of a rotary encoding whose head dimension is
-    split between the contact number and the frame-clock position.
-
-    Without ``space_rope`` the contact half is the identity rotation.
-    """
-    pairs = head_dim // 4
-    exponents = torch.arange(pairs, dtype=torch.float32) / pairs
-    contact_freq = 1.0 / (_ROPE_BASE_CONTACT**exponents)
-    if not space_rope:
-        contact_freq = torch.zeros_like(contact_freq)
-    time_freq = 1.0 / (_ROPE_BASE_TIME**exponents)
-    angle = torch.cat(
-        [
-            contact[..., None].float() * contact_freq,
-            time[..., None].float() * time_freq,
-        ],
-        dim=-1,
-    )
-    return (
-        angle.cos().repeat_interleave(2, dim=-1),
-        angle.sin().repeat_interleave(2, dim=-1),
-    )
-
-
-def _init_transformer_weights(module: nn.Module) -> None:
+def _vjepa_init(module: nn.Module) -> None:
     """V-JEPA 2 initialization of linear layers and layer norms."""
     if isinstance(module, nn.Linear):
-        nn.init.trunc_normal_(module.weight, std=_INIT_STD)
+        nn.init.trunc_normal_(module.weight, std=0.02)
         if module.bias is not None:
             nn.init.constant_(module.bias, 0.0)
     elif isinstance(module, nn.LayerNorm):
@@ -832,16 +712,12 @@ def _init_transformer_weights(module: nn.Module) -> None:
 
 
 class _SpectrogramFrontend(nn.Module):
-    """Per-band STFT magnitudes on a shared 32 Hz clock, robust z-scored,
-    capped and decimated to each band's token rate."""
+    """Per-band STFT magnitudes on a shared 32 Hz clock, robust z-scored
+    (window), capped and decimated to each band's token rate."""
 
     def __init__(self, normalization: str):
         super().__init__()
         self.normalization = normalization
-        for name, n_fft, *_ in _BANDS:
-            self.register_buffer(
-                f"window_{name}", torch.hann_window(n_fft), persistent=False
-            )
 
     def forward(self, x: torch.Tensor) -> list[torch.Tensor]:
         """Return ``(batch, n_chans, n_bins, n_tokens)`` slow, mid, fast bands."""
@@ -856,53 +732,63 @@ class _SpectrogramFrontend(nn.Module):
         ]
 
     def _stft_bands(self, x: torch.Tensor) -> list[torch.Tensor]:
-        """Take ``(batch, n_chans, n_times)`` to ``(batch, n_chans, n_bins, n_frames)``."""
+        """``(batch, n_chans, n_times)`` to per-band magnitudes, robust z-scored
+        on the window; the frames past the true window are dropped."""
         batch, n_chans = x.shape[0], x.shape[1]
         n_frames = _frame_count(x.shape[-1])
         waveform = x.reshape(batch * n_chans, x.shape[-1])
         bands = []
-        for name, n_fft, k0, k1, _ in _BANDS:
+        for _, n_fft, k0, k1, _ in _BANDS:
             # A window shorter than the transform is zero-padded, as in the
-            # reference, so the centred transform has something to reflect; the
-            # frames past the true window are then dropped.
+            # reference, so the centred transform has something to reflect.
             padded = waveform
             if padded.shape[-1] < n_fft:
                 padded = F.pad(padded, (0, n_fft - padded.shape[-1]))
             spectrum = torch.stft(
                 padded,
                 n_fft=n_fft,
-                hop_length=_HOP,
+                hop_length=64,  # 2048 Hz / 32 Hz frame clock
                 win_length=n_fft,
-                window=self.get_buffer(f"window_{name}"),
+                window=torch.hann_window(n_fft, device=x.device, dtype=x.dtype),
                 center=True,
                 normalized=False,
                 return_complex=True,
             )
             band = spectrum[:, k0 : k1 + 1, :n_frames].abs()
             if self.normalization == "window":
-                band = _robust_z(band)
+                # Robust z-score per contact and bin over time: median centre,
+                # MAD scale (x1.4826), zero the sub-floor bins.
+                median = band.median(dim=-1, keepdim=True).values
+                sigma = (
+                    1.4826 * (band - median).abs().median(dim=-1, keepdim=True).values
+                )
+                z = (band - median) / sigma.clamp(min=1e-6)
+                band = torch.where(sigma >= 1e-6, z, torch.zeros_like(z))
             bands.append(band.reshape(batch, n_chans, k1 - k0 + 1, n_frames))
         return bands
 
 
 class _PerBandStem(nn.Module):
-    """One linear projection plus an additive vector per band, with no
-    per-band norm, which would bring back the 1/f the z-score removes."""
+    """One linear projection plus an additive vector per band, with no per-band
+    norm, which would bring back the 1/f the z-score removes."""
 
     def __init__(self, d_model: int, band_bins: tuple[int, ...]):
         super().__init__()
         self.projs = nn.ModuleList(nn.Linear(n_bins, d_model) for n_bins in band_bins)
         self.band_type_emb = nn.Parameter(torch.empty(len(band_bins), d_model))
-        self.projs.apply(_init_transformer_weights)
-        nn.init.trunc_normal_(self.band_type_emb, std=_ADDITIVE_INIT_STD)
+        self.projs.apply(_vjepa_init)
+        # Near-zero: the band vector is added to the residual stream.
+        nn.init.trunc_normal_(self.band_type_emb, std=1e-6)
 
     def forward(self, bands: list[torch.Tensor]) -> torch.Tensor:
         """Return ``(batch, n_chans, k_full, d_model)`` tokens."""
-        tokens = [
-            proj(band.transpose(-1, -2)) + embedding
-            for band, proj, embedding in zip(bands, self.projs, self.band_type_emb)
-        ]
-        return torch.cat(tokens, dim=-2)
+        return torch.cat(
+            [
+                proj(band.transpose(-1, -2)) + embedding
+                for band, proj, embedding in zip(bands, self.projs, self.band_type_emb)
+            ],
+            dim=-2,
+        )
 
 
 class _Encoder(nn.Module):
@@ -918,31 +804,29 @@ class _Encoder(nn.Module):
         activation: type[nn.Module],
     ):
         super().__init__()
-        self.region_embed = _RegionIdentityEmbed(d_model, enabled=region_embed)
-        self.blocks: nn.ModuleList = nn.ModuleList(
-            [
-                _WithinArrayBlock(
-                    d_model=d_model,
-                    n_heads=n_heads,
-                    mlp_ratio=mlp_ratio,
-                    activation=activation,
-                )
-                for _ in range(_DEPTH)
-            ]
+        # ``region_embed.embed`` keeps the released key; an empty container is
+        # the ``no_region`` ablation. Near-zero: added to the residual stream.
+        self.region_embed = nn.ModuleDict(
+            {"embed": nn.Embedding(len(MAPA_DKT_REGIONS) + 1, d_model)}
+            if region_embed
+            else {}
+        )
+        if region_embed:
+            nn.init.trunc_normal_(self.region_embed["embed"].weight, std=1e-6)
+        self.blocks = nn.ModuleList(
+            _WithinArrayBlock(d_model, n_heads, mlp_ratio, activation)
+            for _ in range(12)
         )
         # The deepest tap's norm is the terminal norm, so there is no separate
         # one when the taps are used.
-        self.norms_block: nn.ModuleList | None = (
-            nn.ModuleList([nn.LayerNorm(d_model, eps=_LN_EPS) for _ in _SUP_TAPS])
+        self.norms_block = (
+            nn.ModuleList(nn.LayerNorm(d_model, eps=1e-6) for _ in _SUP_TAPS)
             if deep_sup
             else None
         )
-        self.norm_out: nn.LayerNorm | None = (
-            None if deep_sup else nn.LayerNorm(d_model, eps=_LN_EPS)
-        )
-        self.apply(_init_transformer_weights)
-        for layer, module in enumerate(self.blocks, start=1):
-            block = cast(_WithinArrayBlock, module)
+        self.norm_out = None if deep_sup else nn.LayerNorm(d_model, eps=1e-6)
+        self.apply(_vjepa_init)
+        for layer, block in enumerate(self.blocks, start=1):
             rescale_parameter(block.out.weight.data, layer)
             rescale_parameter(block.mlp[3].weight.data, layer)
 
@@ -955,35 +839,16 @@ class _Encoder(nn.Module):
         key_mask: torch.Tensor,
     ) -> torch.Tensor:
         """Encode ``(batch, n_arrays, n_tokens, d_model)`` array-packed tokens."""
-        region = self.region_embed(region_ids)
-        if region is not None:
-            x = x + region.to(x.dtype)
-
-        norms = self.norms_block
+        if "embed" in self.region_embed:
+            x = x + self.region_embed["embed"](region_ids).to(x.dtype)
         levels = []
         for layer, block in enumerate(self.blocks):
             x = block(x, cos, sin, key_mask)
-            if norms is not None and layer + 1 in _SUP_TAPS:
-                levels.append(norms[_SUP_TAPS.index(layer + 1)](x))
+            if self.norms_block is not None and layer + 1 in _SUP_TAPS:
+                levels.append(self.norms_block[_SUP_TAPS.index(layer + 1)](x))
         if self.norm_out is not None:
             return self.norm_out(x)
         return torch.cat(levels, dim=-1)
-
-
-class _RegionIdentityEmbed(nn.Module):
-    """Near-zero-initialized embedding of the atlas region, built only when
-    ``enabled``."""
-
-    def __init__(self, d_model: int, enabled: bool):
-        super().__init__()
-        self.embed = None
-        if enabled:
-            self.embed = nn.Embedding(_N_REGIONS, d_model)
-            nn.init.trunc_normal_(self.embed.weight, std=_ADDITIVE_INIT_STD)
-
-    def forward(self, region_ids: torch.Tensor) -> torch.Tensor | None:
-        """Return the embedding of each token's region, or ``None`` if ablated."""
-        return None if self.embed is None else self.embed(region_ids)
 
 
 class _WithinArrayBlock(nn.Module):
@@ -998,10 +863,10 @@ class _WithinArrayBlock(nn.Module):
         activation: type[nn.Module],
     ):
         super().__init__()
-        self.norm1 = nn.LayerNorm(d_model, eps=_LN_EPS)
+        self.norm1 = nn.LayerNorm(d_model, eps=1e-6)
         self.qkv = nn.Linear(d_model, 3 * d_model, bias=True)
         self.out = nn.Linear(d_model, d_model, bias=True)
-        self.norm2 = nn.LayerNorm(d_model, eps=_LN_EPS)
+        self.norm2 = nn.LayerNorm(d_model, eps=1e-6)
         self.mlp = FeedForwardBlock(
             emb_size=d_model, expansion=mlp_ratio, drop_p=0.0, activation=activation
         )
