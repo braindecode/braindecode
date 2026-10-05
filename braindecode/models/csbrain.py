@@ -18,6 +18,7 @@ from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.cbramod import _PatchEmbedding
 from braindecode.modules import FeedForwardBlock
 
 log = logging.getLogger(__name__)
@@ -302,7 +303,16 @@ class CSBrain(EEGModuleMixin, nn.Module):
             "batch n_chans (n_patch patch_size) -> batch n_chans n_patch patch_size",
             patch_size=patch_size,
         )
-        self.patch_embedding = _PatchEmbedding(patch_size, drop_prob=drop_prob)
+        # CBraMod's patch encoder: conv stem + rFFT magnitude + depthwise-conv PE.
+        self.patch_embedding = _PatchEmbedding(
+            patch_size,
+            channels_kernel_stride_padding_norm=(
+                (25, 49, 25, 24, (5, 25)),
+                (25, 3, 1, 1, (5, 25)),
+                (25, 3, 1, 1, (5, 25)),
+            ),
+            drop_prob=drop_prob,
+        )
         d_model = self.patch_embedding.d_model
 
         # Region structure: explicit ``brain_regions`` (one region id per input
@@ -438,94 +448,6 @@ class CSBrain(EEGModuleMixin, nn.Module):
         if return_features:
             return {"features": out, "cls_token": None}  # nosec B105
         return self.final_layer(out)
-
-
-class _PatchEmbedding(nn.Module):
-    """CBraMod-style patch encoder: conv stem + FFT magnitude embedding.
-
-    Convolutions are applied over the concatenated channel-patch sequence
-    (channel-major), plus a spectral projection of each patch's rFFT
-    magnitude, followed by a depthwise-convolution positional encoding.
-    ``mask`` (boolean over input samples, applied per patch) replaces masked
-    patches by a zero vector, supporting masked-autoencoding pretraining.
-    """
-
-    def __init__(self, patch_size: int, drop_prob: float = 0.1):
-        super().__init__()
-        self.patch_size = patch_size
-        # (channels, kernel, stride, padding, (norm groups, norm channels))
-        spec = (
-            (25, 49, 25, 24, (5, 25)),
-            (25, 3, 1, 1, (5, 25)),
-            (25, 3, 1, 1, (5, 25)),
-        )
-        last_channels = 1
-        proj_in_layers = []
-        for channels, kernel, stride, padding, norm in spec:
-            proj_in_layers.extend(
-                [
-                    nn.Conv2d(
-                        in_channels=last_channels,
-                        out_channels=channels,
-                        kernel_size=(1, kernel),
-                        stride=(1, stride),
-                        padding=(0, padding),
-                    ),
-                    nn.GroupNorm(*norm),
-                    nn.GELU(),
-                ]
-            )
-            last_channels = channels
-        self.proj_in = nn.Sequential(*proj_in_layers)
-        out_patch_size = patch_size
-        for _, kernel, stride, padding, _ in spec:
-            out_patch_size = int((out_patch_size + 2 * padding - kernel) / stride + 1)
-        self.d_model = last_channels * out_patch_size
-        self.positional_encoding = nn.Sequential(
-            nn.Conv2d(
-                in_channels=self.d_model,
-                out_channels=self.d_model,
-                kernel_size=(19, 7),
-                stride=(1, 1),
-                padding=(9, 3),
-                groups=self.d_model,
-            ),
-        )
-        self.mask_encoding = nn.Parameter(torch.zeros(patch_size), requires_grad=False)
-        self.spectral_proj = nn.Sequential(
-            nn.Linear(patch_size // 2 + 1, self.d_model),
-            nn.Dropout(drop_prob),
-        )
-
-    def forward(self, x, mask=None):
-        bz, ch_num, patch_num, patch_size = x.shape
-        if mask is None:
-            mask_x = x
-        else:
-            mask_x = x.clone()
-            mask_x[mask == 1] = self.mask_encoding
-
-        mask_x = mask_x.contiguous().view(bz, 1, ch_num * patch_num, patch_size)
-        patch_emb = self.proj_in(mask_x)
-        patch_emb = (
-            patch_emb.permute(0, 2, 1, 3)
-            .contiguous()
-            .view(bz, ch_num, patch_num, self.d_model)
-        )
-
-        flat = mask_x.contiguous().view(bz * ch_num * patch_num, patch_size)
-        spectral = torch.fft.rfft(flat, dim=-1, norm="forward")
-        spectral = (
-            torch.abs(spectral)
-            .contiguous()
-            .view(bz, ch_num, patch_num, patch_size // 2 + 1)
-        )
-        patch_emb = patch_emb + self.spectral_proj(spectral)
-
-        positional_embedding = self.positional_encoding(
-            patch_emb.permute(0, 3, 1, 2)
-        ).permute(0, 2, 3, 1)
-        return patch_emb + positional_embedding
 
 
 class _CrossScaleTemporalEmbedding(nn.Module):
