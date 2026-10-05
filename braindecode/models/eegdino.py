@@ -477,7 +477,10 @@ class _Attention(nn.Module):
 
     def forward(self, x):
         bias = torch.cat((self.q_bias, torch.zeros_like(self.v_bias), self.v_bias))
-        qkv = F.linear(x, self.qkv.weight, bias)
+        # Call the ``qkv`` module rather than ``F.linear`` on its weight, so
+        # hooks and adapters attached to it (e.g. LoRA) take part in the forward.
+        qkv = self.qkv(x)
+        qkv = qkv + bias.to(qkv.dtype)  # keep autocast dtype
         batch, tokens, _ = qkv.shape
         query, key, value = (
             qkv.reshape(batch, tokens, 3, self.nhead, -1)

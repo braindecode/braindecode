@@ -25,7 +25,9 @@ from braindecode.modules import (
     CBAM,
     ECA,
     MLP,
+    AvgPool2dWithConv,
     CausalConv1d,
+    Chomp1d,
     CombinedConv,
     DropPath,
     FeedForwardBlock,
@@ -78,6 +80,15 @@ def test_tds_blocks_layouts_and_torchscript(module_factory):
         torch.jit.script(batch_first)(batch_first_inputs),
         actual,
     )
+
+
+def test_chomp1d_zero_is_identity():
+    x = torch.randn(2, 3, 11)
+
+    out = Chomp1d(0)(x)
+
+    assert out.shape == x.shape
+    torch.testing.assert_close(out, x)
 
 
 def old_maxnorm(
@@ -161,6 +172,41 @@ def _filfilt_in_torch_sytle(b, a, x_np):
     return filtered_scipy
 
 
+def test_avgpool2dwithconv_matches_average_pooling_and_caches_input_device():
+    module = AvgPool2dWithConv(kernel_size=(1, 4), stride=(1, 4))
+    x = torch.randn(2, 3, 1, 16)
+
+    out = module(x)
+    expected = torch.nn.functional.avg_pool2d(
+        x, kernel_size=(1, 4), stride=(1, 4)
+    )
+
+    torch.testing.assert_close(out, expected)
+    assert module._pool_weights is not None
+    assert module._pool_weights.device == x.device
+    assert module._pool_weights.dtype == x.dtype
+
+
+def test_avgpool2dwithconv_cache_requires_exact_device_identity():
+    module = AvgPool2dWithConv(kernel_size=(1, 4), stride=(1, 4))
+    weight_shape = (3, 1, 1, 4)
+
+    class FakeTensor:
+        def __init__(self, device, dtype):
+            self.device = torch.device(device)
+            self.dtype = dtype
+
+        def size(self):
+            return torch.Size(weight_shape)
+
+    module._pool_weights = FakeTensor("cuda:0", torch.float32)
+    same_device = FakeTensor("cuda:0", torch.float32)
+    other_device = FakeTensor("cuda:1", torch.float32)
+
+    assert module._pool_weights_match_input(same_device, weight_shape)
+    assert not module._pool_weights_match_input(other_device, weight_shape)
+
+
 def test_time_distributed():
     n_channels = 4
     n_times = 100
@@ -180,6 +226,28 @@ def test_time_distributed():
 
     assert out.shape == (batch_size, n_windows, feat_size)
     assert torch.allclose(out, out2, atol=1e-4, rtol=1e-4)
+
+
+def test_time_distributed_accepts_noncontiguous_input():
+    batch_size = 4
+    n_windows = 4
+    n_channels = 3
+    n_times = 10
+
+    contiguous = torch.randn(batch_size, n_windows, n_channels, n_times)
+    x = contiguous.transpose(0, 1)
+    assert x.shape == contiguous.shape
+    assert not x.is_contiguous()
+
+    model = TimeDistributed(nn.Identity())
+
+    out = model(x)
+
+    assert out.shape == (batch_size, n_windows, n_channels * n_times)
+    torch.testing.assert_close(
+        out,
+        x.reshape(batch_size, n_windows, n_channels * n_times),
+    )
 
 
 def test_reset_parameters():
@@ -248,7 +316,10 @@ def test_dense_spatial_filter_forward_collapse_false():
     "in_chans,n_filters_time,n_filters_spat",
     [(44, 40, 40), (1, 40, 40), (44, 40, 1), (44, 1, 1)],
 )
-def test_combined_conv(bias_time, bias_spat, in_chans, n_filters_time, n_filters_spat):
+@pytest.mark.parametrize("stride", [1, (3, 1)])
+def test_combined_conv(
+    bias_time, bias_spat, in_chans, n_filters_time, n_filters_spat, stride
+):
     batch_size = 64
     timepoints = 1000
 
@@ -259,6 +330,7 @@ def test_combined_conv(bias_time, bias_spat, in_chans, n_filters_time, n_filters
         n_filters_spat=n_filters_spat,
         bias_spat=bias_spat,
         bias_time=bias_time,
+        stride=stride,
     )
 
     combined_out = conv(data)
@@ -1250,6 +1322,43 @@ def test_cbam_invalid_kernel_size():
     """CBAM requires odd kernel sizes for same padding."""
     with pytest.raises(ValueError):
         CBAM(in_channels=4, reduction_rate=2, kernel_size=4)
+
+
+@pytest.mark.parametrize(
+    "kernel_size,dilation,stride",
+    [
+        (1, 1, 1),
+        (3, 1, 2),
+        (3, 2, 2),
+    ],
+)
+def test_causalconv1d_matches_explicit_left_padding(kernel_size, dilation, stride):
+    """CausalConv1d must match a left-padded convolution for every stride."""
+    torch.manual_seed(0)
+    causal = CausalConv1d(
+        2,
+        3,
+        kernel_size=kernel_size,
+        dilation=dilation,
+        stride=stride,
+    )
+    x = torch.randn(4, 2, 17)
+    left_padding = (kernel_size - 1) * dilation
+
+    expected = torch.nn.functional.conv1d(
+        torch.nn.functional.pad(x, (left_padding, 0)),
+        causal.weight,
+        causal.bias,
+        stride=stride,
+        padding=0,
+        dilation=dilation,
+        groups=causal.groups,
+    )
+
+    out = causal(x)
+
+    assert out.shape[-1] == (x.shape[-1] - 1) // stride + 1
+    torch.testing.assert_close(out, expected)
 
 
 def test_causalconv1d_disallows_padding():

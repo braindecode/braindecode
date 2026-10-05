@@ -48,6 +48,14 @@ class AvgPool2dWithConv(nn.Module):
         # that initializes parameters or something
         self._pool_weights = None
 
+    def _pool_weights_match_input(self, x, weight_shape):
+        return (
+            self._pool_weights is not None
+            and tuple(self._pool_weights.size()) == tuple(weight_shape)
+            and self._pool_weights.device == x.device
+            and self._pool_weights.dtype == x.dtype
+        )
+
     def forward(self, x):
         # Create weights for the convolution on demand:
         # size or type of x changed...
@@ -58,17 +66,10 @@ class AvgPool2dWithConv(nn.Module):
             self.kernel_size[0],
             self.kernel_size[1],
         )
-        if self._pool_weights is None or (
-            (tuple(self._pool_weights.size()) != tuple(weight_shape))
-            or (self._pool_weights.is_cuda != x.is_cuda)
-            or (self._pool_weights.data.type() != x.data.type())
-        ):
+        if not self._pool_weights_match_input(x, weight_shape):
             n_pool = np.prod(self.kernel_size)
             weights = np_to_th(np.ones(weight_shape, dtype=np.float32) / float(n_pool))
-            weights = weights.type_as(x)
-            if x.is_cuda:
-                weights = weights.cuda()
-            self._pool_weights = weights
+            self._pool_weights = weights.to(device=x.device, dtype=x.dtype)
 
         pooled = F.conv2d(
             x,
@@ -143,6 +144,9 @@ class CombinedConv(nn.Module):
         Whether to use bias in the temporal conv
     bias_spat: bool
         Whether to use bias in the spatial conv
+    stride: int | tuple[int, int]
+        Stride of the merged convolution. This is applied at the spatial
+        convolution stage, matching the unmerged temporal-then-spatial form.
 
     Examples
     --------
@@ -164,6 +168,7 @@ class CombinedConv(nn.Module):
         filter_time_length=25,
         bias_time=True,
         bias_spat=True,
+        stride=1,
     ):
         super().__init__()
         self.bias_time = bias_time
@@ -172,7 +177,11 @@ class CombinedConv(nn.Module):
             1, n_filters_time, (filter_time_length, 1), bias=bias_time, stride=1
         )
         self.conv_spat = nn.Conv2d(
-            n_filters_time, n_filters_spat, (1, in_chans), bias=bias_spat, stride=1
+            n_filters_time,
+            n_filters_spat,
+            (1, in_chans),
+            bias=bias_spat,
+            stride=stride,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -210,7 +219,9 @@ class CombinedConv(nn.Module):
 
         bias = calculated_bias
 
-        return F.conv2d(x, weight=combined_weight, bias=bias, stride=(1, 1))
+        return F.conv2d(
+            x, weight=combined_weight, bias=bias, stride=self.conv_spat.stride
+        )
 
 
 class CausalConv1d(nn.Conv1d):
@@ -274,16 +285,16 @@ class CausalConv1d(nn.Conv1d):
         )
 
     def forward(self, X):
-        out = F.conv1d(
+        X = F.pad(X, (self.padding[0], 0))
+        return F.conv1d(
             X,
             self.weight,
             self.bias,
             stride=self.stride,
-            padding=self.padding,
+            padding=0,
             dilation=self.dilation,
             groups=self.groups,
         )
-        return out[..., : -self.padding[0]]
 
 
 class DepthwiseConv2d(torch.nn.Conv2d):
