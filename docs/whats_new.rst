@@ -28,6 +28,10 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add registry-wide model contract tests that automatically cover every registered
+  model, checking eval-mode input/state purity, finite batched outputs,
+  batch-permutation equivariance, and ``get_config`` + ``state_dict``
+  reconstruction (:gh:`1208` by `lindicaphxag-tech`_).
 - Generate a version-scoped ``llms.txt`` and selected Markdown documentation
   entry points with source-commit attribution and critical-page coverage checks.
 
