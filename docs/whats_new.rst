@@ -22,13 +22,6 @@
 .. _current:
 
 
-Current 1.9.1 (2026-10-06)
-===============================
-
-Enhancements
-============
-
-
 Current 1.9.0 (2026-10-06)
 ===============================
 
@@ -94,11 +87,6 @@ Enhancements
   an iEEG population model over per-electrode features and coordinates, with
   pretrained weights at ``braindecode/popt-pretrained`` (:gh:`1105` by
   `Adam Mounir`_).
-
-- Add :class:`braindecode.models.VEMG2Pose`,
-  :class:`braindecode.models.NeuroPose`, and
-  :class:`braindecode.models.SensingDynamics` for dense hand-pose
-  regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
 
 - Add a bounded SAE intervention tutorial on a frozen pretrained REVE with
   BNCI2014_001 using optional SAE Lens, without adding an SAE implementation
@@ -340,6 +328,18 @@ Bug fixes
   ``(n_trials, 1)``, and :class:`braindecode.training.CroppedLoss` squeezed the
   time-averaged prediction to ``(batch_size,)``. It now keeps the output
   dimension when the target is 2-D (:gh:`1198` by `Raghav Rathi`_).
+
+
+Current 1.8.1 (2026-08-31)
+===============================
+
+Enhancements
+============
+
+- Add :class:`braindecode.models.VEMG2Pose`,
+  :class:`braindecode.models.NeuroPose`, and
+  :class:`braindecode.models.SensingDynamics` for dense hand-pose
+  regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)
