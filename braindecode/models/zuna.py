@@ -165,11 +165,11 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     activation : type[nn.Module], optional
         Feed-forward activation class. The default is
         :class:`torch.nn.SiLU`.
-    on_non_divisible : {"error", "pad", "crop"}, optional
+    on_non_divisible : {"pad", "crop", "error"}, optional
         How to handle an ``n_times`` that is not a multiple of ``fine_time_pts``,
         passed to :class:`braindecode.modules.PatchTokenizer`: ``"error"`` raises,
         ``"pad"`` right-pads the last patch with zeros, ``"crop"`` drops the
-        trailing samples. The default is ``"error"``.
+        trailing samples. The default is ``"pad"``.
 
     Notes
     -----
@@ -222,7 +222,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         sandwich_norm: bool = True,
         qk_norm: bool = True,
         activation: type[nn.Module] = nn.SiLU,
-        on_non_divisible: str = "error",
+        on_non_divisible: str = "pad",
     ):
         super().__init__(
             n_outputs=n_outputs,

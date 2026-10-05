@@ -25,6 +25,7 @@ from braindecode.modules import (
     CBAM,
     ECA,
     MLP,
+    AvgPool2dWithConv,
     CausalConv1d,
     Chomp1d,
     CombinedConv,
@@ -169,6 +170,41 @@ def _filfilt_in_torch_sytle(b, a, x_np):
     filtered_scipy = np.flip(backward_filtered, axis=-1)
 
     return filtered_scipy
+
+
+def test_avgpool2dwithconv_matches_average_pooling_and_caches_input_device():
+    module = AvgPool2dWithConv(kernel_size=(1, 4), stride=(1, 4))
+    x = torch.randn(2, 3, 1, 16)
+
+    out = module(x)
+    expected = torch.nn.functional.avg_pool2d(
+        x, kernel_size=(1, 4), stride=(1, 4)
+    )
+
+    torch.testing.assert_close(out, expected)
+    assert module._pool_weights is not None
+    assert module._pool_weights.device == x.device
+    assert module._pool_weights.dtype == x.dtype
+
+
+def test_avgpool2dwithconv_cache_requires_exact_device_identity():
+    module = AvgPool2dWithConv(kernel_size=(1, 4), stride=(1, 4))
+    weight_shape = (3, 1, 1, 4)
+
+    class FakeTensor:
+        def __init__(self, device, dtype):
+            self.device = torch.device(device)
+            self.dtype = dtype
+
+        def size(self):
+            return torch.Size(weight_shape)
+
+    module._pool_weights = FakeTensor("cuda:0", torch.float32)
+    same_device = FakeTensor("cuda:0", torch.float32)
+    other_device = FakeTensor("cuda:1", torch.float32)
+
+    assert module._pool_weights_match_input(same_device, weight_shape)
+    assert not module._pool_weights_match_input(other_device, weight_shape)
 
 
 def test_time_distributed():
