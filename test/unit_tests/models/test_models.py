@@ -4926,7 +4926,7 @@ def test_neurorvq_transformer_block_uses_sequential_residuals():
         num_heads=4,
         mlp_ratio=2,
         qkv_bias=True,
-        qk_norm=lambda dim: torch.nn.LayerNorm(dim, eps=1e-6),
+        qk_norm=torch.nn.LayerNorm,
         drop=0,
         attn_drop=0,
         drop_path=0,
