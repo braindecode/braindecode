@@ -134,6 +134,9 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.models.Deep4Net` with an explicit ``final_conv_length`` and no ``n_times``. The model now skips input-length auto-scaling when the input length is intentionally unspecified, matching the documented contract that only ``final_conv_length="auto"`` requires ``n_times``. By `lindicaphxag-tech`_.
+
+
 - Route the attention of :class:`braindecode.models.EEGDINO` and
   :class:`braindecode.models.Labram` through their ``qkv`` linear module
   instead of reading its weight, so hooks and adapters on ``qkv`` (e.g. LoRA)

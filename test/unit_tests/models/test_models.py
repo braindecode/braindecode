@@ -260,6 +260,21 @@ def test_deep4net(input_sizes):
     check_forward_pass(model, input_sizes)
 
 
+def test_deep4net_explicit_final_conv_length_without_n_times():
+    model = Deep4Net(
+        n_chans=18,
+        n_outputs=2,
+        n_times=None,
+        final_conv_length=1,
+    )
+    x = torch.randn(2, 18, 600)
+
+    with torch.no_grad():
+        y = model(x)
+
+    assert y.shape[:2] == (2, 2)
+
+
 def test_deep4net_without_split_first_layer(input_sizes):
     model = Deep4Net(
         input_sizes["n_channels"],
