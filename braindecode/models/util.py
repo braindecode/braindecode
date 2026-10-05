@@ -357,79 +357,73 @@ def _get_bendr_chs_info() -> list[dict]:
     return result
 
 
-# The 31 DKT cortical parcels: the 34 Desikan-Killiany gyral labels minus the
-# three (bankssts, frontalpole, temporalpole) whose boundaries the DKT protocol
-# could not define reliably and reassigned to their neighbours.
-_DKT_CORTICAL_PARCELS: tuple[str, ...] = (
-    "caudalanteriorcingulate",
-    "caudalmiddlefrontal",
-    "cuneus",
-    "entorhinal",
-    "fusiform",
-    "inferiorparietal",
-    "inferiortemporal",
-    "insula",
-    "isthmuscingulate",
-    "lateraloccipital",
-    "lateralorbitofrontal",
-    "lingual",
-    "medialorbitofrontal",
-    "middletemporal",
-    "paracentral",
-    "parahippocampal",
-    "parsopercularis",
-    "parsorbitalis",
-    "parstriangularis",
-    "pericalcarine",
-    "postcentral",
-    "posteriorcingulate",
-    "precentral",
-    "precuneus",
-    "rostralanteriorcingulate",
-    "rostralmiddlefrontal",
-    "superiorfrontal",
-    "superiorparietal",
-    "superiortemporal",
-    "supramarginal",
-    "transversetemporal",
-)
-# The six aseg structures the atlas keeps, which DKT leaves untouched.
-_DKT_SUBCORTICAL_STRUCTURES: tuple[str, ...] = (
-    "Hippocampus",
-    "Amygdala",
-    "Caudate",
-    "Putamen",
-    "Pallidum",
-    "Thalamus-Proper",
-)
+# FreeSurfer's left-hemisphere Desikan-Killiany cortical gyri occupy the
+# contiguous id block 1000-1035 of its bundled colour table (the right
+# hemisphere mirrors it 1000 ids higher). DKT drops five of these 36 ids:
+# 1000 (``unknown``) and 1004 (``corpuscallosum``) are not cortical parcels,
+# and 1001 (``bankssts``), 1032 (``frontalpole``), 1033 (``temporalpole``) are
+# the three gyri whose boundaries the DKT protocol could not define reliably,
+# so they were folded into their neighbours. These are FreeSurfer *ids*, not
+# parcel names, so the exclusion needs no name vocabulary.
+_DK_LH_CORTICAL_IDS = range(1000, 1036)
+_DKT_EXCLUDED_IDS = frozenset({1000, 1001, 1004, 1032, 1033})
+
+# Aseg subcortical structures get a ``Left-``/``Right-`` id pair for every
+# lateralized entry; DKT keeps the structures whose left id falls in 10-18
+# and that have a ``Right-`` counterpart elsewhere in the table. The 3rd/4th
+# ventricles and the brain stem fall in that id range too but have no
+# ``Right-`` counterpart, so this test excludes them by structure, not by
+# typing their names.
+_ASEG_LH_IDS = range(10, 19)
+
+# MAPA's released region embedding orders the six kept aseg structures as
+# Hippocampus, Amygdala, Caudate, Putamen, Pallidum, Thalamus-Proper. That is
+# neither ascending-id order (Thalamus, Caudate, Putamen, Pallidum,
+# Hippocampus, Amygdala) nor alphabetical order (Amygdala, Caudate,
+# Hippocampus, Pallidum, Putamen, Thalamus-Proper): no table MNE ships
+# encodes it. It is the one piece of metadata this helper cannot derive --
+# confirmed only by the released checkpoint, via the state-dict transplant in
+# ``test_mapa_released_checkpoint_reproduces_the_reference_features`` -- so it
+# is kept as a permutation of *positions* in the alphabetically-sorted,
+# MNE-derived set below, never as a list of structure names.
+_ASEG_SLOT_PERMUTATION: tuple[int, ...] = (2, 0, 1, 4, 3, 5)
 
 
 def dkt_region_slots() -> tuple[str, ...]:
-    """FreeSurfer DKT region names in a fixed anatomical slot order.
+    """FreeSurfer DKT region names in MAPA's released embedding slot order.
 
     The 62 hemisphere-qualified cortical parcels come first (left hemisphere,
-    then right), then the 12 subcortical structures (left, then right). Every
-    name is a verbatim FreeSurfer label, i.e. a key of
-    :func:`mne.read_freesurfer_lut` (see ``test_dkt_region_slots_are_freesurfer``
-    labels, which anchors the vocabulary to MNE's bundled colour table without a
-    download). The selection (31 of 34 DKT gyri plus 6 aseg structures) and this
-    slot order are not encoded by the LUT, so braindecode owns them; a port such
-    as MAPA that was trained on this parcellation reuses the slot order as the
-    index into its released region embedding.
+    then right, each alphabetically sorted), then the 12 subcortical
+    structures (left, then right, in the released, non-alphabetical order --
+    see ``_ASEG_SLOT_PERMUTATION``). Every name comes straight out of
+    :func:`mne.read_freesurfer_lut`, MNE's bundled FreeSurfer colour table
+    (no download); braindecode contributes only the id-based selection rule
+    and the slot order, never a hand-typed name list.
 
     Returns
     -------
     tuple of str
         The 74 region names, index ``i`` being embedding slot ``i``.
     """
-    return tuple(
-        f"ctx-{hemisphere}-{parcel}"
-        for hemisphere in ("lh", "rh")
-        for parcel in _DKT_CORTICAL_PARCELS
-    ) + tuple(
-        f"{hemisphere}-{structure}"
-        for hemisphere in ("Left", "Right")
-        for structure in _DKT_SUBCORTICAL_STRUCTURES
+    lut, _ = mne.read_freesurfer_lut()
+    cortical = sorted(
+        name.removeprefix("ctx-lh-")
+        for name, id_ in lut.items()
+        if id_ in _DK_LH_CORTICAL_IDS and id_ not in _DKT_EXCLUDED_IDS
+    )
+    aseg_lh_alpha = sorted(
+        name.removeprefix("Left-")
+        for name, id_ in lut.items()
+        if id_ in _ASEG_LH_IDS
+        and name.startswith("Left-")
+        and f"Right-{name.removeprefix('Left-')}" in lut
+    )
+    aseg = tuple(aseg_lh_alpha[i] for i in _ASEG_SLOT_PERMUTATION)
+    return (
+        tuple(f"ctx-lh-{parcel}" for parcel in cortical)
+        + tuple(f"ctx-rh-{parcel}" for parcel in cortical)
+        + tuple(f"Left-{structure}" for structure in aseg)
+        + tuple(f"Right-{structure}" for structure in aseg)
     )
 
 

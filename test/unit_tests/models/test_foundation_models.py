@@ -1939,18 +1939,104 @@ def test_mapa_sensor_indices_reads_array_and_contact_number():
     ]
 
 
+# The region table as released, frozen here only to prove the MNE-derived
+# helper reproduces it exactly; this tuple is test-only evidence, not a
+# definition braindecode's source code owns (see test below and
+# ``dkt_region_slots`` in ``braindecode/models/util.py``).
+_RELEASED_MAPA_DKT_REGIONS = (
+    "ctx-lh-caudalanteriorcingulate",
+    "ctx-lh-caudalmiddlefrontal",
+    "ctx-lh-cuneus",
+    "ctx-lh-entorhinal",
+    "ctx-lh-fusiform",
+    "ctx-lh-inferiorparietal",
+    "ctx-lh-inferiortemporal",
+    "ctx-lh-insula",
+    "ctx-lh-isthmuscingulate",
+    "ctx-lh-lateraloccipital",
+    "ctx-lh-lateralorbitofrontal",
+    "ctx-lh-lingual",
+    "ctx-lh-medialorbitofrontal",
+    "ctx-lh-middletemporal",
+    "ctx-lh-paracentral",
+    "ctx-lh-parahippocampal",
+    "ctx-lh-parsopercularis",
+    "ctx-lh-parsorbitalis",
+    "ctx-lh-parstriangularis",
+    "ctx-lh-pericalcarine",
+    "ctx-lh-postcentral",
+    "ctx-lh-posteriorcingulate",
+    "ctx-lh-precentral",
+    "ctx-lh-precuneus",
+    "ctx-lh-rostralanteriorcingulate",
+    "ctx-lh-rostralmiddlefrontal",
+    "ctx-lh-superiorfrontal",
+    "ctx-lh-superiorparietal",
+    "ctx-lh-superiortemporal",
+    "ctx-lh-supramarginal",
+    "ctx-lh-transversetemporal",
+    "ctx-rh-caudalanteriorcingulate",
+    "ctx-rh-caudalmiddlefrontal",
+    "ctx-rh-cuneus",
+    "ctx-rh-entorhinal",
+    "ctx-rh-fusiform",
+    "ctx-rh-inferiorparietal",
+    "ctx-rh-inferiortemporal",
+    "ctx-rh-insula",
+    "ctx-rh-isthmuscingulate",
+    "ctx-rh-lateraloccipital",
+    "ctx-rh-lateralorbitofrontal",
+    "ctx-rh-lingual",
+    "ctx-rh-medialorbitofrontal",
+    "ctx-rh-middletemporal",
+    "ctx-rh-paracentral",
+    "ctx-rh-parahippocampal",
+    "ctx-rh-parsopercularis",
+    "ctx-rh-parsorbitalis",
+    "ctx-rh-parstriangularis",
+    "ctx-rh-pericalcarine",
+    "ctx-rh-postcentral",
+    "ctx-rh-posteriorcingulate",
+    "ctx-rh-precentral",
+    "ctx-rh-precuneus",
+    "ctx-rh-rostralanteriorcingulate",
+    "ctx-rh-rostralmiddlefrontal",
+    "ctx-rh-superiorfrontal",
+    "ctx-rh-superiorparietal",
+    "ctx-rh-superiortemporal",
+    "ctx-rh-supramarginal",
+    "ctx-rh-transversetemporal",
+    "Left-Hippocampus",
+    "Left-Amygdala",
+    "Left-Caudate",
+    "Left-Putamen",
+    "Left-Pallidum",
+    "Left-Thalamus-Proper",
+    "Right-Hippocampus",
+    "Right-Amygdala",
+    "Right-Caudate",
+    "Right-Putamen",
+    "Right-Pallidum",
+    "Right-Thalamus-Proper",
+)
+
+
 def test_mapa_regions_are_freesurfer_labels_sourced_from_util():
     """The region vocabulary is the shared util helper, anchored to MNE's LUT.
 
     MAPA owns only the reference and the released slot order; the names are
     standard FreeSurfer labels, so each must be a key of MNE's bundled colour
     table (``mne.read_freesurfer_lut``, no download) rather than hard-coded in
-    the model file.
+    the model file. ``dkt_region_slots`` must still reproduce the exact
+    released slot order (``_RELEASED_MAPA_DKT_REGIONS``, frozen before this
+    refactor) even though it now derives the vocabulary from MNE's ids
+    instead of typing it out.
     """
     from braindecode.models.mapa import MAPA_DKT_REGIONS
     from braindecode.models.util import dkt_region_slots
 
     assert MAPA_DKT_REGIONS == dkt_region_slots()
+    assert MAPA_DKT_REGIONS == _RELEASED_MAPA_DKT_REGIONS
     assert len(MAPA_DKT_REGIONS) == 74
     lut_names, _ = mne.read_freesurfer_lut()
     assert set(MAPA_DKT_REGIONS) <= set(lut_names)
