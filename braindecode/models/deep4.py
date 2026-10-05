@@ -225,7 +225,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
                     in_chans=self.n_chans,
                     n_filters_time=self.n_filters_time,
                     n_filters_spat=self.n_filters_spat,
-                    filter_time_length=filter_time_length,
+                    filter_time_length=self.filter_time_length,
                     bias_time=True,
                     bias_spat=not self.batch_norm,
                     stride=(conv_stride, 1),

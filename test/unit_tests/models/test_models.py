@@ -260,6 +260,22 @@ def test_deep4net(input_sizes):
     check_forward_pass(model, input_sizes)
 
 
+def test_deep4net_short_input_scales_split_temporal_kernel():
+    with pytest.warns(UserWarning, match="smaller than the minimum required"):
+        model = Deep4Net(
+            n_chans=18,
+            n_outputs=2,
+            n_times=300,
+            final_conv_length=1,
+        )
+
+    assert model.filter_time_length < 10
+    assert model.conv_time_spat.conv_time.kernel_size[0] == model.filter_time_length
+
+    with torch.no_grad():
+        y = model(torch.randn(2, 18, 300))
+
+
 def test_deep4net_explicit_final_conv_length_without_n_times():
     model = Deep4Net(
         n_chans=18,
@@ -273,6 +289,8 @@ def test_deep4net_explicit_final_conv_length_without_n_times():
         y = model(x)
 
     assert y.shape[:2] == (2, 2)
+
+
 
 
 def test_deep4net_without_split_first_layer(input_sizes):
