@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 import torch
 
@@ -31,3 +32,24 @@ def test_from_pretrained_local_roundtrip(tmp_path):
     x = torch.randn(1, 19, 1000)
     assert torch.allclose(model(x), reloaded(x), atol=1e-5)
     assert EEGDINO.from_pretrained(save_dir, n_outputs=6)(x).shape == (1, 6)
+
+
+def _chs(names):
+    return [{"ch_name": n, "kind": "eeg", "loc": np.zeros(12)} for n in names]
+
+
+def test_from_pretrained_takes_geometry_from_the_caller_not_the_config(tmp_path):
+    """Passing ``chs_info`` (or ``n_chans``, or ``n_times``/``sfreq``) to
+    ``from_pretrained`` must not collide with the geometry saved in config.json."""
+    pytest.importorskip("huggingface_hub")
+    model = EEGDINO(n_chans=19, n_times=400, sfreq=200, n_outputs=2, n_layer=1)
+    model.save_pretrained(tmp_path)
+    eight = _chs(["Fp1", "Fp2", "C3", "C4", "P3", "P4", "O1", "O2"])
+    loaded = EEGDINO.from_pretrained(tmp_path, chs_info=eight)
+    assert loaded.n_chans == 8
+    loaded = EEGDINO.from_pretrained(tmp_path, n_chans=8)
+    assert loaded.n_chans == 8 and loaded._chs_info is None
+    loaded = EEGDINO.from_pretrained(tmp_path, n_times=600)
+    assert loaded.n_times == 600 and loaded.sfreq == 200
+    loaded = EEGDINO.from_pretrained(tmp_path, sfreq=100)
+    assert loaded.sfreq == 100 and loaded.n_times == 400
