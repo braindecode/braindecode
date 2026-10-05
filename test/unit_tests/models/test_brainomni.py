@@ -13,6 +13,7 @@ import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from mne.io.constants import FIFF
 
 from braindecode.models import BrainOmni, BrainTokenizer
 from braindecode.models.base import EEGModuleMixin
@@ -238,6 +239,96 @@ def test_geometry_nonfinite_meg_orientation_raises(kind, coil_type, orientation_
         _geometry_from_chs_info(
             [{"ch_name": "M1", "kind": kind, "coil_type": coil_type, "loc": loc}]
         )
+
+
+def _meg_info_chs(n_triplets=4, n_eeg=3, axial=False, plain_int=False):
+    """MNE ``info["chs"]`` like the sample data: integer FIFF kind/coil codes.
+
+    VectorView triplets (MAG 3022 + two planar GRAD 3012), or CTF axial
+    gradiometers (5001, unit T) with ``axial=True``, plus EEG. Locations are a
+    sensor helmet (head frame, metres) with an orthonormal coil frame per sensor.
+    """
+    names, types, coils = [], [], []
+    for i in range(n_triplets):
+        if axial:
+            names += [f"MLC{i}1", f"MLC{i}2", f"MLC{i}3"]
+            types += ["mag"] * 3  # MNE stores CTF axial gradiometers with unit T
+            coils += [FIFF.FIFFV_COIL_CTF_GRAD] * 3
+        else:
+            names += [f"MEG{i:03d}1", f"MEG{i:03d}2", f"MEG{i:03d}3"]
+            types += ["mag", "grad", "grad"]
+            coils += [
+                FIFF.FIFFV_COIL_VV_MAG_T3,
+                FIFF.FIFFV_COIL_VV_PLANAR_T1,
+                FIFF.FIFFV_COIL_VV_PLANAR_T1,
+            ]
+    names += [f"EEG{i:03d}" for i in range(n_eeg)]
+    types += ["eeg"] * n_eeg
+    coils += [FIFF.FIFFV_COIL_EEG] * n_eeg
+    info = mne.create_info(names, 256.0, types)
+    rng = np.random.default_rng(7)
+    for ch, coil in zip(info["chs"], coils):
+        ch["coil_type"] = int(coil) if plain_int else coil
+        direction = rng.normal(size=3)
+        direction /= np.linalg.norm(direction)
+        ex = np.cross(direction, [0.0, 0.0, 1.0])
+        ex /= np.linalg.norm(ex)
+        ey = np.cross(direction, ex)
+        ch["loc"] = np.concatenate([0.1 * direction, ex, ey, direction])
+        if plain_int:
+            ch["kind"] = int(ch["kind"])
+    return info["chs"]
+
+
+@pytest.mark.parametrize("plain_int", [False, True], ids=["named_int", "plain_int"])
+def test_geometry_vectorview_meg_info(plain_int):
+    chs = _meg_info_chs(plain_int=plain_int)
+    pos, sensor_type = _geometry_from_chs_info(chs)
+    assert sensor_type.tolist() == [1, 2, 2] * 4 + [0] * 3
+    for i, ch in enumerate(chs):
+        if sensor_type[i] == 2:  # planar GRAD: in-plane ex axis
+            assert np.allclose(pos[i, 3:], ch["loc"][3:6])
+        elif sensor_type[i] == 1:  # MAG: coil normal
+            assert np.allclose(pos[i, 3:], ch["loc"][9:12])
+        else:
+            assert np.allclose(pos[i, 3:], 0.0)
+    # EEG and MEG (MAG + GRAD together) are each centred and scaled.
+    for mask in (sensor_type == 0, sensor_type > 0):
+        xyz = pos[mask, :3]
+        assert np.allclose(xyz.mean(axis=0), 0.0, atol=1e-6)
+        assert np.isclose(np.sqrt(3 * np.mean(np.sum(xyz**2, axis=1))), 1.0)
+
+
+@pytest.mark.parametrize("plain_int", [False, True], ids=["named_int", "plain_int"])
+def test_geometry_ctf_axial_gradiometers_are_grad(plain_int):
+    # mne.channel_type says "mag" for CTF axial gradiometers (unit T); the
+    # released extract_pos_sensor_type says GRAD (no "MAG" in the coil name).
+    chs = _meg_info_chs(n_eeg=0, axial=True, plain_int=plain_int)
+    assert {mne.channel_type({"chs": chs}, i) for i in range(len(chs))} == {"mag"}
+    pos, sensor_type = _geometry_from_chs_info(chs)
+    assert sensor_type.tolist() == [2] * len(chs)
+    assert np.allclose(pos[:, 3:], np.stack([ch["loc"][9:12] for ch in chs]))
+
+
+def test_geometry_rejects_meg_reference_channels():
+    chs = _meg_info_chs(n_triplets=1, n_eeg=0)
+    chs[0]["kind"] = FIFF.FIFFV_REF_MEG_CH
+    with pytest.raises(ValueError, match="Unsupported channel type"):
+        _geometry_from_chs_info(chs)
+
+
+@pytest.mark.parametrize("axial", [False, True], ids=["vectorview", "ctf"])
+def test_brainomni_forward_on_meg_and_eeg_info(axial):
+    chs = _meg_info_chs(axial=axial)
+    model = _small_brainomni(chs_info=chs, n_outputs=2).eval()
+    assert model.tokenizer.sensor_type.tolist() == (
+        [2] * 12 if axial else [1, 2, 2] * 4
+    ) + [0] * 3
+    out = model(torch.randn(2, len(chs), 512))
+    assert out.shape == (2, 2) and torch.isfinite(out).all()
+    tokenizer = _small_tokenizer(chs_info=chs).eval()
+    x = torch.randn(2, len(chs), 512)
+    assert tokenizer(x).shape == x.shape
 
 
 @pytest.mark.parametrize("loc", [np.full(12, np.nan), None], ids=["nan", "absent"])

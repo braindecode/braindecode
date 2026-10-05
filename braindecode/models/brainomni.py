@@ -20,6 +20,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
+from mne.io.constants import FIFF
 from torch.nn import RMSNorm
 
 # Classic weight_norm keeps ``conv.weight_g``/``weight_v`` keys (checkpoint parity).
@@ -953,6 +954,40 @@ def _init_weights(module: nn.Module) -> None:
 
 
 _SENSOR_CODE = {"eeg": 0, "mag": 1, "grad": 2}
+# FIFF coil-type names by integer value, so plain-int ``coil_type`` values (e.g. from
+# serialised ``chs_info``) resolve like MNE's named constants.
+_COIL_NAMES = {
+    int(value): name for name, value in FIFF.items() if name.startswith("FIFFV_COIL_")
+}
+
+
+def _coil_name(ch) -> str:
+    return _COIL_NAMES.get(int(ch.get("coil_type", 0)), "")
+
+
+def _sensor_type_of(chs_info, index: int) -> str:
+    """Return ``"eeg"``, ``"mag"``, ``"grad"`` (or another MNE type) for one channel.
+
+    Follows the released ``factory/utils.py:extract_pos_sensor_type``: an MEG
+    channel is MAG when its coil name contains ``MAG`` and GRAD otherwise, so
+    axial gradiometers (CTF ``5001``, KIT ``6001``, Magnes ``4002``) are GRAD
+    although :func:`mne.channel_type` reports them as ``mag`` (unit T). The coil
+    name is looked up from the integer, so plain-int and ``NamedInt`` coil types
+    give the same answer.
+    """
+    ch = chs_info[index]
+    kind = ch.get("kind")
+    if kind is not None and not isinstance(kind, str):
+        if int(kind) == FIFF.FIFFV_EEG_CH:
+            return "eeg"
+        if int(kind) == FIFF.FIFFV_MEG_CH and "coil_type" in ch:
+            return "mag" if "MAG" in _coil_name(ch) else "grad"
+        return mne.channel_type({"chs": chs_info}, index)
+    # Lightweight dicts carry a resolved string in ``ch_type`` or ``kind``.
+    resolved_type = ch.get("ch_type", kind)
+    if resolved_type is None:
+        resolved_type = mne.channel_type({"chs": chs_info}, index)
+    return str(resolved_type).lower()
 
 
 def _normalize_pos(pos: np.ndarray, sensor_type: np.ndarray) -> np.ndarray:
@@ -983,17 +1018,7 @@ def _geometry_from_chs_info(chs_info):
     the per-modality normalization follow the BrainOmni convention. Raises if any
     channel lacks a finite position.
     """
-    # mne.channel_type owns the FIFF kind/unit -> eeg/mag/grad logic (it only needs
-    # ``info["chs"][idx]``). Lightweight dicts instead carry a resolved string in
-    # ``ch_type`` or ``kind``, so use those directly when present.
-    types = []
-    for index, ch in enumerate(chs_info):
-        resolved_type = ch.get("ch_type")
-        if resolved_type is None and isinstance(ch.get("kind"), str):
-            resolved_type = ch["kind"]
-        if resolved_type is None:
-            resolved_type = mne.channel_type({"chs": chs_info}, index)
-        types.append(str(resolved_type).lower())
+    types = [_sensor_type_of(chs_info, index) for index in range(len(chs_info))]
 
     xyz = extract_channel_locations_from_chs_info(chs_info)
     if xyz is None or len(xyz) != len(chs_info) or not np.isfinite(xyz).all():
@@ -1011,11 +1036,11 @@ def _geometry_from_chs_info(chs_info):
     grad, mag = sensor_type == _SENSOR_CODE["grad"], sensor_type == _SENSOR_CODE["mag"]
     ori = np.zeros((len(chs_info), 3))  # EEG orientation stays zero
     for index in np.flatnonzero(grad):
-        # The released source selects the in-plane x-axis only for VectorView
-        # planar coils. Every other MEG coil (including axial gradiometers) uses
-        # the coil-normal z-axis.
-        coil_type = int(chs_info[index].get("coil_type", 0))
-        axis_slice = slice(3, 6) if 3011 <= coil_type <= 3015 else slice(9, 12)
+        # The released source selects the in-plane x-axis only for coils named
+        # PLANAR (VectorView 3011-3014). Every other MEG coil (including axial
+        # gradiometers) uses the coil-normal z-axis.
+        planar = "PLANAR" in _coil_name(chs_info[index])
+        axis_slice = slice(3, 6) if planar else slice(9, 12)
         axis = np.asarray(chs_info[index]["loc"], dtype=np.float64)[axis_slice]
         if axis.shape != (3,) or not np.isfinite(axis).all():
             raise ValueError("chs_info lacks a finite coil orientation for GRAD.")
