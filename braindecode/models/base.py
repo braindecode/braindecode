@@ -781,13 +781,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         @classmethod
         def from_pretrained(cls, *args, **kwargs):
-            # PyTorchModelHubMixin fills every __init__ argument the caller
-            # omitted from config.json. Input geometry must come from one
-            # source: a caller's ``chs_info`` with the checkpoint's ``n_chans``
-            # (or a caller's ``n_times`` with the checkpoint's
-            # ``input_window_seconds``) would fail the consistency checks in
-            # ``EEGModuleMixin.__init__``. Pin the derived argument so the
-            # config cannot supply it.
+            # The Hub mixin fills omitted __init__ args from config.json; pin the
+            # derived geometry arg so it cannot clash with the caller's one
+            # (e.g. caller chs_info vs saved n_chans) in __init__'s checks.
             if "chs_info" in kwargs and "n_chans" not in kwargs:
                 chs_info = kwargs["chs_info"]
                 kwargs["n_chans"] = None if chs_info is None else len(chs_info)
