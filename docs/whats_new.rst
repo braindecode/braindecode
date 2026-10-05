@@ -22,7 +22,14 @@
 .. _current:
 
 
-Current 1.8.1 (2026-08-31)
+Current 1.9.1 (2026-10-06)
+===============================
+
+Enhancements
+============
+
+
+Current 1.9.0 (2026-10-06)
 ===============================
 
 Enhancements
@@ -33,7 +40,8 @@ Enhancements
   batch-permutation equivariance, and ``get_config`` + ``state_dict``
   reconstruction (:gh:`1208` by `lindicaphxag-tech`_).
 - Generate a version-scoped ``llms.txt`` and selected Markdown documentation
-  entry points with source-commit attribution and critical-page coverage checks.
+  entry points with source-commit attribution and critical-page coverage checks
+  (:gh:`1225` by `Bruno Aristimunha`_).
 
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
@@ -67,6 +75,13 @@ Enhancements
   electrode coordinate, its atlas parcel or its lobe, before a joint
   space-time transformer encoder with rotary temporal embeddings
   (:gh:`1173` by `Julien Gadonneix`_).
+
+- :class:`braindecode.models.BaRISTA` encodes recordings from different
+  montages with one instance: the embedding tables only depend on the spatial
+  scale, so ``spatial_indices`` (or the fallback ``chs_info`` positions) is a
+  :meth:`forward` argument rather than fixed at construction, and the channel
+  count and window length may vary from batch to batch when ``pooling="mean"``
+  (:gh:`1175` by `Julien Gadonneix`_).
 
 - Add :class:`braindecode.models.Brant`, a braindecode-native port of the Brant
   foundation model for intracranial (sEEG/iEEG) signals (Zhang et al., NeurIPS
@@ -144,10 +159,10 @@ Requirements
 Bug fixes
 ==========
 
-- Fix :class:`braindecode.models.Deep4Net` short-input auto-scaling with ``split_first_layer=True`` so the scaled ``filter_time_length`` is used by the actual :class:`braindecode.modules.CombinedConv` temporal kernel instead of retaining the original constructor value. By `lindicaphxag-tech`_.
+- Fix :class:`braindecode.models.Deep4Net` short-input auto-scaling with ``split_first_layer=True`` so the scaled ``filter_time_length`` is used by the actual :class:`braindecode.modules.CombinedConv` temporal kernel instead of retaining the original constructor value (:gh:`1215` by `lindicaphxag-tech`_).
 
 
-- Fix :class:`braindecode.models.Deep4Net` with an explicit ``final_conv_length`` and no ``n_times``. The model now skips input-length auto-scaling when the input length is intentionally unspecified, matching the documented contract that only ``final_conv_length="auto"`` requires ``n_times``. By `lindicaphxag-tech`_.
+- Fix :class:`braindecode.models.Deep4Net` with an explicit ``final_conv_length`` and no ``n_times``. The model now skips input-length auto-scaling when the input length is intentionally unspecified, matching the documented contract that only ``final_conv_length="auto"`` requires ``n_times`` (:gh:`1214` by `lindicaphxag-tech`_).
 
 
 - Route the attention of :class:`braindecode.models.EEGDINO` and
@@ -155,7 +170,7 @@ Bug fixes
   instead of reading its weight, so hooks and adapters on ``qkv`` (e.g. LoRA)
   take effect; before, they were skipped silently. Outputs change only by
   float rounding (:gh:`1194` by `Bruno Aristimunha`_)
-- Fix :class:`braindecode.modules.AvgPool2dWithConv` to invalidate cached pooling weights when the exact input device changes, preventing stale weights from being reused across CUDA devices or non-CUDA backends with the same dtype. By `lindicaphxag-tech`_.
+- Fix :class:`braindecode.modules.AvgPool2dWithConv` to invalidate cached pooling weights when the exact input device changes, preventing stale weights from being reused across CUDA devices or non-CUDA backends with the same dtype (:gh:`1217` by `lindicaphxag-tech`_).
 - Fix :class:`braindecode.models.ShallowFBCSPNet` with
   ``split_first_layer=False``, which attempted to initialize and remap
   checkpoint keys through the split-only ``conv_time_spat`` module after the
@@ -167,9 +182,9 @@ Bug fixes
   checkpoint keys through the split-only ``conv_time_spat`` module after the
   CombinedConv refactor. The unsplit path now initializes and loads its direct
   temporal convolution as before (:gh:`1207` by `lindicaphxag-tech`_).
-- Make :class:`braindecode.modules.TimeDistributed` accept non-contiguous sequence batches by reshaping rather than requiring view-compatible strides. By `lindicaphxag-tech`_.
+- Make :class:`braindecode.modules.TimeDistributed` accept non-contiguous sequence batches by reshaping rather than requiring view-compatible strides (:gh:`1220` by `lindicaphxag-tech`_).
 
-- Make :class:`braindecode.modules.Chomp1d` preserve the input when ``chomp_size=0`` instead of returning an empty time axis. This restores :class:`braindecode.models.TCN` with ``kernel_size=1``, whose causal padding is zero. By `lindicaphxag-tech`_.
+- Make :class:`braindecode.modules.Chomp1d` preserve the input when ``chomp_size=0`` instead of returning an empty time axis. This restores :class:`braindecode.models.TCN` with ``kernel_size=1``, whose causal padding is zero (:gh:`1219` by `lindicaphxag-tech`_).
 
 - Preserve ``Deep4Net``'s first-block temporal stride when using the merged
   ``CombinedConv`` path with ``stride_before_pool=True``; dense-prediction
@@ -244,28 +259,30 @@ Bug fixes
   event mapping once for the whole dataset before the recordings are windowed.
   With ``mapping=None`` and ``n_jobs`` above one, every worker numbered the
   event descriptions of its own recording from zero, so the same description
-  could receive different integer targets across recordings. By `Sarthak
-  Tayal`_.
+  could receive different integer targets across recordings
+  (:gh:`1166` by `Sarthak Tayal`_).
 
 - Make :func:`braindecode.datautil.load_concat_dataset` restore the
   ``targets_from`` and ``last_target_only`` settings of a saved
   :class:`braindecode.datasets.EEGWindowsDataset`. The loader looked the stored
   settings up under the name ``WindowsDataset`` while the windowers record them
   under ``EEGWindowsDataset``, so a dataset windowed with
-  ``targets_from="channels"`` came back reading its targets from the metadata.
-  By `Sarthak Tayal`_.
+  ``targets_from="channels"`` came back reading its targets from the metadata
+  (:gh:`1166` by `Sarthak Tayal`_).
 
 - Make :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` work on a
   copy of the metadata of each dataset. The description columns were written
   into the metadata frame of the dataset itself, replacing any column sharing a
-  name with a description key such as ``target``. By `Sarthak Tayal`_.
+  name with a description key such as ``target``
+  (:gh:`1166` by `Sarthak Tayal`_).
 
 - Make :func:`braindecode.preprocessing.create_windows_from_events` accept a
   ``mapping`` that sends several event descriptions to the same target when the
   windows are stored as :class:`mne.Epochs`, for example to merge sleep stages
   3 and 4. ``mne.Epochs`` rejects an ``event_id`` with repeated values since
   MNE 1.13, so annotations now receive distinct event IDs while their shared
-  targets remain in the window metadata. By `Sarthak Tayal`_.
+  targets remain in the window metadata
+  (:gh:`1166` by `Sarthak Tayal`_).
 
 - Fix :class:`braindecode.models.STEEGFormer` on high-density sensor nets whose
   electrodes are numbered rather than named for a 10-20 site (e.g. EGI
