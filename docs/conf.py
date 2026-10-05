@@ -86,6 +86,8 @@ print(f"--- Sphinx is using sphinx_design version: {sphinx_design.__version__} -
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+    "sphinx_markdown_builder",
+    "agent_markdown",
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
     "sphinx.ext.doctest",
@@ -616,3 +618,8 @@ texinfo_documents = [
         "Miscellaneous",
     ),
 ]
+
+# Markdown siblings link to canonical HTML, including pages outside the curated index.
+markdown_uri_doc_suffix = ".html"
+# Preserve Sphinx IDs instead of depending on renderer-specific heading slugs.
+markdown_anchor_sections = True
