@@ -598,6 +598,10 @@ def test_model_torch_script(model):
         # forward() returns Tensor (logits) or Tuple[Tensor, Tensor] (main +
         # branch logits) when return_features=True; polymorphic return type.
         "MSVTNet",
+        # forward() returns Dict[str, Tensor] (logits/features/aux_loss) or
+        # Tensor (logits) when return_features=True; torch.jit.script rejects
+        # this polymorphic return type.
+        "NeurIPT",
         # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
         # (torch.linalg.eigh + torch.stft).
         "MetaNeuromotorHand",

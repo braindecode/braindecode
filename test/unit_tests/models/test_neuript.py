@@ -87,7 +87,7 @@ def test_neuript_validates_channel_positions_and_lobe_groups():
 
 def test_neuript_embeds_each_sample_without_temporal_pooling():
     model = _small_model()
-    embedded = model._embed(torch.randn(2, 4, 31))
+    embedded = model.embed(torch.randn(2, 4, 31))
 
     assert embedded.shape == (2, 31, 4, 24)
 
@@ -101,7 +101,7 @@ def test_neuript_drop_prob_alias_overrides_dropout():
     model = _small_model(dropout=0.1, drop_prob=0.3)
 
     assert model.layers[0].time_attn.dropout == 0.3
-    assert model.layers[0].time_moe.shared.dropout.p == 0.3
+    assert model.layers[0].time_moe.shared.dropout2.p == 0.3
 
     with pytest.raises(ValueError, match="dropout must be in "):
         _small_model(drop_prob=1.1)
