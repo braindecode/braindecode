@@ -135,6 +135,7 @@ Bug fixes
   checkpoint keys through the split-only ``conv_time_spat`` module after the
   CombinedConv refactor. The unsplit path now initializes and loads its direct
   temporal convolution as before (:gh:`1207` by `lindicaphxag-tech`_).
+- Make :class:`braindecode.modules.TimeDistributed` accept non-contiguous sequence batches by reshaping rather than requiring view-compatible strides. By `lindicaphxag-tech`_.
 
 - Make :class:`braindecode.modules.Chomp1d` preserve the input when ``chomp_size=0`` instead of returning an empty time axis. This restores :class:`braindecode.models.TCN` with ``kernel_size=1``, whose causal padding is zero. By `lindicaphxag-tech`_.
 
