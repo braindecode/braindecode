@@ -263,22 +263,14 @@ COMPAT = {
 }
 
 # Cells the design has not reached yet (strict xfail: flips when the migration lands).
+# Flipped by the ChannelTokenizer migration (#1227 step 5): BENDR now adapts any
+# montage through ChannelTokenizer(fixed_order); EEGDINO raises a declared error
+# past its slot count; SignalJEPA no longer returns NaN for names without
+# coordinates. Labram's names-vocabulary migration remains pending.
 NOT_YET = {
     ("Labram", "G2"),
     ("Labram", "G3"),
     ("Labram", "G3b"),  # ChannelTokenizer(names)
-    ("BENDR", "G4"),
-    ("BENDR", "G2"),
-    ("BENDR", "G3"),
-    ("BENDR", "G3b"),  # ChannelTokenizer(fixed_order)
-    (
-        "EEGDINO",
-        "G2",
-    ),  # ChannelTokenizer(index_slots): > 19 channels needs a declared error
-    (
-        "SignalJEPA",
-        "G3b",
-    ),  # names without coordinates: output is NaN (division by zero) today
 }
 
 
@@ -322,8 +314,8 @@ def expected(spec, gname, gkw):
         return "raise"
     # channels
     strategy = spec["channels"]
-    if strategy == "fixed_order" and gname in ("G2", "G3", "G3b", "G4"):
-        return "raise"
+    # ``fixed_order`` adapts any montage through ChannelTokenizer (name match,
+    # MNE spline, or a name match + zero rows), so it never raises on geometry.
     if strategy == "index_slots" and n_ch > spec["max_n_chans"]:
         return "raise"
     if strategy == "coords" and spec.get("coords_checked") and not has_loc:

@@ -35,6 +35,18 @@ Enhancements
   the error its declared channel strategy implies; unhandled cells are strict
   ``xfail`` markers (:gh:`1228` by `Bruno Aristimunha`_).
 
+- Add :class:`braindecode.modules.ChannelTokenizer`, one module gathering the five
+  ways a pretrained checkpoint identifies its input channels (``names`` with a shared
+  alias table and an ``on_unknown`` policy, ``coords`` with ``on_missing_loc``,
+  ``fixed_order`` = today's :class:`braindecode.modules.ChannelInterpolationLayer`,
+  ``index_slots``, ``agnostic``). :class:`braindecode.models.BENDR` now adapts an
+  arbitrary montage through it instead of refusing any non-canonical ``chs_info``
+  (including a plain permutation); :class:`braindecode.models.EEGDINO` raises a
+  declared error past its slot count; and :class:`braindecode.models.SignalJEPA` no
+  longer returns ``NaN`` for channel names without coordinates. Every released
+  checkpoint's canonical forward is unchanged (max-abs diff 0.0) and its state_dict
+  keys are stable (:gh:`1227` by `Bruno Aristimunha`_).
+
 - Add registry-wide model contract tests that automatically cover every registered
   model, checking eval-mode input/state purity, finite batched outputs,
   batch-permutation equivariance, and ``get_config`` + ``state_dict``

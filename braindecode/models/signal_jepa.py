@@ -1593,7 +1593,14 @@ def _pos_encode_contineous(
         (1 - torch.arange(0, n_dim, 2, device=device) / n_dim) * 2 * math.pi
     )
     pos_encoding = torch.empty((n_dim,), dtype=torch.float32, device=device)
-    xx = (x - x_min) / (x_max - x_min)
+    # A degenerate span (x_max == x_min) happens when the montage carries no
+    # usable coordinates (names without positions): every ``loc`` is zero, so
+    # ``max_abs_coordinate`` -- and hence the span -- is zero. Flooring the
+    # denominator keeps the encoding finite (xx == 0 -> sin/cos of 0) instead
+    # of the NaN a 0/0 would produce. Montages with real coordinates have a
+    # nonzero span, so this leaves every pretrained-checkpoint path unchanged.
+    span = x_max - x_min
+    xx = (x - x_min) / span if span != 0 else 0.0
     pos_encoding[0::2] = torch.sin(xx * div_term)
     pos_encoding[1::2] = torch.cos(xx * div_term)
     return pos_encoding
