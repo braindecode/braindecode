@@ -18,6 +18,7 @@ from braindecode.models import (
     InterpolatedLaBraM,
     Labram,
     MIRepNet,
+    PopulationTransformer,
     SignalJEPA,
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
@@ -105,6 +106,7 @@ _MODELS = [
     pytest.param(Brant, N_CHANS, {"sfreq": 250.0}, False, id="Brant"),
     pytest.param(BrainBERT, N_CHANS, {}, False, id="BrainBERT"),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
+    pytest.param(PopulationTransformer, N_CHANS, {}, True, id="PopulationTransformer"),
     pytest.param(EEGDINO, 16, {}, True, id="EEGDINO"),
     pytest.param(
         STEEGFormer,
