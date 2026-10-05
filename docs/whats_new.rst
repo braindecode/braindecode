@@ -28,6 +28,10 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add registry-wide model contract tests that automatically cover every registered
+  model, checking eval-mode input/state purity, finite batched outputs,
+  batch-permutation equivariance, and ``get_config`` + ``state_dict``
+  reconstruction (:gh:`1208` by `lindicaphxag-tech`_).
 - Generate a version-scoped ``llms.txt`` and selected Markdown documentation
   entry points with source-commit attribution and critical-page coverage checks.
 
@@ -131,6 +135,29 @@ Bug fixes
 ==========
 
 - Fix :class:`braindecode.models.Deep4Net` short-input auto-scaling with ``split_first_layer=True`` so the scaled ``filter_time_length`` is used by the actual :class:`braindecode.modules.CombinedConv` temporal kernel instead of retaining the original constructor value. By `lindicaphxag-tech`_.
+
+
+- Fix :class:`braindecode.models.Deep4Net` with an explicit ``final_conv_length`` and no ``n_times``. The model now skips input-length auto-scaling when the input length is intentionally unspecified, matching the documented contract that only ``final_conv_length="auto"`` requires ``n_times``. By `lindicaphxag-tech`_.
+
+
+- Route the attention of :class:`braindecode.models.EEGDINO` and
+  :class:`braindecode.models.Labram` through their ``qkv`` linear module
+  instead of reading its weight, so hooks and adapters on ``qkv`` (e.g. LoRA)
+  take effect; before, they were skipped silently. Outputs change only by
+  float rounding (:gh:`1194` by `Bruno Aristimunha`_)
+- Fix :class:`braindecode.modules.AvgPool2dWithConv` to invalidate cached pooling weights when the exact input device changes, preventing stale weights from being reused across CUDA devices or non-CUDA backends with the same dtype. By `lindicaphxag-tech`_.
+- Fix :class:`braindecode.models.ShallowFBCSPNet` with
+  ``split_first_layer=False``, which attempted to initialize and remap
+  checkpoint keys through the split-only ``conv_time_spat`` module after the
+  CombinedConv refactor. The unsplit path now initializes and loads its direct
+  temporal convolution as before (:gh:`1212` by `lindicaphxag-tech`_).
+
+- Fix :class:`braindecode.models.Deep4Net` with
+  ``split_first_layer=False``, which attempted to initialize and remap
+  checkpoint keys through the split-only ``conv_time_spat`` module after the
+  CombinedConv refactor. The unsplit path now initializes and loads its direct
+  temporal convolution as before (:gh:`1207` by `lindicaphxag-tech`_).
+- Make :class:`braindecode.modules.TimeDistributed` accept non-contiguous sequence batches by reshaping rather than requiring view-compatible strides. By `lindicaphxag-tech`_.
 
 - Make :class:`braindecode.modules.Chomp1d` preserve the input when ``chomp_size=0`` instead of returning an empty time axis. This restores :class:`braindecode.models.TCN` with ``kernel_size=1``, whose causal padding is zero. By `lindicaphxag-tech`_.
 
