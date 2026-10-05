@@ -11,11 +11,11 @@ from typing import Optional, Sequence
 
 import torch
 from einops import rearrange
-from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import CrissCrossTransformerEncoderLayer
+from braindecode.modules.blocks import PatchTokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +123,9 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
+        is not a multiple of ``patch_size`` (right zero-pad, crop, or raise).
     patch_size : int, default=200
         Temporal patch size in samples (200 samples = 1 second at 200 Hz).
     dim_feedforward : int, default=800
@@ -159,6 +162,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         patch_size: int = 200,
+        on_non_divisible: str = "pad",
         dim_feedforward: int = 800,
         n_layer: int = 12,
         nhead: int = 8,
@@ -183,10 +187,14 @@ class CBraMod(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
-        self.rearrange = Rearrange(
-            "batch n_chans (n_patch patch_size) -> batch n_chans n_patch patch_size",
+        # Shared tokenizer: (batch, n_chans, n_times) -> (batch, n_chans, n_patch, patch_size),
+        # padding/cropping a non-divisible time axis at forward time.
+        self.rearrange = PatchTokenizer(
             patch_size=patch_size,
+            n_times=self._n_times if self._n_times is not None else patch_size,
+            on_non_divisible=on_non_divisible,
         )
+        self._on_non_divisible = on_non_divisible
         self.patch_embedding = _PatchEmbedding(
             patch_size,
             channels_kernel_stride_padding_norm,
@@ -212,7 +220,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         if return_encoder_output:
             self.final_layer = nn.Identity()
         elif self._n_times is not None and self._n_chans is not None:
-            n_patch = self._n_times // patch_size
+            n_patch = self._n_patch()
             flat_dim = self._n_chans * n_patch * emb_dim
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.Linear(flat_dim, self.n_outputs)
@@ -228,13 +236,18 @@ class CBraMod(EEGModuleMixin, nn.Module):
         # A head implies a classifier, also when built with return_encoder_output.
         self._update_init_kwargs(return_encoder_output=False)
         if self._n_times is not None and self._n_chans is not None:
-            n_patch = self._n_times // self._patch_size
+            n_patch = self._n_patch()
             flat_dim = self._n_chans * n_patch * self._emb_dim
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.Linear(flat_dim, n_outputs)
             )
         else:
             self.final_layer = nn.Sequential(nn.Flatten(), nn.LazyLinear(n_outputs))
+
+    def _n_patch(self):
+        if self._on_non_divisible == "pad":
+            return -(-self._n_times // self._patch_size)
+        return self._n_times // self._patch_size
 
     def _weights_init(self):
         for m in self.modules():

@@ -19,6 +19,7 @@ from torch.nn.init import trunc_normal_
 from braindecode.functional import rescale_parameter
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import MLP, DropPath
+from braindecode.modules.blocks import PatchTokenizer
 
 # -----------------------------------------------------------------------------
 # Standard 10-20 system electrode positions used by LaBraM for position embeddings.
@@ -284,6 +285,10 @@ class Labram(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
+        is not a multiple of ``patch_size``: right-pad with zeros (default),
+        crop the trailing samples, or raise.
     patch_size : int
         The size of the patch to be used in the patch embedding.
     learned_patcher : bool
@@ -367,6 +372,7 @@ class Labram(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         patch_size=200,
         learned_patcher=False,
+        on_non_divisible="pad",
         embed_dim=200,
         conv_in_channels=1,
         conv_out_channels=8,
@@ -431,7 +437,12 @@ class Labram(EEGModuleMixin, nn.Module):
             self.embed_dim = None
         else:
             self.patch_size = patch_size
-        self.n_path = self.n_times // self.patch_size
+        self.on_non_divisible = on_non_divisible
+        self.n_path = (
+            -(-self.n_times // self.patch_size)
+            if on_non_divisible == "pad"
+            else self.n_times // self.patch_size
+        )
 
         if neural_tokenizer and conv_in_channels != 1:
             warn(
@@ -456,6 +467,7 @@ class Labram(EEGModuleMixin, nn.Module):
                                 n_chans=self.n_chans,
                                 emb_dim=self.patch_size,
                                 learned_patcher=learned_patcher,
+                                on_non_divisible=on_non_divisible,
                             ),
                         ),
                         (
@@ -1006,13 +1018,28 @@ class _SegmentPatch(nn.Module):
     """
 
     def __init__(
-        self, n_times=2000, patch_size=200, n_chans=1, emb_dim=200, learned_patcher=True
+        self,
+        n_times=2000,
+        patch_size=200,
+        n_chans=1,
+        emb_dim=200,
+        learned_patcher=True,
+        on_non_divisible="pad",
     ):
         super().__init__()
 
         self.n_times = n_times
         self.patch_size = patch_size
-        self.n_patchs = n_times // patch_size
+        # Single place that pads/crops/rejects a non-divisible time axis
+        # (no parameters, so checkpoints are unaffected).
+        self.tokenizer = PatchTokenizer(
+            patch_size=patch_size, n_times=n_times, on_non_divisible=on_non_divisible
+        )
+        self.n_patchs = (
+            -(-n_times // patch_size)
+            if on_non_divisible == "pad"
+            else n_times // patch_size
+        )
         self.emb_dim = emb_dim
         self.n_chans = n_chans
         self.learned_patcher = learned_patcher
@@ -1042,6 +1069,7 @@ class _SegmentPatch(nn.Module):
         X_patch: Tensor
             [batch, n_chans, n_times//patch_size, patch_size]
         """
+        x = self.tokenizer._prepare_input(x)
         batch_size, n_chans_actual, n_times_actual = x.shape
         # Input shape: [batch, n_chs, n_times]
 
@@ -1103,7 +1131,12 @@ class _PatchEmbed(nn.Module):
     """
 
     def __init__(
-        self, n_times=2000, patch_size=200, in_channels=1, emb_dim=200, n_codebooks=62
+        self,
+        n_times=2000,
+        patch_size=200,
+        in_channels=1,
+        emb_dim=200,
+        n_codebooks=62,
     ):
         super().__init__()
         self.n_times = n_times
@@ -1155,10 +1188,6 @@ class _PatchEmbed(nn.Module):
                 "4D (batch, channels, n_patches, patch_size)."
             )
 
-        if n_times % self.patch_size != 0:
-            raise ValueError(
-                f"n_times ({n_times}) must be divisible by patch_size ({self.patch_size})."
-            )
         if n_channels % self.in_channels != 0:
             raise ValueError(
                 "The input channel dimension "
