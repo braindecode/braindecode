@@ -1341,7 +1341,7 @@ class _Attention(nn.Module):
         # and adapters attached to it (e.g. LoRA) take part in the forward.
         qkv = self.qkv(x)
         if qkv_bias is not None:
-            qkv = qkv + qkv_bias
+            qkv = qkv + qkv_bias.to(qkv.dtype)  # keep autocast dtype
         qkv = qkv.reshape(B, N, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
         q, k, v = (
             qkv[0],
