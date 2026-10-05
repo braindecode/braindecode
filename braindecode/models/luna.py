@@ -25,6 +25,7 @@ from einops import rearrange
 from braindecode.functional import rotate_pairs
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
+from braindecode.modules.blocks import PatchTokenizer
 from braindecode.modules.layers import DropPath
 
 
@@ -89,6 +90,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     Parameters
     ----------
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
+        is not a multiple of ``patch_size`` (right zero-pad, crop, or raise).
     patch_size : int
         Number of time samples per patch. Default: 40.
     num_queries : int
@@ -129,6 +133,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         input_window_seconds: Optional[float] = None,
         # Model-specific parameters
         patch_size: int = 40,
+        on_non_divisible: str = "pad",
         num_queries: int = 4,
         embed_dim: int = 64,
         depth: int = 8,
@@ -166,6 +171,11 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.embed_dim = embed_dim
         self.num_queries = num_queries
         self.patch_size = patch_size
+        self.tokenizer = PatchTokenizer(
+            patch_size=patch_size,
+            n_times=self.n_times if self._n_times is not None else patch_size,
+            on_non_divisible=on_non_divisible,
+        )
         self.patch_embed_size = embed_dim
         self.num_heads = num_heads
         self.depth = depth
@@ -177,7 +187,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
         # Layers
         self.patch_embed = _PatchEmbedNetwork(
-            embed_dim=self.embed_dim, patch_size=self.patch_size
+            embed_dim=self.embed_dim,
+            patch_size=self.patch_size,
+            on_non_divisible=on_non_divisible,
         )
         self.freq_embed = _FrequencyFeatureEmbedder(
             embed_dim=self.embed_dim, patch_size=self.patch_size
@@ -269,6 +281,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         num_channels = channel_locations.shape[1]
+        x_signal = self.tokenizer._prepare_input(x_signal)
+        if mask is not None:
+            mask = self.tokenizer._prepare_input(mask)
         num_patches_per_channel = x_signal.shape[-1] // self.patch_size
         x_patched = self.patch_embed(x_signal)
         freq_embed = self.freq_embed(x_signal)
@@ -828,10 +843,15 @@ class _CrossAttentionBlock(nn.Module):
 
 
 class _PatchEmbedNetwork(nn.Module):
-    def __init__(self, embed_dim: int = 64, patch_size: int = 40) -> None:
+    def __init__(
+        self, embed_dim: int = 64, patch_size: int = 40, on_non_divisible: str = "pad"
+    ) -> None:
         super().__init__()
         self.patch_size = patch_size
         self.embed_dim = embed_dim
+        self.tokenizer = PatchTokenizer(
+            patch_size=patch_size, n_times=patch_size, on_non_divisible=on_non_divisible
+        )
         self.in_channels = 1
         self.out_channels = int(embed_dim // 4)
         self.groups = 4
@@ -871,7 +891,7 @@ class _PatchEmbedNetwork(nn.Module):
         x: (B, C, T)
         output: (B, C*S, D) where S = T//patch_size, D = embed_dim
         """
-        x = rearrange(x, "B C (S P) -> B (C S) P", P=self.patch_size)
+        x = rearrange(self.tokenizer(x), "B C S P -> B (C S) P")
         x = x.unsqueeze(1)
         x = self.proj_in(x)
         x = rearrange(x, "B E CS D -> B CS (D E)")
