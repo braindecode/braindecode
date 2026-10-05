@@ -182,6 +182,7 @@ interface for all EEG models and can derive variable names when needed.
      MSVTNet
      NeuroRVQTokenizer
      PBT
+    PopulationTransformer
      REVE
      SCCNet
      ShallowFBCSPNet

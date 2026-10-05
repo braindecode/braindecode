@@ -50,6 +50,8 @@ The following components are licensed under the MIT License:
 - `braindecode/models/tcformer.py`
 - `braindecode/models/ifnet.py`
 - `braindecode/models/mirepnet.py`
+- `braindecode/models/popt.py`
+- `braindecode/modules/popt_modules.py`
 
 ### Apache-2.0 Licensed Files
 
