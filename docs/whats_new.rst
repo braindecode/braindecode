@@ -130,6 +130,7 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.modules.AvgPool2dWithConv` to invalidate cached pooling weights when the exact input device changes, preventing stale weights from being reused across CUDA devices or non-CUDA backends with the same dtype. By `lindicaphxag-tech`_.
 - Fix :class:`braindecode.models.ShallowFBCSPNet` with
   ``split_first_layer=False``, which attempted to initialize and remap
   checkpoint keys through the split-only ``conv_time_spat`` module after the
