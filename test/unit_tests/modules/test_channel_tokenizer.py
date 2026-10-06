@@ -142,3 +142,14 @@ def test_new_montage_after_moving_to_a_device(strategy, kwargs):
     ref = tok.cpu()(x, BENDR19[4:13]).x
     torch.testing.assert_close(enc.x.cpu(), ref, rtol=1e-4, atol=1e-4)
 
+
+def test_loading_a_fitted_state_refreshes_the_cached_maps():
+    rng = np.random.default_rng(0)
+    a = ChannelTokenizer(TARGET, "wiener", src_chs_info=BENDR19[:8])
+    a.fit(_dense_fields(rng, 500), BENDR19)
+    b = ChannelTokenizer(TARGET, "wiener", src_chs_info=BENDR19[:8])
+    b.fit(_dense_fields(rng, 50), BENDR19)  # a different covariance
+    x = torch.randn(1, 8, 5)
+    assert not torch.allclose(a(x).weights, b(x).weights)  # b's map is cached
+    b.load_state_dict(a.state_dict())
+    torch.testing.assert_close(b(x).weights, a(x).weights, rtol=0, atol=0)

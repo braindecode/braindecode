@@ -130,6 +130,12 @@ class ChannelTokenizer(nn.Module):
         self._cache.clear()
         return self
 
+    def _load_from_state_dict(self, *args, **kwargs):
+        # Loaded strategy state (e.g. a fitted wiener covariance) changes the
+        # maps: drop the cached ones.
+        self._cache.clear()
+        super()._load_from_state_dict(*args, **kwargs)
+
     def forward(
         self, x: Tensor, chs_info: Optional[list[dict]] = None
     ) -> ChannelEncoding:
