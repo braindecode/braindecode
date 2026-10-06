@@ -246,11 +246,14 @@ def test_from_pretrained_with_a_strategy(tmp_path):
     small = dict(encoder_h=64, contextualizer_hidden=128, transformer_layers=2)
     native = BENDR(n_chans=20, n_outputs=2, n_times=N_TIMES, **small).eval()
     native.save_pretrained(tmp_path)
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")  # no "freshly initialised" warning
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         model = BENDR.from_pretrained(
             tmp_path, chs_info=FOUR, channel_strategy="source"
         ).eval()
+    # Map-quality warnings (4 inputs -> 20 targets) are expected; the
+    # "freshly initialised" warning is not, since source adds no weights.
+    assert not [w for w in caught if "freshly initialised" in str(w.message)]
     assert model.channel_tokenizer.strategy_name == "source"
     for k, v in native.state_dict().items():
         assert torch.equal(model.state_dict()[k], v), k
