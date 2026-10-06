@@ -211,6 +211,15 @@ def test_eeg_clip_projection_matches_published_architecture():
         assert head[-1].out_features == model.n_outputs
 
 
+def test_eeg_clip_single_projection_layer_is_linear_only():
+    model = _make_model(projection_layers=1)
+
+    assert len(model.text_projection) == 1
+    assert isinstance(model.text_projection[0], nn.Linear)
+    assert len(model.final_layer) == 1
+    assert isinstance(model.final_layer[0], nn.Linear)
+
+
 def test_eeg_clip_projection_depth_is_configurable():
     model = _make_model(projection_layers=2)
     assert sum(isinstance(module, nn.Linear) for module in model.text_projection) == 2
@@ -319,6 +328,22 @@ def test_eeg_clip_rejects_invalid_eeg_encoder_output(features, message):
     )
 
     with pytest.raises(ValueError, match=message):
+        model(torch.randn(2, 3, 20))
+
+
+def test_eeg_clip_rejects_temporal_encoder_wrong_feature_width():
+    features = torch.randn(2, 4, 5)
+    model = EEGCLIP(
+        n_chans=3,
+        n_times=20,
+        n_outputs=4,
+        eeg_encoder=_BadEEGEncoder(features),
+        eeg_embedding_dim=3,
+        text_embedding_dim=8,
+        drop_prob=0,
+    )
+
+    with pytest.raises(ValueError, match="feature dimension"):
         model(torch.randn(2, 3, 20))
 
 
