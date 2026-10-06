@@ -49,6 +49,7 @@ from .mscformer import MSCFormer
 from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
 from .neuropose import NeuroPose
+from .neurorvq import NeuroRVQ
 from .patchedtransformer import PBT
 from .popt import PopulationTransformer
 from .reve import REVE
@@ -147,6 +148,7 @@ __all__ = [
     "MAPA",
     "MEDFormer",
     "MIRepNet",
+    "NeuroRVQ",
     "MSCFormer",
     "MSVTNet",
     "MVPFormer",

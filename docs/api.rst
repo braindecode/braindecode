@@ -78,6 +78,7 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
     - :class:`MAPA` - Masked autoencoder for intracranial EEG with anatomical priors
     - :class:`MIRepNet` - Motor-imagery pre-trained model
+    - :class:`NeuroRVQ` - Multi-scale biosignal tokenizer foundation model
     - :class:`BENDR` - Foundation model with pre-trained weights
     - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
     - :class:`EEGPT` - Pretrained transformer for universal EEG
@@ -185,6 +186,7 @@ interface for all EEG models and can derive variable names when needed.
      MetaNeuromotorHand
      MSCFormer
      MSVTNet
+     NeuroRVQ
      PBT
     PopulationTransformer
      REVE

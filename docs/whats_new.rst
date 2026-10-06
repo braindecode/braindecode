@@ -44,6 +44,12 @@ Enhancements
   model, checking eval-mode input/state purity, finite batched outputs,
   batch-permutation equivariance, and ``get_config`` + ``state_dict``
   reconstruction (:gh:`1208` by `lindicaphxag-tech`_).
+- Add :class:`braindecode.models.NeuroRVQ`, a channel-aware EEG foundation
+  model with four-scale temporal patch embedding and a pretrained masked-token
+  encoder. The port preserves the released architecture and identifies its
+  CC BY-NC 4.0 license and 200 Hz preprocessing requirements
+  (:gh:`1090` by `lindicaphxag-tech`_).
+
 - Generate a version-scoped ``llms.txt`` and selected Markdown documentation
   entry points with source-commit attribution and critical-page coverage checks.
 
