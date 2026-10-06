@@ -33,6 +33,23 @@ def test_from_pretrained_local_roundtrip(tmp_path):
     assert EEGDINO.from_pretrained(save_dir, n_outputs=6)(x).shape == (1, 6)
 
 
+def test_from_pretrained_takes_geometry_from_the_caller_not_the_config(tmp_path):
+    """Passing ``chs_info`` (or ``n_chans``, or ``n_times``/``sfreq``) to
+    ``from_pretrained`` must not collide with the geometry saved in config.json."""
+    pytest.importorskip("huggingface_hub")
+    model = EEGDINO(n_chans=19, n_times=400, sfreq=200, n_outputs=2, n_layer=1)
+    model.save_pretrained(tmp_path)
+    eight = [{"ch_name": f"E{i}"} for i in range(8)]
+    loaded = EEGDINO.from_pretrained(tmp_path, chs_info=eight)
+    assert loaded.n_chans == 8
+    loaded = EEGDINO.from_pretrained(tmp_path, n_chans=8)
+    assert loaded.n_chans == 8 and loaded._chs_info is None
+    loaded = EEGDINO.from_pretrained(tmp_path, n_times=600)
+    assert loaded.n_times == 600 and loaded.sfreq == 200
+    loaded = EEGDINO.from_pretrained(tmp_path, sfreq=100)
+    assert loaded.sfreq == 100 and loaded.n_times == 400
+
+
 def test_attention_calls_qkv_module():
     # Adapters such as LoRA hook or replace ``attn.qkv``; the attention has to call
     # the module, not only read its weight, or they have no effect.

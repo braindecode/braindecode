@@ -176,6 +176,14 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` rejecting a
+  caller's ``chs_info`` (``n_chans=… different from chs_info``) and ``n_times``/``sfreq``
+  (``n_times different from input_window_seconds * sfreq``): the Hub config filled the
+  geometry arguments the caller omitted, so values from two sources collided. The
+  derived argument is now pinned from the caller's one. This unblocks loading EEGPT,
+  STEEGFormer, Brant and MVPFormer checkpoints on a montage other than their
+  pretraining dataset's (:gh:`1232` by `Bruno Aristimunha`_).
+
 - Fix :class:`braindecode.models.Deep4Net` short-input auto-scaling with ``split_first_layer=True`` so the scaled ``filter_time_length`` is used by the actual :class:`braindecode.modules.CombinedConv` temporal kernel instead of retaining the original constructor value. By `lindicaphxag-tech`_.
 
 
