@@ -31,8 +31,9 @@ Enhancements
 - Add :class:`braindecode.models.TFMTokenizer`, a time-frequency motif tokenizer
   that learns a discrete vocabulary from single-channel EEG and returns both token
   IDs and reconstructed spectrograms for self-supervised pretraining. The implementation
-  follows Pradeepkumar et al. (ICLR 2026); it does not claim parity with the paper's
-  pretrained checkpoints or benchmark results (:gh:`1202` by `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
+  follows Pradeepkumar et al. (ICLR 2026); the audited released checkpoint
+  matches the mapped tokenizer state/forward path, while paper pretraining and
+  downstream benchmark metrics are not claimed as reproduced (:gh:`1202` by `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
 - Add :class:`braindecode.models.MAPA`, a masked-autoencoder foundation model
   for intracranial EEG that describes an electrode only by its atlas region and
   its number along the array it was implanted on, never by its coordinates, so
