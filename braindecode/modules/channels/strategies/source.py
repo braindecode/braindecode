@@ -132,8 +132,8 @@ class SourceStrategy(ChannelStrategy):
             }
         return m
 
-    def apply(self, x: Tensor, m: SpatialMap) -> Tensor:
-        out = super().apply(x, m)
+    def project(self, x: Tensor, m: SpatialMap) -> Tensor:
+        out = super().project(x, m)
         if not self.trainable or not m.extra:
             return out
         used = m.extra["used"]

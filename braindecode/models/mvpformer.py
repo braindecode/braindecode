@@ -322,12 +322,7 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         head_in = d_model if pooling == "mean" else self.n_backbone_chans * d_model
         self.final_layer = nn.Linear(head_in, self.n_outputs, bias=False)
 
-        # ``nn.Module.apply`` must not reach the channel strategy
-        # (``ChannelStrategy.apply`` maps signals, and a trainable strategy
-        # keeps its own init).
-        for name, child in self.named_children():
-            if name != "channel_tokenizer":
-                child.apply(self._init_weights)
+        self.apply(self._init_weights)
 
     @staticmethod
     def _init_weights(module):

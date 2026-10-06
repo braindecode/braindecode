@@ -244,6 +244,18 @@ def test_from_pretrained_with_a_strategy(name, tmp_path):
     assert torch.isfinite(_out(y)).all()
 
 
+@pytest.mark.parametrize("strategy", ["spline", "source", "latent"])
+@pytest.mark.parametrize("name", list(MODELS))
+def test_module_apply_reaches_the_channel_strategy(name, strategy):
+    # ``ChannelStrategy`` must not shadow ``nn.Module.apply``: user init code
+    # such as ``model.apply(fn)`` walks every submodule, the strategy included.
+    model = _build(name, strategy, chs_from_montage(["Fz", "Cz", "Pz", "Oz", "C3"]))
+    seen = []
+    assert model.apply(seen.append) is model
+    assert model.channel_tokenizer.strategy in seen
+    assert model in seen
+
+
 @pytest.mark.parametrize("name", list(MODELS))
 def test_channel_strategy_round_trips_through_config(name):
     model = _build(

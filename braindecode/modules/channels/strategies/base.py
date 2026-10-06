@@ -170,7 +170,7 @@ class ChannelStrategy(nn.Module):
             support=_f32(support),
         )
 
-    def apply(self, x: Tensor, m: SpatialMap) -> Tensor:
+    def project(self, x: Tensor, m: SpatialMap) -> Tensor:
         """Apply a built map to ``x`` of shape ``(B, C, T)``."""
         return x if m.weights is None else m.weights @ x
 

@@ -601,12 +601,7 @@ class Labram(EEGModuleMixin, nn.Module):
 
         self.reset_classifier(self.n_outputs)
 
-        # ``nn.Module.apply`` must not reach the channel strategy
-        # (``ChannelStrategy.apply`` maps signals; a trainable one keeps its
-        # own init).
-        for name, child in self.named_children():
-            if name != "channel_tokenizer":
-                child.apply(self._init_weights)
+        self.apply(self._init_weights)
         self.fix_init_weight_and_init_embedding()
 
     def fix_init_weight_and_init_embedding(self):

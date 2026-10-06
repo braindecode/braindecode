@@ -145,7 +145,7 @@ def test_free_target_is_pass_through(strategy):
     m = _build(strategy, _named(["Cz", "Pz", "E1"]), ChannelTarget("free"))
     assert m.weights is None and m.observed.all()
     x = torch.randn(2, 3, 10)
-    assert get_channel_strategy(strategy).apply(x, m) is x
+    assert get_channel_strategy(strategy).project(x, m) is x
 
 
 def test_slots_target_uses_first_n_slots():
@@ -284,7 +284,7 @@ def test_constant_input_gives_constant_output(strategy, kw):
     s = get_channel_strategy(strategy, **kw)
     for chs in (BENDR19[:8], BENDR19[::3]):
         m = s.build(resolve_montage(chs), MONTAGE19)
-        out = s.apply(torch.full((2, len(chs), 6), 5.0), m)
+        out = s.project(torch.full((2, len(chs), 6), 5.0), m)
         torch.testing.assert_close(out, torch.full_like(out, 5.0))
 
 
@@ -296,8 +296,8 @@ def test_source_init_equals_physics(target):
     physics = get_channel_strategy("source")
     learned = get_channel_strategy("source", trainable=True)
     x = torch.randn(3, 8, 50)
-    out_p = physics.apply(x, physics.build(src, target))
-    out_l = learned.apply(x, learned.build(src, target))
+    out_p = physics.project(x, physics.build(src, target))
+    out_l = learned.project(x, learned.build(src, target))
     assert (out_p - out_l).abs().max().item() == 0.0
     assert len(list(learned.parameters())) > 0 and not list(physics.parameters())
 
@@ -310,7 +310,7 @@ def test_source_gradient_reaches_attention_after_one_step():
     grads = []
     for _ in range(2):
         opt.zero_grad()
-        strategy.apply(x, m).pow(2).mean().backward()
+        strategy.project(x, m).pow(2).mean().backward()
         grads.append(strategy.queries.grad.abs().sum().item())
         opt.step()
     assert grads[0] == 0.0  # zero gate: the physics solution at init
@@ -324,7 +324,7 @@ def test_source_free_target_has_fixed_size_for_any_montage():
         m = strategy.build(resolve_montage(chs), ChannelTarget("free"))
         assert m.weights.shape == (32, len(chs))
         assert m.observed.all() and ((m.support >= 0) & (m.support <= 1)).all()
-        sizes.add(strategy.apply(torch.randn(1, len(chs), 4), m).shape[1])
+        sizes.add(strategy.project(torch.randn(1, len(chs), 4), m).shape[1])
     assert sizes == {32}
 
 
@@ -392,7 +392,7 @@ def test_latent_output_shape_for_each_interface(name):
     target, K = LATENT_TARGETS[name]
     strategy = get_channel_strategy("latent", n_latents=16)
     m = strategy.build(resolve_montage(BENDR19[3:10]), target)
-    out = strategy.apply(torch.randn(2, 7, 11), m)
+    out = strategy.project(torch.randn(2, 7, 11), m)
     assert out.shape == (2, K, 11) and torch.isfinite(out).all()
     assert len(list(strategy.parameters())) > 0
 
@@ -404,8 +404,8 @@ def test_latent_ignores_input_order(name):
     chs = BENDR19[3:10]
     perm = [4, 0, 6, 2, 1, 5, 3]
     x = torch.randn(2, 7, 11)
-    out = strategy.apply(x, strategy.build(resolve_montage(chs), target))
-    out_perm = strategy.apply(
+    out = strategy.project(x, strategy.build(resolve_montage(chs), target))
+    out_perm = strategy.project(
         x[:, perm], strategy.build(resolve_montage([chs[i] for i in perm]), target)
     )
     torch.testing.assert_close(out_perm, out)
@@ -457,7 +457,7 @@ def test_ids_position_fallback_never_relabels_a_known_name():
     assert m.channel_ids.tolist() == [1]
 
 
-def test_trainable_source_extra_holds_only_what_apply_reads():
+def test_trainable_source_extra_holds_only_what_project_reads():
     s = get_channel_strategy("source", trainable=True)
     m = s.build(resolve_montage(BENDR19[:8]), MONTAGE19)
     assert set(m.extra) == {"R", "leadfield", "used"}

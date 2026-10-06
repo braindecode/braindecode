@@ -460,12 +460,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         # Upstream MAE init (xavier-uniform Linears, unit/zero LayerNorm) on every
         # submodule, then the faithful-port specials: a normal(std=0.02) CLS token
         # (the channel embedding keeps its zero init from _ChannelPositionalEmbed).
-        # ``nn.Module.apply`` must not reach the channel strategy
-        # (``ChannelStrategy.apply`` maps signals; a trainable one keeps its
-        # own init).
-        for name, child in self.named_children():
-            if name != "channel_tokenizer":
-                child.apply(self._init_weights)
+        self.apply(self._init_weights)
         nn.init.normal_(self.cls_token, std=0.02)
 
     @staticmethod

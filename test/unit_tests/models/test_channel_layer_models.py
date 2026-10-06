@@ -259,3 +259,16 @@ def test_from_pretrained_with_a_strategy(tmp_path):
         assert torch.equal(model.state_dict()[k], v), k
     with torch.no_grad():
         assert torch.isfinite(model(torch.randn(1, 4, N_TIMES))).all()
+
+
+@pytest.mark.parametrize("strategy", ["spline", "source", "latent"])
+def test_module_apply_reaches_the_channel_strategy(strategy):
+    # ``ChannelStrategy.project`` maps signals; ``nn.Module.apply`` stays intact.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        model = BENDR(
+            chs_info=FOUR, n_outputs=2, n_times=N_TIMES, channel_strategy=strategy
+        )
+    seen = []
+    assert model.apply(seen.append) is model
+    assert model.channel_tokenizer.strategy in seen

@@ -185,7 +185,7 @@ class ChannelTokenizer(nn.Module):
             x = x[:, torch.as_tensor(src.picks, device=x.device)]
         m = self._map(src, x)
         return ChannelEncoding(
-            self.strategy.apply(x, m),
+            self.strategy.project(x, m),
             m.channel_ids,
             m.positions,
             m.observed,
