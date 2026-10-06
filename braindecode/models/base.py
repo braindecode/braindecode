@@ -409,7 +409,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         return self._sfreq
 
     @property
-    def input_shape(self) -> tuple[int, int, int]:
+    def input_shape(self) -> tuple[int, ...]:
         """Input data shape."""
         return (1, self.n_chans, self.n_times)
 
