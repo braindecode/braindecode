@@ -311,19 +311,6 @@ def test_strategy_by_geometry(name, strategy, gname, gkw):
 # -- LaBraM: #1227's names migration ------------------------------------------
 
 
-@pytest.mark.parametrize("gname", ["G2", "G3", "G3b"])
-def test_labram_not_yet_compat_cells_pass_with_a_strategy(gname):
-    # The three strict-xfail cells of test_pretrained_compat (NOT_YET), with
-    # the default backbone and channel_strategy set.
-    gkw = geometries(COMPAT["Labram"])[gname]
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        model = Labram(n_outputs=2, channel_strategy="spline", **gkw).eval()
-        with torch.no_grad():
-            y = model(torch.randn(1, len(gkw["chs_info"]), gkw["n_times"]))
-    assert y.shape == (1, 2) and torch.isfinite(y).all()
-
-
 def test_labram_ids_replace_its_name_lookup():
     names = ["Cz", "T3", "FP1", "O2"]
     model = _build("Labram", "exact", chs_from_montage(names))

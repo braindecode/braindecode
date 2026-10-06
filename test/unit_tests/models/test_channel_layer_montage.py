@@ -65,7 +65,7 @@ for _g in ("G1", "G4"):
 for _m, _gs in {
     "BIOT": ("G2", "G3", "G3b"),
     "CodeBrain": ("G3", "G3b"),
-    "MIRepNet": ("G1", "G3", "G3b"),
+    "MIRepNet": ("G3", "G3b"),
 }.items():
     for _g in _gs:
         DECLARED[(_m, _g, "exact")] = EXACT_MISSING
@@ -74,7 +74,6 @@ for _m, _g in [
     ("BIOT", "G2"),
     ("BIOT", "G3"),
     ("CodeBrain", "G3"),
-    ("MIRepNet", "G1"),
     ("MIRepNet", "G3"),
 ]:
     DECLARED[(_m, _g, "wiener")] = WIENER_FAR
