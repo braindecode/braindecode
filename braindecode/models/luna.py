@@ -23,9 +23,17 @@ import torch.nn.functional as F
 from einops import rearrange
 
 from braindecode.functional import rotate_pairs
+from braindecode.models._channel_positions import (
+    JIT_IGNORED,
+    batch_positions,
+    encode_positions,
+    init_positions_layer,
+    key_padding_mask,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules.blocks import PatchTokenizer
+from braindecode.modules.channels import ChannelTarget
 from braindecode.modules.layers import DropPath
 
 
@@ -113,6 +121,21 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Normalization layer class. Default: nn.LayerNorm.
     drop_path : float
         Stochastic depth rate. Default: 0.0.
+    channel_strategy : str, default="native"
+        Channel layer in front of the backbone (see
+        :class:`braindecode.modules.ChannelTokenizer`). LUNA reads channel
+        coordinates (``positions`` interface) and its classification read-out
+        does not depend on the channel set, so every strategy is a
+        pass-through on the montage of the call: ``x`` is unchanged and the
+        coordinates come from the channel layer (``loc`` in ``chs_info``, else
+        the ``standard_1005`` position of the name) instead of the model's own
+        ``chs_info`` parsing. A channel without a position is a declared
+        ``ValueError``. Channels the layer marks as not observed are hidden
+        from the channel-unification cross-attention (key-padding mask).
+        ``forward`` then also takes ``chs_info`` for a montage other than the
+        constructor's.
+    channel_strategy_kwargs : dict or None, default=None
+        Options forwarded to the strategy.
 
     References
     ----------
@@ -121,6 +144,12 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         The Thirty-Ninth Annual Conference on Neural Information Processing Systems - NeurIPS.
         Retrieved from https://openreview.net/forum?id=uazfjnFL0G
     """
+
+    __jit_ignored_attributes__ = [
+        *EEGModuleMixin.__jit_ignored_attributes__,
+        JIT_IGNORED,
+    ]
+    _channel_target = ChannelTarget("positions")
 
     def __init__(
         self,
@@ -144,6 +173,8 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         drop_prob_chan: float = 0.0,
         attn_drop: float = 0.0,
         activation: Type[nn.Module] = nn.GELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: Optional[dict] = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -250,6 +281,10 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             )
 
         self.initialize_weights()
+        # Built last so the backbone initialisation is unchanged.
+        init_positions_layer(
+            self, channel_strategy, channel_strategy_kwargs, fixed_montage=False
+        )
 
     def initialize_weights(self) -> None:
         self.cross_attn.initialize_weights()
@@ -334,8 +369,21 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         mask: Optional[torch.Tensor] = None,
         channel_locations: Optional[torch.Tensor] = None,
         channel_names: Optional[torch.Tensor] = None,
+        chs_info: Optional[list[dict]] = None,
     ) -> torch.Tensor:
-        """Forward pass."""
+        """Forward pass.
+
+        ``chs_info`` (montage of ``X`` when it differs from the constructor's)
+        is used only when ``channel_strategy`` is not ``"native"``; explicit
+        ``channel_locations`` then still take precedence over the layer's.
+        """
+        unobserved: Optional[torch.Tensor] = None
+        if self._channel_layer:
+            enc = encode_positions(self, X, chs_info)
+            X = enc.x
+            if channel_locations is None:
+                channel_locations = batch_positions(enc, X.shape[0])
+            unobserved = key_padding_mask(enc.observed)
         x_signal = X
         B, C, _ = x_signal.shape
 
@@ -350,7 +398,12 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         x, channel_locations_emb = self.prepare_tokens(
             x_signal, channel_locations, mask=mask
         )
-        x, _ = self.cross_attn(x)
+        if unobserved is None:
+            x, _ = self.cross_attn(x)
+        else:
+            x, _ = self.cross_attn(
+                x, key_padding_mask=unobserved.unsqueeze(0).expand(x.shape[0], -1)
+            )
         x = rearrange(x, "(B t) Q D -> B t (Q D)", B=B)
         num_patches = x.shape[1]
 
@@ -822,8 +875,11 @@ class _CrossAttentionBlock(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, x: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         # x is the input with shape (batch_size*num_patches, num_channels, embed_dim)
+        # key_padding_mask: (batch_size*num_patches, num_channels), True = ignore
         batch_size, _, _ = x.size()
         queries = self.query_embed.repeat(batch_size, 1, 1)
         queries = self.queries_norm(queries)
@@ -831,7 +887,7 @@ class _CrossAttentionBlock(nn.Module):
         values = self.values_norm(x)
 
         attention_out, attention_scores = self.cross_attention(
-            query=queries, key=keys, value=values
+            query=queries, key=keys, value=values, key_padding_mask=key_padding_mask
         )  # Shape: (batch_size*num_patches, num_queries, embed_dim)
         attention_out = self.ffn(attention_out) + attention_out
 
