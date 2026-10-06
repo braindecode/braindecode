@@ -28,12 +28,60 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.NeuroRVQ` now reuses the LaBraM attention block
+  instead of a private copy, and the K-means codebook initialisation in
+  :mod:`braindecode.modules.quantization` uses ``torch.cdist`` (about 6x faster,
+  lower peak memory, identical codebooks). Outputs and state-dict keys are
+  unchanged. (by `Bruno Aristimunha`_)
+- Add :class:`braindecode.models.MAPA`, a masked-autoencoder foundation model
+  for intracranial EEG that describes an electrode only by its atlas region and
+  its number along the array it was implanted on, never by its coordinates, so
+  that one pretrained encoder reads a subject it has never seen: three
+  magnitude-spectrogram bands on a shared frame clock are tokenized per
+  contact, offset by a learned region embedding, and mixed by a transformer
+  whose attention stays inside one array and carries a two-axis rotary encoding
+  on the contact number and on time. One instance encodes recordings from
+  different subjects, by passing each one's electrode metadata to ``forward``,
+  and ``normalization="session"`` takes a spectrogram normalized over the whole
+  recording, which reproduces the reference inputs
+  (:gh:`1178` by `Julien Gadonneix`_).
+- Add ``test/unit_tests/models/test_pretrained_compat.py``: every model with released
+  weights is built on a grid of input geometries (canonical montage, permuted order,
+  a 64-channel montage outside the 10-20 vocabulary, coordinates-only channels, names
+  without coordinates, 1 s / 30 s / non-divisible windows) and must forward or raise
+  the error its declared channel strategy implies; unhandled cells are strict
+  ``xfail`` markers (:gh:`1228` by `Bruno Aristimunha`_).
+
+- Add :class:`braindecode.modules.ChannelTokenizer`, one module gathering the five
+  ways a pretrained checkpoint identifies its input channels (``names`` with a shared
+  alias table and an ``on_unknown`` policy, ``coords`` with ``on_missing_loc``,
+  ``fixed_order`` = today's :class:`braindecode.modules.ChannelInterpolationLayer`,
+  ``index_slots``, ``agnostic``). :class:`braindecode.models.BENDR` now adapts an
+  arbitrary montage through it instead of refusing any non-canonical ``chs_info``
+  (including a plain permutation), and :class:`braindecode.models.SignalJEPA` no
+  longer returns ``NaN`` for channel names without coordinates. Every released
+  checkpoint's canonical forward is unchanged (max-abs diff 0.0) and its state_dict
+  keys are stable (:gh:`1227` by `Bruno Aristimunha`_).
+
 - Add registry-wide model contract tests that automatically cover every registered
   model, checking eval-mode input/state purity, finite batched outputs,
   batch-permutation equivariance, and ``get_config`` + ``state_dict``
   reconstruction (:gh:`1208` by `lindicaphxag-tech`_).
+- Add :class:`braindecode.models.NeuroRVQ`, a channel-aware EEG foundation
+  model with four-scale temporal patch embedding and a pretrained masked-token
+  encoder. The port preserves the released architecture and identifies its
+  CC BY-NC 4.0 license and 200 Hz preprocessing requirements
+  (:gh:`1090` by `lindicaphxag-tech`_).
+
 - Generate a version-scoped ``llms.txt`` and selected Markdown documentation
   entry points with source-commit attribution and critical-page coverage checks.
+
+- Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution
+  and Transformer seizure detector of Wu et al. (2025) that won the 2025 SzCORE
+  seizure detection challenge. It predicts a logit for every time sample. With
+  the authors' released weights it reproduces their challenge scores on
+  :class:`braindecode.datasets.SIENA` (event F1 0.706)
+  (:gh:`1236` by `Raghav Rathi`_).
 
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
@@ -57,6 +105,12 @@ Enhancements
   CC BY-NC 4.0 to match the official SleepFM release.
   (:gh:`1106` by `Fashad Ahmed`_)
 
+- Add :class:`braindecode.models.CSBrain`, the cross-scale spatiotemporal brain
+  foundation model from Zhou et al. (NeurIPS 2025 Spotlight): multi-scale
+  temporal and per-region embeddings with structured sparse (inter-window and
+  inter-region) attention, channel names mapped to five anatomical regions or
+  an explicit ``brain_regions`` layout, verified bit-exact against the authors'
+  released pretrained checkpoint (:gh:`1196` by `Li Qing`_).
 - Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
   model with pretrained encoders and support for varying montages through
   :func:`braindecode.models.diver1.channel_metadata_from_chs_info`
@@ -89,10 +143,17 @@ Enhancements
   ``braindecode/brant-pretrained`` (all tensors verified identical to the
   official release) (:gh:`1100` by `Adam Mounir`_).
 
+- Add :class:`braindecode.models.BrainTokenizer`, the EEG/MEG VQ-VAE tokenizer of
+  BrainOmni (NeurIPS 2025), which strictly loads the authors' raw checkpoint
+  (:gh:`1043` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.PopulationTransformer` (PopT, Chau et al. 2024),
   an iEEG population model over per-electrode features and coordinates, with
   pretrained weights at ``braindecode/popt-pretrained`` (:gh:`1105` by
   `Adam Mounir`_).
+
+- Add :class:`braindecode.models.BrainOmni`, the BrainOmni downstream classifier
+  on a frozen :class:`braindecode.models.BrainTokenizer`, which strictly loads the
+  authors' raw tiny and base checkpoints (:gh:`1043` by `Bruno Aristimunha`_).
 
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
@@ -157,6 +218,24 @@ Requirements
 
 Bug fixes
 ==========
+
+- :class:`braindecode.models.BrainOmni` and :class:`braindecode.models.BrainTokenizer`
+  now type CTF and KIT axial MEG gradiometers as gradiometers, as the released
+  BrainOmni code does; they were typed as magnetometers, which gave them the
+  wrong sensor embedding. Elekta magnetometers and planar gradiometers were
+  already correct. (by `Bruno Aristimunha`_)
+- Fix :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` rejecting a
+  caller's ``chs_info`` (``n_chans=… different from chs_info``) and ``n_times``/``sfreq``
+  (``n_times different from input_window_seconds * sfreq``): the Hub config filled the
+  geometry arguments the caller omitted, so values from two sources collided. The
+  derived argument is now pinned from the caller's one. This unblocks loading EEGPT,
+  STEEGFormer, Brant and MVPFormer checkpoints on a montage other than their
+  pretraining dataset's (:gh:`1232` by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.models.CBraMod` building a ``LazyLinear`` head when the
+  geometry came from ``chs_info`` or ``input_window_seconds`` instead of ``n_chans`` /
+  ``n_times``; such a model could not be saved or loaded with ``from_pretrained``
+  ("uninitialized parameter"). The head is now a concrete ``Linear`` whenever the
+  geometry is known (:gh:`1233` by `Bruno Aristimunha`_).
 
 - Fix :class:`braindecode.models.Deep4Net` short-input auto-scaling with ``split_first_layer=True`` so the scaled ``filter_time_length`` is used by the actual :class:`braindecode.modules.CombinedConv` temporal kernel instead of retaining the original constructor value. By `lindicaphxag-tech`_.
 

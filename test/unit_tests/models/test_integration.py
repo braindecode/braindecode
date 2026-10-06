@@ -23,6 +23,7 @@ from torch.export import ExportedProgram, export
 from braindecode import EEGClassifier
 from braindecode.models import (
     EEGPT,
+    MAPA,
     REVE,
     SSTDPN,
     ZUNA,
@@ -446,6 +447,7 @@ def test_model_has_drop_prob_parameter(model_class):
         InterpolatedLaBraM,
         InterpolatedSignalJEPA,
         ZUNA,
+        MAPA,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
@@ -578,6 +580,9 @@ def test_model_torch_script(model):
         "REVE",
         "CBraMod",
         "CodeBrain",
+        # einops Rearrange layer and the Dict/Tensor polymorphic return in
+        # forward (features vs logits), like CBraMod/CodeBrain.
+        "CSBrain",
         # einops rearrange/repeat in the Perceiver/decoder and the fixed-grid
         # cross-attention make forward not torch.jit.script-able. (Reason is
         # einops + dynamic length, NOT polymorphic return — DANCE.forward is
@@ -592,6 +597,9 @@ def test_model_torch_script(model):
         # forward() returns Dict[str, Tensor | None] (features) or Tensor (logits);
         # torch.jit.script rejects this required polymorphic return type.
         "MIRepNet",
+        # forward() returns Dict[str, Tensor | None] (features) or Tensor
+        # (logits), so torch.jit.script rejects this polymorphic return type.
+        "NeuroRVQ",
         # wavelet encoder (conv1d + circular padding) + Dict/Tensor polymorphic
         # return; torch.jit.script rejects the polymorphic return type.
         "MVPFormer",
@@ -615,7 +623,14 @@ def test_model_torch_script(model):
         "InterpolatedEEGPT",
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
+        # VQ argmin dispatch and _encode_quantize method not scriptable.
+        "BrainOmni",
+        "BrainTokenizer",
         "STEEGFormer",
+        # The three-band spectrogram frontend runs torch.stft, which
+        # torch.jit.script cannot compile, and forward() returns Dict[str,
+        # Tensor] (features) or Tensor (logits).
+        "MAPA",
     ]
 
     if model.__class__.__name__ in not_working_models:

@@ -7,6 +7,7 @@ BIOT,"Sleep Staging, Epilepsy",Prediction,200,"n_chans, n_outputs",3183879,"BIOT
 BrainBERT,General,"Prediction, Embedding",2048,"n_chans, n_outputs, n_times",603269,"BrainBERT(n_chans=2, n_outputs=5, n_times=2048)","Foundation Model,Attention/Transformer",iEEG
 CBraMod,General,"Prediction, Embedding",200,"n_outputs",4924000,"CBraMod(n_outputs=2)","Foundation Model",EEG
 CodeBrain,General,"Prediction, Embedding",200,"n_chans, n_outputs, n_times",15238802,"CodeBrain(n_chans=19, n_outputs=2, n_times=6000)","Foundation Model,Attention/Transformer",EEG
+CSBrain,General,"Prediction, Embedding",200,"n_outputs",10962402,"CSBrain(n_outputs=2)","Foundation Model,Attention/Transformer",EEG
 ContraWR,Sleep Staging,"Prediction, Embedding",125,"n_chans, n_outputs, sfreq",1160165,"ContraWR(n_chans=2, n_outputs=5, n_times=3750, emb_size=256, sfreq=125)",Convolution,EEG
 CTNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",26900,"CTNet(n_chans=22, n_outputs=4, n_times=1000, n_filters_time=8, kernel_size=16, num_heads=2, embed_dim=16)","Convolution,Attention/Transformer",EEG
 Deep4Net,General,Prediction,250,"n_chans, n_outputs, n_times",282879,"Deep4Net(n_chans=22, n_outputs=4, n_times=1000)","Convolution",EEG
@@ -58,6 +59,7 @@ PopulationTransformer,General,"Prediction, Embedding",2048,"n_chans, n_outputs, 
 SSTDPN,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",19502,"SSTDPN(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
 BENDR,General,"Prediction, Embedding",250,"n_chans, n_times, n_outputs",157141049,"BENDR(n_chans=22, n_outputs=4, n_times=1000)","Foundation Model,Convolution",EEG
 LUNA,General,"Prediction, Embedding",128,"n_chans, n_times, sfreq, chs_info",7100731,"LUNA(n_chans=22, n_times=512, sfreq=128)","Convolution,Channel,Foundation Model",EEG
+MAPA,General,"Prediction, Embedding",2048,"chs_info, n_outputs, n_times",21341572,"MAPA(chs_info=<user>, n_outputs=4, n_times=2048, sfreq=2048)","Attention/Transformer,Foundation Model,Channel",iEEG
 MEDFormer,General,Prediction,250,"n_chans, n_outputs, n_times",5313924,"MEDFormer(n_chans=22, n_outputs=4, n_times=1000)","Foundation Model,Convolution",EEG
 REVE,General,Prediction,200,"n_outputs, n_times, n_chans",69481476,"REVE(n_times=1000, n_outputs=4, n_chans=19)","Foundation Model,Attention/Transformer",EEG
 DGCNN,Emotion Recognition,Prediction,128,"n_chans, n_outputs, n_times, chs_info",1037385,"DGCNN(n_chans=62, n_outputs=4, n_times=128)","Graph Neural Network,Channel",EEG
@@ -67,6 +69,8 @@ InterpolatedBIOT,"Sleep Staging, Epilepsy",Prediction,200,"chs_info, n_outputs, 
 InterpolatedEEGPT,General,Prediction,256,"chs_info, n_outputs, n_times",25323137,"InterpolatedEEGPT(chs_info=<user>, n_outputs=4, n_times=1024)","Foundation Model,Attention/Transformer,Channel",EEG
 InterpolatedLaBraM,General,"Prediction, Embedding",200,"chs_info, n_outputs, n_times",5866196,"InterpolatedLaBraM(chs_info=<user>, n_outputs=4, n_times=1000)","Convolution,Foundation Model,Channel",EEG
 InterpolatedSignalJEPA,"Motor Imagery, ERP, SSVEP",Embedding,128,"chs_info",3456882,"InterpolatedSignalJEPA(chs_info=<user>)","Convolution,Channel,Foundation Model",EEG
+BrainOmni,General,"Prediction, Embedding",256,"chs_info, n_outputs, n_times, sfreq",13998310,"BrainOmni(chs_info=chs_info, n_outputs=4, n_times=1024, sfreq=256.0)","Foundation Model,Attention/Transformer","EEG, MEG"
+BrainTokenizer,General,Embedding,256,"chs_info, n_times, sfreq",5050338,"BrainTokenizer(chs_info=chs_info, n_times=1024, sfreq=256.0)","Foundation Model","EEG, MEG"
 TCFormer,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times",77820,"TCFormer(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
 EEGDINO,General,Classification,200,"n_chans, n_outputs, n_times",4539698,"EEGDINO(n_chans=19, n_outputs=4, n_times=1000)","Foundation Model,Attention/Transformer",EEG
 DANCE,General,Event Detection,200,"n_chans, n_outputs, n_times, sfreq, chs_info",29813542,"DANCE(n_chans=19, n_outputs=4, n_times=6400, sfreq=200, input_window_seconds=32.0, chs_info=[{'ch_name': f'E{i+1}', 'kind': 'eeg', 'loc': numpy.random.default_rng(2024).random(12)} for i in range(19)])","Convolution,Attention/Transformer,Channel",EEG
@@ -74,3 +78,5 @@ STEEGFormer,General,Classification,250,"n_chans, n_outputs, n_times",25305604,"S
 MVPFormer,General,"Prediction, Embedding",512,"n_chans, n_outputs, n_times, sfreq",3356978,"MVPFormer(n_chans=22, n_outputs=4, n_times=2000, sfreq=100)","Foundation Model,Attention/Transformer",EEG
 ZUNA,General,"Classification,Embedding",256,"chs_info, n_outputs, n_times",172104100,"ZUNA(chs_info=<user>, n_outputs=4, n_times=1280)","Foundation Model,Channel,Attention/Transformer",EEG
 MIRepNet,Motor Imagery,"Prediction, Embedding",250,"n_chans, n_outputs",5143300,"MIRepNet(n_chans=45, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer,Foundation Model",EEG
+NeuroRVQ,General,"Prediction, Embedding",200,"n_chans, n_outputs, n_times, sfreq, channel_names",7097892,"NeuroRVQ(n_chans=64, n_outputs=4, n_times=800, sfreq=200)","Convolution,Attention/Transformer,Foundation Model,Channel",EEG
+SeizureTransformer,Epilepsy,Event Detection,256,"n_chans, n_outputs, n_times",37848897,"SeizureTransformer(n_chans=19, n_outputs=1, n_times=15360)","Convolution,Attention/Transformer",EEG

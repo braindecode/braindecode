@@ -27,6 +27,7 @@ from .blocks import (
     PatchTokenizer,
     TDSConvEncoder,
 )
+from .channel_tokenizer import ChannelTokenizer
 from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
@@ -50,6 +51,7 @@ from .layers import (
 )
 from .linear import LinearWithConstraint, MaxNormLinear
 from .parametrization import MaxNorm, MaxNormParametrize
+from .quantization import EMACodebook, ResidualVectorQuantizer, VectorQuantizer
 from .stats import (
     LogPowerLayer,
     LogVarLayer,
@@ -63,6 +65,9 @@ from .util import aggregate_probas
 from .wrapper import Expression, IntermediateOutputWrapper
 
 __all__ = [
+    "EMACodebook",
+    "ResidualVectorQuantizer",
+    "VectorQuantizer",
     "GatedLinearUnit",
     "LogActivation",
     "SafeLog",
@@ -71,6 +76,7 @@ __all__ = [
     "CAT",
     "CBAM",
     "ChannelInterpolationLayer",
+    "ChannelTokenizer",
     "ECA",
     "FCA",
     "GCT",
