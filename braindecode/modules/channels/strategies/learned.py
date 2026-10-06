@@ -36,6 +36,9 @@ class WienerStrategy(ChannelStrategy):
         Diagonal loading, relative to the mean observed variance.
     """
 
+    cov: torch.Tensor
+    dense_positions: torch.Tensor
+
     def __init__(self, noise: float = 0.01):
         super().__init__()
         self.noise = noise

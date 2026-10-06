@@ -189,7 +189,11 @@ class ChannelTokenizer(nn.Module):
                 "The number of channels the backbone receives depends on the "
                 "input montage: pass chs_info (or n_chans) to the model."
             )
-        if self.strategy is not None and self.target.interface == "free":
+        if (
+            self.strategy is not None
+            and self.target is not None
+            and self.target.interface == "free"
+        ):
             return self.strategy._free_size(n_chans)
         return n_chans
 
