@@ -5178,6 +5178,48 @@ def test_cbramod_patch_embedding_patch_size_not_200(model_class):
     assert model(torch.randn(2, 3, 800)).shape == (2, 2)
 
 
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="needs CUDA"
+            ),
+        ),
+        pytest.param(
+            "mps",
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason="needs MPS"
+            ),
+        ),
+    ],
+)
+def test_csbrain_patch_embedding_same_seed_init_is_stem_first(device):
+    """Same seed gives CSBrain's former stem-first patch-embedding init.
+
+    The Linear weight is skipped: ``_weights_init`` redraws it afterwards.
+    """
+    with torch.device(device):
+        torch.manual_seed(0)
+        emb = CSBrain(n_outputs=2, n_chans=4, n_times=400, n_layer=1).patch_embedding
+        torch.manual_seed(0)
+        d_model = emb.d_model
+        reference = [
+            nn.Conv2d(1, 25, (1, 49), (1, 25), (0, 24)),
+            nn.Conv2d(25, 25, (1, 3), (1, 1), (0, 1)),
+            nn.Conv2d(25, 25, (1, 3), (1, 1), (0, 1)),
+            nn.Conv2d(d_model, d_model, (19, 7), padding=(9, 3), groups=d_model),
+            nn.Linear(101, d_model),
+        ]
+    built = [*emb.proj_in[::3], emb.positional_encoding[0], emb.spectral_proj[0]]
+    reference[-1].weight = built[-1].weight
+    for ref, layer in zip(reference, built):
+        for ref_param, param in zip(ref.parameters(), layer.parameters()):
+            torch.testing.assert_close(param, ref_param, rtol=0, atol=0)
+
+
 def test_csbrain_channel_order_reproduces_reference_topology():
     """``channel_order`` takes the reference's ``sorted_indices`` (CHB-MIT)."""
     regions = [0, 0, 2, 1, 0, 0, 2, 1, 0, 0, 4, 1, 0, 0, 4, 1]

@@ -304,20 +304,26 @@ class CSBrain(EEGModuleMixin, nn.Module):
             patch_size=patch_size,
         )
         # CBraMod's patch encoder: conv stem + rFFT magnitude + depthwise-conv PE.
-        rng_state = torch.get_rng_state()
-        self.patch_embedding = _PatchEmbedding(
-            patch_size,
-            channels_kernel_stride_padding_norm=(
-                (25, 49, 25, 24, (5, 25)),
-                (25, 3, 1, 1, (5, 25)),
-                (25, 3, 1, 1, (5, 25)),
-            ),
-            drop_prob=drop_prob,
-        )
-        # CBraMod creates the positional-encoding conv before the conv stem.
-        # Redraw the initial weights stem-first, so that a given seed gives the
-        # same initial CSBrain weights as before this module was shared.
-        torch.set_rng_state(rng_state)
+        # CBraMod creates the positional-encoding conv before the conv stem, so
+        # build it with the RNG forked (CPU and the default device's generator
+        # are restored on exit), then redraw the initial weights stem-first:
+        # a given seed gives the same initial CSBrain weights as before this
+        # module was shared.
+        device = torch.get_default_device()
+        accelerator = [device] if device.type not in ("cpu", "meta") else []
+        with torch.random.fork_rng(
+            devices=accelerator,
+            device_type=device.type if accelerator else "cuda",
+        ):
+            self.patch_embedding = _PatchEmbedding(
+                patch_size,
+                channels_kernel_stride_padding_norm=(
+                    (25, 49, 25, 24, (5, 25)),
+                    (25, 3, 1, 1, (5, 25)),
+                    (25, 3, 1, 1, (5, 25)),
+                ),
+                drop_prob=drop_prob,
+            )
         for layer in (
             *self.patch_embedding.proj_in,
             *self.patch_embedding.positional_encoding,
