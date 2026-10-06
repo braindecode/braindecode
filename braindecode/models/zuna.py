@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 import torch
 from einops import rearrange
@@ -14,9 +14,15 @@ from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import RMSNorm, functional
 
+from braindecode.models._channel_positions import (
+    JIT_IGNORED,
+    encode_positions,
+    init_positions_layer,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import PatchTokenizer
+from braindecode.modules.channels import ChannelTarget
 
 
 class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -170,6 +176,17 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         passed to :class:`braindecode.modules.PatchTokenizer`: ``"error"`` raises,
         ``"pad"`` right-pads the last patch with zeros, ``"crop"`` drops the
         trailing samples. The default is ``"pad"``.
+    channel_strategy : str, default="native"
+        Channel layer in front of the backbone (see
+        :class:`braindecode.modules.ChannelTokenizer`). ZUNA reads channel
+        coordinates (``positions`` interface), but bakes those of the
+        constructor's ``chs_info`` into its rotary buffers and head. Under a
+        strategy other than ``"native"`` any montage given to :meth:`forward`
+        is mapped onto those channels (``"spline"``, ``"field"``,
+        ``"source"``... reconstruct the missing ones); the layer's positions
+        are then the constructor's, already in the rotary buffers.
+    channel_strategy_kwargs : dict or None, default=None
+        Options forwarded to the strategy.
 
     Notes
     -----
@@ -194,6 +211,13 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
        Super-Resolution. arXiv:2607.27308.
        https://arxiv.org/abs/2607.27308
     """
+
+    # The channel layer is not scriptable; the scripted forward never reaches it.
+    __jit_ignored_attributes__ = [
+        *EEGModuleMixin.__jit_ignored_attributes__,
+        JIT_IGNORED,
+    ]
+    _channel_target = ChannelTarget("positions")
 
     def __init__(
         self,
@@ -223,6 +247,8 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         qk_norm: bool = True,
         activation: type[nn.Module] = nn.SiLU,
         on_non_divisible: str = "pad",
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: Optional[dict] = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -316,12 +342,26 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             Rearrange("batch channel latent -> batch (channel latent)"),
             nn.Linear(self.num_channels * self.latent_dim, self.n_outputs),
         )
+        # Built last so the backbone initialisation is unchanged.
+        init_positions_layer(
+            self, channel_strategy, channel_strategy_kwargs, fixed_montage=True
+        )
 
     def forward(
         self,
         input_tensor: torch.Tensor,
         return_features: bool = False,
+        chs_info: Optional[List[Dict[str, Any]]] = None,
     ):
+        """Encode ``input_tensor`` of shape ``(batch, n_chans, n_times)``.
+
+        ``chs_info`` (montage of the input when it differs from the
+        constructor's) is used only when ``channel_strategy`` is not
+        ``"native"`` (eager mode only).
+        """
+        if not torch.jit.is_scripting():  # the channel layer is eager-only
+            if self._channel_layer:
+                input_tensor = encode_positions(self, input_tensor, chs_info).x
         patch_tokens = self.patch_embedding(input_tensor)
         token_latents = self.encoder(patch_tokens)
         structured_latents = token_latents.reshape(

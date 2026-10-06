@@ -17,9 +17,10 @@ import numpy as np
 import pytest
 import torch
 
-from braindecode.models import LUNA, REVE
+from braindecode.models import LUNA, REVE, ZUNA
 from braindecode.modules.channels import ChannelEncoding
 
+from .test_integration import convert_model_to_plain
 from .test_pretrained_compat import TEN_TWENTY, geometries
 
 STRATEGIES = (
@@ -51,6 +52,18 @@ MODELS = {
         cls=REVE,
         kwargs=dict(n_outputs=2, embed_dim=64, depth=2, heads=2, head_dim=16),
         spec=dict(sfreq=200, n_times=800, canon=TEN_TWENTY),
+        errors={
+            ("exact", "G3"): "not in the input montage",
+            ("exact", "G3b"): "not in the input montage",
+        },
+    ),
+    # Rotary buffers and head fixed at construction: mapped onto its 19.
+    "ZUNA": dict(
+        cls=ZUNA,
+        kwargs=dict(
+            n_outputs=2, dim=64, n_layers=2, n_heads=2, head_dim=16, latent_dim=8
+        ),
+        spec=dict(sfreq=256, n_times=1024, canon=TEN_TWENTY),
         errors={
             ("exact", "G3"): "not in the input montage",
             ("exact", "G3b"): "not in the input montage",
@@ -308,3 +321,32 @@ def test_reve_unobserved_channels_are_masked_in_self_attention(monkeypatch):
     with torch.no_grad():
         model(_x(19, 800))  # constructor montage: all observed, no mask
     assert seen == [None, None]
+
+
+# --------------------------------------------------------------------------- ZUNA
+
+
+def test_zuna_maps_any_montage_onto_its_rotary_montage():
+    geos = _geos("ZUNA")
+    native = _build("ZUNA")
+    model = _build("ZUNA", "exact")
+    model.load_state_dict(native.state_dict())
+    x = _x(19, 1024)
+    with torch.no_grad():
+        ref = native(x)
+        out = model(x.flip(1), chs_info=geos["G4"]["chs_info"])
+    torch.testing.assert_close(out, ref, rtol=0, atol=0)
+    enc = model.channel_tokenizer(x.flip(1), geos["G4"]["chs_info"])
+    torch.testing.assert_close(enc.positions, _std_positions(TEN_TWENTY))
+    spline = _build("ZUNA", "spline")
+    with torch.no_grad():
+        y = spline(_x(8, 1024), chs_info=geos["G3b"]["chs_info"])
+    assert y.shape == (2, 2) and torch.isfinite(y).all()
+
+
+def test_zuna_native_stays_scriptable():
+    model = _build("ZUNA")
+    scripted = torch.jit.script(convert_model_to_plain(model).eval())
+    x = _x(19, 1024)
+    with torch.no_grad():
+        torch.testing.assert_close(scripted(x), model(x), rtol=0, atol=0)
