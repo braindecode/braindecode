@@ -440,3 +440,18 @@ def test_copies_only_do_not_warn_on_quality():
         warnings.simplefilter("always")
         _build("spline", BENDR19[::-1])
     assert _quality_warnings(record) == []
+
+
+def test_ids_position_fallback_never_relabels_a_known_name():
+    # FCz is a standard 10-05 name: a digitised position 5 mm from Cz must not
+    # turn it into Cz (only names unknown to standard_1005 match by position).
+    from braindecode.modules.channels.resolve import standard_position
+
+    loc = np.zeros(12)
+    loc[:3] = standard_position("Cz") + [0.0, 0.005, 0.0]
+    target = ChannelTarget("ids", vocabulary=("Fz", "Cz", "Pz", "Oz"))
+    with pytest.raises(ValueError, match="'FCz'"):
+        _build("exact", [{"ch_name": "FCz", "kind": "eeg", "loc": loc}], target)
+    # An unknown name at the same spot still takes Cz.
+    m = _build("exact", [{"ch_name": "E7", "kind": "eeg", "loc": loc}], target)
+    assert m.channel_ids.tolist() == [1]

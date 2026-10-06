@@ -263,7 +263,13 @@ class ChannelStrategy(nn.Module):
     def _ids_subset(self, src, target, tgt) -> SpatialMap:
         """``ids`` without reconstruction: each input channel -> its vocabulary id."""
         ids = match_names(src.names, tgt.names)
-        lost = ids < 0
+        # Position fallback only for names unknown to standard_1005 (as in
+        # _match): a known 10-05 name is never relabelled as a neighbour.
+        lost = (
+            (ids < 0)
+            & src.has_position
+            & np.array([_unknown_name(n) for n in src.names], dtype=bool)
+        )
         if lost.any():
             j = nearest_vocabulary(src.positions[lost], tgt.positions)
             ids[np.flatnonzero(lost)] = j
