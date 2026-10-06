@@ -31,6 +31,12 @@ def _mlp(d_in: int, d: int) -> nn.Sequential:
 class SourceStrategy(ChannelStrategy):
     """Physics-anchored source-space channel strategy.
 
+    Reference: the inverse works on the input average-referenced over the
+    used channels; reconstructed target rows add that mean back, so they sum
+    to 1 and share the input's own reference with the copied rows (a
+    constant input gives a constant output). Parcel outputs (``free``
+    targets) are reference-free.
+
     Parameters
     ----------
     n_parcels : int
@@ -73,8 +79,10 @@ class SourceStrategy(ChannelStrategy):
     def _inverse(self, src, use, extra_pos):
         """Parcels-from-input ``S (P, C)``, lead field at ``extra_pos``, input lead field.
 
-        The lead field is average-referenced over the used inputs and
-        ``extra_pos``; the input is average-referenced over the used channels.
+        The input and its lead field are average-referenced over the used
+        channels (``S`` kills constants). The lead field at ``extra_pos`` is
+        returned relative to the same mean, so ``Lt @ S`` is a target minus
+        the mean of the used inputs.
         """
         k = int(use.sum())
         LU = self.head.leadfield(np.vstack([src.positions[use], extra_pos]))
@@ -86,11 +94,14 @@ class SourceStrategy(ChannelStrategy):
         S[:, use] = M @ A
         Lo_full = np.zeros((len(src.names), self.n_parcels))
         Lo_full[use] = Lo
-        return S, LU[k:], Lo_full
+        return S, LU[k:] - LU[:k].mean(0), Lo_full
 
     def _fill(self, src, use, tgt_pos):
+        # Target minus the mean of the used inputs, plus that mean: each row
+        # sums to 1 and the output stays in the input's own reference, like
+        # the copied rows.
         S, Lt, _ = self._inverse(src, use, tgt_pos)
-        return Lt @ S
+        return Lt @ S + use / use.sum()
 
     def build(self, src, target):
         if target.interface == "free":

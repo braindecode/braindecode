@@ -196,7 +196,8 @@ def fidelity(strategy, fields, k=8, draws=20, noise=0.1, seed=7, **kw):
 
 # Bound: zero fill (1.0) + 0.05. The regularised spline does not beat zero
 # fill on these fields (report probe 1.16, here 1.07); its bound 1.15 still
-# fails the unregularised spline (1.28 here).
+# fails the unregularised spline (1.28 here). Field mapping keeps the input's
+# reference (rows sum to 1): 1.03 here (0.95 when it dropped the reference).
 @pytest.mark.parametrize(
     "strategy,bound", [("idw", 1.05), ("field", 1.05), ("spline", 1.15)]
 )
@@ -207,11 +208,13 @@ def test_fidelity_smooth_fields_k8(strategy, bound):
 # ---- source strategy (direction C) ------------------------------------------
 
 
-def _dipole_fields_factory():
+def _dipole_fields_factory(reference="average"):
     """3 random dipoles in a head that differs from the strategy's sphere.
 
     4-shell sphere, origin shifted 8 mm, radius 95 mm, skull conductivity
-    halved, 10 mm grid (Fig 6 of the design report).
+    halved, 10 mm grid (Fig 6 of the design report). ``reference``: the
+    average of the 19 sites, or a channel name (e.g. ``"Fp1"``, an electrode
+    reference as in real recordings).
     """
     import mne
 
@@ -234,7 +237,10 @@ def _dipole_fields_factory():
         info, trans=None, src=src, bem=sphere, eeg=True, meg=False, verbose=False
     )
     L = fwd["sol"]["data"]
-    L = L - L.mean(0, keepdims=True)
+    if reference == "average":
+        L = L - L.mean(0, keepdims=True)
+    else:
+        L = L - L[[n.lower() for n in names].index(reference.lower())]
 
     def fields(rng, n):
         S = np.zeros((n, L.shape[1]))
@@ -246,12 +252,38 @@ def _dipole_fields_factory():
     return fields
 
 
-def test_source_fidelity_dipoles_mismatched_head_k8():
-    # 0.83 here; the report probe reached 0.71 by inverting data already
-    # average-referenced over all 19 sites (an oracle reference). The strategy
-    # re-references over the observed channels instead, as real data need.
-    # Field mapping, the best head-model-free baseline, is 0.92.
-    assert fidelity("source", _dipole_fields_factory()) <= 0.85
+# Truth in two references: the average of the 19 sites, and an electrode
+# reference (Fp1) as in real recordings. The output stays in the input's own
+# reference (reconstructed rows sum to 1, like copies), so a strategy cannot
+# profit from a truth referenced over exactly the montage it reconstructs.
+# Bounds: measured + 0.03 (0.888 / 0.761; field mapping 0.986 / 0.841, idw
+# 0.971 / 0.829).
+@pytest.mark.parametrize(
+    "reference,bound", [("average", 0.92), ("Fp1", 0.79)]
+)
+def test_source_fidelity_dipoles_mismatched_head_k8(reference, bound):
+    assert fidelity("source", _dipole_fields_factory(reference)) <= bound
+
+
+@pytest.mark.parametrize(
+    "strategy,kw",
+    [
+        ("nearest", {}),
+        ("idw", {}),
+        ("spline", {}),
+        ("field", {}),
+        ("source", {}),
+        ("source", {"trainable": True}),
+    ],
+)
+def test_constant_input_gives_constant_output(strategy, kw):
+    # A common-mode signal (e.g. the reference) must reach copied and
+    # reconstructed rows alike: one reference for the whole output.
+    s = get_channel_strategy(strategy, **kw)
+    for chs in (BENDR19[:8], BENDR19[::3]):
+        m = s.build(resolve_montage(chs), MONTAGE19)
+        out = s.apply(torch.full((2, len(chs), 6), 5.0), m)
+        torch.testing.assert_close(out, torch.full_like(out, 5.0))
 
 
 @pytest.mark.parametrize(

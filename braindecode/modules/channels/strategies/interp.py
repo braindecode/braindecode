@@ -47,6 +47,10 @@ def _mne_interp_matrix(
 class _MNEStrategy(ChannelStrategy):
     method = "spline"
     min_positions = 4
+    #: The map ignores the input's reference (rows sum to ~0): centre the
+    #: input over the used channels and add their mean back, so every row
+    #: sums to 1 and the output stays in the input's own reference.
+    centre: bool = False
 
     def __init__(self, reg: float = 0.0):
         super().__init__()
@@ -54,9 +58,12 @@ class _MNEStrategy(ChannelStrategy):
 
     def _fill(self, src, use, tgt_pos):
         rows = np.zeros((len(tgt_pos), len(src.names)))
-        rows[:, use] = _mne_interp_matrix(
+        W = _mne_interp_matrix(
             src.positions[use], tgt_pos, method=self.method, reg=self.reg
         )
+        if self.centre:
+            W = W + (1.0 - W.sum(1, keepdims=True)) / W.shape[1]
+        rows[:, use] = W
         return rows
 
 
@@ -70,6 +77,12 @@ class SplineStrategy(_MNEStrategy):
 
 @register_channel_strategy("field")
 class FieldStrategy(_MNEStrategy):
-    """MNE field mapping (``interpolate_to(method="MNE")``)."""
+    """MNE field mapping (``interpolate_to(method="MNE")``).
+
+    MNE maps average-referenced data; the input is centred over the used
+    channels and their mean added back, so reconstructed rows sum to 1 and
+    the output keeps the input's reference, like the copied rows.
+    """
 
     method = "MNE"
+    centre = True
