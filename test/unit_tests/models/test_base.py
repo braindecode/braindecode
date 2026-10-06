@@ -85,9 +85,7 @@ class DummyModuleWithExtraIgnoredProperty(DummyModule):
         raise ValueError("runtime_only must not be inspected while scripting")
 
 
-class DummyModuleWithInheritedExtraIgnoredProperty(
-    DummyModuleWithExtraIgnoredProperty
-):
+class DummyModuleWithInheritedExtraIgnoredProperty(DummyModuleWithExtraIgnoredProperty):
     """Leaf extension inheriting the custom ignored property."""
 
 
@@ -367,7 +365,6 @@ def test_get_output_shape():
 
 
 def test_raised_runtimeerror_kernel_size_get_output_shape(dummy_module: DummyModule):
-
     dummy_module.add_module("too_big_conv", nn.Conv2d(1, 1, kernel_size=(1, 201)))
     err_msg = (
         r"During model prediction RuntimeError was thrown showing that at some "
@@ -431,7 +428,6 @@ def test_get_config_roundtrip_without_hub_config(
 
 
 def test_raised_runtimeerror_output_size_get_output_shape(dummy_module: DummyModule):
-
     dummy_module.add_module("good_conv", nn.Conv2d(1, 1, kernel_size=(1, 100)))
     dummy_module.add_module("too_big_pool", nn.AvgPool2d(kernel_size=(1, 200)))
 
@@ -450,9 +446,9 @@ def test_raised_runtimeerror_output_size_get_output_shape(dummy_module: DummyMod
     "n_times, input_window_seconds, sfreq",
     [
         (1001, 4.004, 250.0),  # Issue example: 4.004 * 250.0 = 1001.0
-        (751, 3.004, 250.0),   # 3.004 * 250.0 = 751.0
-        (501, 2.004, 250.0),   # 2.004 * 250.0 = 501.0
-        (101, 0.404, 250.0),   # 0.404 * 250.0 = 101.0
+        (751, 3.004, 250.0),  # 3.004 * 250.0 = 751.0
+        (501, 2.004, 250.0),  # 2.004 * 250.0 = 501.0
+        (101, 0.404, 250.0),  # 0.404 * 250.0 = 101.0
     ],
 )
 def test_fractional_input_window_seconds_consistency(
@@ -479,8 +475,8 @@ def test_fractional_input_window_seconds_consistency(
 @pytest.mark.parametrize(
     "n_times, input_window_seconds, sfreq",
     [
-        (1001, None, 250.0),   # Infer input_window_seconds
-        (751, None, 250.0),    # Infer input_window_seconds
+        (1001, None, 250.0),  # Infer input_window_seconds
+        (751, None, 250.0),  # Infer input_window_seconds
         (None, 4.004, 250.0),  # Infer n_times
         (None, 3.004, 250.0),  # Infer n_times
     ],
@@ -636,7 +632,6 @@ def _chs(names):
     return [{"ch_name": n, "kind": "eeg"} for n in names]
 
 
-@register_channel_strategy("_test_trainable")
 class _TrainableScale(ChannelStrategy):
     """Exact copies times a learned gain (test-only trainable strategy)."""
 
@@ -649,6 +644,22 @@ class _TrainableScale(ChannelStrategy):
 
     def apply(self, x, m):
         return self.gain * (m.weights @ x)
+
+
+@pytest.fixture
+def trainable_strategy():
+    """Register ``_test_trainable`` for one test only (no import-time registry change)."""
+    from braindecode.modules.channels.strategies.base import _REGISTRY
+
+    register_channel_strategy("_test_trainable")(_TrainableScale)
+    yield "_test_trainable"
+    _REGISTRY.pop("_test_trainable", None)
+
+
+def test_test_strategy_is_not_registered_at_import():
+    from braindecode.modules.channels.strategies.base import _REGISTRY
+
+    assert "_test_trainable" not in _REGISTRY
 
 
 class _ChannelModel(EEGModuleMixin, nn.Module):
@@ -695,8 +706,10 @@ def test_channel_strategy_roundtrips_through_config():
     clone = _ChannelModel.from_config(config)
     assert clone.channel_tokenizer.strategy.p == 1.0
     clone.load_state_dict(model.state_dict())
-    x = torch.randn(3, 5, 8)
-    torch.testing.assert_close(clone(x), model(x), rtol=0, atol=0)
+    # Pz and Oz are missing: the fitted covariance reconstructs them.
+    chs = _chs(["Cz", "C3", "C4", "Fz"])
+    x = torch.randn(3, 4, 8)
+    torch.testing.assert_close(clone(x, chs), model(x, chs), rtol=0, atol=0)
 
 
 def test_native_channel_strategy_keeps_the_input():
@@ -713,7 +726,7 @@ def test_model_without_channel_contract_rejects_a_strategy():
         model._init_channel_tokenizer("spline")
 
 
-def test_trainable_strategy_state_saves_and_reloads():
+def test_trainable_strategy_state_saves_and_reloads(trainable_strategy):
     model = _channel_model(channel_strategy="_test_trainable")
     with torch.no_grad():
         model.channel_tokenizer.strategy.gain.fill_(3.0)
@@ -723,7 +736,9 @@ def test_trainable_strategy_state_saves_and_reloads():
     assert clone.channel_tokenizer.strategy.gain.item() == 3.0
 
 
-def test_backbone_checkpoint_into_trainable_strategy_warns_fresh_keys():
+def test_backbone_checkpoint_into_trainable_strategy_warns_fresh_keys(
+    trainable_strategy,
+):
     backbone = {
         k: v
         for k, v in _channel_model().state_dict().items()
@@ -740,7 +755,9 @@ def test_backbone_checkpoint_into_trainable_strategy_warns_fresh_keys():
 
 
 @pytest.mark.skipif(not HAS_HF_HUB, reason="requires huggingface_hub")
-def test_from_pretrained_with_trainable_strategy_warns_once(tmp_path):
+def test_from_pretrained_with_trainable_strategy_warns_once(
+    tmp_path, trainable_strategy
+):
     _channel_model().save_pretrained(tmp_path)
     with pytest.warns(UserWarning, match="freshly initialised") as record:
         model = _ChannelModel.from_pretrained(
