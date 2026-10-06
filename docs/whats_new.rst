@@ -194,6 +194,11 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.BrainOmni` and :class:`braindecode.models.BrainTokenizer`
+  now type CTF and KIT axial MEG gradiometers as gradiometers, as the released
+  BrainOmni code does; they were typed as magnetometers, which gave them the
+  wrong sensor embedding. Elekta magnetometers and planar gradiometers were
+  already correct. (by `Bruno Aristimunha`_)
 - Fix :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` rejecting a
   caller's ``chs_info`` (``n_chans=… different from chs_info``) and ``n_times``/``sfreq``
   (``n_times different from input_window_seconds * sfreq``): the Hub config filled the
