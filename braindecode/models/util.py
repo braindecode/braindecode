@@ -35,12 +35,6 @@ INTRACRANIAL_CH_TYPES = frozenset({"seeg", "dbs", "ecog"})
 
 
 models_dict = {}
-# Interpolated models are channel-interpolating wrappers around existing
-# braindecode backbones (see :func:`braindecode.models.InterpolatedModel`).
-# They are derivatives of existing models rather than standalone
-# architectures, so they are kept in a separate registry to avoid polluting
-# ``models_dict`` (e.g. for benchmarking that iterates over all "real" models).
-interpolated_models_dict = {}
 
 _IMPORT_ADAPTER = pydantic.TypeAdapter(pydantic.ImportString)
 
@@ -214,22 +208,14 @@ def _init_models_dict():
             issubclass(m[1], models.base.EEGModuleMixin)
             and m[1] != models.base.EEGModuleMixin
         ):
-            # Interpolated models are wrappers around existing backbones
-            # (identified by the ``_TARGET_CHS_INFO`` class attribute set by
-            # :func:`braindecode.models.InterpolatedModel`). Keep them in a
-            # dedicated registry instead of ``models_dict``.
-            if getattr(m[1], "_TARGET_CHS_INFO", None) is not None:
-                interpolated_models_dict[m[0]] = m[1]
-            else:
-                models_dict[m[0]] = m[1]
+            models_dict[m[0]] = m[1]
 
 
 def _get_model_class(model_name: str):
     """Return the model class registered under ``model_name``.
 
-    Searches both the standard :data:`models_dict` and the
-    :data:`interpolated_models_dict` so that interpolated models remain
-    resolvable by name (e.g. for skorch wrappers and pydantic configs).
+    Looks the name up in :data:`models_dict` (e.g. for skorch wrappers and
+    pydantic configs).
 
     Parameters
     ----------
@@ -244,14 +230,12 @@ def _get_model_class(model_name: str):
     Raises
     ------
     ValueError
-        If ``model_name`` is not found in either registry.
+        If ``model_name`` is not a registered model.
     """
-    if not models_dict and not interpolated_models_dict:
+    if not models_dict:
         _init_models_dict()
     if model_name in models_dict:
         return models_dict[model_name]
-    if model_name in interpolated_models_dict:
-        return interpolated_models_dict[model_name]
     raise ValueError(f"Unknown model name {model_name!r}.")
 
 
@@ -300,15 +284,8 @@ _chs_info_3ch = [
     }
     for i in range(1, 4)
 ]
-# 4-channel variant: MNE interpolation requires >=4 digitisation points
-_chs_info_4ch = [
-    {
-        "ch_name": f"C{i}",
-        "kind": "eeg",
-        "loc": _rng.random(12),
-    }
-    for i in range(1, 5)
-]
+# Draws of a removed 4-channel fixture, kept so later random locs are unchanged.
+_rng.random(4 * 12)
 
 
 def _get_labram_chs_info() -> list[dict]:
@@ -461,11 +438,6 @@ models_mandatory_parameters: list[
     ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGPT", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
-    (
-        "InterpolatedEEGPT",
-        ["chs_info", "n_outputs", "n_times"],
-        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
-    ),
     ("ShallowFBCSPNet", ["n_chans", "n_outputs", "n_times"], None),
     (
         "SleepStagerBlanco2020",
@@ -492,11 +464,6 @@ models_mandatory_parameters: list[
         {"n_times": 2048, "sfreq": 2048.0},  # the pretraining rate, 1 s windows
     ),
     ("PopulationTransformer", ["n_chans", "n_outputs", "n_times"], None),
-    (
-        "InterpolatedBIOT",
-        ["chs_info", "n_outputs", "sfreq", "n_times"],
-        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
-    ),
     ("AttentionBaseNet", ["n_chans", "n_outputs", "n_times"], None),
     (
         "Labram",
@@ -504,11 +471,6 @@ models_mandatory_parameters: list[
         # Callable: Labram requires the exact 128-ch canonical order; deferred to
         # avoid a circular import (util.py is loaded by base.py before labram.py).
         lambda: {"chs_info": _get_labram_chs_info()},
-    ),
-    (
-        "InterpolatedLaBraM",
-        ["chs_info", "n_outputs", "n_times"],
-        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
     ),
     ("EEGSimpleConv", ["n_chans", "n_outputs", "sfreq"], None),
     ("SPARCNet", ["n_chans", "n_outputs", "n_times"], None),
@@ -526,11 +488,6 @@ models_mandatory_parameters: list[
     ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 250.0}),
     ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("SignalJEPA", ["chs_info"], None),
-    (
-        "InterpolatedSignalJEPA",
-        ["chs_info"],
-        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
-    ),
     ("SignalJEPA_Contextual", ["chs_info", "n_times", "n_outputs"], None),
     ("SignalJEPA_PostLocal", ["n_chans", "n_times", "n_outputs"], None),
     ("SignalJEPA_PreLocal", ["n_chans", "n_times", "n_outputs"], None),
@@ -604,11 +561,6 @@ models_mandatory_parameters: list[
         # when supplied; deferred to avoid a circular import (util.py is loaded
         # by base.py before bendr.py).
         lambda: {"chs_info": _get_bendr_chs_info()},
-    ),
-    (
-        "InterpolatedBENDR",
-        ["chs_info", "n_outputs", "n_times"],
-        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
     ),
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
     (
@@ -718,7 +670,6 @@ models_mandatory_parameters: list[
 ################################################################
 non_classification_models = [
     "SignalJEPA",
-    "InterpolatedSignalJEPA",
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
     "MetaNeuromotorHand",
     "EMG2QwertyNet",

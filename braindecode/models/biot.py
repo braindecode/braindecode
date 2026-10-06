@@ -9,14 +9,15 @@ from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 
 # -----------------------------------------------------------------------------
-# Canonical channel order for InterpolatedBIOT — the 18-channel TCP bipolar
+# Canonical BIOT channel order: the 18-channel TCP bipolar
 # montage used by BIOT's shhs-prest and six-datasets pretrained checkpoints.
 # Source: https://github.com/ycq091044/BIOT (README + datasets/TUAB/process.py
 # + datasets/SHHS/process.py). Indices 0-15 are the TCP 16-channel bipolar
 # derivations; indices 16-17 are SHHS differential channels.
 #
-# The `loc` values are only used to build an MNE interpolation matrix for
-# InterpolatedBIOT. All entries are bipolar / differential derivations.
+# The `loc` values are only used by the channel layer
+# (:mod:`braindecode.modules.channels`). All entries are bipolar /
+# differential derivations.
 # TODO: positions are stored as the midpoint of the two constituent
 # electrodes. This is a simplification — a bipolar signal V(A)-V(B) cannot
 # be faithfully recovered by spatial interpolation at the midpoint. Revisit
@@ -594,16 +595,3 @@ class _BIOTEncoder(nn.Module):
         # (batch_size, emb)
         emb = self.transformer(emb).mean(dim=1)
         return emb
-
-
-# -----------------------------------------------------------------------------
-# InterpolatedBIOT — experimental channel-interpolation variant of BIOT
-# -----------------------------------------------------------------------------
-# Wraps :class:`BIOT` with an MNE-backed channel-interpolation layer that
-# projects arbitrary user ``chs_info`` to the canonical 18-channel BIOT
-# montage (:data:`_BIOT_TARGET_CHS_INFO`). Frozen by default; set
-# ``trainable=True`` to fine-tune the projection matrix.
-
-from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
-
-InterpolatedBIOT = InterpolatedModel(BIOT, _BIOT_TARGET_CHS_INFO)

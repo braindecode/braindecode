@@ -1,362 +1,236 @@
 # type: ignore
 """.. _channel-interpolation-tutorial:
 
-Loading Pretrained Foundation Models on Arbitrary Channel Sets
-==============================================================
+Running a Pretrained Model on Any Channel Set with the Channel Layer
+====================================================================
 
-Most pretrained EEG foundation models were trained on a specific,
-canonical channel montage:
+Pretrained EEG foundation models expect the channel montage they were
+trained on. :class:`~braindecode.models.BENDR`, for example, was
+pre-trained on 19 channels of the 10-20 system plus ``SCALE``, a
+relative-amplitude channel. A recording with other channels cannot go
+straight into the checkpoint.
 
-* :class:`~braindecode.models.Labram` was pretrained on a fixed
-  128-channel set;
-* :class:`~braindecode.models.BIOT` on an 18-channel TCP montage;
-* :class:`~braindecode.models.SignalJEPA` on 62 channels.
+The channel layer (:mod:`braindecode.modules.channels`) sits inside the
+model and maps the montage of your recording onto the one the backbone
+expects. You choose how with ``channel_strategy``:
 
-When you want to fine-tune one of these checkpoints on a dataset
-whose channel layout is different — fewer channels, different
-naming, different reference — you cannot just call
-``from_pretrained``: the backbone refuses to accept an input that
-does not match the pretrained shape.
+* ``"exact"`` copies channels by name and refuses to invent any;
+* ``"spline"`` fills missing channels with a regularised spherical spline;
+* ``"field"`` uses MNE's minimum-norm field mapping;
+* ``"source"`` estimates sources in a spherical head model and projects
+  them back onto the missing electrodes.
 
-The ``Interpolated*`` family of model wrappers solves this. Each
-wrapper inserts a spatial-interpolation layer in front of the
-backbone, so the pretrained weights see exactly the canonical
-input they were trained on. The interpolation matrix is built
-from the user's channel positions using MNE's spline-based
-interpolation.
-
-This tutorial covers:
-
-* loading a pretrained foundation model on a non-canonical
-  channel set with a single ``from_pretrained`` call,
-* what the interpolation matrix actually does, visualised with
-  scalp topomaps,
-* the same recipe for the other shipped variants
-  (:class:`~braindecode.models.InterpolatedBIOT`,
-  :class:`~braindecode.models.InterpolatedSignalJEPA`),
-* the ``trainable=True`` flag for data-driven projections.
+This example builds a synthetic 32-channel recording (no download), runs
+BENDR with each strategy, and plots the 19 BENDR channels the layer
+reconstructs for one window when three of them are missing from the
+recording.
 
 .. warning::
 
-   The ``Interpolated*`` API is experimental and may change
-   without a deprecation cycle.
+   The channel layer is experimental; its API may change without a
+   deprecation cycle.
 
 .. contents:: This example covers:
    :local:
    :depth: 2
 """
 
-# Authors: Pierre Guetschel <pierre.guetschel@gmail.com>
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
-
-import warnings
 
 import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import torch
 
-from braindecode.datasets import MOABBDataset
-from braindecode.models import (
-    InterpolatedBIOT,
-    InterpolatedLaBraM,
-    InterpolatedSignalJEPA,
-    Labram,
-)
+from braindecode.models import BENDR
+from braindecode.models.bendr import _BENDR_TARGET_CHS_INFO
 
-warnings.simplefilter("ignore")
-mne.set_log_level("ERROR")
 torch.manual_seed(0)
-np.random.seed(0)
+rng = np.random.default_rng(0)
 
 ######################################################################
-# Setting the scene: a real EEG dataset
-# --------------------------------------
+# A synthetic 32-channel recording
+# --------------------------------
 #
-# We load a single subject of the BNCI2014_001 motor-imagery dataset
-# to obtain a realistic 22-channel EEG montage (a subset of the 10-20
-# system).  We will only use the channel layout, not the recordings
-# themselves, so a single subject is enough.
-#
+# We place 32 channels of the ``standard_1020`` montage and fill them with
+# spatially smooth activity: a few broad scalp fields (low-order functions
+# of the electrode position), each with its own oscillation, plus a little
+# sensor noise. Smooth fields are what EEG looks like at the scalp, so the
+# strategies have something to reconstruct.
 
-dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[3])
+ch_names = [
+    "Fp1", "Fp2", "AF3", "AF4", "F7", "F3", "Fz", "F4", "F8", "FC5", "FC1",
+    "FC2", "FC6", "T7", "C3", "Cz", "C4", "T8", "CP5", "CP1", "CP2", "CP6",
+    "P7", "P3", "Pz", "P4", "P8", "PO3", "PO4", "O1", "Oz", "O2",
+]  # fmt: skip
+sfreq = 256.0
+n_times = 4 * int(sfreq)
+
 montage = mne.channels.make_standard_montage("standard_1020")
-for ds in dataset.datasets:
-    ds.raw.pick_types(eeg=True)
-    ds.raw.set_montage(montage)
+info = mne.create_info(ch_names, sfreq=sfreq, ch_types="eeg")
+info.set_montage(montage)
+pos = np.array([info["chs"][i]["loc"][:3] for i in range(len(ch_names))])
 
-raw_info = dataset.datasets[0].raw.info  # MNE Info, kept around for plotting
-chs_info = raw_info["chs"]
-user_ch_names = [ch["ch_name"] for ch in chs_info]
-
-print(f"Dataset has {len(chs_info)} channels:")
-print(user_ch_names)
-
-######################################################################
-# The wall: the pretrained model expects a specific 128-channel layout
-# --------------------------------------------------------------------
-#
-# The ``Labram`` checkpoint on the Hugging Face Hub
-# (``braindecode/labram-pretrained``) was trained on a specific
-# 128-channel layout.  The vanilla :class:`~braindecode.models.Labram`
-# class warns when ``chs_info`` does not match that canonical layout —
-# the model still builds (so callers that resolve channels per batch
-# via the ``ch_names`` argument to :meth:`~braindecode.models.Labram.forward`
-# keep working).  However, the default forward pass (without
-# ``ch_names``) assumes the input is already in canonical order *and*
-# has exactly 128 channels: passing a different channel count raises a
-# :class:`ValueError`, and passing 128 reordered channels would map
-# position embeddings to the wrong sensors.  Either pass ``ch_names``
-# explicitly on every call, or use :class:`InterpolatedLaBraM` for a
-# one-line fix.
-#
-
-with warnings.catch_warnings(record=True) as caught:
-    warnings.simplefilter("always")
-    Labram(chs_info=chs_info, n_times=3000, n_outputs=4, patch_size=200)
-
-if caught and issubclass(caught[-1].category, UserWarning):
-    print("Labram warned about our chs_info:")
-    print(f"  {caught[-1].message}")
+times = np.arange(n_times) / sfreq
+spatial = np.c_[pos, pos**2, pos[:, [0]] * pos[:, [1]]] / 0.08  # (32, 7)
+freqs = rng.uniform(4.0, 14.0, spatial.shape[1])
+temporal = np.sin(2 * np.pi * freqs[:, None] * times + rng.uniform(0, 6, (7, 1)))
+data = spatial @ temporal + 0.05 * rng.standard_normal((len(ch_names), n_times))
+raw = mne.io.RawArray(data * 1e-5, info, verbose="error")
+print(raw)
 
 ######################################################################
-# Without the wrapper, you would have to surgically rebuild the
-# first spatial layer of the model and decide yourself how to map
-# your channels onto the canonical set — error-prone and difficult
-# to keep aligned with the pretrained weights.
+# One window, with three BENDR channels missing
+# ---------------------------------------------
+#
+# BENDR reads windows of ``n_times`` samples. We take the first 4-second
+# window and remove ``Cz``, ``P3`` and ``O2`` from the recording, as if the
+# cap did not have them. We keep the true signals to compare against.
+
+held_out = ["Cz", "P3", "O2"]
+window = raw.get_data()  # (32, 1024)
+keep = [i for i, ch in enumerate(ch_names) if ch not in held_out]
+chs_info = [raw.info["chs"][i] for i in keep]
+x = torch.as_tensor(window[keep], dtype=torch.float32)[None]  # (1, 29, 1024)
+print("input:", tuple(x.shape))
 
 ######################################################################
-# The fix: a one-line ``from_pretrained``
-# ----------------------------------------
+# BENDR with each strategy
+# ------------------------
 #
-# :class:`~braindecode.models.InterpolatedLaBraM` is a subclass of
-# :class:`~braindecode.models.Labram` that prepends a frozen
-# spatial-interpolation layer.  From the user's side it accepts any
-# ``chs_info``; from the backbone's side the input is always the
-# canonical 128-channel tensor the pretrained weights expect.
+# ``channel_strategy`` is a constructor argument, like any other model
+# parameter, and is saved in the model config. The checkpoint weights do
+# not change: the strategies here have no parameters, so a model built with
+# any of them loads the released BENDR weights strictly
+# (``BENDR.from_pretrained("braindecode/braindecode-bendr",
+# chs_info=chs_info, channel_strategy="source")``).
 #
-# This means the standard ``from_pretrained`` workflow just works:
-# pass your own ``chs_info`` (and the same ``n_times`` the
-# checkpoint was trained on, here 3000 samples), use
-# ``strict=False`` because the interpolation matrix is not in the
-# checkpoint, and you are done.
-#
+# To keep the example fast we build a small, randomly initialised BENDR;
+# the channel layer is the same for the full model.
 
-model = InterpolatedLaBraM.from_pretrained(
-    "braindecode/labram-pretrained",
-    chs_info=chs_info,
-    n_times=3000,
-    n_outputs=4,
-    patch_size=200,
-    strict=False,
-)
-print(f"Loaded checkpoint, model has {model.n_chans} channels")
-print(f"chs_info matches the user's: {model.chs_info[0]['ch_name']}, ...")
+small = dict(encoder_h=64, contextualizer_hidden=128, transformer_layers=2)
+
+try:
+    BENDR(chs_info=chs_info, n_outputs=2, n_times=n_times, channel_strategy="exact")
+except ValueError as err:
+    print(f"exact: {err}")
+
+strategies = ["spline", "field", "source"]
+reconstructed = {}
+for strategy in strategies:
+    model = BENDR(
+        chs_info=chs_info,
+        n_outputs=2,
+        n_times=n_times,
+        channel_strategy=strategy,
+        **small,
+    ).eval()
+    with torch.no_grad():
+        enc = model.channel_tokenizer(x)  # what the backbone receives
+        out = model(x)
+    reconstructed[strategy] = enc.x[0].numpy()
+    print(
+        f"{strategy:>6}: backbone input {tuple(enc.x.shape)}, "
+        f"output {tuple(out.shape)}, "
+        f"observed {int(enc.observed.sum())}/{len(enc.observed)} channels"
+    )
 
 ######################################################################
-# A forward pass goes through the interpolation layer first and
-# the pretrained backbone second, returning logits of the user's
-# requested ``n_outputs``:
-#
+# With the full montage, ``exact`` is a plain reordering: the 19 EEG
+# channels are copied by name (``T5``/``T6`` are the old names of
+# ``P7``/``P8``). ``SCALE`` is not an electrode: the layer leaves it at zero
+# and marks it ``observed=False`` (see the :class:`~braindecode.models.BENDR`
+# docstring).
 
-x = torch.randn(2, len(chs_info), 3000)
-model.eval()
+x_full = torch.as_tensor(window, dtype=torch.float32)[None]
+model = BENDR(
+    chs_info=raw.info["chs"],
+    n_outputs=2,
+    n_times=n_times,
+    channel_strategy="exact",
+    **small,
+).eval()
 with torch.no_grad():
-    out = model(x)
-print(f"Input  : {tuple(x.shape)}")
-print(f"Output : {tuple(out.shape)}")
+    enc = model.channel_tokenizer(x_full)
+reconstructed["exact (all 32)"] = enc.x[0].numpy()
+print("exact, all 32 channels: observed", enc.observed.tolist())
 
 ######################################################################
-# .. note::
+# The reconstructed BENDR montage
+# -------------------------------
 #
-#    Why ``strict=False``? In the default (frozen) mode the
-#    interpolation matrix is a *non-persistent buffer*: it is
-#    derived from your ``chs_info`` at construction time and is
-#    deliberately absent from ``state_dict``.  Loading without
-#    ``strict=False`` is also fine in practice — there are no
-#    extra keys to complain about — but ``strict=False`` is the
-#    safe default when mixing user-provided geometry with
-#    third-party checkpoints.
+# Each row of the figure is the 19-channel BENDR montage the backbone
+# receives for this window, shown as the RMS over the window. The top row
+# is the full recording copied exactly; the others are rebuilt from the 29
+# remaining channels. White crosses mark the three missing channels.
 
-######################################################################
-# Under the hood: MNE-backed spline interpolation
-# ------------------------------------------------
-#
-# The interpolation layer is a thin
-# :class:`~braindecode.modules.ChannelInterpolationLayer` whose
-# forward pass is a single matrix multiplication:
-#
-# .. math::
-#
-#    x_{\text{target}} = W \cdot x_{\text{source}},
-#
-# where ``W`` has shape ``(n_target_chans, n_source_chans)``.
-# ``W`` is built once at construction time using
-# :meth:`mne.io.Raw.interpolate_to` (spline interpolation): for
-# every target sensor position, MNE fits a smooth spherical-spline
-# field through the source signals and reads its value at the
-# target.  This produces a fixed linear combination per target
-# channel that depends only on the geometry, not on the data.
-#
-# We can read ``W`` directly from the model:
-#
-
-W = model.interpolation_layer.matrix.detach().cpu().numpy()
-target_chs_info = InterpolatedLaBraM._TARGET_CHS_INFO
-target_names = [ch["ch_name"] for ch in target_chs_info]
-print(f"W shape: {W.shape} (target × source)")
-
-######################################################################
-# Visualising the spatial filters
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-# Each row of ``W`` is a *spatial filter*: it tells how the
-# 22 source channels are linearly combined to estimate one target
-# channel that the source montage does not have.  The natural way
-# to look at a spatial filter is a scalp topomap on the source
-# channel positions: red areas mean source channels with positive
-# weight, blue areas mean negative weight.
-#
-# We pick three canonical target channels that are **not** in our
-# source montage (so they are genuinely interpolated, not just
-# passed through), spread across frontal, temporal, and occipital
-# regions:
-#
-
-src_names_lower = {name.lower() for name in user_ch_names}
-target_names_lower = [name.lower() for name in target_names]
-chosen_targets = ["FP1", "T7", "O1"]
-chosen_idx = [target_names_lower.index(name.lower()) for name in chosen_targets]
-assert all(name.lower() not in src_names_lower for name in chosen_targets), (
-    "chosen targets must be interpolated, not name-matched"
+bendr_eeg = [ch for ch in _BENDR_TARGET_CHS_INFO if ch["ch_name"] != "SCALE"]
+bendr_info = mne.create_info(
+    [ch["ch_name"] for ch in bendr_eeg], sfreq=sfreq, ch_types="eeg"
 )
+bendr_info.set_montage(
+    mne.channels.make_dig_montage(
+        {ch["ch_name"]: ch["loc"][:3] for ch in bendr_eeg}, coord_frame="head"
+    )
+)
+missing_mask = np.array([ch["ch_name"] in {"CZ", "P3", "O2"} for ch in bendr_eeg])
 
-fig, axes = plt.subplots(1, len(chosen_targets), figsize=(11, 3.2), dpi=110)
-for ax, name, idx in zip(axes, chosen_targets, chosen_idx):
-    weights = W[idx]
-    vmax = float(np.abs(weights).max())
+rows = ["exact (all 32)"] + strategies
+rms = {k: np.sqrt((reconstructed[k][:19] ** 2).mean(axis=1)) for k in rows}
+vmax = max(v.max() for v in rms.values())
+fig, axes = plt.subplots(1, len(rows), figsize=(3 * len(rows), 3.2))
+for ax, key in zip(axes, rows):
     mne.viz.plot_topomap(
-        weights,
-        raw_info,
+        rms[key],
+        bendr_info,
         axes=ax,
         show=False,
-        cmap="RdBu_r",
-        vlim=(-vmax, vmax),
-        contours=0,
-        sensors=True,
+        vlim=(0, vmax),
+        mask=missing_mask,
+        mask_params=dict(marker="x", markeredgecolor="w", markersize=9),
     )
-    ax.set_title(f"target = {name}", fontsize=11)
-fig.suptitle(
-    "Spatial filter (one row of W) used to estimate each target channel\n"
-    "from the 22 source channels",
-    fontsize=11,
-    y=1.05,
-)
+    ax.set_title(key)
+fig.suptitle("BENDR input for one window (RMS per channel)")
 fig.tight_layout()
-plt.show()
 
 ######################################################################
-# Notice how each filter is **localised under the target sensor**:
-# to estimate the signal at Fp1 the layer relies mostly on the
-# frontal source channels, T7 leans on the left central row, and
-# O1 mixes the parieto-occipital source channels.  This is the
-# spline interpolation doing exactly what one would expect from a
-# scalp field smoothed across sensor positions.
-#
-# Because ``W`` depends only on positions, channels that share a
-# name between source and target (here ``Fz``, ``Cz``, ``Pz``,
-# ``POz``) get a one-hot row and pass through unchanged — so the
-# pretrained weights see those source channels exactly where they
-# expect them.
-
-######################################################################
-# Other shipped variants
-# ----------------------
-#
-# The same recipe applies to the other foundation models that
-# ship a fixed pretrained montage.  Construction-only examples
-# (without loading the actual checkpoints):
-#
-
-model_biot = InterpolatedBIOT(
-    chs_info=chs_info,
-    n_outputs=4,
-    n_times=2000,
-    sfreq=200,
-)
-out_biot = model_biot(torch.randn(2, len(chs_info), 2000))
-print(f"InterpolatedBIOT  output: {tuple(out_biot.shape)}")
-
-model_sjepa = InterpolatedSignalJEPA(
-    chs_info=chs_info,
-    n_outputs=4,
-    n_times=512,
-    sfreq=128,
-)
-out_sjepa = model_sjepa(torch.randn(2, len(chs_info), 512))
-print(f"InterpolatedSignalJEPA features: {tuple(out_sjepa.shape)}")
-
-######################################################################
-# To load the corresponding pretrained weights, swap the
-# constructor for ``from_pretrained``, e.g.:
-#
-# .. code-block:: python
-#
-#    model_biot = InterpolatedBIOT.from_pretrained(
-#        "braindecode/biot-pretrained-shhs-prest-18chs",
-#        chs_info=chs_info,
-#        strict=False,
-#    )
-#
-# See :ref:`load-pretrained-models` for the available checkpoints.
-
-######################################################################
-# Making the interpolation trainable
+# How close are the missing channels?
 # -----------------------------------
 #
-# By default the interpolation matrix is a frozen, non-persistent
-# buffer — recomputed from ``chs_info`` at every ``__init__`` and
-# never updated by the optimizer.  This is the safe choice for
-# linear probing: the pretrained weights see exactly the input
-# they were trained for.
-#
-# For larger fine-tuning budgets you can let the network learn a
-# better spatial projection by passing ``trainable=True``.  The
-# matrix is then an :class:`torch.nn.Parameter`, initialised from
-# the same MNE spline interpolation, optimised jointly with the
-# backbone, and saved to ``state_dict``.
-#
+# Because the synthetic field is known, we can compare each reconstructed
+# channel with the signal it replaces. The fields here are low-order
+# polynomials of position, which suits the spline by construction; on real
+# EEG the ranking can differ, so treat the strategy as a hyper-parameter.
 
-model_trainable = InterpolatedLaBraM(
-    chs_info=chs_info,
-    n_times=3000,
-    n_outputs=4,
-    patch_size=200,
-    trainable=True,
-)
-print("Trainable interpolation parameters:")
-for name, p in model_trainable.named_parameters():
-    if "interpolation_layer" in name:
-        print(f"  {name}  shape={tuple(p.shape)}  requires_grad={p.requires_grad}")
+target_names = [ch["ch_name"].upper() for ch in bendr_eeg]
+fig, axes = plt.subplots(len(held_out), 1, figsize=(8, 6), sharex=True)
+t = times[: int(sfreq)]  # first second
+for ax, name in zip(axes, held_out):
+    k = target_names.index(name.upper())
+    truth = window[ch_names.index(name), : len(t)]
+    ax.plot(t, truth, color="k", lw=2, label="true")
+    for strategy in strategies:
+        rec = reconstructed[strategy][k, : len(t)]
+        r = np.corrcoef(truth, rec)[0, 1]
+        ax.plot(t, rec, lw=1, label=f"{strategy} (r={r:.2f})")
+    ax.set_ylabel(name)
+    ax.legend(loc="upper right", fontsize=7, ncol=4)
+axes[-1].set_xlabel("time (s)")
+fig.suptitle("Missing channels rebuilt by the channel layer")
+fig.tight_layout()
+plt.show()
 
 ######################################################################
 # Summary
 # -------
 #
-# * ``Interpolated*`` wrappers let you call ``from_pretrained``
-#   on a foundation-model checkpoint with **any** channel layout,
-#   in one line.
-# * The projection is built once from MNE's spline interpolation
-#   and stored as a frozen non-persistent buffer — safe for
-#   linear probing.
-# * For larger fine-tuning budgets, ``trainable=True`` turns it
-#   into an ``nn.Parameter`` initialised from the same MNE
-#   solution.
-# * The shipped variants are
-#   :class:`~braindecode.models.InterpolatedLaBraM`,
-#   :class:`~braindecode.models.InterpolatedBIOT`, and
-#   :class:`~braindecode.models.InterpolatedSignalJEPA`; for
-#   custom backbones, use the
-#   :func:`~braindecode.models.InterpolatedModel` factory.
-#
+# * ``BENDR(chs_info=..., channel_strategy=...)`` runs the pretrained
+#   backbone on any montage; the default ``"native"`` keeps BENDR's own
+#   behaviour and leaves the canonical montage untouched.
+# * ``exact`` never invents data and fails when a channel is missing;
+#   ``spline``, ``field`` and ``source`` reconstruct it from positions.
+# * ``model.channel_tokenizer(x)`` returns what the backbone receives:
+#   the signal, plus which channels were measured (``observed``) and how
+#   much to trust each one (``support``).

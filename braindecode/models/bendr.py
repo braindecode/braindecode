@@ -4,6 +4,7 @@
 # License: BSD (3-clause)
 
 import copy
+from typing import ClassVar, Optional
 
 import numpy as np
 import torch
@@ -22,14 +23,11 @@ from braindecode.modules.channels import ChannelTarget, ChannelTokenizer
 #
 # The 20th entry is ``SCALE``, a relative-amplitude statistic (not an
 # electrode) appended by ``To1020(include_scale_ch=True)`` during
-# pre-training. Since it has no physical position, the ``loc`` below is
-# the centroid of the 19 EEG positions — purely a placeholder so that
-# :class:`~braindecode.modules.ChannelInterpolationLayer` (used by
-# :class:`InterpolatedBENDR`) can build a valid spline interpolation
-# matrix. It is NOT the SCALE the pre-training pipeline computes
-# (which is an RMS-like amplitude via ``dn3.MappingDeep1010``); users
-# who need a faithful SCALE must compute it themselves and feed 20
-# channels to :class:`BENDR` directly.
+# pre-training. It has no physical position: the ``loc`` below (the
+# centroid of the 19 EEG positions) is a placeholder kept only for the
+# ``channel_strategy="native"`` projection of non-canonical montages, which
+# reproduces the former behaviour bit for bit. Every other strategy treats
+# SCALE as a non-electrode target (see ``BENDR._channel_target``).
 _BENDR_TARGET_CHS_TUPLES: list[tuple[str, tuple[float, float, float]]] = [
     ("FP1", (-0.0294367, +0.0839171, -0.0069900)),  # standard_1005
     ("FP2", (+0.0298723, +0.0848959, -0.0070800)),  # standard_1005
@@ -55,12 +53,35 @@ _BENDR_TARGET_CHS_TUPLES: list[tuple[str, tuple[float, float, float]]] = [
         (+0.0006439, -0.0131942, +0.0278448),
     ),  # centroid of the 19 EEG positions (placeholder; see comment above)
 ]
+_BENDR_NON_ELECTRODE: tuple[str, ...] = ("SCALE",)
 
 _BENDR_TARGET_CHS_INFO: list[dict] = [
     {"ch_name": ch, "kind": "eeg", "loc": np.asarray(loc, dtype=float)}
     for ch, loc in _BENDR_TARGET_CHS_TUPLES
 ]
 BENDR_CHANNEL_ORDER: list[str] = [ch for ch, _ in _BENDR_TARGET_CHS_TUPLES]
+
+# ``channel_strategy="native"`` with a non-canonical montage: an unregularised
+# spline with name copies, SCALE spline-filled at its placeholder position
+# (the former ``fixed_order`` behaviour, kept bit-identical).
+_BENDR_NATIVE_TARGET = ChannelTarget("montage", chs_info=_BENDR_TARGET_CHS_INFO)
+
+
+def _without_scale_position(chs_info: Optional[list[dict]]) -> Optional[list[dict]]:
+    """Drop the placeholder position of an input ``SCALE`` channel.
+
+    SCALE is not an electrode, so a strategy must never use it as a source
+    for spatial reconstruction; without a position it is only copied by name.
+    """
+    if chs_info is None:
+        return None
+    non_electrode = {n.lower() for n in _BENDR_NON_ELECTRODE}
+    return [
+        {**ch, "loc": np.zeros(12)}
+        if str(ch.get("ch_name", "")).lower() in non_electrode
+        else ch
+        for ch in chs_info
+    ]
 
 
 class BENDR(EEGModuleMixin, nn.Module):
@@ -249,7 +270,38 @@ class BENDR(EEGModuleMixin, nn.Module):
         The contextualizer is still created (to allow loading pretrained weights) but is not
         used in the forward pass. Requires input length of at least
         ``4 * product(enc_downsample)`` samples (384 with default downsampling of 96x).
+    channel_strategy : str, default="native"
+        How the user montage reaches the 20 pre-training channels
+        (:mod:`braindecode.modules.channels`). ``"native"`` keeps BENDR's own
+        behaviour: the canonical order ``BENDR_CHANNEL_ORDER`` goes straight
+        to the encoder, and any other ``chs_info`` is projected with name
+        copies and an unregularised spherical spline (SCALE included, at its
+        placeholder position). Any other registered strategy (``"exact"``,
+        ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``, ``"field"``,
+        ``"source"``, ``"wiener"``, ``"region"``, ``"latent"``) maps the
+        montage onto the 19 EEG targets and handles SCALE as a non-electrode
+        (see the note below).
+    channel_strategy_kwargs : dict or None, default=None
+        Keyword arguments of the strategy (e.g. ``{"reg": 1e-2}`` for
+        ``"spline"``). Only valid with a strategy other than ``"native"``.
+
+    .. note::
+       **The SCALE channel.** BENDR was pre-trained on 19 EEG channels plus
+       ``SCALE``, a relative-amplitude statistic that dn3's
+       ``To1020(include_scale_ch=True)`` appends. Its exact formula could not
+       be checked against the dn3 source when the channel layer was written,
+       so with a strategy other than ``"native"`` SCALE is a constant channel
+       of zeros marked ``observed=False``, unless the input carries a channel
+       named ``SCALE`` (then it is copied as is and never used as a spatial
+       source). Users who need the pre-training SCALE must compute it
+       themselves and pass it as a channel named ``SCALE``.
     """
+
+    _channel_target: ClassVar[ChannelTarget] = ChannelTarget(
+        "montage",
+        chs_info=_BENDR_TARGET_CHS_INFO,
+        non_electrode=_BENDR_NON_ELECTRODE,
+    )
 
     def __init__(
         self,
@@ -276,6 +328,9 @@ class BENDR(EEGModuleMixin, nn.Module):
         start_token=-5,  # Value for start token embedding
         final_layer=True,  # Whether to include the final linear layer
         encoder_only=False,  # If True, bypass contextualizer and use 4-chunk pooling
+        # Channel layer
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: Optional[dict] = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -289,23 +344,37 @@ class BENDR(EEGModuleMixin, nn.Module):
         # Keep these parameters if needed later, otherwise they are captured by the mixin
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        # No chs_info (incl. from_pretrained) or the canonical order: no
-        # tokenizer, so released checkpoints stay bit-identical. Any other
-        # montage is projected onto the 20 canonical channels.
         try:
             _chs_info = self.chs_info
         except ValueError:
             _chs_info = None
+        self.channel_strategy = channel_strategy
         self.channel_tokenizer = None  # type: ignore[assignment]
         backbone_n_chans = self.n_chans
-        if _chs_info is not None:
+        if channel_strategy != "native":
+            # The channel layer maps any montage onto the 20 pre-training
+            # channels; SCALE is a non-electrode target.
+            self.channel_tokenizer = ChannelTokenizer(
+                self._channel_target,
+                channel_strategy,
+                src_chs_info=_without_scale_position(_chs_info),
+                **(channel_strategy_kwargs or {}),
+            )
+            backbone_n_chans = len(_BENDR_TARGET_CHS_INFO)
+        elif channel_strategy_kwargs:
+            raise ValueError(
+                "channel_strategy_kwargs need a channel_strategy other than "
+                f"'native'; got {channel_strategy_kwargs!r}."
+            )
+        elif _chs_info is not None:
+            # No chs_info (incl. from_pretrained) or the canonical order: no
+            # tokenizer, so released checkpoints stay bit-identical. Any other
+            # montage is projected as before the channel layer existed.
             user_names = [ch["ch_name"] for ch in _chs_info]  # type: ignore[index]
             canonical = BENDR_CHANNEL_ORDER
             if [n.lower() for n in user_names] != [n.lower() for n in canonical]:
-                # Unregularised spline with name copies: the former
-                # "fixed_order" behaviour (SCALE interpolated at its placeholder).
                 self.channel_tokenizer = ChannelTokenizer(
-                    ChannelTarget("montage", chs_info=_BENDR_TARGET_CHS_INFO),
+                    _BENDR_NATIVE_TARGET,
                     "spline",
                     src_chs_info=_chs_info,
                     reg=0.0,
@@ -363,9 +432,31 @@ class BENDR(EEGModuleMixin, nn.Module):
         self._update_init_kwargs(final_layer=True)
         self._build_head(n_outputs)
 
-    def forward(self, x, return_features=False):
+    def forward(self, x, return_features=False, chs_info=None):
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            EEG of shape ``(batch, n_chans, n_times)``.
+        return_features : bool, default=False
+            Return ``{"features": ..., "cls_token": None}`` instead of the
+            head output.
+        chs_info : list of dict, optional
+            Montage of ``x`` for this call (cached per montage). Needs a
+            ``channel_strategy`` other than ``"native"``; ``None`` uses the
+            montage given at construction.
+        """
+        if chs_info is not None:
+            if self.channel_strategy == "native":
+                raise ValueError(
+                    "BENDR(channel_strategy='native') takes its montage at "
+                    "construction only; pass channel_strategy='spline' (or "
+                    "another strategy) to give chs_info per call."
+                )
+            chs_info = _without_scale_position(chs_info)
         if self.channel_tokenizer is not None:
-            x = self.channel_tokenizer(x).x
+            x = self.channel_tokenizer(x, chs_info).x
         encoded = self.encoder(x)
         # encoded: [batch_size, encoder_h, n_encoded_times]
 
@@ -610,23 +701,3 @@ class _BENDRContextualizer(nn.Module):
         # x: [batch_size, in_features, seq_len + 1]
 
         return x
-
-
-# -----------------------------------------------------------------------------
-# InterpolatedBENDR — experimental channel-interpolation variant of BENDR
-# -----------------------------------------------------------------------------
-# Wraps :class:`BENDR` with an MNE-backed channel-interpolation layer that
-# projects arbitrary user ``chs_info`` to the canonical 20-channel BENDR
-# input (:data:`_BENDR_TARGET_CHS_INFO` — the 19 pre-training EEG channels
-# plus a ``SCALE`` placeholder at the centroid of those 19 positions).
-# Frozen by default; set ``trainable=True`` to fine-tune the projection.
-#
-# NOTE: the ``SCALE`` target has no physical position, so the row of the
-# interpolation matrix that produces it is a spatial spline of the user's
-# EEG channels — *not* the dn3 ``MappingDeep1010`` RMS statistic the
-# checkpoint saw during pre-training. Expect degraded zero-shot transfer
-# from the SCALE channel; downstream fine-tuning should still work.
-
-from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
-
-InterpolatedBENDR = InterpolatedModel(BENDR, _BENDR_TARGET_CHS_INFO)

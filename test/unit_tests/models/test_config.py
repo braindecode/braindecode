@@ -19,13 +19,11 @@ from braindecode.models.config import make_model_config
 from braindecode.models.util import (
     _get_possible_signal_params,
     _get_signal_params,
-    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
 )
 
-# Interpolated models are stored in a separate registry from ``models_dict``.
-all_models_dict = {**models_dict, **interpolated_models_dict}
+all_models_dict = dict(models_dict)
 
 
 @pytest.mark.parametrize(
