@@ -6,7 +6,9 @@ import torch.nn as nn
 from linear_attention_transformer import LinearAttentionTransformer
 
 from braindecode.functional import sinusoidal_positional_encoding
+from braindecode.models._channel_layer import names_chs_info, warn_if_not_canonical
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.channels import ChannelTarget
 
 # -----------------------------------------------------------------------------
 # Canonical BIOT channel order: the 18-channel TCP bipolar
@@ -52,6 +54,22 @@ _BIOT_TARGET_CHS_INFO = [
     for ch, loc in _BIOT_TARGET_CHS_TUPLES
 ]
 BIOT_CHANNEL_ORDER = [ch for ch, _ in _BIOT_TARGET_CHS_TUPLES]
+
+# Non-native channel strategies reconstruct the monopolar electrodes behind the
+# derivations and form each derivation as V(A) - V(B), as BIOT's preprocessing
+# does: a bipolar signal is not a potential at the midpoint, and midpoints
+# inside the head make the physical strategies (``field``, ``source``) blow up.
+_BIOT_ELECTRODES = list(
+    dict.fromkeys(e for ch in BIOT_CHANNEL_ORDER for e in ch.split("-"))
+)
+_BIOT_DERIVATION = np.zeros((len(BIOT_CHANNEL_ORDER), len(_BIOT_ELECTRODES)))
+for _row, _ch in enumerate(BIOT_CHANNEL_ORDER):
+    _a, _b = _ch.split("-")
+    _BIOT_DERIVATION[_row, _BIOT_ELECTRODES.index(_a)] = 1.0
+    _BIOT_DERIVATION[_row, _BIOT_ELECTRODES.index(_b)] = -1.0
+_BIOT_CHANNEL_TARGET = ChannelTarget(
+    "montage", chs_info=names_chs_info(_BIOT_ELECTRODES)
+)
 
 
 class BIOT(EEGModuleMixin, nn.Module):
@@ -138,6 +156,22 @@ class BIOT(EEGModuleMixin, nn.Module):
         encoder. The default is 100.
     sfreq: int, optional
         The sfreq parameter for the encoder. The default is 200
+    channel_strategy : str, default="native"
+        How the input montage reaches the backbone, which consumes
+        ``18`` bipolar derivations of :data:`BIOT_CHANNEL_ORDER` (see
+        :class:`braindecode.modules.ChannelTokenizer`). ``"native"`` feeds
+        ``x`` unchecked (a non-canonical montage emits a ``FutureWarning``
+        and will raise in the next release). A registered strategy
+        (``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``,
+        ``"field"``, ``"source"``, ``"wiener"``, ``"region"``, ``"latent"``)
+        maps a **monopolar** montage onto the 18 electrodes behind the
+        derivations (Fp1, F7, ..., A1, A2) inside ``forward`` and forms each
+        derivation as ``V(A) - V(B)``; ``forward`` then also takes
+        ``chs_info`` for a montage other than the constructor's. Bipolar input
+        (already in :data:`BIOT_CHANNEL_ORDER`) is what ``"native"`` is for.
+    channel_strategy_kwargs : dict or None, default=None
+        Options forwarded to the strategy (e.g. ``{"reg": 1e-3}`` for
+        ``"spline"``).
 
     References
     ----------
@@ -148,6 +182,8 @@ class BIOT(EEGModuleMixin, nn.Module):
        Biosignal Transformer for Cross-data Learning in the Wild.
        GitHub https://github.com/ycq091044/BIOT (accessed 2024-02-13)
     """
+
+    _channel_target = _BIOT_CHANNEL_TARGET
 
     def __init__(
         self,
@@ -168,6 +204,8 @@ class BIOT(EEGModuleMixin, nn.Module):
         max_seq_len: int = 1024,
         att_drop_prob=0.2,
         att_layer_drop_prob=0.2,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -178,6 +216,22 @@ class BIOT(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq
+        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
+        self._channel_layer = channel_strategy != "native"
+        if not self._channel_layer:
+            # The 16-channel checkpoint uses the first 16 TCP derivations.
+            warn_if_not_canonical(
+                self, BIOT_CHANNEL_ORDER, also_accept=[BIOT_CHANNEL_ORDER[:16]]
+            )
+        if self._channel_layer:
+            self.register_buffer(
+                "_bipolar",
+                torch.as_tensor(_BIOT_DERIVATION, dtype=torch.float32),
+                persistent=False,
+            )
+            n_backbone_chans = len(BIOT_CHANNEL_ORDER)
+        else:
+            n_backbone_chans = self.n_chans
         self.embed_dim = embed_dim
         self.hop_length = hop_length
         self.num_heads = num_heads
@@ -189,7 +243,7 @@ class BIOT(EEGModuleMixin, nn.Module):
                 + "no guarantee to generalize well with the default parameters",
                 UserWarning,
             )
-        if self.n_chans > embed_dim:
+        if n_backbone_chans > embed_dim:
             warn(
                 "The number of channels is larger than the embedding size. "
                 + "This may cause overfitting. Consider using a larger "
@@ -220,7 +274,7 @@ class BIOT(EEGModuleMixin, nn.Module):
             emb_size=self.embed_dim,
             num_heads=self.num_heads,
             n_layers=self.num_layers,
-            n_chans=self.n_chans,
+            n_chans=n_backbone_chans,
             n_fft=self.n_fft,
             hop_length=hop_length,
             drop_prob=drop_prob,
@@ -245,7 +299,7 @@ class BIOT(EEGModuleMixin, nn.Module):
             activation=self._head_activation,
         )
 
-    def forward(self, x, return_features=False):
+    def forward(self, x, return_features=False, chs_info=None):
         """
         Pass the input through the BIOT encoder, and then through the
         classification head.
@@ -257,6 +311,9 @@ class BIOT(EEGModuleMixin, nn.Module):
         return_features : bool
             If True, return a dict with ``"features"`` and ``"cls_token"``
             instead of the classification output.
+        chs_info : list of dict, optional
+            Montage of ``x`` when it differs from the constructor's; used only
+            when ``channel_strategy`` is not ``"native"``.
 
         Returns
         -------
@@ -267,6 +324,9 @@ class BIOT(EEGModuleMixin, nn.Module):
             If legacy ``return_feature=True`` (init param):
             ``(out, emb)`` tuple (ignored when ``return_features=True``).
         """
+        if self._channel_layer:
+            electrodes = self._encode_channels(x, chs_info).x
+            x = self._bipolar.to(electrodes) @ electrodes
         emb = self.encoder(x)
 
         if return_features:

@@ -6,12 +6,16 @@
 
 from __future__ import annotations
 
+from typing import Any, Dict, List, Optional
+
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange, Reduce
 
+from braindecode.models._channel_layer import JIT_IGNORED, backbone_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PatchTokenizer
+from braindecode.modules.channels import ChannelTarget
 
 # Standard rhythmic-activity bands (Hz) used by Brant's frequency encoding,
 # from the paper (§ Frequency encoding): theta, alpha, beta, gamma1-5.
@@ -146,6 +150,18 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         describes the data and is not used by the band-power features.
     drop_prob : float, optional
         Dropout probability. Default 0.1.
+    channel_strategy : str, default="native"
+        Channel layer in front of the backbone (see
+        :class:`braindecode.modules.ChannelTokenizer`). The backbone takes any
+        channel count without channel identity (``free`` interface), so
+        ``"native"`` and every sensor strategy pass ``x`` through unchanged;
+        ``"source"`` feeds ``n_parcels`` source parcels and ``"latent"``
+        ``n_latents`` learned latents instead of the electrodes.
+        ``forward`` then also takes ``chs_info`` for a montage other than the
+        constructor's.
+    channel_strategy_kwargs : dict or None, default=None
+        Options forwarded to the strategy (e.g. ``{"n_parcels": 32}`` for
+        ``"source"``).
 
     References
     ----------
@@ -154,6 +170,13 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
        Thirty-seventh Conference on Neural Information Processing Systems,
        NeurIPS. Code: https://github.com/yzz673/Brant (Apache-2.0).
     """
+
+    # The channel layer is not scriptable; the scripted forward never reaches it.
+    __jit_ignored_attributes__ = [
+        *EEGModuleMixin.__jit_ignored_attributes__,
+        JIT_IGNORED,
+    ]
+    _channel_target = ChannelTarget("free")
 
     def __init__(
         self,
@@ -175,6 +198,8 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         n_freq_bands: int = 8,
         band_power_sfreq: float = 256.0,
         drop_prob: float = 0.1,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: Optional[dict] = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -185,6 +210,13 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
+        self._channel_layer = channel_strategy != "native"
+        if not self._channel_layer:
+            # Native needs no layer. ``None`` keeps the model scriptable also
+            # when it is rebuilt as a plain ``nn.Module`` (no class attributes).
+            self.channel_tokenizer = None  # type: ignore[assignment]
+        self._n_backbone_chans = backbone_n_chans(self)
 
         self.patch_size = patch_size
         self.embed_dim = embed_dim
@@ -248,7 +280,7 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         self.split_time = Rearrange(
             "(batch chans) patches dim -> (batch patches) chans dim",
-            chans=self.n_chans,
+            chans=self._n_backbone_chans,
         )
         self.merge_time = Rearrange(
             "(batch patches) chans dim -> batch chans patches dim",
@@ -265,7 +297,12 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         head = nn.Linear(self.final_layer.in_features, n_outputs)
         self.final_layer = head.to(self.final_layer.weight)
 
-    def forward(self, x: torch.Tensor, return_features: bool = False):
+    def forward(
+        self,
+        x: torch.Tensor,
+        return_features: bool = False,
+        chs_info: Optional[List[Dict[str, Any]]] = None,
+    ):
         """Decode a batch of signals.
 
         Parameters
@@ -278,6 +315,9 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
             (braindecode foundation-model convention). Brant pools over channels
             and patches and has no class token, hence ``cls_token`` is ``None``.
             A TorchScript-compiled model returns the logits instead.
+        chs_info : list of dict, optional
+            Montage of ``x`` when it differs from the constructor's; used only
+            when ``channel_strategy`` is not ``"native"`` (eager mode only).
 
         Returns
         -------
@@ -285,13 +325,24 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
             Class logits of shape ``(batch, n_outputs)``, or the feature
             dict ``{"features", "cls_token"}`` when ``return_features`` is set.
         """
+        if torch.jit.is_scripting():
+            if self._channel_layer:
+                raise RuntimeError(
+                    "The channel layer runs in eager mode only; script a model "
+                    "built with channel_strategy='native'."
+                )
+        else:
+            if self._channel_layer:
+                x = self._encode_channels(x, chs_info).x
         if x.shape[-1] != self.n_times:
             raise ValueError(
                 f"Brant was configured for {self.n_times} time samples, "
                 f"but received {x.shape[-1]}."
             )
-        if x.shape[1] != self.n_chans:
-            raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}.")
+        if x.shape[1] != self._n_backbone_chans:
+            raise ValueError(
+                f"Expected {self._n_backbone_chans} channels, got {x.shape[1]}."
+            )
 
         # 1. patch: (batch, n_chans, n_times) -> (batch, n_chans, seq_len, patch_size)
         patches = self.patch_tokenizer(x)

@@ -72,6 +72,12 @@ class SphereHead:
     def _free_leadfield(self, positions: np.ndarray) -> np.ndarray:
         import mne
 
+        # MNE's sphere EEG formula is singular for an electrode exactly on the
+        # z axis through the sphere centre (e.g. biosemi64 Cz at (0, 0, r)):
+        # it returns NaN. A 1 um shift is far below any electrode precision.
+        positions = np.array(positions, float)
+        rel = positions - np.asarray(self.sphere["r0"], float)
+        positions[np.hypot(rel[:, 0], rel[:, 1]) < 1e-9, 0] += 1e-6
         names = [f"E{i}" for i in range(len(positions))]
         try:
             info = mne.create_info(names, 100.0, "eeg")
