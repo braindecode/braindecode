@@ -28,13 +28,38 @@ Current 1.9.0 (2026-10-06)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.MAPA`, a masked-autoencoder foundation model
+  for intracranial EEG that describes an electrode only by its atlas region and
+  its number along the array it was implanted on, never by its coordinates, so
+  that one pretrained encoder reads a subject it has never seen: three
+  magnitude-spectrogram bands on a shared frame clock are tokenized per
+  contact, offset by a learned region embedding, and mixed by a transformer
+  whose attention stays inside one array and carries a two-axis rotary encoding
+  on the contact number and on time. One instance encodes recordings from
+  different subjects, by passing each one's electrode metadata to ``forward``,
+  and ``normalization="session"`` takes a spectrogram normalized over the whole
+  recording, which reproduces the reference inputs
+  (:gh:`1178` by `Julien Gadonneix`_).
 - Add registry-wide model contract tests that automatically cover every registered
   model, checking eval-mode input/state purity, finite batched outputs,
   batch-permutation equivariance, and ``get_config`` + ``state_dict``
   reconstruction (:gh:`1208` by `lindicaphxag-tech`_).
+- Add :class:`braindecode.models.NeuroRVQ`, a channel-aware EEG foundation
+  model with four-scale temporal patch embedding and a pretrained masked-token
+  encoder. The port preserves the released architecture and identifies its
+  CC BY-NC 4.0 license and 200 Hz preprocessing requirements
+  (:gh:`1218` by `lindicaphxag-tech`_).
+
 - Generate a version-scoped ``llms.txt`` and selected Markdown documentation
   entry points with source-commit attribution and critical-page coverage checks
   (:gh:`1225` by `Bruno Aristimunha`_).
+
+- Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution
+  and Transformer seizure detector of Wu et al. (2025) that won the 2025 SzCORE
+  seizure detection challenge. It predicts a logit for every time sample. With
+  the authors' released weights it reproduces their challenge scores on
+  :class:`braindecode.datasets.SIENA` (event F1 0.706)
+  (:gh:`1236` by `Raghav Rathi`_).
 
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
@@ -83,6 +108,10 @@ Enhancements
   ``braindecode/brant-pretrained`` (all tensors verified identical to the
   official release) (:gh:`1100` by `Adam Mounir`_).
 
+- Add :class:`braindecode.models.BrainTokenizer`, the EEG/MEG VQ-VAE tokenizer of
+  BrainOmni (NeurIPS 2025), which strictly loads the authors' raw checkpoint
+  (:gh:`1230` by `Bruno Aristimunha`_).
+
 - Add :class:`braindecode.models.PopulationTransformer` (PopT, Chau et al. 2024),
   an iEEG population model over per-electrode features and coordinates, with
   pretrained weights at ``braindecode/popt-pretrained`` (:gh:`1105` by
@@ -93,6 +122,10 @@ Enhancements
   EEG, with pre-trained weights re-hosted at
   `braindecode/mirepnet-pretrained <https://huggingface.co/braindecode/mirepnet-pretrained>`_
   (:gh:`1146` by `Bruno Aristimunha`_).
+
+- Add :class:`braindecode.models.BrainOmni`, the BrainOmni downstream classifier
+  on a frozen :class:`braindecode.models.BrainTokenizer`, which strictly loads the
+  authors' raw tiny and base checkpoints (:gh:`1231` by `Bruno Aristimunha`_).
 
 - Add a bounded SAE intervention tutorial on a frozen pretrained REVE with
   BNCI2014_001 using optional SAE Lens, without adding an SAE implementation
@@ -152,6 +185,14 @@ Requirements
 
 Bug fixes
 ==========
+
+- Fix :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` rejecting a
+  caller's ``chs_info`` (``n_chans=… different from chs_info``) and ``n_times``/``sfreq``
+  (``n_times different from input_window_seconds * sfreq``): the Hub config filled the
+  geometry arguments the caller omitted, so values from two sources collided. The
+  derived argument is now pinned from the caller's one. This unblocks loading EEGPT,
+  STEEGFormer, Brant and MVPFormer checkpoints on a montage other than their
+  pretraining dataset's (:gh:`1232` by `Bruno Aristimunha`_).
 
 - Fix :class:`braindecode.models.Deep4Net` short-input auto-scaling with ``split_first_layer=True`` so the scaled ``filter_time_length`` is used by the actual :class:`braindecode.modules.CombinedConv` temporal kernel instead of retaining the original constructor value (:gh:`1215` by `lindicaphxag-tech`_).
 
