@@ -97,7 +97,14 @@ class SphereHead:
                 f"electrode positions {np.round(positions, 4).tolist()[:4]}...: "
                 f"{exc}"
             ) from exc
-        return fwd["sol"]["data"]
+        sol = fwd["sol"]["data"]
+        if not np.isfinite(sol).all():
+            raise ValueError(
+                "The template sphere head gave a non-finite lead field at "
+                f"{len(positions)} electrode positions "
+                f"{np.round(positions, 4).tolist()[:4]}...; check the positions."
+            )
+        return sol
 
     def leadfield(self, positions: np.ndarray) -> np.ndarray:
         """``(C, n_parcels)`` lead field, average-referenced over ``positions``."""

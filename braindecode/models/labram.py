@@ -7,6 +7,7 @@ License: BSD 3 clause
 """
 
 from collections import OrderedDict
+from typing import ClassVar, Optional
 from warnings import warn
 
 import numpy as np
@@ -20,6 +21,7 @@ from braindecode.functional import rescale_parameter
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import MLP, DropPath
 from braindecode.modules.blocks import PatchTokenizer
+from braindecode.modules.channels import ChannelTarget
 
 # -----------------------------------------------------------------------------
 # Standard 10-20 system electrode positions used by LaBraM for position embeddings.
@@ -346,6 +348,22 @@ class Labram(EEGModuleMixin, nn.Module):
     activation: nn.Module, default=nn.GELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
+    channel_strategy : str, default="native"
+        How the user montage reaches LaBraM's channel vocabulary
+        (:data:`LABRAM_CHANNEL_ORDER`, one position embedding per name; see
+        :mod:`braindecode.modules.channels`). ``"native"`` keeps LaBraM's own
+        behaviour: ``x`` in :data:`LABRAM_CHANNEL_ORDER`, or ``ch_names`` given
+        to :meth:`forward`. ``"exact"`` maps each input channel to its
+        vocabulary id (by name, alias or a position within 15 mm) and raises
+        for a channel it cannot place. A reconstructing strategy
+        (``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``, ``"field"``,
+        ``"source"``, ``"wiener"``, ``"region"``, ``"latent"``) produces all
+        128 vocabulary channels from any montage; the tokens of channels it
+        did not copy from a measured one (``ChannelEncoding.observed``) are
+        masked as attention keys.
+    channel_strategy_kwargs : dict or None, default=None
+        Keyword arguments of the strategy (e.g. ``{"reg": 1e-2}`` for
+        ``"spline"``). Only valid with a strategy other than ``"native"``.
 
     References
     ----------
@@ -361,6 +379,13 @@ class Labram(EEGModuleMixin, nn.Module):
        BEiT v2: Masked Image Modeling with Vector-Quantized Visual Tokenizers.
        arXiv:2208.06366 [cs.CV]
     """
+
+    #: Channel contract: ids into the 128-name position-embedding vocabulary.
+    _channel_target: ClassVar[ChannelTarget] = ChannelTarget(
+        "ids",
+        chs_info=_LABRAM_TARGET_CHS_INFO,
+        vocabulary=tuple(LABRAM_CHANNEL_ORDER),
+    )
 
     def __init__(
         self,
@@ -393,6 +418,8 @@ class Labram(EEGModuleMixin, nn.Module):
         neural_tokenizer=True,
         attn_head_dim=None,
         activation: type[nn.Module] = nn.GELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: Optional[dict] = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -403,6 +430,9 @@ class Labram(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, n_times, input_window_seconds, sfreq
+        # The backbone draws the same random numbers under every strategy.
+        with torch.random.fork_rng(devices=[]):
+            self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
 
         # Non-canonical chs_info is accepted with a warning so callers can
         # resolve channels per batch via forward(ch_names=...).
@@ -410,7 +440,7 @@ class Labram(EEGModuleMixin, nn.Module):
             _chs_info = self.chs_info
         except ValueError:
             _chs_info = None
-        if _chs_info is not None:
+        if _chs_info is not None and channel_strategy == "native":
             user_names = [ch["ch_name"] for ch in _chs_info]  # type: ignore[index]
             if [n.upper() for n in user_names] != list(_LABRAM_CANONICAL_INDEX):
                 warn(
@@ -571,7 +601,12 @@ class Labram(EEGModuleMixin, nn.Module):
 
         self.reset_classifier(self.n_outputs)
 
-        self.apply(self._init_weights)
+        # ``nn.Module.apply`` must not reach the channel strategy
+        # (``ChannelStrategy.apply`` maps signals; a trainable one keeps its
+        # own init).
+        for name, child in self.named_children():
+            if name != "channel_tokenizer":
+                child.apply(self._init_weights)
         self.fix_init_weight_and_init_embedding()
 
     def fix_init_weight_and_init_embedding(self):
@@ -637,6 +672,7 @@ class Labram(EEGModuleMixin, nn.Module):
         input_chans,
         return_patch_tokens=False,
         return_all_tokens=False,
+        observed: Optional[torch.Tensor] = None,
     ):
         """
         Forward the features of the model.
@@ -651,6 +687,10 @@ class Labram(EEGModuleMixin, nn.Module):
             Whether to return the patch tokens.
         return_all_tokens : bool
             Whether to return all the tokens.
+        observed : torch.Tensor, optional
+            Boolean ``(n_chans,)``; the tokens of a ``False`` channel (one the
+            channel layer reconstructed) are masked as attention keys, in
+            neural tokenizer mode. ``None`` (default) attends to every token.
 
         Returns
         -------
@@ -730,8 +770,17 @@ class Labram(EEGModuleMixin, nn.Module):
 
         x = self.pos_drop(x)
 
+        key_mask = None
+        if observed is not None and self.neural_tokenizer:
+            # Tokens are channel-major after [CLS]: ch0 p0, ch0 p1, ..., ch1 p0.
+            key_mask = torch.cat(
+                [
+                    observed.new_ones(1),
+                    observed.repeat_interleave(self.patch_embed[0].n_patchs),
+                ]
+            )
         for blk in self.blocks:
-            x = blk(x)
+            x = blk(x, key_padding_mask=key_mask)
 
         x = self.norm(x)
         if self.fc_norm is not None:
@@ -756,6 +805,7 @@ class Labram(EEGModuleMixin, nn.Module):
         return_features=False,
         *,
         ch_names: list[str] | None = None,
+        chs_info: list[dict] | None = None,
     ):
         """
         Forward the input EEG data through the model.
@@ -781,14 +831,37 @@ class Labram(EEGModuleMixin, nn.Module):
             with exactly ``len(LABRAM_CHANNEL_ORDER)`` channels; otherwise
             a :class:`ValueError` is raised. Only honored when
             ``neural_tokenizer=True``; in decoder mode the position
-            embedding is sequential and ``ch_names`` has no effect.
+            embedding is sequential and ``ch_names`` has no effect. With a ``channel_strategy`` other
+            than ``"native"``, the names go through the channel layer (a
+            shortcut for ``chs_info`` without positions).
+        chs_info : list of dict, optional
+            Keyword-only. Montage of ``x`` for this call when the model has a
+            ``channel_strategy`` other than ``"native"`` (default: the montage
+            given at construction). Ignored under ``"native"``.
 
         Returns
         -------
         torch.Tensor or dict
             The output of the model with dimensions (batch, n_outputs)
         """
-        if ch_names is None:
+        observed = None
+        if self.channel_tokenizer.strategy is not None:
+            if ch_names is not None:
+                if chs_info is not None:
+                    raise ValueError("Pass either ch_names or chs_info, not both.")
+                chs_info = [
+                    {"ch_name": n, "kind": "eeg", "loc": np.zeros(12)} for n in ch_names
+                ]
+            enc = self._encode_channels(x, chs_info)
+            x = enc.x
+            assert enc.channel_ids is not None  # ``ids`` target
+            # CLS token at index 0; vocabulary ids are offset by 1.
+            input_chans = torch.cat(
+                [enc.channel_ids.new_zeros(1), enc.channel_ids + 1]
+            ).to(x.device)
+            if not bool(enc.observed.all()):
+                observed = enc.observed.to(x.device)
+        elif ch_names is None:
             if x.shape[1] != len(LABRAM_CHANNEL_ORDER):
                 raise ValueError(
                     f"x has {x.shape[1]} channels but ch_names is None; "
@@ -823,7 +896,7 @@ class Labram(EEGModuleMixin, nn.Module):
 
         if return_features:
             x = self.forward_features(
-                x, input_chans=input_chans, return_all_tokens=True
+                x, input_chans=input_chans, return_all_tokens=True, observed=observed
             )
             return {"features": x[:, 1:, :], "cls_token": x[:, 0, :]}
 
@@ -832,6 +905,7 @@ class Labram(EEGModuleMixin, nn.Module):
             input_chans=input_chans,
             return_patch_tokens=return_patch_tokens,
             return_all_tokens=return_all_tokens,
+            observed=observed,
         )
         x = self.final_layer(x)
         return x
@@ -1337,6 +1411,7 @@ class _Attention(nn.Module):
         x: torch.Tensor,
         return_attention=False,
         return_qkv=False,
+        key_padding_mask: Optional[torch.Tensor] = None,
     ):
         """
         Apply the attention mechanism to the input tensor.
@@ -1350,6 +1425,8 @@ class _Attention(nn.Module):
         return_qkv: bool (default=False)
             If True, return the query, key, and value tensors together with
             the output tensor.
+        key_padding_mask: torch.Tensor, optional
+            Boolean ``(N,)``; keys marked ``False`` get no attention.
         Returns:
         --------
         x: torch.Tensor
@@ -1399,6 +1476,9 @@ class _Attention(nn.Module):
                 2, 0, 1
             ).contiguous()  # nH, Wh*Ww, Wh*Ww
             attn = attn + relative_position_bias.unsqueeze(0)
+
+        if key_padding_mask is not None:
+            attn = attn.masked_fill(~key_padding_mask, float("-inf"))
 
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
@@ -1516,7 +1596,13 @@ class _WindowsAttentionBlock(nn.Module):
         else:
             self.gamma_1, self.gamma_2 = None, None
 
-    def forward(self, x, return_attention=False, return_qkv=False):
+    def forward(
+        self,
+        x,
+        return_attention=False,
+        return_qkv=False,
+        key_padding_mask: Optional[torch.Tensor] = None,
+    ):
         """
         Apply the attention mechanism to the input tensor.
         Parameters
@@ -1528,6 +1614,8 @@ class _WindowsAttentionBlock(nn.Module):
         return_qkv: bool (default=False)
             If True, return the query, key, and value tensors together with
             the output tensor.
+        key_padding_mask: torch.Tensor, optional
+            Boolean ``(N,)``; keys marked ``False`` get no attention.
 
         Returns
         -------
@@ -1536,18 +1624,27 @@ class _WindowsAttentionBlock(nn.Module):
         """
 
         if return_attention:
-            return self.attn(self.norm1(x), return_attention=True)
+            return self.attn(
+                self.norm1(x), return_attention=True, key_padding_mask=key_padding_mask
+            )
         if return_qkv:
-            y, qkv = self.attn(self.norm1(x), return_qkv=return_qkv)
+            y, qkv = self.attn(
+                self.norm1(x), return_qkv=return_qkv, key_padding_mask=key_padding_mask
+            )
             x = x + self.drop_path(self.gamma_1 * y)
             x = x + self.drop_path(self.gamma_2 * self.mlp(self.norm2(x)))
             return x, qkv
 
         if self.gamma_1 is None:
-            x = x + self.drop_path(self.attn(self.norm1(x)))
+            x = x + self.drop_path(
+                self.attn(self.norm1(x), key_padding_mask=key_padding_mask)
+            )
             x = x + self.drop_path(self.mlp(self.norm2(x)))
         else:
-            x = x + self.drop_path(self.gamma_1 * self.attn(self.norm1(x)))
+            x = x + self.drop_path(
+                self.gamma_1
+                * self.attn(self.norm1(x), key_padding_mask=key_padding_mask)
+            )
             x = x + self.drop_path(self.gamma_2 * self.mlp(self.norm2(x)))
         return x
 
