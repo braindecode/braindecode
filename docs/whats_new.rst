@@ -75,6 +75,9 @@ Enhancements
   ``braindecode/brant-pretrained`` (all tensors verified identical to the
   official release) (:gh:`1100` by `Adam Mounir`_).
 
+- Add :class:`braindecode.models.BrainTokenizer`, the EEG/MEG VQ-VAE tokenizer of
+  BrainOmni (NeurIPS 2025), which strictly loads the authors' raw checkpoint
+  (:gh:`1043` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.PopulationTransformer` (PopT, Chau et al. 2024),
   an iEEG population model over per-electrode features and coordinates, with
   pretrained weights at ``braindecode/popt-pretrained`` (:gh:`1105` by

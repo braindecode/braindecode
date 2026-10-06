@@ -142,6 +142,7 @@ interface for all EEG models and can derive variable names when needed.
      BIOT
      BrainBERT
      BrainModule
+     BrainTokenizer
      CBraMod
      CodeBrain
      ContraWR
