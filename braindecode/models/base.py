@@ -118,6 +118,15 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         Length of the input window in seconds.
     sfreq : float
         Sampling frequency of the EEG recordings.
+    channel_strategy : str, default="native"
+        How the input montage reaches the backbone (pretrained models only; see
+        :doc:`/user_guide/channel_strategies`). ``"native"`` keeps the model's own
+        behaviour. ``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``,
+        ``"field"``, ``"source"``, ``"wiener"``, ``"region"`` or ``"latent"`` map
+        any montage onto what the backbone consumes inside ``forward``, which
+        then also takes ``chs_info`` for a per-call montage. Saved in the config.
+    channel_strategy_kwargs : dict or None, default=None
+        Options of the strategy (e.g. ``{"reg": 1e-2}`` for ``"spline"``).
 
     Raises
     ------
@@ -602,58 +611,62 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     mapping: Optional[Dict[str, str]] = None
 
-    #: Channel contract of the backbone (what it consumes). ``None``: the model
-    #: only supports ``channel_strategy="native"``.
+    #: Channel contract of the backbone; ``None``: only ``channel_strategy="native"``.
     _channel_target: ClassVar[Optional[ChannelTarget]] = None
-
-    #: Channel kinds the channel layer accepts (see
-    #: :func:`~braindecode.modules.channels.resolve_montage`); intracranial
-    #: models set ``ELECTRODE_KINDS``.
+    #: Channel kinds the layer accepts (intracranial models: ``ELECTRODE_KINDS``).
     _channel_kinds: ClassVar[tuple[str, ...]] = ("eeg",)
 
     def _init_channel_tokenizer(
         self,
         channel_strategy: str = "native",
         channel_strategy_kwargs: Optional[dict] = None,
+        target: Optional[ChannelTarget] = None,
+        kinds: Optional[tuple[str, ...]] = None,
     ) -> None:
-        """Build ``self.channel_tokenizer`` from the class's channel contract.
+        """Set ``self.channel_tokenizer`` (``None`` under ``"native"``) and ``self._channel_layer``.
 
-        Models opt in by taking ``channel_strategy`` and
-        ``channel_strategy_kwargs`` in ``__init__`` (so they land in
-        :meth:`get_config`) and calling this after ``super().__init__``.
+        ``target`` defaults to the class's ``_channel_target``. The layer's
+        parameters are drawn from a forked RNG, so the backbone initialises the
+        same under every strategy.
         """
-        target = type(self)._channel_target
-        if target is None and channel_strategy != "native":
+        self._channel_layer = channel_strategy != "native"
+        if not self._channel_layer:
+            if channel_strategy_kwargs:
+                raise ValueError(
+                    f"channel_strategy='native' takes no options; got "
+                    f"{sorted(channel_strategy_kwargs)}."
+                )
+            self.channel_tokenizer: Optional[ChannelTokenizer] = None
+            return
+        target = target or type(self)._channel_target
+        if target is None:
             raise ValueError(
                 f"{type(self).__name__} has no channel contract, so "
                 f"channel_strategy={channel_strategy!r} cannot apply; use 'native'."
             )
-        self.channel_tokenizer = ChannelTokenizer(
-            target,
-            channel_strategy,
-            src_chs_info=self._chs_info,
-            kinds=type(self)._channel_kinds,
-            **(channel_strategy_kwargs or {}),
-        )
+        with torch.random.fork_rng(devices=[]):
+            self.channel_tokenizer = ChannelTokenizer(
+                target,
+                channel_strategy,
+                src_chs_info=self._chs_info,
+                kinds=kinds or type(self)._channel_kinds,
+                **(channel_strategy_kwargs or {}),
+            )
 
     def _encode_channels(
         self, x: torch.Tensor, chs_info: Optional[list[dict]] = None
     ) -> ChannelEncoding:
         """Run the channel layer on ``x`` (montage: ``chs_info`` or the model's)."""
+        assert self.channel_tokenizer is not None
         return self.channel_tokenizer(x, chs_info)
 
     def load_state_dict(self, state_dict, strict=True, assign=False):
-        mapping = self.mapping if self.mapping else {}
-        new_state_dict = OrderedDict()
-        for k, v in state_dict.items():
-            if k in mapping:
-                new_state_dict[mapping[k]] = v
-            else:
-                new_state_dict[k] = v
-
-        # A backbone checkpoint has no weights for a trainable channel
-        # strategy: keep them at their initial value, say so, and load the
-        # rest as strictly as asked.
+        mapping = self.mapping or {}
+        new_state_dict = OrderedDict(
+            (mapping.get(k, k), v) for k, v in state_dict.items()
+        )
+        # A backbone checkpoint has no weights for a trainable channel strategy:
+        # keep their initial values, say so once, load the rest as strictly as asked.
         own = super().state_dict()
         fresh = [
             k
@@ -663,19 +676,17 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         if fresh:
             strategy = getattr(self.channel_tokenizer, "strategy", None)
             todo = (
-                "train them before use"
+                "train them"
                 if getattr(strategy, "trainable", True)
-                else "call model.channel_tokenizer.fit() before use"
+                else "call model.channel_tokenizer.fit()"
             )
             warnings.warn(
-                f"{type(self).__name__}: the checkpoint has no weights for "
-                f"{fresh}; they are freshly initialised ({todo}).",
+                f"{type(self).__name__}: the checkpoint has no weights for {fresh}; "
+                f"they are freshly initialised ({todo} before use).",
                 UserWarning,
                 stacklevel=2,
             )
-            for k in fresh:
-                new_state_dict[k] = own[k]
-
+            new_state_dict.update((k, own[k]) for k in fresh)
         return super().load_state_dict(new_state_dict, strict=strict, assign=assign)
 
     def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:

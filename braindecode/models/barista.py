@@ -13,7 +13,6 @@ from torch import nn
 
 from braindecode.models._channel_layer import (
     JIT_IGNORED,
-    encode_positions,
     init_positions_layer,
 )
 from braindecode.models.base import EEGModuleMixin
@@ -177,22 +176,6 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
     activation : type[nn.Module]
         Activation layer class of the feed-forward blocks, default
         :class:`~torch.nn.GELU`.
-    channel_strategy : str, default="native"
-        Channel layer in front of the backbone (see
-        :class:`braindecode.modules.ChannelTokenizer`). BaRISTA reads contact
-        coordinates (``positions`` interface); sEEG, ECoG and DBS contacts are
-        accepted as electrodes. With ``pooling="learned"`` the read-out is tied
-        to the constructor's ``chs_info``, so a montage given to
-        :meth:`forward` is mapped onto those contacts (sensor strategies such
-        as ``"nearest"``, ``"idw"`` or ``"spline"``) and the constructor's
-        spatial indices are kept. With ``pooling="mean"`` the layer is a
-        pass-through on the montage of the call and, for
-        ``spatial_scale="coords"``, the spatial indices are binned from the
-        layer's positions instead of the model's own ``chs_info`` parsing.
-        ``"source"`` raises a ``ValueError``: its sphere head model is
-        scalp-EEG only.
-    channel_strategy_kwargs : dict or None, default=None
-        Options forwarded to the strategy.
 
     References
     ----------
@@ -469,7 +452,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             raise ValueError("Expected input of shape (batch, n_chans, n_times).")
         if not torch.jit.is_scripting():  # the channel layer is eager-only
             if self._channel_layer:
-                enc = encode_positions(self, x, chs_info, require_positions=False)
+                enc = self._encode_channels(x, chs_info)
                 x = enc.x
                 if (
                     spatial_indices is None

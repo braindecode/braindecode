@@ -304,8 +304,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         # The channel layer comes first because it sets how many channels reach
         # the backbone; the backbone then draws the same random numbers under
         # every strategy.
-        with torch.random.fork_rng(devices=[]):
-            self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
+        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
         #: Channels the channel layer hands to the backbone (``None``: native,
         #: the backbone sees ``n_chans``).
         self._n_backbone_chans: Optional[int] = (
@@ -356,7 +355,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         Under ``"native"`` returns ``(X, None)`` (the default rows of the
         pos encoder). Otherwise runs the channel layer.
         """
-        if self.channel_tokenizer.strategy is None:
+        if not self._channel_layer:
             return X, None
         enc = self._encode_channels(X, chs_info)
         if enc.x.shape[1] != self._n_backbone_chans:
@@ -463,24 +462,6 @@ class SignalJEPA(_BaseSignalJEPA):
         **0.5 and 40 Hz** and rescaled by a factor of :math:`10^{6}`
         (volts to microvolts). Apply the same preprocessing to your
         data to match the pre-training distribution.
-
-    Parameters
-    ----------
-    channel_strategy : str, default="native"
-        How the user montage reaches the 62 pre-training channels, whose
-        names index the channel embedding table (see
-        :mod:`braindecode.modules.channels`). ``"native"`` keeps the
-        ``channel_embedding`` behaviour. Any other strategy uses the
-        pre-training table (as ``channel_embedding='pretrain_aligned'``) and
-        looks rows up with the vocabulary ids of the channel layer:
-        ``"exact"`` maps each input channel to its id (by name, alias or a
-        position within 15 mm) and raises for a channel it cannot place; a
-        reconstructing strategy (``"zero"``, ``"nearest"``, ``"idw"``,
-        ``"spline"``, ``"field"``, ``"source"``, ``"wiener"``, ``"region"``,
-        ``"latent"``) produces all 62 channels from any montage.
-    channel_strategy_kwargs : dict or None, default=None
-        Keyword arguments of the strategy (e.g. ``{"reg": 1e-2}`` for
-        ``"spline"``). Only valid with a strategy other than ``"native"``.
 
     References
     ----------
@@ -643,21 +624,6 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
     ----------
     n_spat_filters : int
         Number of spatial filters.
-    channel_strategy : str, default="native"
-        How the user montage reaches the 62 pre-training channels, whose
-        names index the channel embedding table (see
-        :mod:`braindecode.modules.channels`). ``"native"`` keeps the
-        ``channel_embedding`` behaviour. Any other strategy uses the
-        pre-training table (as ``channel_embedding='pretrain_aligned'``) and
-        looks rows up with the vocabulary ids of the channel layer:
-        ``"exact"`` maps each input channel to its id (by name, alias or a
-        position within 15 mm) and raises for a channel it cannot place; a
-        reconstructing strategy (``"zero"``, ``"nearest"``, ``"idw"``,
-        ``"spline"``, ``"field"``, ``"source"``, ``"wiener"``, ``"region"``,
-        ``"latent"``) produces all 62 channels from any montage.
-    channel_strategy_kwargs : dict or None, default=None
-        Keyword arguments of the strategy (e.g. ``{"reg": 1e-2}`` for
-        ``"spline"``). Only valid with a strategy other than ``"native"``.
 
     References
     ----------
@@ -812,7 +778,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
                 "n_outputs must be provided when loading from a SignalJEPA model"
             )
 
-        if model.channel_tokenizer.strategy is not None:
+        if model._channel_layer:
             raise ValueError(
                 "Transfer from a SignalJEPA instance needs channel_strategy="
                 "'native'; save it and load with from_pretrained(path, "

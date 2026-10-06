@@ -16,7 +16,6 @@ from torch.nn import RMSNorm, functional
 
 from braindecode.models._channel_layer import (
     JIT_IGNORED,
-    encode_positions,
     init_positions_layer,
 )
 from braindecode.models.base import EEGModuleMixin
@@ -176,17 +175,6 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         passed to :class:`braindecode.modules.PatchTokenizer`: ``"error"`` raises,
         ``"pad"`` right-pads the last patch with zeros, ``"crop"`` drops the
         trailing samples. The default is ``"pad"``.
-    channel_strategy : str, default="native"
-        Channel layer in front of the backbone (see
-        :class:`braindecode.modules.ChannelTokenizer`). ZUNA reads channel
-        coordinates (``positions`` interface), but bakes those of the
-        constructor's ``chs_info`` into its rotary buffers and head. Under a
-        strategy other than ``"native"`` any montage given to :meth:`forward`
-        is mapped onto those channels (``"spline"``, ``"field"``,
-        ``"source"``... reconstruct the missing ones); the layer's positions
-        are then the constructor's, already in the rotary buffers.
-    channel_strategy_kwargs : dict or None, default=None
-        Options forwarded to the strategy.
 
     Notes
     -----
@@ -361,7 +349,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         """
         if not torch.jit.is_scripting():  # the channel layer is eager-only
             if self._channel_layer:
-                input_tensor = encode_positions(self, input_tensor, chs_info).x
+                input_tensor = self._encode_channels(input_tensor, chs_info).x
         patch_tokens = self.patch_embedding(input_tensor)
         token_latents = self.encoder(patch_tokens)
         structured_latents = token_latents.reshape(

@@ -192,22 +192,6 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         How to pool the last segment over channels before the head. ``"mean"``
         (default, as used for seizure detection) is montage-agnostic;
         ``"concat"`` flattens channels and ties the head to ``n_chans``.
-    channel_strategy : str, default="native"
-        Channel layer in front of the backbone (see
-        :mod:`braindecode.modules.channels`). MVPFormer has no channel
-        vocabulary: its channel embedding is a table of ``max_channels``
-        slots taken in input order, so its contract is ``free``. ``"native"``
-        (default) feeds ``x`` as is. Sensor strategies (``"exact"``,
-        ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``, ``"field"``,
-        ``"wiener"``, ``"region"``) pass the channels through after checking
-        the montage; ``"source"`` feeds ``n_parcels`` sources of a sphere head
-        model and ``"latent"`` ``n_latents`` learned mixtures, whatever the
-        montage, each in slot order. The layer accepts EEG, sEEG, ECoG and
-        DBS channels; ``"source"`` (a scalp-EEG head model) refuses
-        intracranial ones with a ``ValueError``.
-    channel_strategy_kwargs : dict or None, default=None
-        Keyword arguments of the strategy (e.g. ``{"n_parcels": 32}`` for
-        ``"source"``). Only valid with a strategy other than ``"native"``.
 
     Notes
     -----
@@ -289,8 +273,7 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # The channel layer comes first because it sets how many channels reach
         # the backbone; the backbone then draws the same random numbers under
         # every strategy.
-        with torch.random.fork_rng(devices=[]):
-            self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
+        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
         self.n_backbone_chans = backbone_n_chans(self)
         if self.n_backbone_chans > max_channels:
             raise ValueError(
@@ -362,7 +345,7 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
             ``channel_strategy`` other than ``"native"`` (default: the montage
             given at construction). Ignored under ``"native"``.
         """
-        if self.channel_tokenizer.strategy is not None:
+        if self._channel_layer:
             x = self._encode_channels(x, chs_info).x
             if self.pooling == "concat" and x.shape[1] != self.n_backbone_chans:
                 raise ValueError(

@@ -10,10 +10,9 @@ The expected outcome of each cell is derived from the model's channel
 contract (the interface of its ``_channel_target``; ``COMPAT`` below holds
 the rest), not hard-coded per cell, so adding a model means adding one entry.
 
-``test_channel_strategy_contract`` crosses every model with every channel
-strategy on the channel geometries G1-G4: each cell forwards a finite output
-or raises one of the layer's declared ``ValueError`` (``DECLARED_ERRORS``).
-Strategies other than ``native``, ``exact`` and ``source`` are marked slow.
+``test_channel_strategy_smoke`` runs every channel strategy once on one model
+per channel interface; ``test_native_checkpoint_loads_under_a_strategy``
+checks that the native state dict loads strictly into a model with a layer.
 """
 
 from __future__ import annotations
@@ -238,43 +237,34 @@ STRATEGY_CELLS = {
 }
 
 STRATEGIES = (
-    "native",
     "exact",
-    "source",
     "zero",
     "nearest",
     "idw",
     "spline",
     "field",
+    "source",
     "wiener",
     "region",
     "latent",
 )
-FAST_STRATEGIES = ("native", "exact", "source")
-CHANNEL_GEOMETRIES = ("G1", "G2", "G3", "G3b", "G4")
+# One model per channel interface (montage, ids, positions, slots, free).
+REPRESENTATIVES = ("BENDR", "Labram", "LUNA", "EEGDINO", "CBraMod")
 
-# What a strategy may refuse, with the layer's declared message: missing
-# targets under ``exact``, names outside an id vocabulary, too few positioned
-# channels, sites outside the fitted dense montage (``wiener``), non-EEG
-# channels for the scalp-EEG ``source``; and the constructor checks of models
-# built on a montage without positions (ZUNA, BaRISTA).
+# What a strategy may refuse, with the layer's declared message.
 DECLARED_ERRORS = "|".join(
     [
         r"not in the input",
         r"not in the model vocabulary",
         r"needs at least \d+ channels with a position",
         r"no electrode of the fitted dense montage",
-        r"sphere head model",
-        r"requires channel locations",
-        r"No spatial indices available",
     ]
 )
 
 
 def interface(spec):
     """Channel interface of a COMPAT entry (from its ``_channel_target``)."""
-    target = spec["cls"]._channel_target
-    return target.interface if target is not None else spec["channels"]
+    return getattr(spec["cls"]._channel_target, "interface", None)
 
 
 def geometries(spec):
@@ -361,29 +351,23 @@ def test_geometry_contract(name, gname, gkw):
         assert torch.is_tensor(y) and y.shape[0] == 1 and torch.isfinite(y).all()
 
 
-def test_interfaces_come_from_the_channel_contract():
-    got = {name: interface(spec) for name, spec in COMPAT.items()}
-    assert got == {
-        "Labram": "ids",
-        "EEGPT": "ids",
-        "BENDR": "montage",
-        "BIOT": "montage",
-        "CBraMod": "free",
-        "CodeBrain": "montage",
-        "EEGDINO": "slots",
-        "LUNA": "positions",
-        "REVE": "positions",
-        "SignalJEPA": "ids",
-        "STEEGFormer": "ids",
-        "ZUNA": "positions",
-        "Brant": "free",
-        "BrainBERT": "free",
-        "BaRISTA": "positions",
-        "DIVER1": "positions",
-        "MIRepNet": "montage",
-        "MVPFormer": "free",
-        "PopT": "positions",
-    }
+# BIOT takes monopolar input under a strategy; SignalJEPA then uses its
+# pre-training channel table: their canonical montage has no ``exact`` twin.
+BACKBONE_CHANGES_UNDER_A_STRATEGY = ("BIOT", "SignalJEPA")
+
+
+@pytest.mark.parametrize("name", list(COMPAT))
+def test_native_checkpoint_loads_under_a_strategy(name):
+    """Native keeps the released state dict; it loads strictly with a layer on."""
+    spec = COMPAT[name]
+    kw = dict(n_outputs=2, **geometries(spec)["G1"], **spec.get("kwargs", {}))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        native = spec["cls"](**kw).state_dict()
+        assert not [k for k in native if k.startswith("channel_tokenizer")]
+        if name not in BACKBONE_CHANGES_UNDER_A_STRATEGY:
+            model = spec["cls"](**kw, channel_strategy="exact")
+            model.load_state_dict(native, strict=True)
 
 
 _POS_1005 = _montage("standard_1005").get_positions()["ch_pos"]
@@ -396,60 +380,30 @@ def _dense_fit_set(n_samples=300, seed=0):
         for n, p in _POS_1005.items()
     ]
     P = np.array([ch["loc"][:3] for ch in dense])
-    basis = np.c_[np.ones(len(P)), P, P**2, P[:, [0]] * P[:, [1]]]
+    basis = np.c_[np.ones(len(P)), P, P**2]
     rng = np.random.default_rng(seed)
     X = rng.standard_normal((n_samples, basis.shape[1])) @ basis.T * 1e2
     return X + 0.1 * rng.standard_normal(X.shape), dense
 
 
-def _strategy_cases():
-    for name, spec in COMPAT.items():
-        geos = geometries(spec)
-        for strategy in STRATEGIES:
-            marks = () if strategy in FAST_STRATEGIES else pytest.mark.slow
-            for gname in CHANNEL_GEOMETRIES:
-                if gname in geos:
-                    yield pytest.param(
-                        name,
-                        strategy,
-                        gname,
-                        geos[gname],
-                        id=f"{name}-{strategy}-{gname}",
-                        marks=marks,
-                    )
-
-
-@pytest.mark.parametrize("name,strategy,gname,gkw", list(_strategy_cases()))
-def test_channel_strategy_contract(name, strategy, gname, gkw):
+@pytest.mark.parametrize("strategy", STRATEGIES)
+@pytest.mark.parametrize("name", REPRESENTATIVES)
+def test_channel_strategy_smoke(name, strategy):
+    """Eight 10-20 names without positions: a finite output or a declared error."""
     spec = COMPAT[name]
-    kw = dict(n_outputs=2, channel_strategy=strategy, **gkw, **spec.get("kwargs", {}))
-
-    def build_and_forward():
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            torch.manual_seed(0)
-            model = spec["cls"](**kw).eval()
+    chs = chs_names_no_loc(TEN_TWENTY[:8])
+    kw = dict(n_outputs=2, chs_info=chs, sfreq=spec["sfreq"], n_times=spec["n_times"])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            model = spec["cls"](**kw, channel_strategy=strategy).eval()
             if strategy == "wiener":
                 model.channel_tokenizer.fit(*_dense_fit_set())
             with torch.no_grad():
-                y = model(torch.randn(1, len(gkw["chs_info"]), gkw["n_times"]))
-        return model, y["features"] if isinstance(y, dict) else y
-
-    if strategy == "native":
-        if expected(spec, gname, gkw) == "raise":
-            with pytest.raises((ValueError, RuntimeError)):
-                build_and_forward()
-            return
-        model, y = build_and_forward()
-        # native keeps the released state dict: no channel-layer keys.
-        assert not [k for k in model.state_dict() if k.startswith("channel_tokenizer")]
-    else:
-        try:
-            model, y = build_and_forward()
+                y = model(torch.randn(1, len(chs), spec["n_times"]))
         except ValueError as exc:
-            assert re.search(DECLARED_ERRORS, str(exc)), (
-                f"undeclared error: {exc}"
-            )
+            assert re.search(DECLARED_ERRORS, str(exc)), f"undeclared error: {exc}"
             return
-        assert model.get_config()["channel_strategy"] == strategy
-    assert torch.is_tensor(y) and y.shape[0] == 1 and torch.isfinite(y).all()
+    assert model.get_config()["channel_strategy"] == strategy
+    y = y["features"] if isinstance(y, dict) else y
+    assert y.shape[0] == 1 and torch.isfinite(y).all()

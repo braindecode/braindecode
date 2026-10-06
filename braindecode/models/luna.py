@@ -26,7 +26,6 @@ from braindecode.functional import rotate_pairs
 from braindecode.models._channel_layer import (
     JIT_IGNORED,
     batch_positions,
-    encode_positions,
     init_positions_layer,
     key_padding_mask,
 )
@@ -121,21 +120,6 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Normalization layer class. Default: nn.LayerNorm.
     drop_path : float
         Stochastic depth rate. Default: 0.0.
-    channel_strategy : str, default="native"
-        Channel layer in front of the backbone (see
-        :class:`braindecode.modules.ChannelTokenizer`). LUNA reads channel
-        coordinates (``positions`` interface) and its classification read-out
-        does not depend on the channel set, so every strategy is a
-        pass-through on the montage of the call: ``x`` is unchanged and the
-        coordinates come from the channel layer (``loc`` in ``chs_info``, else
-        the ``standard_1005`` position of the name) instead of the model's own
-        ``chs_info`` parsing. A channel without a position is a declared
-        ``ValueError``. Channels the layer marks as not observed are hidden
-        from the channel-unification cross-attention (key-padding mask).
-        ``forward`` then also takes ``chs_info`` for a montage other than the
-        constructor's.
-    channel_strategy_kwargs : dict or None, default=None
-        Options forwarded to the strategy.
 
     References
     ----------
@@ -379,7 +363,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         """
         unobserved: Optional[torch.Tensor] = None
         if self._channel_layer:
-            enc = encode_positions(self, X, chs_info)
+            enc = self._encode_channels(X, chs_info)
             X = enc.x
             if channel_locations is None:
                 channel_locations = batch_positions(enc, X.shape[0])

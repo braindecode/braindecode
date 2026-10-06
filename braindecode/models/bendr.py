@@ -270,31 +270,12 @@ class BENDR(EEGModuleMixin, nn.Module):
         The contextualizer is still created (to allow loading pretrained weights) but is not
         used in the forward pass. Requires input length of at least
         ``4 * product(enc_downsample)`` samples (384 with default downsampling of 96x).
-    channel_strategy : str, default="native"
-        How the user montage reaches the 20 pre-training channels
-        (:mod:`braindecode.modules.channels`). ``"native"`` keeps BENDR's own
-        behaviour: the canonical order ``BENDR_CHANNEL_ORDER`` goes straight
-        to the encoder, and any other ``chs_info`` is projected with name
-        copies and an unregularised spherical spline (SCALE included, at its
-        placeholder position). Any other registered strategy (``"exact"``,
-        ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``, ``"field"``,
-        ``"source"``, ``"wiener"``, ``"region"``, ``"latent"``) maps the
-        montage onto the 19 EEG targets and handles SCALE as a non-electrode
-        (see the note below).
-    channel_strategy_kwargs : dict or None, default=None
-        Keyword arguments of the strategy (e.g. ``{"reg": 1e-2}`` for
-        ``"spline"``). Only valid with a strategy other than ``"native"``.
 
     .. note::
-       **The SCALE channel.** BENDR was pre-trained on 19 EEG channels plus
-       ``SCALE``, a relative-amplitude statistic that dn3's
-       ``To1020(include_scale_ch=True)`` appends. Its exact formula could not
-       be checked against the dn3 source when the channel layer was written,
-       so with a strategy other than ``"native"`` SCALE is a constant channel
-       of zeros marked ``observed=False``, unless the input carries a channel
-       named ``SCALE`` (then it is copied as is and never used as a spatial
-       source). Users who need the pre-training SCALE must compute it
-       themselves and pass it as a channel named ``SCALE``.
+       Under a ``channel_strategy`` other than ``"native"``, ``SCALE`` (dn3's
+       relative-amplitude channel, not an electrode) is zero with
+       ``observed=False`` unless the input has a channel named ``SCALE``, which
+       is copied and never used as a spatial source.
     """
 
     _channel_target: ClassVar[ChannelTarget] = ChannelTarget(

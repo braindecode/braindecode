@@ -1,42 +1,21 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
-"""Private glue between pretrained models and the channel layer.
-
-Shared by every model on the layer: :data:`JIT_IGNORED`,
-:func:`backbone_n_chans`, and for the ``montage``/``slots`` models
-:func:`names_chs_info` and :func:`warn_if_not_canonical`.
-
-``positions`` models (LUNA, REVE, ZUNA, BaRISTA, DIVER-1, PopT) read electrode
-coordinates. Under a channel strategy other than ``"native"`` they take ``x``
-and the coordinates from :class:`~braindecode.modules.channels.ChannelEncoding`
-instead of their own ``chs_info`` parsing. Two targets exist:
-
-- the instance montage (the ``chs_info`` the model was built with), when the
-  read-out is tied to that channel set (a flattened head, a learned token
-  pooling, fixed rotary buffers): any per-call montage is mapped onto it;
-- otherwise a pass-through on the user's resolved positions (the channel set
-  of each call, positions from ``loc`` or ``standard_1005``).
-
-Their layer accepts every electrode kind (``kinds=ELECTRODE_KINDS``: EEG,
-sEEG, ECoG, DBS); the ``"source"`` strategy, whose sphere head model is
-scalp-EEG only, raises a declared ``ValueError`` for intracranial channels.
-"""
+"""Private glue between the pretrained models and the channel layer."""
 
 from __future__ import annotations
 
 import warnings
 from typing import Optional, Sequence
 
+import numpy as np
 import torch
 
 from braindecode.modules.channels import ELECTRODE_KINDS, ChannelEncoding, ChannelTarget
 from braindecode.modules.channels.resolve import canon_name
-from braindecode.modules.channels.tokenizer import ChannelTokenizer
 
-#: Appended to a model's ``__jit_ignored_attributes__`` so that
-#: :func:`torch.jit.script` skips the (non-scriptable) channel layer, which is
-#: only reached from eager code (``torch.jit.is_scripting()`` guards).
+#: Appended to ``__jit_ignored_attributes__``: the channel layer is not
+#: scriptable and only reached from eager code.
 JIT_IGNORED = "channel_tokenizer"
 
 
@@ -45,15 +24,11 @@ def names_chs_info(names: Sequence[str]) -> list[dict]:
     return [{"ch_name": n, "kind": "eeg"} for n in names]
 
 
-def warn_if_not_canonical(
-    model, canonical: Sequence[str], also_accept: Sequence[Sequence[str]] = ()
-) -> None:
-    """``FutureWarning`` when ``native`` would feed an unchecked montage.
+def warn_if_not_canonical(model, canonical, also_accept=()) -> None:
+    """``FutureWarning`` when ``native`` feeds a montage the checkpoint was not trained on.
 
-    The montage is non-canonical when the given ``chs_info`` names differ from
-    ``canonical`` and every ``also_accept`` order (case and aliases ignored)
-    or, without ``chs_info``, when ``n_chans`` matches none of their sizes. An
-    unknown montage (no ``chs_info`` and no ``n_chans``) is not flagged.
+    Compares the ``chs_info`` names (case and aliases ignored), or without
+    ``chs_info`` the channel count, with ``canonical`` and ``also_accept``.
     """
     orders = [list(canonical), *(list(o) for o in also_accept)]
     chs = getattr(model, "_chs_info", None)
@@ -63,29 +38,22 @@ def warn_if_not_canonical(
     else:
         try:
             ok = model.n_chans in {len(o) for o in orders}
-        except ValueError:
+        except ValueError:  # unknown montage: nothing to check
             return
-    if ok:
-        return
-    name = type(model).__name__
-    warnings.warn(
-        f"{name} with channel_strategy='native' feeds this montage unchecked to a "
-        f"backbone trained on its {len(canonical)}-channel order "
-        f"({', '.join(canonical[:4])}, ...). This will raise in the next release: "
-        f"pass channel_strategy=... ('exact' to reorder or select, 'spline', "
-        f"'field' or 'source' to reconstruct missing channels).",
-        FutureWarning,
-        stacklevel=3,
-    )
+    if not ok:
+        warnings.warn(
+            f"{type(model).__name__} with channel_strategy='native' feeds this montage "
+            f"unchecked to a backbone trained on its {len(canonical)}-channel order "
+            f"({', '.join(canonical[:4])}, ...). This will raise in the next release: pass "
+            f"channel_strategy=... ('exact' to reorder or select, 'spline', 'field' or "
+            f"'source' to reconstruct missing channels).",
+            FutureWarning,
+            stacklevel=3,
+        )
 
 
 def backbone_n_chans(model) -> int:
-    """Channels the backbone receives after the channel layer.
-
-    ``native`` (or no layer): the model's ``n_chans``; otherwise
-    :meth:`~braindecode.modules.channels.ChannelTokenizer.n_outputs` of the
-    construction montage, with ``n_chans`` as the fallback input size.
-    """
+    """Channels the backbone receives after the channel layer."""
     tok = getattr(model, "channel_tokenizer", None)
     if tok is None or tok.strategy is None:
         return model.n_chans
@@ -94,23 +62,6 @@ def backbone_n_chans(model) -> int:
     except ValueError:
         n_chans = None
     return tok.n_outputs(n_chans=n_chans)
-
-
-# -- positions models ---------------------------------------------------------
-
-
-def check_model_kind(model_name: str, strategy: str, model_kind: str) -> None:
-    """Declared ``ValueError`` for ``"source"`` on an intracranial model.
-
-    Per channel, the ``source`` strategy itself refuses non-EEG kinds.
-    """
-    if strategy == "source" and model_kind != "eeg":
-        raise ValueError(
-            f"{model_name}: channel_strategy={strategy!r} uses the scalp-EEG "
-            f"sphere head model and cannot serve a {model_kind} model. Use a "
-            f"sensor strategy ('exact', 'nearest', 'idw', 'spline', 'field', ...) "
-            f"instead."
-        )
 
 
 def init_positions_layer(
@@ -122,82 +73,44 @@ def init_positions_layer(
     model_kind: str = "eeg",
     require_positions: bool = True,
 ) -> None:
-    """Build ``model.channel_tokenizer`` for a ``positions`` model.
+    """Channel layer of a ``positions`` model (LUNA, REVE, ZUNA, BaRISTA, DIVER-1, PopT).
 
-    Sets ``model._channel_layer`` (``False`` under ``"native"``, where
-    ``channel_tokenizer`` is ``None`` so the native model is unchanged and
-    stays scriptable).
+    ``fixed_montage``: the read-out is tied to the construction montage, so any
+    montage is mapped onto it; otherwise the layer passes the call's channels
+    through with their positions. Every electrode kind is accepted.
     """
-    model._channel_layer = channel_strategy != "native"
-    if not model._channel_layer:
-        if channel_strategy_kwargs:
-            raise ValueError(
-                f"strategy='native' takes no options; got "
-                f"{sorted(channel_strategy_kwargs)}."
-            )
-        model.channel_tokenizer = None
-        return
     name = type(model).__name__
+    if channel_strategy == "source" and model_kind != "eeg":
+        raise ValueError(
+            f"{name}: channel_strategy='source' uses the scalp-EEG sphere head model and "
+            f"cannot serve a {model_kind} model. Use a sensor strategy ('exact', 'nearest', "
+            f"'idw', 'spline', 'field', ...) instead."
+        )
     chs = model._chs_info
-    check_model_kind(name, channel_strategy, model_kind)
-    if fixed_montage and chs:
-        target = ChannelTarget("positions", chs_info=chs)
-    else:
-        target = type(model)._channel_target or ChannelTarget("positions")
-    model.channel_tokenizer = ChannelTokenizer(
-        target,
-        channel_strategy,
-        src_chs_info=chs,
-        kinds=ELECTRODE_KINDS,
-        **(channel_strategy_kwargs or {}),
+    target = ChannelTarget("positions", chs_info=chs) if fixed_montage and chs else None
+    model._init_channel_tokenizer(
+        channel_strategy, channel_strategy_kwargs, target=target, kinds=ELECTRODE_KINDS
     )
-    sensors = target.sensors()
+    tok = model.channel_tokenizer
+    sensors = (
+        tok.target.sensors() if tok is not None and tok.target is not None else None
+    )
     if require_positions and sensors is not None:
         unknown = [
             n
             for n, p in zip(sensors.names, sensors.positions)
-            if not torch.isfinite(torch.as_tensor(p)).all()
+            if not np.isfinite(p).all()
         ]
         if unknown:
             raise ValueError(
-                f"{name} maps every montage onto the {len(sensors.names)} "
-                f"channels it was built with, but {unknown} have no position: "
-                f"give their 'loc' in chs_info or use standard_1005 names."
-            )
-
-
-def encode_positions(
-    model,
-    x: torch.Tensor,
-    chs_info: Optional[list[dict]],
-    *,
-    require_positions: bool = True,
-) -> ChannelEncoding:
-    """Run the channel layer; positions are guaranteed finite if required."""
-    tok = model.channel_tokenizer
-    enc = tok(x, chs_info)
-    if require_positions and enc.positions is not None:
-        bad = ~torch.isfinite(enc.positions).all(dim=1)
-        if bool(bad.any()):
-            sensors = tok.target.sensors()
-            names = sensors.names if sensors is not None else ()
-            missing = [
-                names[i] for i in torch.flatnonzero(bad).tolist() if i < len(names)
-            ]
-            raise ValueError(
-                f"{type(model).__name__} needs a position for every channel, but "
-                f"{missing} have none: give their 'loc' in chs_info or use "
+                f"{name} maps every montage onto the {len(sensors.names)} channels it was built "
+                f"with, but {unknown} have no position: give their 'loc' in chs_info or use "
                 f"standard_1005 names."
             )
-    return enc
 
 
 def key_padding_mask(observed: torch.Tensor) -> Optional[torch.Tensor]:
-    """``True`` for unobserved channels, or ``None`` when nothing is masked.
-
-    A mask hiding every channel would make attention undefined (NaN), so it
-    is dropped too: the backbone then attends to the reconstructed channels.
-    """
+    """``True`` for unobserved channels; ``None`` when none or all are (all-masked attention is NaN)."""
     unobserved = ~observed.bool()
     if not bool(unobserved.any()) or bool(unobserved.all()):
         return None
@@ -206,6 +119,5 @@ def key_padding_mask(observed: torch.Tensor) -> Optional[torch.Tensor]:
 
 def batch_positions(enc: ChannelEncoding, batch_size: int) -> torch.Tensor:
     """The layer's ``(K, 3)`` positions broadcast to ``(batch_size, K, 3)``."""
-    if enc.positions is None:  # not reached for a ``positions`` target
-        raise ValueError("The channel layer returned no positions.")
+    assert enc.positions is not None  # ``positions`` targets always carry them
     return enc.positions.unsqueeze(0).expand(batch_size, -1, -1)

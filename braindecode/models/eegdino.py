@@ -156,18 +156,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
     return_encoder_output : bool, default=False
         If True, ``final_layer`` is :class:`~torch.nn.Identity` and ``forward``
         returns the pooled encoder representation (linear probing).
-    channel_strategy : str, default="native"
-        How the input montage reaches the 19 channel slots (see
-        :class:`braindecode.modules.ChannelTokenizer`). ``"native"``: input
-        channel ``i`` takes slot ``i`` (at most ``n_channel_embeddings``
-        channels). A registered strategy (``"exact"``, ``"zero"``,
-        ``"nearest"``, ``"idw"``, ``"spline"``, ``"field"``, ``"source"``,
-        ``"wiener"``, ``"region"``, ``"latent"``) maps any montage onto the
-        electrodes of :data:`EEGDINO_SLOT_CHANNELS` inside ``forward``, which
-        then also takes ``chs_info`` for a montage other than the constructor's.
-    channel_strategy_kwargs : dict or None, default=None
-        Options forwarded to the strategy (e.g. ``{"reg": 1e-3}`` for
-        ``"spline"``).
 
     References
     ----------
@@ -229,7 +217,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         if n_global_tokens < 1:
             raise ValueError(f"n_global_tokens must be >= 1, got {n_global_tokens}.")
         self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
-        self._channel_layer = channel_strategy != "native"
         n_backbone_chans = backbone_n_chans(self)
         if n_backbone_chans > n_channel_embeddings:
             raise ValueError(

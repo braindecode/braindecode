@@ -204,24 +204,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
         Normalization layer. If None, defaults to ``nn.LayerNorm`` with epsilon ``layer_norm_eps``.
     layer_norm_eps : float, default=1e-6
         Epsilon value for the normalization layer.
-    channel_strategy : str, default="native"
-        How the user montage reaches EEGPT's channel vocabulary
-        (:data:`EEGPT_CHANNELS`, one channel embedding per name; see
-        :mod:`braindecode.modules.channels`). ``"native"`` keeps EEGPT's own
-        behaviour (ids from the ``chs_info`` names, or the 19 standard channels
-        after the channel projection). ``"exact"`` maps each input channel to
-        its vocabulary id (by name, alias or a position within 15 mm) and
-        raises for a channel it cannot place. A reconstructing strategy
-        (``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``, ``"field"``,
-        ``"source"``, ``"wiener"``, ``"region"``, ``"latent"``) produces all 62
-        vocabulary channels from any montage. With ``chan_proj_type="none"``
-        the encoder sees these channels with their vocabulary ids, and the
-        channels the strategy did not copy from a measured one
-        (``ChannelEncoding.observed``) are masked as attention keys; otherwise
-        the channel projection maps them to the 19 standard channels.
-    channel_strategy_kwargs : dict or None, default=None
-        Keyword arguments of the strategy (e.g. ``{"reg": 1e-2}`` for
-        ``"spline"``). Only valid with a strategy other than ``"native"``.
 
     References
     ----------
@@ -288,8 +270,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         # The channel layer comes first because it sets how many channels reach
         # the backbone; the backbone then draws the same random numbers under
         # every strategy.
-        with torch.random.fork_rng(devices=[]):
-            self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
+        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
         n_backbone_chans = backbone_n_chans(self)
 
         # model parameters
@@ -362,7 +343,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         if chan_proj_type != "none":
             # Use standard 19 channels when projecting
             self.channel_names = EEGPT_19_CHANNELS
-        elif self.channel_tokenizer.strategy is not None:
+        elif self._channel_layer:
             # The channel layer gives the vocabulary ids at each forward.
             self.channel_names = None  # type: ignore
         elif self._chs_info is not None:
@@ -457,7 +438,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         """
         chans_id = self.chans_id
         observed = None
-        if self.channel_tokenizer.strategy is not None:
+        if self._channel_layer:
             enc = self._encode_channels(x, chs_info)
             x = enc.x
             if self.chan_proj_type == "none":

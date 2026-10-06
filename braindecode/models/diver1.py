@@ -22,7 +22,6 @@ from torch import nn
 from braindecode.functional import rotate_pairs
 from braindecode.models._channel_layer import (
     JIT_IGNORED,
-    encode_positions,
     init_positions_layer,
 )
 from braindecode.models.base import EEGModuleMixin
@@ -171,22 +170,6 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
     activation : type[nn.Module]
         Activation layer class of the feed-forward blocks, default
         :class:`~torch.nn.SiLU`.
-    channel_strategy : str, default="native"
-        Channel layer in front of the backbone (see
-        :class:`braindecode.modules.ChannelTokenizer`). DIVER-1 reads
-        electrode coordinates (``positions`` interface); scalp EEG and
-        intracranial (sEEG, ECoG, DBS) channels are both accepted. With
-        ``pooling="flatten"`` the read-out is tied to the constructor's
-        ``chs_info``, so a montage given to :meth:`forward` is mapped onto
-        those channels and the constructor's metadata is kept. With
-        ``pooling="mean"`` the layer is a pass-through on the montage of the
-        call and the metadata coordinates come from the layer's positions
-        (``loc``, else the ``standard_1005`` position of the name) instead of
-        the model's own ``chs_info`` parsing; the electrode types still come
-        from each channel's ``"kind"``. ``"source"`` raises a ``ValueError``
-        on intracranial channels: its sphere head model is scalp-EEG only.
-    channel_strategy_kwargs : dict or None, default=None
-        Options forwarded to the strategy.
 
     References
     ----------
@@ -419,7 +402,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         """
         if not torch.jit.is_scripting():  # the channel layer is eager-only
             if self._channel_layer:
-                enc = encode_positions(self, x, chs_info, require_positions=False)
+                enc = self._encode_channels(x, chs_info)
                 x = enc.x
                 if (
                     chan_metadata is None

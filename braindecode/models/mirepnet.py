@@ -141,19 +141,6 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         ``embed_dim ** -0.5`` scale.
     return_features : bool, default=False
         Whether ``forward`` returns the unified feature dictionary by default.
-    channel_strategy : str, default="native"
-        How the input montage reaches the backbone, which consumes
-        ``45`` channels in the order of :data:`MIREPNET_CHANNEL_ORDER` (see
-        :class:`braindecode.modules.ChannelTokenizer`). ``"native"`` feeds
-        ``x`` unchecked (a non-canonical montage emits a ``FutureWarning``
-        and will raise in the next release). A registered strategy
-        (``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``,
-        ``"field"``, ``"source"``, ``"wiener"``, ``"region"``, ``"latent"``)
-        maps any montage onto that order inside ``forward``; ``forward`` then
-        also takes ``chs_info`` for a montage other than the constructor's.
-    channel_strategy_kwargs : dict or None, default=None
-        Options forwarded to the strategy (e.g. ``{"reg": 1e-3}`` for
-        ``"spline"``).
 
     Input shape
     -----------
@@ -241,7 +228,6 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         if attention_scale is not None and attention_scale <= 0:
             raise ValueError("attention_scale must be positive or None.")
         self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
-        self._channel_layer = channel_strategy != "native"
         if not self._channel_layer:
             warn_if_not_canonical(self, MIREPNET_CHANNEL_ORDER)
 

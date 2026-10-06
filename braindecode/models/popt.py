@@ -22,7 +22,6 @@ import torch.nn as nn
 
 from braindecode.models._channel_layer import (
     JIT_IGNORED,
-    encode_positions,
     init_positions_layer,
 )
 from braindecode.models._channel_layer import key_padding_mask as unobserved_mask
@@ -134,21 +133,6 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
         Feed-forward activation, given as a class. Default :class:`~torch.nn.GELU`.
     drop_prob : float, optional
         Dropout probability. Default 0.1.
-    channel_strategy : str, default="native"
-        Channel layer in front of the backbone (see
-        :class:`braindecode.modules.ChannelTokenizer`). PopT reads electrode
-        coordinates (``positions`` interface) and pools the population through
-        its ``CLS`` token, so every strategy is a pass-through on the montage
-        of the call: the per-electrode features are unchanged (a spatial map
-        of features would be meaningless) and the integer coordinates are
-        derived from the channel layer's positions, with ``coord_units`` and
-        ``shift_coords`` as above, instead of the model's own ``chs_info``
-        parsing. sEEG, ECoG and DBS contacts are accepted; a contact without
-        a position is a declared ``ValueError``. Electrodes the layer marks as
-        not observed join ``key_padding_mask``. ``"source"`` raises a
-        ``ValueError``: its sphere head model is scalp-EEG only.
-    channel_strategy_kwargs : dict or None, default=None
-        Options forwarded to the strategy.
 
     References
     ----------
@@ -341,7 +325,7 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
         """
         if not torch.jit.is_scripting():  # the channel layer is eager-only
             if self._channel_layer:
-                enc = encode_positions(self, x, chs_info)
+                enc = self._encode_channels(x, chs_info)
                 x = enc.x
                 if coords is None and enc.positions is not None:
                     coords = self._coords_from_positions(enc.positions)

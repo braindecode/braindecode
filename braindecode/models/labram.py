@@ -348,22 +348,6 @@ class Labram(EEGModuleMixin, nn.Module):
     activation: nn.Module, default=nn.GELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
-    channel_strategy : str, default="native"
-        How the user montage reaches LaBraM's channel vocabulary
-        (:data:`LABRAM_CHANNEL_ORDER`, one position embedding per name; see
-        :mod:`braindecode.modules.channels`). ``"native"`` keeps LaBraM's own
-        behaviour: ``x`` in :data:`LABRAM_CHANNEL_ORDER`, or ``ch_names`` given
-        to :meth:`forward`. ``"exact"`` maps each input channel to its
-        vocabulary id (by name, alias or a position within 15 mm) and raises
-        for a channel it cannot place. A reconstructing strategy
-        (``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``, ``"field"``,
-        ``"source"``, ``"wiener"``, ``"region"``, ``"latent"``) produces all
-        128 vocabulary channels from any montage; the tokens of channels it
-        did not copy from a measured one (``ChannelEncoding.observed``) are
-        masked as attention keys.
-    channel_strategy_kwargs : dict or None, default=None
-        Keyword arguments of the strategy (e.g. ``{"reg": 1e-2}`` for
-        ``"spline"``). Only valid with a strategy other than ``"native"``.
 
     References
     ----------
@@ -431,8 +415,7 @@ class Labram(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, n_times, input_window_seconds, sfreq
         # The backbone draws the same random numbers under every strategy.
-        with torch.random.fork_rng(devices=[]):
-            self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
+        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
 
         # Non-canonical chs_info is accepted with a warning so callers can
         # resolve channels per batch via forward(ch_names=...).
@@ -840,7 +823,7 @@ class Labram(EEGModuleMixin, nn.Module):
             The output of the model with dimensions (batch, n_outputs)
         """
         observed = None
-        if self.channel_tokenizer.strategy is not None:
+        if self._channel_layer:
             if ch_names is not None:
                 if chs_info is not None:
                     raise ValueError("Pass either ch_names or chs_info, not both.")

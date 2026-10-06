@@ -156,22 +156,11 @@ class BIOT(EEGModuleMixin, nn.Module):
         encoder. The default is 100.
     sfreq: int, optional
         The sfreq parameter for the encoder. The default is 200
-    channel_strategy : str, default="native"
-        How the input montage reaches the backbone, which consumes
-        ``18`` bipolar derivations of :data:`BIOT_CHANNEL_ORDER` (see
-        :class:`braindecode.modules.ChannelTokenizer`). ``"native"`` feeds
-        ``x`` unchecked (a non-canonical montage emits a ``FutureWarning``
-        and will raise in the next release). A registered strategy
-        (``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``,
-        ``"field"``, ``"source"``, ``"wiener"``, ``"region"``, ``"latent"``)
-        maps a **monopolar** montage onto the 18 electrodes behind the
-        derivations (Fp1, F7, ..., A1, A2) inside ``forward`` and forms each
-        derivation as ``V(A) - V(B)``; ``forward`` then also takes
-        ``chs_info`` for a montage other than the constructor's. Bipolar input
-        (already in :data:`BIOT_CHANNEL_ORDER`) is what ``"native"`` is for.
-    channel_strategy_kwargs : dict or None, default=None
-        Options forwarded to the strategy (e.g. ``{"reg": 1e-3}`` for
-        ``"spline"``).
+
+    .. note::
+       ``"native"`` takes the 18 bipolar derivations of ``BIOT_CHANNEL_ORDER``.
+       Any other ``channel_strategy`` takes a monopolar montage, maps it onto the
+       electrodes behind the derivations and forms each as ``V(A) - V(B)``.
 
     References
     ----------
@@ -217,7 +206,6 @@ class BIOT(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq
         self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
-        self._channel_layer = channel_strategy != "native"
         if not self._channel_layer:
             # The 16-channel checkpoint uses the first 16 TCP derivations.
             warn_if_not_canonical(

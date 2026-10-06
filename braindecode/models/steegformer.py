@@ -27,7 +27,7 @@ from braindecode.modules import (
     MultiHeadAttention,
     PatchTokenizer,
 )
-from braindecode.modules.channels import ChannelTarget, ChannelTokenizer
+from braindecode.modules.channels import ChannelTarget
 
 # Shared montage vocabulary of the official ST-EEGFormer checkpoints: the
 # learned channel embedding has one slot per entry, in this order (the slot
@@ -64,22 +64,6 @@ def _channel_order() -> list[str]:
 @lru_cache(maxsize=1)
 def _channel_index() -> dict[str, int]:
     return {name.upper(): i for i, name in enumerate(_channel_order())}
-
-
-@lru_cache(maxsize=1)
-def _vocabulary_target() -> ChannelTarget:
-    return ChannelTarget("ids", vocabulary=tuple(_channel_order()))
-
-
-class _VocabularyTarget:
-    """Class attribute holding the ``ids`` channel contract of STEEGFormer.
-
-    Built on first access, because the vocabulary is downloaded from the Hub
-    (and cached), never at import.
-    """
-
-    def __get__(self, obj, objtype=None) -> ChannelTarget:
-        return _vocabulary_target()
 
 
 def __getattr__(name: str):
@@ -271,20 +255,6 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         If omitted, it is resolved from ``chs_info`` electrode names, then
         from electrode positions for names outside the vocabulary (falling
         back to ``range(n_chans)``).
-    channel_strategy : str, default="native"
-        How the user montage reaches the montage vocabulary (the 142 names of
-        :data:`STEEGFORMER_CHANNEL_ORDER`, slots of the 145-row embedding; see
-        :mod:`braindecode.modules.channels`). ``"native"`` keeps the
-        resolution above (``chan_pos_idx``, names, nearest site, identity).
-        ``"exact"`` maps each input channel to its vocabulary slot (by name,
-        alias or a position within 15 mm) and raises for a channel it cannot
-        place. A reconstructing strategy (``"zero"``, ``"nearest"``,
-        ``"idw"``, ``"spline"``, ``"field"``, ``"source"``, ``"wiener"``,
-        ``"region"``, ``"latent"``) produces all 142 vocabulary channels from
-        any montage. Requires ``n_chans_pos=145`` and no ``chan_pos_idx``.
-    channel_strategy_kwargs : dict or None, default=None
-        Keyword arguments of the strategy (e.g. ``{"reg": 1e-2}`` for
-        ``"spline"``). Only valid with a strategy other than ``"native"``.
 
     References
     ----------
@@ -294,10 +264,6 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
        on Learning Representations (ICLR 2026).
        https://openreview.net/forum?id=5Xwm8e6vbh
     """
-
-    #: Channel contract: ids into the montage vocabulary (lazy, see
-    #: :class:`_VocabularyTarget`).
-    _channel_target = _VocabularyTarget()
 
     def __init__(
         self,
@@ -332,19 +298,15 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        if channel_strategy == "native":
-            # Identity layer, built without reading ``_channel_target``: that
-            # would download the vocabulary even when no name is resolved.
-            self.channel_tokenizer = ChannelTokenizer(None, "native")
-            if channel_strategy_kwargs:
-                raise ValueError(
-                    "channel_strategy='native' takes no options; got "
-                    f"{sorted(channel_strategy_kwargs)}."
-                )
-        else:
-            # The backbone draws the same random numbers under every strategy.
-            with torch.random.fork_rng(devices=[]):
-                self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
+        # The vocabulary is fetched from the Hub, so the ``ids`` target is
+        # built only when a strategy needs it.
+        self._init_channel_tokenizer(
+            channel_strategy,
+            channel_strategy_kwargs,
+            target=None
+            if channel_strategy == "native"
+            else ChannelTarget("ids", vocabulary=tuple(_channel_order())),
+        )
 
         if global_pool not in ("avg", "cls"):
             raise ValueError(
@@ -617,7 +579,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 f"{self.patch_size} samples, got input with {x.shape[-1]} samples."
             )
         channel_indices = self.channel_indices
-        if self.channel_tokenizer.strategy is not None:
+        if self._channel_layer:
             enc = self._encode_channels(x, chs_info)
             x = enc.x
             assert enc.channel_ids is not None  # ``ids`` target

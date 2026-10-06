@@ -21,7 +21,6 @@ from torch.nn import RMSNorm
 from braindecode.models._channel_layer import (
     JIT_IGNORED,
     batch_positions,
-    encode_positions,
     init_positions_layer,
     key_padding_mask,
 )
@@ -226,21 +225,6 @@ class REVE(EEGModuleMixin, nn.Module):
         learnable query token that attends to all encoder outputs, producing a single
         embedding of size ``embed_dim``. Attention pooling is more parameter-efficient
         for long sequences and variable-length inputs.
-    channel_strategy : str, default="native"
-        Channel layer in front of the backbone (see
-        :class:`braindecode.modules.ChannelTokenizer`). REVE reads channel
-        coordinates (``positions`` interface). Under a strategy other than
-        ``"native"`` the coordinates come from the channel layer (``loc`` in
-        ``chs_info``, else the ``standard_1005`` position of the name, which is
-        the frame of REVE's position bank) instead of the position-bank lookup.
-        With the flattened head (``attention_pooling=False``) the read-out is
-        tied to the constructor's ``chs_info``, so any montage given to
-        ``forward`` is mapped onto those channels; channels the layer marks as
-        not observed are then hidden from self-attention (key-padding mask).
-        With attention pooling the layer is a pass-through on the montage of
-        the call. A channel without a position is a declared ``ValueError``.
-    channel_strategy_kwargs : dict or None, default=None
-        Options forwarded to the strategy.
 
     References
     ----------
@@ -454,7 +438,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
         unobserved: Optional[torch.Tensor] = None
         if self._channel_layer:
-            enc = encode_positions(self, eeg, chs_info)
+            enc = self._encode_channels(eeg, chs_info)
             eeg = enc.x
             if pos is None:
                 pos = batch_positions(enc, eeg.shape[0])

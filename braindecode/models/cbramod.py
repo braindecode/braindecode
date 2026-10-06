@@ -146,19 +146,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
         If false (default), the features are flattened and passed through a final linear layer
         to produce class logits of size ``n_outputs``.
         If True, the model returns the encoder output features.
-    channel_strategy : str, default="native"
-        Channel layer in front of the backbone (see
-        :class:`braindecode.modules.ChannelTokenizer`). The backbone takes any
-        channel count without channel identity (``free`` interface), so
-        ``"native"`` and every sensor strategy pass ``x`` through unchanged;
-        ``"source"`` feeds ``n_parcels`` source parcels and ``"latent"``
-        ``n_latents`` learned latents instead of the electrodes.
-        Channels the layer marks as not observed get all their patches
-        replaced by the pre-training mask token. ``forward`` then also takes ``chs_info`` for a montage other than the
-        constructor's.
-    channel_strategy_kwargs : dict or None, default=None
-        Options forwarded to the strategy (e.g. ``{"n_parcels": 32}`` for
-        ``"source"``).
 
     References
     ----------
@@ -207,7 +194,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
         self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
-        self._channel_layer = channel_strategy != "native"
         # Shared tokenizer: (batch, n_chans, n_times) -> (batch, n_chans, n_patch, patch_size),
         # padding/cropping a non-divisible time axis at forward time.
         try:

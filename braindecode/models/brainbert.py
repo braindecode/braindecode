@@ -126,18 +126,6 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         pretrained).
     drop_prob : float, optional
         Dropout probability. Default 0.1.
-    channel_strategy : str, default="native"
-        Channel layer in front of the backbone (see
-        :class:`braindecode.modules.ChannelTokenizer`). The backbone takes any
-        channel count without channel identity (``free`` interface), so
-        ``"native"`` and every sensor strategy pass ``x`` through unchanged;
-        ``"source"`` feeds ``n_parcels`` source parcels and ``"latent"``
-        ``n_latents`` learned latents instead of the electrodes.
-        ``forward`` then also takes ``chs_info`` for a montage other than the
-        constructor's.
-    channel_strategy_kwargs : dict or None, default=None
-        Options forwarded to the strategy (e.g. ``{"n_parcels": 32}`` for
-        ``"source"``).
 
     References
     ----------
@@ -191,11 +179,6 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
-        self._channel_layer = channel_strategy != "native"
-        if not self._channel_layer:
-            # Native needs no layer. ``None`` keeps the model scriptable also
-            # when it is rebuilt as a plain ``nn.Module`` (no class attributes).
-            self.channel_tokenizer = None  # type: ignore[assignment]
         self._n_backbone_chans = backbone_n_chans(self)
 
         # Refuse rather than silently fall back to a different pooling: the

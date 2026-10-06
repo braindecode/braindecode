@@ -120,19 +120,6 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         Number of groups for ``GroupNorm`` in the patch projection.
     activation : type[nn.Module], default=nn.ReLU
         Non-linear activation class used in ``init_conv`` and ``final_conv``.
-    channel_strategy : str, default="native"
-        How the input montage reaches the backbone, which consumes
-        ``19`` channels in the order of :data:`CODEBRAIN_CHANNEL_ORDER` (see
-        :class:`braindecode.modules.ChannelTokenizer`). ``"native"`` feeds
-        ``x`` unchecked (a non-canonical montage emits a ``FutureWarning``
-        and will raise in the next release). A registered strategy
-        (``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``,
-        ``"field"``, ``"source"``, ``"wiener"``, ``"region"``, ``"latent"``)
-        maps any montage onto that order inside ``forward``; ``forward`` then
-        also takes ``chs_info`` for a montage other than the constructor's.
-    channel_strategy_kwargs : dict or None, default=None
-        Options forwarded to the strategy (e.g. ``{"reg": 1e-3}`` for
-        ``"spline"``).
 
     References
     ----------
@@ -189,7 +176,6 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
-        self._channel_layer = channel_strategy != "native"
         if not self._channel_layer:
             warn_if_not_canonical(self, CODEBRAIN_CHANNEL_ORDER)
         n_backbone_chans = backbone_n_chans(self)
