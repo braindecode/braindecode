@@ -455,3 +455,10 @@ def test_ids_position_fallback_never_relabels_a_known_name():
     # An unknown name at the same spot still takes Cz.
     m = _build("exact", [{"ch_name": "E7", "kind": "eeg", "loc": loc}], target)
     assert m.channel_ids.tolist() == [1]
+
+
+def test_sphere_head_errors_are_declared():
+    from braindecode.modules.channels.head import get_sphere_head
+
+    with pytest.raises(ValueError, match="sphere head"):
+        get_sphere_head().leadfield(np.full((4, 3), np.nan))

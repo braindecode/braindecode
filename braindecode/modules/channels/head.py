@@ -70,16 +70,24 @@ class SphereHead:
         import mne
 
         names = [f"E{i}" for i in range(len(positions))]
-        info = mne.create_info(names, 100.0, "eeg")
-        info.set_montage(
-            mne.channels.make_dig_montage(
-                dict(zip(names, positions)), coord_frame="head"
+        try:
+            info = mne.create_info(names, 100.0, "eeg")
+            info.set_montage(
+                mne.channels.make_dig_montage(
+                    dict(zip(names, positions)), coord_frame="head"
+                )
             )
-        )
-        with mne.utils.use_log_level("ERROR"):
-            fwd = mne.make_forward_solution(
-                info, trans=None, src=self.src, bem=self.sphere, eeg=True, meg=False
-            )
+            with mne.utils.use_log_level("ERROR"):
+                fwd = mne.make_forward_solution(
+                    info, trans=None, src=self.src, bem=self.sphere, eeg=True, meg=False
+                )
+        except (ValueError, RuntimeError) as exc:
+            raise ValueError(
+                f"MNE could not compute the lead field of the template sphere head "
+                f"(3-shell, r0=(0, 0, 0.04), radius 90 mm) at {len(positions)} "
+                f"electrode positions {np.round(positions, 4).tolist()[:4]}...: "
+                f"{exc}"
+            ) from exc
         return fwd["sol"]["data"]
 
     def leadfield(self, positions: np.ndarray) -> np.ndarray:
