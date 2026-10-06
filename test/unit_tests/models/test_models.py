@@ -39,6 +39,7 @@ from braindecode.models import (
     BrainBERT,
     BrainModule,
     Brant,
+    CBraMod,
     ContraWR,
     Deep4Net,
     DeepSleepNet,
@@ -5168,6 +5169,13 @@ def test_csbrain_head_hidden_dim_overrides_the_reference_width():
 def test_csbrain_rejects_brain_regions_of_wrong_length():
     with pytest.raises(ValueError, match="brain_regions has 3 entries for 4"):
         CSBrain(n_outputs=2, n_chans=4, n_times=400, brain_regions=[0, 1, 2], n_layer=1)
+
+
+@pytest.mark.parametrize("model_class", [CBraMod, CSBrain])
+def test_cbramod_patch_embedding_patch_size_not_200(model_class):
+    """The shared patch embedding sizes its rFFT bins from ``patch_size``."""
+    model = model_class(n_outputs=2, n_chans=3, n_times=800, patch_size=400, n_layer=1)
+    assert model(torch.randn(2, 3, 800)).shape == (2, 2)
 
 
 def test_csbrain_channel_order_reproduces_reference_topology():
