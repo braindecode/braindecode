@@ -68,13 +68,17 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`BIOT` - Foundation model with pre-trained weights
     - :class:`BrainBERT` - Intracranial (sEEG/iEEG) foundation model with pre-trained
       weights
+    - :class:`BrainOmni` - Unified EEG/MEG foundation model; official raw weights are
+      available from the authors
     - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
     - :class:`CodeBrain` - Scalable EEG pre-training with temporal and spectral code
       prediction
     - :class:`Labram` - Large Brain Model with pre-trained weights
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
+    - :class:`MAPA` - Masked autoencoder for intracranial EEG with anatomical priors
     - :class:`MIRepNet` - Motor-imagery pre-trained model
+    - :class:`NeuroRVQ` - Multi-scale biosignal tokenizer foundation model
     - :class:`NeuroRVQTokenizer` - Residual vector quantization EEG tokenizer
     - :class:`BENDR` - Foundation model with pre-trained weights
     - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
@@ -143,6 +147,8 @@ interface for all EEG models and can derive variable names when needed.
      BIOT
      BrainBERT
      BrainModule
+     BrainOmni
+     BrainTokenizer
      CBraMod
      CodeBrain
      ContraWR
@@ -176,15 +182,18 @@ interface for all EEG models and can derive variable names when needed.
      InterpolatedSignalJEPA
      Labram
      LUNA
+     MAPA
      MEDFormer
      MetaNeuromotorHand
      MSCFormer
      MSVTNet
+     NeuroRVQ
      NeuroRVQTokenizer
      PBT
     PopulationTransformer
      REVE
      SCCNet
+     SeizureTransformer
      ShallowFBCSPNet
      SignalJEPA
      SignalJEPA_Contextual
