@@ -191,6 +191,8 @@ class LatentStrategy(ChannelStrategy):
 
     def apply(self, x: Tensor, m: SpatialMap) -> Tensor:
         e = m.extra
+        if not e:  # pass-through map (``positions`` target without chs_info)
+            return super().apply(x, m)
         used = e["used"]
         keys = self.key_position(e["src_feat"]) + self.key_signal(
             _channel_stats(x, used)
