@@ -18,6 +18,7 @@ BENDR19 = [c for c in _BENDR_TARGET_CHS_INFO if c["ch_name"] != "SCALE"]
 P19 = np.stack([np.asarray(c["loc"], float)[:3] for c in BENDR19])
 MONTAGE19 = ChannelTarget("montage", chs_info=BENDR19)
 SENSOR = ["exact", "zero", "nearest", "idw", "spline", "field"]
+PHYSICS = ["source"]
 
 
 def _named(names):
@@ -29,7 +30,7 @@ def _build(strategy, src_chs, target=MONTAGE19, **kw):
     return get_channel_strategy(strategy, **kw).build(resolve_montage(src_chs), target)
 
 
-@pytest.mark.parametrize("strategy", SENSOR)
+@pytest.mark.parametrize("strategy", SENSOR + PHYSICS)
 def test_permutation_is_exact_one_hot(strategy):
     m = _build(strategy, BENDR19[::-1])
     np.testing.assert_array_equal(m.weights.numpy(), np.eye(19)[::-1])
@@ -45,7 +46,7 @@ def test_spline_gain_bounded():
     assert _build("spline", src, reg=0.0).weights.abs().sum(1).max() > 100
 
 
-@pytest.mark.parametrize("strategy", ["spline", "field"])
+@pytest.mark.parametrize("strategy", ["spline", "field", "source"])
 def test_less_than_4_positions_declared_error(strategy):
     with pytest.raises(ValueError, match="at least 4"):
         _build(strategy, _named(["Fz", "Cz", "Pz"]))
@@ -199,3 +200,93 @@ def fidelity(strategy, fields, k=8, draws=20, noise=0.1, seed=7, **kw):
 )
 def test_fidelity_smooth_fields_k8(strategy, bound):
     assert fidelity(strategy, _smooth_fields) <= bound
+
+
+# ---- source strategy (direction C) ------------------------------------------
+
+
+def _dipole_fields_factory():
+    """3 random dipoles in a head that differs from the strategy's sphere.
+
+    4-shell sphere, origin shifted 8 mm, radius 95 mm, skull conductivity
+    halved, 10 mm grid (Fig 6 of the design report).
+    """
+    import mne
+
+    sphere = mne.make_sphere_model(
+        r0=(0.0, 0.008, 0.045),
+        head_radius=0.095,
+        relative_radii=(0.90, 0.92, 0.97, 1.0),
+        sigmas=(0.33, 1.0, 0.002, 0.33),
+        verbose=False,
+    )
+    src = mne.setup_volume_source_space(
+        sphere=sphere, pos=10.0, mindist=5.0, exclude=20.0, verbose=False
+    )
+    names = [c["ch_name"] for c in BENDR19]
+    info = mne.create_info(names, 100.0, "eeg")
+    info.set_montage(
+        mne.channels.make_dig_montage(dict(zip(names, P19)), coord_frame="head")
+    )
+    fwd = mne.make_forward_solution(
+        info, trans=None, src=src, bem=sphere, eeg=True, meg=False, verbose=False
+    )
+    L = fwd["sol"]["data"]
+    L = L - L.mean(0, keepdims=True)
+
+    def fields(rng, n):
+        S = np.zeros((n, L.shape[1]))
+        for i in range(n):
+            S[i, rng.choice(L.shape[1], 3, replace=False)] = rng.normal(size=3)
+        X = S @ L.T
+        return X / X.std(axis=1, keepdims=True)
+
+    return fields
+
+
+def test_source_fidelity_dipoles_mismatched_head_k8():
+    # 0.83 here; the report probe reached 0.71 by inverting data already
+    # average-referenced over all 19 sites (an oracle reference). The strategy
+    # re-references over the observed channels instead, as real data need.
+    # Field mapping, the best head-model-free baseline, is 0.92.
+    assert fidelity("source", _dipole_fields_factory()) <= 0.85
+
+
+@pytest.mark.parametrize(
+    "target", [MONTAGE19, ChannelTarget("free")], ids=["montage", "free"]
+)
+def test_source_init_equals_physics(target):
+    src = resolve_montage(BENDR19[:8])
+    physics = get_channel_strategy("source")
+    learned = get_channel_strategy("source", trainable=True)
+    x = torch.randn(3, 8, 50)
+    out_p = physics.apply(x, physics.build(src, target))
+    out_l = learned.apply(x, learned.build(src, target))
+    assert (out_p - out_l).abs().max().item() == 0.0
+    assert len(list(learned.parameters())) > 0 and not list(physics.parameters())
+
+
+def test_source_gradient_reaches_attention_after_one_step():
+    strategy = get_channel_strategy("source", trainable=True)
+    m = strategy.build(resolve_montage(BENDR19[:8]), MONTAGE19)
+    opt = torch.optim.SGD(strategy.parameters(), lr=0.1)
+    x = torch.randn(4, 8, 30)
+    grads = []
+    for _ in range(2):
+        opt.zero_grad()
+        strategy.apply(x, m).pow(2).mean().backward()
+        grads.append(strategy.queries.grad.abs().sum().item())
+        opt.step()
+    assert grads[0] == 0.0  # zero gate: the physics solution at init
+    assert grads[1] > 0.0  # once the gate opens, attention learns
+
+
+def test_source_free_target_has_fixed_size_for_any_montage():
+    strategy = get_channel_strategy("source", n_parcels=32)
+    sizes = set()
+    for chs in (BENDR19[:5], BENDR19, _named(["C3", "C4", "Cz", "FC1", "CP2"])):
+        m = strategy.build(resolve_montage(chs), ChannelTarget("free"))
+        assert m.weights.shape == (32, len(chs))
+        assert m.observed.all() and ((m.support >= 0) & (m.support <= 1)).all()
+        sizes.add(strategy.apply(torch.randn(1, len(chs), 4), m).shape[1])
+    assert sizes == {32}
