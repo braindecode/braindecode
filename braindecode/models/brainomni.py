@@ -406,8 +406,6 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         )
         for key, value in state_dict.items():
             new_key = _rename_official_key(key)
-            if new_key is None:
-                continue
             if new_key in remapped:
                 raise ValueError(
                     f"Checkpoint keys collide after remapping: {new_key!r}."
@@ -596,7 +594,10 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
 
         The pretraining-only mask predictor in the checkpoint is discarded and
         the classification ``final_layer`` remains freshly initialized, so
-        fine-tune or linear-probe before use.
+        fine-tune or linear-probe before use. The checkpoint's RoPE position
+        cache holds cosines only (no sine); it is loaded as is, so the
+        temporal attention rotates exactly as the released code does with
+        these weights.
 
     .. versionadded:: 1.8
 
@@ -777,8 +778,11 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
             ]
         )
         self._head_in = n_neuro * lm_dim
-        self.final_layer = self._make_head(self.n_outputs)
         self.apply(_init_weights)
+        # The released downstream head (``downstream/model.py``) keeps PyTorch's
+        # default ``Linear`` initialisation; only the backbone gets
+        # ``_init_weights``.
+        self.final_layer = self._make_head(self.n_outputs)
         self.tokenizer.requires_grad_(False)
 
     @classmethod
@@ -820,7 +824,6 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         self._set_n_outputs(n_outputs)
         reference = next(self.parameters())
         self.final_layer = self._make_head(n_outputs)
-        self.final_layer.apply(_init_weights)
         self.final_layer.to(device=reference.device, dtype=reference.dtype)
 
     def _tokens(self, x: torch.Tensor) -> torch.Tensor:
@@ -860,9 +863,10 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         than a downstream classifier. Those three pretraining-only tensors are
         intentionally ignored; the downstream ``final_layer`` remains local.
         The released export also stores RoPE's frequencies (rounded to
-        bfloat16) and its derived cache (without the sine component). The port
-        has no RoPE buffers: those keys are dropped and the rotation is
-        recomputed in float32, as in a freshly built upstream model.
+        bfloat16) and its position cache, which holds the cosines only. Both
+        load into the RoPE buffers, so the rotation is the one the released
+        code applies with these weights. A state dict without RoPE buffers
+        (saved by an earlier version) keeps the model's own ones.
         """
         remapped = OrderedDict()
         metadata = getattr(state_dict, "_metadata", None)
@@ -877,12 +881,12 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
             if official and (key == "mask_token" or key.startswith("predict_head.")):
                 continue
             new_key = _rename_official_key(key)
-            if new_key is None:
-                continue
             if new_key in remapped:
                 raise ValueError(
                     f"Checkpoint keys collide after remapping: {new_key!r}."
                 )
+            if new_key.endswith(_ROPE_CACHE_KEY):
+                value = _rope_cache_as_real(value)
             remapped[new_key] = value
         if official:
             for key in own_state:
@@ -891,20 +895,38 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
                     "tokenizer.sensor_type",
                 }:
                     remapped[key] = own_state[key]
+        for key in own_state:
+            if key.endswith(_ROPE_BUFFER_KEYS) and key not in remapped:
+                remapped[key] = own_state[key]
         if metadata is not None:
             remapped._metadata = metadata
         return super().load_state_dict(remapped, *args, **kwargs)
 
 
-def _rename_official_key(key: str) -> str | None:
-    """Map an OpenTSLab state-dict key to this port's name, or ``None`` to drop it.
+_ROPE_CACHE_KEY = "rope_embedding_layer.rotate"
+_ROPE_BUFFER_KEYS = ("rope_embedding_layer.freqs", _ROPE_CACHE_KEY)
 
-    Native keys pass through unchanged. RoPE ``freqs``/``rotate`` are dropped:
-    the port recomputes them in float32 (the release stores ``freqs`` rounded
-    to bfloat16 and ``rotate`` without its sine component).
+
+def _rope_cache_as_real(value: torch.Tensor) -> torch.Tensor:
+    """Return a released RoPE cache as ``(seq, n_dim // 2, 2)`` ``(cos, sin)``.
+
+    The released module keeps a complex cache. Its exported checkpoints store
+    the real part only (``(seq, n_dim // 2)``, float32); the released
+    ``load_state_dict`` copies it into the complex buffer, so the sine is zero.
     """
-    if key.endswith(("rope_embedding_layer.freqs", "rope_embedding_layer.rotate")):
-        return None
+    if value.is_complex():
+        return torch.view_as_real(value).float()
+    if value.dim() == 2:
+        return torch.stack((value.float(), torch.zeros_like(value.float())), dim=-1)
+    return value
+
+
+def _rename_official_key(key: str) -> str:
+    """Map an OpenTSLab state-dict key to this port's name.
+
+    Native keys, including the RoPE ``freqs``/``rotate`` buffers, pass through
+    unchanged.
+    """
     key = key.replace("quantizer.rvq.", "quantizer.")
     if key.startswith("decoder."):
         key = "final_layer." + key.removeprefix("decoder.")
@@ -1118,38 +1140,72 @@ class _SpatialTemporalBlock(nn.Module):
 
 
 class _RotaryPositionalEmbedding(nn.Module):
-    """Stateless rotary position embedding (RoPE) of the released BrainOmni.
+    """Rotary position embedding (RoPE) of the released BrainOmni.
 
     Adjacent feature pairs of queries and keys are rotated by a
-    position-dependent angle (Su et al., 2021), computed in float32 with real
-    arithmetic (:func:`~braindecode.functional.rotate_pairs`), so there is no
-    complex cache and no state-dict entry.
+    position-dependent angle (Su et al., 2021). As in the release, the module
+    holds two buffers: ``freqs`` (one inverse-frequency ladder over ``n_dim``,
+    split across heads, so each head gets a different band) and ``rotate``, the
+    cache of the first ``init_seq_len`` positions. The release stores ``rotate``
+    as complex numbers; here it is their real view ``(seq, n_dim // 2, 2)``
+    holding ``(cos, sin)``, so the rotation runs in real arithmetic
+    (:func:`~braindecode.functional.rotate_pairs`) on devices without complex
+    support.
 
-    ``n_dim`` is the full attention dimension (``n_heads * head_dim``): one
-    inverse-frequency ladder is built over ``n_dim`` and split across heads, so
-    each head gets a different frequency band, as in the release. Using the
-    per-head size instead would change pretrained numerics without tripping a
-    strict load, because the module has no parameters.
+    The cache is part of the state dict because the released checkpoints
+    change it: their ``rotate`` holds the cosines only (the sine is zero), and
+    the released code rotates with that loaded cache. Positions beyond the cache
+    are computed from ``freqs`` with both cosine and sine, as the release does
+    when it rebuilds its cache. Both buffers stay in float32 when the module is
+    cast to another dtype, as the release's complex64 cache does under a
+    ``bfloat16`` training engine.
+
+    Parameters
+    ----------
+    n_dim : int
+        Full attention dimension (``n_heads * head_dim``).
+    base : float
+        Base of the inverse-frequency ladder.
+    init_seq_len : int
+        Number of cached positions (240 in the release).
     """
 
-    def __init__(self, n_dim, base=10000):
+    def __init__(self, n_dim, base=10000, init_seq_len=240):
         super().__init__()
         if n_dim <= 0 or n_dim % 2:
             raise ValueError(f"n_dim must be a positive even integer, got {n_dim}.")
         self.n_dim = n_dim
         self.base = base
+        exponent = torch.arange(0, n_dim, 2).float() / n_dim
+        self.register_buffer("freqs", 1.0 / (base**exponent))
+        self.register_buffer("rotate", self._polar(init_seq_len))
 
-    def _cos_sin(self, seq: int, heads: int, device: torch.device):
-        """``(seq, heads, head_dim)`` cosines and sines, recomputed in float32."""
-        exponent = torch.arange(0, self.n_dim, 2, device=device).float() / self.n_dim
-        freqs = 1.0 / (self.base**exponent)
-        positions = torch.arange(seq, device=device, dtype=torch.float32)
-        angles = torch.outer(positions, freqs)
-        angles = torch.repeat_interleave(angles, 2, dim=-1)
-        angles = rearrange(
-            angles, "seq (heads head_dim) -> seq heads head_dim", heads=heads
+    def _polar(self, seq: int) -> torch.Tensor:
+        """``(seq, n_dim // 2, 2)`` cosines and sines of ``position * freqs``."""
+        positions = torch.arange(seq, device=self.freqs.device, dtype=torch.float32)
+        angles = torch.outer(positions, self.freqs.float())
+        return torch.stack((angles.cos(), angles.sin()), dim=-1)
+
+    def _apply(self, fn, recurse=True):
+        # Follow device moves but keep the float32 values of the buffers, so a
+        # ``.half()`` / ``.to(torch.bfloat16)`` model rotates with the same
+        # angles, as the released complex64 cache under a bfloat16 engine.
+        before = dict(self._buffers)
+        super()._apply(fn, recurse)
+        for name, buffer in before.items():
+            moved = self._buffers[name]
+            if buffer is not None and moved is not None and moved.dtype != buffer.dtype:
+                self._buffers[name] = buffer.to(device=moved.device)
+        return self
+
+    def _cos_sin(self, seq: int, heads: int):
+        """``(seq, heads, head_dim)`` cosines and sines, each repeated per pair."""
+        rotate = self.rotate if seq <= self.rotate.shape[0] else self._polar(seq)
+        rotate = rotate[:seq].float().repeat_interleave(2, dim=1)
+        rotate = rearrange(
+            rotate, "seq (heads head_dim) two -> seq heads head_dim two", heads=heads
         )
-        return angles.cos(), angles.sin()
+        return rotate[..., 0], rotate[..., 1]
 
     def forward(self, q, k):
         """Rotate ``q`` and ``k`` of shape ``(batch, seq, n_heads, head_dim)``."""
@@ -1159,7 +1215,7 @@ class _RotaryPositionalEmbedding(nn.Module):
                 f"RoPE expects n_heads * head_dim == {self.n_dim}, got "
                 f"{heads} * {head_dim}."
             )
-        cos, sin = self._cos_sin(seq, heads, q.device)
+        cos, sin = self._cos_sin(seq, heads)
         q_float = q.float()
         k_float = k.float()
         q_out = q_float * cos + rotate_pairs(q_float) * sin
