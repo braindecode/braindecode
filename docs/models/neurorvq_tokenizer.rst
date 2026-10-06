@@ -18,7 +18,9 @@ Inputs have shape ``(batch, channels, samples)`` and must be sampled at 200 Hz. 
 window must contain an integer number of 200-sample patches, up to 256 patches. Provide
 ordered channel names from the released 104-channel montage. The model does not
 resample, filter, clip, or reorder input channels; prepare the signal and channel order
-before calling it.
+before calling it. The released example (``preprocessing/preprocessing_eeg_example.py``
+in the source repository) applies notch filters at 50, 60 and 100 Hz, a 0.5-44.5 Hz
+Butterworth band-pass, clipping at 500 uV and resampling to 200 Hz.
 
 *****************************
  Pretrained token extraction
@@ -40,8 +42,11 @@ before calling it.
 
 ``codes`` has shape ``(4, 8, batch, channels * patches)``. Reconstruction returns
 standardized target and reconstructed patches with shape ``(batch, channels * patches,
-200)``. Loading the released checkpoint requires ``huggingface_hub``; a local checkpoint
-path can be passed to ``load_pretrained_weights``.
+200)``. Both are z-scored per window over channels, patches and samples, so the
+time-domain reconstruction error of a batch is ``(target -
+reconstruction).square().mean()``. Loading the released checkpoint requires
+``huggingface_hub``; a local checkpoint path can be passed to
+``load_pretrained_weights``.
 
 ******************
  Reference parity
