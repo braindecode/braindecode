@@ -161,9 +161,11 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
 
     The upstream research implementation and its pretrained checkpoints are
     available at https://github.com/Jathurshan0330/TFM-Tokenizer and
-    https://huggingface.co/Jathurshan/TFM-Tokenizer. This class does not claim
-    checkpoint parity; it provides a library-native implementation of the
-    tokenizer architecture and training outputs.
+    https://huggingface.co/Jathurshan/TFM-Tokenizer. The audited released
+    checkpoint maps all 191 state entries and matches the reference token IDs,
+    internal embeddings, reconstructions, and reconstruction-path gradients
+    under the pinned parity protocol. This class does not claim reproduction
+    of the paper's pretraining or downstream benchmark metrics.
 
     Examples
     --------
