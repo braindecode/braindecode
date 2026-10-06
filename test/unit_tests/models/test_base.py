@@ -623,3 +623,129 @@ def test_hub_method_install_hint_no_hf():
         M.from_pretrained("any/repo")
     with pytest.raises(ImportError, match=r"M\.push_to_hub.*braindecode\[hub\]"):
         M().push_to_hub("any/repo")
+
+
+# ---- channel layer (EEGModuleMixin.channel_strategy) -------------------------
+
+from braindecode.models.base import HAS_HF_HUB  # noqa: E402
+from braindecode.modules import ChannelTarget, register_channel_strategy  # noqa: E402
+from braindecode.modules.channels import ChannelStrategy  # noqa: E402
+
+
+def _chs(names):
+    return [{"ch_name": n, "kind": "eeg"} for n in names]
+
+
+@register_channel_strategy("_test_trainable")
+class _TrainableScale(ChannelStrategy):
+    """Exact copies times a learned gain (test-only trainable strategy)."""
+
+    trainable = True
+    reconstructs = False
+
+    def __init__(self):
+        super().__init__()
+        self.gain = nn.Parameter(torch.ones(()))
+
+    def apply(self, x, m):
+        return self.gain * (m.weights @ x)
+
+
+class _ChannelModel(EEGModuleMixin, nn.Module):
+    """Backbone over a fixed 4-electrode montage."""
+
+    _channel_target = ChannelTarget("montage", chs_info=_chs(["Fz", "Cz", "Pz", "Oz"]))
+
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        channel_strategy="native",
+        channel_strategy_kwargs=None,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
+        self.head = nn.Linear(4, self.n_outputs)
+
+    def forward(self, x, chs_info=None):
+        return self.head(self._encode_channels(x, chs_info).x.mean(-1))
+
+
+def _channel_model(**kw):
+    return _ChannelModel(
+        chs_info=_chs(["Oz", "Cz", "C3", "Fz", "Pz"]), n_outputs=2, n_times=8, **kw
+    )
+
+
+def test_channel_strategy_roundtrips_through_config():
+    model = _channel_model(channel_strategy="idw", channel_strategy_kwargs={"p": 1.0})
+    config = json.loads(json.dumps(model.get_config()))
+    assert config["channel_strategy"] == "idw"
+    clone = _ChannelModel.from_config(config)
+    assert clone.channel_tokenizer.strategy.p == 1.0
+    clone.load_state_dict(model.state_dict())
+    x = torch.randn(3, 5, 8)
+    torch.testing.assert_close(clone(x), model(x), rtol=0, atol=0)
+
+
+def test_native_channel_strategy_keeps_the_input():
+    model = _ChannelModel(n_chans=4, n_outputs=2, n_times=8)
+    x = torch.randn(1, 4, 8)
+    assert model._encode_channels(x).x is x
+    assert not any(k.startswith("channel_tokenizer") for k in model.state_dict())
+
+
+def test_model_without_channel_contract_rejects_a_strategy():
+    model = DummyModule(n_outputs=2, n_chans=3, n_times=8)
+    model._init_channel_tokenizer()  # native is always fine
+    with pytest.raises(ValueError, match="no channel contract"):
+        model._init_channel_tokenizer("spline")
+
+
+def test_trainable_strategy_state_saves_and_reloads():
+    model = _channel_model(channel_strategy="_test_trainable")
+    with torch.no_grad():
+        model.channel_tokenizer.strategy.gain.fill_(3.0)
+    assert "channel_tokenizer.strategy.gain" in model.state_dict()
+    clone = _ChannelModel.from_config(model.get_config())
+    clone.load_state_dict(model.state_dict(), strict=True)
+    assert clone.channel_tokenizer.strategy.gain.item() == 3.0
+
+
+def test_backbone_checkpoint_into_trainable_strategy_warns_fresh_keys():
+    backbone = {
+        k: v
+        for k, v in _channel_model().state_dict().items()
+        if not k.startswith("channel_tokenizer")
+    }
+    model = _channel_model(channel_strategy="_test_trainable")
+    with pytest.warns(UserWarning, match=r"channel_tokenizer\.strategy\.gain"):
+        model.load_state_dict(backbone, strict=True)
+    assert model.channel_tokenizer.strategy.gain.item() == 1.0
+    # Strict loading still guards the backbone.
+    del backbone["head.bias"]
+    with pytest.raises(RuntimeError, match="head.bias"):
+        model.load_state_dict(backbone, strict=True)
+
+
+@pytest.mark.skipif(not HAS_HF_HUB, reason="requires huggingface_hub")
+def test_from_pretrained_with_trainable_strategy_warns_once(tmp_path):
+    _channel_model().save_pretrained(tmp_path)
+    with pytest.warns(UserWarning, match="freshly initialised") as record:
+        model = _ChannelModel.from_pretrained(
+            tmp_path, channel_strategy="_test_trainable"
+        )
+    fresh = [w for w in record if "freshly initialised" in str(w.message)]
+    assert len(fresh) == 1
+    assert model.channel_tokenizer.strategy.gain.item() == 1.0

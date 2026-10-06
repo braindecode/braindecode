@@ -9,7 +9,7 @@ import json
 import warnings
 from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, Iterable, Optional, Type, Union
+from typing import ClassVar, Dict, Iterable, Optional, Type, Union
 
 import numpy as np
 import torch
@@ -23,6 +23,11 @@ from braindecode.models.util import (
     build_model_config,
     resolve_type_kwargs,
     track_model_init_kwargs,
+)
+from braindecode.modules.channels import (
+    ChannelEncoding,
+    ChannelTarget,
+    ChannelTokenizer,
 )
 from braindecode.version import __version__
 
@@ -597,7 +602,41 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     mapping: Optional[Dict[str, str]] = None
 
-    def load_state_dict(self, state_dict, *args, **kwargs):
+    #: Channel contract of the backbone (what it consumes). ``None``: the model
+    #: only supports ``channel_strategy="native"``.
+    _channel_target: ClassVar[Optional[ChannelTarget]] = None
+
+    def _init_channel_tokenizer(
+        self,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: Optional[dict] = None,
+    ) -> None:
+        """Build ``self.channel_tokenizer`` from the class's channel contract.
+
+        Models opt in by taking ``channel_strategy`` and
+        ``channel_strategy_kwargs`` in ``__init__`` (so they land in
+        :meth:`get_config`) and calling this after ``super().__init__``.
+        """
+        target = type(self)._channel_target
+        if target is None and channel_strategy != "native":
+            raise ValueError(
+                f"{type(self).__name__} has no channel contract, so "
+                f"channel_strategy={channel_strategy!r} cannot apply; use 'native'."
+            )
+        self.channel_tokenizer = ChannelTokenizer(
+            target,
+            channel_strategy,
+            src_chs_info=self._chs_info,
+            **(channel_strategy_kwargs or {}),
+        )
+
+    def _encode_channels(
+        self, x: torch.Tensor, chs_info: Optional[list[dict]] = None
+    ) -> ChannelEncoding:
+        """Run the channel layer on ``x`` (montage: ``chs_info`` or the model's)."""
+        return self.channel_tokenizer(x, chs_info)
+
+    def load_state_dict(self, state_dict, strict=True, assign=False):
         mapping = self.mapping if self.mapping else {}
         new_state_dict = OrderedDict()
         for k, v in state_dict.items():
@@ -606,7 +645,26 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             else:
                 new_state_dict[k] = v
 
-        return super().load_state_dict(new_state_dict, *args, **kwargs)
+        # A backbone checkpoint has no weights for a trainable channel
+        # strategy: keep them at their initial value, say so, and load the
+        # rest as strictly as asked.
+        own = super().state_dict()
+        fresh = [
+            k
+            for k in own
+            if k.startswith("channel_tokenizer.") and k not in new_state_dict
+        ]
+        if fresh:
+            warnings.warn(
+                f"{type(self).__name__}: the checkpoint has no weights for "
+                f"{fresh}; they are freshly initialised (train them before use).",
+                UserWarning,
+                stacklevel=2,
+            )
+            for k in fresh:
+                new_state_dict[k] = own[k]
+
+        return super().load_state_dict(new_state_dict, strict=strict, assign=assign)
 
     def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
         """

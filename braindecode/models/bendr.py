@@ -296,7 +296,7 @@ class BENDR(EEGModuleMixin, nn.Module):
             _chs_info = self.chs_info
         except ValueError:
             _chs_info = None
-        self.channel_tokenizer = None
+        self.channel_tokenizer = None  # type: ignore[assignment]
         backbone_n_chans = self.n_chans
         if _chs_info is not None:
             user_names = [ch["ch_name"] for ch in _chs_info]  # type: ignore[index]
