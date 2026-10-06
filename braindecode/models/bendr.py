@@ -11,6 +11,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.channel_tokenizer import ChannelTokenizer
 
 # The 20 channels used to pre-train BENDR, in the order expected by the
 # `braindecode/braindecode-bendr` checkpoint. The first 19 entries are the
@@ -288,26 +289,25 @@ class BENDR(EEGModuleMixin, nn.Module):
         # Keep these parameters if needed later, otherwise they are captured by the mixin
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        # If the user supplies chs_info, require it to match BENDR_CHANNEL_ORDER
-        # exactly (case-insensitive). Arbitrary channel sets should go through
-        # InterpolatedBENDR — same pattern as Labram / InterpolatedLaBraM.
-        # When chs_info is absent (the usual n_chans=20 path, incl.
-        # from_pretrained), no check is performed.
+        # No chs_info (incl. from_pretrained) or the canonical order: no
+        # tokenizer, so released checkpoints stay bit-identical. Any other
+        # montage is projected onto the 20 canonical channels.
         try:
             _chs_info = self.chs_info
         except ValueError:
             _chs_info = None
+        self.channel_tokenizer = None
+        backbone_n_chans = self.n_chans
         if _chs_info is not None:
             user_names = [ch["ch_name"] for ch in _chs_info]  # type: ignore[index]
             canonical = BENDR_CHANNEL_ORDER
             if [n.lower() for n in user_names] != [n.lower() for n in canonical]:
-                raise ValueError(
-                    f"BENDR requires chs_info to match BENDR_CHANNEL_ORDER exactly "
-                    f"({len(canonical)} channels, specific order; last is 'SCALE'). "
-                    f"Got {len(user_names)} channel(s). For arbitrary channel sets, "
-                    f"use InterpolatedBENDR "
-                    f"(from braindecode.models import InterpolatedBENDR)."
+                self.channel_tokenizer = ChannelTokenizer(
+                    strategy="fixed_order",
+                    src_chs_info=_chs_info,
+                    target_chs_info=_BENDR_TARGET_CHS_INFO,
                 )
+                backbone_n_chans = len(_BENDR_TARGET_CHS_INFO)
 
         self.encoder_h = encoder_h
         self.contextualizer_hidden = contextualizer_hidden
@@ -315,7 +315,7 @@ class BENDR(EEGModuleMixin, nn.Module):
         self.encoder_only = encoder_only
 
         self.encoder = _ConvEncoderBENDR(
-            in_features=self.n_chans,
+            in_features=backbone_n_chans,
             encoder_h=encoder_h,
             dropout=drop_prob,
             projection_head=projection_head,
@@ -361,6 +361,8 @@ class BENDR(EEGModuleMixin, nn.Module):
         self._build_head(n_outputs)
 
     def forward(self, x, return_features=False):
+        if self.channel_tokenizer is not None:
+            x = self.channel_tokenizer(x)
         encoded = self.encoder(x)
         # encoded: [batch_size, encoder_h, n_encoded_times]
 
