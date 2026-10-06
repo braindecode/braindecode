@@ -47,22 +47,10 @@ path can be passed to ``load_pretrained_weights``.
  Reference parity
 ******************
 
-The optional script ``scripts/validate_neurorvq_tokenizer_parity.py`` compares the port
-with the released implementation using the pinned Hugging Face checkpoint. It checks
-eval-mode reconstructions and codes, then checks one training step, all trainable
-parameter and input gradients, and EMA state. Run it from the Braindecode repository
-root after cloning the reference repository and installing its Python dependencies:
-
-.. code-block:: shell
-
-    python scripts/validate_neurorvq_tokenizer_parity.py \
-        --neurorvq-source /path/to/NeuroRVQ
-
-The script downloads the pinned 304 MB checkpoint unless ``--checkpoint`` is provided.
-On the deterministic CPU input in the script, the port and reference matched exactly for
-eval and train outputs, discrete codes, input gradients, and all quantizer state after
-one update. The maximum absolute difference over 345 trainable parameter gradients was
-below ``1e-14``.
+With the pinned Hugging Face checkpoint loaded into both the port and the released
+implementation, eval-mode discrete codes are identical and reconstructions agree to
+float32 precision. The Transformer blocks, temporal convolution and channel list are
+shared with :class:`NeuroRVQ`.
 
 .. currentmodule:: braindecode.models
 

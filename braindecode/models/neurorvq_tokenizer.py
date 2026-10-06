@@ -11,15 +11,16 @@ import torch.distributed as distributed
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.models._neurorvq_components import (
+from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin, huggingface_hub
+from braindecode.models.neurorvq import (
+    _PRETRAINED_REPO_ID,
+    _PRETRAINED_REVISION,
     NEURORVQ_CHANNELS,
     _Block,
     _MultiScaleTemporalConv,
+    _remap_mlp_state_dict_keys,
 )
-from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin, huggingface_hub
 
-_PRETRAINED_REPO_ID = "ntinosbarmpas/NeuroRVQ"
-_PRETRAINED_REVISION = "d944b87f44ae0ba2923b2f10d0518f23f6803b76"
 _PRETRAINED_FILENAME = "pretrained_models/tokenizers/NeuroRVQ_EEG_tokenizer_v1.pt"
 
 
@@ -691,5 +692,5 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                 revision=_PRETRAINED_REVISION,
             )
         state = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-        self.load_state_dict(state, strict=True)
+        self.load_state_dict(_remap_mlp_state_dict_keys(state), strict=True)
         return self
