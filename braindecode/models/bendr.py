@@ -11,7 +11,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.channel_tokenizer import ChannelTokenizer
+from braindecode.modules.channels import ChannelTarget, ChannelTokenizer
 
 # The 20 channels used to pre-train BENDR, in the order expected by the
 # `braindecode/braindecode-bendr` checkpoint. The first 19 entries are the
@@ -302,10 +302,13 @@ class BENDR(EEGModuleMixin, nn.Module):
             user_names = [ch["ch_name"] for ch in _chs_info]  # type: ignore[index]
             canonical = BENDR_CHANNEL_ORDER
             if [n.lower() for n in user_names] != [n.lower() for n in canonical]:
+                # Unregularised spline with name copies: the former
+                # "fixed_order" behaviour (SCALE interpolated at its placeholder).
                 self.channel_tokenizer = ChannelTokenizer(
-                    strategy="fixed_order",
+                    ChannelTarget("montage", chs_info=_BENDR_TARGET_CHS_INFO),
+                    "spline",
                     src_chs_info=_chs_info,
-                    target_chs_info=_BENDR_TARGET_CHS_INFO,
+                    reg=0.0,
                 )
                 backbone_n_chans = len(_BENDR_TARGET_CHS_INFO)
 
@@ -362,7 +365,7 @@ class BENDR(EEGModuleMixin, nn.Module):
 
     def forward(self, x, return_features=False):
         if self.channel_tokenizer is not None:
-            x = self.channel_tokenizer(x)
+            x = self.channel_tokenizer(x).x
         encoded = self.encoder(x)
         # encoded: [batch_size, encoder_h, n_encoded_times]
 

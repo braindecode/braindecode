@@ -1,0 +1,102 @@
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+#
+# License: BSD (3-clause)
+import numpy as np
+import pytest
+import torch
+
+from braindecode.models.bendr import _BENDR_TARGET_CHS_INFO
+from braindecode.modules import ChannelTarget, ChannelTokenizer
+
+BENDR19 = [c for c in _BENDR_TARGET_CHS_INFO if c["ch_name"] != "SCALE"]
+TARGET = ChannelTarget("montage", chs_info=BENDR19)
+
+
+def _named(names, kind="eeg"):
+    return [{"ch_name": n, "kind": kind} for n in names]
+
+
+def test_native_is_identity():
+    tok = ChannelTokenizer(TARGET)
+    x = torch.randn(2, 5, 7)
+    enc = tok(x, _named(["A", "B", "C", "D", "E"]))
+    assert enc.x is x
+    assert enc.observed.tolist() == [True] * 5 and (enc.support == 1).all()
+    assert enc.channel_ids is None and enc.positions is None and enc.weights is None
+    assert tok.state_dict() == {}
+
+
+def test_non_trainable_strategy_adds_no_state():
+    tok = ChannelTokenizer(TARGET, "spline", src_chs_info=BENDR19[:8])
+    assert tok.state_dict() == {}
+    assert list(tok.parameters()) == []
+
+
+def test_construction_montage_is_the_default():
+    tok = ChannelTokenizer(TARGET, "exact", src_chs_info=BENDR19[::-1])
+    x = torch.randn(2, 19, 4)
+    torch.testing.assert_close(tok(x).x, x.flip(1), rtol=0, atol=0)
+    with pytest.raises(ValueError, match="chs_info"):
+        ChannelTokenizer(TARGET, "exact")(x)
+
+
+def test_channel_count_mismatch_is_declared_error():
+    tok = ChannelTokenizer(TARGET, "spline", src_chs_info=BENDR19[:8])
+    with pytest.raises(ValueError, match="7 channels.*8"):
+        tok(torch.randn(1, 7, 10))
+    with pytest.raises(ValueError, match="8 channels.*9"):
+        tok(torch.randn(1, 8, 10), BENDR19[:9])
+
+
+def test_alternating_montages_use_their_own_map():
+    tok = ChannelTokenizer(TARGET, "zero")
+    a, b = BENDR19[:10], BENDR19[5:15]
+    xa, xb = torch.randn(1, 10, 3), torch.randn(1, 10, 3)
+    for _ in range(2):
+        # Montage a fills rows 0-9, montage b rows 5-14, in input order.
+        assert torch.equal(tok(xa, a).x[0, :10], xa[0])
+        assert torch.equal(tok(xb, b).x[0, 5:15], xb[0])
+        assert tok(xb, b).x[0, :5].abs().sum() == 0
+
+
+def test_cache_keeps_at_most_8_montages():
+    tok = ChannelTokenizer(TARGET, "zero")
+    x = torch.randn(1, 10, 3)
+    for start in range(10):
+        tok(x, BENDR19[start : start + 10])
+    assert len(tok._cache) == 8
+
+
+def test_maps_follow_dtype():
+    tok = ChannelTokenizer(TARGET, "spline", src_chs_info=BENDR19[:8])
+    x = torch.randn(2, 8, 5, dtype=torch.float64)
+    enc = tok.double()(x)
+    assert enc.x.dtype == torch.float64 and enc.weights.dtype == torch.float64
+    ref = tok(x.float()).x
+    torch.testing.assert_close(enc.x.float(), ref)
+
+
+def test_non_eeg_dropped_from_the_signal_when_asked():
+    chs = _named(["Cz"]) + _named(["EOG"], kind="eog") + _named(["Pz"])
+    tok = ChannelTokenizer(TARGET, "zero", src_chs_info=chs, drop_non_eeg=True)
+    x = torch.tensor([1.0, 2.0, 3.0]).reshape(1, 3, 1)
+    out = tok(x).x[0, :, 0]
+    assert out[9].item() == 1.0 and out[14].item() == 3.0  # CZ, PZ rows
+    assert out.sum().item() == 4.0  # the EOG signal went nowhere
+    with pytest.raises(ValueError, match="EOG"):
+        ChannelTokenizer(TARGET, "zero", src_chs_info=chs)
+
+
+def test_unknown_strategy_lists_names():
+    with pytest.raises(ValueError, match="native"):
+        ChannelTokenizer(TARGET, "splin")
+
+
+def test_bendr_non_canonical_montage_goes_through_the_layer():
+    from braindecode.models import BENDR
+
+    model = BENDR(chs_info=BENDR19[:8], n_outputs=2, n_times=1000).eval()
+    assert isinstance(model.channel_tokenizer, ChannelTokenizer)
+    W = model.channel_tokenizer(torch.zeros(1, 8, 1)).weights
+    assert W.shape == (20, 8)
+    np.testing.assert_array_equal(W[:8].numpy(), np.eye(8))

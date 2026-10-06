@@ -27,7 +27,12 @@ from .blocks import (
     PatchTokenizer,
     TDSConvEncoder,
 )
-from .channel_tokenizer import ChannelTokenizer
+from .channels import (
+    ChannelEncoding,
+    ChannelTarget,
+    ChannelTokenizer,
+    register_channel_strategy,
+)
 from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
@@ -76,7 +81,10 @@ __all__ = [
     "CAT",
     "CBAM",
     "ChannelInterpolationLayer",
+    "ChannelEncoding",
+    "ChannelTarget",
     "ChannelTokenizer",
+    "register_channel_strategy",
     "ECA",
     "FCA",
     "GCT",

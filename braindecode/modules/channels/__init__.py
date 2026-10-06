@@ -14,11 +14,14 @@ from .strategies import (
     register_channel_strategy,
 )
 from .target import ChannelTarget
+from .tokenizer import ChannelEncoding, ChannelTokenizer
 
 __all__ = [
     "CHANNEL_NAME_ALIASES",
+    "ChannelEncoding",
     "ChannelStrategy",
     "ChannelTarget",
+    "ChannelTokenizer",
     "ResolvedMontage",
     "SpatialMap",
     "get_channel_strategy",
