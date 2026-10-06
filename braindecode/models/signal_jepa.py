@@ -13,6 +13,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.channels import ChannelTarget
 
 _DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.1875s, stride 1s
     (8, 32, 8),
@@ -269,9 +270,17 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         channel_embedding: str = "scratch",
         _init_feature_encoder: bool,
         _init_transformer: bool,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         # Resolve channel embedding config before calling super().__init__
-        if _init_transformer:
+        if _init_transformer and channel_strategy != "native":
+            # The channel layer gives pre-training ids: the table is the
+            # pre-training one, whatever the user montage.
+            effective_chs_info = chs_info
+            channel_locations = [ch["loc"] for ch in _PRETRAIN_CHS_INFO]
+            ch_idxs = torch.arange(len(_PRETRAIN_CHS_INFO), dtype=torch.long)
+        elif _init_transformer:
             effective_chs_info, channel_locations, ch_idxs = (
                 _resolve_channel_embedding_config(channel_embedding, chs_info)
             )
@@ -291,14 +300,32 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self._channel_embedding = channel_embedding
+        # The channel layer comes first because it sets how many channels reach
+        # the backbone; the backbone then draws the same random numbers under
+        # every strategy.
+        with torch.random.fork_rng(devices=[]):
+            self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
+        #: Channels the channel layer hands to the backbone (``None``: native,
+        #: the backbone sees ``n_chans``).
+        self._n_backbone_chans: Optional[int] = (
+            None
+            if channel_strategy == "native"
+            else _n_channel_tokens(self, len(_PRETRAIN_CHS_INFO))
+        )
 
         self.feature_encoder = None
         self.pos_encoder = None
         self.transformer = None
         if _init_feature_encoder:
+            fe_channels = (
+                self._n_backbone_chans
+                if self._n_backbone_chans is not None
+                and self._feature_encoder_channels == "n_chans"
+                else getattr(self, self._feature_encoder_channels)
+            )
             self.feature_encoder = _ConvFeatureEncoder(
                 conv_layers_spec=feature_encoder__conv_layers_spec,
-                channels=getattr(self, self._feature_encoder_channels),
+                channels=fe_channels,
                 drop_prob=drop_prob,
                 mode=feature_encoder__mode,
                 conv_bias=feature_encoder__conv_bias,
@@ -323,6 +350,45 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
                 num_decoder_layers=transformer__num_decoder_layers,
                 batch_first=True,
             )
+
+    def _encode_ids(self, X, chs_info):
+        """Signal and embedding-table rows for the backbone.
+
+        Under ``"native"`` returns ``(X, None)`` (the default rows of the
+        pos encoder). Otherwise runs the channel layer.
+        """
+        if self.channel_tokenizer.strategy is None:
+            return X, None
+        enc = self._encode_channels(X, chs_info)
+        if enc.x.shape[1] != self._n_backbone_chans:
+            raise ValueError(
+                f"The channel layer gives {enc.x.shape[1]} channels for this "
+                f"montage but the model was built for {self._n_backbone_chans}; "
+                f"rebuild it for this montage or use a reconstructing strategy."
+            )
+        assert enc.channel_ids is not None  # ``ids`` target
+        ch_idxs = enc.channel_ids.to(enc.x.device)[None].expand(enc.x.shape[0], -1)
+        return enc.x, ch_idxs
+
+
+#: Channel contract of the models that read the channel embedding table.
+_SJEPA_CHANNEL_TARGET = ChannelTarget(
+    "ids",
+    chs_info=[{**ch, "kind": "eeg"} for ch in _PRETRAIN_CHS_INFO],
+    vocabulary=tuple(ch["ch_name"] for ch in _PRETRAIN_CHS_INFO),
+)
+
+
+def _n_channel_tokens(model: EEGModuleMixin, n_vocab: int) -> int:
+    """Channels the channel layer hands to the backbone of ``model``."""
+    tok = model.channel_tokenizer
+    if tok.strategy is None:
+        return model.n_chans
+    if tok._src is not None and getattr(tok.strategy, "fitted", True):
+        return int(tok._map(tok._src).observed.numel())
+    # No construction montage (or an unfitted strategy): reconstructing
+    # strategies produce the whole vocabulary, ``exact`` one id per input.
+    return n_vocab if tok.strategy.reconstructs else model.n_chans
 
 
 class SignalJEPA(_BaseSignalJEPA):
@@ -411,12 +477,32 @@ class SignalJEPA(_BaseSignalJEPA):
         (volts to microvolts). Apply the same preprocessing to your
         data to match the pre-training distribution.
 
+    Parameters
+    ----------
+    channel_strategy : str, default="native"
+        How the user montage reaches the 62 pre-training channels, whose
+        names index the channel embedding table (see
+        :mod:`braindecode.modules.channels`). ``"native"`` keeps the
+        ``channel_embedding`` behaviour. Any other strategy uses the
+        pre-training table (as ``channel_embedding='pretrain_aligned'``) and
+        looks rows up with the vocabulary ids of the channel layer:
+        ``"exact"`` maps each input channel to its id (by name, alias or a
+        position within 15 mm) and raises for a channel it cannot place; a
+        reconstructing strategy (``"zero"``, ``"nearest"``, ``"idw"``,
+        ``"spline"``, ``"field"``, ``"source"``, ``"wiener"``, ``"region"``,
+        ``"latent"``) produces all 62 channels from any montage.
+    channel_strategy_kwargs : dict or None, default=None
+        Keyword arguments of the strategy (e.g. ``{"reg": 1e-2}`` for
+        ``"spline"``). Only valid with a strategy other than ``"native"``.
+
     References
     ----------
     .. [1] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
+
+    _channel_target = _SJEPA_CHANNEL_TARGET
 
     def __init__(
         self,
@@ -447,6 +533,8 @@ class SignalJEPA(_BaseSignalJEPA):
         transformer__nhead: int = 8,
         # other
         channel_embedding: str = "scratch",
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -471,13 +559,16 @@ class SignalJEPA(_BaseSignalJEPA):
             channel_embedding=channel_embedding,
             _init_feature_encoder=True,
             _init_transformer=True,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.final_layer = nn.Identity()
 
-    def forward(self, X, return_features=False):  # type: ignore
+    def forward(self, X, return_features=False, chs_info=None):  # type: ignore
+        X, ch_idxs = self._encode_ids(X, chs_info)
         local_features = self.feature_encoder(X)  # type: ignore
-        pos_encoding = self.pos_encoder(local_features)  # type: ignore
+        pos_encoding = self.pos_encoder(local_features, ch_idxs)  # type: ignore
         local_features += pos_encoding  # type: ignore
         contextual_features = self.transformer.encoder(local_features)  # type: ignore
         if return_features:
@@ -565,6 +656,21 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
     ----------
     n_spat_filters : int
         Number of spatial filters.
+    channel_strategy : str, default="native"
+        How the user montage reaches the 62 pre-training channels, whose
+        names index the channel embedding table (see
+        :mod:`braindecode.modules.channels`). ``"native"`` keeps the
+        ``channel_embedding`` behaviour. Any other strategy uses the
+        pre-training table (as ``channel_embedding='pretrain_aligned'``) and
+        looks rows up with the vocabulary ids of the channel layer:
+        ``"exact"`` maps each input channel to its id (by name, alias or a
+        position within 15 mm) and raises for a channel it cannot place; a
+        reconstructing strategy (``"zero"``, ``"nearest"``, ``"idw"``,
+        ``"spline"``, ``"field"``, ``"source"``, ``"wiener"``, ``"region"``,
+        ``"latent"``) produces all 62 channels from any montage.
+    channel_strategy_kwargs : dict or None, default=None
+        Keyword arguments of the strategy (e.g. ``{"reg": 1e-2}`` for
+        ``"spline"``). Only valid with a strategy other than ``"native"``.
 
     References
     ----------
@@ -605,6 +711,8 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         channel_embedding: str = "scratch",
         _init_feature_encoder: bool = True,
         _init_transformer: bool = True,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -629,13 +737,15 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             channel_embedding=channel_embedding,
             _init_feature_encoder=_init_feature_encoder,
             _init_transformer=_init_transformer,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self._clf_conv_layers_spec = feature_encoder__conv_layers_spec
         self._clf_n_spat_filters = n_spat_filters
         self.final_layer = _get_separable_clf_layer(
             conv_layers_spec=feature_encoder__conv_layers_spec,
-            n_chans=self.n_chans,
+            n_chans=self._n_backbone_chans or self.n_chans,
             n_times=self.n_times,
             n_classes=self.n_outputs,
             n_spat_filters=n_spat_filters,
@@ -646,15 +756,16 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         self._update_init_kwargs(n_outputs=n_outputs)
         self.final_layer = _get_separable_clf_layer(
             conv_layers_spec=self._clf_conv_layers_spec,
-            n_chans=self.n_chans,
+            n_chans=self._n_backbone_chans or self.n_chans,
             n_times=self.n_times,
             n_classes=n_outputs,
             n_spat_filters=self._clf_n_spat_filters,
         )
 
-    def forward(self, X, return_features=False):  # type: ignore
+    def forward(self, X, return_features=False, chs_info=None):  # type: ignore
+        X, ch_idxs = self._encode_ids(X, chs_info)
         local_features = self.feature_encoder(X)  # type: ignore
-        pos_encoding = self.pos_encoder(local_features)  # type: ignore
+        pos_encoding = self.pos_encoder(local_features, ch_idxs)  # type: ignore
         local_features += pos_encoding  # type: ignore
         contextual_features = self.transformer.encoder(local_features)  # type: ignore
         if return_features:
@@ -714,6 +825,12 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
                 "n_outputs must be provided when loading from a SignalJEPA model"
             )
 
+        if model.channel_tokenizer.strategy is not None:
+            raise ValueError(
+                "Transfer from a SignalJEPA instance needs channel_strategy="
+                "'native'; save it and load with from_pretrained(path, "
+                "channel_strategy=...) instead."
+            )
         feature_encoder = model.feature_encoder
         pos_encoder = model.pos_encoder
         transformer = model.transformer
@@ -745,6 +862,9 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             )
 
         return new_model
+
+
+SignalJEPA_Contextual._channel_target = _SJEPA_CHANNEL_TARGET
 
 
 class SignalJEPA_PostLocal(_BaseSignalJEPA):
