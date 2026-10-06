@@ -18,14 +18,7 @@ from mne.datasets.utils import _get_path
 from torch import nn
 from torch.nn import RMSNorm
 
-from braindecode.models._channel_layer import (
-    JIT_IGNORED,
-    batch_positions,
-    init_positions_layer,
-    key_padding_mask,
-)
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.channels import ChannelTarget
 
 logger = logging.getLogger(__name__)
 
@@ -245,12 +238,6 @@ class REVE(EEGModuleMixin, nn.Module):
     requiring matched layouts between pretraining and downstream tasks.
     """
 
-    __jit_ignored_attributes__ = [
-        *EEGModuleMixin.__jit_ignored_attributes__,
-        JIT_IGNORED,
-    ]
-    _channel_target = ChannelTarget("positions")
-
     def __init__(
         self,
         n_outputs=None,
@@ -271,7 +258,7 @@ class REVE(EEGModuleMixin, nn.Module):
         patch_overlap: int = 20,
         attention_pooling: bool = False,
         channel_strategy: str = "native",
-        channel_strategy_kwargs: Optional[dict] = None,
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -280,6 +267,8 @@ class REVE(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
 
         self.embed_dim = embed_dim
@@ -327,14 +316,6 @@ class REVE(EEGModuleMixin, nn.Module):
         self.default_pos = None
         if chs_info is not None:
             self.default_pos = self.get_positions([ch["ch_name"] for ch in chs_info])
-
-        # Built last so the backbone initialisation is unchanged.
-        init_positions_layer(
-            self,
-            channel_strategy,
-            channel_strategy_kwargs,
-            fixed_montage=not self.use_attention_pooling,
-        )
 
     def _get_flattened_output_dim(self) -> int:
         """Helper function to compute the flattened output dimension after the transformer."""
@@ -395,7 +376,6 @@ class REVE(EEGModuleMixin, nn.Module):
         pos: Optional[torch.Tensor] = None,
         return_output: bool = False,
         return_features: bool = False,
-        chs_info: Optional[list[dict]] = None,
     ) -> Union[torch.Tensor, list[torch.Tensor], dict]:
         """
         Forward pass of the model.
@@ -418,10 +398,6 @@ class REVE(EEGModuleMixin, nn.Module):
         return_features : bool, optional
             If True, returns a dict ``{"features": Tensor, "cls_token": None}``
             with encoder features before the final layer. Default is False.
-        chs_info : list of dict, optional
-            Montage of ``eeg`` when it differs from the constructor's; used only
-            when ``channel_strategy`` is not ``"native"``. An explicit ``pos``
-            still takes precedence over the layer's positions.
 
         Returns
         -------
@@ -435,14 +411,6 @@ class REVE(EEGModuleMixin, nn.Module):
             raise ValueError(
                 "return_output and return_features are mutually exclusive."
             )
-
-        unobserved: Optional[torch.Tensor] = None
-        if self._channel_layer:
-            enc = self._encode_channels(eeg, chs_info)
-            eeg = enc.x
-            if pos is None:
-                pos = batch_positions(enc, eeg.shape[0])
-            unobserved = key_padding_mask(enc.observed)
 
         patches = eeg.unfold(
             dimension=2,
@@ -477,11 +445,7 @@ class REVE(EEGModuleMixin, nn.Module):
             )
             + pos_embed
         )
-        attn_mask: Optional[torch.Tensor] = None
-        if unobserved is not None:
-            # SDPA boolean mask, True = attend; tokens are (chan patch) ordered.
-            attn_mask = (~unobserved).repeat_interleave(n_patches)[None, None, None]
-        x = self.transformer(x, return_output, attn_mask=attn_mask)
+        x = self.transformer(x, return_output)
 
         if return_output:
             return x
@@ -585,7 +549,7 @@ class Attention(nn.Module):
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
         self.to_out = nn.Linear(inner_dim, dim, bias=False)
 
-    def forward(self, x, attn_mask: Optional[torch.Tensor] = None):
+    def forward(self, x):
         x = self.norm(x)
         qkv = self.to_qkv(x)
         q, k, v = (
@@ -594,7 +558,7 @@ class Attention(nn.Module):
             )
             for t in qkv.chunk(3, dim=-1)
         )
-        out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+        out = F.scaled_dot_product_attention(q, k, v)
         out = rearrange(out, "batch heads seq dim -> batch seq (heads dim)")
         return self.to_out(out)
 
@@ -628,11 +592,11 @@ class TransformerBackbone(nn.Module):
             )
 
     def forward(
-        self, x, return_out_layers=False, attn_mask: Optional[torch.Tensor] = None
+        self, x, return_out_layers=False
     ) -> Union[torch.Tensor, list[torch.Tensor]]:
         out_layers = [x] if return_out_layers else []
         for attn, ff in self.layers:
-            x = attn(x, attn_mask) + x
+            x = attn(x) + x
             x = ff(x) + x
             if return_out_layers:
                 out_layers.append(x)

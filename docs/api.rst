@@ -291,40 +291,12 @@ The channel layer behind ``channel_strategy=`` (see
 
 :py:mod:`braindecode.modules.channels`:
 
-.. currentmodule:: braindecode.modules.channels
-
 .. autosummary::
     :toctree: generated/channels
     :template: class_in_subdir
     :recursive:
 
-    ChannelTokenizer
-    ChannelEncoding
-    ChannelTarget
-    ChannelStrategy
-    SpatialMap
-    ResolvedMontage
-    ExactStrategy
-    ZeroStrategy
-    NearestStrategy
-    IDWStrategy
-    SplineStrategy
-    FieldStrategy
-    SourceStrategy
-    WienerStrategy
-    RegionStrategy
-    LatentStrategy
-
-.. autosummary::
-    :toctree: generated/channels
-    :template: function_in_subdir
-    :recursive:
-
-    register_channel_strategy
-    get_channel_strategy
-    resolve_montage
-
-.. currentmodule:: braindecode.modules
+    ChannelLayer
 
 Convolution
 ===========

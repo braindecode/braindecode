@@ -623,19 +623,3 @@ def test_hub_method_install_hint_no_hf():
         M.from_pretrained("any/repo")
     with pytest.raises(ImportError, match=r"M\.push_to_hub.*braindecode\[hub\]"):
         M().push_to_hub("any/repo")
-
-
-def test_backbone_checkpoint_into_a_trainable_channel_strategy():
-    """Missing channel-layer keys warn once; the backbone load stays strict."""
-    from braindecode.models import LUNA
-
-    chs = [{"ch_name": n, "kind": "eeg"} for n in ["Fz", "Cz", "Pz", "Oz"]]
-    kw = dict(chs_info=chs, n_outputs=2, n_times=800, sfreq=200)
-    backbone = LUNA(**kw).state_dict()
-    with pytest.warns(UserWarning):
-        model = LUNA(**kw, channel_strategy="latent")  # no effect on LUNA: says so
-    with pytest.warns(UserWarning, match="freshly initialised.*train them"):
-        model.load_state_dict(backbone, strict=True)
-    del backbone[next(iter(backbone))]
-    with pytest.raises(RuntimeError, match="Missing key"):
-        model.load_state_dict(backbone, strict=True)

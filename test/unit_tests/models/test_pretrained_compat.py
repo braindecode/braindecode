@@ -6,19 +6,15 @@ a 64-channel montage outside the 10-20 vocabulary, coordinates-only channels,
 names without coordinates, short / long / non-divisible windows, other
 sampling rates -- and must either forward or raise the *declared* error.
 
-The expected outcome of each cell is derived from the model's channel
-contract (the interface of its ``_channel_target``; ``COMPAT`` below holds
-the rest), not hard-coded per cell, so adding a model means adding one entry.
-
-``test_channel_strategy_smoke`` runs every channel strategy once on one model
-per channel interface; ``test_native_checkpoint_loads_under_a_strategy``
-checks that the native state dict loads strictly into a model with a layer.
+The expected outcome of each cell is derived from the model's declared
+channel strategy (``COMPAT`` below), not hard-coded per cell, so adding a
+model means adding one entry. Cells the native path cannot serve run with a
+``channel_strategy`` instead (``STRATEGY_CELLS``).
 """
 
 from __future__ import annotations
 
 import math
-import re
 import warnings
 
 import mne
@@ -90,17 +86,16 @@ def chs_names_no_loc(names):
     return [{"ch_name": n, "kind": "eeg", "loc": np.zeros(12)} for n in names]
 
 
-# Declared behaviour per pretrained class. How the checkpoint identifies
-# channels comes from the class's ``_channel_target.interface`` (montage / ids
-# / positions / slots / free, see ``interface``); a ``channels`` entry is only
-# needed for a model without a channel contract. ``min_n_times`` = smallest
-# accepted window in samples.
+# Declared behaviour per pretrained class: ``channels`` = how the checkpoint
+# identifies channels (names / coords / fixed_order / index_slots / agnostic),
+# ``min_n_times`` = smallest accepted window in samples.
 COMPAT = {
     "Labram": dict(
         cls=Labram,
         sfreq=200,
         n_times=800,
         canon=LABRAM_CHANNEL_ORDER,
+        channels="names",
         names_required_at_forward=True,
     ),
     "EEGPT": dict(
@@ -108,36 +103,42 @@ COMPAT = {
         sfreq=256,
         n_times=1024,
         canon=EEGPT_19_CHANNELS,
+        channels="names",
     ),
     "BENDR": dict(
         cls=BENDR,
         sfreq=256,
         n_times=1024,
         canon=BENDR_CHANNEL_ORDER,
+        channels="fixed_order",
     ),
     "BIOT": dict(
         cls=BIOT,
         sfreq=200,
         n_times=800,
         canon=BIOT_CHANNEL_ORDER,
+        channels="fixed_order_unchecked",
     ),
     "CBraMod": dict(
         cls=CBraMod,
         sfreq=200,
         n_times=800,
         canon=TEN_TWENTY,
+        channels="agnostic",
     ),
     "CodeBrain": dict(
         cls=CodeBrain,
         sfreq=200,
         n_times=800,
         canon=TEN_TWENTY,
+        channels="fixed_order_unchecked",
     ),
     "EEGDINO": dict(
         cls=EEGDINO,
         sfreq=200,
         n_times=800,
         canon=TEN_TWENTY,
+        channels="index_slots",
         max_n_chans=19,
     ),
     "LUNA": dict(
@@ -145,6 +146,7 @@ COMPAT = {
         sfreq=200,
         n_times=800,
         canon=TEN_TWENTY,
+        channels="coords",
         coords_checked=False,
     ),
     "REVE": dict(
@@ -152,6 +154,7 @@ COMPAT = {
         sfreq=200,
         n_times=800,
         canon=TEN_TWENTY,
+        channels="coords",
         coords_checked=False,
     ),
     "SignalJEPA": dict(
@@ -159,6 +162,7 @@ COMPAT = {
         sfreq=128,
         n_times=2048,
         canon=TEN_TWENTY,
+        channels="names",
         min_n_times=160,
     ),
     "STEEGFormer": dict(
@@ -166,12 +170,14 @@ COMPAT = {
         sfreq=100,
         n_times=400,
         canon=TEN_TWENTY,
+        channels="names",
     ),
     "ZUNA": dict(
         cls=ZUNA,
         sfreq=256,
         n_times=1024,
         canon=TEN_TWENTY,
+        channels="coords",
         coords_checked=True,
     ),
     "Brant": dict(
@@ -179,6 +185,7 @@ COMPAT = {
         sfreq=250,
         n_times=1500,
         canon=TEN_TWENTY,
+        channels="agnostic",
         kwargs=dict(patch_size=250),
     ),
     "BrainBERT": dict(
@@ -186,6 +193,7 @@ COMPAT = {
         sfreq=2048,
         n_times=4096,
         canon=["E1"],
+        channels="agnostic",
         min_n_times=1401,
     ),
     "BaRISTA": dict(
@@ -194,6 +202,7 @@ COMPAT = {
         n_times=2048,
         canon=None,
         kind="seeg",
+        channels="coords",
         coords_checked=True,
         min_n_times=512,
     ),
@@ -202,6 +211,7 @@ COMPAT = {
         sfreq=500,
         n_times=1000,
         canon=TEN_TWENTY,
+        channels="coords",
         coords_checked=False,
     ),
     "MIRepNet": dict(
@@ -209,6 +219,7 @@ COMPAT = {
         sfreq=250,
         n_times=1000,
         canon=MIREPNET_CHANNEL_ORDER,
+        channels="fixed_order_unchecked",
     ),
     "MVPFormer": dict(
         cls=MVPFormer,
@@ -216,6 +227,7 @@ COMPAT = {
         n_times=2560,
         canon=None,
         kind="seeg",
+        channels="agnostic",
     ),
     "PopT": dict(
         cls=PopulationTransformer,
@@ -223,48 +235,13 @@ COMPAT = {
         n_times=768,
         canon=None,
         kind="seeg",
+        channels="coords",
         coords_checked=False,
     ),
 }
 
-# Cells the native path cannot serve, run with a channel strategy instead
-# (LaBraM looks names up at forward; biosemi64 / coordinates-only / names
-# without positions go through the layer).
-STRATEGY_CELLS = {
-    ("Labram", "G2"): "spline",
-    ("Labram", "G3"): "spline",
-    ("Labram", "G3b"): "spline",
-}
-
-STRATEGIES = (
-    "exact",
-    "zero",
-    "nearest",
-    "idw",
-    "spline",
-    "field",
-    "source",
-    "wiener",
-    "region",
-    "latent",
-)
-# One model per channel interface (montage, ids, positions, slots, free).
-REPRESENTATIVES = ("BENDR", "Labram", "LUNA", "EEGDINO", "CBraMod")
-
-# What a strategy may refuse, with the layer's declared message.
-DECLARED_ERRORS = "|".join(
-    [
-        r"not in the input",
-        r"not in the model vocabulary",
-        r"needs at least \d+ channels with a position",
-        r"no electrode of the fitted dense montage",
-    ]
-)
-
-
-def interface(spec):
-    """Channel interface of a COMPAT entry (from its ``_channel_target``)."""
-    return getattr(spec["cls"]._channel_target, "interface", None)
+# LaBraM looks names up at forward: these montages go through the channel layer.
+STRATEGY_CELLS = {("Labram", "G2"), ("Labram", "G3"), ("Labram", "G3b")}
 
 
 def geometries(spec):
@@ -297,24 +274,22 @@ def geometries(spec):
     return geos
 
 
-def expected(spec, gname, gkw, strategy="native"):
-    """Return 'ok' or 'raise' from the declared contract (native path)."""
+def expected(spec, gname, gkw):
+    """Return 'ok' or 'raise' from the declared strategy."""
     n_ch = len(gkw["chs_info"])
     has_loc = any(np.any(ch["loc"][:3]) for ch in gkw["chs_info"])
     # length
     min_nt = spec.get("min_n_times")
     if min_nt is not None and gkw["n_times"] < min_nt:
         return "raise"
-    if strategy != "native":  # the layer serves the montage
-        return "ok"
     # channels
-    iface = interface(spec)
-    if iface == "slots" and n_ch > spec["max_n_chans"]:
+    strategy = spec["channels"]
+    if strategy == "index_slots" and n_ch > spec["max_n_chans"]:
         return "raise"
-    if iface == "positions" and spec.get("coords_checked") and not has_loc:
+    if strategy == "coords" and spec.get("coords_checked") and not has_loc:
         return "raise"
     if (
-        iface == "ids"
+        strategy == "names"
         and spec.get("names_required_at_forward")
         and gname in ("G2", "G3", "G3b")
     ):
@@ -331,10 +306,9 @@ def _cases():
 @pytest.mark.parametrize("name,gname,gkw", list(_cases()))
 def test_geometry_contract(name, gname, gkw):
     spec = COMPAT[name]
-    strategy = STRATEGY_CELLS.get((name, gname), "native")
     kw = dict(n_outputs=2, **gkw, **spec.get("kwargs", {}))
-    if strategy != "native":
-        kw["channel_strategy"] = strategy
+    if (name, gname) in STRATEGY_CELLS:
+        kw["channel_strategy"] = "spline"
 
     def build_and_forward():
         with warnings.catch_warnings():
@@ -343,7 +317,7 @@ def test_geometry_contract(name, gname, gkw):
             with torch.no_grad():
                 return model(torch.randn(1, len(gkw["chs_info"]), gkw["n_times"]))
 
-    if expected(spec, gname, gkw, strategy) == "raise":
+    if expected(spec, gname, gkw) == "raise" and (name, gname) not in STRATEGY_CELLS:
         with pytest.raises((ValueError, RuntimeError)):
             build_and_forward()
     else:
@@ -351,59 +325,29 @@ def test_geometry_contract(name, gname, gkw):
         assert torch.is_tensor(y) and y.shape[0] == 1 and torch.isfinite(y).all()
 
 
-# BIOT takes monopolar input under a strategy; SignalJEPA then uses its
-# pre-training channel table: their canonical montage has no ``exact`` twin.
-BACKBONE_CHANGES_UNDER_A_STRATEGY = ("BIOT", "SignalJEPA")
-
-
-@pytest.mark.parametrize("name", list(COMPAT))
+# BIOT's canonical input is bipolar; under a strategy it takes electrodes.
+@pytest.mark.parametrize("name", [n for n in COMPAT if n != "BIOT"])
 def test_native_checkpoint_loads_under_a_strategy(name):
-    """Native keeps the released state dict; it loads strictly with a layer on."""
+    """The native state dict loads strictly into the same model with a layer."""
     spec = COMPAT[name]
     kw = dict(n_outputs=2, **geometries(spec)["G1"], **spec.get("kwargs", {}))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         native = spec["cls"](**kw).state_dict()
-        assert not [k for k in native if k.startswith("channel_tokenizer")]
-        if name not in BACKBONE_CHANGES_UNDER_A_STRATEGY:
-            model = spec["cls"](**kw, channel_strategy="exact")
-            model.load_state_dict(native, strict=True)
+        spec["cls"](**kw, channel_strategy="exact").load_state_dict(native)
 
 
-_POS_1005 = _montage("standard_1005").get_positions()["ch_pos"]
-
-
-def _dense_fit_set(n_samples=300, seed=0):
-    """Smooth synthetic fields on every standard_1005 site (fits ``wiener``)."""
-    dense = [
-        {"ch_name": n, "kind": "eeg", "loc": np.r_[p, np.zeros(9)]}
-        for n, p in _POS_1005.items()
-    ]
-    P = np.array([ch["loc"][:3] for ch in dense])
-    basis = np.c_[np.ones(len(P)), P, P**2]
-    rng = np.random.default_rng(seed)
-    X = rng.standard_normal((n_samples, basis.shape[1])) @ basis.T * 1e2
-    return X + 0.1 * rng.standard_normal(X.shape), dense
-
-
-@pytest.mark.parametrize("strategy", STRATEGIES)
-@pytest.mark.parametrize("name", REPRESENTATIVES)
-def test_channel_strategy_smoke(name, strategy):
-    """Eight 10-20 names without positions: a finite output or a declared error."""
+# One model per channel contract: canonical montage, ids, positions, slots, free.
+@pytest.mark.parametrize("name", ["BENDR", "Labram", "LUNA", "EEGDINO", "CBraMod"])
+def test_channel_strategy_smoke(name):
+    """Eight 10-20 names without positions forward through ``spline``."""
     spec = COMPAT[name]
     chs = chs_names_no_loc(TEN_TWENTY[:8])
     kw = dict(n_outputs=2, chs_info=chs, sfreq=spec["sfreq"], n_times=spec["n_times"])
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        try:
-            model = spec["cls"](**kw, channel_strategy=strategy).eval()
-            if strategy == "wiener":
-                model.channel_tokenizer.fit(*_dense_fit_set())
-            with torch.no_grad():
-                y = model(torch.randn(1, len(chs), spec["n_times"]))
-        except ValueError as exc:
-            assert re.search(DECLARED_ERRORS, str(exc)), f"undeclared error: {exc}"
-            return
-    assert model.get_config()["channel_strategy"] == strategy
-    y = y["features"] if isinstance(y, dict) else y
+        model = spec["cls"](**kw, channel_strategy="spline").eval()
+        with torch.no_grad():
+            y = model(torch.randn(1, len(chs), spec["n_times"]))
+    assert model.get_config()["channel_strategy"] == "spline"
     assert y.shape[0] == 1 and torch.isfinite(y).all()

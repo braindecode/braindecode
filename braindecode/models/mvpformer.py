@@ -17,17 +17,13 @@ Braindecode Adaptation: Bruno Aristimunha
 
 from __future__ import annotations
 
-from typing import ClassVar, Optional
-
 import torch
 from einops import rearrange, reduce, repeat
 from torch import nn
 
 from braindecode.functional import daubechies_filters, wavelet_decomposition
-from braindecode.models._channel_layer import backbone_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PatchTokenizer
-from braindecode.modules.channels import ELECTRODE_KINDS, ChannelTarget
 
 
 class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -210,10 +206,6 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
        https://openreview.net/forum?id=5M1YOW3bRq
     """
 
-    #: Channel contract: no channel identity, slots in input order.
-    _channel_target: ClassVar[ChannelTarget] = ChannelTarget("free")
-    _channel_kinds = ELECTRODE_KINDS  # intracranial contacts are electrodes too
-
     def __init__(
         self,
         # braindecode signal parameters
@@ -239,7 +231,7 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         activation: type[nn.Module] = nn.SiLU,
         pooling: str = "mean",
         channel_strategy: str = "native",
-        channel_strategy_kwargs: Optional[dict] = None,
+        channel_strategy_kwargs: dict | None = None,
     ):
         if not isinstance(segment_len, int) or segment_len < 1:
             raise ValueError(
@@ -254,6 +246,8 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
@@ -270,15 +264,9 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"{self.n_segments} segments exceed max_segments ({max_segments}); "
                 "increase max_segments or reduce n_times / segment_len."
             )
-        # The channel layer comes first because it sets how many channels reach
-        # the backbone; the backbone then draws the same random numbers under
-        # every strategy.
-        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
-        self.n_backbone_chans = backbone_n_chans(self)
-        if self.n_backbone_chans > max_channels:
+        if self.n_chans > max_channels:
             raise ValueError(
-                f"n_chans ({self.n_backbone_chans}) exceeds max_channels "
-                f"({max_channels})."
+                f"n_chans ({self.n_chans}) exceeds max_channels ({max_channels})."
             )
 
         self.patch_tokenizer = PatchTokenizer(
@@ -306,7 +294,7 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
             ]
         )
         self.ln_f = nn.RMSNorm(d_model, eps=1e-5)
-        head_in = d_model if pooling == "mean" else self.n_backbone_chans * d_model
+        head_in = d_model if pooling == "mean" else self.n_chans * d_model
         self.final_layer = nn.Linear(head_in, self.n_outputs, bias=False)
 
         self.apply(self._init_weights)
@@ -323,36 +311,13 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self._n_outputs = n_outputs
         self._update_init_kwargs(n_outputs=n_outputs)
         head_in = (
-            self.d_model
-            if self.pooling == "mean"
-            else self.n_backbone_chans * self.d_model
+            self.d_model if self.pooling == "mean" else self.n_chans * self.d_model
         )
         self.final_layer = nn.Linear(head_in, n_outputs, bias=False)
         # Match fresh construction (std=0.02), not the default Linear init.
         self._init_weights(self.final_layer)
 
-    def forward(self, x, return_features: bool = False, chs_info=None):
-        """Encode ``x`` of shape ``(batch, n_chans, n_times)``.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input of shape ``(batch, n_chans, n_times)``.
-        return_features : bool
-            If ``True``, return ``{"features": pooled, "cls_token": None}``.
-        chs_info : list of dict, optional
-            Montage of ``x`` for this call when the model has a
-            ``channel_strategy`` other than ``"native"`` (default: the montage
-            given at construction). Ignored under ``"native"``.
-        """
-        if self._channel_layer:
-            x = self._encode_channels(x, chs_info).x
-            if self.pooling == "concat" and x.shape[1] != self.n_backbone_chans:
-                raise ValueError(
-                    f"The channel layer gives {x.shape[1]} channels for this "
-                    f"montage but the concat head was built for "
-                    f"{self.n_backbone_chans}."
-                )
+    def forward(self, x, return_features: bool = False):
         # x: (batch, n_chans, n_times)
         patches = self.patch_tokenizer(x)  # (batch, channel, segment, segment_len)
         embeds = self.patch_embed(patches)  # (batch, channel, segment, d_model)

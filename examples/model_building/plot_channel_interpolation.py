@@ -10,7 +10,7 @@ pre-trained on 19 channels of the 10-20 system plus ``SCALE``, a
 relative-amplitude channel. A recording with other channels cannot go
 straight into the checkpoint.
 
-The channel layer (:mod:`braindecode.modules.channels`) sits inside the
+The channel layer (:class:`~braindecode.modules.ChannelLayer`) sits inside the
 model and maps the montage of your recording onto the one the backbone
 expects. You choose how with ``channel_strategy``:
 
@@ -128,13 +128,13 @@ for strategy in strategies:
         **small,
     ).eval()
     with torch.no_grad():
-        enc = model.channel_tokenizer(x)  # what the backbone receives
+        x_backbone, observed = model.channel_layer(x)  # what the backbone receives
         out = model(x)
-    reconstructed[strategy] = enc.x[0].numpy()
+    reconstructed[strategy] = x_backbone[0].numpy()
     print(
-        f"{strategy:>6}: backbone input {tuple(enc.x.shape)}, "
+        f"{strategy:>6}: backbone input {tuple(x_backbone.shape)}, "
         f"output {tuple(out.shape)}, "
-        f"observed {int(enc.observed.sum())}/{len(enc.observed)} channels"
+        f"observed {int(observed.sum())}/{len(observed)} channels"
     )
 
 ######################################################################
@@ -153,9 +153,9 @@ model = BENDR(
     **small,
 ).eval()
 with torch.no_grad():
-    enc = model.channel_tokenizer(x_full)
-reconstructed["exact (all 32)"] = enc.x[0].numpy()
-print("exact, all 32 channels: observed", enc.observed.tolist())
+    x_backbone, observed = model.channel_layer(x_full)
+reconstructed["exact (all 32)"] = x_backbone[0].numpy()
+print("exact, all 32 channels: observed", observed.tolist())
 
 ######################################################################
 # The reconstructed BENDR montage
@@ -231,6 +231,5 @@ plt.show()
 #   behaviour and leaves the canonical montage untouched.
 # * ``exact`` never invents data and fails when a channel is missing;
 #   ``spline``, ``field`` and ``source`` reconstruct it from positions.
-# * ``model.channel_tokenizer(x)`` returns what the backbone receives:
-#   the signal, plus which channels were measured (``observed``) and how
-#   much to trust each one (``support``).
+# * ``model.channel_layer(x)`` returns what the backbone receives: the
+#   signal and which channels were measured (``observed``).

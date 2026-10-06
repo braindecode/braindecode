@@ -14,20 +14,13 @@ from __future__ import annotations
 
 import warnings
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 
-from braindecode.models._channel_layer import (
-    JIT_IGNORED,
-    init_positions_layer,
-)
-from braindecode.models._channel_layer import key_padding_mask as unobserved_mask
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
-from braindecode.modules.channels import ChannelTarget
 from braindecode.modules.popt_modules import (
     _PopTInputEmbedding,
     _PopTSpecPredictionHead,
@@ -142,13 +135,6 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
        preprint arXiv:2406.03044.
     """
 
-    # The channel layer is not scriptable; the scripted forward never reaches it.
-    __jit_ignored_attributes__ = [
-        *EEGModuleMixin.__jit_ignored_attributes__,
-        JIT_IGNORED,
-    ]
-    _channel_target = ChannelTarget("positions")
-
     def __init__(
         self,
         # braindecode parameters
@@ -170,7 +156,7 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
         activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.1,
         channel_strategy: str = "native",
-        channel_strategy_kwargs: Optional[dict] = None,
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -179,6 +165,8 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if coord_units not in ("m", "raw"):
@@ -217,14 +205,6 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
         self.register_buffer(
             "electrode_coords", self._coords_from_chs_info(), persistent=False
         )
-        # Built last so the backbone initialisation is unchanged.
-        init_positions_layer(
-            self,
-            channel_strategy,
-            channel_strategy_kwargs,
-            fixed_montage=False,
-            model_kind="ieeg",
-        )
 
     def _coords_from_chs_info(self) -> torch.Tensor:
         """Integer ``(n_chans, 3)`` coordinates from ``chs_info``, or sequential ones."""
@@ -236,31 +216,28 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
         if loc is None or loc.shape[0] != self.n_chans or not np.isfinite(loc).all():
             idx = torch.arange(self.n_chans, dtype=torch.long)
             coords = idx.unsqueeze(1).repeat(1, 3)
-            return coords.clamp(0, self.max_len - 1)
-        return self._coords_from_positions(torch.as_tensor(loc, dtype=torch.float))
-
-    def _coords_from_positions(self, loc_t: torch.Tensor) -> torch.Tensor:
-        """Integer ``(n_chans, 3)`` coordinates from finite positions."""
-        if self.coord_units == "m":
-            loc_t = loc_t * 1000.0
-        coords = loc_t.round().long()
-        if self.shift_coords:
-            coords = coords - coords.min(dim=0, keepdim=True).values
-        if bool(((coords < 0) | (coords >= self.max_len)).any()):
-            hint = (
-                "raise `max_len`"
-                if self.shift_coords
-                else "set `shift_coords=True` to train from scratch"
-            )
-            warnings.warn(
-                "Some electrode coordinates from chs_info fall outside "
-                f"[0, {self.max_len - 1}] and are clamped. The pretrained "
-                "model expects the non-negative integer (left, inferior, "
-                "posterior) indices of the upstream data; pass `coords` to "
-                f"forward, or {hint}.",
-                UserWarning,
-                stacklevel=5,
-            )
+        else:
+            loc_t = torch.as_tensor(loc, dtype=torch.float)
+            if self.coord_units == "m":
+                loc_t = loc_t * 1000.0
+            coords = loc_t.round().long()
+            if self.shift_coords:
+                coords = coords - coords.min(dim=0, keepdim=True).values
+            if bool(((coords < 0) | (coords >= self.max_len)).any()):
+                hint = (
+                    "raise `max_len`"
+                    if self.shift_coords
+                    else "set `shift_coords=True` to train from scratch"
+                )
+                warnings.warn(
+                    "Some electrode coordinates from chs_info fall outside "
+                    f"[0, {self.max_len - 1}] and are clamped. The pretrained "
+                    "model expects the non-negative integer (left, inferior, "
+                    "posterior) indices of the upstream data; pass `coords` to "
+                    f"forward, or {hint}.",
+                    UserWarning,
+                    stacklevel=4,
+                )
         return coords.clamp(0, self.max_len - 1)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
@@ -289,7 +266,6 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
         seq_id: torch.Tensor | None = None,
         return_features: bool = False,
         key_padding_mask: torch.Tensor | None = None,
-        chs_info: Optional[List[Dict[str, Any]]] = None,
     ):
         """Aggregate a population of electrode features.
 
@@ -312,10 +288,6 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
             Boolean ``(batch, n_chans)`` mask, ``True`` for padded electrodes, so
             recordings with different electrode sets can share a batch (upstream
             ``src_key_padding_mask``). The ``CLS`` token is never masked.
-        chs_info : list of dict, optional
-            Montage of ``x`` when it differs from the constructor's; used only
-            when ``channel_strategy`` is not ``"native"`` (eager mode only).
-            Explicit ``coords`` still take precedence.
 
         Returns
         -------
@@ -323,21 +295,6 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
             Class logits of shape ``(batch, n_outputs)``, or the feature dict
             when ``return_features`` is set.
         """
-        if not torch.jit.is_scripting():  # the channel layer is eager-only
-            if self._channel_layer:
-                enc = self._encode_channels(x, chs_info)
-                x = enc.x
-                if coords is None and enc.positions is not None:
-                    coords = self._coords_from_positions(enc.positions)
-                    coords = coords.unsqueeze(0).expand(x.shape[0], -1, -1)
-                unobserved = unobserved_mask(enc.observed)
-                if unobserved is not None:
-                    unobserved = unobserved.unsqueeze(0).expand(x.shape[0], -1)
-                    key_padding_mask = (
-                        unobserved
-                        if key_padding_mask is None
-                        else key_padding_mask.to(torch.bool) | unobserved
-                    )
         batch_size, n_chans, _ = x.shape
         if coords is None:
             n_known = self.electrode_coords.shape[0]

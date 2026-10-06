@@ -13,11 +13,9 @@ import torch
 from einops import rearrange
 from torch import Tensor, nn
 
-from braindecode.models._channel_layer import backbone_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import CrissCrossTransformerEncoderLayer
 from braindecode.modules.blocks import PatchTokenizer
-from braindecode.modules.channels import ChannelTarget
 
 logger = logging.getLogger(__name__)
 
@@ -155,8 +153,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
        https://arxiv.org/abs/2412.07236
     """
 
-    _channel_target = ChannelTarget("free")
-
     def __init__(
         self,
         n_outputs=None,
@@ -182,7 +178,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         drop_prob: float = 0.1,
         return_encoder_output: bool = False,
         channel_strategy: str = "native",
-        channel_strategy_kwargs: Optional[dict] = None,
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -191,9 +187,10 @@ class CBraMod(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
-        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
         # Shared tokenizer: (batch, n_chans, n_times) -> (batch, n_chans, n_patch, patch_size),
         # padding/cropping a non-divisible time axis at forward time.
         try:
@@ -232,7 +229,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Identity()
         elif self._knows_geometry():
             n_patch = self._n_patch()
-            flat_dim = backbone_n_chans(self) * n_patch * emb_dim
+            flat_dim = self.n_chans * n_patch * emb_dim
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.Linear(flat_dim, self.n_outputs)
             )
@@ -248,7 +245,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self._update_init_kwargs(return_encoder_output=False)
         if self._knows_geometry():
             n_patch = self._n_patch()
-            flat_dim = backbone_n_chans(self) * n_patch * self._emb_dim
+            flat_dim = self.n_chans * n_patch * self._emb_dim
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.Linear(flat_dim, n_outputs)
             )
@@ -280,28 +277,8 @@ class CBraMod(EEGModuleMixin, nn.Module):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-    def forward(self, x, mask=None, return_features=False, chs_info=None):
-        """Encode ``x`` of shape ``(batch, n_chans, n_times)``.
-
-        ``mask`` ``(batch, n_chans, n_patches)`` marks patches (``1``) replaced
-        by the mask token. ``chs_info`` (montage of ``x`` when it differs from
-        the constructor's) is used only when ``channel_strategy`` is not
-        ``"native"``; channels the layer marks as not observed are then masked.
-        """
-        unobserved = None
-        if self._channel_layer:
-            enc = self._encode_channels(x, chs_info)
-            x, unobserved = enc.x, ~enc.observed
+    def forward(self, x, mask=None, return_features=False):
         x = self.rearrange(x)
-        if unobserved is not None and bool(unobserved.any()):
-            channel_mask = unobserved.to(x.device)[None, :, None].expand(
-                x.shape[0], -1, x.shape[2]
-            )
-            mask = (
-                channel_mask.long()
-                if mask is None
-                else (mask.bool() | channel_mask).long()
-            )
         patch_emb = self.patch_embedding(x, mask)
         feats = self.encoder(patch_emb)
         out = self.proj_out(feats)

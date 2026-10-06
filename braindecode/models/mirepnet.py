@@ -9,20 +9,12 @@ from __future__ import annotations
 
 from torch import Tensor, nn
 
-from braindecode.models._channel_layer import (
-    backbone_n_chans,
-    names_chs_info,
-    warn_if_not_canonical,
-)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules import FeedForwardBlock, MultiHeadAttention
-from braindecode.modules.channels import ChannelTarget
 
-#: Channel order of the released MIRepNet checkpoint: ``use_channels_names``
-#: in ``utils/channel_list.py`` of the original code (revision ``b35d113``),
-#: 9 + 9 + 9 + 9 + 9 electrodes from F7 to P8 (frontal pole, AF, PO and O rows
-#: excluded). Upstream pads missing channels onto this template.
+#: Channel order of the released checkpoint (``use_channels_names`` in
+#: ``utils/channel_list.py`` of the original code, revision ``b35d113``).
 MIREPNET_CHANNEL_ORDER = [
     *"F7 F5 F3 F1 Fz F2 F4 F6 F8".split(),
     *"FT7 FC5 FC3 FC1 FCz FC2 FC4 FC6 FT8".split(),
@@ -100,9 +92,8 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
 
         model = MIRepNet.from_pretrained("braindecode/mirepnet-pretrained")
 
-    It was trained with 45 channels (:data:`MIREPNET_CHANNEL_ORDER`), 1,000
-    samples at 250 Hz, and three output classes. Pass ``n_outputs`` to replace
-    its classification head.
+    It was trained with 45 channels, 1,000 samples at 250 Hz, and three output
+    classes. Pass ``n_outputs`` to replace its classification head.
 
     .. versionadded:: 1.8
 
@@ -160,9 +151,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
        https://github.com/staraink/MIRepNet
     """
 
-    _channel_target = ChannelTarget(
-        "montage", chs_info=names_chs_info(MIREPNET_CHANNEL_ORDER)
-    )
+    _channel_target = MIREPNET_CHANNEL_ORDER
 
     def __init__(
         self,
@@ -201,6 +190,8 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         for name, positive_value in (
@@ -227,9 +218,6 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
                 raise ValueError(f"{name} must be between 0 and 1.")
         if attention_scale is not None and attention_scale <= 0:
             raise ValueError("attention_scale must be positive or None.")
-        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
-        if not self._channel_layer:
-            warn_if_not_canonical(self, MIREPNET_CHANNEL_ORDER)
 
         self.embed_dim = embed_dim
         self.return_features = return_features
@@ -240,7 +228,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             "clshead.bias": "final_layer.bias",
         }
         self.embedding = _PatchEmbedding(
-            n_chans=backbone_n_chans(self),
+            n_chans=self.n_chans,
             embed_dim=embed_dim,
             n_filters_time=n_filters_time,
             n_filters_spat=n_filters_spat,
@@ -263,19 +251,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
 
     @_disable_batch_norm_training_if_batch_size_one
-    def forward(
-        self,
-        x: Tensor,
-        return_features: bool | None = None,
-        chs_info: list[dict] | None = None,
-    ):
-        """Classify ``x`` of shape ``(batch, n_chans, n_times)``.
-
-        ``chs_info`` (montage of ``x`` when it differs from the constructor's)
-        is used only when ``channel_strategy`` is not ``"native"``.
-        """
-        if self._channel_layer:
-            x = self._encode_channels(x, chs_info).x
+    def forward(self, x: Tensor, return_features: bool | None = None):
         tokens = self.transformer(self.embedding(x))
         features = tokens.mean(dim=1)
         if return_features is None:

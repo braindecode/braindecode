@@ -9,7 +9,7 @@ import json
 import warnings
 from collections import OrderedDict
 from pathlib import Path
-from typing import ClassVar, Dict, Iterable, Optional, Type, Union
+from typing import Dict, Iterable, Optional, Type, Union
 
 import numpy as np
 import torch
@@ -24,11 +24,7 @@ from braindecode.models.util import (
     resolve_type_kwargs,
     track_model_init_kwargs,
 )
-from braindecode.modules.channels import (
-    ChannelEncoding,
-    ChannelTarget,
-    ChannelTokenizer,
-)
+from braindecode.modules.channels import ChannelLayer
 from braindecode.version import __version__
 
 huggingface_hub = _soft_import(
@@ -94,6 +90,12 @@ class _BraindecodeDocstringMeta(NumpyDocstringInheritanceInitMeta):
             track_model_init_kwargs(cls)
 
 
+def _apply_channel_layer(model, args, kwargs):
+    """Forward pre-hook: run the channel layer on ``x`` (``chs_info=`` per call)."""
+    x, _ = model.channel_layer(args[0], kwargs.pop("chs_info", None))
+    return (x, *args[1:]), kwargs
+
+
 class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     """
     Mixin class for all EEG models in braindecode.
@@ -119,12 +121,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     sfreq : float
         Sampling frequency of the EEG recordings.
     channel_strategy : str, default="native"
-        How the input montage reaches the backbone (pretrained models only; see
-        :doc:`/user_guide/channel_strategies`). ``"native"`` keeps the model's own
-        behaviour. ``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``,
-        ``"field"``, ``"source"``, ``"wiener"``, ``"region"`` or ``"latent"`` map
-        any montage onto what the backbone consumes inside ``forward``, which
-        then also takes ``chs_info`` for a per-call montage. Saved in the config.
+        How any montage reaches the backbone (pretrained models only; see
+        :doc:`/user_guide/channel_strategies`). ``"native"`` keeps the model as
+        it is. ``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``,
+        ``"field"`` or ``"source"`` map the montage of ``chs_info`` (or of the
+        ``chs_info`` given to ``forward``) onto the backbone's channels with a
+        :class:`~braindecode.modules.ChannelLayer`. Saved in the config.
     channel_strategy_kwargs : dict or None, default=None
         Options of the strategy (e.g. ``{"reg": 1e-2}`` for ``"spline"``).
 
@@ -300,6 +302,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         n_times: Optional[int] = None,  # type: ignore[assignment]
         input_window_seconds: Optional[float] = None,  # type: ignore[assignment]
         sfreq: Optional[float] = None,  # type: ignore[assignment]
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: Optional[dict] = None,
     ):
         # Deserialize chs_info if it comes as a list of dicts (from Hub)
         if chs_info is not None and isinstance(chs_info, list):
@@ -321,6 +325,26 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ):
             raise ValueError(
                 f"{n_times=} different from {input_window_seconds=} * {sfreq=}"
+            )
+        layer = None
+        if channel_strategy != "native":  # the backbone is built on the target
+            target = self._channel_target or chs_info
+            if target is None:
+                raise ValueError(
+                    f"channel_strategy={channel_strategy!r} needs chs_info."
+                )
+            target = [
+                c
+                if isinstance(c, dict)
+                else {"ch_name": c, "kind": "eeg", "loc": np.zeros(12)}
+                for c in target
+            ]
+            kwargs = channel_strategy_kwargs or {}
+            layer = ChannelLayer(target, channel_strategy, chs_info, **kwargs)
+            chs_info, n_chans = layer.target, None
+        elif channel_strategy_kwargs:
+            raise ValueError(
+                "channel_strategy='native' takes no channel_strategy_kwargs."
             )
 
         self._input_window_seconds = input_window_seconds  # type: ignore[assignment]
@@ -348,6 +372,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 setattr(self, key, val)
 
         super().__init__()
+        if layer is not None:
+            self.channel_layer = layer
+            self.register_forward_pre_hook(_apply_channel_layer, with_kwargs=True)
 
     @property
     def n_outputs(self) -> int:
@@ -610,84 +637,23 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         )
 
     mapping: Optional[Dict[str, str]] = None
+    #: Channels the backbone consumes under a ``channel_strategy`` (names or
+    #: ``chs_info``); ``None``: the model's own ``chs_info``.
+    _channel_target: Optional[list] = None
 
-    #: Channel contract of the backbone; ``None``: only ``channel_strategy="native"``.
-    _channel_target: ClassVar[Optional[ChannelTarget]] = None
-    #: Channel kinds the layer accepts (intracranial models: ``ELECTRODE_KINDS``).
-    _channel_kinds: ClassVar[tuple[str, ...]] = ("eeg",)
-
-    def _init_channel_tokenizer(
-        self,
-        channel_strategy: str = "native",
-        channel_strategy_kwargs: Optional[dict] = None,
-        target: Optional[ChannelTarget] = None,
-        kinds: Optional[tuple[str, ...]] = None,
-    ) -> None:
-        """Set ``self.channel_tokenizer`` (``None`` under ``"native"``) and ``self._channel_layer``.
-
-        ``target`` defaults to the class's ``_channel_target``. The layer's
-        parameters are drawn from a forked RNG, so the backbone initialises the
-        same under every strategy.
-        """
-        self._channel_layer = channel_strategy != "native"
-        if not self._channel_layer:
-            if channel_strategy_kwargs:
-                raise ValueError(
-                    f"channel_strategy='native' takes no options; got "
-                    f"{sorted(channel_strategy_kwargs)}."
-                )
-            self.channel_tokenizer: Optional[ChannelTokenizer] = None
-            return
-        target = target or type(self)._channel_target
-        if target is None:
-            raise ValueError(
-                f"{type(self).__name__} has no channel contract, so "
-                f"channel_strategy={channel_strategy!r} cannot apply; use 'native'."
-            )
-        with torch.random.fork_rng(devices=[]):
-            self.channel_tokenizer = ChannelTokenizer(
-                target,
-                channel_strategy,
-                src_chs_info=self._chs_info,
-                kinds=kinds or type(self)._channel_kinds,
-                **(channel_strategy_kwargs or {}),
-            )
-
-    def _encode_channels(
-        self, x: torch.Tensor, chs_info: Optional[list[dict]] = None
-    ) -> ChannelEncoding:
-        """Run the channel layer on ``x`` (montage: ``chs_info`` or the model's)."""
-        assert self.channel_tokenizer is not None
-        return self.channel_tokenizer(x, chs_info)
-
-    def load_state_dict(self, state_dict, strict=True, assign=False):
-        mapping = self.mapping or {}
-        new_state_dict = OrderedDict(
-            (mapping.get(k, k), v) for k, v in state_dict.items()
-        )
-        # A backbone checkpoint has no weights for a trainable channel strategy:
-        # keep their initial values, say so once, load the rest as strictly as asked.
-        own = super().state_dict()
-        fresh = [
-            k
-            for k in own
-            if k.startswith("channel_tokenizer.") and k not in new_state_dict
-        ]
-        if fresh:
-            strategy = getattr(self.channel_tokenizer, "strategy", None)
-            todo = (
-                "train them"
-                if getattr(strategy, "trainable", True)
-                else "call model.channel_tokenizer.fit()"
-            )
-            warnings.warn(
-                f"{type(self).__name__}: the checkpoint has no weights for {fresh}; "
-                f"they are freshly initialised ({todo} before use).",
-                UserWarning,
-                stacklevel=2,
-            )
-            new_state_dict.update((k, own[k]) for k in fresh)
-        return super().load_state_dict(new_state_dict, strict=strict, assign=assign)
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        mapping = self.mapping if self.mapping else {}
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            if k in mapping:
+                new_state_dict[mapping[k]] = v
+            else:
+                new_state_dict[k] = v
+        # A backbone checkpoint has no weights for a trainable channel layer.
+        for k, v in super().state_dict().items():
+            if k.startswith("channel_layer.") and k not in new_state_dict:
+                new_state_dict[k] = v
+        return super().load_state_dict(new_state_dict, *args, **kwargs)
 
     def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
         """

@@ -12,10 +12,8 @@ import torch
 from einops import rearrange, repeat
 from torch import nn
 
-from braindecode.models._channel_layer import backbone_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath
-from braindecode.modules.channels import ChannelTarget
 from braindecode.modules.convolution import Conv1dWithConstraint
 from braindecode.modules.linear import LinearWithConstraint
 from braindecode.util import resolve_montage_name
@@ -256,7 +254,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         chan_conv_max_norm: float = 1.0,
         final_layer: type[nn.Module] | None = None,
         channel_strategy: str = "native",
-        channel_strategy_kwargs: Optional[dict] = None,
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -265,13 +263,10 @@ class EEGPT(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        # The channel layer comes first because it sets how many channels reach
-        # the backbone; the backbone then draws the same random numbers under
-        # every strategy.
-        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
-        n_backbone_chans = backbone_n_chans(self)
 
         # model parameters
         self.return_encoder_output = return_encoder_output
@@ -310,7 +305,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         # Build channel projection (before encoder)
         if chan_proj_type != "none":
             self.chan_proj = _ChannelProjection(
-                in_channels=n_backbone_chans,
+                in_channels=self.n_chans,
                 out_channels=n_chans_target,
                 proj_type=chan_proj_type,
                 max_norm=chan_conv_max_norm,
@@ -318,7 +313,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
             encoder_n_chans = n_chans_target
         else:
             self.chan_proj = nn.Identity()
-            encoder_n_chans = n_backbone_chans
+            encoder_n_chans = self.n_chans
 
         self.target_encoder = _EEGTransformer(
             n_chans=encoder_n_chans,
@@ -343,9 +338,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
         if chan_proj_type != "none":
             # Use standard 19 channels when projecting
             self.channel_names = EEGPT_19_CHANNELS
-        elif self._channel_layer:
-            # The channel layer gives the vocabulary ids at each forward.
-            self.channel_names = None  # type: ignore
         elif self._chs_info is not None:
             self.channel_names = [ch["ch_name"] for ch in self.chs_info]  # type: ignore
         else:
@@ -415,7 +407,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         state_dict.pop(prefix + "chans_id", None)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
-    def forward(self, x, return_features=False, chs_info=None):
+    def forward(self, x, return_features=False):
         """
         Forward pass.
 
@@ -426,32 +418,17 @@ class EEGPT(EEGModuleMixin, nn.Module):
         return_features : bool
             If True, return a dict with ``"features"`` and ``"cls_token"``
             instead of the classification output.
-        chs_info : list of dict, optional
-            Montage of ``x`` for this call when the model has a
-            ``channel_strategy`` other than ``"native"`` (default: the montage
-            given at construction). Ignored under ``"native"``.
 
         Returns
         -------
         torch.Tensor or dict
             Model output. Shape depends on `n_outputs` and `return_encoder_output`.
         """
-        chans_id = self.chans_id
-        observed = None
-        if self._channel_layer:
-            enc = self._encode_channels(x, chs_info)
-            x = enc.x
-            if self.chan_proj_type == "none":
-                assert enc.channel_ids is not None  # ``ids`` target
-                chans_id = enc.channel_ids[None].to(x.device)
-                if not bool(enc.observed.all()):
-                    observed = enc.observed.to(x.device)
-
         # Channel projection (if configured)
         x = self.chan_proj(x)
 
         # z shape: (batch, n_patches, embed_num, embed_dim)
-        z = self.target_encoder(x, chans_id, key_padding_mask=observed)
+        z = self.target_encoder(x, self.chans_id)
 
         if return_features:
             return {"features": z.flatten(2), "cls_token": None}
@@ -543,7 +520,6 @@ EEGPT_CHANNELS = _get_eegpt_channels()
 
 CHANNEL_DICT = {ch: i for i, ch in enumerate(EEGPT_CHANNELS)}
 
-
 # Standard 19 channels used in original EEGPT linear probe
 EEGPT_19_CHANNELS = [
     "FP1",
@@ -566,9 +542,6 @@ EEGPT_19_CHANNELS = [
     "O1",
     "O2",
 ]
-
-#: Channel contract: ids into the 62-name channel-embedding vocabulary.
-EEGPT._channel_target = ChannelTarget("ids", vocabulary=tuple(EEGPT_CHANNELS))
 
 
 class _LinearConstraintProbe(nn.Module):
@@ -929,7 +902,7 @@ class _Attention(nn.Module):
         self.is_causal = is_causal
         self.return_attention = return_attention
 
-    def forward(self, x, freqs=None, key_padding_mask=None):
+    def forward(self, x, freqs=None):
         """
         Forward pass of the attention layer.
 
@@ -939,8 +912,6 @@ class _Attention(nn.Module):
             Input tensor of shape (batch, seq_len, embed_dim).
         freqs : torch.Tensor, optional
             Frequencies for Rotary Positional Embeddings (RoPE).
-        key_padding_mask : torch.Tensor, optional
-            Boolean ``(seq_len,)``; keys marked ``False`` get no attention.
         """
         # qkv: (batch, seq_len, 3 * num_heads * head_dim)
         qkv = self.qkv(x)
@@ -981,10 +952,9 @@ class _Attention(nn.Module):
                     dim=-1,
                 )
             else:
-                scores = q @ k.transpose(-2, -1) / math.sqrt(q.size(-1))
-                if key_padding_mask is not None:
-                    scores = scores.masked_fill(~key_padding_mask, -float("inf"))
-                attn_weight = torch.softmax(scores, dim=-1)
+                attn_weight = torch.softmax(
+                    (q @ k.transpose(-2, -1) / math.sqrt(q.size(-1))), dim=-1
+                )
             return attn_weight
 
         # 3. Flash Attention
@@ -994,9 +964,7 @@ class _Attention(nn.Module):
             q,
             k,
             v,
-            attn_mask=None
-            if key_padding_mask is None
-            else key_padding_mask[None, None, None, :],
+            attn_mask=None,
             dropout_p=self.attn_drop.p if self.training else 0,
             is_causal=self.is_causal,
         )
@@ -1090,8 +1058,8 @@ class _Block(nn.Module):
             drop=drop,
         )
 
-    def forward(self, x, freqs=None, key_padding_mask=None):
-        y = self.attn(self.norm1(x), freqs, key_padding_mask=key_padding_mask)
+    def forward(self, x, freqs=None):
+        y = self.attn(self.norm1(x), freqs)
         if self.return_attention:
             return y
         x = x + self.drop_path(y)
@@ -1393,9 +1361,7 @@ class _EEGTransformer(nn.Module):
         elif isinstance(m, nn.Embedding):
             torch.nn.init.normal_(m.weight, mean=0.0, std=0.02)
 
-    def forward(
-        self, x, chan_ids=None, mask_x=None, mask_t=None, key_padding_mask=None
-    ):
+    def forward(self, x, chan_ids=None, mask_x=None, mask_t=None):
         """
         Forward pass.
 
@@ -1409,10 +1375,6 @@ class _EEGTransformer(nn.Module):
             Mask for input patches.
         mask_t : torch.Tensor, optional
             Mask for temporal patches.
-        key_padding_mask : torch.Tensor, optional
-            Boolean ``(n_chans,)``; channels marked ``False`` (reconstructed by
-            the channel layer) are not attended to. Incompatible with
-            ``mask_x``.
 
         Returns
         -------
@@ -1459,18 +1421,9 @@ class _EEGTransformer(nn.Module):
         x = torch.cat([x, summary_token], dim=1)
         # x shape: (batch * n_patches, n_chans + embed_num, embed_dim)
 
-        key_mask = None
-        if key_padding_mask is not None:
-            if mask_x is not None:
-                raise ValueError("key_padding_mask cannot be combined with mask_x.")
-            # Summary tokens are always attended to.
-            key_mask = torch.cat(
-                [key_padding_mask, key_padding_mask.new_ones(summary_token.shape[1])]
-            )
-
         # -- fwd prop
         for i, blk in enumerate(self.blocks):
-            x = blk(x, key_padding_mask=key_mask)
+            x = blk(x)
             if blk.return_attention:
                 return x
 
@@ -1502,23 +1455,4 @@ class _EEGTransformer(nn.Module):
         return x
 
 
-# -----------------------------------------------------------------------------
-# Canonical EEGPT channels with their standard_1020 positions
-# -----------------------------------------------------------------------------
-# ``EEGPT_CHANNELS`` with positions, for the channel layer
-# (:mod:`braindecode.modules.channels`).
-
-from mne.channels import make_standard_montage  # noqa: E402
-
-montage = make_standard_montage(resolve_montage_name("standard_1020"))
-ch_pos = {
-    ch.upper(): (ch, loc) for ch, loc in montage.get_positions()["ch_pos"].items()
-}
-_EEGPT_TARGET_CHS_INFO = [
-    {
-        "ch_name": ch_pos[ch.upper()][0],
-        "kind": "eeg",
-        "loc": ch_pos[ch.upper()][1],
-    }
-    for ch in EEGPT_CHANNELS
-]
+EEGPT._channel_target = EEGPT_19_CHANNELS

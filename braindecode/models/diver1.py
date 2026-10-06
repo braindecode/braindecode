@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import math
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn.functional as F
@@ -20,10 +19,6 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import rotate_pairs
-from braindecode.models._channel_layer import (
-    JIT_IGNORED,
-    init_positions_layer,
-)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     INTRACRANIAL_CH_TYPES,
@@ -32,7 +27,6 @@ from braindecode.models.util import (
     valid_location_mask,
 )
 from braindecode.modules import FeedForwardBlock, PatchTokenizer
-from braindecode.modules.channels import ChannelTarget
 
 
 class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -180,13 +174,6 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
        https://arxiv.org/abs/2512.19097
     """
 
-    # The channel layer is not scriptable; the scripted forward never reaches it.
-    __jit_ignored_attributes__ = [
-        *EEGModuleMixin.__jit_ignored_attributes__,
-        JIT_IGNORED,
-    ]
-    _channel_target = ChannelTarget("positions")
-
     def __init__(
         self,
         n_outputs=None,
@@ -214,7 +201,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         activation: type[nn.Module] = nn.SiLU,
         cnn_out_size: int | None = None,
         channel_strategy: str = "native",
-        channel_strategy_kwargs: Optional[dict] = None,
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -223,6 +210,8 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
@@ -346,15 +335,6 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             self.n_chans * self.n_patches * d_model if pooling == "flatten" else d_model
         )
         self.final_layer = nn.Linear(head_in_features, self.n_outputs)
-        # Built last so the backbone initialisation is unchanged. Missing
-        # coordinates give a zero embedding, so positions are not required.
-        init_positions_layer(
-            self,
-            channel_strategy,
-            channel_strategy_kwargs,
-            fixed_montage=pooling == "flatten",
-            require_positions=False,
-        )
 
     def reset_head(self, n_outputs):
         """Replace the linear classification head for a new ``n_outputs``."""
@@ -362,20 +342,8 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.final_layer = nn.Linear(self.final_layer.in_features, n_outputs)
         self._update_init_kwargs(n_outputs=n_outputs)
 
-    def _layer_metadata(
-        self, positions: torch.Tensor, chs_info: Optional[list[dict]]
-    ) -> torch.Tensor:
-        """Metadata of a pass-through montage: the layer's positions (mm) and
-        the electrode types of its ``chs_info``."""
-        metadata = channel_metadata_from_chs_info(chs_info or self.chs_info)
-        metadata = metadata.to(device=positions.device, dtype=positions.dtype)
-        return torch.cat([1e3 * positions, metadata[:, 3:]], dim=-1)
-
     def forward(
-        self,
-        x: torch.Tensor,
-        chan_metadata: torch.Tensor | None = None,
-        chs_info: Optional[List[Dict[str, Any]]] = None,
+        self, x: torch.Tensor, chan_metadata: torch.Tensor | None = None
     ) -> torch.Tensor:
         """Encode an iEEG batch into class logits.
 
@@ -390,26 +358,12 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             ``chs_info``. Every sample of the batch shares it. Defaults to the
             montage given at construction, which only fits the
             construction-time channel count.
-        chs_info : list of dict, optional
-            Montage of ``x`` when it differs from the constructor's; used only
-            when ``channel_strategy`` is not ``"native"`` (eager mode only).
-            An explicit ``chan_metadata`` still takes precedence.
 
         Returns
         -------
         torch.Tensor
             Class logits of shape ``(batch, n_outputs)``.
         """
-        if not torch.jit.is_scripting():  # the channel layer is eager-only
-            if self._channel_layer:
-                enc = self._encode_channels(x, chs_info)
-                x = enc.x
-                if (
-                    chan_metadata is None
-                    and self.pooling == "mean"  # pass-through montage
-                    and enc.positions is not None
-                ):
-                    chan_metadata = self._layer_metadata(enc.positions, chs_info)
         n_chans = x.shape[1]
         if chan_metadata is None:
             if n_chans != self.n_chans_grid:

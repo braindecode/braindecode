@@ -7,92 +7,88 @@ import numpy as np
 import pytest
 import torch
 
-from braindecode.modules.channels import ChannelTarget, ChannelTokenizer
-from braindecode.modules.channels.resolve import match_names, standard_position
+from braindecode.models import LUNA
+from braindecode.modules import ChannelLayer
+from braindecode.modules.channels import STRATEGIES, _resolve
 
 TEN_TWENTY = "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
 SUBSET = ["Fp1", "F3", "Fz", "C3", "Cz", "P4", "Pz", "O2"]
-LINEAR = ["exact", "zero", "nearest", "idw", "spline", "field", "source", "region"]
 
 
-def chs(names, loc=True, kind="eeg"):
-    return [
-        {
-            "ch_name": n,
-            "kind": kind,
-            "loc": np.r_[standard_position(n), np.zeros(9)] if loc else np.zeros(12),
-        }
-        for n in names
+def chs(names, kind="eeg"):
+    return [{"ch_name": n, "kind": kind, "loc": np.zeros(12)} for n in names]
+
+
+def at(name, xyz):
+    return {"ch_name": name, "kind": "eeg", "loc": np.r_[xyz, np.zeros(9)]}
+
+
+def test_a_legacy_alias_does_not_merge_distinct_names():
+    assert ChannelLayer(
+        chs(["T7", "T3"]), "exact", chs(["T3", "T7"])
+    ).weight.tolist() == [
+        [0, 1],
+        [1, 0],
     ]
-
-
-def layer(strategy, src, names=TEN_TWENTY, **kw):
-    target = ChannelTarget("montage", chs_info=chs(names))
-    return ChannelTokenizer(target, strategy, src, **kw)
-
-
-def test_a_alias_does_not_merge_distinct_vocabulary_names():
-    assert match_names(["T3", "T7"], ["T7", "T3"]).tolist() == [1, 0]
-    assert match_names(["T3"], ["T7"]).tolist() == [0]
 
 
 def test_b_misspelt_strategy_is_declared():
     with pytest.raises(ValueError, match=r"Did you mean \['spline'\]"):
-        layer("splien", chs(SUBSET))
+        ChannelLayer(chs(TEN_TWENTY), "splien", chs(SUBSET))
 
 
 def test_c_coordinate_only_channel_matched_by_position():
-    near_cz = standard_position("Cz") + [0.002, 0, 0]
-    e7 = [{"ch_name": "E7", "kind": "eeg", "loc": np.r_[near_cz, np.zeros(9)]}]
-    assert layer("exact", e7, ["Cz"])(torch.ones(1, 1, 1)).weights.tolist() == [[1.0]]
-    fcz = [{**e7[0], "ch_name": "FCz"}]  # a known name is never relabelled
-    with pytest.raises(ValueError, match="not in the input"):
-        layer("exact", fcz, ["Cz"])
+    cz = _resolve(chs(["Cz"]))[1][0]
+    layer = ChannelLayer(chs(["Cz"]), "exact", [at("E7", cz + [0.002, 0, 0])])
+    assert layer.weight.tolist() == [[1.0]]
+    with pytest.raises(ValueError, match="not in the input"):  # never relabelled
+        ChannelLayer(chs(["Cz"]), "exact", [at("FCz", cz + [0.002, 0, 0])])
 
 
-@pytest.mark.parametrize("loc", [True, False])
-def test_d_non_eeg_rejected_or_dropped(loc):
-    src = chs(SUBSET) + chs(["EOG1"], loc=loc, kind="eog")
+def test_d_non_eeg_rejected_or_dropped():
+    src = chs(SUBSET) + chs(["EOG1"], kind="eog")
     with pytest.raises(ValueError, match="not EEG"):
-        layer("spline", src)
-    tok = layer("exact", src, SUBSET, drop_non_eeg=True)
+        ChannelLayer(chs(TEN_TWENTY), "spline", src)
+    layer = ChannelLayer(chs(SUBSET), "exact", src, drop_non_eeg=True)
     x = torch.randn(2, len(src), 10)
-    assert torch.equal(tok(x).x, x[:, :-1])
+    assert torch.equal(layer(x)[0], x[:, :-1])
 
 
-@pytest.mark.parametrize("loc", [True, False])
-def test_e_legacy_names_are_copies(loc):
-    src = chs(["T3", "T4", "T5", "T6", "A1"], loc=loc)
-    tok = layer("spline", src, ["T7", "T8", "P7", "P8", "M1"])
-    assert torch.equal(tok(torch.eye(5)[None]).weights, torch.eye(5))
-
-
-def test_f_sparse_montages_and_non_electrodes():
-    src = chs(["Fz", "Cz", "Pz", "Oz"])
-    gain = layer("spline", src)(torch.zeros(1, 4, 1)).weights.abs().sum(1).max()
-    assert gain < 5
-    with pytest.warns(UserWarning, match="row gain"):
-        layer("spline", src, reg=0.0)
-    target = ChannelTarget(
-        "montage",
-        chs_info=chs(TEN_TWENTY) + [{"ch_name": "SCALE", "loc": np.ones(12) * 0.01}],
-        non_electrode=("SCALE",),
+def test_e_legacy_names_are_copies():
+    layer = ChannelLayer(
+        chs(["T7", "T8", "P7", "P8"]), "spline", chs(["T3", "T4", "T5", "T6"])
     )
-    enc = ChannelTokenizer(target, "spline", src)(torch.randn(1, 4, 5))
-    assert not enc.observed[-1] and (enc.x[0, -1] == 0).all()
+    assert torch.equal(layer.weight, torch.eye(4))
+
+
+def test_f_sparse_montage_gain_and_targets_without_position():
+    src = chs(["Fz", "Cz", "Pz", "Oz"])
+    assert ChannelLayer(chs(TEN_TWENTY), "spline", src).weight.abs().sum(1).max() < 5
+    with pytest.warns(UserWarning, match="row gain"):
+        ChannelLayer(chs(TEN_TWENTY), "spline", src, reg=0.0)
+    x, observed = ChannelLayer(chs([*TEN_TWENTY, "SCALE"]), "spline", src)(
+        torch.randn(1, 4, 5)
+    )
+    assert not observed[-1] and (x[0, -1] == 0).all() and observed.sum() == 3
 
 
 @pytest.mark.parametrize("strategy", ["spline", "field", "source"])
 def test_g_fewer_than_four_positions_is_declared(strategy):
     with pytest.raises(ValueError, match="needs at least 4 channels with a position"):
-        layer(strategy, chs(["Fz", "Cz", "Pz"]))
+        ChannelLayer(chs(TEN_TWENTY), strategy, chs(["Fz", "Cz", "Pz"]))
 
 
-@pytest.mark.parametrize("strategy", [*LINEAR, "latent"])
+@pytest.mark.parametrize("strategy", STRATEGIES)
 def test_permutation_is_an_exact_copy(strategy):
-    perm = TEN_TWENTY[::-1]
     x = torch.randn(2, 19, 10)
-    assert torch.equal(layer(strategy, chs(perm))(x).x, x.flip(1))
+    layer = ChannelLayer(chs(TEN_TWENTY), strategy, chs(TEN_TWENTY[::-1]))
+    assert torch.equal(layer(x)[0], x.flip(1))
+
+
+def test_bipolar_target_is_a_derivation():
+    layer = ChannelLayer(chs(["F3-C3"]), "spline", chs(SUBSET))
+    x = torch.randn(1, 8, 5)
+    assert torch.equal(layer(x)[0][0, 0], x[0, 1] - x[0, 3])
 
 
 @pytest.mark.parametrize(
@@ -100,33 +96,32 @@ def test_permutation_is_an_exact_copy(strategy):
 )
 def test_constant_input_gives_constant_output(strategy, kw):
     # A target on the sphere's vertical axis (biosemi64 Cz) must stay finite.
-    axis = {"ch_name": "Zaxis", "kind": "eeg", "loc": np.r_[0, 0, 0.12, np.zeros(9)]}
-    target = ChannelTarget("montage", chs_info=chs(TEN_TWENTY) + [axis])
-    out = ChannelTokenizer(target, strategy, chs(SUBSET), **kw)(torch.ones(1, 8, 4)).x
+    target = chs(TEN_TWENTY) + [at("Zaxis", [0, 0, 0.12])]
+    out, _ = ChannelLayer(target, strategy, chs(SUBSET), **kw)(torch.ones(1, 8, 4))
     torch.testing.assert_close(out, torch.ones_like(out))
 
 
 def test_trainable_source_equals_physics_at_init():
     x = torch.randn(2, 8, 50)
-    physics = layer("source", chs(SUBSET))(x).x
-    assert torch.equal(layer("source", chs(SUBSET), trainable=True)(x).x, physics)
+    physics = ChannelLayer(chs(TEN_TWENTY), "source", chs(SUBSET))(x)[0]
+    trainable = ChannelLayer(chs(TEN_TWENTY), "source", chs(SUBSET), trainable=True)
+    assert torch.equal(trainable(x)[0], physics)
+    trainable(x)[0].sum().backward()
+    assert trainable.parcel_mix.grad.abs().sum() > 0
 
 
-def test_load_state_dict_clears_the_map_cache():
-    dense = chs(TEN_TWENTY)
-    rng = np.random.default_rng(0)
-    a, b = (layer("wiener", chs(SUBSET)) for _ in range(2))
-    a.fit(rng.standard_normal((200, 19)), dense)
-    b.fit(rng.standard_normal((200, 19)) @ rng.standard_normal((19, 19)), dense)
-    x = torch.randn(1, 8, 5)
-    a(x)  # caches a's map
-    a.load_state_dict(b.state_dict())
-    torch.testing.assert_close(a(x).x, b(x).x)
-
-
-def test_unfitted_wiener_is_declared():
-    with pytest.raises(ValueError, match="call fit"):
-        layer("wiener", chs(SUBSET))(torch.randn(1, 8, 5))
+def test_load_clears_the_cache_and_backbone_checkpoints_load():
+    kw = dict(chs_info=chs(SUBSET), n_outputs=2, n_times=800, sfreq=200)
+    backbone = LUNA(**kw).state_dict()
+    model = LUNA(
+        **kw, channel_strategy="source", channel_strategy_kwargs={"trainable": True}
+    )
+    assert model.channel_layer._key is not None
+    model.load_state_dict(backbone, strict=True)  # the layer keeps its init
+    assert model.channel_layer._key is None
+    x = torch.randn(1, 8, 800)
+    assert torch.isfinite(model(x.flip(1), chs_info=chs(SUBSET[::-1]))).all()
+    assert model.get_config()["channel_strategy"] == "source"
 
 
 _DEVICES = ["cpu"] + [
@@ -142,11 +137,9 @@ _DEVICES = ["cpu"] + [
 @pytest.mark.parametrize("device", _DEVICES)
 def test_maps_follow_device_and_dtype(device):
     dtype = torch.float32 if device == "mps" else torch.float64
-    tok = layer("source", chs(SUBSET), trainable=True)
+    layer = ChannelLayer(chs(TEN_TWENTY), "source", chs(SUBSET), trainable=True)
     x = torch.randn(2, 8, 20)
-    expected = tok(x).x
-    enc = tok.to(device, dtype)(x.to(device, dtype), chs(SUBSET[::-1]))
-    assert enc.x.device.type == device and enc.weights.dtype == dtype
-    torch.testing.assert_close(
-        tok(x.to(device, dtype)).x.cpu().float(), expected, rtol=1e-4, atol=1e-4
-    )
+    expected = layer(x)[0]
+    out, observed = layer.to(device, dtype)(x.to(device, dtype))
+    assert out.device.type == observed.device.type == device and out.dtype == dtype
+    torch.testing.assert_close(out.cpu().float(), expected, rtol=1e-4, atol=1e-4)

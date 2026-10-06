@@ -12,17 +12,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from braindecode.models._channel_layer import backbone_n_chans, names_chs_info
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath, PatchTokenizer
-from braindecode.modules.channels import ChannelTarget
-
-#: Electrodes behind the 19 channel slots of the released weights (slot ``i``
-#: = electrode ``i``), the 10-20 montage of the TUEG pre-training data. Used by
-#: non-native channel strategies to fill the slots from any montage.
-EEGDINO_SLOT_CHANNELS = (
-    "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
-)
 
 
 class EEGDINO(EEGModuleMixin, nn.Module):
@@ -165,8 +156,8 @@ class EEGDINO(EEGModuleMixin, nn.Module):
        Intervention (MICCAI 2025).
     """
 
-    _channel_target = ChannelTarget(
-        "slots", chs_info=names_chs_info(EEGDINO_SLOT_CHANNELS), n_slots=19
+    _channel_target = (
+        "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
     )
 
     def __init__(
@@ -206,6 +197,8 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
@@ -216,14 +209,10 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             )
         if n_global_tokens < 1:
             raise ValueError(f"n_global_tokens must be >= 1, got {n_global_tokens}.")
-        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
-        n_backbone_chans = backbone_n_chans(self)
-        if n_backbone_chans > n_channel_embeddings:
+        if self.n_chans > n_channel_embeddings:
             raise ValueError(
-                f"n_chans ({n_backbone_chans}) must not exceed n_channel_embeddings "
-                f"({n_channel_embeddings}); the released weights use 19. Pass "
-                f"channel_strategy=... (e.g. 'exact' or 'spline') to map a larger "
-                f"montage onto the 19 slots."
+                f"n_chans ({self.n_chans}) must not exceed n_channel_embeddings "
+                f"({n_channel_embeddings}); the released weights use 19."
             )
 
         if self._sfreq is not None and self.sfreq != 200:
@@ -284,12 +273,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self._update_init_kwargs(return_encoder_output=False)
         self.final_layer = self._make_head()
 
-    def forward(
-        self,
-        x,
-        return_features: bool | None = None,
-        chs_info: list[dict] | None = None,
-    ):
+    def forward(self, x, return_features: bool | None = None):
         """Forward pass.
 
         Parameters
@@ -299,9 +283,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             rescale ``x`` (see the amplitude-scale warning in the class docstring).
         return_features : bool, optional
             Overrides ``self.return_features`` for this call.
-        chs_info : list of dict, optional
-            Montage of ``x`` when it differs from the constructor's; used only
-            when ``channel_strategy`` is not ``"native"``.
 
         Returns
         -------
@@ -312,8 +293,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         """
         if return_features is None:
             return_features = self.return_features
-        if self._channel_layer:
-            x = self._encode_channels(x, chs_info).x
         x = self.tokenizer(x)  # (batch, n_chans, n_patches, patch_size)
 
         patch_emb = self.patch_embedding(x)  # (batch, n_chans, n_patches, emb_dim)

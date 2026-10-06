@@ -4,21 +4,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.models._channel_layer import (
-    JIT_IGNORED,
-    init_positions_layer,
-)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import GatedLinearUnit, PatchTokenizer
-from braindecode.modules.channels import ChannelTarget
 
 
 class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
@@ -185,13 +180,6 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
        Systems 38. https://arxiv.org/abs/2512.12135
     """
 
-    # The channel layer is not scriptable; the scripted forward never reaches it.
-    __jit_ignored_attributes__ = [
-        *EEGModuleMixin.__jit_ignored_attributes__,
-        JIT_IGNORED,
-    ]
-    _channel_target = ChannelTarget("positions")
-
     def __init__(
         self,
         # --- signal-related (handled by EEGModuleMixin) ---
@@ -218,7 +206,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         drop_prob: float = 0.1,
         activation: type[nn.Module] = nn.GELU,
         channel_strategy: str = "native",
-        channel_strategy_kwargs: Optional[dict] = None,
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -227,6 +215,8 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
@@ -325,17 +315,6 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         )
         self.final_layer = nn.Linear(d_model, self.n_outputs)
         self.apply(self._init_weights)
-        # Built last so the backbone initialisation is unchanged. Contacts
-        # without a position can still be copied by name (spatial indices
-        # may come from the dataset), so positions are not required here.
-        init_positions_layer(
-            self,
-            channel_strategy,
-            channel_strategy_kwargs,
-            fixed_montage=pooling == "learned",
-            model_kind="ieeg",
-            require_positions=False,
-        )
 
     @staticmethod
     def _init_weights(module: nn.Module) -> None:
@@ -373,7 +352,13 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
                     raise ValueError(
                         "chs_info must use the same coordinate frame for all channels."
                     )
-                indices = self._coord_indices(positions)
+                # MNE positions are RAS metres; negated they are (left, posterior,
+                # inferior). Reorder to the (left, inferior, posterior) columns of
+                # the released coordinate tables (upstream
+                # braintreebank_data_helpers.py:365, NEMAR nm000253 electrodes).
+                positions = positions[:, [0, 2, 1]]
+                indices = (-1000 * positions).round() + self.coord_bins // 2
+                indices = indices.clamp(0, self.coord_bins - 1)
         if indices is not None:
             expected = (self.n_chans, 3) if is_coords else (self.n_chans,)
             if tuple(indices.shape) != expected:
@@ -397,16 +382,6 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             default_indices=indices,
         )
 
-    def _coord_indices(self, positions: torch.Tensor) -> torch.Tensor:
-        """Bin ``(n_chans, 3)`` MNE positions (metres) onto the coordinate grid."""
-        # MNE positions are RAS metres; negated they are (left, posterior,
-        # inferior). Reorder to the (left, inferior, posterior) columns of
-        # the released coordinate tables (upstream
-        # braintreebank_data_helpers.py:365, NEMAR nm000253 electrodes).
-        positions = positions[:, [0, 2, 1]]
-        indices = (-1000 * positions).round() + self.coord_bins // 2
-        return indices.clamp(0, self.coord_bins - 1)
-
     def reset_head(self, n_outputs: int) -> None:
         """Replace the linear classification head for a new ``n_outputs``."""
         self._set_n_outputs(n_outputs)
@@ -422,7 +397,6 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         x: torch.Tensor,
         spatial_indices: Optional[torch.Tensor] = None,
         return_features: bool = False,
-        chs_info: Optional[List[Dict[str, Any]]] = None,
     ):
         """Encode an iEEG batch into class logits.
 
@@ -437,10 +411,6 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             construction, which only fits the construction-time channel count.
         return_features : bool
             Return the pooled embedding instead of logits.
-        chs_info : list of dict, optional
-            Montage of ``x`` when it differs from the constructor's; used only
-            when ``channel_strategy`` is not ``"native"`` (eager mode only).
-            Explicit ``spatial_indices`` still take precedence.
 
         Returns
         -------
@@ -450,17 +420,6 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         """
         if x.ndim != 3:
             raise ValueError("Expected input of shape (batch, n_chans, n_times).")
-        if not torch.jit.is_scripting():  # the channel layer is eager-only
-            if self._channel_layer:
-                enc = self._encode_channels(x, chs_info)
-                x = enc.x
-                if (
-                    spatial_indices is None
-                    and self.spatial_scale == "coords"
-                    and self.token_pooling is None  # pass-through montage
-                    and enc.positions is not None
-                ):
-                    spatial_indices = self._coord_indices(enc.positions).long()
         n_chans = x.shape[1]
 
         patches = self.patch_tokenizer(x)

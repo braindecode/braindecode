@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import warnings
 from functools import lru_cache
-from typing import Optional
 
 import torch
 from einops import rearrange
@@ -27,7 +26,6 @@ from braindecode.modules import (
     MultiHeadAttention,
     PatchTokenizer,
 )
-from braindecode.modules.channels import ChannelTarget
 
 # Shared montage vocabulary of the official ST-EEGFormer checkpoints: the
 # learned channel embedding has one slot per entry, in this order (the slot
@@ -287,7 +285,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         n_chans_pos: int = 145,
         chan_pos_idx=None,
         channel_strategy: str = "native",
-        channel_strategy_kwargs: Optional[dict] = None,
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -296,17 +294,10 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        # The vocabulary is fetched from the Hub, so the ``ids`` target is
-        # built only when a strategy needs it.
-        self._init_channel_tokenizer(
-            channel_strategy,
-            channel_strategy_kwargs,
-            target=None
-            if channel_strategy == "native"
-            else ChannelTarget("ids", vocabulary=tuple(_channel_order())),
-        )
 
         if global_pool not in ("avg", "cls"):
             raise ValueError(
@@ -339,25 +330,11 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         # electrode names, then positions in ``chs_info``; if neither is usable,
         # fall back to the identity mapping (channel i -> slot i).
         explicit_chan_pos = chan_pos_idx is not None
-        if channel_strategy != "native":
-            # The channel layer gives the vocabulary slots at each forward.
-            if explicit_chan_pos:
-                raise ValueError(
-                    "chan_pos_idx cannot be combined with channel_strategy="
-                    f"{channel_strategy!r}: the channel layer sets the slots."
-                )
-            if n_chans_pos != _CHANNELS_VOCAB_SIZE:
-                raise ValueError(
-                    f"channel_strategy={channel_strategy!r} needs the published "
-                    f"{_CHANNELS_VOCAB_SIZE}-slot vocabulary; n_chans_pos="
-                    f"{n_chans_pos} has no published electrode names."
-                )
-            chan_pos_idx = torch.zeros(0, dtype=torch.long)
-        elif explicit_chan_pos:
+        if explicit_chan_pos:
             chan_pos_idx = torch.as_tensor(chan_pos_idx, dtype=torch.long)
         else:
             chan_pos_idx = self._chan_pos_idx_from_chs_info()
-        if channel_strategy == "native" and chan_pos_idx.shape != (self.n_chans,):
+        if chan_pos_idx.shape != (self.n_chans,):
             raise ValueError(
                 f"chan_pos_idx must have shape ({self.n_chans},), got "
                 f"{tuple(chan_pos_idx.shape)}."
@@ -544,12 +521,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             )
         return torch.arange(self.n_chans)
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        return_features: bool = False,
-        chs_info: Optional[list[dict]] = None,
-    ):
+    def forward(self, x: torch.Tensor, return_features: bool = False):
         """Encode an EEG batch into class logits (or encoder features).
 
         Parameters
@@ -561,10 +533,6 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             ``{"features": patch_tokens, "cls_token": cls_token}`` instead of
             the class logits (the unified braindecode foundation-model API). The
             ``cls_token`` then matches the feature the ``"cls"`` head consumes.
-        chs_info : list of dict, optional
-            Montage of ``x`` for this call when the model has a
-            ``channel_strategy`` other than ``"native"`` (default: the montage
-            given at construction). Ignored under ``"native"``.
 
         Returns
         -------
@@ -578,20 +546,16 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 f"STEEGFormer requires at least one full temporal patch of "
                 f"{self.patch_size} samples, got input with {x.shape[-1]} samples."
             )
-        channel_indices = self.channel_indices
-        if self._channel_layer:
-            enc = self._encode_channels(x, chs_info)
-            x = enc.x
-            assert enc.channel_ids is not None  # ``ids`` target
-            channel_indices = enc.channel_ids.to(x.device)
-        elif x.shape[1] != self.n_chans:
+        if x.shape[1] != self.n_chans:
             raise ValueError(
                 f"STEEGFormer was built for {self.n_chans} channels but got input "
                 f"with {x.shape[1]}; rebuild the model for this montage."
             )
         # Tokens + positional embeddings, kept on the (seq, channel) grid.
         tokens = self.patch_embed(x)  # (batch, seq, n_chans, embed_dim)
-        tokens = tokens + self.temporal_pos(seq) + self.channel_pos(channel_indices)
+        tokens = (
+            tokens + self.temporal_pos(seq) + self.channel_pos(self.channel_indices)
+        )
         tokens = self.flatten_tokens(tokens)
 
         # Prepend the CLS token (combined with the temporal encoding at pos. 0).
