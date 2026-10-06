@@ -74,6 +74,7 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`Labram` - Large Brain Model with pre-trained weights
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
+    - :class:`MAPA` - Masked autoencoder for intracranial EEG with anatomical priors
     - :class:`MIRepNet` - Motor-imagery pre-trained model
     - :class:`NeuroRVQ` - Multi-scale biosignal tokenizer foundation model
     - :class:`BENDR` - Foundation model with pre-trained weights
@@ -143,6 +144,7 @@ interface for all EEG models and can derive variable names when needed.
      BIOT
      BrainBERT
      BrainModule
+     BrainTokenizer
      CBraMod
      CodeBrain
      ContraWR
@@ -176,6 +178,7 @@ interface for all EEG models and can derive variable names when needed.
      InterpolatedSignalJEPA
      Labram
      LUNA
+     MAPA
      MEDFormer
      MetaNeuromotorHand
      MSCFormer
@@ -185,6 +188,7 @@ interface for all EEG models and can derive variable names when needed.
     PopulationTransformer
      REVE
      SCCNet
+     SeizureTransformer
      ShallowFBCSPNet
      SignalJEPA
      SignalJEPA_Contextual

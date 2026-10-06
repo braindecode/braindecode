@@ -4938,3 +4938,46 @@ def test_neurorvq_transformer_block_uses_sequential_residuals():
     expected = expected + block.gamma_2 * block.mlp(block.norm2(expected))
 
     torch.testing.assert_close(block(x), expected)
+
+# SeizureTransformer
+# ---------------------------------------------------------------------------
+
+
+def _small_seizure_transformer(n_times):
+    from braindecode.models import SeizureTransformer
+
+    return SeizureTransformer(
+        n_chans=4, n_outputs=2, n_times=n_times, num_layers=1, dim_feedforward=64
+    ).eval()
+
+
+@pytest.mark.parametrize(
+    "n_times, input_times",
+    [
+        (1024, 1024),
+        # 1001 is odd at four of the five pooling levels.
+        (1001, 1001),
+        # Inputs shorter than n_times are accepted.
+        (1024, 999),
+    ],
+)
+def test_seizure_transformer_predicts_every_input_sample(n_times, input_times):
+    model = _small_seizure_transformer(n_times)
+    with torch.no_grad():
+        out = model(torch.randn(2, 4, input_times))
+    assert out.shape == (2, 2, input_times)
+
+
+def test_seizure_transformer_rejects_inputs_longer_than_n_times():
+    model = _small_seizure_transformer(256)
+    with pytest.raises(ValueError, match="at most 256"):
+        model(torch.randn(1, 4, 512))
+
+
+def test_seizure_transformer_rejects_invalid_construction():
+    from braindecode.models import SeizureTransformer
+
+    with pytest.raises(ValueError, match="same length"):
+        SeizureTransformer(n_chans=4, n_outputs=1, n_times=256, n_filters=(8, 16))
+    with pytest.raises(ValueError, match="num_heads"):
+        SeizureTransformer(n_chans=4, n_outputs=1, n_times=256, num_heads=3)

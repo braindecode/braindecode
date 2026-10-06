@@ -9,6 +9,7 @@ from .bendr import BENDR, InterpolatedBENDR
 from .biot import BIOT, InterpolatedBIOT
 from .brainbert import BrainBERT
 from .brainmodule import BrainModule
+from .brainomni import BrainTokenizer
 from .brant import Brant
 from .cbramod import CBraMod
 from .codebrain import CodeBrain
@@ -40,6 +41,7 @@ from .ifnet import IFNet
 from .interpolated import InterpolatedModel
 from .labram import InterpolatedLaBraM, Labram
 from .luna import LUNA
+from .mapa import MAPA
 from .medformer import MEDFormer
 from .meta_neuromotor import MetaNeuromotorHand
 from .mirepnet import MIRepNet
@@ -52,6 +54,7 @@ from .patchedtransformer import PBT
 from .popt import PopulationTransformer
 from .reve import REVE
 from .sccnet import SCCNet
+from .seizure_transformer import SeizureTransformer
 from .sensingdynamics import SensingDynamics
 from .shallow_fbcsp import ShallowFBCSPNet
 from .signal_jepa import (
@@ -97,6 +100,7 @@ __all__ = [
     "BIOT",
     "BENDR",
     "BrainBERT",
+    "BrainTokenizer",
     "CBraMod",
     "CodeBrain",
     "ContraWR",
@@ -140,6 +144,7 @@ __all__ = [
     "LUNA",
     "extract_channel_locations_from_chs_info",
     "positions_from_chs_info",
+    "MAPA",
     "MEDFormer",
     "MIRepNet",
     "NeuroRVQ",
@@ -150,6 +155,7 @@ __all__ = [
     "PopulationTransformer",
     "REVE",
     "SCCNet",
+    "SeizureTransformer",
     "ShallowFBCSPNet",
     "SignalJEPA",
     "SignalJEPA_Contextual",
