@@ -3,11 +3,11 @@
 from .resolve import (
     CHANNEL_NAME_ALIASES,
     ELECTRODE_KINDS,
+    ChannelTarget,
     ResolvedMontage,
-    match_names,
-    nearest_vocabulary,
     resolve_montage,
 )
+from .source import SourceStrategy
 from .strategies import (
     ChannelStrategy,
     ExactStrategy,
@@ -16,7 +16,6 @@ from .strategies import (
     LatentStrategy,
     NearestStrategy,
     RegionStrategy,
-    SourceStrategy,
     SpatialMap,
     SplineStrategy,
     WienerStrategy,
@@ -24,7 +23,6 @@ from .strategies import (
     get_channel_strategy,
     register_channel_strategy,
 )
-from .target import ChannelTarget
 from .tokenizer import ChannelEncoding, ChannelTokenizer
 
 __all__ = [
@@ -47,8 +45,6 @@ __all__ = [
     "WienerStrategy",
     "ZeroStrategy",
     "get_channel_strategy",
-    "match_names",
-    "nearest_vocabulary",
     "register_channel_strategy",
     "resolve_montage",
 ]
