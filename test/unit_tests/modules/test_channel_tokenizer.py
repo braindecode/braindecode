@@ -100,3 +100,45 @@ def test_bendr_non_canonical_montage_goes_through_the_layer():
     W = model.channel_tokenizer(torch.zeros(1, 8, 1)).weights
     assert W.shape == (20, 8)
     np.testing.assert_array_equal(W[:8].numpy(), np.eye(8))
+
+
+def _dense_fields(rng, n):
+    """Spatially smooth random fields on the 19 BENDR sites (wiener training)."""
+    pos = np.stack([np.asarray(c["loc"], float)[:3] for c in BENDR19])
+    d = np.linalg.norm(pos[:, None] - pos[None], axis=-1)
+    cov = np.exp(-d / 0.06)
+    return rng.multivariate_normal(np.zeros(19), cov, size=n)
+
+
+def _accelerator():
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return None
+
+
+@pytest.mark.skipif(_accelerator() is None, reason="needs a cuda or mps device")
+@pytest.mark.parametrize(
+    "strategy,kwargs",
+    [
+        ("spline", {}),
+        ("source", {"trainable": True}),
+        ("latent", {}),
+        ("wiener", {}),
+    ],
+)
+def test_new_montage_after_moving_to_a_device(strategy, kwargs):
+    device = _accelerator()
+    tok = ChannelTokenizer(TARGET, strategy, src_chs_info=BENDR19[:8], **kwargs)
+    if strategy == "wiener":
+        tok.fit(_dense_fields(np.random.default_rng(0), 500), BENDR19)
+    tok = tok.to(device)
+    x = torch.randn(2, 9, 16)
+    # A montage the tokenizer has not built yet: the map is built on the device.
+    enc = tok(x.to(device), BENDR19[4:13])
+    assert enc.x.device.type == device.type and enc.x.dtype == torch.float32
+    assert torch.isfinite(enc.x).all()
+    ref = tok.cpu()(x, BENDR19[4:13]).x
+    torch.testing.assert_close(enc.x.cpu(), ref, rtol=1e-4, atol=1e-4)
+

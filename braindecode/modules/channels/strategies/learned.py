@@ -22,6 +22,11 @@ from .base import (
 from .source import _mlp
 
 
+def _numpy(t: Tensor) -> np.ndarray:
+    """float64 numpy copy of a buffer on any device (MPS has no float64)."""
+    return t.detach().cpu().double().numpy()
+
+
 def _channel_stats(x: Tensor, used: Tensor) -> Tensor:
     """``(B, C, 2)`` log-variance and log line-length, centred over used channels."""
     w = used.to(x.dtype)
@@ -69,8 +74,9 @@ class WienerStrategy(ChannelStrategy):
                 f"for every dense channel; got X {X.shape} for {len(dense.names)} "
                 "channels."
             )
-        self.cov = torch.as_tensor(np.cov(np.asarray(X, float).T), dtype=torch.float32)
-        self.dense_positions = _f32(dense.positions)
+        device = self.cov.device
+        self.cov = _f32(np.cov(np.asarray(X, float).T)).to(device)
+        self.dense_positions = _f32(dense.positions).to(device)
         return self
 
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
@@ -87,7 +93,7 @@ class WienerStrategy(ChannelStrategy):
         return super().build(src, target)
 
     def _dense_index(self, positions, names):
-        j = nearest_vocabulary(positions, self.dense_positions.double().numpy())
+        j = nearest_vocabulary(positions, _numpy(self.dense_positions))
         if (j < 0).any():
             raise ValueError(
                 f"'wiener': channels {[n for n, i in zip(names, j) if i < 0]} have no "
@@ -96,7 +102,7 @@ class WienerStrategy(ChannelStrategy):
         return j
 
     def _fill(self, src, use, tgt_pos):
-        cov = self.cov.double().numpy()
+        cov = _numpy(self.cov)
         js = self._dense_index(src.positions[use], np.asarray(src.names)[use])
         jt = self._dense_index(tgt_pos, [f"target at {p.round(3)}" for p in tgt_pos])
         C_obs = cov[np.ix_(js, js)]
