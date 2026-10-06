@@ -63,33 +63,14 @@ Enhancements
   checkpoint's canonical forward is unchanged (max-abs diff 0.0) and its state_dict
   keys are stable (:gh:`1227` by `Bruno Aristimunha`_).
 
-- Add a channel layer to every pretrained model: 19 models (BENDR, BIOT,
-  CodeBrain, MIRepNet, EEGDINO, CBraMod, Brant, BrainBERT, Labram, EEGPT,
-  STEEGFormer, SignalJEPA, SignalJEPA_Contextual, MVPFormer, LUNA, REVE, ZUNA,
-  BaRISTA, DIVER1, PopulationTransformer) take ``channel_strategy`` and
-  ``channel_strategy_kwargs``, saved in their configuration, and
-  ``forward(..., chs_info=...)`` for a montage given per call. A model declares
-  what its backbone consumes with a :class:`braindecode.modules.channels.ChannelTarget`
-  (``montage``, ``ids``, ``positions``, ``slots`` or ``free``), and
-  :class:`braindecode.modules.channels.ChannelTokenizer` resolves the user
-  montage (names, aliases, positions, channel kinds), maps it with the chosen
-  strategy, caches the map per montage and returns a
-  :class:`braindecode.modules.channels.ChannelEncoding` whose ``observed`` mask
-  reaches the attention of LaBraM, EEGPT, LUNA, REVE, PopT and CBraMod. The
-  default ``"native"`` keeps every released checkpoint bit-identical on its
-  canonical montage (max-abs diff 0.0, same state_dict keys, strict load). See
+- Add a channel layer to the 19 pretrained models: ``channel_strategy`` (``"exact"``,
+  ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``, ``"field"``, ``"source"``,
+  ``"wiener"``, ``"region"``, ``"latent"``, default ``"native"``) and
+  ``channel_strategy_kwargs``, saved in the configuration, map any montage onto what
+  the backbone consumes inside ``forward(x, chs_info=None)``. ``"native"`` keeps every
+  released checkpoint bit-identical with the same ``state_dict``. New strategies
+  register with :func:`braindecode.modules.channels.register_channel_strategy`. See
   :doc:`user_guide/channel_strategies` (this PR, by `Bruno Aristimunha`_).
-- Add eleven channel strategies, registered by name and extensible with
-  :func:`braindecode.modules.channels.register_channel_strategy`: ``exact``
-  (reorder or select, missing channel = error), ``zero``, ``nearest``, ``idw``,
-  ``spline`` (MNE spherical spline, now regularised with ``reg=1e-3``),
-  ``field`` (MNE field mapping), ``source`` (a minimum-norm inverse on a
-  template sphere head, physics-anchored, optionally trainable with a
-  zero-initialised gate), ``wiener`` (fitted on dense recordings with
-  ``model.channel_tokenizer.fit``), ``region``, ``latent`` (learned
-  cross-attention), plus ``native``. Trainable strategies keep their weights
-  under ``channel_tokenizer.*``; loading a checkpoint without them warns once
-  and leaves the backbone load strict (this PR, by `Bruno Aristimunha`_).
 
 - Add registry-wide model contract tests that automatically cover every registered
   model, checking eval-mode input/state purity, finite batched outputs,
@@ -219,30 +200,13 @@ API and behavior changes
   (:gh:`1155` by `Bruno Aristimunha`_).
 
 - Remove ``InterpolatedBENDR``, ``InterpolatedBIOT``, ``InterpolatedEEGPT``,
-  ``InterpolatedLaBraM``, ``InterpolatedSignalJEPA``, the ``InterpolatedModel``
-  factory, ``braindecode.modules.ChannelInterpolationLayer`` and
-  ``braindecode.models.util.interpolated_models_dict``: every model now adapts
-  a montage itself. Migrate with
-  ``InterpolatedBENDR(chs_info=...)`` → ``BENDR(chs_info=..., channel_strategy="spline")``
-  (the same for the other four models) (this PR, by `Bruno Aristimunha`_).
-- Replace the signature of :class:`braindecode.modules.ChannelTokenizer` from
-  :gh:`1227`, ``ChannelTokenizer(strategy, src_chs_info, vocabulary,
-  target_chs_info, n_slots, on_unknown, on_missing_loc, method)``, by
-  ``ChannelTokenizer(target, strategy="native", src_chs_info=None, *,
-  drop_non_eeg=False, kinds=("eeg",), **strategy_kwargs)``, which takes a
-  :class:`braindecode.modules.channels.ChannelTarget` and returns a
-  :class:`braindecode.modules.channels.ChannelEncoding`; it lives in
-  :mod:`braindecode.modules.channels` and is still exported from
-  :mod:`braindecode.modules` (this PR, by `Bruno Aristimunha`_).
-- :class:`braindecode.models.BIOT`, :class:`braindecode.models.CodeBrain` and
-  :class:`braindecode.models.MIRepNet` built with ``channel_strategy="native"``
-  on a ``chs_info`` that is not their canonical montage (or a channel count that
-  matches none of their checkpoints) now emit a ``FutureWarning``: they feed it
-  to the backbone unchecked, which will raise in the next release. Pass a
-  ``channel_strategy`` (this PR, by `Bruno Aristimunha`_).
-- :class:`braindecode.models.BIOT` takes its bipolar derivations as input under
-  ``"native"`` only. Under any other strategy it takes the 18 monopolar
-  electrodes behind them and forms the derivations itself
+  ``InterpolatedLaBraM``, ``InterpolatedSignalJEPA``, ``InterpolatedModel``,
+  ``ChannelInterpolationLayer`` and ``interpolated_models_dict``: migrate with
+  ``InterpolatedBENDR(chs_info=...)`` → ``BENDR(chs_info=..., channel_strategy="spline")``.
+  :class:`braindecode.modules.ChannelTokenizer` now takes a
+  :class:`braindecode.modules.channels.ChannelTarget` and a strategy name. BIOT,
+  CodeBrain and MIRepNet under ``"native"`` on a non-canonical montage emit a
+  ``FutureWarning``; under a strategy BIOT takes monopolar input
   (this PR, by `Bruno Aristimunha`_).
 
 Requirements
@@ -458,35 +422,14 @@ Bug fixes
   time-averaged prediction to ``(batch_size,)``. It now keeps the output
   dimension when the target is 2-D (:gh:`1198` by `Raghav Rathi`_).
 
-- Fix channel names that differ only by an alias (``T3`` and ``T7``) landing on
-  the same vocabulary slot: exact names are now matched first, aliases second,
-  so a vocabulary holding both keeps them distinct (this PR, by `Bruno Aristimunha`_).
-- Fix a misspelt channel policy or strategy name silently changing the
-  behaviour: an unknown ``channel_strategy`` raises a ``ValueError`` that lists
-  the valid names and the closest one (this PR, by `Bruno Aristimunha`_).
-- Fix coordinate-only channels being matched by name only: a channel whose name
-  is not in ``standard_1005`` (e.g. ``E7``) is matched to a target within 15 mm
-  of its position, and positions drive every interpolation weight
-  (this PR, by `Bruno Aristimunha`_).
-- Fix the EEG-type check being skipped for channels without positions: a
-  non-EEG channel (EOG, ECG, stim) raises on every path, or is dropped from the
-  montage and the signal with ``drop_non_eeg=True`` (this PR, by `Bruno Aristimunha`_).
-- Fix legacy names (``T3``/``T4``/``T5``/``T6``, ``A1``/``A2``) resolving through
-  the alias table on one path only: they are now copies of ``T7``/``T8``/``P7``/``P8``,
-  ``M1``/``M2`` with or without coordinates, where coordinates used to turn
-  them into a 19-electrode spline (this PR, by `Bruno Aristimunha`_).
-- Fix sparse montages blowing up the projection: the ``spline`` strategy is
-  regularised (``reg=1e-3``), so four channels mapped onto BENDR's 19 give a
-  row gain below 5 instead of 1301 (BENDR's ``native`` projection keeps the
-  former unregularised spline), BENDR's ``SCALE`` channel is never
-  interpolated under a strategy, and any map whose row gain exceeds 2 warns
-  (this PR, by `Bruno Aristimunha`_).
-- Fix fewer than four positioned channels raising a raw MNE error: ``spline``,
-  ``field`` and ``source`` raise a declared ``ValueError`` naming the count
-  (this PR, by `Bruno Aristimunha`_).
-- Fix the ``source`` strategy returning ``NaN`` for an electrode on the vertical
-  axis of the template sphere head (biosemi64 ``Cz``): such electrodes are moved
-  by 1 µm (this PR, by `Bruno Aristimunha`_).
+- Fix channel resolution in the channel layer: ``T3`` and ``T7`` stay distinct in a
+  vocabulary holding both; an unknown strategy name raises with the closest valid
+  one; coordinate-only channels match a target within 15 mm; non-EEG channels raise
+  on every path (or are dropped with ``drop_non_eeg=True``); legacy names are copies
+  with or without coordinates; ``spline`` is regularised (``reg=1e-3``; gain < 5
+  instead of 1301 from four channels) and maps with a row gain above 2 warn; fewer
+  than four positioned channels raise a declared ``ValueError``; ``source`` stays
+  finite on the sphere's vertical axis (this PR, by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)
