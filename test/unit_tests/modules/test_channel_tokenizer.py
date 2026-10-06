@@ -180,3 +180,39 @@ def test_exact_without_training_montage_does_not_warn():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         ChannelTokenizer(ChannelTarget("positions"), "exact")
+
+
+@pytest.mark.filterwarnings("ignore::UserWarning")
+@pytest.mark.parametrize(
+    "target,strategy,kwargs,expected",
+    [
+        (TARGET, "spline", {}, 19),  # sensor target: the target size
+        (ChannelTarget("ids", vocabulary=("Fz", "Cz", "Pz")), "exact", {}, 8),
+        (ChannelTarget("ids", vocabulary=("Fz", "Cz", "Pz", "Oz")), "idw", {}, 4),
+        (ChannelTarget("free"), "idw", {}, 8),  # pass-through
+        (ChannelTarget("free"), "source", dict(n_parcels=16), 16),
+        (ChannelTarget("free"), "latent", dict(n_latents=5), 5),
+        (ChannelTarget("positions"), "spline", {}, 8),
+    ],
+)
+def test_n_outputs_matches_forward(target, strategy, kwargs, expected):
+    chs = BENDR19[:8]
+    if target.interface == "ids" and strategy == "exact":
+        chs, expected = _named(["Pz", "Fz", "Cz"]), 3  # one id per input
+    tok = ChannelTokenizer(target, strategy, **kwargs)
+    with_montage = ChannelTokenizer(target, strategy, src_chs_info=chs, **kwargs)
+    x = torch.randn(1, len(chs), 4)
+    assert with_montage.n_outputs() == with_montage(x).x.shape[1] == expected
+    assert tok.n_outputs(chs) == expected
+    # Without a montage, K follows from the target, the strategy and n_chans.
+    assert tok.n_outputs(n_chans=len(chs)) == expected
+
+
+def test_n_outputs_needs_a_size_when_it_depends_on_the_input():
+    with pytest.raises(ValueError, match="pass chs_info"):
+        ChannelTokenizer(ChannelTarget("free"), "idw").n_outputs()
+    # The target size needs no montage.
+    assert ChannelTokenizer(TARGET, "spline").n_outputs() == 19
+    # native hands the input over unchanged.
+    native = ChannelTokenizer(TARGET)
+    assert native.n_outputs(BENDR19[:8]) == native.n_outputs(n_chans=8) == 8

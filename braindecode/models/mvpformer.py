@@ -24,6 +24,7 @@ from einops import rearrange, reduce, repeat
 from torch import nn
 
 from braindecode.functional import daubechies_filters, wavelet_decomposition
+from braindecode.models._channel_layer import backbone_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PatchTokenizer
 from braindecode.modules.channels import ChannelTarget
@@ -287,7 +288,7 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # every strategy.
         with torch.random.fork_rng(devices=[]):
             self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
-        self.n_backbone_chans = _n_channel_tokens(self)
+        self.n_backbone_chans = backbone_n_chans(self)
         if self.n_backbone_chans > max_channels:
             raise ValueError(
                 f"n_chans ({self.n_backbone_chans}) exceeds max_channels "
@@ -395,17 +396,6 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         if return_features:
             return {"features": pooled, "cls_token": None}
         return self.final_layer(pooled)
-
-
-def _n_channel_tokens(model: EEGModuleMixin) -> int:
-    """Channels the channel layer hands to the backbone of ``model``."""
-    tok = model.channel_tokenizer
-    if tok.strategy is not None and tok._src is not None:
-        if getattr(tok.strategy, "fitted", True):
-            return int(tok._map(tok._src).observed.numel())
-    # Native, no construction montage, or an unfitted strategy (``wiener``,
-    # a pass-through for a ``free`` target).
-    return model.n_chans
 
 
 class _WaveletPatchEmbed(nn.Module):

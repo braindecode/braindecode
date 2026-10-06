@@ -12,6 +12,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode.models._channel_layer import backbone_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules.channels import ChannelTarget
 
@@ -308,9 +309,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         #: Channels the channel layer hands to the backbone (``None``: native,
         #: the backbone sees ``n_chans``).
         self._n_backbone_chans: Optional[int] = (
-            None
-            if channel_strategy == "native"
-            else _n_channel_tokens(self, len(_PRETRAIN_CHS_INFO))
+            None if channel_strategy == "native" else backbone_n_chans(self)
         )
 
         self.feature_encoder = None
@@ -377,18 +376,6 @@ _SJEPA_CHANNEL_TARGET = ChannelTarget(
     chs_info=[{**ch, "kind": "eeg"} for ch in _PRETRAIN_CHS_INFO],
     vocabulary=tuple(ch["ch_name"] for ch in _PRETRAIN_CHS_INFO),
 )
-
-
-def _n_channel_tokens(model: EEGModuleMixin, n_vocab: int) -> int:
-    """Channels the channel layer hands to the backbone of ``model``."""
-    tok = model.channel_tokenizer
-    if tok.strategy is None:
-        return model.n_chans
-    if tok._src is not None and getattr(tok.strategy, "fitted", True):
-        return int(tok._map(tok._src).observed.numel())
-    # No construction montage (or an unfitted strategy): reconstructing
-    # strategies produce the whole vocabulary, ``exact`` one id per input.
-    return n_vocab if tok.strategy.reconstructs else model.n_chans
 
 
 class SignalJEPA(_BaseSignalJEPA):

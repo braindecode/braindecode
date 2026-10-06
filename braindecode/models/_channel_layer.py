@@ -58,20 +58,15 @@ def warn_if_not_canonical(
 def backbone_n_chans(model) -> int:
     """Channels the backbone receives after the channel layer.
 
-    ``native``: the model's ``n_chans``. Sensor targets (``montage``,
-    ``slots``): the target size. ``free`` targets: set by the strategy
-    (``source`` parcels, ``latent`` latents, else the input channels), read
-    from the map of the construction montage.
+    ``native`` (or no layer): the model's ``n_chans``; otherwise
+    :meth:`~braindecode.modules.channels.ChannelTokenizer.n_outputs` of the
+    construction montage, with ``n_chans`` as the fallback input size.
     """
-    tok = model.channel_tokenizer
+    tok = getattr(model, "channel_tokenizer", None)
     if tok is None or tok.strategy is None:
         return model.n_chans
-    sensors = tok.target.sensors()
-    if sensors is not None:
-        return len(sensors.names)
-    src = tok._src
-    if src is None:  # no montage yet: assume a pass-through strategy
-        return model.n_chans
-    if not getattr(tok.strategy, "fitted", True):  # e.g. unfitted wiener
-        return len(src.picks)
-    return int(tok._map(src).observed.shape[0])
+    try:
+        n_chans = model.n_chans
+    except ValueError:
+        n_chans = None
+    return tok.n_outputs(n_chans=n_chans)

@@ -132,6 +132,9 @@ class SourceStrategy(ChannelStrategy):
             }
         return m
 
+    def _free_size(self, n_input: int) -> int:
+        return self.n_parcels
+
     def project(self, x: Tensor, m: SpatialMap) -> Tensor:
         out = super().project(x, m)
         if not self.trainable or not m.extra:

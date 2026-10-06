@@ -174,6 +174,10 @@ class ChannelStrategy(nn.Module):
         """Apply a built map to ``x`` of shape ``(B, C, T)``."""
         return x if m.weights is None else m.weights @ x
 
+    def _free_size(self, n_input: int) -> int:
+        """Outputs on a ``free`` target for ``n_input`` channels (pass-through)."""
+        return n_input
+
     def _fill(
         self, src: ResolvedMontage, use: np.ndarray, tgt_pos: np.ndarray
     ) -> np.ndarray:

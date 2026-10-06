@@ -12,6 +12,7 @@ import torch
 from einops import rearrange, repeat
 from torch import nn
 
+from braindecode.models._channel_layer import backbone_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath
 from braindecode.modules.channels import ChannelTarget
@@ -289,7 +290,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         # every strategy.
         with torch.random.fork_rng(devices=[]):
             self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
-        n_backbone_chans = _n_channel_tokens(self, len(EEGPT_CHANNELS))
+        n_backbone_chans = backbone_n_chans(self)
 
         # model parameters
         self.return_encoder_output = return_encoder_output
@@ -560,18 +561,6 @@ def _get_eegpt_channels():
 EEGPT_CHANNELS = _get_eegpt_channels()
 
 CHANNEL_DICT = {ch: i for i, ch in enumerate(EEGPT_CHANNELS)}
-
-
-def _n_channel_tokens(model: EEGModuleMixin, n_vocab: int) -> int:
-    """Channels the channel layer hands to the backbone of ``model``."""
-    tok = model.channel_tokenizer
-    if tok.strategy is None:
-        return model.n_chans
-    if tok._src is not None and getattr(tok.strategy, "fitted", True):
-        return int(tok._map(tok._src).observed.numel())
-    # No construction montage (or an unfitted strategy): reconstructing
-    # strategies produce the whole vocabulary, ``exact`` one id per input.
-    return n_vocab if tok.strategy.reconstructs else model.n_chans
 
 
 # Standard 19 channels used in original EEGPT linear probe

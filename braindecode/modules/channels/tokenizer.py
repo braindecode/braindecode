@@ -134,6 +134,56 @@ class ChannelTokenizer(nn.Module):
             self._cache.popitem(last=False)
         return m
 
+    def n_outputs(
+        self, chs_info: Optional[list[dict]] = None, *, n_chans: Optional[int] = None
+    ) -> int:
+        """Number of channels ``K`` that :meth:`forward` hands to the backbone.
+
+        Parameters
+        ----------
+        chs_info : list of dict, optional
+            Montage to size for; defaults to the construction montage.
+        n_chans : int, optional
+            Number of input channels, used when no montage is known (or the
+            strategy is not fitted yet) and ``K`` depends on the input.
+
+        Returns
+        -------
+        int
+            With a known montage and a ready strategy: the size of its map.
+            Otherwise ``K`` follows from the target and the strategy: the
+            target size for ``montage``/``slots`` targets and for ``ids``
+            targets under a reconstructing strategy, the strategy's fixed size
+            on ``free`` targets (``source`` parcels, ``latent`` latents), else
+            the number of input channels.
+        """
+        src = (
+            resolve_montage(chs_info, drop_non_eeg=self.drop_non_eeg)
+            if chs_info is not None
+            else self._src
+        )
+        if src is not None:
+            if self.strategy is None:
+                return src.n_input
+            if getattr(self.strategy, "fitted", True):
+                return int(self._map(src).observed.numel())
+            n_chans = len(src.picks)
+        if self.strategy is not None:
+            assert self.target is not None
+            sensors = self.target.sensors()
+            if sensors is not None and (
+                self.target.interface != "ids" or self.strategy.reconstructs
+            ):
+                return len(sensors.names)
+        if n_chans is None:
+            raise ValueError(
+                "The number of channels the backbone receives depends on the "
+                "input montage: pass chs_info (or n_chans) to the model."
+            )
+        if self.strategy is not None and self.target.interface == "free":
+            return self.strategy._free_size(n_chans)
+        return n_chans
+
     def fit(self, *args, **kwargs) -> "ChannelTokenizer":
         """Fit a data-driven strategy (e.g. ``wiener``) and drop stale maps."""
         if self.strategy is None or not hasattr(self.strategy, "fit"):

@@ -189,6 +189,9 @@ class LatentStrategy(ChannelStrategy):
             extra,
         )
 
+    def _free_size(self, n_input: int) -> int:
+        return self.latents.shape[0]
+
     def project(self, x: Tensor, m: SpatialMap) -> Tensor:
         e = m.extra
         if not e:  # pass-through map (``positions`` target without chs_info)
