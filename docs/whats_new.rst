@@ -28,6 +28,11 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.NeuroRVQ` now reuses the LaBraM attention block
+  instead of a private copy, and the K-means codebook initialisation in
+  :mod:`braindecode.modules.quantization` uses ``torch.cdist`` (about 6x faster,
+  lower peak memory, identical codebooks). Outputs and state-dict keys are
+  unchanged. (by `Bruno Aristimunha`_)
 - Add :class:`braindecode.models.MAPA`, a masked-autoencoder foundation model
   for intracranial EEG that describes an electrode only by its atlas region and
   its number along the array it was implanted on, never by its coordinates, so
