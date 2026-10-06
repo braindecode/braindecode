@@ -655,9 +655,15 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             if k.startswith("channel_tokenizer.") and k not in new_state_dict
         ]
         if fresh:
+            strategy = getattr(self.channel_tokenizer, "strategy", None)
+            todo = (
+                "train them before use"
+                if getattr(strategy, "trainable", True)
+                else "call model.channel_tokenizer.fit() before use"
+            )
             warnings.warn(
                 f"{type(self).__name__}: the checkpoint has no weights for "
-                f"{fresh}; they are freshly initialised (train them before use).",
+                f"{fresh}; they are freshly initialised ({todo}).",
                 UserWarning,
                 stacklevel=2,
             )

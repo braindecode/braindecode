@@ -749,3 +749,37 @@ def test_from_pretrained_with_trainable_strategy_warns_once(tmp_path):
     fresh = [w for w in record if "freshly initialised" in str(w.message)]
     assert len(fresh) == 1
     assert model.channel_tokenizer.strategy.gain.item() == 1.0
+
+
+def _fitted_wiener_model():
+    import numpy as np
+
+    model = _channel_model(channel_strategy="wiener")
+    dense = _chs(["Fz", "Cz", "Pz", "Oz", "C3", "C4", "FCz", "CPz"])
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(200, 8)) @ rng.normal(size=(8, 8))
+    model.channel_tokenizer.fit(X, dense)
+    return model
+
+
+def test_backbone_checkpoint_into_wiener_says_fit():
+    backbone = {
+        k: v
+        for k, v in _channel_model().state_dict().items()
+        if not k.startswith("channel_tokenizer")
+    }
+    model = _channel_model(channel_strategy="wiener")
+    with pytest.warns(UserWarning, match=r"freshly initialised.*fit\(\)"):
+        model.load_state_dict(backbone, strict=True)
+
+
+@pytest.mark.skipif(not HAS_HF_HUB, reason="requires huggingface_hub")
+def test_fitted_wiener_model_saves_and_reloads(tmp_path):
+    model = _fitted_wiener_model()
+    model.save_pretrained(tmp_path)
+    clone = _ChannelModel.from_pretrained(tmp_path)
+    assert clone.channel_tokenizer.strategy.cov.shape == (8, 8)
+    # Pz and Oz are missing: the fitted covariance reconstructs them.
+    chs = _chs(["Cz", "C3", "C4", "Fz"])
+    x = torch.randn(3, 4, 8)
+    torch.testing.assert_close(clone(x, chs), model(x, chs), rtol=0, atol=0)
