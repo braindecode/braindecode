@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 import torch
 
-from braindecode.models import LUNA, REVE, ZUNA
+from braindecode.models import LUNA, REVE, ZUNA, BaRISTA
 from braindecode.modules.channels import ChannelEncoding
 
 from .test_integration import convert_model_to_plain
@@ -70,6 +70,23 @@ MODELS = {
         },
     ),
 }
+SOURCE_IS_EEG_ONLY = "sphere head model"
+MODELS.update(
+    # sEEG (coords-only G1, no G4); learned pooling: mapped onto its 16 contacts.
+    BaRISTA=dict(
+        cls=BaRISTA,
+        kwargs=dict(n_outputs=2, d_model=16, n_layers=2, num_heads=2),
+        spec=dict(sfreq=2048, n_times=1024, canon=None, kind="seeg"),
+        errors={
+            ("source", "*"): SOURCE_IS_EEG_ONLY,
+            ("exact", "G2"): "not in the input montage",
+            ("exact", "G3"): "not in the input montage",  # E9..E16 missing
+            ("exact", "G3b"): "not in the input montage",
+            # biosemi64 sites are not standard_1005 sites (> 15 mm off)
+            ("wiener", "G2"): "fitted dense montage",
+        },
+    ),
+)
 
 _POS = mne.channels.make_standard_montage("standard_1005").get_positions()["ch_pos"]
 
@@ -348,5 +365,51 @@ def test_zuna_native_stays_scriptable():
     model = _build("ZUNA")
     scripted = torch.jit.script(convert_model_to_plain(model).eval())
     x = _x(19, 1024)
+    with torch.no_grad():
+        torch.testing.assert_close(scripted(x), model(x), rtol=0, atol=0)
+
+
+# ------------------------------------------------------------------------ BaRISTA
+
+
+def test_barista_seeg_contacts_pass_the_resolve_stage():
+    """sEEG contacts are electrodes for the sensor strategies; ``source``
+    (scalp sphere head) is a declared error, at construction and per call."""
+    geos = _geos("BaRISTA")
+    native = _build("BaRISTA")
+    model = _build("BaRISTA", "nearest")
+    model.load_state_dict(native.state_dict())
+    x = _x(16, 1024)
+    with torch.no_grad():
+        torch.testing.assert_close(
+            model(x, chs_info=geos["G1"]["chs_info"]), native(x), rtol=0, atol=0
+        )
+    with pytest.raises(ValueError, match=SOURCE_IS_EEG_ONLY):
+        _build("BaRISTA", "source")
+    with pytest.raises(ValueError, match=SOURCE_IS_EEG_ONLY):
+        _build("BaRISTA", "source", pooling="mean")
+
+
+def test_barista_mean_pooling_bins_the_layer_positions():
+    geos = _geos("BaRISTA")
+    native = _build("BaRISTA", pooling="mean")
+    model = _build("BaRISTA", "idw", pooling="mean")
+    model.load_state_dict(native.state_dict())
+    for g in ("G2", "G3"):
+        chs = geos[g]["chs_info"]
+        x = _x(len(chs), 1024)
+        pos = torch.as_tensor(
+            np.stack([ch["loc"][:3] for ch in chs]), dtype=torch.float32
+        )
+        with torch.no_grad():
+            ref = native(x, spatial_indices=native._coord_indices(pos).long())
+            out = model(x, chs_info=chs)
+        torch.testing.assert_close(out, ref, rtol=0, atol=0)
+
+
+def test_barista_native_stays_scriptable():
+    model = _build("BaRISTA")
+    scripted = torch.jit.script(convert_model_to_plain(model).eval())
+    x = _x(16, 1024)
     with torch.no_grad():
         torch.testing.assert_close(scripted(x), model(x), rtol=0, atol=0)
