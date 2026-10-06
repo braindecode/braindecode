@@ -153,3 +153,16 @@ def test_loading_a_fitted_state_refreshes_the_cached_maps():
     assert not torch.allclose(a(x).weights, b(x).weights)  # b's map is cached
     b.load_state_dict(a.state_dict())
     torch.testing.assert_close(b(x).weights, a(x).weights, rtol=0, atol=0)
+
+
+def test_quality_warnings_once_per_montage():
+    import warnings
+
+    tok = ChannelTokenizer(TARGET, "idw")
+    x = torch.randn(1, 4, 3)
+    chs = _named(["Fz", "Cz", "Pz", "Oz"])
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        for _ in range(3):
+            tok(x, chs)
+    assert sum("support < 0.5" in str(w.message) for w in record) == 1

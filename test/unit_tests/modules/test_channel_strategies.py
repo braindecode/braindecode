@@ -120,7 +120,11 @@ def test_unusable_channel_warns_and_is_ignored():
 
 def test_ids_exact_maps_vocabulary_and_lists_closest_names():
     target = ChannelTarget("ids", vocabulary=("Fp1", "Fz", "Cz", "Pz"))
-    m = _build("exact", _named(["Cz", "T3", "fz"]), ChannelTarget("ids", vocabulary=("Fp1", "Fz", "Cz", "T7")))
+    m = _build(
+        "exact",
+        _named(["Cz", "T3", "fz"]),
+        ChannelTarget("ids", vocabulary=("Fp1", "Fz", "Cz", "T7")),
+    )
     assert m.channel_ids.tolist() == [2, 3, 1]
     assert m.weights is None and m.observed.all()
     with pytest.raises(ValueError, match="'Cy'.*Cz"):
@@ -258,9 +262,7 @@ def _dipole_fields_factory(reference="average"):
 # profit from a truth referenced over exactly the montage it reconstructs.
 # Bounds: measured + 0.03 (0.888 / 0.761; field mapping 0.986 / 0.841, idw
 # 0.971 / 0.829).
-@pytest.mark.parametrize(
-    "reference,bound", [("average", 0.92), ("Fp1", 0.79)]
-)
+@pytest.mark.parametrize("reference,bound", [("average", 0.92), ("Fp1", 0.79)])
 def test_source_fidelity_dipoles_mismatched_head_k8(reference, bound):
     assert fidelity("source", _dipole_fields_factory(reference)) <= bound
 
@@ -407,3 +409,34 @@ def test_latent_ignores_input_order(name):
         x[:, perm], strategy.build(resolve_montage([chs[i] for i in perm]), target)
     )
     torch.testing.assert_close(out_perm, out)
+
+
+# ---- review follow-ups -------------------------------------------------------
+
+
+def _quality_warnings(record):
+    return [
+        str(w.message)
+        for w in record
+        if "row gain" in str(w.message) or "support < 0.5" in str(w.message)
+    ]
+
+
+def test_high_row_gain_warns():
+    # The unregularised spline from 4 midline sites amplifies (gain > 100).
+    with pytest.warns(UserWarning, match=r"row gain .* > 2"):
+        _build("spline", _named(["Fz", "Cz", "Pz", "Oz"]), reg=0.0)
+
+
+def test_far_targets_warn_low_support():
+    with pytest.warns(UserWarning, match=r"\d+ of 19 target channels.*support < 0.5"):
+        _build("idw", _named(["Fz", "Cz", "Pz", "Oz"]))
+
+
+def test_copies_only_do_not_warn_on_quality():
+    import warnings
+
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        _build("spline", BENDR19[::-1])
+    assert _quality_warnings(record) == []

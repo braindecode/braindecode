@@ -139,12 +139,7 @@ class ChannelStrategy(nn.Module):
             return self._pass_through(src, target)
         if target.interface == "ids" and not self.reconstructs:
             return self._ids_subset(src, target, tgt)
-        copy, dist = self._match(src, tgt)
-        K, C = len(tgt.names), len(src.names)
-        W = np.zeros((K, C))
-        hit = copy >= 0
-        W[np.flatnonzero(hit), copy[hit]] = 1.0
-        support = np.where(hit, np.exp(-dist / (SUPPORT_SCALE_MM * 1e-3)), 0.0)
+        W, hit, support = self._copies(src, tgt)
         todo = ~hit & ~tgt.non_electrode & np.isfinite(tgt.positions).all(1)
         if not self.reconstructs:
             missing = [
@@ -162,10 +157,8 @@ class ChannelStrategy(nn.Module):
             use = self._usable(src)
             W[todo] = self._fill(src, use, tgt.positions[todo])
             filled = todo & (np.abs(W).sum(1) > 0)
-            d = np.linalg.norm(
-                tgt.positions[filled][:, None] - src.positions[use][None], axis=-1
-            ).min(1, initial=np.inf)
-            support[filled] = np.exp(-d / (SUPPORT_SCALE_MM * 1e-3))
+            support[filled] = self._fill_support(src, use, tgt.positions[filled])
+            self._warn_quality(W[todo], support[todo], len(tgt.names))
         self._warn_unused(src, W)
         return SpatialMap(
             weights=_f32(W),
@@ -188,6 +181,46 @@ class ChannelStrategy(nn.Module):
         raise NotImplementedError
 
     # -- shared helpers ------------------------------------------------------
+
+    def _copies(self, src: ResolvedMontage, tgt: TargetSensors):
+        """Copy rows ``W (K, C)``, which targets are copies, and their support."""
+        copy, dist = self._match(src, tgt)
+        W = np.zeros((len(tgt.names), len(src.names)))
+        hit = copy >= 0
+        W[np.flatnonzero(hit), copy[hit]] = 1.0
+        support = np.where(hit, np.exp(-dist / (SUPPORT_SCALE_MM * 1e-3)), 0.0)
+        return W, hit, support
+
+    @staticmethod
+    def _fill_support(
+        src: ResolvedMontage, use: np.ndarray, tgt_pos: np.ndarray
+    ) -> np.ndarray:
+        """``exp(-d / 30 mm)``, ``d`` the distance to the nearest used input."""
+        d = np.linalg.norm(tgt_pos[:, None] - src.positions[use][None], axis=-1).min(
+            1, initial=np.inf
+        )
+        return np.exp(-d / (SUPPORT_SCALE_MM * 1e-3))
+
+    def _warn_quality(self, rows: np.ndarray, support: np.ndarray, K: int) -> None:
+        """Warn (once per built montage) about amplifying rows and far targets."""
+        gain = np.abs(rows).sum(1).max(initial=0.0)
+        if gain > 2:
+            warnings.warn(
+                f"Strategy {self.name!r}: reconstructed row gain |w|_1 = "
+                f"{gain:.3g} > 2; the map amplifies noise. Supply more input "
+                f"channels or a smoother strategy.",
+                UserWarning,
+                stacklevel=4,
+            )
+        low = int((support < 0.5).sum())
+        if low:
+            warnings.warn(
+                f"Strategy {self.name!r}: {low} of {K} target channels have "
+                f"support < 0.5 (no used input within "
+                f"{SUPPORT_SCALE_MM * np.log(2):.0f} mm); they are guesses.",
+                UserWarning,
+                stacklevel=4,
+            )
 
     def _usable(self, src: ResolvedMontage) -> np.ndarray:
         use = src.positioned
