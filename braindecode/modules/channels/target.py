@@ -10,7 +10,7 @@ from typing import Literal, NamedTuple, Optional, get_args
 
 import numpy as np
 
-from .resolve import match_names, resolve_montage, standard_position
+from .resolve import ELECTRODE_KINDS, match_names, resolve_montage, standard_position
 
 Interface = Literal["montage", "ids", "positions", "slots", "free"]
 
@@ -38,7 +38,8 @@ class ChannelTarget:
         ``chs_info``. ``free``: any ``C``, no channel identity.
     chs_info : list of dict, optional
         Training montage (``montage``, ``slots``; optional for ``ids`` and
-        ``positions``). For ``ids`` it gives the vocabulary positions.
+        ``positions``). For ``ids`` it gives the vocabulary positions. Any
+        electrode kind (EEG, sEEG, ECoG, DBS) is accepted here.
     vocabulary : tuple of str, optional
         Channel names of the embedding table (``ids``).
     n_slots : int, optional
@@ -77,7 +78,7 @@ class ChannelTarget:
             names = tuple(self.vocabulary or ())
             pos = np.stack([standard_position(n) for n in names])
             if self.chs_info is not None:
-                given = resolve_montage(self.chs_info)
+                given = resolve_montage(self.chs_info, kinds=ELECTRODE_KINDS)
                 j = match_names(names, given.names)
                 pos[j >= 0] = given.positions[j[j >= 0]]
             ids = np.arange(len(names))
@@ -85,7 +86,7 @@ class ChannelTarget:
             chs = self.chs_info or []
             if self.interface == "slots":
                 chs = chs[: self.n_slots]
-            given = resolve_montage(chs)
+            given = resolve_montage(chs, kinds=ELECTRODE_KINDS)
             names, pos, ids = given.names, given.positions, None
         non_el = {n.lower() for n in self.non_electrode}
         mask = np.array([n.lower() in non_el for n in names], dtype=bool)

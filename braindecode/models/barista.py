@@ -469,9 +469,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             raise ValueError("Expected input of shape (batch, n_chans, n_times).")
         if not torch.jit.is_scripting():  # the channel layer is eager-only
             if self._channel_layer:
-                enc = encode_positions(
-                    self, x, chs_info, model_kind="ieeg", require_positions=False
-                )
+                enc = encode_positions(self, x, chs_info, require_positions=False)
                 x = enc.x
                 if (
                     spatial_indices is None

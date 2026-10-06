@@ -8,12 +8,12 @@ from __future__ import annotations
 import warnings
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Sequence
 
 import torch
 from torch import Tensor, nn
 
-from .resolve import ResolvedMontage, resolve_montage
+from .resolve import ResolvedMontage, _check_kinds, resolve_montage
 from .strategies import SpatialMap, get_channel_strategy
 from .target import ChannelTarget
 
@@ -69,7 +69,13 @@ class ChannelTokenizer(nn.Module):
     src_chs_info : list of dict, optional
         Montage used when :meth:`forward` gets no ``chs_info``.
     drop_non_eeg : bool
-        Drop non-EEG input channels (from the signal too) instead of raising.
+        Drop input channels of another kind (from the signal too) instead of
+        raising.
+    kinds : sequence of str
+        Accepted input channel kinds (see
+        :func:`~braindecode.modules.channels.resolve_montage`). Scalp EEG by
+        default; intracranial models pass ``("eeg", "seeg", "ecog", "dbs")``.
+        ``"source"`` serves scalp EEG only and raises on other kinds.
     **strategy_kwargs
         Forwarded to the strategy (e.g. ``reg`` for ``"spline"``).
     """
@@ -81,12 +87,14 @@ class ChannelTokenizer(nn.Module):
         src_chs_info: Optional[list[dict]] = None,
         *,
         drop_non_eeg: bool = False,
+        kinds: Sequence[str] = ("eeg",),
         **strategy_kwargs,
     ) -> None:
         super().__init__()
         self.target = target
         self.strategy_name = strategy
         self.drop_non_eeg = drop_non_eeg
+        self.kinds = _check_kinds(kinds)
         self._cache: OrderedDict[str, SpatialMap] = OrderedDict()
         self._src: Optional[ResolvedMontage] = None
         if strategy == "native":
@@ -116,9 +124,14 @@ class ChannelTokenizer(nn.Module):
                 stacklevel=2,
             )
         if src_chs_info is not None:
-            self._src = resolve_montage(src_chs_info, drop_non_eeg=drop_non_eeg)
+            self._src = self._resolve(src_chs_info)
             if getattr(self.strategy, "fitted", True):
                 self._map(self._src)  # surface montage errors at construction
+
+    def _resolve(self, chs_info: list[dict]) -> ResolvedMontage:
+        return resolve_montage(
+            chs_info, kinds=self.kinds, drop_non_eeg=self.drop_non_eeg
+        )
 
     def _map(self, src: ResolvedMontage, ref: Optional[Tensor] = None) -> SpatialMap:
         m = self._cache.pop(src.key, None)
@@ -157,11 +170,7 @@ class ChannelTokenizer(nn.Module):
             on ``free`` targets (``source`` parcels, ``latent`` latents), else
             the number of input channels.
         """
-        src = (
-            resolve_montage(chs_info, drop_non_eeg=self.drop_non_eeg)
-            if chs_info is not None
-            else self._src
-        )
+        src = self._resolve(chs_info) if chs_info is not None else self._src
         if src is not None:
             if self.strategy is None:
                 return src.n_input
@@ -218,7 +227,7 @@ class ChannelTokenizer(nn.Module):
                 None,
             )
         if chs_info is not None:
-            src = resolve_montage(chs_info, drop_non_eeg=self.drop_non_eeg)
+            src = self._resolve(chs_info)
         elif self._src is not None:
             src = self._src
         else:

@@ -101,6 +101,13 @@ class SourceStrategy(ChannelStrategy):
         return Lt @ S + use / use.sum()
 
     def build(self, src, target):
+        other = sorted({k for k in src.kinds if k != "eeg"})
+        if other:
+            raise ValueError(
+                f"channel_strategy='source' uses the scalp-EEG sphere head model "
+                f"and cannot serve channels of kind {other}. Use a sensor strategy "
+                f"('exact', 'nearest', 'idw', 'spline', 'field', ...) instead."
+            )
         if target.interface == "free":
             use = self._usable(src)
             S, _, Lo = self._inverse(src, use, np.zeros((0, 3)))

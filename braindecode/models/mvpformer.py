@@ -27,7 +27,7 @@ from braindecode.functional import daubechies_filters, wavelet_decomposition
 from braindecode.models._channel_layer import backbone_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PatchTokenizer
-from braindecode.modules.channels import ChannelTarget
+from braindecode.modules.channels import ELECTRODE_KINDS, ChannelTarget
 
 
 class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -202,7 +202,9 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         ``"wiener"``, ``"region"``) pass the channels through after checking
         the montage; ``"source"`` feeds ``n_parcels`` sources of a sphere head
         model and ``"latent"`` ``n_latents`` learned mixtures, whatever the
-        montage, each in slot order. The layer only accepts EEG channels.
+        montage, each in slot order. The layer accepts EEG, sEEG, ECoG and
+        DBS channels; ``"source"`` (a scalp-EEG head model) refuses
+        intracranial ones with a ``ValueError``.
     channel_strategy_kwargs : dict or None, default=None
         Keyword arguments of the strategy (e.g. ``{"n_parcels": 32}`` for
         ``"source"``). Only valid with a strategy other than ``"native"``.
@@ -226,6 +228,7 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     #: Channel contract: no channel identity, slots in input order.
     _channel_target: ClassVar[ChannelTarget] = ChannelTarget("free")
+    _channel_kinds = ELECTRODE_KINDS  # intracranial contacts are electrodes too
 
     def __init__(
         self,

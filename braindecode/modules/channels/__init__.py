@@ -2,6 +2,7 @@
 
 from .resolve import (
     CHANNEL_NAME_ALIASES,
+    ELECTRODE_KINDS,
     ResolvedMontage,
     match_names,
     nearest_vocabulary,
@@ -18,6 +19,7 @@ from .tokenizer import ChannelEncoding, ChannelTokenizer
 
 __all__ = [
     "CHANNEL_NAME_ALIASES",
+    "ELECTRODE_KINDS",
     "ChannelEncoding",
     "ChannelStrategy",
     "ChannelTarget",

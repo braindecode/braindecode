@@ -15,7 +15,7 @@ from einops.layers.torch import Rearrange, Reduce
 from braindecode.models._channel_layer import JIT_IGNORED, backbone_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PatchTokenizer
-from braindecode.modules.channels import ChannelTarget
+from braindecode.modules.channels import ELECTRODE_KINDS, ChannelTarget
 
 # Standard rhythmic-activity bands (Hz) used by Brant's frequency encoding,
 # from the paper (§ Frequency encoding): theta, alpha, beta, gamma1-5.
@@ -177,6 +177,7 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         JIT_IGNORED,
     ]
     _channel_target = ChannelTarget("free")
+    _channel_kinds = ELECTRODE_KINDS  # intracranial contacts are electrodes too
 
     def __init__(
         self,

@@ -216,3 +216,25 @@ def test_n_outputs_needs_a_size_when_it_depends_on_the_input():
     # native hands the input over unchanged.
     native = ChannelTokenizer(TARGET)
     assert native.n_outputs(BENDR19[:8]) == native.n_outputs(n_chans=8) == 8
+
+
+def test_intracranial_kinds_through_the_layer():
+    contacts = [
+        {"ch_name": f"LA{i}", "kind": "seeg", "loc": [0.03, 0.01 * i - 0.02, 0.04]}
+        for i in range(5)
+    ]
+    target = ChannelTarget("positions", chs_info=contacts)  # sEEG training set
+    with pytest.raises(ValueError, match="not EEG"):
+        ChannelTokenizer(target, "idw", src_chs_info=contacts)
+    tok = ChannelTokenizer(
+        target, "idw", src_chs_info=contacts[::-1], kinds=("eeg", "seeg")
+    )
+    x = torch.randn(1, 5, 3)
+    torch.testing.assert_close(tok(x).x, x.flip(1), rtol=0, atol=0)
+    # source serves scalp EEG only: a declared error, at construction ...
+    with pytest.raises(ValueError, match="sphere head model.*seeg"):
+        ChannelTokenizer(target, "source", src_chs_info=contacts, kinds=("eeg", "seeg"))
+    # ... and per call.
+    tok = ChannelTokenizer(target, "source", kinds=("eeg", "seeg"))
+    with pytest.raises(ValueError, match="sphere head model.*seeg"):
+        tok(x, contacts)

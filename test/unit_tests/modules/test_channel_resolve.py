@@ -91,3 +91,34 @@ def test_nearest_vocabulary_within_15_mm():
     pos = np.vstack([pos, np.full(3, np.nan)])
     assert nearest_vocabulary(pos, vocab).tolist() == [0, -1, -1]
     assert nearest_vocabulary(pos, vocab, max_mm=25.0).tolist() == [0, 1, -1]
+
+
+def test_intracranial_kinds_accepted_only_when_asked():
+    seeg = [_ch("LA1", loc=[0.02, 0.01, 0.03], kind="seeg"), _ch("Cz")]
+    seeg.append(_ch("LA2", loc=[0.02, 0.012, 0.03], kind=802))  # FIFF sEEG
+    with pytest.raises(ValueError, match="not EEG"):
+        resolve_montage(seeg)
+    m = resolve_montage(seeg, kinds=("eeg", "seeg"))
+    assert m.names == ("LA1", "Cz", "LA2")
+    assert m.kinds == ("seeg", "eeg", "seeg")
+    # A kind outside ``kinds`` still raises, or is dropped when asked.
+    mixed = seeg + [_ch("EOG", kind="eog")]
+    with pytest.raises(ValueError, match="EOG.*not one of"):
+        resolve_montage(mixed, kinds=("eeg", "seeg"))
+    assert resolve_montage(mixed, kinds=("eeg", "seeg"), drop_non_eeg=True).names == (
+        "LA1",
+        "Cz",
+        "LA2",
+    )
+    # EEG-only montages keep their key; kinds enter it otherwise.
+    eeg = [_ch("Cz"), _ch("Pz")]
+    assert resolve_montage(eeg).key == resolve_montage(eeg, kinds=("eeg", "seeg")).key
+    relabelled = [dict(ch, kind="eeg") for ch in seeg]
+    assert resolve_montage(relabelled).key != m.key
+
+
+def test_kinds_must_be_electrode_kinds():
+    with pytest.raises(ValueError, match="subset"):
+        resolve_montage([_ch("Cz")], kinds=("eeg", "eog"))
+    with pytest.raises(ValueError, match="subset"):
+        resolve_montage([_ch("Cz")], kinds=())

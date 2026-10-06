@@ -341,7 +341,7 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
         """
         if not torch.jit.is_scripting():  # the channel layer is eager-only
             if self._channel_layer:
-                enc = encode_positions(self, x, chs_info, model_kind="ieeg")
+                enc = encode_positions(self, x, chs_info)
                 x = enc.x
                 if coords is None and enc.positions is not None:
                     coords = self._coords_from_positions(enc.positions)

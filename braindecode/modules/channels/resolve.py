@@ -28,7 +28,11 @@ CHANNEL_NAME_ALIASES: dict[str, str] = {
     "a2": "m2",
 }
 
-_FIFF_EEG = 2  # mne.io.constants.FIFF.FIFFV_EEG_CH
+#: Electrode kinds the layer can place: scalp EEG and intracranial contacts.
+ELECTRODE_KINDS: tuple[str, ...] = ("eeg", "seeg", "ecog", "dbs")
+
+# mne.io.constants.FIFF.FIFFV_{EEG,SEEG,ECOG,DBS}_CH
+_FIFF_KINDS = {2: "eeg", 802: "seeg", 902: "ecog", 803: "dbs"}
 
 
 def canon_name(name: str) -> str:
@@ -63,13 +67,24 @@ def standard_position(name: str) -> np.ndarray:
     return _standard_1005().get(name.lower(), np.full(3, np.nan))
 
 
-def _is_eeg(kind) -> bool:
+def _kind_name(kind) -> str:
+    """Lower-case channel kind of a ``chs_info`` entry (string or FIFF code)."""
     # Missing kind = EEG: many users build chs_info by hand without it.
     if kind is None:
-        return True
+        return "eeg"
     if isinstance(kind, str):
-        return kind.lower() == "eeg"
-    return int(kind) == _FIFF_EEG
+        return kind.lower()
+    return _FIFF_KINDS.get(int(kind), f"kind {int(kind)}")
+
+
+def _check_kinds(kinds: Sequence[str]) -> tuple[str, ...]:
+    out = tuple(k.lower() for k in kinds)
+    bad = sorted(set(out) - set(ELECTRODE_KINDS))
+    if not out or bad:
+        raise ValueError(
+            f"kinds must be a non-empty subset of {ELECTRODE_KINDS}; got {tuple(kinds)}."
+        )
+    return out
 
 
 def _loc(ch: dict) -> np.ndarray:
@@ -105,6 +120,8 @@ class ResolvedMontage:
         Index of each kept channel in the input ``chs_info``.
     n_input : int
         Number of channels in the input ``chs_info`` (before dropping).
+    kinds : tuple of str
+        Channel kind of each kept channel (``"eeg"``, ``"seeg"``, ...).
     """
 
     names: tuple[str, ...]
@@ -114,6 +131,7 @@ class ResolvedMontage:
     key: str
     picks: np.ndarray
     n_input: int
+    kinds: tuple[str, ...] = ()
 
     @property
     def positioned(self) -> np.ndarray:
@@ -124,6 +142,7 @@ class ResolvedMontage:
 def resolve_montage(
     chs_info: list[dict],
     *,
+    kinds: Sequence[str] = ("eeg",),
     drop_non_eeg: bool = False,
     fill_positions: bool = True,
 ) -> ResolvedMontage:
@@ -134,30 +153,38 @@ def resolve_montage(
     chs_info : list of dict
         ``info["chs"]``-like dicts with ``"ch_name"``, optional ``"loc"`` and
         optional ``"kind"`` (string or FIFF code; missing = EEG).
+    kinds : sequence of str
+        Accepted channel kinds, a subset of :data:`ELECTRODE_KINDS`. The
+        default accepts scalp EEG only; intracranial models pass
+        ``("eeg", "seeg", "ecog", "dbs")``.
     drop_non_eeg : bool
-        Drop non-EEG channels instead of raising.
+        Drop channels of another kind (EOG, ECG, stim, ...) instead of raising.
     fill_positions : bool
         Fill missing positions from ``standard_1005`` by name.
 
     Raises
     ------
     ValueError
-        On a non-EEG channel (unless ``drop_non_eeg``), on duplicated names
-        (case-insensitive) or when no EEG channel is left.
+        On a channel of a kind not in ``kinds`` (unless ``drop_non_eeg``), on
+        duplicated names (case-insensitive) or when no channel is left.
     """
-    picks, names = [], []
+    accepted = _check_kinds(kinds)
+    what = "EEG" if accepted == ("eeg",) else f"one of {accepted}"
+    picks, names, kept_kinds = [], [], []
     for i, ch in enumerate(chs_info):
-        if not _is_eeg(ch.get("kind")):
+        kind = _kind_name(ch.get("kind"))
+        if kind not in accepted:
             if drop_non_eeg:
                 continue
             raise ValueError(
                 f"Channel {ch.get('ch_name')!r} has kind={ch.get('kind')!r}, not "
-                f"EEG. Remove it (e.g. raw.pick('eeg')) or pass drop_non_eeg=True."
+                f"{what}. Remove it (e.g. raw.pick('eeg')) or pass drop_non_eeg=True."
             )
         picks.append(i)
         names.append(str(ch["ch_name"]))
+        kept_kinds.append(kind)
     if not names:
-        raise ValueError("No EEG channel in chs_info.")
+        raise ValueError(f"No {what} channel in chs_info.")
     seen: dict[str, str] = {}
     for n in names:
         if n.lower() in seen:
@@ -175,7 +202,10 @@ def resolve_montage(
             positions[i] = standard_position(names[i])
 
     rounded = np.round(positions * 1e4)  # 0.1 mm
-    key = hashlib.sha1(repr((tuple(names), rounded.tolist())).encode()).hexdigest()
+    ident: tuple = (tuple(names), rounded.tolist())
+    if any(k != "eeg" for k in kept_kinds):  # EEG-only keys stay as they were
+        ident += (tuple(kept_kinds),)
+    key = hashlib.sha1(repr(ident).encode()).hexdigest()
     return ResolvedMontage(
         names=tuple(names),
         canon=tuple(canon_name(n) for n in names),
@@ -184,6 +214,7 @@ def resolve_montage(
         key=key,
         picks=np.asarray(picks, dtype=int),
         n_input=len(chs_info),
+        kinds=tuple(kept_kinds),
     )
 
 

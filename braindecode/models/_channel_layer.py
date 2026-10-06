@@ -18,9 +18,9 @@ instead of their own ``chs_info`` parsing. Two targets exist:
 - otherwise a pass-through on the user's resolved positions (the channel set
   of each call, positions from ``loc`` or ``standard_1005``).
 
-Intracranial channels (``seeg``, ``ecog``, ``dbs``) pass the resolve stage as
-electrodes with positions; the ``"source"`` strategy, whose sphere head model
-is scalp-EEG only, raises a declared ``ValueError`` for them.
+Their layer accepts every electrode kind (``kinds=ELECTRODE_KINDS``: EEG,
+sEEG, ECoG, DBS); the ``"source"`` strategy, whose sphere head model is
+scalp-EEG only, raises a declared ``ValueError`` for intracranial channels.
 """
 
 from __future__ import annotations
@@ -30,8 +30,7 @@ from typing import Optional, Sequence
 
 import torch
 
-from braindecode.models.util import INTRACRANIAL_CH_TYPES, channel_types_from_chs_info
-from braindecode.modules.channels import ChannelEncoding, ChannelTarget
+from braindecode.modules.channels import ELECTRODE_KINDS, ChannelEncoding, ChannelTarget
 from braindecode.modules.channels.resolve import canon_name
 from braindecode.modules.channels.tokenizer import ChannelTokenizer
 
@@ -99,42 +98,18 @@ def backbone_n_chans(model) -> int:
 
 # -- positions models ---------------------------------------------------------
 
-#: Strategies that rely on the scalp-EEG sphere head model.
-EEG_ONLY_STRATEGIES = frozenset({"source"})
 
+def check_model_kind(model_name: str, strategy: str, model_kind: str) -> None:
+    """Declared ``ValueError`` for ``"source"`` on an intracranial model.
 
-def as_electrodes(chs_info: Optional[list[dict]]) -> Optional[list[dict]]:
-    """Copy of ``chs_info`` with intracranial kinds relabelled ``"eeg"``.
-
-    The resolve stage accepts EEG only; sEEG / ECoG / DBS contacts are
-    electrodes with positions too, so the sensor strategies serve them.
+    Per channel, the ``source`` strategy itself refuses non-EEG kinds.
     """
-    if chs_info is None:
-        return None
-    kinds = channel_types_from_chs_info(chs_info)
-    return [
-        dict(ch, kind="eeg") if kind in INTRACRANIAL_CH_TYPES else ch
-        for ch, kind in zip(chs_info, kinds)
-    ]
-
-
-def check_strategy_kind(
-    model_name: str,
-    strategy: str,
-    chs_info: Optional[list[dict]],
-    model_kind: str = "eeg",
-) -> None:
-    """Declared ``ValueError`` for an EEG-only strategy on non-EEG channels."""
-    if strategy not in EEG_ONLY_STRATEGIES:
-        return
-    kinds = set(channel_types_from_chs_info(chs_info)) if chs_info else set()
-    bad = sorted(kinds & INTRACRANIAL_CH_TYPES)
-    if model_kind != "eeg" or bad:
-        what = f"channels of kind {bad}" if bad else f"a {model_kind} model"
+    if strategy == "source" and model_kind != "eeg":
         raise ValueError(
             f"{model_name}: channel_strategy={strategy!r} uses the scalp-EEG "
-            f"sphere head model and cannot serve {what}. Use a sensor strategy "
-            f"('exact', 'nearest', 'idw', 'spline', 'field', ...) instead."
+            f"sphere head model and cannot serve a {model_kind} model. Use a "
+            f"sensor strategy ('exact', 'nearest', 'idw', 'spline', 'field', ...) "
+            f"instead."
         )
 
 
@@ -164,8 +139,7 @@ def init_positions_layer(
         return
     name = type(model).__name__
     chs = model._chs_info
-    check_strategy_kind(name, channel_strategy, chs, model_kind)
-    chs = as_electrodes(chs)
+    check_model_kind(name, channel_strategy, model_kind)
     if fixed_montage and chs:
         target = ChannelTarget("positions", chs_info=chs)
     else:
@@ -174,6 +148,7 @@ def init_positions_layer(
         target,
         channel_strategy,
         src_chs_info=chs,
+        kinds=ELECTRODE_KINDS,
         **(channel_strategy_kwargs or {}),
     )
     sensors = target.sensors()
@@ -196,13 +171,11 @@ def encode_positions(
     x: torch.Tensor,
     chs_info: Optional[list[dict]],
     *,
-    model_kind: str = "eeg",
     require_positions: bool = True,
 ) -> ChannelEncoding:
     """Run the channel layer; positions are guaranteed finite if required."""
     tok = model.channel_tokenizer
-    check_strategy_kind(type(model).__name__, tok.strategy_name, chs_info, model_kind)
-    enc = tok(x, as_electrodes(chs_info))
+    enc = tok(x, chs_info)
     if require_positions and enc.positions is not None:
         bad = ~torch.isfinite(enc.positions).all(dim=1)
         if bool(bad.any()):

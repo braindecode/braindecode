@@ -72,7 +72,7 @@ MODELS = {
 }
 
 _UNKNOWN = "not in the model vocabulary"
-_NON_EEG = "not EEG"
+_SPHERE = "sphere head model"
 _DENSE = "fitted dense montage"
 # Cells where a strategy cannot serve the montage: a declared ValueError.
 DECLARED_ERRORS = {
@@ -88,9 +88,9 @@ DECLARED_ERRORS = {
     ("EEGPT-proj", "exact", "G2"): _UNKNOWN,
     ("SignalJEPA", "exact", "G2"): _UNKNOWN,
     ("SignalJEPA_Contextual", "exact", "G2"): _UNKNOWN,
-    # MVPFormer is an iEEG model: the compat geometries are sEEG channels,
-    # which the channel layer rejects (EEG only).
-    **{("MVPFormer", s, g): _NON_EEG for s in STRATEGIES for g in ("G1", "G2", "G3")},
+    # MVPFormer is an iEEG model (kinds=ELECTRODE_KINDS): the compat
+    # geometries are sEEG channels, which the scalp-EEG ``source`` refuses.
+    **{("MVPFormer", "source", g): _SPHERE for g in ("G1", "G2", "G3")},
 }
 
 _POS = mne.channels.make_standard_montage("standard_1005").get_positions()["ch_pos"]

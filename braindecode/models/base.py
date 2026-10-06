@@ -606,6 +606,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     #: only supports ``channel_strategy="native"``.
     _channel_target: ClassVar[Optional[ChannelTarget]] = None
 
+    #: Channel kinds the channel layer accepts (see
+    #: :func:`~braindecode.modules.channels.resolve_montage`); intracranial
+    #: models set ``ELECTRODE_KINDS``.
+    _channel_kinds: ClassVar[tuple[str, ...]] = ("eeg",)
+
     def _init_channel_tokenizer(
         self,
         channel_strategy: str = "native",
@@ -627,6 +632,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             target,
             channel_strategy,
             src_chs_info=self._chs_info,
+            kinds=type(self)._channel_kinds,
             **(channel_strategy_kwargs or {}),
         )
 
