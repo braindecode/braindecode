@@ -48,27 +48,7 @@ from braindecode.models.biot import BIOT_CHANNEL_ORDER
 from braindecode.models.eegpt import EEGPT_19_CHANNELS
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 
-TEN_TWENTY = [
-    "Fp1",
-    "Fp2",
-    "F7",
-    "F3",
-    "Fz",
-    "F4",
-    "F8",
-    "T7",
-    "C3",
-    "Cz",
-    "C4",
-    "T8",
-    "P7",
-    "P3",
-    "Pz",
-    "P4",
-    "P8",
-    "O1",
-    "O2",
-]
+TEN_TWENTY = "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
 
 
 def _montage(name):
@@ -324,12 +304,10 @@ def expected(spec, gname, gkw):
 def _cases():
     for name, spec in COMPAT.items():
         for gname, gkw in geometries(spec).items():
-            marks = []
+            marks = ()
             if (name, gname) in NOT_YET:
-                marks.append(
-                    pytest.mark.xfail(
-                        strict=True, reason="not migrated yet (see design doc)"
-                    )
+                marks = pytest.mark.xfail(
+                    strict=True, reason="not migrated yet (see design doc)"
                 )
             yield pytest.param(name, gname, gkw, id=f"{name}-{gname}", marks=marks)
 
@@ -337,24 +315,18 @@ def _cases():
 @pytest.mark.parametrize("name,gname,gkw", list(_cases()))
 def test_geometry_contract(name, gname, gkw):
     spec = COMPAT[name]
-    want = expected(spec, gname, gkw)
     kw = dict(n_outputs=2, **gkw, **spec.get("kwargs", {}))
-    n_ch = len(gkw["chs_info"])
 
     def build_and_forward():
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             model = spec["cls"](**kw).eval()
             with torch.no_grad():
-                return model(torch.randn(1, n_ch, gkw["n_times"]))
+                return model(torch.randn(1, len(gkw["chs_info"]), gkw["n_times"]))
 
-    if (name, gname) in NOT_YET:
-        # Target behaviour after the migration: builds, forwards, finite output.
-        # xfail(strict) documents that it does not hold yet.
-        y = build_and_forward()
-        assert torch.is_tensor(y) and y.shape[0] == 1 and torch.isfinite(y).all()
-        return
-    if want == "raise":
+    # NOT_YET cells assert the post-migration target (builds, forwards, finite
+    # output) under xfail(strict), whatever the declared strategy says today.
+    if expected(spec, gname, gkw) == "raise" and (name, gname) not in NOT_YET:
         with pytest.raises((ValueError, RuntimeError)):
             build_and_forward()
     else:

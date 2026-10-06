@@ -51,6 +51,7 @@ from .layers import (
 )
 from .linear import LinearWithConstraint, MaxNormLinear
 from .parametrization import MaxNorm, MaxNormParametrize
+from .quantization import EMACodebook, ResidualVectorQuantizer, VectorQuantizer
 from .stats import (
     LogPowerLayer,
     LogVarLayer,
@@ -64,6 +65,9 @@ from .util import aggregate_probas
 from .wrapper import Expression, IntermediateOutputWrapper
 
 __all__ = [
+    "EMACodebook",
+    "ResidualVectorQuantizer",
+    "VectorQuantizer",
     "GatedLinearUnit",
     "LogActivation",
     "SafeLog",
