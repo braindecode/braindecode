@@ -76,6 +76,7 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`Labram` - Large Brain Model with pre-trained weights
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
+    - :class:`MAPA` - Masked autoencoder for intracranial EEG with anatomical priors
     - :class:`MIRepNet` - Motor-imagery pre-trained model
     - :class:`BENDR` - Foundation model with pre-trained weights
     - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
@@ -179,6 +180,7 @@ interface for all EEG models and can derive variable names when needed.
      InterpolatedSignalJEPA
      Labram
      LUNA
+     MAPA
      MEDFormer
      MetaNeuromotorHand
      MSCFormer

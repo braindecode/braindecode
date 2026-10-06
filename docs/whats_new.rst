@@ -28,6 +28,18 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.MAPA`, a masked-autoencoder foundation model
+  for intracranial EEG that describes an electrode only by its atlas region and
+  its number along the array it was implanted on, never by its coordinates, so
+  that one pretrained encoder reads a subject it has never seen: three
+  magnitude-spectrogram bands on a shared frame clock are tokenized per
+  contact, offset by a learned region embedding, and mixed by a transformer
+  whose attention stays inside one array and carries a two-axis rotary encoding
+  on the contact number and on time. One instance encodes recordings from
+  different subjects, by passing each one's electrode metadata to ``forward``,
+  and ``normalization="session"`` takes a spectrogram normalized over the whole
+  recording, which reproduces the reference inputs
+  (:gh:`1178` by `Julien Gadonneix`_).
 - Add registry-wide model contract tests that automatically cover every registered
   model, checking eval-mode input/state purity, finite batched outputs,
   batch-permutation equivariance, and ``get_config`` + ``state_dict``

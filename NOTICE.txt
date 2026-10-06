@@ -60,6 +60,7 @@ The following components are licensed under the Apache License 2.0:
 - `braindecode/models/mvpformer.py`
 - `braindecode/models/zuna.py`
 - `braindecode/models/luna.py`
+- `braindecode/models/mapa.py`
 - `braindecode/models/brant.py`
 - `braindecode/models/diver1.py`
 - `braindecode/models/mscformer.py`
