@@ -222,7 +222,12 @@ class CSBrain(EEGModuleMixin, nn.Module):
     temporal_kernel_sizes : tuple[int, ...], default=(1, 3, 5)
         Kernel sizes of the cross-scale temporal embedding convolutions.
     drop_prob : float, default=0.1
-        Dropout probability.
+        Dropout probability, applied to the backbone (patch embedding and
+        encoder layers) and to the task head. The reference fine-tuning
+        scripts keep the backbone at 0.1 and raise only the head dropout
+        (``--dropout 0.3`` for BCIC IV-2a); to reproduce that recipe, keep
+        ``drop_prob=0.1`` and raise the head dropout in a thin subclass or
+        wrapper.
     brain_regions : sequence of int | None, default=None
         Explicit region id per input channel (0 frontal, 1 parietal, 2
         temporal, 3 occipital, 4 central), taking precedence over the
