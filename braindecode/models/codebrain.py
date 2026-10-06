@@ -15,7 +15,19 @@ from einops import rearrange
 from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 
+from braindecode.models._channel_layer import (
+    backbone_n_chans,
+    names_chs_info,
+    warn_if_not_canonical,
+)
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.channels import ChannelTarget
+
+#: Channel order of the released CodeBrain checkpoint: the 19 electrodes of the
+#: 10-20 system (TUEG), as used by the compatibility grid.
+CODEBRAIN_CHANNEL_ORDER = (
+    "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
+)
 
 
 class CodeBrain(EEGModuleMixin, nn.Module):
@@ -108,6 +120,19 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         Number of groups for ``GroupNorm`` in the patch projection.
     activation : type[nn.Module], default=nn.ReLU
         Non-linear activation class used in ``init_conv`` and ``final_conv``.
+    channel_strategy : str, default="native"
+        How the input montage reaches the backbone, which consumes
+        ``19`` channels in the order of :data:`CODEBRAIN_CHANNEL_ORDER` (see
+        :class:`braindecode.modules.ChannelTokenizer`). ``"native"`` feeds
+        ``x`` unchecked (a non-canonical montage emits a ``FutureWarning``
+        and will raise in the next release). A registered strategy
+        (``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``,
+        ``"field"``, ``"source"``, ``"wiener"``, ``"region"``, ``"latent"``)
+        maps any montage onto that order inside ``forward``; ``forward`` then
+        also takes ``chs_info`` for a montage other than the constructor's.
+    channel_strategy_kwargs : dict or None, default=None
+        Options forwarded to the strategy (e.g. ``{"reg": 1e-3}`` for
+        ``"spline"``).
 
     References
     ----------
@@ -115,6 +140,10 @@ class CodeBrain(EEGModuleMixin, nn.Module):
        CodeBrain: Scalable Code EEG Pre-Training for Unified Downstream BCI Tasks.
        https://arxiv.org/abs/2506.09110
     """
+
+    _channel_target = ChannelTarget(
+        "montage", chs_info=names_chs_info(CODEBRAIN_CHANNEL_ORDER)
+    )
 
     def __init__(
         self,
@@ -148,6 +177,8 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         codebook_size_f: int = 4096,
         pretrain_mode: bool = False,
         activation: type[nn.Module] = nn.ReLU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: Optional[dict] = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -157,6 +188,11 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
+        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
+        self._channel_layer = channel_strategy != "native"
+        if not self._channel_layer:
+            warn_if_not_canonical(self, CODEBRAIN_CHANNEL_ORDER)
+        n_backbone_chans = backbone_n_chans(self)
 
         # ========== Parameters ==========
         self.patch_size = patch_size
@@ -209,7 +245,9 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         self.lm_head_f = nn.Linear(out_channels, codebook_size_f, bias=False)
 
         # Classification head (3-layer MLP, Section 3.3)
-        flat_dim = self.n_chans * (self.n_times // self.patch_size) * self.out_channels
+        flat_dim = (
+            n_backbone_chans * (self.n_times // self.patch_size) * self.out_channels
+        )
         self.final_layer = nn.Sequential(
             nn.Flatten(),
             nn.Linear(flat_dim, mlp_hidden_multiplier * out_channels),
@@ -249,8 +287,11 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             remapped[new_key] = value
         return super().load_state_dict(remapped, *args, **kwargs)
 
-    def forward(self, inputs, mask=None, return_features=False):
-        # inputs: (batch, n_chans, n_times)
+    def forward(self, inputs, mask=None, return_features=False, chs_info=None):
+        # inputs: (batch, n_chans, n_times); ``chs_info`` (montage of
+        # ``inputs``) is used only when ``channel_strategy`` is not "native".
+        if self._channel_layer:
+            inputs = self._encode_channels(inputs, chs_info).x
         batch, n_chans, n_times = inputs.shape
         patch_size = self.patch_size
         seq_len = n_times // patch_size

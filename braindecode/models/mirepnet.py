@@ -9,9 +9,27 @@ from __future__ import annotations
 
 from torch import Tensor, nn
 
+from braindecode.models._channel_layer import (
+    backbone_n_chans,
+    names_chs_info,
+    warn_if_not_canonical,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules import FeedForwardBlock, MultiHeadAttention
+from braindecode.modules.channels import ChannelTarget
+
+#: Channel order of the released MIRepNet checkpoint: ``use_channels_names``
+#: in ``utils/channel_list.py`` of the original code (revision ``b35d113``),
+#: 9 + 9 + 9 + 9 + 9 electrodes from F7 to P8 (frontal pole, AF, PO and O rows
+#: excluded). Upstream pads missing channels onto this template.
+MIREPNET_CHANNEL_ORDER = [
+    *"F7 F5 F3 F1 Fz F2 F4 F6 F8".split(),
+    *"FT7 FC5 FC3 FC1 FCz FC2 FC4 FC6 FT8".split(),
+    *"T7 C5 C3 C1 Cz C2 C4 C6 T8".split(),
+    *"TP7 CP5 CP3 CP1 CPz CP2 CP4 CP6 TP8".split(),
+    *"P7 P5 P3 P1 Pz P2 P4 P6 P8".split(),
+]
 
 
 class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
@@ -82,8 +100,9 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
 
         model = MIRepNet.from_pretrained("braindecode/mirepnet-pretrained")
 
-    It was trained with 45 channels, 1,000 samples at 250 Hz, and three output
-    classes. Pass ``n_outputs`` to replace its classification head.
+    It was trained with 45 channels (:data:`MIREPNET_CHANNEL_ORDER`), 1,000
+    samples at 250 Hz, and three output classes. Pass ``n_outputs`` to replace
+    its classification head.
 
     .. versionadded:: 1.8
 
@@ -122,6 +141,19 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         ``embed_dim ** -0.5`` scale.
     return_features : bool, default=False
         Whether ``forward`` returns the unified feature dictionary by default.
+    channel_strategy : str, default="native"
+        How the input montage reaches the backbone, which consumes
+        ``45`` channels in the order of :data:`MIREPNET_CHANNEL_ORDER` (see
+        :class:`braindecode.modules.ChannelTokenizer`). ``"native"`` feeds
+        ``x`` unchecked (a non-canonical montage emits a ``FutureWarning``
+        and will raise in the next release). A registered strategy
+        (``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``,
+        ``"field"``, ``"source"``, ``"wiener"``, ``"region"``, ``"latent"``)
+        maps any montage onto that order inside ``forward``; ``forward`` then
+        also takes ``chs_info`` for a montage other than the constructor's.
+    channel_strategy_kwargs : dict or None, default=None
+        Options forwarded to the strategy (e.g. ``{"reg": 1e-3}`` for
+        ``"spline"``).
 
     Input shape
     -----------
@@ -140,6 +172,10 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     .. [mirepnetcode] Released implementation:
        https://github.com/staraink/MIRepNet
     """
+
+    _channel_target = ChannelTarget(
+        "montage", chs_info=names_chs_info(MIREPNET_CHANNEL_ORDER)
+    )
 
     def __init__(
         self,
@@ -168,6 +204,8 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         feedforward_drop_prob: float = 0.5,
         attention_scale: float | None = None,
         return_features: bool = False,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -202,6 +240,10 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
                 raise ValueError(f"{name} must be between 0 and 1.")
         if attention_scale is not None and attention_scale <= 0:
             raise ValueError("attention_scale must be positive or None.")
+        self._init_channel_tokenizer(channel_strategy, channel_strategy_kwargs)
+        self._channel_layer = channel_strategy != "native"
+        if not self._channel_layer:
+            warn_if_not_canonical(self, MIREPNET_CHANNEL_ORDER)
 
         self.embed_dim = embed_dim
         self.return_features = return_features
@@ -212,7 +254,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             "clshead.bias": "final_layer.bias",
         }
         self.embedding = _PatchEmbedding(
-            n_chans=self.n_chans,
+            n_chans=backbone_n_chans(self),
             embed_dim=embed_dim,
             n_filters_time=n_filters_time,
             n_filters_spat=n_filters_spat,
@@ -235,7 +277,19 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
 
     @_disable_batch_norm_training_if_batch_size_one
-    def forward(self, x: Tensor, return_features: bool | None = None):
+    def forward(
+        self,
+        x: Tensor,
+        return_features: bool | None = None,
+        chs_info: list[dict] | None = None,
+    ):
+        """Classify ``x`` of shape ``(batch, n_chans, n_times)``.
+
+        ``chs_info`` (montage of ``x`` when it differs from the constructor's)
+        is used only when ``channel_strategy`` is not ``"native"``.
+        """
+        if self._channel_layer:
+            x = self._encode_channels(x, chs_info).x
         tokens = self.transformer(self.embedding(x))
         features = tokens.mean(dim=1)
         if return_features is None:
