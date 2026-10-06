@@ -780,6 +780,22 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     if HAS_HF_HUB:
 
         @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            # The Hub mixin fills omitted __init__ args from config.json; pin the
+            # derived geometry arg so it cannot clash with the caller's one
+            # (e.g. caller chs_info vs saved n_chans) in __init__'s checks.
+            if "chs_info" in kwargs and "n_chans" not in kwargs:
+                chs_info = kwargs["chs_info"]
+                kwargs["n_chans"] = None if chs_info is None else len(chs_info)
+            elif "n_chans" in kwargs and "chs_info" not in kwargs:
+                kwargs["chs_info"] = None
+            if ("n_times" in kwargs or "sfreq" in kwargs) and (
+                "input_window_seconds" not in kwargs
+            ):
+                kwargs["input_window_seconds"] = None
+            return super().from_pretrained(*args, **kwargs)
+
+        @classmethod
         def _from_pretrained(
             cls,
             *,
