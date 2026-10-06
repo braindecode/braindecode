@@ -5027,6 +5027,7 @@ def test_neurorvq_tokenizer_loads_released_mlp_key_layout(tmp_path):
     for name, value in model.state_dict().items():
         torch.testing.assert_close(loaded.state_dict()[name], value)
 
+
 def test_neurorvq_tokenizer_pretrained_loading_requires_channel_metadata():
     model = NeuroRVQTokenizer(
         n_chans=3,
@@ -5080,6 +5081,7 @@ def test_neurorvq_ema_quantizer_matches_normalized_ema_update():
     assert indices.tolist() == [0, 1]
     torch.testing.assert_close(quantizer.embedding.weight, expected)
     torch.testing.assert_close(quantizer.cluster_size, torch.tensor([0.5, 0.5]))
+
 
 def test_neurorvq_ema_quantizer_syncs_training_statistics_across_distributed_ranks(
     monkeypatch,
@@ -5141,6 +5143,33 @@ def test_neurorvq_tokenizer_rejects_incompatible_signal_metadata(kwargs, message
         NeuroRVQTokenizer(**params)
 
 
+def test_neurorvq_tokenizer_standardizes_each_window():
+    model = _small_neurorvq_tokenizer().eval()
+    signal = 5.0 * torch.randn(2, 3, 400) + 3.0
+
+    target, reconstruction = model(signal)
+
+    for output in (target, reconstruction):
+        torch.testing.assert_close(
+            output.mean(dim=(1, 2)), torch.zeros(2), atol=1e-5, rtol=0
+        )
+        torch.testing.assert_close(
+            output.std(dim=(1, 2)), torch.ones(2), atol=1e-4, rtol=0
+        )
+
+
+def test_neurorvq_tokenizer_tokenize_matches_forward_codes():
+    model = _small_neurorvq_tokenizer().eval()
+    signal = torch.randn(2, 3, 400)
+    codes = model.tokenize(signal)  # also initializes the cold codebooks
+
+    time, spatial = model._embedding_indices(signal.device)
+    _, forward_codes = model._encode(model._patches(signal), time, spatial)
+
+    torch.testing.assert_close(codes, forward_codes)
+
+
+# ---------------------------------------------------------------------------
 # SeizureTransformer
 # ---------------------------------------------------------------------------
 
