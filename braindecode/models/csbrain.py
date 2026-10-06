@@ -304,6 +304,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
             patch_size=patch_size,
         )
         # CBraMod's patch encoder: conv stem + rFFT magnitude + depthwise-conv PE.
+        rng_state = torch.get_rng_state()
         self.patch_embedding = _PatchEmbedding(
             patch_size,
             channels_kernel_stride_padding_norm=(
@@ -313,6 +314,17 @@ class CSBrain(EEGModuleMixin, nn.Module):
             ),
             drop_prob=drop_prob,
         )
+        # CBraMod creates the positional-encoding conv before the conv stem.
+        # Redraw the initial weights stem-first, so that a given seed gives the
+        # same initial CSBrain weights as before this module was shared.
+        torch.set_rng_state(rng_state)
+        for layer in (
+            *self.patch_embedding.proj_in,
+            *self.patch_embedding.positional_encoding,
+            *self.patch_embedding.spectral_proj,
+        ):
+            if hasattr(layer, "reset_parameters"):
+                layer.reset_parameters()
         d_model = self.patch_embedding.d_model
 
         # Region structure: explicit ``brain_regions`` (one region id per input
