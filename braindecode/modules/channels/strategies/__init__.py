@@ -1,6 +1,6 @@
 """Registered channel strategies (importing a module registers its strategies)."""
 
-from . import interp, sensor, source  # noqa: F401  (registers the strategies)
+from . import interp, learned, sensor, source  # noqa: F401  (registers the strategies)
 from .base import (
     ChannelStrategy,
     SpatialMap,

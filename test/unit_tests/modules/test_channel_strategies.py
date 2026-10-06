@@ -27,7 +27,9 @@ def _named(names):
 
 
 def _build(strategy, src_chs, target=MONTAGE19, **kw):
-    return get_channel_strategy(strategy, **kw).build(resolve_montage(src_chs), target)
+    if isinstance(strategy, str):
+        strategy = get_channel_strategy(strategy, **kw)
+    return strategy.build(resolve_montage(src_chs), target)
 
 
 @pytest.mark.parametrize("strategy", SENSOR + PHYSICS)
@@ -290,3 +292,86 @@ def test_source_free_target_has_fixed_size_for_any_montage():
         assert m.observed.all() and ((m.support >= 0) & (m.support <= 1)).all()
         sizes.add(strategy.apply(torch.randn(1, len(chs), 4), m).shape[1])
     assert sizes == {32}
+
+
+# ---- data-driven and learned strategies --------------------------------------
+
+
+def _fitted_wiener(**kw):
+    rng = np.random.default_rng(0)  # training fields independent of the test's
+    return get_channel_strategy("wiener", **kw).fit(_smooth_fields(rng, 2000), BENDR19)
+
+
+def test_wiener_fidelity_smooth_fields_k8():
+    # Report probe: 0.60 (covariance fitted on 2000 dense training fields).
+    assert fidelity(_fitted_wiener(), _smooth_fields) <= 0.70
+
+
+def test_wiener_requires_fit():
+    with pytest.raises(ValueError, match=r"fit\(\)"):
+        _build("wiener", BENDR19[:8])
+
+
+def test_wiener_fit_travels_in_the_state_dict():
+    src = resolve_montage(BENDR19[:8])
+    fitted = _fitted_wiener()
+    fresh = get_channel_strategy("wiener")
+    fresh.load_state_dict(fitted.state_dict())
+    torch.testing.assert_close(
+        fresh.build(src, MONTAGE19).weights, fitted.build(src, MONTAGE19).weights
+    )
+
+
+def test_tokenizer_fit_refreshes_its_maps():
+    from braindecode.modules import ChannelTokenizer
+
+    tok = ChannelTokenizer(MONTAGE19, "wiener", src_chs_info=BENDR19[:8])
+    x = torch.randn(1, 8, 5)
+    with pytest.raises(ValueError, match=r"fit\(\)"):
+        tok(x)
+    tok.fit(_smooth_fields(np.random.default_rng(0), 2000), BENDR19)
+    assert tok(x).x.shape == (1, 19, 5)
+
+
+def test_region_averages_the_40_mm_neighbourhood():
+    # FC3, CP3 and C1 lie within 40 mm of C3; Oz is the only source near O1;
+    # nothing observed is near Fp1.
+    m = _build("region", _named(["FC3", "CP3", "C1", "Oz"]))
+    c3, o1, fp1 = 8, 17, 0
+    np.testing.assert_allclose(m.weights[c3].numpy(), [1 / 3, 1 / 3, 1 / 3, 0])
+    np.testing.assert_allclose(m.weights[o1].numpy(), [0, 0, 0, 1])
+    assert (m.weights[fp1] == 0).all()
+    assert not m.observed[fp1] and m.support[fp1] == 0
+
+
+LATENT_TARGETS = {
+    "montage": (MONTAGE19, 19),
+    "ids": (ChannelTarget("ids", vocabulary=("Fz", "Cz", "Pz", "Oz", "Nope")), 5),
+    "slots": (ChannelTarget("slots", chs_info=BENDR19, n_slots=6), 6),
+    "positions": (ChannelTarget("positions", chs_info=BENDR19[:12]), 12),
+    "free": (ChannelTarget("free"), 16),
+}
+
+
+@pytest.mark.parametrize("name", LATENT_TARGETS)
+def test_latent_output_shape_for_each_interface(name):
+    target, K = LATENT_TARGETS[name]
+    strategy = get_channel_strategy("latent", n_latents=16)
+    m = strategy.build(resolve_montage(BENDR19[3:10]), target)
+    out = strategy.apply(torch.randn(2, 7, 11), m)
+    assert out.shape == (2, K, 11) and torch.isfinite(out).all()
+    assert len(list(strategy.parameters())) > 0
+
+
+@pytest.mark.parametrize("name", ["montage", "free"])
+def test_latent_ignores_input_order(name):
+    target, _ = LATENT_TARGETS[name]
+    strategy = get_channel_strategy("latent", n_latents=16)
+    chs = BENDR19[3:10]
+    perm = [4, 0, 6, 2, 1, 5, 3]
+    x = torch.randn(2, 7, 11)
+    out = strategy.apply(x, strategy.build(resolve_montage(chs), target))
+    out_perm = strategy.apply(
+        x[:, perm], strategy.build(resolve_montage([chs[i] for i in perm]), target)
+    )
+    torch.testing.assert_close(out_perm, out)

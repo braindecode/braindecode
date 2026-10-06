@@ -120,9 +120,15 @@ class ChannelTokenizer(nn.Module):
             self._cache.popitem(last=False)
         return m
 
-    def clear_cache(self) -> None:
-        """Forget built maps (call after changing the strategy's fitted state)."""
+    def fit(self, *args, **kwargs) -> "ChannelTokenizer":
+        """Fit a data-driven strategy (e.g. ``wiener``) and drop stale maps."""
+        if self.strategy is None or not hasattr(self.strategy, "fit"):
+            raise ValueError(
+                f"Channel strategy {self.strategy_name!r} has nothing to fit."
+            )
+        self.strategy.fit(*args, **kwargs)
         self._cache.clear()
+        return self
 
     def forward(
         self, x: Tensor, chs_info: Optional[list[dict]] = None
