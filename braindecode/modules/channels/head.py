@@ -66,7 +66,7 @@ class SphereHead:
             self._orient[cols, p] = np.linalg.svd(L[:, cols], full_matrices=False)[2][0]
         self._cache: OrderedDict[bytes, np.ndarray] = OrderedDict()
 
-    def _free_leadfield(self, positions: np.ndarray) -> np.ndarray:
+    def _free_leadfield(self, positions: np.ndarray, _retry: bool = True) -> np.ndarray:
         import mne
 
         names = [f"E{i}" for i in range(len(positions))]
@@ -76,11 +76,23 @@ class SphereHead:
                 dict(zip(names, positions)), coord_frame="head"
             )
         )
-        with mne.utils.use_log_level("ERROR"):
+        with (
+            mne.utils.use_log_level("ERROR"),
+            np.errstate(divide="ignore", invalid="ignore"),
+        ):
             fwd = mne.make_forward_solution(
                 info, trans=None, src=self.src, bem=self.sphere, eeg=True, meg=False
             )
-        return fwd["sol"]["data"]
+        sol = fwd["sol"]["data"]
+        bad = ~np.isfinite(sol).all(1)
+        if bad.any() and _retry:
+            # An electrode on the line through the sphere centre and a grid
+            # dipole (e.g. biosemi64 Cz at (0, 0, 0.095)) hits a 0/0 in the
+            # sphere formula; moving it by 1 µm leaves the line.
+            positions = np.array(positions, float)
+            positions[bad] += 1e-6
+            return self._free_leadfield(positions, _retry=False)
+        return sol
 
     def leadfield(self, positions: np.ndarray) -> np.ndarray:
         """``(C, n_parcels)`` lead field, average-referenced over ``positions``."""
