@@ -17,7 +17,14 @@ import numpy as np
 import pytest
 import torch
 
-from braindecode.models import DIVER1, LUNA, REVE, ZUNA, BaRISTA
+from braindecode.models import (
+    DIVER1,
+    LUNA,
+    REVE,
+    ZUNA,
+    BaRISTA,
+    PopulationTransformer,
+)
 from braindecode.models.diver1 import channel_metadata_from_chs_info
 from braindecode.modules.channels import ChannelEncoding
 
@@ -96,6 +103,13 @@ MODELS.update(
             ("exact", "G3"): "not in the input montage",
             ("exact", "G3b"): "not in the input montage",
         },
+    ),
+    # sEEG features pooled by CLS: a pass-through for every sensor strategy.
+    PopT=dict(
+        cls=PopulationTransformer,
+        kwargs=dict(n_outputs=2, hidden_dim=64, ffn_dim=128, n_layers=2, n_heads=2),
+        spec=dict(sfreq=None, n_times=768, canon=None, kind="seeg"),
+        errors={("source", "*"): SOURCE_IS_EEG_ONLY},
     ),
 )
 
@@ -485,5 +499,72 @@ def test_diver1_native_stays_scriptable():
     model = _build("DIVER1")
     scripted = torch.jit.script(convert_model_to_plain(model).eval())
     x = _x(19, 1000)
+    with torch.no_grad():
+        torch.testing.assert_close(scripted(x), model(x), rtol=0, atol=0)
+
+
+# --------------------------------------------------------------------------- PopT
+
+
+def test_popt_coordinates_come_from_the_layer():
+    geos = _geos("PopT")
+    native = _build("PopT")
+    model = _build("PopT", "spline")
+    model.load_state_dict(native.state_dict())
+    for g in ("G1", "G2", "G3", "G3b"):
+        chs = geos[g]["chs_info"]
+        pos = torch.as_tensor(
+            np.stack(
+                [
+                    ch["loc"][:3] if np.any(ch["loc"][:3]) else _POS[ch["ch_name"]]
+                    for ch in chs
+                ]
+            ),
+            dtype=torch.float32,
+        )
+        x = _x(len(chs), 768)
+        with warnings.catch_warnings(), torch.no_grad():
+            warnings.simplefilter("ignore")  # negative coordinates are clamped
+            coords = native._coords_from_positions(pos).expand(2, -1, -1)
+            ref = native(x, coords=coords)
+            out = model(x, chs_info=chs)
+        torch.testing.assert_close(out, ref, rtol=0, atol=0)
+    with pytest.raises(ValueError, match=SOURCE_IS_EEG_ONLY):
+        _build("PopT", "source")
+
+
+@pytest.mark.filterwarnings("ignore:Some electrode coordinates")
+def test_popt_unobserved_electrodes_join_the_key_padding_mask():
+    model = _build("PopT", "nearest")
+    observed = torch.ones(16, dtype=torch.bool)
+    observed[[2, 7]] = False
+    seen = []
+    enc_forward = model.transformer_encoder.forward
+
+    def spy(src, *args, **kwargs):
+        seen.append(kwargs.get("src_key_padding_mask"))
+        return enc_forward(src, *args, **kwargs)
+
+    model.transformer_encoder.forward = spy
+    x = _x(16, 768)
+    user = torch.zeros(2, 16, dtype=torch.bool)
+    user[1, 0] = True
+    with torch.no_grad():
+        model(x)
+        _swap_observed(model, observed)
+        model(x)
+        model(x, key_padding_mask=user)
+    assert seen[0] is None
+    expected = torch.zeros(2, 17, dtype=torch.bool)  # CLS first, never masked
+    expected[:, [3, 8]] = True
+    assert (seen[1] == expected).all()
+    expected[1, 1] = True
+    assert (seen[2] == expected).all()
+
+
+def test_popt_native_stays_scriptable():
+    model = _build("PopT")
+    scripted = torch.jit.script(convert_model_to_plain(model).eval())
+    x = _x(16, 768)
     with torch.no_grad():
         torch.testing.assert_close(scripted(x), model(x), rtol=0, atol=0)
