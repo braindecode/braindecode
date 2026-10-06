@@ -17,7 +17,8 @@ import numpy as np
 import pytest
 import torch
 
-from braindecode.models import LUNA, REVE, ZUNA, BaRISTA
+from braindecode.models import DIVER1, LUNA, REVE, ZUNA, BaRISTA
+from braindecode.models.diver1 import channel_metadata_from_chs_info
 from braindecode.modules.channels import ChannelEncoding
 
 from .test_integration import convert_model_to_plain
@@ -84,6 +85,16 @@ MODELS.update(
             ("exact", "G3b"): "not in the input montage",
             # biosemi64 sites are not standard_1005 sites (> 15 mm off)
             ("wiener", "G2"): "fitted dense montage",
+        },
+    ),
+    # Flattened head: mapped onto its 19 (pooling="mean" is a pass-through).
+    DIVER1=dict(
+        cls=DIVER1,
+        kwargs=dict(n_outputs=2, d_model=64, n_layers=2, patch_size=500),
+        spec=dict(sfreq=500, n_times=1000, canon=TEN_TWENTY),
+        errors={
+            ("exact", "G3"): "not in the input montage",
+            ("exact", "G3b"): "not in the input montage",
         },
     ),
 )
@@ -411,5 +422,68 @@ def test_barista_native_stays_scriptable():
     model = _build("BaRISTA")
     scripted = torch.jit.script(convert_model_to_plain(model).eval())
     x = _x(16, 1024)
+    with torch.no_grad():
+        torch.testing.assert_close(scripted(x), model(x), rtol=0, atol=0)
+
+
+# ------------------------------------------------------------------------- DIVER1
+
+
+def test_diver1_flatten_maps_any_montage_onto_its_own():
+    geos = _geos("DIVER1")
+    native = _build("DIVER1")
+    model = _build("DIVER1", "exact")
+    model.load_state_dict(native.state_dict())
+    x = _x(19, 1000)
+    with torch.no_grad():
+        ref = native(x)
+        out = model(x.flip(1), chs_info=geos["G4"]["chs_info"])
+    torch.testing.assert_close(out, ref, rtol=0, atol=0)
+
+
+def test_diver1_mean_pooling_reads_the_layer_positions():
+    geos = _geos("DIVER1")
+    native = _build("DIVER1", pooling="mean")
+    model = _build("DIVER1", "spline", pooling="mean")
+    model.load_state_dict(native.state_dict())
+    chs = geos["G2"]["chs_info"]
+    x = _x(len(chs), 1000)
+    with torch.no_grad():
+        ref = native(x, chan_metadata=channel_metadata_from_chs_info(chs))
+        out = model(x, chs_info=chs)
+    torch.testing.assert_close(out, ref, rtol=0, atol=0)
+    # names without loc: the layer supplies standard_1005 positions
+    chs = geos["G3b"]["chs_info"]
+    meta = channel_metadata_from_chs_info(chs)
+    assert meta[:, :3].isnan().all()
+    meta[:, :3] = 1e3 * _std_positions([ch["ch_name"] for ch in chs])
+    x = _x(8, 1000)
+    with torch.no_grad():
+        ref = native(x, chan_metadata=meta)
+        out = model(x, chs_info=chs)
+    torch.testing.assert_close(out, ref, rtol=0, atol=0)
+
+
+def test_diver1_intracranial_channels():
+    """sEEG contacts serve the sensor strategies; ``source`` is declared."""
+    seeg = geometries(dict(sfreq=500, n_times=1000, canon=None, kind="seeg"))
+    chs = seeg["G1"]["chs_info"]
+    native = _build("DIVER1", chs_info=chs, pooling="mean")
+    model = _build("DIVER1", "nearest", chs_info=chs, pooling="mean")
+    model.load_state_dict(native.state_dict())
+    x = _x(len(chs), 1000)
+    with torch.no_grad():
+        torch.testing.assert_close(model(x), native(x), rtol=0, atol=0)
+    with pytest.raises(ValueError, match=SOURCE_IS_EEG_ONLY):
+        _build("DIVER1", "source", chs_info=chs, pooling="mean")
+    eeg_source = _build("DIVER1", "source", pooling="mean")
+    with pytest.raises(ValueError, match=SOURCE_IS_EEG_ONLY):
+        eeg_source(_x(8, 1000), chs_info=seeg["G3"]["chs_info"])
+
+
+def test_diver1_native_stays_scriptable():
+    model = _build("DIVER1")
+    scripted = torch.jit.script(convert_model_to_plain(model).eval())
+    x = _x(19, 1000)
     with torch.no_grad():
         torch.testing.assert_close(scripted(x), model(x), rtol=0, atol=0)
