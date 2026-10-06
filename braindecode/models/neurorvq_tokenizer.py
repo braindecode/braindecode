@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 import torch
 import torch.distributed as distributed
 import torch.nn.functional as F
@@ -184,8 +186,109 @@ class _PatchProjection(nn.Module):
         return x.permute(0, 2, 3, 1).reshape(x.shape[0], -1, x.shape[1])
 
 
-class _NeuroRVQEncoder(nn.Module):
-    """Multi-scale EEG encoder with state-dict names matching NeuroRVQ v1."""
+def _transformer_blocks(
+    *,
+    embed_dim: int,
+    depth: int,
+    num_heads: int,
+    drop_prob: float,
+    attn_drop_rate: float,
+    drop_path_rate: float,
+    init_values: float,
+) -> nn.ModuleList:
+    """Pre-norm Transformer blocks of the NeuroRVQ FM (qk-norm, q/v bias, MLP ratio 4)."""
+    drop_paths = torch.linspace(0, drop_path_rate, depth).tolist()
+    qk_norm = partial(nn.LayerNorm, eps=1e-6)
+    return nn.ModuleList(
+        [
+            _Block(
+                embed_dim,
+                num_heads,
+                4.0,
+                True,
+                qk_norm,
+                drop_prob,
+                attn_drop_rate,
+                drop_paths[i],
+                init_values,
+            )
+            for i in range(depth)
+        ]
+    )
+
+
+class _BranchTransformer(nn.Module):
+    """Embeddings, Transformer blocks and per-branch heads shared by the encoder and decoder.
+
+    Subclasses register ``cls_token`` and their patch embedding first, then call
+    :meth:`_init_transformer`, so the parameter order (and the state-dict layout of
+    the released checkpoint) is ``cls_token, patch_embed*, pos_embed, time_embed,
+    blocks, fc_norm_i/head_i``.
+    """
+
+    def _init_transformer(
+        self,
+        *,
+        max_patches: int,
+        embed_dim: int,
+        depth: int,
+        num_heads: int,
+        drop_prob: float,
+        attn_drop_rate: float,
+        drop_path_rate: float,
+        init_values: float,
+    ) -> None:
+        # One spatial slot per montage electrode plus slot 0 for the class token.
+        self.pos_embed = nn.Parameter(
+            torch.zeros(len(NEURORVQ_CHANNELS) + 1, embed_dim)
+        )
+        self.time_embed = nn.Parameter(torch.zeros(max_patches, embed_dim))
+        self.pos_drop = nn.Dropout(drop_prob)
+        self.blocks = _transformer_blocks(
+            embed_dim=embed_dim,
+            depth=depth,
+            num_heads=num_heads,
+            drop_prob=drop_prob,
+            attn_drop_rate=attn_drop_rate,
+            drop_path_rate=drop_path_rate,
+            init_values=init_values,
+        )
+        self.norm = nn.Identity()
+        for i in range(1, 5):
+            setattr(self, f"fc_norm_{i}", nn.LayerNorm(embed_dim))
+            setattr(self, f"head_{i}", nn.Identity())
+
+    def _embeddings(
+        self, time_indices: Tensor, spatial_indices: Tensor
+    ) -> tuple[Tensor, Tensor]:
+        """Look up the spatial (with class-token slot 0) and temporal embeddings."""
+        spatial = self.pos_embed[F.pad(spatial_indices, (1, 0), value=0)]
+        return spatial, self.time_embed[time_indices]
+
+    def _run_transformer(
+        self, tokens: Tensor, spatial: Tensor, temporal: Tensor, branch: int
+    ) -> Tensor:
+        """Embed ``(batch, n_tokens, dim)`` patch tokens and apply branch ``branch`` (1-4)."""
+        tokens = torch.cat(
+            (self.cls_token.expand(tokens.shape[0], -1, -1), tokens), dim=1
+        )
+        tokens = tokens + spatial
+        tokens[:, 1:] = tokens[:, 1:] + temporal
+        tokens = self.pos_drop(tokens)
+        for block in self.blocks:
+            tokens = block(tokens)
+        tokens = self.norm(tokens[:, 1:])
+        return getattr(self, f"head_{branch}")(
+            getattr(self, f"fc_norm_{branch}")(tokens)
+        )
+
+
+class _NeuroRVQEncoder(_BranchTransformer):
+    """Multi-scale EEG encoder with state-dict names matching NeuroRVQ v1.
+
+    The four temporal-convolution scales share one Transformer; each scale
+    returns its own ``(batch, n_chans * n_patches, embed_dim)`` features.
+    """
 
     def __init__(
         self,
@@ -206,60 +309,29 @@ class _NeuroRVQEncoder(nn.Module):
         self.patch_embed = _MultiScaleTemporalConv(
             out_chans=out_chans, activation=activation
         )
-        self.pos_embed = nn.Parameter(
-            torch.zeros(len(NEURORVQ_CHANNELS) + 1, embed_dim)
+        self._init_transformer(
+            max_patches=max_patches,
+            embed_dim=embed_dim,
+            depth=depth,
+            num_heads=num_heads,
+            drop_prob=drop_prob,
+            attn_drop_rate=attn_drop_rate,
+            drop_path_rate=drop_path_rate,
+            init_values=init_values,
         )
-        self.time_embed = nn.Parameter(torch.zeros(max_patches, embed_dim))
-        self.pos_drop = nn.Dropout(drop_prob)
-        drop_paths = torch.linspace(0, drop_path_rate, depth).tolist()
-        qk_norm = lambda dim: nn.LayerNorm(dim, eps=1e-6)
-        self.blocks = nn.ModuleList(
-            [
-                _Block(
-                    embed_dim,
-                    num_heads,
-                    4.0,
-                    True,
-                    qk_norm,
-                    drop_prob,
-                    attn_drop_rate,
-                    drop_paths[i],
-                    init_values,
-                )
-                for i in range(depth)
-            ]
-        )
-        self.norm = nn.Identity()
-        for i in range(1, 5):
-            setattr(self, f"fc_norm_{i}", nn.LayerNorm(embed_dim))
-            setattr(self, f"head_{i}", nn.Identity())
 
     def forward(
         self, x: Tensor, time_indices: Tensor, spatial_indices: Tensor
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         branches = self.patch_embed(x)
-        batch_size = x.shape[0]
-        spatial_indices = F.pad(spatial_indices, (1, 0), value=0)
-        spatial = self.pos_embed[spatial_indices]
-        temporal = self.time_embed[time_indices]
-        outputs = []
-        for i, branch in enumerate(branches, start=1):
-            tokens = torch.cat(
-                (self.cls_token.expand(batch_size, -1, -1), branch), dim=1
-            )
-            tokens = tokens + spatial
-            tokens[:, 1:] = tokens[:, 1:] + temporal
-            tokens = self.pos_drop(tokens)
-            for block in self.blocks:
-                tokens = block(tokens)
-            tokens = self.norm(tokens[:, 1:])
-            outputs.append(
-                getattr(self, f"head_{i}")(getattr(self, f"fc_norm_{i}")(tokens))
-            )
-        return tuple(outputs)
+        spatial, temporal = self._embeddings(time_indices, spatial_indices)
+        return tuple(
+            self._run_transformer(branch, spatial, temporal, i)
+            for i, branch in enumerate(branches, start=1)
+        )
 
 
-class _NeuroRVQDecoder(nn.Module):
+class _NeuroRVQDecoder(_BranchTransformer):
     """Shared Transformer decoder with branch-specific latent projections."""
 
     def __init__(
@@ -279,33 +351,16 @@ class _NeuroRVQDecoder(nn.Module):
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         for i in range(1, 5):
             setattr(self, f"patch_embed_{i}", _PatchProjection(code_dim, embed_dim))
-        self.pos_embed = nn.Parameter(
-            torch.zeros(len(NEURORVQ_CHANNELS) + 1, embed_dim)
+        self._init_transformer(
+            max_patches=max_patches,
+            embed_dim=embed_dim,
+            depth=depth,
+            num_heads=num_heads,
+            drop_prob=drop_prob,
+            attn_drop_rate=attn_drop_rate,
+            drop_path_rate=drop_path_rate,
+            init_values=init_values,
         )
-        self.time_embed = nn.Parameter(torch.zeros(max_patches, embed_dim))
-        self.pos_drop = nn.Dropout(drop_prob)
-        drop_paths = torch.linspace(0, drop_path_rate, depth).tolist()
-        qk_norm = lambda dim: nn.LayerNorm(dim, eps=1e-6)
-        self.blocks = nn.ModuleList(
-            [
-                _Block(
-                    embed_dim,
-                    num_heads,
-                    4.0,
-                    True,
-                    qk_norm,
-                    drop_prob,
-                    attn_drop_rate,
-                    drop_paths[i],
-                    init_values,
-                )
-                for i in range(depth)
-            ]
-        )
-        self.norm = nn.Identity()
-        for i in range(1, 5):
-            setattr(self, f"fc_norm_{i}", nn.LayerNorm(embed_dim))
-            setattr(self, f"head_{i}", nn.Identity())
 
     def forward_branch(
         self,
@@ -314,18 +369,10 @@ class _NeuroRVQDecoder(nn.Module):
         spatial_indices: Tensor,
         branch_index: int,
     ) -> Tensor:
+        """Decode the quantized latents of scale ``branch_index`` (0-3)."""
         x = getattr(self, f"patch_embed_{branch_index + 1}")(x)
-        x = torch.cat((self.cls_token.expand(x.shape[0], -1, -1), x), dim=1)
-        spatial_indices = F.pad(spatial_indices, (1, 0), value=0)
-        x = x + self.pos_embed[spatial_indices]
-        x[:, 1:] = x[:, 1:] + self.time_embed[time_indices]
-        x = self.pos_drop(x)
-        for block in self.blocks:
-            x = block(x)
-        x = self.norm(x[:, 1:])
-        return getattr(self, f"head_{branch_index + 1}")(
-            getattr(self, f"fc_norm_{branch_index + 1}")(x)
-        )
+        spatial, temporal = self._embeddings(time_indices, spatial_indices)
+        return self._run_transformer(x, spatial, temporal, branch_index + 1)
 
 
 class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
@@ -393,6 +440,25 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     ``(batch, n_chans * n_patches, patch_size)``, matching the released
     implementation. ``tokenize`` returns integer codes shaped ``(4,
     num_quantizers, batch, n_chans * n_patches)``.
+
+    Examples
+    --------
+    Reconstruct 200 Hz EEG windows with the released tokenizer and compute the
+    time-domain reconstruction error on the standardized windows:
+
+    >>> import torch
+    >>> from braindecode.models import NeuroRVQTokenizer
+    >>> model = NeuroRVQTokenizer(
+    ...     n_chans=3, n_times=800, sfreq=200, channel_names=["C3", "Cz", "C4"]
+    ... )
+    >>> model = model.load_pretrained_weights().eval()  # doctest: +SKIP
+    >>> x = torch.randn(2, 3, 800)  # (batch, channels, 4 s at 200 Hz)
+    >>> target, reconstruction = model(x)
+    >>> target.shape  # (batch, n_chans * n_patches, patch_size)
+    torch.Size([2, 12, 200])
+    >>> mse = (target - reconstruction).square().mean()
+    >>> model.tokenize(x).shape  # (scale, quantizer, batch, n_chans * n_patches)
+    torch.Size([4, 8, 2, 12])
 
     References
     ----------
@@ -579,18 +645,31 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         )
         return time.unsqueeze(0), spatial.unsqueeze(0)
 
+    def _patches(self, x: Tensor) -> Tensor:
+        """Validate ``(batch, n_chans, n_times)`` input and split it into patches."""
+        if x.ndim != 3 or tuple(x.shape[1:]) != (self.n_chans, self.n_times):
+            raise ValueError(
+                f"Expected input shape (batch, {self.n_chans}, {self.n_times}), "
+                f"got {tuple(x.shape)}."
+            )
+        return x.reshape(x.shape[0], self.n_chans, self.num_patches, self.patch_size)
+
+    def _branch_latents(self, patches: Tensor, time: Tensor, spatial: Tensor):
+        """Project the four encoder scales to ``(batch, code_dim, n_chans, n_patches)``."""
+        batch, channels, n_patches, _ = patches.shape
+        latents = []
+        for i, features in enumerate(self.encoder(patches, time, spatial), start=1):
+            latent = getattr(self, f"encode_task_layer_{i}")(features)
+            latent = latent.reshape(batch, channels, n_patches, self.code_dim)
+            latents.append(latent.permute(0, 3, 1, 2).contiguous())
+        return latents
+
     def _encode(self, x: Tensor, time: Tensor, spatial: Tensor):
-        batch, channels, patches, _ = x.shape
-        branch_features = self.encoder(x, time, spatial)
         quantized, codes = [], []
-        for i, features in enumerate(branch_features, start=1):
-            projected = getattr(self, f"encode_task_layer_{i}")(features)
-            projected = projected.reshape(batch, channels, patches, self.code_dim)
-            projected = projected.permute(0, 3, 1, 2).contiguous()
-            quantizer = getattr(self, f"quantize_{i}")
-            q, branch_codes, _ = quantizer(projected)
+        for i, latent in enumerate(self._branch_latents(x, time, spatial), start=1):
+            q, branch_codes, _ = getattr(self, f"quantize_{i}")(latent)
             quantized.append(q)
-            codes.append(branch_codes.reshape(self.num_quantizers, batch, -1))
+            codes.append(branch_codes.reshape(self.num_quantizers, x.shape[0], -1))
         return quantized, torch.stack(codes)
 
     @torch.no_grad()
@@ -601,22 +680,14 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         input vectors with the source implementation's cosine k-means routine.
         Load pretrained weights before extracting pretrained representations.
         """
-        if x.ndim != 3 or tuple(x.shape[1:]) != (self.n_chans, self.n_times):
-            raise ValueError(
-                f"Expected input shape (batch, {self.n_chans}, {self.n_times}), "
-                f"got {tuple(x.shape)}."
-            )
+        patches = self._patches(x)
         time, spatial = self._embedding_indices(x.device)
-        patches = x.reshape(x.shape[0], self.n_chans, self.num_patches, self.patch_size)
-        batch, channels, n_patches, _ = patches.shape
-        features = self.encoder(patches, time, spatial)
         scale_codes = []
-        for i, branch in enumerate(features, start=1):
-            latent = getattr(self, f"encode_task_layer_{i}")(branch)
-            latent = latent.reshape(batch, channels, n_patches, self.code_dim)
-            latent = latent.permute(0, 3, 1, 2).contiguous()
+        for i, latent in enumerate(
+            self._branch_latents(patches, time, spatial), start=1
+        ):
             _, codes = getattr(self, f"quantize_{i}").encode(latent)
-            scale_codes.append(codes.reshape(self.num_quantizers, batch, -1))
+            scale_codes.append(codes.reshape(self.num_quantizers, x.shape[0], -1))
         return torch.stack(scale_codes)
 
     def _decode(self, quantized, time: Tensor, spatial: Tensor):
@@ -638,29 +709,26 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         return (x - mean) / std, mean, std
 
     def forward(self, x: Tensor):
-        """Return standardized target and reconstruction windows."""
-        if x.ndim != 3 or tuple(x.shape[1:]) != (self.n_chans, self.n_times):
-            raise ValueError(
-                f"Expected input shape (batch, {self.n_chans}, {self.n_times}), "
-                f"got {tuple(x.shape)}."
-            )
+        """Return standardized target and reconstruction windows.
+
+        Both outputs are z-scored per window (over channels, patches and
+        samples), as in the released implementation, so their mean squared
+        difference is the time-domain reconstruction error of the window.
+        """
+        patches = self._patches(x)
         time, spatial = self._embedding_indices(x.device)
-        patches = x.reshape(x.shape[0], self.n_chans, self.num_patches, self.patch_size)
         spectrum = torch.fft.fft(patches, dim=-1)
         amplitude = torch.log1p(spectrum.abs())
         amplitude, amp_mean, amp_std = self._standardize(amplitude)
         quantized, _ = self._encode(patches, time, spatial)
         rec_amp, rec_sin, rec_cos = self._decode(quantized, time, spatial)
-        rec_amp = rec_amp.reshape_as(patches) * amp_std + amp_mean
-        rec_amp = torch.expm1(rec_amp).reshape(x.shape[0], self.n_chans, self.n_times)
-        rec_sin = rec_sin.reshape_as(patches).reshape_as(spectrum.real)
-        rec_cos = rec_cos.reshape_as(patches).reshape_as(spectrum.real)
+        # Undo the log-amplitude standardization, then invert the patch FFT
+        # from the amplitude and the predicted phase (cos, sin).
+        rec_amp = torch.expm1(rec_amp.reshape_as(patches) * amp_std + amp_mean)
+        rec_sin = rec_sin.reshape_as(patches)
+        rec_cos = rec_cos.reshape_as(patches)
         reconstructed = torch.fft.ifft(
-            torch.complex(
-                rec_amp.reshape_as(spectrum.real) * rec_cos,
-                rec_amp.reshape_as(spectrum.real) * rec_sin,
-            ),
-            dim=-1,
+            torch.complex(rec_amp * rec_cos, rec_amp * rec_sin), dim=-1
         ).real
         target_std, _, _ = self._standardize(patches)
         reconstructed_std, _, _ = self._standardize(reconstructed)
