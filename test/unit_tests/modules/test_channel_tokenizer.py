@@ -166,3 +166,17 @@ def test_quality_warnings_once_per_montage():
         for _ in range(3):
             tok(x, chs)
     assert sum("support < 0.5" in str(w.message) for w in record) == 1
+
+
+@pytest.mark.parametrize("strategy", ["source", "spline", "latent"])
+def test_reconstructing_strategy_without_training_montage_warns(strategy):
+    with pytest.warns(UserWarning, match="has no effect.*chs_info"):
+        ChannelTokenizer(ChannelTarget("positions"), strategy)
+
+
+def test_exact_without_training_montage_does_not_warn():
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ChannelTokenizer(ChannelTarget("positions"), "exact")

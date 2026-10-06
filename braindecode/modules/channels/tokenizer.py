@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Optional
@@ -101,6 +102,19 @@ class ChannelTokenizer(nn.Module):
                 f"has no channel contract."
             )
         self.strategy = get_channel_strategy(strategy, **strategy_kwargs)
+        if (
+            target.interface == "positions"
+            and target.sensors() is None
+            and strategy not in ("exact", "zero")
+        ):
+            warnings.warn(
+                f"Channel strategy {strategy!r} has no effect: the target declares "
+                f"no training montage, so every input channel passes through with "
+                f"its position. Give the model's ChannelTarget a chs_info to "
+                f"reconstruct onto it.",
+                UserWarning,
+                stacklevel=2,
+            )
         if src_chs_info is not None:
             self._src = resolve_montage(src_chs_info, drop_non_eeg=drop_non_eeg)
             if getattr(self.strategy, "fitted", True):
