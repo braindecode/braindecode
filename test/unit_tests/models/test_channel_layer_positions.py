@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 import torch
 
-from braindecode.models import LUNA
+from braindecode.models import LUNA, REVE
 from braindecode.modules.channels import ChannelEncoding
 
 from .test_pretrained_compat import TEN_TWENTY, geometries
@@ -45,6 +45,16 @@ MODELS = {
         kwargs=dict(n_outputs=2, embed_dim=32, depth=2, num_queries=4),
         spec=dict(sfreq=200, n_times=800, canon=TEN_TWENTY),
         errors={},
+    ),
+    # Flattened head: every montage is mapped onto the constructor's 19.
+    "REVE": dict(
+        cls=REVE,
+        kwargs=dict(n_outputs=2, embed_dim=64, depth=2, heads=2, head_dim=16),
+        spec=dict(sfreq=200, n_times=800, canon=TEN_TWENTY),
+        errors={
+            ("exact", "G3"): "not in the input montage",
+            ("exact", "G3b"): "not in the input montage",
+        },
     ),
 }
 
@@ -232,3 +242,69 @@ def test_luna_unobserved_channels_are_masked_in_cross_attention():
     assert mask.shape == (2 * 20, 19)  # (batch * patches, channels)
     assert (mask == ~observed).all()
     assert torch.isfinite(y_masked).all() and not torch.allclose(y_masked, y_all)
+
+
+# --------------------------------------------------------------------------- REVE
+
+
+def _std_positions(names):
+    return torch.as_tensor(np.stack([_POS[n] for n in names]), dtype=torch.float32)
+
+
+def test_reve_positions_replace_the_position_bank():
+    """A permuted montage under ``exact`` is the native model on the
+    constructor's order, with the layer's (standard_1005) positions."""
+    geos = _geos("REVE")
+    native = _build("REVE")
+    model = _build("REVE", "exact")
+    model.load_state_dict(native.state_dict())
+    x = _x(19, 800)
+    with torch.no_grad():
+        ref = native(x, pos=_std_positions(TEN_TWENTY).expand(2, -1, -1))
+        out = model(x.flip(1), chs_info=geos["G4"]["chs_info"])
+    torch.testing.assert_close(out, ref, rtol=0, atol=0)
+    with torch.no_grad():  # the bank holds the same positions (to 4 nm)
+        torch.testing.assert_close(native(x), ref, rtol=0, atol=1e-4)
+
+
+def test_reve_attention_pooling_is_a_pass_through():
+    geos = _geos("REVE")
+    native = _build("REVE", attention_pooling=True)
+    model = _build("REVE", "spline", attention_pooling=True)
+    model.load_state_dict(native.state_dict())
+    chs = geos["G2"]["chs_info"]  # 64 biosemi channels, positions from loc
+    x = _x(len(chs), 800)
+    pos = torch.as_tensor(np.stack([ch["loc"][:3] for ch in chs]), dtype=torch.float32)
+    with torch.no_grad():
+        ref = native(x, pos=pos.expand(2, -1, -1))
+        out = model(x, chs_info=chs)
+    torch.testing.assert_close(out, ref, rtol=0, atol=0)
+
+
+def test_reve_unobserved_channels_are_masked_in_self_attention(monkeypatch):
+    """Channels the layer reconstructs get an SDPA key-padding mask."""
+    import braindecode.models.reve as reve
+
+    seen = []
+    sdpa = reve.F.scaled_dot_product_attention
+
+    def spy(q, k, v, attn_mask=None, **kw):
+        seen.append(attn_mask)
+        return sdpa(q, k, v, attn_mask=attn_mask, **kw)
+
+    monkeypatch.setattr(reve.F, "scaled_dot_product_attention", spy)
+    model = _build("REVE", "spline")
+    chs = _geos("REVE")["G3b"]["chs_info"]  # Fp1..T7: 8 of the 19 channels
+    with torch.no_grad():
+        y = model(_x(8, 800), chs_info=chs)
+    assert torch.isfinite(y).all() and len(seen) == 2  # one per layer
+    n_patches = (800 - 200) // 180 + 1
+    observed = torch.tensor([n in TEN_TWENTY[:8] for n in TEN_TWENTY])
+    expected = observed.repeat_interleave(n_patches)
+    for mask in seen:
+        assert mask.shape == (1, 1, 1, 19 * n_patches)
+        assert (mask.flatten() == expected).all()
+    seen.clear()
+    with torch.no_grad():
+        model(_x(19, 800))  # constructor montage: all observed, no mask
+    assert seen == [None, None]
