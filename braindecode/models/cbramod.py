@@ -189,9 +189,13 @@ class CBraMod(EEGModuleMixin, nn.Module):
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
         # Shared tokenizer: (batch, n_chans, n_times) -> (batch, n_chans, n_patch, patch_size),
         # padding/cropping a non-divisible time axis at forward time.
+        try:
+            tokenizer_n_times = self.n_times
+        except ValueError:  # unknown length: nothing to check at construction
+            tokenizer_n_times = patch_size
         self.rearrange = PatchTokenizer(
             patch_size=patch_size,
-            n_times=self._n_times if self._n_times is not None else patch_size,
+            n_times=tokenizer_n_times,
             on_non_divisible=on_non_divisible,
         )
         self._on_non_divisible = on_non_divisible
@@ -219,9 +223,9 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
         if return_encoder_output:
             self.final_layer = nn.Identity()
-        elif self._n_times is not None and self._n_chans is not None:
+        elif self._knows_geometry():
             n_patch = self._n_patch()
-            flat_dim = self._n_chans * n_patch * emb_dim
+            flat_dim = self.n_chans * n_patch * emb_dim
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.Linear(flat_dim, self.n_outputs)
             )
@@ -235,19 +239,29 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self._update_init_kwargs(n_outputs=n_outputs)
         # A head implies a classifier, also when built with return_encoder_output.
         self._update_init_kwargs(return_encoder_output=False)
-        if self._n_times is not None and self._n_chans is not None:
+        if self._knows_geometry():
             n_patch = self._n_patch()
-            flat_dim = self._n_chans * n_patch * self._emb_dim
+            flat_dim = self.n_chans * n_patch * self._emb_dim
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.Linear(flat_dim, n_outputs)
             )
         else:
             self.final_layer = nn.Sequential(nn.Flatten(), nn.LazyLinear(n_outputs))
 
+    def _knows_geometry(self):
+        """True when n_chans and n_times are known (given or derivable), so the
+        head can be a real Linear instead of a LazyLinear that cannot be saved
+        or loaded before a forward pass."""
+        try:
+            self.n_chans, self.n_times
+        except ValueError:
+            return False
+        return True
+
     def _n_patch(self):
         if self._on_non_divisible == "pad":
-            return -(-self._n_times // self._patch_size)
-        return self._n_times // self._patch_size
+            return -(-self.n_times // self._patch_size)
+        return self.n_times // self._patch_size
 
     def _weights_init(self):
         for m in self.modules():

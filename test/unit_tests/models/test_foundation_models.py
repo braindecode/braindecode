@@ -2397,3 +2397,24 @@ def test_non_divisible_window_padded_by_default(cls, kwargs, patch_size):
     assert not any("tokenizer" in k for k in model.state_dict())
     with pytest.raises(ValueError, match="divisible"):
         cls(**kwargs, on_non_divisible="error")
+
+
+def test_cbramod_head_is_concrete_when_geometry_is_derived(tmp_path):
+    """chs_info / input_window_seconds define the geometry as much as n_chans /
+    n_times do: the head must be a real Linear, so the model saves and loads
+    (a LazyLinear cannot be serialized before a forward pass)."""
+    pytest.importorskip("huggingface_hub")
+    chs = _zuna_chs_info()
+    model = CBraMod(
+        chs_info=chs, input_window_seconds=4.0, sfreq=200, n_outputs=2, n_layer=1
+    )
+    assert type(model.final_layer[1]) is nn.Linear  # LazyLinear subclasses Linear
+    model.save_pretrained(tmp_path)
+    loaded = CBraMod.from_pretrained(tmp_path)
+    x = torch.randn(1, len(chs), 800)
+    assert torch.allclose(model.eval()(x), loaded.eval()(x), atol=1e-5)
+    # unknown geometry still falls back to a lazy head
+    assert isinstance(CBraMod(n_outputs=2, n_layer=1).final_layer[1], nn.LazyLinear)
+    # n_times alone (no channels) still reaches the tokenizer's divisibility check
+    with pytest.raises(ValueError, match="divisible"):
+        CBraMod(n_times=1001, n_outputs=2, n_layer=1, on_non_divisible="error")
