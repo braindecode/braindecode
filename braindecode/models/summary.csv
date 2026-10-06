@@ -7,6 +7,7 @@ BIOT,"Sleep Staging, Epilepsy",Prediction,200,"n_chans, n_outputs",3183879,"BIOT
 BrainBERT,General,"Prediction, Embedding",2048,"n_chans, n_outputs, n_times",603269,"BrainBERT(n_chans=2, n_outputs=5, n_times=2048)","Foundation Model,Attention/Transformer",iEEG
 CBraMod,General,"Prediction, Embedding",200,"n_outputs",4924000,"CBraMod(n_outputs=2)","Foundation Model",EEG
 CodeBrain,General,"Prediction, Embedding",200,"n_chans, n_outputs, n_times",15238802,"CodeBrain(n_chans=19, n_outputs=2, n_times=6000)","Foundation Model,Attention/Transformer",EEG
+CSBrain,General,"Prediction, Embedding",200,"n_outputs",10962402,"CSBrain(n_outputs=2)","Foundation Model,Attention/Transformer",EEG
 ContraWR,Sleep Staging,"Prediction, Embedding",125,"n_chans, n_outputs, sfreq",1160165,"ContraWR(n_chans=2, n_outputs=5, n_times=3750, emb_size=256, sfreq=125)",Convolution,EEG
 CTNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",26900,"CTNet(n_chans=22, n_outputs=4, n_times=1000, n_filters_time=8, kernel_size=16, num_heads=2, embed_dim=16)","Convolution,Attention/Transformer",EEG
 Deep4Net,General,Prediction,250,"n_chans, n_outputs, n_times",282879,"Deep4Net(n_chans=22, n_outputs=4, n_times=1000)","Convolution",EEG
