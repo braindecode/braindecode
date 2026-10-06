@@ -12,32 +12,13 @@ import torch
 from torch import Tensor, nn
 
 from ..resolve import nearest_vocabulary, resolve_montage
-from .base import (
-    SUPPORT_SCALE_MM,
-    ChannelStrategy,
-    SpatialMap,
-    _f32,
-    register_channel_strategy,
-)
-from .source import _mlp
+from ._nn import _channel_stats, _mlp
+from .base import ChannelStrategy, SpatialMap, _f32, register_channel_strategy
 
 
 def _numpy(t: Tensor) -> np.ndarray:
     """float64 numpy copy of a buffer on any device (MPS has no float64)."""
     return t.detach().cpu().double().numpy()
-
-
-def _channel_stats(x: Tensor, used: Tensor) -> Tensor:
-    """``(B, C, 2)`` log-variance and log line-length, centred over used channels."""
-    w = used.to(x.dtype)
-    stats = torch.stack(
-        [
-            torch.log(x.var(-1) + 1e-12),
-            torch.log(x.diff(dim=-1).abs().mean(-1) + 1e-12),
-        ],
-        -1,
-    )
-    return stats - (stats * w[:, None]).sum(1, keepdim=True) / w.sum()
 
 
 @register_channel_strategy("wiener")
@@ -190,18 +171,12 @@ class LatentStrategy(ChannelStrategy):
                 {**extra, "recon": torch.ones(K, dtype=torch.bool)},
             )
             return m
-        copy, dist = self._match(src, tgt)
-        hit = copy >= 0
-        W = np.zeros((len(hit), len(src.names)))
-        W[np.flatnonzero(hit), copy[hit]] = 1.0
+        W, hit, support = self._copies(src, tgt)
         recon = ~hit & ~tgt.non_electrode & np.isfinite(tgt.positions).all(1)
-        d = np.linalg.norm(
-            tgt.positions[:, None] - src.positions[use][None], axis=-1
-        ).min(1)
-        scale = SUPPORT_SCALE_MM * 1e-3
-        support = np.where(
-            hit, np.exp(-dist / scale), np.where(recon, np.exp(-d / scale), 0)
-        )
+        support[recon] = self._fill_support(src, use, tgt.positions[recon])
+        # Reconstructed rows attend over every used input.
+        self._warn_unused(src, np.vstack([W, recon.any() * use[None]]))
+        self._warn_quality(np.zeros((0, len(src.names))), support[recon], len(hit))
         extra.update(
             recon=torch.as_tensor(recon), tgt_feat=self._fourier(tgt.positions)
         )

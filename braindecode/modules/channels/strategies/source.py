@@ -20,11 +20,8 @@ import torch
 from torch import Tensor, nn
 
 from ..head import get_sphere_head
+from ._nn import _channel_stats, _mlp
 from .base import ChannelStrategy, SpatialMap, _f32, register_channel_strategy
-
-
-def _mlp(d_in: int, d: int) -> nn.Sequential:
-    return nn.Sequential(nn.Linear(d_in, d), nn.GELU(), nn.Linear(d, d))
 
 
 @register_channel_strategy("source")
@@ -123,14 +120,12 @@ class SourceStrategy(ChannelStrategy):
             # Rows the physics filled; copies and zero rows stay as they are.
             recon = (~m.observed & (m.weights.abs().sum(1) > 0)).numpy()
             use = self._usable(src)
-            S, Lt, Lo = self._inverse(src, use, m.positions.numpy()[recon])
+            _, Lt, Lo = self._inverse(src, use, m.positions.numpy()[recon])
             R = np.zeros((len(recon), self.n_parcels))
             R[recon] = Lt
         if self.trainable:
-            use = self._usable(src)
             norm = np.linalg.norm(Lo, axis=1, keepdims=True)
             m.extra = {
-                "S": _f32(S),
                 "R": _f32(R),
                 "leadfield": _f32(Lo / np.where(norm > 0, norm, 1.0)),
                 "used": torch.as_tensor(use),
@@ -144,16 +139,9 @@ class SourceStrategy(ChannelStrategy):
         used = m.extra["used"]
         w = used.to(x.dtype)
         xc = (x - (x * w[:, None]).sum(1, keepdim=True) / w.sum()) * w[:, None]
-        # Per-channel statistics, relative across the used channels.
-        stats = torch.stack(
-            [
-                torch.log(x.var(-1) + 1e-12),
-                torch.log(x.diff(dim=-1).abs().mean(-1) + 1e-12),
-            ],
-            -1,
+        keys = self.key_leadfield(m.extra["leadfield"]) + self.key_signal(
+            _channel_stats(x, used)
         )
-        stats = stats - (stats * w[:, None]).sum(1, keepdim=True) / w.sum()
-        keys = self.key_leadfield(m.extra["leadfield"]) + self.key_signal(stats)
         logits = self.queries @ keys.transpose(1, 2) / math.sqrt(keys.shape[-1])
         attn = logits.masked_fill(~used, float("-inf")).softmax(-1)  # (B, P, C)
         return out + self.gate * (m.extra["R"] @ (attn @ xc))

@@ -457,6 +457,18 @@ def test_ids_position_fallback_never_relabels_a_known_name():
     assert m.channel_ids.tolist() == [1]
 
 
+def test_trainable_source_extra_holds_only_what_apply_reads():
+    s = get_channel_strategy("source", trainable=True)
+    m = s.build(resolve_montage(BENDR19[:8]), MONTAGE19)
+    assert set(m.extra) == {"R", "leadfield", "used"}
+
+
+def test_latent_warns_on_unusable_channels():
+    chs = BENDR19[:6] + _named(["Foo"])
+    with pytest.warns(UserWarning, match="contribute nothing.*Foo"):
+        _build("latent", chs)
+
+
 def test_sphere_head_errors_are_declared():
     from braindecode.modules.channels.head import get_sphere_head
 

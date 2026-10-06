@@ -64,6 +64,9 @@ class SphereHead:
         for p in range(n_parcels):
             cols = (3 * np.flatnonzero(labels == p)[:, None] + np.arange(3)).ravel()
             self._orient[cols, p] = np.linalg.svd(L[:, cols], full_matrices=False)[2][0]
+        # ponytail: a second cache below the tokenizer's map LRU on purpose; a
+        # lead field costs an MNE forward solution, and source rebuilds it for
+        # used + target positions of every montage (32 entries, a few MB).
         self._cache: OrderedDict[bytes, np.ndarray] = OrderedDict()
 
     def _free_leadfield(self, positions: np.ndarray) -> np.ndarray:
