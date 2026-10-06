@@ -14,6 +14,7 @@ from .brant import Brant
 from .cbramod import CBraMod
 from .codebrain import CodeBrain
 from .contrawr import ContraWR
+from .csbrain import CSBrain
 from .ctnet import CTNet
 from .dance import DANCE
 from .deep4 import Deep4Net
@@ -102,6 +103,7 @@ __all__ = [
     "CBraMod",
     "CodeBrain",
     "ContraWR",
+    "CSBrain",
     "CTNet",
     "DANCE",
     "Deep4Net",

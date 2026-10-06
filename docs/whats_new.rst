@@ -28,6 +28,11 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.NeuroRVQ` now reuses the LaBraM attention block
+  instead of a private copy, and the K-means codebook initialisation in
+  :mod:`braindecode.modules.quantization` uses ``torch.cdist`` (about 6x faster,
+  lower peak memory, identical codebooks). Outputs and state-dict keys are
+  unchanged. (by `Bruno Aristimunha`_)
 - Add :class:`braindecode.models.MAPA`, a masked-autoencoder foundation model
   for intracranial EEG that describes an electrode only by its atlas region and
   its number along the array it was implanted on, never by its coordinates, so
@@ -114,6 +119,12 @@ Enhancements
   and cover its one-token-per-temporal-patch behavior
   (:gh:`1155` by `Bruno Aristimunha`_).
 
+- Add :class:`braindecode.models.CSBrain`, the cross-scale spatiotemporal brain
+  foundation model from Zhou et al. (NeurIPS 2025 Spotlight): multi-scale
+  temporal and per-region embeddings with structured sparse (inter-window and
+  inter-region) attention, channel names mapped to five anatomical regions or
+  an explicit ``brain_regions`` layout, verified bit-exact against the authors'
+  released pretrained checkpoint (:gh:`1196` by `Li Qing`_).
 - Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
   model with pretrained encoders and support for varying montages through
   :func:`braindecode.models.diver1.channel_metadata_from_chs_info`
@@ -249,6 +260,11 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.BrainOmni` and :class:`braindecode.models.BrainTokenizer`
+  now type CTF and KIT axial MEG gradiometers as gradiometers, as the released
+  BrainOmni code does; they were typed as magnetometers, which gave them the
+  wrong sensor embedding. Elekta magnetometers and planar gradiometers were
+  already correct. (by `Bruno Aristimunha`_)
 - Fix :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` rejecting a
   caller's ``chs_info`` (``n_chans=… different from chs_info``) and ``n_times``/``sfreq``
   (``n_times different from input_window_seconds * sfreq``): the Hub config filled the

@@ -144,14 +144,10 @@ class EMACodebook(nn.Module):
         centers = self._sample_vectors(samples, self.codebook_size)
         bins = torch.ones(self.codebook_size, device=samples.device, dtype=torch.long)
         for _ in range(self.kmeans_iters):
-            # Same element-wise arithmetic as the released ``kmeans``, in sample
-            # chunks: the full (n_samples, codebook_size, dim) broadcast is ~2 GB
-            # for the default 4096 x 512 x 256 initialisation.
-            distances = torch.cat(
-                [
-                    ((chunk.unsqueeze(1) - centers) ** 2).sum(dim=-1)
-                    for chunk in samples.split(256)
-                ]
+            # Exact (non-matmul) mode keeps the released ``kmeans`` assignments
+            # without materialising the (n_samples, codebook_size, dim) broadcast.
+            distances = torch.cdist(
+                samples, centers, compute_mode="donot_use_mm_for_euclid_dist"
             )
             buckets = distances.argmin(dim=-1)
             bins = torch.bincount(buckets, minlength=self.codebook_size)
