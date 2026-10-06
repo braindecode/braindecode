@@ -686,6 +686,15 @@ models_mandatory_parameters: list[
             "input_window_seconds": 5.0,
         },
     ),
+    (
+        "SeizureTransformer",
+        ["n_chans", "n_outputs", "n_times"],
+        {
+            "n_chans": 19,
+            "n_times": 1024,  # 4 s @ 256 Hz keeps the 38M-parameter model fast in CI
+            "sfreq": 256.0,
+        },
+    ),
 ]
 
 ################################################################
@@ -709,6 +718,9 @@ non_classification_models = [
     # forward returns (batch, num_latents, n_outputs) dense per-token logits,
     # not class logits.
     "DANCE",
+    # forward returns (batch, n_outputs, n_times) per-sample logits, not
+    # window logits.
+    "SeizureTransformer",
 ]
 
 ################################################################

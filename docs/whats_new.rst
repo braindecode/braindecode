@@ -47,6 +47,13 @@ Enhancements
 - Generate a version-scoped ``llms.txt`` and selected Markdown documentation
   entry points with source-commit attribution and critical-page coverage checks.
 
+- Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution
+  and Transformer seizure detector of Wu et al. (2025) that won the 2025 SzCORE
+  seizure detection challenge. It predicts a logit for every time sample. With
+  the authors' released weights it reproduces their challenge scores on
+  :class:`braindecode.datasets.SIENA` (event F1 0.706)
+  (:gh:`1236` by `Raghav Rathi`_).
+
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
   control and a replicability check), run by a dedicated CI job
