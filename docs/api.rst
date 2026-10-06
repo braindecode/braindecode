@@ -280,6 +280,61 @@ perceptrons (MLPs) and inception blocks.
     InceptionBlock
     PatchTokenizer
 
+Channels
+========
+
+The channel layer puts any montage in front of a pretrained backbone. A model declares
+what its backbone consumes (:class:`ChannelTarget`); the :class:`ChannelTokenizer`
+resolves the user montage (names, aliases, positions, channel kinds), builds a spatial
+map with the strategy chosen by ``channel_strategy=...`` and returns a
+:class:`ChannelEncoding` (signal, channel ids, positions, observed mask, support). See
+:doc:`user_guide/channel_strategies`.
+
+:py:mod:`braindecode.modules.channels`:
+
+.. currentmodule:: braindecode.modules.channels
+
+.. autosummary::
+    :toctree: generated/channels
+    :template: class_in_subdir
+    :recursive:
+
+    ChannelTokenizer
+    ChannelEncoding
+    ChannelTarget
+    ChannelStrategy
+    SpatialMap
+    ResolvedMontage
+
+.. autosummary::
+    :toctree: generated/channels
+    :template: function_in_subdir
+    :recursive:
+
+    register_channel_strategy
+    get_channel_strategy
+    resolve_montage
+
+Strategies registered with the library, by ``channel_strategy`` name:
+
+.. autosummary::
+    :toctree: generated/channels
+    :template: class_in_subdir
+    :recursive:
+
+    ExactStrategy
+    ZeroStrategy
+    NearestStrategy
+    IDWStrategy
+    SplineStrategy
+    FieldStrategy
+    SourceStrategy
+    WienerStrategy
+    RegionStrategy
+    LatentStrategy
+
+.. currentmodule:: braindecode.modules
+
 Convolution
 ===========
 
