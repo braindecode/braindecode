@@ -40,6 +40,13 @@ Enhancements
   and ``normalization="session"`` takes a spectrogram normalized over the whole
   recording, which reproduces the reference inputs
   (:gh:`1178` by `Julien Gadonneix`_).
+- Add ``test/unit_tests/models/test_pretrained_compat.py``: every model with released
+  weights is built on a grid of input geometries (canonical montage, permuted order,
+  a 64-channel montage outside the 10-20 vocabulary, coordinates-only channels, names
+  without coordinates, 1 s / 30 s / non-divisible windows) and must forward or raise
+  the error its declared channel strategy implies; unhandled cells are strict
+  ``xfail`` markers (:gh:`1228` by `Bruno Aristimunha`_).
+
 - Add registry-wide model contract tests that automatically cover every registered
   model, checking eval-mode input/state purity, finite batched outputs,
   batch-permutation equivariance, and ``get_config`` + ``state_dict``
