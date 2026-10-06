@@ -45,8 +45,8 @@ from braindecode.modules.blocks import PatchTokenizer
 #   - CCP7/CCP8 → midpoint(T7, TP7) / midpoint(T8, TP8)
 #   - FTT9h/TTP7h/TPP9h/FTT10h/TPP8h/TPP10h → standard_1005 (h-suffix entries)
 #
-# The `loc` values are only used to build an MNE interpolation matrix
-# for InterpolatedLaBraM. They are NOT used by Labram itself, which
+# The `loc` values are only used by the channel layer
+# (:mod:`braindecode.modules.channels`). They are NOT used by Labram itself, which
 # relies on learned position embeddings indexed by channel name.
 # -----------------------------------------------------------------------------
 
@@ -416,8 +416,8 @@ class Labram(EEGModuleMixin, nn.Module):
                 warn(
                     f"Labram chs_info does not match LABRAM_CHANNEL_ORDER "
                     f"(got {len(user_names)} of {len(LABRAM_CHANNEL_ORDER)}). "
-                    f"Pass ch_names to forward() per batch, or use "
-                    f"InterpolatedLaBraM.",
+                    f"Pass ch_names to forward() per batch, or project the "
+                    f"montage with braindecode.modules.ChannelTokenizer.",
                     UserWarning,
                 )
 
@@ -795,8 +795,9 @@ class Labram(EEGModuleMixin, nn.Module):
                     f"expected {len(LABRAM_CHANNEL_ORDER)} canonical channels "
                     f"in LABRAM_CHANNEL_ORDER. Either pass "
                     f"ch_names=<your channel names> matching x.shape[1], or "
-                    f"use InterpolatedLaBraM to project from an arbitrary "
-                    f"montage onto the canonical 128-channel layout."
+                    f"project an arbitrary montage onto the canonical "
+                    f"128-channel layout with "
+                    f"braindecode.modules.ChannelTokenizer."
                 )
             input_chans = torch.arange(
                 len(LABRAM_CHANNEL_ORDER) + 1, device=x.device, dtype=torch.long
@@ -812,7 +813,8 @@ class Labram(EEGModuleMixin, nn.Module):
                 raise ValueError(
                     f"ch_names contains a name not in LABRAM_CHANNEL_ORDER: "
                     f"{exc.args[0]!r}. Filter unknown channels before calling "
-                    f"forward, or use InterpolatedLaBraM."
+                    f"forward, or project them with "
+                    f"braindecode.modules.ChannelTokenizer."
                 ) from exc
             # CLS token at index 0; canonical channel indices are offset by 1.
             input_chans = torch.tensor(
@@ -1659,23 +1661,3 @@ class _TemporalConv(nn.Module):
         x = self.act_layer_3(self.norm3(self.conv3(x)))
         x = self.transpose_temporal_channel(x)
         return x
-
-
-# -----------------------------------------------------------------------------
-# InterpolatedLaBraM — experimental channel-interpolation variant of Labram
-# -----------------------------------------------------------------------------
-# A :func:`~braindecode.models.interpolated.InterpolatedModel` wrapper around
-# :class:`Labram` whose target channel set is the 128-channel canonical
-# ``LABRAM_CHANNEL_ORDER``. Accepts arbitrary user ``chs_info``; projects to
-# the canonical 128 channels via an MNE-backed (frozen by default)
-# interpolation matrix.
-#
-# NOTE: 8 of the 128 canonical channels are bipolar derivations (e.g. FP1-F7);
-# their positions are approximated as midpoints — see the TODO in
-# ``_LABRAM_TARGET_CHS_TUPLES``.
-
-from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
-
-InterpolatedLaBraM = InterpolatedModel(
-    Labram, _LABRAM_TARGET_CHS_INFO, name="InterpolatedLaBraM"
-)

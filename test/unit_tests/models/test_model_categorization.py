@@ -9,11 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from braindecode.models.util import interpolated_models_dict, models_dict
+from braindecode.models.util import models_dict
 
-# Interpolated models live in a separate registry; combine so their
-# categorization badges are still validated.
-all_models_dict = {**models_dict, **interpolated_models_dict}
+all_models_dict = dict(models_dict)
 
 # Mapping of categorization names to badge formats
 CATEGORIZATION_BADGES = {
