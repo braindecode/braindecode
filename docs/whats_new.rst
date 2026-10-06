@@ -53,8 +53,7 @@ Enhancements
   ``fixed_order`` = today's :class:`braindecode.modules.ChannelInterpolationLayer`,
   ``index_slots``, ``agnostic``). :class:`braindecode.models.BENDR` now adapts an
   arbitrary montage through it instead of refusing any non-canonical ``chs_info``
-  (including a plain permutation); :class:`braindecode.models.EEGDINO` raises a
-  declared error past its slot count; and :class:`braindecode.models.SignalJEPA` no
+  (including a plain permutation), and :class:`braindecode.models.SignalJEPA` no
   longer returns ``NaN`` for channel names without coordinates. Every released
   checkpoint's canonical forward is unchanged (max-abs diff 0.0) and its state_dict
   keys are stable (:gh:`1227` by `Bruno Aristimunha`_).
@@ -202,6 +201,11 @@ Bug fixes
   derived argument is now pinned from the caller's one. This unblocks loading EEGPT,
   STEEGFormer, Brant and MVPFormer checkpoints on a montage other than their
   pretraining dataset's (:gh:`1232` by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.models.CBraMod` building a ``LazyLinear`` head when the
+  geometry came from ``chs_info`` or ``input_window_seconds`` instead of ``n_chans`` /
+  ``n_times``; such a model could not be saved or loaded with ``from_pretrained``
+  ("uninitialized parameter"). The head is now a concrete ``Linear`` whenever the
+  geometry is known (:gh:`1233` by `Bruno Aristimunha`_).
 
 - Fix :class:`braindecode.models.Deep4Net` short-input auto-scaling with ``split_first_layer=True`` so the scaled ``filter_time_length`` is used by the actual :class:`braindecode.modules.CombinedConv` temporal kernel instead of retaining the original constructor value. By `lindicaphxag-tech`_.
 
