@@ -437,3 +437,31 @@ def test_eeg_clip_default_encoders_support_config_round_trip():
 
     assert config["n_outputs"] == 4
     assert config["text_embedding_dim"] == 8
+
+
+def test_eeg_clip_accepts_mapping_last_hidden_state():
+    class MappingEncoder(nn.Module):
+        def forward(self, input_ids):
+            batch = input_ids.shape[0]
+            return {"last_hidden_state": torch.randn(batch, 3, 8)}
+
+    model = _make_model(text_encoder=MappingEncoder())
+    result = model.encode_text(torch.ones(2, dtype=torch.long))
+
+    assert result.shape == (2, model.n_outputs)
+
+
+def test_eeg_clip_default_model_save_pretrained(tmp_path):
+    pytest.importorskip("huggingface_hub")
+    model = EEGCLIP(
+        n_chans=3,
+        n_times=1000,
+        n_outputs=4,
+        eeg_embedding_dim=8,
+        text_embedding_dim=8,
+        drop_prob=0,
+    )
+
+    model.save_pretrained(tmp_path)
+
+    assert (tmp_path / "config.json").exists()
