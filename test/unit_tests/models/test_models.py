@@ -2509,7 +2509,14 @@ def test_models_batch1_train_mode(
 
     BatchNorm layers, when present, must also be restored to train mode
     after temporarily using running statistics for single-sample inputs.
+    Multi-output models (e.g. tokenizers returning ``(target,
+    reconstruction)``) must keep the batch dimension on every output.
     """
+
+    def _assert_batch_one(out):
+        outputs = out if isinstance(out, (tuple, list)) else (out,)
+        assert all(o.shape[0] == 1 for o in outputs)
+
     sp = _get_signal_params(signal_params)
     model_kwargs = _get_possible_signal_params(sp, required_params)[0]
     model = all_models_dict[model_name](**model_kwargs)
@@ -2527,7 +2534,7 @@ def test_models_batch1_train_mode(
     assert model.training
     with torch.no_grad():
         out = model(x)
-    assert out.shape[0] == 1
+    _assert_batch_one(out)
     # Model and BatchNorm layers must be restored to train mode after forward.
     assert model.training
     assert all(batch_norm.training for batch_norm in batch_norms)
@@ -2536,7 +2543,7 @@ def test_models_batch1_train_mode(
     model.eval()
     with torch.no_grad():
         out = model(x)
-    assert out.shape[0] == 1
+    _assert_batch_one(out)
 
 
 def test_batchnorm_decorator_preserves_forward_input_keyword():

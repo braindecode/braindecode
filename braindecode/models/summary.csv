@@ -77,4 +77,4 @@ ZUNA,General,"Classification,Embedding",256,"chs_info, n_outputs, n_times",17210
 MIRepNet,Motor Imagery,"Prediction, Embedding",250,"n_chans, n_outputs",5143300,"MIRepNet(n_chans=45, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer,Foundation Model",EEG
 NeuroRVQ,General,"Prediction, Embedding",200,"n_chans, n_outputs, n_times, sfreq, channel_names",7097892,"NeuroRVQ(n_chans=64, n_outputs=4, n_times=800, sfreq=200)","Convolution,Attention/Transformer,Foundation Model,Channel",EEG
 SeizureTransformer,Epilepsy,Event Detection,256,"n_chans, n_outputs, n_times",37848897,"SeizureTransformer(n_chans=19, n_outputs=1, n_times=15360)","Convolution,Attention/Transformer",EEG
-NeuroRVQTokenizer,General,Embedding,200,"n_chans, n_times, sfreq, chs_info",75726448,"NeuroRVQTokenizer(n_chans=3, n_times=200, sfreq=200)","Convolution,Attention/Transformer,Foundation Model,Vector Quantization,Channel",EEG
+NeuroRVQTokenizer,General,Embedding,200,"n_chans, n_times, sfreq, chs_info",75726448,"NeuroRVQTokenizer(n_chans=3, n_times=200, sfreq=200)","Convolution,Attention/Transformer,Foundation Model,Channel",EEG

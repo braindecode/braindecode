@@ -331,6 +331,8 @@ class _NeuroRVQDecoder(nn.Module):
 class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     r"""NeuroRVQ multi-scale residual-vector-quantized EEG tokenizer.
 
+    :bdg-success:`Convolution` :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`
+
     The tokenizer encodes EEG patches through four temporal scales, quantizes
     each scale with a separate residual vector quantizer, and reconstructs the
     signal from amplitude and phase components. Its design follows
