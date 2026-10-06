@@ -23,6 +23,7 @@ from torch.export import ExportedProgram, export
 from braindecode import EEGClassifier
 from braindecode.models import (
     EEGPT,
+    MAPA,
     REVE,
     SSTDPN,
     ZUNA,
@@ -446,6 +447,7 @@ def test_model_has_drop_prob_parameter(model_class):
         InterpolatedLaBraM,
         InterpolatedSignalJEPA,
         ZUNA,
+        MAPA,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
@@ -570,11 +572,7 @@ def test_model_torch_script(model):
 
     not_working_models = [
         "BIOT",
-        # TFMTokenizer uses the same third-party LinearAttentionTransformer as
-        # BIOT. Its forward signature accepts variadic **kwargs, which
-        # torch.jit.script cannot compile. torch.compile remains covered below.
-        "TFMTokenizer",
-        "Labram",
+        # TFMTokenizer uses LinearAttentionTransformer, whose variadic internals\n        # are not supported by torch.jit.script; torch.compile remains covered.\n        "TFMTokenizer",\n        "Labram",
         "EEGPT",
         "SSTDPN",
         "BENDR",
@@ -596,6 +594,9 @@ def test_model_torch_script(model):
         # forward() returns Dict[str, Tensor | None] (features) or Tensor (logits);
         # torch.jit.script rejects this required polymorphic return type.
         "MIRepNet",
+        # forward() returns Dict[str, Tensor | None] (features) or Tensor
+        # (logits), so torch.jit.script rejects this polymorphic return type.
+        "NeuroRVQ",
         # wavelet encoder (conv1d + circular padding) + Dict/Tensor polymorphic
         # return; torch.jit.script rejects the polymorphic return type.
         "MVPFormer",
@@ -614,7 +615,14 @@ def test_model_torch_script(model):
         "InterpolatedEEGPT",
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
+        # VQ argmin dispatch and _encode_quantize method not scriptable.
+        "BrainOmni",
+        "BrainTokenizer",
         "STEEGFormer",
+        # The three-band spectrogram frontend runs torch.stft, which
+        # torch.jit.script cannot compile, and forward() returns Dict[str,
+        # Tensor] (features) or Tensor (logits).
+        "MAPA",
     ]
 
     if model.__class__.__name__ in not_working_models:
