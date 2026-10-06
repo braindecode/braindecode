@@ -18,7 +18,7 @@ from mne.datasets.utils import _get_path
 from torch import nn
 from torch.nn import RMSNorm
 
-from braindecode.models._channel_positions import (
+from braindecode.models._channel_layer import (
     JIT_IGNORED,
     batch_positions,
     encode_positions,

@@ -20,12 +20,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from braindecode.models._channel_positions import (
+from braindecode.models._channel_layer import (
     JIT_IGNORED,
     encode_positions,
     init_positions_layer,
 )
-from braindecode.models._channel_positions import key_padding_mask as unobserved_mask
+from braindecode.models._channel_layer import key_padding_mask as unobserved_mask
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules.channels import ChannelTarget

@@ -20,7 +20,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import rotate_pairs
-from braindecode.models._channel_positions import (
+from braindecode.models._channel_layer import (
     JIT_IGNORED,
     encode_positions,
     init_positions_layer,
