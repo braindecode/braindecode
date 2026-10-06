@@ -28,6 +28,32 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.MAPA`, a masked-autoencoder foundation model
+  for intracranial EEG that describes an electrode only by its atlas region and
+  its number along the array it was implanted on, never by its coordinates, so
+  that one pretrained encoder reads a subject it has never seen: three
+  magnitude-spectrogram bands on a shared frame clock are tokenized per
+  contact, offset by a learned region embedding, and mixed by a transformer
+  whose attention stays inside one array and carries a two-axis rotary encoding
+  on the contact number and on time. One instance encodes recordings from
+  different subjects, by passing each one's electrode metadata to ``forward``,
+  and ``normalization="session"`` takes a spectrogram normalized over the whole
+  recording, which reproduces the reference inputs
+  (:gh:`1178` by `Julien Gadonneix`_).
+- Add registry-wide model contract tests that automatically cover every registered
+  model, checking eval-mode input/state purity, finite batched outputs,
+  batch-permutation equivariance, and ``get_config`` + ``state_dict``
+  reconstruction (:gh:`1208` by `lindicaphxag-tech`_).
+- Generate a version-scoped ``llms.txt`` and selected Markdown documentation
+  entry points with source-commit attribution and critical-page coverage checks.
+
+- Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution
+  and Transformer seizure detector of Wu et al. (2025) that won the 2025 SzCORE
+  seizure detection challenge. It predicts a logit for every time sample. With
+  the authors' released weights it reproduces their challenge scores on
+  :class:`braindecode.datasets.SIENA` (event F1 0.706)
+  (:gh:`1236` by `Raghav Rathi`_).
+
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
   control and a replicability check), run by a dedicated CI job
@@ -74,6 +100,14 @@ Enhancements
   ``braindecode/brant-pretrained`` (all tensors verified identical to the
   official release) (:gh:`1100` by `Adam Mounir`_).
 
+- Add :class:`braindecode.models.BrainTokenizer`, the EEG/MEG VQ-VAE tokenizer of
+  BrainOmni (NeurIPS 2025), which strictly loads the authors' raw checkpoint
+  (:gh:`1043` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.PopulationTransformer` (PopT, Chau et al. 2024),
+  an iEEG population model over per-electrode features and coordinates, with
+  pretrained weights at ``braindecode/popt-pretrained`` (:gh:`1105` by
+  `Adam Mounir`_).
+
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
@@ -102,6 +136,16 @@ Enhancements
 API and behavior changes
 ========================
 
+- :class:`braindecode.models.Labram`, :class:`braindecode.models.CBraMod` and
+  :class:`braindecode.models.LUNA` tokenize the time axis with the shared
+  :class:`braindecode.modules.PatchTokenizer` and accept a window that is not a
+  multiple of ``patch_size`` by right zero-padding the last patch (with a warning),
+  through a new ``on_non_divisible={"pad", "crop", "error"}`` argument; previously
+  such windows raised a reshape error. :class:`braindecode.models.ZUNA` now defaults to
+  ``on_non_divisible="pad"`` as well (it was ``"error"``). Outputs and state-dict keys
+  are unchanged for divisible windows, so released checkpoints load as before
+  (:gh:`1226` by `Bruno Aristimunha`_).
+
 - :class:`braindecode.models.Labram` defaults to ``use_mean_pooling=True``
   again, the documented value and the readout of the original fine-tuning
   (``fc_norm`` of the mean patch token). :gh:`931` had made the [CLS] output,
@@ -116,6 +160,9 @@ API and behavior changes
 Requirements
 ============
 
+- Add ``sphinx-markdown-builder==0.6.11`` and ``pytest<9.1`` to the docs extra
+  for version-scoped Markdown exports and their offline contract tests.
+
 - Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
   REVE and ZUNA now import PyTorch's RMSNorm layer directly, preserving their
   explicit epsilon values. Intel macOS is no longer supported because
@@ -125,6 +172,37 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.models.Deep4Net` short-input auto-scaling with ``split_first_layer=True`` so the scaled ``filter_time_length`` is used by the actual :class:`braindecode.modules.CombinedConv` temporal kernel instead of retaining the original constructor value. By `lindicaphxag-tech`_.
+
+
+- Fix :class:`braindecode.models.Deep4Net` with an explicit ``final_conv_length`` and no ``n_times``. The model now skips input-length auto-scaling when the input length is intentionally unspecified, matching the documented contract that only ``final_conv_length="auto"`` requires ``n_times``. By `lindicaphxag-tech`_.
+
+
+- Route the attention of :class:`braindecode.models.EEGDINO` and
+  :class:`braindecode.models.Labram` through their ``qkv`` linear module
+  instead of reading its weight, so hooks and adapters on ``qkv`` (e.g. LoRA)
+  take effect; before, they were skipped silently. Outputs change only by
+  float rounding (:gh:`1194` by `Bruno Aristimunha`_)
+- Fix :class:`braindecode.modules.AvgPool2dWithConv` to invalidate cached pooling weights when the exact input device changes, preventing stale weights from being reused across CUDA devices or non-CUDA backends with the same dtype. By `lindicaphxag-tech`_.
+- Fix :class:`braindecode.models.ShallowFBCSPNet` with
+  ``split_first_layer=False``, which attempted to initialize and remap
+  checkpoint keys through the split-only ``conv_time_spat`` module after the
+  CombinedConv refactor. The unsplit path now initializes and loads its direct
+  temporal convolution as before (:gh:`1212` by `lindicaphxag-tech`_).
+
+- Fix :class:`braindecode.models.Deep4Net` with
+  ``split_first_layer=False``, which attempted to initialize and remap
+  checkpoint keys through the split-only ``conv_time_spat`` module after the
+  CombinedConv refactor. The unsplit path now initializes and loads its direct
+  temporal convolution as before (:gh:`1207` by `lindicaphxag-tech`_).
+- Make :class:`braindecode.modules.TimeDistributed` accept non-contiguous sequence batches by reshaping rather than requiring view-compatible strides. By `lindicaphxag-tech`_.
+
+- Make :class:`braindecode.modules.Chomp1d` preserve the input when ``chomp_size=0`` instead of returning an empty time axis. This restores :class:`braindecode.models.TCN` with ``kernel_size=1``, whose causal padding is zero. By `lindicaphxag-tech`_.
+
+- Preserve ``Deep4Net``'s first-block temporal stride when using the merged
+  ``CombinedConv`` path with ``stride_before_pool=True``; dense-prediction
+  outputs now retain the historical temporal geometry (:gh:`1205` by `lindicaphxag-tech`_).
+- Fix :class:`braindecode.modules.CausalConv1d` to use explicit left-only causal padding. This prevents ``kernel_size=1`` from producing an empty time axis and keeps strided/dilated convolutions aligned with the causal reference instead of over-cropping downsampled outputs (:gh:`1216` by `lindicaphxag-tech`_).
 - :meth:`braindecode.EEGClassifier.predict_trials` and
   :meth:`braindecode.EEGRegressor.predict_trials` no longer raise a
   ``ValueError`` on trials of different lengths; they return a list with one
@@ -252,6 +330,12 @@ Bug fixes
   intermediate gradients, and rows at or below ``max_norm`` are unchanged.
   Empty tensors pass through and a negative ``max_norm`` raises, as
   ``Tensor.renorm`` does (:gh:`1187` by `Bruno Aristimunha`_).
+- Keep the channel IDs of :class:`braindecode.models.EEGPT` (``chans_id``) out
+  of the state dict. They are rebuilt from ``chs_info``, and a checkpoint that
+  still stores them no longer overrides them: the released weights now load on
+  any montage and with the default channel projection, where they failed with a
+  size mismatch, and a montage with the same channel count no longer silently
+  takes the checkpoint's IDs (:gh:`1195` by `Bruno Aristimunha`_).
 
 - Fix :class:`braindecode.models.Labram` so the released weights keep their
   pretrained time embedding at every window length: it now holds the original
@@ -1962,3 +2046,5 @@ Authors
 .. _Li Qing: https://github.com/qinxwew
 .. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
+
+.. _lindicaphxag-tech: https://github.com/lindicaphxag-tech

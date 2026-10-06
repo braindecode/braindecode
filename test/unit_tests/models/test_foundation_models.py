@@ -2,6 +2,7 @@
 #
 # License: BSD-3
 
+import hashlib
 import json
 import os
 from contextlib import nullcontext
@@ -28,11 +29,13 @@ except ImportError:
 from braindecode.models import (
     DIVER1,
     LUNA,
+    MAPA,
     REVE,
     ZUNA,
     CBraMod,
     CodeBrain,
     Labram,
+    PopulationTransformer,
     STEEGFormer,
     steegformer,
 )
@@ -604,6 +607,35 @@ def test_labram_wrong_channel_count(model_tokenizer, n_times):
 # ==============================================================================
 
 
+@pytest.mark.parametrize("qkv_bias", [False, True])
+def test_labram_attention_calls_qkv_module(qkv_bias):
+    # Adapters such as LoRA hook or replace ``attn.qkv``; the attention has to call
+    # the module, not only read its weight, or they have no effect.
+    ch_names = list(LABRAM_CHANNEL_ORDER[:4])
+    model = Labram(n_chans=4, n_outputs=2, n_times=800, qkv_bias=qkv_bias).eval()
+    attentions = [block.attn for block in model.blocks]
+    if qkv_bias:  # non-zero biases, as in the checkpoint
+        for attn in attentions:
+            torch.nn.init.normal_(attn.q_bias)
+            torch.nn.init.normal_(attn.v_bias)
+    x = torch.randn(2, 4, 800)
+    reference = model(x, ch_names=ch_names)
+
+    calls = []
+    handles = [
+        attn.qkv.register_forward_hook(lambda *_: calls.append(None))
+        for attn in attentions
+    ]
+    assert torch.equal(model(x, ch_names=ch_names), reference)
+    assert len(calls) == len(attentions)
+    for handle in handles:
+        handle.remove()
+
+    for attn in attentions:  # an adapter that changes the projection
+        attn.qkv.register_forward_hook(lambda _m, _i, out: 2 * out)
+    assert not torch.allclose(model(x, ch_names=ch_names), reference)
+
+
 def test_labram_channel_order_constant_exported():
     """Test that LABRAM_CHANNEL_ORDER is exported and has expected format."""
     assert LABRAM_CHANNEL_ORDER is not None
@@ -694,9 +726,7 @@ def test_labram_forward_none_ch_names_wrong_count_raises(chs_info, n_outputs):
         model(x)
 
 
-def test_labram_forward_return_flags_remain_positional(
-    chs_info, n_outputs, n_chans
-):
+def test_labram_forward_return_flags_remain_positional(chs_info, n_outputs, n_chans):
     """Back-compat: return_* flags can still be passed positionally."""
     model = _small_labram_for_ch_names(chs_info, n_outputs)
     model.eval()
@@ -941,10 +971,20 @@ def _zuna_chs_info():
     return info["chs"]
 
 
-def test_zuna_rejects_non_divisible_n_times_by_default():
-    """The default ``on_non_divisible="error"`` keeps the previous behavior."""
+def test_zuna_pads_non_divisible_n_times_by_default():
+    """The default ``on_non_divisible="pad"`` accepts any window (with a warning);
+    ``"error"`` restores the strict behavior."""
+    with pytest.warns(UserWarning, match="not divisible"):
+        model = ZUNA(chs_info=_zuna_chs_info(), n_times=1000, **_ZUNA_SMALL)
+    out = model(torch.randn(1, len(_zuna_chs_info()), 1000))
+    assert torch.isfinite(out).all()
     with pytest.raises(ValueError, match="divisible"):
-        ZUNA(chs_info=_zuna_chs_info(), n_times=1000, **_ZUNA_SMALL)
+        ZUNA(
+            chs_info=_zuna_chs_info(),
+            n_times=1000,
+            on_non_divisible="error",
+            **_ZUNA_SMALL,
+        )
 
 
 def test_zuna_rejects_invalid_on_non_divisible():
@@ -1144,8 +1184,9 @@ def test_luna_channel_embed_batch_ordering(luna_base_config):
 
 def test_luna_mapping_includes_temperature_typo():
     # pretrained weights have typo key, mapping should handle it
-    model = LUNA(n_outputs=2, n_chans=22, n_times=1000, embed_dim=64,
-                 num_queries=4, depth=8)
+    model = LUNA(
+        n_outputs=2, n_chans=22, n_times=1000, embed_dim=64, num_queries=4, depth=8
+    )
     assert "cross_attn.temparature" in model.mapping
 
 
@@ -1507,7 +1548,6 @@ def test_cbramod_forward_pass():
 # ==============================================================================
 
 
-
 def test_codebrain_forward_pass():
     model = CodeBrain(n_chans=19, n_outputs=2, n_times=6000)
     x = torch.randn(2, 19, 6000)
@@ -1542,13 +1582,18 @@ def diver1_model():
     for i, ch in enumerate(info["chs"]):
         ch["loc"][:3] = [0.01 * i, 0.02, -0.03]
     return DIVER1(
-        n_outputs=4, chs_info=info["chs"], n_times=1000, sfreq=500.0,
-        pooling="mean", d_model=64, n_layers=2,
+        n_outputs=4,
+        chs_info=info["chs"],
+        n_times=1000,
+        sfreq=500.0,
+        pooling="mean",
+        d_model=64,
+        n_layers=2,
     ).eval()
 
 
 @pytest.mark.parametrize(
-    "kind,located,slots", [("ecog", True, [1., 0.]), ("eeg", False, [0., -1.])]
+    "kind,located,slots", [("ecog", True, [1.0, 0.0]), ("eeg", False, [0.0, -1.0])]
 )
 def test_diver1_channel_metadata(kind, located, slots):
     info = mne.create_info(["A0", "A1"], 500.0, kind)
@@ -1559,12 +1604,15 @@ def test_diver1_channel_metadata(kind, located, slots):
     assert metadata.shape == (2, 5)
     torch.testing.assert_close(metadata[:, 3:], torch.tensor([slots, slots]))
     if located:
-        torch.testing.assert_close(metadata[1, :3], torch.tensor([10., 20., -30.]))
+        torch.testing.assert_close(metadata[1, :3], torch.tensor([10.0, 20.0, -30.0]))
     else:
         assert torch.isnan(metadata[:, :3]).all()
 
 
-@pytest.mark.parametrize("kind, slots", [("eeg", [0, -1]), ("ecog", [1, 0]), ("seeg", [1, 2]), ("dbs", [1, 2])])
+@pytest.mark.parametrize(
+    "kind, slots",
+    [("eeg", [0, -1]), ("ecog", [1, 0]), ("seeg", [1, 2]), ("dbs", [1, 2])],
+)
 def test_diver1_channel_metadata_from_chs_info(kind, slots):
     """Standalone metadata retains MNE units and DIVER-1 type slots."""
     info = mne.create_info(["A1", "A2"], 500.0, kind)
@@ -1598,8 +1646,10 @@ def test_diver1_montage_switching_and_permutation(diver1_model):
         torch.testing.assert_close(model(xa), first_a)
         torch.testing.assert_close(model(xa, model.default_chan_metadata), first_a)
         torch.testing.assert_close(
-            model(xa[:, perm], model.default_chan_metadata[perm]), first_a,
-            atol=1e-5, rtol=1e-5,
+            model(xa[:, perm], model.default_chan_metadata[perm]),
+            first_a,
+            atol=1e-5,
+            rtol=1e-5,
         )
 
 
@@ -1610,7 +1660,11 @@ def test_diver1_montage_switching_and_permutation(diver1_model):
         (torch.zeros(3, 5), "mean", r"shape \(9, 5\)"),
         (torch.zeros(9, 4), "mean", r"shape \(9, 5\)"),
         (torch.full((9, 5), 7.0), "mean", "modality column"),
-        (torch.zeros(9, 5).index_fill_(1, torch.tensor([4]), 3.), "mean", "sub-modality"),
+        (
+            torch.zeros(9, 5).index_fill_(1, torch.tensor([4]), 3.0),
+            "mean",
+            "sub-modality",
+        ),
         (torch.zeros(9, 5), "flatten", "pooling='flatten'"),
     ],
 )
@@ -1618,8 +1672,13 @@ def test_diver1_rejects_incompatible_montage(diver1_model, metadata, pooling, ma
     model = diver1_model
     if pooling == "flatten":
         model = DIVER1(
-            n_outputs=4, chs_info=model.chs_info, n_times=1000, sfreq=500.0,
-            pooling=pooling, d_model=64, n_layers=2,
+            n_outputs=4,
+            chs_info=model.chs_info,
+            n_times=1000,
+            sfreq=500.0,
+            pooling=pooling,
+            d_model=64,
+            n_layers=2,
         ).eval()
     with pytest.raises(ValueError, match=match):
         model(torch.randn(1, 9, 1000), metadata)
@@ -1656,15 +1715,19 @@ def test_diver1_stcpe_preserves_low_precision_overlap(monkeypatch):
     torch.testing.assert_close(actual_grad, expected_grad, rtol=0, atol=0)
 
 
-
 @pytest.mark.parametrize("patch_size", [50, 500])
 @pytest.mark.parametrize("out_size", [8, 16, 32])
 def test_diver1_cnn_out_size(patch_size, out_size, tmp_path):
     """Output-size HPO preserves token width and survives config/Hub cloning."""
     info = mne.create_info(["A0", "A1"], 500.0, "seeg")
     kwargs = dict(
-        chs_info=info["chs"], n_outputs=2, n_times=2 * patch_size - 1,
-        patch_size=patch_size, d_model=64, n_layers=1, pooling="mean",
+        chs_info=info["chs"],
+        n_outputs=2,
+        n_times=2 * patch_size - 1,
+        patch_size=patch_size,
+        d_model=64,
+        n_layers=1,
+        pooling="mean",
         cnn_out_size=out_size,
     )
     torch.manual_seed(21)
@@ -1722,7 +1785,9 @@ def test_diver1_cnn_out_size(patch_size, out_size, tmp_path):
 )
 def test_diver1_cnn_out_size_validation(options, match):
     info = mne.create_info(["A0", "A1"], 500.0, "seeg")
-    kwargs = dict(chs_info=info["chs"], n_outputs=2, n_times=500, d_model=64, n_layers=1)
+    kwargs = dict(
+        chs_info=info["chs"], n_outputs=2, n_times=500, d_model=64, n_layers=1
+    )
     with pytest.raises(ValueError, match=match):
         DIVER1(**(kwargs | options))
 
@@ -1808,6 +1873,7 @@ def test_steegformer_montage_fallback(
     if fallback == "hydrocel":
         info.set_montage(mne.channels.make_standard_montage("GSN-HydroCel-256"))
     if fallback == "unavailable":
+
         def unavailable():
             raise OSError("offline")
 
@@ -1839,3 +1905,495 @@ def test_steegformer_montage_fallback(
             assert 0 <= int(slots.min()) <= int(slots.max()) < len(steeg_vocab)
         else:
             assert model.channel_indices.tolist() == list(range(n_chans))
+
+
+# ==============================================================================
+# Tests for MAPA Model
+# ==============================================================================
+
+
+MAPA_SUBJECT_A = ["LA1", "LA2", "LA5", "LB3", "LB7"]
+MAPA_SUBJECT_B = ["RH2", "RH3", "RH8", "LT1", "LT2", "LT3", "LT4", "RX5"]
+
+
+@pytest.fixture
+def mapa_model():
+    return MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+    ).eval()
+
+
+def test_mapa_sensor_indices_reads_array_and_contact_number():
+    indices = MAPA.sensor_indices(MAPA_SUBJECT_A, ["ctx-lh-insula"] + [None] * 4)
+    assert indices.tolist() == [
+        [0, 1, 7],
+        [0, 2, 74],
+        [0, 5, 74],
+        [1, 3, 74],
+        [1, 7, 74],
+    ]
+
+
+# The region table as released, frozen here only to prove the MNE-derived
+# helper reproduces it exactly; this tuple is test-only evidence, not a
+# definition braindecode's source code owns (see test below and
+# ``dkt_region_slots`` in ``braindecode/models/util.py``).
+_RELEASED_MAPA_DKT_REGIONS = (
+    "ctx-lh-caudalanteriorcingulate",
+    "ctx-lh-caudalmiddlefrontal",
+    "ctx-lh-cuneus",
+    "ctx-lh-entorhinal",
+    "ctx-lh-fusiform",
+    "ctx-lh-inferiorparietal",
+    "ctx-lh-inferiortemporal",
+    "ctx-lh-insula",
+    "ctx-lh-isthmuscingulate",
+    "ctx-lh-lateraloccipital",
+    "ctx-lh-lateralorbitofrontal",
+    "ctx-lh-lingual",
+    "ctx-lh-medialorbitofrontal",
+    "ctx-lh-middletemporal",
+    "ctx-lh-paracentral",
+    "ctx-lh-parahippocampal",
+    "ctx-lh-parsopercularis",
+    "ctx-lh-parsorbitalis",
+    "ctx-lh-parstriangularis",
+    "ctx-lh-pericalcarine",
+    "ctx-lh-postcentral",
+    "ctx-lh-posteriorcingulate",
+    "ctx-lh-precentral",
+    "ctx-lh-precuneus",
+    "ctx-lh-rostralanteriorcingulate",
+    "ctx-lh-rostralmiddlefrontal",
+    "ctx-lh-superiorfrontal",
+    "ctx-lh-superiorparietal",
+    "ctx-lh-superiortemporal",
+    "ctx-lh-supramarginal",
+    "ctx-lh-transversetemporal",
+    "ctx-rh-caudalanteriorcingulate",
+    "ctx-rh-caudalmiddlefrontal",
+    "ctx-rh-cuneus",
+    "ctx-rh-entorhinal",
+    "ctx-rh-fusiform",
+    "ctx-rh-inferiorparietal",
+    "ctx-rh-inferiortemporal",
+    "ctx-rh-insula",
+    "ctx-rh-isthmuscingulate",
+    "ctx-rh-lateraloccipital",
+    "ctx-rh-lateralorbitofrontal",
+    "ctx-rh-lingual",
+    "ctx-rh-medialorbitofrontal",
+    "ctx-rh-middletemporal",
+    "ctx-rh-paracentral",
+    "ctx-rh-parahippocampal",
+    "ctx-rh-parsopercularis",
+    "ctx-rh-parsorbitalis",
+    "ctx-rh-parstriangularis",
+    "ctx-rh-pericalcarine",
+    "ctx-rh-postcentral",
+    "ctx-rh-posteriorcingulate",
+    "ctx-rh-precentral",
+    "ctx-rh-precuneus",
+    "ctx-rh-rostralanteriorcingulate",
+    "ctx-rh-rostralmiddlefrontal",
+    "ctx-rh-superiorfrontal",
+    "ctx-rh-superiorparietal",
+    "ctx-rh-superiortemporal",
+    "ctx-rh-supramarginal",
+    "ctx-rh-transversetemporal",
+    "Left-Hippocampus",
+    "Left-Amygdala",
+    "Left-Caudate",
+    "Left-Putamen",
+    "Left-Pallidum",
+    "Left-Thalamus-Proper",
+    "Right-Hippocampus",
+    "Right-Amygdala",
+    "Right-Caudate",
+    "Right-Putamen",
+    "Right-Pallidum",
+    "Right-Thalamus-Proper",
+)
+
+
+def test_mapa_regions_are_freesurfer_labels_sourced_from_util():
+    """The region vocabulary is the shared util helper, anchored to MNE's LUT.
+
+    MAPA owns only the reference and the released slot order; the names are
+    standard FreeSurfer labels, so each must be a key of MNE's bundled colour
+    table (``mne.read_freesurfer_lut``, no download) rather than hard-coded in
+    the model file. ``dkt_region_slots`` must still reproduce the exact
+    released slot order (``_RELEASED_MAPA_DKT_REGIONS``, frozen before this
+    refactor) even though it now derives the vocabulary from MNE's ids
+    instead of typing it out.
+    """
+    from braindecode.models.mapa import MAPA_DKT_REGIONS
+    from braindecode.models.util import dkt_region_slots
+
+    assert MAPA_DKT_REGIONS == dkt_region_slots()
+    assert MAPA_DKT_REGIONS == _RELEASED_MAPA_DKT_REGIONS
+    assert len(MAPA_DKT_REGIONS) == 74
+    lut_names, _ = mne.read_freesurfer_lut()
+    assert set(MAPA_DKT_REGIONS) <= set(lut_names)
+
+
+@pytest.mark.parametrize("n_times", [448, 2048, 4096])
+def test_mapa_one_model_reads_another_subject(mapa_model, n_times):
+    """A montage and a window the mapa_model was not built for both go through."""
+    x = torch.randn(2, len(MAPA_SUBJECT_B), n_times)
+    with torch.no_grad():
+        y = mapa_model(x, MAPA.sensor_indices(MAPA_SUBJECT_B))
+    assert y.shape == (2, 4)
+
+
+def test_mapa_channel_order_does_not_change_the_output(mapa_model):
+    perm = torch.tensor([4, 0, 3, 1, 2])
+    x = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    with torch.no_grad():
+        expected = mapa_model(x)
+        permuted = mapa_model(x[:, perm], mapa_model.default_sensor_indices[perm])
+    torch.testing.assert_close(expected, permuted, atol=1e-5, rtol=1e-5)
+
+
+def test_mapa_switching_subjects_does_not_leak_between_calls(mapa_model):
+    """The cached token layout must not survive a change of montage."""
+    xa = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    xb = torch.randn(2, len(MAPA_SUBJECT_B), 2048)
+    indices_b = MAPA.sensor_indices(MAPA_SUBJECT_B)
+    with torch.no_grad():
+        first_a, first_b = mapa_model(xa), mapa_model(xb, indices_b)
+        again_b, again_a = mapa_model(xb, indices_b), mapa_model(xa)
+    torch.testing.assert_close(first_a, again_a)
+    torch.testing.assert_close(first_b, again_b)
+
+
+def test_mapa_flatten_pooling_stays_tied_to_its_montage():
+    mapa_model = MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+        pooling="flatten",
+    ).eval()
+    with pytest.raises(ValueError, match="pooling='flatten'"):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_B), 2048), MAPA.sensor_indices(MAPA_SUBJECT_B))
+
+
+@pytest.mark.parametrize(
+    "sensor_indices,match",
+    [
+        (None, "got input with 8 channels"),
+        (torch.zeros(3, 3, dtype=torch.long), r"shape \(8, 3\)"),
+        (torch.zeros(8, 3), "must hold integers"),
+        (torch.full((8, 3), 75), "region slots below 75"),
+        (torch.full((8, 3), -1), "must be non-negative"),
+    ],
+)
+def test_mapa_bad_sensor_indices_are_rejected(mapa_model, sensor_indices, match):
+    with pytest.raises(ValueError, match=match):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_B), 2048), sensor_indices)
+
+
+def test_mapa_window_shorter_than_one_slow_token_is_rejected(mapa_model):
+    with pytest.raises(ValueError, match="at least 448 samples"):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_A), 256))
+
+
+def _mapa_session_model(**kwargs):
+    return MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=32,
+        sfreq=32,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+        normalization="session",
+        **kwargs,
+    ).eval()
+
+
+def test_mapa_session_normalization_matches_window_normalization_on_its_bands(mapa_model):
+    """Handed the bands window normalization computes, session mode is identical."""
+    session = _mapa_session_model()
+    session.load_state_dict(mapa_model.state_dict())
+    x = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    frames = torch.cat(mapa_model.frontend._stft_bands(x), dim=2)
+    with torch.no_grad():
+        torch.testing.assert_close(session(frames), mapa_model(x))
+
+
+def test_mapa_session_normalization_reads_another_subject():
+    frames = torch.randn(2, len(MAPA_SUBJECT_B), 20, 64)
+    with torch.no_grad():
+        y = _mapa_session_model()(frames, MAPA.sensor_indices(MAPA_SUBJECT_B))
+    assert y.shape == (2, 4)
+
+
+@pytest.mark.parametrize(
+    "shape,match",
+    [
+        ((1, 5, 2048), "takes a spectrogram"),
+        ((1, 5, 19, 32), "takes a spectrogram"),
+        ((1, 5, 20, 4), "at least 8 frames"),
+    ],
+)
+def test_mapa_session_normalization_rejects_bad_input(shape, match):
+    with pytest.raises(ValueError, match=match):
+        _mapa_session_model()(torch.randn(shape))
+
+
+def test_mapa_raw_normalization_rejects_a_spectrogram(mapa_model):
+    with pytest.raises(ValueError, match="normalization='session'"):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_A), 20, 32))
+
+
+def test_mapa_token_layout_tracks_the_montage(mapa_model):
+    indices = MAPA.sensor_indices(MAPA_SUBJECT_A)
+    first = mapa_model._token_layout(indices, mapa_model.n_frames)
+    indices[0, 2] = 3
+    changed = mapa_model._token_layout(indices, mapa_model.n_frames)
+    assert changed is not first
+    assert (changed["token_region"] == 3).any()
+
+
+# The authors' Hub repository, pinned to the commit whose mapa_vits384.pt is
+# byte-identical to their GitHub release v0.1.0.
+MAPA_HUB_REPO = "bentang18/MAPA"
+MAPA_HUB_REVISION = "988efbf31a7d1f38533b848c993a719d6f900b1f"
+MAPA_CHECKPOINT_SHA256 = (
+    "2d236089a2f1a3cc2827e3f150c4a2ba14c51bbfaf0ce0888f84b92a6eb25a7a"
+)
+
+
+def _mapa_reference_windows():
+    """Two 1 s windows at 2048 Hz of four amplitude-modulated multi-tone channels."""
+    t = torch.arange(2048, dtype=torch.float64) / 2048
+    freqs = torch.tensor([3.0, 11.0, 23.0, 47.0, 95.0, 140.0], dtype=torch.float64)
+    rates = 0.75 * torch.arange(1, 7, dtype=torch.float64)
+    windows = []
+    for sample in range(2):
+        channels = []
+        for channel in range(4):
+            phase = 0.7 * channel + 1.3 * sample
+            carrier = torch.sin(2 * torch.pi * freqs[:, None] * t + phase)
+            envelope = 1 + 0.8 * torch.sin(2 * torch.pi * rates[:, None] * t + phase)
+            channels.append((carrier * envelope).sum(0))
+        windows.append(torch.stack(channels))
+    return torch.stack(windows).float()
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_mapa_released_checkpoint_reproduces_the_reference_features():
+    """The released mapa_vits384 loads and gives the authors' features.
+
+    The expected values were computed with the authors' code (bentang18/MAPA at
+    bf2b49e) on the same windows: its STFT and robust z-score fitted on each
+    window (the default ``normalization="window"``; the authors fit it on the
+    whole session), then ``MapaEncoder.from_checkpoint`` and the mean over every
+    token of the four normed deep-supervision taps, which is what
+    ``return_features`` pools. CI does not pass ``--run-network`` to the unit
+    tests; run it with ``pytest -k mapa_released --run-network``.
+    """
+    hub = pytest.importorskip("huggingface_hub")
+    mne_data_dir = mne.get_config("MNE_DATA") or str(Path.home() / "mne_data")
+    try:
+        path = hub.hf_hub_download(
+            MAPA_HUB_REPO,
+            "mapa_vits384.pt",
+            revision=MAPA_HUB_REVISION,
+            cache_dir=str(Path(mne_data_dir) / "mapa_pretrained"),
+        )
+    except (URLError, OSError) as err:
+        pytest.skip(f"Could not download the MAPA checkpoint: {err}")
+    assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == (
+        MAPA_CHECKPOINT_SHA256
+    )
+
+    model = MAPA(
+        n_outputs=2,
+        n_chans=4,
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=["LA1", "LA2", "LA4", "LB1"],
+        regions=[
+            "ctx-lh-superiortemporal",
+            "ctx-lh-superiortemporal",
+            "Left-Hippocampus",
+            None,
+        ],
+    ).eval()
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    missing, unexpected = model.load_state_dict(checkpoint["model"], strict=False)
+    assert sorted(missing) == ["final_layer.bias", "final_layer.weight"]
+    assert unexpected == []
+
+    with torch.no_grad():
+        features = model(_mapa_reference_windows(), return_features=True)["features"]
+    # The first four dimensions of each of the four taps (blocks 3, 6, 9, 12).
+    expected = torch.tensor(
+        [
+            [-0.097404, -0.035431, -0.036317, -0.00045]
+            + [0.000488, -0.010021, -0.031613, -0.012514]
+            + [-0.000287, 0.000164, 0.001316, 0.00072]
+            + [0.009574, -0.119245, -0.004626, 0.019742],
+            [-0.108159, 0.016018, -0.037283, -0.000448]
+            + [0.000275, -0.013464, -0.029668, -0.011087]
+            + [-0.000288, 0.000152, 0.001267, 0.000396]
+            + [-0.000122, -0.127825, -0.006181, 0.038055],
+        ]
+    )
+    taps = features.unflatten(1, (4, -1))[..., :4].flatten(1)
+    torch.testing.assert_close(taps, expected, rtol=0, atol=1e-4)
+    torch.testing.assert_close(
+        features.norm(dim=1), torch.tensor([3.91526, 3.92401]), rtol=1e-4, atol=0
+    )
+
+
+# ==============================================================================
+# Tests for PopulationTransformer (PopT)
+# ==============================================================================
+
+_POPT_SMALL = dict(hidden_dim=32, ffn_dim=64, n_layers=1, n_heads=4)
+# Brain Treebank-like absolute (left, inferior, posterior) integer indices.
+_POPT_LIP = [[57, 52, 62], [196, 155, 191], [120, 80, 100]]
+
+
+def _popt_chs_info(positions):
+    info = mne.create_info([f"E{i}" for i in range(len(positions))], 2048.0, "seeg")
+    for ch, xyz in zip(info["chs"], positions):
+        ch["loc"][:3] = xyz
+    return info["chs"]
+
+
+def test_popt_defaults_are_the_released_config():
+    """A default PopT has the shapes of the released ``popt_brainbert_stft``."""
+    model = PopulationTransformer(n_chans=4, n_outputs=2, n_times=768)
+    layer = model.transformer_encoder.layers[0]
+    assert model.hidden_dim == 512
+    assert len(model.transformer_encoder.layers) == 6
+    assert layer.self_attn.num_heads == 8
+    assert layer.linear1.out_features == 2048
+
+
+@pytest.mark.parametrize(
+    "coord_units, scale, shift_coords, expected",
+    [
+        ("m", 1e-3, False, _POPT_LIP),
+        ("raw", 1.0, False, _POPT_LIP),
+        ("m", 1e-3, True, [[0, 0, 0], [139, 103, 129], [63, 28, 38]]),
+    ],
+    ids=["metres", "raw", "opt-in-shift"],
+)
+def test_popt_chs_info_coords_are_absolute_by_default(
+    coord_units, scale, shift_coords, expected
+):
+    """Upstream feeds absolute indices; the per-axis shift is opt-in."""
+    chs_info = _popt_chs_info([[v * scale for v in xyz] for xyz in _POPT_LIP])
+    model = PopulationTransformer(
+        n_chans=3,
+        n_outputs=1,
+        n_times=16,
+        chs_info=chs_info,
+        coord_units=coord_units,
+        shift_coords=shift_coords,
+        **_POPT_SMALL,
+    )
+    assert model.electrode_coords.tolist() == expected
+
+
+def test_popt_out_of_range_coords_warn_and_clamp():
+    chs_info = _popt_chs_info([[-0.02, 0.01, 0.03], [0.04, -0.05, 0.06]])
+    with pytest.warns(UserWarning, match="clamped"):
+        model = PopulationTransformer(
+            n_chans=2, n_outputs=1, n_times=16, chs_info=chs_info, **_POPT_SMALL
+        )
+    assert model.electrode_coords.tolist() == [[0, 10, 30], [40, 0, 60]]
+
+
+def test_popt_head_is_upstream_linear_and_loads_legacy_head():
+    """The head is upstream's single linear layer on the CLS token.
+
+    The ``braindecode/popt-pretrained`` mirror stores an earlier
+    LayerNorm + Linear head (``final_layer.norm``/``final_layer.fc``); it still
+    loads strictly, onto the linear layer.
+    """
+    model = PopulationTransformer(n_chans=3, n_outputs=2, n_times=16, **_POPT_SMALL)
+    model.eval()
+    assert type(model.final_layer) is torch.nn.Linear
+    x = torch.randn(2, 3, 16)
+    cls_token = model(x, return_features=True)["cls_token"]
+    torch.testing.assert_close(model(x), model.final_layer(cls_token), rtol=0, atol=0)
+
+    legacy = {
+        k: v for k, v in model.state_dict().items() if not k.startswith("final_layer")
+    }
+    fc_weight, fc_bias = torch.randn(2, 32), torch.randn(2)
+    legacy.update(
+        {
+            "final_layer.norm.weight": torch.ones(32),
+            "final_layer.norm.bias": torch.zeros(32),
+            "final_layer.fc.weight": fc_weight,
+            "final_layer.fc.bias": fc_bias,
+        }
+    )
+    reloaded = PopulationTransformer(n_chans=3, n_outputs=2, n_times=16, **_POPT_SMALL)
+    reloaded.load_state_dict(legacy, strict=True)
+    torch.testing.assert_close(reloaded.final_layer.weight, fc_weight)
+    torch.testing.assert_close(reloaded.final_layer.bias, fc_bias)
+
+
+_TEN_TWENTY = [
+    "Fp1",
+    "Fp2",
+    "F7",
+    "F3",
+    "Fz",
+    "F4",
+    "F8",
+    "T7",
+    "C3",
+    "Cz",
+    "C4",
+    "T8",
+    "P7",
+    "P3",
+    "Pz",
+    "P4",
+    "P8",
+    "O1",
+    "O2",
+]
+
+
+def _patch_models():
+    return [
+        (Labram, dict(n_chans=19, n_times=800, sfreq=200), 200),
+        (CBraMod, dict(n_chans=19, n_times=800, sfreq=200), 200),
+        (LUNA, dict(chs_info=_zuna_chs_info(), n_times=800, sfreq=200), 40),
+        (ZUNA, dict(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL), 32),
+    ]
+
+
+@pytest.mark.parametrize("cls,kwargs,patch_size", _patch_models())
+def test_non_divisible_window_padded_by_default(cls, kwargs, patch_size):
+    """A window that is not a multiple of patch_size pads (warning) and only
+    raises with on_non_divisible="error"; the tokenizer adds no parameters."""
+    kwargs = dict(kwargs, n_times=kwargs["n_times"] + 37, n_outputs=2)
+    with pytest.warns(UserWarning, match="not divisible"):
+        model = cls(**kwargs).eval()
+    n_chans = kwargs.get("n_chans") or len(kwargs["chs_info"])
+    x = torch.randn(1, n_chans, kwargs["n_times"])
+    with torch.no_grad():
+        out = model(x, ch_names=_TEN_TWENTY) if cls is Labram else model(x)
+    assert torch.isfinite(out).all()
+    assert not any("tokenizer" in k for k in model.state_dict())
+    with pytest.raises(ValueError, match="divisible"):
+        cls(**kwargs, on_non_divisible="error")
