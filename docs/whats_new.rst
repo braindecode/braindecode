@@ -102,6 +102,10 @@ Enhancements
   pretrained weights at ``braindecode/popt-pretrained`` (:gh:`1105` by
   `Adam Mounir`_).
 
+- Add :class:`braindecode.models.BrainOmni`, the BrainOmni downstream classifier
+  on a frozen :class:`braindecode.models.BrainTokenizer`, which strictly loads the
+  authors' raw tiny and base checkpoints (:gh:`1043` by `Bruno Aristimunha`_).
+
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose

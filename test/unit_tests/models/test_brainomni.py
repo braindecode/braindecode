@@ -1,7 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD-3
-"""Focused tests for the BrainOmni port (BrainTokenizer)."""
+"""Focused tests for the BrainOmni port (BrainTokenizer and BrainOmni)."""
 
 import hashlib
 import json
@@ -14,13 +14,17 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from braindecode.models import BrainTokenizer
+from braindecode.models import BrainOmni, BrainTokenizer
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.brainomni import (
     _geometry_from_chs_info,
+    _MultiHeadAttentionRoPE,
+    _rename_official_key,
+    _RotaryPositionalEmbedding,
     _SEANetDecoder,
     _SEANetEncoder,
     _SensorEmbedding,
+    _SpatialTemporalBlock,
     _TokenizerEncoder,
 )
 from braindecode.modules.quantization import EMACodebook as _Codebook
@@ -79,6 +83,19 @@ def _small_tokenizer(n_chans=4, n_times=512, chs_info=None, sfreq=256.0):
         chs_info=chs_info if chs_info is not None else _eeg_chs_info(n_chans),
         n_times=n_times,
         sfreq=sfreq,
+        **_BRAINOMNI_KW,
+    )
+
+
+def _small_brainomni(n_chans=4, n_outputs=3, n_times=512, sfreq=256.0, chs_info=None):
+    return BrainOmni(
+        chs_info=chs_info if chs_info is not None else _eeg_chs_info(n_chans),
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+        lm_dim=16,
+        num_heads=4,
+        depth=2,
         **_BRAINOMNI_KW,
     )
 
@@ -638,3 +655,383 @@ def test_braintokenizer_released_checkpoint_strict_load_and_parity(tmp_path):
     torch.testing.assert_close(feat.flatten()[:16], expected, rtol=1e-5, atol=1e-5)
     assert feat.sum().item() == pytest.approx(-52.497127532958984, abs=1e-4)
     assert indices.sum().item() == 138744
+
+
+# ---- BrainOmni private attention ---------------------------------------------
+
+
+def _complex_rope_reference(x, n_dim, base=10000):
+    """Released BrainOmni RoPE: one complex frequency ladder split across heads."""
+    freqs = 1.0 / (base ** (torch.arange(0, n_dim, 2)[: (n_dim // 2)].float() / n_dim))
+    angles = torch.outer(torch.arange(x.shape[1]).float(), freqs)
+    rotate = torch.polar(torch.ones_like(angles), angles)
+    rotate = rotate.reshape(x.shape[1], x.shape[2], -1).unsqueeze(0)
+    x_ = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
+    return torch.view_as_real(x_ * rotate).flatten(3).type_as(x)
+
+
+@pytest.mark.parametrize("seq", [1, 7, 300])
+def test_rope_matches_released_complex_rotation(seq):
+    """Real-valued RoPE equals the released complex rotation, per-head bands included."""
+    n_heads, head_dim = 4, 8
+    rope = _RotaryPositionalEmbedding(n_dim=n_heads * head_dim)
+    q = torch.randn(2, seq, n_heads, head_dim)
+    k = torch.randn(2, seq, n_heads, head_dim)
+    q_out, k_out = rope(q, k)
+    torch.testing.assert_close(q_out, _complex_rope_reference(q, n_heads * head_dim))
+    torch.testing.assert_close(k_out, _complex_rope_reference(k, n_heads * head_dim))
+    torch.testing.assert_close(q_out.norm(dim=-1), q.norm(dim=-1))
+
+
+def test_rope_is_stateless_and_keeps_dtype():
+    """No buffers to cast or load; half inputs are rotated in float32."""
+    rope = _RotaryPositionalEmbedding(n_dim=16).half()
+    q = torch.randn(2, 9, 4, 4)
+    q_out, _ = rope(q.half(), q.half())
+    assert rope.state_dict() == {}
+    assert q_out.dtype == torch.float16
+    torch.testing.assert_close(
+        q_out.float(), _complex_rope_reference(q, 16), atol=1e-2, rtol=1e-2
+    )
+
+
+def test_rope_rejects_mismatched_heads():
+    rope = _RotaryPositionalEmbedding(n_dim=16)
+    with pytest.raises(ValueError, match="n_heads \\* head_dim"):
+        rope(torch.randn(1, 3, 2, 4), torch.randn(1, 3, 2, 4))
+
+
+@pytest.mark.parametrize("rope", [True, False])
+def test_rope_attention_shape_and_eval_determinism(rope):
+    module = _MultiHeadAttentionRoPE(16, 4, dropout=0.5, rope=rope).eval()
+    x = torch.randn(2, 7, 16)
+    out = module(x)
+    assert out.shape == (2, 7, 16)
+    torch.testing.assert_close(module(x), out)  # SDPA dropout is off in eval
+
+
+def test_rope_attention_rejects_odd_head_dim():
+    with pytest.raises(ValueError, match="head dimension.*even"):
+        _MultiHeadAttentionRoPE(12, 4, dropout=0.0, rope=True)
+
+
+def test_spatial_temporal_block_shape():
+    out = _SpatialTemporalBlock(16, 4, 0.0, causal=False)(torch.randn(2, 3, 7, 16))
+    assert out.shape == (2, 3, 7, 16)
+    assert torch.isfinite(out).all()
+
+
+# ---- public BrainOmni classifier ---------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "chs_info, n_times, n_outputs",
+    [
+        (_eeg_chs_info(4), 512, 3),  # standard EEG
+        (_eeg_chs_info(4), 300, 3),  # input shorter than window_length -> padded
+        (_mixed_chs_info(), 512, 2),  # mixed EEG + MAG + GRAD
+    ],
+    ids=["standard", "short_input", "mixed_eeg_meg"],
+)
+def test_brainomni_forward_shape(chs_info, n_times, n_outputs):
+    model = _small_brainomni(chs_info=chs_info, n_outputs=n_outputs, n_times=n_times)
+    out = model.eval()(torch.randn(2, len(chs_info), n_times))
+    assert out.shape == (2, n_outputs)
+
+
+def test_brainomni_constructs_from_official_stage2_config():
+    official_config = {
+        "window_length": 8,
+        "n_filters": 4,
+        "ratios": [2],
+        "kernel_size": 3,
+        "last_kernel_size": 3,
+        "n_dim": 8,
+        "n_head": 2,
+        "n_neuro": 2,
+        "dropout": 0.0,
+        "codebook_dim": 8,
+        "codebook_size": 8,
+        "num_quantizers": 1,
+        "rotation_trick": True,
+        "quantize_optimize_method": "ema",
+        "overlap_ratio": 0.0,
+        "lm_dim": 8,
+        "lm_head": 2,
+        "lm_depth": 2,
+        "lm_dropout": 0.0,
+        "mask_ratio": 0.5,
+        "num_quantizers_used": 1,
+    }
+    original_config = dict(official_config)
+    model = BrainOmni.from_opentslab_config(
+        official_config, chs_info=_eeg_chs_info(2), n_outputs=3, n_times=8, sfreq=256.0
+    )
+    assert model.lm_dim == 8
+    assert len(model.blocks) == 2
+    assert model.tokenizer.emb_dim == 8
+    assert official_config == original_config
+
+
+def test_brainomni_encode_shape_and_normalized():
+    feat = _small_brainomni().eval().encode(torch.randn(2, 4, 512))
+    assert feat.ndim == 4 and feat.shape[1] == 3 and feat.shape[-1] == 16
+    norms = feat.norm(dim=-1)
+    assert torch.allclose(norms, torch.ones_like(norms), atol=1e-4)
+
+
+def test_brainomni_reset_head_changes_only_head():
+    model = _small_brainomni(n_outputs=3)
+    tokenizer = model.tokenizer
+    model.reset_head(5)
+    assert model(torch.randn(2, 4, 512)).shape == (2, 5)
+    assert model.tokenizer is tokenizer  # backbone untouched
+    assert model.get_config()["n_outputs"] == 5
+
+
+def test_brainomni_reset_head_preserves_dtype():
+    model = _small_brainomni().double()
+    model.reset_head(5)
+    assert next(model.final_layer.parameters()).dtype == torch.float64
+
+
+def test_brainomni_return_features_head_contract():
+    model = _small_brainomni().eval()
+    x = torch.randn(2, 4, 512)
+    bundle = model(x, return_features=True)
+    assert set(bundle) == {"features", "cls_token"}
+    assert bundle["cls_token"] is None
+    assert torch.allclose(model.final_layer(bundle["features"]), model(x))
+
+
+def test_brainomni_released_dropout_configuration():
+    """Tokenizer and Stage-2 dropout follow their separate released configs."""
+    model = _small_brainomni()
+    assert model.tokenizer.drop_prob == 0.0
+    assert model.tokenizer.encoder.backwardsolution.dropout == 0.0
+    assert model.tokenizer.final_layer.forwardsolution.dropout == 0.0
+    assert model.drop_prob == 0.1
+    assert model.blocks[0].time_attn.dropout == 0.1
+    assert model.final_layer[0].p == 0.1
+
+
+def test_brainomni_downstream_head_dropout_is_independent():
+    """The released downstream head keeps 0.1 dropout when LM dropout changes."""
+    model = BrainOmni(
+        chs_info=_eeg_chs_info(4),
+        n_outputs=3,
+        n_times=512,
+        sfreq=256.0,
+        lm_dim=16,
+        num_heads=4,
+        depth=2,
+        drop_prob=0.0,
+        **_BRAINOMNI_KW,
+    )
+    assert model.blocks[0].time_attn.dropout == 0.0
+    assert model.final_layer[0].p == 0.1
+
+
+def test_brainomni_native_state_dict_roundtrip():
+    source = _small_brainomni()
+    target = _small_brainomni()
+    target.load_state_dict(source.state_dict(), strict=True)
+    for key, value in source.state_dict().items():
+        assert torch.equal(target.state_dict()[key], value)
+
+
+def test_brainomni_official_stage2_keys_load():
+    """A Stage-2 state dict (pretraining head, RoPE caches) loads strictly."""
+    source = _small_brainomni()
+    official = {}
+    for key, value in source.state_dict().items():
+        if key.startswith("final_layer.") or key in {
+            "tokenizer.pos",
+            "tokenizer.sensor_type",
+        }:
+            continue  # not in the official artifact
+        key = key.replace("tokenizer.quantizer.", "tokenizer.quantizer.rvq.")
+        key = key.replace("tokenizer.final_layer.", "tokenizer.decoder.")
+        key = key.replace(".conv.weight", ".conv.conv.weight")
+        key = key.replace(".conv.bias", ".conv.conv.bias")
+        key = key.replace(".convtr.", ".convtr.convtr.")
+        key = key.replace("ff.0.", "ff.layer.0.").replace("ff.3.", "ff.layer.2.")
+        key = key.replace("aggregate_mlp.0.", "aggregate_mlp.layer.0.")
+        key = key.replace("aggregate_mlp.3.", "aggregate_mlp.layer.2.")
+        official[key] = value
+    official["mask_token"] = torch.zeros(16)
+    official["predict_head.weight"] = torch.zeros(4, 16)
+    official["blocks.0.time_attn.rope_embedding_layer.freqs"] = torch.zeros(4)
+    official["blocks.0.time_attn.rope_embedding_layer.rotate"] = torch.zeros(7, 4)
+    target = _small_brainomni()
+    head = {k: v.clone() for k, v in target.state_dict().items() if "final_layer." in k}
+    target.load_state_dict(official, strict=True)
+    for key, value in source.state_dict().items():
+        expected = head[key] if key.startswith("final_layer.") else value
+        assert torch.equal(target.state_dict()[key], expected), key
+
+
+def test_brainomni_official_decoder_rename_is_anchored():
+    """Only a leading ``decoder.``/``tokenizer.decoder.`` is renamed."""
+    assert _rename_official_key("decoder.weight") == "final_layer.weight"
+    assert (
+        _rename_official_key("tokenizer.decoder.model.0.weight")
+        == "tokenizer.final_layer.model.0.weight"
+    )
+    assert _rename_official_key("head.tokenizer.decoder.w") == "head.tokenizer.decoder.w"
+
+
+def test_brainomni_checkpoint_key_remap_rejects_collisions():
+    model = _small_brainomni()
+    state_dict = model.state_dict()
+    native_key = next(
+        key for key in state_dict if "tokenizer." in key and ".conv.weight_g" in key
+    )
+    official_key = native_key.replace(".conv.weight_g", ".conv.conv.weight_g")
+    state_dict[official_key] = state_dict[native_key].clone()
+    with pytest.raises(ValueError, match="collide"):
+        model.load_state_dict(state_dict, strict=True)
+
+
+def test_brainomni_tokenizer_is_frozen_during_train_step():
+    torch.manual_seed(0)
+    model = _small_brainomni().train()
+    assert not any(p.requires_grad for p in model.tokenizer.parameters())
+    assert all(p.requires_grad for p in model.blocks.parameters())
+    x = torch.randn(2, 4, 512)
+    model.tokenizer.tokenize(x)  # one-time initialization for a fresh tokenizer
+    codebook = model.tokenizer.quantizer.layers[0]._codebook
+    before = codebook.embed.clone()
+    model(x).sum().backward()
+    assert torch.equal(before, codebook.embed)
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"overlap_ratio": -0.1}, "overlap_ratio"),
+        ({"overlap_ratio": 1.0 - 0.5 / 512}, "overlap_ratio"),
+        ({"overlap_ratio": 1.0}, "overlap_ratio"),
+        ({"lm_dim": 15}, "lm_dim.*num_heads"),
+        ({"num_heads": 3}, "num_heads.*even"),
+        ({"depth": 0}, "depth"),
+        ({"tokenizer_drop_prob": -0.1}, "tokenizer_drop_prob"),
+        ({"tokenizer_drop_prob": 1.1}, "tokenizer_drop_prob"),
+        ({"drop_prob": -0.1}, "drop_prob"),
+        ({"drop_prob": 1.1}, "drop_prob"),
+    ],
+)
+def test_brainomni_rejects_invalid_constructor_arguments(kwargs, match):
+    model_kwargs = dict(lm_dim=16, num_heads=4, depth=2) | kwargs
+    with pytest.raises(ValueError, match=match):
+        BrainOmni(
+            chs_info=_eeg_chs_info(4),
+            n_outputs=3,
+            n_times=512,
+            sfreq=256.0,
+            **(_BRAINOMNI_KW | model_kwargs),
+        )
+
+
+def test_brainomni_sfreq_warning():
+    with pytest.warns(UserWarning, match="256"):
+        _small_brainomni(sfreq=128.0)
+    with pytest.warns(UserWarning, match="256"):
+        _small_brainomni(sfreq=255.6)
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_brainomni_released_checkpoint_strict_load_and_parity(tmp_path):
+    """Gate the exact official tiny artifact and deterministic encoder path."""
+    path = _hub_file("tiny/BrainOmni.pt", tmp_path)
+    config_path = _hub_file("tiny/model_cfg.json", tmp_path)
+    assert _sha256(path) == (
+        "62c67ba6a84ea0625e67a3b5e7463fe3930bfee88a612a225e9062a052542ffc"
+    )
+    assert _sha256(config_path) == (
+        "4b994b38f1a8dccc8136f2b837a8ad2d3ebb028a1af0c527f9e0902a1a5c252e"
+    )
+    state_dict = torch.load(path, map_location="cpu", weights_only=True)
+    model = BrainOmni.from_opentslab_config(
+        json.loads(config_path.read_text()),
+        chs_info=_eeg_chs_info(2),
+        n_times=512,
+        sfreq=256.0,
+        n_outputs=3,
+    ).eval()
+    original_head = {
+        key: value.clone()
+        for key, value in model.state_dict().items()
+        if key.startswith("final_layer.")
+    }
+    model.load_state_dict(state_dict, strict=True)
+    assert all(
+        torch.equal(model.state_dict()[key], value)
+        for key, value in original_head.items()
+    )
+    # The release stores RoPE's frequencies rounded to bfloat16 and its complex
+    # cache without the sine part; the loader drops both and the port recomputes
+    # them in float32, as a freshly built upstream model does. The pinned
+    # upstream signature below uses that path.
+    model.tokenizer.pos.copy_(
+        torch.tensor([[0.1, 0.2, 0.3, 0, 0, 0], [-0.2, 0.1, 0.4, 0, 0, 0]])
+    )
+    torch.manual_seed(123)
+    feat = model.encode(torch.randn(1, 2, 512))
+    assert feat.shape == (1, 16, 8, 256)
+    expected = torch.tensor(
+        [
+            0.004591966513544321,
+            -0.005511901341378689,
+            -0.02144569717347622,
+            -0.047614686191082,
+            -0.057811133563518524,
+            0.04927004501223564,
+            -0.009117362089455128,
+            -0.033146947622299194,
+            -0.006567645352333784,
+            -0.2256787121295929,
+            -0.12158702313899994,
+            0.009830539114773273,
+            -0.045027319341897964,
+            -0.0062219384126365185,
+            0.016128726303577423,
+            0.06308680027723312,
+        ]
+    )
+    torch.testing.assert_close(feat.flatten()[:16], expected, rtol=1e-5, atol=1e-5)
+    assert feat.sum().item() == pytest.approx(62.13804626464844, abs=1e-4)
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_brainomni_base_released_checkpoint_strict_load(tmp_path):
+    """Gate the exact official base architecture and public loading path."""
+    path = _hub_file("base/BrainOmni.pt", tmp_path)
+    config_path = _hub_file("base/model_cfg.json", tmp_path)
+    assert _sha256(path) == (
+        "435db24e57a55df05aa7e16355def7b7ecbedb22aa1ec16063e7d14efd2386d0"
+    )
+    assert _sha256(config_path) == (
+        "492e2229b1fb87d49330b23f482a1641ec7cdc0b41d38f76384f18fdef3696d5"
+    )
+    state_dict = torch.load(path, map_location="cpu", weights_only=True)
+    model = BrainOmni.from_opentslab_config(
+        json.loads(config_path.read_text()),
+        chs_info=_eeg_chs_info(2),
+        n_times=512,
+        sfreq=256.0,
+        n_outputs=3,
+    )
+    original_head = {
+        key: value.clone()
+        for key, value in model.state_dict().items()
+        if key.startswith("final_layer.")
+    }
+    model.load_state_dict(state_dict, strict=True)
+    assert torch.equal(model.projection.weight, state_dict["projection.weight"])
+    assert all(
+        torch.equal(model.state_dict()[key], value)
+        for key, value in original_head.items()
+    )
