@@ -3,12 +3,14 @@
 # License: BSD (3-clause)
 """Channel layer: regressions A-G and the invariants every strategy keeps."""
 
+import inspect
+
 import mne
 import numpy as np
 import pytest
 import torch
 
-from braindecode.models import LUNA
+from braindecode.models import BENDR, LUNA, Labram, SignalJEPA
 from braindecode.modules import ChannelLayer
 from braindecode.modules.channels import STRATEGIES, _resolve
 
@@ -88,8 +90,9 @@ def test_g_fewer_than_four_positions_is_declared(strategy):
 
 @pytest.mark.parametrize("strategy", STRATEGIES)
 def test_permutation_is_an_exact_copy(strategy):
-    x = torch.randn(2, 19, 10)
-    layer = ChannelLayer(chs(TEN_TWENTY), strategy, chs(TEN_TWENTY[::-1]))
+    names = [*TEN_TWENTY, "F3-C3"]  # a measured bipolar channel is copied too
+    x = torch.randn(2, 20, 10)
+    layer = ChannelLayer(chs(names), strategy, chs(names[::-1]))
     assert torch.equal(layer(x)[0], x.flip(1))
 
 
@@ -203,3 +206,65 @@ def test_a_map_built_under_inference_mode_trains():
     with torch.inference_mode():  # e.g. a validation batch on a new montage
         layer(x, new)
     layer(x, new)[0].sum().backward()
+
+
+@pytest.mark.parametrize("strategy", ["exact", "zero"])
+def test_measured_bipolar_target_is_copied(strategy):
+    target = [at("F3-C3", [-0.06, 0.02, 0.1]), chs(["Fz"])[0]]  # LaBraM: a midpoint
+    x = torch.randn(1, 2, 5)
+    layer = ChannelLayer(target, strategy, chs(["F3-C3", "Fz"]))
+    assert torch.equal(layer(x)[0], x) and layer(x)[1].all()
+
+
+def test_trainable_source_with_nothing_to_reconstruct():
+    layer = ChannelLayer(chs(["Cz"]), "source", chs(["Cz"]), trainable=True)
+    x = torch.randn(1, 1, 5)
+    assert torch.equal(layer(x)[0], x)
+
+
+def test_latent_half_precision_stays_finite():
+    layer = ChannelLayer(chs(TEN_TWENTY), "latent", chs(SUBSET)).half()
+    for x in (torch.zeros(1, 8, 20), 1e-5 * torch.randn(1, 8, 20)):  # var underflows
+        assert torch.isfinite(layer(x.half())[0]).all()
+
+
+@pytest.mark.parametrize("cls", [BENDR, LUNA])  # forward(x, ...) / forward(X, ...)
+def test_input_by_keyword(cls):
+    model = cls(chs_info=chs(SUBSET), n_outputs=2, n_times=800, sfreq=200,
+                channel_strategy="spline").eval()
+    x = torch.randn(1, 8, 800)
+    name = next(iter(inspect.signature(model.forward).parameters))
+    assert torch.equal(model(**{name: x}, chs_info=chs(SUBSET)), model(x))
+
+
+def test_labram_ch_names_describe_the_input():
+    model = Labram(chs_info=chs(SUBSET), n_outputs=2, n_times=800, sfreq=200,
+                   channel_strategy="spline").eval()
+    x = torch.randn(1, 8, 800).flip(1)
+    expected = model(x, chs_info=chs(SUBSET[::-1]))
+    assert torch.equal(model(x, ch_names=SUBSET[::-1]), expected)
+
+
+def test_config_saves_the_input_montage_not_the_target(tmp_path):
+    model = BENDR(chs_info=chs(SUBSET), n_outputs=2, n_times=1280, sfreq=256,
+                  channel_strategy="spline").eval()
+    x = torch.randn(1, 8, 1280)
+    config = model.get_config()
+    assert [c["ch_name"] for c in config["chs_info"]] == SUBSET
+    clone = BENDR.from_config(config).eval()
+    clone.load_state_dict(model.state_dict())
+    assert torch.equal(clone(x), model(x))
+    pytest.importorskip("huggingface_hub")
+    model.save_pretrained(tmp_path)
+    assert torch.equal(BENDR.from_pretrained(tmp_path).eval()(x), model(x))
+
+
+def test_signal_jepa_strategy_targets_the_pretraining_channels():
+    kw = dict(n_outputs=2, n_times=256, sfreq=128)
+    full = SignalJEPA(**kw, channel_embedding="pretrain_aligned").state_dict()
+    names_only = [{"ch_name": "Fz"}, {"ch_name": "Cz", "loc": None}]
+    model = SignalJEPA(chs_info=names_only, **kw, channel_strategy="zero")
+    model.load_state_dict(full, strict=True)  # the 62-channel checkpoint
+    assert torch.isfinite(model(torch.randn(1, 2, 256))).all()
+    with pytest.raises(ValueError, match="not in the input"):
+        SignalJEPA(chs_info=names_only, **kw, channel_strategy="exact")
