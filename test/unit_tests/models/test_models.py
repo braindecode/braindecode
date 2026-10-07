@@ -5045,7 +5045,7 @@ def test_neurorvq_ema_quantizer_matches_normalized_ema_update():
         quantizer.embedding.weight.copy_(torch.eye(2))
         quantizer.embedding.initted.fill_(True)
 
-    _, _, indices = quantizer(torch.tensor([[[[0.8, -0.6]], [[0.6, 0.8]]]]))
+    _, indices = quantizer(torch.tensor([[[[0.8, -0.6]], [[0.6, 0.8]]]]))
 
     expected = torch.nn.functional.normalize(torch.tensor([[0.9, 0.3], [-0.3, 0.9]]))
     assert indices.tolist() == [0, 1]

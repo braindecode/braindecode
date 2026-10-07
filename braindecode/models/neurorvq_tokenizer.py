@@ -103,10 +103,8 @@ class _EMAVectorQuantizer(nn.Module):
                 weight.mul_(self.decay).add_(means, alpha=1 - self.decay)
                 weight.copy_(F.normalize(weight, dim=-1))
 
-        loss = F.mse_loss(quantized.detach(), z)
         quantized = z + (quantized - z).detach()
-        quantized = quantized.permute(0, 3, 1, 2).contiguous()
-        return quantized, loss, indices
+        return quantized.permute(0, 3, 1, 2).contiguous(), indices
 
 
 class _ResidualVectorQuantizer(nn.Module):
@@ -119,14 +117,13 @@ class _ResidualVectorQuantizer(nn.Module):
     def forward(self, x: Tensor):
         quantized_out = torch.zeros_like(x)
         residual = x
-        codes, losses = [], []
+        codes = []
         for layer in self.layers:
-            quantized, loss, indices = layer(residual)
+            quantized, indices = layer(residual)
             residual = residual - quantized
             quantized_out = quantized_out + quantized
-            losses.append(loss + 0.4 * F.mse_loss(quantized, residual.detach()))
             codes.append(indices)
-        return quantized_out, torch.stack(codes), torch.stack(losses).mean()
+        return quantized_out, torch.stack(codes)
 
     def encode(self, x: Tensor) -> Tensor:
         """Codes without the straight-through estimator or EMA updates."""
@@ -512,7 +509,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     def _encode(self, x: Tensor, time: Tensor, spatial: Tensor):
         quantized, codes = [], []
         for i, latent in enumerate(self._branch_latents(x, time, spatial), start=1):
-            q, branch_codes, _ = getattr(self, f"quantize_{i}")(latent)
+            q, branch_codes = getattr(self, f"quantize_{i}")(latent)
             quantized.append(q)
             codes.append(branch_codes.reshape(self.num_quantizers, x.shape[0], -1))
         return quantized, torch.stack(codes)
