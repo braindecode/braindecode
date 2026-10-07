@@ -3,7 +3,9 @@
 # License: BSD (3-clause)
 """Channel layer: regressions A-G and the invariants every strategy keeps."""
 
+import copy
 import inspect
+import pickle
 
 import mne
 import numpy as np
@@ -76,9 +78,9 @@ def test_f_sparse_montage_gain_and_targets_without_position():
     assert ChannelLayer(chs(TEN_TWENTY), "spline", src).weight.abs().sum(1).max() < 5
     with pytest.warns(UserWarning, match="row gain"):
         ChannelLayer(chs(TEN_TWENTY), "spline", src, reg=0.0)
-    x, observed = ChannelLayer(chs([*TEN_TWENTY, "SCALE"]), "spline", src)(
-        torch.randn(1, 4, 5)
-    )
+    with pytest.warns(UserWarning, match=r"\['SCALE'\] .* zero-filled"):
+        layer = ChannelLayer(chs([*TEN_TWENTY, "SCALE"]), "spline", src)
+    x, observed = layer(torch.randn(1, 4, 5))
     assert not observed[-1] and (x[0, -1] == 0).all() and observed.sum() == 3
 
 
@@ -222,6 +224,43 @@ def test_trainable_source_with_nothing_to_reconstruct():
     assert torch.equal(layer(x)[0], x)
 
 
+@pytest.mark.parametrize(
+    "strategy,kw",
+    [("zero", {}), ("spline", {}), ("latent", {}), ("source", {"trainable": True})],
+)
+def test_no_target_observed_is_declared(strategy, kw):
+    # BrainBERT-like target without a position, 10-20 input: only zeros.
+    with pytest.raises(ValueError, match="would see only zeros"):
+        ChannelLayer(chs(["E1"]), strategy, chs(SUBSET), **kw)
+
+
+@pytest.mark.parametrize("cls", [BENDR, LUNA, Labram])
+def test_forward_applies_the_layer_once(cls):
+    model = cls(chs_info=chs(SUBSET), n_outputs=2, n_times=800, sfreq=200,
+                channel_strategy="spline").eval()
+    calls = []
+    model.channel_layer.register_forward_hook(lambda *a: calls.append(1))
+    x = torch.randn(1, 8, 800)
+    with torch.no_grad():
+        y = model(x)
+        assert torch.equal(model.forward(x), y)
+        y_perm = model.forward(x.flip(1), chs_info=chs(SUBSET[::-1]))
+        torch.testing.assert_close(y_perm, y)
+    assert len(calls) == 3
+    assert "forward" not in vars(cls(chs_info=chs(SUBSET), n_outputs=2, n_times=800,
+                                     sfreq=200))  # native: the class forward
+
+
+def test_strategy_model_survives_deepcopy_and_pickle():
+    model = LUNA(chs_info=chs(SUBSET), n_outputs=2, n_times=800, sfreq=200,
+                 channel_strategy="spline").eval()
+    x = torch.randn(1, 8, 800)
+    y = model(x)
+    for clone in (copy.deepcopy(model), pickle.loads(pickle.dumps(model))):
+        assert clone.forward.__self__ is clone
+        assert torch.equal(clone(x), y) and torch.equal(clone.forward(x), y)
+
+
 def test_latent_half_precision_stays_finite():
     layer = ChannelLayer(chs(TEN_TWENTY), "latent", chs(SUBSET)).half()
     for x in (torch.zeros(1, 8, 20), 1e-5 * torch.randn(1, 8, 20)):  # var underflows
@@ -233,7 +272,7 @@ def test_input_by_keyword(cls):
     model = cls(chs_info=chs(SUBSET), n_outputs=2, n_times=800, sfreq=200,
                 channel_strategy="spline").eval()
     x = torch.randn(1, 8, 800)
-    name = next(iter(inspect.signature(model.forward).parameters))
+    name = list(inspect.signature(type(model).forward).parameters)[1]
     assert torch.equal(model(**{name: x}, chs_info=chs(SUBSET)), model(x))
 
 

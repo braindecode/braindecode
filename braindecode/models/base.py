@@ -91,22 +91,6 @@ class _BraindecodeDocstringMeta(NumpyDocstringInheritanceInitMeta):
             track_model_init_kwargs(cls)
 
 
-def _apply_channel_layer(model, args, kwargs):
-    """Forward pre-hook: run the channel layer on ``x`` (``chs_info=`` per call).
-
-    ``model.forward`` is the backbone on the target channels (hooks do not run).
-    """
-    chs = kwargs.pop("chs_info", None)
-    names = kwargs.pop("ch_names", None)  # LaBraM: names of x's channels
-    if chs is None and names is not None:
-        chs = [{"ch_name": n} for n in names]
-    if args:
-        return (model.channel_layer(args[0], chs)[0], *args[1:]), kwargs
-    x = next(iter(inspect.signature(model.forward).parameters))  # x, X, eeg...
-    kwargs[x] = model.channel_layer(kwargs[x], chs)[0]
-    return args, kwargs
-
-
 class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     """
     Mixin class for all EEG models in braindecode.
@@ -139,6 +123,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ``model.channel_layer.fit`` first) or ``"latent"`` map the montage of ``chs_info`` (or of the
         ``chs_info`` given to ``forward``) onto the backbone's channels with a
         :class:`~braindecode.modules.ChannelLayer`. Saved in the config.
+        ``model(x)`` and ``model.forward(x)`` both apply the layer.
     channel_strategy_kwargs : dict or None, default=None
         Options of the strategy (e.g. ``{"reg": 1e-2}`` for ``"spline"``).
 
@@ -386,7 +371,20 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         super().__init__()
         if layer is not None:
             self.channel_layer = layer
-            self.register_forward_pre_hook(_apply_channel_layer, with_kwargs=True)
+            # Instance attribute: model(x) and model.forward(x) both map x.
+            setattr(self, "forward", self._channel_forward)
+
+    def _channel_forward(self, *args, chs_info=None, ch_names=None, **kwargs):
+        """``forward`` under a channel strategy: map ``x`` (recorded with
+        ``chs_info``, default the model's) onto the target, then run the backbone."""
+        if chs_info is None and ch_names is not None:  # LaBraM: names of x's channels
+            chs_info = [{"ch_name": n} for n in ch_names]
+        if args:
+            args = (self.channel_layer(args[0], chs_info)[0], *args[1:])
+        else:  # x by keyword: the backbone's first input (x, X, eeg...)
+            x = list(inspect.signature(type(self).forward).parameters)[1]
+            kwargs[x] = self.channel_layer(kwargs[x], chs_info)[0]
+        return type(self).forward(self, *args, **kwargs)
 
     @property
     def n_outputs(self) -> int:
@@ -477,13 +475,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         with torch.inference_mode():
             try:
                 return tuple(
-                    self.forward(  # type: ignore
+                    type(self)
+                    .forward(  # the backbone, on its own channels
+                        self,
                         torch.zeros(
                             self.input_shape,
                             dtype=next(self.parameters()).dtype,  # type: ignore
                             device=next(self.parameters()).device,  # type: ignore
-                        )
-                    ).shape
+                        ),
+                    )
+                    .shape
                 )
             except RuntimeError as exc:
                 if str(exc).endswith(

@@ -329,10 +329,22 @@ class ChannelLayer(nn.Module):
         observed = W.sum(1) > 0
         copied = observed[self._whole][:, None]  # a measured A-B target: copy it
         D = np.where(copied, np.eye(len(mono))[self._whole], self._D)
-        todo = ~observed & np.isfinite(tpos).all(1) & np.abs(D).any(0)
+        missing = ~observed & np.abs(D).any(0)
+        todo = missing & np.isfinite(tpos).all(1)
         if self.strategy == "exact" and todo.any():
             raise ValueError(
                 f"Strategy 'exact': target channels {[m for m, t in zip(mono, todo) if t]} are not in the input montage {names}; use a reconstructing strategy (e.g. 'spline') or supply them."
+            )
+        seen = np.abs(D) @ missing == 0
+        if not seen.any() and (self.strategy == "zero" or not todo.any()):
+            raise ValueError(
+                f"No target channel of {[c['ch_name'] for c in self.target]} is in the input montage {names}, and strategy {self.strategy!r} reconstructs none: the model would see only zeros. Supply matching names or positions, or a reconstructing strategy (e.g. 'spline')."
+            )
+        if (missing & ~todo).any():
+            warnings.warn(
+                f"Target channels {[m for m, t in zip(mono, missing & ~todo) if t]} are not in the input montage and have no position to reconstruct them from; they are zero-filled.",
+                UserWarning,
+                stacklevel=4,
             )
         use = keep & np.isfinite(pos).all(1)
         if todo.any() and use.sum() < _MIN_POSITIONS[self.strategy]:
@@ -377,7 +389,7 @@ class ChannelLayer(nn.Module):
             k: v if torch.is_tensor(v) else torch.tensor(v, device=dev, dtype=dt)
             for k, v in maps.items()
         }
-        maps["observed"] = torch.as_tensor((np.abs(D) @ ~observed) == 0, device=dev)
+        maps["observed"] = torch.as_tensor(seen, device=dev)
         return maps
 
     def _apply(self, fn, recurse=True):
