@@ -298,6 +298,7 @@ class ChannelLayer(nn.Module):
             self._key = key
         self._chs = chs
 
+    @torch.inference_mode(False)  # maps built in an eval pass serve training
     def _build(self, chs_info: list[dict]) -> dict[str, Tensor]:
         names, pos, std, types, _ = _resolve(chs_info)
         bad = [n for n, t in zip(names, types) if t not in _ELECTRODES]

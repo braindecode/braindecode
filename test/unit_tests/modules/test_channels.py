@@ -195,3 +195,11 @@ def test_latent_is_permutation_invariant_and_trains():
     torch.testing.assert_close(layer(x.flip(1), chs(SUBSET[::-1]))[0], out)
     out.sum().backward()
     assert all(p.grad.abs().sum() > 0 for p in layer.parameters())
+
+
+def test_a_map_built_under_inference_mode_trains():
+    layer = ChannelLayer(chs(TEN_TWENTY), "latent", chs(SUBSET))
+    x, new = torch.randn(2, 8, 50), chs(SUBSET[::-1])
+    with torch.inference_mode():  # e.g. a validation batch on a new montage
+        layer(x, new)
+    layer(x, new)[0].sum().backward()
