@@ -214,6 +214,22 @@ Bug fixes
   BrainOmni code does; they were typed as magnetometers, which gave them the
   wrong sensor embedding. Elekta magnetometers and planar gradiometers were
   already correct. (by `Bruno Aristimunha`_)
+- Fix :meth:`braindecode.models.BrainOmni.reset_head` leaving the new head in
+  training mode after ``model.eval()``, so its dropout made inference
+  stochastic; the head now follows the model's mode (by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.models.BrainTokenizer` reconstruction when
+  ``window_length`` is not a multiple of ``prod(ratios)``: each decoded window
+  is now cropped to ``window_length`` before the windows are joined, so later
+  windows keep their position. Configurations with a divisible window, such as
+  the released one, are unchanged (by `Bruno Aristimunha`_).
+- :class:`braindecode.models.BrainTokenizer` and
+  :class:`braindecode.models.BrainOmni` now raise ``ValueError`` for
+  ``n_filters < 2`` and for attention dimensions that do not split across
+  heads, instead of a reshape error or an ``assert``; the tokenizer's sampling
+  rate warning names ``BrainTokenizer`` (by `Bruno Aristimunha`_).
+- :attr:`braindecode.models.MAPA.input_shape` now returns the spectrogram shape
+  ``(1, n_chans, 20, n_times)`` with ``normalization="session"``, so
+  ``get_output_shape()`` works in that mode (by `Bruno Aristimunha`_).
 - Fix :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` rejecting a
   caller's ``chs_info`` (``n_chans=… different from chs_info``) and ``n_times``/``sfreq``
   (``n_times different from input_window_seconds * sfreq``): the Hub config filled the

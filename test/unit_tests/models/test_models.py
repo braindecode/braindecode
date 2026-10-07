@@ -4952,6 +4952,30 @@ def test_neurorvq_transformer_block_uses_sequential_residuals():
 
     torch.testing.assert_close(block(x), expected)
 
+
+def test_neurorvq_block_qk_norm_factory_receives_eps():
+    """``_Block.qk_norm`` is called as ``qk_norm(head_dim, eps=1e-6)``."""
+    from braindecode.models.neurorvq import _Block
+
+    calls = []
+
+    def factory(head_dim, eps):
+        calls.append((head_dim, eps))
+        return torch.nn.LayerNorm(head_dim, eps=eps)
+
+    _Block(
+        dim=16,
+        num_heads=4,
+        mlp_ratio=2,
+        qkv_bias=True,
+        qk_norm=factory,
+        drop=0,
+        attn_drop=0,
+        drop_path=0,
+        init_values=1e-5,
+    )
+    assert calls == [(4, 1e-6), (4, 1e-6)]
+
 # SeizureTransformer
 # ---------------------------------------------------------------------------
 

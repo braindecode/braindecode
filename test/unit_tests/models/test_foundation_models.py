@@ -2137,6 +2137,16 @@ def test_mapa_session_normalization_matches_window_normalization_on_its_bands(ma
         torch.testing.assert_close(session(frames), mapa_model(x))
 
 
+def test_mapa_session_normalization_input_and_output_shape():
+    model = _mapa_session_model()
+    assert model.input_shape == (1, len(MAPA_SUBJECT_A), 20, 32)
+    assert model.get_output_shape() == (1, 4)
+
+
+def test_mapa_window_normalization_input_shape_is_raw(mapa_model):
+    assert mapa_model.input_shape == (1, mapa_model.n_chans, mapa_model.n_times)
+
+
 def test_mapa_session_normalization_reads_another_subject():
     frames = torch.randn(2, len(MAPA_SUBJECT_B), 20, 64)
     with torch.no_grad():

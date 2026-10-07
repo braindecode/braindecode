@@ -141,7 +141,8 @@ class _Block(nn.Module):
         num_heads: int,
         mlp_ratio: float,
         qkv_bias: bool,
-        qk_norm: Callable[[int], nn.Module] | None,
+        # LaBraM's ``_Attention`` calls ``qk_norm(head_dim, eps=1e-6)``.
+        qk_norm: Callable[..., nn.Module] | None,
         drop: float,
         attn_drop: float,
         drop_path: float,
