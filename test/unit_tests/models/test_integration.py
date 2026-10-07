@@ -27,6 +27,7 @@ from braindecode.models import (
     REVE,
     SSTDPN,
     ZUNA,
+    BrainTokenizer,
     Brant,
     EEGInceptionMI,
     EEGMiner,
@@ -368,6 +369,7 @@ def test_model_has_activation_parameter(model_class):
     """
     if model_class in [
         Brant,
+        BrainTokenizer,  # the released SEANet codec has fixed ELU activations
         EEGMiner,
         REVE,
         EEGPT,
