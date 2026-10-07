@@ -237,6 +237,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
     transformer: nn.Transformer | None
 
     _feature_encoder_channels: str = "n_chans"
+    _channel_target = [ch["ch_name"] for ch in _PRETRAIN_CHS_INFO]
 
     def __init__(
         self,
@@ -273,9 +274,13 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         channel_strategy_kwargs: dict | None = None,
     ):
         # Resolve channel embedding config before calling super().__init__
+        # (under a channel strategy: on the 62 pre-training channels, the target).
+        native = channel_strategy == "native"
         if _init_transformer:
             effective_chs_info, channel_locations, ch_idxs = (
-                _resolve_channel_embedding_config(channel_embedding, chs_info)
+                _resolve_channel_embedding_config(
+                    channel_embedding, chs_info if native else _PRETRAIN_CHS_INFO
+                )
             )
         else:
             effective_chs_info = chs_info
@@ -285,7 +290,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            chs_info=effective_chs_info,
+            chs_info=effective_chs_info if native else chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,

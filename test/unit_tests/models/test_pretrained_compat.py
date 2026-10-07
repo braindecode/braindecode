@@ -328,7 +328,8 @@ def test_geometry_contract(name, gname, gkw):
 
 
 # BIOT's canonical input is bipolar; under a strategy it takes electrodes.
-@pytest.mark.parametrize("name", [n for n in COMPAT if n != "BIOT"])
+# SignalJEPA's target is its 62 pre-training channels (test_channels.py).
+@pytest.mark.parametrize("name", [n for n in COMPAT if n not in ("BIOT", "SignalJEPA")])
 def test_native_checkpoint_loads_under_a_strategy(name):
     """The native state dict loads strictly into the same model with a layer."""
     spec = COMPAT[name]
