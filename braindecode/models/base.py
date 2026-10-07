@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import warnings
 from collections import OrderedDict
@@ -91,9 +92,19 @@ class _BraindecodeDocstringMeta(NumpyDocstringInheritanceInitMeta):
 
 
 def _apply_channel_layer(model, args, kwargs):
-    """Forward pre-hook: run the channel layer on ``x`` (``chs_info=`` per call)."""
-    x, _ = model.channel_layer(args[0], kwargs.pop("chs_info", None))
-    return (x, *args[1:]), kwargs
+    """Forward pre-hook: run the channel layer on ``x`` (``chs_info=`` per call).
+
+    ``model.forward`` is the backbone on the target channels (hooks do not run).
+    """
+    chs = kwargs.pop("chs_info", None)
+    names = kwargs.pop("ch_names", None)  # LaBraM: names of x's channels
+    if chs is None and names is not None:
+        chs = [{"ch_name": n} for n in names]
+    if args:
+        return (model.channel_layer(args[0], chs)[0], *args[1:]), kwargs
+    x = next(iter(inspect.signature(model.forward).parameters))  # x, X, eeg...
+    kwargs[x] = model.channel_layer(kwargs[x], chs)[0]
+    return args, kwargs
 
 
 class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):

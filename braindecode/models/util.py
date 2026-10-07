@@ -155,7 +155,10 @@ def build_model_config(model) -> dict:
             elif not _is_jsonable(val):
                 continue
             config[name] = val
-    chs_info = getattr(model, "_chs_info", None)
+    layer = getattr(model, "channel_layer", None)  # save the input, not the target
+    chs_info = (
+        layer.chs_info if layer is not None else getattr(model, "_chs_info", None)
+    )
     if chs_info is not None:
         config["chs_info"] = model._serialize_chs_info(chs_info)
     return config
