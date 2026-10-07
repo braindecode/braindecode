@@ -90,6 +90,10 @@ Enhancements
 - Clarify decoder temporal embedding indexing in :class:`braindecode.models.Labram`
   and cover its one-token-per-temporal-patch behavior
   (:gh:`1155` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.SleepFM`, a channel-agnostic multimodal PSG
+  foundation encoder, and :class:`braindecode.models.SleepFMStager`, its
+  patch-wise sleep-staging model, with the released weights; CC BY-NC 4.0
+  (:gh:`1106` by `Fashad Ahmed`_)
 
 - Add :class:`braindecode.models.CSBrain`, the cross-scale spatiotemporal brain
   foundation model from Zhou et al. (NeurIPS 2025 Spotlight): multi-scale
@@ -261,6 +265,10 @@ Bug fixes
   ``n_times``; such a model could not be saved or loaded with ``from_pretrained``
   ("uninitialized parameter"). The head is now a concrete ``Linear`` whenever the
   geometry is known (:gh:`1233` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.BrainOmni` now loads the released checkpoints' RoPE
+  cache (cosines only) and keeps PyTorch's default head initialisation, as the
+  released code does. Unlike the released code, it applies no attention dropout
+  in evaluation mode (:gh:`1244` by `Bruno Aristimunha`_).
 - Fix :class:`braindecode.models.CBraMod` failing in ``forward`` for any
   ``patch_size`` other than 200: the spectral reshape hard-coded 101 rFFT bins
   instead of ``patch_size // 2 + 1`` (:gh:`1240` by `Bruno Aristimunha`_).

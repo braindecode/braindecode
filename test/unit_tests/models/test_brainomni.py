@@ -852,12 +852,19 @@ def test_braintokenizer_released_checkpoint_strict_load_and_parity(tmp_path):
 # ---- BrainOmni private attention ---------------------------------------------
 
 
-def _complex_rope_reference(x, n_dim, base=10000):
-    """Released BrainOmni RoPE: one complex frequency ladder split across heads."""
-    freqs = 1.0 / (base ** (torch.arange(0, n_dim, 2)[: (n_dim // 2)].float() / n_dim))
-    angles = torch.outer(torch.arange(x.shape[1]).float(), freqs)
-    rotate = torch.polar(torch.ones_like(angles), angles)
-    rotate = rotate.reshape(x.shape[1], x.shape[2], -1).unsqueeze(0)
+def _complex_rope_reference(x, n_dim, base=10000, rotate=None):
+    """Released BrainOmni RoPE: one complex frequency ladder split across heads.
+
+    ``rotate`` is the released complex cache; by default the one a freshly
+    built released module computes.
+    """
+    if rotate is None:
+        freqs = 1.0 / (
+            base ** (torch.arange(0, n_dim, 2)[: (n_dim // 2)].float() / n_dim)
+        )
+        angles = torch.outer(torch.arange(x.shape[1]).float(), freqs)
+        rotate = torch.polar(torch.ones_like(angles), angles)
+    rotate = rotate[: x.shape[1]].reshape(x.shape[1], x.shape[2], -1).unsqueeze(0)
     x_ = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
     return torch.view_as_real(x_ * rotate).flatten(3).type_as(x)
 
@@ -875,15 +882,50 @@ def test_rope_matches_released_complex_rotation(seq):
     torch.testing.assert_close(q_out.norm(dim=-1), q.norm(dim=-1))
 
 
-def test_rope_is_stateless_and_keeps_dtype():
-    """No buffers to cast or load; half inputs are rotated in float32."""
-    rope = _RotaryPositionalEmbedding(n_dim=16).half()
-    q = torch.randn(2, 9, 4, 4)
-    q_out, _ = rope(q.half(), q.half())
-    assert rope.state_dict() == {}
-    assert q_out.dtype == torch.float16
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_rope_cast_keeps_float32_cache_and_rebuilds_in_dtype(dtype):
+    """As the release: the cache stays float32, ``freqs`` follows the cast."""
+    rope = _RotaryPositionalEmbedding(n_dim=32).to(dtype)
+    assert rope.freqs.dtype == dtype and rope.rotate.dtype == torch.float32
+    q = torch.randn(2, 9, 4, 8).to(dtype)
+    torch.testing.assert_close(rope(q, q)[0], _complex_rope_reference(q, 32))
+    q = torch.randn(2, 300, 4, 8).to(dtype)
+    angles = torch.outer(torch.arange(300).type_as(rope.freqs), rope.freqs).float()
+    released = torch.polar(torch.ones_like(angles), angles)
     torch.testing.assert_close(
-        q_out.float(), _complex_rope_reference(q, 16), atol=1e-2, rtol=1e-2
+        rope(q, q)[0], _complex_rope_reference(q, 32, rotate=released)
+    )
+
+
+def test_rope_released_cosine_only_cache_then_rebuilt():
+    """Released cache (cosines, no sine) up to 240; past it, rebuilt and kept.
+
+    The release copies the stored real cache into its complex buffer (sine 0)
+    and ``_set_rotate_cache`` rebuilds from the bfloat16-rounded ``freqs``.
+    The state dict is unchanged and a reload restores the loaded cache.
+    """
+    n_dim = 32
+    exact = 1.0 / (10000 ** (torch.arange(0, n_dim, 2).float() / n_dim))
+    cosines = torch.cos(torch.outer(torch.arange(240).float(), exact))
+    rotate = torch.stack((cosines, torch.zeros_like(cosines)), dim=-1)
+    state = {"freqs": exact.bfloat16().float(), "rotate": rotate}
+    rope = _RotaryPositionalEmbedding(n_dim=n_dim)
+    rope.load_state_dict(state, strict=True)
+    cosine_only = torch.complex(cosines, torch.zeros_like(cosines))
+    angles = torch.outer(torch.arange(250).float(), state["freqs"])
+    rebuilt = torch.polar(torch.ones_like(angles), angles)
+    for seq, released in ((240, cosine_only), (250, rebuilt), (5, rebuilt)):
+        q = torch.randn(2, seq, 4, 8)
+        torch.testing.assert_close(
+            rope(q, q)[0], _complex_rope_reference(q, n_dim, rotate=released)
+        )
+    assert {k: v.shape for k, v in rope.state_dict().items()} == {
+        "freqs": (16,),
+        "rotate": (240, 16, 2),
+    }
+    rope.load_state_dict(state, strict=True)
+    torch.testing.assert_close(
+        rope(q, q)[0], _complex_rope_reference(q, n_dim, rotate=cosine_only)
     )
 
 
@@ -926,6 +968,49 @@ def test_spatial_temporal_block_shape():
     out = _SpatialTemporalBlock(16, 4, 0.0, causal=False)(torch.randn(2, 3, 7, 16))
     assert out.shape == (2, 3, 7, 16)
     assert torch.isfinite(out).all()
+
+
+def test_spatial_temporal_block_matches_frozen_released_output():
+    """Seeded block with a released-style RoPE cache equals the released code.
+
+    Reference values: ``SpatialTemporalAttentionBlock(16, 4, 0.0, False)`` of
+    OpenTSLab/BrainOmni 340d6b5 (complex RoPE, CPU float32), loaded with the
+    same state dict (cosine-only ``rotate``, bfloat16-rounded ``freqs``, as in
+    the released checkpoints) and run on the same input.
+    """
+    block = _SpatialTemporalBlock(16, 4, 0.0, causal=False).eval()
+    gen = torch.Generator().manual_seed(0)
+    state = {}
+    for key, value in block.state_dict().items():
+        if "rope_embedding_layer" in key:
+            continue
+        offset = 1.0 if key.endswith("norm.weight") else 0.0
+        state[key] = 0.3 * torch.randn(value.shape, generator=gen) + offset
+    exact = 1.0 / (10000 ** (torch.arange(0, 8, 2).float() / 8))
+    cosines = torch.cos(torch.outer(torch.arange(240).float(), exact))
+    state["time_attn.rope_embedding_layer.freqs"] = exact.bfloat16().float()
+    state["time_attn.rope_embedding_layer.rotate"] = torch.stack(
+        (cosines, torch.zeros_like(cosines)), dim=-1
+    )
+    block.load_state_dict(state, strict=True)
+    x = torch.randn(2, 3, 5, 16, generator=gen)
+    with torch.no_grad():
+        out = block(x)
+    expected = torch.tensor(
+        [
+            2.487884044647217,
+            -2.8454644680023193,
+            2.999533176422119,
+            7.002948760986328,
+            -0.9435640573501587,
+            6.7119903564453125,
+            -1.1264961957931519,
+            3.6791319847106934,
+        ]
+    )
+    torch.testing.assert_close(out.flatten()[:8], expected, rtol=1e-5, atol=1e-5)
+    assert out.sum().item() == pytest.approx(-245.95851135253906, abs=1e-3)
+    assert out.abs().sum().item() == pytest.approx(1331.4229736328125, abs=1e-3)
 
 
 # ---- public BrainOmni classifier ---------------------------------------------
@@ -1077,17 +1162,38 @@ def test_brainomni_official_stage2_keys_load():
         key = key.replace("ff.0.", "ff.layer.0.").replace("ff.3.", "ff.layer.2.")
         key = key.replace("aggregate_mlp.0.", "aggregate_mlp.layer.0.")
         key = key.replace("aggregate_mlp.3.", "aggregate_mlp.layer.2.")
+        if key.endswith("rope_embedding_layer.rotate"):
+            value = value[..., 0]  # the release exports the cosines only
         official[key] = value
     official["mask_token"] = torch.zeros(16)
     official["predict_head.weight"] = torch.zeros(4, 16)
-    official["blocks.0.time_attn.rope_embedding_layer.freqs"] = torch.zeros(4)
-    official["blocks.0.time_attn.rope_embedding_layer.rotate"] = torch.zeros(7, 4)
     target = _small_brainomni()
     head = {k: v.clone() for k, v in target.state_dict().items() if "final_layer." in k}
     target.load_state_dict(official, strict=True)
     for key, value in source.state_dict().items():
         expected = head[key] if key.startswith("final_layer.") else value
+        if key.endswith("rope_embedding_layer.rotate"):
+            expected = torch.stack((value[..., 0], torch.zeros_like(value[..., 0])), -1)
         assert torch.equal(target.state_dict()[key], expected), key
+
+
+def test_brainomni_rope_buffers_backfilled_only_when_all_missing():
+    """A state dict saved before the RoPE buffers loads; a partial one fails."""
+    state = _small_brainomni().state_dict()
+    legacy = {k: v for k, v in state.items() if "rope_embedding" not in k}
+    _small_brainomni().load_state_dict(legacy, strict=True)
+    del state["blocks.0.time_attn.rope_embedding_layer.rotate"]
+    with pytest.raises(RuntimeError, match="rope_embedding_layer.rotate"):
+        _small_brainomni().load_state_dict(state, strict=True)
+
+
+def test_brainomni_head_keeps_default_linear_init():
+    """As released, ``_init_weights`` (zero biases) skips the head."""
+    model = _small_brainomni()
+    biases = [model.final_layer[i].bias for i in (1, 3)]
+    model.reset_head(5)
+    biases += [model.final_layer[i].bias for i in (1, 3)]
+    assert all(bias.abs().max() > 0 for bias in biases)
 
 
 def test_brainomni_official_decoder_rename_is_anchored():
@@ -1189,10 +1295,9 @@ def test_brainomni_released_checkpoint_strict_load_and_parity(tmp_path):
         torch.equal(model.state_dict()[key], value)
         for key, value in original_head.items()
     )
-    # The release stores RoPE's frequencies rounded to bfloat16 and its complex
-    # cache without the sine part; the loader drops both and the port recomputes
-    # them in float32, as a freshly built upstream model does. The pinned
-    # upstream signature below uses that path.
+    # Reference: the released code (OpenTSLab/BrainOmni 340d6b5, complex RoPE,
+    # attention dropout 0, CPU float32) on the same weights and input. Its
+    # checkpoint RoPE cache holds cosines only and is used as loaded.
     model.tokenizer.pos.copy_(
         torch.tensor([[0.1, 0.2, 0.3, 0, 0, 0], [-0.2, 0.1, 0.4, 0, 0, 0]])
     )
@@ -1201,26 +1306,26 @@ def test_brainomni_released_checkpoint_strict_load_and_parity(tmp_path):
     assert feat.shape == (1, 16, 8, 256)
     expected = torch.tensor(
         [
-            0.004591966513544321,
-            -0.005511901341378689,
-            -0.02144569717347622,
-            -0.047614686191082,
-            -0.057811133563518524,
-            0.04927004501223564,
-            -0.009117362089455128,
-            -0.033146947622299194,
-            -0.006567645352333784,
-            -0.2256787121295929,
-            -0.12158702313899994,
-            0.009830539114773273,
-            -0.045027319341897964,
-            -0.0062219384126365185,
-            0.016128726303577423,
-            0.06308680027723312,
+            0.006593634374439716,
+            -0.009288209490478039,
+            -0.017851131036877632,
+            -0.047316037118434906,
+            -0.050065912306308746,
+            0.055971305817365646,
+            -0.0009199601481668651,
+            -0.048122622072696686,
+            -0.011542999185621738,
+            -0.20722696185112,
+            -0.13327118754386902,
+            0.044792190194129944,
+            -0.03646082431077957,
+            -0.025013461709022522,
+            0.015188287012279034,
+            0.053703077137470245,
         ]
     )
     torch.testing.assert_close(feat.flatten()[:16], expected, rtol=1e-5, atol=1e-5)
-    assert feat.sum().item() == pytest.approx(62.13804626464844, abs=1e-4)
+    assert feat.sum().item() == pytest.approx(51.254783630371094, abs=1e-4)
 
 
 @pytest.mark.network
