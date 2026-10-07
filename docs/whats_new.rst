@@ -28,12 +28,9 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
-- Add :class:`braindecode.models.TFMTokenizer`, a time-frequency motif tokenizer
-  that learns a discrete vocabulary from single-channel EEG and returns both token
-  IDs and reconstructed spectrograms for self-supervised pretraining. The implementation
-  follows Pradeepkumar et al. (ICLR 2026); the audited released checkpoint
-  matches the mapped tokenizer state/forward path, while paper pretraining and
-  downstream benchmark metrics are not claimed as reproduced (:gh:`1202` by `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
+- Add :class:`braindecode.models.TFMTokenizer`, the time-frequency motif tokenizer
+  for single-channel EEG of Pradeepkumar et al. (ICLR 2026) (:gh:`1202` by
+  `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
 - :class:`braindecode.models.NeuroRVQ` now reuses the LaBraM attention block
   instead of a private copy, and the K-means codebook initialisation in
   :mod:`braindecode.modules.quantization` uses ``torch.cdist`` (about 6x faster,

@@ -3,8 +3,6 @@
 # License: MIT
 # Adapted from https://github.com/Jathurshan0330/TFM-Tokenizer (MIT).
 
-"""Time-frequency motif tokenizer for EEG signals."""
-
 from typing import NamedTuple
 
 import torch
@@ -16,30 +14,23 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class TFMTokenizerOutput(NamedTuple):
-    """Outputs from :class:`TFMTokenizer`.
+    """Outputs of :meth:`TFMTokenizer.tokenize`.
 
     Attributes
     ----------
     reconstruction : torch.Tensor
-        Reconstructed magnitude spectra with shape ``(batch, channels, n_freqs,
-        n_frames)``. This is the decoder output used by the tokenizer's
-        reconstruction objective.
+        Reconstructed magnitude spectra, ``(batch, channels, n_freqs, n_frames)``.
     token_ids : torch.LongTensor
-        Quantized motif IDs with shape ``(batch, channels, n_frames)``.
+        Motif IDs, ``(batch, channels, n_frames)``.
     quantized : torch.Tensor
-        Straight-through quantized embeddings with shape
-        ``(batch * channels, n_frames, embed_dim)``.
+        Straight-through quantized embeddings, ``(batch * channels, n_frames,
+        embed_dim)``.
     embeddings : torch.Tensor
-        L2-normalized pre-quantization embeddings with the same shape as
-        ``quantized``.
+        L2-normalized embeddings before quantization, same shape as ``quantized``.
     quantization_loss : torch.Tensor
-        Vector-quantization objective combining codebook-distance and
-        commitment terms. Gradients train the encoder through the
-        straight-through path; the codebook itself is updated by EMA only.
+        Codebook plus ``commitment_cost`` times commitment loss.
     target_spectrogram : torch.Tensor
-        Unmasked target magnitude spectra with shape ``(batch, channels,
-        n_freqs, n_frames)``.
-
+        Unmasked magnitude spectra, same shape as ``reconstruction``.
     """
 
     reconstruction: torch.Tensor
@@ -51,28 +42,24 @@ class TFMTokenizerOutput(NamedTuple):
 
 
 class _EMAVectorQuantizer(nn.Module):
-    """Vector quantizer whose codebook is updated with exponential averages."""
+    """Vector quantizer whose codebook is updated by EMA only (no gradients)."""
+
+    # ponytail: not modules.quantization.EMACodebook; its buffer names, init,
+    # dead-code expiry and eps handling differ from the released checkpoint.
 
     def __init__(self, embed_dim: int, codebook_size: int, decay: float = 0.99):
         super().__init__()
-        self.embed_dim = embed_dim
         self.codebook_size = codebook_size
         self.decay = decay
         self.eps = 1e-5
-
         self.embedding = nn.Embedding(codebook_size, embed_dim)
         nn.init.uniform_(self.embedding.weight, -1 / codebook_size, 1 / codebook_size)
-        # The codebook is an EMA state variable, not an optimizer-owned parameter.
         self.embedding.weight.requires_grad_(False)
         self.register_buffer("cluster_size", torch.zeros(codebook_size))
         self.register_buffer("ema_weight", self.embedding.weight.detach().clone())
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        flat_x = x.reshape(-1, self.embed_dim)
-        # The released tokenizer updates the codebook through EMA only.
-        # Nearest-neighbor lookup therefore treats the embedding table as
-        # non-differentiable; encoder gradients flow through the straight-
-        # through estimator applied after quantization.
+        flat_x = x.reshape(-1, x.shape[-1])
         codebook = self.embedding.weight.detach()
         distances = (
             flat_x.square().sum(dim=1, keepdim=True)
@@ -91,7 +78,6 @@ class _EMAVectorQuantizer(nn.Module):
                 self.ema_weight.mul_(self.decay).add_(
                     assignments.T @ flat_x, alpha=1 - self.decay
                 )
-
                 total = self.cluster_size.sum()
                 smoothed_size = (
                     (self.cluster_size + self.eps)
@@ -101,87 +87,131 @@ class _EMAVectorQuantizer(nn.Module):
                 normalized = self.ema_weight / smoothed_size.clamp_min(
                     self.eps
                 ).unsqueeze(1)
-                # Keep never-selected codes at their initialized locations until
-                # they receive their first assignment. With zero-initialized
-                # cluster counts, normalizing an unseen code by eps would inflate
-                # its vector by ~1 / eps and make it effectively unreachable.
+                # Unlike the reference, never-selected codes keep their initial
+                # vector (dividing by ~eps would push them out of reach).
                 occupied = self.cluster_size > 0
                 self.embedding.weight[occupied] = normalized[occupied]
 
-        return quantized, indices.view(x.shape[0], x.shape[1])
+        return quantized, indices
 
 
 class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
-    r"""Time-Frequency Motif (TFM) tokenizer for single-channel EEG motifs.
+    r"""Time-Frequency Motif (TFM) tokenizer from Pradeepkumar et al. (2026) [tfm2026]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
-    The model follows Pradeepkumar et al., *Tokenizing Single-Channel EEG with
-    Time-Frequency Motif Learning* (ICLR 2026). It embeds each EEG channel
-    independently through parallel frequency and temporal paths, combines the
-    features with a temporal transformer, and quantizes the resulting sequence
-    into a learned vocabulary. Complementary time-frequency masks can be passed
-    to the encoder while the decoder reconstructs the original spectrogram.
+    .. figure:: https://arxiv.org/html/2502.16060v5/Method_Overview_Figure_New.png
+        :align: center
+        :alt: TFM-Tokenizer overview (Pradeepkumar et al., 2026, Fig. 2).
+
+    Each channel is tokenized independently. A frequency path (patch
+    convolutions and a linear-attention transformer over the STFT magnitude of
+    each frame) and a temporal path (strided convolution over the raw signal)
+    are concatenated, contextualized by a temporal transformer and quantized by
+    an EMA codebook. A decoder reconstructs the unmasked spectrogram from the
+    quantized tokens. :meth:`tokenize` returns every output;
+    :meth:`forward` returns the reconstruction only.
 
     Parameters
     ----------
-    sfreq : int
-        Sampling frequency in Hz. The reference tokenizer uses 200 Hz and a
-        one-second STFT window with a half-second hop. ``sfreq`` must be even.
-    embed_dim : int
-        Joint embedding size. Must be divisible by 8 and by twice the number of
-        frequency groups.
-    codebook_size : int
-        Number of discrete time-frequency motifs.
-    freq_patch_size : int
-        Width and stride of the frequency patches. For the reference settings,
-        ``sfreq=200`` and ``freq_patch_size=5`` produce 100 bins and four groups.
-    freq_encoder_depth : int
-        Number of linear-attention blocks in the frequency encoder.
-    temporal_encoder_depth : int
-        Number of linear-attention blocks in the joint temporal encoder.
-    decoder_depth : int
-        Number of linear-attention blocks in the reconstruction decoder.
-    max_seq_len : int
-        Maximum temporal sequence length supported by the transformers.
-    commitment_cost : float
-        Weight of the vector-quantization commitment loss.
-    activation : type[nn.Module]
-        Activation module used in convolutional projection blocks.
-    drop_prob : float
-        Dropout probability used in attention blocks.
+    embed_dim : int, default=64
+        Embedding size; a multiple of 8 and of twice the number of frequency
+        groups.
+    codebook_size : int, default=8192
+        Number of motifs in the codebook.
+    freq_patch_size : int, default=5
+        Width and stride of the frequency patches; ``sfreq // 2`` must be
+        divisible by its square.
+    freq_encoder_depth : int, default=2
+        Linear-attention blocks of the frequency encoder.
+    temporal_encoder_depth : int, default=2
+        Linear-attention blocks of the temporal encoder.
+    decoder_depth : int, default=8
+        Linear-attention blocks of the decoder.
+    max_seq_len : int, default=1024
+        Maximum number of frames.
+    commitment_cost : float, default=1.0
+        Weight of the commitment loss.
+    activation : type[nn.Module], default=nn.GELU
+        Activation of the convolutional blocks.
+    drop_prob : float, default=0.2
+        Dropout of the attention blocks.
 
     Notes
     -----
-    Input must be resampled to ``sfreq`` before calling the model. Each channel
-    is tokenized independently; channel identity is not mixed in the tokenizer.
-    For a signal window of length ``n_times``, the token count is
-    ``1 + floor((n_times - sfreq) / (sfreq / 2))``. Windows shorter than one
-    second are rejected.
+    The STFT uses a one-second Hann window and a half-second hop, so ``sfreq``
+    must be an even integer (200 Hz for the released weights) and a window of
+    ``n_times`` samples gives ``1 + (n_times - sfreq) // (sfreq // 2)`` tokens
+    per channel.
 
-    The upstream research implementation and its pretrained checkpoints are
-    available at https://github.com/Jathurshan0330/TFM-Tokenizer and
-    https://huggingface.co/Jathurshan/TFM-Tokenizer. The audited released
-    checkpoint maps all 191 state entries and matches the reference token IDs,
-    internal embeddings, reconstructions, and reconstruction-path gradients
-    under the pinned parity protocol. This class does not claim reproduction
-    of the paper's pretraining or downstream benchmark metrics.
+    Training differs from the reference code in two places; inference does
+    not. The codebook term of the quantization loss is computed from the
+    detached codebook, so at ``commitment_cost=1`` the encoder still receives
+    the commitment gradient (in the reference both terms use the
+    straight-through tensor and their encoder gradients cancel). The EMA update
+    leaves never-selected codes at their initial vector.
+
+    Tokens from this class are identical to the reference tokenizer's. With
+    them, on CHB-MIT, the authors' released fine-tuned classifier gives a
+    balanced accuracy of 0.619 and our retraining with the authors' code gives
+    0.611 ± 0.034 (10 seeds); the paper reports 0.647 ± 0.015.
+
+    .. important::
+       **Pre-trained Weights Available**
+
+       The authors' tokenizer weights (MIT) are on the Hugging Face Hub at
+       `Jathurshan/TFM-Tokenizer <https://huggingface.co/Jathurshan/TFM-Tokenizer>`_
+       under the reference module names; rename the keys to load them:
+
+       .. code-block:: python
+
+           import torch
+           from huggingface_hub import hf_hub_download
+           from braindecode.models import TFMTokenizer
+
+           path = hf_hub_download(
+               "Jathurshan/TFM-Tokenizer",
+               "multiple_dataset_settings/Pretrained_tfm_tokenizer_2x2x8/"
+               "tfm_tokenizer_last.pth",
+           )
+           renames = {
+               "trans_freq_encoder.transformer.": "frequency_encoder.",
+               "trans_temporal_encoder.transformer.": "temporal_encoder.",
+               "trans_decoder.transformer.": "decoder.",
+               "freq_patch_embedding_2_atten.": "frequency_attention.",
+               "freq_patch_embedding_2.0.": "frequency_projection.",
+               "freq_patch_embedding.": "frequency_patch_embedding.",
+               "decoder.": "final_layer.",
+               "quantizer.ema_w": "quantizer.ema_weight",
+           }
+           state = {
+               next((new + k[len(old) :] for old, new in renames.items()
+                     if k.startswith(old)), k): v
+               for k, v in torch.load(path, map_location="cpu").items()
+           }
+           model = TFMTokenizer(sfreq=200)
+           model.load_state_dict(state)
+
+    .. versionadded:: 1.9
 
     Examples
     --------
     >>> import torch
     >>> from braindecode.models import TFMTokenizer
     >>> model = TFMTokenizer(sfreq=200, codebook_size=256)
-    >>> out = model.tokenize(torch.randn(2, 8, 1000))
-    >>> out.token_ids.shape
-    torch.Size([2, 8, 9])
     >>> x = torch.randn(2, 8, 1000)
     >>> spec = model.compute_spectrogram(x)
     >>> mask_a, mask_b = model.make_complementary_masks(spec)
-    >>> out_a = model.tokenize(x, spectrogram_mask=mask_a)
-    >>> out_b = model.tokenize(x, spectrogram_mask=mask_b)
-    >>> loss = (out_a.reconstruction - spec).square().mean() + out_a.quantization_loss
+    >>> out = model.tokenize(x, spectrogram_mask=mask_a)
+    >>> out.token_ids.shape
+    torch.Size([2, 8, 9])
+    >>> loss = (out.reconstruction - spec).square().mean() + out.quantization_loss
 
+    References
+    ----------
+    .. [tfm2026] Pradeepkumar, J., Piao, X., Chen, Z., Sun, J. (2026).
+       Tokenizing Single-Channel EEG with Time-Frequency Motif Learning.
+       ICLR 2026. https://openreview.net/forum?id=2sPmWHZ8Ir
     """
 
     def __init__(
@@ -211,122 +241,74 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        sfreq = self.sfreq
-        if sfreq <= 0 or not float(sfreq).is_integer() or int(sfreq) % 2:
-            raise ValueError(f"sfreq must be a positive even integer, got {sfreq}.")
-        if embed_dim < 8 or embed_dim % 8:
+        if self.sfreq <= 0 or not float(self.sfreq).is_integer() or self.sfreq % 2:
             raise ValueError(
-                f"embed_dim must be a positive multiple of 8, got {embed_dim}."
+                f"sfreq must be a positive even integer, got {self.sfreq}."
             )
-        if codebook_size < 2:
-            raise ValueError("codebook_size must be at least 2.")
-        if freq_patch_size < 1:
-            raise ValueError("freq_patch_size must be positive.")
-        if min(freq_encoder_depth, temporal_encoder_depth, decoder_depth) < 1:
-            raise ValueError("All transformer depths must be positive.")
-        if max_seq_len < 1:
-            raise ValueError("max_seq_len must be positive.")
-        if commitment_cost < 0:
-            raise ValueError("commitment_cost must be non-negative.")
-        if not 0 <= drop_prob < 1:
-            raise ValueError("drop_prob must be in [0, 1).")
-
-        self.window_size = int(round(self.sfreq))
+        self.window_size = int(self.sfreq)
         self.n_freqs = self.window_size // 2
-        self.embed_dim = embed_dim
-        self.codebook_size = codebook_size
-        self.freq_patch_size = freq_patch_size
-        self.max_seq_len = max_seq_len
-        self.commitment_cost = commitment_cost
-        self.activation = activation
-        self.drop_prob = drop_prob
-
-        patch_area = freq_patch_size**2
-        if self.n_freqs % patch_area:
+        n_freq_groups = self.n_freqs // freq_patch_size**2
+        if self.n_freqs % freq_patch_size**2:
             raise ValueError(
                 "sfreq // 2 must be divisible by freq_patch_size squared; "
                 f"got {self.n_freqs} bins and patch size {freq_patch_size}."
             )
-        self.n_freq_groups = self.n_freqs // patch_area
-        if embed_dim % (2 * self.n_freq_groups):
+        if embed_dim % 8 or embed_dim % (2 * n_freq_groups):
             raise ValueError(
-                "embed_dim must be divisible by twice the number of frequency "
-                f"groups ({2 * self.n_freq_groups}), got {embed_dim}."
+                "embed_dim must be a multiple of 8 and of twice the number of "
+                f"frequency groups ({2 * n_freq_groups}), got {embed_dim}."
             )
-        self.frequency_patch_embedding = nn.Sequential(
-            nn.Conv1d(
-                1, embed_dim, kernel_size=freq_patch_size, stride=freq_patch_size
-            ),
-            activation(),
-            nn.GroupNorm(embed_dim // 4, embed_dim),
-            nn.Conv1d(embed_dim, embed_dim, kernel_size=1),
-            activation(),
-            nn.GroupNorm(embed_dim // 4, embed_dim),
-            nn.Conv1d(embed_dim, embed_dim, kernel_size=1),
-            activation(),
-            nn.GroupNorm(embed_dim // 4, embed_dim),
-        )
-        self.frequency_encoder = LinearAttentionTransformer(
-            dim=embed_dim,
-            heads=8,
-            depth=freq_encoder_depth,
-            max_seq_len=self.n_freqs // freq_patch_size,
-            attn_layer_dropout=drop_prob,
-            attn_dropout=drop_prob,
-        )
+        self.embed_dim = embed_dim
+        self.max_seq_len = max_seq_len
+        self.commitment_cost = commitment_cost
 
-        frequency_width = embed_dim // (2 * self.n_freq_groups)
+        def lat(depth, seq_len):
+            return LinearAttentionTransformer(
+                dim=embed_dim,
+                heads=8,
+                depth=depth,
+                max_seq_len=seq_len,
+                attn_layer_dropout=drop_prob,
+                attn_dropout=drop_prob,
+            )
+
+        def conv_block(kernel_size, stride, out_dim):
+            return nn.Sequential(
+                nn.Conv1d(1, embed_dim, kernel_size=kernel_size, stride=stride),
+                activation(),
+                nn.GroupNorm(embed_dim // 4, embed_dim),
+                nn.Conv1d(embed_dim, embed_dim, kernel_size=1),
+                activation(),
+                nn.GroupNorm(embed_dim // 4, embed_dim),
+                nn.Conv1d(embed_dim, out_dim, kernel_size=1),
+                activation(),
+                nn.GroupNorm(embed_dim // 4, out_dim),
+            )
+
+        freq_width = embed_dim // (2 * n_freq_groups)
+        self.frequency_patch_embedding = conv_block(
+            freq_patch_size, freq_patch_size, embed_dim
+        )
+        self.frequency_encoder = lat(
+            freq_encoder_depth, self.n_freqs // freq_patch_size
+        )
         self.frequency_attention = nn.Sequential(
             nn.Conv1d(
-                embed_dim,
-                frequency_width,
-                kernel_size=freq_patch_size,
-                stride=freq_patch_size,
+                embed_dim, freq_width, kernel_size=freq_patch_size, stride=freq_patch_size
             ),
             nn.Sigmoid(),
         )
         self.frequency_projection = nn.Conv1d(
-            embed_dim,
-            frequency_width,
-            kernel_size=freq_patch_size,
-            stride=freq_patch_size,
+            embed_dim, freq_width, kernel_size=freq_patch_size, stride=freq_patch_size
         )
-
-        self.temporal_patch_embedding = nn.Sequential(
-            nn.Conv1d(
-                1,
-                embed_dim,
-                kernel_size=self.window_size,
-                stride=self.window_size // 2,
-            ),
-            activation(),
-            nn.GroupNorm(embed_dim // 4, embed_dim),
-            nn.Conv1d(embed_dim, embed_dim, kernel_size=1),
-            activation(),
-            nn.GroupNorm(embed_dim // 4, embed_dim),
-            nn.Conv1d(embed_dim, embed_dim // 2, kernel_size=1),
-            activation(),
-            nn.GroupNorm(embed_dim // 4, embed_dim // 2),
+        self.temporal_patch_embedding = conv_block(
+            self.window_size, self.window_size // 2, embed_dim // 2
         )
-        self.temporal_encoder = LinearAttentionTransformer(
-            dim=embed_dim,
-            heads=8,
-            depth=temporal_encoder_depth,
-            max_seq_len=max_seq_len,
-            attn_layer_dropout=drop_prob,
-            attn_dropout=drop_prob,
-        )
+        self.temporal_encoder = lat(temporal_encoder_depth, max_seq_len)
         self.quantizer = _EMAVectorQuantizer(embed_dim, codebook_size)
-        self.decoder = LinearAttentionTransformer(
-            dim=embed_dim,
-            heads=8,
-            depth=decoder_depth,
-            max_seq_len=max_seq_len,
-            attn_layer_dropout=drop_prob,
-            attn_dropout=drop_prob,
-        )
-        # Braindecode's integration checks expect a task-output layer name.
-        # For this non-classification model it projects tokens to spectrum bins.
+        self.decoder = lat(decoder_depth, max_seq_len)
+        # Reconstruction head (spectrum bins per token), named for the
+        # braindecode head contract.
         self.final_layer = nn.Sequential(
             nn.Linear(embed_dim, embed_dim),
             nn.Tanh(),
@@ -337,19 +319,9 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         )
 
     def compute_spectrogram(self, x: torch.Tensor) -> torch.Tensor:
-        """Compute the reference STFT magnitude representation.
+        """STFT magnitude of ``x`` ``(batch, channels, samples)``.
 
-        Parameters
-        ----------
-        x : torch.Tensor
-            EEG tensor with shape ``(batch, channels, samples)``.
-
-        Returns
-        -------
-        torch.Tensor
-            Magnitude spectrogram with shape ``(batch, channels, n_freqs,
-            n_frames)``.
-
+        Returns a ``(batch, channels, n_freqs, n_frames)`` tensor.
         """
         if x.ndim != 3 or not x.is_floating_point():
             raise ValueError(
@@ -357,30 +329,25 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             )
         if x.shape[-1] < self.window_size:
             raise ValueError(
-                f"Input must contain at least one second ({self.window_size} samples), "
-                f"got {x.shape[-1]} samples."
+                f"Input must contain at least one second ({self.window_size} "
+                f"samples), got {x.shape[-1]} samples."
             )
         batch_size, n_chans, n_times = x.shape
-        flattened = x.reshape(batch_size * n_chans, n_times)
-        window = self.stft_window.to(device=x.device, dtype=x.dtype)
         spectrogram = torch.stft(
-            flattened,
+            x.reshape(batch_size * n_chans, n_times),
             n_fft=self.window_size,
             hop_length=self.window_size // 2,
             win_length=self.window_size,
-            window=window,
+            window=self.stft_window.to(device=x.device, dtype=x.dtype),
             center=False,
             return_complex=True,
         ).abs()[:, : self.n_freqs]
         return spectrogram.reshape(batch_size, n_chans, self.n_freqs, -1)
 
     def encode(self, x: torch.Tensor, spectrogram: torch.Tensor) -> torch.Tensor:
+        """Embed ``x`` and its ``(batch * channels, n_freqs, n_frames)`` spectrogram."""
         batch_size, n_chans, _ = x.shape
-        flattened = x.reshape(batch_size * n_chans, -1)
         n_frames = spectrogram.shape[-1]
-
-        # Encode each frame's frequency profile independently, then aggregate
-        # adjacent frequency groups into a half-width frequency representation.
         freq = spectrogram.transpose(1, 2).reshape(-1, 1, self.n_freqs)
         freq = self.frequency_patch_embedding(freq).transpose(1, 2)
         freq = self.frequency_encoder(freq).transpose(1, 2)
@@ -388,16 +355,11 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         freq = freq.flatten(1).reshape(
             batch_size * n_chans, n_frames, self.embed_dim // 2
         )
-
-        temporal = self.temporal_patch_embedding(flattened.unsqueeze(1)).transpose(1, 2)
-        if temporal.shape[1] != n_frames:
-            raise RuntimeError(
-                "The temporal convolution and STFT produced different frame counts: "
-                f"{temporal.shape[1]} and {n_frames}."
-            )
+        temporal = self.temporal_patch_embedding(
+            x.reshape(batch_size * n_chans, 1, -1)
+        ).transpose(1, 2)
         embeddings = self.temporal_encoder(torch.cat((freq, temporal), dim=-1))
-        embeddings = F.normalize(embeddings, p=2, dim=-1)
-        return embeddings
+        return F.normalize(embeddings, p=2, dim=-1)
 
     def make_complementary_masks(
         self,
@@ -407,160 +369,88 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         time_mask_ratio: float = 0.5,
         time_bin_size: int = 1,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Create complementary time-frequency masks for paired-view training.
+        """Return a random time-frequency mask and its complement.
 
-        The boolean masks have the same shape as ``spectrogram`` and are shared
-        across batch elements and channels, matching the reference setup.
+        Groups of ``freq_bin_size`` bins and ``time_bin_size`` frames are hidden
+        at the given ratios. One mask, shaped like ``spectrogram``, is shared
+        by every trial and channel, as in the reference.
         """
-        if spectrogram.ndim != 4:
-            raise ValueError(
-                "Expected spectrogram with shape (batch, channels, freqs, frames), "
-                f"got {tuple(spectrogram.shape)}."
-            )
-        if not 0 <= freq_mask_ratio <= 1 or not 0 <= time_mask_ratio <= 1:
-            raise ValueError("Mask ratios must be between 0 and 1.")
-        if freq_bin_size < 1 or time_bin_size < 1:
-            raise ValueError("Mask bin sizes must be positive.")
-
-        n_freqs, n_frames = spectrogram.shape[-2:]
-        if n_freqs % freq_bin_size:
-            raise ValueError(
-                f"{n_freqs} frequency bins must be divisible by freq_bin_size "
-                f"({freq_bin_size})."
-            )
-        if n_frames % time_bin_size:
-            raise ValueError(
-                f"{n_frames} time frames must be divisible by time_bin_size "
-                f"({time_bin_size})."
-            )
-
         keep = torch.ones(
-            (n_freqs, n_frames), dtype=torch.bool, device=spectrogram.device
+            spectrogram.shape[-2:], dtype=torch.bool, device=spectrogram.device
         )
-        n_freq_groups = n_freqs // freq_bin_size
-        n_masked_freq_groups = int(n_freq_groups * freq_mask_ratio)
-        if n_masked_freq_groups:
-            groups = torch.randperm(n_freq_groups, device=spectrogram.device)[
-                :n_masked_freq_groups
-            ]
-            freqs = (
-                groups[:, None] * freq_bin_size
-                + torch.arange(freq_bin_size, device=spectrogram.device)[None, :]
-            ).reshape(-1)
-            keep[freqs, :] = False
-
-        n_time_groups = n_frames // time_bin_size
-        n_masked_time_groups = int(n_time_groups * time_mask_ratio)
-        if n_masked_time_groups:
-            groups = torch.randperm(n_time_groups, device=spectrogram.device)[
-                :n_masked_time_groups
-            ]
-            frames = (
-                groups[:, None] * time_bin_size
-                + torch.arange(time_bin_size, device=spectrogram.device)[None, :]
-            ).reshape(-1)
-            keep[:, frames] = False
-
+        for dim, bin_size, ratio in (
+            (0, freq_bin_size, freq_mask_ratio),
+            (1, time_bin_size, time_mask_ratio),
+        ):
+            if keep.shape[dim] % bin_size:
+                raise ValueError(
+                    f"{keep.shape[dim]} bins/frames must be divisible by the bin "
+                    f"size ({bin_size})."
+                )
+            n_groups = keep.shape[dim] // bin_size
+            n_masked = int(n_groups * ratio)
+            if n_masked:
+                groups = torch.randperm(n_groups, device=keep.device)[:n_masked]
+                index = groups[:, None] * bin_size + torch.arange(
+                    bin_size, device=keep.device
+                )
+                keep.index_fill_(dim, index.reshape(-1), False)
         keep = keep.expand_as(spectrogram)
         return keep, ~keep
 
     def tokenize(
         self, x: torch.Tensor, spectrogram_mask: torch.Tensor | None = None
     ) -> TFMTokenizerOutput:
-        """Encode EEG windows and reconstruct their unmasked magnitude spectra.
+        """Tokenize ``x`` and reconstruct its spectrogram.
 
         Parameters
         ----------
         x : torch.Tensor
-            Floating-point EEG tensor of shape ``(batch, channels, samples)``
-            sampled at ``self.sfreq``.
+            EEG ``(batch, channels, samples)`` sampled at ``sfreq``.
         spectrogram_mask : torch.Tensor, optional
-            Boolean mask matching the computed spectrogram shape. ``True`` bins
-            are visible to the encoder. If omitted, all bins are visible.
+            Boolean mask shaped like :meth:`compute_spectrogram` output;
+            ``True`` bins are visible to the encoder. Default: all visible.
 
         Returns
         -------
         TFMTokenizerOutput
-            Reconstruction, discrete token IDs, straight-through quantized
-            embeddings, normalized pre-quantization embeddings, commitment loss,
-            and the unmasked spectrogram target.
-
         """
-        if x.ndim != 3:
-            raise ValueError(
-                "Expected EEG input with shape (batch, channels, samples), "
-                f"got {tuple(x.shape)}."
-            )
-        if not x.is_floating_point():
-            raise TypeError("EEG input must have a floating-point dtype.")
-        if x.shape[-1] < self.window_size:
-            raise ValueError(
-                f"Input must contain at least one second ({self.window_size} samples), "
-                f"got {x.shape[-1]} samples."
-            )
-
-        batch_size, n_chans, _ = x.shape
-        if batch_size < 1 or n_chans < 1:
-            raise ValueError("EEG input must contain at least one trial and channel.")
-        n_frames = 1 + (x.shape[-1] - self.window_size) // (self.window_size // 2)
+        target = self.compute_spectrogram(x)
+        batch_size, n_chans, _, n_frames = target.shape
         if n_frames > self.max_seq_len:
             raise ValueError(
                 f"Input produces {n_frames} frames, exceeding max_seq_len="
                 f"{self.max_seq_len}."
             )
-        target_spectrogram = self.compute_spectrogram(x)
-        expected_shape = target_spectrogram.shape
-        if spectrogram_mask is None:
-            input_spectrogram = target_spectrogram.reshape(
-                batch_size * n_chans, self.n_freqs, -1
-            )
-        else:
-            if spectrogram_mask.shape != expected_shape:
+        visible = target
+        if spectrogram_mask is not None:
+            if spectrogram_mask.shape != target.shape:
                 raise ValueError(
                     "spectrogram_mask must match the computed spectrogram shape "
-                    f"{expected_shape}, got {tuple(spectrogram_mask.shape)}."
+                    f"{target.shape}, got {tuple(spectrogram_mask.shape)}."
                 )
-            input_spectrogram = (
-                target_spectrogram
-                * spectrogram_mask.to(
-                    device=target_spectrogram.device, dtype=target_spectrogram.dtype
-                )
-            ).reshape(batch_size * n_chans, self.n_freqs, -1)
-
-        embeddings = self.encode(x, input_spectrogram)
+            visible = target * spectrogram_mask
+        embeddings = self.encode(
+            x, visible.reshape(batch_size * n_chans, self.n_freqs, -1)
+        )
         codebook_vectors, token_ids = self.quantizer(embeddings)
         quantized = embeddings + (codebook_vectors - embeddings).detach()
-        # Keep the reference objective value while preserving EMA-only codebook
-        # semantics. Computing the codebook term from the straight-through tensor
-        # would send an encoder gradient opposite to the commitment term; at the
-        # reference commitment_cost=1.0 the two gradients cancel exactly.
+        # Same loss value as the reference, but the codebook term carries no
+        # gradient, so it cannot cancel the commitment gradient (see Notes).
         codebook_loss = F.mse_loss(codebook_vectors, embeddings.detach())
         commitment_loss = F.mse_loss(codebook_vectors.detach(), embeddings)
-        quantization_loss = codebook_loss + self.commitment_cost * commitment_loss
         reconstruction = self.final_layer(self.decoder(quantized)).transpose(1, 2)
-        n_frames = reconstruction.shape[-1]
-        reconstruction = reconstruction.reshape(
-            batch_size, n_chans, self.n_freqs, n_frames
-        )
-        token_ids = token_ids.reshape(batch_size, n_chans, n_frames)
-        quantized = quantized.reshape(batch_size * n_chans, n_frames, self.embed_dim)
-        embeddings = embeddings.reshape(batch_size * n_chans, n_frames, self.embed_dim)
         return TFMTokenizerOutput(
-            reconstruction,
-            token_ids,
+            reconstruction.reshape(batch_size, n_chans, self.n_freqs, n_frames),
+            token_ids.reshape(batch_size, n_chans, n_frames),
             quantized,
             embeddings,
-            quantization_loss,
-            target_spectrogram,
+            codebook_loss + self.commitment_cost * commitment_loss,
+            target,
         )
 
     def forward(
         self, x: torch.Tensor, spectrogram_mask: torch.Tensor | None = None
     ) -> torch.Tensor:
-        """Return the reconstructed magnitude spectrogram.
-
-        The structured self-supervised training outputs are available from
-        :meth:`tokenize`. Keeping the default forward path tensor-valued
-        preserves Braindecode's common model integration contract.
-        """
+        """Return the reconstructed spectrogram (see :meth:`tokenize`)."""
         return self.tokenize(x, spectrogram_mask=spectrogram_mask).reconstruction

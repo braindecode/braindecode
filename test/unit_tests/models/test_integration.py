@@ -572,7 +572,8 @@ def test_model_torch_script(model):
 
     not_working_models = [
         "BIOT",
-        # TFMTokenizer uses LinearAttentionTransformer, whose variadic internals\n        # are not supported by torch.jit.script; torch.compile remains covered.\n        "TFMTokenizer",\n        "Labram",
+        "Labram",
+        "TFMTokenizer",
         "EEGPT",
         "SSTDPN",
         "BENDR",
