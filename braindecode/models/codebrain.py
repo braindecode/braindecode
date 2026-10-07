@@ -116,6 +116,10 @@ class CodeBrain(EEGModuleMixin, nn.Module):
        https://arxiv.org/abs/2506.09110
     """
 
+    _channel_target = (
+        "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
+    )
+
     def __init__(
         self,
         n_outputs=None,
@@ -148,6 +152,8 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         codebook_size_f: int = 4096,
         pretrain_mode: bool = False,
         activation: type[nn.Module] = nn.ReLU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -156,6 +162,8 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
 
         # ========== Parameters ==========

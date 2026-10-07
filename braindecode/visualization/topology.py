@@ -31,7 +31,7 @@ def project_to_topomap(data, chs_info, res=64):
     Returns
     -------
     numpy.ndarray
-        Interpolated scalp map of shape ``(res, res)``. Pixels outside the
+        Scalp map, interpolated on a grid of shape ``(res, res)``. Pixels outside the
         electrode convex hull are ``NaN``.
     """
     info = _info_from_chs_info(chs_info)

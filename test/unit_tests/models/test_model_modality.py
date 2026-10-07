@@ -9,11 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from braindecode.models.util import interpolated_models_dict, models_dict
+from braindecode.models.util import models_dict
 
-# Interpolated models live in a separate registry; combine so their
-# modality entries are still validated.
-all_models_dict = {**models_dict, **interpolated_models_dict}
+all_models_dict = dict(models_dict)
 
 # Controlled vocabulary for the "Modality" column of summary.csv. Keep this in
 # sync with the column definition in docs/models/models_table.rst. Add a new

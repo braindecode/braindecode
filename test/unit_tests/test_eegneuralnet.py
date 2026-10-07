@@ -362,6 +362,25 @@ def test_predict_with_window_inds_and_ys_module_not_instantiated(
     assert results["window_ys"].shape[0] == 4
 
 
+def test_predict_with_window_inds_and_ys_calls_the_module(
+    eegneuralnet_cls, cropped_windows_dataset
+):
+    # module_(X), not module_.forward(X): hooks such as a channel layer run
+    eegneuralnet = eegneuralnet_cls(
+        MockModuleCroppedPreds,
+        module__n_outputs=2,
+        module__n_chans=3,
+        module__n_times=250,
+        cropped=True,
+        batch_size=4,
+    )
+    eegneuralnet.initialize()
+    calls = []
+    eegneuralnet.module_.register_forward_pre_hook(lambda *_: calls.append(1))
+    eegneuralnet.predict_with_window_inds_and_ys(cropped_windows_dataset)
+    assert calls
+
+
 def test_predict_trials_sets_eval_mode(eegneuralnet_cls, cropped_windows_dataset):
     eegneuralnet = eegneuralnet_cls(
         MockModuleCroppedPreds,
