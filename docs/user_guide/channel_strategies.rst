@@ -4,8 +4,10 @@
  Channel strategies: any montage in
 ####################################
 
-The 19 pretrained models take ``channel_strategy=`` to map your montage onto the
-channels their backbone was trained on:
+The 19 pretrained EEG models take ``channel_strategy=`` to map your montage onto
+the channels their backbone was trained on. :class:`~braindecode.models.SleepFM` and
+:class:`~braindecode.models.SleepFMStager` take polysomnography grouped by modality,
+not an EEG montage, so they accept only ``"native"``:
 
 .. code-block:: python
 

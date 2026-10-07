@@ -41,6 +41,8 @@ from braindecode.models import (
     MVPFormer,
     PopulationTransformer,
     SignalJEPA,
+    SleepFM,
+    SleepFMStager,
     STEEGFormer,
 )
 from braindecode.models.bendr import BENDR_CHANNEL_ORDER
@@ -240,6 +242,22 @@ COMPAT = {
         channels="coords",
         coords_checked=False,
     ),
+    "SleepFM": dict(
+        cls=SleepFM,
+        sfreq=128,
+        n_times=3840,
+        canon=None,
+        channels="agnostic",
+        min_n_times=640,
+    ),
+    "SleepFMStager": dict(
+        cls=SleepFMStager,
+        sfreq=128,
+        n_times=3840,
+        canon=None,
+        channels="agnostic",
+        min_n_times=640,
+    ),
 }
 
 # LaBraM looks names up at forward: these montages go through the channel layer.
@@ -327,9 +345,17 @@ def test_geometry_contract(name, gname, gkw):
         assert torch.is_tensor(y) and y.shape[0] == 1 and torch.isfinite(y).all()
 
 
+# Polysomnography (EEG, EOG, ECG, EMG, respiration) grouped by modality:
+# any channel count but no EEG montage, so ``native`` only.
+NATIVE_ONLY = {"SleepFM", "SleepFMStager"}
+
+
 # BIOT's canonical input is bipolar; under a strategy it takes electrodes.
 # SignalJEPA's target is its 62 pre-training channels (test_channels.py).
-@pytest.mark.parametrize("name", [n for n in COMPAT if n not in ("BIOT", "SignalJEPA")])
+@pytest.mark.parametrize(
+    "name",
+    [n for n in COMPAT if n not in ("BIOT", "SignalJEPA") and n not in NATIVE_ONLY],
+)
 def test_native_checkpoint_loads_under_a_strategy(name):
     """The native state dict loads strictly into the same model with a layer."""
     spec = COMPAT[name]
@@ -361,3 +387,11 @@ def test_channel_strategy_smoke(name, strategy):
             y = model(torch.randn(1, len(chs), spec["n_times"]))
     assert model.get_config()["channel_strategy"] == strategy
     assert y.shape[0] == 1 and torch.isfinite(y).all()
+
+
+@pytest.mark.parametrize("name", sorted(NATIVE_ONLY))
+def test_native_only_models_refuse_a_strategy(name):
+    spec = COMPAT[name]
+    kw = dict(n_outputs=2, **geometries(spec)["G1"])
+    with pytest.raises(ValueError, match="native"):
+        spec["cls"](**kw, channel_strategy="spline")
