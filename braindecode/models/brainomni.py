@@ -212,7 +212,10 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
     num_quantizers : int
         Number of residual VQ stages.
     rotation_trick : bool
-        Whether to use the rotation trick when updating codebook entries.
+        Whether training passes gradients from the quantized vectors to the
+        encoder output with the rotation trick (Fifty et al., 2024) instead of
+        the plain straight-through estimator. Codebook entries are updated by
+        EMA in both cases.
     quantize_optimize_method : str
         Codebook optimisation method (``"ema"``; the only currently
         supported option).
@@ -284,7 +287,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
 
         if not math.isclose(float(self.sfreq), 256.0, rel_tol=0.0, abs_tol=1e-6):
             warnings.warn(
-                f"BrainOmni pretrained weights expect sfreq=256 Hz, got "
+                f"BrainTokenizer pretrained weights expect sfreq=256 Hz, got "
                 f"{self.sfreq}. Use only for training from scratch.",
                 UserWarning,
             )
@@ -301,8 +304,9 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
 
         if window_length <= 0:
             raise ValueError(f"window_length must be positive, got {window_length}.")
-        if n_filters <= 0:
-            raise ValueError(f"n_filters must be positive, got {n_filters}.")
+        if n_filters < 2:
+            # The first SEANet residual block uses ``n_filters // 2`` channels.
+            raise ValueError(f"n_filters must be at least 2, got {n_filters}.")
         if not ratios or any(ratio <= 0 for ratio in ratios):
             raise ValueError(
                 f"ratios must be a non-empty sequence of positive values, got {ratios}."
@@ -430,26 +434,28 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         feat_q, indices, commit = self.quantizer(feat)
         return feat_q, indices, commit, se
 
+    def _decode(
+        self, feat_q: torch.Tensor, se: torch.Tensor, n_times: int
+    ) -> torch.Tensor:
+        """Decode windows and lay them back on a ``n_times`` timeline."""
+        recon = self.final_layer(feat_q, se)  # (batch, n_chans, n_windows, wlen)
+        # SEANet decodes ceil(window_length / hop) * hop samples per window;
+        # crop each window before joining so later windows keep their place.
+        recon = recon[..., : self.window_length]
+        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)
+        if recon.shape[-1] < n_times:
+            recon = F.pad(recon, (0, n_times - recon.shape[-1]))
+        return recon[..., :n_times]
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Reconstruct ``x``, zero-filling a dropped non-overlap tail."""
         feat_q, _, _, se = self._encode_quantize(x)
-        recon = self.final_layer(
-            feat_q, se
-        )  # (batch, n_chans, n_windows, window_length)
-        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)
-        if recon.shape[-1] < x.shape[-1]:
-            recon = F.pad(recon, (0, x.shape[-1] - recon.shape[-1]))
-        return recon[..., : x.shape[-1]]
+        return self._decode(feat_q, se, x.shape[-1])
 
     def encode_decode(self, x: torch.Tensor):
         """Return reconstruction, commitment loss, and codebook indices."""
         feat_q, indices, commit, se = self._encode_quantize(x)
-        recon = self.final_layer(feat_q, se)
-        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)
-        if recon.shape[-1] < x.shape[-1]:
-            recon = F.pad(recon, (0, x.shape[-1] - recon.shape[-1]))
-        recon = recon[..., : x.shape[-1]]
-        return recon, commit, indices
+        return self._decode(feat_q, se, x.shape[-1]), commit, indices
 
     @torch.no_grad()
     def tokenize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
@@ -643,7 +649,10 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
     num_quantizers : int
         Number of residual VQ stages.
     rotation_trick : bool
-        Whether to use the rotation-trick STE for codebook updates.
+        Whether tokenizer training passes gradients from the quantized vectors
+        to the encoder output with the rotation trick (Fifty et al., 2024)
+        instead of the plain straight-through estimator. Codebook entries are
+        updated by EMA in both cases.
     quantize_optimize_method : str
         Codebook optimisation strategy (``"ema"``).
     tokenizer_drop_prob : float
@@ -825,6 +834,8 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         reference = next(self.parameters())
         self.final_layer = self._make_head(n_outputs)
         self.final_layer.to(device=reference.device, dtype=reference.dtype)
+        # A new module starts in train mode; follow the model's current mode.
+        self.final_layer.train(self.training)
 
     def _tokens(self, x: torch.Tensor) -> torch.Tensor:
         """Tokenize ``x`` and project to ``lm_dim``.
@@ -992,8 +1003,10 @@ def _sensor_type_of(chs_info, index: int) -> str:
 
     Follows the released ``factory/utils.py:extract_pos_sensor_type``: an MEG
     channel is MAG when its coil name contains ``MAG`` and GRAD otherwise, so
-    axial gradiometers (CTF ``5001``, KIT ``6001``, Magnes ``4002``) are GRAD
-    although :func:`mne.channel_type` reports them as ``mag`` (unit T). The coil
+    axial gradiometers (CTF ``5001``, KIT ``6001``) are GRAD although
+    :func:`mne.channel_type` reports them as ``mag`` (unit T). Magnes ``4002``
+    (``FIFFV_COIL_MAGNES_GRAD``) has ``MAG`` in its name and is typed MAG, as in
+    the release. The coil
     name is looked up from the integer, so plain-int and ``NamedInt`` coil types
     give the same answer.
     """
@@ -1059,7 +1072,7 @@ def _geometry_from_chs_info(chs_info):
     ori = np.zeros((len(chs_info), 3))  # EEG orientation stays zero
     for index in np.flatnonzero(grad):
         # The released source selects the in-plane x-axis only for coils named
-        # PLANAR (VectorView 3011-3014). Every other MEG coil (including axial
+        # PLANAR (VectorView 3011-3015). Every other MEG coil (including axial
         # gradiometers) uses the coil-normal z-axis.
         planar = "PLANAR" in _coil_name(chs_info[index])
         axis_slice = slice(3, 6) if planar else slice(9, 12)
@@ -1099,9 +1112,11 @@ class _SpatialTemporalBlock(nn.Module):
 
     def __init__(self, n_dim, n_head, dropout, causal):
         super().__init__()
-        assert n_dim % 2 == 0 and n_head % 2 == 0, (
-            "n_dim and n_head must be even (split into spatial/temporal halves)"
-        )
+        if n_dim % 2 or n_head % 2:
+            raise ValueError(
+                f"n_dim ({n_dim}) and n_head ({n_head}) must be even "
+                "(split into spatial/temporal halves)."
+            )
         self.pre_attn_norm = RMSNorm(n_dim, eps=1e-6)
         self.time_attn = _MultiHeadAttentionRoPE(
             n_dim // 2, n_head // 2, dropout, causal=causal, rope=True
@@ -1769,7 +1784,8 @@ class _ForwardSolution(nn.Module):
 
     def __init__(self, n_dim: int, n_head: int, dropout: float) -> None:
         super().__init__()
-        assert n_dim % n_head == 0
+        if n_dim % n_head:
+            raise ValueError(f"n_dim ({n_dim}) must be divisible by n_head ({n_head}).")
         self.n_dim = n_dim
         self.n_head = n_head
         self.dropout = dropout
@@ -1819,7 +1835,8 @@ class _BackwardSolution(nn.Module):
 
     def __init__(self, n_dim: int, n_head: int, dropout: float) -> None:
         super().__init__()
-        assert n_dim % n_head == 0
+        if n_dim % n_head:
+            raise ValueError(f"n_dim ({n_dim}) must be divisible by n_head ({n_head}).")
         self.n_dim = n_dim
         self.n_head = n_head
         self.dropout = dropout

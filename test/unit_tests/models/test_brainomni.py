@@ -18,6 +18,8 @@ from mne.io.constants import FIFF
 from braindecode.models import BrainOmni, BrainTokenizer
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.brainomni import (
+    _BackwardSolution,
+    _ForwardSolution,
     _geometry_from_chs_info,
     _MultiHeadAttentionRoPE,
     _rename_official_key,
@@ -212,7 +214,8 @@ def test_geometry_eeg_orientation_and_centering():
     "kind, coil_type, orientation_slice",
     [
         ("grad", 3012, slice(3, 6)),  # planar gradiometer
-        ("grad", 5001, slice(9, 12)),  # axial gradiometer
+        ("grad", 5001, slice(9, 12)),  # CTF axial gradiometer
+        ("grad", 6001, slice(9, 12)),  # KIT axial gradiometer
         ("mag", 3022, slice(9, 12)),
     ],
 )
@@ -230,6 +233,7 @@ def test_geometry_meg_orientation_uses_mne_loc_axes(kind, coil_type, orientation
     [
         ("grad", 3012, slice(3, 6)),
         ("grad", 5001, slice(9, 12)),
+        ("grad", 6001, slice(9, 12)),
         ("mag", 3022, slice(9, 12)),
     ],
 )
@@ -242,19 +246,26 @@ def test_geometry_nonfinite_meg_orientation_raises(kind, coil_type, orientation_
         )
 
 
-def _meg_info_chs(n_triplets=4, n_eeg=3, axial=False, plain_int=False):
+def _meg_info_chs(
+    n_triplets=4,
+    n_eeg=3,
+    axial=False,
+    plain_int=False,
+    axial_coil=FIFF.FIFFV_COIL_CTF_GRAD,
+):
     """MNE ``info["chs"]`` like the sample data: integer FIFF kind/coil codes.
 
-    VectorView triplets (MAG 3022 + two planar GRAD 3012), or CTF axial
-    gradiometers (5001, unit T) with ``axial=True``, plus EEG. Locations are a
-    sensor helmet (head frame, metres) with an orthonormal coil frame per sensor.
+    VectorView triplets (MAG 3022 + two planar GRAD 3012), or axial
+    gradiometers (``axial_coil``, CTF 5001 by default, unit T) with
+    ``axial=True``, plus EEG. Locations are a sensor helmet (head frame,
+    metres) with an orthonormal coil frame per sensor.
     """
     names, types, coils = [], [], []
     for i in range(n_triplets):
         if axial:
             names += [f"MLC{i}1", f"MLC{i}2", f"MLC{i}3"]
             types += ["mag"] * 3  # MNE stores CTF axial gradiometers with unit T
-            coils += [FIFF.FIFFV_COIL_CTF_GRAD] * 3
+            coils += [axial_coil] * 3
         else:
             names += [f"MEG{i:03d}1", f"MEG{i:03d}2", f"MEG{i:03d}3"]
             types += ["mag", "grad", "grad"]
@@ -300,14 +311,24 @@ def test_geometry_vectorview_meg_info(plain_int):
         assert np.isclose(np.sqrt(3 * np.mean(np.sum(xyz**2, axis=1))), 1.0)
 
 
+@pytest.mark.parametrize(
+    "coil, expected",
+    [
+        (FIFF.FIFFV_COIL_CTF_GRAD, 2),
+        (FIFF.FIFFV_COIL_KIT_GRAD, 2),
+        (FIFF.FIFFV_COIL_MAGNES_GRAD, 1),
+    ],
+    ids=["ctf_5001", "kit_6001", "magnes_4002"],
+)
 @pytest.mark.parametrize("plain_int", [False, True], ids=["named_int", "plain_int"])
-def test_geometry_ctf_axial_gradiometers_are_grad(plain_int):
-    # mne.channel_type says "mag" for CTF axial gradiometers (unit T); the
-    # released extract_pos_sensor_type says GRAD (no "MAG" in the coil name).
-    chs = _meg_info_chs(n_eeg=0, axial=True, plain_int=plain_int)
+def test_geometry_axial_gradiometer_types_follow_release(plain_int, coil, expected):
+    # mne.channel_type says "mag" for axial gradiometers (unit T); the released
+    # extract_pos_sensor_type says GRAD unless the coil name contains "MAG"
+    # (Magnes 4002 is FIFFV_COIL_MAGNES_GRAD, so it stays MAG).
+    chs = _meg_info_chs(n_eeg=0, axial=True, plain_int=plain_int, axial_coil=coil)
     assert {mne.channel_type({"chs": chs}, i) for i in range(len(chs))} == {"mag"}
     pos, sensor_type = _geometry_from_chs_info(chs)
-    assert sensor_type.tolist() == [2] * len(chs)
+    assert sensor_type.tolist() == [expected] * len(chs)
     assert np.allclose(pos[:, 3:], np.stack([ch["loc"][9:12] for ch in chs]))
 
 
@@ -437,6 +458,58 @@ def test_quantizer_initializes_codebook_from_first_batch():
     assert codebook.cluster_size.sum() > 0
     assert torch.isfinite(codebook.embed).all()
     assert codebook.embed.norm(dim=-1).max() < 1.1
+
+
+def _broadcast_kmeans_reference(codebook, samples):
+    """``EMACodebook._kmeans`` before #1239: explicit squared distances."""
+    samples = samples.reshape(-1, samples.shape[-1])
+    dim, dtype = samples.shape[1], samples.dtype
+    if samples.shape[0] < codebook.codebook_size:
+        noise = torch.randn(
+            codebook.codebook_size - samples.shape[0], dim, dtype=dtype
+        )
+        samples = torch.cat([samples, noise], dim=0)
+    centers = codebook._sample_vectors(samples, codebook.codebook_size)
+    bins = torch.ones(codebook.codebook_size, dtype=torch.long)
+    for _ in range(codebook.kmeans_iters):
+        distances = torch.cat(
+            [
+                ((chunk.unsqueeze(1) - centers) ** 2).sum(dim=-1)
+                for chunk in samples.split(256)
+            ]
+        )
+        buckets = distances.argmin(dim=-1)
+        bins = torch.bincount(buckets, minlength=codebook.codebook_size)
+        empty = bins == 0
+        bins[empty] = 1
+        new_centers = torch.zeros(codebook.codebook_size, dim, dtype=dtype)
+        new_centers.scatter_add_(0, buckets.unsqueeze(-1).expand(-1, dim), samples)
+        new_centers = new_centers / bins.unsqueeze(-1)
+        centers = torch.where(empty.unsqueeze(-1), centers, new_centers)
+    return centers, bins
+
+
+@pytest.mark.parametrize(
+    "make_samples, codebook_size",
+    [
+        (lambda: torch.randn(600, 16), 32),
+        # Integer grid with repeated rows: many exact distance ties.
+        (lambda: torch.randint(-2, 3, (600, 4)).float(), 32),
+        # Fewer samples than codes: noise padding, duplicated centres, empty bins.
+        (lambda: torch.randint(0, 2, (20, 3)).float(), 32),
+    ],
+    ids=["gaussian", "tie_heavy_grid", "fewer_samples_than_codes"],
+)
+def test_codebook_kmeans_matches_broadcast_reference(make_samples, codebook_size):
+    codebook = _Codebook(dim=16, codebook_size=codebook_size, kmeans_iters=10)
+    torch.manual_seed(0)
+    samples = make_samples()
+    torch.manual_seed(1)
+    centers, bins = codebook._kmeans(samples)
+    torch.manual_seed(1)
+    ref_centers, ref_bins = _broadcast_kmeans_reference(codebook, samples)
+    torch.testing.assert_close(bins, ref_bins, rtol=0, atol=0)
+    torch.testing.assert_close(centers, ref_centers, rtol=0, atol=0)
 
 
 @pytest.mark.skipif(not dist.is_available(), reason="torch.distributed is unavailable")
@@ -586,6 +659,33 @@ def test_braintokenizer_constructs_from_official_config():
     assert official_config == original_config
 
 
+def test_braintokenizer_crops_each_window_when_hop_does_not_divide_it():
+    """SEANet decodes 12 samples for a 10-sample window at hop 4; each window
+    is cropped before joining, so window 2 lands at samples 10-19."""
+    kw = dict(
+        sfreq=256.0,
+        window_length=10,
+        ratios=(4,),
+        emb_dim=8,
+        n_neuro=2,
+        n_filters=4,
+        tokenizer_num_heads=2,
+        codebook_dim=8,
+        codebook_size=8,
+        num_quantizers=1,
+    )
+    torch.manual_seed(0)
+    model = BrainTokenizer(chs_info=_eeg_chs_info(2), n_times=30, **kw).eval()
+    x = torch.randn(1, 2, 30)
+    with torch.no_grad():
+        full = model(x)
+        reconstruction, _, _ = model.encode_decode(x)
+        window = model(x[..., 10:20])
+    assert full.shape == x.shape
+    torch.testing.assert_close(full[..., 10:20], window)
+    torch.testing.assert_close(reconstruction, full, rtol=0, atol=0)
+
+
 def test_braintokenizer_reconstruction_zero_fills_dropped_tail():
     model = _small_tokenizer(n_times=600).eval()
     reconstruction = model(torch.randn(1, 4, 600))
@@ -631,6 +731,7 @@ def test_braintokenizer_rejects_invalid_overlap(overlap_ratio):
     [
         ({"window_length": 0}, "window_length"),
         ({"n_filters": 0}, "n_filters"),
+        ({"n_filters": 1}, "n_filters must be at least 2"),
         ({"ratios": ()}, "ratios"),
         ({"ratios": (8, 0, 2)}, "ratios"),
         ({"kernel_size": 0}, "kernel_size"),
@@ -653,7 +754,7 @@ def test_braintokenizer_rejects_invalid_constructor_arguments(kwargs, match):
 
 
 def test_braintokenizer_sfreq_warning():
-    with pytest.warns(UserWarning, match="256"):
+    with pytest.warns(UserWarning, match="BrainTokenizer pretrained weights.*256"):
         _small_tokenizer(sfreq=128.0)
 
 
@@ -875,6 +976,21 @@ def test_rope_attention_rejects_odd_head_dim():
         _MultiHeadAttentionRoPE(12, 4, dropout=0.0, rope=True)
 
 
+@pytest.mark.parametrize(
+    "build, match",
+    [
+        (lambda: _SpatialTemporalBlock(15, 4, 0.0, causal=False), "must be even"),
+        (lambda: _SpatialTemporalBlock(16, 3, 0.0, causal=False), "must be even"),
+        (lambda: _ForwardSolution(10, 4, 0.0), "divisible"),
+        (lambda: _BackwardSolution(10, 4, 0.0), "divisible"),
+    ],
+    ids=["block_odd_dim", "block_odd_heads", "forward_solution", "backward_solution"],
+)
+def test_attention_blocks_reject_invalid_dimensions(build, match):
+    with pytest.raises(ValueError, match=match):
+        build()
+
+
 def test_spatial_temporal_block_shape():
     out = _SpatialTemporalBlock(16, 4, 0.0, causal=False)(torch.randn(2, 3, 7, 16))
     assert out.shape == (2, 3, 7, 16)
@@ -988,6 +1104,18 @@ def test_brainomni_reset_head_changes_only_head():
     assert model(torch.randn(2, 4, 512)).shape == (2, 5)
     assert model.tokenizer is tokenizer  # backbone untouched
     assert model.get_config()["n_outputs"] == 5
+
+
+def test_brainomni_reset_head_follows_eval_mode():
+    model = _small_brainomni(n_outputs=3).eval()
+    model.reset_head(5)
+    assert not any(module.training for module in model.final_layer.modules())
+    x = torch.randn(2, 4, 512)
+    with torch.no_grad():
+        torch.testing.assert_close(model(x), model(x), rtol=0, atol=0)
+    model.train()
+    model.reset_head(2)
+    assert all(module.training for module in model.final_layer.modules())
 
 
 def test_brainomni_reset_head_preserves_dtype():
