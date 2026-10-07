@@ -45,6 +45,9 @@ Enhancements
   and ``normalization="session"`` takes a spectrogram normalized over the whole
   recording, which reproduces the reference inputs
   (:gh:`1178` by `Julien Gadonneix`_).
+- :class:`braindecode.models.MAPA` loads the released ``mapa_vits384`` with
+  ``MAPA.from_pretrained("braindecode/mapa-pretrained", ...)``; the key mapping
+  for the original checkpoint is removed (by `Bruno Aristimunha`_).
 - Add ``test/unit_tests/models/test_pretrained_compat.py``: every model with released
   weights is built on a grid of input geometries (canonical montage, permuted order,
   a 64-channel montage outside the 10-20 vocabulary, coordinates-only channels, names
@@ -90,6 +93,10 @@ Enhancements
 - Clarify decoder temporal embedding indexing in :class:`braindecode.models.Labram`
   and cover its one-token-per-temporal-patch behavior
   (:gh:`1155` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.SleepFM`, a channel-agnostic multimodal PSG
+  foundation encoder, and :class:`braindecode.models.SleepFMStager`, its
+  patch-wise sleep-staging model, with the released weights; CC BY-NC 4.0
+  (:gh:`1106` by `Fashad Ahmed`_)
 
 - Add :class:`braindecode.models.CSBrain`, the cross-scale spatiotemporal brain
   foundation model from Zhou et al. (NeurIPS 2025 Spotlight): multi-scale
@@ -101,6 +108,10 @@ Enhancements
   :class:`braindecode.models.CBraMod` instead of a copy of it; state-dict keys,
   outputs with loaded weights and same-seed initial weights are unchanged
   (:gh:`1240` by `Bruno Aristimunha`_).
+- Add ``head_drop_prob`` to :class:`braindecode.models.CSBrain`, the task-head
+  dropout of the reference fine-tuning models (default: ``drop_prob``, so
+  existing models are unchanged), and document the checkpoint key names
+  (:gh:`1247` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
   model with pretrained encoders and support for varying montages through
   :func:`braindecode.models.diver1.channel_metadata_from_chs_info`
@@ -244,8 +255,9 @@ Bug fixes
   ("uninitialized parameter"). The head is now a concrete ``Linear`` whenever the
   geometry is known (:gh:`1233` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.BrainOmni` now loads the released checkpoints' RoPE
-  cache (cosines only) and keeps PyTorch's default head initialisation, so its
-  forward pass equals the released code's (:gh:`1244` by `Bruno Aristimunha`_).
+  cache (cosines only) and keeps PyTorch's default head initialisation, as the
+  released code does. Unlike the released code, it applies no attention dropout
+  in evaluation mode (:gh:`1244` by `Bruno Aristimunha`_).
 - Fix :class:`braindecode.models.CBraMod` failing in ``forward`` for any
   ``patch_size`` other than 200: the spectral reshape hard-coded 101 rFFT bins
   instead of ``patch_size // 2 + 1`` (:gh:`1240` by `Bruno Aristimunha`_).
