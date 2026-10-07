@@ -227,6 +227,7 @@ Requirements
 Bug fixes
 ==========
 
+- Delete each passing test's ``tmp_path`` so the Windows CI runner no longer runs out of disk (:gh:`1251` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.BrainOmni` and :class:`braindecode.models.BrainTokenizer`
   now type CTF and KIT axial MEG gradiometers as gradiometers, as the released
   BrainOmni code does; they were typed as magnetometers, which gave them the
