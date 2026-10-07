@@ -212,11 +212,13 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
             the number of predictions depend on the chosen window size and the
             receptive field of the network. If trials have different lengths,
             a list with one (n_classes x n_predictions) array per trial.
-        trial_targets : np.ndarray
+        trial_targets : np.ndarray | list of np.ndarray
             Ground-truth targets from the dataset in a 2-dimensional array
             (n_trials x n_targets). Only returned when ``return_targets=True``.
             The number of targets depends on the decoding paradigm and can be
-            either a single value, multiple values, or a sequence.
+            either a single value, multiple values, or a sequence. If
+            sequence targets have different lengths across trials, a list
+            with one array per trial.
         """
         if not self.cropped:
             warnings.warn(
