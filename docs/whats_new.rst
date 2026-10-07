@@ -45,6 +45,9 @@ Enhancements
   and ``normalization="session"`` takes a spectrogram normalized over the whole
   recording, which reproduces the reference inputs
   (:gh:`1178` by `Julien Gadonneix`_).
+- :class:`braindecode.models.MAPA` loads the released ``mapa_vits384`` with
+  ``MAPA.from_pretrained("braindecode/mapa-pretrained", ...)``; the key mapping
+  for the original checkpoint is removed (by `Bruno Aristimunha`_).
 - Add ``test/unit_tests/models/test_pretrained_compat.py``: every model with released
   weights is built on a grid of input geometries (canonical montage, permuted order,
   a 64-channel montage outside the 10-20 vocabulary, coordinates-only channels, names
