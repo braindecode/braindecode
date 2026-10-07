@@ -1577,6 +1577,17 @@ def test_codebrain_return_features():
     assert out["cls_token"] is None
 
 
+def test_codebrain_trains_after_inference_mode():
+    # The lazily initialised kernel norm must not become an inference tensor.
+    model = CodeBrain(n_chans=2, n_outputs=2, n_times=400).eval()
+    x = torch.randn(2, 2, 400)
+    with torch.inference_mode():
+        model(x)
+    model.train()
+    model(x).sum().backward()
+    assert all(not b.is_inference() for b in model.buffers())
+
+
 @pytest.fixture
 def diver1_model():
     info = mne.create_info([f"A{i}" for i in range(6)], 500.0, "seeg")

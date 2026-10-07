@@ -209,6 +209,15 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.BENDR`, :class:`braindecode.models.BIOT`,
+  :class:`braindecode.models.BrainBERT`, :class:`braindecode.models.CBraMod`,
+  :class:`braindecode.models.CodeBrain`, :class:`braindecode.models.EEGDINO`,
+  :class:`braindecode.models.LUNA`, :class:`braindecode.models.REVE` and
+  :class:`braindecode.models.ZUNA` now run after ``model.to(torch.float64)`` or
+  ``model.to(torch.bfloat16)``: FFTs run in float32 at least and are cast back,
+  and tensors built inside ``forward`` follow the input's dtype. CodeBrain can
+  also train after a first forward under ``torch.inference_mode()``. Float32
+  outputs are unchanged (:gh:`PRNUM` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.BrainOmni` and :class:`braindecode.models.BrainTokenizer`
   now type CTF and KIT axial MEG gradiometers as gradiometers, as the released
   BrainOmni code does; they were typed as magnetometers, which gave them the

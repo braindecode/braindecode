@@ -501,15 +501,18 @@ class _BIOTEncoder(nn.Module):
             Absolute value of the Fourier transform with size
             (batch_size, n_fft // 2 + 1, n_times // hop_length + 1)
         """
+        # CPU FFT has no bfloat16/float16 kernel: transform in float32 at least.
         spectral = torch.stft(
-            input=sample.squeeze(1),
+            input=sample.squeeze(1).to(
+                torch.promote_types(sample.dtype, torch.float32)
+            ),
             n_fft=int(self.n_fft),
             hop_length=self.hop_length,
             center=False,
             onesided=True,
             return_complex=True,
         )
-        return torch.abs(spectral)
+        return torch.abs(spectral).to(sample.dtype)
 
     def forward(self, x, n_channel_offset=0, perturb=False):
         """

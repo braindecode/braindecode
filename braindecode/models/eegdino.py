@@ -414,7 +414,11 @@ class _PatchEmbedding(nn.Module):
             .permute(0, 2, 3, 1, 4)
             .flatten(3, 4)
         )
-        spectrum = torch.fft.rfft(x, dim=-1, norm="forward").abs()
+        # CPU FFT has no bfloat16/float16 kernel: transform in float32 at least.
+        spectrum = torch.fft.rfft(
+            x.to(torch.promote_types(x.dtype, torch.float32)), dim=-1, norm="forward"
+        )
+        spectrum = spectrum.abs().to(x.dtype)
         patch_emb = time_tokens + self.spectral_proj(spectrum)
 
         # Decoupled positional embedding: one-hot channel + depthwise temporal conv.

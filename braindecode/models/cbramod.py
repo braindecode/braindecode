@@ -355,9 +355,14 @@ class _PatchEmbedding(nn.Module):
         patch_emb = rearrange(patch_emb, "b d (c n) p2 -> b c n (d p2)", c=ch_num)
 
         mask_x = rearrange(mask_x, "b 1 (c n) p -> (b c n) p", c=ch_num)
-        spectral = torch.fft.rfft(mask_x, dim=-1, norm="forward")
+        # CPU FFT has no bfloat16/float16 kernel: transform in float32 at least.
+        spectral = torch.fft.rfft(
+            mask_x.to(torch.promote_types(mask_x.dtype, torch.float32)),
+            dim=-1,
+            norm="forward",
+        )
         spectral = rearrange(
-            torch.abs(spectral),
+            torch.abs(spectral).to(mask_x.dtype),
             "(b c n) p -> b c n p",
             b=bz,
             c=ch_num,

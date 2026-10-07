@@ -459,7 +459,8 @@ def nerf_positional_encoding(coords: torch.Tensor, embed_size: int) -> torch.Ten
     if leftover > 0:
         pad = torch.zeros(N, C, leftover, device=device, dtype=coords.dtype)
         encoded = torch.cat([encoded, pad], dim=-1)
-    return encoded
+    # Sin/cos run in float32 at least (float32 frequency bands); return coords' dtype.
+    return encoded.to(coords.dtype)
 
 
 class _ChannelEmbeddings(nn.Module):
@@ -521,14 +522,15 @@ class _FrequencyFeatureEmbedder(nn.Module):
             S = T // self.patch_size
         x = x.view(B, C, S, self.patch_size)
 
+        # CPU FFT has no bfloat16/float16 kernel: transform in float32 at least.
         freq_representation = fft.rfft(
-            x, dim=-1
+            x.to(torch.promote_types(x.dtype, torch.float32)), dim=-1
         )  # (B, C, num_patches, patch_size // 2 + 1)
         magnitude = torch.abs(freq_representation)
         phase = torch.angle(freq_representation)
 
         # Concatenate magnitude and phase along the frequency axis (last dimension)
-        freq_features = torch.cat((magnitude, phase), dim=-1)
+        freq_features = torch.cat((magnitude, phase), dim=-1).to(x.dtype)
         # Map frequency features to embedding dimension
         embedded = self.frequency_to_embed(
             freq_features
