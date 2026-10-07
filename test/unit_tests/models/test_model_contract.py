@@ -16,12 +16,11 @@ from torch import nn
 
 from braindecode.models.util import (
     _get_signal_params,
-    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
 )
 
-all_models_dict = {**models_dict, **interpolated_models_dict}
+all_models_dict = dict(models_dict)
 
 
 def _tensor_leaves(value):

@@ -3,7 +3,6 @@
 # License: BSD-3
 
 import copy
-import hashlib
 import json
 import os
 import sys
@@ -2316,15 +2315,6 @@ def test_mapa_token_layout_tracks_the_montage(mapa_model):
     assert (changed["token_region"] == 3).any()
 
 
-# The authors' Hub repository, pinned to the commit whose mapa_vits384.pt is
-# byte-identical to their GitHub release v0.1.0.
-MAPA_HUB_REPO = "bentang18/MAPA"
-MAPA_HUB_REVISION = "988efbf31a7d1f38533b848c993a719d6f900b1f"
-MAPA_CHECKPOINT_SHA256 = (
-    "2d236089a2f1a3cc2827e3f150c4a2ba14c51bbfaf0ce0888f84b92a6eb25a7a"
-)
-
-
 def _mapa_reference_windows():
     """Two 1 s windows at 2048 Hz of four amplitude-modulated multi-tone channels."""
     t = torch.arange(2048, dtype=torch.float64) / 2048
@@ -2345,7 +2335,7 @@ def _mapa_reference_windows():
 @pytest.mark.network
 @pytest.mark.huggingface
 def test_mapa_released_checkpoint_reproduces_the_reference_features():
-    """The released mapa_vits384 loads and gives the authors' features.
+    """The re-hosted mapa_vits384 loads and gives the authors' features.
 
     The expected values were computed with the authors' code (bentang18/MAPA at
     bf2b49e) on the same windows: its STFT and robust z-score fitted on each
@@ -2355,38 +2345,22 @@ def test_mapa_released_checkpoint_reproduces_the_reference_features():
     ``return_features`` pools. CI does not pass ``--run-network`` to the unit
     tests; run it with ``pytest -k mapa_released --run-network``.
     """
-    hub = pytest.importorskip("huggingface_hub")
-    mne_data_dir = mne.get_config("MNE_DATA") or str(Path.home() / "mne_data")
+    pytest.importorskip("huggingface_hub")
     try:
-        path = hub.hf_hub_download(
-            MAPA_HUB_REPO,
-            "mapa_vits384.pt",
-            revision=MAPA_HUB_REVISION,
-            cache_dir=str(Path(mne_data_dir) / "mapa_pretrained"),
-        )
+        model = MAPA.from_pretrained(
+            "braindecode/mapa-pretrained",
+            n_chans=4,
+            contact_labels=["LA1", "LA2", "LA4", "LB1"],
+            regions=[
+                "ctx-lh-superiortemporal",
+                "ctx-lh-superiortemporal",
+                "Left-Hippocampus",
+                None,
+            ],
+            strict=True,
+        ).eval()
     except (URLError, OSError) as err:
         pytest.skip(f"Could not download the MAPA checkpoint: {err}")
-    assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == (
-        MAPA_CHECKPOINT_SHA256
-    )
-
-    model = MAPA(
-        n_outputs=2,
-        n_chans=4,
-        n_times=2048,
-        sfreq=2048,
-        contact_labels=["LA1", "LA2", "LA4", "LB1"],
-        regions=[
-            "ctx-lh-superiortemporal",
-            "ctx-lh-superiortemporal",
-            "Left-Hippocampus",
-            None,
-        ],
-    ).eval()
-    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-    missing, unexpected = model.load_state_dict(checkpoint["model"], strict=False)
-    assert sorted(missing) == ["final_layer.bias", "final_layer.weight"]
-    assert unexpected == []
 
     with torch.no_grad():
         features = model(_mapa_reference_windows(), return_features=True)["features"]

@@ -27,7 +27,7 @@ from .blocks import (
     PatchTokenizer,
     TDSConvEncoder,
 )
-from .channel_tokenizer import ChannelTokenizer
+from .channels import ChannelLayer
 from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
@@ -38,7 +38,6 @@ from .convolution import (
 )
 from .dance_modules import Perceiver, SimpleConv
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
-from .interpolation import ChannelInterpolationLayer
 from .layers import (
     ChannelMerger,
     Chomp1d,
@@ -75,8 +74,7 @@ __all__ = [
     "Square",
     "CAT",
     "CBAM",
-    "ChannelInterpolationLayer",
-    "ChannelTokenizer",
+    "ChannelLayer",
     "ECA",
     "FCA",
     "GCT",
