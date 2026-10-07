@@ -91,6 +91,10 @@ Enhancements
 - Clarify decoder temporal embedding indexing in :class:`braindecode.models.Labram`
   and cover its one-token-per-temporal-patch behavior
   (:gh:`1155` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.SleepFM`, a channel-agnostic multimodal PSG
+  foundation encoder, and :class:`braindecode.models.SleepFMStager`, its
+  patch-wise sleep-staging model, with the released weights; CC BY-NC 4.0
+  (:gh:`1106` by `Fashad Ahmed`_)
 
 - Add :class:`braindecode.models.CSBrain`, the cross-scale spatiotemporal brain
   foundation model from Zhou et al. (NeurIPS 2025 Spotlight): multi-scale
@@ -98,6 +102,10 @@ Enhancements
   inter-region) attention, channel names mapped to five anatomical regions or
   an explicit ``brain_regions`` layout, verified bit-exact against the authors'
   released pretrained checkpoint (:gh:`1196` by `Li Qing`_).
+- :class:`braindecode.models.CSBrain` reuses the patch embedding of
+  :class:`braindecode.models.CBraMod` instead of a copy of it; state-dict keys,
+  outputs with loaded weights and same-seed initial weights are unchanged
+  (:gh:`1240` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
   model with pretrained encoders and support for varying montages through
   :func:`braindecode.models.diver1.channel_metadata_from_chs_info`
@@ -217,6 +225,22 @@ Bug fixes
   BrainOmni code does; they were typed as magnetometers, which gave them the
   wrong sensor embedding. Elekta magnetometers and planar gradiometers were
   already correct. (by `Bruno Aristimunha`_)
+- Fix :meth:`braindecode.models.BrainOmni.reset_head` leaving the new head in
+  training mode after ``model.eval()``, so its dropout made inference
+  stochastic; the head now follows the model's mode (by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.models.BrainTokenizer` reconstruction when
+  ``window_length`` is not a multiple of ``prod(ratios)``: each decoded window
+  is now cropped to ``window_length`` before the windows are joined, so later
+  windows keep their position. Configurations with a divisible window, such as
+  the released one, are unchanged (by `Bruno Aristimunha`_).
+- :class:`braindecode.models.BrainTokenizer` and
+  :class:`braindecode.models.BrainOmni` now raise ``ValueError`` for
+  ``n_filters < 2`` and for attention dimensions that do not split across
+  heads, instead of a reshape error or an ``assert``; the tokenizer's sampling
+  rate warning names ``BrainTokenizer`` (by `Bruno Aristimunha`_).
+- :attr:`braindecode.models.MAPA.input_shape` now returns the spectrogram shape
+  ``(1, n_chans, 20, n_times)`` with ``normalization="session"``, so
+  ``get_output_shape()`` works in that mode (by `Bruno Aristimunha`_).
 - Fix :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` rejecting a
   caller's ``chs_info`` (``n_chans=… different from chs_info``) and ``n_times``/``sfreq``
   (``n_times different from input_window_seconds * sfreq``): the Hub config filled the
@@ -229,6 +253,13 @@ Bug fixes
   ``n_times``; such a model could not be saved or loaded with ``from_pretrained``
   ("uninitialized parameter"). The head is now a concrete ``Linear`` whenever the
   geometry is known (:gh:`1233` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.BrainOmni` now loads the released checkpoints' RoPE
+  cache (cosines only) and keeps PyTorch's default head initialisation, as the
+  released code does. Unlike the released code, it applies no attention dropout
+  in evaluation mode (:gh:`1244` by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.models.CBraMod` failing in ``forward`` for any
+  ``patch_size`` other than 200: the spectral reshape hard-coded 101 rFFT bins
+  instead of ``patch_size // 2 + 1`` (:gh:`1240` by `Bruno Aristimunha`_).
 
 - Fix :class:`braindecode.models.Deep4Net` short-input auto-scaling with ``split_first_layer=True`` so the scaled ``filter_time_length`` is used by the actual :class:`braindecode.modules.CombinedConv` temporal kernel instead of retaining the original constructor value. By `lindicaphxag-tech`_.
 

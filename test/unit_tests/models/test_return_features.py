@@ -22,6 +22,7 @@ from braindecode.models import (
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
     SignalJEPA_PreLocal,
+    SleepFM,
     STEEGFormer,
 )
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
@@ -141,6 +142,21 @@ _MODELS = [
         {"chs_info": _chs()},
         False,
         id="SignalJEPA_PreLocal",
+    ),
+    pytest.param(
+        SleepFM,
+        N_CHANS,
+        {
+            "sfreq": 128.0,
+            "patch_size": 64,
+            "embed_dim": 16,
+            "num_heads": 4,
+            "num_layers": 1,
+            "pooling_heads": 4,
+            "max_seq_length": 16,
+        },
+        False,
+        id="SleepFM",
     ),
     pytest.param(
         MIRepNet,

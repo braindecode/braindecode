@@ -322,6 +322,14 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         self.final_layer = nn.Linear(n_features, self.n_outputs)
 
+    @property
+    @torch.jit.unused
+    def input_shape(self):  # 3-D, or 4-D for normalization="session"
+        """Input data shape; ``normalization="session"`` takes the spectrogram."""
+        if self.normalization == "session":
+            return (1, self.n_chans, sum(_BAND_BINS), self.n_times)
+        return super().input_shape
+
     @staticmethod
     def sensor_indices(
         contact_labels: list[str],
@@ -560,7 +568,7 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         sensor_indices: torch.Tensor | None = None,
         return_features: bool = False,
     ):
-        """Encode an iEEG batch into class logits.
+        """Encode an iEEG batch into class logits or pooled features.
 
         Parameters
         ----------
@@ -575,12 +583,15 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             batch shares it. Defaults to the montage resolved at construction,
             which only fits the construction-time channel count.
         return_features : bool
-            Whether to also return the pooled token embedding.
+            Whether to return the pooled token embedding instead of the logits.
 
         Returns
         -------
-        torch.Tensor
-            Class logits of shape ``(batch, n_outputs)``.
+        torch.Tensor or dict
+            Class logits of shape ``(batch, n_outputs)``, or with
+            ``return_features=True`` a dict whose ``"features"`` entry is the
+            pooled embedding of shape ``(batch, final_layer.in_features)`` and whose
+            ``"cls_token"`` entry is ``None``.
         """
         spectrogram = self.normalization == "session"
         n_bins = sum(_BAND_BINS)

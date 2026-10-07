@@ -595,6 +595,9 @@ def test_model_torch_script(model):
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",
         "SignalJEPA_PreLocal",
+        # As EEGDINO: forward() returns a Dict[str, Tensor] or a Tensor.
+        "SleepFM",
+        "SleepFMStager",
         # VQ argmin dispatch and _encode_quantize method not scriptable.
         "BrainOmni",
         "BrainTokenizer",

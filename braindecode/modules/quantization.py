@@ -222,6 +222,9 @@ class EMACodebook(nn.Module):
         quantize = self.dequantize(embed_ind).type(dtype)
 
         if self.training:
+            # As in the released encodec/BrainOmni ``EuclideanCodebook``, the
+            # replacement writes ``embed`` only, and the EMA step below rebuilds
+            # ``embed`` from ``embed_avg``. Kept as released for checkpoint parity.
             self.expire_codes_(x)
             # EMA update of the cluster sizes and code sums (.data detaches grad).
             one_hot_sum = embed_onehot.sum(0)

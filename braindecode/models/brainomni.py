@@ -212,7 +212,10 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
     num_quantizers : int
         Number of residual VQ stages.
     rotation_trick : bool
-        Whether to use the rotation trick when updating codebook entries.
+        Whether training passes gradients from the quantized vectors to the
+        encoder output with the rotation trick (Fifty et al., 2024) instead of
+        the plain straight-through estimator. Codebook entries are updated by
+        EMA in both cases.
     quantize_optimize_method : str
         Codebook optimisation method (``"ema"``; the only currently
         supported option).
@@ -284,7 +287,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
 
         if not math.isclose(float(self.sfreq), 256.0, rel_tol=0.0, abs_tol=1e-6):
             warnings.warn(
-                f"BrainOmni pretrained weights expect sfreq=256 Hz, got "
+                f"BrainTokenizer pretrained weights expect sfreq=256 Hz, got "
                 f"{self.sfreq}. Use only for training from scratch.",
                 UserWarning,
             )
@@ -301,8 +304,9 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
 
         if window_length <= 0:
             raise ValueError(f"window_length must be positive, got {window_length}.")
-        if n_filters <= 0:
-            raise ValueError(f"n_filters must be positive, got {n_filters}.")
+        if n_filters < 2:
+            # The first SEANet residual block uses ``n_filters // 2`` channels.
+            raise ValueError(f"n_filters must be at least 2, got {n_filters}.")
         if not ratios or any(ratio <= 0 for ratio in ratios):
             raise ValueError(
                 f"ratios must be a non-empty sequence of positive values, got {ratios}."
@@ -406,8 +410,6 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         )
         for key, value in state_dict.items():
             new_key = _rename_official_key(key)
-            if new_key is None:
-                continue
             if new_key in remapped:
                 raise ValueError(
                     f"Checkpoint keys collide after remapping: {new_key!r}."
@@ -432,26 +434,28 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         feat_q, indices, commit = self.quantizer(feat)
         return feat_q, indices, commit, se
 
+    def _decode(
+        self, feat_q: torch.Tensor, se: torch.Tensor, n_times: int
+    ) -> torch.Tensor:
+        """Decode windows and lay them back on a ``n_times`` timeline."""
+        recon = self.final_layer(feat_q, se)  # (batch, n_chans, n_windows, wlen)
+        # SEANet decodes ceil(window_length / hop) * hop samples per window;
+        # crop each window before joining so later windows keep their place.
+        recon = recon[..., : self.window_length]
+        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)
+        if recon.shape[-1] < n_times:
+            recon = F.pad(recon, (0, n_times - recon.shape[-1]))
+        return recon[..., :n_times]
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Reconstruct ``x``, zero-filling a dropped non-overlap tail."""
         feat_q, _, _, se = self._encode_quantize(x)
-        recon = self.final_layer(
-            feat_q, se
-        )  # (batch, n_chans, n_windows, window_length)
-        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)
-        if recon.shape[-1] < x.shape[-1]:
-            recon = F.pad(recon, (0, x.shape[-1] - recon.shape[-1]))
-        return recon[..., : x.shape[-1]]
+        return self._decode(feat_q, se, x.shape[-1])
 
     def encode_decode(self, x: torch.Tensor):
         """Return reconstruction, commitment loss, and codebook indices."""
         feat_q, indices, commit, se = self._encode_quantize(x)
-        recon = self.final_layer(feat_q, se)
-        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)
-        if recon.shape[-1] < x.shape[-1]:
-            recon = F.pad(recon, (0, x.shape[-1] - recon.shape[-1]))
-        recon = recon[..., : x.shape[-1]]
-        return recon, commit, indices
+        return self._decode(feat_q, se, x.shape[-1]), commit, indices
 
     @torch.no_grad()
     def tokenize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
@@ -642,7 +646,10 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
     num_quantizers : int
         Number of residual VQ stages.
     rotation_trick : bool
-        Whether to use the rotation-trick STE for codebook updates.
+        Whether tokenizer training passes gradients from the quantized vectors
+        to the encoder output with the rotation trick (Fifty et al., 2024)
+        instead of the plain straight-through estimator. Codebook entries are
+        updated by EMA in both cases.
     quantize_optimize_method : str
         Codebook optimisation strategy (``"ema"``).
     tokenizer_drop_prob : float
@@ -777,8 +784,9 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
             ]
         )
         self._head_in = n_neuro * lm_dim
-        self.final_layer = self._make_head(self.n_outputs)
         self.apply(_init_weights)
+        # As released (``downstream/model.py``): default init for the head.
+        self.final_layer = self._make_head(self.n_outputs)
         self.tokenizer.requires_grad_(False)
 
     @classmethod
@@ -820,8 +828,9 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         self._set_n_outputs(n_outputs)
         reference = next(self.parameters())
         self.final_layer = self._make_head(n_outputs)
-        self.final_layer.apply(_init_weights)
         self.final_layer.to(device=reference.device, dtype=reference.dtype)
+        # A new module starts in train mode; follow the model's current mode.
+        self.final_layer.train(self.training)
 
     def _tokens(self, x: torch.Tensor) -> torch.Tensor:
         """Tokenize ``x`` and project to ``lm_dim``.
@@ -859,10 +868,8 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         The official artifact contains the Stage-2 mask-prediction head rather
         than a downstream classifier. Those three pretraining-only tensors are
         intentionally ignored; the downstream ``final_layer`` remains local.
-        The released export also stores RoPE's frequencies (rounded to
-        bfloat16) and its derived cache (without the sine component). The port
-        has no RoPE buffers: those keys are dropped and the rotation is
-        recomputed in float32, as in a freshly built upstream model.
+        Its RoPE ``freqs`` (rounded to bfloat16) and cosine-only cache load
+        into the RoPE buffers, so the rotation is the released one.
         """
         remapped = OrderedDict()
         metadata = getattr(state_dict, "_metadata", None)
@@ -877,12 +884,17 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
             if official and (key == "mask_token" or key.startswith("predict_head.")):
                 continue
             new_key = _rename_official_key(key)
-            if new_key is None:
-                continue
             if new_key in remapped:
                 raise ValueError(
                     f"Checkpoint keys collide after remapping: {new_key!r}."
                 )
+            if new_key.endswith("rope_embedding_layer.rotate") and value.dim() == 2:
+                # Released export: cosines only (the release's copy into its
+                # complex cache leaves the sine at zero); in memory: complex.
+                if value.is_complex():
+                    value = torch.view_as_real(value)
+                else:
+                    value = torch.stack((value, torch.zeros_like(value)), dim=-1)
             remapped[new_key] = value
         if official:
             for key in own_state:
@@ -891,20 +903,21 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
                     "tokenizer.sensor_type",
                 }:
                     remapped[key] = own_state[key]
+        if not any(".rope_embedding_layer." in key for key in remapped):
+            # Saved before the RoPE buffers existed: keep the model's own.
+            remapped.update(
+                {k: v for k, v in own_state.items() if ".rope_embedding_layer." in k}
+            )
         if metadata is not None:
             remapped._metadata = metadata
         return super().load_state_dict(remapped, *args, **kwargs)
 
 
-def _rename_official_key(key: str) -> str | None:
-    """Map an OpenTSLab state-dict key to this port's name, or ``None`` to drop it.
+def _rename_official_key(key: str) -> str:
+    """Map an OpenTSLab state-dict key to this port's name.
 
-    Native keys pass through unchanged. RoPE ``freqs``/``rotate`` are dropped:
-    the port recomputes them in float32 (the release stores ``freqs`` rounded
-    to bfloat16 and ``rotate`` without its sine component).
+    Native keys pass through unchanged.
     """
-    if key.endswith(("rope_embedding_layer.freqs", "rope_embedding_layer.rotate")):
-        return None
     key = key.replace("quantizer.rvq.", "quantizer.")
     if key.startswith("decoder."):
         key = "final_layer." + key.removeprefix("decoder.")
@@ -970,8 +983,10 @@ def _sensor_type_of(chs_info, index: int) -> str:
 
     Follows the released ``factory/utils.py:extract_pos_sensor_type``: an MEG
     channel is MAG when its coil name contains ``MAG`` and GRAD otherwise, so
-    axial gradiometers (CTF ``5001``, KIT ``6001``, Magnes ``4002``) are GRAD
-    although :func:`mne.channel_type` reports them as ``mag`` (unit T). The coil
+    axial gradiometers (CTF ``5001``, KIT ``6001``) are GRAD although
+    :func:`mne.channel_type` reports them as ``mag`` (unit T). Magnes ``4002``
+    (``FIFFV_COIL_MAGNES_GRAD``) has ``MAG`` in its name and is typed MAG, as in
+    the release. The coil
     name is looked up from the integer, so plain-int and ``NamedInt`` coil types
     give the same answer.
     """
@@ -1037,7 +1052,7 @@ def _geometry_from_chs_info(chs_info):
     ori = np.zeros((len(chs_info), 3))  # EEG orientation stays zero
     for index in np.flatnonzero(grad):
         # The released source selects the in-plane x-axis only for coils named
-        # PLANAR (VectorView 3011-3014). Every other MEG coil (including axial
+        # PLANAR (VectorView 3011-3015). Every other MEG coil (including axial
         # gradiometers) uses the coil-normal z-axis.
         planar = "PLANAR" in _coil_name(chs_info[index])
         axis_slice = slice(3, 6) if planar else slice(9, 12)
@@ -1077,9 +1092,11 @@ class _SpatialTemporalBlock(nn.Module):
 
     def __init__(self, n_dim, n_head, dropout, causal):
         super().__init__()
-        assert n_dim % 2 == 0 and n_head % 2 == 0, (
-            "n_dim and n_head must be even (split into spatial/temporal halves)"
-        )
+        if n_dim % 2 or n_head % 2:
+            raise ValueError(
+                f"n_dim ({n_dim}) and n_head ({n_head}) must be even "
+                "(split into spatial/temporal halves)."
+            )
         self.pre_attn_norm = RMSNorm(n_dim, eps=1e-6)
         self.time_attn = _MultiHeadAttentionRoPE(
             n_dim // 2, n_head // 2, dropout, causal=causal, rope=True
@@ -1118,18 +1135,17 @@ class _SpatialTemporalBlock(nn.Module):
 
 
 class _RotaryPositionalEmbedding(nn.Module):
-    """Stateless rotary position embedding (RoPE) of the released BrainOmni.
+    """Rotary position embedding (RoPE) of the released BrainOmni.
 
     Adjacent feature pairs of queries and keys are rotated by a
-    position-dependent angle (Su et al., 2021), computed in float32 with real
-    arithmetic (:func:`~braindecode.functional.rotate_pairs`), so there is no
-    complex cache and no state-dict entry.
-
-    ``n_dim`` is the full attention dimension (``n_heads * head_dim``): one
-    inverse-frequency ladder is built over ``n_dim`` and split across heads, so
-    each head gets a different frequency band, as in the release. Using the
-    per-head size instead would change pretrained numerics without tripping a
-    strict load, because the module has no parameters.
+    position-dependent angle (Su et al., 2021). One inverse-frequency ladder
+    ``freqs`` is built over ``n_dim`` and split across heads, as in the
+    release. ``rotate`` caches 240 positions as ``(cos, sin)`` pairs, the real
+    view of the release's complex cache, so released checkpoints (cosines
+    only) load into it. A longer sequence rebuilds the cache from ``freqs``
+    and later calls keep using it, as in the release; that cache is not
+    saved. Under ``.half()``/``.bfloat16()`` the caches stay float32 and
+    ``freqs`` follows the cast, as in the release.
     """
 
     def __init__(self, n_dim, base=10000):
@@ -1137,19 +1153,42 @@ class _RotaryPositionalEmbedding(nn.Module):
         if n_dim <= 0 or n_dim % 2:
             raise ValueError(f"n_dim must be a positive even integer, got {n_dim}.")
         self.n_dim = n_dim
-        self.base = base
+        exponent = torch.arange(0, n_dim, 2).float() / n_dim
+        self.register_buffer("freqs", 1.0 / (base**exponent))
+        self.register_buffer("rotate", self._polar(240))
+        self.register_buffer("rebuilt", None, persistent=False)
 
-    def _cos_sin(self, seq: int, heads: int, device: torch.device):
-        """``(seq, heads, head_dim)`` cosines and sines, recomputed in float32."""
-        exponent = torch.arange(0, self.n_dim, 2, device=device).float() / self.n_dim
-        freqs = 1.0 / (self.base**exponent)
-        positions = torch.arange(seq, device=device, dtype=torch.float32)
-        angles = torch.outer(positions, freqs)
-        angles = torch.repeat_interleave(angles, 2, dim=-1)
-        angles = rearrange(
-            angles, "seq (heads head_dim) -> seq heads head_dim", heads=heads
+    def _polar(self, seq: int) -> torch.Tensor:
+        """``(seq, n_dim // 2, 2)`` cosines and sines of ``position * freqs``."""
+        positions = torch.arange(seq, device=self.freqs.device).type_as(self.freqs)
+        angles = torch.outer(positions, self.freqs).float()
+        return torch.stack((angles.cos(), angles.sin()), dim=-1)
+
+    def _apply(self, fn, recurse=True):
+        # Keep the float32 caches under a dtype cast (release: complex64).
+        before = {name: self._buffers[name] for name in ("rotate", "rebuilt")}
+        super()._apply(fn, recurse)
+        for name, buffer in before.items():
+            moved = self._buffers[name]
+            if buffer is not None and moved is not None and moved.dtype != buffer.dtype:
+                self._buffers[name] = buffer.to(device=moved.device)
+        return self
+
+    def _load_from_state_dict(self, *args, **kwargs):
+        self.rebuilt = None
+        super()._load_from_state_dict(*args, **kwargs)
+
+    def _cos_sin(self, seq: int, heads: int):
+        """``(seq, heads, head_dim)`` cosines and sines."""
+        rotate = self.rotate if self.rebuilt is None else self.rebuilt
+        if seq > rotate.shape[0]:
+            # Release ``_set_rotate_cache``: replace the cache, keep it.
+            self.rebuilt = rotate = self._polar(seq)
+        rotate = rotate[:seq].repeat_interleave(2, dim=1)
+        rotate = rearrange(
+            rotate, "seq (heads head_dim) two -> seq heads head_dim two", heads=heads
         )
-        return angles.cos(), angles.sin()
+        return rotate[..., 0], rotate[..., 1]
 
     def forward(self, q, k):
         """Rotate ``q`` and ``k`` of shape ``(batch, seq, n_heads, head_dim)``."""
@@ -1159,7 +1198,7 @@ class _RotaryPositionalEmbedding(nn.Module):
                 f"RoPE expects n_heads * head_dim == {self.n_dim}, got "
                 f"{heads} * {head_dim}."
             )
-        cos, sin = self._cos_sin(seq, heads, q.device)
+        cos, sin = self._cos_sin(seq, heads)
         q_float = q.float()
         k_float = k.float()
         q_out = q_float * cos + rotate_pairs(q_float) * sin
@@ -1703,7 +1742,8 @@ class _ForwardSolution(nn.Module):
 
     def __init__(self, n_dim: int, n_head: int, dropout: float) -> None:
         super().__init__()
-        assert n_dim % n_head == 0
+        if n_dim % n_head:
+            raise ValueError(f"n_dim ({n_dim}) must be divisible by n_head ({n_head}).")
         self.n_dim = n_dim
         self.n_head = n_head
         self.dropout = dropout
@@ -1753,7 +1793,8 @@ class _BackwardSolution(nn.Module):
 
     def __init__(self, n_dim: int, n_head: int, dropout: float) -> None:
         super().__init__()
-        assert n_dim % n_head == 0
+        if n_dim % n_head:
+            raise ValueError(f"n_dim ({n_dim}) must be divisible by n_head ({n_head}).")
         self.n_dim = n_dim
         self.n_head = n_head
         self.dropout = dropout
