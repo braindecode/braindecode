@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+import sys
 import warnings
 from contextlib import nullcontext
 from pathlib import Path
@@ -2164,6 +2165,13 @@ def test_diver1_reset_head_preserves_zero_outputs(diver1_model, n_outputs):
     assert diver1_model.get_config()["n_outputs"] == n_outputs
 
 
+# The bfloat16 ``fold`` kernel crashes the Windows CI runners' Python process
+# with 0xC000001D (illegal instruction); pytest-xdist then reports a lost
+# worker. It happens on master too, so it is the runner/CPU path, not DIVER-1.
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="bfloat16 fold crashes Windows CI runners (0xC000001D, illegal instruction)",
+)
 def test_diver1_stcpe_preserves_low_precision_overlap(monkeypatch):
     # BF16 fold accumulates 257 overlapping ones to 256, not scalar 257.
     model = _STCPE(8, 4, 257, torch.nn.SiLU, 1).bfloat16().eval()
