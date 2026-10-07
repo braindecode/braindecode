@@ -2,9 +2,10 @@
 #
 # License: BSD-3
 
-import hashlib
+import copy
 import json
 import os
+import sys
 from contextlib import nullcontext
 from pathlib import Path
 from urllib.error import URLError
@@ -36,6 +37,8 @@ from braindecode.models import (
     CodeBrain,
     Labram,
     PopulationTransformer,
+    SleepFM,
+    SleepFMStager,
     STEEGFormer,
     steegformer,
 )
@@ -1576,6 +1579,138 @@ def test_codebrain_return_features():
     assert out["cls_token"] is None
 
 
+# ==============================================================================
+# Tests for SleepFM and SleepFMStager: masks and the release's two-stage
+# pipeline (shapes, features and compilation are in the shared suites)
+# ==============================================================================
+
+
+def _small(cls, **kwargs):
+    """Reduced model: 20 patches of 64 samples; stager chunks of 8, 8 and 4."""
+    config = dict(n_chans=3, n_times=1280, n_outputs=5, sfreq=128.0, patch_size=64)
+    config |= dict(embed_dim=16, drop_prob=0.0, max_seq_length=32)
+    if cls is SleepFM:
+        config |= dict(num_heads=4, num_layers=1, pooling_heads=4)
+    else:
+        config |= dict(channel_modalities=["A", "A", "B"], encoder_chunk_patches=8)
+        config |= dict(encoder_num_heads=4, encoder_num_layers=1)
+        config |= dict(encoder_pooling_heads=4, staging_pooling_heads=4)
+    return cls(**(config | kwargs))
+
+
+@pytest.mark.parametrize("training", [False, True])
+@pytest.mark.parametrize(
+    "cls,masked",
+    [(SleepFM, "channel"), (SleepFMStager, "channel"), (SleepFMStager, "patch")],
+)
+def test_sleepfm_masked_input_is_ignored(cls, masked, training):
+    """Masked channels or patches reach neither the output nor BatchNorm."""
+    model = _small(cls).train(training)
+    x = torch.randn(2, 3, 1280)
+    corrupted = x.clone()
+    if masked == "channel":
+        mask = torch.tensor([[False, False, True], [False, True, False]])
+        corrupted[mask] = 1e3
+        kwargs = {"channel_mask": mask}
+    else:
+        mask = torch.zeros(2, 20, dtype=torch.bool)
+        mask[1, 12:] = True  # ends inside a chunk
+        corrupted[1, :, 12 * 64 :] = 1e3
+        kwargs = {"temporal_mask": mask}
+    runs = []
+    for signal in (x, corrupted):
+        net = copy.deepcopy(model)
+        stats = [v for k, v in net.state_dict().items() if "running" in k]
+        runs.append((net(signal, **kwargs), stats))
+    torch.testing.assert_close(runs[0], runs[1])
+
+
+@pytest.mark.parametrize("n_valid", [16, 12], ids=["chunk_aligned", "inside_chunk"])
+def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
+    """Stager = SleepFM.encode per modality and chunk, then the staging head."""
+    encoder = _small(SleepFM, max_seq_length=128).eval()
+    stager = _small(SleepFMStager).eval()
+    shared = {
+        k: v
+        for k, v in encoder.state_dict().items()
+        if k in stager.state_dict() and not k.startswith("final_layer.")
+    }
+    stager.load_state_dict(shared, strict=False)
+    x = torch.randn(2, 3, 1280)
+    channel_mask = torch.tensor([[False, True, False], [False, False, False]])
+    temporal_mask = torch.zeros(2, 20, dtype=torch.bool)
+    temporal_mask[1, n_valid:] = True
+
+    def embed(chans):
+        out = torch.zeros(2, 20, 16)
+        for i, stop in enumerate((20, n_valid)):
+            for start in range(0, stop, 8):
+                end = min(start + 8, stop)
+                signal = x[i : i + 1, chans, start * 64 : end * 64]
+                out[i, start:end] = encoder.encode(
+                    signal, channel_mask[i : i + 1, chans]
+                )[1][0]
+        return out
+
+    with torch.no_grad():
+        embeddings = torch.stack(
+            [embed([0, 1]), embed([2])] + [torch.zeros(2, 20, 16)] * 2, 1
+        )
+        modality_mask = torch.tensor([[False, False, True, True]] * 2)
+        features = stager.staging_head(embeddings, modality_mask, temporal_mask)
+        expected = stager.final_layer(features).transpose(1, 2)
+        output = stager(x, channel_mask, temporal_mask=temporal_mask)
+        permuted = _small(SleepFMStager, channel_modalities=["B", "A", "A"]).eval()
+        permuted.load_state_dict(stager.state_dict())
+        torch.testing.assert_close(permuted(x[:, [2, 0, 1]]), stager(x))
+
+    assert output.shape == (2, 5, 20)
+    torch.testing.assert_close(output[0], expected[0])
+    torch.testing.assert_close(output[1, :, :n_valid], expected[1, :, :n_valid])
+
+
+@pytest.mark.skipif(not HAS_SAFETENSORS, reason="safetensors is required")
+def test_sleepfm_stager_completes_a_head_only_checkpoint(tmp_path):
+    """Older stager mirror revisions hold the tokenizer and head only."""
+    from safetensors.torch import save_file
+
+    stager, encoder = _small(SleepFMStager), _small(SleepFM, max_seq_length=128)
+    stager.save_pretrained(tmp_path / "stager")
+    encoder.save_pretrained(tmp_path / "encoder")
+    head = ("patch_embedding.", "staging_head.", "final_layer.")
+    head_only = {k: v for k, v in stager.state_dict().items() if k.startswith(head)}
+    save_file(head_only, tmp_path / "stager" / "model.safetensors")
+
+    loaded = SleepFMStager.from_pretrained(
+        tmp_path / "stager", encoder_model_name_or_path=tmp_path / "encoder"
+    )
+    expected = encoder.state_dict() | head_only
+    for key, value in loaded.state_dict().items():
+        torch.testing.assert_close(value, expected[key], msg=key)
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_sleepfm_pretrained_loads():
+    kwargs = dict(n_chans=3, n_times=1280, n_outputs=5, sfreq=128.0)
+    encoder = SleepFM.from_pretrained(**kwargs)
+    kwargs["channel_modalities"] = ["BAS", "BAS", "EKG"]
+    stager, reference = SleepFMStager.from_pretrained(**kwargs), SleepFMStager(**kwargs)
+    with torch.no_grad():
+        features = encoder.eval()(torch.randn(2, 3, 1280), return_features=True)
+        assert features["features"].shape == (2, 128)
+        assert stager.eval()(torch.randn(2, 3, 1280)).shape == (2, 5, 2)
+    for name in (
+        "patch_embedding.tokenizer.0.weight",
+        "transformer_encoder.layers.5.linear2.weight",
+        "staging_head.lstm.weight_ih_l0",
+        "final_layer.weight",
+    ):
+        assert not torch.equal(
+            stager.get_parameter(name), reference.get_parameter(name)
+        )
+
+
 @pytest.fixture
 def diver1_model():
     info = mne.create_info([f"A{i}" for i in range(6)], 500.0, "seeg")
@@ -1691,6 +1826,13 @@ def test_diver1_reset_head_preserves_zero_outputs(diver1_model, n_outputs):
     assert diver1_model.get_config()["n_outputs"] == n_outputs
 
 
+# The bfloat16 ``fold`` kernel crashes the Windows CI runners' Python process
+# with 0xC000001D (illegal instruction); pytest-xdist then reports a lost
+# worker. It happens on master too, so it is the runner/CPU path, not DIVER-1.
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="bfloat16 fold crashes Windows CI runners (0xC000001D, illegal instruction)",
+)
 def test_diver1_stcpe_preserves_low_precision_overlap(monkeypatch):
     # BF16 fold accumulates 257 overlapping ones to 256, not scalar 257.
     model = _STCPE(8, 4, 257, torch.nn.SiLU, 1).bfloat16().eval()
@@ -2129,6 +2271,16 @@ def test_mapa_session_normalization_matches_window_normalization_on_its_bands(ma
         torch.testing.assert_close(session(frames), mapa_model(x))
 
 
+def test_mapa_session_normalization_input_and_output_shape():
+    model = _mapa_session_model()
+    assert model.input_shape == (1, len(MAPA_SUBJECT_A), 20, 32)
+    assert model.get_output_shape() == (1, 4)
+
+
+def test_mapa_window_normalization_input_shape_is_raw(mapa_model):
+    assert mapa_model.input_shape == (1, mapa_model.n_chans, mapa_model.n_times)
+
+
 def test_mapa_session_normalization_reads_another_subject():
     frames = torch.randn(2, len(MAPA_SUBJECT_B), 20, 64)
     with torch.no_grad():
@@ -2163,15 +2315,6 @@ def test_mapa_token_layout_tracks_the_montage(mapa_model):
     assert (changed["token_region"] == 3).any()
 
 
-# The authors' Hub repository, pinned to the commit whose mapa_vits384.pt is
-# byte-identical to their GitHub release v0.1.0.
-MAPA_HUB_REPO = "bentang18/MAPA"
-MAPA_HUB_REVISION = "988efbf31a7d1f38533b848c993a719d6f900b1f"
-MAPA_CHECKPOINT_SHA256 = (
-    "2d236089a2f1a3cc2827e3f150c4a2ba14c51bbfaf0ce0888f84b92a6eb25a7a"
-)
-
-
 def _mapa_reference_windows():
     """Two 1 s windows at 2048 Hz of four amplitude-modulated multi-tone channels."""
     t = torch.arange(2048, dtype=torch.float64) / 2048
@@ -2192,7 +2335,7 @@ def _mapa_reference_windows():
 @pytest.mark.network
 @pytest.mark.huggingface
 def test_mapa_released_checkpoint_reproduces_the_reference_features():
-    """The released mapa_vits384 loads and gives the authors' features.
+    """The re-hosted mapa_vits384 loads and gives the authors' features.
 
     The expected values were computed with the authors' code (bentang18/MAPA at
     bf2b49e) on the same windows: its STFT and robust z-score fitted on each
@@ -2202,38 +2345,22 @@ def test_mapa_released_checkpoint_reproduces_the_reference_features():
     ``return_features`` pools. CI does not pass ``--run-network`` to the unit
     tests; run it with ``pytest -k mapa_released --run-network``.
     """
-    hub = pytest.importorskip("huggingface_hub")
-    mne_data_dir = mne.get_config("MNE_DATA") or str(Path.home() / "mne_data")
+    pytest.importorskip("huggingface_hub")
     try:
-        path = hub.hf_hub_download(
-            MAPA_HUB_REPO,
-            "mapa_vits384.pt",
-            revision=MAPA_HUB_REVISION,
-            cache_dir=str(Path(mne_data_dir) / "mapa_pretrained"),
-        )
+        model = MAPA.from_pretrained(
+            "braindecode/mapa-pretrained",
+            n_chans=4,
+            contact_labels=["LA1", "LA2", "LA4", "LB1"],
+            regions=[
+                "ctx-lh-superiortemporal",
+                "ctx-lh-superiortemporal",
+                "Left-Hippocampus",
+                None,
+            ],
+            strict=True,
+        ).eval()
     except (URLError, OSError) as err:
         pytest.skip(f"Could not download the MAPA checkpoint: {err}")
-    assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == (
-        MAPA_CHECKPOINT_SHA256
-    )
-
-    model = MAPA(
-        n_outputs=2,
-        n_chans=4,
-        n_times=2048,
-        sfreq=2048,
-        contact_labels=["LA1", "LA2", "LA4", "LB1"],
-        regions=[
-            "ctx-lh-superiortemporal",
-            "ctx-lh-superiortemporal",
-            "Left-Hippocampus",
-            None,
-        ],
-    ).eval()
-    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-    missing, unexpected = model.load_state_dict(checkpoint["model"], strict=False)
-    assert sorted(missing) == ["final_layer.bias", "final_layer.weight"]
-    assert unexpected == []
 
     with torch.no_grad():
         features = model(_mapa_reference_windows(), return_features=True)["features"]

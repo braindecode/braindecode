@@ -580,6 +580,9 @@ def test_model_torch_script(model):
         "REVE",
         "CBraMod",
         "CodeBrain",
+        # einops Rearrange layer and the Dict/Tensor polymorphic return in
+        # forward (features vs logits), like CBraMod/CodeBrain.
+        "CSBrain",
         # einops rearrange/repeat in the Perceiver/decoder and the fixed-grid
         # cross-attention make forward not torch.jit.script-able. (Reason is
         # einops + dynamic length, NOT polymorphic return — DANCE.forward is
@@ -610,6 +613,9 @@ def test_model_torch_script(model):
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",
         "SignalJEPA_PreLocal",
+        # As EEGDINO: forward() returns a Dict[str, Tensor] or a Tensor.
+        "SleepFM",
+        "SleepFMStager",
         "InterpolatedBENDR",
         "InterpolatedBIOT",
         "InterpolatedEEGPT",

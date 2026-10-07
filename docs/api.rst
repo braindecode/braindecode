@@ -78,6 +78,8 @@ IDs, quantized embeddings, and commitment loss through its ``tokenize()`` method
     - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
     - :class:`CodeBrain` - Scalable EEG pre-training with temporal and spectral code
       prediction
+    - :class:`CSBrain` - Cross-scale spatiotemporal brain foundation model with
+      structured sparse attention
     - :class:`Labram` - Large Brain Model with pre-trained weights
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
@@ -89,6 +91,9 @@ IDs, quantized embeddings, and commitment loss through its ``tokenize()`` method
     - :class:`EEGPT` - Pretrained transformer for universal EEG
     - :class:`STEEGFormer` - ViT-MAE EEG foundation model with braindecode-format
       re-hosted weights
+    - :class:`SleepFM` and :class:`SleepFMStager` - Multimodal PSG foundation encoder
+      and token-wise sleep-staging model compatible with the authors' CC BY-NC
+      checkpoints
 
     **Example - Loading a pre-trained model:**
 
@@ -156,6 +161,7 @@ IDs, quantized embeddings, and commitment loss through its ``tokenize()`` method
      CBraMod
      CodeBrain
      ContraWR
+     CSBrain
      CTNet
      DGCNN
      DIVER1
@@ -203,6 +209,8 @@ IDs, quantized embeddings, and commitment loss through its ``tokenize()`` method
      SignalJEPA_PostLocal
      SignalJEPA_PreLocal
      SincShallowNet
+     SleepFM
+     SleepFMStager
      SleepStagerBlanco2020
      SleepStagerChambon2018
      SPARCNet

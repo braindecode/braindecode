@@ -282,12 +282,16 @@ def test_interpolated_eegpt_accepts_arbitrary_user_channels():
     assert y.shape == (1, 2)
 
 
-def test_bendr_rejects_non_canonical_chs():
+def test_bendr_adapts_non_canonical_chs():
+    # Since the ChannelTokenizer, BENDR adapts any montage with coordinates
+    # instead of pointing the user at InterpolatedBENDR.
     from braindecode.models import BENDR
 
     user = _target_5ch()  # 5 non-canonical (for BENDR) channels
-    with pytest.raises(ValueError, match="InterpolatedBENDR"):
-        BENDR(chs_info=user, n_outputs=2, n_times=1000, sfreq=256)
+    model = BENDR(chs_info=user, n_outputs=2, n_times=1000, sfreq=256).eval()
+    with torch.no_grad():
+        y = model(torch.randn(1, 5, 1000))
+    assert y.shape[0] == 1 and torch.isfinite(y).all()
 
 
 def test_signal_jepa_pretrain_aligned_still_works():
