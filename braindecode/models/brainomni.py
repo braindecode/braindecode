@@ -600,10 +600,7 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
 
         The pretraining-only mask predictor in the checkpoint is discarded and
         the classification ``final_layer`` remains freshly initialized, so
-        fine-tune or linear-probe before use. The checkpoint's RoPE position
-        cache holds cosines only (no sine); it is loaded as is, so the
-        temporal attention rotates exactly as the released code does with
-        these weights.
+        fine-tune or linear-probe before use.
 
     .. versionadded:: 1.8
 
@@ -788,9 +785,7 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         )
         self._head_in = n_neuro * lm_dim
         self.apply(_init_weights)
-        # The released downstream head (``downstream/model.py``) keeps PyTorch's
-        # default ``Linear`` initialisation; only the backbone gets
-        # ``_init_weights``.
+        # As released (``downstream/model.py``): default init for the head.
         self.final_layer = self._make_head(self.n_outputs)
         self.tokenizer.requires_grad_(False)
 
@@ -873,11 +868,8 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         The official artifact contains the Stage-2 mask-prediction head rather
         than a downstream classifier. Those three pretraining-only tensors are
         intentionally ignored; the downstream ``final_layer`` remains local.
-        The released export also stores RoPE's frequencies (rounded to
-        bfloat16) and its position cache, which holds the cosines only. Both
-        load into the RoPE buffers, so the rotation is the one the released
-        code applies with these weights. A state dict without RoPE buffers
-        (saved by an earlier version) keeps the model's own ones.
+        Its RoPE ``freqs`` (rounded to bfloat16) and cosine-only cache load
+        into the RoPE buffers, so the rotation is the released one.
         """
         remapped = OrderedDict()
         metadata = getattr(state_dict, "_metadata", None)
@@ -896,8 +888,13 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
                 raise ValueError(
                     f"Checkpoint keys collide after remapping: {new_key!r}."
                 )
-            if new_key.endswith(_ROPE_CACHE_KEY):
-                value = _rope_cache_as_real(value)
+            if new_key.endswith("rope_embedding_layer.rotate") and value.dim() == 2:
+                # Released export: cosines only (the release's copy into its
+                # complex cache leaves the sine at zero); in memory: complex.
+                if value.is_complex():
+                    value = torch.view_as_real(value)
+                else:
+                    value = torch.stack((value, torch.zeros_like(value)), dim=-1)
             remapped[new_key] = value
         if official:
             for key in own_state:
@@ -906,37 +903,20 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
                     "tokenizer.sensor_type",
                 }:
                     remapped[key] = own_state[key]
-        for key in own_state:
-            if key.endswith(_ROPE_BUFFER_KEYS) and key not in remapped:
-                remapped[key] = own_state[key]
+        if not any(".rope_embedding_layer." in key for key in remapped):
+            # Saved before the RoPE buffers existed: keep the model's own.
+            remapped.update(
+                {k: v for k, v in own_state.items() if ".rope_embedding_layer." in k}
+            )
         if metadata is not None:
             remapped._metadata = metadata
         return super().load_state_dict(remapped, *args, **kwargs)
 
 
-_ROPE_CACHE_KEY = "rope_embedding_layer.rotate"
-_ROPE_BUFFER_KEYS = ("rope_embedding_layer.freqs", _ROPE_CACHE_KEY)
-
-
-def _rope_cache_as_real(value: torch.Tensor) -> torch.Tensor:
-    """Return a released RoPE cache as ``(seq, n_dim // 2, 2)`` ``(cos, sin)``.
-
-    The released module keeps a complex cache. Its exported checkpoints store
-    the real part only (``(seq, n_dim // 2)``, float32); the released
-    ``load_state_dict`` copies it into the complex buffer, so the sine is zero.
-    """
-    if value.is_complex():
-        return torch.view_as_real(value).float()
-    if value.dim() == 2:
-        return torch.stack((value.float(), torch.zeros_like(value.float())), dim=-1)
-    return value
-
-
 def _rename_official_key(key: str) -> str:
     """Map an OpenTSLab state-dict key to this port's name.
 
-    Native keys, including the RoPE ``freqs``/``rotate`` buffers, pass through
-    unchanged.
+    Native keys pass through unchanged.
     """
     key = key.replace("quantizer.rvq.", "quantizer.")
     if key.startswith("decoder."):
@@ -1158,45 +1138,24 @@ class _RotaryPositionalEmbedding(nn.Module):
     """Rotary position embedding (RoPE) of the released BrainOmni.
 
     Adjacent feature pairs of queries and keys are rotated by a
-    position-dependent angle (Su et al., 2021). As in the release, the module
-    holds two buffers: ``freqs`` (one inverse-frequency ladder over ``n_dim``,
-    split across heads, so each head gets a different band) and ``rotate``, the
-    cache of the first ``init_seq_len`` positions. The release stores ``rotate``
-    as complex numbers; here it is their real view ``(seq, n_dim // 2, 2)``
-    holding ``(cos, sin)``, so the rotation runs in real arithmetic
-    (:func:`~braindecode.functional.rotate_pairs`) on devices without complex
-    support.
-
-    The cache is part of the state dict because the released checkpoints
-    change it: their ``rotate`` holds the cosines only (the sine is zero), and
-    the released code rotates with that loaded cache. A sequence longer than the
-    cache rebuilds it from ``freqs`` with both cosine and sine, and later calls
-    of any length use the rebuilt cache, as in the release. The rebuilt cache is
-    a non-persistent buffer, so the state dict is unchanged; loading a state
-    dict drops it. When the module is cast with ``.half()`` or ``.bfloat16()``,
-    the caches stay in float32, as the release's complex64 cache does, while
-    ``freqs`` follows the cast, so a rebuilt cache forms the angles in that
-    dtype, as the release does.
-
-    Parameters
-    ----------
-    n_dim : int
-        Full attention dimension (``n_heads * head_dim``).
-    base : float
-        Base of the inverse-frequency ladder.
-    init_seq_len : int
-        Number of cached positions (240 in the release).
+    position-dependent angle (Su et al., 2021). One inverse-frequency ladder
+    ``freqs`` is built over ``n_dim`` and split across heads, as in the
+    release. ``rotate`` caches 240 positions as ``(cos, sin)`` pairs, the real
+    view of the release's complex cache, so released checkpoints (cosines
+    only) load into it. A longer sequence rebuilds the cache from ``freqs``
+    and later calls keep using it, as in the release; that cache is not
+    saved. Under ``.half()``/``.bfloat16()`` the caches stay float32 and
+    ``freqs`` follows the cast, as in the release.
     """
 
-    def __init__(self, n_dim, base=10000, init_seq_len=240):
+    def __init__(self, n_dim, base=10000):
         super().__init__()
         if n_dim <= 0 or n_dim % 2:
             raise ValueError(f"n_dim must be a positive even integer, got {n_dim}.")
         self.n_dim = n_dim
-        self.base = base
         exponent = torch.arange(0, n_dim, 2).float() / n_dim
         self.register_buffer("freqs", 1.0 / (base**exponent))
-        self.register_buffer("rotate", self._polar(init_seq_len))
+        self.register_buffer("rotate", self._polar(240))
         self.register_buffer("rebuilt", None, persistent=False)
 
     def _polar(self, seq: int) -> torch.Tensor:
@@ -1206,9 +1165,7 @@ class _RotaryPositionalEmbedding(nn.Module):
         return torch.stack((angles.cos(), angles.sin()), dim=-1)
 
     def _apply(self, fn, recurse=True):
-        # Follow device moves but keep the float32 caches under a dtype cast,
-        # as the release's complex64 cache under ``.half()`` / ``.bfloat16()``;
-        # ``freqs`` follows the cast, as in the release.
+        # Keep the float32 caches under a dtype cast (release: complex64).
         before = {name: self._buffers[name] for name in ("rotate", "rebuilt")}
         super()._apply(fn, recurse)
         for name, buffer in before.items():
@@ -1222,12 +1179,12 @@ class _RotaryPositionalEmbedding(nn.Module):
         super()._load_from_state_dict(*args, **kwargs)
 
     def _cos_sin(self, seq: int, heads: int):
-        """``(seq, heads, head_dim)`` cosines and sines, each repeated per pair."""
+        """``(seq, heads, head_dim)`` cosines and sines."""
         rotate = self.rotate if self.rebuilt is None else self.rebuilt
         if seq > rotate.shape[0]:
             # Release ``_set_rotate_cache``: replace the cache, keep it.
             self.rebuilt = rotate = self._polar(seq)
-        rotate = rotate[:seq].float().repeat_interleave(2, dim=1)
+        rotate = rotate[:seq].repeat_interleave(2, dim=1)
         rotate = rearrange(
             rotate, "seq (heads head_dim) two -> seq heads head_dim two", heads=heads
         )

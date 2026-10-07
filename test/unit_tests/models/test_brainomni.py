@@ -23,7 +23,6 @@ from braindecode.models.brainomni import (
     _geometry_from_chs_info,
     _MultiHeadAttentionRoPE,
     _rename_official_key,
-    _rope_cache_as_real,
     _RotaryPositionalEmbedding,
     _SEANetDecoder,
     _SEANetEncoder,
@@ -883,104 +882,50 @@ def test_rope_matches_released_complex_rotation(seq):
     torch.testing.assert_close(q_out.norm(dim=-1), q.norm(dim=-1))
 
 
-def test_rope_buffers_stay_float32_and_keep_dtype():
-    """Casting the module keeps the float32 cache; half inputs stay half."""
-    rope = _RotaryPositionalEmbedding(n_dim=16).half()
-    q = torch.randn(2, 9, 4, 4)
-    q_out, _ = rope(q.half(), q.half())
-    assert set(rope.state_dict()) == {"freqs", "rotate"}
-    assert rope.freqs.dtype == torch.float16
-    assert rope.rotate.dtype == torch.float32
-    assert rope.rotate.shape == (240, 8, 2)
-    assert q_out.dtype == torch.float16
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_rope_cast_keeps_float32_cache_and_rebuilds_in_dtype(dtype):
+    """As the release: the cache stays float32, ``freqs`` follows the cast."""
+    rope = _RotaryPositionalEmbedding(n_dim=32).to(dtype)
+    assert rope.freqs.dtype == dtype and rope.rotate.dtype == torch.float32
+    q = torch.randn(2, 9, 4, 8).to(dtype)
+    torch.testing.assert_close(rope(q, q)[0], _complex_rope_reference(q, 32))
+    q = torch.randn(2, 300, 4, 8).to(dtype)
+    angles = torch.outer(torch.arange(300).type_as(rope.freqs), rope.freqs).float()
+    released = torch.polar(torch.ones_like(angles), angles)
     torch.testing.assert_close(
-        q_out.float(), _complex_rope_reference(q, 16), atol=1e-2, rtol=1e-2
+        rope(q, q)[0], _complex_rope_reference(q, 32, rotate=released)
     )
 
 
-@pytest.mark.parametrize("seq", [5, 240, 250])
-def test_rope_rotates_with_the_released_cosine_only_cache(seq):
-    """A released checkpoint's cache (cosines, no sine) drives the rotation.
+def test_rope_released_cosine_only_cache_then_rebuilt():
+    """Released cache (cosines, no sine) up to 240; past it, rebuilt and kept.
 
-    The released ``load_state_dict`` copies the stored real cache into its
-    complex buffer, so the sine is zero; past the 240 cached positions the
-    release rebuilds the rotation from the loaded (bfloat16-rounded) ``freqs``.
+    The release copies the stored real cache into its complex buffer (sine 0)
+    and ``_set_rotate_cache`` rebuilds from the bfloat16-rounded ``freqs``.
+    The state dict is unchanged and a reload restores the loaded cache.
     """
-    n_heads, head_dim = 4, 8
-    n_dim = n_heads * head_dim
+    n_dim = 32
     exact = 1.0 / (10000 ** (torch.arange(0, n_dim, 2).float() / n_dim))
     cosines = torch.cos(torch.outer(torch.arange(240).float(), exact))
-    freqs = exact.bfloat16().float()
+    rotate = torch.stack((cosines, torch.zeros_like(cosines)), dim=-1)
+    state = {"freqs": exact.bfloat16().float(), "rotate": rotate}
     rope = _RotaryPositionalEmbedding(n_dim=n_dim)
-    rope.load_state_dict(
-        {"freqs": freqs, "rotate": _rope_cache_as_real(cosines)}, strict=True
-    )
-    if seq <= 240:
-        released = torch.complex(cosines, torch.zeros_like(cosines))
-    else:
-        angles = torch.outer(torch.arange(seq).float(), freqs)
-        released = torch.polar(torch.ones_like(angles), angles)
-    q = torch.randn(2, seq, n_heads, head_dim)
-    k = torch.randn(2, seq, n_heads, head_dim)
-    q_out, k_out = rope(q, k)
-    torch.testing.assert_close(q_out, _complex_rope_reference(q, n_dim, rotate=released))
-    torch.testing.assert_close(k_out, _complex_rope_reference(k, n_dim, rotate=released))
-
-
-def test_rope_keeps_the_rebuilt_cache_after_a_long_sequence():
-    """After a sequence past the cache, short calls use the rebuilt cache.
-
-    The release's ``_set_rotate_cache`` replaces its cosine-only cache with
-    the full rotation from ``freqs``; the state dict and a reload are unchanged.
-    """
-    n_heads, head_dim = 4, 8
-    n_dim = n_heads * head_dim
-    exact = 1.0 / (10000 ** (torch.arange(0, n_dim, 2).float() / n_dim))
-    cosines = torch.cos(torch.outer(torch.arange(240).float(), exact))
-    state = {"freqs": exact.bfloat16().float(), "rotate": _rope_cache_as_real(cosines)}
-    rope = _RotaryPositionalEmbedding(n_dim=n_dim)
-    rope.load_state_dict(state, strict=True)
-    long = torch.randn(1, 250, n_heads, head_dim)
-    rope(long, long)
-    angles = torch.outer(torch.arange(250).float(), state["freqs"])
-    rebuilt = torch.polar(torch.ones_like(angles), angles)
-    q = torch.randn(2, 5, n_heads, head_dim)
-    torch.testing.assert_close(
-        rope(q, q)[0], _complex_rope_reference(q, n_dim, rotate=rebuilt)
-    )
-    assert set(rope.state_dict()) == {"freqs", "rotate"}
-    assert rope.state_dict()["rotate"].shape == (240, n_dim // 2, 2)
     rope.load_state_dict(state, strict=True)
     cosine_only = torch.complex(cosines, torch.zeros_like(cosines))
+    angles = torch.outer(torch.arange(250).float(), state["freqs"])
+    rebuilt = torch.polar(torch.ones_like(angles), angles)
+    for seq, released in ((240, cosine_only), (250, rebuilt), (5, rebuilt)):
+        q = torch.randn(2, seq, 4, 8)
+        torch.testing.assert_close(
+            rope(q, q)[0], _complex_rope_reference(q, n_dim, rotate=released)
+        )
+    assert {k: v.shape for k, v in rope.state_dict().items()} == {
+        "freqs": (16,),
+        "rotate": (240, 16, 2),
+    }
+    rope.load_state_dict(state, strict=True)
     torch.testing.assert_close(
         rope(q, q)[0], _complex_rope_reference(q, n_dim, rotate=cosine_only)
-    )
-
-
-@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-def test_rope_rebuilds_past_the_cache_in_the_model_dtype(dtype):
-    """Past 240 positions a cast module forms the angles in its dtype.
-
-    Under ``.half()`` / ``.bfloat16()`` the released ``freqs`` follows the cast
-    and ``_set_rotate_cache`` computes ``outer(t, freqs)`` in that dtype before
-    the float32 polar cache; the port does the same.
-    """
-    n_heads, head_dim, seq = 4, 8, 300
-    n_dim = n_heads * head_dim
-    rope = _RotaryPositionalEmbedding(n_dim=n_dim).to(dtype)
-    assert rope.freqs.dtype == dtype
-    assert rope.rotate.dtype == torch.float32
-    q = torch.randn(2, seq, n_heads, head_dim).to(dtype)
-    q_out, _ = rope(q, q)
-    angles = torch.outer(torch.arange(seq).type_as(rope.freqs), rope.freqs).float()
-    released = torch.polar(torch.ones_like(angles), angles)
-    assert rope.rebuilt.dtype == torch.float32
-    torch.testing.assert_close(
-        rope.rebuilt, torch.view_as_real(released), atol=1e-6, rtol=0
-    )
-    assert q_out.dtype == dtype
-    torch.testing.assert_close(
-        q_out, _complex_rope_reference(q, n_dim, rotate=released)
     )
 
 
@@ -1044,7 +989,9 @@ def test_spatial_temporal_block_matches_frozen_released_output():
     exact = 1.0 / (10000 ** (torch.arange(0, 8, 2).float() / 8))
     cosines = torch.cos(torch.outer(torch.arange(240).float(), exact))
     state["time_attn.rope_embedding_layer.freqs"] = exact.bfloat16().float()
-    state["time_attn.rope_embedding_layer.rotate"] = _rope_cache_as_real(cosines)
+    state["time_attn.rope_embedding_layer.rotate"] = torch.stack(
+        (cosines, torch.zeros_like(cosines)), dim=-1
+    )
     block.load_state_dict(state, strict=True)
     x = torch.randn(2, 3, 5, 16, generator=gen)
     with torch.no_grad():
@@ -1230,23 +1177,23 @@ def test_brainomni_official_stage2_keys_load():
         assert torch.equal(target.state_dict()[key], expected), key
 
 
-def test_brainomni_state_dict_without_rope_buffers_loads():
-    """A native state dict saved before the RoPE buffers existed still loads."""
-    source = _small_brainomni()
-    legacy = {k: v for k, v in source.state_dict().items() if "rope_embedding" not in k}
-    target = _small_brainomni()
-    target.load_state_dict(legacy, strict=True)
-    rope = target.blocks[0].time_attn.rope_embedding_layer
-    torch.testing.assert_close(rope.rotate, _RotaryPositionalEmbedding(8).rotate)
+def test_brainomni_rope_buffers_backfilled_only_when_all_missing():
+    """A state dict saved before the RoPE buffers loads; a partial one fails."""
+    state = _small_brainomni().state_dict()
+    legacy = {k: v for k, v in state.items() if "rope_embedding" not in k}
+    _small_brainomni().load_state_dict(legacy, strict=True)
+    del state["blocks.0.time_attn.rope_embedding_layer.rotate"]
+    with pytest.raises(RuntimeError, match="rope_embedding_layer.rotate"):
+        _small_brainomni().load_state_dict(state, strict=True)
 
 
 def test_brainomni_head_keeps_default_linear_init():
-    """The released downstream head is not re-initialised by ``_init_weights``."""
+    """As released, ``_init_weights`` (zero biases) skips the head."""
     model = _small_brainomni()
-    for module in (model.final_layer[1], model.final_layer[3]):
-        assert module.bias.abs().max() > 0  # _init_weights zeroes biases
+    biases = [model.final_layer[i].bias for i in (1, 3)]
     model.reset_head(5)
-    assert model.final_layer[3].bias.abs().max() > 0
+    biases += [model.final_layer[i].bias for i in (1, 3)]
+    assert all(bias.abs().max() > 0 for bias in biases)
 
 
 def test_brainomni_official_decoder_rename_is_anchored():

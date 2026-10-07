@@ -242,16 +242,9 @@ Bug fixes
   ``n_times``; such a model could not be saved or loaded with ``from_pretrained``
   ("uninitialized parameter"). The head is now a concrete ``Linear`` whenever the
   geometry is known (:gh:`1233` by `Bruno Aristimunha`_).
-- :class:`braindecode.models.BrainOmni` now rotates queries and keys as the
-  released BrainOmni code does with the released weights. The released
-  checkpoints store a RoPE position cache that holds the cosines only, and the
-  released code uses it as loaded (no sine term); the port dropped that cache
-  and recomputed a full rotation, so every transformer block differed from the
-  release. The cache is now a float32 buffer loaded from the checkpoint, and the
-  forward pass equals the released code's (max-abs difference 0 in float32 on
-  the tiny and base weights). The classification head also keeps PyTorch's
-  default ``Linear`` initialisation, as the released downstream head does.
-  State dicts saved without the new buffers still load. (by `Bruno Aristimunha`_)
+- :class:`braindecode.models.BrainOmni` now loads the released checkpoints' RoPE
+  cache (cosines only) and keeps PyTorch's default head initialisation, so its
+  forward pass equals the released code's (:gh:`1244` by `Bruno Aristimunha`_).
 - Fix :class:`braindecode.models.CBraMod` failing in ``forward`` for any
   ``patch_size`` other than 200: the spectral reshape hard-coded 101 rFFT bins
   instead of ``patch_size // 2 + 1`` (:gh:`1240` by `Bruno Aristimunha`_).
