@@ -109,12 +109,21 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     spectrogram itself (``sfreq=32``, ``n_times`` in frames): the 20 retained
     bins, robust z-scored per contact and bin over the whole recording.
 
-    *Pretrained weights.* ``MAPA.stem`` and ``MAPA.encoder`` keep the reference
-    module names (the feed-forward ``fc1``/``fc2`` are renamed on load through
-    ``mapping``), so a released ``checkpoint["model"]`` loads with
-    :meth:`~torch.nn.Module.load_state_dict` under ``strict=False``, leaving
-    only ``final_layer`` uninitialized. The default configuration has the
-    released 21,335,424 parameters, excluding the head.
+    .. important::
+       **Pre-trained Weights Available**
+
+       The released ``mapa_vits384`` encoder (the default configuration,
+       21,335,424 parameters) is hosted on the Hugging Face Hub. The head is
+       randomly initialized, so fine-tune or linear-probe before use::
+
+           from braindecode.models import MAPA
+
+           model = MAPA.from_pretrained(
+               "braindecode/mapa-pretrained",
+               n_outputs=2,
+               chs_info=raw.info["chs"],  # clinical labels, e.g. "LA7"
+               regions=regions,
+           )
 
     .. note::
         Differences from the reference implementation:
@@ -274,17 +283,6 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             deep_sup=deep_sup,
             activation=activation,
         )
-        # The released feed-forward ``fc1``/``fc2`` map to ``FeedForwardBlock``
-        # children 0 and 3, so a checkpoint loads under these names.
-        self.mapping = {
-            f"encoder.blocks.{i}.mlp.fc{fc}.{param}": (
-                f"encoder.blocks.{i}.mlp.{child}.{param}"
-            )
-            for i in range(12)
-            for fc, child in ((1, 0), (2, 3))
-            for param in ("weight", "bias")
-        }
-
         # The montage resolved here is only the default: forward takes another
         # recording's metadata directly, which is what lets one instance read
         # subjects it was not built for. It rides along as a buffer, so it
