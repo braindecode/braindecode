@@ -613,9 +613,7 @@ def test_model_torch_script(model):
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",
         "SignalJEPA_PreLocal",
-        # torch.jit.script cannot type the shape-guard messages (`tuple(x.shape)`
-        # inside an f-string) and, as for EEGDINO and MVPFormer, rejects
-        # forward()'s polymorphic Dict[str, Tensor] / Tensor return.
+        # As EEGDINO: forward() returns a Dict[str, Tensor] or a Tensor.
         "SleepFM",
         "SleepFMStager",
         "InterpolatedBENDR",

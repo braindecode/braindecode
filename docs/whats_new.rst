@@ -92,17 +92,7 @@ Enhancements
   (:gh:`1155` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.SleepFM`, a channel-agnostic multimodal PSG
   foundation encoder, and :class:`braindecode.models.SleepFMStager`, its
-  token-wise bidirectional-LSTM sleep-staging model, which runs the encoder per
-  modality on 5-minute chunks as the released pipeline does and accepts a
-  temporal padding mask. Both accept a variable channel mask, which also keeps
-  masked channels out of batch normalization in training (the official
-  pretraining code normalizes them with the real channels), support
-  ``return_features`` and ``reset_head``, and load the
-  authors' released checkpoints with ``from_pretrained()`` from the braindecode
-  mirror. The paper's disease-prediction baselines are out of scope: they
-  combine the PSG representation with age, sex, BMI, and race/ethnicity, which
-  are not electrophysiological inputs. The implementation is distributed under
-  CC BY-NC 4.0 to match the official SleepFM release.
+  patch-wise sleep-staging model, with the released weights; CC BY-NC 4.0
   (:gh:`1106` by `Fashad Ahmed`_)
 
 - Add :class:`braindecode.models.CSBrain`, the cross-scale spatiotemporal brain
