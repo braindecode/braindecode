@@ -39,6 +39,7 @@ from braindecode.models import (
     BrainBERT,
     BrainModule,
     Brant,
+    CBraMod,
     ContraWR,
     Deep4Net,
     DeepSleepNet,
@@ -5168,6 +5169,55 @@ def test_csbrain_head_hidden_dim_overrides_the_reference_width():
 def test_csbrain_rejects_brain_regions_of_wrong_length():
     with pytest.raises(ValueError, match="brain_regions has 3 entries for 4"):
         CSBrain(n_outputs=2, n_chans=4, n_times=400, brain_regions=[0, 1, 2], n_layer=1)
+
+
+@pytest.mark.parametrize("model_class", [CBraMod, CSBrain])
+def test_cbramod_patch_embedding_patch_size_not_200(model_class):
+    """The shared patch embedding sizes its rFFT bins from ``patch_size``."""
+    model = model_class(n_outputs=2, n_chans=3, n_times=800, patch_size=400, n_layer=1)
+    assert model(torch.randn(2, 3, 800)).shape == (2, 2)
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="needs CUDA"
+            ),
+        ),
+        pytest.param(
+            "mps",
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason="needs MPS"
+            ),
+        ),
+    ],
+)
+def test_csbrain_patch_embedding_same_seed_init_is_stem_first(device):
+    """Same seed gives CSBrain's former stem-first patch-embedding init.
+
+    The Linear weight is skipped: ``_weights_init`` redraws it afterwards.
+    """
+    with torch.device(device):
+        torch.manual_seed(0)
+        emb = CSBrain(n_outputs=2, n_chans=4, n_times=400, n_layer=1).patch_embedding
+        torch.manual_seed(0)
+        d_model = emb.d_model
+        reference = [
+            nn.Conv2d(1, 25, (1, 49), (1, 25), (0, 24)),
+            nn.Conv2d(25, 25, (1, 3), (1, 1), (0, 1)),
+            nn.Conv2d(25, 25, (1, 3), (1, 1), (0, 1)),
+            nn.Conv2d(d_model, d_model, (19, 7), padding=(9, 3), groups=d_model),
+            nn.Linear(101, d_model),
+        ]
+    built = [*emb.proj_in[::3], emb.positional_encoding[0], emb.spectral_proj[0]]
+    reference[-1].weight = built[-1].weight
+    for ref, layer in zip(reference, built):
+        for ref_param, param in zip(ref.parameters(), layer.parameters()):
+            torch.testing.assert_close(param, ref_param, rtol=0, atol=0)
 
 
 def test_csbrain_channel_order_reproduces_reference_topology():

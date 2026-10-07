@@ -97,6 +97,10 @@ Enhancements
   inter-region) attention, channel names mapped to five anatomical regions or
   an explicit ``brain_regions`` layout, verified bit-exact against the authors'
   released pretrained checkpoint (:gh:`1196` by `Li Qing`_).
+- :class:`braindecode.models.CSBrain` reuses the patch embedding of
+  :class:`braindecode.models.CBraMod` instead of a copy of it; state-dict keys,
+  outputs with loaded weights and same-seed initial weights are unchanged
+  (:gh:`1240` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
   model with pretrained encoders and support for varying montages through
   :func:`braindecode.models.diver1.channel_metadata_from_chs_info`
@@ -222,6 +226,9 @@ Bug fixes
   ``n_times``; such a model could not be saved or loaded with ``from_pretrained``
   ("uninitialized parameter"). The head is now a concrete ``Linear`` whenever the
   geometry is known (:gh:`1233` by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.models.CBraMod` failing in ``forward`` for any
+  ``patch_size`` other than 200: the spectral reshape hard-coded 101 rFFT bins
+  instead of ``patch_size // 2 + 1`` (:gh:`1240` by `Bruno Aristimunha`_).
 
 - Fix :class:`braindecode.models.Deep4Net` short-input auto-scaling with ``split_first_layer=True`` so the scaled ``filter_time_length`` is used by the actual :class:`braindecode.modules.CombinedConv` temporal kernel instead of retaining the original constructor value. By `lindicaphxag-tech`_.
 
