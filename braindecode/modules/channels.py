@@ -250,9 +250,11 @@ class ChannelLayer(nn.Module):
         self._cache, self._key, self._chs = OrderedDict(), None, None
         self.register_buffer("weight", torch.zeros(0, 0), persistent=False)
         tnames = [str(c["ch_name"]) for c in self.target]
-        mono = list(dict.fromkeys(m for n in tnames for m in n.split("-")))
-        named = {str(c["ch_name"]): c for c in self.target}
+        # A-B is copied when measured, else derived from A and B (both columns).
+        mono = list(dict.fromkeys(m for n in tnames for m in (n, *n.split("-"))))
+        named = {n: c for n, c in zip(tnames, self.target) if "-" not in n}
         _, tpos, tstd, *_ = _resolve([named.get(m, {"ch_name": m}) for m in mono])
+        self._whole = [mono.index(n) for n in tnames]
         D = np.array(
             [
                 [(m == n.split("-")[0]) - (m == n.split("-")[-1] != n) for m in mono]
@@ -311,7 +313,7 @@ class ChannelLayer(nn.Module):
             raise ValueError(
                 "channel_strategy='source' uses a scalp-EEG sphere head; use a sensor strategy for intracranial channels."
             )
-        mono, tpos, tstd, D = self._mono, self._tpos, self._tstd, self._D
+        mono, tpos, tstd = self._mono, self._tpos, self._tstd
         # Copy: same name, else same standard position (T3 = T7), else unknown name within 15 mm.
         low = np.array([n.lower() for n in names])
         alias = np.nan_to_num(cdist(tstd, std), nan=np.inf) < 1e-6
@@ -325,7 +327,9 @@ class ChannelLayer(nn.Module):
                     W[k, j[np.argmin(near[k][j])]] = 1.0
                     break
         observed = W.sum(1) > 0
-        todo = ~observed & np.isfinite(tpos).all(1)
+        copied = observed[self._whole][:, None]  # a measured A-B target: copy it
+        D = np.where(copied, np.eye(len(mono))[self._whole], self._D)
+        todo = ~observed & np.isfinite(tpos).all(1) & np.abs(D).any(0)
         if self.strategy == "exact" and todo.any():
             raise ValueError(
                 f"Strategy 'exact': target channels {[m for m, t in zip(mono, todo) if t]} are not in the input montage {names}; use a reconstructing strategy (e.g. 'spline') or supply them."
@@ -353,8 +357,13 @@ class ChannelLayer(nn.Module):
                 )
         dev, dt = self.weight.device, self.weight.dtype  # built where the module is
         maps = dict(weight=D @ W)
-        if self.trainable:
-            Lt, S = _source(pos[use], tpos[todo], **self.kwargs)
+        if self.trainable:  # nothing to reconstruct: zero correction, no inverse
+            n = self.parcel_mix.shape[0]
+            Lt, S = (
+                _source(pos[use], tpos[todo], **self.kwargs)
+                if todo.any()
+                else (np.zeros((0, n)), np.zeros((n, use.sum())))
+            )
             maps.update(lead=D[:, todo] @ Lt, inverse=np.zeros((len(S), len(names))))
             maps["inverse"][:, use] = S
         if self.strategy == "latent":  # Fourier features of positions (in dm)
@@ -420,11 +429,12 @@ class ChannelLayer(nn.Module):
         if self.trainable:
             out = out + self.lead @ (self.parcel_mix @ (self.inverse @ x))
         if self.strategy == "latent" and self.lat_D.shape[1]:
-            var = (x - x.mean(-1, keepdim=True)).square().sum(-1) / (x.shape[-1] - 1)
-            stats = torch.stack([var, x.diff(dim=-1).abs().mean(-1)], -1)
+            xf = x.to(torch.promote_types(x.dtype, torch.float32))  # fp16: 1e-12 = 0
+            var = (xf - xf.mean(-1, keepdim=True)).square().sum(-1) / (x.shape[-1] - 1)
+            stats = torch.stack([var, xf.diff(dim=-1).abs().mean(-1)], -1)
             stats = (stats + 1e-12).log()
-            stats = stats - (self.lat_w @ stats)[:, None]  # (B, C, 2), no sync
-            keys = self.key_pos(self.src_feat) + self.key_stats(stats)
+            stats = stats - (self.lat_w.to(stats.dtype) @ stats)[:, None]  # (B, C, 2)
+            keys = self.key_pos(self.src_feat) + self.key_stats(stats.to(x.dtype))
             q = self.query(self.tgt_feat)
             logits = q @ keys.transpose(1, 2) / keys.shape[-1] ** 0.5
             attn = logits.masked_fill(~self.lat_mask, float("-inf")).softmax(-1)
