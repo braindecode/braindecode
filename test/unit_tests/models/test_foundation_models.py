@@ -2503,6 +2503,7 @@ _TEN_TWENTY = [
 def _patch_models():
     return [
         (Labram, dict(n_chans=19, n_times=800, sfreq=200), 200),
+        (Labram, dict(n_chans=19, n_times=800, sfreq=200, neural_tokenizer=False), 200),
         (CBraMod, dict(n_chans=19, n_times=800, sfreq=200), 200),
         (LUNA, dict(chs_info=_zuna_chs_info(), n_times=800, sfreq=200), 40),
         (ZUNA, dict(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL), 32),

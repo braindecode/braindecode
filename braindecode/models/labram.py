@@ -493,6 +493,7 @@ class Labram(EEGModuleMixin, nn.Module):
                     patch_size=patch_size,
                     in_channels=conv_in_channels,
                     emb_dim=self.embed_dim,
+                    on_non_divisible=on_non_divisible,
                 ),
             )
 
@@ -1069,7 +1070,7 @@ class _SegmentPatch(nn.Module):
         X_patch: Tensor
             [batch, n_chans, n_times//patch_size, patch_size]
         """
-        x = self.tokenizer._prepare_input(x)
+        x = self.tokenizer.prepare_input(x)
         batch_size, n_chans_actual, n_times_actual = x.shape
         # Input shape: [batch, n_chs, n_times]
 
@@ -1128,6 +1129,8 @@ class _PatchEmbed(nn.Module):
         Number of input channels (from VQVAE codebook).
     emb_dim: int (default=200)
         Number of output embedding dimension.
+    on_non_divisible: {"pad", "crop", "error"} (default="pad")
+        Passed to :class:`~braindecode.modules.PatchTokenizer`.
     """
 
     def __init__(
@@ -1137,12 +1140,21 @@ class _PatchEmbed(nn.Module):
         in_channels=1,
         emb_dim=200,
         n_codebooks=62,
+        on_non_divisible="pad",
     ):
         super().__init__()
         self.n_times = n_times
         self.patch_size = patch_size
-        self.patch_shape = (1, self.n_times // self.patch_size)
-        self.n_patchs = self.n_times // self.patch_size
+        # Same pad/crop/error step as the tokenizer mode (no parameters).
+        self.tokenizer = PatchTokenizer(
+            patch_size=patch_size, n_times=n_times, on_non_divisible=on_non_divisible
+        )
+        self.n_patchs = (
+            -(-n_times // patch_size)
+            if on_non_divisible == "pad"
+            else n_times // patch_size
+        )
+        self.patch_shape = (1, self.n_patchs)
         self.emb_dim = emb_dim
         self.in_channels = in_channels
 
@@ -1187,6 +1199,8 @@ class _PatchEmbed(nn.Module):
                 "Input must be either 3D (batch, channels, times) or "
                 "4D (batch, channels, n_patches, patch_size)."
             )
+        x = self.tokenizer.prepare_input(x)
+        n_times = x.shape[-1]
 
         if n_channels % self.in_channels != 0:
             raise ValueError(
