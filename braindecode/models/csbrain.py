@@ -223,12 +223,15 @@ class CSBrain(EEGModuleMixin, nn.Module):
     temporal_kernel_sizes : tuple[int, ...], default=(1, 3, 5)
         Kernel sizes of the cross-scale temporal embedding convolutions.
     drop_prob : float, default=0.1
-        Dropout probability, applied to the backbone (patch embedding and
-        encoder layers) and to the task head. The reference fine-tuning
-        scripts keep the backbone at 0.1 and raise only the head dropout
-        (``--dropout 0.3`` for BCIC IV-2a); to reproduce that recipe, keep
-        ``drop_prob=0.1`` and raise the head dropout in a thin subclass or
-        wrapper.
+        Dropout probability of the backbone (patch embedding and encoder
+        layers), and of the task head unless ``head_drop_prob`` is set.
+    head_drop_prob : float | None, default=None
+        Dropout probability of the task head. ``None`` uses ``drop_prob``.
+        The reference fine-tuning models keep the backbone at 0.1 and set
+        only the head dropout (``--dropout 0.3`` for BCIC IV-2a), and they
+        replace ``proj_out`` by ``nn.Identity()`` after loading the
+        pretrained weights: ``drop_prob=0.1, head_drop_prob=0.3``, then
+        ``model.proj_out = nn.Identity()``.
     brain_regions : sequence of int | None, default=None
         Explicit region id per input channel (0 frontal, 1 parietal, 2
         temporal, 3 occipital, 4 central), taking precedence over the
@@ -257,6 +260,17 @@ class CSBrain(EEGModuleMixin, nn.Module):
         passed through the task head to produce class logits of size
         ``n_outputs``. If True, return the encoder output features.
 
+    Notes
+    -----
+    The released checkpoints use other module names. To load one, drop the
+    ``module.`` / ``backbone.`` prefix and rename ``encoder.layers.`` to
+    ``encoder.``, ``TemEmbedEEGLayer.`` to ``temporal_embed.``,
+    ``BrainEmbedEEGLayer.`` to ``region_embed.``, ``linear1`` to
+    ``ff_block.0`` and ``linear2`` to ``ff_block.3``. Like the reference
+    fine-tuning code, keep only the tensors whose name and shape match and
+    load with ``strict=False``: the task head and the region convolutions of
+    regions missing from the montage stay at their initial values.
+
     References
     ----------
     .. [zhou2025csbrain] Zhou, Y., Wu, J., Ren, Z., Yao, Z., Lu, W., Peng, K.,
@@ -284,6 +298,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         emb_dim: int = 200,
         temporal_kernel_sizes: Sequence[int] = (1, 3, 5),
         drop_prob: float = 0.1,
+        head_drop_prob: float | None = None,
         brain_regions: Sequence[int] | None = None,
         channel_order: Sequence[int] | None = None,
         head_hidden_dim: int | None = None,
@@ -387,7 +402,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         self._emb_dim = emb_dim
         self._patch_size = patch_size
         self._d_model = d_model
-        self._drop_prob = drop_prob
+        self._head_drop_prob = drop_prob if head_drop_prob is None else head_drop_prob
         self._head_hidden_dim = head_hidden_dim
         self._weights_init()
 
@@ -420,10 +435,10 @@ class CSBrain(EEGModuleMixin, nn.Module):
                 nn.Flatten(),
                 nn.LazyLinear(self._head_hidden_dim or 4 * self._emb_dim),
                 nn.ELU(),
-                nn.Dropout(self._drop_prob),
+                nn.Dropout(self._head_drop_prob),
                 nn.LazyLinear(self._emb_dim),
                 nn.ELU(),
-                nn.Dropout(self._drop_prob),
+                nn.Dropout(self._head_drop_prob),
                 nn.LazyLinear(self.n_outputs),
             )
         n_patch = n_times // self._patch_size
@@ -432,10 +447,10 @@ class CSBrain(EEGModuleMixin, nn.Module):
             nn.Flatten(),
             nn.Linear(n_chans * n_patch * self._emb_dim, hidden),
             nn.ELU(),
-            nn.Dropout(self._drop_prob),
+            nn.Dropout(self._head_drop_prob),
             nn.Linear(hidden, self._emb_dim),
             nn.ELU(),
-            nn.Dropout(self._drop_prob),
+            nn.Dropout(self._head_drop_prob),
             nn.Linear(self._emb_dim, self.n_outputs),
         )
 
