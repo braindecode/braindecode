@@ -155,6 +155,8 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -163,6 +165,8 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 

@@ -34,11 +34,6 @@ from braindecode.models import (
     FBCNet,
     FBLightConvNet,
     FBMSNet,
-    InterpolatedBENDR,
-    InterpolatedBIOT,
-    InterpolatedEEGPT,
-    InterpolatedLaBraM,
-    InterpolatedSignalJEPA,
     ShallowFBCSPNet,
     SyncNet,
     USleep,
@@ -47,7 +42,6 @@ from braindecode.models.util import (
     _get_possible_signal_params,
     _summary_table,
     default_signal_params,
-    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
     non_classification_models,
@@ -56,9 +50,7 @@ from braindecode.models.util import _get_signal_params as get_sp
 
 rng = np.random.default_rng(12)
 
-# Interpolated models are kept in a separate registry from ``models_dict``;
-# combine them here so integration tests continue to exercise both.
-all_models_dict = {**models_dict, **interpolated_models_dict}
+all_models_dict = dict(models_dict)
 
 _DIRECT_TORCHSCRIPT_MODELS = (
     "Deep4Net",
@@ -371,11 +363,6 @@ def test_model_has_activation_parameter(model_class):
         EEGMiner,
         REVE,
         EEGPT,
-        InterpolatedBENDR,
-        InterpolatedBIOT,
-        InterpolatedEEGPT,
-        InterpolatedLaBraM,
-        InterpolatedSignalJEPA,
     ]:
         pytest.skip(f"Skipping {model_class} as not activation layer")
     # Get the __init__ method of the class
@@ -441,11 +428,6 @@ def test_model_has_drop_prob_parameter(model_class):
         FBLightConvNet,
         SSTDPN,
         REVE,
-        InterpolatedBENDR,
-        InterpolatedBIOT,
-        InterpolatedEEGPT,
-        InterpolatedLaBraM,
-        InterpolatedSignalJEPA,
         ZUNA,
         MAPA,
     ]:
@@ -616,11 +598,6 @@ def test_model_torch_script(model):
         # As EEGDINO: forward() returns a Dict[str, Tensor] or a Tensor.
         "SleepFM",
         "SleepFMStager",
-        "InterpolatedBENDR",
-        "InterpolatedBIOT",
-        "InterpolatedEEGPT",
-        "InterpolatedLaBraM",
-        "InterpolatedSignalJEPA",
         # VQ argmin dispatch and _encode_quantize method not scriptable.
         "BrainOmni",
         "BrainTokenizer",

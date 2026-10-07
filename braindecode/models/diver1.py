@@ -200,6 +200,8 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         drop_prob: float = 0.1,
         activation: type[nn.Module] = nn.SiLU,
         cnn_out_size: int | None = None,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -208,6 +210,8 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 

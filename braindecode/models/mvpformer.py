@@ -230,6 +230,8 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         drop_prob: float = 0.1,
         activation: type[nn.Module] = nn.SiLU,
         pooling: str = "mean",
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         if not isinstance(segment_len, int) or segment_len < 1:
             raise ValueError(
@@ -244,6 +246,8 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 

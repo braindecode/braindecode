@@ -11,48 +11,48 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.channel_tokenizer import ChannelTokenizer
+from braindecode.modules.channels import ChannelLayer
 
 # The 20 channels used to pre-train BENDR, in the order expected by the
 # `braindecode/braindecode-bendr` checkpoint. The first 19 entries are the
 # EEG channels taken verbatim from `dn3.transforms.instance.To1020.EEG_20_div`
 # (https://github.com/SPOClab-ca/dn3/blob/master/dn3/transforms/instance.py).
-# Their positions come from MNE's ``standard_1005`` montage (T5/T6 are
-# legacy names that share positions with P7/P8 there).
+# Their positions come from MNE's ``standard_1005`` montage in the head
+# frame, as ``raw.set_montage`` gives them (T5/T6 are legacy names that
+# share positions with P7/P8 there).
 #
 # The 20th entry is ``SCALE``, a relative-amplitude statistic (not an
 # electrode) appended by ``To1020(include_scale_ch=True)`` during
 # pre-training. Since it has no physical position, the ``loc`` below is
-# the centroid of the 19 EEG positions — purely a placeholder so that
-# :class:`~braindecode.modules.ChannelInterpolationLayer` (used by
-# :class:`InterpolatedBENDR`) can build a valid spline interpolation
-# matrix. It is NOT the SCALE the pre-training pipeline computes
+# the centroid of the 19 EEG positions — purely a placeholder for the
+# spline that ``channel_strategy="native"`` applies to other montages.
+# Any other ``channel_strategy`` leaves SCALE at zero unless the input has it. It is NOT the SCALE the pre-training pipeline computes
 # (which is an RMS-like amplitude via ``dn3.MappingDeep1010``); users
 # who need a faithful SCALE must compute it themselves and feed 20
 # channels to :class:`BENDR` directly.
 _BENDR_TARGET_CHS_TUPLES: list[tuple[str, tuple[float, float, float]]] = [
-    ("FP1", (-0.0294367, +0.0839171, -0.0069900)),  # standard_1005
-    ("FP2", (+0.0298723, +0.0848959, -0.0070800)),  # standard_1005
-    ("F7", (-0.0702629, +0.0424743, -0.0114200)),  # standard_1005
-    ("F3", (-0.0502438, +0.0531112, +0.0421920)),  # standard_1005
-    ("FZ", (+0.0003122, +0.0585120, +0.0664620)),  # standard_1005
-    ("F4", (+0.0518362, +0.0543048, +0.0408140)),  # standard_1005
-    ("F8", (+0.0730431, +0.0444217, -0.0120000)),  # standard_1005
-    ("T7", (-0.0841611, -0.0160187, -0.0093460)),  # standard_1005
-    ("C3", (-0.0653581, -0.0116317, +0.0643580)),  # standard_1005
-    ("CZ", (+0.0004009, -0.0091670, +0.1002440)),  # standard_1005
-    ("C4", (+0.0671179, -0.0109003, +0.0635800)),  # standard_1005
-    ("T8", (+0.0850799, -0.0150203, -0.0094900)),  # standard_1005
-    ("T5", (-0.0724343, -0.0734527, -0.0024870)),  # standard_1005 (= P7)
-    ("P3", (-0.0530073, -0.0787878, +0.0559400)),  # standard_1005
-    ("PZ", (+0.0003247, -0.0811150, +0.0826150)),  # standard_1005
-    ("P4", (+0.0556667, -0.0785602, +0.0565610)),  # standard_1005
-    ("T6", (+0.0730557, -0.0730683, -0.0025400)),  # standard_1005 (= P8)
-    ("O1", (-0.0294134, -0.1124490, +0.0088390)),  # standard_1005
-    ("O2", (+0.0298426, -0.1121560, +0.0088000)),  # standard_1005
+    ("FP1", (-0.0309026, +0.1145852, +0.0278666)),  # standard_1005
+    ("FP2", (+0.0284095, +0.1153463, +0.0277213)),  # standard_1005
+    ("F7", (-0.0718766, +0.0731035, +0.0257905)),  # standard_1005
+    ("F3", (-0.0518090, +0.0866879, +0.0787141)),  # standard_1005
+    ("FZ", (-0.0012293, +0.0932745, +0.1026393)),  # standard_1005
+    ("F4", (+0.0502743, +0.0874384, +0.0772707)),  # standard_1005
+    ("F8", (+0.0714353, +0.0745051, +0.0251010)),  # standard_1005
+    ("T7", (-0.0859821, +0.0148716, +0.0311734)),  # standard_1005
+    ("C3", (-0.0671487, +0.0233582, +0.1045107)),  # standard_1005
+    ("CZ", (-0.0013741, +0.0276171, +0.1401995)),  # standard_1005
+    ("C4", (+0.0653289, +0.0235731, +0.1036924)),  # standard_1005
+    ("T8", (+0.0832614, +0.0152582, +0.0309730)),  # standard_1005
+    ("T5", (-0.0744580, -0.0421232, +0.0412736)),  # standard_1005 (= P7)
+    ("P3", (-0.0550382, -0.0442103, +0.0999090)),  # standard_1005
+    ("PZ", (-0.0017095, -0.0452130, +0.1266729)),  # standard_1005
+    ("P4", (+0.0536360, -0.0443345, +0.1005160)),  # standard_1005
+    ("T6", (+0.0710325, -0.0422600, +0.0411989)),  # standard_1005 (= P8)
+    ("O1", (-0.0315736, -0.0805684, +0.0547896)),  # standard_1005
+    ("O2", (+0.0276831, -0.0804888, +0.0547341)),  # standard_1005
     (
         "SCALE",
-        (+0.0006439, -0.0131942, +0.0278448),
+        (-0.0011601, +0.0194958, +0.0681445),
     ),  # centroid of the 19 EEG positions (placeholder; see comment above)
 ]
 
@@ -251,6 +251,8 @@ class BENDR(EEGModuleMixin, nn.Module):
         ``4 * product(enc_downsample)`` samples (384 with default downsampling of 96x).
     """
 
+    _channel_target = BENDR_CHANNEL_ORDER
+
     def __init__(
         self,
         # Signal related parameters
@@ -276,6 +278,8 @@ class BENDR(EEGModuleMixin, nn.Module):
         start_token=-5,  # Value for start token embedding
         final_layer=True,  # Whether to include the final linear layer
         encoder_only=False,  # If True, bypass contextualizer and use 4-chunk pooling
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -284,6 +288,8 @@ class BENDR(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
 
         # Keep these parameters if needed later, otherwise they are captured by the mixin
@@ -302,10 +308,8 @@ class BENDR(EEGModuleMixin, nn.Module):
             user_names = [ch["ch_name"] for ch in _chs_info]  # type: ignore[index]
             canonical = BENDR_CHANNEL_ORDER
             if [n.lower() for n in user_names] != [n.lower() for n in canonical]:
-                self.channel_tokenizer = ChannelTokenizer(
-                    strategy="fixed_order",
-                    src_chs_info=_chs_info,
-                    target_chs_info=_BENDR_TARGET_CHS_INFO,
+                self.channel_tokenizer = ChannelLayer(
+                    _BENDR_TARGET_CHS_INFO, "spline", _chs_info, reg=0.0
                 )
                 backbone_n_chans = len(_BENDR_TARGET_CHS_INFO)
 
@@ -362,7 +366,7 @@ class BENDR(EEGModuleMixin, nn.Module):
 
     def forward(self, x, return_features=False):
         if self.channel_tokenizer is not None:
-            x = self.channel_tokenizer(x)
+            x = self.channel_tokenizer(x)[0]
         encoded = self.encoder(x)
         # encoded: [batch_size, encoder_h, n_encoded_times]
 
@@ -608,23 +612,3 @@ class _BENDRContextualizer(nn.Module):
         # x: [batch_size, in_features, seq_len + 1]
 
         return x
-
-
-# -----------------------------------------------------------------------------
-# InterpolatedBENDR — experimental channel-interpolation variant of BENDR
-# -----------------------------------------------------------------------------
-# Wraps :class:`BENDR` with an MNE-backed channel-interpolation layer that
-# projects arbitrary user ``chs_info`` to the canonical 20-channel BENDR
-# input (:data:`_BENDR_TARGET_CHS_INFO` — the 19 pre-training EEG channels
-# plus a ``SCALE`` placeholder at the centroid of those 19 positions).
-# Frozen by default; set ``trainable=True`` to fine-tune the projection.
-#
-# NOTE: the ``SCALE`` target has no physical position, so the row of the
-# interpolation matrix that produces it is a spatial spline of the user's
-# EEG channels — *not* the dn3 ``MappingDeep1010`` RMS statistic the
-# checkpoint saw during pre-training. Expect degraded zero-shot transfer
-# from the SCALE channel; downstream fine-tuning should still work.
-
-from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
-
-InterpolatedBENDR = InterpolatedModel(BENDR, _BENDR_TARGET_CHS_INFO)
