@@ -1103,6 +1103,8 @@ class _RotationInvariantMPFMLP(nn.Module):
             dim = hidden_dim
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        # Gaudi eager mode rolls a non-contiguous tensor wrongly.
+        inputs = inputs.contiguous()
         x = torch.stack(
             [
                 inputs.roll(shifts=[offset, offset], dims=[2, 3])

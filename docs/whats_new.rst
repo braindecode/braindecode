@@ -218,6 +218,11 @@ Bug fixes
   permuted as a 4D view, which Gaudi compiles; values are unchanged
   (:gh:`1249` by `Bruno Aristimunha`_)
 
+- :class:`braindecode.models.EMG2QwertyNet` and :class:`braindecode.models.MetaNeuromotorHand`
+  give correct outputs on Intel Gaudi (HPU) in eager mode: the rotation-invariant
+  MLP rolls a contiguous copy of its input, since Gaudi eager mode rolls a
+  non-contiguous tensor wrongly (:gh:`1249` by `Bruno Aristimunha`_)
+
 - Models now run after ``model.to(torch.float64)``, ``torch.bfloat16`` or
   ``torch.float16``, and their FFT, STFT and filter-bank front ends run on Intel
   Gaudi (HPU): the new :func:`braindecode.functional.spectral_input` gives these
