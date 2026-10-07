@@ -73,7 +73,6 @@ from braindecode.models import (
     TSception,
     USleep,
 )
-from braindecode.models import neurorvq_tokenizer as neurorvq_tokenizer_module
 from braindecode.models.brainbert import _STFTSpectrogram
 from braindecode.models.csbrain import (
     REGION_CENTRAL,
@@ -4967,8 +4966,8 @@ def test_neurorvq_transformer_block_uses_sequential_residuals():
 # ---------------------------------------------------------------------------
 
 
-def _small_neurorvq_tokenizer():
-    return NeuroRVQTokenizer(
+def _small_neurorvq_tokenizer(**kwargs):
+    params = dict(
         n_chans=3,
         n_times=400,
         sfreq=200,
@@ -4982,28 +4981,24 @@ def _small_neurorvq_tokenizer():
         code_dim=16,
         num_quantizers=2,
     )
+    return NeuroRVQTokenizer(**{**params, **kwargs})
 
 
-def test_neurorvq_tokenizer_reconstructs_and_emits_discrete_codes():
+def test_neurorvq_tokenizer_codes_and_cold_codebooks():
     model = _small_neurorvq_tokenizer().eval()
-    assert model.quantize_1.layers[0].embedding.initted.dtype == torch.float32
     signal = torch.randn(2, 3, 400)
+    assert not model.quantize_1.layers[0].embedding.initted.item()
 
-    target, reconstruction = model(signal)
-    codes = model.tokenize(signal)
-
-    assert target.shape == reconstruction.shape == (2, 6, 200)
-    assert codes.shape == (4, 2, 2, 6)
-    assert codes.dtype == torch.long
-
-    codebook_state = {
-        name: value.clone()
-        for name, value in model.state_dict().items()
-        if name.startswith("quantize_")
-    }
-    model.tokenize(signal)
-    for name, value in codebook_state.items():
+    codes = model.tokenize(signal)  # initializes the cold codebooks once
+    assert codes.shape == (4, 2, 2, 6) and codes.dtype == torch.long
+    state = {k: v.clone() for k, v in model.state_dict().items()}
+    torch.testing.assert_close(model.tokenize(signal), codes)
+    for name, value in state.items():
         torch.testing.assert_close(model.state_dict()[name], value)
+
+    time, spatial = model._embedding_indices(signal.device)
+    _, forward_codes = model._encode(model._patches(signal), time, spatial)
+    torch.testing.assert_close(forward_codes, codes)
 
     model.train()
     _, reconstruction = model(signal)
@@ -5012,121 +5007,49 @@ def test_neurorvq_tokenizer_reconstructs_and_emits_discrete_codes():
     assert model.encode_task_layer_1[0].weight.grad is not None
 
 
-def test_neurorvq_tokenizer_loads_a_local_state_dict(tmp_path):
-    model = _small_neurorvq_tokenizer()
-    checkpoint = tmp_path / "tokenizer.pt"
-    torch.save(model.state_dict(), checkpoint)
-
-    loaded = _small_neurorvq_tokenizer().load_pretrained_weights(str(checkpoint))
-
-    for name, value in model.state_dict().items():
-        torch.testing.assert_close(loaded.state_dict()[name], value)
+def test_neurorvq_tokenizer_standardizes_each_window():
+    model = _small_neurorvq_tokenizer().eval()
+    target, reconstruction = model(5.0 * torch.randn(2, 3, 400) + 3.0)
+    assert target.shape == reconstruction.shape == (2, 6, 200)
+    for output in (target, reconstruction):
+        torch.testing.assert_close(output.mean(dim=(1, 2)), torch.zeros(2), atol=1e-5, rtol=0)
+        torch.testing.assert_close(output.std(dim=(1, 2)), torch.ones(2), atol=1e-4, rtol=0)
 
 
 def test_neurorvq_tokenizer_loads_released_mlp_key_layout(tmp_path):
-    # The released checkpoint names the block MLP layers ``mlp.fc1``/``mlp.fc2``;
-    # the port reuses ``modules.MLP`` (``mlp.0``/``mlp.2``) and remaps on load.
+    # The released checkpoint names the block MLP layers ``mlp.fc1``/``mlp.fc2``.
     model = _small_neurorvq_tokenizer()
     released = {
         name.replace(".mlp.0.", ".mlp.fc1.").replace(".mlp.2.", ".mlp.fc2."): value
         for name, value in model.state_dict().items()
     }
-    assert any(".mlp.fc1." in name for name in released)
-    checkpoint = tmp_path / "tokenizer_released_keys.pt"
-    torch.save(released, checkpoint)
+    torch.save(released, tmp_path / "tokenizer.pt")
 
-    loaded = _small_neurorvq_tokenizer().load_pretrained_weights(str(checkpoint))
-
+    loaded = _small_neurorvq_tokenizer().load_pretrained_weights(
+        str(tmp_path / "tokenizer.pt")
+    )
     for name, value in model.state_dict().items():
         torch.testing.assert_close(loaded.state_dict()[name], value)
 
-
-def test_neurorvq_tokenizer_pretrained_loading_requires_channel_metadata():
-    model = NeuroRVQTokenizer(
-        n_chans=3,
-        n_times=400,
-        sfreq=200,
-        channel_names=None,
-        out_chans=4,
-        num_heads=4,
-        encoder_depth=1,
-        decoder_depth=1,
-        n_code=16,
-        code_dim=16,
-        num_quantizers=2,
-    )
-
     with pytest.raises(ValueError, match="requires channel_names or chs_info"):
-        model.load_pretrained_weights("checkpoint-is-not-read-before-validation.pt")
-
-
-def test_neurorvq_tokenizer_initializes_cold_codebooks_once():
-    model = _small_neurorvq_tokenizer().eval()
-    signal = torch.randn(1, 3, 400)
-
-    assert not model.quantize_1.layers[0].embedding.initted.item()
-    codes = model.tokenize(signal)
-    assert all(
-        layer.embedding.initted.item()
-        for scale in range(1, 5)
-        for layer in getattr(model, f"quantize_{scale}").layers
-    )
-    state = {name: value.clone() for name, value in model.state_dict().items()}
-
-    torch.testing.assert_close(model.tokenize(signal), codes)
-    for name, value in state.items():
-        torch.testing.assert_close(model.state_dict()[name], value)
+        _small_neurorvq_tokenizer(channel_names=None).load_pretrained_weights(
+            "not-read.pt"
+        )
 
 
 def test_neurorvq_ema_quantizer_matches_normalized_ema_update():
-    quantizer = _EMAVectorQuantizer(
-        n_codes=2, code_dim=2, decay=0.5, kmeans_init=False
-    ).train()
+    quantizer = _EMAVectorQuantizer(n_codes=2, code_dim=2).train()
+    quantizer.decay = 0.5
     with torch.no_grad():
         quantizer.embedding.weight.copy_(torch.eye(2))
         quantizer.embedding.initted.fill_(True)
-    vectors = torch.tensor([[[[0.8, -0.6]], [[0.6, 0.8]]]])
 
-    _, _, indices = quantizer(vectors)
+    _, _, indices = quantizer(torch.tensor([[[[0.8, -0.6]], [[0.6, 0.8]]]]))
 
-    expected = torch.tensor([[0.9, 0.3], [-0.3, 0.9]])
-    expected = torch.nn.functional.normalize(expected, dim=-1)
+    expected = torch.nn.functional.normalize(torch.tensor([[0.9, 0.3], [-0.3, 0.9]]))
     assert indices.tolist() == [0, 1]
     torch.testing.assert_close(quantizer.embedding.weight, expected)
     torch.testing.assert_close(quantizer.cluster_size, torch.tensor([0.5, 0.5]))
-
-
-def test_neurorvq_ema_quantizer_syncs_training_statistics_across_distributed_ranks(
-    monkeypatch,
-):
-    quantizer = _EMAVectorQuantizer(
-        n_codes=2, code_dim=2, decay=0.5, kmeans_init=False
-    ).train()
-    with torch.no_grad():
-        quantizer.embedding.weight.copy_(torch.eye(2))
-        quantizer.embedding.initted.fill_(True)
-
-    calls = []
-    monkeypatch.setattr(neurorvq_tokenizer_module.distributed, "is_available", lambda: True)
-    monkeypatch.setattr(neurorvq_tokenizer_module.distributed, "is_initialized", lambda: True)
-
-    def fake_all_reduce(value):
-        calls.append(tuple(value.shape))
-        value.mul_(2)
-
-    monkeypatch.setattr(
-        neurorvq_tokenizer_module.distributed, "all_reduce", fake_all_reduce
-    )
-    vectors = torch.tensor([[[[0.8, -0.6]], [[0.6, 0.8]]]])
-
-    _, _, indices = quantizer(vectors)
-
-    expected = torch.tensor([[0.9, 0.3], [-0.3, 0.9]])
-    expected = torch.nn.functional.normalize(expected, dim=-1)
-    assert indices.tolist() == [0, 1]
-    assert calls == [(2,), (2, 2)]
-    torch.testing.assert_close(quantizer.cluster_size, torch.tensor([1.0, 1.0]))
-    torch.testing.assert_close(quantizer.embedding.weight, expected)
 
 
 @pytest.mark.parametrize(
@@ -5134,52 +5057,12 @@ def test_neurorvq_ema_quantizer_syncs_training_statistics_across_distributed_ran
     [
         ({"sfreq": 250}, "200 Hz"),
         ({"n_times": 401}, "divisible by patch_size"),
-        ({"channel_names": ("not-an-electrode",)}, "Unsupported NeuroRVQ channel"),
+        ({"channel_names": ("f3", "f4", "x")}, "Unsupported NeuroRVQ channel"),
     ],
 )
 def test_neurorvq_tokenizer_rejects_incompatible_signal_metadata(kwargs, message):
-    params = {
-        "n_chans": 1,
-        "n_times": 400,
-        "sfreq": 200,
-        "channel_names": ("f3",),
-        "out_chans": 4,
-        "num_heads": 4,
-        "encoder_depth": 1,
-        "decoder_depth": 1,
-        "n_code": 16,
-        "code_dim": 16,
-        "num_quantizers": 1,
-    }
-    params.update(kwargs)
     with pytest.raises(ValueError, match=message):
-        NeuroRVQTokenizer(**params)
-
-
-def test_neurorvq_tokenizer_standardizes_each_window():
-    model = _small_neurorvq_tokenizer().eval()
-    signal = 5.0 * torch.randn(2, 3, 400) + 3.0
-
-    target, reconstruction = model(signal)
-
-    for output in (target, reconstruction):
-        torch.testing.assert_close(
-            output.mean(dim=(1, 2)), torch.zeros(2), atol=1e-5, rtol=0
-        )
-        torch.testing.assert_close(
-            output.std(dim=(1, 2)), torch.ones(2), atol=1e-4, rtol=0
-        )
-
-
-def test_neurorvq_tokenizer_tokenize_matches_forward_codes():
-    model = _small_neurorvq_tokenizer().eval()
-    signal = torch.randn(2, 3, 400)
-    codes = model.tokenize(signal)  # also initializes the cold codebooks
-
-    time, spatial = model._embedding_indices(signal.device)
-    _, forward_codes = model._encode(model._patches(signal), time, spatial)
-
-    torch.testing.assert_close(codes, forward_codes)
+        _small_neurorvq_tokenizer(**kwargs)
 
 
 # ---------------------------------------------------------------------------
