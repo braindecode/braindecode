@@ -576,19 +576,17 @@ class _LogSpectrogram(nn.Module):
         # for power=2 (the default).
         # The Spectrogram module's forward, with the window on the input's
         # device and dtype (spectral_input: float32 at least, CPU for HPU).
-        spec, x_in = self.spectrogram, spectral_input(x)
+        x_in = spectral_input(x)
         power_spec = ta_functional.spectrogram(
             x_in,
-            spec.pad,
-            spec.window.to(x_in),
-            spec.n_fft,
-            spec.hop_length,
-            spec.win_length,
-            spec.power,
-            spec.normalized,
-            spec.center,
-            spec.pad_mode,
-            spec.onesided,
+            pad=0,
+            window=self.spectrogram.window.to(x_in),
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            win_length=self.n_fft,
+            power=2.0,
+            normalized=True,
+            center=False,
         )
         n_freq_bins, n_frames = power_spec.shape[-2], power_spec.shape[-1]
         log_power = torch.log10(power_spec + self.log_eps).to(x)

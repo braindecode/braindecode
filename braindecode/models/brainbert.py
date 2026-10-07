@@ -395,7 +395,7 @@ class _STFTSpectrogram(nn.Module):
         xp = F.pad(x, (self.boundary_pad, right_pad))  # (batch, n_chans, padded)
         frames = xp.unfold(-1, self.nperseg, self.step)  # (b, c, n_frames, nperseg)
         frames = spectral_input(frames)
-        win = self.window.to(frames.dtype)
+        win = self.window.to(frames)
         scale = 1.0 / win.sum()  # scaling="spectrum"
         spec = torch.fft.rfft(frames * win, dim=-1)  # (b, c, n_frames, nperseg//2+1)
         low = spec[..., : self.idx_freq_cutoff] * scale  # (b, c, n_frames, cutoff)

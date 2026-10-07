@@ -844,7 +844,6 @@ _FLOAT16_XFAIL = {
     "FBCNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
     "FBMSNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
     "FBLightConvNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
-    "IFNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
     "LUNA": "activations overflow the float16 range",
 }
 _LOW_PRECISION_XFAIL = {

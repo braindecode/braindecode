@@ -249,7 +249,9 @@ class _LearnableAdjacency(nn.Module):
         degree_inv_sqrt = 1.0 / (torch.sqrt(degree) + 1e-5)
         degree_inv_sqrt_diag = torch.diag(degree_inv_sqrt)
 
-        identity = torch.eye(self.n_chans, device=adjacency.device, dtype=adjacency.dtype)
+        identity = torch.eye(
+            self.n_chans, device=adjacency.device, dtype=adjacency.dtype
+        )
         return identity - degree_inv_sqrt_diag @ adjacency @ degree_inv_sqrt_diag
 
 

@@ -366,9 +366,9 @@ class FilterBankLayer(nn.Module):
         # filt_expanded shape: (1, n_chans, filter_length)
         # After convolution: (batch_size, n_chans, n_times)
 
-        filtered = fftconvolve(
-            x_in, filt_expanded, mode="same"
-        ).to(x)  # Shape: (batch_size, nchans, time_points)
+        filtered = fftconvolve(x_in, filt_expanded, mode="same").to(
+            x
+        )  # Shape: (batch_size, nchans, time_points)
 
         # Add a new dimension for the band
         # Shape after unsqueeze: (batch_size, 1, n_chans, n_times)
