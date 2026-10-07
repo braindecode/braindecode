@@ -1154,9 +1154,11 @@ class _RotaryPositionalEmbedding(nn.Module):
 
     The cache is part of the state dict because the released checkpoints
     change it: their ``rotate`` holds the cosines only (the sine is zero), and
-    the released code rotates with that loaded cache. Positions beyond the cache
-    are computed from ``freqs`` with both cosine and sine, as the release does
-    when it rebuilds its cache. Both buffers stay in float32 when the module is
+    the released code rotates with that loaded cache. A sequence longer than the
+    cache rebuilds it from ``freqs`` with both cosine and sine, and later calls
+    of any length use the rebuilt cache, as in the release. The rebuilt cache is
+    a non-persistent buffer, so the state dict is unchanged; loading a state
+    dict drops it. Both buffers stay in float32 when the module is
     cast to another dtype, as the release's complex64 cache does under a
     ``bfloat16`` training engine.
 
@@ -1179,6 +1181,7 @@ class _RotaryPositionalEmbedding(nn.Module):
         exponent = torch.arange(0, n_dim, 2).float() / n_dim
         self.register_buffer("freqs", 1.0 / (base**exponent))
         self.register_buffer("rotate", self._polar(init_seq_len))
+        self.register_buffer("rebuilt", None, persistent=False)
 
     def _polar(self, seq: int) -> torch.Tensor:
         """``(seq, n_dim // 2, 2)`` cosines and sines of ``position * freqs``."""
@@ -1198,9 +1201,16 @@ class _RotaryPositionalEmbedding(nn.Module):
                 self._buffers[name] = buffer.to(device=moved.device)
         return self
 
+    def _load_from_state_dict(self, *args, **kwargs):
+        self.rebuilt = None
+        super()._load_from_state_dict(*args, **kwargs)
+
     def _cos_sin(self, seq: int, heads: int):
         """``(seq, heads, head_dim)`` cosines and sines, each repeated per pair."""
-        rotate = self.rotate if seq <= self.rotate.shape[0] else self._polar(seq)
+        rotate = self.rotate if self.rebuilt is None else self.rebuilt
+        if seq > rotate.shape[0]:
+            # Release ``_set_rotate_cache``: replace the cache, keep it.
+            self.rebuilt = rotate = self._polar(seq)
         rotate = rotate[:seq].float().repeat_interleave(2, dim=1)
         rotate = rearrange(
             rotate, "seq (heads head_dim) two -> seq heads head_dim two", heads=heads

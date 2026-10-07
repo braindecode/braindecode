@@ -825,6 +825,36 @@ def test_rope_rotates_with_the_released_cosine_only_cache(seq):
     torch.testing.assert_close(k_out, _complex_rope_reference(k, n_dim, rotate=released))
 
 
+def test_rope_keeps_the_rebuilt_cache_after_a_long_sequence():
+    """After a sequence past the cache, short calls use the rebuilt cache.
+
+    The release's ``_set_rotate_cache`` replaces its cosine-only cache with
+    the full rotation from ``freqs``; the state dict and a reload are unchanged.
+    """
+    n_heads, head_dim = 4, 8
+    n_dim = n_heads * head_dim
+    exact = 1.0 / (10000 ** (torch.arange(0, n_dim, 2).float() / n_dim))
+    cosines = torch.cos(torch.outer(torch.arange(240).float(), exact))
+    state = {"freqs": exact.bfloat16().float(), "rotate": _rope_cache_as_real(cosines)}
+    rope = _RotaryPositionalEmbedding(n_dim=n_dim)
+    rope.load_state_dict(state, strict=True)
+    long = torch.randn(1, 250, n_heads, head_dim)
+    rope(long, long)
+    angles = torch.outer(torch.arange(250).float(), state["freqs"])
+    rebuilt = torch.polar(torch.ones_like(angles), angles)
+    q = torch.randn(2, 5, n_heads, head_dim)
+    torch.testing.assert_close(
+        rope(q, q)[0], _complex_rope_reference(q, n_dim, rotate=rebuilt)
+    )
+    assert set(rope.state_dict()) == {"freqs", "rotate"}
+    assert rope.state_dict()["rotate"].shape == (240, n_dim // 2, 2)
+    rope.load_state_dict(state, strict=True)
+    cosine_only = torch.complex(cosines, torch.zeros_like(cosines))
+    torch.testing.assert_close(
+        rope(q, q)[0], _complex_rope_reference(q, n_dim, rotate=cosine_only)
+    )
+
+
 def test_rope_rejects_mismatched_heads():
     rope = _RotaryPositionalEmbedding(n_dim=16)
     with pytest.raises(ValueError, match="n_heads \\* head_dim"):
