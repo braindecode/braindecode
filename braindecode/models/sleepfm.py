@@ -63,6 +63,9 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     Notes
     -----
+    The encoder was checked through :class:`SleepFMStager` only (SHHS sleep
+    staging, see there); its pretraining was not reproduced.
+
     ``channel_mask`` (``(batch, n_chans)``, ``True`` for missing channels)
     keeps masked channels out of every output, and out of the tokenizer's
     batch normalization in training. The official pretraining code normalizes
@@ -279,6 +282,11 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     Notes
     -----
+    **Replication.** With the released weights, this port and the authors'
+    released code both reach 0.7925 macro-F1 on the SHHS test set (2,000
+    nights of the released split; paper: 0.78). Only this SHHS sleep-staging
+    result was checked; other datasets and tasks of the paper were not.
+
     ``temporal_mask`` (``(batch, n_patches)``, ``True`` for padding) marks
     padded patches at the end of shorter recordings. As in the release they
     enter the head as zero embeddings masked out of its Transformer, but the
@@ -574,7 +582,7 @@ class _SleepFMTokenizer(nn.Module):
                 f"SleepFM was pretrained at 128 Hz, got {sfreq:g} Hz; resample "
                 "to reuse the released weights.",
                 UserWarning,
-                stacklevel=3,
+                stacklevel=4,
             )
         if not 0 < n_times // patch_size <= max_patches:
             raise ValueError(
