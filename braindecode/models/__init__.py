@@ -5,8 +5,8 @@ from .attentionbasenet import AttentionBaseNet
 from .attn_sleep import AttnSleep
 from .barista import BaRISTA
 from .base import EEGModuleMixin
-from .bendr import BENDR, InterpolatedBENDR
-from .biot import BIOT, InterpolatedBIOT
+from .bendr import BENDR
+from .biot import BIOT
 from .brainbert import BrainBERT
 from .brainmodule import BrainModule
 from .brainomni import BrainOmni, BrainTokenizer
@@ -14,6 +14,7 @@ from .brant import Brant
 from .cbramod import CBraMod
 from .codebrain import CodeBrain
 from .contrawr import ContraWR
+from .csbrain import CSBrain
 from .ctnet import CTNet
 from .dance import DANCE
 from .deep4 import Deep4Net
@@ -29,7 +30,7 @@ from .eegitnet import EEGITNet
 from .eegminer import EEGMiner
 from .eegnet import EEGNet
 from .eegnex import EEGNeX
-from .eegpt import EEGPT, InterpolatedEEGPT
+from .eegpt import EEGPT
 from .eegsimpleconv import EEGSimpleConv
 from .eegsym import EEGSym
 from .eegtcnet import EEGTCNet
@@ -39,8 +40,7 @@ from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
 from .hybrid import HybridNet
 from .ifnet import IFNet
-from .interpolated import InterpolatedModel
-from .labram import InterpolatedLaBraM, Labram
+from .labram import Labram
 from .luna import LUNA
 from .mapa import MAPA
 from .medformer import MEDFormer
@@ -59,7 +59,6 @@ from .seizure_transformer import SeizureTransformer
 from .sensingdynamics import SensingDynamics
 from .shallow_fbcsp import ShallowFBCSPNet
 from .signal_jepa import (
-    InterpolatedSignalJEPA,
     SignalJEPA,
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
@@ -68,6 +67,7 @@ from .signal_jepa import (
 from .sinc_shallow import SincShallowNet
 from .sleep_stager_blanco_2020 import SleepStagerBlanco2020
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
+from .sleepfm import SleepFM, SleepFMStager
 from .sparcnet import SPARCNet
 from .sstdpn import SSTDPN
 from .steegformer import STEEGFormer
@@ -81,7 +81,6 @@ from .util import (
     _init_models_dict,
     build_model_config,
     extract_channel_locations_from_chs_info,
-    interpolated_models_dict,
     models_mandatory_parameters,
     positions_from_chs_info,
 )
@@ -106,6 +105,7 @@ __all__ = [
     "CBraMod",
     "CodeBrain",
     "ContraWR",
+    "CSBrain",
     "CTNet",
     "DANCE",
     "Deep4Net",
@@ -117,7 +117,6 @@ __all__ = [
     "EEGConformer",
     "EEGDINO",
     "EEGPT",
-    "InterpolatedEEGPT",
     "EEGInceptionERP",
     "EEGInceptionMI",
     "EEGITNet",
@@ -138,11 +137,6 @@ __all__ = [
     "MetaNeuromotorHand",
     "HybridNet",
     "IFNet",
-    "InterpolatedBENDR",
-    "InterpolatedBIOT",
-    "InterpolatedLaBraM",
-    "InterpolatedModel",
-    "InterpolatedSignalJEPA",
     "Labram",
     "LUNA",
     "extract_channel_locations_from_chs_info",
@@ -166,6 +160,8 @@ __all__ = [
     "SignalJEPA_PreLocal",
     "SincShallowNet",
     "SSTDPN",
+    "SleepFM",
+    "SleepFMStager",
     "SleepStagerBlanco2020",
     "SleepStagerChambon2018",
     "SPARCNet",
@@ -181,5 +177,4 @@ __all__ = [
     "build_model_config",
     "_init_models_dict",
     "models_mandatory_parameters",
-    "interpolated_models_dict",
 ]
