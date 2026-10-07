@@ -98,14 +98,12 @@ from braindecode.models.usleep import _DecoderBlock
 from braindecode.models.util import (
     _get_possible_signal_params,
     _get_signal_params,
-    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
 )
 from braindecode.util import set_random_seeds
 
-# Interpolated models are stored in a separate registry from ``models_dict``.
-all_models_dict = {**models_dict, **interpolated_models_dict}
+all_models_dict = dict(models_dict)
 
 
 @pytest.fixture(scope="module")

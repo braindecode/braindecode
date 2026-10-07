@@ -58,16 +58,17 @@ Enhancements
   the error its declared channel strategy implies; unhandled cells are strict
   ``xfail`` markers (:gh:`1228` by `Bruno Aristimunha`_).
 
-- Add :class:`braindecode.modules.ChannelTokenizer`, one module gathering the five
-  ways a pretrained checkpoint identifies its input channels (``names`` with a shared
-  alias table and an ``on_unknown`` policy, ``coords`` with ``on_missing_loc``,
-  ``fixed_order`` = today's :class:`braindecode.modules.ChannelInterpolationLayer`,
-  ``index_slots``, ``agnostic``). :class:`braindecode.models.BENDR` now adapts an
-  arbitrary montage through it instead of refusing any non-canonical ``chs_info``
-  (including a plain permutation), and :class:`braindecode.models.SignalJEPA` no
-  longer returns ``NaN`` for channel names without coordinates. Every released
-  checkpoint's canonical forward is unchanged (max-abs diff 0.0) and its state_dict
-  keys are stable (:gh:`1227` by `Bruno Aristimunha`_).
+- Add ``channel_strategy`` (``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``,
+  ``"spline"``, ``"field"``, ``"source"``, ``"region"``, ``"wiener"``,
+  ``"latent"``; default ``"native"``) and
+  ``channel_strategy_kwargs`` to the 19 pretrained models, saved in the config. A
+  :class:`braindecode.modules.ChannelLayer` (one matrix per montage) maps any montage
+  onto the channels the backbone consumes, also per call with
+  ``model(x, chs_info=...)``. ``"native"`` keeps every released checkpoint
+  bit-identical with the same ``state_dict``. It replaces the unreleased
+  ``ChannelTokenizer``; BENDR adapts a non-canonical montage with an MNE spline and
+  SignalJEPA no longer returns ``NaN`` for names without coordinates. See
+  :doc:`user_guide/channel_strategies` (:gh:`1227`, :gh:`1241` by `Bruno Aristimunha`_).
 
 - Add registry-wide model contract tests that automatically cover every registered
   model, checking eval-mode input/state purity, finite batched outputs,
@@ -207,6 +208,12 @@ API and behavior changes
   to keep the [CLS] readout, for instance to load a checkpoint fine-tuned with
   it, which no longer loads into the default model
   (:gh:`1155` by `Bruno Aristimunha`_).
+
+- Remove ``InterpolatedBENDR``, ``InterpolatedBIOT``, ``InterpolatedEEGPT``,
+  ``InterpolatedLaBraM``, ``InterpolatedSignalJEPA``, ``InterpolatedModel``,
+  ``ChannelInterpolationLayer`` and ``interpolated_models_dict``: use
+  ``BENDR(chs_info=..., channel_strategy="spline")`` instead (:gh:`1241` by
+  `Bruno Aristimunha`_).
 
 Requirements
 ============
@@ -443,6 +450,13 @@ Bug fixes
   ``(n_trials, 1)``, and :class:`braindecode.training.CroppedLoss` squeezed the
   time-averaged prediction to ``(batch_size,)``. It now keeps the output
   dimension when the target is 2-D (:gh:`1198` by `Raghav Rathi`_).
+
+- Fix channel resolution in the channel layer: ``T3`` and ``T7`` stay distinct; a
+  misspelt strategy raises with the closest name; coordinate-only channels match a
+  target within 15 mm; non-EEG channels raise (or are dropped with
+  ``drop_non_eeg=True``); legacy names are copies; ``spline`` is regularised
+  (``reg=1e-3``) and a row gain above 2 warns; fewer than four positioned channels
+  raise a ``ValueError`` (:gh:`1241` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)
