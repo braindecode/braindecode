@@ -243,8 +243,9 @@ Bug fixes
   ("uninitialized parameter"). The head is now a concrete ``Linear`` whenever the
   geometry is known (:gh:`1233` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.BrainOmni` now loads the released checkpoints' RoPE
-  cache (cosines only) and keeps PyTorch's default head initialisation, so its
-  forward pass equals the released code's (:gh:`1244` by `Bruno Aristimunha`_).
+  cache (cosines only) and keeps PyTorch's default head initialisation, as the
+  released code does. Unlike the released code, it applies no attention dropout
+  in evaluation mode (:gh:`1244` by `Bruno Aristimunha`_).
 - Fix :class:`braindecode.models.CBraMod` failing in ``forward`` for any
   ``patch_size`` other than 200: the spectral reshape hard-coded 101 rFFT bins
   instead of ``patch_size // 2 + 1`` (:gh:`1240` by `Bruno Aristimunha`_).
