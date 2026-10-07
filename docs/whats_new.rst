@@ -105,6 +105,10 @@ Enhancements
   :class:`braindecode.models.CBraMod` instead of a copy of it; state-dict keys,
   outputs with loaded weights and same-seed initial weights are unchanged
   (:gh:`1240` by `Bruno Aristimunha`_).
+- Add ``head_drop_prob`` to :class:`braindecode.models.CSBrain`, the task-head
+  dropout of the reference fine-tuning models (default: ``drop_prob``, so
+  existing models are unchanged), and document the checkpoint key names
+  (:gh:`1246` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
   model with pretrained encoders and support for varying montages through
   :func:`braindecode.models.diver1.channel_metadata_from_chs_info`

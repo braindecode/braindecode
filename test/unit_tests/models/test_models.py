@@ -5135,6 +5135,18 @@ def test_csbrain_train_mode_small_batches(batch_size):
     assert model(torch.randn(batch_size, 3, 400)).shape == (batch_size, 2)
 
 
+def test_csbrain_head_drop_prob_sets_only_the_head():
+    model = CSBrain(
+        n_outputs=2, n_chans=3, n_times=400, n_layer=1, drop_prob=0.1, head_drop_prob=0.3
+    )
+    ps = {
+        name.startswith("final_layer"): m.p
+        for name, m in model.named_modules()
+        if isinstance(m, nn.Dropout)
+    }
+    assert ps == {False: 0.1, True: 0.3}
+
+
 def test_csbrain_init_keeps_residual_stream_bounded():
     """Only Linear layers are re-initialised, as in the reference.
 
