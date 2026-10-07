@@ -73,6 +73,8 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
     - :class:`CodeBrain` - Scalable EEG pre-training with temporal and spectral code
       prediction
+    - :class:`CSBrain` - Cross-scale spatiotemporal brain foundation model with
+      structured sparse attention
     - :class:`Labram` - Large Brain Model with pre-trained weights
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
@@ -84,6 +86,9 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`EEGPT` - Pretrained transformer for universal EEG
     - :class:`STEEGFormer` - ViT-MAE EEG foundation model with braindecode-format
       re-hosted weights
+    - :class:`SleepFM` and :class:`SleepFMStager` - Multimodal PSG foundation encoder
+      and token-wise sleep-staging model compatible with the authors' CC BY-NC
+      checkpoints
 
     **Example - Loading a pre-trained model:**
 
@@ -151,6 +156,7 @@ interface for all EEG models and can derive variable names when needed.
      CBraMod
      CodeBrain
      ContraWR
+     CSBrain
      CTNet
      DGCNN
      DIVER1
@@ -174,12 +180,6 @@ interface for all EEG models and can derive variable names when needed.
      FBLightConvNet
      FBMSNet
      IFNet
-     InterpolatedBENDR
-     InterpolatedBIOT
-     InterpolatedEEGPT
-     InterpolatedLaBraM
-     InterpolatedModel
-     InterpolatedSignalJEPA
      Labram
      LUNA
      MAPA
@@ -199,6 +199,8 @@ interface for all EEG models and can derive variable names when needed.
      SignalJEPA_PostLocal
      SignalJEPA_PreLocal
      SincShallowNet
+     SleepFM
+     SleepFMStager
      SleepStagerBlanco2020
      SleepStagerChambon2018
      SPARCNet
@@ -287,6 +289,21 @@ perceptrons (MLPs) and inception blocks.
     InceptionBlock
     PatchTokenizer
 
+Channels
+========
+
+The channel layer behind ``channel_strategy=`` (see
+:doc:`user_guide/channel_strategies`).
+
+:py:mod:`braindecode.modules.channels`:
+
+.. autosummary::
+    :toctree: generated/channels
+    :template: class_in_subdir
+    :recursive:
+
+    ChannelLayer
+
 Convolution
 ===========
 
@@ -319,7 +336,6 @@ These modules implement Filter Bank as Layer and generalizer Gaussian layer.
     :template: class_in_subdir
     :recursive:
 
-    ChannelInterpolationLayer
     FilterBankLayer
     GeneralizedGaussianFilter
 
