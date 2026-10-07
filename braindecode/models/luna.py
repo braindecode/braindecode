@@ -144,6 +144,8 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         drop_prob_chan: float = 0.0,
         attn_drop: float = 0.0,
         activation: Type[nn.Module] = nn.GELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -152,6 +154,8 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             sfreq=sfreq,
             chs_info=chs_info,
             input_window_seconds=input_window_seconds,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 

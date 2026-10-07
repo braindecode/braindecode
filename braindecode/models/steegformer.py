@@ -284,6 +284,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         global_pool: str = "avg",
         n_chans_pos: int = 145,
         chan_pos_idx=None,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -292,6 +294,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 

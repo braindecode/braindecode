@@ -15,8 +15,6 @@ from braindecode.models import (
     BrainBERT,
     Brant,
     CBraMod,
-    InterpolatedBENDR,
-    InterpolatedLaBraM,
     Labram,
     MIRepNet,
     PopulationTransformer,
@@ -31,7 +29,6 @@ from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
 from braindecode.models.util import (
     _get_signal_params,
-    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
 )
@@ -75,13 +72,6 @@ def _chs(names=None, n=N_CHANS):
 _MODELS = [
     pytest.param(EEGPT, N_CHANS, {}, False, id="EEGPT"),
     pytest.param(
-        InterpolatedLaBraM,
-        N_CHANS,
-        {"patch_size": 200, "chs_info": _chs()},
-        True,
-        id="InterpolatedLaBraM",
-    ),
-    pytest.param(
         REVE,
         16,
         {"chs_info": _chs(_REVE_CHS), "patch_size": 200, "patch_overlap": 0},
@@ -90,11 +80,11 @@ _MODELS = [
     ),
     pytest.param(BENDR, N_CHANS, {}, False, id="BENDR"),
     pytest.param(
-        InterpolatedBENDR,
+        BENDR,
         N_CHANS,
-        {"chs_info": _chs()},
+        {"chs_info": _chs(), "channel_strategy": "spline"},
         False,
-        id="InterpolatedBENDR",
+        id="BENDR-spline",
     ),
     pytest.param(
         BaRISTA,
@@ -269,10 +259,9 @@ def test_reset_head(cls, nc, kw, has_cls):
 
 # -- reset_head must leave a model that can be saved and loaded back --
 
-_ALL_MODELS = {**models_dict, **interpolated_models_dict}
+_ALL_MODELS = dict(models_dict)
 _REGISTRY = {name: sp for name, _, sp in models_mandatory_parameters}
-# Every registered model that overrides reset_head, including the interpolated
-# wrappers that inherit it from their backbone.
+# Every registered model that overrides reset_head.
 _RESET_HEAD_CASES = [
     name
     for name in _REGISTRY
