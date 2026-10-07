@@ -1415,7 +1415,8 @@ class _SEANetLSTM(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.permute(2, 0, 1)
+        # 4D-view permute: Gaudi lazy mode cannot compile the LSTM after a 3D one.
+        x = x.unsqueeze(-1).permute(2, 0, 1, 3).squeeze(-1)
         y, _ = self.lstm(x)
         if self.bidirectional:
             x = x.repeat(1, 1, 2)
