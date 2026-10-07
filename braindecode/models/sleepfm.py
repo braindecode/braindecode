@@ -26,6 +26,16 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
     :bdg-success:`Convolution`
 
+    .. figure:: https://media.springernature.com/full/springer-static/image/art%3A10.1038%2Fs41591-025-04133-4/MediaObjects/41591_2025_4133_Fig1_HTML.png
+        :align: center
+        :alt: SleepFM overview (Thapa et al., 2026, Fig. 1).
+
+    This class is the pretrained encoder of panel **b**: a 1D CNN per
+    channel, channel pooling, a temporal Transformer and temporal pooling.
+    It was pretrained with leave-one-out contrastive learning, which aligns
+    each modality (BAS, EKG, RESP, EMG) with the others, on over 585,000 h of
+    PSG from SSC, BioSerenity, MESA and MrOS; SHHS was held out.
+
     Every channel is cut into non-overlapping 5-second patches (``patch_size``
     samples at 128 Hz; trailing samples are dropped) and embedded by a shared
     convolutional tokenizer. Attention pools the variable channel set of each
@@ -59,10 +69,21 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     zero-padded channels with the real ones; both agree when no channel is
     masked, and always in eval mode.
 
-    The released encoder loads from the braindecode mirror; ``final_layer`` is
-    not pretrained (the release is a contrastive encoder)::
+    .. important::
+       **Pre-trained Weights Available**
 
-        model = SleepFM.from_pretrained(n_chans=4, n_times=3840, n_outputs=5)
+       The released encoder is mirrored at
+       `braindecode/SleepFM <https://huggingface.co/braindecode/SleepFM>`_
+       (revision ``acecf041``, CC BY-NC 4.0). ``final_layer`` is not
+       pretrained: the release is a contrastive encoder.
+
+       .. code-block:: python
+
+           from braindecode.models import SleepFM
+
+           model = SleepFM.from_pretrained(n_chans=4, n_times=3840, n_outputs=5)
+
+    .. versionadded:: 1.9
 
     `License <https://creativecommons.org/licenses/by-nc/4.0/>`_
 
@@ -99,12 +120,11 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        _check_input(self, patch_size, max_seq_length)
         self.patch_size = patch_size
         self.embed_dim = embed_dim
 
         self.patch_embedding = _SleepFMTokenizer(
-            patch_size, embed_dim, activation, self.n_times
+            patch_size, embed_dim, activation, self.n_times, self.sfreq, max_seq_length
         )
         _add_context_layers(
             self,
@@ -170,7 +190,11 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                 patch=x.shape[-1] // self.patch_size,
             )
         tokens = self.patch_embedding(x, patch_mask)
-        contextual_tokens = _contextualize(self, _pool_set(self, tokens, mask))
+        tokens = self.spatial_pooling.per_patch(tokens, mask)
+        tokens = self.layer_norm(
+            tokens + self.positional_encoding[:, : tokens.shape[1]]
+        )
+        contextual_tokens = self.transformer_encoder(tokens)
         return self.temporal_pooling(contextual_tokens), contextual_tokens
 
     def forward(
@@ -197,6 +221,15 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
+
+    .. figure:: https://media.springernature.com/full/springer-static/image/art%3A10.1038%2Fs41591-025-04133-4/MediaObjects/41591_2025_4133_Fig1_HTML.png
+        :align: center
+        :alt: SleepFM overview (Thapa et al., 2026, Fig. 1).
+
+    This class is the fine-tuned head of panel **c** (modality pooling,
+    LSTM, fully connected layer) on top of the panel **b** encoder of
+    :class:`SleepFM`. The released staging head was fine-tuned on frozen
+    encoder embeddings of SSC, MESA, MrOS and SHHS.
 
     1. **Encoder** (:class:`SleepFM` without its trial pooling). Channels are
        grouped by ``channel_modalities``; each modality is encoded in
@@ -253,14 +286,25 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     padding (never on its content). ``channel_mask`` works as in
     :class:`SleepFM`; a modality without a valid channel is masked.
 
-    The released stager loads from the braindecode mirror::
+    .. important::
+       **Pre-trained Weights Available**
 
-        model = SleepFMStager.from_pretrained(
-            n_chans=7,
-            n_times=38400,
-            n_outputs=5,
-            channel_modalities=["BAS"] * 3 + ["RESP"] * 2 + ["EKG", "EMG"],
-        )
+       The released stager is mirrored at
+       `braindecode/SleepFMStager <https://huggingface.co/braindecode/SleepFMStager>`_
+       (revision ``8681fbad``, CC BY-NC 4.0).
+
+       .. code-block:: python
+
+           from braindecode.models import SleepFMStager
+
+           model = SleepFMStager.from_pretrained(
+               n_chans=7,
+               n_times=38400,
+               n_outputs=5,
+               channel_modalities=["BAS"] * 3 + ["RESP"] * 2 + ["EKG", "EMG"],
+           )
+
+    .. versionadded:: 1.9
 
     `License <https://creativecommons.org/licenses/by-nc/4.0/>`_
 
@@ -303,7 +347,6 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        _check_input(self, patch_size, max_seq_length)
         labels: list[Hashable] = [0] * self.n_chans
         if channel_modalities is not None:
             labels = list(channel_modalities)
@@ -328,7 +371,7 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
         # Same modules and parameter names as SleepFM's encoder.
         self.patch_embedding = _SleepFMTokenizer(
-            patch_size, embed_dim, activation, self.n_times
+            patch_size, embed_dim, activation, self.n_times, self.sfreq, max_seq_length
         )
         _add_context_layers(
             self,
@@ -426,15 +469,69 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         if mask is None:
             mask = torch.zeros(x.shape[:2], dtype=torch.bool, device=x.device)
 
+        chunk = self.encoder_chunk_patches
+        n_full = n_patches // chunk
         embeddings, missing_modalities = [], []
         for signal, modality_mask in zip(
             x.index_select(1, self._channel_order).split(self._modality_sizes, 1),
             mask.index_select(1, self._channel_order).split(self._modality_sizes, 1),
         ):
-            embedding, missing = self._encode_modality(
-                signal, modality_mask, patch_mask, mask_tokens
+            # Encode the modality chunk by chunk, as the release embeds it.
+            missing = modality_mask.all(dim=1)
+            tokenizer_mask = None
+            if mask_tokens:  # without any mask the faster unmasked path is taken
+                tokenizer_mask = repeat(
+                    modality_mask, "batch chans -> batch chans patch", patch=n_patches
+                )
+                if patch_mask is not None:
+                    tokenizer_mask = tokenizer_mask | patch_mask.unsqueeze(1)
+            tokens = self.patch_embedding(signal, tokenizer_mask)
+            # A sample without this modality is pooled unmasked, then zeroed.
+            unmasked = modality_mask & ~missing.unsqueeze(1)
+            tokens = self.spatial_pooling.per_patch(tokens, unmasked)
+
+            encoded = []
+            for start, stop, n_chunks in (
+                (0, n_full * chunk, n_full),
+                (n_full * chunk, n_patches, 1),
+            ):
+                if stop == start:
+                    continue
+                key_padding_mask = None
+                if patch_mask is not None:
+                    key_padding_mask = rearrange(
+                        patch_mask[:, start:stop],
+                        "batch (chunk patch) -> (batch chunk) patch",
+                        chunk=n_chunks,
+                    )
+                    # A fully padded chunk is computed unmasked, then zeroed.
+                    key_padding_mask = key_padding_mask & ~key_padding_mask.all(
+                        dim=1, keepdim=True
+                    )
+                segment = rearrange(
+                    tokens[:, start:stop],
+                    "batch (chunk patch) emb -> (batch chunk) patch emb",
+                    chunk=n_chunks,
+                )
+                segment = self.layer_norm(
+                    segment + self.positional_encoding[:, : segment.shape[1]]
+                )
+                segment = self.transformer_encoder(
+                    segment, src_key_padding_mask=key_padding_mask
+                )
+                encoded.append(
+                    rearrange(
+                        segment,
+                        "(batch chunk) patch emb -> batch (chunk patch) emb",
+                        chunk=n_chunks,
+                    )
+                )
+            empty = repeat(missing, "batch -> batch patch", patch=n_patches)
+            if patch_mask is not None:
+                empty = empty | patch_mask
+            embeddings.append(
+                torch.cat(encoded, dim=1).masked_fill(empty.unsqueeze(-1), 0.0)
             )
-            embeddings.append(embedding)
             missing_modalities.append(missing)
         # The released head (``max_channels: 4``) always gets four modality
         # slots; missing ones are empty and masked.
@@ -451,66 +548,6 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         logits = self.final_layer(features)
         return rearrange(logits, "batch patch cls -> batch cls patch")
 
-    def _encode_modality(self, x, channel_mask, patch_mask, mask_tokens):
-        """Encode one modality chunk by chunk, as the release's embedding step.
-
-        Returns ``(batch, n_patches, embed_dim)`` embeddings, zero where the
-        modality is missing or the patch padded, and the ``(batch,)`` mask of
-        samples without this modality.
-        """
-        n_patches = x.shape[-1] // self.patch_size
-        missing = channel_mask.all(dim=1)
-        tokenizer_mask = None
-        if mask_tokens:  # without any mask the faster unmasked path is taken
-            tokenizer_mask = repeat(
-                channel_mask, "batch chans -> batch chans patch", patch=n_patches
-            )
-            if patch_mask is not None:
-                tokenizer_mask = tokenizer_mask | patch_mask.unsqueeze(1)
-        tokens = self.patch_embedding(x, tokenizer_mask)
-        # A sample without this modality is pooled unmasked, then zeroed.
-        unmasked = channel_mask & ~missing.unsqueeze(1)
-        tokens = _pool_set(self, tokens, unmasked)
-
-        chunk = self.encoder_chunk_patches
-        n_full = n_patches // chunk
-        encoded = []
-        for start, stop, n_chunks in (
-            (0, n_full * chunk, n_full),
-            (n_full * chunk, n_patches, 1),
-        ):
-            if stop == start:
-                continue
-            key_padding_mask = None
-            if patch_mask is not None:
-                key_padding_mask = rearrange(
-                    patch_mask[:, start:stop],
-                    "batch (chunk patch) -> (batch chunk) patch",
-                    chunk=n_chunks,
-                )
-                # A fully padded chunk is computed unmasked, then zeroed.
-                key_padding_mask = key_padding_mask & ~key_padding_mask.all(
-                    dim=1, keepdim=True
-                )
-            segment = rearrange(
-                tokens[:, start:stop],
-                "batch (chunk patch) emb -> (batch chunk) patch emb",
-                chunk=n_chunks,
-            )
-            segment = _contextualize(self, segment, key_padding_mask)
-            encoded.append(
-                rearrange(
-                    segment,
-                    "(batch chunk) patch emb -> batch (chunk patch) emb",
-                    chunk=n_chunks,
-                )
-            )
-        embeddings = torch.cat(encoded, dim=1)
-        empty = repeat(missing, "batch -> batch patch", patch=n_patches)
-        if patch_mask is not None:
-            empty = empty | patch_mask
-        return embeddings.masked_fill(empty.unsqueeze(-1), 0.0), missing
-
     def reset_head(self, n_outputs: int):
         """Replace the patch-wise output layer."""
         self._set_n_outputs(n_outputs)
@@ -526,10 +563,25 @@ class _SleepFMTokenizer(nn.Module):
     to one ``embed_dim`` vector.
     """
 
-    def __init__(self, patch_size, embed_dim, activation, n_times) -> None:
+    def __init__(
+        self, patch_size, embed_dim, activation, n_times, sfreq, max_patches
+    ) -> None:
         super().__init__()
         if patch_size < 64 or patch_size % 64:
             raise ValueError("patch_size must be at least 64 and divisible by 64.")
+        if sfreq != 128:
+            warnings.warn(
+                f"SleepFM was pretrained at 128 Hz, got {sfreq:g} Hz; resample "
+                "to reuse the released weights.",
+                UserWarning,
+                stacklevel=3,
+            )
+        if not 0 < n_times // patch_size <= max_patches:
+            raise ValueError(
+                f"n_times={n_times} gives {n_times // patch_size} patches of "
+                f"{patch_size} samples; between 1 and max_seq_length={max_patches} "
+                "are needed."
+            )
         self.embed_dim = embed_dim
         self.patchify = PatchTokenizer(patch_size, n_times, on_non_divisible="crop")
         layers: list[nn.Module] = []
@@ -594,6 +646,16 @@ class _SleepFMAttentionPooling(nn.Module):
             d_model=input_dim, nhead=num_heads, dropout=drop_prob, batch_first=True
         )
 
+    def per_patch(self, tokens, mask):
+        """Pool the set axis of ``(batch, set, patch, emb)`` within every patch."""
+        n_patches = tokens.shape[2]
+        tokens = rearrange(tokens, "batch chans patch emb -> (batch patch) chans emb")
+        mask = repeat(mask, "batch chans -> (batch patch) chans", patch=n_patches)
+        pooled = self(tokens, mask)
+        return rearrange(
+            pooled, "(batch patch) emb -> batch patch emb", patch=n_patches
+        )
+
     def forward(self, x, key_padding_mask=None):
         """Pool ``(batch, items, emb)``; ``True`` in the mask marks padding."""
         if key_padding_mask is None:
@@ -637,31 +699,19 @@ class _SleepFMStagingHead(nn.Module):
 
     def forward(self, tokens, modality_mask, temporal_mask=None):
         """Map ``(batch, modalities, patches, emb)`` to ``(batch, patches, emb)``."""
-        features = _pool_set(self, tokens, modality_mask)
+        features = self.spatial_pooling.per_patch(tokens, modality_mask)
         if temporal_mask is None:  # the release always passes a padding mask
             temporal_mask = torch.zeros(
                 features.shape[:2], dtype=torch.bool, device=features.device
             )
-        features = _contextualize(self, features, temporal_mask)
+        features = self.layer_norm(
+            features + self.positional_encoding[:, : features.shape[1]]
+        )
+        features = self.transformer_encoder(
+            features, src_key_padding_mask=temporal_mask
+        )
         features, _ = self.lstm(features)
         return features
-
-
-def _check_input(model, patch_size, max_seq_length):
-    """Warn on a sampling rate other than 128 Hz; check the patch count."""
-    if model.sfreq != 128:
-        warnings.warn(
-            f"{type(model).__name__} was pretrained at 128 Hz, got "
-            f"{model.sfreq:g} Hz; resample to reuse the released weights.",
-            UserWarning,
-            stacklevel=3,
-        )
-    n_patches = model.n_times // patch_size
-    if not 0 < n_patches <= max_seq_length:
-        raise ValueError(
-            f"n_times={model.n_times} gives {n_patches} patches of {patch_size} "
-            f"samples; between 1 and max_seq_length={max_seq_length} are needed."
-        )
 
 
 def _check_mask(mask, shape, x, name):
@@ -702,19 +752,3 @@ def _add_context_layers(
     module.transformer_encoder = nn.TransformerEncoder(
         layer, num_layers=num_layers, enable_nested_tensor=False
     )
-
-
-def _pool_set(module, tokens, mask):
-    """Pool the set axis of ``(batch, set, patch, emb)`` within every patch."""
-    n_patches = tokens.shape[2]
-    tokens = rearrange(tokens, "batch chans patch emb -> (batch patch) chans emb")
-    mask = repeat(mask, "batch chans -> (batch patch) chans", patch=n_patches)
-    pooled = module.spatial_pooling(tokens, mask)
-    return rearrange(pooled, "(batch patch) emb -> batch patch emb", patch=n_patches)
-
-
-def _contextualize(module, tokens, mask=None):
-    r"""Return :math:`\operatorname{Transformer}(\operatorname{LN}(z + \mathrm{PE}))`."""
-    tokens = tokens + module.positional_encoding[:, : tokens.shape[1]]
-    tokens = module.layer_norm(tokens)
-    return module.transformer_encoder(tokens, src_key_padding_mask=mask)
