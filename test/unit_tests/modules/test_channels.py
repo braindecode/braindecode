@@ -5,7 +5,7 @@
 
 import copy
 import inspect
-import pickle
+import pickle  # nosec B403
 
 import mne
 import numpy as np
@@ -14,7 +14,7 @@ import torch
 
 from braindecode.models import BENDR, LUNA, Labram, SignalJEPA
 from braindecode.modules import ChannelLayer
-from braindecode.modules.channels import STRATEGIES, _resolve
+from braindecode.modules.channels import _SPHERE_R0, STRATEGIES, _resolve
 
 TEN_TWENTY = "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
 SUBSET = ["Fp1", "F3", "Fz", "C3", "Cz", "P4", "Pz", "O2"]
@@ -108,10 +108,33 @@ def test_bipolar_target_is_a_derivation():
     "strategy,kw", [("field", {}), ("source", {}), ("source", {"trainable": True})]
 )
 def test_constant_input_gives_constant_output(strategy, kw):
-    # A target on the sphere's vertical axis (biosemi64 Cz) must stay finite.
-    target = chs(TEN_TWENTY) + [at("Zaxis", [0, 0, 0.12])]
+    # A target on the sphere's vertical axis must stay finite.
+    target = chs(TEN_TWENTY) + [at("Zaxis", np.add(_SPHERE_R0, [0, 0, 0.08]))]
     out, _ = ChannelLayer(target, strategy, chs(SUBSET), **kw)(torch.ones(1, 8, 4))
     torch.testing.assert_close(out, torch.ones_like(out))
+
+
+def test_source_fidelity_on_another_head():
+    # Truth from a head the inversion does not use: 4 shells, other centre,
+    # radius and skull conductivity. Measured 0.759 (MNE's default sphere: 0.820).
+    info = mne.create_info(TEN_TWENTY, 100.0, "eeg")
+    pos = dict(zip(TEN_TWENTY, _resolve(chs(TEN_TWENTY))[1]))
+    info.set_montage(mne.channels.make_dig_montage(pos, coord_frame="head"))
+    with mne.utils.use_log_level("ERROR"):
+        sph = mne.make_sphere_model((0, 0.008, 0.045), 0.095, sigmas=(0.33, 1, 0.002, 0.33))
+        src = mne.setup_volume_source_space(sphere=sph, pos=10.0, exclude=20.0)
+        L = mne.make_forward_solution(info, None, src, sph, meg=False)["sol"]["data"]
+    rng = np.random.default_rng(0)
+    S = np.zeros((L.shape[1], 300))  # 3 dipoles of random orientation per sample
+    for i, d in enumerate(rng.integers(0, L.shape[1] // 3, (300, 3))):
+        S[(3 * d[:, None] + np.arange(3)).ravel(), i] = rng.standard_normal(9)
+    truth = torch.tensor(L @ S).float()
+    idx = [TEN_TWENTY.index(n) for n in SUBSET]
+    miss = [i for i in range(19) if i not in idx]
+    out = ChannelLayer(chs(TEN_TWENTY), "source", chs(SUBSET))(truth[idx][None])[0][0]
+    out, truth = out - out.mean(0), truth - truth.mean(0)
+    err = (out[miss] - truth[miss]).norm() / truth[miss].norm()
+    assert err < 0.78
 
 
 def test_trainable_source_equals_physics_at_init():
@@ -256,7 +279,8 @@ def test_strategy_model_survives_deepcopy_and_pickle():
                  channel_strategy="spline").eval()
     x = torch.randn(1, 8, 800)
     y = model(x)
-    for clone in (copy.deepcopy(model), pickle.loads(pickle.dumps(model))):
+    clones = (copy.deepcopy(model), pickle.loads(pickle.dumps(model)))  # nosec B301
+    for clone in clones:
         assert clone.forward.__self__ is clone
         assert torch.equal(clone(x), y) and torch.equal(clone.forward(x), y)
 

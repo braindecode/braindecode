@@ -38,7 +38,11 @@ _MIN_POSITIONS = dict(zip(STRATEGIES, (0, 0, 1, 1, 4, 4, 4, 1, 2, 1)))  # positi
 _ELECTRODES = ("eeg", "seeg", "ecog", "dbs")
 _FIFF_KINDS = {FIFF.FIFFV_EEG_CH: "eeg", FIFF.FIFFV_SEEG_CH: "seeg"}
 _FIFF_KINDS.update({FIFF.FIFFV_ECOG_CH: "ecog", FIFF.FIFFV_DBS_CH: "dbs"})
-_MU_LAMBDA = (  # Berg-Scherg fit of make_sphere_model's 4 shells (COBYLA, 0.5 s)
+# Template head: mne.bem._fit_sphere of the dense standard_1005 in the head frame
+# (MNE's default (0, 0, 0.04), R 0.09 sits 15 mm behind the electrodes' centre).
+_SPHERE_R0, _SPHERE_RADIUS = (-0.0010, 0.0148, 0.0392), 0.0988
+_MU_LAMBDA = (  # Berg-Scherg fit of make_sphere_model's 4 shells (COBYLA, 0.5 s);
+    # depends on the relative radii and conductivities only, not on r0 or R
     np.array([0.9433448511080679, 0.663623934869853, 0.079878238156799]),
     np.array([0.4260455268056578, 2.0834380895598508, -0.05381815373454841]),
 )
@@ -113,8 +117,9 @@ def _sphere_forward(positions: np.ndarray, sphere, src) -> np.ndarray:
 
 @lru_cache(maxsize=4)
 def _sphere_head(n_parcels: int, grid_mm: float):
-    """3-shell sphere, volume grid, k-means parcels (seed 0) and their orientation
-    (first right singular vector of the lead field on the dense standard_1005)."""
+    """4-shell sphere fitted to standard_1005, volume grid, k-means parcels
+    (seed 0) and their orientation (first right singular vector of the lead
+    field on the dense standard_1005)."""
     # ponytail: patches a private MNE helper; drop the patch if MNE renames it.
     fit = mock.patch.object(  # deterministic fit: reuse its result
         mne.bem,
@@ -122,7 +127,7 @@ def _sphere_head(n_parcels: int, grid_mm: float):
         lambda m, *_: m.update(zip(("mu", "lambda"), _MU_LAMBDA), nfit=3) or 0.0,
     )
     with mne.utils.use_log_level("ERROR"), fit:
-        sphere = mne.make_sphere_model(r0=(0.0, 0.0, 0.04), head_radius=0.09)
+        sphere = mne.make_sphere_model(r0=_SPHERE_R0, head_radius=_SPHERE_RADIUS)
         src = mne.setup_volume_source_space(
             sphere=sphere, pos=grid_mm, mindist=5.0, exclude=20.0
         )
