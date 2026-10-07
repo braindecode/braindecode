@@ -323,7 +323,8 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.final_layer = nn.Linear(n_features, self.n_outputs)
 
     @property
-    def input_shape(self) -> tuple[int, ...]:
+    @torch.jit.unused
+    def input_shape(self):  # 3-D, or 4-D for normalization="session"
         """Input data shape; ``normalization="session"`` takes the spectrogram."""
         if self.normalization == "session":
             return (1, self.n_chans, sum(_BAND_BINS), self.n_times)
