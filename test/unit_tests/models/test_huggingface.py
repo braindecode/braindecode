@@ -22,7 +22,6 @@ from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 
 # importing some fixtures/utilities to help with testing
 from braindecode.models.util import (
-    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
     non_classification_models,
@@ -30,8 +29,7 @@ from braindecode.models.util import (
 
 from .test_integration import get_sp
 
-# Interpolated models are stored in a separate registry from ``models_dict``.
-all_models_dict = {**models_dict, **interpolated_models_dict}
+all_models_dict = dict(models_dict)
 
 # Dense pose regressors return tensors and support the same local Hub
 # round-trip as classifiers. Other non-classification models remain skipped
@@ -186,7 +184,7 @@ def test_save_pretrained_creates_config(tmp_path, sample_model):
         if name == "Labram":
             assert config['n_chans'] in (n_chans, None)
         elif config.get('n_chans') is None and config.get('chs_info') is not None:
-            # Interpolated* models store chs_info instead of n_chans
+            # Models built from chs_info may store it instead of n_chans
             # (n_chans may be absent OR present-but-null in the saved config)
             assert len(config['chs_info']) == n_chans
         else:
@@ -218,9 +216,6 @@ def test_config_contains_all_parameters(tmp_path, sample_model):
     # identifies the channel space.  Since all __init__ parameters are saved,
     # model-specific keys (including EEG-specific ones) will also be present
     # whenever the constructor accepts them.
-    # Note: Interpolated* models expose only `chs_info` at the top level; they
-    # do not re-expose `sfreq`, `n_outputs`, or `n_chans` explicitly (those
-    # belong to the backbone and are stored when they appear in **kwargs).
     assert 'braindecode_version' in config, "Config must contain 'braindecode_version'"
     assert 'n_chans' in config or 'chs_info' in config, (
         "Config must contain either 'n_chans' or 'chs_info'"

@@ -177,6 +177,8 @@ class CBraMod(EEGModuleMixin, nn.Module):
         ),
         drop_prob: float = 0.1,
         return_encoder_output: bool = False,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -185,6 +187,8 @@ class CBraMod(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
         # Shared tokenizer: (batch, n_chans, n_times) -> (batch, n_chans, n_patch, patch_size),
@@ -357,7 +361,11 @@ class _PatchEmbedding(nn.Module):
         mask_x = rearrange(mask_x, "b 1 (c n) p -> (b c n) p", c=ch_num)
         spectral = torch.fft.rfft(mask_x, dim=-1, norm="forward")
         spectral = rearrange(
-            torch.abs(spectral), "(b c n) p -> b c n p", b=bz, c=ch_num, p=101
+            torch.abs(spectral),
+            "(b c n) p -> b c n p",
+            b=bz,
+            c=ch_num,
+            p=self.patch_size // 2 + 1,
         )
         spectral_emb = self.spectral_proj(spectral)
 

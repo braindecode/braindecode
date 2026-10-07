@@ -237,6 +237,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
     transformer: nn.Transformer | None
 
     _feature_encoder_channels: str = "n_chans"
+    _channel_target = [ch["ch_name"] for ch in _PRETRAIN_CHS_INFO]
 
     def __init__(
         self,
@@ -269,11 +270,17 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         channel_embedding: str = "scratch",
         _init_feature_encoder: bool,
         _init_transformer: bool,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         # Resolve channel embedding config before calling super().__init__
+        # (under a channel strategy: on the 62 pre-training channels, the target).
+        native = channel_strategy == "native"
         if _init_transformer:
             effective_chs_info, channel_locations, ch_idxs = (
-                _resolve_channel_embedding_config(channel_embedding, chs_info)
+                _resolve_channel_embedding_config(
+                    channel_embedding, chs_info if native else _PRETRAIN_CHS_INFO
+                )
             )
         else:
             effective_chs_info = chs_info
@@ -283,10 +290,12 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            chs_info=effective_chs_info,
+            chs_info=effective_chs_info if native else chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
@@ -447,6 +456,8 @@ class SignalJEPA(_BaseSignalJEPA):
         transformer__nhead: int = 8,
         # other
         channel_embedding: str = "scratch",
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -471,6 +482,8 @@ class SignalJEPA(_BaseSignalJEPA):
             channel_embedding=channel_embedding,
             _init_feature_encoder=True,
             _init_transformer=True,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.final_layer = nn.Identity()
@@ -1593,24 +1606,10 @@ def _pos_encode_contineous(
         (1 - torch.arange(0, n_dim, 2, device=device) / n_dim) * 2 * math.pi
     )
     pos_encoding = torch.empty((n_dim,), dtype=torch.float32, device=device)
-    xx = (x - x_min) / (x_max - x_min)
+    # Zero span when every ``loc`` is zero (names without positions): encode
+    # xx = 0 instead of the NaN of 0/0.
+    span = x_max - x_min
+    xx = (x - x_min) / span if span != 0 else 0.0
     pos_encoding[0::2] = torch.sin(xx * div_term)
     pos_encoding[1::2] = torch.cos(xx * div_term)
     return pos_encoding
-
-
-# -----------------------------------------------------------------------------
-# InterpolatedSignalJEPA — experimental channel-interpolation variant
-# -----------------------------------------------------------------------------
-# A :func:`~braindecode.models.interpolated.InterpolatedModel` wrapper around
-# :class:`SignalJEPA` whose target channel set is the 62-channel pre-training
-# montage. Accepts arbitrary user ``chs_info``; projects to the canonical
-# 62 channels via an MNE-backed (frozen by default) interpolation matrix.
-#
-# Coexists with ``SignalJEPA(channel_embedding="pretrain_aligned")`` (added
-# in PR #991). The latter requires user channels to be a strict subset of the
-# pre-training set; the former handles arbitrary channels via interpolation.
-
-from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
-
-InterpolatedSignalJEPA = InterpolatedModel(SignalJEPA, _PRETRAIN_CHS_INFO)
