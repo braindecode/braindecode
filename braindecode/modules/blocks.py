@@ -156,8 +156,6 @@ class PatchTokenizer(nn.Module):
             f"({self.patch_size})."
         )
 
-    _prepare_input = prepare_input
-
     def forward(self, x):
         x = self.prepare_input(x)
         batch_size, n_chans, _ = x.shape
