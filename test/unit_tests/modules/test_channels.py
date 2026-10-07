@@ -3,6 +3,7 @@
 # License: BSD (3-clause)
 """Channel layer: regressions A-G and the invariants every strategy keeps."""
 
+import mne
 import numpy as np
 import pytest
 import torch
@@ -43,6 +44,13 @@ def test_c_coordinate_only_channel_matched_by_position():
     assert layer.weight.tolist() == [[1.0]]
     with pytest.raises(ValueError, match="not in the input"):  # never relabelled
         ChannelLayer(chs(["Cz"]), "exact", [at("FCz", cz + [0.002, 0, 0])])
+
+
+def test_names_resolve_in_the_head_frame_of_raw_info():
+    info = mne.create_info(TEN_TWENTY, 200.0, "eeg")
+    info.set_montage("standard_1020")
+    d = _resolve(chs(TEN_TWENTY))[1] - _resolve(info["chs"])[1]
+    assert np.abs(d).max() < 1e-3  # was 46-57 mm: the montage's own (mri) frame
 
 
 def test_d_non_eeg_rejected_or_dropped():

@@ -60,7 +60,9 @@ def _montage(name):
 
 
 def chs_from_montage(names, montage="standard_1005", kind="eeg"):
-    pos = _montage(montage).get_positions()["ch_pos"]
+    montage = _montage(montage)  # in the head frame, as raw.set_montage gives
+    montage.apply_trans(mne.channels.compute_native_head_t(montage))
+    pos = montage.get_positions()["ch_pos"]
     upper = {k.upper(): k for k in pos}
     chs = []
     for n in names:

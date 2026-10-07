@@ -46,8 +46,10 @@ _MU_LAMBDA = (  # Berg-Scherg fit of make_sphere_model's 4 shells (COBYLA, 0.5 s
 
 @lru_cache(maxsize=1)
 def _standard_positions() -> dict[str, np.ndarray]:
-    """Lower-case ``standard_1005`` name (T3 = T7 included) -> position, own frame."""
+    """Lower-case ``standard_1005`` name (T3 = T7 included) -> position in the
+    head frame, as ``raw.set_montage`` gives it."""
     std = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
+    std.apply_trans(mne.channels.compute_native_head_t(std))
     return {n.lower(): p for n, p in std.get_positions()["ch_pos"].items()}
 
 
