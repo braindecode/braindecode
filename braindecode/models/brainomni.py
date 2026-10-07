@@ -1173,9 +1173,10 @@ class _RotaryPositionalEmbedding(nn.Module):
     cache rebuilds it from ``freqs`` with both cosine and sine, and later calls
     of any length use the rebuilt cache, as in the release. The rebuilt cache is
     a non-persistent buffer, so the state dict is unchanged; loading a state
-    dict drops it. Both buffers stay in float32 when the module is
-    cast to another dtype, as the release's complex64 cache does under a
-    ``bfloat16`` training engine.
+    dict drops it. When the module is cast with ``.half()`` or ``.bfloat16()``,
+    the caches stay in float32, as the release's complex64 cache does, while
+    ``freqs`` follows the cast, so a rebuilt cache forms the angles in that
+    dtype, as the release does.
 
     Parameters
     ----------
@@ -1200,15 +1201,15 @@ class _RotaryPositionalEmbedding(nn.Module):
 
     def _polar(self, seq: int) -> torch.Tensor:
         """``(seq, n_dim // 2, 2)`` cosines and sines of ``position * freqs``."""
-        positions = torch.arange(seq, device=self.freqs.device, dtype=torch.float32)
-        angles = torch.outer(positions, self.freqs.float())
+        positions = torch.arange(seq, device=self.freqs.device).type_as(self.freqs)
+        angles = torch.outer(positions, self.freqs).float()
         return torch.stack((angles.cos(), angles.sin()), dim=-1)
 
     def _apply(self, fn, recurse=True):
-        # Follow device moves but keep the float32 values of the buffers, so a
-        # ``.half()`` / ``.to(torch.bfloat16)`` model rotates with the same
-        # angles, as the released complex64 cache under a bfloat16 engine.
-        before = dict(self._buffers)
+        # Follow device moves but keep the float32 caches under a dtype cast,
+        # as the release's complex64 cache under ``.half()`` / ``.bfloat16()``;
+        # ``freqs`` follows the cast, as in the release.
+        before = {name: self._buffers[name] for name in ("rotate", "rebuilt")}
         super()._apply(fn, recurse)
         for name, buffer in before.items():
             moved = self._buffers[name]

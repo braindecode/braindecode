@@ -889,7 +889,8 @@ def test_rope_buffers_stay_float32_and_keep_dtype():
     q = torch.randn(2, 9, 4, 4)
     q_out, _ = rope(q.half(), q.half())
     assert set(rope.state_dict()) == {"freqs", "rotate"}
-    assert rope.freqs.dtype == rope.rotate.dtype == torch.float32
+    assert rope.freqs.dtype == torch.float16
+    assert rope.rotate.dtype == torch.float32
     assert rope.rotate.shape == (240, 8, 2)
     assert q_out.dtype == torch.float16
     torch.testing.assert_close(
@@ -953,6 +954,33 @@ def test_rope_keeps_the_rebuilt_cache_after_a_long_sequence():
     cosine_only = torch.complex(cosines, torch.zeros_like(cosines))
     torch.testing.assert_close(
         rope(q, q)[0], _complex_rope_reference(q, n_dim, rotate=cosine_only)
+    )
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_rope_rebuilds_past_the_cache_in_the_model_dtype(dtype):
+    """Past 240 positions a cast module forms the angles in its dtype.
+
+    Under ``.half()`` / ``.bfloat16()`` the released ``freqs`` follows the cast
+    and ``_set_rotate_cache`` computes ``outer(t, freqs)`` in that dtype before
+    the float32 polar cache; the port does the same.
+    """
+    n_heads, head_dim, seq = 4, 8, 300
+    n_dim = n_heads * head_dim
+    rope = _RotaryPositionalEmbedding(n_dim=n_dim).to(dtype)
+    assert rope.freqs.dtype == dtype
+    assert rope.rotate.dtype == torch.float32
+    q = torch.randn(2, seq, n_heads, head_dim).to(dtype)
+    q_out, _ = rope(q, q)
+    angles = torch.outer(torch.arange(seq).type_as(rope.freqs), rope.freqs).float()
+    released = torch.polar(torch.ones_like(angles), angles)
+    assert rope.rebuilt.dtype == torch.float32
+    torch.testing.assert_close(
+        rope.rebuilt, torch.view_as_real(released), atol=1e-6, rtol=0
+    )
+    assert q_out.dtype == dtype
+    torch.testing.assert_close(
+        q_out, _complex_rope_reference(q, n_dim, rotate=released)
     )
 
 
