@@ -16,11 +16,13 @@ from typing import Literal, cast
 
 import torch
 import torch.nn.functional as F
+import torchaudio.functional as ta_functional
 import torchaudio.transforms as ta_transforms
 from einops import pack, rearrange, reduce, repeat, unpack
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 
 _LPadType = int | Literal["none", "steady", "full"]
@@ -577,6 +579,24 @@ class _ChannelwiseSTFT(ta_transforms.Spectrogram):
         # Kept for upstream-checkpoint key compatibility; not read anywhere.
         self.register_buffer("window_norm", torch.linalg.vector_norm(self.window))
 
+    def forward(self, waveform: torch.Tensor) -> torch.Tensor:
+        # Spectrogram.forward with the window on the input's device and dtype
+        # (spectral_input: float32 at least, CPU for HPU). Complex output.
+        x = spectral_input(waveform)
+        return ta_functional.spectrogram(
+            x,
+            self.pad,
+            self.window.to(x),
+            self.n_fft,
+            self.hop_length,
+            self.win_length,
+            self.power,
+            self.normalized,
+            self.center,
+            self.pad_mode,
+            self.onesided,
+        )
+
 
 class _FrequencyBandAverager(nn.Module):
     """Reduce high-resolution FFT bins to a few coarse ``(low, high)`` Hz bands.
@@ -674,7 +694,7 @@ class _FrequencyBandAverager(nn.Module):
         if self.frequency_bins is None:
             return x
 
-        freq_masks = cast(torch.Tensor, self.freq_masks)
+        freq_masks = cast(torch.Tensor, self.freq_masks).to(x)
         weighted = self.add_band_axis(x) * freq_masks
         return weighted.sum(dim=3) / freq_masks.sum(dim=3)
 
@@ -951,7 +971,8 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
         x = self.csd(x)
         x = self.band_averager(x)
         x = self.spd_log(x)
-        return self.time_last_layout(x)
+        # STFT to matrix log ran in spectral_input(inputs) (see _ChannelwiseSTFT).
+        return self.time_last_layout(x).to(inputs)
 
     def compute_time_downsampling(self, input_lengths: torch.Tensor) -> torch.Tensor:
         cospectrum_len = 1 + (input_lengths - self.n_fft) // self.fft_stride

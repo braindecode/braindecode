@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange, Reduce
 
-from braindecode.functional import sinusoidal_positional_encoding
+from braindecode.functional import sinusoidal_positional_encoding, spectral_input
 from braindecode.models.base import EEGModuleMixin
 
 
@@ -394,8 +394,7 @@ class _STFTSpectrogram(nn.Module):
         right_pad = self._padded_length(n_times) - n_times - self.boundary_pad
         xp = F.pad(x, (self.boundary_pad, right_pad))  # (batch, n_chans, padded)
         frames = xp.unfold(-1, self.nperseg, self.step)  # (b, c, n_frames, nperseg)
-        # CPU FFT has no bfloat16/float16 kernel: transform in float32 at least.
-        frames = frames.to(torch.promote_types(frames.dtype, torch.float32))
+        frames = spectral_input(frames)
         win = self.window.to(frames.dtype)
         scale = 1.0 / win.sum()  # scaling="spectrum"
         spec = torch.fft.rfft(frames * win, dim=-1)  # (b, c, n_frames, nperseg//2+1)
@@ -414,7 +413,7 @@ class _STFTSpectrogram(nn.Module):
         if self.normalizing == "zscore" and not self.zscore_before_clip:
             mag = self._zscore(mag)
         # upstream stft.py: NaNs surviving the statistics are zeroed, not kept.
-        return torch.nan_to_num(mag, nan=0.0).to(x.dtype)
+        return torch.nan_to_num(mag, nan=0.0).to(x)
 
     @staticmethod
     def _zscore(mag: torch.Tensor) -> torch.Tensor:

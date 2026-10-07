@@ -22,7 +22,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
-from braindecode.functional import rotate_pairs
+from braindecode.functional import rotate_pairs, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules.blocks import PatchTokenizer
@@ -522,15 +522,14 @@ class _FrequencyFeatureEmbedder(nn.Module):
             S = T // self.patch_size
         x = x.view(B, C, S, self.patch_size)
 
-        # CPU FFT has no bfloat16/float16 kernel: transform in float32 at least.
         freq_representation = fft.rfft(
-            x.to(torch.promote_types(x.dtype, torch.float32)), dim=-1
+            spectral_input(x), dim=-1
         )  # (B, C, num_patches, patch_size // 2 + 1)
         magnitude = torch.abs(freq_representation)
         phase = torch.angle(freq_representation)
 
         # Concatenate magnitude and phase along the frequency axis (last dimension)
-        freq_features = torch.cat((magnitude, phase), dim=-1).to(x.dtype)
+        freq_features = torch.cat((magnitude, phase), dim=-1).to(x)
         # Map frequency features to embedding dimension
         embedded = self.frequency_to_embed(
             freq_features

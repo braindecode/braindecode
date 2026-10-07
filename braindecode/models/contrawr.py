@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from mne.utils import warn
 
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
@@ -295,12 +296,11 @@ class _STFTModule(nn.Module):
         self.normalized = normalized
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        window = torch.ones(self.n_fft, device=x.device)
-
         # x: (B, C, T)
         B, C, T = x.shape
         # flatten batch & channel into one dim
-        x_flat = x.reshape(B * C, T)
+        x_flat = spectral_input(x.reshape(B * C, T))
+        window = torch.ones(self.n_fft, device=x_flat.device, dtype=x_flat.dtype)
 
         # compute stft on 2D tensor
         spec_flat = torch.stft(
@@ -318,4 +318,4 @@ class _STFTModule(nn.Module):
         F, L = spec_flat.shape[-2], spec_flat.shape[-1]
         spec = spec_flat.view(B, C, F, L)
 
-        return torch.abs(spec)
+        return torch.abs(spec).to(x)

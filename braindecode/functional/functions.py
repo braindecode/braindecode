@@ -28,6 +28,32 @@ def identity(x):
     return x
 
 
+def spectral_input(x: torch.Tensor) -> torch.Tensor:
+    """Prepare ``x`` for an FFT, STFT or eigendecomposition.
+
+    PyTorch has no complex bfloat16 dtype: CPU and MPS FFTs reject
+    bfloat16/float16, and Intel Gaudi (HPU) has no complex tensors at all.
+    This returns ``x`` in at least float32, moved to the CPU when it lives on
+    an HPU; float32/float64 CPU/CUDA inputs are returned as they are. Cast a
+    real result back with ``.to(x)`` (the input's dtype and device)::
+
+        spectrum = torch.fft.rfft(spectral_input(x), dim=-1).abs().to(x)
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Real input of the spectral operation.
+
+    Returns
+    -------
+    torch.Tensor
+        ``x`` in ``promote_types(x.dtype, float32)``, on the CPU for HPU inputs.
+    """
+    if x.device.type == "hpu":
+        x = x.cpu()
+    return x.to(torch.promote_types(x.dtype, torch.float32))
+
+
 def drop_path(
     x, drop_prob: float = 0.0, training: bool = False, scale_by_keep: bool = True
 ):
@@ -176,8 +202,7 @@ def hilbert_freq(x: torch.Tensor, forward_fourier: bool = True) -> torch.Tensor:
     # the complex-valued part in float32 and restore the real-valued contract
     # at the boundary.  Promoting before the FFT also covers backends that do
     # not implement bfloat16 FFT kernels.
-    if input_dtype == torch.bfloat16:
-        x = x.float()
+    x = spectral_input(x)
 
     if forward_fourier:
         seq_len = x.shape[-1]

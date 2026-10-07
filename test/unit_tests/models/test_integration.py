@@ -836,3 +836,50 @@ def test_if_models_with_embedding_parameter(model):
         print(model)
     except Exception as e:
         pytest.fail(f"Error printing model {model_name}: {e}")
+
+
+# CPU has no float16 kernel for these ops, or the value range overflows float16.
+_FLOAT16_XFAIL = {
+    "EEGMiner": "CPU batch_norm needs float32 parameters for float16 input",
+    "FBCNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
+    "FBMSNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
+    "FBLightConvNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
+    "IFNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
+    "LUNA": "activations overflow the float16 range",
+}
+_LOW_PRECISION_XFAIL = {
+    "EEGSym": "CPU avg_pool3d has no bfloat16/float16 kernel",
+}
+
+
+def _dtype_cases():
+    for name in _MODEL_CASES:
+        for dtype in (torch.float64, torch.bfloat16, torch.float16):
+            reason = None
+            if dtype != torch.float64:
+                reason = _LOW_PRECISION_XFAIL.get(name)
+            if dtype == torch.float16:
+                reason = reason or _FLOAT16_XFAIL.get(name)
+            marks = [pytest.mark.xfail(reason=reason)] if reason else []
+            yield pytest.param(name, dtype, marks=marks, id=f"{name}-{str(dtype)[6:]}")
+
+
+@pytest.mark.parametrize("model_name, dtype", list(_dtype_cases()))
+def test_forward_in_dtype(model_name, dtype):
+    """``model.to(dtype)`` forwards on CPU and returns finite ``dtype`` outputs."""
+    required, signal_params = _MODEL_CASES[model_name]
+    model = all_models_dict[model_name](**get_sp(signal_params, required)).eval()
+    try:
+        n_chans = model.n_chans
+    except ValueError:
+        n_chans = default_signal_params["n_chans"]
+    try:
+        n_times = model.n_times
+    except ValueError:
+        n_times = default_signal_params["n_times"]
+    x = torch.randn(2, n_chans, n_times)
+    with torch.no_grad():
+        model(x)  # materialise lazy modules in float32
+        y = model.to(dtype)(x.to(dtype))
+    y = y if torch.is_tensor(y) else next(iter(y.values()))
+    assert y.dtype == dtype and torch.isfinite(y).all()

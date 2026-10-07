@@ -25,7 +25,7 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import rescale_parameter, rotate_pairs
+from braindecode.functional import rescale_parameter, rotate_pairs, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import dkt_region_slots
 from braindecode.modules import FeedForwardBlock
@@ -697,7 +697,7 @@ class _SpectrogramFrontend(nn.Module):
         on the window; the frames past the true window are dropped."""
         batch, n_chans = x.shape[0], x.shape[1]
         n_frames = _frame_count(x.shape[-1])
-        waveform = x.reshape(batch * n_chans, x.shape[-1])
+        waveform = spectral_input(x.reshape(batch * n_chans, x.shape[-1]))
         bands = []
         for _, n_fft, k0, k1, _ in _BANDS:
             # A window shorter than the transform is zero-padded, as in the
@@ -710,7 +710,9 @@ class _SpectrogramFrontend(nn.Module):
                 n_fft=n_fft,
                 hop_length=64,  # 2048 Hz / 32 Hz frame clock
                 win_length=n_fft,
-                window=torch.hann_window(n_fft, device=x.device, dtype=x.dtype),
+                window=torch.hann_window(
+                    n_fft, device=waveform.device, dtype=waveform.dtype
+                ),
                 center=True,
                 normalized=False,
                 return_complex=True,
@@ -725,7 +727,7 @@ class _SpectrogramFrontend(nn.Module):
                 )
                 z = (band - median) / sigma.clamp(min=1e-6)
                 band = torch.where(sigma >= 1e-6, z, torch.zeros_like(z))
-            bands.append(band.reshape(batch, n_chans, k1 - k0 + 1, n_frames))
+            bands.append(band.reshape(batch, n_chans, k1 - k0 + 1, n_frames).to(x))
         return bands
 
 

@@ -13,9 +13,11 @@ from collections.abc import Sequence
 
 import torch
 import torch.nn.functional as F
+import torchaudio.functional as ta_functional
 import torchaudio.transforms as ta_transforms
 from torch import nn
 
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import TDSConvEncoder
 
@@ -572,9 +574,24 @@ class _LogSpectrogram(nn.Module):
             )
         # ``torchaudio.transforms.Spectrogram`` returns ``(..., freq, time)``
         # for power=2 (the default).
-        power_spec = self.spectrogram(x)
+        # The Spectrogram module's forward, with the window on the input's
+        # device and dtype (spectral_input: float32 at least, CPU for HPU).
+        spec, x_in = self.spectrogram, spectral_input(x)
+        power_spec = ta_functional.spectrogram(
+            x_in,
+            spec.pad,
+            spec.window.to(x_in),
+            spec.n_fft,
+            spec.hop_length,
+            spec.win_length,
+            spec.power,
+            spec.normalized,
+            spec.center,
+            spec.pad_mode,
+            spec.onesided,
+        )
         n_freq_bins, n_frames = power_spec.shape[-2], power_spec.shape[-1]
-        log_power = torch.log10(power_spec + self.log_eps)
+        log_power = torch.log10(power_spec + self.log_eps).to(x)
         return log_power.reshape(
             batch_size,
             self.num_bands,

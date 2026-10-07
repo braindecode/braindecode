@@ -15,6 +15,7 @@ from einops import rearrange
 from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 
 
@@ -510,15 +511,15 @@ class _GConv(nn.Module):
 
         # FFT-based convolution: O(N log N)
         # kernel_freq: (channels, d_model, freq_bins)
-        # In float32 at least: CPU FFT has no bfloat16/float16 kernel.
-        fft_dtype = torch.promote_types(x.dtype, torch.float32)
-        kernel_freq = torch.fft.rfft(kernel.to(fft_dtype), n=2 * seq_len)
+        # spectral_input(x) dtype: x's, at least float32 (the reference's .float()).
+        x_in = spectral_input(x)
+        kernel_freq = torch.fft.rfft(kernel.to(x_in), n=2 * seq_len)
         # x_freq: (batch, d_model, freq_bins)
-        x_freq = torch.fft.rfft(x.to(fft_dtype), n=2 * seq_len)
+        x_freq = torch.fft.rfft(x_in, n=2 * seq_len)
         # out_freq: (batch, channels, d_model, freq_bins)
         out_freq = torch.einsum("bhl,chl->bchl", x_freq, kernel_freq)
         # out: (batch, channels, d_model, seq_len)
-        out = torch.fft.irfft(out_freq, n=2 * seq_len)[..., :seq_len].to(x.dtype)
+        out = torch.fft.irfft(out_freq, n=2 * seq_len)[..., :seq_len].to(x)
 
         # Skip connection via learnable D matrix
         # (batch, channels, d_model, seq_len)
@@ -949,12 +950,8 @@ class _PatchEmbedding(nn.Module):
 
         # Spectral projection: rfft gives (batch * n_chans * seq_len, patch_size // 2 + 1)
         spectral = torch.abs(
-            torch.fft.rfft(
-                patches_flat.to(torch.promote_types(patches_flat.dtype, torch.float32)),
-                dim=-1,
-                norm="forward",
-            )
-        ).to(patches_flat.dtype)
+            torch.fft.rfft(spectral_input(patches_flat), dim=-1, norm="forward")
+        ).to(patches_flat)
 
         # Restore batch/channel/patch dims: (batch, n_chans, seq_len, freq_bins)
         spectral = rearrange(

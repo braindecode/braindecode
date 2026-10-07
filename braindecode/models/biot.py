@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from linear_attention_transformer import LinearAttentionTransformer
 
-from braindecode.functional import sinusoidal_positional_encoding
+from braindecode.functional import sinusoidal_positional_encoding, spectral_input
 from braindecode.models.base import EEGModuleMixin
 
 # -----------------------------------------------------------------------------
@@ -501,18 +501,15 @@ class _BIOTEncoder(nn.Module):
             Absolute value of the Fourier transform with size
             (batch_size, n_fft // 2 + 1, n_times // hop_length + 1)
         """
-        # CPU FFT has no bfloat16/float16 kernel: transform in float32 at least.
         spectral = torch.stft(
-            input=sample.squeeze(1).to(
-                torch.promote_types(sample.dtype, torch.float32)
-            ),
+            input=spectral_input(sample.squeeze(1)),
             n_fft=int(self.n_fft),
             hop_length=self.hop_length,
             center=False,
             onesided=True,
             return_complex=True,
         )
-        return torch.abs(spectral).to(sample.dtype)
+        return torch.abs(spectral).to(sample)
 
     def forward(self, x, n_channel_offset=0, perturb=False):
         """
