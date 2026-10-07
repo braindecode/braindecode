@@ -143,6 +143,10 @@ def test_maps_follow_device_and_dtype(device):
     out, observed = layer.to(device, dtype)(x.to(device, dtype))
     assert out.device.type == observed.device.type == device and out.dtype == dtype
     torch.testing.assert_close(out.cpu().float(), expected, rtol=1e-4, atol=1e-4)
+    flipped = layer(x.to(device, dtype).flip(1), chs(SUBSET[::-1]))[0]  # new montage
+    assert layer.weight.device.type == device and layer.weight.dtype == dtype
+    torch.testing.assert_close(flipped, out, rtol=1e-4, atol=1e-4)
+    assert torch.equal(layer(x.to(device, dtype))[0], out)  # back from the cache
 
 
 def smooth_field(n, rng):

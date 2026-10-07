@@ -15,11 +15,14 @@ from __future__ import annotations
 
 import difflib
 import warnings
+from collections import OrderedDict
 from functools import lru_cache
+from unittest import mock
 
 import mne
 import numpy as np
 import torch
+from mne.io.constants import FIFF
 from scipy.cluster.vq import kmeans2
 from scipy.linalg import solve
 from scipy.spatial.distance import cdist
@@ -33,33 +36,37 @@ STRATEGIES = (
 )
 _MIN_POSITIONS = dict(zip(STRATEGIES, (0, 0, 1, 1, 4, 4, 4, 1, 2, 1)))  # positioned
 _ELECTRODES = ("eeg", "seeg", "ecog", "dbs")
+_FIFF_KINDS = {FIFF.FIFFV_EEG_CH: "eeg", FIFF.FIFFV_SEEG_CH: "seeg"}
+_FIFF_KINDS.update({FIFF.FIFFV_ECOG_CH: "ecog", FIFF.FIFFV_DBS_CH: "dbs"})
+_MU_LAMBDA = (  # Berg-Scherg fit of make_sphere_model's 4 shells (COBYLA, 0.5 s)
+    np.array([0.9433448511080679, 0.663623934869853, 0.079878238156799]),
+    np.array([0.4260455268056578, 2.0834380895598508, -0.05381815373454841]),
+)
 
 
 @lru_cache(maxsize=1)
-def _standard_montage() -> mne.channels.DigMontage:
-    """``standard_1005`` in its own coordinates (no fiducial transform)."""
+def _standard_positions() -> dict[str, np.ndarray]:
+    """Lower-case ``standard_1005`` name (T3 = T7 included) -> position, own frame."""
     std = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
-    return mne.channels.make_dig_montage(
-        std.get_positions()["ch_pos"], coord_frame="head"
-    )
+    return {n.lower(): p for n, p in std.get_positions()["ch_pos"].items()}
 
 
 def _resolve(chs_info: list[dict]):
     """Names, positions ``(C, 3)`` (given ``loc``, else ``standard_1005``, else NaN),
-    standard positions of the names, MNE channel types and which ``loc`` were given."""
+    standard positions of the names, channel types and which ``loc`` were given."""
     names = [str(ch["ch_name"]) for ch in chs_info]
-    kinds = [ch.get("kind") or "eeg" for ch in chs_info]  # missing kind = EEG
-    info = mne.create_info(
-        names, 1.0, [k.lower() if isinstance(k, str) else "eeg" for k in kinds]
-    )
-    with info._unlock():
-        for ch, kind in zip(info["chs"], kinds):
-            if not isinstance(kind, str):
-                ch["kind"] = int(kind)  # FIFF kind
-    with mne.utils.use_log_level("ERROR"), warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # non-electrode channels get no position
-        info.set_montage(_standard_montage(), match_case=False, on_missing="ignore")
-    std = np.array([ch["loc"][:3] for ch in info["chs"]], float)
+    types = [  # missing kind = EEG; FIFF kind ints as in raw.info
+        k.lower() if isinstance(k, str) else _FIFF_KINDS.get(int(k), str(k))
+        for k in (ch.get("kind") or "eeg" for ch in chs_info)
+    ]
+    table, nan = _standard_positions(), np.full(3, np.nan)
+    std = np.array(
+        [
+            table.get(n.lower(), nan) if t in _ELECTRODES else nan
+            for n, t in zip(names, types)
+        ],
+        float,
+    ).reshape(-1, 3)
     loc = np.array(
         [
             np.r_[ch.get("loc") if ch.get("loc") is not None else (), 0, 0, 0][:3]
@@ -69,7 +76,7 @@ def _resolve(chs_info: list[dict]):
     )
     given = np.isfinite(loc).all(1) & (np.abs(loc).max(1) >= 1e-8)
     pos = np.where(given[:, None], loc, std)
-    return names, pos, std, info.get_channel_types(), given
+    return names, pos, std, types, given
 
 
 def _interp(method: str, src_pos, tgt_pos, reg: float) -> np.ndarray:
@@ -106,14 +113,20 @@ def _sphere_forward(positions: np.ndarray, sphere, src) -> np.ndarray:
 def _sphere_head(n_parcels: int, grid_mm: float):
     """3-shell sphere, volume grid, k-means parcels (seed 0) and their orientation
     (first right singular vector of the lead field on the dense standard_1005)."""
-    with mne.utils.use_log_level("ERROR"):
+    # ponytail: patches a private MNE helper; drop the patch if MNE renames it.
+    fit = mock.patch.object(  # deterministic fit: reuse its result
+        mne.bem,
+        "_fwd_eeg_fit_berg_scherg",
+        lambda m, *_: m.update(zip(("mu", "lambda"), _MU_LAMBDA), nfit=3) or 0.0,
+    )
+    with mne.utils.use_log_level("ERROR"), fit:
         sphere = mne.make_sphere_model(r0=(0.0, 0.0, 0.04), head_radius=0.09)
         src = mne.setup_volume_source_space(
             sphere=sphere, pos=grid_mm, mindist=5.0, exclude=20.0
         )
     rr = src[0]["rr"][src[0]["vertno"]]
     _, labels = kmeans2(rr, n_parcels, seed=0, minit="++")
-    dense = np.stack(list(_standard_montage().get_positions()["ch_pos"].values()))
+    dense = np.stack(list(_standard_positions().values()))
     L = _sphere_forward(np.unique(dense.round(6), axis=0), sphere, src)
     L -= L.mean(0)
     orient = np.zeros((L.shape[1], n_parcels))
@@ -230,7 +243,22 @@ class ChannelLayer(nn.Module):
             for c, p, g in zip(target, pos, given)
         ]
         self.strategy, self.chs_info = strategy, chs_info
-        self.drop_non_eeg, self.kwargs, self._key = drop_non_eeg, kwargs, None
+        self.drop_non_eeg, self.kwargs = drop_non_eeg, kwargs
+        # Per-montage maps: LRU of device tensors; the current one is the buffers.
+        self._cache, self._key, self._chs = OrderedDict(), None, None
+        self.register_buffer("weight", torch.zeros(0, 0), persistent=False)
+        tnames = [str(c["ch_name"]) for c in self.target]
+        mono = list(dict.fromkeys(m for n in tnames for m in n.split("-")))
+        named = {str(c["ch_name"]): c for c in self.target}
+        _, tpos, tstd, *_ = _resolve([named.get(m, {"ch_name": m}) for m in mono])
+        D = np.array(
+            [
+                [(m == n.split("-")[0]) - (m == n.split("-")[-1] != n) for m in mono]
+                for n in tnames
+            ],
+            float,
+        )
+        self._mono, self._tpos, self._tstd, self._D = mono, tpos, tstd, D
         self.trainable = trainable and strategy == "source"
         if self.trainable:
             n = kwargs.get("n_parcels", 64)
@@ -247,12 +275,28 @@ class ChannelLayer(nn.Module):
             )
             self.key_stats = nn.Linear(2, d)  # + input statistics
         if chs_info is not None and strategy != "wiener":  # wiener: after fit()
-            self._build(chs_info)  # surface montage errors at construction
+            self._use(chs_info)  # surface montage errors at construction
 
-    def _build(self, chs_info: list[dict]) -> None:
-        key = repr([(c["ch_name"], c.get("kind"), c.get("loc")) for c in chs_info])
-        if key == self._key:
+    def _use(self, chs: list[dict]) -> None:
+        """Make the maps of ``chs`` the buffers (identity, then LRU, then build)."""
+        # ponytail: identity fast path; a montage list mutated in place is not seen.
+        if chs is self._chs:
             return
+        key = tuple(
+            (str(c["ch_name"]), c.get("kind"), np.float64(c.get("loc")).tobytes())
+            for c in chs
+        )
+        if key != self._key:
+            maps = self._cache.pop(key, None) or self._build(chs)
+            self._cache[key] = maps  # most recent last
+            if len(self._cache) > 16:
+                self._cache.popitem(last=False)
+            for name, t in maps.items():
+                self.register_buffer(name, t, persistent=False)
+            self._key = key
+        self._chs = chs
+
+    def _build(self, chs_info: list[dict]) -> dict[str, Tensor]:
         names, pos, std, types, _ = _resolve(chs_info)
         bad = [n for n, t in zip(names, types) if t not in _ELECTRODES]
         if bad and not self.drop_non_eeg:
@@ -264,17 +308,7 @@ class ChannelLayer(nn.Module):
             raise ValueError(
                 "channel_strategy='source' uses a scalp-EEG sphere head; use a sensor strategy for intracranial channels."
             )
-        tnames = [str(c["ch_name"]) for c in self.target]
-        mono = list(dict.fromkeys(m for n in tnames for m in n.split("-")))
-        given = {str(c["ch_name"]): c for c in self.target}
-        _, tpos, tstd, *_ = _resolve([given.get(m, {"ch_name": m}) for m in mono])
-        D = np.array(
-            [
-                [(m == n.split("-")[0]) - (m == n.split("-")[-1] != n) for m in mono]
-                for n in tnames
-            ],
-            float,
-        )
+        mono, tpos, tstd, D = self._mono, self._tpos, self._tstd, self._D
         # Copy: same name, else same standard position (T3 = T7), else unknown name within 15 mm.
         low = np.array([n.lower() for n in names])
         alias = np.nan_to_num(cdist(tstd, std), nan=np.inf) < 1e-6
@@ -312,32 +346,34 @@ class ChannelLayer(nn.Module):
                 warnings.warn(
                     f"Strategy {self.strategy!r}: reconstructed row gain |w|_1 = {gain:.3g} > 2; the map amplifies noise. Supply more channels or a smoother strategy.",
                     UserWarning,
-                    stacklevel=3,
+                    stacklevel=4,
                 )
+        dev, dt = self.weight.device, self.weight.dtype  # built where the module is
+        maps = dict(weight=D @ W)
         if self.trainable:
             Lt, S = _source(pos[use], tpos[todo], **self.kwargs)
-            S_all = np.zeros((len(S), len(names)))
-            S_all[:, use] = S
-            self.register_buffer(
-                "lead", torch.tensor(D[:, todo] @ Lt).float(), persistent=False
-            )
-            self.register_buffer(
-                "inverse", torch.tensor(S_all).float(), persistent=False
-            )
+            maps.update(lead=D[:, todo] @ Lt, inverse=np.zeros((len(S), len(names))))
+            maps["inverse"][:, use] = S
         if self.strategy == "latent":  # Fourier features of positions (in dm)
             arg = np.nan_to_num(np.vstack([pos, tpos[todo]]))[..., None] * 10 * np.pi
             arg = arg * 2.0 ** np.arange(self.n_freqs)
-            feat = torch.tensor(np.concatenate([np.sin(arg), np.cos(arg)], -1))
-            feat = feat.reshape(len(arg), -1).float()
-            self.register_buffer("src_feat", feat[: len(pos)], persistent=False)
-            self.register_buffer("tgt_feat", feat[len(pos) :], persistent=False)
-            self.register_buffer(
-                "lat_D", torch.tensor(D[:, todo]).float(), persistent=False
-            )
-            self.lat_mask = torch.as_tensor(use)
-        self.register_buffer("weight", torch.tensor(D @ W).float(), persistent=False)
-        self.observed = torch.as_tensor((np.abs(D) @ ~observed) == 0)
-        self._key = key
+            feat = np.concatenate([np.sin(arg), np.cos(arg)], -1).reshape(len(arg), -1)
+            maps.update(src_feat=feat[: len(pos)], tgt_feat=feat[len(pos) :])
+            maps.update(lat_D=D[:, todo], lat_w=use / max(use.sum(), 1))
+            maps["lat_mask"] = torch.as_tensor(use, device=dev)
+        maps = {
+            k: v if torch.is_tensor(v) else torch.tensor(v, device=dev, dtype=dt)
+            for k, v in maps.items()
+        }
+        maps["observed"] = torch.as_tensor((np.abs(D) @ ~observed) == 0, device=dev)
+        return maps
+
+    def _apply(self, fn, recurse=True):
+        for maps in self._cache.values():  # cached maps follow .to() / .half()
+            maps.update({k: fn(t) for k, t in maps.items()})
+        super()._apply(fn, recurse)
+        self._buffers.update(self._cache.get(self._key, {}))
+        return self
 
     def fit(self, X, chs_info_dense: list[dict]) -> ChannelLayer:
         """``wiener``: fit the spatial covariance on ``X`` ``(n_samples, n_dense)``
@@ -351,11 +387,13 @@ class ChannelLayer(nn.Module):
         dev = self.get_buffer("cov").device
         self.cov = torch.tensor(np.cov(X.T), dtype=torch.float32, device=dev)
         self.dense_pos = torch.tensor(pos, dtype=torch.float32, device=dev)
-        self._key = None
+        self._cache.clear()
+        self._key = self._chs = None
         return self
 
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
-        self._key = None  # maps are rebuilt after a load
+        self._cache.clear()  # maps are rebuilt after a load
+        self._key = self._chs = None
         for k in ("cov", "dense_pos"):  # fitted buffers change size
             if hasattr(self, k) and prefix + k in state_dict:
                 setattr(self, k, torch.empty_like(state_dict[prefix + k]))
@@ -374,19 +412,18 @@ class ChannelLayer(nn.Module):
             raise ValueError(
                 f"Input has {x.shape[1]} channels but the montage has {len(chs)}; they must match."
             )
-        self._build(chs)
-        out = self.weight.to(x) @ x
+        self._use(chs)  # steady state: no host work, every map already on device
+        out = self.weight @ x
         if self.trainable:
-            mix = self.parcel_mix.to(x) @ (self.inverse.to(x) @ x)
-            out = out + self.lead.to(x) @ mix
+            out = out + self.lead @ (self.parcel_mix @ (self.inverse @ x))
         if self.strategy == "latent" and self.lat_D.shape[1]:
-            m = self.lat_mask.to(x.device)
-            stats = torch.stack([x.var(-1), x.diff(dim=-1).abs().mean(-1)], -1)
+            var = (x - x.mean(-1, keepdim=True)).square().sum(-1) / (x.shape[-1] - 1)
+            stats = torch.stack([var, x.diff(dim=-1).abs().mean(-1)], -1)
             stats = (stats + 1e-12).log()
-            stats = stats - stats[:, m].mean(1, keepdim=True)  # (B, C, 2)
-            keys = self.key_pos(self.src_feat.to(x)) + self.key_stats(stats)
-            q = self.query(self.tgt_feat.to(x))
+            stats = stats - (self.lat_w @ stats)[:, None]  # (B, C, 2), no sync
+            keys = self.key_pos(self.src_feat) + self.key_stats(stats)
+            q = self.query(self.tgt_feat)
             logits = q @ keys.transpose(1, 2) / keys.shape[-1] ** 0.5
-            attn = logits.masked_fill(~m, float("-inf")).softmax(-1)  # (B, M, C)
-            out = out + self.lat_D.to(x) @ (attn @ x)
-        return out, self.observed.to(x.device)
+            attn = logits.masked_fill(~self.lat_mask, float("-inf")).softmax(-1)
+            out = out + self.lat_D @ (attn @ x)
+        return out, self.observed
