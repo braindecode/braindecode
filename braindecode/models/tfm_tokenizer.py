@@ -185,8 +185,9 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
                "quantizer.ema_w": "quantizer.ema_weight",
            }
            state = {
-               next((new + k[len(old) :] for old, new in renames.items()
-                     if k.startswith(old)), k): v
+               next(
+                   (new + k[len(old) :] for old, new in renames.items() if k.startswith(old)), k
+               ): v
                for k, v in torch.load(path, map_location="cpu").items()
            }
            model = TFMTokenizer(sfreq=200)
@@ -294,7 +295,10 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         )
         self.frequency_attention = nn.Sequential(
             nn.Conv1d(
-                embed_dim, freq_width, kernel_size=freq_patch_size, stride=freq_patch_size
+                embed_dim,
+                freq_width,
+                kernel_size=freq_patch_size,
+                stride=freq_patch_size,
             ),
             nn.Sigmoid(),
         )
