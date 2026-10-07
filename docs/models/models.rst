@@ -85,6 +85,5 @@ With this, in this model's sub-pages, we provide:
     models_categorization
     models_table
     models_visualization
-    neurorvq_tokenizer
 
 .. include:: /links.inc

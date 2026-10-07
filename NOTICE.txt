@@ -22,11 +22,6 @@ The `meta_neuromotor.py` file is a derivative of
 `facebookresearch/generic-neuromotor-interface`, released by Meta Platforms,
 Inc. under CC BY-NC 4.0, and inherits the same noncommercial terms.
 
-The `neurorvq_tokenizer.py` file adapts the released NeuroRVQ residual
-vector quantization tokenizer from
-`KonstantinosBarmpas/NeuroRVQ`, released under CC BY-NC 4.0, and inherit the
-same noncommercial terms.
-
 ### CC BY-NC-SA 4.0 Licensed Files
 
 The following components are licensed under the Creative Commons

@@ -79,11 +79,8 @@ Enhancements
 
 - Generate a version-scoped ``llms.txt`` and selected Markdown documentation
   entry points with source-commit attribution and critical-page coverage checks.
-- Add :class:`braindecode.models.NeuroRVQTokenizer`, which ports the released
-  four-scale residual vector quantization tokenizer with strict pretrained
-  checkpoint loading, reconstruction, and discrete token extraction. It
-  retains the source project's CC BY-NC 4.0 terms and 200 Hz input requirement
-  (:gh:`1201` by `lindicaphxag-tech`_).
+- Add :class:`braindecode.models.NeuroRVQTokenizer`, the released NeuroRVQ
+  EEG tokenizer: reconstruction and discrete codes (:gh:`1223` by `lindicaphxag-tech`_).
 
 - Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution
   and Transformer seizure detector of Wu et al. (2025) that won the 2025 SzCORE

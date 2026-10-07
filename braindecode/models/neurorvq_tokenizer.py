@@ -406,7 +406,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             torch.tensor([channel_to_index[name] for name in self.channel_names]),
             persistent=False,
         )
-        transformer = dict(
+        transformer: dict = dict(
             max_patches=max_patches,
             embed_dim=embed_dim,
             num_heads=num_heads,
@@ -421,7 +421,10 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             **transformer,
         )
         self.decoder = _BranchTransformer(
-            {f"patch_embed_{i}": _PatchProjection(code_dim, embed_dim) for i in range(1, 5)},
+            {
+                f"patch_embed_{i}": _PatchProjection(code_dim, embed_dim)
+                for i in range(1, 5)
+            },
             depth=decoder_depth,
             **transformer,
         )
