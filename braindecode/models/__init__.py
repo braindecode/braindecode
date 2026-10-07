@@ -14,6 +14,7 @@ from .brant import Brant
 from .cbramod import CBraMod
 from .codebrain import CodeBrain
 from .contrawr import ContraWR
+from .csbrain import CSBrain
 from .ctnet import CTNet
 from .dance import DANCE
 from .deep4 import Deep4Net
@@ -68,6 +69,7 @@ from .signal_jepa import (
 from .sinc_shallow import SincShallowNet
 from .sleep_stager_blanco_2020 import SleepStagerBlanco2020
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
+from .sleepfm import SleepFM, SleepFMStager
 from .sparcnet import SPARCNet
 from .sstdpn import SSTDPN
 from .steegformer import STEEGFormer
@@ -106,6 +108,7 @@ __all__ = [
     "CBraMod",
     "CodeBrain",
     "ContraWR",
+    "CSBrain",
     "CTNet",
     "DANCE",
     "Deep4Net",
@@ -166,6 +169,8 @@ __all__ = [
     "SignalJEPA_PreLocal",
     "SincShallowNet",
     "SSTDPN",
+    "SleepFM",
+    "SleepFMStager",
     "SleepStagerBlanco2020",
     "SleepStagerChambon2018",
     "SPARCNet",

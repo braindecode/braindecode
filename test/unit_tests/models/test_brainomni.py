@@ -13,10 +13,13 @@ import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from mne.io.constants import FIFF
 
 from braindecode.models import BrainOmni, BrainTokenizer
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.brainomni import (
+    _BackwardSolution,
+    _ForwardSolution,
     _geometry_from_chs_info,
     _MultiHeadAttentionRoPE,
     _rename_official_key,
@@ -210,7 +213,8 @@ def test_geometry_eeg_orientation_and_centering():
     "kind, coil_type, orientation_slice",
     [
         ("grad", 3012, slice(3, 6)),  # planar gradiometer
-        ("grad", 5001, slice(9, 12)),  # axial gradiometer
+        ("grad", 5001, slice(9, 12)),  # CTF axial gradiometer
+        ("grad", 6001, slice(9, 12)),  # KIT axial gradiometer
         ("mag", 3022, slice(9, 12)),
     ],
 )
@@ -228,6 +232,7 @@ def test_geometry_meg_orientation_uses_mne_loc_axes(kind, coil_type, orientation
     [
         ("grad", 3012, slice(3, 6)),
         ("grad", 5001, slice(9, 12)),
+        ("grad", 6001, slice(9, 12)),
         ("mag", 3022, slice(9, 12)),
     ],
 )
@@ -238,6 +243,113 @@ def test_geometry_nonfinite_meg_orientation_raises(kind, coil_type, orientation_
         _geometry_from_chs_info(
             [{"ch_name": "M1", "kind": kind, "coil_type": coil_type, "loc": loc}]
         )
+
+
+def _meg_info_chs(
+    n_triplets=4,
+    n_eeg=3,
+    axial=False,
+    plain_int=False,
+    axial_coil=FIFF.FIFFV_COIL_CTF_GRAD,
+):
+    """MNE ``info["chs"]`` like the sample data: integer FIFF kind/coil codes.
+
+    VectorView triplets (MAG 3022 + two planar GRAD 3012), or axial
+    gradiometers (``axial_coil``, CTF 5001 by default, unit T) with
+    ``axial=True``, plus EEG. Locations are a sensor helmet (head frame,
+    metres) with an orthonormal coil frame per sensor.
+    """
+    names, types, coils = [], [], []
+    for i in range(n_triplets):
+        if axial:
+            names += [f"MLC{i}1", f"MLC{i}2", f"MLC{i}3"]
+            types += ["mag"] * 3  # MNE stores CTF axial gradiometers with unit T
+            coils += [axial_coil] * 3
+        else:
+            names += [f"MEG{i:03d}1", f"MEG{i:03d}2", f"MEG{i:03d}3"]
+            types += ["mag", "grad", "grad"]
+            coils += [
+                FIFF.FIFFV_COIL_VV_MAG_T3,
+                FIFF.FIFFV_COIL_VV_PLANAR_T1,
+                FIFF.FIFFV_COIL_VV_PLANAR_T1,
+            ]
+    names += [f"EEG{i:03d}" for i in range(n_eeg)]
+    types += ["eeg"] * n_eeg
+    coils += [FIFF.FIFFV_COIL_EEG] * n_eeg
+    info = mne.create_info(names, 256.0, types)
+    rng = np.random.default_rng(7)
+    for ch, coil in zip(info["chs"], coils):
+        ch["coil_type"] = int(coil) if plain_int else coil
+        direction = rng.normal(size=3)
+        direction /= np.linalg.norm(direction)
+        ex = np.cross(direction, [0.0, 0.0, 1.0])
+        ex /= np.linalg.norm(ex)
+        ey = np.cross(direction, ex)
+        ch["loc"] = np.concatenate([0.1 * direction, ex, ey, direction])
+        if plain_int:
+            ch["kind"] = int(ch["kind"])
+    return info["chs"]
+
+
+@pytest.mark.parametrize("plain_int", [False, True], ids=["named_int", "plain_int"])
+def test_geometry_vectorview_meg_info(plain_int):
+    chs = _meg_info_chs(plain_int=plain_int)
+    pos, sensor_type = _geometry_from_chs_info(chs)
+    assert sensor_type.tolist() == [1, 2, 2] * 4 + [0] * 3
+    for i, ch in enumerate(chs):
+        if sensor_type[i] == 2:  # planar GRAD: in-plane ex axis
+            assert np.allclose(pos[i, 3:], ch["loc"][3:6])
+        elif sensor_type[i] == 1:  # MAG: coil normal
+            assert np.allclose(pos[i, 3:], ch["loc"][9:12])
+        else:
+            assert np.allclose(pos[i, 3:], 0.0)
+    # EEG and MEG (MAG + GRAD together) are each centred and scaled.
+    for mask in (sensor_type == 0, sensor_type > 0):
+        xyz = pos[mask, :3]
+        assert np.allclose(xyz.mean(axis=0), 0.0, atol=1e-6)
+        assert np.isclose(np.sqrt(3 * np.mean(np.sum(xyz**2, axis=1))), 1.0)
+
+
+@pytest.mark.parametrize(
+    "coil, expected",
+    [
+        (FIFF.FIFFV_COIL_CTF_GRAD, 2),
+        (FIFF.FIFFV_COIL_KIT_GRAD, 2),
+        (FIFF.FIFFV_COIL_MAGNES_GRAD, 1),
+    ],
+    ids=["ctf_5001", "kit_6001", "magnes_4002"],
+)
+@pytest.mark.parametrize("plain_int", [False, True], ids=["named_int", "plain_int"])
+def test_geometry_axial_gradiometer_types_follow_release(plain_int, coil, expected):
+    # mne.channel_type says "mag" for axial gradiometers (unit T); the released
+    # extract_pos_sensor_type says GRAD unless the coil name contains "MAG"
+    # (Magnes 4002 is FIFFV_COIL_MAGNES_GRAD, so it stays MAG).
+    chs = _meg_info_chs(n_eeg=0, axial=True, plain_int=plain_int, axial_coil=coil)
+    assert {mne.channel_type({"chs": chs}, i) for i in range(len(chs))} == {"mag"}
+    pos, sensor_type = _geometry_from_chs_info(chs)
+    assert sensor_type.tolist() == [expected] * len(chs)
+    assert np.allclose(pos[:, 3:], np.stack([ch["loc"][9:12] for ch in chs]))
+
+
+def test_geometry_rejects_meg_reference_channels():
+    chs = _meg_info_chs(n_triplets=1, n_eeg=0)
+    chs[0]["kind"] = FIFF.FIFFV_REF_MEG_CH
+    with pytest.raises(ValueError, match="Unsupported channel type"):
+        _geometry_from_chs_info(chs)
+
+
+@pytest.mark.parametrize("axial", [False, True], ids=["vectorview", "ctf"])
+def test_brainomni_forward_on_meg_and_eeg_info(axial):
+    chs = _meg_info_chs(axial=axial)
+    model = _small_brainomni(chs_info=chs, n_outputs=2).eval()
+    assert model.tokenizer.sensor_type.tolist() == (
+        [2] * 12 if axial else [1, 2, 2] * 4
+    ) + [0] * 3
+    out = model(torch.randn(2, len(chs), 512))
+    assert out.shape == (2, 2) and torch.isfinite(out).all()
+    tokenizer = _small_tokenizer(chs_info=chs).eval()
+    x = torch.randn(2, len(chs), 512)
+    assert tokenizer(x).shape == x.shape
 
 
 @pytest.mark.parametrize("loc", [np.full(12, np.nan), None], ids=["nan", "absent"])
@@ -345,6 +457,58 @@ def test_quantizer_initializes_codebook_from_first_batch():
     assert codebook.cluster_size.sum() > 0
     assert torch.isfinite(codebook.embed).all()
     assert codebook.embed.norm(dim=-1).max() < 1.1
+
+
+def _broadcast_kmeans_reference(codebook, samples):
+    """``EMACodebook._kmeans`` before #1239: explicit squared distances."""
+    samples = samples.reshape(-1, samples.shape[-1])
+    dim, dtype = samples.shape[1], samples.dtype
+    if samples.shape[0] < codebook.codebook_size:
+        noise = torch.randn(
+            codebook.codebook_size - samples.shape[0], dim, dtype=dtype
+        )
+        samples = torch.cat([samples, noise], dim=0)
+    centers = codebook._sample_vectors(samples, codebook.codebook_size)
+    bins = torch.ones(codebook.codebook_size, dtype=torch.long)
+    for _ in range(codebook.kmeans_iters):
+        distances = torch.cat(
+            [
+                ((chunk.unsqueeze(1) - centers) ** 2).sum(dim=-1)
+                for chunk in samples.split(256)
+            ]
+        )
+        buckets = distances.argmin(dim=-1)
+        bins = torch.bincount(buckets, minlength=codebook.codebook_size)
+        empty = bins == 0
+        bins[empty] = 1
+        new_centers = torch.zeros(codebook.codebook_size, dim, dtype=dtype)
+        new_centers.scatter_add_(0, buckets.unsqueeze(-1).expand(-1, dim), samples)
+        new_centers = new_centers / bins.unsqueeze(-1)
+        centers = torch.where(empty.unsqueeze(-1), centers, new_centers)
+    return centers, bins
+
+
+@pytest.mark.parametrize(
+    "make_samples, codebook_size",
+    [
+        (lambda: torch.randn(600, 16), 32),
+        # Integer grid with repeated rows: many exact distance ties.
+        (lambda: torch.randint(-2, 3, (600, 4)).float(), 32),
+        # Fewer samples than codes: noise padding, duplicated centres, empty bins.
+        (lambda: torch.randint(0, 2, (20, 3)).float(), 32),
+    ],
+    ids=["gaussian", "tie_heavy_grid", "fewer_samples_than_codes"],
+)
+def test_codebook_kmeans_matches_broadcast_reference(make_samples, codebook_size):
+    codebook = _Codebook(dim=16, codebook_size=codebook_size, kmeans_iters=10)
+    torch.manual_seed(0)
+    samples = make_samples()
+    torch.manual_seed(1)
+    centers, bins = codebook._kmeans(samples)
+    torch.manual_seed(1)
+    ref_centers, ref_bins = _broadcast_kmeans_reference(codebook, samples)
+    torch.testing.assert_close(bins, ref_bins, rtol=0, atol=0)
+    torch.testing.assert_close(centers, ref_centers, rtol=0, atol=0)
 
 
 @pytest.mark.skipif(not dist.is_available(), reason="torch.distributed is unavailable")
@@ -494,6 +658,33 @@ def test_braintokenizer_constructs_from_official_config():
     assert official_config == original_config
 
 
+def test_braintokenizer_crops_each_window_when_hop_does_not_divide_it():
+    """SEANet decodes 12 samples for a 10-sample window at hop 4; each window
+    is cropped before joining, so window 2 lands at samples 10-19."""
+    kw = dict(
+        sfreq=256.0,
+        window_length=10,
+        ratios=(4,),
+        emb_dim=8,
+        n_neuro=2,
+        n_filters=4,
+        tokenizer_num_heads=2,
+        codebook_dim=8,
+        codebook_size=8,
+        num_quantizers=1,
+    )
+    torch.manual_seed(0)
+    model = BrainTokenizer(chs_info=_eeg_chs_info(2), n_times=30, **kw).eval()
+    x = torch.randn(1, 2, 30)
+    with torch.no_grad():
+        full = model(x)
+        reconstruction, _, _ = model.encode_decode(x)
+        window = model(x[..., 10:20])
+    assert full.shape == x.shape
+    torch.testing.assert_close(full[..., 10:20], window)
+    torch.testing.assert_close(reconstruction, full, rtol=0, atol=0)
+
+
 def test_braintokenizer_reconstruction_zero_fills_dropped_tail():
     model = _small_tokenizer(n_times=600).eval()
     reconstruction = model(torch.randn(1, 4, 600))
@@ -539,6 +730,7 @@ def test_braintokenizer_rejects_invalid_overlap(overlap_ratio):
     [
         ({"window_length": 0}, "window_length"),
         ({"n_filters": 0}, "n_filters"),
+        ({"n_filters": 1}, "n_filters must be at least 2"),
         ({"ratios": ()}, "ratios"),
         ({"ratios": (8, 0, 2)}, "ratios"),
         ({"kernel_size": 0}, "kernel_size"),
@@ -561,7 +753,7 @@ def test_braintokenizer_rejects_invalid_constructor_arguments(kwargs, match):
 
 
 def test_braintokenizer_sfreq_warning():
-    with pytest.warns(UserWarning, match="256"):
+    with pytest.warns(UserWarning, match="BrainTokenizer pretrained weights.*256"):
         _small_tokenizer(sfreq=128.0)
 
 
@@ -660,12 +852,19 @@ def test_braintokenizer_released_checkpoint_strict_load_and_parity(tmp_path):
 # ---- BrainOmni private attention ---------------------------------------------
 
 
-def _complex_rope_reference(x, n_dim, base=10000):
-    """Released BrainOmni RoPE: one complex frequency ladder split across heads."""
-    freqs = 1.0 / (base ** (torch.arange(0, n_dim, 2)[: (n_dim // 2)].float() / n_dim))
-    angles = torch.outer(torch.arange(x.shape[1]).float(), freqs)
-    rotate = torch.polar(torch.ones_like(angles), angles)
-    rotate = rotate.reshape(x.shape[1], x.shape[2], -1).unsqueeze(0)
+def _complex_rope_reference(x, n_dim, base=10000, rotate=None):
+    """Released BrainOmni RoPE: one complex frequency ladder split across heads.
+
+    ``rotate`` is the released complex cache; by default the one a freshly
+    built released module computes.
+    """
+    if rotate is None:
+        freqs = 1.0 / (
+            base ** (torch.arange(0, n_dim, 2)[: (n_dim // 2)].float() / n_dim)
+        )
+        angles = torch.outer(torch.arange(x.shape[1]).float(), freqs)
+        rotate = torch.polar(torch.ones_like(angles), angles)
+    rotate = rotate[: x.shape[1]].reshape(x.shape[1], x.shape[2], -1).unsqueeze(0)
     x_ = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
     return torch.view_as_real(x_ * rotate).flatten(3).type_as(x)
 
@@ -683,15 +882,50 @@ def test_rope_matches_released_complex_rotation(seq):
     torch.testing.assert_close(q_out.norm(dim=-1), q.norm(dim=-1))
 
 
-def test_rope_is_stateless_and_keeps_dtype():
-    """No buffers to cast or load; half inputs are rotated in float32."""
-    rope = _RotaryPositionalEmbedding(n_dim=16).half()
-    q = torch.randn(2, 9, 4, 4)
-    q_out, _ = rope(q.half(), q.half())
-    assert rope.state_dict() == {}
-    assert q_out.dtype == torch.float16
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_rope_cast_keeps_float32_cache_and_rebuilds_in_dtype(dtype):
+    """As the release: the cache stays float32, ``freqs`` follows the cast."""
+    rope = _RotaryPositionalEmbedding(n_dim=32).to(dtype)
+    assert rope.freqs.dtype == dtype and rope.rotate.dtype == torch.float32
+    q = torch.randn(2, 9, 4, 8).to(dtype)
+    torch.testing.assert_close(rope(q, q)[0], _complex_rope_reference(q, 32))
+    q = torch.randn(2, 300, 4, 8).to(dtype)
+    angles = torch.outer(torch.arange(300).type_as(rope.freqs), rope.freqs).float()
+    released = torch.polar(torch.ones_like(angles), angles)
     torch.testing.assert_close(
-        q_out.float(), _complex_rope_reference(q, 16), atol=1e-2, rtol=1e-2
+        rope(q, q)[0], _complex_rope_reference(q, 32, rotate=released)
+    )
+
+
+def test_rope_released_cosine_only_cache_then_rebuilt():
+    """Released cache (cosines, no sine) up to 240; past it, rebuilt and kept.
+
+    The release copies the stored real cache into its complex buffer (sine 0)
+    and ``_set_rotate_cache`` rebuilds from the bfloat16-rounded ``freqs``.
+    The state dict is unchanged and a reload restores the loaded cache.
+    """
+    n_dim = 32
+    exact = 1.0 / (10000 ** (torch.arange(0, n_dim, 2).float() / n_dim))
+    cosines = torch.cos(torch.outer(torch.arange(240).float(), exact))
+    rotate = torch.stack((cosines, torch.zeros_like(cosines)), dim=-1)
+    state = {"freqs": exact.bfloat16().float(), "rotate": rotate}
+    rope = _RotaryPositionalEmbedding(n_dim=n_dim)
+    rope.load_state_dict(state, strict=True)
+    cosine_only = torch.complex(cosines, torch.zeros_like(cosines))
+    angles = torch.outer(torch.arange(250).float(), state["freqs"])
+    rebuilt = torch.polar(torch.ones_like(angles), angles)
+    for seq, released in ((240, cosine_only), (250, rebuilt), (5, rebuilt)):
+        q = torch.randn(2, seq, 4, 8)
+        torch.testing.assert_close(
+            rope(q, q)[0], _complex_rope_reference(q, n_dim, rotate=released)
+        )
+    assert {k: v.shape for k, v in rope.state_dict().items()} == {
+        "freqs": (16,),
+        "rotate": (240, 16, 2),
+    }
+    rope.load_state_dict(state, strict=True)
+    torch.testing.assert_close(
+        rope(q, q)[0], _complex_rope_reference(q, n_dim, rotate=cosine_only)
     )
 
 
@@ -715,10 +949,68 @@ def test_rope_attention_rejects_odd_head_dim():
         _MultiHeadAttentionRoPE(12, 4, dropout=0.0, rope=True)
 
 
+@pytest.mark.parametrize(
+    "build, match",
+    [
+        (lambda: _SpatialTemporalBlock(15, 4, 0.0, causal=False), "must be even"),
+        (lambda: _SpatialTemporalBlock(16, 3, 0.0, causal=False), "must be even"),
+        (lambda: _ForwardSolution(10, 4, 0.0), "divisible"),
+        (lambda: _BackwardSolution(10, 4, 0.0), "divisible"),
+    ],
+    ids=["block_odd_dim", "block_odd_heads", "forward_solution", "backward_solution"],
+)
+def test_attention_blocks_reject_invalid_dimensions(build, match):
+    with pytest.raises(ValueError, match=match):
+        build()
+
+
 def test_spatial_temporal_block_shape():
     out = _SpatialTemporalBlock(16, 4, 0.0, causal=False)(torch.randn(2, 3, 7, 16))
     assert out.shape == (2, 3, 7, 16)
     assert torch.isfinite(out).all()
+
+
+def test_spatial_temporal_block_matches_frozen_released_output():
+    """Seeded block with a released-style RoPE cache equals the released code.
+
+    Reference values: ``SpatialTemporalAttentionBlock(16, 4, 0.0, False)`` of
+    OpenTSLab/BrainOmni 340d6b5 (complex RoPE, CPU float32), loaded with the
+    same state dict (cosine-only ``rotate``, bfloat16-rounded ``freqs``, as in
+    the released checkpoints) and run on the same input.
+    """
+    block = _SpatialTemporalBlock(16, 4, 0.0, causal=False).eval()
+    gen = torch.Generator().manual_seed(0)
+    state = {}
+    for key, value in block.state_dict().items():
+        if "rope_embedding_layer" in key:
+            continue
+        offset = 1.0 if key.endswith("norm.weight") else 0.0
+        state[key] = 0.3 * torch.randn(value.shape, generator=gen) + offset
+    exact = 1.0 / (10000 ** (torch.arange(0, 8, 2).float() / 8))
+    cosines = torch.cos(torch.outer(torch.arange(240).float(), exact))
+    state["time_attn.rope_embedding_layer.freqs"] = exact.bfloat16().float()
+    state["time_attn.rope_embedding_layer.rotate"] = torch.stack(
+        (cosines, torch.zeros_like(cosines)), dim=-1
+    )
+    block.load_state_dict(state, strict=True)
+    x = torch.randn(2, 3, 5, 16, generator=gen)
+    with torch.no_grad():
+        out = block(x)
+    expected = torch.tensor(
+        [
+            2.487884044647217,
+            -2.8454644680023193,
+            2.999533176422119,
+            7.002948760986328,
+            -0.9435640573501587,
+            6.7119903564453125,
+            -1.1264961957931519,
+            3.6791319847106934,
+        ]
+    )
+    torch.testing.assert_close(out.flatten()[:8], expected, rtol=1e-5, atol=1e-5)
+    assert out.sum().item() == pytest.approx(-245.95851135253906, abs=1e-3)
+    assert out.abs().sum().item() == pytest.approx(1331.4229736328125, abs=1e-3)
 
 
 # ---- public BrainOmni classifier ---------------------------------------------
@@ -787,6 +1079,18 @@ def test_brainomni_reset_head_changes_only_head():
     assert model(torch.randn(2, 4, 512)).shape == (2, 5)
     assert model.tokenizer is tokenizer  # backbone untouched
     assert model.get_config()["n_outputs"] == 5
+
+
+def test_brainomni_reset_head_follows_eval_mode():
+    model = _small_brainomni(n_outputs=3).eval()
+    model.reset_head(5)
+    assert not any(module.training for module in model.final_layer.modules())
+    x = torch.randn(2, 4, 512)
+    with torch.no_grad():
+        torch.testing.assert_close(model(x), model(x), rtol=0, atol=0)
+    model.train()
+    model.reset_head(2)
+    assert all(module.training for module in model.final_layer.modules())
 
 
 def test_brainomni_reset_head_preserves_dtype():
@@ -858,17 +1162,38 @@ def test_brainomni_official_stage2_keys_load():
         key = key.replace("ff.0.", "ff.layer.0.").replace("ff.3.", "ff.layer.2.")
         key = key.replace("aggregate_mlp.0.", "aggregate_mlp.layer.0.")
         key = key.replace("aggregate_mlp.3.", "aggregate_mlp.layer.2.")
+        if key.endswith("rope_embedding_layer.rotate"):
+            value = value[..., 0]  # the release exports the cosines only
         official[key] = value
     official["mask_token"] = torch.zeros(16)
     official["predict_head.weight"] = torch.zeros(4, 16)
-    official["blocks.0.time_attn.rope_embedding_layer.freqs"] = torch.zeros(4)
-    official["blocks.0.time_attn.rope_embedding_layer.rotate"] = torch.zeros(7, 4)
     target = _small_brainomni()
     head = {k: v.clone() for k, v in target.state_dict().items() if "final_layer." in k}
     target.load_state_dict(official, strict=True)
     for key, value in source.state_dict().items():
         expected = head[key] if key.startswith("final_layer.") else value
+        if key.endswith("rope_embedding_layer.rotate"):
+            expected = torch.stack((value[..., 0], torch.zeros_like(value[..., 0])), -1)
         assert torch.equal(target.state_dict()[key], expected), key
+
+
+def test_brainomni_rope_buffers_backfilled_only_when_all_missing():
+    """A state dict saved before the RoPE buffers loads; a partial one fails."""
+    state = _small_brainomni().state_dict()
+    legacy = {k: v for k, v in state.items() if "rope_embedding" not in k}
+    _small_brainomni().load_state_dict(legacy, strict=True)
+    del state["blocks.0.time_attn.rope_embedding_layer.rotate"]
+    with pytest.raises(RuntimeError, match="rope_embedding_layer.rotate"):
+        _small_brainomni().load_state_dict(state, strict=True)
+
+
+def test_brainomni_head_keeps_default_linear_init():
+    """As released, ``_init_weights`` (zero biases) skips the head."""
+    model = _small_brainomni()
+    biases = [model.final_layer[i].bias for i in (1, 3)]
+    model.reset_head(5)
+    biases += [model.final_layer[i].bias for i in (1, 3)]
+    assert all(bias.abs().max() > 0 for bias in biases)
 
 
 def test_brainomni_official_decoder_rename_is_anchored():
@@ -970,10 +1295,9 @@ def test_brainomni_released_checkpoint_strict_load_and_parity(tmp_path):
         torch.equal(model.state_dict()[key], value)
         for key, value in original_head.items()
     )
-    # The release stores RoPE's frequencies rounded to bfloat16 and its complex
-    # cache without the sine part; the loader drops both and the port recomputes
-    # them in float32, as a freshly built upstream model does. The pinned
-    # upstream signature below uses that path.
+    # Reference: the released code (OpenTSLab/BrainOmni 340d6b5, complex RoPE,
+    # attention dropout 0, CPU float32) on the same weights and input. Its
+    # checkpoint RoPE cache holds cosines only and is used as loaded.
     model.tokenizer.pos.copy_(
         torch.tensor([[0.1, 0.2, 0.3, 0, 0, 0], [-0.2, 0.1, 0.4, 0, 0, 0]])
     )
@@ -982,26 +1306,26 @@ def test_brainomni_released_checkpoint_strict_load_and_parity(tmp_path):
     assert feat.shape == (1, 16, 8, 256)
     expected = torch.tensor(
         [
-            0.004591966513544321,
-            -0.005511901341378689,
-            -0.02144569717347622,
-            -0.047614686191082,
-            -0.057811133563518524,
-            0.04927004501223564,
-            -0.009117362089455128,
-            -0.033146947622299194,
-            -0.006567645352333784,
-            -0.2256787121295929,
-            -0.12158702313899994,
-            0.009830539114773273,
-            -0.045027319341897964,
-            -0.0062219384126365185,
-            0.016128726303577423,
-            0.06308680027723312,
+            0.006593634374439716,
+            -0.009288209490478039,
+            -0.017851131036877632,
+            -0.047316037118434906,
+            -0.050065912306308746,
+            0.055971305817365646,
+            -0.0009199601481668651,
+            -0.048122622072696686,
+            -0.011542999185621738,
+            -0.20722696185112,
+            -0.13327118754386902,
+            0.044792190194129944,
+            -0.03646082431077957,
+            -0.025013461709022522,
+            0.015188287012279034,
+            0.053703077137470245,
         ]
     )
     torch.testing.assert_close(feat.flatten()[:16], expected, rtol=1e-5, atol=1e-5)
-    assert feat.sum().item() == pytest.approx(62.13804626464844, abs=1e-4)
+    assert feat.sum().item() == pytest.approx(51.254783630371094, abs=1e-4)
 
 
 @pytest.mark.network

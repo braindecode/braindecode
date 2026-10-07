@@ -357,7 +357,11 @@ class _PatchEmbedding(nn.Module):
         mask_x = rearrange(mask_x, "b 1 (c n) p -> (b c n) p", c=ch_num)
         spectral = torch.fft.rfft(mask_x, dim=-1, norm="forward")
         spectral = rearrange(
-            torch.abs(spectral), "(b c n) p -> b c n p", b=bz, c=ch_num, p=101
+            torch.abs(spectral),
+            "(b c n) p -> b c n p",
+            b=bz,
+            c=ch_num,
+            p=self.patch_size // 2 + 1,
         )
         spectral_emb = self.spectral_proj(spectral)
 

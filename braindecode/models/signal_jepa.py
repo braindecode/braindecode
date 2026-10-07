@@ -1593,7 +1593,10 @@ def _pos_encode_contineous(
         (1 - torch.arange(0, n_dim, 2, device=device) / n_dim) * 2 * math.pi
     )
     pos_encoding = torch.empty((n_dim,), dtype=torch.float32, device=device)
-    xx = (x - x_min) / (x_max - x_min)
+    # Zero span when every ``loc`` is zero (names without positions): encode
+    # xx = 0 instead of the NaN of 0/0.
+    span = x_max - x_min
+    xx = (x - x_min) / span if span != 0 else 0.0
     pos_encoding[0::2] = torch.sin(xx * div_term)
     pos_encoding[1::2] = torch.cos(xx * div_term)
     return pos_encoding
