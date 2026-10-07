@@ -217,7 +217,7 @@ Bug fixes
   ``model.to(torch.bfloat16)``: FFTs run in float32 at least and are cast back,
   and tensors built inside ``forward`` follow the input's dtype. CodeBrain can
   also train after a first forward under ``torch.inference_mode()``. Float32
-  outputs are unchanged (:gh:`PRNUM` by `Bruno Aristimunha`_)
+  outputs are unchanged (:gh:`1246` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.BrainOmni` and :class:`braindecode.models.BrainTokenizer`
   now type CTF and KIT axial MEG gradiometers as gradiometers, as the released
   BrainOmni code does; they were typed as magnetometers, which gave them the
