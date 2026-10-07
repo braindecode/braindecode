@@ -696,6 +696,7 @@ non_classification_models = [
     "EMG2QwertyNet",
     # Returns a reconstruction tensor (VQ-VAE output), not class logits.
     "BrainTokenizer",
+    "TFMTokenizer",
     # Dense per-frame pose sequences (batch, T, n_joints), not logits.
     "VEMG2Pose",
     "NeuroPose",
