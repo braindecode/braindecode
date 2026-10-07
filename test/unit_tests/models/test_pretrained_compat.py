@@ -338,16 +338,23 @@ def test_native_checkpoint_loads_under_a_strategy(name):
 
 
 # One model per channel contract: canonical montage, ids, positions, slots, free.
-@pytest.mark.parametrize("name", ["BENDR", "Labram", "LUNA", "EEGDINO", "CBraMod"])
-def test_channel_strategy_smoke(name):
-    """Eight 10-20 names without positions forward through ``spline``."""
+@pytest.mark.parametrize(
+    "name,strategy",
+    [(n, "spline") for n in ["BENDR", "Labram", "LUNA", "EEGDINO", "CBraMod"]]
+    + [("Labram", s) for s in ["wiener", "region", "latent"]],
+)
+def test_channel_strategy_smoke(name, strategy):
+    """Eight 10-20 names without positions forward through a strategy."""
     spec = COMPAT[name]
     chs = chs_names_no_loc(TEN_TWENTY[:8])
     kw = dict(n_outputs=2, chs_info=chs, sfreq=spec["sfreq"], n_times=spec["n_times"])
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        model = spec["cls"](**kw, channel_strategy="spline").eval()
+        model = spec["cls"](**kw, channel_strategy=strategy).eval()
+        if strategy == "wiener":  # fitted on the backbone's own montage
+            dense = model.chs_info
+            model.channel_layer.fit(torch.randn(500, len(dense)), dense)
         with torch.no_grad():
             y = model(torch.randn(1, len(chs), spec["n_times"]))
-    assert model.get_config()["channel_strategy"] == "spline"
+    assert model.get_config()["channel_strategy"] == strategy
     assert y.shape[0] == 1 and torch.isfinite(y).all()

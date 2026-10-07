@@ -37,6 +37,15 @@ not know within 15 mm. The strategy fills the other targets:
 - ``source``: minimum-norm inverse on a template sphere head (``n_parcels=64``),
   projected back; scalp EEG only. ``trainable=True`` adds a parcel mixing initialised at
   zero, so training starts from the physics.
+- ``region``: mean of the inputs within ``radius`` (default 1.5 x the median spacing of
+  the input montage); none in range gives a zero row.
+- ``wiener``: linear MMSE from a spatial covariance fitted on dense recordings with
+  ``model.channel_layer.fit(X, chs_info_dense)`` (``X``: samples x dense channels,
+  matched by position within 15 mm; ``noise=0.01``). The fit is saved in the
+  ``state_dict``; an unfitted map raises.
+- ``latent``: learned (POYO-style) cross-attention: each missing target's position
+  queries the inputs' positions and signal statistics. Its weights live under
+  ``channel_layer.*``, so a backbone checkpoint still loads.
 
 Positions come from ``loc``, else from ``standard_1005`` by name. ``spline``, ``field``
 and ``source`` need at least four positioned channels; a map whose row gain exceeds 2

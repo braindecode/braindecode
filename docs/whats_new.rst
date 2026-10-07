@@ -53,7 +53,8 @@ Enhancements
   ``xfail`` markers (:gh:`1228` by `Bruno Aristimunha`_).
 
 - Add ``channel_strategy`` (``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``,
-  ``"spline"``, ``"field"``, ``"source"``; default ``"native"``) and
+  ``"spline"``, ``"field"``, ``"source"``, ``"region"``, ``"wiener"``,
+  ``"latent"``; default ``"native"``) and
   ``channel_strategy_kwargs`` to the 19 pretrained models, saved in the config. A
   :class:`braindecode.modules.ChannelLayer` (one matrix per montage) maps any montage
   onto the channels the backbone consumes, also per call with

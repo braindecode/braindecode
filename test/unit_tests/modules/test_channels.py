@@ -143,3 +143,43 @@ def test_maps_follow_device_and_dtype(device):
     out, observed = layer.to(device, dtype)(x.to(device, dtype))
     assert out.device.type == observed.device.type == device and out.dtype == dtype
     torch.testing.assert_close(out.cpu().float(), expected, rtol=1e-4, atol=1e-4)
+
+
+def smooth_field(n, rng):
+    """``(n, 19)`` random quadratic fields sampled on the 10-20 positions."""
+    P = _resolve(chs(TEN_TWENTY))[1] / 0.1
+    feats = np.c_[np.ones(19), P, P**2, P[:, :1] * P[:, 1:2], P[:, 1:2] * P[:, 2:]]
+    return rng.standard_normal((n, feats.shape[1])) @ feats.T
+
+
+def test_wiener_beats_zero_fill_and_survives_a_state_dict_round_trip():
+    rng = np.random.default_rng(0)
+    X, truth = smooth_field(2000, rng), torch.tensor(smooth_field(50, rng).T).float()
+    idx = [TEN_TWENTY.index(n) for n in SUBSET]
+    layer = ChannelLayer(chs(TEN_TWENTY), "wiener", chs(SUBSET))
+    with pytest.raises(ValueError, match=r"call fit\(\)"):
+        layer(truth[idx][None])
+    with pytest.warns(UserWarning, match="row gain"):  # 10-dim field, 8 inputs
+        out = layer.fit(X, chs(TEN_TWENTY))(truth[idx][None])[0][0]
+    zero = ChannelLayer(chs(TEN_TWENTY), "zero", chs(SUBSET))(truth[idx][None])[0][0]
+    assert (out - truth).norm() < 0.3 * (zero - truth).norm()
+    fresh = ChannelLayer(chs(TEN_TWENTY), "wiener", chs(SUBSET))
+    fresh.load_state_dict(layer.state_dict())
+    assert torch.equal(fresh(truth[idx][None])[0][0], out)
+
+
+def test_region_reconstructs_a_dropped_electrode():
+    src = [n for n in TEN_TWENTY if n != "Cz"]
+    x, observed = ChannelLayer(chs(TEN_TWENTY), "region", chs(src))(
+        torch.ones(1, 18, 4)
+    )
+    assert not observed[9] and torch.allclose(x[0, 9], torch.ones(4))
+
+
+def test_latent_is_permutation_invariant_and_trains():
+    layer = ChannelLayer(chs(TEN_TWENTY), "latent", chs(SUBSET))
+    x = torch.randn(2, 8, 50)
+    out = layer(x)[0]
+    torch.testing.assert_close(layer(x.flip(1), chs(SUBSET[::-1]))[0], out)
+    out.sum().backward()
+    assert all(p.grad.abs().sum() > 0 for p in layer.parameters())

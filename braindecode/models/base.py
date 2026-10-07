@@ -124,7 +124,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         How any montage reaches the backbone (pretrained models only; see
         :doc:`/user_guide/channel_strategies`). ``"native"`` keeps the model as
         it is. ``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``,
-        ``"field"`` or ``"source"`` map the montage of ``chs_info`` (or of the
+        ``"field"``, ``"source"``, ``"region"``, ``"wiener"`` (call
+        ``model.channel_layer.fit`` first) or ``"latent"`` map the montage of ``chs_info`` (or of the
         ``chs_info`` given to ``forward``) onto the backbone's channels with a
         :class:`~braindecode.modules.ChannelLayer`. Saved in the config.
     channel_strategy_kwargs : dict or None, default=None

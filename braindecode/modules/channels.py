@@ -27,8 +27,11 @@ from torch import Tensor, nn
 
 from braindecode.util import resolve_montage_name
 
-STRATEGIES = ("exact", "zero", "nearest", "idw", "spline", "field", "source")
-_MIN_POSITIONS = dict(zip(STRATEGIES, (0, 0, 1, 1, 4, 4, 4)))  # positioned inputs
+STRATEGIES = (
+    *("exact", "zero", "nearest", "idw", "spline", "field", "source"),
+    *("wiener", "region", "latent"),
+)
+_MIN_POSITIONS = dict(zip(STRATEGIES, (0, 0, 1, 1, 4, 4, 4, 1, 2, 1)))  # positioned
 _ELECTRODES = ("eeg", "seeg", "ecog", "dbs")
 
 
@@ -134,10 +137,40 @@ def _source(src_pos, tgt_pos, n_parcels=64, lam=0.1, grid_mm=15.0):
     return L[k:] - L[:k].mean(0), S
 
 
-def _mixing(name: str, src_pos, tgt_pos, reg=None, p=2.0, **source_kw) -> np.ndarray:
+def _mixing(
+    name: str,
+    src_pos,
+    tgt_pos,
+    reg=None,
+    p=2.0,
+    noise=0.01,
+    radius=None,
+    cov=None,
+    dense_pos=None,
+    **source_kw,
+) -> np.ndarray:
     """``(M, k)`` matrix filling ``M`` target positions from ``k`` input positions."""
-    if name == "zero":
+    if name in ("zero", "latent"):  # latent: the attention fills these rows
         return np.zeros((len(tgt_pos), len(src_pos)))
+    if name == "wiener":  # C_to (C_oo + noise * tr / k * I)^-1
+        if cov is None or not len(cov):
+            raise ValueError("The 'wiener' strategy needs a covariance: call fit().")
+        both = np.vstack([src_pos, tgt_pos])  # matched to the dense montage
+        d = np.nan_to_num(cdist(both, dense_pos), nan=np.inf)
+        if (d.min(1) > 0.015).any():
+            raise ValueError(
+                f"'wiener': positions {both[d.min(1) > 0.015].round(3).tolist()} have no electrode of the fitted dense montage within 15 mm."
+            )
+        jo, jt = np.split(d.argmin(1), [len(src_pos)])
+        Cxx = cov[np.ix_(jo, jo)]
+        Cxx = Cxx + noise * np.trace(Cxx) / len(jo) * np.eye(len(jo))
+        return solve(Cxx, cov[np.ix_(jo, jt)], assume_a="sym").T
+    if name == "region":  # mean within radius (default 1.5 x median input spacing)
+        if radius is None:
+            nn_d = cdist(src_pos, src_pos) + np.diag(np.full(len(src_pos), np.inf))
+            radius = 1.5 * np.median(nn_d.min(1))
+        w = (cdist(tgt_pos, src_pos) <= radius).astype(float)
+        return w / np.maximum(w.sum(1, keepdims=True), 1.0)
     if name in ("nearest", "idw"):
         w = np.maximum(cdist(tgt_pos, src_pos), 1e-6) ** -p
         w = w == w.max(1, keepdims=True) if name == "nearest" else w
@@ -165,6 +198,10 @@ class ChannelLayer(nn.Module):
         ``"idw"`` (``p``), ``"spline"`` (``reg=1e-3``), ``"field"`` (``reg=0``)
         or ``"source"`` (``n_parcels=64``, ``lam=0.1``, ``grid_mm=15``,
         ``trainable``: a zero-initialised parcel mixing on top of the physics).
+        ``"wiener"`` (``noise=0.01``; call :meth:`fit` first), ``"region"``
+        (mean within ``radius``, default 1.5 x the median input spacing) or
+        ``"latent"`` (``d_model=64``, ``n_freqs=8``: learned cross-attention from
+        each missing target's position over the inputs' positions and statistics).
     chs_info : list of dict, optional
         Montage used when :meth:`forward` gets none.
     drop_non_eeg : bool
@@ -198,7 +235,18 @@ class ChannelLayer(nn.Module):
         if self.trainable:
             n = kwargs.get("n_parcels", 64)
             self.parcel_mix = nn.Parameter(torch.zeros(n, n))
-        if chs_info is not None:
+        if strategy == "wiener":  # fitted state, saved in the state_dict
+            self.register_buffer("cov", torch.zeros(0, 0))
+            self.register_buffer("dense_pos", torch.zeros(0, 3))
+        if strategy == "latent":
+            d, self.n_freqs = kwargs.pop("d_model", 64), kwargs.pop("n_freqs", 8)
+            f = 6 * self.n_freqs  # queries: target positions; keys: input positions
+            self.query, self.key_pos = (
+                nn.Sequential(nn.Linear(f, d), nn.GELU(), nn.Linear(d, d))
+                for _ in range(2)
+            )
+            self.key_stats = nn.Linear(2, d)  # + input statistics
+        if chs_info is not None and strategy != "wiener":  # wiener: after fit()
             self._build(chs_info)  # surface montage errors at construction
 
     def _build(self, chs_info: list[dict]) -> None:
@@ -250,9 +298,14 @@ class ChannelLayer(nn.Module):
             raise ValueError(
                 f"Strategy {self.strategy!r} needs at least {_MIN_POSITIONS[self.strategy]} channels with a position; got {int(use.sum())} of {names}. Supply 'loc' or standard 10-05 names."
             )
+        fitted = {  # wiener: device-safe float64 copies
+            k: getattr(self, k).detach().cpu().double().numpy()
+            for k in ("cov", "dense_pos")
+            if hasattr(self, k)
+        }
         if todo.any():
             W[np.ix_(todo, use)] = _mixing(
-                self.strategy, pos[use], tpos[todo], **self.kwargs
+                self.strategy, pos[use], tpos[todo], **self.kwargs, **fitted
             )
             gain = np.abs(W[todo]).sum(1).max()
             if gain > 2:
@@ -271,13 +324,42 @@ class ChannelLayer(nn.Module):
             self.register_buffer(
                 "inverse", torch.tensor(S_all).float(), persistent=False
             )
+        if self.strategy == "latent":  # Fourier features of positions (in dm)
+            arg = np.nan_to_num(np.vstack([pos, tpos[todo]]))[..., None] * 10 * np.pi
+            arg = arg * 2.0 ** np.arange(self.n_freqs)
+            feat = torch.tensor(np.concatenate([np.sin(arg), np.cos(arg)], -1))
+            feat = feat.reshape(len(arg), -1).float()
+            self.register_buffer("src_feat", feat[: len(pos)], persistent=False)
+            self.register_buffer("tgt_feat", feat[len(pos) :], persistent=False)
+            self.register_buffer(
+                "lat_D", torch.tensor(D[:, todo]).float(), persistent=False
+            )
+            self.lat_mask = torch.as_tensor(use)
         self.register_buffer("weight", torch.tensor(D @ W).float(), persistent=False)
         self.observed = torch.as_tensor((np.abs(D) @ ~observed) == 0)
         self._key = key
 
-    def _load_from_state_dict(self, *args, **kwargs):
+    def fit(self, X, chs_info_dense: list[dict]) -> ChannelLayer:
+        """``wiener``: fit the spatial covariance on ``X`` ``(n_samples, n_dense)``
+        recorded with ``chs_info_dense`` (matched to the montages by position)."""
+        pos = _resolve(chs_info_dense)[1]
+        X = np.asarray(X, float)
+        if self.strategy != "wiener" or X.shape[1:] != pos.shape[:1]:
+            raise ValueError(
+                f"fit() is for 'wiener' and needs X (n_samples, {len(pos)}); got {self.strategy!r}, X {X.shape}."
+            )
+        dev = self.get_buffer("cov").device
+        self.cov = torch.tensor(np.cov(X.T), dtype=torch.float32, device=dev)
+        self.dense_pos = torch.tensor(pos, dtype=torch.float32, device=dev)
+        self._key = None
+        return self
+
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
         self._key = None  # maps are rebuilt after a load
-        super()._load_from_state_dict(*args, **kwargs)
+        for k in ("cov", "dense_pos"):  # fitted buffers change size
+            if hasattr(self, k) and prefix + k in state_dict:
+                setattr(self, k, torch.empty_like(state_dict[prefix + k]))
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def forward(
         self, x: Tensor, chs_info: list[dict] | None = None
@@ -297,4 +379,14 @@ class ChannelLayer(nn.Module):
         if self.trainable:
             mix = self.parcel_mix.to(x) @ (self.inverse.to(x) @ x)
             out = out + self.lead.to(x) @ mix
+        if self.strategy == "latent" and self.lat_D.shape[1]:
+            m = self.lat_mask.to(x.device)
+            stats = torch.stack([x.var(-1), x.diff(dim=-1).abs().mean(-1)], -1)
+            stats = (stats + 1e-12).log()
+            stats = stats - stats[:, m].mean(1, keepdim=True)  # (B, C, 2)
+            keys = self.key_pos(self.src_feat.to(x)) + self.key_stats(stats)
+            q = self.query(self.tgt_feat.to(x))
+            logits = q @ keys.transpose(1, 2) / keys.shape[-1] ** 0.5
+            attn = logits.masked_fill(~m, float("-inf")).softmax(-1)  # (B, M, C)
+            out = out + self.lat_D.to(x) @ (attn @ x)
         return out, self.observed.to(x.device)
