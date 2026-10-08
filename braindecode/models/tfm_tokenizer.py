@@ -92,10 +92,10 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
     ``n_times`` samples gives ``1 + (n_times - sfreq) // (sfreq // 2)`` tokens
     per channel.
 
-    Training differs from the reference code in two places; inference does
-    not. The codebook term of the quantization loss is computed from the
-    detached codebook, so at ``commitment_cost=1`` the encoder still receives
-    the commitment gradient (in the reference both terms use the
+    Training differs from the reference code in one place; inference does
+    not. The codebook term of the quantization loss carries no gradient (the
+    codebook moves by EMA only), so at ``commitment_cost=1`` the encoder still
+    receives the commitment gradient (in the reference both terms use the
     straight-through tensor and their encoder gradients cancel).
 
     Tokens from this class are identical to the reference tokenizer's. With
@@ -315,9 +315,7 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         freq = self.frequency_patch_embedding(freq).transpose(1, 2)
         freq = self.frequency_encoder(freq).transpose(1, 2)
         freq = self.frequency_projection(freq) * self.frequency_attention(freq)
-        freq = freq.flatten(1).reshape(
-            batch_size * n_chans, n_frames, self.embed_dim // 2
-        )
+        freq = freq.reshape(batch_size * n_chans, n_frames, self.embed_dim // 2)
         temporal = self.temporal_patch_embedding(
             x.reshape(batch_size * n_chans, 1, -1)
         ).transpose(1, 2)
@@ -398,17 +396,16 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         )
         codebook_vectors, token_ids = self.quantizer(embeddings)
         quantized = embeddings + (codebook_vectors - embeddings).detach()
-        # Same loss value as the reference, but the codebook term carries no
-        # gradient, so it cannot cancel the commitment gradient (see Notes).
-        codebook_loss = F.mse_loss(codebook_vectors, embeddings.detach())
-        commitment_loss = F.mse_loss(codebook_vectors.detach(), embeddings)
+        # The codebook term has the commitment term's value and no gradient
+        # (see Notes).
+        commitment_loss = F.mse_loss(codebook_vectors, embeddings)
         reconstruction = self.final_layer(self.decoder(quantized)).transpose(1, 2)
         return TFMTokenizerOutput(
             reconstruction.reshape(batch_size, n_chans, self.n_freqs, n_frames),
             token_ids.reshape(batch_size, n_chans, n_frames),
             quantized,
             embeddings,
-            codebook_loss + self.commitment_cost * commitment_loss,
+            commitment_loss.detach() + self.commitment_cost * commitment_loss,
             target,
         )
 
