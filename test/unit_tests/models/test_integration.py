@@ -833,6 +833,7 @@ _FLOAT16_XFAIL = {
 }
 _LOW_PRECISION_XFAIL = {
     "EEGSym": "CPU avg_pool3d has no bfloat16/float16 kernel",
+    "NeuroRVQTokenizer": "CPU torch.fft has no bfloat16/float16 kernel",
 }
 
 
@@ -865,5 +866,7 @@ def test_forward_in_dtype(model_name, dtype):
     with torch.no_grad():
         model(x)  # materialise lazy modules in float32
         y = model.to(dtype)(x.to(dtype))
+    if isinstance(y, tuple):  # NeuroRVQTokenizer: (target, reconstruction)
+        y = y[1]
     y = y if torch.is_tensor(y) else next(iter(y.values()))
     assert y.dtype == dtype and torch.isfinite(y).all()
