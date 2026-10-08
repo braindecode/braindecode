@@ -492,8 +492,8 @@ def test_model_compiled(model):
     output = not_compiled_model(input_tensor)
     output_compiled = compiled_model(input_tensor)
 
-    assert output.shape == output_compiled.shape
-    assert output_compiled.allclose(output, atol=1e-4)
+    # assert_close also walks the tuple outputs (e.g. NeuroRVQTokenizer).
+    torch.testing.assert_close(output_compiled, output, atol=1e-4, rtol=1e-5)
 
 
 def test_model_exported(model):
@@ -510,6 +510,7 @@ def test_model_exported(model):
         "SSTDPN",  # We found a fake tensor in the exported program constant's list.
         "Labram",  # Uses data-dependent channel/patch paths that are not export-stable yet.
         "CodeBrain",  # Data-dependent n_times // patch_size division in forward is not export-stable.
+        "NeuroRVQTokenizer",  # EMA codebooks use data-dependent k-means initialization.
     ]
     if sys.platform.startswith("win"):
         not_exportable_models += [
@@ -594,6 +595,8 @@ def test_model_torch_script(model):
         # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
         # (torch.linalg.eigh + torch.stft).
         "MetaNeuromotorHand",
+        # Cold EMA codebooks use data-dependent k-means initialization.
+        "NeuroRVQTokenizer",
         "SignalJEPA",
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",
@@ -856,6 +859,8 @@ def test_forward_in_dtype(model_name, dtype):
     backward = dtype == torch.float64
     with torch.set_grad_enabled(backward), _record() as log:
         y = model.to(dtype)(x.to(dtype))
+    if isinstance(y, tuple):  # NeuroRVQTokenizer: (target, reconstruction)
+        y = y[1]
     y = y if torch.is_tensor(y) else next(iter(y.values()))
     assert y.dtype == dtype and torch.isfinite(y).all()
     if not backward:
