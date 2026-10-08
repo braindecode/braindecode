@@ -55,9 +55,7 @@ all_models_dict = dict(models_dict)
 # First blocker of each model that torch.jit.script cannot compile, or whose
 # scripted output differs from the eager one.
 _TORCHSCRIPT_XFAIL = {
-    "BENDR": "TransformerEncoderLayer fast path reads norm1.weight (Identity)",
     "BIOT": "linear_attention_transformer forward takes **kwargs",
-    "BrainModule": "ModuleList with None entries: scripted zip drops them",
     "BrainOmni": "rope passed as a callable argument",
     "BrainTokenizer": "rope passed as a callable argument",
     "CBraMod": "einops.rearrange call (**axes_lengths)",
@@ -69,8 +67,6 @@ _TORCHSCRIPT_XFAIL = {
     "LUNA": "einops.rearrange call (**axes_lengths)",
     "Labram": "keyword-only forward argument",
     "MAPA": "f-string error message in forward",
-    "MIRepNet": "forward returns a Dict or a Tensor",
-    "MSVTNet": "forward returns a Tensor or a tuple",
     "MVPFormer": "math.log2 in forward",
     "MetaNeuromotorHand": "einops.pack call",
     "NeuroRVQ": "getattr with a computed name",

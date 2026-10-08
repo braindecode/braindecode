@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from typing import Dict, Optional, Union
+
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -251,13 +253,16 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
 
     @_disable_batch_norm_training_if_batch_size_one
-    def forward(self, x: Tensor, return_features: bool | None = None):
+    def forward(
+        self, x: Tensor, return_features: Optional[bool] = None
+    ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         tokens = self.transformer(self.embedding(x))
         features = tokens.mean(dim=1)
         if return_features is None:
             return_features = self.return_features
         if return_features:
-            return {"features": features, "cls_token": None}  # nosec B105
+            out: Dict[str, Optional[Tensor]] = {"features": features, "cls_token": None}
+            return out
         return self.final_layer(features)
 
     def reset_head(self, n_outputs: int) -> None:
