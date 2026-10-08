@@ -4878,7 +4878,6 @@ def test_neurorvq_output_and_features(neurorvq_model_kwargs):
         ({"channel_names": ("f3", "f3", "cz")}, "channel_names must be unique"),
         ({"n_times": 1800, "max_patches": 8}, "supports at most 8 patches"),
         ({"modality": "eog"}, "modality must be one of"),
-        ({"head_pooling": "max"}, "head_pooling must be"),
         ({"init_values": None}, "init_values must be a number"),
     ],
 )

@@ -360,24 +360,21 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         modality's rate.
     channel_names : tuple of str, list of str, or None
         Ordered channel names. Names are case-insensitive and must occur in
-        the modality's pretrained list (EEG: 104 electrodes; ECG: ``i``,
-        ``ii``, ``iii``, ``avr``, ``avl``, ``avf``, ``v1``-``v6``, ``vx``,
-        ``vy``, ``vz``; EMG: ``c1``-``c16``; PPG: ``ppg_c1``). If omitted,
+        the modality's pretrained list (EEG: 104 electrodes; ECG: the 12
+        standard leads and ``vx``, ``vy``, ``vz``; EMG: ``c1``-``c16``; PPG:
+        ``ppg_c1``). If omitted,
         names are read from ``chs_info``; without either, the first entries
         of that list are used, which only suits training from scratch.
     modality : {"eeg", "ecg", "emg", "ppg"}, default="eeg"
         Released configuration: sampling rate, temporal kernel sizes, channel
-        list and the defaults of ``patch_size``, ``max_patches`` and
-        ``head_pooling``. No PPG foundation model was released.
+        list, head pooling (EEG flattens the tokens, the others average them)
+        and the defaults of ``patch_size`` and ``max_patches``. No PPG
+        foundation model was released.
     patch_size : int or None, default=None
         Samples per temporal patch; ``None`` uses the modality's value.
     max_patches : int or None, default=None
         Length of the temporal embedding table (EEG 256, ECG 600, EMG 256,
         PPG 12); ``None`` uses the modality's value.
-    head_pooling : {"flatten", "mean"} or None, default=None
-        How the classification head reads the tokens: ``"flatten"``
-        concatenates every token, ``"mean"`` averages them. ``None`` uses the
-        authors' released choice (EEG flatten, the others mean).
     depth : int, default=12
         Number of shared Transformer blocks applied to each temporal branch.
     num_heads : int, default=10
@@ -411,8 +408,8 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     ------------
     By default, ``(batch, n_outputs)`` logits. With ``return_features=True``,
     returns a dictionary whose ``"features"`` entry has shape
-    ``(batch, 4 * embed_dim * n_chans * (n_times // patch_size))`` with the
-    flatten head and ``(batch, 4 * embed_dim)`` with the mean head, where
+    ``(batch, 4 * embed_dim * n_chans * (n_times // patch_size))`` for EEG
+    and ``(batch, 4 * embed_dim)`` for the other modalities, where
     ``embed_dim = out_chans * patch_size // 8``.
 
     .. versionadded:: 1.8
@@ -437,7 +434,6 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         modality: str = "eeg",
         patch_size: int | None = None,
         max_patches: int | None = None,
-        head_pooling: str | None = None,
         depth: int = 12,
         num_heads: int = 10,
         mlp_ratio: float = 4.0,
@@ -462,9 +458,6 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         preset = _modality(self, modality)
         patch_size = patch_size or preset["patch_size"]
         max_patches = max_patches or preset["max_patches"]
-        head_pooling = head_pooling or preset["head_pooling"]
-        if head_pooling not in ("flatten", "mean"):
-            raise ValueError("head_pooling must be 'flatten' or 'mean'.")
         if self.n_times % patch_size:
             raise ValueError(f"n_times must be divisible by patch_size ({patch_size}).")
         if self.n_times // patch_size > max_patches:
@@ -492,7 +485,7 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         self.embed_dim = embed_dim
         self.patch_size = patch_size
         self.max_patches = max_patches
-        self.head_pooling = head_pooling
+        self.head_pooling = preset["head_pooling"]
         self.num_patches = self.n_times // patch_size
         self.channel_names, slots = _channel_slots(
             self, channel_names, preset["channels"]
@@ -529,7 +522,7 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         )
         self.norm = nn.Identity()
         head_dim = embed_dim * 4
-        if head_pooling == "flatten":
+        if self.head_pooling == "flatten":
             head_dim *= self.n_chans * self.num_patches
         self.fc_norm = nn.LayerNorm(head_dim)
         self.final_layer = nn.Linear(head_dim, self.n_outputs)

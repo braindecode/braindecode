@@ -84,17 +84,15 @@ Enhancements
   EEG tokenizer: reconstruction and discrete codes (:gh:`1223` by `lindicaphxag-tech`_).
 - :class:`braindecode.models.NeuroRVQ` and
   :class:`braindecode.models.NeuroRVQTokenizer` take ``modality`` (``"eeg"``,
-  ``"ecg"``, ``"emg"``, ``"ppg"``) with the settings of the authors' four
-  released packages, and :class:`~braindecode.models.NeuroRVQ` takes
-  ``head_pooling`` (``"flatten"`` or ``"mean"``). The seven released checkpoints
-  are hosted as ``braindecode/neurorvq-{eeg,ecg,emg}-pretrained`` and
-  ``braindecode/neurorvq-tokenizer-{eeg,ecg,emg,ppg}-pretrained`` and load with
-  ``from_pretrained`` (``load_pretrained_weights`` is removed). The tokenizer
-  reconstruction now equals the authors' code exactly (it differed by up to
-  6e-8), and its ``statistic_code_usage`` argument (default ``True``, as the
-  authors' code) lets eval forwards update the codebooks' ``cluster_size``
-  usage statistic. Builds on :gh:`1090` and :gh:`1223` by `lindicaphxag-tech`_
-  (:gh:`NNNN` by `Bruno Aristimunha`_).
+  ``"ecg"``, ``"emg"``, ``"ppg"``), the settings of the authors' four released
+  packages; the seven released checkpoints load with ``from_pretrained`` from
+  ``braindecode/neurorvq-{eeg,ecg,emg}-pretrained`` and
+  ``braindecode/neurorvq-tokenizer-{eeg,ecg,emg,ppg}-pretrained``
+  (``load_pretrained_weights`` is removed). The tokenizer reconstruction now
+  equals the authors' code (it differed by up to 6e-8);
+  ``statistic_code_usage=True`` reproduces their eval-time code-usage EMA.
+  Builds on :gh:`1090` and :gh:`1223` by `lindicaphxag-tech`_ (:gh:`NNNN` by
+  `Bruno Aristimunha`_).
 
 - Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution
   and Transformer seizure detector of Wu et al. (2025) that won the 2025 SzCORE

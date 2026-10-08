@@ -57,7 +57,7 @@ class _EMAEmbedding(nn.Module):
 class _EMAVectorQuantizer(nn.Module):
     """EMA vector quantizer on L2-normalized vectors (cosine codebook)."""
 
-    def __init__(self, n_codes: int, code_dim: int, statistic_code_usage: bool = True):
+    def __init__(self, n_codes: int, code_dim: int, statistic_code_usage=False):
         super().__init__()
         self.decay = 0.99
         self.statistic_code_usage = statistic_code_usage
@@ -84,47 +84,31 @@ class _EMAVectorQuantizer(nn.Module):
         indices = self._indices(vectors)
         quantized = F.embedding(indices, self.embedding.weight).view_as(z)
 
-        if not self.training and self.statistic_code_usage:
-            # As the authors' quantizer: EMA of the code usage in eval forwards.
-            with torch.no_grad():
-                counts = F.one_hot(indices, self.embedding.weight.shape[0])
-                counts = counts.to(z.dtype).sum(0)
-                _all_reduce_sum(counts)
-                self.cluster_size.mul_(self.decay).add_(counts, alpha=1 - self.decay)
-
-        if self.training:
+        if self.training or self.statistic_code_usage:
             with torch.no_grad():
                 weight = self.embedding.weight
                 encodings = F.one_hot(indices, weight.shape[0]).to(z.dtype)
                 counts = encodings.sum(0)
                 _all_reduce_sum(counts)
                 self.cluster_size.mul_(self.decay).add_(counts, alpha=1 - self.decay)
-                safe_counts = counts.masked_fill(counts == 0, 1.0)
-                embed_sum = vectors.T @ encodings
-                _all_reduce_sum(embed_sum)
-                means = F.normalize((embed_sum / safe_counts.unsqueeze(0)).T, dim=-1)
-                means = torch.where(counts[:, None] == 0, weight, means)
-                weight.mul_(self.decay).add_(means, alpha=1 - self.decay)
-                weight.copy_(F.normalize(weight, dim=-1))
+                if self.training:
+                    safe_counts = counts.masked_fill(counts == 0, 1.0)
+                    embed_sum = vectors.T @ encodings
+                    _all_reduce_sum(embed_sum)
+                    means = F.normalize((embed_sum / safe_counts.unsqueeze(0)).T, dim=-1)
+                    means = torch.where(counts[:, None] == 0, weight, means)
+                    weight.mul_(self.decay).add_(means, alpha=1 - self.decay)
+                    weight.copy_(F.normalize(weight, dim=-1))
 
         quantized = z + (quantized - z).detach()
         return quantized.permute(0, 3, 1, 2).contiguous(), indices
 
 
 class _ResidualVectorQuantizer(nn.Module):
-    def __init__(
-        self,
-        n_quantizers: int,
-        n_codes: int,
-        code_dim: int,
-        statistic_code_usage: bool = True,
-    ):
+    def __init__(self, n_quantizers: int, *args):
         super().__init__()
         self.layers = nn.ModuleList(
-            [
-                _EMAVectorQuantizer(n_codes, code_dim, statistic_code_usage)
-                for _ in range(n_quantizers)
-            ]
+            [_EMAVectorQuantizer(*args) for _ in range(n_quantizers)]
         )
 
     def forward(self, x: Tensor):
@@ -325,9 +309,8 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         LayerScale initialization used by the tokenizer checkpoint.
     activation : type[nn.Module], default=nn.GELU
         Activation in the temporal patch embedding.
-    statistic_code_usage : bool, default=True
-        As in the authors' code, eval forwards update the quantizers'
-        ``cluster_size`` buffer (EMA of code usage); ``False`` keeps inference state-free.
+    statistic_code_usage : bool, default=False
+        ``True`` lets eval forwards update the ``cluster_size`` code-usage EMA, as the authors' code.
 
     Output shape
     ------------
@@ -382,7 +365,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         drop_path_rate: float = 0.0,
         init_values: float = 0.0,
         activation: type[nn.Module] = nn.GELU,
-        statistic_code_usage: bool = True,
+        statistic_code_usage: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,
