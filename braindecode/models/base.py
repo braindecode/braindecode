@@ -432,7 +432,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             and self._input_window_seconds is not None
             and self._sfreq is not None
         ):
-            return round(self._input_window_seconds * self._sfreq)
+            return int(round(self._input_window_seconds * self._sfreq))
         elif self._n_times is None:
             raise ValueError(
                 "n_times could not be inferred. "
@@ -453,6 +453,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 "input_window_seconds could not be inferred. "
                 "Either specify input_window_seconds or n_times and sfreq."
             )
+        if torch.jit.is_scripting():  # may be an int, e.g. from a Hub config
+            return float(self._input_window_seconds)
         return self._input_window_seconds
 
     @property
@@ -468,6 +470,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 "sfreq could not be inferred. "
                 "Either specify sfreq or input_window_seconds and n_times."
             )
+        if torch.jit.is_scripting():  # may be an int, e.g. from a Hub config
+            return float(self._sfreq)
         return self._sfreq
 
     @property

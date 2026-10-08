@@ -604,6 +604,22 @@ def test_signal_params_still_raise_value_error():
         model.sfreq
 
 
+@pytest.mark.parametrize(
+    "signal",
+    [
+        dict(n_times=1000, sfreq=250),
+        dict(input_window_seconds=4, sfreq=250),
+        dict(input_window_seconds=4.0, sfreq=250.0),
+    ],
+)
+def test_torch_script_signal_params_types(signal):
+    """Int ``sfreq``/``input_window_seconds`` (as in Hub configs) and a derived
+    ``n_times`` do not stop scripting."""
+    model = ShallowFBCSPNet(n_chans=3, n_outputs=2, **signal).eval()
+    x = torch.randn(2, 3, 1000)
+    torch.testing.assert_close(torch.jit.script(model)(x), model(x))
+
+
 @pytest.mark.parametrize("method", ["mag", "corr", "plv"])
 def test_eegminer_torch_script_methods(method):
     model = EEGMiner(
