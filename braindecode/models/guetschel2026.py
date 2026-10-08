@@ -29,6 +29,12 @@ _HUB_NAMESPACE = "PierreGtch"
 _PRETEXTS = ("mae", "jepa")
 _MASK_RADII = ("one", "6cm", "9cm", "12cm", "all")
 _MASK_LENGTHS = (1, 2, 4, 8, 16, 33)
+# Bounds (metres) of the distance of every electrode to the origin of the MNE head
+# frame. The MNE built-in montages (34 in MNE 1.13) lie between 0.064 and 0.146 m,
+# and the 32,713 REVE pre-training channels between 0.078 and 0.133 m.
+_MIN_CH_DIST = 0.05
+_MAX_CH_DIST = 0.20
+_MAX_LISTED_CHANNELS = 5
 
 
 def _pos_encode_xyz(ch_pos, x_min, x_max, n_dim):
@@ -107,7 +113,9 @@ class _PositionalEncoder(nn.Module):
         self.register_buffer("ch_pos", ch_pos, persistent=False)
         self.register_buffer(
             "encoding_time",
-            # computed on the CPU (bit-parity), then moved to the default device
+            # formula values until the weights are loaded: the checkpoints all store
+            # the same table, which overwrites them. Computed on the CPU, then moved
+            # to the default device.
             _pos_encode_time(_N_STORED_TIME_PATCHES, self.time_dim, max_n_times).to(
                 torch.get_default_device()
             ),
@@ -123,9 +131,10 @@ class _PositionalEncoder(nn.Module):
         ch_pos = self.ch_pos[None].expand(batch_size, -1, -1)
         spat = _pos_encode_xyz(ch_pos, -h, h, self.coord_dim).flatten(-2)  # (B, C, 3d)
         if n_patches <= self.encoding_time.shape[0]:
-            # stored table (!= recompute by 1.9e-6)
+            # the stored table: a recomputation differs in the last bits depending on
+            # the platform's math library, so the checkpoint's values are used
             enc_t = self.encoding_time[:n_patches]
-        else:  # as the original's full recompute, but never stored
+        else:  # beyond the stored table: recomputed for this call, not stored
             enc_t = _pos_encode_time(
                 n_patches, self.time_dim, self.max_n_times, self.encoding_time.device
             ).to(self.encoding_time.dtype)
@@ -204,6 +213,51 @@ class _ContextualEncoder(nn.Module):
         return self.transformer(local_features + pos.to(local_features.dtype))
 
 
+def _check_channel_distances(chs_info, ch_pos) -> None:
+    """Raise if an electrode is not within 5 to 20 cm of the head-frame origin.
+
+    The positions must be in metres. Centimetres or millimetres are far above
+    the range and a wrong unit or a placeholder at the origin (an all-zero
+    ``loc``; MNE marks an unknown position with NaN or zeros, and NaN is
+    rejected earlier) far below it.
+
+    ``ch_pos`` is the ``(C, 3)`` array of the positions, in float64: the bounds
+    are inclusive for the positions as given, not as rounded to float32.
+    """
+    dist = np.linalg.norm(np.asarray(ch_pos, dtype=np.float64), axis=1)
+    bad = np.flatnonzero((dist < _MIN_CH_DIST) | (dist > _MAX_CH_DIST))
+    if bad.size == 0:
+        return
+    listed = ", ".join(
+        f"{chs_info[i].get('ch_name', f'#{i}')!r} ({dist[i]:.3g} m, "
+        f"{'below' if dist[i] < _MIN_CH_DIST else 'above'} the range)"
+        for i in bad[:_MAX_LISTED_CHANNELS]
+    )
+    if bad.size > _MAX_LISTED_CHANNELS:
+        listed += f", ... ({bad.size - _MAX_LISTED_CHANNELS} more)"
+    raise ValueError(
+        "Guetschel2026 requires channel positions in METRES (MNE head frame, e.g. "
+        "raw.info['chs'][i]['loc'][:3] after raw.set_montage(...)): the distance of "
+        f"every channel to the origin must be between {_MIN_CH_DIST * 100:g} cm and "
+        f"{_MAX_CH_DIST * 100:g} cm ({_MIN_CH_DIST:g} to {_MAX_CH_DIST:g} m), but "
+        f"{bad.size} of {len(dist)} channel positions are outside it: {listed}. "
+        "Values far above the range look like centimetres or millimetres; values "
+        "far below it look like a wrong unit or a placeholder position at the "
+        "origin (MNE marks an unknown position with an all-zero or NaN loc). "
+        "Convert the positions to metres. A channel whose loc is all zeros (no "
+        "position) can instead be left as it is: pass the same chs_info with "
+        "channel_strategy='exact', which looks the missing positions up by "
+        "channel name (standard 10-05 names, standard_1005) and "
+        "keeps the positions that are given. Channels whose name is not a "
+        "standard_1005 name (e.g. 'E1' of an EGI net) cannot be looked up and "
+        "stay at the origin: they need positions in metres. Positions in a "
+        "wrong unit are not replaced by 'exact': convert them, or pass chs_info "
+        "with standard 10-05 channel names only (loc missing or all zeros) "
+        "together with channel_strategy='exact' to use the standard_1005 "
+        "positions."
+    )
+
+
 class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
     r"""Encoder of the EEG masking-geometry study from Guetschel et al. (2026) [guetschel2026]_.
 
@@ -214,15 +268,18 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
 
     .. figure:: ../_static/model/guetschel2026_arch.png
         :align: center
-        :alt: Guetschel2026 shared pre-training pipeline, MAE and JEPA branches
+        :alt: Figure 1 of Guetschel et al. (2026): shared MAE/JEPA pre-training pipeline (A) and the block-masking geometries (B)
         :width: 1000px
 
-        Shared pre-training pipeline of the 58 checkpoints (Figure 1A of
-        [guetschel2026]_): a linear tokeniser, block masking with spatial
-        radius ``r`` and temporal length ``L``, a transformer encoder and a
-        transformer decoder are common to both pretexts (this class keeps only
-        the tokeniser and the encoder). MAE (green) reconstructs the masked
-        signal patches, JEPA (orange) predicts the latents of an EMA teacher.
+        Figure 1 of [guetschel2026]_. **(A)** Framework axis: the MAE (green)
+        and JEPA (orange) branches share one pipeline (linear tokeniser,
+        masking, transformer encoder, transformer decoder); this class keeps
+        only the tokeniser and the encoder. **(B)** Masking axis: block masks
+        parameterised by a spatial radius ``r``, a temporal length ``L`` and a
+        target ratio :math:`\rho`. They recover random patches (``L=1``,
+        ``r="one"``), temporal blocks (``r="all"``), spatial blocks (``L=33``)
+        and spatio-temporal blocks. The 29 ``(L, r)`` configurations at
+        :math:`\rho = 0.55`, times the 2 pretexts, give the 58 checkpoints.
 
     The backbone is the REVE-Small architecture of REVE with minor
     simplifications (12,687,872 parameters). It was pre-trained 58 times, with
@@ -262,9 +319,7 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
 
       Sinusoidal encoding of :math:`x`, :math:`y` and :math:`z` (each of width
       ``embed_dim // 4``, computed from the channel locations) and of the patch
-      index (width ``embed_dim // 4``, a table of the 33 patches of the 30 s
-      pre-training window stored in the checkpoint). It is added to the
-      patch embeddings.
+      index (width ``embed_dim // 4``). It is added to the patch embeddings.
 
     - ``Guetschel2026.model.transformer`` **Transformer encoder**
 
@@ -499,15 +554,27 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
        - ``chs_info`` must hold the electrode positions in ``loc[:3]`` (metres,
          MNE head frame), for any montage; they are read at construction. To
          use another montage for each call, use a ``channel_strategy``.
+         The distance of every channel to the origin must be between 5 cm and
+         20 cm, otherwise a ``ValueError`` is raised: this catches positions in
+         centimetres or millimetres (far above), and in a wrong unit or at the
+         origin (far below). All the built-in MNE montages (34 in MNE 1.13)
+         and the REVE pre-training positions are inside this range. A channel
+         without a position (a NaN or all-zero ``loc`` in MNE) is rejected
+         too: pass the same ``chs_info`` with ``channel_strategy="exact"`` to
+         look the missing positions up by name (standard 10-05 names,
+         ``standard_1005``, e.g. ``"Fz"``; the positions that are given are
+         kept). Channels whose name is not a standard_1005 name (e.g. ``"E1"``
+         of an EGI net) cannot be looked up and stay at the origin: they need
+         positions in metres. ``channel_strategy`` does not replace non-zero
+         positions: positions in a wrong unit must be converted to metres, or
+         replaced by the standard ones by passing ``chs_info`` with standard
+         10-05 channel names only.
        - The pre-training corpus includes PhysioNet-MI (EEGMMIDB, 48.5 h):
          results on that dataset are not an evaluation on unseen data (paper,
          Limitations). The other eleven OpenEEGBench datasets were not seen
          during pre-training.
        - The window needs at least ``patch_size`` (200) samples. Trailing
          samples that do not fill a patch are dropped.
-       - Windows of more than 33 patches (6140 samples or more with the
-         default ``patch_size`` and ``patch_overlap``) use a time encoding
-         recomputed from the same formula, which the model was not trained on.
 
     .. note::
         Differences from the reference implementation (the backbone features
@@ -519,14 +586,18 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
           patches. That count is wrong for every window of 1820 samples or more
           (for instance 2000 or 6000 samples) and for some shorter ones (for
           instance 380 to 399), and the original head fails on all of them.
-        - Time encodings beyond 33 patches are computed at each call and never
-          stored. The original stores them, so that its later outputs depend on
-          the previous calls.
         - Attention dropout is off in eval mode.
         - The scaling runs in at least float32, so that float16 inputs do not
           overflow.
         - The random projection head (``random_projection=None`` gives the
           original head).
+        - Every channel position must be finite, not all zero, and between
+          5 cm and 20 cm from the origin (metres, MNE head frame). The
+          original checks only for NaN, so it accepts positions in the wrong
+          unit, infinite values and all-zero rows, up to a montage with no
+          positions at all, which it encodes as the origin; this class raises
+          a ``ValueError`` for all of them (with ``channel_strategy="exact"``,
+          NaN and all-zero rows are looked up by name instead, see above).
 
     Parameters
     ----------
@@ -672,14 +743,17 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
                 "Guetschel2026 requires channel locations: every chs_info entry needs "
                 "a finite loc[:3] (metres, MNE head frame) and not all of them zero. "
                 "Call raw.set_montage(...) before taking raw.info['chs'], or pass "
-                "channel_strategy='exact' to look positions up by channel name "
-                "(standard_1005)."
+                "channel_strategy='exact' to look the missing positions up by "
+                "channel name (standard 10-05 names, standard_1005). Channels "
+                "whose name is not a standard_1005 name (e.g. 'E1' of an EGI net) "
+                "cannot be looked up: they need positions in metres."
             )
 
+        ch_pos_f64 = np.array([ch["loc"][:3] for ch in self.chs_info], dtype=np.float64)
+        _check_channel_distances(self.chs_info, ch_pos_f64)
         # float32 BEFORE the encoding: float64 then cast gives a 4.2e-5 difference.
-        ch_pos = torch.from_numpy(
-            np.array([ch["loc"][:3] for ch in self.chs_info], dtype=np.float32)
-        ).to(torch.get_default_device())
+        ch_pos_np = ch_pos_f64.astype(np.float32)
+        ch_pos = torch.from_numpy(ch_pos_np).to(torch.get_default_device())
         self.normalization: str = normalization
         self.input_scale: float = input_scale
         self.clip_sigma: float = clip_sigma

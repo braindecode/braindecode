@@ -25,6 +25,7 @@ import braindecode.models.guetschel2026 as guetschel2026_module
 from braindecode.models import Guetschel2026
 from braindecode.models.guetschel2026 import _GaussianRandomProjection
 from braindecode.models.signal_jepa import _pos_encode_time
+from braindecode.modules.channels import _standard_positions
 
 try:
     from safetensors.torch import load_file, save_file
@@ -419,13 +420,217 @@ def test_requires_channel_locations(mutate):
         )
 
 
-def test_one_zero_location_among_valid_ones_builds():
-    chs = _chs()
-    chs[1] = dict(chs[1], loc=np.zeros(12))  # as the original: no per-row check
-    model = Guetschel2026(
-        chs_info=chs, n_times=1000, n_outputs=2, sfreq=200.0, random_projection=None
+def _build(chs, **kwargs):
+    kwargs.setdefault("random_projection", None)
+    return Guetschel2026(
+        chs_info=chs, n_times=1000, n_outputs=2, sfreq=200.0, **kwargs
     )
-    assert torch.equal(model.model.pos_encoder.ch_pos[1], torch.zeros(3))
+
+
+def _scaled(factor, names=_NAMES):
+    return [dict(c, loc=c["loc"] * factor) for c in _chs(names)]
+
+
+def _on_axis(distance, name="E0"):
+    """One channel at ``distance`` metres from the origin."""
+    loc = np.r_[distance, 0.0, 0.0, np.zeros(9)]
+    return {"ch_name": name, "kind": "eeg", "loc": loc}
+
+
+def test_one_zero_location_among_valid_ones_is_rejected():
+    # An all-zero loc is a placeholder for an unknown position (MNE marks one
+    # with NaN or zeros); the original accepted it (it checks only for NaN),
+    # this class does not.
+    chs = _chs()
+    chs[1] = dict(chs[1], loc=np.zeros(12))
+    with pytest.raises(ValueError, match=r"METRES.*'Cz' \(0 m, below the range\)"):
+        _build(chs)
+
+
+@pytest.mark.parametrize("factor", [100, 1000], ids=["cm", "mm"])
+def test_rejects_positions_in_centimetres_or_millimetres(factor):
+    with pytest.raises(ValueError, match="METRES") as err:
+        _build(_scaled(factor))
+    msg = str(err.value)
+    assert "centimetres or millimetres" in msg
+    assert "4 of 4" in msg
+    assert "'C3'" in msg and "'Oz'" in msg
+    # channel_strategy does not replace non-zero positions: the message must
+    # say so, and that the strategy needs a names-only chs_info (standard names)
+    assert "not replaced by 'exact'" in msg
+    assert "standard 10-05 channel names only" in msg
+    assert "above the range" in msg
+
+
+@pytest.mark.filterwarnings("ignore:Montage name .* is deprecated")
+def test_the_advice_of_the_error_works():
+    """Names only + channel_strategy='exact' builds from the rejected names."""
+    names = [c["ch_name"] for c in _scaled(100)]
+    with pytest.raises(ValueError, match="METRES"):
+        _build(_scaled(100), channel_strategy="exact")  # alone: same error
+    names_only = [{"ch_name": n, "kind": "eeg"} for n in names]
+    model = _build(names_only, channel_strategy="exact")
+    dist = model.model.pos_encoder.ch_pos.norm(dim=-1)
+    assert dist.shape == (len(names),)
+    assert ((dist >= 0.05) & (dist <= 0.20)).all()
+
+
+@pytest.mark.filterwarnings("ignore:Montage name .* is deprecated")
+def test_exact_fills_only_the_zero_row_and_keeps_the_given_positions():
+    """The advice of the error for a channel without position: 'exact' alone."""
+    chs = _scaled(1.05)  # given positions that differ from the standard ones
+    zero_at = 1
+    chs[zero_at] = dict(chs[zero_at], loc=np.zeros(12))
+    with pytest.raises(ValueError, match=r"METRES.*'Cz' \(0 m, below the range\)") as err:
+        _build(chs)
+    assert "pass the same chs_info with channel_strategy='exact'" in str(err.value)
+    model = _build(chs, channel_strategy="exact")
+    ch_pos = model.model.pos_encoder.ch_pos.numpy()
+    expected = np.array([c["loc"][:3] for c in chs])
+    expected[zero_at] = _standard_positions()[chs[zero_at]["ch_name"].lower()]
+    np.testing.assert_allclose(ch_pos, expected, atol=1e-6)
+    # the other rows are the given ones, not the standard_1005 template
+    given = [i for i in range(len(chs)) if i != zero_at]
+    template = np.array([_standard_positions()[chs[i]["ch_name"].lower()] for i in given])
+    assert not np.allclose(ch_pos[given], template, atol=1e-4)
+
+
+def test_exact_cannot_look_up_non_standard_names():
+    """Names outside standard_1005 (EGI 'E1'...) need positions in metres."""
+    egi = [{"ch_name": f"E{i}", "kind": "eeg"} for i in range(1, 4)]
+    with pytest.raises(ValueError, match="channel locations") as err:
+        _build(egi, channel_strategy="exact")
+    assert "not a standard_1005 name" in str(err.value)
+    assert "positions in metres" in str(err.value)
+
+
+def test_exact_cannot_look_up_non_standard_names_with_an_all_zero_loc():
+    """The all-zero error says that 'exact' leaves an unknown name at the origin."""
+    chs = _chs() + [{"ch_name": "E1", "kind": "eeg", "loc": np.zeros(12)}]
+    with pytest.raises(ValueError, match="METRES") as err:
+        _build(chs, channel_strategy="exact")
+    msg = str(err.value)
+    assert "'E1' (0 m, below the range)" in msg
+    assert "not a standard_1005 name" in msg
+    assert "positions in metres" in msg
+
+
+def test_rejects_positions_scaled_by_1e_3():
+    with pytest.raises(ValueError, match="METRES") as err:
+        _build(_scaled(1e-3))
+    msg = str(err.value)
+    assert "wrong unit or a placeholder" in msg
+    assert "'C3'" in msg
+    assert "below the range" in msg
+
+
+def test_error_names_the_channel_at_the_origin_among_valid_ones():
+    chs = _chs() + [{"ch_name": "Fp1", "kind": "eeg", "loc": np.zeros(12)}]
+    with pytest.raises(ValueError, match="METRES") as err:
+        _build(chs)
+    msg = str(err.value)
+    assert "1 of 5" in msg
+    assert "'Fp1' (0 m, below the range)" in msg
+    for name in _NAMES:
+        assert repr(name) not in msg
+
+
+def test_error_lists_only_the_first_offending_channels():
+    chs = _chs() * 3  # 12 channels, all too far
+    chs = [dict(c, ch_name=f"E{i}", loc=c["loc"] * 100) for i, c in enumerate(chs)]
+    with pytest.raises(ValueError, match="METRES") as err:
+        _build(chs)
+    msg = str(err.value)
+    assert "12 of 12" in msg
+    assert "'E4'" in msg and "'E5'" not in msg
+    assert "(7 more)" in msg
+
+
+def test_a_single_valid_channel_builds():
+    model = _build(_chs(("Cz",)))
+    assert model.model.pos_encoder.ch_pos.shape == (1, 3)
+
+
+@pytest.mark.parametrize("distance", [0.001, 0.01, 0.1, 1.0, 10.0])
+def test_a_single_channel_is_checked(distance):
+    if 0.05 <= distance <= 0.2:
+        _build([_on_axis(distance)])
+    else:
+        with pytest.raises(ValueError, match="METRES"):
+            _build([_on_axis(distance)])
+
+
+def test_a_single_channel_at_the_origin_is_rejected():
+    # caught by the all-zero check, which runs first
+    with pytest.raises(ValueError, match="locations|positions"):
+        _build([_on_axis(0.0)])
+
+
+@pytest.mark.parametrize(
+    "distance, ok",
+    [
+        (0.0499, False),
+        (0.0499999, False),
+        # both are accepted once rounded to float32: the distance is taken on
+        # the float64 positions as given
+        (0.049999999, False),
+        (0.05, True),  # the bounds are inclusive, whatever the float32 rounding
+        (0.0501, True),
+        (0.1999, True),
+        (0.2, True),
+        (0.20000001, False),  # accepted once rounded to float32, see above
+        (0.2000001, False),
+        (0.2001, False),
+    ],
+)
+def test_distance_boundaries(distance, ok):
+    chs = _chs() + [_on_axis(distance, name="B")]
+    if ok:
+        _build(chs)
+    else:
+        with pytest.raises(ValueError, match="'B'"):
+            _build(chs)
+
+
+def test_the_distance_is_the_euclidean_norm_not_one_coordinate():
+    # each coordinate is below 0.2 m but the norm is 0.208 m
+    loc = np.r_[0.12, 0.12, 0.12, np.zeros(9)]
+    with pytest.raises(ValueError, match="'D' \\(0.208 m, above the range\\)"):
+        _build([{"ch_name": "D", "kind": "eeg", "loc": loc}])
+
+
+def test_the_registry_fixture_builds():
+    from braindecode.models.util import _get_signal_params, models_mandatory_parameters
+
+    _, required, signal_params = next(
+        p for p in models_mandatory_parameters if p[0] == "Guetschel2026"
+    )
+    sp = _get_signal_params(signal_params, required)
+    model = Guetschel2026(**sp, random_projection=None)
+    assert model.model.pos_encoder.ch_pos.shape[0] == len(sp["chs_info"])
+
+
+def test_inline_metre_positions_build():
+    model = _build(_synthetic_chs(32))
+    assert model.model.pos_encoder.ch_pos.shape == (32, 3)
+
+
+def test_positions_of_a_real_montage_build_and_their_scalings_do_not():
+    mne = pytest.importorskip("mne")
+    from braindecode.util import resolve_montage_name
+
+    montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1020"))
+    info = mne.create_info(montage.ch_names, 200.0, "eeg")
+    info.set_montage(montage)
+    chs = [
+        {"ch_name": c["ch_name"], "kind": "eeg", "loc": c["loc"].copy()}
+        for c in info["chs"]
+    ]
+    assert len(chs) > 80
+    _build(chs)
+    for factor in (100, 1000, 1e-3):
+        with pytest.raises(ValueError, match="METRES"):
+            _build([dict(c, loc=c["loc"] * factor) for c in chs])
 
 
 @pytest.mark.filterwarnings("ignore:Montage name .* is deprecated")
