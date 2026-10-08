@@ -11,7 +11,7 @@ import contextlib
 import copy
 import functools
 import json
-import pickle
+import pickle  # nosec B403 - the test reloads a model it just pickled
 import re
 import sys
 from collections import namedtuple
@@ -191,7 +191,7 @@ def test_registered_model_serialization_contract(
     # torch refuses to pickle modules with parametrizations (weight_norm,
     # max-norm constraints): those models are saved through state_dict only.
     if not any(parametrize.is_parametrized(m) for m in model.modules()):
-        copies["pickle"] = pickle.loads(pickle.dumps(model))
+        copies["pickle"] = pickle.loads(pickle.dumps(model))  # nosec B301
     for how, clone in copies.items():
         with torch.no_grad():
             actual = list(_tensor_leaves(clone(x)))
