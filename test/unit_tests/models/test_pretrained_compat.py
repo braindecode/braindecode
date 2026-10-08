@@ -3,8 +3,9 @@
 Every model class that ships pretrained weights is built (random weights, no
 download) on a grid of input geometries -- canonical montage, permuted order,
 a 64-channel montage outside the 10-20 vocabulary, coordinates-only channels,
-names without coordinates, short / long / non-divisible windows, other
-sampling rates -- and must either forward or raise the *declared* error.
+names without coordinates, short / long / non-divisible windows, all at the
+checkpoint's sampling rate -- and must either forward or raise the *declared*
+error.
 
 The expected outcome of each cell is derived from the model's declared
 channel strategy (``COMPAT`` below), not hard-coded per cell, so adding a
@@ -14,7 +15,10 @@ model means adding one entry. Cells the native path cannot serve run with a
 
 from __future__ import annotations
 
+import inspect
+import json
 import math
+import re
 import warnings
 
 import mne
@@ -29,18 +33,25 @@ from braindecode.models import (
     EEGDINO,
     EEGPT,
     LUNA,
+    MAPA,
     REVE,
     ZUNA,
     BaRISTA,
     BrainBERT,
+    BrainOmni,
+    BrainTokenizer,
     Brant,
     CBraMod,
     CodeBrain,
     Labram,
     MIRepNet,
     MVPFormer,
+    NeuroRVQ,
     PopulationTransformer,
     SignalJEPA,
+    SignalJEPA_Contextual,
+    SignalJEPA_PostLocal,
+    SignalJEPA_PreLocal,
     SleepFM,
     SleepFMStager,
     STEEGFormer,
@@ -50,8 +61,22 @@ from braindecode.models.biot import BIOT_CHANNEL_ORDER
 from braindecode.models.eegpt import EEGPT_19_CHANNELS
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.mirepnet import MIREPNET_CHANNEL_ORDER
+from braindecode.models.neurorvq import NEURORVQ_CHANNELS
+from braindecode.models.util import models_dict
 
 TEN_TWENTY = "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
+
+# Known, harmless warnings from the grid itself; anything else surfaces.
+pytestmark = [
+    pytest.mark.filterwarnings(f"ignore:{msg}")
+    for msg in (
+        r"Time dimension \(\d+\) is not divisible by patch_size",
+        "Montage name .* is deprecated",
+        "A window was not provided",
+        "enable_nested_tensor is True",
+        r"`torch.nn.utils.weight_norm` is deprecated",
+    )
+]
 
 
 def _montage(name):
@@ -91,8 +116,13 @@ def chs_names_no_loc(names):
 
 
 # Declared behaviour per pretrained class: ``channels`` = how the checkpoint
-# identifies channels (names / coords / fixed_order / index_slots / agnostic),
-# ``min_n_times`` = smallest accepted window in samples.
+# identifies channels (names / coords / fixed_order / index_slots / agnostic /
+# contact_labels = sEEG labels ending in a contact number),
+# ``min_n_times`` = smallest accepted window in samples, ``n_times_multiple`` =
+# required divisor of the window, ``vocab`` = the only accepted channel names.
+# ``windows`` = (short, long) window lengths, default (1 s, 30 s); ``skip`` =
+# geometries not built. Large-token models (sEEG/MEG scale) use a short
+# ``n_times``, ``windows`` and ``skip=("G2",)`` to keep the cells small.
 COMPAT = {
     "Labram": dict(
         cls=Labram,
@@ -153,7 +183,9 @@ COMPAT = {
         channels="coords",
         coords_checked=False,
     ),
-    "REVE": dict(
+    # Not keyed "REVE": test/conftest.py marks that literal as network-only.
+    # The position bank comes from a local file (``_reve_position_bank``).
+    "REVE-local-bank": dict(
         cls=REVE,
         sfreq=200,
         n_times=800,
@@ -168,7 +200,21 @@ COMPAT = {
         canon=TEN_TWENTY,
         channels="names",
         min_n_times=160,
+        short_match="Kernel size",
     ),
+    # Downstream heads that load the SignalJEPA checkpoint (strict=False).
+    **{
+        cls.__name__: dict(
+            cls=cls,
+            sfreq=128,
+            n_times=2048,
+            canon=TEN_TWENTY,
+            channels="names",
+            min_n_times=160,
+            short_match="Kernel size",
+        )
+        for cls in (SignalJEPA_Contextual, SignalJEPA_PostLocal, SignalJEPA_PreLocal)
+    },
     "STEEGFormer": dict(
         cls=STEEGFormer,
         sfreq=100,
@@ -258,10 +304,62 @@ COMPAT = {
         channels="agnostic",
         min_n_times=640,
     ),
+    "NeuroRVQ": dict(
+        cls=NeuroRVQ,
+        sfreq=200,
+        n_times=200,
+        canon=TEN_TWENTY,
+        channels="names",
+        vocab=NEURORVQ_CHANNELS,
+        n_times_multiple=200,
+        windows=(100, 400),
+    ),
+    "MAPA": dict(
+        cls=MAPA,
+        sfreq=2048,
+        n_times=512,
+        canon=None,
+        kind="seeg",
+        channels="contact_labels",
+        min_n_times=448,
+        windows=(256, 1024),
+        skip=("G2",),
+    ),
+    "BrainOmni": dict(
+        cls=BrainOmni,
+        sfreq=256,
+        n_times=512,
+        canon=TEN_TWENTY,
+        channels="coords",
+        coords_checked=True,
+        windows=(256, 1024),
+        skip=("G2",),
+    ),
+    "BrainTokenizer": dict(
+        cls=BrainTokenizer,
+        sfreq=256,
+        n_times=512,
+        canon=TEN_TWENTY,
+        channels="coords",
+        coords_checked=True,
+        windows=(256, 1024),
+        skip=("G2",),
+    ),
 }
 
 # LaBraM looks names up at forward: these montages go through the channel layer.
 STRATEGY_CELLS = {("Labram", "G2"), ("Labram", "G3"), ("Labram", "G3b")}
+
+
+@pytest.fixture(autouse=True)
+def _reve_position_bank(tmp_path, monkeypatch):
+    """Serve REVE's position bank from a local file instead of the Hub."""
+    pos = _montage("standard_1005").get_positions()["ch_pos"]
+    bank = {name: [float(v) for v in xyz] for name, xyz in pos.items()}
+    for ch in chs_coords_only(128):  # EGI-style E1..E128, as in the released bank
+        bank[ch["ch_name"]] = [float(v) for v in ch["loc"][:3]]
+    (tmp_path / "reve_positions.json").write_text(json.dumps(bank))
+    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
 
 
 def geometries(spec):
@@ -288,33 +386,42 @@ def geometries(spec):
     geos["G3b"] = dict(chs_info=chs_names_no_loc(TEN_TWENTY[:8]), sfreq=sf, n_times=nt)
     base = geos["G1"]["chs_info"]
     if sf:
-        geos["G5a"] = dict(chs_info=base, sfreq=sf, n_times=int(sf))
-        geos["G5b"] = dict(chs_info=base, sfreq=sf, n_times=int(sf * 30))
+        short, long = spec.get("windows", (int(sf), int(sf * 30)))
+        geos["G5a"] = dict(chs_info=base, sfreq=sf, n_times=short)
+        geos["G5b"] = dict(chs_info=base, sfreq=sf, n_times=long)
         geos["G5c"] = dict(chs_info=base, sfreq=sf, n_times=nt + 37)
+    for gname in spec.get("skip", ()):
+        del geos[gname]
     return geos
 
 
 def expected(spec, gname, gkw):
-    """Return 'ok' or 'raise' from the declared strategy."""
-    n_ch = len(gkw["chs_info"])
+    """Return ``None`` (forwards) or the expected error message pattern."""
+    n_ch, n_times = len(gkw["chs_info"]), gkw["n_times"]
+    names = [ch["ch_name"].lower() for ch in gkw["chs_info"]]
     has_loc = any(np.any(ch["loc"][:3]) for ch in gkw["chs_info"])
     # length
-    min_nt = spec.get("min_n_times")
-    if min_nt is not None and gkw["n_times"] < min_nt:
-        return "raise"
+    if n_times < spec.get("min_n_times", 0):
+        return spec.get("short_match", "n_times|window")
+    if n_times % spec.get("n_times_multiple", 1):
+        return "divisible"
     # channels
     strategy = spec["channels"]
     if strategy == "index_slots" and n_ch > spec["max_n_chans"]:
-        return "raise"
+        return "n_channel_embeddings"
     if strategy == "coords" and spec.get("coords_checked") and not has_loc:
-        return "raise"
+        return "locations|positions"
+    if strategy == "contact_labels" and not all(re.search(r"\d$", n) for n in names):
+        return "trailing number"
+    if "vocab" in spec and not set(names) <= set(spec["vocab"]):
+        return "channel name"
     if (
         strategy == "names"
         and spec.get("names_required_at_forward")
         and gname in ("G2", "G3", "G3b")
     ):
-        return "raise"
-    return "ok"
+        return "channel"
+    return None
 
 
 def _cases():
@@ -331,14 +438,13 @@ def test_geometry_contract(name, gname, gkw):
         kw["channel_strategy"] = "spline"
 
     def build_and_forward():
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            model = spec["cls"](**kw).eval()
-            with torch.no_grad():
-                return model(torch.randn(1, len(gkw["chs_info"]), gkw["n_times"]))
+        model = spec["cls"](**kw).eval()
+        with torch.no_grad():
+            return model(torch.randn(1, len(gkw["chs_info"]), gkw["n_times"]))
 
-    if expected(spec, gname, gkw) == "raise" and (name, gname) not in STRATEGY_CELLS:
-        with pytest.raises((ValueError, RuntimeError)):
+    match = expected(spec, gname, gkw)
+    if match is not None and (name, gname) not in STRATEGY_CELLS:
+        with pytest.raises((ValueError, RuntimeError), match=match):
             build_and_forward()
     else:
         y = build_and_forward()
@@ -349,12 +455,21 @@ def test_geometry_contract(name, gname, gkw):
 # any channel count but no EEG montage, so ``native`` only.
 NATIVE_ONLY = {"SleepFM", "SleepFMStager"}
 
+# No ``channel_strategy`` argument (not part of the #1241 channel layer).
+NO_STRATEGY = {"NeuroRVQ", "MAPA", "BrainOmni", "BrainTokenizer"}
+
 
 # BIOT's canonical input is bipolar; under a strategy it takes electrodes.
-# SignalJEPA's target is its 62 pre-training channels (test_channels.py).
+# SignalJEPA (and its heads) target its 62 pre-training channels (test_channels.py).
 @pytest.mark.parametrize(
     "name",
-    [n for n in COMPAT if n not in ("BIOT", "SignalJEPA") and n not in NATIVE_ONLY],
+    [
+        n
+        for n in COMPAT
+        if n != "BIOT"
+        and not n.startswith("SignalJEPA")
+        and n not in NATIVE_ONLY | NO_STRATEGY
+    ],
 )
 def test_native_checkpoint_loads_under_a_strategy(name):
     """The native state dict loads strictly into the same model with a layer."""
@@ -395,3 +510,25 @@ def test_native_only_models_refuse_a_strategy(name):
     kw = dict(n_outputs=2, **geometries(spec)["G1"])
     with pytest.raises(ValueError, match="native"):
         spec["cls"](**kw, channel_strategy="spline")
+
+
+# Classes with released weights that are outside this EEG/iEEG contract.
+EXCLUDED = {
+    "NeuroPose": "sEMG hand-pose regression, no EEG geometry",
+    "VEMG2Pose": "sEMG hand-pose regression, no EEG geometry",
+}
+_SHIPS_WEIGHTS = re.compile(
+    r"hf_hub_download|from_pretrained\(|huggingface\.co/|Hugging Face Hub"
+)
+
+
+def test_compat_covers_every_pretrained_model():
+    """A model class whose source points to released weights has a COMPAT entry."""
+    covered = {spec["cls"].__name__ for spec in COMPAT.values()}
+    shipped = {
+        name
+        for name, cls in models_dict.items()
+        if _SHIPS_WEIGHTS.search(inspect.getsource(cls))
+    }
+    assert set(EXCLUDED) <= shipped
+    assert shipped - covered - set(EXCLUDED) == set()
