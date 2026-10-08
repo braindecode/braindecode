@@ -345,8 +345,6 @@ class ResidualVectorQuantizer(nn.Module):
         Number of residual VQ stages stacked sequentially.
     rotation_trick : bool
         Passed through to each :class:`VectorQuantizer` layer.
-    quantize_optimize_method : str
-        Codebook update strategy. Only ``"ema"`` is currently supported.
     """
 
     def __init__(
@@ -356,11 +354,8 @@ class ResidualVectorQuantizer(nn.Module):
         codebook_size: int,
         num_quantizers: int,
         rotation_trick: bool = True,
-        quantize_optimize_method: str = "ema",
     ):
         super().__init__()
-        if quantize_optimize_method != "ema":
-            raise ValueError(f"Only 'ema' supported, got {quantize_optimize_method!r}")
         for name, value in (
             ("dim", dim),
             ("codebook_dim", codebook_dim),
