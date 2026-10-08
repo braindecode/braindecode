@@ -239,7 +239,7 @@ Enhancements
   :class:`braindecode.models.STEEGFormer`: einops function calls in ``forward``
   (and in :class:`braindecode.modules.CrissCrossTransformerEncoderLayer`) are
   written as ``reshape``/``permute``. Eager outputs and state-dict keys are
-  unchanged (:gh:`ZZZZ` by `Bruno Aristimunha`_).
+  unchanged (:gh:`1258` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
