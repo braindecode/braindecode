@@ -748,7 +748,9 @@ transformations, frequency'domain transformations, and spatial transformations.
      SegmentationReconstruction
      MaskEncoding
      AmplitudeScale
+     BandRotation
      ChannelsReref
+     TrivialAugment
 
 The functional augmentation API contains the same transformations as the transforms API,
 but they are implemented as functions.
