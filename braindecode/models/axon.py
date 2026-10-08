@@ -4,7 +4,6 @@
 # Reference implementation and weights: https://huggingface.co/NeuroDX/axon-eeg (Apache-2.0).
 """AXON: an axis-factorized EEG foundation model."""
 
-import math
 import warnings
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -13,6 +12,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 from braindecode.util import resolve_montage_name
 
@@ -345,8 +345,8 @@ class _AXONEncoder(nn.Module):
         n_patches = tokens.shape[2]
 
         spatial = self.spatial_pos_embed(self.channel_positions)  # (C, D)
-        temporal = _sinusoidal_encoding(
-            n_patches, self.embed_dim, tokens.device, spatial.dtype
+        temporal = sinusoidal_positional_encoding(n_patches, self.embed_dim).to(
+            device=tokens.device, dtype=spatial.dtype
         )
         position = spatial.unsqueeze(1) + temporal.unsqueeze(0)  # (C, P, D)
         tokens = tokens + position.unsqueeze(0).to(tokens.dtype)
@@ -357,20 +357,6 @@ class _AXONEncoder(nn.Module):
         for block in self.blocks:
             tokens = block(tokens, band)
         return self.final_norm(tokens)
-
-
-def _sinusoidal_encoding(
-    n_positions: int, dim: int, device: torch.device, dtype: torch.dtype
-) -> torch.Tensor:
-    """Fixed sinusoidal encoding of positions 0..n_positions-1, shape (n, dim)."""
-    position = torch.arange(n_positions, device=device, dtype=dtype).unsqueeze(-1)
-    div_term = torch.exp(
-        torch.arange(0, dim, 2, device=device, dtype=dtype) * (-math.log(10000.0) / dim)
-    )
-    encoding = torch.zeros(n_positions, dim, device=device, dtype=dtype)
-    encoding[:, 0::2] = torch.sin(position * div_term)
-    encoding[:, 1::2] = torch.cos(position * div_term)
-    return encoding
 
 
 class _TokenGate(nn.Module):
