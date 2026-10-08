@@ -37,6 +37,7 @@ from .emg2qwerty import EMG2QwertyNet
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
+from .guetschel2026 import Guetschel2026
 from .hybrid import HybridNet
 from .ifnet import IFNet
 from .labram import Labram
@@ -133,6 +134,7 @@ __all__ = [
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",
+    "Guetschel2026",
     "MetaNeuromotorHand",
     "HybridNet",
     "IFNet",

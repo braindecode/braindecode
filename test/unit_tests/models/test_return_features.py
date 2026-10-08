@@ -15,6 +15,7 @@ from braindecode.models import (
     BrainBERT,
     Brant,
     CBraMod,
+    Guetschel2026,
     Labram,
     MIRepNet,
     PopulationTransformer,
@@ -103,6 +104,14 @@ _MODELS = [
         },
         False,
         id="MAPA",
+    ),
+    pytest.param(
+        Guetschel2026,
+        N_CHANS,
+        # small head: the default 5000 x 56320 buffer is ~1.1 GB at 22 ch
+        {"chs_info": _chs(), "random_projection": 64},
+        False,
+        id="Guetschel2026",
     ),
     pytest.param(Brant, N_CHANS, {"sfreq": 250.0}, False, id="Brant"),
     pytest.param(BrainBERT, N_CHANS, {}, False, id="BrainBERT"),

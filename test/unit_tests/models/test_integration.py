@@ -611,6 +611,9 @@ def test_model_torch_script(model):
         # torch.jit.script cannot compile, and forward() returns Dict[str,
         # Tensor] (features) or Tensor (logits).
         "MAPA",
+        # forward() returns Dict[str, Tensor | None] (features) or Tensor (logits);
+        # polymorphic return.
+        "Guetschel2026",
     ]
 
     if model.__class__.__name__ in not_working_models:

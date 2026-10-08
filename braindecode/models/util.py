@@ -686,6 +686,7 @@ models_mandatory_parameters: list[
             "sfreq": 256.0,
         },
     ),
+    ("Guetschel2026", ["chs_info", "n_outputs", "n_times"], {"sfreq": 200.0}),
 ]
 
 ################################################################
