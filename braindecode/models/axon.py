@@ -347,11 +347,11 @@ class _AXONEncoder(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.normalize_input:
-            # Per-channel z-score within each window, in float32 so that a flat
-            # channel cannot become 0/0 in float16. Scale-free, so volts (MNE)
-            # and microvolts give the same result; on microvolt data this matches
-            # the reference evaluation's ``(x - mean) / (std + 1e-6)``.
-            x32 = x.float()
+            # Per-channel z-score within each window, in at least float32 so
+            # that a flat channel cannot become 0/0 in float16. Scale-free, so
+            # volts (MNE) and microvolts give the same result; on microvolt data
+            # this matches the reference evaluation's ``(x - mean) / (std + 1e-6)``.
+            x32 = x.to(torch.promote_types(x.dtype, torch.float32))
             mean = x32.mean(dim=-1, keepdim=True)
             std = x32.std(dim=-1, keepdim=True)
             x = ((x32 - mean) / std.clamp_min(1e-12)).to(x.dtype)
@@ -360,9 +360,11 @@ class _AXONEncoder(nn.Module):
         n_patches = tokens.shape[2]
 
         spatial = self.spatial_pos_embed(self.channel_positions)  # (C, D)
-        temporal = sinusoidal_positional_encoding(n_patches, self.embed_dim).to(
-            device=tokens.device, dtype=spatial.dtype
-        )
+        # Built in at least float32: bfloat16 cannot represent the angles.
+        table_dtype = torch.promote_types(spatial.dtype, torch.float32)
+        temporal = sinusoidal_positional_encoding(
+            n_patches, self.embed_dim, tokens.device, table_dtype
+        ).to(spatial.dtype)
         position = spatial.unsqueeze(1) + temporal.unsqueeze(0)  # (C, P, D)
         tokens = tokens + position.unsqueeze(0).to(tokens.dtype)
 
