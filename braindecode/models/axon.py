@@ -1,11 +1,11 @@
 # Authors: Mahir Jain (mahir@mannas.ai)
 #
 # License: Apache-2.0
-# Reference implementation and weights: https://huggingface.co/NeuroDX/axon-eeg (Apache-2.0).
+# Reference implementation and weights: https://huggingface.co/MannasAI/axon-eeg (Apache-2.0).
 """AXON: an axis-factorized EEG foundation model."""
 
 import warnings
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Optional, Sequence
 
 import numpy as np
 import torch
@@ -14,11 +14,7 @@ from torch import nn
 
 from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
-from braindecode.util import resolve_montage_name
-
-# Positions are stored in the model in centimetres, because that is the unit the
-# pretrained spatial encoder saw. MNE ``chs_info[i]["loc"]`` is in metres.
-_METRES_TO_CM = 100.0
+from braindecode.modules.channels import _resolve
 
 
 class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -55,8 +51,8 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
     AXON is montage-agnostic: electrodes are identified only by their 3D scalp
     position, taken from ``chs_info[i]["loc"][:3]`` (MNE head coordinates, in
     metres). Channels without a valid position are looked up by name in MNE's
-    10-20 and then 10-05 standard montages, in head coordinates.
-    Channel order does not matter.
+    ``standard_1005`` montage, in head coordinates. Channel order does not
+    matter.
 
     .. rubric:: Expected input
 
@@ -67,28 +63,29 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
       z-score is scale-free, so data in volts (MNE's default) or microvolts
       give the same output.
 
-    .. rubric:: Pretrained weights
+    .. important::
+       **Pretrained weights.** The 118.6M-parameter encoder is on the Hugging
+       Face Hub (`MannasAI/axon-eeg <https://huggingface.co/MannasAI/axon-eeg>`_,
+       `License <https://www.apache.org/licenses/LICENSE-2.0>`_) and is loaded
+       with :meth:`from_pretrained`. The classification head is not pretrained
+       and must be trained for your task::
 
-    The pretrained encoder has 118.6M parameters. It is loaded with
-    :meth:`from_pretrained`. The classification head is not pretrained and
-    must be trained for your task::
+           import mne
+           from braindecode.models import AXON
+           from braindecode.util import resolve_montage_name
 
-        import mne
-        from braindecode.models import AXON
-        from braindecode.util import resolve_montage_name
+           raw = mne.io.read_raw_edf("recording.edf", preload=True)
+           raw.set_montage(resolve_montage_name("standard_1020"), match_case=False)
+           raw.resample(200)
+           model = AXON.from_pretrained(
+               "MannasAI/axon-eeg",
+               chs_info=raw.info["chs"],
+               n_outputs=4,
+               n_times=800,
+           )
 
-        raw = mne.io.read_raw_edf("recording.edf", preload=True)
-        raw.set_montage(resolve_montage_name("standard_1020"), match_case=False)
-        raw.resample(200)
-        model = AXON.from_pretrained(
-            "NeuroDX/axon-eeg",
-            chs_info=raw.info["chs"],
-            n_outputs=4,
-            n_times=800,
-        )
-
-    For linear probing, freeze everything except ``final_layer``. The
-    reference fine-tuning recipe also kept the two gates frozen.
+       For linear probing, freeze everything except ``final_layer``. The
+       reference fine-tuning recipe also kept the two gates frozen.
 
     Parameters
     ----------
@@ -120,6 +117,12 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Dropout probability in the classification head.
     att_drop_prob : float
         Attention dropout probability (0 in the pretrained model).
+    channel_strategy : str
+        How another montage reaches the encoder; see
+        :class:`~braindecode.models.base.EEGModuleMixin`. AXON reads any montage
+        natively, so the default ``"native"`` is usually what you want.
+    channel_strategy_kwargs : dict or None
+        Options of ``channel_strategy``.
 
     References
     ----------
@@ -153,6 +156,8 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
         head_activation: type[nn.Module] = nn.ELU,
         drop_prob: float = 0.3,
         att_drop_prob: float = 0.0,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: Optional[dict] = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -161,6 +166,8 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
@@ -186,10 +193,18 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.head_activation = head_activation
         self.drop_prob = drop_prob
 
-        # Electrode positions (C, 3) in cm, resolved once from chs_info.
-        positions = _resolve_channel_positions(self.chs_info) * _METRES_TO_CM
+        # Electrode positions (C, 3): ``loc``, else standard_1005 by name.
+        names, positions, *_ = _resolve(self.chs_info)
+        unknown = [n for n, p in zip(names, positions) if np.isnan(p).any()]
+        if unknown:
+            raise ValueError(
+                "AXON needs a 3D position for every channel. No valid 'loc' in "
+                f"chs_info and no match in MNE standard montages for: {unknown}. "
+                "Set a montage on your data (e.g. raw.set_montage(...)) first."
+            )
         self.encoder = _AXONEncoder(
-            channel_positions=torch.as_tensor(positions, dtype=torch.float32),
+            # cm: the unit the pretrained spatial encoder saw (``loc`` is in m).
+            channel_positions=100.0 * torch.as_tensor(positions, dtype=torch.float32),
             patch_size=patch_size,
             patch_stride=patch_stride,
             embed_dim=embed_dim,
@@ -503,64 +518,3 @@ class _AXONBlock(nn.Module):
     def forward(self, x: torch.Tensor, band: torch.Tensor) -> torch.Tensor:
         x = x + self.attn(self.norm_attn(x), band)
         return x + self.ffn(self.norm_ffn(x))
-
-
-def _valid_position(loc: Any) -> Optional[np.ndarray]:
-    """Return the first three entries of an MNE ``loc`` if they are usable."""
-    if loc is None:
-        return None
-    position = np.asarray(loc, dtype=np.float64).reshape(-1)[:3]
-    if position.shape[0] < 3 or not np.all(np.isfinite(position)):
-        return None
-    if np.allclose(position, 0.0):
-        return None
-    return position
-
-
-def _standard_head_positions(ch_names: List[str]) -> Dict[str, np.ndarray]:
-    """Head-frame positions (metres) of ``ch_names`` in MNE standard montages."""
-    import mne
-
-    found: Dict[str, np.ndarray] = {}
-    remaining = list(dict.fromkeys(ch_names))
-    for montage_name in ("standard_1020", "standard_1005"):
-        if not remaining:
-            break
-        montage = mne.channels.make_standard_montage(resolve_montage_name(montage_name))
-        known = {name.lower() for name in montage.ch_names}
-        names = [name for name in remaining if name.lower() in known]
-        if not names:
-            continue
-        info = mne.create_info(names, sfreq=1.0, ch_types="eeg")
-        info.set_montage(montage, match_case=False, on_missing="ignore", verbose=False)
-        for name, ch in zip(names, info["chs"]):
-            position = _valid_position(ch["loc"])
-            if position is not None:
-                found[name] = position
-        remaining = [name for name in remaining if name not in found]
-    return found
-
-
-def _resolve_channel_positions(chs_info: Sequence[Dict[str, Any]]) -> np.ndarray:
-    """Positions (C, 3) in metres from ``loc``, falling back to standard montages."""
-    positions: List[Optional[np.ndarray]] = [
-        _valid_position(ch.get("loc")) for ch in chs_info
-    ]
-    missing = [
-        str(ch.get("ch_name", f"channel {i}"))
-        for i, (ch, pos) in enumerate(zip(chs_info, positions))
-        if pos is None
-    ]
-    if missing:
-        lookup = _standard_head_positions(missing)
-        unknown = [name for name in missing if name not in lookup]
-        if unknown:
-            raise ValueError(
-                "AXON needs a 3D position for every channel. No valid 'loc' in "
-                f"chs_info and no match in MNE standard montages for: {unknown}. "
-                "Set a montage on your data (e.g. raw.set_montage(...)) first."
-            )
-        for i, ch in enumerate(chs_info):
-            if positions[i] is None:
-                positions[i] = lookup[str(ch.get("ch_name", f"channel {i}"))]
-    return np.stack(positions).astype(np.float32)

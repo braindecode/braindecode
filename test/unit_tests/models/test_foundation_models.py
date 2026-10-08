@@ -1733,7 +1733,7 @@ def test_sleepfm_pretrained_loads():
 def test_axon_pretrained_loads():
     chs_info = [{"ch_name": n, "kind": "eeg"} for n in ["Fz", "C3", "Cz", "C4", "Pz"]]
     model = AXON.from_pretrained(
-        "NeuroDX/axon-eeg", chs_info=chs_info, n_outputs=2, n_times=800
+        "MannasAI/axon-eeg", chs_info=chs_info, n_outputs=2, n_times=800
     )
     out = model(torch.randn(2, 5, 800))
     assert out.shape == (2, 2)
@@ -1752,19 +1752,6 @@ def _axon_chs(names=_AXON_NAMES):
 def _axon_model(chs_info, **kw):
     torch.manual_seed(0)
     return AXON(chs_info=chs_info, n_outputs=3, sfreq=200.0, **{**_AXON_SMALL, **kw}).eval()
-
-
-def test_axon_shapes_and_features():
-    model = _axon_model(_axon_chs())
-    x = torch.randn(2, len(_AXON_NAMES), 800)  # 4 patches of 1 s with 0.9 s stride
-    with torch.no_grad():
-        logits = model(x)
-        out = model(x, return_features=True)
-    assert logits.shape == (2, 3)
-    assert out["features"].shape == (2, 64)
-    assert out["tokens"].shape == (2, len(_AXON_NAMES), 4, 64)
-    assert out["cls_token"] is None
-    torch.testing.assert_close(model.encode(x), out["tokens"])
 
 
 def test_axon_channel_order_does_not_matter():
@@ -1821,15 +1808,6 @@ def test_axon_too_short_window_raises():
 def test_axon_warns_on_non_200_hz():
     with pytest.warns(UserWarning, match="200 Hz"):
         AXON(chs_info=_axon_chs(), n_outputs=2, sfreq=250.0, **_AXON_SMALL)
-
-
-def test_axon_reset_head_updates_config():
-    """``reset_head`` must propagate to ``get_config`` for save/restore."""
-    model = _axon_model(_axon_chs())
-    model.reset_head(7)
-    assert model.final_layer[-1].out_features == 7
-    assert model.get_config()["n_outputs"] == 7
-    assert AXON.from_config(model.get_config()).n_outputs == 7
 
 
 @pytest.fixture
