@@ -95,7 +95,9 @@ class _EMAVectorQuantizer(nn.Module):
                     safe_counts = counts.masked_fill(counts == 0, 1.0)
                     embed_sum = vectors.T @ encodings
                     _all_reduce_sum(embed_sum)
-                    means = F.normalize((embed_sum / safe_counts.unsqueeze(0)).T, dim=-1)
+                    means = F.normalize(
+                        (embed_sum / safe_counts.unsqueeze(0)).T, dim=-1
+                    )
                     means = torch.where(counts[:, None] == 0, weight, means)
                     weight.mul_(self.decay).add_(means, alpha=1 - self.decay)
                     weight.copy_(F.normalize(weight, dim=-1))
