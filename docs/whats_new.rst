@@ -91,7 +91,7 @@ Enhancements
   (``load_pretrained_weights`` is removed). The tokenizer reconstruction now
   equals the authors' code (it differed by up to 6e-8);
   ``statistic_code_usage=True`` reproduces their eval-time code-usage EMA.
-  Builds on :gh:`1090` and :gh:`1223` by `lindicaphxag-tech`_ (:gh:`NNNN` by
+  Builds on :gh:`1090` and :gh:`1223` by `lindicaphxag-tech`_ (:gh:`1254` by
   `Bruno Aristimunha`_).
 
 - Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution
