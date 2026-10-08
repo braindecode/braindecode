@@ -161,6 +161,11 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             warnings.warn(f"BrainTokenizer weights expect 256 Hz, got {self.sfreq}.")
         if n_filters < 2:  # the first residual block has n_filters // 2 channels
             raise ValueError(f"n_filters must be at least 2, got {n_filters}.")
+        if emb_dim <= 0 or tokenizer_num_heads <= 0:
+            raise ValueError(
+                f"emb_dim ({emb_dim}) and tokenizer_num_heads "
+                f"({tokenizer_num_heads}) must be positive."
+            )
         if emb_dim % tokenizer_num_heads:
             raise ValueError(
                 f"emb_dim ({emb_dim}) must be divisible by "
@@ -248,6 +253,11 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         indices : torch.Tensor
             ``(batch, n_neuro, n_windows * n_tokens, num_quantizers)``.
         """
+        if overlap_ratio < 0 or int(self.window_length * (1 - overlap_ratio)) < 1:
+            raise ValueError(
+                f"overlap_ratio must be >= 0 and leave a stride of at least one "
+                f"sample for window_length={self.window_length}, got {overlap_ratio}."
+            )
         was_training = self.training
         self.eval()
         try:
@@ -405,6 +415,10 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if not 0 <= overlap_ratio < 1:
             raise ValueError(f"overlap_ratio must be in [0, 1), got {overlap_ratio}.")
+        if lm_dim <= 0 or num_heads <= 0:
+            raise ValueError(
+                f"lm_dim ({lm_dim}) and num_heads ({num_heads}) must be positive."
+            )
         if num_heads % 2 or lm_dim % num_heads or (lm_dim // num_heads) % 2:
             raise ValueError(
                 f"num_heads ({num_heads}) must be even and divide lm_dim ({lm_dim}) "

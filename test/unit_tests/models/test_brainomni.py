@@ -353,6 +353,26 @@ def test_rejects_invalid_arguments(build, match):
         build()
 
 
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: _small_tokenizer(tokenizer_num_heads=0),
+        lambda: _small_tokenizer(emb_dim=0),
+        lambda: _small_brainomni(num_heads=0),
+    ],
+    ids=["tokenizer_heads", "emb_dim", "lm_heads"],
+)
+def test_rejects_non_positive_head_dims(build):
+    with pytest.raises(ValueError, match="must be positive"):
+        build()
+
+
+@pytest.mark.parametrize("overlap_ratio", [-0.1, 1.0, 0.999])
+def test_braintokenizer_tokenize_rejects_bad_overlap(overlap_ratio):
+    with pytest.raises(ValueError, match="overlap_ratio"):
+        _small_tokenizer().tokenize(torch.randn(1, 4, 512), overlap_ratio)
+
+
 def test_sfreq_warning():
     with pytest.warns(UserWarning, match="256 Hz"):
         _small_brainomni(sfreq=128.0)
