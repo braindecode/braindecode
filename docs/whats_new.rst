@@ -190,9 +190,7 @@ Enhancements
   (max-norm constraints, ``weight_norm``): ATCNet, BDTCN, EEGITNet, EEGNeX,
   EEGNet, EEGTCNet, FBCNet, FBMSNet, IFNet and TIDNet now script and give the
   eager output, and so do models built with an int ``sfreq`` or
-  ``input_window_seconds`` (as in Hub configs). One TorchScript test covers
-  every model; the models that still do not script are strict ``xfail`` with
-  their reason (:gh:`1256` by
+  ``input_window_seconds`` (as in Hub configs) (:gh:`1256` by
   `Bruno Aristimunha`_).
 
 API and behavior changes

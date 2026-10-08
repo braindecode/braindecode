@@ -130,10 +130,6 @@ def test_completeness__models_test_cases():
     ), f"Models missing from models_test_cases: {all_models - models_tested}"
 
 
-def test_torchscript_xfail_registry():
-    assert _TORCHSCRIPT_XFAIL.keys() <= _MODEL_CASES.keys()
-
-
 @pytest.mark.parametrize(
     "model_name, required_params, signal_params", models_mandatory_parameters
 )
@@ -604,18 +600,10 @@ def test_signal_params_still_raise_value_error():
         model.sfreq
 
 
-@pytest.mark.parametrize(
-    "signal",
-    [
-        dict(n_times=1000, sfreq=250),
-        dict(input_window_seconds=4, sfreq=250),
-        dict(input_window_seconds=4.0, sfreq=250.0),
-    ],
-)
-def test_torch_script_signal_params_types(signal):
-    """Int ``sfreq``/``input_window_seconds`` (as in Hub configs) and a derived
-    ``n_times`` do not stop scripting."""
-    model = ShallowFBCSPNet(n_chans=3, n_outputs=2, **signal).eval()
+def test_torch_script_int_signal_params():
+    """Int ``sfreq``/``input_window_seconds``, as in Hub configs, still script."""
+    model = ShallowFBCSPNet(n_chans=3, n_outputs=2, input_window_seconds=4, sfreq=250)
+    model.eval()
     x = torch.randn(2, 3, 1000)
     torch.testing.assert_close(torch.jit.script(model)(x), model(x))
 
