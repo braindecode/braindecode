@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath, PatchTokenizer
 
@@ -422,7 +423,8 @@ class _PatchEmbedding(nn.Module):
             .permute(0, 2, 3, 1, 4)
             .flatten(3, 4)
         )
-        spectrum = torch.fft.rfft(x, dim=-1, norm="forward").abs()
+        spectrum = torch.fft.rfft(spectral_input(x), dim=-1, norm="forward")
+        spectrum = spectrum.abs().to(x)
         patch_emb = time_tokens + self.spectral_proj(spectrum)
 
         # Decoupled positional embedding: one-hot channel + depthwise temporal conv.

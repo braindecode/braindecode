@@ -22,7 +22,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
-from braindecode.functional import rotate_pairs
+from braindecode.functional import rotate_pairs, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules.blocks import PatchTokenizer
@@ -285,9 +285,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         num_channels = channel_locations.shape[1]
-        x_signal = self.tokenizer._prepare_input(x_signal)
+        x_signal = self.tokenizer.prepare_input(x_signal)
         if mask is not None:
-            mask = self.tokenizer._prepare_input(mask)
+            mask = self.tokenizer.prepare_input(mask)
         num_patches_per_channel = x_signal.shape[-1] // self.patch_size
         x_patched = self.patch_embed(x_signal)
         freq_embed = self.freq_embed(x_signal)
@@ -463,7 +463,8 @@ def nerf_positional_encoding(coords: torch.Tensor, embed_size: int) -> torch.Ten
     if leftover > 0:
         pad = torch.zeros(N, C, leftover, device=device, dtype=coords.dtype)
         encoded = torch.cat([encoded, pad], dim=-1)
-    return encoded
+    # Sin/cos run in float32 at least (float32 frequency bands); return coords' dtype.
+    return encoded.to(coords.dtype)
 
 
 class _ChannelEmbeddings(nn.Module):
@@ -526,13 +527,13 @@ class _FrequencyFeatureEmbedder(nn.Module):
         x = x.view(B, C, S, self.patch_size)
 
         freq_representation = fft.rfft(
-            x, dim=-1
+            spectral_input(x), dim=-1
         )  # (B, C, num_patches, patch_size // 2 + 1)
         magnitude = torch.abs(freq_representation)
         phase = torch.angle(freq_representation)
 
         # Concatenate magnitude and phase along the frequency axis (last dimension)
-        freq_features = torch.cat((magnitude, phase), dim=-1)
+        freq_features = torch.cat((magnitude, phase), dim=-1).to(x)
         # Map frequency features to embedding dimension
         embedded = self.frequency_to_embed(
             freq_features
