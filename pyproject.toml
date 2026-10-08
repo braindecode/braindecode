@@ -165,6 +165,9 @@ testpaths = ["test"]
 python_files = ["test_*.py", "*_test.py"]
 # which functions inside them count as tests
 python_functions = ["test_*"]
+# delete each passing test's tmp_path: the save/load round-trips write GBs of
+# weights, which filled the Windows runner disk
+tmp_path_retention_policy = "failed"
 markers = [
     "integration: integration tests",
     "network: tests that require network access",

@@ -9,13 +9,12 @@ from braindecode.models import (
     BIOT,
     EEGDINO,
     EEGPT,
+    MAPA,
     REVE,
     BaRISTA,
     BrainBERT,
     Brant,
     CBraMod,
-    InterpolatedBENDR,
-    InterpolatedLaBraM,
     Labram,
     MIRepNet,
     PopulationTransformer,
@@ -23,13 +22,13 @@ from braindecode.models import (
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
     SignalJEPA_PreLocal,
+    SleepFM,
     STEEGFormer,
 )
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
 from braindecode.models.util import (
     _get_signal_params,
-    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
 )
@@ -73,13 +72,6 @@ def _chs(names=None, n=N_CHANS):
 _MODELS = [
     pytest.param(EEGPT, N_CHANS, {}, False, id="EEGPT"),
     pytest.param(
-        InterpolatedLaBraM,
-        N_CHANS,
-        {"patch_size": 200, "chs_info": _chs()},
-        True,
-        id="InterpolatedLaBraM",
-    ),
-    pytest.param(
         REVE,
         16,
         {"chs_info": _chs(_REVE_CHS), "patch_size": 200, "patch_overlap": 0},
@@ -88,11 +80,11 @@ _MODELS = [
     ),
     pytest.param(BENDR, N_CHANS, {}, False, id="BENDR"),
     pytest.param(
-        InterpolatedBENDR,
+        BENDR,
         N_CHANS,
-        {"chs_info": _chs()},
+        {"chs_info": _chs(), "channel_strategy": "spline"},
         False,
-        id="InterpolatedBENDR",
+        id="BENDR-spline",
     ),
     pytest.param(
         BaRISTA,
@@ -102,6 +94,16 @@ _MODELS = [
         id="BaRISTA",
     ),
     pytest.param(BIOT, N_CHANS, {}, False, id="BIOT"),
+    pytest.param(
+        MAPA,
+        N_CHANS,
+        {
+            "contact_labels": [f"L{'AB'[i % 2]}{i + 1}" for i in range(N_CHANS)],
+            "d_model": 64,
+        },
+        False,
+        id="MAPA",
+    ),
     pytest.param(Brant, N_CHANS, {"sfreq": 250.0}, False, id="Brant"),
     pytest.param(BrainBERT, N_CHANS, {}, False, id="BrainBERT"),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
@@ -140,6 +142,21 @@ _MODELS = [
         {"chs_info": _chs()},
         False,
         id="SignalJEPA_PreLocal",
+    ),
+    pytest.param(
+        SleepFM,
+        N_CHANS,
+        {
+            "sfreq": 128.0,
+            "patch_size": 64,
+            "embed_dim": 16,
+            "num_heads": 4,
+            "num_layers": 1,
+            "pooling_heads": 4,
+            "max_seq_length": 16,
+        },
+        False,
+        id="SleepFM",
     ),
     pytest.param(
         MIRepNet,
@@ -242,10 +259,9 @@ def test_reset_head(cls, nc, kw, has_cls):
 
 # -- reset_head must leave a model that can be saved and loaded back --
 
-_ALL_MODELS = {**models_dict, **interpolated_models_dict}
+_ALL_MODELS = dict(models_dict)
 _REGISTRY = {name: sp for name, _, sp in models_mandatory_parameters}
-# Every registered model that overrides reset_head, including the interpolated
-# wrappers that inherit it from their backbone.
+# Every registered model that overrides reset_head.
 _RESET_HEAD_CASES = [
     name
     for name in _REGISTRY

@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange, Reduce
 
-from braindecode.functional import sinusoidal_positional_encoding
+from braindecode.functional import sinusoidal_positional_encoding, spectral_input
 from braindecode.models.base import EEGModuleMixin
 
 
@@ -155,6 +155,8 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -163,6 +165,8 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
@@ -394,7 +398,8 @@ class _STFTSpectrogram(nn.Module):
         right_pad = self._padded_length(n_times) - n_times - self.boundary_pad
         xp = F.pad(x, (self.boundary_pad, right_pad))  # (batch, n_chans, padded)
         frames = xp.unfold(-1, self.nperseg, self.step)  # (b, c, n_frames, nperseg)
-        win = self.window.to(frames.dtype)
+        frames = spectral_input(frames)
+        win = self.window.to(frames)
         scale = 1.0 / win.sum()  # scaling="spectrum"
         spec = torch.fft.rfft(frames * win, dim=-1)  # (b, c, n_frames, nperseg//2+1)
         low = spec[..., : self.idx_freq_cutoff] * scale  # (b, c, n_frames, cutoff)
@@ -412,7 +417,7 @@ class _STFTSpectrogram(nn.Module):
         if self.normalizing == "zscore" and not self.zscore_before_clip:
             mag = self._zscore(mag)
         # upstream stft.py: NaNs surviving the statistics are zeroed, not kept.
-        return torch.nan_to_num(mag, nan=0.0)
+        return torch.nan_to_num(mag, nan=0.0).to(x)
 
     @staticmethod
     def _zscore(mag: torch.Tensor) -> torch.Tensor:

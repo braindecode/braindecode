@@ -13,6 +13,16 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules import FeedForwardBlock, MultiHeadAttention
 
+#: Channel order of the released checkpoint (``use_channels_names`` in
+#: ``utils/channel_list.py`` of the original code, revision ``b35d113``).
+MIREPNET_CHANNEL_ORDER = [
+    *"F7 F5 F3 F1 Fz F2 F4 F6 F8".split(),
+    *"FT7 FC5 FC3 FC1 FCz FC2 FC4 FC6 FT8".split(),
+    *"T7 C5 C3 C1 Cz C2 C4 C6 T8".split(),
+    *"TP7 CP5 CP3 CP1 CPz CP2 CP4 CP6 TP8".split(),
+    *"P7 P5 P3 P1 Pz P2 P4 P6 P8".split(),
+]
+
 
 class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     r"""MIRepNet from Liu et al. (2026) [liu2026mirepnet]_.
@@ -141,6 +151,8 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
        https://github.com/staraink/MIRepNet
     """
 
+    _channel_target = MIREPNET_CHANNEL_ORDER
+
     def __init__(
         self,
         # braindecode parameters
@@ -168,6 +180,8 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         feedforward_drop_prob: float = 0.5,
         attention_scale: float | None = None,
         return_features: bool = False,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -176,6 +190,8 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         for name, positive_value in (

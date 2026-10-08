@@ -125,37 +125,41 @@ jobs:
 
     - name: Upload Coverage to Codecov
       uses: codecov/codecov-action@v4
+      continue-on-error: true
       if: ${{ matrix.run-coverage }}
       with:
-        fail_ci_if_error: true
         file: ./coverage.xml
         env_vars: OS,PYTHON
         token: ${{ secrets.CODECOV_TOKEN }}
 
   # Real-data acceptance tests (marked network, so skipped by the jobs above).
-  # They train on BNCI2014_001 subject 1, which the ubuntu 3.12 job downloads too.
+  # They train on BNCI2014_001 subject 1, which the ubuntu test jobs download too.
   acceptance:
-    name: acceptance (ubuntu-latest, 3.12)
+    name: acceptance (ubuntu-latest, ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
     timeout-minutes: 30
     env:
       OMP_NUM_THREADS: "1"
     steps:
     - name: Checking Out Repository
       uses: actions/checkout@v4
-    # Restore-only: reuse the ubuntu 3.12 test job's MNE data without saving a
+    # Restore-only: reuse the ubuntu test job's MNE data without saving a
     # smaller cache under its key.
     - name: Restore MNE Data Cache
       uses: actions/cache/restore@v4
       with:
         path: ~/mne_data
-        key: test-2-${{ runner.os }}-3.12
+        key: test-2-${{ runner.os }}-${{ matrix.python-version }}
         restore-keys: |
-          test-2-${{ runner.os }}-3.12-
+          test-2-${{ runner.os }}-${{ matrix.python-version }}-
           test-2-${{ runner.os }}-
     - uses: actions/setup-python@v5
       with:
-        python-version: "3.12"
+        python-version: ${{ matrix.python-version }}
     - name: Install uv
       uses: astral-sh/setup-uv@v7
       with:

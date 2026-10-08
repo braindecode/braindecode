@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import warnings
 from collections import OrderedDict
@@ -24,6 +25,7 @@ from braindecode.models.util import (
     resolve_type_kwargs,
     track_model_init_kwargs,
 )
+from braindecode.modules.channels import ChannelLayer
 from braindecode.version import __version__
 
 huggingface_hub = _soft_import(
@@ -31,6 +33,16 @@ huggingface_hub = _soft_import(
 )
 
 HAS_HF_HUB = huggingface_hub is not False
+
+# __init__ args that from_pretrained fills from config.json when not given.
+_GEOMETRY_KWARGS = (
+    "n_outputs",
+    "n_chans",
+    "chs_info",
+    "n_times",
+    "input_window_seconds",
+    "sfreq",
+)
 
 
 _HF_INSTALL_HINT = (
@@ -113,6 +125,17 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         Length of the input window in seconds.
     sfreq : float
         Sampling frequency of the EEG recordings.
+    channel_strategy : str, default="native"
+        How any montage reaches the backbone (pretrained models only; see
+        :doc:`/user_guide/channel_strategies`). ``"native"`` keeps the model as
+        it is. ``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``, ``"spline"``,
+        ``"field"``, ``"source"``, ``"region"``, ``"wiener"`` (call
+        ``model.channel_layer.fit`` first) or ``"latent"`` map the montage of ``chs_info`` (or of the
+        ``chs_info`` given to ``forward``) onto the backbone's channels with a
+        :class:`~braindecode.modules.ChannelLayer`. Saved in the config.
+        ``model(x)`` and ``model.forward(x)`` both apply the layer.
+    channel_strategy_kwargs : dict or None, default=None
+        Options of the strategy (e.g. ``{"reg": 1e-2}`` for ``"spline"``).
 
     Raises
     ------
@@ -286,6 +309,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         n_times: Optional[int] = None,  # type: ignore[assignment]
         input_window_seconds: Optional[float] = None,  # type: ignore[assignment]
         sfreq: Optional[float] = None,  # type: ignore[assignment]
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: Optional[dict] = None,
     ):
         # Deserialize chs_info if it comes as a list of dicts (from Hub)
         if chs_info is not None and isinstance(chs_info, list):
@@ -307,6 +332,26 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ):
             raise ValueError(
                 f"{n_times=} different from {input_window_seconds=} * {sfreq=}"
+            )
+        layer = None
+        if channel_strategy != "native":  # the backbone is built on the target
+            target = self._channel_target or chs_info
+            if target is None:
+                raise ValueError(
+                    f"channel_strategy={channel_strategy!r} needs chs_info."
+                )
+            target = [
+                c
+                if isinstance(c, dict)
+                else {"ch_name": c, "kind": "eeg", "loc": np.zeros(12)}
+                for c in target
+            ]
+            kwargs = channel_strategy_kwargs or {}
+            layer = ChannelLayer(target, channel_strategy, chs_info, **kwargs)
+            chs_info, n_chans = layer.target, None
+        elif channel_strategy_kwargs:
+            raise ValueError(
+                "channel_strategy='native' takes no channel_strategy_kwargs."
             )
 
         self._input_window_seconds = input_window_seconds  # type: ignore[assignment]
@@ -334,6 +379,22 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 setattr(self, key, val)
 
         super().__init__()
+        if layer is not None:
+            self.channel_layer = layer
+            # Instance attribute: model(x) and model.forward(x) both map x.
+            setattr(self, "forward", self._channel_forward)
+
+    def _channel_forward(self, *args, chs_info=None, ch_names=None, **kwargs):
+        """``forward`` under a channel strategy: map ``x`` (recorded with
+        ``chs_info``, default the model's) onto the target, then run the backbone."""
+        if chs_info is None and ch_names is not None:  # LaBraM: names of x's channels
+            chs_info = [{"ch_name": n} for n in ch_names]
+        if args:
+            args = (self.channel_layer(args[0], chs_info)[0], *args[1:])
+        else:  # x by keyword: the backbone's first input (x, X, eeg...)
+            x = list(inspect.signature(type(self).forward).parameters)[1]
+            kwargs[x] = self.channel_layer(kwargs[x], chs_info)[0]
+        return type(self).forward(self, *args, **kwargs)
 
     @property
     def n_outputs(self) -> int:
@@ -424,13 +485,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         with torch.inference_mode():
             try:
                 return tuple(
-                    self.forward(  # type: ignore
+                    type(self)
+                    .forward(  # the backbone, on its own channels
+                        self,
                         torch.zeros(
                             self.input_shape,
                             dtype=next(self.parameters()).dtype,  # type: ignore
                             device=next(self.parameters()).device,  # type: ignore
-                        )
-                    ).shape
+                        ),
+                    )
+                    .shape
                 )
             except RuntimeError as exc:
                 if str(exc).endswith(
@@ -596,6 +660,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         )
 
     mapping: Optional[Dict[str, str]] = None
+    #: Channels the backbone consumes under a ``channel_strategy`` (names or
+    #: ``chs_info``); ``None``: the model's own ``chs_info``.
+    _channel_target: Optional[list] = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         mapping = self.mapping if self.mapping else {}
@@ -605,7 +672,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 new_state_dict[mapping[k]] = v
             else:
                 new_state_dict[k] = v
-
+        # A backbone checkpoint has no weights for a trainable channel layer.
+        for k, v in super().state_dict().items():
+            if k.startswith("channel_layer.") and k not in new_state_dict:
+                new_state_dict[k] = v
         return super().load_state_dict(new_state_dict, *args, **kwargs)
 
     def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
@@ -778,6 +848,24 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             )
 
     if HAS_HF_HUB:
+
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            # The Hub mixin fills only the __init__ args whose keys are absent,
+            # so drop explicit Nones (e.g. forwarded by a wrapper) to let the
+            # saved values fill them. Then pin the derived geometry arg so it
+            # cannot clash with the caller's one (e.g. caller chs_info vs saved
+            # n_chans) in __init__'s checks.
+            for key in _GEOMETRY_KWARGS:
+                if key in kwargs and kwargs[key] is None:
+                    del kwargs[key]
+            if "chs_info" in kwargs:
+                kwargs.setdefault("n_chans", len(kwargs["chs_info"]))
+            elif "n_chans" in kwargs:
+                kwargs.setdefault("chs_info", None)
+            if "n_times" in kwargs or "sfreq" in kwargs:
+                kwargs.setdefault("input_window_seconds", None)
+            return super().from_pretrained(*args, **kwargs)
 
         @classmethod
         def _from_pretrained(

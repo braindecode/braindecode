@@ -223,6 +223,8 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         qk_norm: bool = True,
         activation: type[nn.Module] = nn.SiLU,
         on_non_divisible: str = "pad",
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -231,6 +233,8 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
@@ -535,14 +539,18 @@ class _TransformerBlock(nn.Module):
         rotary_cosine: torch.Tensor,
         rotary_sine: torch.Tensor,
     ) -> torch.Tensor:
-        input_tensor = input_tensor.float()
+        # Residual stream in float32 at least; the sub-layers run in the
+        # weights' dtype.
+        dtype = self.attention.wq.weight.dtype
+        residual_dtype = torch.promote_types(dtype, torch.float32)
+        input_tensor = input_tensor.to(residual_dtype)
         hidden_states = input_tensor + self.attention_norm_post(
             self.attention(
-                self.attention_norm(input_tensor), rotary_cosine, rotary_sine
-            ).float()
+                self.attention_norm(input_tensor).to(dtype), rotary_cosine, rotary_sine
+            ).to(residual_dtype)
         )
         return hidden_states + self.ffn_norm_post(
-            self.feed_forward(self.ffn_norm(hidden_states)).float()
+            self.feed_forward(self.ffn_norm(hidden_states).to(dtype)).to(residual_dtype)
         )
 
 
@@ -610,4 +618,4 @@ class _ZUNAEncoder(nn.Module):
         register_latents = hidden_states.reshape(batch_size, sequence_length, 2, -1)[
             :, :, 0
         ]
-        return self.output(self.norm(register_latents))
+        return self.output(self.norm(register_latents).to(self.output.weight.dtype))

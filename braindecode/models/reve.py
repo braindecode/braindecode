@@ -257,6 +257,8 @@ class REVE(EEGModuleMixin, nn.Module):
         patch_size: int = 200,
         patch_overlap: int = 20,
         attention_pooling: bool = False,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -265,6 +267,8 @@ class REVE(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
 
         self.embed_dim = embed_dim
@@ -423,7 +427,11 @@ class REVE(EEGModuleMixin, nn.Module):
             pos = self.default_pos.expand(batch_size, -1, -1).to(eeg.device)
 
         pos = FourierEmb4D.add_time_patch(pos, n_patches)
-        pos_embed = self.ln(self.fourier4d(pos) + self.mlp4d(pos))
+        # Positions stay in float32 for the Fourier features; the embedding
+        # follows the signal's dtype.
+        pos_embed = self.ln(
+            self.fourier4d(pos).to(eeg.dtype) + self.mlp4d(pos.to(eeg.dtype))
+        )
 
         # Patch embedding: (batch, channels, n_patches, patch_size) -> (batch, channels, n_patches, embed_dim)
         patch_embeddings = self.to_patch_embedding(patches)

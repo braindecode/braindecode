@@ -68,18 +68,26 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`BIOT` - Foundation model with pre-trained weights
     - :class:`BrainBERT` - Intracranial (sEEG/iEEG) foundation model with pre-trained
       weights
+    - :class:`BrainOmni` - Unified EEG/MEG foundation model with pre-trained weights
     - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
     - :class:`CodeBrain` - Scalable EEG pre-training with temporal and spectral code
       prediction
+    - :class:`CSBrain` - Cross-scale spatiotemporal brain foundation model with
+      structured sparse attention
     - :class:`Labram` - Large Brain Model with pre-trained weights
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
+    - :class:`MAPA` - Masked autoencoder for intracranial EEG with anatomical priors
     - :class:`MIRepNet` - Motor-imagery pre-trained model
+    - :class:`NeuroRVQ` - Multi-scale biosignal tokenizer foundation model
     - :class:`BENDR` - Foundation model with pre-trained weights
     - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
     - :class:`EEGPT` - Pretrained transformer for universal EEG
     - :class:`STEEGFormer` - ViT-MAE EEG foundation model with braindecode-format
       re-hosted weights
+    - :class:`SleepFM` and :class:`SleepFMStager` - Multimodal PSG foundation encoder
+      and token-wise sleep-staging model compatible with the authors' CC BY-NC
+      checkpoints
 
     **Example - Loading a pre-trained model:**
 
@@ -142,9 +150,12 @@ interface for all EEG models and can derive variable names when needed.
      BIOT
      BrainBERT
      BrainModule
+     BrainOmni
+     BrainTokenizer
      CBraMod
      CodeBrain
      ContraWR
+     CSBrain
      CTNet
      DGCNN
      DIVER1
@@ -167,28 +178,27 @@ interface for all EEG models and can derive variable names when needed.
      FBLightConvNet
      FBMSNet
      IFNet
-     InterpolatedBENDR
-     InterpolatedBIOT
-     InterpolatedEEGPT
-     InterpolatedLaBraM
-     InterpolatedModel
-     InterpolatedSignalJEPA
      Labram
      LUNA
+     MAPA
      MEDFormer
      MetaNeuromotorHand
      MSCFormer
      MSVTNet
+     NeuroRVQ
      PBT
     PopulationTransformer
      REVE
      SCCNet
+     SeizureTransformer
      ShallowFBCSPNet
      SignalJEPA
      SignalJEPA_Contextual
      SignalJEPA_PostLocal
      SignalJEPA_PreLocal
      SincShallowNet
+     SleepFM
+     SleepFMStager
      SleepStagerBlanco2020
      SleepStagerChambon2018
      SPARCNet
@@ -278,6 +288,21 @@ perceptrons (MLPs) and inception blocks.
     InceptionBlock
     PatchTokenizer
 
+Channels
+========
+
+The channel layer behind ``channel_strategy=`` (see
+:doc:`user_guide/channel_strategies`).
+
+:py:mod:`braindecode.modules.channels`:
+
+.. autosummary::
+    :toctree: generated/channels
+    :template: class_in_subdir
+    :recursive:
+
+    ChannelLayer
+
 Convolution
 ===========
 
@@ -310,7 +335,6 @@ These modules implement Filter Bank as Layer and generalizer Gaussian layer.
     :template: class_in_subdir
     :recursive:
 
-    ChannelInterpolationLayer
     FilterBankLayer
     GeneralizedGaussianFilter
 
@@ -433,6 +457,7 @@ The functional module contains various functions that can be used like functiona
      rescale_parameter
      safe_log
      sinusoidal_positional_encoding
+     spectral_input
      square
 
 **********

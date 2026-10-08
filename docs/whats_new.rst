@@ -28,13 +28,66 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- The pretrained-compatibility test now covers every model class with released weights (NeuroRVQ, MAPA, BrainOmni, BrainTokenizer and the SignalJEPA heads added), checks that the list is complete, and runs REVE's cases without network access (:gh:`1252` by `Bruno Aristimunha`_)
+- :class:`braindecode.models.NeuroRVQ` now reuses the LaBraM attention block
+  instead of a private copy, and the K-means codebook initialisation in
+  :mod:`braindecode.modules.quantization` uses ``torch.cdist`` (about 6x faster,
+  lower peak memory, identical codebooks). Outputs and state-dict keys are
+  unchanged. (by `Bruno Aristimunha`_)
+- Add :class:`braindecode.models.MAPA`, a masked-autoencoder foundation model
+  for intracranial EEG that describes an electrode only by its atlas region and
+  its number along the array it was implanted on, never by its coordinates, so
+  that one pretrained encoder reads a subject it has never seen: three
+  magnitude-spectrogram bands on a shared frame clock are tokenized per
+  contact, offset by a learned region embedding, and mixed by a transformer
+  whose attention stays inside one array and carries a two-axis rotary encoding
+  on the contact number and on time. One instance encodes recordings from
+  different subjects, by passing each one's electrode metadata to ``forward``,
+  and ``normalization="session"`` takes a spectrogram normalized over the whole
+  recording, which reproduces the reference inputs
+  (:gh:`1178` by `Julien Gadonneix`_).
+- :class:`braindecode.models.MAPA` loads the released ``mapa_vits384`` with
+  ``MAPA.from_pretrained("braindecode/mapa-pretrained", ...)``; the key mapping
+  for the original checkpoint is removed (by `Bruno Aristimunha`_).
+- Add ``test/unit_tests/models/test_pretrained_compat.py``: every model with released
+  weights is built on a grid of input geometries (canonical montage, permuted order,
+  a 64-channel montage outside the 10-20 vocabulary, coordinates-only channels, names
+  without coordinates, 1 s / 30 s / non-divisible windows) and must forward or raise
+  the error its declared channel strategy implies; unhandled cells are strict
+  ``xfail`` markers (:gh:`1228` by `Bruno Aristimunha`_).
+
+- Add ``channel_strategy`` (``"exact"``, ``"zero"``, ``"nearest"``, ``"idw"``,
+  ``"spline"``, ``"field"``, ``"source"``, ``"region"``, ``"wiener"``,
+  ``"latent"``; default ``"native"``) and
+  ``channel_strategy_kwargs`` to the 19 pretrained models, saved in the config. A
+  :class:`braindecode.modules.ChannelLayer` (one matrix per montage) maps any montage
+  onto the channels the backbone consumes, also per call with
+  ``model(x, chs_info=...)``. ``"native"`` keeps every released checkpoint
+  bit-identical with the same ``state_dict``. It replaces the unreleased
+  ``ChannelTokenizer``; BENDR adapts a non-canonical montage with an MNE spline and
+  SignalJEPA no longer returns ``NaN`` for names without coordinates. See
+  :doc:`user_guide/channel_strategies` (:gh:`1227`, :gh:`1241` by `Bruno Aristimunha`_).
+
 - Add registry-wide model contract tests that automatically cover every registered
   model, checking eval-mode input/state purity, finite batched outputs,
   batch-permutation equivariance, and ``get_config`` + ``state_dict``
   reconstruction (:gh:`1208` by `lindicaphxag-tech`_).
+- Add :class:`braindecode.models.NeuroRVQ`, a channel-aware EEG foundation
+  model with four-scale temporal patch embedding and a pretrained masked-token
+  encoder. The port preserves the released architecture and identifies its
+  CC BY-NC 4.0 license and 200 Hz preprocessing requirements
+  (:gh:`1090` by `lindicaphxag-tech`_).
+
 - Generate a version-scoped ``llms.txt`` and selected Markdown documentation
   entry points with source-commit attribution and critical-page coverage checks.
 - Add :class:`braindecode.models.TMSANet`, the motor-imagery convolution/attention model from Zhao and Zhu (2025). The port preserves the released non-divisible multi-head attention geometry (the default ``embed_dim=19`` and four heads use a 16-dimensional Q/K/V bottleneck) and the summed local/global attention branches; a pinned reference assay maps all 45 model-state entries with identical logits and input gradients. See :gh:`1209`. By `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_.
+
+- Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution
+  and Transformer seizure detector of Wu et al. (2025) that won the 2025 SzCORE
+  seizure detection challenge. It predicts a logit for every time sample. With
+  the authors' released weights it reproduces their challenge scores on
+  :class:`braindecode.datasets.SIENA` (event F1 0.706)
+  (:gh:`1236` by `Raghav Rathi`_).
 
 - Restore acceptance tests on supported Python versions as seeded decoding
   checks on BNCI2014_001 (held-out accuracy thresholds, a shuffled-label
@@ -43,7 +96,25 @@ Enhancements
 - Clarify decoder temporal embedding indexing in :class:`braindecode.models.Labram`
   and cover its one-token-per-temporal-patch behavior
   (:gh:`1155` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.SleepFM`, a channel-agnostic multimodal PSG
+  foundation encoder, and :class:`braindecode.models.SleepFMStager`, its
+  patch-wise sleep-staging model, with the released weights; CC BY-NC 4.0
+  (:gh:`1106` by `Fashad Ahmed`_)
 
+- Add :class:`braindecode.models.CSBrain`, the cross-scale spatiotemporal brain
+  foundation model from Zhou et al. (NeurIPS 2025 Spotlight): multi-scale
+  temporal and per-region embeddings with structured sparse (inter-window and
+  inter-region) attention, channel names mapped to five anatomical regions or
+  an explicit ``brain_regions`` layout, verified bit-exact against the authors'
+  released pretrained checkpoint (:gh:`1196` by `Li Qing`_).
+- :class:`braindecode.models.CSBrain` reuses the patch embedding of
+  :class:`braindecode.models.CBraMod` instead of a copy of it; state-dict keys,
+  outputs with loaded weights and same-seed initial weights are unchanged
+  (:gh:`1240` by `Bruno Aristimunha`_).
+- Add ``head_drop_prob`` to :class:`braindecode.models.CSBrain`, the task-head
+  dropout of the reference fine-tuning models (default: ``drop_prob``, so
+  existing models are unchanged), and document the checkpoint key names
+  (:gh:`1247` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.DIVER1`, an any-variate EEG/iEEG foundation
   model with pretrained encoders and support for varying montages through
   :func:`braindecode.models.diver1.channel_metadata_from_chs_info`
@@ -76,10 +147,18 @@ Enhancements
   ``braindecode/brant-pretrained`` (all tensors verified identical to the
   official release) (:gh:`1100` by `Adam Mounir`_).
 
+- Add :class:`braindecode.models.BrainTokenizer`, the EEG/MEG VQ-VAE tokenizer of
+  BrainOmni (NeurIPS 2025), with the released weights converted to
+  ``braindecode/braintokenizer-pretrained`` (:gh:`1043` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.PopulationTransformer` (PopT, Chau et al. 2024),
   an iEEG population model over per-electrode features and coordinates, with
   pretrained weights at ``braindecode/popt-pretrained`` (:gh:`1105` by
   `Adam Mounir`_).
+
+- Add :class:`braindecode.models.BrainOmni`, the BrainOmni downstream classifier
+  on a frozen :class:`braindecode.models.BrainTokenizer`, with the released tiny
+  and base weights converted to ``braindecode/brainomni-tiny-pretrained`` and
+  ``braindecode/brainomni-base-pretrained`` (:gh:`1043` by `Bruno Aristimunha`_).
 
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
@@ -130,6 +209,12 @@ API and behavior changes
   it, which no longer loads into the default model
   (:gh:`1155` by `Bruno Aristimunha`_).
 
+- Remove ``InterpolatedBENDR``, ``InterpolatedBIOT``, ``InterpolatedEEGPT``,
+  ``InterpolatedLaBraM``, ``InterpolatedSignalJEPA``, ``InterpolatedModel``,
+  ``ChannelInterpolationLayer`` and ``interpolated_models_dict``: use
+  ``BENDR(chs_info=..., channel_strategy="spline")`` instead (:gh:`1241` by
+  `Bruno Aristimunha`_).
+
 Requirements
 ============
 
@@ -144,6 +229,76 @@ Requirements
 
 Bug fixes
 ==========
+
+- :class:`braindecode.models.BrainOmni` and :class:`braindecode.models.BrainTokenizer`
+  now run forward on Intel Gaudi (HPU) in lazy mode: the SEANet LSTM input is
+  permuted as a 4D view, which Gaudi compiles; values are unchanged
+  (:gh:`1249` by `Bruno Aristimunha`_)
+- :class:`braindecode.models.EMG2QwertyNet` and :class:`braindecode.models.MetaNeuromotorHand`
+  give correct outputs on Intel Gaudi (HPU) in eager mode: the rotation-invariant
+  MLP rolls a contiguous copy of its input, since Gaudi eager mode rolls a
+  non-contiguous tensor wrongly (:gh:`1249` by `Bruno Aristimunha`_)
+- Models now run after ``model.to(torch.float64)``, ``torch.bfloat16`` or
+  ``torch.float16``, and their FFT, STFT and filter-bank front ends run on Intel
+  Gaudi (HPU): the new :func:`braindecode.functional.spectral_input` gives these
+  ops a float32 (at least) input, on the CPU for HPU tensors since PyTorch has no
+  complex bfloat16 and Gaudi no complex dtype; the real result is cast back with
+  ``.to(x)``. Used by :class:`braindecode.models.BIOT`, :class:`braindecode.models.BrainBERT`,
+  :class:`braindecode.models.Brant`, :class:`braindecode.models.CBraMod`,
+  :class:`braindecode.models.CodeBrain`, :class:`braindecode.models.ContraWR`,
+  :class:`braindecode.models.DIVER1`, :class:`braindecode.models.EEGDINO`,
+  :class:`braindecode.models.EMG2QwertyNet`, :class:`braindecode.models.LUNA`,
+  :class:`braindecode.models.MAPA`, :class:`braindecode.models.MetaNeuromotorHand`,
+  :class:`braindecode.models.SensingDynamics`, :class:`braindecode.modules.FilterBankLayer`
+  (FBCNet, FBMSNet, FBLightConvNet, IFNet), :class:`braindecode.modules.GeneralizedGaussianFilter`
+  and :func:`braindecode.functional.hilbert_freq`. Tensors built inside ``forward`` of
+  :class:`braindecode.models.BENDR`, :class:`braindecode.models.CodeBrain`,
+  :class:`braindecode.models.DGCNN`, :class:`braindecode.models.REVE`,
+  :class:`braindecode.models.SyncNet` and :class:`braindecode.models.ZUNA` follow the
+  input's dtype. CodeBrain can also train after a first forward under
+  ``torch.inference_mode()``. Float32 outputs and gradients are unchanged (:gh:`1246` by `Bruno Aristimunha`_)
+- Delete each passing test's ``tmp_path`` so the Windows CI runner no longer runs out of disk (:gh:`1251` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.BrainOmni` and :class:`braindecode.models.BrainTokenizer`
+  now type CTF and KIT axial MEG gradiometers as gradiometers, as the released
+  BrainOmni code does; they were typed as magnetometers, which gave them the
+  wrong sensor embedding. Elekta magnetometers and planar gradiometers were
+  already correct. (by `Bruno Aristimunha`_)
+- Fix :meth:`braindecode.models.BrainOmni.reset_head` leaving the new head in
+  training mode after ``model.eval()``, so its dropout made inference
+  stochastic; the head now follows the model's mode (by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.models.BrainTokenizer` reconstruction when
+  ``window_length`` is not a multiple of ``prod(ratios)``: each decoded window
+  is now cropped to ``window_length`` before the windows are joined, so later
+  windows keep their position. Configurations with a divisible window, such as
+  the released one, are unchanged (by `Bruno Aristimunha`_).
+- :class:`braindecode.models.BrainTokenizer` and
+  :class:`braindecode.models.BrainOmni` now raise ``ValueError`` for
+  ``n_filters < 2`` and for attention dimensions that do not split across
+  heads, instead of a reshape error or an ``assert``; the tokenizer's sampling
+  rate warning names ``BrainTokenizer`` (by `Bruno Aristimunha`_).
+- :attr:`braindecode.models.MAPA.input_shape` now returns the spectrogram shape
+  ``(1, n_chans, 20, n_times)`` with ``normalization="session"``, so
+  ``get_output_shape()`` works in that mode (by `Bruno Aristimunha`_).
+- Fix :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` rejecting a
+  caller's ``chs_info`` (``n_chans=… different from chs_info``) and ``n_times``/``sfreq``
+  (``n_times different from input_window_seconds * sfreq``): the Hub config filled the
+  geometry arguments the caller omitted, so values from two sources collided. The
+  derived argument is now pinned from the caller's one. This unblocks loading EEGPT,
+  STEEGFormer, Brant and MVPFormer checkpoints on a montage other than their
+  pretraining dataset's (:gh:`1232` by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.models.CBraMod` building a ``LazyLinear`` head when the
+  geometry came from ``chs_info`` or ``input_window_seconds`` instead of ``n_chans`` /
+  ``n_times``; such a model could not be saved or loaded with ``from_pretrained``
+  ("uninitialized parameter"). The head is now a concrete ``Linear`` whenever the
+  geometry is known (:gh:`1233` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.BrainOmni` now loads the released checkpoints' RoPE
+  cache (cosines only) and keeps PyTorch's default head initialisation, as the
+  released code does. Unlike the released code, it applies no attention dropout
+  in evaluation mode (:gh:`1244` by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.models.CBraMod` failing in ``forward`` for any
+  ``patch_size`` other than 200: the spectral reshape hard-coded 101 rFFT bins
+  instead of ``patch_size // 2 + 1`` (:gh:`1240` by `Bruno Aristimunha`_).
+- Fix ``from_pretrained`` ignoring the saved geometry when called with an explicit ``chs_info=None`` or ``n_chans=None``, and :class:`braindecode.models.Labram` with ``neural_tokenizer=False`` ignoring ``on_non_divisible`` (:gh:`1250` by `Bruno Aristimunha`_).
 
 - Fix :class:`braindecode.models.Deep4Net` short-input auto-scaling with ``split_first_layer=True`` so the scaled ``filter_time_length`` is used by the actual :class:`braindecode.modules.CombinedConv` temporal kernel instead of retaining the original constructor value. By `lindicaphxag-tech`_.
 
@@ -324,6 +479,13 @@ Bug fixes
   ``(n_trials, 1)``, and :class:`braindecode.training.CroppedLoss` squeezed the
   time-averaged prediction to ``(batch_size,)``. It now keeps the output
   dimension when the target is 2-D (:gh:`1198` by `Raghav Rathi`_).
+
+- Fix channel resolution in the channel layer: ``T3`` and ``T7`` stay distinct; a
+  misspelt strategy raises with the closest name; coordinate-only channels match a
+  target within 15 mm; non-EEG channels raise (or are dropped with
+  ``drop_non_eeg=True``); legacy names are copies; ``spline`` is regularised
+  (``reg=1e-3``) and a row gain above 2 warns; fewer than four positioned channels
+  raise a ``ValueError`` (:gh:`1241` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)
