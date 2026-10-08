@@ -31,9 +31,6 @@ language encoder without making Transformers a Braindecode dependency::
     loss = model.contrastive_loss(
         output["eeg_embeds"], output["text_embeds"]
     )
-
-For zero-shot scoring, encode candidate descriptions with the text encoder
-and compare their embeddings against EEG embeddings via compute_logits.
 """
 
 from __future__ import annotations
