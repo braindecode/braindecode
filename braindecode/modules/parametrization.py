@@ -1,5 +1,50 @@
 import torch
 from torch import nn
+from torch.nn.utils import parametrize
+
+
+def _scriptable_weight(fget):
+    def weight(self) -> torch.Tensor:
+        if torch.jit.is_scripting():  # ParametrizationList.forward, uncached
+            x = self.parametrizations.weight.original
+            for f in self.parametrizations.weight:
+                x = f(x)
+            return x
+        return fget(self)
+
+    return property(weight)
+
+
+def _scriptable_weight_norm(fget):
+    def weight(self) -> torch.Tensor:
+        if torch.jit.is_scripting():  # weight_norm: original0 = g, original1 = v
+            p = self.parametrizations.weight
+            return p[0](p.original0, p.original1)
+        return fget(self)
+
+    return property(weight)
+
+
+def make_parametrizations_scriptable(module: nn.Module) -> nn.Module:
+    """Let :func:`torch.jit.script` read parametrized ``weight`` tensors.
+
+    The getter that :func:`torch.nn.utils.parametrize.register_parametrization`
+    installs raises under scripting. This swaps it, on the per-instance class
+    that registration creates, for one computing the same chain of
+    parametrizations in scripted code; eager calls still use the original getter.
+    """
+    for m in module.modules():
+        if not parametrize.is_parametrized(m, "weight"):
+            continue
+        fget = type(m).__dict__["weight"].fget
+        if fget.__module__ == __name__:  # already swapped
+            continue
+        plist = m.parametrizations.weight
+        if hasattr(plist, "original"):
+            setattr(type(m), "weight", _scriptable_weight(fget))
+        elif len(plist) == 1 and hasattr(plist, "original1"):
+            setattr(type(m), "weight", _scriptable_weight_norm(fget))
+    return module
 
 
 class MaxNorm(nn.Module):

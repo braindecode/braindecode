@@ -26,6 +26,7 @@ from braindecode.models.util import (
     track_model_init_kwargs,
 )
 from braindecode.modules.channels import ChannelLayer
+from braindecode.modules.parametrization import make_parametrizations_scriptable
 from braindecode.version import __version__
 
 huggingface_hub = _soft_import(
@@ -473,6 +474,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     def input_shape(self) -> tuple[int, int, int]:
         """Input data shape."""
         return (1, self.n_chans, self.n_times)
+
+    def __prepare_scriptable__(self):
+        # Called by torch.jit.script before compiling the model.
+        return make_parametrizations_scriptable(self)
 
     def get_output_shape(self) -> tuple[int, ...]:
         """Returns shape of neural network output for batch size equal 1.

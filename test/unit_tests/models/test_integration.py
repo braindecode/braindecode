@@ -7,10 +7,8 @@
 from __future__ import annotations
 
 import inspect
-import os
 import sys
 from io import BytesIO
-from types import MethodType
 
 import mne
 import numpy as np
@@ -53,88 +51,45 @@ rng = np.random.default_rng(12)
 
 all_models_dict = dict(models_dict)
 
-_DIRECT_TORCHSCRIPT_MODELS = (
-    "Deep4Net",
-    "DeepSleepNet",
-    "EEGConformer",
-    "EEGInceptionERP",
-    "EEGInceptionMI",
-    "ShallowFBCSPNet",
-    "SleepStagerBlanco2020",
-    "SleepStagerChambon2018",
-    "AttnSleep",
-    "USleep",
-    "AttentionBaseNet",
-    "EEGSimpleConv",
-    "SPARCNet",
-    "ContraWR",
-    "EEGSym",
-    "TSception",
-    "SyncNet",
-    "EEGMiner",
-    "CTNet",
-    "SincShallowNet",
-    "SCCNet",
-    "EMG2QwertyNet",
-    "NeuroPose",
-    "SensingDynamics",
-    "VEMG2Pose",
-    "FBLightConvNet",
-    "PBT",
-    "MEDFormer",
-    "DGCNN",
-    "ZUNA",
-    "Brant",
-    "BrainBERT",
-)
+# First blocker of each model that torch.jit.script cannot compile, or whose
+# scripted output differs from the eager one.
+_TORCHSCRIPT_XFAIL = {
+    "BENDR": "TransformerEncoderLayer fast path reads norm1.weight (Identity)",
+    "BIOT": "linear_attention_transformer forward takes **kwargs",
+    "BrainModule": "ModuleList with None entries: scripted zip drops them",
+    "BrainOmni": "rope passed as a callable argument",
+    "BrainTokenizer": "rope passed as a callable argument",
+    "CBraMod": "einops.rearrange call (**axes_lengths)",
+    "CSBrain": "einops.rearrange call (**axes_lengths)",
+    "CodeBrain": "einops.rearrange call (**axes_lengths)",
+    "DANCE": "starred unpacking of a tensor shape",
+    "EEGDINO": "forward returns a Dict or a Tensor",
+    "EEGPT": "einops.rearrange call (**axes_lengths)",
+    "LUNA": "einops.rearrange call (**axes_lengths)",
+    "Labram": "keyword-only forward argument",
+    "MAPA": "f-string error message in forward",
+    "MIRepNet": "forward returns a Dict or a Tensor",
+    "MSVTNet": "forward returns a Tensor or a tuple",
+    "MVPFormer": "math.log2 in forward",
+    "MetaNeuromotorHand": "einops.pack call",
+    "NeuroRVQ": "getattr with a computed name",
+    "NeuroRVQTokenizer": "getattr with a computed name",
+    "REVE": "einops.rearrange call (**axes_lengths)",
+    "SSTDPN": "einops.rearrange call (**axes_lengths)",
+    "STEEGFormer": "einops.rearrange call (**axes_lengths)",
+    "SignalJEPA": "'_ConvFeatureEncoder | None' annotation",
+    "SignalJEPA_Contextual": "'_ConvFeatureEncoder | None' annotation",
+    "SignalJEPA_PostLocal": "'_ConvFeatureEncoder | None' annotation",
+    "SignalJEPA_PreLocal": "forward returns a Dict or a Tensor",
+    "SleepFM": "einops.rearrange call (**axes_lengths)",
+    "SleepFMStager": "einops.rearrange call (**axes_lengths)",
+    "TCFormer": "nn.ConstantPad with an int value",
+}
 
 _MODEL_CASES = {
     name: (required, signal_params)
     for name, required, signal_params in models_mandatory_parameters
 }
-
-
-def convert_model_to_plain(model):
-    basic_mixin = [
-        "_n_times",
-        "_sfreq",
-        "_n_times",
-        "_chs_info",
-        "_n_outputs",
-        "_n_chans",
-    ]
-    final_plain_model = nn.Module()
-
-    if isinstance(model, nn.Sequential):
-        final_plain_model = nn.Sequential(*model.children())
-        final_plain_model.__dict__.update(
-            {k: v for k, v in model.__dict__.items() if k != "_modules"}
-        )
-    else:
-        final_plain_model = nn.Module()
-        for name, module in model.named_children():
-            final_plain_model.add_module(name, module)
-
-        for attr, val in model.__dict__.items():
-            # Skip the modules dict to avoid double‐registering
-            if attr != "_modules":
-                if attr in basic_mixin:
-                    setattr(final_plain_model, attr[1:], val)
-                else:
-                    setattr(final_plain_model, attr, val)
-
-        # Retrieves (name, value) for every attribute of type function
-        methods = inspect.getmembers(model.__class__, predicate=inspect.isfunction)
-
-        for name, func in methods:
-            # Skip Python dunders or private methods if desired
-            if name.startswith("_"):
-                continue
-            # Bind func to final_plain_model so its signature is (self, *args, **kwargs)
-            bound_method = MethodType(func, final_plain_model)
-            setattr(final_plain_model, name, bound_method)
-
-    return final_plain_model
 
 
 @pytest.fixture(scope="module", params=models_mandatory_parameters, ids=lambda p: p[0])
@@ -175,13 +130,8 @@ def test_completeness__models_test_cases():
     ), f"Models missing from models_test_cases: {all_models - models_tested}"
 
 
-def test_direct_torchscript_model_registry():
-    """Every direct TorchScript case is unique and registered."""
-    direct_models = set(_DIRECT_TORCHSCRIPT_MODELS)
-    assert len(_DIRECT_TORCHSCRIPT_MODELS) == 32
-    assert len(direct_models) == len(_DIRECT_TORCHSCRIPT_MODELS)
-    assert direct_models <= all_models_dict.keys()
-    assert direct_models <= _MODEL_CASES.keys()
+def test_torchscript_xfail_registry():
+    assert _TORCHSCRIPT_XFAIL.keys() <= _MODEL_CASES.keys()
 
 
 @pytest.mark.parametrize(
@@ -547,108 +497,20 @@ def test_model_exported(model):
     assert isinstance(exported_prog, ExportedProgram)
 
 
-# skip if windows or python 3.14
-@pytest.mark.skipif(
-    sys.platform.startswith("win") or sys.version_info >= (3, 14),
-    reason="TorchScript is known to have issues on Windows or with Python 3.14.",
-)
-def test_model_torch_script(model):
-    """Compatible models can be scripted after conversion to plain modules."""
-
-    not_working_models = [
-        "BIOT",
-        "Labram",
-        "EEGPT",
-        "SSTDPN",
-        "BENDR",
-        "LUNA",
-        "REVE",
-        "CBraMod",
-        "CodeBrain",
-        # einops Rearrange layer and the Dict/Tensor polymorphic return in
-        # forward (features vs logits), like CBraMod/CodeBrain.
-        "CSBrain",
-        # einops rearrange/repeat in the Perceiver/decoder and the fixed-grid
-        # cross-attention make forward not torch.jit.script-able. (Reason is
-        # einops + dynamic length, NOT polymorphic return — DANCE.forward is
-        # monomorphic Tensor, unlike EEGDINO.)
-        "DANCE",
-        # einops Rearrange layers and the interleaved-RoPE slicing in the
-        # grouped-query attention are not torch.jit.script-able.
-        "TCFormer",
-        # forward() returns Dict[str, Tensor] (features) or Tensor (logits);
-        # torch.jit.script rejects this polymorphic return type.
-        "EEGDINO",
-        # forward() returns Dict[str, Tensor | None] (features) or Tensor (logits);
-        # torch.jit.script rejects this required polymorphic return type.
-        "MIRepNet",
-        # forward() returns Dict[str, Tensor | None] (features) or Tensor
-        # (logits), so torch.jit.script rejects this polymorphic return type.
-        "NeuroRVQ",
-        # wavelet encoder (conv1d + circular padding) + Dict/Tensor polymorphic
-        # return; torch.jit.script rejects the polymorphic return type.
-        "MVPFormer",
-        # forward() returns Tensor (logits) or Tuple[Tensor, Tensor] (main +
-        # branch logits) when return_features=True; polymorphic return type.
-        "MSVTNet",
-        # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
-        # (torch.linalg.eigh + torch.stft).
-        "MetaNeuromotorHand",
-        # Cold EMA codebooks use data-dependent k-means initialization.
-        "NeuroRVQTokenizer",
-        "SignalJEPA",
-        "SignalJEPA_Contextual",
-        "SignalJEPA_PostLocal",
-        "SignalJEPA_PreLocal",
-        # As EEGDINO: forward() returns a Dict[str, Tensor] or a Tensor.
-        "SleepFM",
-        "SleepFMStager",
-        # VQ argmin dispatch and _encode_quantize method not scriptable.
-        "BrainOmni",
-        "BrainTokenizer",
-        "STEEGFormer",
-        # The three-band spectrogram frontend runs torch.stft, which
-        # torch.jit.script cannot compile, and forward() returns Dict[str,
-        # Tensor] (features) or Tensor (logits).
-        "MAPA",
-    ]
-
-    if model.__class__.__name__ in not_working_models:
-        pytest.skip(
-            f"Skipping {model.__class__.__name__} as not working with torchscript"
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        pytest.param(
+            name,
+            marks=pytest.mark.xfail(reason=_TORCHSCRIPT_XFAIL[name], strict=True)
+            if name in _TORCHSCRIPT_XFAIL
+            else (),
         )
-
-    final_plain_model = convert_model_to_plain(model)
-    final_plain_model.eval()
-
-    # example input matching your model's expected shape
-    try:
-        n_chans = model.n_chans
-    except ValueError:
-        n_chans = default_signal_params["n_chans"]
-    try:
-        n_times = model.n_times
-    except ValueError:
-        n_times = default_signal_params["n_times"]
-    input_tensor = torch.randn(1, n_chans, n_times)
-
-    output_model = model(input_tensor)
-    output_model_recreated = final_plain_model(input_tensor)
-    assert output_model.shape == output_model_recreated.shape
-
-    torch.testing.assert_close(output_model, output_model_recreated)
-    # convert the new model to scripted
-    scripted_model = torch.jit.script(final_plain_model)
-
-    fname = f"{model.__class__.__name__}_scripted.pt"
-    scripted_model.save(fname)
-
-    os.remove(fname)
-
-
-@pytest.mark.parametrize("model_name", _DIRECT_TORCHSCRIPT_MODELS)
-def test_torch_script_without_plain_conversion(model_name):
-    """Models script directly, without being rebuilt as a plain ``nn.Module``.
+        for name in _MODEL_CASES
+    ],
+)
+def test_torch_script(model_name):
+    """Models script directly and the scripted output equals the eager one.
 
     ``EEGModuleMixin`` exposes the signal-related parameters as properties that
     raise ``ValueError`` when unset, and annotates ``mapping`` with a postponed
@@ -751,11 +613,10 @@ def test_eegminer_torch_script_methods(method):
         n_times=128,
         sfreq=100.0,
     ).eval()
-    plain_model = convert_model_to_plain(model).eval()
     input_tensor = torch.randn(2, 4, 128)
 
-    expected = plain_model(input_tensor)
-    scripted_model = torch.jit.script(plain_model)
+    expected = model(input_tensor)
+    scripted_model = torch.jit.script(model)
 
     torch.testing.assert_close(scripted_model(input_tensor), expected)
 
