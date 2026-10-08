@@ -504,6 +504,31 @@ def test_channel_strategy_smoke(name, strategy):
     assert y.shape[0] == 1 and torch.isfinite(y).all()
 
 
+@pytest.mark.parametrize(
+    "name", [n for n in COMPAT if n not in NATIVE_ONLY | NO_STRATEGY]
+)
+def test_channel_strategy_round_trip(name):
+    """Under a strategy, ``model(x)`` equals ``model.forward(x)`` and the
+    config keeps the input montage, so ``from_config`` rebuilds the same model."""
+    spec = COMPAT[name]
+    chs = chs_from_montage(TEN_TWENTY[:8], kind=spec.get("kind", "eeg"))
+    kw = dict(n_outputs=2, chs_info=chs, sfreq=spec["sfreq"], n_times=spec["n_times"])
+    x = torch.randn(1, len(chs), spec["n_times"])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        model = spec["cls"](**kw, **spec.get("kwargs", {}), channel_strategy="spline")
+        model.eval()
+        config = json.loads(json.dumps(model.get_config()))
+        rebuilt = spec["cls"].from_config(config).eval()
+        rebuilt.load_state_dict(model.state_dict())
+        with torch.no_grad():
+            y = model(x)
+            torch.testing.assert_close(model.forward(x), y)
+            torch.testing.assert_close(rebuilt(x), y)
+    assert [c["ch_name"] for c in rebuilt.channel_layer.chs_info] == TEN_TWENTY[:8]
+    assert rebuilt.get_config()["chs_info"] == config["chs_info"]
+
+
 @pytest.mark.parametrize("name", sorted(NATIVE_ONLY))
 def test_native_only_models_refuse_a_strategy(name):
     spec = COMPAT[name]
