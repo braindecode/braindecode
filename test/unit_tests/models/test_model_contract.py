@@ -220,8 +220,20 @@ _UNUSED_IN_FORWARD = {
 }
 
 
-def _train_step(model, x, sync=lambda: None, unused=None):
-    """One train-mode SGD step; every trainable parameter gets a finite gradient."""
+@pytest.mark.parametrize(
+    "model_name,required_params,signal_params",
+    models_mandatory_parameters,
+)
+def test_registered_model_training_contract(
+    model_name, required_params, signal_params
+):
+    """A model used under ``torch.inference_mode`` still trains, then evaluates."""
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    with torch.inference_mode():
+        expected = _batched_tensor_leaves(model(x), x.shape[0])
+
+    # One train-mode SGD step; every trainable parameter gets a finite gradient.
     model.train()
     leaves = [t for t in _tensor_leaves(model(x)) if t.requires_grad]
     assert leaves, "no differentiable output"
@@ -229,7 +241,7 @@ def _train_step(model, x, sync=lambda: None, unused=None):
     loss = sum(t.float().square().mean() for t in leaves)
     assert torch.isfinite(loss), "non-finite train-mode output"
     loss.backward()
-    sync()
+    unused = _UNUSED_IN_FORWARD.get(model_name)
     trainable = {n: p for n, p in model.named_parameters() if p.requires_grad}
     no_grad = [
         n
@@ -244,24 +256,7 @@ def _train_step(model, x, sync=lambda: None, unused=None):
     ]
     assert not bad, f"non-finite gradient in {bad}"
     torch.optim.SGD(trainable.values(), lr=1e-3).step()
-    sync()
     assert all(torch.isfinite(p).all() for p in trainable.values())
-
-
-@pytest.mark.parametrize(
-    "model_name,required_params,signal_params",
-    models_mandatory_parameters,
-)
-def test_registered_model_training_contract(
-    model_name, required_params, signal_params
-):
-    """A model used under ``torch.inference_mode`` still trains, then evaluates."""
-    model, x = _build_case(model_name, required_params, signal_params)
-    _materialize(model, x)
-    with torch.inference_mode():
-        expected = _batched_tensor_leaves(model(x), x.shape[0])
-
-    _train_step(model, x, unused=_UNUSED_IN_FORWARD.get(model_name))
 
     # e.g. keeping the best model: no non-leaf tensor may stay cached.
     model = copy.deepcopy(model)
@@ -428,21 +423,6 @@ def _record(meta_as_hpu=False):
             m.spectral_input = original
 
 
-@functools.cache
-def _findings(model_name):
-    """Op patterns of one eval-mode and one train-mode forward."""
-    case = next(c for c in models_mandatory_parameters if c[0] == model_name)
-    model, x = _build_case(*case)
-    _materialize(model, x)
-    with torch.no_grad(), _record() as eval_log:
-        model(x)
-    model.train()
-    with _record() as train_log:
-        model(x)
-    forward = eval_log.ops + train_log.ops
-    return {"host_sync": _host_syncs(forward), "gaps": _accelerator_gaps(forward)}
-
-
 # Gaudi has no complex dtype: an FFT/STFT input goes through
 # braindecode.functional.spectral_input, which moves HPU tensors to the CPU.
 @pytest.mark.parametrize(
@@ -461,8 +441,7 @@ def test_registered_model_complex_only_after_spectral_input(
     x = x.to("meta")
     with _record(meta_as_hpu=True) as log:
         leaves = [t for t in _tensor_leaves(model(x)) if t.requires_grad]
-        if leaves:
-            sum(t.float().square().mean() for t in leaves).backward()
+        sum(t.float().square().mean() for t in leaves).backward()
     found = sorted(
         {
             op.name
@@ -513,23 +492,53 @@ _HOST_SYNC = {
 }
 
 
-def _host_syncs(ops):
-    found = set()
-    for op in ops:
+@functools.cache
+def _findings(model_name):
+    """Host syncs and accelerator/low-precision gaps in one eval-mode and one
+    train-mode forward."""
+    case = next(c for c in models_mandatory_parameters if c[0] == model_name)
+    model, x = _build_case(*case)
+    _materialize(model, x)
+    with torch.no_grad(), _record() as eval_log:
+        model(x)
+    model.train()
+    with _record() as train_log:
+        model(x)
+    syncs, gaps = set(), set()
+    for op in eval_log.ops + train_log.ops:
         if op.name in _SYNC_OPS:
-            found.add(op.name)
+            syncs.add(op.name)
         elif op.name.startswith("index") and any(
             t[0] == torch.bool for t in op.ins[1:]
         ):
-            found.add(f"{op.name} with a boolean mask")
+            syncs.add(f"{op.name} with a boolean mask")
         elif (
             op.name == "repeat_interleave"
             and op.overload == "Tensor"
             and op.kwargs.get("output_size") is None
             and len(op.args) < 2
         ):
-            found.add("repeat_interleave with tensor repeats")
-    return sorted(found)
+            syncs.add("repeat_interleave with tensor repeats")
+        # Op patterns that broke models on Gaudi or in bfloat16/float16; each
+        # one names the fix that removed it.
+        if op.name == "avg_pool3d":
+            # no CPU bfloat16/float16 kernel (EEGSym, c2aff52b)
+            gaps.add("avg_pool3d")
+        elif op.name == "elu":
+            scale = op.args[2] if len(op.args) > 2 else op.kwargs.get("scale", 1)
+            input_scale = (
+                op.args[3] if len(op.args) > 3 else op.kwargs.get("input_scale", 1)
+            )
+            if (scale, input_scale) != (1, 1):
+                # nn.SELU: does not train on Gaudi (BrainOmni, ba1264bf)
+                gaps.add("elu with scale != 1 (nn.SELU): use scale * F.elu")
+        elif op.name == "roll" and not op.ins[0][3]:
+            # wrong values in Gaudi eager mode (EMG2QwertyNet, #1249)
+            gaps.add("roll of a non-contiguous tensor")
+        elif op.name.startswith("rnn:") and op.args[0]:
+            # Gaudi lazy mode fails to compile (BrainOmni SEANet LSTM, #1249)
+            gaps.add(f"{op.name[4:]} fed by a 3-D permute")
+    return {"host_sync": sorted(syncs), "gaps": sorted(gaps)}
 
 
 @pytest.mark.parametrize(
@@ -543,32 +552,6 @@ def test_registered_model_forward_has_no_host_sync(
     allowed = _HOST_SYNC.get(model_name, ((), ""))[0]
     found = [f for f in _findings(model_name)["host_sync"] if f not in allowed]
     assert not found, f"host syncs / data-dependent shapes in forward: {found}"
-
-
-def _elu_scales(op):
-    scale = op.args[2] if len(op.args) > 2 else op.kwargs.get("scale", 1)
-    input_scale = op.args[3] if len(op.args) > 3 else op.kwargs.get("input_scale", 1)
-    return scale, input_scale
-
-
-def _accelerator_gaps(ops):
-    """Op patterns that broke models on Gaudi or in bfloat16/float16; each one
-    names the fix that removed it."""
-    found = set()
-    for op in ops:
-        if op.name == "avg_pool3d":
-            # no CPU bfloat16/float16 kernel (EEGSym, c2aff52b)
-            found.add("avg_pool3d")
-        elif op.name == "elu" and _elu_scales(op) != (1, 1):
-            # nn.SELU: does not train on Gaudi (BrainOmni, ba1264bf)
-            found.add("elu with scale != 1 (nn.SELU): use scale * F.elu")
-        elif op.name == "roll" and not op.ins[0][3]:
-            # wrong values in Gaudi eager mode (EMG2QwertyNet, #1249)
-            found.add("roll of a non-contiguous tensor")
-        elif op.name.startswith("rnn:") and op.args[0]:
-            # Gaudi lazy mode fails to compile (BrainOmni SEANet LSTM, #1249)
-            found.add(f"{op.name[4:]} fed by a 3-D permute")
-    return sorted(found)
 
 
 @pytest.mark.parametrize(
