@@ -82,6 +82,17 @@ Enhancements
   entry points with source-commit attribution and critical-page coverage checks.
 - Add :class:`braindecode.models.NeuroRVQTokenizer`, the released NeuroRVQ
   EEG tokenizer: reconstruction and discrete codes (:gh:`1223` by `lindicaphxag-tech`_).
+- :class:`braindecode.models.NeuroRVQ` and
+  :class:`braindecode.models.NeuroRVQTokenizer` take ``modality`` (``"eeg"``,
+  ``"ecg"``, ``"emg"``, ``"ppg"``) with the settings of the authors' four
+  released packages, and :class:`~braindecode.models.NeuroRVQ` takes
+  ``head_pooling`` (``"flatten"`` or ``"mean"``). The seven released checkpoints
+  are hosted as ``braindecode/neurorvq-{eeg,ecg,emg}-pretrained`` and
+  ``braindecode/neurorvq-tokenizer-{eeg,ecg,emg,ppg}-pretrained`` and load with
+  ``from_pretrained`` (``load_pretrained_weights`` is removed). The tokenizer
+  reconstruction now equals the authors' code exactly (it differed by up to
+  6e-8). Builds on :gh:`1090` and :gh:`1223` by `lindicaphxag-tech`_
+  (:gh:`NNNN` by `Bruno Aristimunha`_).
 
 - Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution
   and Transformer seizure detector of Wu et al. (2025) that won the 2025 SzCORE

@@ -558,10 +558,10 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             torch.complex(rec_amp * rec_cos, rec_amp * rec_sin), dim=-1
         ).real
         target_std, _, _ = self._standardize(patches)
-        # The authors z-score the reconstruction as (batch, tokens, 1, patch);
-        # the reduction order (float rounding) depends on that shape.
+        # The authors z-score a contiguous (batch, tokens, 1, patch) copy; the
+        # reduction order (float rounding) depends on that shape and layout.
         reconstructed_std, _, _ = self._standardize(
-            reconstructed.reshape(x.shape[0], -1, 1, self.patch_size)
+            reconstructed.reshape(x.shape[0], -1, 1, self.patch_size).contiguous()
         )
         return (
             target_std.reshape(x.shape[0], self.n_chans * self.num_patches, -1),
