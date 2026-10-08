@@ -91,7 +91,9 @@ Enhancements
   ``braindecode/neurorvq-tokenizer-{eeg,ecg,emg,ppg}-pretrained`` and load with
   ``from_pretrained`` (``load_pretrained_weights`` is removed). The tokenizer
   reconstruction now equals the authors' code exactly (it differed by up to
-  6e-8). Builds on :gh:`1090` and :gh:`1223` by `lindicaphxag-tech`_
+  6e-8), and its ``statistic_code_usage`` argument (default ``True``, as the
+  authors' code) lets eval forwards update the codebooks' ``cluster_size``
+  usage statistic. Builds on :gh:`1090` and :gh:`1223` by `lindicaphxag-tech`_
   (:gh:`NNNN` by `Bruno Aristimunha`_).
 
 - Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution

@@ -5062,6 +5062,22 @@ def test_neurorvq_ema_quantizer_matches_normalized_ema_update():
     torch.testing.assert_close(quantizer.cluster_size, torch.tensor([0.5, 0.5]))
 
 
+@pytest.mark.parametrize("statistic_code_usage", [True, False])
+def test_neurorvq_ema_quantizer_eval_code_usage(statistic_code_usage):
+    quantizer = _EMAVectorQuantizer(2, 2, statistic_code_usage).eval()
+    quantizer.decay = 0.5
+    with torch.no_grad():
+        quantizer.embedding.weight.copy_(torch.eye(2))
+        quantizer.embedding.initted.fill_(True)
+
+    # (batch, code_dim, 1, 3): three vectors, two nearest to code 0.
+    quantizer(torch.tensor([[[[1.0, 0.9, 0.1]], [[0.1, -0.2, 1.0]]]]))
+
+    expected = [1.0, 0.5] if statistic_code_usage else [0.0, 0.0]
+    torch.testing.assert_close(quantizer.cluster_size, torch.tensor(expected))
+    torch.testing.assert_close(quantizer.embedding.weight, torch.eye(2))
+
+
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [

@@ -57,9 +57,10 @@ class _EMAEmbedding(nn.Module):
 class _EMAVectorQuantizer(nn.Module):
     """EMA vector quantizer on L2-normalized vectors (cosine codebook)."""
 
-    def __init__(self, n_codes: int, code_dim: int):
+    def __init__(self, n_codes: int, code_dim: int, statistic_code_usage: bool = True):
         super().__init__()
         self.decay = 0.99
+        self.statistic_code_usage = statistic_code_usage
         self.embedding = _EMAEmbedding(n_codes, code_dim)
         self.register_buffer("cluster_size", torch.zeros(n_codes))
 
@@ -83,6 +84,14 @@ class _EMAVectorQuantizer(nn.Module):
         indices = self._indices(vectors)
         quantized = F.embedding(indices, self.embedding.weight).view_as(z)
 
+        if not self.training and self.statistic_code_usage:
+            # As the authors' quantizer: EMA of the code usage in eval forwards.
+            with torch.no_grad():
+                counts = F.one_hot(indices, self.embedding.weight.shape[0])
+                counts = counts.to(z.dtype).sum(0)
+                _all_reduce_sum(counts)
+                self.cluster_size.mul_(self.decay).add_(counts, alpha=1 - self.decay)
+
         if self.training:
             with torch.no_grad():
                 weight = self.embedding.weight
@@ -103,10 +112,19 @@ class _EMAVectorQuantizer(nn.Module):
 
 
 class _ResidualVectorQuantizer(nn.Module):
-    def __init__(self, n_quantizers: int, n_codes: int, code_dim: int):
+    def __init__(
+        self,
+        n_quantizers: int,
+        n_codes: int,
+        code_dim: int,
+        statistic_code_usage: bool = True,
+    ):
         super().__init__()
         self.layers = nn.ModuleList(
-            [_EMAVectorQuantizer(n_codes, code_dim) for _ in range(n_quantizers)]
+            [
+                _EMAVectorQuantizer(n_codes, code_dim, statistic_code_usage)
+                for _ in range(n_quantizers)
+            ]
         )
 
     def forward(self, x: Tensor):
@@ -307,6 +325,9 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         LayerScale initialization used by the tokenizer checkpoint.
     activation : type[nn.Module], default=nn.GELU
         Activation in the temporal patch embedding.
+    statistic_code_usage : bool, default=True
+        As in the authors' code, eval forwards update the quantizers'
+        ``cluster_size`` buffer (EMA of code usage); ``False`` keeps inference state-free.
 
     Output shape
     ------------
@@ -361,6 +382,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         drop_path_rate: float = 0.0,
         init_values: float = 0.0,
         activation: type[nn.Module] = nn.GELU,
+        statistic_code_usage: bool = True,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -426,7 +448,9 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             setattr(
                 self,
                 f"quantize_{i}",
-                _ResidualVectorQuantizer(num_quantizers, n_code, code_dim),
+                _ResidualVectorQuantizer(
+                    num_quantizers, n_code, code_dim, statistic_code_usage
+                ),
             )
             setattr(
                 self,
