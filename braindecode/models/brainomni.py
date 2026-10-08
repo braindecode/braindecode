@@ -661,10 +661,12 @@ class _RotaryPositionalEmbedding(nn.Module):
         rotate = self.rotate if self.rebuilt is None else self.rebuilt
         if seq > rotate.shape[0]:
             self.rebuilt = rotate = self._polar(seq)
-        rotate = rotate[:seq].repeat_interleave(2, dim=1)
+        # In at least float32 (the cache's dtype), float64 for float64 inputs.
+        work = torch.promote_types(q.dtype, torch.float32)
+        rotate = rotate.to(work)[:seq].repeat_interleave(2, dim=1)
         rotate = rearrange(rotate, "s (h d) two -> s h d two", h=heads)
         cos, sin = rotate[..., 0], rotate[..., 1]
-        q_float, k_float = q.float(), k.float()
+        q_float, k_float = q.to(work), k.to(work)
         q_out = q_float * cos + rotate_pairs(q_float) * sin
         k_out = k_float * cos + rotate_pairs(k_float) * sin
         return q_out.type_as(q), k_out.type_as(k)

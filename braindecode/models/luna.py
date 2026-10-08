@@ -454,7 +454,8 @@ def nerf_positional_encoding(coords: torch.Tensor, embed_size: int) -> torch.Ten
     device = coords.device
     freqs = embed_size // (2 * dim)
     leftover = embed_size - freqs * 2 * dim
-    freq_bands = 2.0 ** torch.arange(freqs, device=device).float()
+    work = torch.promote_types(coords.dtype, torch.float32)
+    freq_bands = 2.0 ** torch.arange(freqs, device=device, dtype=work)
     scaled_coords = coords.unsqueeze(-1) * freq_bands.view(
         1, 1, 1, -1
     )  # (N, C, dim, freqs)
