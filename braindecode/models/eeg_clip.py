@@ -60,8 +60,8 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
     EEG-CLIP learns a shared embedding space for paired EEG recordings and
     clinical text reports with a symmetric contrastive objective. The default
     EEG encoder is a dense-prediction :class:`~braindecode.models.Deep4Net`
-    whose 128 outputs per time step are projected and averaged over time, as
-    in the authors' code. The text encoder is any
+    whose 128 log-softmax outputs per time step are projected and averaged
+    over time, as in the authors' code. The text encoder is any
     :class:`torch.nn.Module` (e.g. a Hugging Face ClinicalBERT, kept as an
     optional user dependency); with ``text_encoder=None`` the text inputs are
     precomputed features.
@@ -177,6 +177,9 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
                 stride_before_pool=True,
             )
             eeg_encoder.to_dense_prediction_model()
+            # The authors' Deep4Net (braindecode <= 0.8) ends with a
+            # log-softmax over its outputs; their projection sees log-probs.
+            eeg_encoder.final_layer.add_module("log_softmax", nn.LogSoftmax(dim=1))
         self.eeg_encoder = eeg_encoder
         self.text_encoder = text_encoder
 

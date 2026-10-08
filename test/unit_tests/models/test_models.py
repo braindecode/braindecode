@@ -5296,9 +5296,14 @@ def test_eegclip_matches_authors_projection_and_clip_loss():
         n_chans=21, n_times=1200, n_outputs=64, text_embedding_dim=768, drop_prob=0
     )
     X, text = torch.randn(4, 21, 1200), torch.randn(4, 768)
+    torch.manual_seed(1)  # same Deep4Net dropout masks in both passes (train mode)
     paired = model.forward_paired(X, text)
-
+    torch.manual_seed(1)
     features = model.eeg_encoder(X)
+    # Authors' Deep4Net ends with a log-softmax over its 128 outputs.
+    torch.testing.assert_close(
+        features.exp().sum(dim=1), torch.ones(4, 519), rtol=0, atol=1e-4
+    )
     # Authors' ProjectionHead(transpose=True) on [B, N_pred, 128], mean over time.
     x = features.transpose(1, 2)
     for layer in model.final_layer:
