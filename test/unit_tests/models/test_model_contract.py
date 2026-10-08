@@ -22,6 +22,10 @@ from braindecode.models.util import (
 
 all_models_dict = dict(models_dict)
 
+# Documented flags that make eval forwards update state as the released code
+# does; the contract checks these models with the flag off.
+_STATEFUL_EVAL_FLAGS = {"NeuroRVQTokenizer": {"statistic_code_usage": False}}
+
 
 def _tensor_leaves(value):
     """Yield tensor leaves from nested model outputs."""
@@ -38,6 +42,7 @@ def _tensor_leaves(value):
 def _build_case(model_name, required_params, signal_params):
     signal = _get_signal_params(signal_params)
     model_kwargs = _get_signal_params(signal_params, required_params)
+    model_kwargs.update(_STATEFUL_EVAL_FLAGS.get(model_name, {}))
     model = all_models_dict[model_name](**model_kwargs).eval()
     x = torch.randn(2, len(signal["chs_info"]), signal["n_times"])
     return model, x
