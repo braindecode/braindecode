@@ -894,7 +894,8 @@ class _PatchEmbedNetwork(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         x: (B, C, T)
-        output: (B, C*S, D) where S = T//patch_size, D = embed_dim
+        output: (B, C*S, D) where D = embed_dim and S = ceil(T / patch_size)
+        for ``on_non_divisible="pad"``, T // patch_size otherwise
         """
         x = rearrange(self.tokenizer(x), "B C S P -> B (C S) P")
         x = x.unsqueeze(1)
