@@ -9,7 +9,6 @@ from typing import List, Optional, Tuple, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange
 
 from braindecode.models.base import EEGModuleMixin
 
@@ -334,9 +333,12 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         # Renormalize inter-class separation prototypes. ``proto_sep`` has shape
         # (n_outputs, feat_dim); the source constrains each class-row prototype
         # vector (``||s_i|| <= S``), i.e. renorm along dim=0.
-        self.proto_sep.data = torch.renorm(
-            self.proto_sep.data, p=2, dim=0, maxnorm=self.proto_sep_maxnorm
-        )
+        with torch.no_grad():  # in place, like ``.data =`` (not scriptable)
+            self.proto_sep.copy_(
+                torch.renorm(
+                    self.proto_sep, p=2, dim=0, maxnorm=self.proto_sep_maxnorm
+                )
+            )
         logits = torch.einsum("bd,cd->bc", features, self.proto_sep)  # (b, n_outputs)
         logits = self.final_layer(logits)
 
@@ -575,13 +577,14 @@ class _DepthwiseTemporalConv1d(nn.Module):
         torch.Tensor
             Output of shape (batch, num_heads * n_spectral_filters_temporal, time).
         """
-        B, _, _ = inp.size()
+        B, C, T = inp.size()
         H = self.num_heads
         weight = self.weight
         if self.weight_softmax:
             weight = F.softmax(weight, dim=-1)
 
-        inp = rearrange(inp, "b (h c) t -> (b c) h t", h=H)
+        # "b (h c) t -> (b c) h t"
+        inp = inp.reshape(B, H, C // H, T).permute(0, 2, 1, 3).reshape(-1, H, T)
         if self.bias is None:
             output = F.conv1d(
                 inp,
@@ -599,7 +602,9 @@ class _DepthwiseTemporalConv1d(nn.Module):
                 padding=self.padding,
                 groups=self.num_heads,
             )
-        output = rearrange(output, "(b c) h t -> b (h c) t", b=B)
+        # "(b c) h t -> b (h c) t"
+        _, h, t = output.shape
+        output = output.reshape(B, -1, h, t).permute(0, 2, 1, 3).reshape(B, -1, t)
         return output
 
 
@@ -796,7 +801,7 @@ class _SpatSpectralAttn(nn.Module):
             norm = self.gamma / (
                 torch.abs(embedding).mean(dim=1, keepdim=True) + self.epsilon
             )
-        elif self.mode == "var":
+        else:  # "var" (checked in __init__)
             # Variance-based embedding (global context)
             embedding = (self.global_ctx(x) + self.epsilon).pow(0.5) * self.alpha
             norm = (self.gamma) / (
@@ -867,8 +872,8 @@ class _MultiScaleVarPooler(nn.Module):
 
         # Apply variance pooling at each scale
         multi_scale_features = []
-        for scale_idx, x_scale in enumerate(x_split):
-            multi_scale_features.append(self.var_layers[scale_idx](x_scale))
+        for scale_idx, var_layer in enumerate(self.var_layers):
+            multi_scale_features.append(var_layer(x_split[scale_idx]))
 
         # Concatenate features from all scales
         y = torch.concat(multi_scale_features, dim=1)

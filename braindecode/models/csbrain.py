@@ -11,6 +11,7 @@
 import copy
 import logging
 from collections.abc import Sequence
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -468,7 +469,12 @@ class CSBrain(EEGModuleMixin, nn.Module):
             if isinstance(m, nn.Linear):
                 nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
 
-    def forward(self, x, mask=None, return_features=False):
+    def forward(
+        self,
+        x: Tensor,
+        mask: Optional[Tensor] = None,
+        return_features: bool = False,
+    ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         x = self.rearrange(x)
         if self.sorted_indices is not None:
             x = x[:, self.sorted_indices, :, :]
@@ -479,7 +485,8 @@ class CSBrain(EEGModuleMixin, nn.Module):
             emb = layer(emb)
         out = self.proj_out(emb)
         if return_features:
-            return {"features": out, "cls_token": None}  # nosec B105
+            features: Dict[str, Optional[Tensor]] = {"features": out, "cls_token": None}
+            return features
         return self.final_layer(out)
 
 
@@ -528,6 +535,8 @@ class _RegionEmbedding(nn.Module):
     wraps around the region's electrode ring, mixing each region locally.
     """
 
+    region_bounds: List[Tuple[int, int]]
+
     def __init__(
         self,
         dim_in: int,
@@ -538,6 +547,10 @@ class _RegionEmbedding(nn.Module):
         super().__init__()
         self.dim_out = dim_out
         self.area_config = area_config
+        # (start, stop) per region, in region_blocks order: TorchScript has no slice.
+        self.region_bounds = [
+            (info["slice"].start, info["slice"].stop) for info in area_config.values()
+        ]
         dim_scales = [dim_out // (2 ** (i + 1)) for i in range(len(kernel_sizes) - 1)]
         dim_scales.append(dim_out - sum(dim_scales))
         self.region_blocks = nn.ModuleDict(
@@ -562,10 +575,10 @@ class _RegionEmbedding(nn.Module):
         output = torch.zeros(
             (batch, chans, T, self.dim_out), device=x.device, dtype=x.dtype
         )
-        for region_key, region_info in self.area_config.items():
-            channel_slice = region_info["slice"]
-            n_electrodes = region_info["channels"]
-            x_region = x[:, channel_slice, :, :]
+        for i, blocks in enumerate(self.region_blocks.values()):
+            start, stop = self.region_bounds[i]
+            n_electrodes = stop - start
+            x_region = x[:, start:stop, :, :]
             x_trans = (
                 x_region.permute(0, 2, 1, 3)
                 .reshape(-1, n_electrodes, dim_in)
@@ -573,12 +586,12 @@ class _RegionEmbedding(nn.Module):
                 .unsqueeze(-1)
             )
             fmap_outputs = []
-            for conv in self.region_blocks[region_key]:
+            for conv in blocks:
                 k = conv.kernel_size[0]
                 pad = (k - 1) // 2
                 if n_electrodes == 1:
                     x_padded = F.pad(
-                        x_trans, (0, 0, pad, pad), mode="constant", value=0
+                        x_trans, (0, 0, pad, pad), mode="constant", value=0.0
                     )
                 else:
                     x_padded = F.pad(x_trans, (0, 0, pad, pad), mode="circular")
@@ -590,7 +603,7 @@ class _RegionEmbedding(nn.Module):
                 .reshape(batch, T, n_electrodes, self.dim_out)
                 .permute(0, 2, 1, 3)
             )
-            output[:, channel_slice, :, :] = fmap_out
+            output[:, start:stop, :, :] = fmap_out
         return output
 
 
@@ -604,6 +617,8 @@ class _CSBrainEncoderLayer(nn.Module):
     global mean feature;
     3. feedforward block.
     """
+
+    region_bounds: List[Tuple[int, int]]
 
     def __init__(
         self,
@@ -643,6 +658,10 @@ class _CSBrainEncoderLayer(nn.Module):
         self.dropout3 = nn.Dropout(dropout)
 
         self.area_config = area_config or {}
+        self.region_bounds = [
+            (info["slice"].start, info["slice"].stop)
+            for info in self.area_config.values()
+        ]
         if area_config:
             n_channels = sum(info["channels"] for info in area_config.values())
             self.register_buffer(
@@ -686,14 +705,12 @@ class _CSBrainEncoderLayer(nn.Module):
 
     def _inter_region_attention(self, x: Tensor) -> Tensor:
         batch, chans, T, Fea = x.shape
-        region_slices = [info["slice"] for info in self.area_config.values()]
-
         x_flat = x.permute(0, 2, 1, 3).reshape(batch * T, chans, Fea)
         global_features = torch.zeros_like(x_flat)
-        for region_slice in region_slices:
-            region_global = x[:, region_slice, :, :].mean(dim=1, keepdim=True)
+        for start, stop in self.region_bounds:
+            region_global = x[:, start:stop, :, :].mean(dim=1, keepdim=True)
             region_global = region_global.permute(0, 2, 1, 3).reshape(batch * T, 1, Fea)
-            for idx in range(region_slice.start, region_slice.stop):
+            for idx in range(start, stop):
                 global_features[:, idx : idx + 1, :] = region_global
         x_enhanced = x_flat + self.global_fc(global_features)
 
