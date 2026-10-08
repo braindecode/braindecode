@@ -476,12 +476,8 @@ class _ConvEncoderBENDR(nn.Module):
 
 
 class _TFixupEncoderLayer(nn.TransformerEncoderLayer):
-    """Post-norm encoder layer whose LayerNorms are Identity (T-Fixup).
-
-    Runs only the regular path of :class:`torch.nn.TransformerEncoderLayer`:
-    its fast path, never taken here (``batch_first=False``), reads
-    ``norm1.weight``, which stops :func:`torch.jit.script`.
-    """
+    """Post-norm layer without the fast path (never taken: ``batch_first=False``),
+    which reads ``norm1.weight``, an Identity under T-Fixup, and cannot be scripted."""
 
     def forward(
         self,
@@ -490,7 +486,9 @@ class _TFixupEncoderLayer(nn.TransformerEncoderLayer):
         src_key_padding_mask: Optional[torch.Tensor] = None,
         is_causal: bool = False,
     ) -> torch.Tensor:
-        x = self.norm1(src + self._sa_block(src, src_mask, src_key_padding_mask, is_causal))
+        x = self.norm1(
+            src + self._sa_block(src, src_mask, src_key_padding_mask, is_causal)
+        )
         return self.norm2(x + self._ff_block(x))
 
 
