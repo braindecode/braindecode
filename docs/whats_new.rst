@@ -246,7 +246,7 @@ Bug fixes
   returned float32), so :class:`braindecode.models.EEGMiner` runs after
   ``model.to(torch.float16)``, and :class:`braindecode.models.NeuroRVQTokenizer` runs
   in bfloat16/float16 on CPU (its FFTs go through
-  :func:`braindecode.functional.spectral_input`) (:gh:`PRNUM` by `Bruno Aristimunha`_)
+  :func:`braindecode.functional.spectral_input`) (:gh:`1259` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.BrainOmni` and :class:`braindecode.models.BrainTokenizer`
   now run forward on Intel Gaudi (HPU) in lazy mode: the SEANet LSTM input is
   permuted as a 4D view, which Gaudi compiles; values are unchanged
