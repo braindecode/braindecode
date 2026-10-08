@@ -271,340 +271,139 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
         :alt: Figure 1 of Guetschel et al. (2026): shared MAE/JEPA pre-training pipeline (A) and the block-masking geometries (B)
         :width: 1000px
 
-        Figure 1 of [guetschel2026]_. **(A)** Framework axis: the MAE (green)
-        and JEPA (orange) branches share one pipeline (linear tokeniser,
-        masking, transformer encoder, transformer decoder); this class keeps
-        only the tokeniser and the encoder. **(B)** Masking axis: block masks
-        parameterised by a spatial radius ``r``, a temporal length ``L`` and a
-        target ratio :math:`\rho`. They recover random patches (``L=1``,
-        ``r="one"``), temporal blocks (``r="all"``), spatial blocks (``L=33``)
-        and spatio-temporal blocks. The 29 ``(L, r)`` configurations at
-        :math:`\rho = 0.55`, times the 2 pretexts, give the 58 checkpoints.
+        Figure 1 of [guetschel2026]_. (A) MAE and JEPA share one pre-training
+        pipeline; this class is its tokeniser and encoder. (B) The masks are
+        blocks of spatial radius :math:`r` and temporal length :math:`L`.
 
-    The backbone is the REVE-Small architecture of REVE with minor
-    simplifications (12,687,872 parameters). It was pre-trained 58 times, with
-    a masked autoencoder (MAE) or a joint-embedding predictive architecture
-    (JEPA) and with 29 different spatio-temporal mask geometries (a radius
-    :math:`r` and a length :math:`L`, about 55 % of the tokens masked). This
-    class is the backbone: the 58 released checkpoints all load into it, with
-    the default arguments (see the box below). All 58 checkpoints were
-    pre-trained on the same data: the open-licence subset of the REVE
-    pre-training corpus (4.4 TB, about 34,000 h of EEG; the datasets are listed
-    in the paper's appendix), for 10 epochs. The study finds that a block mask
-    of radius 9 cm and length 2 patches is the best for both pretexts, that a
-    poorly chosen mask costs JEPA 2.4 times more than MAE, and that the
-    resulting frozen features reach the level of REVE-Base with 12.7 M
-    parameters [guetschel2026]_.
+    Which mask should an EEG foundation model learn from? The study answers
+    with a controlled sweep: one backbone, pre-trained 58 times on the same data
+    with the same recipe, changing only the pretext (MAE or JEPA) and the
+    geometry of the mask. This class is that backbone: all 58 checkpoints load
+    into it.
 
-    The signal is cut into overlapping 1 s patches (``patch_size=200`` samples
-    at 200 Hz, a step of 180) that a single linear layer embeds. A fixed,
-    additive sinusoidal encoding of the electrode position
-    :math:`(x, y, z)` and of the patch index gives the transformer its
-    spatio-temporal context, so that any montage with channel locations can be
-    used. Four pre-norm transformer layers (RMSNorm, 8 heads, GEGLU
-    feed-forward of width 1365, no bias, no final norm) then attend over all
-    ``n_chans * n_patches`` tokens. :meth:`forward` returns the logits of a head
-    that flattens all the tokens, or, with ``return_features=True``, the
-    ``(batch, n_chans, n_patches, embed_dim)`` features themselves.
+    Both pretexts agree on the best mask, blocks of radius 9 cm and length
+    2 patches. With it, the frozen features reach the level of REVE-Base under
+    a linear probe on the 12 datasets of OpenEEGBench, with 12.7 M parameters
+    and a fraction of REVE's pre-training compute.
 
-    .. rubric:: Macro Components
+    .. rubric:: Architecture
 
-    - ``Guetschel2026.feature_encoder`` **Patch embedding**
+    The backbone follows REVE-Small, with a simpler positional encoding:
 
-      The input is scaled (see the warning below), unfolded into overlapping
-      patches of ``patch_size`` samples and projected by one
-      :class:`~torch.nn.Linear` to ``embed_dim``.
+    - ``feature_encoder`` **Patch embedding.** Each channel is cut into
+      overlapping 1 s patches (200 samples, 20 of overlap), and one linear
+      layer embeds each patch into 512 features.
+    - ``model.pos_encoder`` **Positional encoding.** Fixed sinusoids of the
+      electrode position :math:`(x, y, z)` and of the patch index are added to
+      the embeddings. Any montage works, as long as the channels have
+      positions.
+    - ``model.transformer`` **Transformer encoder.** Four pre-norm layers
+      (RMSNorm, 8 heads, GEGLU feed-forward) attend over all the
+      channel × patch tokens.
+    - ``final_layer`` **Head.** Flatten, a fixed random projection to 5000
+      features, then a linear layer. It is not part of the checkpoints.
 
-    - ``Guetschel2026.model.pos_encoder`` **Positional encoding**
+    .. rubric:: The 58 checkpoints
 
-      Sinusoidal encoding of :math:`x`, :math:`y` and :math:`z` (each of width
-      ``embed_dim // 4``, computed from the channel locations) and of the patch
-      index (width ``embed_dim // 4``). It is added to the patch embeddings.
+    Each checkpoint is a Hugging Face repository, named after its three
+    parameters (:meth:`hub_repo_id` builds the name)::
 
-    - ``Guetschel2026.model.transformer`` **Transformer encoder**
+        PierreGtch/eeg-fm-masking_{pretext}_r{radius}_L{length}
 
-      ``depth`` pre-norm layers with multi-head self-attention
-      (:func:`torch.nn.functional.scaled_dot_product_attention`) and a GEGLU
-      feed-forward block, over the channel-major sequence of tokens.
+    ================  ==========================================================
+    Pretext           ``mae`` or ``jepa``
+    Radius :math:`r`  ``one`` (a single channel), ``6cm``, ``9cm``, ``12cm``,
+                      ``all`` (every channel)
+    Length :math:`L`  1, 2, 4, 8, 16 or 33 patches (33 is the whole 30 s
+                      window)
+    ================  ==========================================================
 
-    - ``Guetschel2026.final_layer`` **Classification head**
+    Every combination exists except :math:`r` = all with :math:`L` = 33, which
+    would mask the whole window: 2 × 29 = 58 checkpoints.
 
-      :class:`~torch.nn.Flatten`, then a fixed Gaussian random projection to
-      ``random_projection`` features (see below), then :class:`~torch.nn.Linear`
-      to ``n_outputs``. With ``random_projection=None``, only Flatten and
-      Linear. The released checkpoints contain no head.
+    - **Recommended:** ``mae_r9cm_L2`` or ``jepa_r9cm_L2``. Many other masks
+      are nearly as good.
+    - **To avoid** for downstream use: masks that are too local
+      (:math:`r` = one), too global (:math:`r` = all) or, in most cases, too
+      long (:math:`L` = 8, 16). JEPA collapses at :math:`r` = all. These
+      checkpoints are released to study how the mask shapes the
+      representations.
+    - **Intermediate epochs:** ``model.safetensors`` is the end of epoch 10,
+      the one evaluated in the paper; the folders ``epoch_01/`` to
+      ``epoch_09/`` hold the earlier epochs of the same run.
 
-    .. important::
-       **Pre-trained weights: 58 checkpoints, one backbone**
+    The weights are released under CC-BY-4.0 (`collection
+    <https://huggingface.co/collections/PierreGtch/eeg-fm-masking-6ab912b6a03bba1348fc7366>`_,
+    `project page <https://pierregtch.github.io/eeg-fm-masking/>`_).
 
-       The checkpoints are hosted on the Hugging Face Hub in the repositories
-       ``PierreGtch/eeg-fm-masking_{pretext}_r{radius}_L{length}`` (see the
-       `collection <https://huggingface.co/collections/PierreGtch/eeg-fm-masking-6ab912b6a03bba1348fc7366>`_
-       and the `project page <https://pierregtch.github.io/eeg-fm-masking/>`_).
-       They share this architecture and the default arguments of this class and
-       differ only in the pretext (``mae`` or ``jepa``) and in the mask
-       geometry used for the pre-training: the radius ``r`` of the blocks of
-       masked channels (``one`` channel, ``6cm``, ``9cm``, ``12cm`` or
-       ``all`` channels) and their length ``L`` in patches. Each cell of the
-       table gives the ``r{radius}_L{length}`` suffix; both ``mae_`` and
-       ``jepa_`` exist for every cell but the last, which gives
-       2 x 29 = 58 checkpoints.
+    .. rubric:: Usage
 
-       .. list-table::
-          :header-rows: 1
-          :stub-columns: 1
+    .. code-block:: python
 
-          * - radius / length
-            - L=1
-            - L=2
-            - L=4
-            - L=8
-            - L=16
-            - L=33
-          * - one channel
-            - ``rone_L1``
-            - ``rone_L2``
-            - ``rone_L4``
-            - ``rone_L8``
-            - ``rone_L16``
-            - ``rone_L33``
-          * - 6 cm
-            - ``r6cm_L1``
-            - ``r6cm_L2``
-            - ``r6cm_L4``
-            - ``r6cm_L8``
-            - ``r6cm_L16``
-            - ``r6cm_L33``
-          * - 9 cm
-            - ``r9cm_L1``
-            - ``r9cm_L2`` (recommended)
-            - ``r9cm_L4``
-            - ``r9cm_L8``
-            - ``r9cm_L16``
-            - ``r9cm_L33``
-          * - 12 cm
-            - ``r12cm_L1``
-            - ``r12cm_L2``
-            - ``r12cm_L4``
-            - ``r12cm_L8``
-            - ``r12cm_L16``
-            - ``r12cm_L33``
-          * - all channels
-            - ``rall_L1``
-            - ``rall_L2``
-            - ``rall_L4``
-            - ``rall_L8``
-            - ``rall_L16``
-            - not trained (would mask the whole window)
+        from braindecode.models import Guetschel2026
 
-       **Recommended:** ``PierreGtch/eeg-fm-masking_mae_r9cm_L2`` or
-       ``PierreGtch/eeg-fm-masking_jepa_r9cm_L2``. :meth:`hub_repo_id` builds
-       and validates the repository name from the three parameters.
+        raw.set_montage("standard_1020")  # channel positions, in metres
+        model = Guetschel2026.from_pretrained(
+            Guetschel2026.hub_repo_id("mae", "9cm", 2),
+            chs_info=raw.info["chs"],
+            n_times=1000,  # 5 s at 200 Hz
+            n_outputs=4,
+            # filename="epoch_05/model.safetensors",  # an intermediate epoch
+        )
 
-       The paper advises against the extremes of the grid. With ``rone_*`` the
-       pretext is too easy. With ``rall_*``, MAE stays below the REVE baseline,
-       and JEPA suffers *bias-inflation collapse*: its encoder drifts towards a
-       lookup table of the channel positions, the part of the features that
-       depends on the input shrinks, and the downstream score falls from about
-       epoch 3 onwards. For ``jepa_rall_*`` the score peaks around epochs 3-4,
-       so ``model.safetensors`` (epoch 10) sits well below the best
-       intermediate checkpoints of the run. These checkpoints are released
-       to reproduce that finding [guetschel2026]_.
+        # features: (batch, n_chans, n_patches, 512)
+        features = model(x, return_features=True)["features"]
 
-       ``model.safetensors`` is the end of epoch 10, the checkpoint behind the
-       paper's main results. The folders ``epoch_01/`` to ``epoch_09/`` hold
-       intermediate checkpoints of the same run (used for the paper's training
-       trajectories), loaded with
-       ``filename="epoch_05/model.safetensors"``. The JEPA files hold the
-       student encoder. The weights are released under CC-BY-4.0, the code
-       under the MIT license.
-
-       .. code-block:: python
-
-           import mne
-           import torch
-           from braindecode.models import Guetschel2026
-
-           raw = mne.io.read_raw_edf("recording.edf", preload=True)
-           raw.resample(200.0)
-           # the model needs channel locations ("colin27_1020" on MNE >= 1.13)
-           raw.set_montage("standard_1020")
-
-           repo_id = Guetschel2026.hub_repo_id("mae", "9cm", 2)
-           # -> "PierreGtch/eeg-fm-masking_mae_r9cm_L2"
-           model = Guetschel2026.from_pretrained(
-               repo_id,
-               chs_info=raw.info["chs"],
-               n_times=1000,  # 5 s at 200 Hz
-               n_outputs=4,
-               sfreq=200.0,
-               # filename="epoch_05/model.safetensors",  # an intermediate epoch
-               # revision="<commit sha>",  # pin the weights for reproducibility
-           )
-
-           # The features: (batch, n_chans, n_patches, 512), n_patches = 5 here.
-           x = torch.randn(8, len(raw.ch_names), 1000) * 1e-5  # volts
-           features = model(x, return_features=True)["features"]
-
-       The head is randomly initialized (the checkpoints have none), so train
-       it before using the logits. For a linear probe, freeze the encoder and
-       train the head only:
-
-       .. code-block:: python
-
-           for name, p in model.named_parameters():
-               p.requires_grad = name.startswith("final_layer.")
-
-       and for fine-tuning, train everything, for instance with
-       :class:`~braindecode.classifier.EEGClassifier`:
-
-       .. code-block:: python
-
-           from braindecode import EEGClassifier
-
-           clf = EEGClassifier(model, lr=1e-4, max_epochs=20, batch_size=64)
-           clf.fit(train_set, y=None)
-
-       The names built by :meth:`hub_repo_id` cover the whole grid:
-
-       .. code-block:: python
-
-           for pretext in ("mae", "jepa"):
-               for radius in ("one", "6cm", "9cm", "12cm", "all"):
-                   for length in (1, 2, 4, 8, 16, 33):
-                       if (radius, length) == ("all", 33):
-                           continue  # never trained
-                       # includes the rone_* / rall_* checkpoints the paper advises against
-                       repo_id = Guetschel2026.hub_repo_id(pretext, radius, length)
-                       model = Guetschel2026.from_pretrained(
-                           repo_id, chs_info=chs_info, n_times=1000, n_outputs=2
-                       )
-
-       If your channels have names but no coordinates, look them up by name
-       with ``channel_strategy="exact"`` (see :doc:`/user_guide/channel_strategies`):
-
-       .. code-block:: python
-
-           model = Guetschel2026.from_pretrained(
-               repo_id,
-               chs_info=[{"ch_name": "C3"}, {"ch_name": "Cz"}, {"ch_name": "C4"}],
-               n_times=1000,
-               n_outputs=2,
-               channel_strategy="exact",
-           )
-
-       Loading is not strict by default: the missing head is expected, but a
-       checkpoint that lacks any backbone weight raises a ``RuntimeError``
-       instead of silently keeping random weights.
+        # linear probing: train only the head, which starts from random weights
+        for name, p in model.named_parameters():
+            p.requires_grad = name.startswith("final_layer.")
 
     .. rubric:: Random projection head
 
-    The head reuses the random-projection step of the OpenEEGBench ridge probe:
-    the flattened features (``n_chans * n_patches * embed_dim``) are projected
-    to ``random_projection`` features (5000 by default) by a fixed Gaussian
-    random projection, which is never trained, then fed to a
-    :class:`~torch.nn.Linear` layer. This reduces the dimension only when
-    ``n_chans * n_patches * embed_dim`` exceeds ``random_projection``: for few
-    channels or short windows (for instance 3 channels x 1 s = 1,536 features)
-    it expands the features instead. OpenEEGBench applies the projection only
-    when the features outnumber its ``max_features`` and uses the raw features
-    otherwise. This head always applies it, so pass ``random_projection=None``
-    to match OpenEEGBench on such small inputs. OpenEEGBench fits a closed-form
-    ridge regression on the projected frozen features instead of training a
-    linear layer, and the paper reports means over 5 projection seeds, so
-    training this head by gradient descent does not reproduce the paper's
-    numbers exactly.
+    The paper probes the frozen features as OpenEEGBench does: it projects the
+    flattened features to 5000 dimensions with a Gaussian random projection,
+    then fits a linear model on top. The head reproduces this design:
 
-    The projection matrix has shape
-    ``(random_projection, n_chans * n_patches * embed_dim)`` with entries drawn
-    from :math:`\mathcal{N}(0, 1/\mathrm{random\_projection})`, the
-    distribution of :class:`sklearn.random_projection.GaussianRandomProjection`
-    and of ``_make_projection_matrix`` in `OpenEEGBench
-    <https://github.com/braindecode/OpenEEGBench/blob/3e4d034ae3e009deeda9c987d05a37e18fd87e15/open_eeg_bench/ridge_probe.py#L62>`_
-    (the values differ for a given seed). It is generated in float32 on the CPU
-    from ``random_projection_seed``, without touching the global random state, and
-    stored as a buffer (in the default dtype): it is saved in the
-    ``state_dict`` and by ``save_pretrained``, and never trained. Loading a
-    checkpoint without head therefore gives the same projection for the same
-    seed, with the same PyTorch version and CPU type; save the model
-    (``save_pretrained``) to keep the projection bit-exact across machines.
-
-    **Memory cost.** The matrix has ``random_projection * n_chans * n_patches
-    * embed_dim`` entries in the default dtype: in float32, about 0.9 GB for
-    22 channels and 4 s (45,056 features) and 2.1 GB for 19 channels and 10 s
-    with the default 5000 components, and twice that in float64. Lower
-    ``random_projection`` for long windows or many channels, or pass
-    ``random_projection=None`` for the plain ``Flatten`` then ``Linear`` head
-    of the original wrapper, which is the head to use to reproduce its logits.
-    :meth:`reset_head` replaces only the last linear layer and keeps the
-    projection.
+    - The projection is drawn once, from ``random_projection_seed``, with the
+      same distribution as scikit-learn's
+      :class:`~sklearn.random_projection.GaussianRandomProjection`. It is
+      stored as a buffer: saved with the model, never trained.
+    - It is large: ``random_projection`` × ``n_chans`` × ``n_patches`` × 512
+      values, about 0.9 GB in float32 for 22 channels and 4 s windows.
+    - ``random_projection=None`` gives the plain flatten-then-linear head of
+      the original code.
 
     .. warning::
-       **Input.** The model was pre-trained at 200 Hz (a warning is raised if
-       ``sfreq`` differs) on 30 s windows (33 patches) of 32 channels, randomly
-       sampled from each recording and zero-padded when fewer were available
-       (paper, Sec. 3); any number of channels can be used at inference.
 
-       - The signal is expected in volts, not standardized: the model
-         multiplies it by ``input_scale`` (:math:`10^6`, so microvolts), divides
-         it by the median over channels of the standard deviations of each
-         channel and clips it at ``clip_sigma``, as the original wrapper does.
-         For data that you already scaled, use ``normalization="none"`` and
-         ``input_scale=1.0``.
-       - ``chs_info`` must hold the electrode positions in ``loc[:3]`` (metres,
-         MNE head frame), for any montage; they are read at construction. To
-         use another montage for each call, use a ``channel_strategy``.
-         The distance of every channel to the origin must be between 5 cm and
-         20 cm, otherwise a ``ValueError`` is raised: this catches positions in
-         centimetres or millimetres (far above), and in a wrong unit or at the
-         origin (far below). All the built-in MNE montages (34 in MNE 1.13)
-         and the REVE pre-training positions are inside this range. A channel
-         without a position (a NaN or all-zero ``loc`` in MNE) is rejected
-         too: pass the same ``chs_info`` with ``channel_strategy="exact"`` to
-         look the missing positions up by name (standard 10-05 names,
-         ``standard_1005``, e.g. ``"Fz"``; the positions that are given are
-         kept). Channels whose name is not a standard_1005 name (e.g. ``"E1"``
-         of an EGI net) cannot be looked up and stay at the origin: they need
-         positions in metres. ``channel_strategy`` does not replace non-zero
-         positions: positions in a wrong unit must be converted to metres, or
-         replaced by the standard ones by passing ``chs_info`` with standard
-         10-05 channel names only.
-       - The pre-training corpus includes PhysioNet-MI (EEGMMIDB, 48.5 h):
-         results on that dataset are not an evaluation on unseen data (paper,
-         Limitations). The other eleven OpenEEGBench datasets were not seen
-         during pre-training.
-       - The window needs at least ``patch_size`` (200) samples. Trailing
-         samples that do not fill a patch are dropped.
+       **Input requirements**
+
+       - **Sampling rate:** 200 Hz, as in pre-training.
+       - **Units:** volts, without standardisation. The model scales each
+         window itself, as in pre-training (microvolts, then division by the
+         median channel standard deviation, clipped at 15).
+       - **Channel positions:** in metres, in the MNE head frame, as given by
+         ``raw.set_montage(...)``. Every channel must be 5 to 20 cm from the
+         origin, which catches positions in centimetres or millimetres. For
+         channels with standard names but no positions, pass
+         ``channel_strategy="exact"``.
+       - **Window:** at least 200 samples; trailing samples that do not fill a
+         patch are dropped.
 
     .. note::
-        Differences from the reference implementation (the backbone features
-        are otherwise identical, bit for bit, in float32 and float64):
 
-        - The head uses the true number of overlapping patches,
-          ``(n_times - patch_size) // (patch_size - patch_overlap) + 1``. The
-          original wrapper sizes its head for ``n_times // patch_size``
-          patches. That count is wrong for every window of 1820 samples or more
-          (for instance 2000 or 6000 samples) and for some shorter ones (for
-          instance 380 to 399), and the original head fails on all of them.
-        - Attention dropout is off in eval mode.
-        - The scaling runs in at least float32, so that float16 inputs do not
-          overflow.
-        - The random projection head (``random_projection=None`` gives the
-          original head).
-        - Every channel position must be finite, not all zero, and between
-          5 cm and 20 cm from the origin (metres, MNE head frame). The
-          original checks only for NaN, so it accepts positions in the wrong
-          unit, infinite values and all-zero rows, up to a montage with no
-          positions at all, which it encodes as the origin; this class raises
-          a ``ValueError`` for all of them (with ``channel_strategy="exact"``,
-          NaN and all-zero rows are looked up by name instead, see above).
+       **Differences from the reference implementation.** The backbone gives
+       bit-identical features. Around it:
+
+       - the head is sized for the true number of overlapping patches (the
+         original head fails for most window lengths);
+       - the random projection head is new;
+       - channel positions are validated (the original only rejects NaN);
+       - attention dropout is off in eval mode.
 
     Parameters
     ----------
     embed_dim : int, default=512
-        Width of the tokens. Must be divisible by 8 and by ``num_heads``; the
-        three coordinates and the patch index each get ``embed_dim // 4``
-        positional features.
+        Width of the tokens. Must be divisible by 8 and by ``num_heads``.
     depth : int, default=4
         Number of transformer layers.
     num_heads : int, default=8
@@ -614,31 +413,28 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
     patch_size : int, default=200
         Number of samples of a patch (1 s at 200 Hz).
     patch_overlap : int, default=20
-        Number of samples shared by two consecutive patches; the step is
-        ``patch_size - patch_overlap``.
+        Number of samples shared by two consecutive patches.
     pos_half_range : float, default=0.15
-        Half range in metres of the electrode coordinates, which are mapped
-        from ``[-pos_half_range, pos_half_range]`` to ``[0, 1]`` before the
-        sinusoidal encoding.
+        Half range, in metres, of the electrode coordinates mapped to
+        :math:`[0, 1]` before the sinusoidal encoding.
     activation : type[nn.Module], default=nn.GELU
-        Activation class applied to the gate of the feed-forward block.
+        Activation of the gate of the feed-forward block.
     drop_prob : float, default=0.0
-        Dropout probability (attention and feed-forward residual branches).
+        Dropout probability of the attention and feed-forward branches.
     normalization : {"median_std_clip", "none"}, default="median_std_clip"
-        Input scaling. ``"median_std_clip"`` divides each window by the lower
-        median over channels of the per-channel standard deviations and clips
-        it at ``clip_sigma``; ``"none"`` only multiplies by ``input_scale``.
+        Input scaling. ``"median_std_clip"`` divides each window by the median
+        over channels of the channel standard deviations and clips it at
+        ``clip_sigma``; ``"none"`` only multiplies by ``input_scale``. Use
+        ``"none"`` with ``input_scale=1.0`` for data you already scaled.
     input_scale : float, default=1e6
-        Factor applied to the input before the normalization (volts to
-        microvolts).
+        Factor applied to the input first (volts to microvolts).
     clip_sigma : float, default=15.0
         Clipping bound of ``"median_std_clip"``.
     random_projection : int or None, default=5000
-        Number of features of the fixed Gaussian random projection between the
-        flatten and the linear layer of the head (see the section above), or
-        ``None`` for no projection.
+        Size of the random projection of the head, or ``None`` for no
+        projection.
     random_projection_seed : int, default=0
-        Seed of the random projection matrix.
+        Seed of the random projection.
 
     References
     ----------
