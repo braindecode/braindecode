@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath, PatchTokenizer
 
@@ -156,6 +157,10 @@ class EEGDINO(EEGModuleMixin, nn.Module):
        Intervention (MICCAI 2025).
     """
 
+    _channel_target = (
+        "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
+    )
+
     def __init__(
         self,
         n_outputs=None,
@@ -183,6 +188,8 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         drop_prob: float = 0.1,
         return_features: bool = False,
         return_encoder_output: bool = False,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -191,6 +198,8 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
@@ -414,7 +423,8 @@ class _PatchEmbedding(nn.Module):
             .permute(0, 2, 3, 1, 4)
             .flatten(3, 4)
         )
-        spectrum = torch.fft.rfft(x, dim=-1, norm="forward").abs()
+        spectrum = torch.fft.rfft(spectral_input(x), dim=-1, norm="forward")
+        spectrum = spectrum.abs().to(x)
         patch_emb = time_tokens + self.spectral_proj(spectrum)
 
         # Decoupled positional embedding: one-hot channel + depthwise temporal conv.

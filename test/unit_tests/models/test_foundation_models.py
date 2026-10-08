@@ -2,8 +2,10 @@
 #
 # License: BSD-3
 
+import copy
 import json
 import os
+import sys
 from contextlib import nullcontext
 from pathlib import Path
 from urllib.error import URLError
@@ -29,12 +31,15 @@ from braindecode.models import (
     AXON,
     DIVER1,
     LUNA,
+    MAPA,
     REVE,
     ZUNA,
     CBraMod,
     CodeBrain,
     Labram,
     PopulationTransformer,
+    SleepFM,
+    SleepFMStager,
     STEEGFormer,
     steegformer,
 )
@@ -1575,6 +1580,149 @@ def test_codebrain_return_features():
     assert out["cls_token"] is None
 
 
+def test_codebrain_trains_after_inference_mode():
+    # The lazily initialised kernel norm must not become an inference tensor.
+    model = CodeBrain(n_chans=2, n_outputs=2, n_times=400).eval()
+    x = torch.randn(2, 2, 400)
+    with torch.inference_mode():
+        model(x)
+    model.train()
+    model(x).sum().backward()
+    assert all(not b.is_inference() for b in model.buffers())
+
+
+# ==============================================================================
+# Tests for SleepFM and SleepFMStager: masks and the release's two-stage
+# pipeline (shapes, features and compilation are in the shared suites)
+# ==============================================================================
+
+
+def _small(cls, **kwargs):
+    """Reduced model: 20 patches of 64 samples; stager chunks of 8, 8 and 4."""
+    config = dict(n_chans=3, n_times=1280, n_outputs=5, sfreq=128.0, patch_size=64)
+    config |= dict(embed_dim=16, drop_prob=0.0, max_seq_length=32)
+    if cls is SleepFM:
+        config |= dict(num_heads=4, num_layers=1, pooling_heads=4)
+    else:
+        config |= dict(channel_modalities=["A", "A", "B"], encoder_chunk_patches=8)
+        config |= dict(encoder_num_heads=4, encoder_num_layers=1)
+        config |= dict(encoder_pooling_heads=4, staging_pooling_heads=4)
+    return cls(**(config | kwargs))
+
+
+@pytest.mark.parametrize("training", [False, True])
+@pytest.mark.parametrize(
+    "cls,masked",
+    [(SleepFM, "channel"), (SleepFMStager, "channel"), (SleepFMStager, "patch")],
+)
+def test_sleepfm_masked_input_is_ignored(cls, masked, training):
+    """Masked channels or patches reach neither the output nor BatchNorm."""
+    model = _small(cls).train(training)
+    x = torch.randn(2, 3, 1280)
+    corrupted = x.clone()
+    if masked == "channel":
+        mask = torch.tensor([[False, False, True], [False, True, False]])
+        corrupted[mask] = 1e3
+        kwargs = {"channel_mask": mask}
+    else:
+        mask = torch.zeros(2, 20, dtype=torch.bool)
+        mask[1, 12:] = True  # ends inside a chunk
+        corrupted[1, :, 12 * 64 :] = 1e3
+        kwargs = {"temporal_mask": mask}
+    runs = []
+    for signal in (x, corrupted):
+        net = copy.deepcopy(model)
+        stats = [v for k, v in net.state_dict().items() if "running" in k]
+        runs.append((net(signal, **kwargs), stats))
+    torch.testing.assert_close(runs[0], runs[1])
+
+
+@pytest.mark.parametrize("n_valid", [16, 12], ids=["chunk_aligned", "inside_chunk"])
+def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
+    """Stager = SleepFM.encode per modality and chunk, then the staging head."""
+    encoder = _small(SleepFM, max_seq_length=128).eval()
+    stager = _small(SleepFMStager).eval()
+    shared = {
+        k: v
+        for k, v in encoder.state_dict().items()
+        if k in stager.state_dict() and not k.startswith("final_layer.")
+    }
+    stager.load_state_dict(shared, strict=False)
+    x = torch.randn(2, 3, 1280)
+    channel_mask = torch.tensor([[False, True, False], [False, False, False]])
+    temporal_mask = torch.zeros(2, 20, dtype=torch.bool)
+    temporal_mask[1, n_valid:] = True
+
+    def embed(chans):
+        out = torch.zeros(2, 20, 16)
+        for i, stop in enumerate((20, n_valid)):
+            for start in range(0, stop, 8):
+                end = min(start + 8, stop)
+                signal = x[i : i + 1, chans, start * 64 : end * 64]
+                out[i, start:end] = encoder.encode(
+                    signal, channel_mask[i : i + 1, chans]
+                )[1][0]
+        return out
+
+    with torch.no_grad():
+        embeddings = torch.stack(
+            [embed([0, 1]), embed([2])] + [torch.zeros(2, 20, 16)] * 2, 1
+        )
+        modality_mask = torch.tensor([[False, False, True, True]] * 2)
+        features = stager.staging_head(embeddings, modality_mask, temporal_mask)
+        expected = stager.final_layer(features).transpose(1, 2)
+        output = stager(x, channel_mask, temporal_mask=temporal_mask)
+        permuted = _small(SleepFMStager, channel_modalities=["B", "A", "A"]).eval()
+        permuted.load_state_dict(stager.state_dict())
+        torch.testing.assert_close(permuted(x[:, [2, 0, 1]]), stager(x))
+
+    assert output.shape == (2, 5, 20)
+    torch.testing.assert_close(output[0], expected[0])
+    torch.testing.assert_close(output[1, :, :n_valid], expected[1, :, :n_valid])
+
+
+@pytest.mark.skipif(not HAS_SAFETENSORS, reason="safetensors is required")
+def test_sleepfm_stager_completes_a_head_only_checkpoint(tmp_path):
+    """Older stager mirror revisions hold the tokenizer and head only."""
+    from safetensors.torch import save_file
+
+    stager, encoder = _small(SleepFMStager), _small(SleepFM, max_seq_length=128)
+    stager.save_pretrained(tmp_path / "stager")
+    encoder.save_pretrained(tmp_path / "encoder")
+    head = ("patch_embedding.", "staging_head.", "final_layer.")
+    head_only = {k: v for k, v in stager.state_dict().items() if k.startswith(head)}
+    save_file(head_only, tmp_path / "stager" / "model.safetensors")
+
+    loaded = SleepFMStager.from_pretrained(
+        tmp_path / "stager", encoder_model_name_or_path=tmp_path / "encoder"
+    )
+    expected = encoder.state_dict() | head_only
+    for key, value in loaded.state_dict().items():
+        torch.testing.assert_close(value, expected[key], msg=key)
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_sleepfm_pretrained_loads():
+    kwargs = dict(n_chans=3, n_times=1280, n_outputs=5, sfreq=128.0)
+    encoder = SleepFM.from_pretrained(**kwargs)
+    kwargs["channel_modalities"] = ["BAS", "BAS", "EKG"]
+    stager, reference = SleepFMStager.from_pretrained(**kwargs), SleepFMStager(**kwargs)
+    with torch.no_grad():
+        features = encoder.eval()(torch.randn(2, 3, 1280), return_features=True)
+        assert features["features"].shape == (2, 128)
+        assert stager.eval()(torch.randn(2, 3, 1280)).shape == (2, 5, 2)
+    for name in (
+        "patch_embedding.tokenizer.0.weight",
+        "transformer_encoder.layers.5.linear2.weight",
+        "staging_head.lstm.weight_ih_l0",
+        "final_layer.weight",
+    ):
+        assert not torch.equal(
+            stager.get_parameter(name), reference.get_parameter(name)
+        )
+
+
 # ==============================================================================
 # Tests for AXON Model
 # ==============================================================================
@@ -1682,11 +1830,6 @@ def test_axon_reset_head_updates_config():
     assert model.final_layer[-1].out_features == 7
     assert model.get_config()["n_outputs"] == 7
     assert AXON.from_config(model.get_config()).n_outputs == 7
-
-
-# ==============================================================================
-# Tests for DIVER-1 Model
-# ==============================================================================
 
 
 @pytest.fixture
@@ -1804,6 +1947,13 @@ def test_diver1_reset_head_preserves_zero_outputs(diver1_model, n_outputs):
     assert diver1_model.get_config()["n_outputs"] == n_outputs
 
 
+# The bfloat16 ``fold`` kernel crashes the Windows CI runners' Python process
+# with 0xC000001D (illegal instruction); pytest-xdist then reports a lost
+# worker. It happens on master too, so it is the runner/CPU path, not DIVER-1.
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="bfloat16 fold crashes Windows CI runners (0xC000001D, illegal instruction)",
+)
 def test_diver1_stcpe_preserves_low_precision_overlap(monkeypatch):
     # BF16 fold accumulates 257 overlapping ones to 256, not scalar 257.
     model = _STCPE(8, 4, 257, torch.nn.SiLU, 1).bfloat16().eval()
@@ -2021,6 +2171,341 @@ def test_steegformer_montage_fallback(
 
 
 # ==============================================================================
+# Tests for MAPA Model
+# ==============================================================================
+
+
+MAPA_SUBJECT_A = ["LA1", "LA2", "LA5", "LB3", "LB7"]
+MAPA_SUBJECT_B = ["RH2", "RH3", "RH8", "LT1", "LT2", "LT3", "LT4", "RX5"]
+
+
+@pytest.fixture
+def mapa_model():
+    return MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+    ).eval()
+
+
+def test_mapa_sensor_indices_reads_array_and_contact_number():
+    indices = MAPA.sensor_indices(MAPA_SUBJECT_A, ["ctx-lh-insula"] + [None] * 4)
+    assert indices.tolist() == [
+        [0, 1, 7],
+        [0, 2, 74],
+        [0, 5, 74],
+        [1, 3, 74],
+        [1, 7, 74],
+    ]
+
+
+# The region table as released, frozen here only to prove the MNE-derived
+# helper reproduces it exactly; this tuple is test-only evidence, not a
+# definition braindecode's source code owns (see test below and
+# ``dkt_region_slots`` in ``braindecode/models/util.py``).
+_RELEASED_MAPA_DKT_REGIONS = (
+    "ctx-lh-caudalanteriorcingulate",
+    "ctx-lh-caudalmiddlefrontal",
+    "ctx-lh-cuneus",
+    "ctx-lh-entorhinal",
+    "ctx-lh-fusiform",
+    "ctx-lh-inferiorparietal",
+    "ctx-lh-inferiortemporal",
+    "ctx-lh-insula",
+    "ctx-lh-isthmuscingulate",
+    "ctx-lh-lateraloccipital",
+    "ctx-lh-lateralorbitofrontal",
+    "ctx-lh-lingual",
+    "ctx-lh-medialorbitofrontal",
+    "ctx-lh-middletemporal",
+    "ctx-lh-paracentral",
+    "ctx-lh-parahippocampal",
+    "ctx-lh-parsopercularis",
+    "ctx-lh-parsorbitalis",
+    "ctx-lh-parstriangularis",
+    "ctx-lh-pericalcarine",
+    "ctx-lh-postcentral",
+    "ctx-lh-posteriorcingulate",
+    "ctx-lh-precentral",
+    "ctx-lh-precuneus",
+    "ctx-lh-rostralanteriorcingulate",
+    "ctx-lh-rostralmiddlefrontal",
+    "ctx-lh-superiorfrontal",
+    "ctx-lh-superiorparietal",
+    "ctx-lh-superiortemporal",
+    "ctx-lh-supramarginal",
+    "ctx-lh-transversetemporal",
+    "ctx-rh-caudalanteriorcingulate",
+    "ctx-rh-caudalmiddlefrontal",
+    "ctx-rh-cuneus",
+    "ctx-rh-entorhinal",
+    "ctx-rh-fusiform",
+    "ctx-rh-inferiorparietal",
+    "ctx-rh-inferiortemporal",
+    "ctx-rh-insula",
+    "ctx-rh-isthmuscingulate",
+    "ctx-rh-lateraloccipital",
+    "ctx-rh-lateralorbitofrontal",
+    "ctx-rh-lingual",
+    "ctx-rh-medialorbitofrontal",
+    "ctx-rh-middletemporal",
+    "ctx-rh-paracentral",
+    "ctx-rh-parahippocampal",
+    "ctx-rh-parsopercularis",
+    "ctx-rh-parsorbitalis",
+    "ctx-rh-parstriangularis",
+    "ctx-rh-pericalcarine",
+    "ctx-rh-postcentral",
+    "ctx-rh-posteriorcingulate",
+    "ctx-rh-precentral",
+    "ctx-rh-precuneus",
+    "ctx-rh-rostralanteriorcingulate",
+    "ctx-rh-rostralmiddlefrontal",
+    "ctx-rh-superiorfrontal",
+    "ctx-rh-superiorparietal",
+    "ctx-rh-superiortemporal",
+    "ctx-rh-supramarginal",
+    "ctx-rh-transversetemporal",
+    "Left-Hippocampus",
+    "Left-Amygdala",
+    "Left-Caudate",
+    "Left-Putamen",
+    "Left-Pallidum",
+    "Left-Thalamus-Proper",
+    "Right-Hippocampus",
+    "Right-Amygdala",
+    "Right-Caudate",
+    "Right-Putamen",
+    "Right-Pallidum",
+    "Right-Thalamus-Proper",
+)
+
+
+def test_mapa_regions_are_freesurfer_labels_sourced_from_util():
+    """The region vocabulary is the shared util helper, anchored to MNE's LUT.
+
+    MAPA owns only the reference and the released slot order; the names are
+    standard FreeSurfer labels, so each must be a key of MNE's bundled colour
+    table (``mne.read_freesurfer_lut``, no download) rather than hard-coded in
+    the model file. ``dkt_region_slots`` must still reproduce the exact
+    released slot order (``_RELEASED_MAPA_DKT_REGIONS``, frozen before this
+    refactor) even though it now derives the vocabulary from MNE's ids
+    instead of typing it out.
+    """
+    from braindecode.models.mapa import MAPA_DKT_REGIONS
+    from braindecode.models.util import dkt_region_slots
+
+    assert MAPA_DKT_REGIONS == dkt_region_slots()
+    assert MAPA_DKT_REGIONS == _RELEASED_MAPA_DKT_REGIONS
+    assert len(MAPA_DKT_REGIONS) == 74
+    lut_names, _ = mne.read_freesurfer_lut()
+    assert set(MAPA_DKT_REGIONS) <= set(lut_names)
+
+
+@pytest.mark.parametrize("n_times", [448, 2048, 4096])
+def test_mapa_one_model_reads_another_subject(mapa_model, n_times):
+    """A montage and a window the mapa_model was not built for both go through."""
+    x = torch.randn(2, len(MAPA_SUBJECT_B), n_times)
+    with torch.no_grad():
+        y = mapa_model(x, MAPA.sensor_indices(MAPA_SUBJECT_B))
+    assert y.shape == (2, 4)
+
+
+def test_mapa_channel_order_does_not_change_the_output(mapa_model):
+    perm = torch.tensor([4, 0, 3, 1, 2])
+    x = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    with torch.no_grad():
+        expected = mapa_model(x)
+        permuted = mapa_model(x[:, perm], mapa_model.default_sensor_indices[perm])
+    torch.testing.assert_close(expected, permuted, atol=1e-5, rtol=1e-5)
+
+
+def test_mapa_switching_subjects_does_not_leak_between_calls(mapa_model):
+    """The cached token layout must not survive a change of montage."""
+    xa = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    xb = torch.randn(2, len(MAPA_SUBJECT_B), 2048)
+    indices_b = MAPA.sensor_indices(MAPA_SUBJECT_B)
+    with torch.no_grad():
+        first_a, first_b = mapa_model(xa), mapa_model(xb, indices_b)
+        again_b, again_a = mapa_model(xb, indices_b), mapa_model(xa)
+    torch.testing.assert_close(first_a, again_a)
+    torch.testing.assert_close(first_b, again_b)
+
+
+def test_mapa_flatten_pooling_stays_tied_to_its_montage():
+    mapa_model = MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+        pooling="flatten",
+    ).eval()
+    with pytest.raises(ValueError, match="pooling='flatten'"):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_B), 2048), MAPA.sensor_indices(MAPA_SUBJECT_B))
+
+
+@pytest.mark.parametrize(
+    "sensor_indices,match",
+    [
+        (None, "got input with 8 channels"),
+        (torch.zeros(3, 3, dtype=torch.long), r"shape \(8, 3\)"),
+        (torch.zeros(8, 3), "must hold integers"),
+        (torch.full((8, 3), 75), "region slots below 75"),
+        (torch.full((8, 3), -1), "must be non-negative"),
+    ],
+)
+def test_mapa_bad_sensor_indices_are_rejected(mapa_model, sensor_indices, match):
+    with pytest.raises(ValueError, match=match):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_B), 2048), sensor_indices)
+
+
+def test_mapa_window_shorter_than_one_slow_token_is_rejected(mapa_model):
+    with pytest.raises(ValueError, match="at least 448 samples"):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_A), 256))
+
+
+def _mapa_session_model(**kwargs):
+    return MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=32,
+        sfreq=32,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+        normalization="session",
+        **kwargs,
+    ).eval()
+
+
+def test_mapa_session_normalization_matches_window_normalization_on_its_bands(mapa_model):
+    """Handed the bands window normalization computes, session mode is identical."""
+    session = _mapa_session_model()
+    session.load_state_dict(mapa_model.state_dict())
+    x = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    frames = torch.cat(mapa_model.frontend._stft_bands(x), dim=2)
+    with torch.no_grad():
+        torch.testing.assert_close(session(frames), mapa_model(x))
+
+
+def test_mapa_session_normalization_input_and_output_shape():
+    model = _mapa_session_model()
+    assert model.input_shape == (1, len(MAPA_SUBJECT_A), 20, 32)
+    assert model.get_output_shape() == (1, 4)
+
+
+def test_mapa_window_normalization_input_shape_is_raw(mapa_model):
+    assert mapa_model.input_shape == (1, mapa_model.n_chans, mapa_model.n_times)
+
+
+def test_mapa_session_normalization_reads_another_subject():
+    frames = torch.randn(2, len(MAPA_SUBJECT_B), 20, 64)
+    with torch.no_grad():
+        y = _mapa_session_model()(frames, MAPA.sensor_indices(MAPA_SUBJECT_B))
+    assert y.shape == (2, 4)
+
+
+@pytest.mark.parametrize(
+    "shape,match",
+    [
+        ((1, 5, 2048), "takes a spectrogram"),
+        ((1, 5, 19, 32), "takes a spectrogram"),
+        ((1, 5, 20, 4), "at least 8 frames"),
+    ],
+)
+def test_mapa_session_normalization_rejects_bad_input(shape, match):
+    with pytest.raises(ValueError, match=match):
+        _mapa_session_model()(torch.randn(shape))
+
+
+def test_mapa_raw_normalization_rejects_a_spectrogram(mapa_model):
+    with pytest.raises(ValueError, match="normalization='session'"):
+        mapa_model(torch.randn(1, len(MAPA_SUBJECT_A), 20, 32))
+
+
+def test_mapa_token_layout_tracks_the_montage(mapa_model):
+    indices = MAPA.sensor_indices(MAPA_SUBJECT_A)
+    first = mapa_model._token_layout(indices, mapa_model.n_frames)
+    indices[0, 2] = 3
+    changed = mapa_model._token_layout(indices, mapa_model.n_frames)
+    assert changed is not first
+    assert (changed["token_region"] == 3).any()
+
+
+def _mapa_reference_windows():
+    """Two 1 s windows at 2048 Hz of four amplitude-modulated multi-tone channels."""
+    t = torch.arange(2048, dtype=torch.float64) / 2048
+    freqs = torch.tensor([3.0, 11.0, 23.0, 47.0, 95.0, 140.0], dtype=torch.float64)
+    rates = 0.75 * torch.arange(1, 7, dtype=torch.float64)
+    windows = []
+    for sample in range(2):
+        channels = []
+        for channel in range(4):
+            phase = 0.7 * channel + 1.3 * sample
+            carrier = torch.sin(2 * torch.pi * freqs[:, None] * t + phase)
+            envelope = 1 + 0.8 * torch.sin(2 * torch.pi * rates[:, None] * t + phase)
+            channels.append((carrier * envelope).sum(0))
+        windows.append(torch.stack(channels))
+    return torch.stack(windows).float()
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_mapa_released_checkpoint_reproduces_the_reference_features():
+    """The re-hosted mapa_vits384 loads and gives the authors' features.
+
+    The expected values were computed with the authors' code (bentang18/MAPA at
+    bf2b49e) on the same windows: its STFT and robust z-score fitted on each
+    window (the default ``normalization="window"``; the authors fit it on the
+    whole session), then ``MapaEncoder.from_checkpoint`` and the mean over every
+    token of the four normed deep-supervision taps, which is what
+    ``return_features`` pools. CI does not pass ``--run-network`` to the unit
+    tests; run it with ``pytest -k mapa_released --run-network``.
+    """
+    pytest.importorskip("huggingface_hub")
+    try:
+        model = MAPA.from_pretrained(
+            "braindecode/mapa-pretrained",
+            n_chans=4,
+            contact_labels=["LA1", "LA2", "LA4", "LB1"],
+            regions=[
+                "ctx-lh-superiortemporal",
+                "ctx-lh-superiortemporal",
+                "Left-Hippocampus",
+                None,
+            ],
+            strict=True,
+        ).eval()
+    except (URLError, OSError) as err:
+        pytest.skip(f"Could not download the MAPA checkpoint: {err}")
+
+    with torch.no_grad():
+        features = model(_mapa_reference_windows(), return_features=True)["features"]
+    # The first four dimensions of each of the four taps (blocks 3, 6, 9, 12).
+    expected = torch.tensor(
+        [
+            [-0.097404, -0.035431, -0.036317, -0.00045]
+            + [0.000488, -0.010021, -0.031613, -0.012514]
+            + [-0.000287, 0.000164, 0.001316, 0.00072]
+            + [0.009574, -0.119245, -0.004626, 0.019742],
+            [-0.108159, 0.016018, -0.037283, -0.000448]
+            + [0.000275, -0.013464, -0.029668, -0.011087]
+            + [-0.000288, 0.000152, 0.001267, 0.000396]
+            + [-0.000122, -0.127825, -0.006181, 0.038055],
+        ]
+    )
+    taps = features.unflatten(1, (4, -1))[..., :4].flatten(1)
+    torch.testing.assert_close(taps, expected, rtol=0, atol=1e-4)
+    torch.testing.assert_close(
+        features.norm(dim=1), torch.tensor([3.91526, 3.92401]), rtol=1e-4, atol=0
+    )
+
+
+# ==============================================================================
 # Tests for PopulationTransformer (PopT)
 # ==============================================================================
 
@@ -2139,6 +2624,7 @@ _TEN_TWENTY = [
 def _patch_models():
     return [
         (Labram, dict(n_chans=19, n_times=800, sfreq=200), 200),
+        (Labram, dict(n_chans=19, n_times=800, sfreq=200, neural_tokenizer=False), 200),
         (CBraMod, dict(n_chans=19, n_times=800, sfreq=200), 200),
         (LUNA, dict(chs_info=_zuna_chs_info(), n_times=800, sfreq=200), 40),
         (ZUNA, dict(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL), 32),
@@ -2160,3 +2646,24 @@ def test_non_divisible_window_padded_by_default(cls, kwargs, patch_size):
     assert not any("tokenizer" in k for k in model.state_dict())
     with pytest.raises(ValueError, match="divisible"):
         cls(**kwargs, on_non_divisible="error")
+
+
+def test_cbramod_head_is_concrete_when_geometry_is_derived(tmp_path):
+    """chs_info / input_window_seconds define the geometry as much as n_chans /
+    n_times do: the head must be a real Linear, so the model saves and loads
+    (a LazyLinear cannot be serialized before a forward pass)."""
+    pytest.importorskip("huggingface_hub")
+    chs = _zuna_chs_info()
+    model = CBraMod(
+        chs_info=chs, input_window_seconds=4.0, sfreq=200, n_outputs=2, n_layer=1
+    )
+    assert type(model.final_layer[1]) is nn.Linear  # LazyLinear subclasses Linear
+    model.save_pretrained(tmp_path)
+    loaded = CBraMod.from_pretrained(tmp_path)
+    x = torch.randn(1, len(chs), 800)
+    assert torch.allclose(model.eval()(x), loaded.eval()(x), atol=1e-5)
+    # unknown geometry still falls back to a lazy head
+    assert isinstance(CBraMod(n_outputs=2, n_layer=1).final_layer[1], nn.LazyLinear)
+    # n_times alone (no channels) still reaches the tokenizer's divisibility check
+    with pytest.raises(ValueError, match="divisible"):
+        CBraMod(n_times=1001, n_outputs=2, n_layer=1, on_non_divisible="error")

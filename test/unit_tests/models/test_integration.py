@@ -23,9 +23,11 @@ from torch.export import ExportedProgram, export
 from braindecode import EEGClassifier
 from braindecode.models import (
     EEGPT,
+    MAPA,
     REVE,
     SSTDPN,
     ZUNA,
+    BrainTokenizer,
     Brant,
     EEGInceptionMI,
     EEGMiner,
@@ -33,11 +35,6 @@ from braindecode.models import (
     FBCNet,
     FBLightConvNet,
     FBMSNet,
-    InterpolatedBENDR,
-    InterpolatedBIOT,
-    InterpolatedEEGPT,
-    InterpolatedLaBraM,
-    InterpolatedSignalJEPA,
     ShallowFBCSPNet,
     SyncNet,
     USleep,
@@ -46,7 +43,6 @@ from braindecode.models.util import (
     _get_possible_signal_params,
     _summary_table,
     default_signal_params,
-    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
     non_classification_models,
@@ -55,9 +51,7 @@ from braindecode.models.util import _get_signal_params as get_sp
 
 rng = np.random.default_rng(12)
 
-# Interpolated models are kept in a separate registry from ``models_dict``;
-# combine them here so integration tests continue to exercise both.
-all_models_dict = {**models_dict, **interpolated_models_dict}
+all_models_dict = dict(models_dict)
 
 _DIRECT_TORCHSCRIPT_MODELS = (
     "Deep4Net",
@@ -367,14 +361,10 @@ def test_model_has_activation_parameter(model_class):
     """
     if model_class in [
         Brant,
+        BrainTokenizer,  # the released SEANet codec has fixed ELU activations
         EEGMiner,
         REVE,
         EEGPT,
-        InterpolatedBENDR,
-        InterpolatedBIOT,
-        InterpolatedEEGPT,
-        InterpolatedLaBraM,
-        InterpolatedSignalJEPA,
     ]:
         pytest.skip(f"Skipping {model_class} as not activation layer")
     # Get the __init__ method of the class
@@ -440,12 +430,8 @@ def test_model_has_drop_prob_parameter(model_class):
         FBLightConvNet,
         SSTDPN,
         REVE,
-        InterpolatedBENDR,
-        InterpolatedBIOT,
-        InterpolatedEEGPT,
-        InterpolatedLaBraM,
-        InterpolatedSignalJEPA,
         ZUNA,
+        MAPA,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
@@ -578,6 +564,9 @@ def test_model_torch_script(model):
         "REVE",
         "CBraMod",
         "CodeBrain",
+        # einops Rearrange layer and the Dict/Tensor polymorphic return in
+        # forward (features vs logits), like CBraMod/CodeBrain.
+        "CSBrain",
         # einops rearrange/repeat in the Perceiver/decoder and the fixed-grid
         # cross-attention make forward not torch.jit.script-able. (Reason is
         # einops + dynamic length, NOT polymorphic return — DANCE.forward is
@@ -592,6 +581,9 @@ def test_model_torch_script(model):
         # forward() returns Dict[str, Tensor | None] (features) or Tensor (logits);
         # torch.jit.script rejects this required polymorphic return type.
         "MIRepNet",
+        # forward() returns Dict[str, Tensor | None] (features) or Tensor
+        # (logits), so torch.jit.script rejects this polymorphic return type.
+        "NeuroRVQ",
         # wavelet encoder (conv1d + circular padding) + Dict/Tensor polymorphic
         # return; torch.jit.script rejects the polymorphic return type.
         "MVPFormer",
@@ -605,12 +597,17 @@ def test_model_torch_script(model):
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",
         "SignalJEPA_PreLocal",
-        "InterpolatedBENDR",
-        "InterpolatedBIOT",
-        "InterpolatedEEGPT",
-        "InterpolatedLaBraM",
-        "InterpolatedSignalJEPA",
+        # As EEGDINO: forward() returns a Dict[str, Tensor] or a Tensor.
+        "SleepFM",
+        "SleepFMStager",
+        # VQ argmin dispatch and _encode_quantize method not scriptable.
+        "BrainOmni",
+        "BrainTokenizer",
         "STEEGFormer",
+        # The three-band spectrogram frontend runs torch.stft, which
+        # torch.jit.script cannot compile, and forward() returns Dict[str,
+        # Tensor] (features) or Tensor (logits).
+        "MAPA",
     ]
 
     if model.__class__.__name__ in not_working_models:
@@ -821,3 +818,49 @@ def test_if_models_with_embedding_parameter(model):
         print(model)
     except Exception as e:
         pytest.fail(f"Error printing model {model_name}: {e}")
+
+
+# CPU has no float16 kernel for these ops, or the value range overflows float16.
+_FLOAT16_XFAIL = {
+    "EEGMiner": "CPU batch_norm needs float32 parameters for float16 input",
+    "FBCNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
+    "FBMSNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
+    "FBLightConvNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
+    "LUNA": "activations overflow the float16 range",
+}
+_LOW_PRECISION_XFAIL = {
+    "EEGSym": "CPU avg_pool3d has no bfloat16/float16 kernel",
+}
+
+
+def _dtype_cases():
+    for name in _MODEL_CASES:
+        for dtype in (torch.float64, torch.bfloat16, torch.float16):
+            reason = None
+            if dtype != torch.float64:
+                reason = _LOW_PRECISION_XFAIL.get(name)
+            if dtype == torch.float16:
+                reason = reason or _FLOAT16_XFAIL.get(name)
+            marks = [pytest.mark.xfail(reason=reason)] if reason else []
+            yield pytest.param(name, dtype, marks=marks, id=f"{name}-{str(dtype)[6:]}")
+
+
+@pytest.mark.parametrize("model_name, dtype", list(_dtype_cases()))
+def test_forward_in_dtype(model_name, dtype):
+    """``model.to(dtype)`` forwards on CPU and returns finite ``dtype`` outputs."""
+    required, signal_params = _MODEL_CASES[model_name]
+    model = all_models_dict[model_name](**get_sp(signal_params, required)).eval()
+    try:
+        n_chans = model.n_chans
+    except ValueError:
+        n_chans = default_signal_params["n_chans"]
+    try:
+        n_times = model.n_times
+    except ValueError:
+        n_times = default_signal_params["n_times"]
+    x = torch.randn(2, n_chans, n_times)
+    with torch.no_grad():
+        model(x)  # materialise lazy modules in float32
+        y = model.to(dtype)(x.to(dtype))
+    y = y if torch.is_tensor(y) else next(iter(y.values()))
+    assert y.dtype == dtype and torch.isfinite(y).all()

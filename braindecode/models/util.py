@@ -35,12 +35,6 @@ INTRACRANIAL_CH_TYPES = frozenset({"seeg", "dbs", "ecog"})
 
 
 models_dict = {}
-# Interpolated models are channel-interpolating wrappers around existing
-# braindecode backbones (see :func:`braindecode.models.InterpolatedModel`).
-# They are derivatives of existing models rather than standalone
-# architectures, so they are kept in a separate registry to avoid polluting
-# ``models_dict`` (e.g. for benchmarking that iterates over all "real" models).
-interpolated_models_dict = {}
 
 _IMPORT_ADAPTER = pydantic.TypeAdapter(pydantic.ImportString)
 
@@ -161,7 +155,10 @@ def build_model_config(model) -> dict:
             elif not _is_jsonable(val):
                 continue
             config[name] = val
-    chs_info = getattr(model, "_chs_info", None)
+    layer = getattr(model, "channel_layer", None)  # save the input, not the target
+    chs_info = (
+        layer.chs_info if layer is not None else getattr(model, "_chs_info", None)
+    )
     if chs_info is not None:
         config["chs_info"] = model._serialize_chs_info(chs_info)
     return config
@@ -214,22 +211,14 @@ def _init_models_dict():
             issubclass(m[1], models.base.EEGModuleMixin)
             and m[1] != models.base.EEGModuleMixin
         ):
-            # Interpolated models are wrappers around existing backbones
-            # (identified by the ``_TARGET_CHS_INFO`` class attribute set by
-            # :func:`braindecode.models.InterpolatedModel`). Keep them in a
-            # dedicated registry instead of ``models_dict``.
-            if getattr(m[1], "_TARGET_CHS_INFO", None) is not None:
-                interpolated_models_dict[m[0]] = m[1]
-            else:
-                models_dict[m[0]] = m[1]
+            models_dict[m[0]] = m[1]
 
 
 def _get_model_class(model_name: str):
     """Return the model class registered under ``model_name``.
 
-    Searches both the standard :data:`models_dict` and the
-    :data:`interpolated_models_dict` so that interpolated models remain
-    resolvable by name (e.g. for skorch wrappers and pydantic configs).
+    Looks the name up in :data:`models_dict` (e.g. for skorch wrappers and
+    pydantic configs).
 
     Parameters
     ----------
@@ -244,14 +233,12 @@ def _get_model_class(model_name: str):
     Raises
     ------
     ValueError
-        If ``model_name`` is not found in either registry.
+        If ``model_name`` is not a registered model.
     """
-    if not models_dict and not interpolated_models_dict:
+    if not models_dict:
         _init_models_dict()
     if model_name in models_dict:
         return models_dict[model_name]
-    if model_name in interpolated_models_dict:
-        return interpolated_models_dict[model_name]
     raise ValueError(f"Unknown model name {model_name!r}.")
 
 
@@ -300,15 +287,8 @@ _chs_info_3ch = [
     }
     for i in range(1, 4)
 ]
-# 4-channel variant: MNE interpolation requires >=4 digitisation points
-_chs_info_4ch = [
-    {
-        "ch_name": f"C{i}",
-        "kind": "eeg",
-        "loc": _rng.random(12),
-    }
-    for i in range(1, 5)
-]
+# Draws of a removed 4-channel fixture, kept so later random locs are unchanged.
+_rng.random(4 * 12)
 
 
 def _get_labram_chs_info() -> list[dict]:
@@ -357,6 +337,76 @@ def _get_bendr_chs_info() -> list[dict]:
     return result
 
 
+# FreeSurfer's left-hemisphere Desikan-Killiany cortical gyri occupy the
+# contiguous id block 1000-1035 of its bundled colour table (the right
+# hemisphere mirrors it 1000 ids higher). DKT drops five of these 36 ids:
+# 1000 (``unknown``) and 1004 (``corpuscallosum``) are not cortical parcels,
+# and 1001 (``bankssts``), 1032 (``frontalpole``), 1033 (``temporalpole``) are
+# the three gyri whose boundaries the DKT protocol could not define reliably,
+# so they were folded into their neighbours. These are FreeSurfer *ids*, not
+# parcel names, so the exclusion needs no name vocabulary.
+_DK_LH_CORTICAL_IDS = range(1000, 1036)
+_DKT_EXCLUDED_IDS = frozenset({1000, 1001, 1004, 1032, 1033})
+
+# Aseg subcortical structures get a ``Left-``/``Right-`` id pair for every
+# lateralized entry; DKT keeps the structures whose left id falls in 10-18
+# and that have a ``Right-`` counterpart elsewhere in the table. The 3rd/4th
+# ventricles and the brain stem fall in that id range too but have no
+# ``Right-`` counterpart, so this test excludes them by structure, not by
+# typing their names.
+_ASEG_LH_IDS = range(10, 19)
+
+# MAPA's released region embedding orders the six kept aseg structures as
+# Hippocampus, Amygdala, Caudate, Putamen, Pallidum, Thalamus-Proper. That is
+# neither ascending-id order (Thalamus, Caudate, Putamen, Pallidum,
+# Hippocampus, Amygdala) nor alphabetical order (Amygdala, Caudate,
+# Hippocampus, Pallidum, Putamen, Thalamus-Proper): no table MNE ships
+# encodes it. It is the one piece of metadata this helper cannot derive --
+# confirmed only by the released checkpoint, via the state-dict transplant in
+# ``test_mapa_released_checkpoint_reproduces_the_reference_features`` -- so it
+# is kept as a permutation of *positions* in the alphabetically-sorted,
+# MNE-derived set below, never as a list of structure names.
+_ASEG_SLOT_PERMUTATION: tuple[int, ...] = (2, 0, 1, 4, 3, 5)
+
+
+def dkt_region_slots() -> tuple[str, ...]:
+    """FreeSurfer DKT region names in MAPA's released embedding slot order.
+
+    The 62 hemisphere-qualified cortical parcels come first (left hemisphere,
+    then right, each alphabetically sorted), then the 12 subcortical
+    structures (left, then right, in the released, non-alphabetical order --
+    see ``_ASEG_SLOT_PERMUTATION``). Every name comes straight out of
+    :func:`mne.read_freesurfer_lut`, MNE's bundled FreeSurfer colour table
+    (no download); braindecode contributes only the id-based selection rule
+    and the slot order, never a hand-typed name list.
+
+    Returns
+    -------
+    tuple of str
+        The 74 region names, index ``i`` being embedding slot ``i``.
+    """
+    lut, _ = mne.read_freesurfer_lut()
+    cortical = sorted(
+        name.removeprefix("ctx-lh-")
+        for name, id_ in lut.items()
+        if id_ in _DK_LH_CORTICAL_IDS and id_ not in _DKT_EXCLUDED_IDS
+    )
+    aseg_lh_alpha = sorted(
+        name.removeprefix("Left-")
+        for name, id_ in lut.items()
+        if id_ in _ASEG_LH_IDS
+        and name.startswith("Left-")
+        and f"Right-{name.removeprefix('Left-')}" in lut
+    )
+    aseg = tuple(aseg_lh_alpha[i] for i in _ASEG_SLOT_PERMUTATION)
+    return (
+        tuple(f"ctx-lh-{parcel}" for parcel in cortical)
+        + tuple(f"ctx-rh-{parcel}" for parcel in cortical)
+        + tuple(f"Left-{structure}" for structure in aseg)
+        + tuple(f"Right-{structure}" for structure in aseg)
+    )
+
+
 models_mandatory_parameters: list[
     tuple[str, list[SigArgName], dict[SigArgName, Any] | None | Any]
 ] = [
@@ -392,11 +442,6 @@ models_mandatory_parameters: list[
     ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGPT", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
-    (
-        "InterpolatedEEGPT",
-        ["chs_info", "n_outputs", "n_times"],
-        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
-    ),
     ("ShallowFBCSPNet", ["n_chans", "n_outputs", "n_times"], None),
     (
         "SleepStagerBlanco2020",
@@ -404,6 +449,16 @@ models_mandatory_parameters: list[
         {"n_chans": 4},  # n_chans dividable by n_groups=2
     ),
     ("SleepStagerChambon2018", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    (
+        "SleepFM",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {"n_chans": 3, "n_times": 640, "sfreq": 128.0},
+    ),
+    (
+        "SleepFMStager",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {"n_chans": 3, "n_times": 640, "sfreq": 128.0},
+    ),
     (
         "AttnSleep",
         ["n_outputs", "n_times", "sfreq"],
@@ -423,11 +478,6 @@ models_mandatory_parameters: list[
         {"n_times": 2048, "sfreq": 2048.0},  # the pretraining rate, 1 s windows
     ),
     ("PopulationTransformer", ["n_chans", "n_outputs", "n_times"], None),
-    (
-        "InterpolatedBIOT",
-        ["chs_info", "n_outputs", "sfreq", "n_times"],
-        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
-    ),
     ("AttentionBaseNet", ["n_chans", "n_outputs", "n_times"], None),
     (
         "Labram",
@@ -435,11 +485,6 @@ models_mandatory_parameters: list[
         # Callable: Labram requires the exact 128-ch canonical order; deferred to
         # avoid a circular import (util.py is loaded by base.py before labram.py).
         lambda: {"chs_info": _get_labram_chs_info()},
-    ),
-    (
-        "InterpolatedLaBraM",
-        ["chs_info", "n_outputs", "n_times"],
-        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
     ),
     ("EEGSimpleConv", ["n_chans", "n_outputs", "sfreq"], None),
     ("SPARCNet", ["n_chans", "n_outputs", "n_times"], None),
@@ -457,11 +502,6 @@ models_mandatory_parameters: list[
     ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 250.0}),
     ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("SignalJEPA", ["chs_info"], None),
-    (
-        "InterpolatedSignalJEPA",
-        ["chs_info"],
-        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
-    ),
     ("SignalJEPA_Contextual", ["chs_info", "n_times", "n_outputs"], None),
     ("SignalJEPA_PostLocal", ["n_chans", "n_times", "n_outputs"], None),
     ("SignalJEPA_PreLocal", ["n_chans", "n_times", "n_outputs"], None),
@@ -536,12 +576,22 @@ models_mandatory_parameters: list[
         # by base.py before bendr.py).
         lambda: {"chs_info": _get_bendr_chs_info()},
     ),
-    (
-        "InterpolatedBENDR",
-        ["chs_info", "n_outputs", "n_times"],
-        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
-    ),
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
+    (
+        "MAPA",
+        ["chs_info", "n_outputs", "n_times"],
+        {
+            # 1 s at the paper's 2048 Hz, i.e. 32 frames of the 32 Hz clock.
+            "n_times": 2048,
+            "sfreq": 2048.0,
+            # Clinical sEEG labels, which MAPA reads the array and the contact
+            # number off: two arrays of unequal length.
+            "chs_info": [
+                {"ch_name": name, "kind": "seeg"}
+                for name in ("LA1", "LA2", "LA5", "LB3", "LB7")
+            ],
+        },
+    ),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("MIRepNet", ["n_chans", "n_outputs"], None),
     ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
@@ -561,18 +611,33 @@ models_mandatory_parameters: list[
         },
     ),
     ("CBraMod", ["n_outputs"], None),
+    ("CSBrain", ["n_outputs"], None),
     (
         "CodeBrain",
         ["n_chans", "n_outputs", "n_times"],
         {"n_chans": 19, "n_times": 6000},
     ),
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
+    ("BrainOmni", ["chs_info", "n_outputs", "n_times", "sfreq"], None),
+    ("BrainTokenizer", ["chs_info", "n_times", "sfreq"], None),
     (
         "DIVER1",
         ["chs_info", "n_outputs", "n_times"],
         {"sfreq": 500.0},
     ),
     ("EEGDINO", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "NeuroRVQ",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 3,
+            "n_times": 600,
+            "sfreq": 200.0,
+            "chs_info": [
+                {"ch_name": name, "kind": "eeg"} for name in ("F3", "F4", "Cz")
+            ],
+        },
+    ),
     (
         "DANCE",
         ["n_outputs", "n_chans", "n_times", "sfreq", "chs_info"],
@@ -601,6 +666,15 @@ models_mandatory_parameters: list[
             "input_window_seconds": 5.0,
         },
     ),
+    (
+        "SeizureTransformer",
+        ["n_chans", "n_outputs", "n_times"],
+        {
+            "n_chans": 19,
+            "n_times": 1024,  # 4 s @ 256 Hz keeps the 38M-parameter model fast in CI
+            "sfreq": 256.0,
+        },
+    ),
 ]
 
 ################################################################
@@ -611,10 +685,13 @@ models_mandatory_parameters: list[
 ################################################################
 non_classification_models = [
     "SignalJEPA",
-    "InterpolatedSignalJEPA",
+    # Emits token-wise logits (batch, n_outputs, n_patches).
+    "SleepFMStager",
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
     "MetaNeuromotorHand",
     "EMG2QwertyNet",
+    # Returns a reconstruction tensor (VQ-VAE output), not class logits.
+    "BrainTokenizer",
     # Dense per-frame pose sequences (batch, T, n_joints), not logits.
     "VEMG2Pose",
     "NeuroPose",
@@ -622,6 +699,9 @@ non_classification_models = [
     # forward returns (batch, num_latents, n_outputs) dense per-token logits,
     # not class logits.
     "DANCE",
+    # forward returns (batch, n_outputs, n_times) per-sample logits, not
+    # window logits.
+    "SeizureTransformer",
 ]
 
 ################################################################

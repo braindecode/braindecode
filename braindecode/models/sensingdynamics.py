@@ -11,6 +11,7 @@ from einops.layers.torch import Rearrange
 from scipy.signal import butter
 from torch import nn
 
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules.activation import SmoothMaximumUnit
@@ -384,12 +385,13 @@ class _ButterworthLowpass(nn.Module):
         self.register_buffer("b_coeffs", torch.as_tensor(b_coeffs, dtype=torch.float64))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x_in = spectral_input(x)
         n_times = x.shape[-1]
         n_freqs = n_times // 2 + 1
         frequency_indices = torch.arange(
             n_freqs,
-            device=x.device,
-            dtype=self.a_coeffs.dtype,
+            device=x_in.device,
+            dtype=torch.float64,
         )
         omega = 2 * torch.pi * frequency_indices / n_times
         negative_imaginary_omega = -1j * omega
@@ -397,7 +399,10 @@ class _ButterworthLowpass(nn.Module):
 
         numerator = torch.zeros_like(unit_delay)
         denominator = torch.zeros_like(unit_delay)
-        for delay, (b_coeff, a_coeff) in enumerate(zip(self.b_coeffs, self.a_coeffs)):
+        # Filter response in float64 (on the CPU for HPU inputs, via x_in).
+        b_coeffs = self.b_coeffs.to(x_in.device, torch.float64)
+        a_coeffs = self.a_coeffs.to(x_in.device, torch.float64)
+        for delay, (b_coeff, a_coeff) in enumerate(zip(b_coeffs, a_coeffs)):
             unit_delay_power = unit_delay**delay
             numerator_term = b_coeff * unit_delay_power
             denominator_term = a_coeff * unit_delay_power
@@ -408,7 +413,7 @@ class _ButterworthLowpass(nn.Module):
         magnitude_response = frequency_response.abs()
         zero_phase_response = magnitude_response.square()
 
-        spectrum = torch.fft.rfft(x, dim=-1)
+        spectrum = torch.fft.rfft(x_in, dim=-1)
         typed_response = zero_phase_response.to(dtype=spectrum.dtype)
         filtered_spectrum = spectrum * typed_response
         filtered = torch.fft.irfft(
@@ -416,7 +421,7 @@ class _ButterworthLowpass(nn.Module):
             n=n_times,
             dim=-1,
         )
-        return filtered
+        return filtered.to(x)
 
 
 class _ConvBlock(nn.Module):

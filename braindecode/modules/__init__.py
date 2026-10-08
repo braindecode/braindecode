@@ -27,6 +27,7 @@ from .blocks import (
     PatchTokenizer,
     TDSConvEncoder,
 )
+from .channels import ChannelLayer
 from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
@@ -37,7 +38,6 @@ from .convolution import (
 )
 from .dance_modules import Perceiver, SimpleConv
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
-from .interpolation import ChannelInterpolationLayer
 from .layers import (
     ChannelMerger,
     Chomp1d,
@@ -50,6 +50,7 @@ from .layers import (
 )
 from .linear import LinearWithConstraint, MaxNormLinear
 from .parametrization import MaxNorm, MaxNormParametrize
+from .quantization import EMACodebook, ResidualVectorQuantizer, VectorQuantizer
 from .stats import (
     LogPowerLayer,
     LogVarLayer,
@@ -63,6 +64,9 @@ from .util import aggregate_probas
 from .wrapper import Expression, IntermediateOutputWrapper
 
 __all__ = [
+    "EMACodebook",
+    "ResidualVectorQuantizer",
+    "VectorQuantizer",
     "GatedLinearUnit",
     "LogActivation",
     "SafeLog",
@@ -70,7 +74,7 @@ __all__ = [
     "Square",
     "CAT",
     "CBAM",
-    "ChannelInterpolationLayer",
+    "ChannelLayer",
     "ECA",
     "FCA",
     "GCT",
