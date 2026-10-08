@@ -195,6 +195,13 @@ Enhancements
   their reason (:gh:`1256` by
   `Bruno Aristimunha`_).
 
+- :func:`torch.jit.script` compiles :class:`braindecode.models.BENDR`,
+  :class:`braindecode.models.MIRepNet` and :class:`braindecode.models.MSVTNet`,
+  whose ``forward`` now declares its dict or tuple return, and the scripted
+  :class:`braindecode.models.BrainModule` gives the eager output (its encoder
+  held ``None`` in a ``ModuleList``, which TorchScript drops). Eager outputs
+  and state-dict keys are unchanged (:gh:`YYYY` by `Bruno Aristimunha`_).
+
 API and behavior changes
 ========================
 
