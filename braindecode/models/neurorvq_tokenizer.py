@@ -3,7 +3,7 @@
 #
 # License: CC BY-NC 4.0
 # Adapted from https://github.com/KonstantinosBarmpas/NeuroRVQ (CC BY-NC 4.0).
-"""NeuroRVQ residual-vector-quantized EEG tokenizer."""
+"""NeuroRVQ residual-vector-quantized biosignal tokenizer."""
 
 from __future__ import annotations
 
@@ -11,19 +11,14 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin, huggingface_hub
+from braindecode.models.base import EEGModuleMixin
 from braindecode.models.neurorvq import (
-    _PRETRAINED_REPO_ID,
-    _PRETRAINED_REVISION,
-    NEURORVQ_CHANNELS,
-    NeuroRVQ,
     _Block,
+    _channel_slots,
+    _modality,
     _MultiScaleTemporalConv,
-    _remap_mlp_state_dict_keys,
 )
 from braindecode.modules.quantization import _all_reduce_sum
-
-_PRETRAINED_FILENAME = "pretrained_models/tokenizers/NeuroRVQ_EEG_tokenizer_v1.pt"
 
 
 class _EMAEmbedding(nn.Module):
@@ -160,6 +155,7 @@ class _BranchTransformer(nn.Module):
         self,
         patch_embeds: dict[str, nn.Module],
         *,
+        n_channels: int,
         max_patches: int,
         embed_dim: int,
         depth: int,
@@ -173,10 +169,8 @@ class _BranchTransformer(nn.Module):
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         for name, module in patch_embeds.items():
             setattr(self, name, module)
-        # One spatial slot per montage electrode plus slot 0 for the class token.
-        self.pos_embed = nn.Parameter(
-            torch.zeros(len(NEURORVQ_CHANNELS) + 1, embed_dim)
-        )
+        # One spatial slot per pretrained channel plus slot 0 for the class token.
+        self.pos_embed = nn.Parameter(torch.zeros(n_channels + 1, embed_dim))
         self.time_embed = nn.Parameter(torch.zeros(max_patches, embed_dim))
         self.pos_drop = nn.Dropout(drop_prob)
         drop_paths = torch.linspace(0, drop_path_rate, depth).tolist()
@@ -220,36 +214,42 @@ class _BranchTransformer(nn.Module):
 
 
 class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
-    r"""NeuroRVQ multi-scale residual-vector-quantized EEG tokenizer from Barmpas et al. [neurorvq]_.
+    r"""NeuroRVQ multi-scale residual-vector-quantized biosignal tokenizer from Barmpas et al. [neurorvq]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`
 
-    The tokenizer encodes EEG patches through four temporal scales, quantizes
-    each scale with a separate residual vector quantizer, and reconstructs the
-    signal from amplitude and phase components. The Transformer blocks,
-    temporal convolution and channel list are shared with :class:`NeuroRVQ`.
+    The tokenizer encodes EEG, ECG, EMG or PPG patches through four temporal
+    scales, quantizes each scale with a separate residual vector quantizer,
+    and reconstructs the signal from amplitude and phase components. The
+    Transformer blocks, temporal convolution, channel lists and ``modality``
+    presets are shared with :class:`NeuroRVQ`.
 
-    Inputs must be sampled at 200 Hz, contain complete 200-sample patches, and
-    use electrode labels from the released 104-channel montage. The model does
-    not preprocess signals; the released example applies notch filters at 50,
-    60 and 100 Hz, a 0.5-44.5 Hz band-pass, clipping at 500 uV and resampling
-    to 200 Hz.
+    Inputs must be sampled at the modality's rate, contain complete patches
+    and use channel names from the modality's pretrained list (see
+    :class:`NeuroRVQ`). The model does not preprocess signals; the released
+    EEG example applies notch filters at 50, 60 and 100 Hz, a 0.5-44.5 Hz
+    band-pass, clipping at 500 uV and resampling to 200 Hz.
 
     .. important::
        **Pre-trained Weights Available**
 
-       ``load_pretrained_weights`` downloads the released EEG tokenizer
-       (`ntinosbarmpas/NeuroRVQ <https://huggingface.co/ntinosbarmpas/NeuroRVQ>`_,
-       revision ``d944b87``, CC BY-NC 4.0). Pass ``channel_names`` or
-       ``chs_info`` so electrodes map to the released spatial embeddings.
+       The released tokenizers (`ntinosbarmpas/NeuroRVQ
+       <https://huggingface.co/ntinosbarmpas/NeuroRVQ>`_, revision ``d944b87``,
+       CC BY-NC 4.0) are hosted as
+       ``braindecode/neurorvq-tokenizer-eeg-pretrained``,
+       ``braindecode/neurorvq-tokenizer-ecg-pretrained``,
+       ``braindecode/neurorvq-tokenizer-emg-pretrained`` and
+       ``braindecode/neurorvq-tokenizer-ppg-pretrained``; the foundation models
+       are in ``braindecode/neurorvq-{eeg,ecg,emg}-pretrained``
+       (:class:`NeuroRVQ`):
 
        .. code-block:: python
 
            from braindecode.models import NeuroRVQTokenizer
 
-           model = NeuroRVQTokenizer(
-               n_chans=3, n_times=800, sfreq=200, channel_names=("f3", "f4", "cz")
-           ).load_pretrained_weights()
+           model = NeuroRVQTokenizer.from_pretrained(
+               "braindecode/neurorvq-tokenizer-eeg-pretrained", chs_info=raw.info["chs"]
+           )
 
        Raw reconstruction MSE (Table 10 of [neurorvq]_), with the data preparation
        of the EEG-Benchmarking code linked from the NeuroRVQ repository: the port
@@ -264,22 +264,26 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     Parameters
     ----------
     n_chans : int
-        Number of EEG channels.
+        Number of channels.
     n_times : int
-        Number of samples; must be divisible by 200 and no longer than
-        ``patch_size * max_patches``.
+        Number of samples; must be divisible by ``patch_size`` and no longer
+        than ``patch_size * max_patches``.
     sfreq : float
-        Sampling frequency. NeuroRVQ-EEG v1 requires 200 Hz.
+        Sampling frequency; must be the modality's rate.
     channel_names : sequence of str or None
-        Ordered electrode names. If omitted, names are inferred from
+        Ordered channel names. If omitted, names are inferred from
         ``chs_info`` or default to the first channels in the pretrained order.
-    max_patches : int, default=256
-        Length of the temporal embedding table.
-    patch_size : int, default=200
-        Samples per patch. The pretrained version requires 200.
+    modality : {"eeg", "ecg", "emg", "ppg"}, default="eeg"
+        Released configuration (see :class:`NeuroRVQ`); also sets the
+        defaults of ``patch_size``, ``max_patches`` and ``num_quantizers``.
+    patch_size : int or None, default=None
+        Samples per patch; ``None`` uses the modality's value.
+    max_patches : int or None, default=None
+        Length of the temporal embedding table; ``None`` uses the modality's
+        value.
     out_chans : int, default=8
         Number of channels per temporal-convolution branch; must be divisible
-        by four. The Transformer width is derived as ``out_chans * 25``.
+        by four. The Transformer width is ``out_chans * patch_size // 8``.
     encoder_depth : int, default=12
         Number of shared encoder Transformer blocks.
     decoder_depth : int, default=3
@@ -290,8 +294,9 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         Number of entries per EMA codebook.
     code_dim : int, default=128
         Dimension of each quantized latent vector.
-    num_quantizers : int, default=8
-        Number of residual codebooks per temporal scale.
+    num_quantizers : int or None, default=None
+        Number of residual codebooks per temporal scale (EMG 16, the others
+        8); ``None`` uses the modality's value.
     drop_prob : float, default=0.0
         Dropout probability in the Transformer stacks.
     attn_drop_rate : float, default=0.0
@@ -316,8 +321,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     >>> from braindecode.models import NeuroRVQTokenizer
     >>> model = NeuroRVQTokenizer(
     ...     n_chans=3, n_times=800, sfreq=200, channel_names=["C3", "Cz", "C4"]
-    ... )
-    >>> model = model.load_pretrained_weights().eval()  # doctest: +SKIP
+    ... ).eval()
     >>> x = torch.randn(2, 3, 800)  # (batch, channels, 4 s at 200 Hz)
     >>> target, reconstruction = model(x)
     >>> target.shape  # (batch, n_chans * n_patches, patch_size)
@@ -342,15 +346,16 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         sfreq: float | None = None,
         *,
         channel_names: tuple[str, ...] | list[str] | None = None,
-        patch_size: int = 200,
-        max_patches: int = 256,
+        modality: str = "eeg",
+        patch_size: int | None = None,
+        max_patches: int | None = None,
         out_chans: int = 8,
         encoder_depth: int = 12,
         decoder_depth: int = 3,
         num_heads: int = 10,
         n_code: int = 8192,
         code_dim: int = 128,
-        num_quantizers: int = 8,
+        num_quantizers: int | None = None,
         drop_prob: float = 0.0,
         attn_drop_rate: float = 0.0,
         drop_path_rate: float = 0.0,
@@ -366,44 +371,32 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, input_window_seconds
-        if patch_size != 200:
-            raise ValueError("NeuroRVQ-EEG v1 requires patch_size=200.")
+        preset = _modality(self, modality)
+        patch_size = patch_size or preset["patch_size"]
+        max_patches = max_patches or preset["max_patches"]
+        num_quantizers = num_quantizers or preset["num_quantizers"]
         if self.n_times % patch_size:
-            raise ValueError("n_times must be divisible by patch_size (200 samples).")
+            raise ValueError(f"n_times must be divisible by patch_size ({patch_size}).")
         self.num_patches = self.n_times // patch_size
         if self.num_patches > max_patches:
             raise ValueError(f"n_times supports at most {max_patches} patches.")
-        model_sfreq = self._sfreq
-        if model_sfreq is None and self._input_window_seconds is not None:
-            model_sfreq = self.n_times / self._input_window_seconds
-        if model_sfreq is not None and model_sfreq != 200:
-            raise ValueError("NeuroRVQ-EEG v1 requires a 200 Hz sampling frequency.")
-        embed_dim = out_chans * 25
+        embed_dim = out_chans * (patch_size // 8)
         # LaBraM's attention would silently floor the head width otherwise.
         if embed_dim % num_heads:
             raise ValueError(
                 "The derived embedding width must be divisible by num_heads."
             )
 
-        self._has_explicit_channel_mapping = (
-            channel_names is not None or self._chs_info is not None
+        self.channel_names, slots = _channel_slots(
+            self, channel_names, preset["channels"]
         )
-        self.channel_names = NeuroRVQ._resolve_channel_names(self, channel_names)
-        channel_to_index = {name: i for i, name in enumerate(NEURORVQ_CHANNELS)}
-        unknown = [name for name in self.channel_names if name not in channel_to_index]
-        if unknown:
-            raise ValueError(f"Unsupported NeuroRVQ channel name(s): {unknown}.")
-
         self.patch_size = patch_size
         self.max_patches = max_patches
         self.code_dim = code_dim
         self.num_quantizers = num_quantizers
-        self.register_buffer(
-            "spatial_embedding_ix",
-            torch.tensor([channel_to_index[name] for name in self.channel_names]),
-            persistent=False,
-        )
+        self.register_buffer("spatial_embedding_ix", slots, persistent=False)
         transformer: dict = dict(
+            n_channels=len(preset["channels"]),
             max_patches=max_patches,
             embed_dim=embed_dim,
             num_heads=num_heads,
@@ -413,7 +406,11 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             init_values=init_values,
         )
         self.encoder = _BranchTransformer(
-            {"patch_embed": _MultiScaleTemporalConv(out_chans, activation)},
+            {
+                "patch_embed": _MultiScaleTemporalConv(
+                    out_chans, activation, preset["kernels"]
+                )
+            },
             depth=encoder_depth,
             **transformer,
         )
@@ -566,30 +563,3 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             target_std.reshape(x.shape[0], self.n_chans * self.num_patches, -1),
             reconstructed_std.reshape(x.shape[0], self.n_chans * self.num_patches, -1),
         )
-
-    def load_pretrained_weights(self, checkpoint_path: str | None = None):
-        """Load the released EEG tokenizer checkpoint from a local path or the Hub.
-
-        The model must have been built with ``channel_names`` or ``chs_info``.
-        """
-        if not self._has_explicit_channel_mapping:
-            raise ValueError(
-                "Loading pretrained NeuroRVQ tokenizer weights requires "
-                "channel_names or chs_info so input electrodes map to the "
-                "released spatial embedding slots. The implicit first-N channel "
-                "fallback is only supported for randomly initialized training."
-            )
-        if checkpoint_path is None:
-            if not HAS_HF_HUB:
-                raise ImportError(
-                    "Loading NeuroRVQ weights from the Hub requires huggingface_hub. "
-                    "Install braindecode[hub] or pass checkpoint_path."
-                )
-            checkpoint_path = huggingface_hub.hf_hub_download(
-                repo_id=_PRETRAINED_REPO_ID,
-                filename=_PRETRAINED_FILENAME,
-                revision=_PRETRAINED_REVISION,
-            )
-        state = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-        self.load_state_dict(_remap_mlp_state_dict_keys(state), strict=True)
-        return self

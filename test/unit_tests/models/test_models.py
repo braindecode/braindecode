@@ -4877,7 +4877,8 @@ def test_neurorvq_output_and_features(neurorvq_model_kwargs):
         ),
         ({"channel_names": ("f3", "f3", "cz")}, "channel_names must be unique"),
         ({"n_times": 1800, "max_patches": 8}, "supports at most 8 patches"),
-        ({"patch_size": 100}, "requires patch_size=200"),
+        ({"modality": "eog"}, "modality must be one of"),
+        ({"head_pooling": "max"}, "head_pooling must be"),
         ({"init_values": None}, "init_values must be a number"),
     ],
 )
@@ -4928,14 +4929,43 @@ def test_neurorvq_default_channel_names_follow_reference_order(neurorvq_model_kw
     assert model.channel_names == NEURORVQ_CHANNELS[:3]
 
 
-def test_neurorvq_pretrained_loading_requires_explicit_channel_mapping(
-    neurorvq_model_kwargs,
+@pytest.mark.parametrize(
+    "modality, sfreq, n_times, names, kernels, n_slots, num_quantizers",
+    [
+        ("eeg", 200, 400, ("f3", "cz"), (21, 9), 105, 8),
+        ("ecg", 200, 80, ("i", "v1"), (21, 9), 16, 8),
+        ("emg", 1000, 400, ("c1", "c9"), (51, 25), 17, 16),
+        ("ppg", 100, 160, ("ppg_c1",), (41, 17), 2, 8),
+    ],
+)
+def test_neurorvq_modality_presets(
+    modality, sfreq, n_times, names, kernels, n_slots, num_quantizers
 ):
-    kwargs = neurorvq_model_kwargs | {"channel_names": None, "chs_info": None}
-    model = NeuroRVQ(**kwargs)
+    geometry = dict(
+        n_chans=len(names),
+        n_times=n_times,
+        sfreq=sfreq,
+        channel_names=names,
+        modality=modality,
+    )
+    model = NeuroRVQ(n_outputs=2, depth=1, **geometry)
+    tokenizer = NeuroRVQTokenizer(
+        encoder_depth=1, decoder_depth=1, n_code=16, **geometry
+    ).eval()
+    x = torch.randn(2, len(names), n_times)
 
-    with pytest.raises(ValueError, match="requires channel_names or chs_info"):
-        model.load_pretrained_weights("checkpoint-is-not-read-before-validation.pt")
+    for m in (model, tokenizer.encoder):
+        conv = m.patch_embed
+        assert (conv.conv1_1.kernel_size[1], conv.conv2_1.kernel_size[1]) == kernels
+        assert m.pos_embed.shape[0] == n_slots
+    assert len(tokenizer.quantize_1.layers) == num_quantizers
+    width = 4 * model.embed_dim
+    if modality != "eeg":  # mean-pooled head
+        assert model(x, return_features=True)["features"].shape == (2, width)
+    assert model(x).shape == (2, 2)
+    target, reconstruction = tokenizer(x)
+    assert target.shape == reconstruction.shape == (2, n_times // model.patch_size * len(names), model.patch_size)
+    assert tokenizer.tokenize(x).shape[:2] == (4, num_quantizers)
 
 
 def test_neurorvq_transformer_block_uses_sequential_residuals():
@@ -5015,27 +5045,6 @@ def test_neurorvq_tokenizer_standardizes_each_window():
     for output in (target, reconstruction):
         torch.testing.assert_close(output.mean(dim=(1, 2)), torch.zeros(2), atol=1e-5, rtol=0)
         torch.testing.assert_close(output.std(dim=(1, 2)), torch.ones(2), atol=1e-4, rtol=0)
-
-
-def test_neurorvq_tokenizer_loads_released_mlp_key_layout(tmp_path):
-    # The released checkpoint names the block MLP layers ``mlp.fc1``/``mlp.fc2``.
-    model = _small_neurorvq_tokenizer()
-    released = {
-        name.replace(".mlp.0.", ".mlp.fc1.").replace(".mlp.2.", ".mlp.fc2."): value
-        for name, value in model.state_dict().items()
-    }
-    torch.save(released, tmp_path / "tokenizer.pt")
-
-    loaded = _small_neurorvq_tokenizer().load_pretrained_weights(
-        str(tmp_path / "tokenizer.pt")
-    )
-    for name, value in model.state_dict().items():
-        torch.testing.assert_close(loaded.state_dict()[name], value)
-
-    with pytest.raises(ValueError, match="requires channel_names or chs_info"):
-        _small_neurorvq_tokenizer(channel_names=None).load_pretrained_weights(
-            "not-read.pt"
-        )
 
 
 def test_neurorvq_ema_quantizer_matches_normalized_ema_update():
