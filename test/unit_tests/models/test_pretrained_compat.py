@@ -525,6 +525,7 @@ def test_native_only_models_refuse_a_strategy(name):
 EXCLUDED = {
     "NeuroPose": "sEMG hand-pose regression, no EEG geometry",
     "VEMG2Pose": "sEMG hand-pose regression, no EEG geometry",
+    "NeuroRVQTokenizer": "returns (target, reconstruction); NeuroRVQ's channel contract",
 }
 _SHIPS_WEIGHTS = re.compile(
     r"hf_hub_download|from_pretrained\(|huggingface\.co/|Hugging Face Hub"

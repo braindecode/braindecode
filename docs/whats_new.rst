@@ -80,6 +80,8 @@ Enhancements
 
 - Generate a version-scoped ``llms.txt`` and selected Markdown documentation
   entry points with source-commit attribution and critical-page coverage checks.
+- Add :class:`braindecode.models.NeuroRVQTokenizer`, the released NeuroRVQ
+  EEG tokenizer: reconstruction and discrete codes (:gh:`1223` by `lindicaphxag-tech`_).
 - Add :class:`braindecode.models.AXON`, an axis-factorized EEG foundation
   model whose layers mix a temporal and a spatial attention path with a
   per-token gate, with pretrained weights on the Hugging Face Hub

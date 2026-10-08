@@ -51,6 +51,7 @@ from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
 from .neuropose import NeuroPose
 from .neurorvq import NeuroRVQ
+from .neurorvq_tokenizer import NeuroRVQTokenizer
 from .patchedtransformer import PBT
 from .popt import PopulationTransformer
 from .reve import REVE
@@ -146,6 +147,7 @@ __all__ = [
     "MIRepNet",
     "NeuroRVQ",
     "MSCFormer",
+    "NeuroRVQTokenizer",
     "MSVTNet",
     "MVPFormer",
     "PBT",
