@@ -62,6 +62,7 @@ from braindecode.models import (
     MEDFormer,
     MetaNeuromotorHand,
     NeuroRVQ,
+    NeuroRVQTokenizer,
     SCCNet,
     ShallowFBCSPNet,
     SleepStagerBlanco2020,
@@ -94,6 +95,7 @@ from braindecode.models.eegpt import (
     _rotate_half,
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
+from braindecode.models.neurorvq_tokenizer import _EMAVectorQuantizer
 from braindecode.models.usleep import _DecoderBlock
 from braindecode.models.util import (
     _get_possible_signal_params,
@@ -2518,7 +2520,14 @@ def test_models_batch1_train_mode(
 
     BatchNorm layers, when present, must also be restored to train mode
     after temporarily using running statistics for single-sample inputs.
+    Multi-output models (e.g. tokenizers returning ``(target,
+    reconstruction)``) must keep the batch dimension on every output.
     """
+
+    def _assert_batch_one(out):
+        outputs = out if isinstance(out, (tuple, list)) else (out,)
+        assert all(o.shape[0] == 1 for o in outputs)
+
     sp = _get_signal_params(signal_params)
     model_kwargs = _get_possible_signal_params(sp, required_params)[0]
     model = all_models_dict[model_name](**model_kwargs)
@@ -2536,7 +2545,7 @@ def test_models_batch1_train_mode(
     assert model.training
     with torch.no_grad():
         out = model(x)
-    assert out.shape[0] == 1
+    _assert_batch_one(out)
     # Model and BatchNorm layers must be restored to train mode after forward.
     assert model.training
     assert all(batch_norm.training for batch_norm in batch_norms)
@@ -2545,7 +2554,7 @@ def test_models_batch1_train_mode(
     model.eval()
     with torch.no_grad():
         out = model(x)
-    assert out.shape[0] == 1
+    _assert_batch_one(out)
 
 
 def test_batchnorm_decorator_preserves_forward_input_keyword():
@@ -4951,6 +4960,114 @@ def test_neurorvq_transformer_block_uses_sequential_residuals():
 
     torch.testing.assert_close(block(x), expected)
 
+# ---------------------------------------------------------------------------
+# NeuroRVQTokenizer
+# ---------------------------------------------------------------------------
+
+
+def _small_neurorvq_tokenizer(**kwargs):
+    params = dict(
+        n_chans=3,
+        n_times=400,
+        sfreq=200,
+        channel_names=("f3", "f4", "cz"),
+        max_patches=4,
+        out_chans=4,
+        num_heads=4,
+        encoder_depth=1,
+        decoder_depth=1,
+        n_code=16,
+        code_dim=16,
+        num_quantizers=2,
+    )
+    return NeuroRVQTokenizer(**{**params, **kwargs})
+
+
+def test_neurorvq_tokenizer_codes_and_cold_codebooks():
+    torch.manual_seed(0)
+    model = _small_neurorvq_tokenizer().eval()
+    signal = torch.randn(2, 3, 400)
+    assert not model.quantize_1.layers[0].embedding.initted.item()
+
+    codes = model.tokenize(signal)  # initializes the cold codebooks once
+    assert codes.shape == (4, 2, 2, 6) and codes.dtype == torch.long
+    state = {k: v.clone() for k, v in model.state_dict().items()}
+    torch.testing.assert_close(model.tokenize(signal), codes)
+    for name, value in state.items():
+        torch.testing.assert_close(model.state_dict()[name], value)
+
+    time, spatial = model._embedding_indices(signal.device)
+    _, forward_codes = model._encode(model._patches(signal), time, spatial)
+    # Later residual stages subtract the straight-through ``z + (q - z)`` instead
+    # of ``q``; the rounding can flip near-ties, so compare the first stage.
+    torch.testing.assert_close(forward_codes[:, 0], codes[:, 0])
+
+    model.train()
+    _, reconstruction = model(signal)
+    assert model.quantize_1.layers[0].cluster_size.sum() > 0
+    reconstruction.square().mean().backward()
+    assert model.encode_task_layer_1[0].weight.grad is not None
+
+
+def test_neurorvq_tokenizer_standardizes_each_window():
+    model = _small_neurorvq_tokenizer().eval()
+    target, reconstruction = model(5.0 * torch.randn(2, 3, 400) + 3.0)
+    assert target.shape == reconstruction.shape == (2, 6, 200)
+    for output in (target, reconstruction):
+        torch.testing.assert_close(output.mean(dim=(1, 2)), torch.zeros(2), atol=1e-5, rtol=0)
+        torch.testing.assert_close(output.std(dim=(1, 2)), torch.ones(2), atol=1e-4, rtol=0)
+
+
+def test_neurorvq_tokenizer_loads_released_mlp_key_layout(tmp_path):
+    # The released checkpoint names the block MLP layers ``mlp.fc1``/``mlp.fc2``.
+    model = _small_neurorvq_tokenizer()
+    released = {
+        name.replace(".mlp.0.", ".mlp.fc1.").replace(".mlp.2.", ".mlp.fc2."): value
+        for name, value in model.state_dict().items()
+    }
+    torch.save(released, tmp_path / "tokenizer.pt")
+
+    loaded = _small_neurorvq_tokenizer().load_pretrained_weights(
+        str(tmp_path / "tokenizer.pt")
+    )
+    for name, value in model.state_dict().items():
+        torch.testing.assert_close(loaded.state_dict()[name], value)
+
+    with pytest.raises(ValueError, match="requires channel_names or chs_info"):
+        _small_neurorvq_tokenizer(channel_names=None).load_pretrained_weights(
+            "not-read.pt"
+        )
+
+
+def test_neurorvq_ema_quantizer_matches_normalized_ema_update():
+    quantizer = _EMAVectorQuantizer(n_codes=2, code_dim=2).train()
+    quantizer.decay = 0.5
+    with torch.no_grad():
+        quantizer.embedding.weight.copy_(torch.eye(2))
+        quantizer.embedding.initted.fill_(True)
+
+    _, indices = quantizer(torch.tensor([[[[0.8, -0.6]], [[0.6, 0.8]]]]))
+
+    expected = torch.nn.functional.normalize(torch.tensor([[0.9, 0.3], [-0.3, 0.9]]))
+    assert indices.tolist() == [0, 1]
+    torch.testing.assert_close(quantizer.embedding.weight, expected)
+    torch.testing.assert_close(quantizer.cluster_size, torch.tensor([0.5, 0.5]))
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"sfreq": 250}, "200 Hz"),
+        ({"n_times": 401}, "divisible by patch_size"),
+        ({"channel_names": ("f3", "f4", "x")}, "Unsupported NeuroRVQ channel"),
+    ],
+)
+def test_neurorvq_tokenizer_rejects_incompatible_signal_metadata(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        _small_neurorvq_tokenizer(**kwargs)
+
+
+# ---------------------------------------------------------------------------
 
 def test_neurorvq_block_qk_norm_factory_receives_eps():
     """``_Block.qk_norm`` is called as ``qk_norm(head_dim, eps=1e-6)``."""
