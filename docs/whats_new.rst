@@ -33,6 +33,7 @@ Enhancements
   provides EEG/text embedding, similarity-logit, and zero-shot classification
   interfaces while allowing an optional text encoder to be supplied by the
   user (:gh:`1200` by `lindicaphxag-tech`_).
+- The pretrained-compatibility test now covers every model class with released weights (NeuroRVQ, MAPA, BrainOmni, BrainTokenizer and the SignalJEPA heads added), checks that the list is complete, and runs REVE's cases without network access (:gh:`1252` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.NeuroRVQ` now reuses the LaBraM attention block
   instead of a private copy, and the K-means codebook initialisation in
   :mod:`braindecode.modules.quantization` uses ``torch.cdist`` (about 6x faster,
