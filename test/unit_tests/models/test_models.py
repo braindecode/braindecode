@@ -5059,21 +5059,15 @@ def test_tfm_tokenizer_tokenize_outputs_and_masks():
 def test_tfm_tokenizer_codebook_is_ema_only():
     torch.manual_seed(7)
     model = _small_tfm_tokenizer(codebook_size=64)
-    before = model.quantizer.embedding.weight.clone()
+    before = model.quantizer.embed.clone()
 
     out = model.tokenize(torch.randn(1, 1, 200))
     out.quantization_loss.backward()
 
-    # The VQ loss alone trains both encoder paths, never the codebook.
+    # The VQ loss alone trains both encoder paths; the codebook moves by EMA.
     assert model.frequency_patch_embedding[0].weight.grad.norm() > 0
     assert model.temporal_patch_embedding[0].weight.grad.norm() > 0
-    assert model.quantizer.embedding.weight.grad is None
-    # EMA moves the selected codes and leaves never-selected ones in place.
-    used = torch.zeros(64, dtype=torch.bool)
-    used[out.token_ids.unique()] = True
-    after = model.quantizer.embedding.weight
-    assert not torch.equal(after[used], before[used])
-    torch.testing.assert_close(after[~used], before[~used])
+    assert not torch.equal(model.quantizer.embed, before)
     # No EMA update in eval mode.
     state = {k: v.clone() for k, v in model.quantizer.state_dict().items()}
     model.eval().tokenize(torch.randn(1, 1, 200))

@@ -11,6 +11,7 @@ from linear_attention_transformer import LinearAttentionTransformer
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.quantization import EMACodebook
 
 
 class TFMTokenizerOutput(NamedTuple):
@@ -39,60 +40,6 @@ class TFMTokenizerOutput(NamedTuple):
     embeddings: torch.Tensor
     quantization_loss: torch.Tensor
     target_spectrogram: torch.Tensor
-
-
-class _EMAVectorQuantizer(nn.Module):
-    """Vector quantizer whose codebook is updated by EMA only (no gradients)."""
-
-    # ponytail: not modules.quantization.EMACodebook; its buffer names, init,
-    # dead-code expiry and eps handling differ from the released checkpoint.
-
-    def __init__(self, embed_dim: int, codebook_size: int, decay: float = 0.99):
-        super().__init__()
-        self.codebook_size = codebook_size
-        self.decay = decay
-        self.eps = 1e-5
-        self.embedding = nn.Embedding(codebook_size, embed_dim)
-        nn.init.uniform_(self.embedding.weight, -1 / codebook_size, 1 / codebook_size)
-        self.embedding.weight.requires_grad_(False)
-        self.register_buffer("cluster_size", torch.zeros(codebook_size))
-        self.register_buffer("ema_weight", self.embedding.weight.detach().clone())
-
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        flat_x = x.reshape(-1, x.shape[-1])
-        codebook = self.embedding.weight.detach()
-        distances = (
-            flat_x.square().sum(dim=1, keepdim=True)
-            - 2 * flat_x @ codebook.T
-            + codebook.square().sum(dim=1)
-        )
-        indices = distances.argmin(dim=1)
-        quantized = F.embedding(indices, codebook).view_as(x)
-
-        if self.training:
-            with torch.no_grad():
-                assignments = F.one_hot(indices, self.codebook_size).to(flat_x.dtype)
-                self.cluster_size.mul_(self.decay).add_(
-                    assignments.sum(dim=0), alpha=1 - self.decay
-                )
-                self.ema_weight.mul_(self.decay).add_(
-                    assignments.T @ flat_x, alpha=1 - self.decay
-                )
-                total = self.cluster_size.sum()
-                smoothed_size = (
-                    (self.cluster_size + self.eps)
-                    / (total + self.codebook_size * self.eps)
-                    * total
-                )
-                normalized = self.ema_weight / smoothed_size.clamp_min(
-                    self.eps
-                ).unsqueeze(1)
-                # Unlike the reference, never-selected codes keep their initial
-                # vector (dividing by ~eps would push them out of reach).
-                occupied = self.cluster_size > 0
-                self.embedding.weight[occupied] = normalized[occupied]
-
-        return quantized, indices
 
 
 class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
@@ -148,8 +95,7 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
     not. The codebook term of the quantization loss is computed from the
     detached codebook, so at ``commitment_cost=1`` the encoder still receives
     the commitment gradient (in the reference both terms use the
-    straight-through tensor and their encoder gradients cancel). The EMA update
-    leaves never-selected codes at their initial vector.
+    straight-through tensor and their encoder gradients cancel).
 
     Tokens from this class are identical to the reference tokenizer's. With
     them, on CHB-MIT, the authors' released fine-tuned classifier gives a
@@ -182,7 +128,8 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
                "freq_patch_embedding_2.0.": "frequency_projection.",
                "freq_patch_embedding.": "frequency_patch_embedding.",
                "decoder.": "final_layer.",
-               "quantizer.ema_w": "quantizer.ema_weight",
+               "quantizer.embedding.weight": "quantizer.embed",
+               "quantizer.ema_w": "quantizer.embed_avg",
            }
            state = {
                next(
@@ -190,6 +137,7 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
                ): v
                for k, v in torch.load(path, map_location="cpu").items()
            }
+           state["quantizer.inited"] = torch.ones(1)
            model = TFMTokenizer(sfreq=200)
            model.load_state_dict(state)
 
@@ -309,7 +257,16 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             self.window_size, self.window_size // 2, embed_dim // 2
         )
         self.temporal_encoder = lat(temporal_encoder_depth, max_seq_len)
-        self.quantizer = _EMAVectorQuantizer(embed_dim, codebook_size)
+        # The reference EMA codebook: no k-means init, no dead-code expiry.
+        self.quantizer = EMACodebook(
+            embed_dim,
+            codebook_size,
+            epsilon=1e-5,
+            threshold_ema_dead_code=0,
+            kmeans_init=False,
+        )
+        nn.init.uniform_(self.quantizer.embed, -1 / codebook_size, 1 / codebook_size)
+        self.quantizer.embed_avg.copy_(self.quantizer.embed)
         self.decoder = lat(decoder_depth, max_seq_len)
         # Reconstruction head (spectrum bins per token), named for the
         # braindecode head contract.
