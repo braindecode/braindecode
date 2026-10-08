@@ -1579,6 +1579,17 @@ def test_codebrain_return_features():
     assert out["cls_token"] is None
 
 
+def test_codebrain_trains_after_inference_mode():
+    # The lazily initialised kernel norm must not become an inference tensor.
+    model = CodeBrain(n_chans=2, n_outputs=2, n_times=400).eval()
+    x = torch.randn(2, 2, 400)
+    with torch.inference_mode():
+        model(x)
+    model.train()
+    model(x).sum().backward()
+    assert all(not b.is_inference() for b in model.buffers())
+
+
 # ==============================================================================
 # Tests for SleepFM and SleepFMStager: masks and the release's two-stage
 # pipeline (shapes, features and compilation are in the shared suites)
@@ -2503,6 +2514,7 @@ _TEN_TWENTY = [
 def _patch_models():
     return [
         (Labram, dict(n_chans=19, n_times=800, sfreq=200), 200),
+        (Labram, dict(n_chans=19, n_times=800, sfreq=200, neural_tokenizer=False), 200),
         (CBraMod, dict(n_chans=19, n_times=800, sfreq=200), 200),
         (LUNA, dict(chs_info=_zuna_chs_info(), n_times=800, sfreq=200), 40),
         (ZUNA, dict(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL), 32),

@@ -11,6 +11,7 @@ from .functions import (
     rotate_pairs,
     safe_log,
     sinusoidal_positional_encoding,
+    spectral_input,
     square,
     wavelet_decomposition,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "rotate_pairs",
     "safe_log",
     "sinusoidal_positional_encoding",
+    "spectral_input",
     "square",
     "wavelet_decomposition",
     "glorot_weight_zero_bias",

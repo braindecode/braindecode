@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from linear_attention_transformer import LinearAttentionTransformer
 
-from braindecode.functional import sinusoidal_positional_encoding
+from braindecode.functional import sinusoidal_positional_encoding, spectral_input
 from braindecode.models.base import EEGModuleMixin
 
 # -----------------------------------------------------------------------------
@@ -492,14 +492,14 @@ class _BIOTEncoder(nn.Module):
             (batch_size, n_fft // 2 + 1, n_times // hop_length + 1)
         """
         spectral = torch.stft(
-            input=sample.squeeze(1),
+            input=spectral_input(sample.squeeze(1)),
             n_fft=int(self.n_fft),
             hop_length=self.hop_length,
             center=False,
             onesided=True,
             return_complex=True,
         )
-        return torch.abs(spectral)
+        return torch.abs(spectral).to(sample)
 
     def forward(self, x, n_channel_offset=0, perturb=False):
         """

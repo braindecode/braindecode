@@ -206,9 +206,9 @@ class SyncNet(EEGModuleMixin, nn.Module):
         W = W.permute(3, 2, 0, 1).contiguous()
 
         # Apply convolution
-        x_padded = self.pad_input(x.float())
+        x_padded = self.pad_input(x)
 
-        res = F.conv2d(x_padded, W.float(), bias=self.bias, stride=1)
+        res = F.conv2d(x_padded, W.to(x), bias=self.bias, stride=1)
 
         # Apply padding to the convolution result
         res_padded = self.pad_res(res)

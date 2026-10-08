@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange, Reduce
 
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PatchTokenizer
 
@@ -372,15 +373,12 @@ class _BandPowerFeatures(nn.Module):
                 f"Expected patches of {self.patch_size} samples, "
                 f"got {patches.shape[-1]}."
             )
-        output_dtype = patches.dtype
-        # CPU FFT does not accept reduced precision, while CUDA float16 FFT is
-        # restricted to power-of-two lengths (the released patch size is 1500).
-        if output_dtype in (torch.float16, torch.bfloat16):
-            patches = patches.float()
-
-        n = patches.shape[-1]
+        # CUDA float16 FFT is also restricted to power-of-two lengths (the
+        # released patch size is 1500).
+        x = spectral_input(patches)
+        n = x.shape[-1]
         # scipy periodogram default: detrend='constant' (remove the mean).
-        x = patches - patches.mean(dim=-1, keepdim=True)
+        x = x - x.mean(dim=-1, keepdim=True)
         spectrum = torch.fft.rfft(x, dim=-1)
         # one-sided power spectral density, density scaling (boxcar window).
         psd = spectrum.abs().pow(2) / (self.sfreq * n)
@@ -391,8 +389,8 @@ class _BandPowerFeatures(nn.Module):
         # Sum the PSD bins of each band: (batch, n_chans, seq_len, n_bands).
         # Elementwise ops keep float32 under autocast; a matmul would be cast
         # down to float16.
-        band = (psd.unsqueeze(-1) * self.band_matrix).sum(dim=-2)
-        return torch.log10(band + 1.0).to(dtype=output_dtype)
+        band = (psd.unsqueeze(-1) * self.band_matrix.to(psd)).sum(dim=-2)
+        return torch.log10(band + 1.0).to(patches)
 
 
 class _BrantInputEmbedding(nn.Module):
