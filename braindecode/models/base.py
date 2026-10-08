@@ -34,6 +34,16 @@ huggingface_hub = _soft_import(
 
 HAS_HF_HUB = huggingface_hub is not False
 
+# __init__ args that from_pretrained fills from config.json when not given.
+_GEOMETRY_KWARGS = (
+    "n_outputs",
+    "n_chans",
+    "chs_info",
+    "n_times",
+    "input_window_seconds",
+    "sfreq",
+)
+
 
 _HF_INSTALL_HINT = (
     "requires the `huggingface_hub` package. "
@@ -841,15 +851,19 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         @classmethod
         def from_pretrained(cls, *args, **kwargs):
-            # The Hub mixin fills omitted __init__ args from config.json; pin the
-            # derived geometry arg so it cannot clash with the caller's one
-            # (e.g. caller chs_info vs saved n_chans) in __init__'s checks. An
-            # explicit None pins nothing, so the saved geometry still loads.
-            if kwargs.get("chs_info") is not None:
+            # The Hub mixin fills only the __init__ args whose keys are absent,
+            # so drop explicit Nones (e.g. forwarded by a wrapper) to let the
+            # saved values fill them. Then pin the derived geometry arg so it
+            # cannot clash with the caller's one (e.g. caller chs_info vs saved
+            # n_chans) in __init__'s checks.
+            for key in _GEOMETRY_KWARGS:
+                if key in kwargs and kwargs[key] is None:
+                    del kwargs[key]
+            if "chs_info" in kwargs:
                 kwargs.setdefault("n_chans", len(kwargs["chs_info"]))
-            elif kwargs.get("n_chans") is not None:
+            elif "n_chans" in kwargs:
                 kwargs.setdefault("chs_info", None)
-            if kwargs.get("n_times") is not None or kwargs.get("sfreq") is not None:
+            if "n_times" in kwargs or "sfreq" in kwargs:
                 kwargs.setdefault("input_window_seconds", None)
             return super().from_pretrained(*args, **kwargs)
 

@@ -50,10 +50,14 @@ def test_from_pretrained_takes_geometry_from_the_caller_not_the_config(tmp_path)
     assert loaded.sfreq == 100 and loaded.n_times == 400
     # an explicit None (e.g. forwarded by a wrapper) keeps the saved geometry
     assert EEGDINO.from_pretrained(tmp_path, chs_info=None).n_chans == 19
+    assert EEGDINO.from_pretrained(tmp_path, n_chans=None).n_chans == 19
+    assert EEGDINO.from_pretrained(tmp_path, n_times=None).n_times == 400
     EEGDINO(chs_info=eight, n_times=400, n_outputs=2, n_layer=1).save_pretrained(
         tmp_path / "chs"
     )
     loaded = EEGDINO.from_pretrained(tmp_path / "chs", n_chans=None)
+    assert loaded.n_chans == 8 and len(loaded.chs_info) == 8
+    loaded = EEGDINO.from_pretrained(tmp_path / "chs", chs_info=None)
     assert loaded.n_chans == 8 and len(loaded.chs_info) == 8
 
 
