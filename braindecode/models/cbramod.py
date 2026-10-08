@@ -13,6 +13,7 @@ import torch
 from einops import rearrange
 from torch import Tensor, nn
 
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import CrissCrossTransformerEncoderLayer
 from braindecode.modules.blocks import PatchTokenizer
@@ -359,9 +360,9 @@ class _PatchEmbedding(nn.Module):
         patch_emb = rearrange(patch_emb, "b d (c n) p2 -> b c n (d p2)", c=ch_num)
 
         mask_x = rearrange(mask_x, "b 1 (c n) p -> (b c n) p", c=ch_num)
-        spectral = torch.fft.rfft(mask_x, dim=-1, norm="forward")
+        spectral = torch.fft.rfft(spectral_input(mask_x), dim=-1, norm="forward")
         spectral = rearrange(
-            torch.abs(spectral),
+            torch.abs(spectral).to(mask_x),
             "(b c n) p -> b c n p",
             b=bz,
             c=ch_num,

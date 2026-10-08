@@ -532,3 +532,21 @@ def test_compat_covers_every_pretrained_model():
     }
     assert set(EXCLUDED) <= shipped
     assert shipped - covered - set(EXCLUDED) == set()
+
+
+@pytest.mark.parametrize(
+    "dtype", [torch.float64, torch.bfloat16], ids=["float64", "bfloat16"]
+)
+@pytest.mark.parametrize("name", list(COMPAT))
+def test_forward_in_dtype(name, dtype):
+    """``model.to(dtype)`` forwards on CPU and returns finite ``dtype`` outputs."""
+    spec = COMPAT[name]
+    gkw = geometries(spec)["G1"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        model = spec["cls"](n_outputs=2, **gkw, **spec.get("kwargs", {}))
+        model = model.to(dtype).eval()
+        x = torch.randn(2, len(gkw["chs_info"]), gkw["n_times"], dtype=dtype)
+        with torch.no_grad():
+            y = model(x)
+    assert y.dtype == dtype and torch.isfinite(y).all()

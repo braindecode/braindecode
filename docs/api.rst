@@ -456,6 +456,7 @@ The functional module contains various functions that can be used like functiona
      rescale_parameter
      safe_log
      sinusoidal_positional_encoding
+     spectral_input
      square
 
 **********

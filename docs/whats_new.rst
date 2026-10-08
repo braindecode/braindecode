@@ -229,6 +229,25 @@ Requirements
 Bug fixes
 ==========
 
+- Models now run after ``model.to(torch.float64)``, ``torch.bfloat16`` or
+  ``torch.float16``, and their FFT, STFT and filter-bank front ends run on Intel
+  Gaudi (HPU): the new :func:`braindecode.functional.spectral_input` gives these
+  ops a float32 (at least) input, on the CPU for HPU tensors since PyTorch has no
+  complex bfloat16 and Gaudi no complex dtype; the real result is cast back with
+  ``.to(x)``. Used by :class:`braindecode.models.BIOT`, :class:`braindecode.models.BrainBERT`,
+  :class:`braindecode.models.Brant`, :class:`braindecode.models.CBraMod`,
+  :class:`braindecode.models.CodeBrain`, :class:`braindecode.models.ContraWR`,
+  :class:`braindecode.models.DIVER1`, :class:`braindecode.models.EEGDINO`,
+  :class:`braindecode.models.EMG2QwertyNet`, :class:`braindecode.models.LUNA`,
+  :class:`braindecode.models.MAPA`, :class:`braindecode.models.MetaNeuromotorHand`,
+  :class:`braindecode.models.SensingDynamics`, :class:`braindecode.modules.FilterBankLayer`
+  (FBCNet, FBMSNet, FBLightConvNet, IFNet), :class:`braindecode.modules.GeneralizedGaussianFilter`
+  and :func:`braindecode.functional.hilbert_freq`. Tensors built inside ``forward`` of
+  :class:`braindecode.models.BENDR`, :class:`braindecode.models.CodeBrain`,
+  :class:`braindecode.models.DGCNN`, :class:`braindecode.models.REVE`,
+  :class:`braindecode.models.SyncNet` and :class:`braindecode.models.ZUNA` follow the
+  input's dtype. CodeBrain can also train after a first forward under
+  ``torch.inference_mode()``. Float32 outputs and gradients are unchanged (:gh:`1246` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.BrainOmni` and :class:`braindecode.models.BrainTokenizer`
   now type CTF and KIT axial MEG gradiometers as gradiometers, as the released
   BrainOmni code does; they were typed as magnetometers, which gave them the

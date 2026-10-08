@@ -146,8 +146,12 @@ class EMACodebook(nn.Module):
         for _ in range(self.kmeans_iters):
             # Exact (non-matmul) mode keeps the released ``kmeans`` assignments
             # without materialising the (n_samples, codebook_size, dim) broadcast.
+            # cdist has no bf16/fp16 kernel: compute in at least float32.
+            work = torch.promote_types(dtype, torch.float32)
             distances = torch.cdist(
-                samples, centers, compute_mode="donot_use_mm_for_euclid_dist"
+                samples.to(work),
+                centers.to(work),
+                compute_mode="donot_use_mm_for_euclid_dist",
             )
             buckets = distances.argmin(dim=-1)
             bins = torch.bincount(buckets, minlength=self.codebook_size)
