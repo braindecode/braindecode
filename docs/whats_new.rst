@@ -232,7 +232,7 @@ Enhancements
   whose ``forward`` now declares its dict or tuple return, and the scripted
   :class:`braindecode.models.BrainModule` gives the eager output (its encoder
   held ``None`` in a ``ModuleList``, which TorchScript drops). Eager outputs
-  and state-dict keys are unchanged (:gh:`YYYY` by `Bruno Aristimunha`_).
+  and state-dict keys are unchanged (:gh:`1257` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
