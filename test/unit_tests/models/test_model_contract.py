@@ -272,7 +272,13 @@ def test_registered_model_training_contract(
 
 
 # ``.item()`` in forward, which meta tensors cannot answer (see _HOST_SYNC).
-_DATA_DEPENDENT_FORWARD = {"BaRISTA", "BrainOmni", "BrainTokenizer", "CodeBrain"}
+_DATA_DEPENDENT_FORWARD = {
+    "BaRISTA",
+    "BrainOmni",
+    "BrainTokenizer",
+    "CodeBrain",
+    "NeuroRVQTokenizer",
+}
 # Known misses, not fixed here.
 _DEVICE_XFAIL = {
     "LUNA": "default channel locations are cached on the CPU and copied to the "
@@ -495,6 +501,10 @@ _HOST_SYNC = {
     "EEGSimpleConv": (
         ("_local_scalar_dense",),
         "torchaudio Resample takes the output length from a CPU scalar",
+    ),
+    "NeuroRVQTokenizer": (
+        ("_local_scalar_dense",),
+        "codebook k-means init flag (``initted`` buffer), as in the released code",
     ),
     "MetaNeuromotorHand": (
         ("_local_scalar_dense",),
