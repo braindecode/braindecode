@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from linear_attention_transformer import LinearAttentionTransformer
 from torch import nn
 
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules.quantization import EMACodebook
 
@@ -294,16 +295,17 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
                 f"samples), got {x.shape[-1]} samples."
             )
         batch_size, n_chans, n_times = x.shape
+        signal = spectral_input(x.reshape(batch_size * n_chans, n_times))
         spectrogram = torch.stft(
-            x.reshape(batch_size * n_chans, n_times),
+            signal,
             n_fft=self.window_size,
             hop_length=self.window_size // 2,
             win_length=self.window_size,
-            window=self.stft_window.to(device=x.device, dtype=x.dtype),
+            window=self.stft_window.to(signal),
             center=False,
             return_complex=True,
         ).abs()[:, : self.n_freqs]
-        return spectrogram.reshape(batch_size, n_chans, self.n_freqs, -1)
+        return spectrogram.to(x).reshape(batch_size, n_chans, self.n_freqs, -1)
 
     def encode(self, x: torch.Tensor, spectrogram: torch.Tensor) -> torch.Tensor:
         """Embed ``x`` and its ``(batch * channels, n_freqs, n_frames)`` spectrogram."""
