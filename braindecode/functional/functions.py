@@ -224,9 +224,7 @@ def hilbert_freq(x: torch.Tensor, forward_fourier: bool = True) -> torch.Tensor:
     x = torch.fft.ifft(x, norm=None, dim=-1)  # returns complex signal
     x = torch.view_as_real(x)
 
-    if input_dtype == torch.bfloat16:
-        x = x.to(input_dtype)
-    return x
+    return x.to(input_dtype)
 
 
 def plv_time(

@@ -825,7 +825,6 @@ def test_if_models_with_embedding_parameter(model):
 
 # CPU has no float16 kernel for these ops, or the value range overflows float16.
 _FLOAT16_XFAIL = {
-    "EEGMiner": "CPU batch_norm needs float32 parameters for float16 input",
     "FBCNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
     "FBMSNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
     "FBLightConvNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
@@ -833,7 +832,6 @@ _FLOAT16_XFAIL = {
 }
 _LOW_PRECISION_XFAIL = {
     "EEGSym": "CPU avg_pool3d has no bfloat16/float16 kernel",
-    "NeuroRVQTokenizer": "CPU torch.fft has no bfloat16/float16 kernel",
 }
 
 

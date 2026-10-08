@@ -11,6 +11,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.neurorvq import (
     _Block,
@@ -547,8 +548,8 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         """Return the per-window z-scored target and reconstruction."""
         patches = self._patches(x)
         time, spatial = self._embedding_indices(x.device)
-        spectrum = torch.fft.fft(patches, dim=-1)
-        amplitude = torch.log1p(spectrum.abs())
+        spectrum = torch.fft.fft(spectral_input(patches), dim=-1)
+        amplitude = torch.log1p(spectrum.abs()).to(patches)
         amplitude, amp_mean, amp_std = self._standardize(amplitude)
         quantized, _ = self._encode(patches, time, spatial)
         features = []
@@ -563,9 +564,10 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         # Undo the log-amplitude standardization, then invert the patch FFT
         # from the amplitude and the predicted phase (cos, sin).
         rec_amp = torch.expm1(rec_amp.reshape_as(patches) * amp_std + amp_mean)
-        reconstructed = torch.fft.ifft(
-            torch.complex(rec_amp * rec_cos, rec_amp * rec_sin), dim=-1
-        ).real
+        rec_spectrum = torch.complex(
+            spectral_input(rec_amp * rec_cos), spectral_input(rec_amp * rec_sin)
+        )
+        reconstructed = torch.fft.ifft(rec_spectrum, dim=-1).real.to(patches)
         target_std, _, _ = self._standardize(patches)
         # The authors z-score a contiguous (batch, tokens, 1, patch) copy; the
         # reduction order (float rounding) depends on that shape and layout.
