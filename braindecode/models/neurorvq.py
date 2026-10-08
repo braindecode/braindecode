@@ -17,7 +17,6 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.labram import _Attention
 from braindecode.modules import MLP, DropPath
 
-
 # Channel order used to train NeuroRVQ-EEG v1. Keep in sync with the released
 # inference module: https://github.com/KonstantinosBarmpas/NeuroRVQ
 NEURORVQ_CHANNELS = (
@@ -149,8 +148,21 @@ _MODALITIES = {
         head_pooling="mean",
         num_quantizers=8,
         channels=(
-            "avf", "avl", "avr", "i", "ii", "iii", "v1", "v2",
-            "v3", "v4", "v5", "v6", "vx", "vy", "vz",
+            "avf",
+            "avl",
+            "avr",
+            "i",
+            "ii",
+            "iii",
+            "v1",
+            "v2",
+            "v3",
+            "v4",
+            "v5",
+            "v6",
+            "vx",
+            "vy",
+            "vz",
         ),
     ),
     "emg": dict(
