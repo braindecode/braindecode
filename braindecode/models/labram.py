@@ -1074,7 +1074,10 @@ class _SegmentPatch(nn.Module):
         Returns:
         --------
         X_patch: Tensor
-            [batch, n_chans, n_times//patch_size, patch_size]
+            [batch, n_chans, n_patchs, emb_dim] if ``learned_patcher``, else
+            [batch, n_chans, n_patchs, patch_size], where ``n_patchs`` is
+            ``ceil(n_times / patch_size)`` for ``on_non_divisible="pad"`` and
+            ``n_times // patch_size`` otherwise.
         """
         x = self.tokenizer._prepare_input(x)
         batch_size, n_chans_actual, n_times_actual = x.shape
