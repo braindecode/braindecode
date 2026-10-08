@@ -257,6 +257,8 @@ class REVE(EEGModuleMixin, nn.Module):
         patch_size: int = 200,
         patch_overlap: int = 20,
         attention_pooling: bool = False,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -265,6 +267,8 @@ class REVE(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
 
         self.embed_dim = embed_dim

@@ -44,6 +44,12 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     Parameters
     ----------
+    channel_strategy : str, default="native"
+        Only ``"native"``: the input is polysomnography grouped by modality
+        (EEG, EOG, ECG, EMG, respiration), not an EEG montage, so no channel
+        strategy applies. Any other value raises a ``ValueError``.
+    channel_strategy_kwargs : dict or None, default=None
+        Must be ``None``.
     patch_size : int, default=640
         Samples per patch; at least 64 and divisible by 64.
     embed_dim : int, default=128
@@ -114,7 +120,15 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         drop_prob: float = 0.3,
         max_seq_length: int = 128,
         activation: type[nn.Module] = nn.ELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ) -> None:
+        if channel_strategy != "native" or channel_strategy_kwargs:
+            raise ValueError(
+                f"{type(self).__name__} takes polysomnography channels grouped by "
+                f"modality (EEG, EOG, ECG, EMG, respiration), not an EEG montage: "
+                f"only channel_strategy='native' is supported."
+            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -252,6 +266,12 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     channel_modalities : sequence of hashable, optional
         Modality label of every channel, e.g. ``["BAS", "RESP", "EKG", "EMG"]``
         as in the release. ``None`` puts every channel in one modality.
+    channel_strategy : str, default="native"
+        Only ``"native"``: the input is polysomnography grouped by modality
+        (EEG, EOG, ECG, EMG, respiration), not an EEG montage, so no channel
+        strategy applies. Any other value raises a ``ValueError``.
+    channel_strategy_kwargs : dict or None, default=None
+        Must be ``None``.
     patch_size : int, default=640
         Samples per patch.
     embed_dim : int, default=128
@@ -346,7 +366,15 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         drop_prob: float = 0.3,
         max_seq_length: int = 8196,
         activation: type[nn.Module] = nn.ELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ) -> None:
+        if channel_strategy != "native" or channel_strategy_kwargs:
+            raise ValueError(
+                f"{type(self).__name__} takes polysomnography channels grouped by "
+                f"modality (EEG, EOG, ECG, EMG, respiration), not an EEG montage: "
+                f"only channel_strategy='native' is supported."
+            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
