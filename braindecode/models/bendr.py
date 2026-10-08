@@ -587,6 +587,7 @@ class _BENDRContextualizer(nn.Module):
                 (1, x.shape[1], x.shape[2]),
                 float(self.start_token),
                 device=x.device,
+                dtype=x.dtype,
                 requires_grad=False,
             )
             x = torch.cat([token_emb, x], dim=0)

@@ -15,6 +15,7 @@ from einops import rearrange
 from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 
 
@@ -492,11 +493,11 @@ class _GConv(nn.Module):
             raise ValueError(f"Unknown mode {self.mode}")
 
         # Lazy-init kernel normalisation on first forward pass
+        # In place, so a first forward under torch.inference_mode() does not
+        # leave inference tensors in the buffers for a later training step.
         if not self.kernel_norm_initialized:
-            self.kernel_norm = kernel.norm(dim=-1, keepdim=True).detach()
-            self.kernel_norm_initialized = torch.tensor(
-                1, dtype=torch.bool, device=kernel.device
-            )
+            self.kernel_norm.copy_(kernel.norm(dim=-1, keepdim=True).detach())
+            self.kernel_norm_initialized.fill_(True)
 
         # Pad or truncate kernel to match seq_len
         if kernel.size(-1) > seq_len:
@@ -518,13 +519,15 @@ class _GConv(nn.Module):
 
         # FFT-based convolution: O(N log N)
         # kernel_freq: (channels, d_model, freq_bins)
-        kernel_freq = torch.fft.rfft(kernel.float(), n=2 * seq_len)
+        # spectral_input(x) dtype: x's, at least float32 (the reference's .float()).
+        x_in = spectral_input(x)
+        kernel_freq = torch.fft.rfft(kernel.to(x_in), n=2 * seq_len)
         # x_freq: (batch, d_model, freq_bins)
-        x_freq = torch.fft.rfft(x.float(), n=2 * seq_len)
+        x_freq = torch.fft.rfft(x_in, n=2 * seq_len)
         # out_freq: (batch, channels, d_model, freq_bins)
         out_freq = torch.einsum("bhl,chl->bchl", x_freq, kernel_freq)
         # out: (batch, channels, d_model, seq_len)
-        out = torch.fft.irfft(out_freq, n=2 * seq_len)[..., :seq_len]
+        out = torch.fft.irfft(out_freq, n=2 * seq_len)[..., :seq_len].to(x)
 
         # Skip connection via learnable D matrix
         # (batch, channels, d_model, seq_len)
@@ -685,7 +688,7 @@ class _ResidualBlock(nn.Module):
         # (batch, 2*res_channels, seq_len) -> (batch, seq_len, 2*res_channels)
         h_attn = rearrange(h_ssm, "b c l -> b l c")
         swa_mask = self.generate_local_window_mask(seq_len, self.swa_window_size).to(
-            x.device
+            x.device, x.dtype
         )
         h_attn, _ = self.attention(h_attn, h_attn, h_attn, attn_mask=swa_mask)
         # (batch, seq_len, 2*res_channels) -> (batch, 2*res_channels, seq_len)
@@ -955,8 +958,8 @@ class _PatchEmbedding(nn.Module):
 
         # Spectral projection: rfft gives (batch * n_chans * seq_len, patch_size // 2 + 1)
         spectral = torch.abs(
-            torch.fft.rfft(patches_flat.float(), dim=-1, norm="forward")
-        )
+            torch.fft.rfft(spectral_input(patches_flat), dim=-1, norm="forward")
+        ).to(patches_flat)
 
         # Restore batch/channel/patch dims: (batch, n_chans, seq_len, freq_bins)
         spectral = rearrange(
