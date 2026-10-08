@@ -253,8 +253,8 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
        Raw reconstruction MSE (Table 10 of [neurorvq]_), with the data preparation
        of the EEG-Benchmarking code linked from the NeuroRVQ repository: the port
-       gives 0.0858 on Pavlov 2022 (paper: 0.090) and 0.0748 on High Gamma
-       (paper: 0.084); the authors' released code gives the same numbers on the
+       gives 0.0858 on Pavlov 2022 (paper: 0.084) and 0.0748 on High Gamma
+       (paper: 0.090); the authors' released code gives the same numbers on the
        same data.
 
     .. versionadded:: 1.9
