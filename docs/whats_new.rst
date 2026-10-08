@@ -80,7 +80,10 @@ Enhancements
 
 - Generate a version-scoped ``llms.txt`` and selected Markdown documentation
   entry points with source-commit attribution and critical-page coverage checks.
-- Add :class:`braindecode.models.TMSANet`, the motor-imagery convolution/attention model from Zhao and Zhu (2025). The port preserves the released non-divisible multi-head attention geometry (the default ``embed_dim=19`` and four heads use a 16-dimensional Q/K/V bottleneck) and the summed local/global attention branches; a pinned reference assay maps all 45 model-state entries with identical logits and input gradients. See :gh:`1209`. By `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_.
+
+- Add :class:`braindecode.models.TMSANet`, the motor-imagery convolution and
+  local/global attention model of Zhao and Zhu (2025)
+  (:gh:`1209` by `lindicaphxag-tech`_).
 
 - Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution
   and Transformer seizure detector of Wu et al. (2025) that won the 2025 SzCORE
