@@ -427,7 +427,11 @@ class REVE(EEGModuleMixin, nn.Module):
             pos = self.default_pos.expand(batch_size, -1, -1).to(eeg.device)
 
         pos = FourierEmb4D.add_time_patch(pos, n_patches)
-        pos_embed = self.ln(self.fourier4d(pos) + self.mlp4d(pos))
+        # Positions stay in float32 for the Fourier features; the embedding
+        # follows the signal's dtype.
+        pos_embed = self.ln(
+            self.fourier4d(pos).to(eeg.dtype) + self.mlp4d(pos.to(eeg.dtype))
+        )
 
         # Patch embedding: (batch, channels, n_patches, patch_size) -> (batch, channels, n_patches, embed_dim)
         patch_embeddings = self.to_patch_embedding(patches)
