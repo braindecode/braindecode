@@ -5,7 +5,7 @@
 """AXON: an axis-factorized EEG foundation model."""
 
 import warnings
-from typing import Optional, Sequence
+from typing import Optional
 
 import numpy as np
 import torch
@@ -377,26 +377,28 @@ class _AXONEncoder(nn.Module):
 
 
 class _TokenGate(nn.Module):
-    """Per-token softmax gate over ``n_paths`` paths, read through a stop-gradient."""
+    """Per-token softmax gate over the paths, read through a stop-gradient.
+
+    One path per entry of ``init_bias``, the initial bias of the gate logits.
+    """
 
     def __init__(
         self,
         embed_dim: int,
-        n_paths: int,
         reduction: int,
         activation: type[nn.Module],
-        init_bias: Sequence[float],
+        init_bias: tuple[float, ...],
     ):
         super().__init__()
         hidden = max(16, embed_dim // reduction)
         self.mlp = nn.Sequential(
             nn.Linear(embed_dim, hidden),
             activation(),
-            nn.Linear(hidden, n_paths),
+            nn.Linear(hidden, len(init_bias)),
         )
         nn.init.zeros_(self.mlp[-1].weight)
         with torch.no_grad():
-            self.mlp[-1].bias.copy_(torch.tensor(list(init_bias), dtype=torch.float32))
+            self.mlp[-1].bias.copy_(torch.tensor(init_bias))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # The gate reads the token but sends no gradient back into the encoder.
@@ -433,7 +435,6 @@ class _AxisAttention(nn.Module):
         att_drop_prob: float,
     ):
         super().__init__()
-        self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
         self.att_drop_prob = att_drop_prob
@@ -444,11 +445,11 @@ class _AxisAttention(nn.Module):
         self.spatial_out = nn.Linear(embed_dim, embed_dim)
         # Axis gate: [temporal, spatial]; initialised to lean slightly temporal.
         self.axis_gate = _TokenGate(
-            embed_dim, 2, gate_reduction, activation, init_bias=(0.5, 0.0)
+            embed_dim, gate_reduction, activation, init_bias=(0.5, 0.0)
         )
         # Scale gate: [restricted window, full window]; initialised to favour full.
         self.scale_gate = _TokenGate(
-            embed_dim, 2, gate_reduction, activation, init_bias=(0.0, 1.0)
+            embed_dim, gate_reduction, activation, init_bias=(0.0, 1.0)
         )
 
     def _attend(
@@ -456,19 +457,17 @@ class _AxisAttention(nn.Module):
     ) -> torch.Tensor:
         """Multi-head attention within each sequence; ``projected`` is (N, L, 3D)."""
         n_seq, length, _ = projected.shape
-        query, key, value = projected.chunk(3, dim=-1)
-        query = query.reshape(n_seq, length, self.num_heads, self.head_dim).transpose(
-            1, 2
-        )
-        key = key.reshape(n_seq, length, self.num_heads, self.head_dim).transpose(1, 2)
-        value = value.reshape(n_seq, length, self.num_heads, self.head_dim).transpose(
-            1, 2
+        # (N, L, 3, H, Dh) -> 3 x (N, H, L, Dh)
+        query, key, value = (
+            projected.reshape(n_seq, length, 3, self.num_heads, self.head_dim)
+            .permute(2, 0, 3, 1, 4)
+            .unbind(0)
         )
         drop = self.att_drop_prob if self.training else 0.0
         attended = F.scaled_dot_product_attention(
             query, key, value, attn_mask=mask, dropout_p=drop
         )
-        return attended.transpose(1, 2).reshape(n_seq, length, self.embed_dim)
+        return attended.transpose(1, 2).reshape(n_seq, length, -1)
 
     def forward(self, x: torch.Tensor, band: torch.Tensor) -> torch.Tensor:
         batch, n_chans, n_patches, dim = x.shape
