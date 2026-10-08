@@ -39,7 +39,6 @@ and compare their embeddings against EEG embeddings via compute_logits.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
 
 import torch
 from torch import nn
@@ -49,82 +48,66 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.deep4 import Deep4Net
 
 
-class EEGCLIP(EEGModuleMixin, nn.Module):
-    r"""Dual encoder for contrastive alignment of EEG and text.
+class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
+    r"""Dual encoder for contrastive alignment of EEG and text [eegclip]_.
 
     :bdg-danger:`Foundation Model` :bdg-success:`Convolution`
 
-    EEG-CLIP learns a shared embedding space for paired EEG recordings and
-    text descriptions using a symmetric contrastive objective [eegclip]_. The
-    default EEG encoder is :class:`~braindecode.models.Deep4Net`. A text encoder
-    can be supplied as any :class:`torch.nn.Module`; its outputs may be pooled
-    vectors or token sequences. This keeps text-model dependencies optional and
-    lets users provide a clinical language model or precomputed text embeddings.
+    .. figure:: https://www.frontiersin.org/files/Articles/1625731/frobt-12-1625731-HTML/image_m/frobt-12-1625731-g001.jpg
+        :align: center
+        :alt: EEG-CLIP overview (N'dir et al., 2025, Fig. 1).
 
-    The model is trained with paired batches using :meth:`forward_paired` and
-    :meth:`contrastive_loss`. Its ordinary ``forward(X)`` intentionally
-    returns only projected EEG embeddings so the model preserves Braindecode's
-    standard Tensor-valued inference contract (including skorch and TorchScript).
-    Candidate text embeddings can be passed to :meth:`compute_logits` for
-    zero-shot classification.
+    EEG-CLIP learns a shared embedding space for paired EEG recordings and
+    clinical text reports with a symmetric contrastive objective. The default
+    EEG encoder is a dense-prediction :class:`~braindecode.models.Deep4Net`
+    whose 128 outputs per time step are projected and averaged over time, as
+    in the authors' code. The text encoder is any
+    :class:`torch.nn.Module` (e.g. a Hugging Face ClinicalBERT, kept as an
+    optional user dependency); with ``text_encoder=None`` the text inputs are
+    precomputed features.
+
+    ``forward(X)`` returns the projected EEG embeddings only, so the model
+    keeps braindecode's Tensor-valued contract. Train with
+    :meth:`forward_paired` and :meth:`contrastive_loss`; score zero-shot with
+    :meth:`compute_logits` against embedded candidate descriptions.
 
     Parameters
     ----------
-    n_outputs : int
-        Dimension of the shared EEG-text embedding space.
-    n_chans : int
-        Number of EEG channels.
-    n_times : int
-        Number of time samples in each input window.
     text_encoder : torch.nn.Module | None
-        Optional text encoder. It must accept ``text_inputs`` and return a
-        tensor, an object with ``last_hidden_state`` or ``pooler_output``, or a
-        tuple whose first element is a tensor. If ``None``, ``text_inputs`` are
-        treated as precomputed text features.
+        Text encoder called as ``text_encoder(text_inputs, **kwargs)``. It
+        returns a tensor, or a tuple / Hugging Face output whose first element
+        is the tensor. ``None`` treats ``text_inputs`` as precomputed features.
     text_embedding_dim : int
-        Dimension of pooled text features before projection.
+        Dimension of the pooled text features.
     eeg_encoder : torch.nn.Module | None
-        Optional EEG encoder returning ``(batch, features)`` or
-        ``(batch, features, time)``. Defaults to Deep4Net.
+        EEG encoder returning ``(batch, features)`` or
+        ``(batch, features, time)``. ``None`` builds the default Deep4Net.
     eeg_embedding_dim : int
-        Feature dimension emitted by the default EEG encoder, or expected from
-        a custom EEG encoder.
+        Feature dimension of the EEG encoder output.
     text_pooling : {"cls", "mean"}
-        Pooling used for token-sequence text outputs. ``"cls"`` selects the
-        first token; ``"mean"`` computes a masked mean when an attention mask
-        is supplied.
+        Pooling of token-sequence text outputs: first token, or the mean over
+        tokens (masked when ``attention_mask`` is given).
     projection_layers : int
-        Number of fully connected layers in each projection head. The default
-        of three follows the architecture described in the EEG-CLIP paper.
+        Linear layers in each projection head; 3 as in the paper.
     activation : type[nn.Module]
-        Activation used in non-final projection blocks. Defaults to ReLU, as in
-        the published EEG-CLIP architecture.
+        Activation of the non-final projection blocks.
     drop_prob : float
-        Dropout probability in non-final projection blocks.
+        Dropout probability of the non-final projection blocks.
     initial_temperature : float
-        Initial temperature used to initialize the released EEG-CLIP logit-scale
-        parameter as ``log(1 / temperature)``. For reference fidelity, the
-        released implementation multiplies similarities by this learned raw
-        parameter rather than exponentiating it.
-    chs_info : list | None
-        Channel information passed to :class:`~braindecode.models.EEGModuleMixin`.
-    input_window_seconds : float | None
-        Input duration passed to :class:`~braindecode.models.EEGModuleMixin`.
-    sfreq : float | None
-        Sampling frequency passed to :class:`~braindecode.models.EEGModuleMixin`.
+        The logit scale starts at ``log(1 / initial_temperature)`` and, as in
+        the authors' code, multiplies the similarities without ``exp``.
 
     Notes
     -----
-    ``n_outputs`` is the shared embedding dimension, not a number of diagnostic
-    classes. The output of :meth:`compute_logits` is a matrix of EEG-to-text
-    similarities; columns correspond to candidate text descriptions. Custom
-    ``eeg_encoder`` or ``text_encoder`` modules are not included in Braindecode
-    Hub configs; such models can use ``state_dict`` directly but cannot be saved
-    with :meth:`get_config` or pushed to the Hub.
+    ``n_outputs`` is the shared embedding dimension, not a number of classes.
+    The released ``modelsexample.ckpt`` predates the authors' current
+    projection head and is not loadable. Models with a custom ``eeg_encoder``
+    or ``text_encoder`` cannot be rebuilt from a config, so :meth:`get_config`
+    and ``save_pretrained`` raise for them; save their ``state_dict``.
 
     Examples
     --------
-    Train a paired EEG/text-feature encoder without external model weights::
+    Train on paired EEG windows and precomputed text features::
 
         import torch
         from braindecode.models import EEGCLIP
@@ -139,15 +122,14 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
             paired["eeg_embeds"], paired["text_embeds"]
         )
 
-    Users may also supply a separate text encoder; see the module-level
-    documentation for the optional external text-model integration.
-
     References
     ----------
     .. [eegclip] N'dir, T. C., Schirrmeister, R. T., & Ball, T. (2025).
        EEG-CLIP: Learning EEG representations from natural language descriptions.
        Frontiers in Robotics and AI, 12, 1625731.
        https://doi.org/10.3389/frobt.2025.1625731
+
+    .. versionadded:: 1.9
     """
 
     def __init__(
@@ -176,23 +158,16 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        if text_pooling not in {"cls", "mean"}:
+        if text_pooling not in ("cls", "mean"):
             raise ValueError("text_pooling must be 'cls' or 'mean'.")
-        if not 0 < initial_temperature:
-            raise ValueError("initial_temperature must be strictly positive.")
-        if not 0 <= drop_prob < 1:
-            raise ValueError("drop_prob must be in the interval [0, 1).")
-        if projection_layers < 1:
-            raise ValueError("projection_layers must be at least 1.")
-
         self.text_pooling = text_pooling
         self.text_embedding_dim = text_embedding_dim
         self.eeg_embedding_dim = eeg_embedding_dim
         self.projection_layers = projection_layers
         self.activation = activation
         self.drop_prob = drop_prob
+        self._custom_encoders = eeg_encoder is not None or text_encoder is not None
 
-        self._uses_default_eeg_encoder = eeg_encoder is None
         if eeg_encoder is None:
             eeg_encoder = Deep4Net(
                 n_chans=self.n_chans,
@@ -203,142 +178,60 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
             )
             eeg_encoder.to_dense_prediction_model()
         self.eeg_encoder = eeg_encoder
-        self.text_encoder = text_encoder if text_encoder is not None else nn.Identity()
+        self.text_encoder = text_encoder
 
-        self.text_projection = self._make_projection(
-            text_embedding_dim,
-            self.n_outputs,
-            projection_layers,
-            activation,
-            drop_prob,
+        self.text_projection = _projection_head(
+            text_embedding_dim, self.n_outputs, projection_layers, activation, drop_prob
         )
-        # Braindecode's integration checks (and skorch wrappers) expect the
-        # EEG prediction head to be one of the final registered child modules.
-        self.final_layer = self._make_projection(
-            eeg_embedding_dim,
-            self.n_outputs,
-            projection_layers,
-            activation,
-            drop_prob,
+        # EEG projection, named final_layer for braindecode's head conventions.
+        self.final_layer = _projection_head(
+            eeg_embedding_dim, self.n_outputs, projection_layers, activation, drop_prob
         )
         self.logit_scale = nn.Parameter(
-            torch.tensor(math.log(1.0 / initial_temperature), dtype=torch.float32)
+            torch.tensor(math.log(1.0 / initial_temperature))
         )
 
-    @staticmethod
-    def _make_projection(
-        input_dim, output_dim, projection_layers, activation, drop_prob
-    ):
-        # The published EEG-CLIP architecture uses three fully connected
-        # projection layers with ReLU activations. The authors' released
-        # ProjectionHead additionally applies BatchNorm and dropout after each
-        # non-final layer. Keeping the depth configurable also makes the
-        # released two-layer configuration reproducible.
-        if projection_layers == 1:
-            return nn.Sequential(nn.Linear(input_dim, output_dim))
-
-        layers = [
-            nn.Linear(input_dim, output_dim),
-            nn.BatchNorm1d(output_dim),
-            activation(),
-            nn.Dropout(drop_prob),
-        ]
-        for _ in range(projection_layers - 2):
-            layers.extend(
-                [
-                    nn.Linear(output_dim, output_dim),
-                    nn.BatchNorm1d(output_dim),
-                    activation(),
-                    nn.Dropout(drop_prob),
-                ]
-            )
-        layers.append(nn.Linear(output_dim, output_dim))
-        return nn.Sequential(*layers)
-
-    def encode_eeg(self, X):
-        """Encode EEG windows as shared-space projection vectors.
-
-        The standard forward path owns the EEG-only computation so it remains
-        self-contained for Braindecode's plain-module/TorchScript integration.
-        This helper is the eager multimodal API alias.
-        """
-        return self.forward(X)
-
-    @staticmethod
-    def _get_text_features(outputs):
-        if isinstance(outputs, torch.Tensor):
-            return outputs
-        if hasattr(outputs, "last_hidden_state"):
-            return outputs.last_hidden_state
-        if isinstance(outputs, Mapping):
-            if "last_hidden_state" in outputs:
-                return outputs["last_hidden_state"]
-            if outputs.get("pooler_output") is not None:
-                return outputs["pooler_output"]
-        if hasattr(outputs, "pooler_output") and outputs.pooler_output is not None:
-            return outputs.pooler_output
-        if isinstance(outputs, (tuple, list)) and outputs:
-            return outputs[0]
-        raise TypeError(
-            "text_encoder must return a tensor, a model output with "
-            "last_hidden_state/pooler_output, or a tuple containing a tensor."
-        )
+    def forward(self, X):
+        """Return projected EEG embeddings, shape ``(batch, n_outputs)``."""
+        features = self.eeg_encoder(X)
+        if features.ndim == 2:
+            features = features.unsqueeze(-1)
+        batch_size = features.shape[0]
+        # Project every dense prediction, then average over time.
+        per_step = features.transpose(1, 2).reshape(-1, features.shape[1])
+        projected = self.final_layer(per_step)
+        return projected.reshape(batch_size, -1, projected.shape[-1]).mean(dim=1)
 
     def encode_text(self, text_inputs, attention_mask=None, **text_kwargs):
         """Encode text tokens or features as shared-space projection vectors."""
-        if isinstance(self.text_encoder, nn.Identity):
-            outputs = text_inputs
-        else:
+        features = text_inputs
+        if self.text_encoder is not None:
             if attention_mask is not None:
                 text_kwargs["attention_mask"] = attention_mask
-            outputs = self.text_encoder(text_inputs, **text_kwargs)
-        features = self._get_text_features(outputs)
+            features = self.text_encoder(text_inputs, **text_kwargs)
         if not isinstance(features, torch.Tensor):
-            raise TypeError("The text encoder output must contain a torch.Tensor.")
+            features = features[0]  # tuple or Hugging Face last_hidden_state
         if features.ndim == 3:
             if self.text_pooling == "cls":
                 features = features[:, 0]
             elif attention_mask is None:
                 features = features.mean(dim=1)
             else:
-                mask = attention_mask.to(device=features.device, dtype=features.dtype)
-                if mask.ndim != 2 or mask.shape != features.shape[:2]:
-                    raise ValueError(
-                        "attention_mask must match the batch and token dimensions "
-                        "of the text encoder output."
-                    )
-                mask = mask.unsqueeze(-1)
+                mask = attention_mask.to(features.dtype).unsqueeze(-1)
                 features = (features * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)
-        if features.ndim != 2:
-            raise ValueError("Pooled text features must have shape (batch, features).")
-        expected_dim = self.text_projection[0].in_features
-        if features.shape[1] != expected_dim:
-            raise ValueError(
-                f"Text encoder returned {features.shape[1]} features; "
-                f"text_embedding_dim={expected_dim} was configured."
-            )
         return self.text_projection(features)
 
     def compute_logits(self, eeg_embeds, text_embeds):
-        """Return EEG-to-text and text-to-EEG similarity logits."""
-        if eeg_embeds.ndim != 2 or text_embeds.ndim != 2:
-            raise ValueError("EEG and text embeddings must both be two-dimensional.")
-        if eeg_embeds.shape[1] != text_embeds.shape[1]:
-            raise ValueError("EEG and text embeddings must have the same dimension.")
-        # Match the released EEG-CLIP implementation exactly: projection
-        # vectors are not L2-normalized, and ClipLoss multiplies their dot
-        # product by the learned raw logit_scale parameter. Although the
-        # parameter is initialized as log(1 / 0.07), the released source does
-        # not exponentiate it before computing logits.
+        """Return EEG-to-text and text-to-EEG similarity logits.
+
+        As in the authors' ``ClipLoss``, embeddings are not L2-normalized and
+        the raw ``logit_scale`` multiplies the dot products.
+        """
         logits_per_eeg = self.logit_scale * eeg_embeds @ text_embeds.T
         return logits_per_eeg, logits_per_eeg.T
 
     def contrastive_loss(self, eeg_embeds, text_embeds):
-        """Compute symmetric cross-entropy for paired EEG/text batches."""
-        if eeg_embeds.shape[0] != text_embeds.shape[0]:
-            raise ValueError("EEG and text batches must contain paired examples.")
-        if eeg_embeds.shape[0] == 0:
-            raise ValueError("EEG and text batches must not be empty.")
+        """Symmetric cross-entropy over a batch of paired EEG/text embeddings."""
         logits_per_eeg, logits_per_text = self.compute_logits(eeg_embeds, text_embeds)
         labels = torch.arange(eeg_embeds.shape[0], device=eeg_embeds.device)
         return (
@@ -346,42 +239,9 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
             + F.cross_entropy(logits_per_text, labels)
         ) / 2
 
-    def forward(self, X):
-        """Return projected EEG embeddings.
-
-        This Tensor-only path is self-contained because Braindecode's generic
-        integration converts models to a plain ``nn.Module`` before scripting.
-        Use :meth:`forward_paired` for multimodal training.
-        """
-        features = self.eeg_encoder(X)
-        if features.ndim == 3:
-            if features.shape[1] != self.eeg_embedding_dim:
-                raise ValueError(
-                    "EEG encoder feature dimension does not match eeg_embedding_dim."
-                )
-            batch_size = features.shape[0]
-            n_predictions = features.shape[2]
-            temporal_features = features.transpose(1, 2).reshape(
-                batch_size * n_predictions, self.eeg_embedding_dim
-            )
-            projected = self.final_layer(temporal_features)
-            projected = projected.reshape(batch_size, n_predictions, self.n_outputs)
-            return projected.mean(dim=1)
-
-        if features.ndim != 2:
-            raise ValueError(
-                "eeg_encoder output must have shape (batch, features) or "
-                "(batch, features, time)."
-            )
-        if features.shape[1] != self.eeg_embedding_dim:
-            raise ValueError(
-                "EEG encoder feature dimension does not match eeg_embedding_dim."
-            )
-        return self.final_layer(features)
-
     def forward_paired(self, X, text_inputs, attention_mask=None, **text_kwargs):
         """Return paired EEG/text embeddings and bidirectional similarity logits."""
-        eeg_embeds = self.encode_eeg(X)
+        eeg_embeds = self(X)
         text_embeds = self.encode_text(
             text_inputs, attention_mask=attention_mask, **text_kwargs
         )
@@ -394,59 +254,50 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
         }
 
     def reset_head(self, n_outputs):
-        """Reset both projection heads to a new shared embedding dimension."""
-        if n_outputs <= 0:
-            raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
-        text_projection = self._make_projection(
-            self.text_embedding_dim,
-            n_outputs,
-            self.projection_layers,
-            self.activation,
-            self.drop_prob,
-        )
-        final_layer = self._make_projection(
-            self.eeg_embedding_dim,
-            n_outputs,
-            self.projection_layers,
-            self.activation,
-            self.drop_prob,
-        )
-        # Match each replacement submodule's mode to the module it replaces.
-        # This preserves eval mode and intentional mixed modes such as
-        # Monte-Carlo dropout when changing the shared embedding dimension.
-        for old_head, new_head in (
-            (self.text_projection, text_projection),
-            (self.final_layer, final_layer),
-        ):
-            # Head replacement must not silently move a fine-tuned model back
-            # to CPU/float32. Match the existing projection's device and dtype,
-            # as other Braindecode reset_head implementations do.
-            new_head.to(next(old_head.parameters()))
-            for old_module, new_module in zip(old_head.modules(), new_head.modules()):
-                new_module.training = old_module.training
-        self.text_projection = text_projection
-        self.final_layer = final_layer
+        """Rebuild both projection heads for a new shared embedding dimension."""
         self._set_n_outputs(n_outputs)
+        for name, in_dim in (
+            ("text_projection", self.text_embedding_dim),
+            ("final_layer", self.eeg_embedding_dim),
+        ):
+            old_head = getattr(self, name)
+            new_head = _projection_head(
+                in_dim,
+                n_outputs,
+                self.projection_layers,
+                self.activation,
+                self.drop_prob,
+            )
+            new_head.to(next(old_head.parameters())).train(old_head.training)
+            setattr(self, name, new_head)
 
     def get_config(self):
-        """Return the model config when its text encoder can be reconstructed."""
-        self._ensure_text_encoder_is_serializable()
+        """Return the config; custom encoders cannot be rebuilt from one."""
+        if self._custom_encoders:
+            raise ValueError(
+                "EEGCLIP cannot serialize custom encoder architectures; build "
+                "the encoders yourself and save the model state_dict."
+            )
         return super().get_config()
 
     def _save_pretrained(self, save_directory):
-        """Save this model only when its text encoder is represented in config."""
-        self._ensure_text_encoder_is_serializable()
+        self.get_config()  # raises for custom encoders
         return super()._save_pretrained(save_directory)
 
-    def _ensure_text_encoder_is_serializable(self):
-        if (
-            not isinstance(self.text_encoder, nn.Identity)
-            or not self._uses_default_eeg_encoder
-        ):
-            raise ValueError(
-                "EEGCLIP cannot serialize custom encoder architectures. "
-                "Use precomputed text features (text_encoder=None) for Hub "
-                "round-trips with the default Deep4Net EEG encoder, or save "
-                "and restore the full model state_dict with your encoders "
-                "constructed separately."
-            )
+
+def _projection_head(in_dim, out_dim, n_layers, activation, drop_prob):
+    """Authors' ``ProjectionHead``: (Linear, BatchNorm, act, Dropout) blocks, then Linear.
+
+    ``braindecode.modules.MLP`` uses LayerNorm/GELU, not BatchNorm, so it does not fit.
+    """
+    layers = []
+    for _ in range(n_layers - 1):
+        layers += [
+            nn.Linear(in_dim, out_dim),
+            nn.BatchNorm1d(out_dim),
+            activation(),
+            nn.Dropout(drop_prob),
+        ]
+        in_dim = out_dim
+    layers.append(nn.Linear(in_dim, out_dim))
+    return nn.Sequential(*layers)
