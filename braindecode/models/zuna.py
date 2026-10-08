@@ -223,6 +223,8 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         qk_norm: bool = True,
         activation: type[nn.Module] = nn.SiLU,
         on_non_divisible: str = "pad",
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -231,6 +233,8 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 

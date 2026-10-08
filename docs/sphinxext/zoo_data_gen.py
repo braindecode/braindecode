@@ -114,11 +114,6 @@ def generate_zoo_data(app, *_args) -> None:
             name = (row.get("Model") or "").strip()
             if not name:
                 continue
-            # Skip the auto-channel-interpolation wrappers; they shadow the
-            # base foundation models (BENDR / BIOT / LaBraM / SignalJEPA)
-            # and aren't useful as separate cards on the landing page.
-            if name.startswith("Interpolated"):
-                continue
             cat_field = (row.get("Categorization") or "").strip()
             cid, clabel = _classify(cat_field)
             params = _format_params(row.get("#Parameters") or "")

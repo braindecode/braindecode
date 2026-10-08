@@ -68,8 +68,7 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`BIOT` - Foundation model with pre-trained weights
     - :class:`BrainBERT` - Intracranial (sEEG/iEEG) foundation model with pre-trained
       weights
-    - :class:`BrainOmni` - Unified EEG/MEG foundation model; official raw weights are
-      available from the authors
+    - :class:`BrainOmni` - Unified EEG/MEG foundation model with pre-trained weights
     - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
     - :class:`CodeBrain` - Scalable EEG pre-training with temporal and spectral code
       prediction
@@ -179,12 +178,6 @@ interface for all EEG models and can derive variable names when needed.
      FBLightConvNet
      FBMSNet
      IFNet
-     InterpolatedBENDR
-     InterpolatedBIOT
-     InterpolatedEEGPT
-     InterpolatedLaBraM
-     InterpolatedModel
-     InterpolatedSignalJEPA
      Labram
      LUNA
      MAPA
@@ -294,6 +287,21 @@ perceptrons (MLPs) and inception blocks.
     InceptionBlock
     PatchTokenizer
 
+Channels
+========
+
+The channel layer behind ``channel_strategy=`` (see
+:doc:`user_guide/channel_strategies`).
+
+:py:mod:`braindecode.modules.channels`:
+
+.. autosummary::
+    :toctree: generated/channels
+    :template: class_in_subdir
+    :recursive:
+
+    ChannelLayer
+
 Convolution
 ===========
 
@@ -326,7 +334,6 @@ These modules implement Filter Bank as Layer and generalizer Gaussian layer.
     :template: class_in_subdir
     :recursive:
 
-    ChannelInterpolationLayer
     FilterBankLayer
     GeneralizedGaussianFilter
 

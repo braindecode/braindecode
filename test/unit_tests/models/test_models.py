@@ -97,14 +97,12 @@ from braindecode.models.usleep import _DecoderBlock
 from braindecode.models.util import (
     _get_possible_signal_params,
     _get_signal_params,
-    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
 )
 from braindecode.util import set_random_seeds
 
-# Interpolated models are stored in a separate registry from ``models_dict``.
-all_models_dict = {**models_dict, **interpolated_models_dict}
+all_models_dict = dict(models_dict)
 
 
 @pytest.fixture(scope="module")
@@ -5133,6 +5131,18 @@ def test_csbrain_train_mode_small_batches(batch_size):
     model = CSBrain(n_outputs=2, n_chans=3, n_times=400, sfreq=200.0, n_layer=1)
     model.train()
     assert model(torch.randn(batch_size, 3, 400)).shape == (batch_size, 2)
+
+
+def test_csbrain_head_drop_prob_sets_only_the_head():
+    model = CSBrain(
+        n_outputs=2, n_chans=3, n_times=400, n_layer=1, drop_prob=0.1, head_drop_prob=0.3
+    )
+    ps = {
+        name.startswith("final_layer"): m.p
+        for name, m in model.named_modules()
+        if isinstance(m, nn.Dropout)
+    }
+    assert ps == {False: 0.1, True: 0.3}
 
 
 def test_csbrain_init_keeps_residual_stream_bounded():

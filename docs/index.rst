@@ -740,6 +740,7 @@
     :caption: Documentation
 
     API <api>
+    Channel strategies <user_guide/channel_strategies>
     What's new <whats_new>
 
 .. toctree::

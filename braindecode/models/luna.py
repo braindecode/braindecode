@@ -144,6 +144,8 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         drop_prob_chan: float = 0.0,
         attn_drop: float = 0.0,
         activation: Type[nn.Module] = nn.GELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -152,6 +154,8 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             sfreq=sfreq,
             chs_info=chs_info,
             input_window_seconds=input_window_seconds,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
@@ -281,9 +285,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         num_channels = channel_locations.shape[1]
-        x_signal = self.tokenizer._prepare_input(x_signal)
+        x_signal = self.tokenizer.prepare_input(x_signal)
         if mask is not None:
-            mask = self.tokenizer._prepare_input(mask)
+            mask = self.tokenizer.prepare_input(mask)
         num_patches_per_channel = x_signal.shape[-1] // self.patch_size
         x_patched = self.patch_embed(x_signal)
         freq_embed = self.freq_embed(x_signal)
@@ -890,7 +894,8 @@ class _PatchEmbedNetwork(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         x: (B, C, T)
-        output: (B, C*S, D) where S = T//patch_size, D = embed_dim
+        output: (B, C*S, D) where D = embed_dim and S = ceil(T / patch_size)
+        for ``on_non_divisible="pad"``, T // patch_size otherwise
         """
         x = rearrange(self.tokenizer(x), "B C S P -> B (C S) P")
         x = x.unsqueeze(1)
