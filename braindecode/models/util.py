@@ -1141,6 +1141,24 @@ def valid_location_mask(locations: torch.Tensor) -> torch.Tensor:
     )
 
 
+def warn_if_sfreq_differs(
+    model_name: str, sfreq: Optional[float], pretrained_sfreq: float
+) -> None:
+    """Warn when ``sfreq`` differs from the rate the released weights expect.
+
+    A randomly initialised model may run at any rate, so this warns instead of
+    raising. ``sfreq=None`` (not given) does not warn.
+    """
+    if sfreq is not None and abs(float(sfreq) - pretrained_sfreq) > 1e-6:
+        warnings.warn(
+            f"{model_name} was pretrained at {pretrained_sfreq:g} Hz, got "
+            f"sfreq={sfreq}. Resample the data to {pretrained_sfreq:g} Hz to use "
+            "the pretrained weights.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+
 def channel_types_from_chs_info(
     chs_info: Optional[Sequence[Dict[str, Any]]],
     num_channels: Optional[int] = None,

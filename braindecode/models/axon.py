@@ -4,7 +4,6 @@
 # Reference implementation and weights: https://huggingface.co/MannasAI/axon-eeg (Apache-2.0).
 """AXON: an axis-factorized EEG foundation model."""
 
-import warnings
 from typing import Optional
 
 import numpy as np
@@ -14,6 +13,7 @@ from torch import nn
 
 from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules.channels import _resolve
 
 
@@ -177,12 +177,7 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
             )
         if embed_dim % 2 != 0:
             raise ValueError(f"embed_dim ({embed_dim}) must be even.")
-        if self._sfreq is not None and abs(float(self._sfreq) - 200.0) > 1e-6:
-            warnings.warn(
-                f"AXON was pretrained on 200 Hz EEG, got sfreq={self._sfreq}. "
-                "Resample the data to 200 Hz to use the pretrained weights.",
-                stacklevel=2,
-            )
+        warn_if_sfreq_differs("AXON", self._sfreq, 200.0)
         if self._n_times is not None and self._n_times < patch_size:
             raise ValueError(
                 f"n_times ({self._n_times}) must be at least patch_size ({patch_size})."
