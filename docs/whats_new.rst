@@ -34,7 +34,7 @@ Enhancements
   features identical to the reference implementation, and
   :meth:`~braindecode.models.Guetschel2026.hub_repo_id` builds their names. The head is a
   flatten, a fixed Gaussian random projection (``random_projection=5000``, optional) and a
-  linear layer (by `Pierre Guetschel`_).
+  linear layer (:gh:`1260` by `Pierre Guetschel`_).
 - The pretrained-compatibility test now covers every model class with released weights (NeuroRVQ, MAPA, BrainOmni, BrainTokenizer and the SignalJEPA heads added), checks that the list is complete, and runs REVE's cases without network access (:gh:`1252` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.NeuroRVQ` now reuses the LaBraM attention block
   instead of a private copy, and the K-means codebook initialisation in
