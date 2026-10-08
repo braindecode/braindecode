@@ -2,7 +2,39 @@
 #
 # License: BSD-3-Clause
 
-"""Contrastive EEG-text representation learning."""
+"""Contrastive EEG-text representation learning.
+
+Optional external text-encoder integration
+------------------------------------------
+This module does not itself distribute pretrained EEGCLIP weights.
+For paired text descriptions, users may supply their own external
+language encoder without making Transformers a Braindecode dependency::
+
+    from transformers import AutoModel, AutoTokenizer
+    from braindecode.models import EEGCLIP
+
+    tokenizer = AutoTokenizer.from_pretrained("medicalai/ClinicalBERT")
+    text_encoder = AutoModel.from_pretrained("medicalai/ClinicalBERT")
+    model = EEGCLIP(
+        n_chans=21,
+        n_times=1000,
+        n_outputs=64,
+        text_encoder=text_encoder,
+        text_embedding_dim=text_encoder.config.hidden_size,
+    )
+    tokens = tokenizer(reports, padding=True, return_tensors="pt")
+    output = model.forward_paired(
+        eeg_batch,
+        tokens["input_ids"],
+        attention_mask=tokens["attention_mask"],
+    )
+    loss = model.contrastive_loss(
+        output["eeg_embeds"], output["text_embeds"]
+    )
+
+For zero-shot scoring, encode candidate descriptions with the text encoder
+and compare their embeddings against EEG embeddings via compute_logits.
+"""
 
 from __future__ import annotations
 
@@ -92,45 +124,23 @@ class EEGCLIP(EEGModuleMixin, nn.Module):
 
     Examples
     --------
-    Use a Hugging Face text encoder without making Transformers a core
-    dependency::
+    Train a paired EEG/text-feature encoder without external model weights::
 
-        from transformers import AutoModel, AutoTokenizer
+        import torch
         from braindecode.models import EEGCLIP
 
-        tokenizer = AutoTokenizer.from_pretrained("medicalai/ClinicalBERT")
-        text_encoder = AutoModel.from_pretrained("medicalai/ClinicalBERT")
         model = EEGCLIP(
-            n_chans=21,
-            n_times=1000,
-            n_outputs=64,
-            text_encoder=text_encoder,
-            text_embedding_dim=text_encoder.config.hidden_size,
+            n_chans=21, n_times=1000, n_outputs=64, text_embedding_dim=768
         )
-        tokens = tokenizer(reports, padding=True, return_tensors="pt")
-        output = model.forward_paired(
-            eeg_batch,
-            tokens["input_ids"],
-            attention_mask=tokens["attention_mask"],
-        )
+        eeg_windows = torch.randn(2, 21, 1000)
+        text_features = torch.randn(2, 768)
+        paired = model.forward_paired(eeg_windows, text_features)
         loss = model.contrastive_loss(
-            output["eeg_embeds"], output["text_embeds"]
+            paired["eeg_embeds"], paired["text_embeds"]
         )
 
-    Compare EEG windows against candidate descriptions with zero-shot logits::
-
-        candidate_tokens = tokenizer(
-            ["normal EEG", "EEG with epileptiform activity"],
-            padding=True,
-            return_tensors="pt",
-        )
-        eeg_embeds = model.encode_eeg(eeg_batch)
-        text_embeds = model.encode_text(
-            candidate_tokens["input_ids"],
-            attention_mask=candidate_tokens["attention_mask"],
-        )
-        logits_per_eeg, _ = model.compute_logits(eeg_embeds, text_embeds)
-        predicted_class = logits_per_eeg.argmax(dim=1)
+    Users may also supply a separate text encoder; see the module-level
+    documentation for the optional external text-model integration.
 
     References
     ----------
