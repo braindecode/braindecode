@@ -26,6 +26,18 @@ from braindecode.modules import FeedForwardBlock
 from braindecode.modules.quantization import ResidualVectorQuantizer
 
 
+class _SELU(nn.SELU):
+    """``nn.SELU`` written as ``scale * x`` / ELU: same values and gradients, and
+    trainable on Gaudi, whose ELU backward only supports ``scale == 1``."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        alpha, scale = (
+            1.6732632423543772848170429916717,
+            1.0507009873554804934193349852946,
+        )
+        return torch.where(x > 0, x * scale, F.elu(x, alpha * scale))
+
+
 class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
     r"""BrainTokenizer from Xiao et al. (2025) [brainomni]_.
 
@@ -461,7 +473,8 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         return nn.Sequential(
             nn.Dropout(0.1),
             nn.Linear(self.n_neuro * self.lm_dim, self.lm_dim),
-            self.activation(),
+            # nn.SELU (the released config) as _SELU, which trains on Gaudi
+            (_SELU if self.activation is nn.SELU else self.activation)(),
             nn.Linear(self.lm_dim, n_outputs),
         )
 
@@ -593,7 +606,7 @@ class _SpatialTemporalBlock(nn.Module):
         )
         self.pre_ff_norm = RMSNorm(n_dim, eps=1e-6)
         # Released FeedForward: Linear -> SELU -> Linear -> Dropout.
-        self.ff = FeedForwardBlock(n_dim, 4, 0.0, nn.SELU, output_drop_p=dropout)
+        self.ff = FeedForwardBlock(n_dim, 4, 0.0, _SELU, output_drop_p=dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch, _, _, dim = x.shape
@@ -715,9 +728,9 @@ class _SensorEmbedding(nn.Module):
         super().__init__()
         self.sensor_embedding_layer = nn.Embedding(3, n_dim)
         self.pos_embedding_layer = nn.Sequential(
-            nn.Linear(6, n_dim // 2), nn.SELU(), nn.Linear(n_dim // 2, n_dim)
+            nn.Linear(6, n_dim // 2), _SELU(), nn.Linear(n_dim // 2, n_dim)
         )
-        self.aggregate_mlp = FeedForwardBlock(n_dim, 4, 0.0, nn.SELU)
+        self.aggregate_mlp = FeedForwardBlock(n_dim, 4, 0.0, _SELU)
         self.norm = RMSNorm(n_dim, eps=1e-6)
 
     def forward(self, pos: torch.Tensor, sensor_type: torch.Tensor) -> torch.Tensor:
