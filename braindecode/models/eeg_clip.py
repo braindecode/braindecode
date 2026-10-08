@@ -105,6 +105,10 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
     or ``text_encoder`` cannot be rebuilt from a config, so :meth:`get_config`
     and ``save_pretrained`` raise for them; save their ``state_dict``.
 
+    The authors' repository has no license file; this implementation follows
+    braindecode's BSD-3-Clause license, and its projection head mirrors the
+    authors' five-line ``ProjectionHead``.
+
     Examples
     --------
     Train on paired EEG windows and precomputed text features::
