@@ -285,9 +285,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         num_channels = channel_locations.shape[1]
-        x_signal = self.tokenizer._prepare_input(x_signal)
+        x_signal = self.tokenizer.prepare_input(x_signal)
         if mask is not None:
-            mask = self.tokenizer._prepare_input(mask)
+            mask = self.tokenizer.prepare_input(mask)
         num_patches_per_channel = x_signal.shape[-1] // self.patch_size
         x_patched = self.patch_embed(x_signal)
         freq_embed = self.freq_embed(x_signal)
