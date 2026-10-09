@@ -63,11 +63,6 @@ _TORCHSCRIPT_XFAIL = {
     "Labram": "keyword-only forward argument",
     "MAPA": "f-string error message in forward",
     "MVPFormer": "math.log2 in forward",
-    "MetaNeuromotorHand": "einops.pack call",
-    "NeuroRVQTokenizer": "getattr with a computed name",
-    "REVE": "einops.rearrange call (**axes_lengths)",
-    "SleepFM": "einops.rearrange call (**axes_lengths)",
-    "SleepFMStager": "einops.rearrange call (**axes_lengths)",
     "TFMTokenizer": "linear_attention_transformer forward takes **kwargs",
 }
 
