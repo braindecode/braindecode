@@ -389,7 +389,7 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
         Clipping bound of ``"median_std_clip"``.
     random_projection : int or None, default=5000
         Size of the random projection of the head, or ``None`` for no
-        projection.
+        projection. Memory grows linearly with it (see Notes).
     random_projection_seed : int, default=0
         Seed of the random projection.
 
@@ -425,7 +425,8 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
         normalization: str = "median_std_clip",
         input_scale: float = 1e6,
         clip_sigma: float = 15.0,
-        # head
+        # head; the projection buffer holds random_projection x n_chans x n_patches x 512
+        # floats (~0.9 GB at 22 channels, 4 s): pass None or a small value for low memory.
         random_projection: int | None = 5000,
         random_projection_seed: int = 0,
         channel_strategy: str = "native",
