@@ -6,13 +6,13 @@
 from __future__ import annotations
 
 from typing import Sequence
-from warnings import warn
 
 import torch
 from torch import nn
 
 from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import DropPath, PatchTokenizer
 
 
@@ -215,12 +215,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
                 f"({n_channel_embeddings}); the released weights use 19."
             )
 
-        if self._sfreq is not None and self.sfreq != 200:
-            warn(
-                f"EEG-DINO was trained at 200 Hz but sfreq={self.sfreq}. Inputs are "
-                "not resampled internally; results may be unreliable.",
-                UserWarning,
-            )
+        warn_if_sfreq_differs("EEG-DINO", self._sfreq, 200)
 
         self.tokenizer = PatchTokenizer(
             patch_size, n_times=self.n_times, learnable=False

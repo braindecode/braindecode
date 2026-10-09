@@ -28,6 +28,7 @@ from braindecode.models.util import (
     positions_from_chs_info,
     resolve_channel_indices,
     valid_location_mask,
+    warn_if_sfreq_differs,
 )
 from braindecode.modules.util import (
     _pad_shift_array,
@@ -386,3 +387,14 @@ def test_dance_signal_params_are_real_channels_and_stable():
     assert [ch["ch_name"] for ch in first["chs_info"]] == [
         ch["ch_name"] for ch in second["chs_info"]
     ]
+
+
+@pytest.mark.filterwarnings("error")
+@pytest.mark.parametrize("sfreq", [None, 200, 200.0, 200 + 1e-9])
+def test_warn_if_sfreq_differs_silent(sfreq):
+    warn_if_sfreq_differs("M", sfreq, 200)
+
+
+def test_warn_if_sfreq_differs_warns():
+    with pytest.warns(UserWarning, match="M was pretrained at 200 Hz"):
+        warn_if_sfreq_differs("M", 250, 200)

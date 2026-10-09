@@ -38,6 +38,9 @@ Enhancements
 - Add :class:`braindecode.models.TFMTokenizer`, the time-frequency motif tokenizer
   for single-channel EEG of Pradeepkumar et al. (ICLR 2026) (:gh:`1202` by
   `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
+- Add :class:`braindecode.models.EEGCLIP`, a dual encoder that aligns EEG
+  windows and text descriptions with a symmetric contrastive objective; the
+  text encoder is optional and user-supplied (:gh:`1200` by `lindicaphxag-tech`_).
 - The pretrained-compatibility test now covers every model class with released weights (NeuroRVQ, MAPA, BrainOmni, BrainTokenizer and the SignalJEPA heads added), checks that the list is complete, and runs REVE's cases without network access (:gh:`1252` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.NeuroRVQ` now reuses the LaBraM attention block
   instead of a private copy, and the K-means codebook initialisation in
@@ -96,6 +99,15 @@ Enhancements
   model whose layers mix a temporal and a spatial attention path with a
   per-token gate, with pretrained weights on the Hugging Face Hub
   (:gh:`1182` by `Mahir Jain`_).
+- :class:`braindecode.models.BIOT`, :class:`braindecode.models.BrainBERT`,
+  :class:`braindecode.models.EEGDINO`, :class:`braindecode.models.SleepFM`,
+  :class:`braindecode.models.SleepFMStager`,
+  :class:`braindecode.models.BrainTokenizer` and
+  :class:`braindecode.models.BrainOmni` warn about a sampling rate that differs
+  from the pretrained one through the shared
+  ``braindecode.models.util.warn_if_sfreq_differs``; the warning fires in the
+  same cases as before (up to a 1e-6 Hz tolerance), with one wording
+  (:gh:`1261` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.NeuroRVQ` and
   :class:`braindecode.models.NeuroRVQTokenizer` take ``modality`` (``"eeg"``,
   ``"ecg"``, ``"emg"``, ``"ppg"``), the settings of the authors' four released

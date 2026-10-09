@@ -207,6 +207,10 @@ categories can be found in the respective sections below.
   (:cite:label:`jiang2024large`), :class:`EEGPT` (:cite:label:`eegpt2024`), and
   :class:`TFMTokenizer` (:cite:label:`pradeepkumar2026tfm`). These typically need a
   heavily self-supervised pre-training before decoding.
+- **Cross-modal contrastive** models learn a shared space for brain signals and
+  descriptions, enabling text-conditioned retrieval and zero-shot decoding. The
+  :class:`EEGCLIP` implementation follows the EEG/text alignment objective in
+  :cite:label:`eegclip2025`.
 
 We are continually expanding this collection and welcome contributions! If you have
 implemented a model relevant to EEG, ECoG, or MEG analysis, consider adding it to

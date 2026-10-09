@@ -6,6 +6,7 @@ from linear_attention_transformer import LinearAttentionTransformer
 
 from braindecode.functional import sinusoidal_positional_encoding, spectral_input
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_if_sfreq_differs
 
 # -----------------------------------------------------------------------------
 # Canonical BIOT channel order: the 18-channel TCP bipolar montage used by
@@ -172,12 +173,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.return_feature = return_feature
-        if (self.sfreq != 200) & (self.sfreq is not None):
-            warn(
-                "This model has only been trained on a dataset with 200 Hz. "
-                + "no guarantee to generalize well with the default parameters",
-                UserWarning,
-            )
+        warn_if_sfreq_differs("BIOT", self.sfreq, 200)
         if self.n_chans > embed_dim:
             warn(
                 "The number of channels is larger than the embedding size. "
