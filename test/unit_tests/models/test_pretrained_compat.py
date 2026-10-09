@@ -55,6 +55,7 @@ from braindecode.models import (
     SleepFM,
     SleepFMStager,
     STEEGFormer,
+    TFMTokenizer,
 )
 from braindecode.models.bendr import BENDR_CHANNEL_ORDER
 from braindecode.models.biot import BIOT_CHANNEL_ORDER
@@ -304,6 +305,13 @@ COMPAT = {
         channels="agnostic",
         min_n_times=640,
     ),
+    "TFMTokenizer": dict(
+        cls=TFMTokenizer,
+        sfreq=200,
+        n_times=1000,
+        canon=TEN_TWENTY,
+        channels="agnostic",
+    ),
     "NeuroRVQ": dict(
         cls=NeuroRVQ,
         sfreq=200,
@@ -456,7 +464,7 @@ def test_geometry_contract(name, gname, gkw):
 NATIVE_ONLY = {"SleepFM", "SleepFMStager"}
 
 # No ``channel_strategy`` argument (not part of the #1241 channel layer).
-NO_STRATEGY = {"NeuroRVQ", "MAPA", "BrainOmni", "BrainTokenizer"}
+NO_STRATEGY = {"NeuroRVQ", "MAPA", "BrainOmni", "BrainTokenizer", "TFMTokenizer"}
 
 
 # BIOT's canonical input is bipolar; under a strategy it takes electrodes.

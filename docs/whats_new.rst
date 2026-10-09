@@ -28,6 +28,9 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.TFMTokenizer`, the time-frequency motif tokenizer
+  for single-channel EEG of Pradeepkumar et al. (ICLR 2026) (:gh:`1202` by
+  `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
 - The pretrained-compatibility test now covers every model class with released weights (NeuroRVQ, MAPA, BrainOmni, BrainTokenizer and the SignalJEPA heads added), checks that the list is complete, and runs REVE's cases without network access (:gh:`1252` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.NeuroRVQ` now reuses the LaBraM attention block
   instead of a private copy, and the K-means codebook initialisation in

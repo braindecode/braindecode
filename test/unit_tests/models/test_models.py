@@ -69,6 +69,7 @@ from braindecode.models import (
     SleepStagerChambon2018,
     SPARCNet,
     SyncNet,
+    TFMTokenizer,
     TIDNet,
     TSception,
     USleep,
@@ -5157,6 +5158,64 @@ def test_seizure_transformer_rejects_invalid_construction():
         SeizureTransformer(n_chans=4, n_outputs=1, n_times=256, n_filters=(8, 16))
     with pytest.raises(ValueError, match="num_heads"):
         SeizureTransformer(n_chans=4, n_outputs=1, n_times=256, num_heads=3)
+
+# ---------------------------------------------------------------------------
+# TFMTokenizer
+# ---------------------------------------------------------------------------
+
+
+def _small_tfm_tokenizer(**kwargs):
+    params = dict(
+        sfreq=200,
+        embed_dim=16,
+        codebook_size=32,
+        freq_encoder_depth=1,
+        temporal_encoder_depth=1,
+        decoder_depth=1,
+        max_seq_len=32,
+    )
+    return TFMTokenizer(**{**params, **kwargs})
+
+
+def test_tfm_tokenizer_tokenize_outputs_and_masks():
+    model = _small_tfm_tokenizer().eval()
+    x = torch.randn(2, 3, 500)
+    target = model.compute_spectrogram(x)
+    mask_a, mask_b = model.make_complementary_masks(target)
+
+    # One mask for every trial and channel, and its exact complement.
+    assert torch.equal(mask_b, ~mask_a)
+    assert torch.equal(mask_a[0, 0], mask_a[-1, -1])
+    assert not mask_a.all() and mask_a.any()
+
+    out = model.tokenize(x, spectrogram_mask=mask_a)
+    assert out.reconstruction.shape == target.shape == (2, 3, 100, 4)
+    assert out.token_ids.shape == (2, 3, 4)
+    assert 0 <= out.token_ids.min() and out.token_ids.max() < 32
+    assert out.quantized.shape == out.embeddings.shape == (6, 4, 16)
+    torch.testing.assert_close(out.target_spectrogram, target)
+    torch.testing.assert_close(model(x, spectrogram_mask=mask_a), out.reconstruction)
+
+
+def test_tfm_tokenizer_codebook_is_ema_only():
+    torch.manual_seed(7)
+    model = _small_tfm_tokenizer(codebook_size=64)
+    before = model.quantizer.embed.clone()
+
+    out = model.tokenize(torch.randn(1, 1, 200))
+    out.quantization_loss.backward()
+
+    # The VQ loss alone trains both encoder paths; the codebook moves by EMA.
+    assert model.frequency_patch_embedding[0].weight.grad.norm() > 0
+    assert model.temporal_patch_embedding[0].weight.grad.norm() > 0
+    assert not torch.equal(model.quantizer.embed, before)
+    # No EMA update in eval mode.
+    state = {k: v.clone() for k, v in model.quantizer.state_dict().items()}
+    model.eval().tokenize(torch.randn(1, 1, 200))
+    for k, v in model.quantizer.state_dict().items():
+        torch.testing.assert_close(v, state[k])
+    assert "stft_window" not in model.state_dict()
+
 
 # ---------------------------------------------------------------------------
 # CSBrain

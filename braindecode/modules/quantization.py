@@ -110,6 +110,7 @@ class EMACodebook(nn.Module):
         self.epsilon = epsilon
         self.threshold_ema_dead_code = threshold_ema_dead_code
         self.codebook_size = codebook_size
+        self.kmeans_init = kmeans_init
         self.kmeans_iters = kmeans_iters
 
         embed = torch.zeros(codebook_size, dim)
@@ -171,7 +172,10 @@ class EMACodebook(nn.Module):
         # First-batch K-means is deliberately stateful and data-dependent, so it
         # cannot be captured by ``torch.export``. Evaluation exports consume an
         # already initialized or pretrained codebook and leave its buffers alone.
-        if torch.compiler.is_compiling() and not self.training:
+        # Without k-means init there is nothing to do (and no host sync).
+        if not self.kmeans_init or (
+            torch.compiler.is_compiling() and not self.training
+        ):
             return
         if bool(self.inited.item()):
             return

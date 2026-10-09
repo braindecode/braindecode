@@ -559,6 +559,7 @@ def test_model_torch_script(model):
     not_working_models = [
         "BIOT",
         "Labram",
+        "TFMTokenizer",
         "EEGPT",
         "SSTDPN",
         "BENDR",

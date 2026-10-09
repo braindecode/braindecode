@@ -74,6 +74,7 @@ from .steegformer import STEEGFormer
 from .syncnet import SyncNet
 from .tcformer import TCFormer
 from .tcn import BDTCN, TCN
+from .tfm_tokenizer import TFMTokenizer, TFMTokenizerOutput
 from .tidnet import TIDNet
 from .tsinception import TSception
 from .usleep import USleep
@@ -168,6 +169,8 @@ __all__ = [
     "STEEGFormer",
     "SyncNet",
     "BDTCN",
+    "TFMTokenizer",
+    "TFMTokenizerOutput",
     "TCFormer",
     "TCN",
     "TIDNet",

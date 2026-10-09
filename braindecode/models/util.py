@@ -593,6 +593,11 @@ models_mandatory_parameters: list[
     ),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("MIRepNet", ["n_chans", "n_outputs"], None),
+    (
+        "TFMTokenizer",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {"sfreq": 200.0, "n_times": 1000},
+    ),
     ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
     (
         "MVPFormer",
@@ -705,6 +710,7 @@ non_classification_models = [
     "EMG2QwertyNet",
     # Returns a reconstruction tensor (VQ-VAE output), not class logits.
     "BrainTokenizer",
+    "TFMTokenizer",
     # Dense per-frame pose sequences (batch, T, n_joints), not logits.
     "VEMG2Pose",
     "NeuroPose",
