@@ -19,6 +19,7 @@ from urllib.error import URLError
 import numpy as np
 import pytest
 import torch
+from mne.io.constants import FIFF
 from torch import nn
 
 import braindecode.models.guetschel2026 as guetschel2026_module
@@ -1506,3 +1507,19 @@ def test_spatial_frequencies_are_computed_on_the_cpu_whatever_the_default_device
         model = _model(random_projection=None)
     assert devices and set(devices) == {"cpu"}
     assert model.model.pos_encoder.div_term.device.type == "meta"
+
+
+@pytest.mark.parametrize("coord_frame", [FIFF.FIFFV_COORD_DEVICE, FIFF.FIFFV_COORD_MRI])
+def test_rejects_positions_in_another_coordinate_frame(coord_frame):
+    chs = _chs(_NAMES)
+    chs[1] = {**chs[1], "coord_frame": coord_frame}
+    with pytest.raises(ValueError, match="head frame"):
+        Guetschel2026(chs_info=chs, n_times=1000, n_outputs=2, sfreq=200.0)
+
+
+@pytest.mark.parametrize("coord_frame", [FIFF.FIFFV_COORD_HEAD, "head", None])
+def test_accepts_head_frame_or_missing_coord_frame(coord_frame):
+    chs = _chs(_NAMES)
+    if coord_frame is not None:
+        chs = [{**ch, "coord_frame": coord_frame} for ch in chs]
+    Guetschel2026(chs_info=chs, n_times=1000, n_outputs=2, sfreq=200.0)

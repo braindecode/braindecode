@@ -13,6 +13,7 @@ import warnings
 import numpy as np
 import torch
 import torch.nn.functional as F
+from mne.io.constants import FIFF
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -508,6 +509,20 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
                 "other names (e.g. EGI 'E1') need positions in metres."
             )
 
+        # loc[:3] must be head-frame coordinates; a missing coord_frame counts as head
+        other_frame = [
+            ch.get("ch_name", f"#{i}")
+            for i, ch in enumerate(self.chs_info)
+            if ch.get("coord_frame", FIFF.FIFFV_COORD_HEAD)
+            not in (FIFF.FIFFV_COORD_HEAD, "head")
+        ]
+        if other_frame:
+            raise ValueError(
+                "Guetschel2026 requires channel positions in the MNE head frame, but "
+                f"{len(other_frame)} channels are in another coordinate frame: "
+                f"{other_frame[:5]}. Set the montage with raw.set_montage(...) or "
+                "transform the positions to the head frame."
+            )
         ch_pos_f64 = np.array([ch["loc"][:3] for ch in self.chs_info], dtype=np.float64)
         # Every electrode lies 5 to 20 cm from the head-frame origin (MNE montages:
         # 0.064-0.146 m; REVE's 32,713 pre-training channels: 0.078-0.133 m), so
