@@ -227,6 +227,13 @@ Enhancements
   contributions covering implementation conventions, registration,
   documentation, and benchmarking (:gh:`1169` by `Li Qing`_).
 
+- :func:`torch.jit.script` compiles models whose weights are parametrized
+  (max-norm constraints, ``weight_norm``): ATCNet, BDTCN, EEGITNet, EEGNeX,
+  EEGNet, EEGTCNet, FBCNet, FBMSNet, IFNet and TIDNet now script and give the
+  eager output, and so do models built with an int ``sfreq`` or
+  ``input_window_seconds`` (as in Hub configs) (:gh:`1256` by
+  `Bruno Aristimunha`_).
+
 API and behavior changes
 ========================
 
