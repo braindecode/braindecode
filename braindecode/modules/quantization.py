@@ -232,14 +232,14 @@ class EMACodebook(nn.Module):
         shape, dtype = x.shape, x.dtype
         x = x.reshape(-1, shape[-1])
         self.init_embed_(x)
-        embed_ind = self.quantize(x)
-        # F.one_hot reads the index range on the host (a device sync).
-        codes = torch.arange(self.codebook_size, device=embed_ind.device)
-        embed_onehot = (embed_ind.unsqueeze(-1) == codes).type(dtype)
-        embed_ind = embed_ind.view(shape[:-1])
+        flat_ind = self.quantize(x)
+        embed_ind = flat_ind.view(shape[:-1])
         quantize = self.dequantize(embed_ind).type(dtype)
 
         if self.training:
+            # F.one_hot reads the index range on the host (a device sync).
+            codes = torch.arange(self.codebook_size, device=flat_ind.device)
+            embed_onehot = (flat_ind.unsqueeze(-1) == codes).type(dtype)
             # As in the released encodec/BrainOmni ``EuclideanCodebook``, the
             # replacement writes ``embed`` only, and the EMA step below rebuilds
             # ``embed`` from ``embed_avg``. Kept as released for checkpoint parity.
