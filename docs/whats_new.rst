@@ -35,6 +35,7 @@ Enhancements
   :meth:`~braindecode.models.Guetschel2026.hub_repo_id` builds their names. The head is a
   flatten and a linear layer, with an optional fixed Gaussian random projection in between
   (``random_projection``, as in the OpenEEGBench probe) (:gh:`1260` by `Pierre Guetschel`_).
+- :class:`braindecode.models.EEGInceptionMI` runs its max pooling in channels-last layout and pads even kernels once per inception module: CPU forward 1.1-1.25x faster, outputs, gradients and state dict unchanged (:gh:`1267` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.TFMTokenizer`, the time-frequency motif tokenizer
   for single-channel EEG of Pradeepkumar et al. (ICLR 2026) (:gh:`1202` by
   `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
@@ -47,6 +48,12 @@ Enhancements
   :mod:`braindecode.modules.quantization` uses ``torch.cdist`` (about 6x faster,
   lower peak memory, identical codebooks). Outputs and state-dict keys are
   unchanged. (by `Bruno Aristimunha`_)
+- The K-means codebook initialisation in :mod:`braindecode.modules.quantization`
+  searches the nearest center once per distinct sampled row: a first batch
+  smaller than the 4096 drawn vectors is sampled with replacement, and the first
+  forward of a fresh :class:`braindecode.models.BrainOmni` or
+  :class:`braindecode.models.BrainTokenizer` took about 10 s on CPU. Codebooks
+  are unchanged (:gh:`1265` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.MAPA`, a masked-autoencoder foundation model
   for intracranial EEG that describes an electrode only by its atlas region and
   its number along the array it was implanted on, never by its coordinates, so
@@ -280,6 +287,9 @@ Bug fixes
 ==========
 
 - Model fixes caught by new CPU-only integration checks (complex tensors, host syncs, kernel gaps, device/dtype follow, training after ``inference_mode``, deepcopy/pickle): BrainOmni/BrainTokenizer SELU trains on Gaudi, EEGSym pools with ``avg_pool2d``, FBCNet/FBMSNet/FBLightConvNet and LUNA run in float16, EEGMiner and AttnSleep deep-copy after training, Labram and NeuroRVQ pickle, SignalJEPA heads accept ``channel_strategy``, and tensors built in ``forward`` follow the input in CodeBrain, TCFormer, LUNA, MVPFormer, BrainOmni, ZUNA, DIVER1 and EEGDINO; float32 outputs unchanged (:gh:`1253` by `Bruno Aristimunha`_)
+- :func:`braindecode.functional.hilbert_freq` returns float16 for float16 input (it
+  returned float32), so :class:`braindecode.models.EEGMiner` runs after
+  ``model.to(torch.float16)`` (:gh:`1259` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.BrainOmni` and :class:`braindecode.models.BrainTokenizer`
   now run forward on Intel Gaudi (HPU) in lazy mode: the SEANet LSTM input is
   permuted as a 4D view, which Gaudi compiles; values are unchanged
