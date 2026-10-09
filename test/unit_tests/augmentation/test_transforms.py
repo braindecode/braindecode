@@ -2,6 +2,7 @@
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
 #          Li Qing <325196192+qinxwew@users.noreply.github.com>
+#          Anton Soloviev <anton@praviel.com>
 #
 # License: BSD (3-clause)
 import pickle  # nosec B403 - only round-trips objects built in the tests
@@ -769,6 +770,45 @@ def test_segmentation_rec_with_large_n_segments(time_aranged_batch):
         common_transform_assertions(
             time_aranged_batch, transform(*time_aranged_batch), X
         )
+
+
+@pytest.mark.parametrize("n_segments", [1, 3, 6, 10])
+@pytest.mark.parametrize("probability", [0.5, 1.0])
+@pytest.mark.parametrize("device", ["cpu", pytest.param(
+    "cuda", marks=pytest.mark.skipif(
+        not torch.cuda.is_available(), reason="CUDA unavailable"
+    )
+)])
+def test_segmentation_reconstruction_preserves_single_trial_classes(
+        n_segments, probability, device):
+    # With one trial per class, every sample must come from that same trial,
+    # even when the segment count does not divide the window length.
+    X = torch.arange(1, 81, device=device).reshape(4, 2, 10).float()
+    y = torch.arange(4, device=device)
+    transform = SegmentationReconstruction(
+        probability=probability, n_segments=n_segments, random_state=42
+    )
+
+    transformed_X, transformed_y = transform(X, y)
+
+    torch.testing.assert_close(transformed_X, X[transformed_y], rtol=0, atol=0)
+    torch.testing.assert_close(transformed_y.sort().values, y)
+
+
+def test_segmentation_reconstruction_remainder_uses_final_donor():
+    X = torch.arange(1, 21).reshape(2, 1, 10).float()
+    y = torch.zeros(2, dtype=torch.long)
+    transformed_X, transformed_y = SegmentationReconstruction.operation(
+        X, y, n_segments=3, data_classes=[(0, X)],
+        rand_indices={0: np.array([[1, 0, 1], [0, 1, 0]])},
+        idx_shuffle=np.array([1, 0]),
+    )
+    expected = torch.tensor([
+        [[1, 2, 3, 14, 15, 16, 7, 8, 9, 10]],
+        [[11, 12, 13, 4, 5, 6, 17, 18, 19, 20]],
+    ]).float()
+    torch.testing.assert_close(transformed_X, expected, rtol=0, atol=0)
+    torch.testing.assert_close(transformed_y, y)
 
 
 @pytest.mark.parametrize(

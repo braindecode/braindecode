@@ -3,6 +3,7 @@
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #          Bruna Lopes <brunajaflopes@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
+#          Anton Soloviev <anton@praviel.com>
 #
 # License: BSD (3-clause)
 
@@ -1093,7 +1094,8 @@ def segmentation_reconstruction(
     y : torch.Tensor
         EEG labels for the example or batch.
     n_segments : int
-        Number of segments to use in the batch.
+        Number of segments to use in the batch. Any remaining samples are
+        included in the last segment.
     data_classes : list[tuple[int, torch.Tensor]]
         List of tuples. Each tuple contains the class index and the corresponding EEG data.
     rand_indices : array-like
@@ -1133,6 +1135,8 @@ def segmentation_reconstruction(
         for idx_segment in range(n_segments):
             start = idx_segment * segment_size
             end = (idx_segment + 1) * segment_size
+            if idx_segment == n_segments - 1:
+                end = window_size
 
             # Perform the data augmentation
             X_aug[np.arange(n_trials), :, start:end] = X_class[

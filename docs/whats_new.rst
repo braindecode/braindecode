@@ -1448,6 +1448,9 @@ Requirements
 
 Bugs
 =====
+- Preserve the final samples in :class:`braindecode.augmentation.SegmentationReconstruction`
+  when the window length is not divisible by the segment count, instead of
+  replacing them with zeros (by `Anton Soloviev`_).
 - Improve the error message when :meth:`from_pretrained` or :meth:`push_to_hub`
   are called without the optional ``huggingface_hub`` dependency installed.
   Users now get a clear :class:`ImportError` with installation instructions
@@ -2231,6 +2234,7 @@ Authors
 ========
 
 .. _Arnaud Delorme: https://github.com/arnodelorme
+.. _Anton Soloviev: https://github.com/antonsoo
 .. _Hubert Banville: https://github.com/hubertjb
 .. _Robin Tibor Schirrmeister: https://github.com/robintibor
 .. _Lukas Gemein: https://github.com/gemeinl
