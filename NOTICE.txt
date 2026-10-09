@@ -58,7 +58,6 @@ The `brainomni.py` file is a derivative of `OpenTSLab/BrainOmni` (MIT), whose
 SEANet codec derives from Meta's `facebookresearch/encodec` (MIT). The
 `quantization.py` module holds the residual vector quantization derived from
 `lucidrains/vector-quantize-pytorch` (MIT) and the BrainOmni port.
-The `guetschel2026.py` file is a derivative of `PierreGtch/eeg-fm-masking` (MIT).
 
 ### Apache-2.0 Licensed Files
 

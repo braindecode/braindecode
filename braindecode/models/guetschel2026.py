@@ -19,22 +19,10 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.signal_jepa import _pos_encode_time
 from braindecode.models.util import has_valid_locations, warn_if_sfreq_differs
 
-_N_STORED_TIME_PATCHES = 33  # (6000 - 200) // 180 + 1: the 30 s pre-training window
-_PRETRAIN_SFREQ = 200.0
-_MAX_SECONDS = 600.0
-_SCALE_EPS = 1e-6
 _NORMALIZATIONS = ("median_std_clip", "none")
-
-_HUB_NAMESPACE = "PierreGtch"
 _PRETEXTS = ("mae", "jepa")
 _MASK_RADII = ("one", "6cm", "9cm", "12cm", "all")
 _MASK_LENGTHS = (1, 2, 4, 8, 16, 33)
-# Bounds (metres) of the distance of every electrode to the origin of the MNE head
-# frame. The MNE built-in montages (34 in MNE 1.13) lie between 0.064 and 0.146 m,
-# and the 32,713 REVE pre-training channels between 0.078 and 0.133 m.
-_MIN_CH_DIST = 0.05
-_MAX_CH_DIST = 0.20
-_MAX_LISTED_CHANNELS = 5
 
 
 def _xyz_div_term(n_dim):
@@ -128,7 +116,8 @@ class _PositionalEncoder(nn.Module):
             # formula values until the weights are loaded: the checkpoints all store
             # the same table, which overwrites them. Computed on the CPU, then moved
             # to the default device.
-            _pos_encode_time(_N_STORED_TIME_PATCHES, self.time_dim, max_n_times).to(
+            # 33 = (6000 - 200) // 180 + 1 patches: the 30 s pre-training window
+            _pos_encode_time(33, self.time_dim, max_n_times).to(
                 torch.get_default_device()
             ),
         )
@@ -225,51 +214,6 @@ class _ContextualEncoder(nn.Module):
         return self.transformer(local_features + pos.to(local_features.dtype))
 
 
-def _check_channel_distances(chs_info, ch_pos) -> None:
-    """Raise if an electrode is not within 5 to 20 cm of the head-frame origin.
-
-    The positions must be in metres. Centimetres or millimetres are far above
-    the range and a wrong unit or a placeholder at the origin (an all-zero
-    ``loc``; MNE marks an unknown position with NaN or zeros, and NaN is
-    rejected earlier) far below it.
-
-    ``ch_pos`` is the ``(C, 3)`` array of the positions, in float64: the bounds
-    are inclusive for the positions as given, not as rounded to float32.
-    """
-    dist = np.linalg.norm(np.asarray(ch_pos, dtype=np.float64), axis=1)
-    bad = np.flatnonzero((dist < _MIN_CH_DIST) | (dist > _MAX_CH_DIST))
-    if bad.size == 0:
-        return
-    listed = ", ".join(
-        f"{chs_info[i].get('ch_name', f'#{i}')!r} ({dist[i]:.3g} m, "
-        f"{'below' if dist[i] < _MIN_CH_DIST else 'above'} the range)"
-        for i in bad[:_MAX_LISTED_CHANNELS]
-    )
-    if bad.size > _MAX_LISTED_CHANNELS:
-        listed += f", ... ({bad.size - _MAX_LISTED_CHANNELS} more)"
-    raise ValueError(
-        "Guetschel2026 requires channel positions in METRES (MNE head frame, e.g. "
-        "raw.info['chs'][i]['loc'][:3] after raw.set_montage(...)): the distance of "
-        f"every channel to the origin must be between {_MIN_CH_DIST * 100:g} cm and "
-        f"{_MAX_CH_DIST * 100:g} cm ({_MIN_CH_DIST:g} to {_MAX_CH_DIST:g} m), but "
-        f"{bad.size} of {len(dist)} channel positions are outside it: {listed}. "
-        "Values far above the range look like centimetres or millimetres; values "
-        "far below it look like a wrong unit or a placeholder position at the "
-        "origin (MNE marks an unknown position with an all-zero or NaN loc). "
-        "Convert the positions to metres. A channel whose loc is all zeros (no "
-        "position) can instead be left as it is: pass the same chs_info with "
-        "channel_strategy='exact', which looks the missing positions up by "
-        "channel name (standard 10-05 names, standard_1005) and "
-        "keeps the positions that are given. Channels whose name is not a "
-        "standard_1005 name (e.g. 'E1' of an EGI net) cannot be looked up and "
-        "stay at the origin: they need positions in metres. Positions in a "
-        "wrong unit are not replaced by 'exact': convert them, or pass chs_info "
-        "with standard 10-05 channel names only (loc missing or all zeros) "
-        "together with channel_strategy='exact' to use the standard_1005 "
-        "positions."
-    )
-
-
 class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
     r"""Encoder of the EEG masking-geometry study from Guetschel et al. (2026) [guetschel2026]_.
 
@@ -344,7 +288,8 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
       the one evaluated in the paper; the folders ``epoch_01/`` to
       ``epoch_09/`` hold the earlier epochs of the same run.
 
-    The weights are released under CC-BY-4.0 (`collection
+    `License <https://github.com/PierreGtch/eeg-fm-masking/blob/main/LICENSE>`_
+    (MIT, the code). The weights are released under CC-BY-4.0 (`collection
     <https://huggingface.co/collections/PierreGtch/eeg-fm-masking-6ab912b6a03bba1348fc7366>`_,
     `project page <https://pierregtch.github.io/eeg-fm-masking/>`_).
 
@@ -535,24 +480,37 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError(
                 f"n_times ({self.n_times}) must be at least patch_size ({patch_size})."
             )
-        try:
-            sfreq_known = self.sfreq
-        except ValueError:
-            sfreq_known = None
-        warn_if_sfreq_differs("Guetschel2026", sfreq_known, _PRETRAIN_SFREQ)
+        if self._sfreq is not None or self._input_window_seconds is not None:
+            # sfreq given or derived from n_times / input_window_seconds
+            warn_if_sfreq_differs("Guetschel2026", self.sfreq, 200.0)
         if not has_valid_locations(self.chs_info):
             raise ValueError(
-                "Guetschel2026 requires channel locations: every chs_info entry needs "
-                "a finite loc[:3] (metres, MNE head frame) and not all of them zero. "
-                "Call raw.set_montage(...) before taking raw.info['chs'], or pass "
-                "channel_strategy='exact' to look the missing positions up by "
-                "channel name (standard 10-05 names, standard_1005). Channels "
-                "whose name is not a standard_1005 name (e.g. 'E1' of an EGI net) "
-                "cannot be looked up: they need positions in metres."
+                "Guetschel2026 requires channel locations: a finite loc[:3] in "
+                "metres for every channel (raw.set_montage(...)). For standard "
+                "10-05 names without positions, pass channel_strategy='exact'; "
+                "other names (e.g. EGI 'E1') need positions in metres."
             )
 
         ch_pos_f64 = np.array([ch["loc"][:3] for ch in self.chs_info], dtype=np.float64)
-        _check_channel_distances(self.chs_info, ch_pos_f64)
+        # Every electrode lies 5 to 20 cm from the head-frame origin (MNE montages:
+        # 0.064-0.146 m; REVE's 32,713 pre-training channels: 0.078-0.133 m), so
+        # centimetres, millimetres or a placeholder at the origin fall outside.
+        # Checked on the float64 positions as given: the bounds are inclusive.
+        dist = np.linalg.norm(ch_pos_f64, axis=1)
+        bad = np.flatnonzero((dist < 0.05) | (dist > 0.20))
+        if bad.size:
+            listed = ", ".join(
+                f"{self.chs_info[i].get('ch_name', f'#{i}')!r} ({dist[i]:.3g} m)"
+                for i in bad[:5]
+            )
+            raise ValueError(
+                "Guetschel2026 requires channel positions in METRES (MNE head "
+                f"frame), 5 to 20 cm from the origin; {bad.size} of {len(dist)} "
+                f"are not: {listed}{', ...' if bad.size > 5 else ''}. Convert "
+                "centimetres or millimetres to metres. For standard 10-05 names "
+                "with an all-zero loc, pass channel_strategy='exact' (it does not "
+                "replace given positions; other names need positions in metres)."
+            )
         # float32 BEFORE the encoding: float64 then cast gives a 4.2e-5 difference.
         ch_pos_np = ch_pos_f64.astype(np.float32)
         ch_pos = torch.from_numpy(ch_pos_np).to(torch.get_default_device())
@@ -566,7 +524,7 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
             None if random_projection is None else int(random_projection)
         )
         self.random_projection_seed: int = int(random_projection_seed)
-        max_n_times = int(_MAX_SECONDS * (_PRETRAIN_SFREQ / self.patch_step))  # 666
+        max_n_times = int(600.0 * (200.0 / self.patch_step))  # 600 s at 200 Hz: 666
         self.n_patches: int = (self.n_times - patch_size) // self.patch_step + 1
 
         # The attribute names are the key prefixes of the released checkpoints
@@ -631,7 +589,7 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
                 "No checkpoint was trained with mask_radius='all' and mask_length=33: "
                 "it would mask the whole window. Use another radius or length."
             )
-        return f"{_HUB_NAMESPACE}/eeg-fm-masking_{pretext}_r{mask_radius}_L{int(mask_length)}"
+        return f"PierreGtch/eeg-fm-masking_{pretext}_r{mask_radius}_L{int(mask_length)}"
 
     def _build_head(self, n_outputs: int) -> nn.Sequential:
         n_features = self.n_chans * self.n_patches * self.embed_dim
@@ -700,7 +658,7 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
         if self.normalization == "median_std_clip":
             std = x.std(dim=-1, keepdim=True, correction=0)
             median = std.median(dim=-2, keepdim=True).values  # lower median
-            x = x / (median + _SCALE_EPS)
+            x = x / (median + 1e-6)
             x = x.clamp(-self.clip_sigma, self.clip_sigma)
         return x.to(dtype)
 

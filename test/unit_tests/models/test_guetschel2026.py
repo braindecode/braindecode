@@ -443,7 +443,7 @@ def test_one_zero_location_among_valid_ones_is_rejected():
     # this class does not.
     chs = _chs()
     chs[1] = dict(chs[1], loc=np.zeros(12))
-    with pytest.raises(ValueError, match=r"METRES.*'Cz' \(0 m, below the range\)"):
+    with pytest.raises(ValueError, match=r"METRES.*'Cz' \(0 m\)"):
         _build(chs)
 
 
@@ -455,11 +455,8 @@ def test_rejects_positions_in_centimetres_or_millimetres(factor):
     assert "centimetres or millimetres" in msg
     assert "4 of 4" in msg
     assert "'C3'" in msg and "'Oz'" in msg
-    # channel_strategy does not replace non-zero positions: the message must
-    # say so, and that the strategy needs a names-only chs_info (standard names)
-    assert "not replaced by 'exact'" in msg
-    assert "standard 10-05 channel names only" in msg
-    assert "above the range" in msg
+    # channel_strategy does not replace non-zero positions: the message must say so
+    assert "does not replace given positions" in msg
 
 
 @pytest.mark.filterwarnings("ignore:Montage name .* is deprecated")
@@ -481,9 +478,9 @@ def test_exact_fills_only_the_zero_row_and_keeps_the_given_positions():
     chs = _scaled(1.05)  # given positions that differ from the standard ones
     zero_at = 1
     chs[zero_at] = dict(chs[zero_at], loc=np.zeros(12))
-    with pytest.raises(ValueError, match=r"METRES.*'Cz' \(0 m, below the range\)") as err:
+    with pytest.raises(ValueError, match=r"METRES.*'Cz' \(0 m\)") as err:
         _build(chs)
-    assert "pass the same chs_info with channel_strategy='exact'" in str(err.value)
+    assert "pass channel_strategy='exact'" in str(err.value)
     model = _build(chs, channel_strategy="exact")
     ch_pos = model.model.pos_encoder.ch_pos.numpy()
     expected = np.array([c["loc"][:3] for c in chs])
@@ -500,7 +497,7 @@ def test_exact_cannot_look_up_non_standard_names():
     egi = [{"ch_name": f"E{i}", "kind": "eeg"} for i in range(1, 4)]
     with pytest.raises(ValueError, match="channel locations") as err:
         _build(egi, channel_strategy="exact")
-    assert "not a standard_1005 name" in str(err.value)
+    assert "other names" in str(err.value)
     assert "positions in metres" in str(err.value)
 
 
@@ -510,18 +507,15 @@ def test_exact_cannot_look_up_non_standard_names_with_an_all_zero_loc():
     with pytest.raises(ValueError, match="METRES") as err:
         _build(chs, channel_strategy="exact")
     msg = str(err.value)
-    assert "'E1' (0 m, below the range)" in msg
-    assert "not a standard_1005 name" in msg
-    assert "positions in metres" in msg
+    assert "'E1' (0 m)" in msg
+    assert "other names need positions in metres" in msg
 
 
 def test_rejects_positions_scaled_by_1e_3():
     with pytest.raises(ValueError, match="METRES") as err:
         _build(_scaled(1e-3))
     msg = str(err.value)
-    assert "wrong unit or a placeholder" in msg
-    assert "'C3'" in msg
-    assert "below the range" in msg
+    assert "'C3' (0.000126 m)" in msg  # 0.126 m x 1e-3
 
 
 def test_error_names_the_channel_at_the_origin_among_valid_ones():
@@ -530,7 +524,7 @@ def test_error_names_the_channel_at_the_origin_among_valid_ones():
         _build(chs)
     msg = str(err.value)
     assert "1 of 5" in msg
-    assert "'Fp1' (0 m, below the range)" in msg
+    assert "'Fp1' (0 m)" in msg
     for name in _NAMES:
         assert repr(name) not in msg
 
@@ -543,7 +537,7 @@ def test_error_lists_only_the_first_offending_channels():
     msg = str(err.value)
     assert "12 of 12" in msg
     assert "'E4'" in msg and "'E5'" not in msg
-    assert "(7 more)" in msg
+    assert "'E4'" in msg and msg.count(" m)") == 5 and ", ..." in msg
 
 
 def test_a_single_valid_channel_builds():
@@ -595,7 +589,7 @@ def test_distance_boundaries(distance, ok):
 def test_the_distance_is_the_euclidean_norm_not_one_coordinate():
     # each coordinate is below 0.2 m but the norm is 0.208 m
     loc = np.r_[0.12, 0.12, 0.12, np.zeros(9)]
-    with pytest.raises(ValueError, match="'D' \\(0.208 m, above the range\\)"):
+    with pytest.raises(ValueError, match="'D' \\(0.208 m\\)"):
         _build([{"ch_name": "D", "kind": "eeg", "loc": loc}])
 
 
