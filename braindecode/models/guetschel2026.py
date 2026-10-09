@@ -37,7 +37,7 @@ def _xyz_div_term(n_dim):
     return torch.exp((1 - freqs / n_dim) * 2 * math.pi)
 
 
-def _pos_encode_xyz(ch_pos, x_min, x_max, div_term):
+def _pos_encode_xyz(ch_pos, x_min: float, x_max: float, div_term):
     """Sinusoidal encoding of the coordinates, ``(..., 3) -> (..., 3, n_dim)``.
 
     The order of the operations is the one of the reference implementation
