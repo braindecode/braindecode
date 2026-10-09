@@ -227,27 +227,15 @@ Enhancements
   ``input_window_seconds`` (as in Hub configs) (:gh:`1256` by
   `Bruno Aristimunha`_).
 
-- :func:`torch.jit.script` compiles :class:`braindecode.models.BENDR`,
-  :class:`braindecode.models.MIRepNet` and :class:`braindecode.models.MSVTNet`,
-  whose ``forward`` now declares its dict or tuple return, and the scripted
-  :class:`braindecode.models.BrainModule` gives the eager output (its encoder
-  held ``None`` in a ``ModuleList``, which TorchScript drops). Eager outputs
-  and state-dict keys are unchanged (:gh:`1257` by `Bruno Aristimunha`_).
-
-- :func:`torch.jit.script` compiles :class:`braindecode.models.CBraMod`,
-  :class:`braindecode.models.CSBrain`, :class:`braindecode.models.SSTDPN` and
-  :class:`braindecode.models.STEEGFormer`: einops function calls in ``forward``
-  (and in :class:`braindecode.modules.CrissCrossTransformerEncoderLayer`) are
-  written as ``reshape``/``permute``. Eager outputs and state-dict keys are
-  unchanged (:gh:`1258` by `Bruno Aristimunha`_).
-
-- :func:`torch.jit.script` compiles :class:`braindecode.models.CodeBrain`,
-  :class:`braindecode.models.EEGDINO`, :class:`braindecode.models.LUNA`,
-  :class:`braindecode.models.NeuroRVQ`, :class:`braindecode.models.TCFormer` and
-  the four :class:`braindecode.models.SignalJEPA` variants: einops calls as
-  ``reshape``/``permute``, typed dict/tuple returns, the NeuroRVQ branches without
-  computed-name ``getattr``, and LUNA's reconstruction head kept eager-only. Eager
-  outputs and state-dict keys are unchanged (:gh:`1262` by `Bruno Aristimunha`_).
+- :func:`torch.jit.script` compiles 17 more models and gives the eager output:
+  BENDR, BrainModule, CBraMod, CodeBrain, CSBrain, EEGDINO, LUNA, MIRepNet,
+  MSVTNet, NeuroRVQ, SSTDPN, STEEGFormer, TCFormer and the four SignalJEPA
+  variants. einops calls in ``forward`` are written as ``reshape``/``permute``,
+  ``forward`` declares its dict or tuple return, BrainModule no longer keeps
+  ``None`` in a ``ModuleList`` (TorchScript dropped it), NeuroRVQ's branches no
+  longer use a computed-name ``getattr`` and LUNA's reconstruction head stays
+  eager-only. Eager outputs and state-dict keys are unchanged (:gh:`1262` by
+  `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
