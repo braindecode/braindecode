@@ -1,5 +1,34 @@
 import torch
 from torch import nn
+from torch.nn.utils import parametrize
+
+
+def _scriptable_weight(fget):
+    def weight(self) -> torch.Tensor:
+        if torch.jit.is_scripting():  # ParametrizationList.forward, uncached
+            p = self.parametrizations.weight
+            if hasattr(p, "original"):
+                x = p.original
+                for f in p:
+                    x = f(x)
+                return x
+            return p[0](p.original0, p.original1)  # weight_norm: g, v
+        return fget(self)
+
+    return property(weight)
+
+
+def make_parametrizations_scriptable(module: nn.Module) -> nn.Module:
+    """Let :func:`torch.jit.script` read parametrized ``weight`` tensors.
+
+    The getter installed by :func:`torch.nn.utils.parametrize.register_parametrization`
+    raises under scripting. Swap it, on the per-instance class that registration
+    creates, for one that recomputes the parametrization; eager calls are unchanged.
+    """
+    for m in module.modules():
+        if parametrize.is_parametrized(m, "weight"):
+            type(m).weight = _scriptable_weight(type(m).weight.fget)
+    return module
 
 
 class MaxNorm(nn.Module):
