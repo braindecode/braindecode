@@ -7,10 +7,9 @@
 
 import copy
 import logging
-from typing import Optional, Sequence
+from typing import Dict, Optional, Sequence, Union
 
 import torch
-from einops import rearrange
 from torch import Tensor, nn
 
 from braindecode.functional import spectral_input
@@ -278,13 +277,19 @@ class CBraMod(EEGModuleMixin, nn.Module):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-    def forward(self, x, mask=None, return_features=False):
+    def forward(
+        self,
+        x: Tensor,
+        mask: Optional[Tensor] = None,
+        return_features: bool = False,
+    ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         x = self.rearrange(x)
         patch_emb = self.patch_embedding(x, mask)
         feats = self.encoder(patch_emb)
         out = self.proj_out(feats)
         if return_features:
-            return {"features": out, "cls_token": None}
+            features: Dict[str, Optional[Tensor]] = {"features": out, "cls_token": None}
+            return features
         return self.final_layer(out)
 
 
@@ -347,7 +352,7 @@ class _PatchEmbedding(nn.Module):
             patch_size = int((patch_size + 2 * padding - kernel) / stride + 1)
         return last_channels * patch_size
 
-    def forward(self, x, mask=None):
+    def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
         bz, ch_num, patch_num, patch_size = x.shape
         if mask is None:
             mask_x = x
@@ -355,27 +360,24 @@ class _PatchEmbedding(nn.Module):
             mask_x = x.clone()
             mask_x[mask == 1] = self.mask_encoding
 
-        mask_x = rearrange(mask_x, "b c n p -> b 1 (c n) p")
-        patch_emb = self.proj_in(mask_x)
-        patch_emb = rearrange(patch_emb, "b d (c n) p2 -> b c n (d p2)", c=ch_num)
-
-        mask_x = rearrange(mask_x, "b 1 (c n) p -> (b c n) p", c=ch_num)
-        spectral = torch.fft.rfft(spectral_input(mask_x), dim=-1, norm="forward")
-        spectral = rearrange(
-            torch.abs(spectral).to(mask_x),
-            "(b c n) p -> b c n p",
-            b=bz,
-            c=ch_num,
-            p=self.patch_size // 2 + 1,
+        mask_x = mask_x.reshape(bz, 1, ch_num * patch_num, patch_size)
+        patch_emb = self.proj_in(mask_x)  # (b, d, c * n, p2)
+        d, p2 = patch_emb.shape[1], patch_emb.shape[3]
+        patch_emb = (
+            patch_emb.reshape(bz, d, ch_num, patch_num, p2)
+            .permute(0, 2, 3, 1, 4)
+            .reshape(bz, ch_num, patch_num, d * p2)
         )
+
+        mask_x = mask_x.reshape(-1, patch_size)
+        spectral = torch.fft.rfft(spectral_input(mask_x), dim=-1, norm="forward")
+        spectral = torch.abs(spectral).to(mask_x).reshape(bz, ch_num, patch_num, -1)
         spectral_emb = self.spectral_proj(spectral)
 
         patch_emb = patch_emb + spectral_emb
 
-        positional_embedding = self.positional_encoding(
-            rearrange(patch_emb, "b c n p -> b p c n", p=self.d_model)
-        )  # d for sanity check
-        positional_embedding = rearrange(positional_embedding, "b p c n -> b c n p")
+        positional_embedding = self.positional_encoding(patch_emb.permute(0, 3, 1, 2))
+        positional_embedding = positional_embedding.permute(0, 2, 3, 1)
 
         patch_emb = patch_emb + positional_embedding
 

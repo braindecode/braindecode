@@ -1,7 +1,7 @@
 # Authors: Tao Yang <sheeptao@outlook.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 #
-from typing import Type, Union
+from typing import Tuple, Type, Union
 
 import torch
 import torch.nn as nn
@@ -168,7 +168,9 @@ class MSVTNet(EEGModuleMixin, nn.Module):
             x = [_.flatten(start_dim=1, end_dim=-1) for _ in x]
         return x
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         # x with shape: (batch, n_chans, n_times)
         x = self.ensure_dim(x)
         # x with shape: (batch, 1, n_chans, n_times)

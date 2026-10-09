@@ -7,6 +7,7 @@ License: BSD 3 clause
 """
 
 from collections import OrderedDict
+from typing import Tuple, Union
 from warnings import warn
 
 import numpy as np
@@ -1357,9 +1358,9 @@ class _Attention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        return_attention=False,
-        return_qkv=False,
-    ):
+        return_attention: bool = False,
+        return_qkv: bool = False,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Apply the attention mechanism to the input tensor.
 
@@ -1386,7 +1387,7 @@ class _Attention(nn.Module):
             qkv_bias = torch.cat(
                 (
                     self.q_bias,
-                    torch.zeros_like(self.v_bias, requires_grad=False),
+                    torch.zeros_like(self.v_bias),
                     self.v_bias,
                 )
             )
