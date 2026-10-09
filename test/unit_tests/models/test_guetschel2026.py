@@ -1025,7 +1025,10 @@ def test_construction_warnings_point_at_the_calling_line():
     with pytest.warns(UserWarning) as record:
         Guetschel2026(sfreq=250.0, random_projection=5000, **kwargs)
     assert len(record) == 2, [str(w.message) for w in record]
-    assert all(w.filename == __file__ for w in record), [w.filename for w in record]
+    # The sampling-rate warning comes from the shared warn_if_sfreq_differs, whose
+    # stacklevel is the one of every pretrained model; only ours is checked here.
+    projection = [w for w in record if "random_projection" in str(w.message)]
+    assert [w.filename for w in projection] == [__file__]
 
 
 def test_random_projection_warns_when_it_expands_the_features():

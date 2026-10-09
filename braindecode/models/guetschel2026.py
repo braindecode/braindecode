@@ -17,7 +17,7 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.signal_jepa import _pos_encode_time
-from braindecode.models.util import has_valid_locations
+from braindecode.models.util import has_valid_locations, warn_if_sfreq_differs
 
 _N_STORED_TIME_PATCHES = 33  # (6000 - 200) // 180 + 1: the 30 s pre-training window
 _PRETRAIN_SFREQ = 200.0
@@ -539,13 +539,7 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
             sfreq_known = self.sfreq
         except ValueError:
             sfreq_known = None
-        if sfreq_known is not None and not math.isclose(sfreq_known, _PRETRAIN_SFREQ):
-            warnings.warn(
-                f"Guetschel2026 was pre-trained at {_PRETRAIN_SFREQ:g} Hz but sfreq is "
-                f"{sfreq_known:g} Hz; resample the data to {_PRETRAIN_SFREQ:g} Hz.",
-                UserWarning,
-                stacklevel=3,  # __init__, the track_model_init_kwargs wrapper, caller
-            )
+        warn_if_sfreq_differs("Guetschel2026", sfreq_known, _PRETRAIN_SFREQ)
         if not has_valid_locations(self.chs_info):
             raise ValueError(
                 "Guetschel2026 requires channel locations: every chs_info entry needs "
