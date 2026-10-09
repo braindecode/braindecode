@@ -532,6 +532,11 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
             None if random_projection is None else int(random_projection)
         )
         self.random_projection_seed: int = int(random_projection_seed)
+        # store the normalised values (e.g. a NumPy integer) in the saved config
+        self._update_init_kwargs(
+            random_projection=self.random_projection,
+            random_projection_seed=self.random_projection_seed,
+        )
         max_n_times = int(600.0 * (200.0 / self.patch_step))  # 600 s at 200 Hz: 666
         self.n_patches: int = (self.n_times - patch_size) // self.patch_step + 1
 
@@ -695,6 +700,21 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError(
                 f"Input has {x.shape[-1]} samples, fewer than patch_size "
                 f"({self.patch_size})."
+            )
+        if x.shape[-2] != self.n_chans:
+            # one channel would otherwise broadcast over every configured electrode
+            raise ValueError(
+                f"The model was built for {self.n_chans} channels, but the input has "
+                f"{x.shape[-2]}. Pass the matching chs_info at construction, or use a "
+                "channel_strategy to map another montage."
+            )
+        n_patches = (x.shape[-1] - self.patch_size) // self.patch_step + 1
+        if not return_features and n_patches != self.n_patches:
+            raise ValueError(
+                f"The head expects {self.n_patches} patches (n_times={self.n_times}), "
+                f"but the input has {x.shape[-1]} samples ({n_patches} patches). "
+                "Use return_features=True for other window lengths, or build the "
+                f"model with n_times={x.shape[-1]}."
             )
         z = self.model(self.feature_encoder(self._scale(x)))  # (B, C, P, embed_dim)
         if return_features:

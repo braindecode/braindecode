@@ -1442,3 +1442,38 @@ def test_random_projection_repr_shows_its_shape():
     head = _model(random_projection=16).final_layer[1]
     assert "n_components=16" in repr(head)
     assert f"n_features={head.n_features}" in repr(head)
+
+
+def test_numpy_integer_head_arguments_round_trip_through_the_config():
+    model = _model(random_projection=np.int64(16), random_projection_seed=np.int32(3))
+    config = model.get_config()
+    assert config["random_projection"] == 16 and type(config["random_projection"]) is int
+    assert config["random_projection_seed"] == 3
+    assert type(config["random_projection_seed"]) is int
+    rebuilt = Guetschel2026.from_config(config)
+    assert torch.equal(
+        rebuilt.final_layer[1].projection, model.final_layer[1].projection
+    )
+
+
+def test_logits_require_the_configured_window_length():
+    model = _model(random_projection=None).eval()
+    n_times = model.n_times
+    x = torch.randn(2, model.n_chans, n_times + 200) * 1e-5
+    with pytest.raises(ValueError, match="return_features=True"):
+        model(x)
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+    assert features.shape[2] == (n_times + 200 - 200) // 180 + 1
+    # trailing samples that do not fill a patch keep the patch count
+    with torch.no_grad():
+        model(torch.randn(2, model.n_chans, n_times + 10) * 1e-5)
+
+
+@pytest.mark.parametrize("return_features", [False, True])
+def test_rejects_inputs_with_another_number_of_channels(return_features):
+    model = _model(random_projection=None)
+    for n_chans in (1, model.n_chans + 1):
+        x = torch.randn(2, n_chans, model.n_times) * 1e-5
+        with pytest.raises(ValueError, match="channels"):
+            model(x, return_features=return_features)
