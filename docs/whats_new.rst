@@ -35,15 +35,12 @@ Enhancements
   windows and text descriptions with a symmetric contrastive objective; the
   text encoder is optional and user-supplied (:gh:`1200` by `lindicaphxag-tech`_).
 - Add :class:`braindecode.augmentation.TrivialAugment`, a tuning-free
-  augmentation composition that samples, independently for every example in a
-  batch, one transform from a label-preserving pool (time reverse, sign flip,
-  FT surrogate, channel dropout/shuffle, smooth time mask, amplitude scale
-  and scale-relative Gaussian noise, plus opt-in band-stop filter and
-  frequency shift when ``sfreq`` is given and sensor rotation when channel
-  positions are given) and one strength from a discrete grid, following the
-  image TrivialAugment recipe. Also registers the previously undocumented
-  :class:`braindecode.augmentation.BandRotation` in the API docs. (:gh:`375`
-  by `Li Qing`_)
+  composition that applies, to every example independently, one transform
+  sampled from a label-preserving pool with one strength sampled from a
+  discrete grid, as in the image TrivialAugment; ``sfreq`` and sensor
+  positions add frequency and rotation transforms to the pool. Also lists
+  :class:`braindecode.augmentation.BandRotation` in the API docs (:gh:`1255`
+  by `Li Qing`_).
 - The pretrained-compatibility test now covers every model class with released weights (NeuroRVQ, MAPA, BrainOmni, BrainTokenizer and the SignalJEPA heads added), checks that the list is complete, and runs REVE's cases without network access (:gh:`1252` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.NeuroRVQ` now reuses the LaBraM attention block
   instead of a private copy, and the K-means codebook initialisation in

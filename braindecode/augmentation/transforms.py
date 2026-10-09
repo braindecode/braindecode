@@ -1461,21 +1461,7 @@ class BandRotation(Transform):
 
 
 class _PoolEntry(NamedTuple):
-    """One entry of :class:`TrivialAugment`'s transform pool.
-
-    Parameters
-    ----------
-    name : str
-        Label exposed through ``TrivialAugment.op_names``.
-    strengths : list
-        Discrete strength grid; ``[None]`` for magnitude-free transforms.
-    variants : list | None
-        One callable per strength, applied as ``variant(X_sub, y_sub)``
-        returning the transformed ``(X_sub, y_sub)``. ``None`` for the two
-        built-in transforms whose strength depends on the sub-batch
-        (``SmoothTimeMask``, ``GaussianNoise``), which are dispatched by
-        name instead so that the whole transform stays picklable.
-    """
+    """One :class:`TrivialAugment` pool entry (``variants=None``: built per call)."""
 
     name: str
     strengths: list
@@ -1537,7 +1523,7 @@ class TrivialAugment(Transform):
         :class:`SensorsRotation` to the pool. Defaults to None.
     num_bins : int, optional
         Number of discrete strength levels sampled for every transform.
-        Defaults to 10, as commonly used for the image version.
+        Defaults to 10.
     custom_ops : list | None, optional
         Extra entries appended to the pool, each a tuple
         ``(name, make, bounds)``: ``name`` is a label reported by
@@ -1567,20 +1553,11 @@ class TrivialAugment(Transform):
 
     References
     ----------
-    .. [1] Müller, S., Hoyer, S., & Neumann, F. (2021). TrivialAugment:
+    .. [1] Müller, S. G., & Hutter, F. (2021). TrivialAugment:
        Tuning-free Yet State-of-the-Art Data Augmentation. Proceedings of
        the IEEE/CVF International Conference on Computer Vision (ICCV),
-       pp. 774-783.
+       pp. 774-782.
     """
-
-    # strength ranges of the two built-in transforms whose strength is
-    # expressed relatively to the sub-batch and hence dispatched at call time
-    _SMOOTH_TIME_MASK_FRACTIONS = (0.05, 0.25)
-    _GAUSSIAN_NOISE_FRACTIONS = (0.02, 0.3)
-    # strength ranges of the opt-in, sfreq/positions-dependent transforms
-    _BANDSTOP_BANDWIDTH = (0.5, 4.0)
-    _FREQ_SHIFT_MAX_DELTA = (0.5, 2.0)
-    _SENSORS_ROTATION_DEGREES = (5.0, 25.0)
 
     def __init__(
         self,
@@ -1631,20 +1608,10 @@ class TrivialAugment(Transform):
             0.1,
             0.75,
         )
-        # SmoothTimeMask and GaussianNoise depend on the sub-batch (window
-        # length, signal scale), so they cannot be instantiated here; they
-        # are dispatched by name in _apply_dynamic to keep this transform
-        # picklable for DataLoader workers.
-        pool.append(
-            _PoolEntry(
-                "SmoothTimeMask",
-                _bins(*self._SMOOTH_TIME_MASK_FRACTIONS),
-                None,
-            )
-        )
-        pool.append(
-            _PoolEntry("GaussianNoise", _bins(*self._GAUSSIAN_NOISE_FRACTIONS), None)
-        )
+        # strength relative to the sub-batch (window length, signal scale):
+        # built per call in _apply_dynamic, which also keeps this picklable
+        pool.append(_PoolEntry("SmoothTimeMask", _bins(0.05, 0.25), None))
+        pool.append(_PoolEntry("GaussianNoise", _bins(0.02, 0.3), None))
         _add_static(
             "AmplitudeScale",
             lambda s: AmplitudeScale(1.0, interval=(1.0 / s, s), random_state=rng),
@@ -1656,25 +1623,19 @@ class TrivialAugment(Transform):
             if not isinstance(sfreq, Real) or sfreq <= 0:
                 raise ValueError(f"sfreq should be a positive float, got {sfreq}")
             nyquist = sfreq / 2.0
-            max_bandwidth = min(
-                self._BANDSTOP_BANDWIDTH[1], nyquist - 2.5
-            )  # keep 2 Hz + margin below Nyquist
-            if max_bandwidth <= self._BANDSTOP_BANDWIDTH[0]:
+            # BandstopFilter needs bandwidth < nyquist - 2; keep a margin
+            min_bandwidth, max_bandwidth = 0.5, min(4.0, nyquist - 2.5)
+            if max_bandwidth <= min_bandwidth:
                 raise ValueError(
                     f"sfreq={sfreq} is too small to sample valid band-stop "
-                    f"bandwidths (needs at least "
-                    f"{2 * (self._BANDSTOP_BANDWIDTH[0] + 2.5)} Hz)."
+                    f"bandwidths (needs at least {2 * (min_bandwidth + 2.5)} Hz)."
                 )
             _add_static(
                 "BandstopFilter",
                 lambda s: BandstopFilter(
-                    1.0,
-                    sfreq=sfreq,
-                    bandwidth=s,
-                    max_freq=nyquist,  # avoid the max_freq=None warning
-                    random_state=rng,
+                    1.0, sfreq=sfreq, bandwidth=s, max_freq=nyquist, random_state=rng
                 ),
-                self._BANDSTOP_BANDWIDTH[0],
+                min_bandwidth,
                 max_bandwidth,
             )
             _add_static(
@@ -1682,7 +1643,8 @@ class TrivialAugment(Transform):
                 lambda s: FrequencyShift(
                     1.0, sfreq=sfreq, max_delta_freq=s, random_state=rng
                 ),
-                *self._FREQ_SHIFT_MAX_DELTA,
+                0.5,
+                2.0,
             )
 
         if sensors_positions_matrix is not None:
@@ -1694,7 +1656,8 @@ class TrivialAugment(Transform):
                     max_degrees=s,
                     random_state=rng,
                 ),
-                *self._SENSORS_ROTATION_DEGREES,
+                5.0,
+                25.0,
             )
 
         if custom_ops is not None:
@@ -1749,69 +1712,26 @@ class TrivialAugment(Transform):
             transform = GaussianNoise(1.0, std=std, random_state=self.rng)
         return transform(X_sub, y_sub)
 
-    def forward(self, X, y=None):
-        """Apply one sampled transform and strength per example.
+    def operation(self, X, y):
+        """Apply one sampled transform and strength to each example of X."""
+        n_strengths = np.array([len(entry.strengths) for entry in self._pool])
+        op_ids = self.rng.randint(0, len(self._pool), size=X.shape[0])
+        bin_ids = self.rng.randint(0, self.num_bins, size=X.shape[0])
+        # magnitude-free transforms collapse all examples onto bin 0
+        bin_ids[n_strengths[op_ids] == 1] = 0
+        keys = op_ids * self.num_bins + bin_ids
 
-        Parameters
-        ----------
-        X : torch.Tensor
-            EEG input example or batch.
-        y : torch.Tensor | None
-            EEG labels for the example or batch. Defaults to None.
-
-        Returns
-        -------
-        torch.Tensor
-            Transformed inputs.
-        torch.Tensor, optional
-            Transformed labels, unchanged by every pooled transform. Only
-            returned when y is not None.
-        """
-        X = torch.as_tensor(X).float()
-        orig_shape = X.shape
-        if X.dim() < 3:
-            X = X[None, ...]
-
-        if y is not None:
-            y = torch.as_tensor(y).to(X.device)
-            out_y = y.clone()
-            if out_y.dim() == 0:
-                out_y = out_y.reshape(1)
-        else:
-            out_y = torch.zeros(X.shape[0], device=X.device)
-
-        out_X = X.clone()
-        mask = self._get_mask(X.shape[0], X.device)
-        selected = torch.nonzero(mask, as_tuple=False).flatten()
-
-        if selected.numel() > 0:
-            n_examples = selected.numel()
-            op_ids = self.rng.randint(0, len(self._pool), size=n_examples)
-            bin_ids = self.rng.randint(0, self.num_bins, size=n_examples)
-            # magnitude-free transforms collapse all examples onto bin 0
-            keys = np.empty(n_examples, dtype=np.int64)
-            for i, entry in enumerate(self._pool):
-                rows = op_ids == i
-                if len(entry.strengths) == 1:
-                    keys[rows] = i * self.num_bins
-                else:
-                    keys[rows] = i * self.num_bins + bin_ids[rows]
-
-            for key in np.unique(keys):
-                group = selected[torch.from_numpy(keys == key)]
-                op_i, bin_j = divmod(int(key), self.num_bins)
-                entry = self._pool[op_i]
-                if entry.variants is not None:
-                    transform = entry.variants[bin_j]
-                    tr_X, tr_y = transform(X[group], out_y[group])
-                else:
-                    tr_X, tr_y = self._apply_dynamic(
-                        entry.name, entry.strengths[bin_j], X[group], out_y[group]
-                    )
-                out_X[group] = tr_X.to(out_X.dtype)
-                out_y[group] = tr_y
-
-        out_X = out_X.reshape(orig_shape)
-        if y is not None:
-            return out_X, out_y
-        return out_X
+        out_X, out_y = X.clone(), y.clone()
+        for key in np.unique(keys):
+            group = torch.from_numpy(np.flatnonzero(keys == key)).to(X.device)
+            op_i, bin_j = divmod(int(key), self.num_bins)
+            entry = self._pool[op_i]
+            if entry.variants is not None:
+                tr_X, tr_y = entry.variants[bin_j](X[group], y[group])
+            else:
+                tr_X, tr_y = self._apply_dynamic(
+                    entry.name, entry.strengths[bin_j], X[group], y[group]
+                )
+            out_X[group] = tr_X.to(out_X.dtype)
+            out_y[group] = tr_y
+        return out_X, out_y

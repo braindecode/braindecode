@@ -1,8 +1,11 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
+#          Li Qing <325196192+qinxwew@users.noreply.github.com>
 #
 # License: BSD (3-clause)
+import pickle  # nosec B403 - only round-trips objects built in the tests
+
 import numpy as np
 import pytest
 import torch
@@ -38,6 +41,7 @@ from braindecode.augmentation.transforms import (
     SignFlip,
     SmoothTimeMask,
     TimeReverse,
+    TrivialAugment,
     _get_standard_10_20_positions,
 )
 from braindecode.models import ShallowFBCSPNet
@@ -854,6 +858,130 @@ def test_band_rotation_transform_seed_reproducibility():
     assert torch.equal(BandRotation(**{**kw, "probability": 0.0})(X), X)
 
 
+@pytest.fixture
+def trivial_batch():
+    rng = np.random.RandomState(31)
+    X = torch.from_numpy(rng.randn(200, 8, 100)).float()
+    return X, torch.arange(200) % 4
+
+
+def _scaling_op(s):
+    """``custom_ops`` maker: multiply X by its strength (None -> by 2)."""
+
+    def apply(X, y):
+        return X * (2.0 if s is None else s), y
+
+    return apply
+
+
+def test_trivial_augment_transform(trivial_batch):
+    X, y = trivial_batch
+    tr_X, tr_y = TrivialAugment(random_state=0)(X, y)
+    common_transform_assertions((X, y), (tr_X, tr_y))
+    out = TrivialAugment(random_state=0)(X)
+    assert not isinstance(out, tuple) and out.shape == X.shape
+    tr_X, tr_y = TrivialAugment(random_state=0)(X[:1], y[:1])
+    assert tr_X.shape == X[:1].shape and torch.equal(tr_y, y[:1])
+    tr_X, tr_y = TrivialAugment(probability=0.0, random_state=0)(X, y)
+    assert torch.equal(tr_X, X) and torch.equal(tr_y, y)
+    loader = AugmentedDataLoader(
+        torch.utils.data.TensorDataset(X, y),
+        batch_size=64,
+        transforms=TrivialAugment(random_state=0),
+    )
+    for Xb, yb in loader:
+        assert Xb.shape[1:] == (8, 100) and Xb.shape[0] == yb.shape[0]
+
+
+def test_trivial_augment_pool():
+    default_ops = [
+        "TimeReverse",
+        "SignFlip",
+        "FTSurrogate",
+        "ChannelsDropout",
+        "ChannelsShuffle",
+        "SmoothTimeMask",
+        "GaussianNoise",
+        "AmplitudeScale",
+    ]
+    assert TrivialAugment().op_names == default_ops
+    assert TrivialAugment(sfreq=250).op_names == default_ops + [
+        "BandstopFilter",
+        "FrequencyShift",
+    ]
+    positions = _get_standard_10_20_positions(ordered_ch_names=MONTAGE_10_20)
+    assert TrivialAugment(sensors_positions_matrix=positions).op_names == (
+        default_ops + ["SensorsRotation"]
+    )
+    double = TrivialAugment(custom_ops=[("Double", _scaling_op, None)])
+    assert double.op_names == default_ops + ["Double"]
+    X, y = torch.randn(16, 8, 100), torch.zeros(16)
+    tr_X, tr_y = double(X, y)
+    assert tr_X.shape == X.shape and torch.equal(tr_y, y)
+
+    with pytest.raises(ValueError, match="too small"):
+        TrivialAugment(sfreq=6)
+    with pytest.raises(ValueError, match="num_bins"):
+        TrivialAugment(num_bins=0)
+    with pytest.raises(ValueError, match="custom_ops entries must be"):
+        TrivialAugment(custom_ops=[("bad",)])
+    with pytest.raises(ValueError, match="str name and a callable"):
+        TrivialAugment(custom_ops=[("Scale", "not-callable", (1.0, 2.0))])
+    with pytest.raises(ValueError, match="lo < hi"):
+        TrivialAugment(custom_ops=[("Scale", _scaling_op, (2.0, 1.0))])
+
+
+def test_trivial_augment_per_example_strengths():
+    """Strengths are sampled per example (not per batch) from the grid."""
+    transform = TrivialAugment(num_bins=4, random_state=2)
+    # white-box: a single deterministic op, so each row's scale is its strength
+    transform._pool = [transform._check_custom_op(("Scale", _scaling_op, (1.0, 4.0)))]
+    X = torch.from_numpy(np.random.RandomState(5).randn(100, 8, 50)).float()
+    y = torch.zeros(100)
+    tr_X, tr_y = transform(X, y)
+    row_scale = (tr_X / X).mean(dim=(1, 2))
+    grid = torch.linspace(1.0, 4.0, 4)
+    assert all(torch.isclose(scale, grid).any() for scale in row_scale)
+    assert row_scale.unique().numel() > 1
+    assert torch.equal(tr_y, y)
+
+
+def test_trivial_augment_samples_every_default_op():
+    transform = TrivialAugment(random_state=42)
+    called = set()
+
+    def spy(fn, name):
+        def wrapped(*args):
+            called.add(name)
+            return fn(*args)
+
+        return wrapped
+
+    for entry in transform._pool:
+        if entry.variants is not None:
+            entry.variants[:] = [spy(v, entry.name) for v in entry.variants]
+    dynamic = transform._apply_dynamic
+    transform._apply_dynamic = lambda name, *args: spy(dynamic, name)(name, *args)
+    transform(torch.randn(2000, 8, 100), torch.zeros(2000))
+    assert called == set(transform.op_names)
+
+
+def test_trivial_augment_reproducible_and_picklable(trivial_batch):
+    X, y = trivial_batch
+    out_a = TrivialAugment(random_state=7)(X, y)[0]
+    assert torch.equal(out_a, TrivialAugment(random_state=7)(X, y)[0])
+    assert not torch.equal(out_a, TrivialAugment(random_state=8)(X, y)[0])
+    # DataLoader workers pickle the transform; the copy must keep the rng state
+    transform = TrivialAugment(sfreq=250, random_state=0)
+    restored = pickle.loads(pickle.dumps(transform))  # nosec B301 - own object
+    # windows long enough for BandstopFilter's default filter length
+    X = torch.from_numpy(np.random.RandomState(3).randn(32, 8, 2000)).float()
+    y = torch.zeros(32)
+    tr_a, y_a = transform(X, y)
+    tr_b, y_b = restored(X, y)
+    assert torch.equal(tr_a, tr_b) and torch.equal(y_a, y_b)
+
+
 @pytest.mark.parametrize(
     "augmentation,kwargs",
     [
@@ -879,6 +1007,7 @@ def test_band_rotation_transform_seed_reproducibility():
         (SensorsZRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
         (SegmentationReconstruction, {"probability": 0.5}),
         (MaskEncoding, {"probability": 0.5}),
+        (TrivialAugment, {"probability": 0.5, "sfreq": 100}),
     ],
 )
 def test_set_params(augmented_mock_clf, augmentation, kwargs, random_batch):
