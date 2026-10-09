@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.EEGInceptionMI` runs its max pooling in channels-last layout and pads even kernels once per inception module: CPU forward 1.1-1.25x faster, outputs, gradients and state dict unchanged (:gh:`1267` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.TFMTokenizer`, the time-frequency motif tokenizer
   for single-channel EEG of Pradeepkumar et al. (ICLR 2026) (:gh:`1202` by
   `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
