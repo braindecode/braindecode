@@ -7,8 +7,6 @@
 # derives from Meta's EnCodec (MIT).
 from __future__ import annotations
 
-import warnings
-
 import mne
 import numpy as np
 import torch
@@ -21,7 +19,10 @@ from torch.nn.utils.parametrizations import weight_norm
 
 from braindecode.functional import rotate_pairs
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import extract_channel_locations_from_chs_info
+from braindecode.models.util import (
+    extract_channel_locations_from_chs_info,
+    warn_if_sfreq_differs,
+)
 from braindecode.modules import FeedForwardBlock
 from braindecode.modules.quantization import ResidualVectorQuantizer
 
@@ -169,8 +170,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        if self.sfreq != 256:
-            warnings.warn(f"BrainTokenizer weights expect 256 Hz, got {self.sfreq}.")
+        warn_if_sfreq_differs("BrainTokenizer", self.sfreq, 256)
         if n_filters < 2:  # the first residual block has n_filters // 2 channels
             raise ValueError(f"n_filters must be at least 2, got {n_filters}.")
         if emb_dim <= 0 or tokenizer_num_heads <= 0:
