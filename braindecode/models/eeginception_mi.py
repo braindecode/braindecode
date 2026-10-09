@@ -7,7 +7,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import spectral_input
+from braindecode.functional import fft_conv1d, prefer_fft_conv
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import Ensure4d
 
@@ -57,11 +57,10 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         Activation function. Defaults to ReLU activation.
     fft_conv : bool | None, optional
         Compute the temporal convolutions of the inception modules with an FFT
-        (exact linear convolution, same parameters, equal up to float rounding)
-        instead of a direct convolution. ``None`` (default) uses the FFT on CPU
-        for float16/bfloat16 inputs or when ``batch_size * largest_kernel >= 600``
-        samples, where it was faster in CPU benchmarks, and the direct
-        convolution otherwise, including on GPU and HPU.
+        (:func:`~braindecode.functional.fft_conv1d`: same parameters, equal up
+        to float rounding) instead of a direct convolution. ``None`` (default)
+        decides per input with :func:`~braindecode.functional.prefer_fft_conv`
+        (FFT on CPU where it was faster in benchmarks, direct on GPU and HPU).
 
     References
     ----------
@@ -298,17 +297,13 @@ class _InceptionModuleMI(nn.Module):
             bias=True,
         )
 
-        # torch's "same" pads one extra zero on the right for even kernels; all
-        # kernels share kernel_unit's parity, so forward pads once for all convs.
-        self.pad_right = kernel_unit % 2 == 0
-        self.max_kernel = (2 * self.n_convs - 1) * kernel_unit
         self.conv_list = nn.ModuleList(
             [
                 nn.Conv2d(
                     in_channels=self.n_filters,
                     out_channels=self.n_filters,
                     kernel_size=(1, (n_units * 2 + 1) * kernel_unit),
-                    padding=(0, ((n_units * 2 + 1) * kernel_unit - 1) // 2),
+                    padding="same",
                     bias=True,
                 )
                 for n_units in range(self.n_convs)
@@ -324,99 +319,35 @@ class _InceptionModuleMI(nn.Module):
         X: torch.Tensor,
     ) -> torch.Tensor:
         X1 = self.bottleneck(X)
+        k_max = self.conv_list[-1].kernel_size[1]
         if self.fft_conv is None:
-            # Measured on CPU (2 threads, oneDNN on/off, eval/train): the FFT wins
-            # in half precision (11-113x) and from 600 samples of batch x kernel.
-            use_fft = X.device.type == "cpu" and (
-                X.element_size() == 2 or X.shape[0] * self.max_kernel >= 600
-            )
+            use_fft = prefer_fft_conv(X1, k_max)
         else:
             use_fft = self.fft_conv
         if use_fft:
-            branches = [self._conv_fft(X1)]
+            # The parallel convs as one: kernels zero-padded (centred) to the
+            # longest, stacked along the output channels.
+            weights, biases = [], []
+            for conv in self.conv_list:
+                pad = (k_max - conv.kernel_size[1]) // 2
+                weights.append(nn.functional.pad(conv.weight.squeeze(2), [pad, pad]))
+                bias = conv.bias
+                if bias is not None:
+                    biases.append(bias)
+            X1 = fft_conv1d(X1.squeeze(2), torch.cat(weights), torch.cat(biases))
+            X1 = X1.unsqueeze(2)
         else:
-            if self.pad_right:
-                X1 = nn.functional.pad(X1, (0, 1))
-            branches = [conv(X1) for conv in self.conv_list]
+            X1 = torch.cat([conv(X1) for conv in self.conv_list], 1)
 
-        # channels_last: same values and indices, but torch's CPU max pool
-        # vectorises over channels instead of looping over them.
+        # channels_last: same values, but torch's CPU max pool then vectorises
+        # over channels instead of looping over them.
         X2 = self.pooling(X.contiguous(memory_format=torch.channels_last))
-        X2 = self.pooling_conv(X2.contiguous())
-        # Get the target length from one of the conv branches
-        target_len = branches[0].shape[-1]
+        # An even kernel_unit pools n_times + 1 samples: drop the last one.
+        X2 = self.pooling_conv(X2.contiguous())[..., : X.shape[-1]]
 
-        # Crop the pooling output if its length does not match
-        if X2.shape[-1] != target_len:
-            X2 = X2[..., :target_len]
-
-        out = torch.cat(branches + [X2], 1)
-
+        out = torch.cat([X1, X2], 1)
         out = self.bn(out)
         return self.activation(out)
-
-    def _conv_fft(self, X: torch.Tensor) -> torch.Tensor:
-        """Every conv of ``conv_list`` through one rFFT, outputs concatenated.
-
-        Exact linear convolution (``n_fft >= n_times + k - 1``), aligned like
-        torch's "same" padding (for even ``k`` the extra zero is on the right).
-        """
-        xs = spectral_input(X.squeeze(2)).permute(2, 0, 1)  # (time, batch, in)
-        n_times, n_batch = xs.shape[0], xs.shape[1]
-        n_fft = _next_fast_len(n_times + self.max_kernel - 1)
-        # A conv layer is a cross-correlation, i.e. a convolution with the
-        # flipped kernel. Spectra are laid out (freq, in, out).
-        kernels = torch.cat(
-            [
-                torch.fft.rfft(
-                    conv.weight.squeeze(2).permute(2, 1, 0).flip(0).to(xs),
-                    n=n_fft,
-                    dim=0,
-                )
-                for conv in self.conv_list
-            ],
-            dim=2,
-        )
-        spec = torch.fft.rfft(xs, n=n_fft, dim=0)  # (freq, batch, in)
-        # Complex matmul as one real bmm ([re; im] rows times interleaved re/im
-        # columns): torch's CPU complex bmm loops over the frequencies.
-        prod = torch.bmm(
-            torch.cat([torch.real(spec), torch.imag(spec)], 1),
-            torch.view_as_real(kernels).flatten(2),
-        )
-        prod = prod.unflatten(1, [2, n_batch]).unflatten(3, [-1, 2])
-        spec = torch.complex(
-            prod[:, 0, :, :, 0] - prod[:, 1, :, :, 1],
-            prod[:, 0, :, :, 1] + prod[:, 1, :, :, 0],
-        )
-        full = torch.fft.irfft(spec, n=n_fft, dim=0)  # (time, batch, out)
-        out = []
-        start = 0
-        for conv in self.conv_list:
-            # "same" output t of a size-k kernel is sample t + k // 2 of the full one
-            k = conv.kernel_size[1]
-            branch = full[
-                k // 2 : k // 2 + n_times, :, start : start + conv.out_channels
-            ]
-            bias = conv.bias
-            if bias is not None:
-                branch = branch + bias.to(xs)
-            out.append(branch)
-            start += conv.out_channels
-        return torch.cat(out, 2).permute(1, 2, 0).unsqueeze(2).to(X)
-
-
-def _next_fast_len(n: int) -> int:
-    """Smallest ``2^a 3^b 5^c >= n`` (scipy's ``next_fast_len(n, real=True)``)."""
-    n -= 1
-    m = 0
-    while m != 1:
-        n += 1
-        m = n
-        for p in [2, 3, 5]:
-            while m % p == 0:
-                m = m // p
-    return n
 
 
 class _ResidualModuleMI(nn.Module):
