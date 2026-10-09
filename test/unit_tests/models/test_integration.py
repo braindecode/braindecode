@@ -48,6 +48,7 @@ from braindecode.models.util import (
     non_classification_models,
 )
 from braindecode.models.util import _get_signal_params as get_sp
+from test.unit_tests.models.test_model_contract import _record
 
 rng = np.random.default_rng(12)
 
@@ -823,35 +824,23 @@ def test_if_models_with_embedding_parameter(model):
         pytest.fail(f"Error printing model {model_name}: {e}")
 
 
-# CPU has no float16 kernel for these ops, or the value range overflows float16.
+# CPU has no float16 kernel for this op.
 _FLOAT16_XFAIL = {
-    "EEGMiner": "CPU batch_norm needs float32 parameters for float16 input",
-    "FBCNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
-    "FBMSNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
-    "FBLightConvNet": "LogVarLayer clamps at 1e6, above the float16 maximum",
-    "LUNA": "activations overflow the float16 range",
-}
-_LOW_PRECISION_XFAIL = {
-    "EEGSym": "CPU avg_pool3d has no bfloat16/float16 kernel",
-    "NeuroRVQTokenizer": "CPU torch.fft has no bfloat16/float16 kernel",
+    "EEGMiner": "CPU batch_norm without affine weights rejects float16 statistics",
 }
 
 
 def _dtype_cases():
     for name in _MODEL_CASES:
         for dtype in (torch.float64, torch.bfloat16, torch.float16):
-            reason = None
-            if dtype != torch.float64:
-                reason = _LOW_PRECISION_XFAIL.get(name)
-            if dtype == torch.float16:
-                reason = reason or _FLOAT16_XFAIL.get(name)
+            reason = _FLOAT16_XFAIL.get(name) if dtype == torch.float16 else None
             marks = [pytest.mark.xfail(reason=reason)] if reason else []
             yield pytest.param(name, dtype, marks=marks, id=f"{name}-{str(dtype)[6:]}")
 
 
 @pytest.mark.parametrize("model_name, dtype", list(_dtype_cases()))
 def test_forward_in_dtype(model_name, dtype):
-    """``model.to(dtype)`` forwards on CPU and returns finite ``dtype`` outputs."""
+    """``model.to(dtype)`` forwards on CPU in ``dtype`` (and backpropagates in float64)."""
     required, signal_params = _MODEL_CASES[model_name]
     model = all_models_dict[model_name](**get_sp(signal_params, required)).eval()
     try:
@@ -865,8 +854,31 @@ def test_forward_in_dtype(model_name, dtype):
     x = torch.randn(2, n_chans, n_times)
     with torch.no_grad():
         model(x)  # materialise lazy modules in float32
+    # Backward only in float64: CPUs without bfloat16/float16 kernels take
+    # minutes per model (DANCE: ~700 s).
+    backward = dtype == torch.float64
+    with torch.set_grad_enabled(backward), _record() as log:
         y = model.to(dtype)(x.to(dtype))
     if isinstance(y, tuple):  # NeuroRVQTokenizer: (target, reconstruction)
         y = y[1]
     y = y if torch.is_tensor(y) else next(iter(y.values()))
     assert y.dtype == dtype and torch.isfinite(y).all()
+    if not backward:
+        # no bfloat16/float16 cdist kernel (modules.quantization, #1246)
+        cdist = [op for op in log.ops if op.name == "_cdist_forward"]
+        assert all(t[0] != dtype for op in cdist for t in op.ins)
+        return
+    # Every floating tensor follows the model dtype: a float32 one comes from
+    # torch.zeros/full/tensor without dtype= or a hard-coded .float() (0-dim
+    # ones do not lower the dtype of the tensors they meet).
+    float32 = sorted(
+        {
+            op.name
+            for op in log.ops
+            if any(t[0] == torch.float32 and t[2] for t in op.outs)
+        }
+    )
+    assert not float32, f"float32 tensors in a float64 forward: {float32}"
+    y.float().square().mean().backward()
+    grads = [p.grad for p in model.parameters() if p.grad is not None]
+    assert grads and all(g.dtype == dtype and torch.isfinite(g).all() for g in grads)

@@ -204,8 +204,9 @@ class EMACodebook(nn.Module):
 
     @torch.no_grad()
     def quantize(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.float()
-        embed = self.embed.t().float()
+        work = torch.promote_types(x.dtype, torch.float32)
+        x = x.to(work)
+        embed = self.embed.t().to(work)
         dist = (
             x.pow(2).sum(1, keepdim=True)
             - 2 * x @ embed
@@ -221,7 +222,9 @@ class EMACodebook(nn.Module):
         x = rearrange(x, "... dim -> (...) dim")
         self.init_embed_(x)
         embed_ind = self.quantize(x)
-        embed_onehot = F.one_hot(embed_ind, self.codebook_size).type(dtype)
+        # F.one_hot reads the index range on the host (a device sync).
+        codes = torch.arange(self.codebook_size, device=embed_ind.device)
+        embed_onehot = (embed_ind.unsqueeze(-1) == codes).type(dtype)
         embed_ind = embed_ind.view(*shape[:-1])
         quantize = self.dequantize(embed_ind).type(dtype)
 
@@ -324,7 +327,8 @@ class VectorQuantizer(nn.Module):
                 quantize = _rotate_to(x, quantize).to(input_dtype)
             else:
                 quantize = x + (quantize - x).detach()
-        loss = F.mse_loss(x.float(), quantize.detach().float()) * 0.25
+        work = torch.promote_types(x.dtype, torch.float32)
+        loss = F.mse_loss(x.to(work), quantize.detach().to(work)) * 0.25
         if not self.training:
             loss = loss.detach()
         quantize = self.project_out(quantize)

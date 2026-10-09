@@ -242,6 +242,7 @@ Requirements
 Bug fixes
 ==========
 
+- Model fixes caught by new CPU-only integration checks (complex tensors, host syncs, kernel gaps, device/dtype follow, training after ``inference_mode``, deepcopy/pickle): BrainOmni/BrainTokenizer SELU trains on Gaudi, EEGSym pools with ``avg_pool2d``, FBCNet/FBMSNet/FBLightConvNet and LUNA run in float16, EEGMiner and AttnSleep deep-copy after training, Labram and NeuroRVQ pickle, SignalJEPA heads accept ``channel_strategy``, and tensors built in ``forward`` follow the input in CodeBrain, TCFormer, LUNA, MVPFormer, BrainOmni, ZUNA, DIVER1 and EEGDINO; float32 outputs unchanged (:gh:`1253` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.BrainOmni` and :class:`braindecode.models.BrainTokenizer`
   now run forward on Intel Gaudi (HPU) in lazy mode: the SEANet LSTM input is
   permuted as a 4D view, which Gaudi compiles; values are unchanged

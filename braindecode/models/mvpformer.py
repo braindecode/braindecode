@@ -380,7 +380,8 @@ class _WaveletPatchEmbed(nn.Module):
         self.proj = nn.Linear(self.dwt_size, d_model, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        feats = wavelet_decomposition(x.float(), self._filters)
+        x = x.to(torch.promote_types(x.dtype, torch.float32))
+        feats = wavelet_decomposition(x, self._filters)
         feats = self.ln(feats)
         # Match the projection weight dtype (robust across AMP / float16 inputs).
         return self.proj(feats.to(self.proj.weight.dtype))
