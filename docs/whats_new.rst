@@ -342,6 +342,9 @@ Requirements
 Bug fixes
 ==========
 
+- Preserve the final samples in :class:`braindecode.augmentation.SegmentationReconstruction`
+  when the window length is not divisible by the segment count, instead of
+  replacing them with zeros (:gh:`1279` by `Anton Soloviev`_).
 - Model fixes caught by new CPU-only integration checks (complex tensors, host syncs, kernel gaps, device/dtype follow, training after ``inference_mode``, deepcopy/pickle): BrainOmni/BrainTokenizer SELU trains on Gaudi, EEGSym pools with ``avg_pool2d``, FBCNet/FBMSNet/FBLightConvNet and LUNA run in float16, EEGMiner and AttnSleep deep-copy after training, Labram and NeuroRVQ pickle, SignalJEPA heads accept ``channel_strategy``, and tensors built in ``forward`` follow the input in CodeBrain, TCFormer, LUNA, MVPFormer, BrainOmni, ZUNA, DIVER1 and EEGDINO; float32 outputs unchanged (:gh:`1253` by `Bruno Aristimunha`_)
 - :func:`braindecode.functional.hilbert_freq` returns float16 for float16 input (it
   returned float32), so :class:`braindecode.models.EEGMiner` runs after
@@ -2232,6 +2235,7 @@ Authors
 ========
 
 .. _Arnaud Delorme: https://github.com/arnodelorme
+.. _Anton Soloviev: https://github.com/antonsoo
 .. _Hubert Banville: https://github.com/hubertjb
 .. _Robin Tibor Schirrmeister: https://github.com/robintibor
 .. _Lukas Gemein: https://github.com/gemeinl
