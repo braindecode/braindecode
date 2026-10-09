@@ -254,6 +254,12 @@ Enhancements
   Eager outputs and state-dict keys are unchanged (:gh:`1271` by
   `Bruno Aristimunha`_).
 
+- :func:`torch.jit.script` compiles MVPFormer and gives the eager output: its
+  einops calls are written as the reshapes and expands einops ran, and
+  :func:`~braindecode.functional.dwt_max_level` finds the level in integers
+  instead of with ``math.log2``. Eager outputs and state-dict keys are
+  unchanged (:gh:`1272` by `Bruno Aristimunha`_).
+
 - Shrink the slowest unit tests, keeping what each one checks: EEGInceptionMI's
   500 Hz case on 2 windows instead of 64; 1 s DANCE and ZUNA and 5-patch
   CodeBrain windows in the shared model test geometry; one ``EEGClassifier`` fit

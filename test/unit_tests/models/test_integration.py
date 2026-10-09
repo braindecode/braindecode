@@ -56,7 +56,6 @@ all_models_dict = dict(models_dict)
 # scripted output differs from the eager one.
 _TORCHSCRIPT_XFAIL = {
     "MAPA": "f-string error message in forward",
-    "MVPFormer": "math.log2 in forward",
 }
 
 _MODEL_CASES = {
