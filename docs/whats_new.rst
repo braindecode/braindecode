@@ -241,6 +241,11 @@ Enhancements
   ``input_window_seconds`` (as in Hub configs) (:gh:`1256` by
   `Bruno Aristimunha`_).
 
+- Shrink the slowest unit tests, keeping what each one checks: EEGInceptionMI's
+  500 Hz case on 2 windows instead of 64; 1 s DANCE and ZUNA and 5-patch
+  CodeBrain windows in the shared model test geometry; one ``EEGClassifier`` fit
+  per model instead of two; 8 BIOT shape cases instead of 240; 3 spawned
+  processes instead of 14 in the distributed sampler tests (:gh:`1264` by `Bruno Aristimunha`_).
 - :func:`torch.jit.script` compiles 17 more models and gives the eager output:
   BENDR, BrainModule, CBraMod, CodeBrain, CSBrain, EEGDINO, LUNA, MIRepNet,
   MSVTNet, NeuroRVQ, SSTDPN, STEEGFormer, TCFormer and the four SignalJEPA
