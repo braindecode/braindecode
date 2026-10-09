@@ -28,6 +28,11 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.EpiNT`, a port of the EpiNT epilepsy foundation
+  model for scalp and intracranial EEG (Zhang et al., 2025): a channel-independent
+  transformer with rotary attention over 256-sample patches of a 3072-sample
+  window. The authors' released ``representations.bin`` loads with
+  ``load_state_dict(strict=False)`` (by `Julien Gadonneix`_).
 - The pretrained-compatibility test now covers every model class with released weights (NeuroRVQ, MAPA, BrainOmni, BrainTokenizer and the SignalJEPA heads added), checks that the list is complete, and runs REVE's cases without network access (:gh:`1252` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.NeuroRVQ` now reuses the LaBraM attention block
   instead of a private copy, and the K-means codebook initialisation in

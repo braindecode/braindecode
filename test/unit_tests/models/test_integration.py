@@ -612,6 +612,8 @@ def test_model_torch_script(model):
         # torch.jit.script cannot compile, and forward() returns Dict[str,
         # Tensor] (features) or Tensor (logits).
         "MAPA",
+        # As EEGDINO: forward() returns a Dict[str, Tensor] or a Tensor.
+        "EpiNT",
     ]
 
     if model.__class__.__name__ in not_working_models:
