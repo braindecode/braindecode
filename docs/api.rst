@@ -143,6 +143,7 @@ interface for all EEG models and can derive variable names when needed.
     :recursive:
 
      ATCNet
+     AXON
      AttentionBaseNet
      AttnSleep
      BaRISTA

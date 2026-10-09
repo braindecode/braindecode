@@ -27,6 +27,7 @@ import pytest
 import torch
 
 from braindecode.models import (
+    AXON,
     BENDR,
     BIOT,
     DIVER1,
@@ -261,6 +262,14 @@ COMPAT = {
         cls=DIVER1,
         sfreq=500,
         n_times=1000,
+        canon=TEN_TWENTY,
+        channels="coords",
+        coords_checked=False,
+    ),
+    "AXON": dict(
+        cls=AXON,
+        sfreq=200,
+        n_times=800,
         canon=TEN_TWENTY,
         channels="coords",
         coords_checked=False,

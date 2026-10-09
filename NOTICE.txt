@@ -62,6 +62,7 @@ SEANet codec derives from Meta's `facebookresearch/encodec` (MIT). The
 
 The following components are licensed under the Apache License 2.0:
 
+- `braindecode/models/axon.py`
 - `braindecode/models/mvpformer.py`
 - `braindecode/models/zuna.py`
 - `braindecode/models/luna.py`

@@ -85,6 +85,10 @@ Enhancements
   entry points with source-commit attribution and critical-page coverage checks.
 - Add :class:`braindecode.models.NeuroRVQTokenizer`, the released NeuroRVQ
   EEG tokenizer: reconstruction and discrete codes (:gh:`1223` by `lindicaphxag-tech`_).
+- Add :class:`braindecode.models.AXON`, an axis-factorized EEG foundation
+  model whose layers mix a temporal and a spatial attention path with a
+  per-token gate, with pretrained weights on the Hugging Face Hub
+  (:gh:`1182` by `Mahir Jain`_).
 - :class:`braindecode.models.NeuroRVQ` and
   :class:`braindecode.models.NeuroRVQTokenizer` take ``modality`` (``"eeg"``,
   ``"ecg"``, ``"emg"``, ``"ppg"``), the settings of the authors' four released
@@ -2199,6 +2203,7 @@ Authors
 .. _Aditya Singh: https://github.com/adityasingh2400
 .. _Julien Gadonneix: https://github.com/julien-gadonneix
 .. _Li Qing: https://github.com/qinxwew
+.. _Mahir Jain: https://github.com/mahirjain01
 .. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
 
