@@ -57,7 +57,6 @@ all_models_dict = dict(models_dict)
 _TORCHSCRIPT_XFAIL = {
     "BIOT": "linear_attention_transformer forward takes **kwargs",
     "MAPA": "f-string error message in forward",
-    "MVPFormer": "math.log2 in forward",
     "TFMTokenizer": "linear_attention_transformer forward takes **kwargs",
 }
 
