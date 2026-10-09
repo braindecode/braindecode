@@ -3377,9 +3377,9 @@ def test_brain_module_glu(brain_module_params, glu, glu_context, depth):
 
     # Verify GLU modules only created when glu > 0
     if glu > 0:
-        assert any(g is not None for g in model.encoder.glus)
+        assert not all(isinstance(g, nn.Identity) for g in model.encoder.glus)
     else:
-        assert all(g is None for g in model.encoder.glus)
+        assert all(isinstance(g, nn.Identity) for g in model.encoder.glus)
 
 
 @pytest.mark.parametrize("depth", [2, 4, 6])

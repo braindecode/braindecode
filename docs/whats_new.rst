@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.EEGInceptionMI` runs its max pooling in channels-last layout and pads even kernels once per inception module: CPU forward 1.1-1.25x faster, outputs, gradients and state dict unchanged (:gh:`1267` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.TFMTokenizer`, the time-frequency motif tokenizer
   for single-channel EEG of Pradeepkumar et al. (ICLR 2026) (:gh:`1202` by
   `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
@@ -40,6 +41,12 @@ Enhancements
   :mod:`braindecode.modules.quantization` uses ``torch.cdist`` (about 6x faster,
   lower peak memory, identical codebooks). Outputs and state-dict keys are
   unchanged. (by `Bruno Aristimunha`_)
+- The K-means codebook initialisation in :mod:`braindecode.modules.quantization`
+  searches the nearest center once per distinct sampled row: a first batch
+  smaller than the 4096 drawn vectors is sampled with replacement, and the first
+  forward of a fresh :class:`braindecode.models.BrainOmni` or
+  :class:`braindecode.models.BrainTokenizer` took about 10 s on CPU. Codebooks
+  are unchanged (:gh:`1265` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.MAPA`, a masked-autoencoder foundation model
   for intracranial EEG that describes an electrode only by its atlas region and
   its number along the array it was implanted on, never by its coordinates, so
@@ -232,6 +239,15 @@ Enhancements
   CodeBrain windows in the shared model test geometry; one ``EEGClassifier`` fit
   per model instead of two; 8 BIOT shape cases instead of 240; 3 spawned
   processes instead of 14 in the distributed sampler tests (:gh:`1264` by `Bruno Aristimunha`_).
+- :func:`torch.jit.script` compiles 17 more models and gives the eager output:
+  BENDR, BrainModule, CBraMod, CodeBrain, CSBrain, EEGDINO, LUNA, MIRepNet,
+  MSVTNet, NeuroRVQ, SSTDPN, STEEGFormer, TCFormer and the four SignalJEPA
+  variants. einops calls in ``forward`` are written as ``reshape``/``permute``,
+  ``forward`` declares its dict or tuple return, BrainModule no longer keeps
+  ``None`` in a ``ModuleList`` (TorchScript dropped it), NeuroRVQ's branches no
+  longer use a computed-name ``getattr`` and LUNA's reconstruction head stays
+  eager-only. Eager outputs and state-dict keys are unchanged (:gh:`1262` by
+  `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================

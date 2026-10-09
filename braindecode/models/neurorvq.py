@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from typing import Dict, Optional, Union
 
 import torch
 import torch.nn.functional as F
@@ -249,6 +250,7 @@ class _Block(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         attn = self.attn(self.norm1(x))
+        assert isinstance(attn, Tensor)  # narrows the Union return for TorchScript
         if self.gamma_1 is not None:
             attn = self.gamma_1 * attn
         x = x + self.drop_path(attn)
@@ -286,20 +288,34 @@ class _MultiScaleTemporalConv(nn.Module):
         # x: batch x channels x patches x patch_size, in channel-major order.
         batch, channels, patches, patch_size = x.shape
         x = x.reshape(batch, channels * patches, patch_size).unsqueeze(1)
-        outputs = []
-        for i in range(1, 5):
-            branch = getattr(self, f"pool1_{i}")(
-                self.gelu1(getattr(self, f"norm1_{i}")(getattr(self, f"conv1_{i}")(x)))
-            )
-            branch = getattr(self, f"pool2_{i}")(
-                self.gelu2(
-                    getattr(self, f"norm2_{i}")(getattr(self, f"conv2_{i}")(branch))
-                )
-            )
-            # Match the reference reshape B,C,channel*patch,time -> B,token,time*C.
-            branch = branch.permute(0, 2, 3, 1).reshape(batch, channels * patches, -1)
-            outputs.append(branch)
-        return tuple(outputs)
+        # Unrolled (no getattr with a computed name) so TorchScript compiles it.
+        return (
+            self._tokens(self._branch1(x), batch, channels * patches),
+            self._tokens(self._branch2(x), batch, channels * patches),
+            self._tokens(self._branch3(x), batch, channels * patches),
+            self._tokens(self._branch4(x), batch, channels * patches),
+        )
+
+    @staticmethod
+    def _tokens(branch: Tensor, batch: int, n_tokens: int) -> Tensor:
+        # Match the reference reshape B,C,channel*patch,time -> B,token,time*C.
+        return branch.permute(0, 2, 3, 1).reshape(batch, n_tokens, -1)
+
+    def _branch1(self, x: Tensor) -> Tensor:
+        x = self.pool1_1(self.gelu1(self.norm1_1(self.conv1_1(x))))
+        return self.pool2_1(self.gelu2(self.norm2_1(self.conv2_1(x))))
+
+    def _branch2(self, x: Tensor) -> Tensor:
+        x = self.pool1_2(self.gelu1(self.norm1_2(self.conv1_2(x))))
+        return self.pool2_2(self.gelu2(self.norm2_2(self.conv2_2(x))))
+
+    def _branch3(self, x: Tensor) -> Tensor:
+        x = self.pool1_3(self.gelu1(self.norm1_3(self.conv1_3(x))))
+        return self.pool2_3(self.gelu2(self.norm2_3(self.conv2_3(x))))
+
+    def _branch4(self, x: Tensor) -> Tensor:
+        x = self.pool1_4(self.gelu1(self.norm1_4(self.conv1_4(x))))
+        return self.pool2_4(self.gelu2(self.norm2_4(self.conv2_4(x))))
 
 
 class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
@@ -549,14 +565,16 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     def _features(self, x: Tensor) -> Tensor:
         if x.ndim != 3 or x.shape[1] != self.n_chans or x.shape[2] != self.n_times:
             raise ValueError(
-                f"Expected input shape (batch, {self.n_chans}, {self.n_times}), got {tuple(x.shape)}."
+                "Expected input shape (batch, {}, {}), got {}.".format(
+                    self.n_chans, self.n_times, list(x.shape)
+                )
             )
         batch = x.shape[0]
         x = x.reshape(batch, self.n_chans, self.num_patches, self.patch_size)
         branches = self.patch_embed(x)
-        tokens = []
+        scales = []
         spatial_ix = self.spatial_embedding_ix.repeat_interleave(self.num_patches)
-        spatial_ix = F.pad(spatial_ix, (1, 0), value=0)
+        spatial_ix = F.pad(spatial_ix, (1, 0), value=0.0)
         spatial = self.pos_embed[spatial_ix].unsqueeze(0)
         temporal_ix = torch.arange(
             self.max_patches - self.num_patches, self.max_patches, device=x.device
@@ -570,14 +588,17 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             branch = self.pos_drop(branch)
             for block in self.blocks:
                 branch = block(branch)
-            tokens.append(self.norm(branch[:, 1:]))
-        tokens = torch.cat(tokens, dim=-1)
+            scales.append(self.norm(branch[:, 1:]))
+        tokens = torch.cat(scales, dim=-1)
         return tokens.flatten(1) if self.head_pooling == "flatten" else tokens.mean(1)
 
-    def forward(self, x: Tensor, return_features: bool = False):
+    def forward(
+        self, x: Tensor, return_features: bool = False
+    ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         features = self.fc_norm(self._features(x))
         if return_features:
-            return {"features": features, "cls_token": None}  # nosec B105
+            out: Dict[str, Optional[Tensor]] = {"features": features, "cls_token": None}
+            return out
         return self.final_layer(features)
 
     def reset_head(self, n_outputs: int) -> None:

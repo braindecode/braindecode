@@ -5,7 +5,7 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Dict, Optional, Sequence, Union
 
 import torch
 from torch import nn
@@ -268,7 +268,9 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self._update_init_kwargs(return_encoder_output=False)
         self.final_layer = self._make_head()
 
-    def forward(self, x, return_features: bool | None = None):
+    def forward(
+        self, x: torch.Tensor, return_features: Optional[bool] = None
+    ) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
         """Forward pass.
 
         Parameters
@@ -354,6 +356,9 @@ class _PatchEmbedding(nn.Module):
     one-hot ``channel_embedding`` and depthwise ``time_encoding`` are EEG-DINO's
     decoupled positional embedding.
     """
+
+    # Hub configs store the conv spec as nested lists, which TorchScript cannot type.
+    __jit_unused_properties__ = ["emb_dim"]
 
     def __init__(
         self,
@@ -539,7 +544,7 @@ class _ClassificationHead(nn.Module):
             nn.Linear(emb_dim // 4, n_outputs),
         )
 
-    def forward(self, patch_tokens, n_chans):
+    def forward(self, patch_tokens: torch.Tensor, n_chans: int) -> torch.Tensor:
         x = self.token_proj(patch_tokens)
         x = x.reshape(x.shape[0], n_chans, -1, x.shape[2]).mean(dim=1)
         x = self.time_proj(x).mean(dim=1)
