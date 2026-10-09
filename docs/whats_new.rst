@@ -29,6 +29,7 @@ Enhancements
 ============
 
 - :class:`braindecode.models.EEGInceptionMI` runs its max pooling in channels-last layout and pads even kernels once per inception module: CPU forward 1.1-1.25x faster, outputs, gradients and state dict unchanged (:gh:`1267` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.EEGInceptionMI` computes its temporal convolutions with an FFT on CPU when the input is float16/bfloat16 or ``batch_size * largest_kernel >= 600`` (new ``fft_conv`` argument; ``None`` by default, ``False`` keeps the direct convolution bit for bit): float32 CPU steps 1.5-8.8x faster from batch 8 (2 threads), float16/bfloat16 17-117x; outputs change by float rounding (<= 3.6e-7 relative) (:gh:`1268` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.TFMTokenizer`, the time-frequency motif tokenizer
   for single-channel EEG of Pradeepkumar et al. (ICLR 2026) (:gh:`1202` by
   `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
