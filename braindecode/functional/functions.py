@@ -197,6 +197,7 @@ def hilbert_freq(x: torch.Tensor, forward_fourier: bool = True) -> torch.Tensor:
         return _real_dft.hilbert_freq_real(x, forward_fourier).to(x.dtype)
 
     input_dtype = x.dtype
+    cast_back = x.is_floating_point()
     # ``view_as_complex`` does not accept bfloat16 real/imaginary pairs.  The
     # HPU path can produce bfloat16 Fourier coefficients under autocast, so do
     # the complex-valued part in float32 and restore the real-valued contract
@@ -224,7 +225,8 @@ def hilbert_freq(x: torch.Tensor, forward_fourier: bool = True) -> torch.Tensor:
     x = torch.fft.ifft(x, norm=None, dim=-1)  # returns complex signal
     x = torch.view_as_real(x)
 
-    return x.to(input_dtype)
+    # Integer input stays float (casting back would truncate the analytic signal).
+    return x.to(input_dtype) if cast_back else x
 
 
 def plv_time(
