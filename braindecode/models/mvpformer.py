@@ -17,7 +17,7 @@ Braindecode Adaptation: Bruno Aristimunha
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -258,6 +258,7 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.segment_len = segment_len
         self.d_model = d_model
         self.pooling = pooling
+        self.local_window = local_window
         # Ceil division because PatchTokenizer pads the last partial segment.
         self.n_segments = -(-self.n_times // self.segment_len)
         if self.n_segments > max_segments:
@@ -333,8 +334,9 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
             torch.arange(n_channels, device=x.device)
         ).unsqueeze(0)  # (1, channel, d_model)
         hidden = self.drop(embeds)
+        masks = _mvpa_masks(n_segments, n_channels, self.local_window, x.device)
         for block in self.blocks:
-            hidden = block(hidden, position_embeds, channel_embeds)
+            hidden = block(hidden, position_embeds, channel_embeds, masks)
         hidden = self.ln_f(hidden)  # (batch, segment, channel, d_model)
         pooled = hidden[:, -1]  # last segment: (batch, channel, d_model)
         if self.pooling == "mean":
@@ -394,6 +396,31 @@ def _repeat_segment_mask(mask: torch.Tensor, n_channels: int) -> torch.Tensor:
     n_query, n_key = mask.shape
     mask = mask[:, None, :, None].expand(-1, n_channels, -1, n_channels)
     return mask.reshape(n_query * n_channels, n_key * n_channels)
+
+
+def _mvpa_masks(
+    n_segments: int, n_channels: int, local_window: int, device: torch.device
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """What every MVPA layer of one forward shares, built once.
+
+    The local-window mask (the last segment sees the whole context) and the
+    causal mask, both ``(segment * channel, segment * channel)``, and the
+    ``(segment * channel, channel)`` gather index of the channel-relative
+    shift: ``n_channels - 1 - |query channel - key channel|``.
+    """
+    ones = torch.ones((n_segments, n_segments), device=device, dtype=torch.bool)
+    window_mask = torch.logical_and(
+        torch.tril(ones, diagonal=local_window),
+        torch.triu(ones, diagonal=-local_window),
+    )
+    # (query_segment, key_segment)
+    # -> (query_segment * query_channel, key_segment * key_channel)
+    window_mask = _repeat_segment_mask(window_mask, n_channels).clone()
+    window_mask[-n_channels:] = 1
+    causal_mask = _repeat_segment_mask(torch.tril(ones), n_channels)
+    channel = torch.arange(n_channels, device=device)
+    shift = n_channels - 1 - (channel[:, None] - channel).abs()
+    return window_mask, causal_mask, shift.repeat(n_segments, 1)
 
 
 def _finfo_min(dtype: torch.dtype) -> float:
@@ -525,38 +552,13 @@ class _MVPAttention(nn.Module):
         return x_padded[..., 1:, :].view_as(x)
 
     @staticmethod
-    def _rel_shift_chan(x):
+    def _rel_shift_chan(x: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
         # Relative shift along the channel axis (symmetric distance), as a single
-        # ``torch.gather`` whose backward is a ``scatter_add``. Advanced indexing
-        # would backpropagate through ``index_put_(accumulate=True)``, which Intel
-        # Gaudi (HPU) runs on the host, slowly and with wrong gradients. Index
-        # tensors are built on x.device with long dtype.
-        device = x.device
-        chan_size = x.shape[-1]
-        if chan_size > 1:
-            upper_val = torch.cat(
-                [
-                    torch.arange(1, chan_size - i, dtype=torch.long, device=device)
-                    for i in range(chan_size - 1)
-                ]
-            )
-        else:
-            upper_val = torch.zeros((0,), dtype=torch.long, device=device)
-        idxes = torch.triu_indices(chan_size, chan_size, offset=1, device=device)
-        shifting_idxes = torch.zeros(
-            (chan_size, chan_size), dtype=torch.long, device=device
-        )
-        shifting_idxes[idxes[0], idxes[1]] = upper_val
-        lower = shifting_idxes.transpose(-2, -1)  # a view: writes into shifting_idxes
-        lower[idxes[0], idxes[1]] = upper_val
-        shifting_idxes = (chan_size - 1 - shifting_idxes).repeat(
-            x.shape[-2] // chan_size, 1
-        )
-        return torch.gather(
-            x,
-            -1,
-            shifting_idxes.expand(list(x.shape[:-2]) + list(shifting_idxes.shape)),
-        )
+        # ``torch.gather`` (index from ``_mvpa_masks``) whose backward is a
+        # ``scatter_add``. Advanced indexing would backpropagate through
+        # ``index_put_(accumulate=True)``, which Intel Gaudi (HPU) runs on the
+        # host, slowly and with wrong gradients.
+        return torch.gather(x, -1, index.expand(list(x.shape[:-2]) + list(index.shape)))
 
     def _split_heads(self, tensor: torch.Tensor, num_heads: int) -> torch.Tensor:
         # (batch, segment, channel, head * head_dim)
@@ -580,9 +582,11 @@ class _MVPAttention(nn.Module):
         time_key: torch.Tensor,
         channel_key: torch.Tensor,
         value: torch.Tensor,
+        masks: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         attention_mask: Optional[torch.Tensor],
     ) -> torch.Tensor:
         _, _, n_segments, n_channels, _ = query.size()
+        window_mask, causal_mask, channel_shift = masks
         global_bias, time_bias, channel_bias = self.attn_bias.split(self.kv_dim, dim=0)
 
         time_bias = self._as_bias(time_bias)
@@ -602,7 +606,9 @@ class _MVPAttention(nn.Module):
         time_q = (query + time_bias).flatten(2, 3)
         channel_q = (query + channel_bias).flatten(2, 3)
         time_att = self._rel_shift(torch.matmul(time_q, time_key))
-        channel_att = self._rel_shift_chan(torch.matmul(channel_q, channel_key))
+        channel_att = self._rel_shift_chan(
+            torch.matmul(channel_q, channel_key), channel_shift
+        )
         attn_weights = self._repeat_channel(time_att, n_channels) + self._repeat_time(
             channel_att, n_segments
         )
@@ -615,18 +621,6 @@ class _MVPAttention(nn.Module):
             global_key = global_key.permute(0, 1, 4, 2, 3).flatten(3)
             global_q = (query + global_bias).flatten(2, 3)
             global_att = torch.matmul(global_q, global_key)
-            window = self.local_window
-            ones = torch.ones(
-                (n_segments, n_segments), device=query.device, dtype=torch.bool
-            )
-            window_mask = torch.logical_and(
-                torch.tril(ones, diagonal=window),
-                torch.triu(ones, diagonal=-window),
-            )
-            # (query_segment, key_segment)
-            # -> (query_segment * query_channel, key_segment * key_channel)
-            window_mask = _repeat_segment_mask(window_mask, n_channels).clone()
-            window_mask[-n_channels:] = 1
             attn_weights = attn_weights + global_att.masked_fill(~window_mask, 0.0)
 
         if self.scale_attn:
@@ -635,14 +629,6 @@ class _MVPAttention(nn.Module):
         if self.scale_by_layer_idx and layer_idx is not None:
             attn_weights = attn_weights / float(layer_idx + 1)
 
-        causal_mask = _repeat_segment_mask(
-            torch.tril(
-                torch.ones(
-                    (n_segments, n_segments), device=query.device, dtype=torch.bool
-                )
-            ),
-            n_channels,
-        )
         if torch.jit.is_scripting():  # torch.finfo is not scriptable
             min_value = _finfo_min(attn_weights.dtype)
         else:
@@ -664,6 +650,7 @@ class _MVPAttention(nn.Module):
         hidden_states,
         position_embeds,
         channel_embeds,
+        masks: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         attention_mask: Optional[torch.Tensor] = None,
     ):
         query = self.q_attn(hidden_states)
@@ -677,7 +664,7 @@ class _MVPAttention(nn.Module):
         time_key = self._split_heads(time_key, self.n_head_kv)
         channel_key = self._split_heads(channel_key, self.n_head_kv)
         attn_output = self._rel_attn(
-            query, content_key, time_key, channel_key, value, attention_mask
+            query, content_key, time_key, channel_key, value, masks, attention_mask
         )
         attn_output = self._merge_heads(attn_output)
         attn_output = self.c_proj(attn_output)
@@ -745,9 +732,12 @@ class _MVPABlock(nn.Module):
         hidden_states,
         position_embeds,
         channel_embeds,
+        masks: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         attention_mask: Optional[torch.Tensor] = None,
     ):
         normed = self.ln_1(hidden_states)
-        attn_output = self.attn(normed, position_embeds, channel_embeds, attention_mask)
+        attn_output = self.attn(
+            normed, position_embeds, channel_embeds, masks, attention_mask
+        )
         mlp_output = self.mlp(normed)
         return hidden_states + mlp_output + attn_output
