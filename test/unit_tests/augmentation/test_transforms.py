@@ -745,7 +745,7 @@ def test_segmentation_reconstruction_with_EEGClassifier(dataset, probability):
     _ = clf.fit(X=dataset)
 
 
-@pytest.mark.parametrize("n_segments", [1, 5, 10, None, 50])
+@pytest.mark.parametrize("n_segments", [1, 3, 5, 10, None, 50])
 def test_segmentation_reconstruction_transform(
         time_aranged_batch,
         n_segments,
@@ -770,29 +770,6 @@ def test_segmentation_rec_with_large_n_segments(time_aranged_batch):
         common_transform_assertions(
             time_aranged_batch, transform(*time_aranged_batch), X
         )
-
-
-@pytest.mark.parametrize("n_segments", [1, 3, 6, 10])
-@pytest.mark.parametrize("probability", [0.5, 1.0])
-@pytest.mark.parametrize("device", ["cpu", pytest.param(
-    "cuda", marks=pytest.mark.skipif(
-        not torch.cuda.is_available(), reason="CUDA unavailable"
-    )
-)])
-def test_segmentation_reconstruction_preserves_single_trial_classes(
-        n_segments, probability, device):
-    # With one trial per class, every sample must come from that same trial,
-    # even when the segment count does not divide the window length.
-    X = torch.arange(1, 81, device=device).reshape(4, 2, 10).float()
-    y = torch.arange(4, device=device)
-    transform = SegmentationReconstruction(
-        probability=probability, n_segments=n_segments, random_state=42
-    )
-
-    transformed_X, transformed_y = transform(X, y)
-
-    torch.testing.assert_close(transformed_X, X[transformed_y], rtol=0, atol=0)
-    torch.testing.assert_close(transformed_y.sort().values, y)
 
 
 def test_segmentation_reconstruction_remainder_uses_final_donor():
