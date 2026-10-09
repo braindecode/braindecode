@@ -1796,6 +1796,15 @@ def test_axon_input_unit_does_not_matter():
         torch.testing.assert_close(model(x_uv), model(x_uv * 1e-6), atol=1e-4, rtol=1e-4)
 
 
+def test_axon_block_without_band_equals_all_true_band():
+    # Windows of <= temporal_window + 1 patches run the blocks with band=None.
+    block = _axon_model(_axon_chs()).encoder.blocks[0]
+    tokens = torch.randn(2, 3, 5, _AXON_SMALL["embed_dim"])
+    band = torch.ones(5, 5, dtype=torch.bool)
+    with torch.no_grad():
+        torch.testing.assert_close(block(tokens, None), block(tokens, band))
+
+
 def test_axon_too_short_window_raises():
     with pytest.raises(ValueError, match="patch_size"):
         AXON(chs_info=_axon_chs(), n_outputs=2, n_times=100, **_AXON_SMALL)
