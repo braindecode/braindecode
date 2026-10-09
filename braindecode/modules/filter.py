@@ -308,7 +308,6 @@ class FilterBankLayer(nn.Module):
                         x=x,
                         filt=fir,
                         a_coeffs=fir_a,
-                        n_chans=self.n_chans,
                         forward_filter=self.forward_filter,
                     )
                 )
@@ -320,7 +319,6 @@ class FilterBankLayer(nn.Module):
         x,
         filt: Tensor,
         a_coeffs: Tensor,
-        n_chans: int,
         forward_filter: bool = False,
     ) -> Tensor:
         """
@@ -335,8 +333,6 @@ class FilterBankLayer(nn.Module):
             - "b": Tensor of numerator coefficients.
         a_coeffs: Tensor
             FIR denominator coefficients for one-pass filtering.
-        n_chans: int
-            Number of channels
         forward_filter : bool
             If True, apply the FIR coefficients once in the forward direction.
 
@@ -355,18 +351,11 @@ class FilterBankLayer(nn.Module):
             )
             return filtered.to(x).unsqueeze(1)
 
-        # Expand filter coefficients to match the number of channels
-        # Original 'b' shape: (filter_length,)
-        # After unsqueeze and repeat: (n_chans, filter_length)
-        # After final unsqueeze: (1, n_chans, filter_length)
-        filt_expanded = filt.to(x_in).unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
-
-        # Perform FFT-based convolution
+        # Perform FFT-based convolution; the (1, 1, filter_length) filter
+        # broadcasts over batch and channels, so its FFT is computed once.
         # Input x shape: (batch_size, n_chans, n_times)
-        # filt_expanded shape: (1, n_chans, filter_length)
         # After convolution: (batch_size, n_chans, n_times)
-
-        filtered = fftconvolve(x_in, filt_expanded, mode="same").to(
+        filtered = fftconvolve(x_in, filt.to(x_in)[None, None], mode="same").to(
             x
         )  # Shape: (batch_size, nchans, time_points)
 
