@@ -220,6 +220,12 @@ Enhancements
   contributions covering implementation conventions, registration,
   documentation, and benchmarking (:gh:`1169` by `Li Qing`_).
 
+- Shrink the slowest unit tests, keeping what each one checks: EEGInceptionMI's
+  500 Hz case on 2 windows instead of 64; 1 s DANCE and ZUNA and 5-patch
+  CodeBrain windows in the shared model test geometry; one ``EEGClassifier`` fit
+  per model instead of two; 8 BIOT shape cases instead of 240; 3 spawned
+  processes instead of 14 in the distributed sampler tests (:gh:`1264` by `Bruno Aristimunha`_).
+
 API and behavior changes
 ========================
 

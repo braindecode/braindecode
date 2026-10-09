@@ -622,7 +622,8 @@ models_mandatory_parameters: list[
     (
         "CodeBrain",
         ["n_chans", "n_outputs", "n_times"],
-        {"n_chans": 19, "n_times": 6000},
+        # 5 patches; test_foundation_models runs the pretraining 19 x 6000 geometry
+        {"n_chans": 19, "n_times": 1000},
     ),
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
     ("BrainOmni", ["chs_info", "n_outputs", "n_times", "sfreq"], None),
@@ -662,9 +663,11 @@ models_mandatory_parameters: list[
         ["n_outputs", "n_chans", "n_times", "sfreq", "chs_info"],
         {
             "n_chans": 19,
-            "n_times": 6400,  # 32 s @ 200 Hz, above the depth-10 stack minimum
+            # 1 s @ 200 Hz: CPU float16/bfloat16 dilated convolutions take a
+            # scalar path, so 32 s windows took 25 min per dtype case.
+            "n_times": 200,
             "sfreq": 200.0,
-            "input_window_seconds": 32.0,
+            "input_window_seconds": 1.0,
             "n_outputs": 4,
             "chs_info": [
                 {
@@ -680,9 +683,9 @@ models_mandatory_parameters: list[
         "ZUNA",
         ["chs_info", "n_outputs", "n_times"],
         {
-            "n_times": 1280,
+            "n_times": 256,  # 1 s: 8 patches per channel for the 172M-parameter model
             "sfreq": 256.0,
-            "input_window_seconds": 5.0,
+            "input_window_seconds": 1.0,
         },
     ),
     (

@@ -1663,7 +1663,8 @@ def test_sccnet_dummy(n_times, n_chans, sfreq, n_outputs):
     ],
 )
 def test_eeginceptionmi_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 64
+    # 64 windows held 6.3 GB of activations; a macOS runner has 7 GB for 3 workers.
+    batch_size = 2
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -1884,9 +1885,12 @@ def test_model_trainable_parameters(model):
     assert trainable_final_layer_parameters == 66
 
 
-@pytest.mark.parametrize("n_chans", (2 ** np.arange(8)).tolist())
-@pytest.mark.parametrize("n_outputs", [2, 3, 4, 5, 50])
-@pytest.mark.parametrize("input_size_s", [1, 2, 5, 10, 15, 30])
+# Every channel count, output size and window length once, not their 240-case product.
+@pytest.mark.parametrize(
+    "n_chans, n_outputs, input_size_s",
+    [(1, 2, 1), (2, 3, 2), (4, 4, 5), (8, 5, 10), (16, 50, 15), (32, 2, 30),
+     (64, 3, 1), (128, 4, 2)],
+)
 def test_biot(n_chans, n_outputs, input_size_s):
     rng = check_random_state(42)
     sfreq = 200
@@ -3936,16 +3940,17 @@ def test_medformer_boolean_combinations(no_inter_attn, single_channel, output_at
     """
     set_random_seeds(0, False)
 
+    # 200 samples: single_channel attends over time patches of every channel.
     model = MEDFormer(
         n_chans=22,
         n_outputs=4,
-        n_times=1000,
+        n_times=200,
         no_inter_attn=no_inter_attn,
         single_channel=single_channel,
         output_attention=output_attention,
     )
 
-    x = torch.randn(2, 22, 1000)
+    x = torch.randn(2, 22, 200)
     y = model(x)
     assert y.shape == (2, 4)
 
