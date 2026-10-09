@@ -452,6 +452,14 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
                 f"embed_dim ({embed_dim}) must be divisible by 8: each of the four "
                 "positional encodings needs an even width."
             )
+        if (
+            isinstance(num_heads, bool)
+            or not isinstance(num_heads, numbers.Integral)
+            or num_heads < 1
+        ):
+            raise ValueError(
+                f"num_heads must be a positive integer, got {num_heads!r}."
+            )
         if embed_dim % num_heads != 0:
             raise ValueError(
                 f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})."

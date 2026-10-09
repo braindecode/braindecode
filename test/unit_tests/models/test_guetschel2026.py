@@ -667,6 +667,9 @@ def test_warns_when_sfreq_is_not_the_pretraining_one():
         (dict(normalization="chan_std"), "normalization"),
         (dict(embed_dim=100), "embed_dim"),
         (dict(embed_dim=512, num_heads=7), "num_heads"),
+        (dict(num_heads=0), "num_heads"),
+        (dict(num_heads=-8), "num_heads"),
+        (dict(num_heads=8.0), "num_heads"),
         (dict(patch_overlap=200), "patch_overlap"),
     ],
 )
