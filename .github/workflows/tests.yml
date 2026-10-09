@@ -16,10 +16,10 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     env:
-      # One torch/OpenMP/MKL thread per xdist worker and one worker per vCPU
-      # (-n logical); unpinned, every worker started one torch thread per core.
+      # One torch/OpenMP/MKL thread per xdist worker (MKL falls back to
+      # OMP_NUM_THREADS) and one worker per vCPU (-n logical); unpinned, every
+      # worker started one torch thread per core.
       OMP_NUM_THREADS: "1"
-      MKL_NUM_THREADS: "1"
     strategy:
       fail-fast: false
       matrix:
