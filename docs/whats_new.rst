@@ -241,6 +241,14 @@ Enhancements
   written as ``reshape``/``permute``. Eager outputs and state-dict keys are
   unchanged (:gh:`1258` by `Bruno Aristimunha`_).
 
+- :func:`torch.jit.script` compiles :class:`braindecode.models.CodeBrain`,
+  :class:`braindecode.models.EEGDINO`, :class:`braindecode.models.LUNA`,
+  :class:`braindecode.models.NeuroRVQ`, :class:`braindecode.models.TCFormer` and
+  the four :class:`braindecode.models.SignalJEPA` variants: einops calls as
+  ``reshape``/``permute``, typed dict/tuple returns, the NeuroRVQ branches without
+  computed-name ``getattr``, and LUNA's reconstruction head kept eager-only. Eager
+  outputs and state-dict keys are unchanged (:gh:`PRNUM` by `Bruno Aristimunha`_).
+
 API and behavior changes
 ========================
 
