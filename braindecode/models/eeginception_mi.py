@@ -283,13 +283,16 @@ class _InceptionModuleMI(nn.Module):
             bias=True,
         )
 
+        # torch's "same" pads one extra zero on the right for even kernels; all
+        # kernels share kernel_unit's parity, so forward pads once for all convs.
+        self.pad_right = kernel_unit % 2 == 0
         self.conv_list = nn.ModuleList(
             [
                 nn.Conv2d(
                     in_channels=self.n_filters,
                     out_channels=self.n_filters,
                     kernel_size=(1, (n_units * 2 + 1) * kernel_unit),
-                    padding="same",
+                    padding=(0, ((n_units * 2 + 1) * kernel_unit - 1) // 2),
                     bias=True,
                 )
                 for n_units in range(self.n_convs)
@@ -305,6 +308,8 @@ class _InceptionModuleMI(nn.Module):
         X: torch.Tensor,
     ) -> torch.Tensor:
         X1 = self.bottleneck(X)
+        if self.pad_right:
+            X1 = nn.functional.pad(X1, (0, 1))
 
         X1 = [conv(X1) for conv in self.conv_list]
 
