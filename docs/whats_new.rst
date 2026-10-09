@@ -28,6 +28,12 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.DuIN` (Du-IN, Zheng et al., NeurIPS 2024),
+  an sEEG speech decoder that fuses the channels of a brain region into one
+  token per 100 ms patch before a Transformer encoder. The authors'
+  per-subject Du-IN MAE checkpoints load directly through
+  ``load_state_dict`` and match the upstream encoder to float precision
+  (:gh:`XXXX` by `Adam Mounir`_).
 - Add :class:`braindecode.models.TFMTokenizer`, the time-frequency motif tokenizer
   for single-channel EEG of Pradeepkumar et al. (ICLR 2026) (:gh:`1202` by
   `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
