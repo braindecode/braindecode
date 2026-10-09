@@ -43,6 +43,7 @@ _BANDS: tuple[tuple[str, int, int, int, int], ...] = (
     ("fast", 128, 4, 10, 1),
 )
 _BAND_BINS: tuple[int, ...] = tuple(k1 - k0 + 1 for _, _, k0, k1, _ in _BANDS)
+_BAND_STRIDES: tuple[int, ...] = tuple(stride for *_, stride in _BANDS)
 # The published "Guard 3" caps on the normalized inputs, per band.
 _INPUT_CLIP_Z: tuple[float, float, float] = (15.0, 15.0, 20.0)
 
@@ -200,6 +201,12 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
        sample-efficient neural interfaces. https://arxiv.org/abs/2609.13507
     """
 
+    # TorchScript reads no module globals, so forward reads these constants.
+    __constants__ = ("_band_strides", "_n_bins", "_n_regions")
+    _band_strides = _BAND_STRIDES
+    _n_bins = sum(_BAND_BINS)
+    _n_regions = len(MAPA_DKT_REGIONS) + 1
+
     def __init__(
         self,
         # --- signal-related (handled by EEGModuleMixin) ---
@@ -308,9 +315,16 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # along across devices and the common forward path stays export-stable
         # (the layout is rebuilt at call time only for a foreign montage).
         layout = self._token_layout(self.default_sensor_indices, self.n_frames)
-        self._layout_names = tuple(k for k, v in layout.items() if torch.is_tensor(v))
-        for name in self._layout_names:
-            self.register_buffer(name, layout[name], persistent=False)
+        names = (
+            "gather_idx",
+            "key_mask",
+            "token_region",
+            "scatter_idx",
+            "rope_cos",
+            "rope_sin",
+        )
+        for name, tensor in zip(names, layout):  # zip drops the trailing k_full
+            self.register_buffer(name, tensor, persistent=False)
 
         feature_dim = d_model * (len(_SUP_TAPS) if deep_sup else 1)
         n_features = (
@@ -429,14 +443,16 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                     f"this recording's metadata as sensor_indices, which "
                     f"MAPA.sensor_indices builds from its contact labels."
                 )
-            return self.get_buffer("default_sensor_indices")
+            return self.default_sensor_indices
         indices = torch.as_tensor(sensor_indices)
-        n_regions = len(MAPA_DKT_REGIONS) + 1
+        n_regions = self._n_regions
         if (
             indices.is_floating_point()
             or indices.is_complex()
             or indices.dtype == torch.bool
-            or indices.shape != (n_chans, 3)
+            or indices.ndim != 2
+            or indices.shape[0] != n_chans
+            or indices.shape[1] != 3
             or bool((indices < 0).any())
             or bool((indices[:, 2] >= n_regions).any())
         ):
@@ -444,7 +460,7 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"sensor_indices must hold integers of shape ({n_chans}, 3), one "
                 f"row of (array, contact number, region slot) per channel, and "
                 f"must be non-negative, with region slots below {n_regions}; got "
-                f"{indices.dtype} of shape {tuple(indices.shape)}."
+                f"{indices.dtype} of shape {list(indices.shape)}."
             )
         return indices.to(device=x.device, dtype=torch.long)
 
@@ -477,23 +493,23 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             angle.sin().repeat_interleave(2, dim=-1),
         )
 
-    def _token_layout(self, indices: torch.Tensor, n_frames: int) -> dict:
+    def _token_layout(
+        self, indices: torch.Tensor, n_frames: int
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        int,
+    ]:
         """Regroup the channels into arrays padded to the largest one, and
-        return the gather plan, padding mask, region ids, rotary tables and the
-        per-contact token count of that grid."""
-        if (
-            getattr(self, "_layout_names", None) is not None
-            and indices is self.get_buffer("default_sensor_indices")
-            and n_frames == self.n_frames
-        ):
-            layout = {name: self.get_buffer(name) for name in self._layout_names}
-            layout["k_full"] = self.k_full
-            return layout
+        return the gather plan, padding mask, region ids, scatter plan, rotary
+        tables and the per-contact token count of that grid."""
         device = indices.device
         n_chans = indices.shape[0]
         arrays, contacts, regions = indices.unbind(dim=1)
-        band_lengths = [n_frames // stride for *_, stride in _BANDS]
-        k_full = sum(band_lengths)
 
         # Renumber the arrays contiguously, so any labelling of them works.
         _, array_of_contact = torch.unique(arrays, return_inverse=True)
@@ -523,27 +539,26 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
         # Each contact carries the same block of tokens: the three bands in
         # order, each at its own rate on the shared clock.
-        lattice = torch.cat(
-            [
-                torch.arange(length, device=device) * stride
-                for length, (*_, stride) in zip(band_lengths, _BANDS)
-            ]
-        )
+        bands: list[torch.Tensor] = []
+        for stride in self._band_strides:
+            bands.append(torch.arange(n_frames // stride, device=device) * stride)
+        lattice = torch.cat(bands)
+        k_full = lattice.numel()
         cos, sin = self._rope(
             contact=contacts[gather_idx].repeat_interleave(k_full, dim=1),
             time=lattice.repeat(max_contacts).expand(n_arrays, -1),
         )
-        return {
-            "gather_idx": gather_idx,
+        return (
+            gather_idx,
             # Inserted axes broadcast the mask and the tables over the batch,
             # the heads and the query length, keeping the key length last.
-            "key_mask": valid.repeat_interleave(k_full, dim=1)[None, :, None, None],
-            "token_region": regions[gather_idx].repeat_interleave(k_full, dim=1),
-            "scatter_idx": scatter_idx,
-            "rope_cos": cos[None, :, None],
-            "rope_sin": sin[None, :, None],
-            "k_full": k_full,
-        }
+            valid.repeat_interleave(k_full, dim=1)[None, :, None, None],
+            regions[gather_idx].repeat_interleave(k_full, dim=1),
+            scatter_idx,
+            cos[None, :, None],
+            sin[None, :, None],
+            k_full,
+        )
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the linear classification head for a new ``n_outputs``.
@@ -565,7 +580,7 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         x: torch.Tensor,
         sensor_indices: torch.Tensor | None = None,
         return_features: bool = False,
-    ):
+    ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Encode an iEEG batch into class logits or pooled features.
 
         Parameters
@@ -592,15 +607,15 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             ``"cls_token"`` entry is ``None``.
         """
         spectrogram = self.normalization == "session"
-        n_bins = sum(_BAND_BINS)
+        n_bins = self._n_bins
         if x.ndim != (4 if spectrogram else 3) or (
             spectrogram and x.shape[2] != n_bins
         ):
             raise ValueError(
                 f"normalization='session' takes a spectrogram of shape (batch, "
                 f"n_chans, {n_bins}, n_frames), any other a raw signal of shape "
-                f"(batch, n_chans, n_times), but got {tuple(x.shape)} with "
-                f"normalization={self.normalization!r}."
+                f"(batch, n_chans, n_times), but got {list(x.shape)} with "
+                f"normalization='{self.normalization}'."
             )
         indices = self._resolve_sensor_indices(sensor_indices, x)
         n_frames = _frame_count(x.shape[-1], spectrogram=spectrogram)
@@ -613,21 +628,28 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"{x.shape[1]} channels and {n_frames} frames. Build the model "
                 f"with pooling='mean' to encode recordings of any shape."
             )
-        layout = self._token_layout(indices, n_frames)
+        # The construction-time montage reads its precomputed layout.
+        gather_idx, key_mask, token_region, scatter_idx, cos, sin, k_full = (
+            (
+                self.gather_idx,
+                self.key_mask,
+                self.token_region,
+                self.scatter_idx,
+                self.rope_cos,
+                self.rope_sin,
+                self.k_full,
+            )
+            if indices is self.default_sensor_indices and n_frames == self.n_frames
+            else self._token_layout(indices, n_frames)
+        )
 
         tokens = self.stem(self.frontend(x))
         # (batch, n_arrays, max_contacts * k_full, d_model), array-contiguous.
-        packed = tokens[:, layout["gather_idx"]].flatten(2, 3)
-        encoded = self.encoder(
-            packed,
-            layout["token_region"],
-            layout["rope_cos"],
-            layout["rope_sin"],
-            layout["key_mask"],
-        )
+        packed = tokens[:, gather_idx].flatten(2, 3)
+        encoded = self.encoder(packed, token_region, cos, sin, key_mask)
         # Back to one block of tokens per channel, in the input channel order.
-        encoded = encoded.unflatten(2, (-1, layout["k_full"])).flatten(1, 2)
-        encoded = encoded[:, layout["scatter_idx"]]
+        encoded = encoded.unflatten(2, (-1, k_full)).flatten(1, 2)
+        encoded = encoded[:, scatter_idx]
 
         if self.pooling == "mean":
             features = encoded.mean(dim=(1, 2))
@@ -636,17 +658,22 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         logits = self.final_layer(features)
 
         if return_features:
-            return {
+            out: dict[str, torch.Tensor | None] = {
                 "features": features,
                 "cls_token": None,  # nosec B105
             }
+            return out
         return logits
 
 
-def _frame_count(n_times: int, spectrogram: bool = False) -> int:
+def _frame_count(
+    n_times: int,
+    spectrogram: bool = False,
+    # The slow band's token rate, a default since TorchScript reads no globals.
+    quantum: int = max(_BAND_STRIDES),
+) -> int:
     """Usable frames of the 32 Hz clock in ``n_times`` samples (or frames)."""
     frames = n_times if spectrogram else 1 + n_times // 64  # hop of 64 samples
-    quantum = max(stride for *_, stride in _BANDS)  # the slow band's token rate
     n_frames = (frames // quantum) * quantum
     if n_frames < quantum:
         minimum = (
@@ -674,6 +701,13 @@ class _SpectrogramFrontend(nn.Module):
     """Per-band STFT magnitudes on a shared 32 Hz clock, robust z-scored
     (window), capped and decimated to each band's token rate."""
 
+    # TorchScript reads no module globals, so forward reads these constants.
+    __constants__ = ("bands", "band_bins", "band_strides", "clip_z")
+    bands = _BANDS
+    band_bins = _BAND_BINS
+    band_strides = _BAND_STRIDES
+    clip_z = _INPUT_CLIP_Z
+
     def __init__(self, normalization: str):
         super().__init__()
         self.normalization = normalization
@@ -682,13 +716,13 @@ class _SpectrogramFrontend(nn.Module):
         """Return ``(batch, n_chans, n_bins, n_tokens)`` slow, mid, fast bands."""
         if self.normalization == "session":
             n_frames = _frame_count(x.shape[-1], spectrogram=True)
-            bands = x[..., :n_frames].split(_BAND_BINS, dim=2)
+            bands = x[..., :n_frames].split(self.band_bins, dim=2)
         else:
             bands = self._stft_bands(x)
-        return [
-            band.clamp(-cap, cap)[..., ::stride]
-            for band, cap, (*_, stride) in zip(bands, _INPUT_CLIP_Z, _BANDS)
-        ]
+        out: list[torch.Tensor] = []
+        for i, (cap, stride) in enumerate(zip(self.clip_z, self.band_strides)):
+            out.append(bands[i].clamp(-cap, cap)[..., ::stride])
+        return out
 
     def _stft_bands(self, x: torch.Tensor) -> list[torch.Tensor]:
         """``(batch, n_chans, n_times)`` to per-band magnitudes, robust z-scored
@@ -696,8 +730,8 @@ class _SpectrogramFrontend(nn.Module):
         batch, n_chans = x.shape[0], x.shape[1]
         n_frames = _frame_count(x.shape[-1])
         waveform = spectral_input(x.reshape(batch * n_chans, x.shape[-1]))
-        bands = []
-        for _, n_fft, k0, k1, _ in _BANDS:
+        bands: list[torch.Tensor] = []
+        for _, n_fft, k0, k1, _ in self.bands:
             # A window shorter than the transform is zero-padded, as in the
             # reference, so the centred transform has something to reflect.
             padded = waveform
@@ -743,17 +777,18 @@ class _PerBandStem(nn.Module):
 
     def forward(self, bands: list[torch.Tensor]) -> torch.Tensor:
         """Return ``(batch, n_chans, k_full, d_model)`` tokens."""
-        return torch.cat(
-            [
-                proj(band.transpose(-1, -2)) + embedding
-                for band, proj, embedding in zip(bands, self.projs, self.band_type_emb)
-            ],
-            dim=-2,
-        )
+        tokens: list[torch.Tensor] = []
+        embeddings = self.band_type_emb.unbind(0)
+        for i, proj in enumerate(self.projs):
+            tokens.append(proj(bands[i].transpose(-1, -2)) + embeddings[i])
+        return torch.cat(tokens, dim=-2)
 
 
 class _Encoder(nn.Module):
     """Region embedding plus a pre-norm stack of within-array blocks."""
+
+    __constants__ = ("sup_taps",)  # TorchScript reads no module globals
+    sup_taps = _SUP_TAPS
 
     def __init__(
         self,
@@ -800,13 +835,15 @@ class _Encoder(nn.Module):
         key_mask: torch.Tensor,
     ) -> torch.Tensor:
         """Encode ``(batch, n_arrays, n_tokens, d_model)`` array-packed tokens."""
-        if "embed" in self.region_embed:
+        if hasattr(self.region_embed, "embed"):  # static under TorchScript
             x = x + self.region_embed["embed"](region_ids).to(x.dtype)
-        levels = []
+        levels: list[torch.Tensor] = []
         for layer, block in enumerate(self.blocks):
             x = block(x, cos, sin, key_mask)
-            if self.norms_block is not None and layer + 1 in _SUP_TAPS:
-                levels.append(self.norms_block[_SUP_TAPS.index(layer + 1)](x))
+            if self.norms_block is not None:
+                for tap, norm in zip(self.sup_taps, self.norms_block):
+                    if layer + 1 == tap:
+                        levels.append(norm(x))
         if self.norm_out is not None:
             return self.norm_out(x)
         return torch.cat(levels, dim=-1)
