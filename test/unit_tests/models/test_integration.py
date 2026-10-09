@@ -62,7 +62,6 @@ _TORCHSCRIPT_XFAIL = {
     "EEGPT": "einops.rearrange call (**axes_lengths)",
     "Labram": "keyword-only forward argument",
     "MAPA": "f-string error message in forward",
-    "MVPFormer": "math.log2 in forward",
     "TFMTokenizer": "linear_attention_transformer forward takes **kwargs",
 }
 

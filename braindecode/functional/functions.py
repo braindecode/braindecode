@@ -412,7 +412,14 @@ def dwt_max_level(n_times: int, filter_len: int) -> int:
     """
     if n_times < filter_len:
         return 0
-    return max(0, int(math.floor(math.log2(n_times / (filter_len - 1)))))
+    # floor(log2(n_times / (filter_len - 1))) in integers (TorchScript has no
+    # math.log2): the largest level with (filter_len - 1) * 2**level <= n_times.
+    ratio = n_times // (filter_len - 1)
+    level = 0
+    while ratio >= 2:
+        ratio = ratio // 2
+        level += 1
+    return level
 
 
 def wavelet_decomposition(
@@ -456,8 +463,9 @@ def wavelet_decomposition(
         )
         approx, detail = F.conv1d(padded, weight, stride=2).unbind(dim=1)
         details.append(detail)
-    out = torch.cat([approx, *reversed(details)], dim=-1)
-    return out.reshape(*leading, -1)
+    details.reverse()  # [cD_n, ..., cD_1]
+    out = torch.cat([approx] + details, dim=-1)
+    return out.reshape(list(leading) + [-1])
 
 
 def sinusoidal_positional_encoding(
