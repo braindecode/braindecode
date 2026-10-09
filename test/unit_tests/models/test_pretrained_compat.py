@@ -364,8 +364,8 @@ COMPAT = {
         skip=("G2",),
     ),
     # random_projection=64 exercises the projection head with a light buffer:
-    # 5000 x n_features float32 is hundreds of MB on the 64-channel and
-    # 6000-sample cells.
+    # 5000 components in float32 take 3.3 GB on the 64-channel cell (G2, 5
+    # patches) and 6.4 GB on the 6000-sample one (G5b, 19 channels, 33 patches).
     "Guetschel2026": dict(
         cls=Guetschel2026,
         sfreq=200,
