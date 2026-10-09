@@ -690,21 +690,14 @@ def test_if_models_with_embedding_parameter(model):
         pytest.fail(f"Error printing model {model_name}: {e}")
 
 
-# CPU has no float16 kernel for this op.
-_FLOAT16_XFAIL = {
-    "EEGMiner": "CPU batch_norm without affine weights rejects float16 statistics",
-}
-
-
-def _dtype_cases():
-    for name in _MODEL_CASES:
-        for dtype in (torch.float64, torch.bfloat16, torch.float16):
-            reason = _FLOAT16_XFAIL.get(name) if dtype == torch.float16 else None
-            marks = [pytest.mark.xfail(reason=reason)] if reason else []
-            yield pytest.param(name, dtype, marks=marks, id=f"{name}-{str(dtype)[6:]}")
-
-
-@pytest.mark.parametrize("model_name, dtype", list(_dtype_cases()))
+@pytest.mark.parametrize(
+    "model_name, dtype",
+    [
+        pytest.param(name, dtype, id=f"{name}-{str(dtype)[6:]}")
+        for name in _MODEL_CASES
+        for dtype in (torch.float64, torch.bfloat16, torch.float16)
+    ],
+)
 def test_forward_in_dtype(model_name, dtype):
     """``model.to(dtype)`` forwards on CPU in ``dtype`` (and backpropagates in float64)."""
     required, signal_params = _MODEL_CASES[model_name]
