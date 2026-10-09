@@ -1416,9 +1416,7 @@ class _Attention(nn.Module):
         if self.k_norm is not None:
             k = self.k_norm(k).type_as(v)
 
-        q = q * self.scale
-        attn = q @ k.transpose(-2, -1)
-
+        attn_mask: Optional[torch.Tensor] = None
         if self.relative_position_bias_table is not None:
             relative_position_bias = self.relative_position_bias_table[
                 self.relative_position_index.view(-1)
@@ -1427,18 +1425,24 @@ class _Attention(nn.Module):
                 self.window_size[0] * self.window_size[1] + 1,
                 -1,
             )  # Wh*Ww,Wh*Ww,nH
-            relative_position_bias = relative_position_bias.permute(
-                2, 0, 1
-            ).contiguous()  # nH, Wh*Ww, Wh*Ww
-            attn = attn + relative_position_bias.unsqueeze(0)
+            attn_mask = (
+                relative_position_bias.permute(2, 0, 1).contiguous().unsqueeze(0)
+            )  # 1, nH, Wh*Ww, Wh*Ww
 
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-
-        if return_attention:
-            return attn
-
-        x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
+        if not return_attention and (self.attn_drop.p == 0.0 or not self.training):
+            # Fused kernel, same math; it would draw other attention-dropout masks.
+            x = nn.functional.scaled_dot_product_attention(
+                q, k, v, attn_mask=attn_mask, scale=self.scale
+            )
+        else:
+            attn = (q * self.scale) @ k.transpose(-2, -1)
+            if attn_mask is not None:
+                attn = attn + attn_mask
+            attn = self.attn_drop(attn.softmax(dim=-1))
+            if return_attention:
+                return attn
+            x = attn @ v
+        x = x.transpose(1, 2).reshape(B, N, -1)
 
         x = self.proj(x)
         x = self.proj_drop(x)
