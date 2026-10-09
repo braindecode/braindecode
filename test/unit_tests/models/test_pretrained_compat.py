@@ -363,8 +363,9 @@ COMPAT = {
         windows=(256, 1024),
         skip=("G2",),
     ),
-    # random_projection=64 keeps the head light: the default 5000 x n_features
-    # float32 buffer is hundreds of MB on the 64-channel and 6000-sample cells.
+    # random_projection=64 exercises the projection head with a light buffer:
+    # 5000 x n_features float32 is hundreds of MB on the 64-channel and
+    # 6000-sample cells.
     "Guetschel2026": dict(
         cls=Guetschel2026,
         sfreq=200,

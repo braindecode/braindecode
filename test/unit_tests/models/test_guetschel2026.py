@@ -1017,12 +1017,20 @@ _N_FEATURES = 4 * 5 * _EMBED_DIM  # 4 channels, 1000 samples
 
 def test_random_projection_defaults():
     params = inspect.signature(Guetschel2026.__init__).parameters
-    assert params["random_projection"].default == 5000
+    assert params["random_projection"].default is None
     assert params["random_projection_seed"].default == 0
-    # the default really builds the 5000-feature projection (1 channel, 1 patch)
+    # the default head has no projection
+    model = Guetschel2026(chs_info=_chs(["Cz"]), n_times=200, n_outputs=2, sfreq=200.0)
+    assert [type(m) for m in model.final_layer] == [nn.Flatten, nn.Linear]
+    assert model.random_projection is None
+    # the paper's 5000-feature projection (1 channel, 1 patch)
     with pytest.warns(UserWarning, match="random_projection"):
         model = Guetschel2026(
-            chs_info=_chs(["Cz"]), n_times=200, n_outputs=2, sfreq=200.0
+            chs_info=_chs(["Cz"]),
+            n_times=200,
+            n_outputs=2,
+            sfreq=200.0,
+            random_projection=5000,
         )
     assert model.final_layer[1].projection.shape == (5000, _EMBED_DIM)
     assert model.final_layer[2].in_features == 5000

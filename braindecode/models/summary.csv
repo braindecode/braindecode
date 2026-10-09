@@ -80,4 +80,4 @@ MIRepNet,Motor Imagery,"Prediction, Embedding",250,"n_chans, n_outputs",5143300,
 NeuroRVQ,General,"Prediction, Embedding",200,"n_chans, n_outputs, n_times, sfreq, channel_names",7097892,"NeuroRVQ(n_chans=64, n_outputs=4, n_times=800, sfreq=200)","Convolution,Attention/Transformer,Foundation Model,Channel",EEG
 SeizureTransformer,Epilepsy,Event Detection,256,"n_chans, n_outputs, n_times",37848897,"SeizureTransformer(n_chans=19, n_outputs=1, n_times=15360)","Convolution,Attention/Transformer",EEG
 NeuroRVQTokenizer,General,Embedding,200,"n_chans, n_times, sfreq, chs_info",75726448,"NeuroRVQTokenizer(n_chans=3, n_times=200, sfreq=200)","Convolution,Attention/Transformer,Foundation Model,Channel",EEG
-Guetschel2026,General,"Prediction, Embedding",200,"chs_info, n_outputs, n_times",12707876,"Guetschel2026(chs_info=<user>, n_outputs=4, n_times=1000, sfreq=200)","Foundation Model,Attention/Transformer,Channel",EEG
+Guetschel2026,General,"Prediction, Embedding",200,"chs_info, n_outputs, n_times",12882436,"Guetschel2026(chs_info=<user>, n_outputs=4, n_times=1000, sfreq=200)","Foundation Model,Attention/Transformer,Channel",EEG

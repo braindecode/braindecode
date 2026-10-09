@@ -116,7 +116,7 @@ _MODELS = [
     pytest.param(
         Guetschel2026,
         N_CHANS,
-        # small head: the default 5000 x 56320 buffer is ~1.1 GB at 22 ch
+        # a small projection exercises that head without a ~1 GB buffer
         {"chs_info": _chs(), "random_projection": 64},
         False,
         id="Guetschel2026",

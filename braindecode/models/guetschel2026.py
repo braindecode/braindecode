@@ -256,8 +256,9 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
     - ``model.transformer`` **Transformer encoder.** Four pre-norm layers
       (RMSNorm, 8 heads, GEGLU feed-forward) attend over all the
       channel × patch tokens.
-    - ``final_layer`` **Head.** Flatten, a fixed random projection to 5000
-      features, then a linear layer. It is not part of the checkpoints.
+    - ``final_layer`` **Head.** Flatten, then a linear layer, with an optional
+      fixed random projection in between (see below). It is not part of the
+      checkpoints.
 
     .. rubric:: The 58 checkpoints
 
@@ -319,16 +320,16 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
 
     The paper probes the frozen features as OpenEEGBench does: it projects the
     flattened features to 5000 dimensions with a Gaussian random projection,
-    then fits a linear model on top. The head reproduces this design:
+    then fits a linear model on top. Pass ``random_projection=5000`` to put the
+    same projection between the flatten and the linear layer of the head:
 
     - The projection is drawn once, from ``random_projection_seed``, with the
       same distribution as scikit-learn's
       :class:`~sklearn.random_projection.GaussianRandomProjection`. It is
       stored as a buffer: saved with the model, never trained.
     - It is large: ``random_projection`` × ``n_chans`` × ``n_patches`` × 512
-      values, about 0.9 GB in float32 for 22 channels and 4 s windows.
-    - ``random_projection=None`` gives the plain flatten-then-linear head of
-      the original code.
+      values, about 0.9 GB in float32 for 5000 components, 22 channels and 4 s
+      windows.
 
     .. warning::
 
@@ -387,9 +388,10 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
         Factor applied to the input first (volts to microvolts).
     clip_sigma : float, default=15.0
         Clipping bound of ``"median_std_clip"``.
-    random_projection : int or None, default=5000
-        Size of the random projection of the head, or ``None`` for no
-        projection. Memory grows linearly with it (see Notes).
+    random_projection : int or None, default=None
+        Size of the fixed random projection inserted in the head (5000 in the
+        paper), or ``None`` for no projection. Memory grows linearly with it
+        (see "Random projection head" above).
     random_projection_seed : int, default=0
         Seed of the random projection.
 
@@ -425,9 +427,9 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
         normalization: str = "median_std_clip",
         input_scale: float = 1e6,
         clip_sigma: float = 15.0,
-        # head; the projection buffer holds random_projection x n_chans x n_patches x 512
-        # floats (~0.9 GB at 22 channels, 4 s): pass None or a small value for low memory.
-        random_projection: int | None = 5000,
+        # head; a projection buffer holds random_projection x n_chans x n_patches x 512
+        # floats (~0.9 GB for 5000 components at 22 channels, 4 s)
+        random_projection: int | None = None,
         random_projection_seed: int = 0,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,

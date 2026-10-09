@@ -382,8 +382,8 @@ _chs_info_3ch = [
     }.items()
 ]
 # Draws of the former random locs (3 channels, then a removed 4-channel
-# fixture), kept so that the random locs drawn later at module level (BaRISTA)
-# are unchanged. Nothing reads ``_rng`` after that.
+# fixture), kept so that the sEEG locs that the BaRISTA entry below still draws
+# from ``_rng`` are unchanged; BaRISTA is the only later reader of ``_rng``.
 _rng.random(3 * 12)
 _rng.random(4 * 12)
 

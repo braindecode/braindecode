@@ -33,8 +33,8 @@ Enhancements
   load with ``from_pretrained`` from the original Hugging Face repositories, with backbone
   features identical to the reference implementation, and
   :meth:`~braindecode.models.Guetschel2026.hub_repo_id` builds their names. The head is a
-  flatten, a fixed Gaussian random projection (``random_projection=5000``, optional) and a
-  linear layer (:gh:`1260` by `Pierre Guetschel`_).
+  flatten and a linear layer, with an optional fixed Gaussian random projection in between
+  (``random_projection``, as in the OpenEEGBench probe) (:gh:`1260` by `Pierre Guetschel`_).
 - Add :class:`braindecode.models.TFMTokenizer`, the time-frequency motif tokenizer
   for single-channel EEG of Pradeepkumar et al. (ICLR 2026) (:gh:`1202` by
   `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
