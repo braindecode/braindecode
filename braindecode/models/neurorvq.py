@@ -587,8 +587,8 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             self.max_patches - self.num_patches, self.max_patches, device=x.device
         ).repeat(self.n_chans)
         temporal = self.time_embed[temporal_ix].unsqueeze(0)
+        cls = self.cls_token.expand(branches[0].shape[0], -1, -1)
         for branch in branches:
-            cls = self.cls_token.expand(branch.shape[0], -1, -1)
             branch = torch.cat((cls, branch), dim=1)
             branch = branch + spatial
             branch[:, 1:] = branch[:, 1:] + temporal
