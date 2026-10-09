@@ -652,18 +652,17 @@ class _ResidualBlock(nn.Module):
         )
         nn.init.kaiming_normal_(self.skip_conv.parametrizations.weight.original1)
 
-    def generate_local_window_mask(self, seq_len, window_size):
+    def generate_local_window_mask(self, seq_len, window_size, device=None, dtype=None):
         if window_size % 2 != 1:
             raise ValueError(
                 f"window_size must be odd (e.g. 7, 9, 11), got {window_size}"
             )
 
         half_window = window_size // 2
-        idx = torch.arange(seq_len)
+        idx = torch.arange(seq_len, device=device)
         dist = (idx.unsqueeze(0) - idx.unsqueeze(1)).abs()
-        return torch.where(
-            dist <= half_window, torch.zeros(1), torch.full((1,), float("-inf"))
-        )
+        mask = torch.zeros(seq_len, seq_len, device=device, dtype=dtype)
+        return mask.masked_fill(dist > half_window, float("-inf"))
 
     def forward(self, input_data):
         x, original = input_data
@@ -687,8 +686,8 @@ class _ResidualBlock(nn.Module):
         # Sliding-window attention branch
         # (batch, 2*res_channels, seq_len) -> (batch, seq_len, 2*res_channels)
         h_attn = rearrange(h_ssm, "b c l -> b l c")
-        swa_mask = self.generate_local_window_mask(seq_len, self.swa_window_size).to(
-            x.device, x.dtype
+        swa_mask = self.generate_local_window_mask(
+            seq_len, self.swa_window_size, x.device, x.dtype
         )
         h_attn, _ = self.attention(h_attn, h_attn, h_attn, attn_mask=swa_mask)
         # (batch, seq_len, 2*res_channels) -> (batch, 2*res_channels, seq_len)

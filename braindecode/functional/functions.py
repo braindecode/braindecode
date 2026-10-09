@@ -458,7 +458,12 @@ def wavelet_decomposition(
     return out.reshape(*leading, -1)
 
 
-def sinusoidal_positional_encoding(n_positions: int, dim: int) -> torch.Tensor:
+def sinusoidal_positional_encoding(
+    n_positions: int,
+    dim: int,
+    device: torch.device | None = None,
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
     r"""Fixed sine/cosine positional-encoding table of shape ``(n_positions, dim)``.
 
     The standard encoding of Vaswani et al. (2017): for position :math:`p` and
@@ -475,6 +480,10 @@ def sinusoidal_positional_encoding(n_positions: int, dim: int) -> torch.Tensor:
         Number of positions (sequence length) to encode.
     dim : int
         Embedding dimension of each position.
+    device : torch.device or None
+        Device of the table (default: CPU), for tables built inside ``forward``.
+    dtype : torch.dtype
+        Floating dtype the table is computed in.
 
     Returns
     -------
@@ -483,11 +492,12 @@ def sinusoidal_positional_encoding(n_positions: int, dim: int) -> torch.Tensor:
         dropout, or offset.
     """
     dim_even = dim + (dim % 2)
-    position = torch.arange(n_positions).unsqueeze(1).float()
+    position = torch.arange(n_positions, device=device).unsqueeze(1).to(dtype)
     div_term = torch.exp(
-        torch.arange(0, dim_even, 2).float() * (-math.log(10000.0) / dim_even)
+        torch.arange(0, dim_even, 2, device=device).to(dtype)
+        * (-math.log(10000.0) / dim_even)
     )
-    pe = torch.zeros(n_positions, dim_even)
+    pe = torch.zeros(n_positions, dim_even, device=device, dtype=dtype)
     pe[:, 0::2] = torch.sin(position * div_term)
     pe[:, 1::2] = torch.cos(position * div_term)
     # ``.contiguous()`` so an odd-``dim`` truncation owns tight storage -- a
