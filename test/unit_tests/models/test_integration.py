@@ -55,10 +55,8 @@ all_models_dict = dict(models_dict)
 # First blocker of each model that torch.jit.script cannot compile, or whose
 # scripted output differs from the eager one.
 _TORCHSCRIPT_XFAIL = {
-    "BIOT": "linear_attention_transformer forward takes **kwargs",
     "MAPA": "f-string error message in forward",
     "MVPFormer": "math.log2 in forward",
-    "TFMTokenizer": "linear_attention_transformer forward takes **kwargs",
 }
 
 _MODEL_CASES = {
