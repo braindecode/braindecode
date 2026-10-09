@@ -468,9 +468,9 @@ _SYNC_OPS = {
 }
 # Allowed per model: (findings, reason).
 _QUANTIZER = (
-    ("_local_scalar_dense", "index_put_ with a boolean mask"),
-    "codebook k-means init flag, first-batch k-means and dead-code expiry "
-    "(the released EuclideanCodebook)",
+    ("_local_scalar_dense", "index_put_ with a boolean mask", "unique_dim"),
+    "codebook k-means init flag, first-batch k-means (on its distinct rows) and "
+    "dead-code expiry (the released EuclideanCodebook)",
 )
 _HOST_SYNC = {
     "BaRISTA": (("_local_scalar_dense",), "eager-only spatial_indices range check"),

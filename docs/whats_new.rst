@@ -40,6 +40,12 @@ Enhancements
   :mod:`braindecode.modules.quantization` uses ``torch.cdist`` (about 6x faster,
   lower peak memory, identical codebooks). Outputs and state-dict keys are
   unchanged. (by `Bruno Aristimunha`_)
+- The K-means codebook initialisation in :mod:`braindecode.modules.quantization`
+  searches the nearest center once per distinct sampled row: a first batch
+  smaller than the 4096 drawn vectors is sampled with replacement, and the first
+  forward of a fresh :class:`braindecode.models.BrainOmni` or
+  :class:`braindecode.models.BrainTokenizer` took about 10 s on CPU. Codebooks
+  are unchanged (:gh:`1265` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.MAPA`, a masked-autoencoder foundation model
   for intracranial EEG that describes an electrode only by its atlas region and
   its number along the array it was implanted on, never by its coordinates, so

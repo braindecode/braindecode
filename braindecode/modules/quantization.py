@@ -144,17 +144,20 @@ class EMACodebook(nn.Module):
             samples = torch.cat([samples, noise], dim=0)
         centers = self._sample_vectors(samples, self.codebook_size)
         bins = torch.ones(self.codebook_size, device=samples.device, dtype=torch.long)
+        # A batch smaller than the 4096 drawn vectors is sampled with replacement:
+        # search the nearest center once per distinct row, not once per draw.
+        rows, inverse = torch.unique(samples, dim=0, return_inverse=True)
         for _ in range(self.kmeans_iters):
             # Exact (non-matmul) mode keeps the released ``kmeans`` assignments
             # without materialising the (n_samples, codebook_size, dim) broadcast.
             # cdist has no bf16/fp16 kernel: compute in at least float32.
             work = torch.promote_types(dtype, torch.float32)
             distances = torch.cdist(
-                samples.to(work),
+                rows.to(work),
                 centers.to(work),
                 compute_mode="donot_use_mm_for_euclid_dist",
             )
-            buckets = distances.argmin(dim=-1)
+            buckets = distances.argmin(dim=-1)[inverse]
             bins = torch.bincount(buckets, minlength=self.codebook_size)
             empty = bins == 0
             bins[empty] = 1
