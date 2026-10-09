@@ -234,6 +234,16 @@ Enhancements
   ``input_window_seconds`` (as in Hub configs) (:gh:`1256` by
   `Bruno Aristimunha`_).
 
+- :func:`torch.jit.script` compiles 17 more models and gives the eager output:
+  BENDR, BrainModule, CBraMod, CodeBrain, CSBrain, EEGDINO, LUNA, MIRepNet,
+  MSVTNet, NeuroRVQ, SSTDPN, STEEGFormer, TCFormer and the four SignalJEPA
+  variants. einops calls in ``forward`` are written as ``reshape``/``permute``,
+  ``forward`` declares its dict or tuple return, BrainModule no longer keeps
+  ``None`` in a ``ModuleList`` (TorchScript dropped it), NeuroRVQ's branches no
+  longer use a computed-name ``getattr`` and LUNA's reconstruction head stays
+  eager-only. Eager outputs and state-dict keys are unchanged (:gh:`1262` by
+  `Bruno Aristimunha`_).
+
 API and behavior changes
 ========================
 

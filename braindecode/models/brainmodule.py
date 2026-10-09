@@ -698,11 +698,12 @@ class _ConvSequence(nn.Module):
 
             self.sequence.append(nn.Sequential(*layers))
 
-            # Add skip projection if channels don't match (for growth != 1.0)
+            # Add skip projection if channels don't match (for growth != 1.0).
+            # Identity, not None: TorchScript drops None entries of a ModuleList.
             if chin != chout:
                 self.skip_projections.append(nn.Conv1d(chin, chout, 1))
             else:
-                self.skip_projections.append(None)
+                self.skip_projections.append(nn.Identity())
 
             # GLU gating every N layers
             if glu > 0 and (k + 1) % glu == 0:
@@ -715,20 +716,14 @@ class _ConvSequence(nn.Module):
                     )
                 )
             else:
-                self.glus.append(None)
+                self.glus.append(nn.Identity())
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         for module, glu, skip_proj in zip(
             self.sequence, self.glus, self.skip_projections
         ):
-            # Apply residual connection
-            # If channels match, add directly; otherwise use projection
-            if skip_proj is not None:
-                x = skip_proj(x) + module(x)
-            else:
-                x = x + module(x)
-            if glu is not None:
-                x = glu(x)
+            x = skip_proj(x) + module(x)
+            x = glu(x)
         return x
 
 
