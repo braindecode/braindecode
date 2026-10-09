@@ -15,6 +15,7 @@ from einops.layers.torch import Rearrange, Reduce
 
 from braindecode.functional import rotate_pairs
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import FeedForwardBlock
 
 
 class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
@@ -157,9 +158,9 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
         }
         self.mapping.update(
             {
-                f"transformer_encoder.{key}": f"encoder.{key}"
+                f"transformer_encoder.{up}": f"encoder.{port}"
                 for i in range(n_layers)
-                for key in _EpiNTLayer.state_keys(i)
+                for up, port in _EpiNTLayer.state_keys(i).items()
             }
         )
 
@@ -287,25 +288,6 @@ class _RoPEAttention(nn.Module):
         return self.w_concat(self.merge_heads(out))
 
 
-class _FeedForward(nn.Module):
-    def __init__(
-        self,
-        embed_dim: int,
-        ffn_dim: int,
-        drop_prob: float,
-        activation: type[nn.Module],
-    ):
-        super().__init__()
-        self.linear1 = nn.Linear(embed_dim, ffn_dim)
-        self.act = activation()
-        self.linear2 = nn.Linear(ffn_dim, embed_dim)
-        self.dropout = nn.Dropout(drop_prob)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.dropout(self.act(self.linear1(x)))
-        return self.dropout(self.linear2(x))
-
-
 class _EpiNTLayer(nn.Module):
     """Post-norm Transformer layer; the LayerNorms span tokens and features."""
 
@@ -322,23 +304,36 @@ class _EpiNTLayer(nn.Module):
         self.attention = _RoPEAttention(embed_dim, n_heads)
         self.norm1 = nn.LayerNorm([n_tokens, embed_dim])
         self.dropout1 = nn.Dropout(drop_prob)
-        self.ffn = _FeedForward(embed_dim, ffn_dim, drop_prob, activation)
+        self.ffn = FeedForwardBlock(
+            emb_size=embed_dim,
+            expansion=1,
+            drop_p=drop_prob,
+            activation=activation,
+            hidden_features=ffn_dim,
+            output_drop_p=drop_prob,
+        )
         self.norm2 = nn.LayerNorm([n_tokens, embed_dim])
         self.dropout2 = nn.Dropout(drop_prob)
 
     @staticmethod
-    def state_keys(index: int) -> list[str]:
-        """Parameter names of layer ``index`` in the upstream ``state_dict``."""
-        names = [
-            f"attention.{proj}.{p}"
+    def state_keys(index: int) -> dict[str, str]:
+        """Upstream to port parameter names of layer ``index``."""
+        names = {
+            f"attention.{proj}.{p}": f"attention.{proj}.{p}"
             for proj in ("w_q", "w_k", "w_v", "w_concat")
             for p in ("weight", "bias")
-        ]
-        names += [f"{n}.{p}" for n in ("norm1", "norm2") for p in ("weight", "bias")]
-        names += [
-            f"ffn.{n}.{p}" for n in ("linear1", "linear2") for p in ("weight", "bias")
-        ]
-        return [f"{index}.{name}" for name in names]
+        }
+        names |= {
+            f"{n}.{p}": f"{n}.{p}"
+            for n in ("norm1", "norm2")
+            for p in ("weight", "bias")
+        }
+        names |= {
+            f"ffn.{up}.{p}": f"ffn.{port}.{p}"
+            for up, port in (("linear1", "0"), ("linear2", "3"))
+            for p in ("weight", "bias")
+        }
+        return {f"{index}.{up}": f"{index}.{port}" for up, port in names.items()}
 
     def forward(
         self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
