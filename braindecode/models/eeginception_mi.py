@@ -7,6 +7,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import Ensure4d
 
@@ -36,11 +37,11 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
     Parameters
     ----------
     input_window_seconds : float, optional
-        Size of the input, in seconds. Set to 4.5 s as in [1]_ for dataset
-        BCI IV 2a.
+        Size of the input, in seconds. [1]_ uses 3 s (750 samples at 250 Hz).
     sfreq : float, optional
         EEG sampling frequency in Hz. Defaults to 250 Hz as in [1]_ for dataset
-        BCI IV 2a.
+        BCI IV 2a. Kernels are set in seconds, so compute grows with sfreq^2:
+        resampling 500 Hz data to 250 Hz makes the model about 4x cheaper.
     n_convs : int, optional
         Number of convolution per inception wide branching. Defaults to 5 as
         in [1]_ for dataset BCI IV 2a.
@@ -54,6 +55,13 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         0.9 here for ``n_convs=5``). Defaults to 0.1 s.
     activation: nn.Module
         Activation function. Defaults to ReLU activation.
+    fft_conv : bool | None, optional
+        Compute the temporal convolutions of the inception modules with an FFT
+        (exact linear convolution, same parameters, equal up to float rounding)
+        instead of a direct convolution. ``None`` (default) uses the FFT on CPU
+        for float16/bfloat16 inputs or when ``batch_size * largest_kernel >= 600``
+        samples, where it was faster in CPU benchmarks, and the direct
+        convolution otherwise, including on GPU and HPU.
 
     References
     ----------
@@ -75,6 +83,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         activation: type[nn.Module] = nn.ReLU,
         chs_info=None,
         n_times=None,
+        fft_conv: bool | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -90,6 +99,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         self.n_filters = n_filters
         self.kernel_unit_s = kernel_unit_s
         self.activation = activation
+        self.fft_conv = fft_conv
 
         self.ensuredims = Ensure4d()
         self.dimshuffle = Rearrange("batch C T 1 -> batch C 1 T")
@@ -108,6 +118,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             kernel_unit_s=self.kernel_unit_s,
             sfreq=self.sfreq,
             activation=self.activation,
+            fft_conv=self.fft_conv,
         )
 
         intermediate_in_channels = (self.n_convs + 1) * self.n_filters
@@ -121,6 +132,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
                     kernel_unit_s=self.kernel_unit_s,
                     sfreq=self.sfreq,
                     activation=self.activation,
+                    fft_conv=self.fft_conv,
                 )
                 for _ in range(2)
             ]
@@ -141,6 +153,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
                     kernel_unit_s=self.kernel_unit_s,
                     sfreq=self.sfreq,
                     activation=self.activation,
+                    fft_conv=self.fft_conv,
                 )
                 for _ in range(3)
             ]
@@ -249,8 +262,10 @@ class _InceptionModuleMI(nn.Module):
         kernel_unit_s=0.1,
         sfreq=250,
         activation: type[nn.Module] = nn.ReLU,
+        fft_conv: bool | None = None,
     ):
         super().__init__()
+        self.fft_conv = fft_conv
         self.in_channels = in_channels
         self.n_filters = n_filters
         self.n_convs = n_convs
@@ -286,6 +301,7 @@ class _InceptionModuleMI(nn.Module):
         # torch's "same" pads one extra zero on the right for even kernels; all
         # kernels share kernel_unit's parity, so forward pads once for all convs.
         self.pad_right = kernel_unit % 2 == 0
+        self.max_kernel = (2 * self.n_convs - 1) * kernel_unit
         self.conv_list = nn.ModuleList(
             [
                 nn.Conv2d(
@@ -308,26 +324,99 @@ class _InceptionModuleMI(nn.Module):
         X: torch.Tensor,
     ) -> torch.Tensor:
         X1 = self.bottleneck(X)
-        if self.pad_right:
-            X1 = nn.functional.pad(X1, (0, 1))
-
-        X1 = [conv(X1) for conv in self.conv_list]
+        if self.fft_conv is None:
+            # Measured on CPU (2 threads, oneDNN on/off, eval/train): the FFT wins
+            # in half precision (11-113x) and from 600 samples of batch x kernel.
+            use_fft = X.device.type == "cpu" and (
+                X.element_size() == 2 or X.shape[0] * self.max_kernel >= 600
+            )
+        else:
+            use_fft = self.fft_conv
+        if use_fft:
+            branches = [self._conv_fft(X1)]
+        else:
+            if self.pad_right:
+                X1 = nn.functional.pad(X1, (0, 1))
+            branches = [conv(X1) for conv in self.conv_list]
 
         # channels_last: same values and indices, but torch's CPU max pool
         # vectorises over channels instead of looping over them.
         X2 = self.pooling(X.contiguous(memory_format=torch.channels_last))
         X2 = self.pooling_conv(X2.contiguous())
         # Get the target length from one of the conv branches
-        target_len = X1[0].shape[-1]
+        target_len = branches[0].shape[-1]
 
         # Crop the pooling output if its length does not match
         if X2.shape[-1] != target_len:
             X2 = X2[..., :target_len]
 
-        out = torch.cat(X1 + [X2], 1)
+        out = torch.cat(branches + [X2], 1)
 
         out = self.bn(out)
         return self.activation(out)
+
+    def _conv_fft(self, X: torch.Tensor) -> torch.Tensor:
+        """Every conv of ``conv_list`` through one rFFT, outputs concatenated.
+
+        Exact linear convolution (``n_fft >= n_times + k - 1``), aligned like
+        torch's "same" padding (for even ``k`` the extra zero is on the right).
+        """
+        xs = spectral_input(X.squeeze(2)).permute(2, 0, 1)  # (time, batch, in)
+        n_times, n_batch = xs.shape[0], xs.shape[1]
+        n_fft = _next_fast_len(n_times + self.max_kernel - 1)
+        # A conv layer is a cross-correlation, i.e. a convolution with the
+        # flipped kernel. Spectra are laid out (freq, in, out).
+        kernels = torch.cat(
+            [
+                torch.fft.rfft(
+                    conv.weight.squeeze(2).permute(2, 1, 0).flip(0).to(xs),
+                    n=n_fft,
+                    dim=0,
+                )
+                for conv in self.conv_list
+            ],
+            dim=2,
+        )
+        spec = torch.fft.rfft(xs, n=n_fft, dim=0)  # (freq, batch, in)
+        # Complex matmul as one real bmm ([re; im] rows times interleaved re/im
+        # columns): torch's CPU complex bmm loops over the frequencies.
+        prod = torch.bmm(
+            torch.cat([torch.real(spec), torch.imag(spec)], 1),
+            torch.view_as_real(kernels).flatten(2),
+        )
+        prod = prod.unflatten(1, [2, n_batch]).unflatten(3, [-1, 2])
+        spec = torch.complex(
+            prod[:, 0, :, :, 0] - prod[:, 1, :, :, 1],
+            prod[:, 0, :, :, 1] + prod[:, 1, :, :, 0],
+        )
+        full = torch.fft.irfft(spec, n=n_fft, dim=0)  # (time, batch, out)
+        out = []
+        start = 0
+        for conv in self.conv_list:
+            # "same" output t of a size-k kernel is sample t + k // 2 of the full one
+            k = conv.kernel_size[1]
+            branch = full[
+                k // 2 : k // 2 + n_times, :, start : start + conv.out_channels
+            ]
+            bias = conv.bias
+            if bias is not None:
+                branch = branch + bias.to(xs)
+            out.append(branch)
+            start += conv.out_channels
+        return torch.cat(out, 2).permute(1, 2, 0).unsqueeze(2).to(X)
+
+
+def _next_fast_len(n: int) -> int:
+    """Smallest ``2^a 3^b 5^c >= n`` (scipy's ``next_fast_len(n, real=True)``)."""
+    n -= 1
+    m = 0
+    while m != 1:
+        n += 1
+        m = n
+        for p in [2, 3, 5]:
+            while m % p == 0:
+                m = m // p
+    return n
 
 
 class _ResidualModuleMI(nn.Module):
