@@ -670,6 +670,10 @@ def test_warns_when_sfreq_is_not_the_pretraining_one():
         (dict(num_heads=0), "num_heads"),
         (dict(num_heads=-8), "num_heads"),
         (dict(num_heads=8.0), "num_heads"),
+        (dict(pos_half_range=0.0), "pos_half_range"),
+        (dict(pos_half_range=-0.15), "pos_half_range"),
+        (dict(pos_half_range=float("inf")), "pos_half_range"),
+        (dict(pos_half_range=float("nan")), "pos_half_range"),
         (dict(patch_overlap=200), "patch_overlap"),
     ],
 )

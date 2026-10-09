@@ -465,6 +465,10 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError(
                 f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})."
             )
+        if not (math.isfinite(pos_half_range) and pos_half_range > 0):
+            raise ValueError(
+                f"pos_half_range must be a positive finite number, got {pos_half_range!r}."
+            )
         if not 0 <= patch_overlap < patch_size:
             raise ValueError(
                 f"patch_overlap ({patch_overlap}) must satisfy "
