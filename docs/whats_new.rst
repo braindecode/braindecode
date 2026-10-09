@@ -260,6 +260,14 @@ Enhancements
   longer use a computed-name ``getattr`` and LUNA's reconstruction head stays
   eager-only. Eager outputs and state-dict keys are unchanged (:gh:`1262` by
   `Bruno Aristimunha`_).
+- :func:`torch.jit.script` compiles BrainOmni, BrainTokenizer, DANCE, EEGPT and
+  Labram and gives the eager output: the shared EMA codebook
+  (``braindecode.modules.quantization``), DANCE's Fourier position embedding and
+  Perceiver, and EEGPT no longer use einops functions, ``**kwargs`` or
+  ``@torch.no_grad()`` methods in ``forward``, and Labram's ``ch_names`` is no
+  longer keyword-only. A scripted BrainOmni needs its tokenizer in eval mode.
+  Eager outputs and state-dict keys are unchanged (:gh:`1270` by
+  `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
