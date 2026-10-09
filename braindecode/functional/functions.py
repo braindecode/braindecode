@@ -367,18 +367,24 @@ def plv_time(
     )
     # Normalize the analytic signal to obtain unit vectors (phasors).
     unit_phasor = analytic_signal / amplitude.unsqueeze(-1)
+    # The real/imaginary slices are strided (step 2): matmul copied each of
+    # them for every product, per batch matrix. Copy them once.
+    real = unit_phasor[..., 0].contiguous()
+    imag = unit_phasor[..., 1].contiguous()
+    real_t = real.transpose(-2, -1).contiguous()
+    imag_t = imag.transpose(-2, -1).contiguous()
 
     # Compute the real part of the outer product between phasors of
     # different channels.
-    real_real = torch.matmul(unit_phasor[..., 0], unit_phasor[..., 0].transpose(-2, -1))
+    real_real = torch.matmul(real, real_t)
 
     # Compute the imaginary part of the outer product between phasors of
     # different channels.
-    imag_imag = torch.matmul(unit_phasor[..., 1], unit_phasor[..., 1].transpose(-2, -1))
+    imag_imag = torch.matmul(imag, imag_t)
 
     # Compute the cross-terms for the real and imaginary parts.
-    real_imag = torch.matmul(unit_phasor[..., 0], unit_phasor[..., 1].transpose(-2, -1))
-    imag_real = torch.matmul(unit_phasor[..., 1], unit_phasor[..., 0].transpose(-2, -1))
+    real_imag = torch.matmul(real, imag_t)
+    imag_real = torch.matmul(imag, real_t)
 
     # Combine the real and imaginary parts to form the complex correlation.
     correlation_real = real_real + imag_imag
