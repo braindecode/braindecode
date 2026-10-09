@@ -58,6 +58,16 @@ def test_hilbert_freq_matches_scipy(seq_len):
     np.testing.assert_allclose(output[..., 1].numpy(), expected.imag, atol=1e-10)
 
 
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.int16])
+def test_hilbert_freq_dtype(dtype):
+    """Floating input keeps its dtype; integer input returns float32, not truncated."""
+    x = (torch.randn(2, 64) * 100).to(dtype)
+    out = hilbert_freq(x)
+    assert out.dtype == (dtype if dtype.is_floating_point else torch.float32)
+    expected = hilbert_freq(x.float())
+    torch.testing.assert_close(out.float(), expected, atol=0.5, rtol=1e-2)
+
+
 def test_plv_time_shape():
     """
     Test that plv_time returns the correct shape.
