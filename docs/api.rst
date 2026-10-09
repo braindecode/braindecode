@@ -211,6 +211,7 @@ interface for all EEG models and can derive variable names when needed.
      TFMTokenizerOutput
      TCFormer
      TIDNet
+     TMSANet
      TSception
      USleep
      ZUNA

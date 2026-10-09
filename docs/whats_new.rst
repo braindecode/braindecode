@@ -97,6 +97,10 @@ Enhancements
   Builds on :gh:`1090` and :gh:`1223` by `lindicaphxag-tech`_ (:gh:`1254` by
   `Bruno Aristimunha`_).
 
+- Add :class:`braindecode.models.TMSANet`, the motor-imagery convolution and
+  local/global attention model of Zhao and Zhu (2025)
+  (:gh:`1209` by `lindicaphxag-tech`_).
+
 - Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution
   and Transformer seizure detector of Wu et al. (2025) that won the 2025 SzCORE
   seizure detection challenge. It predicts a logit for every time sample. With

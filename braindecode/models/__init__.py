@@ -76,6 +76,7 @@ from .tcformer import TCFormer
 from .tcn import BDTCN, TCN
 from .tfm_tokenizer import TFMTokenizer, TFMTokenizerOutput
 from .tidnet import TIDNet
+from .tmsanet import TMSANet
 from .tsinception import TSception
 from .usleep import USleep
 from .util import (
@@ -174,6 +175,7 @@ __all__ = [
     "TCFormer",
     "TCN",
     "TIDNet",
+    "TMSANet",
     "TSception",
     "USleep",
     "ZUNA",
