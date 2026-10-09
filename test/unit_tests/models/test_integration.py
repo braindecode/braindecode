@@ -52,12 +52,6 @@ rng = np.random.default_rng(12)
 
 all_models_dict = dict(models_dict)
 
-# First blocker of each model that torch.jit.script cannot compile, or whose
-# scripted output differs from the eager one.
-_TORCHSCRIPT_XFAIL = {
-    "MAPA": "f-string error message in forward",
-}
-
 _MODEL_CASES = {
     name: (required, signal_params)
     for name, required, signal_params in models_mandatory_parameters
@@ -415,18 +409,7 @@ def test_model_exported(model):
     assert isinstance(exported_prog, ExportedProgram)
 
 
-@pytest.mark.parametrize(
-    "model_name",
-    [
-        pytest.param(
-            name,
-            marks=pytest.mark.xfail(reason=_TORCHSCRIPT_XFAIL[name], strict=True)
-            if name in _TORCHSCRIPT_XFAIL
-            else (),
-        )
-        for name in _MODEL_CASES
-    ],
-)
+@pytest.mark.parametrize("model_name", list(_MODEL_CASES))
 def test_torch_script(model_name):
     """Models script directly and the scripted output equals the eager one.
 

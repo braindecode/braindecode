@@ -288,6 +288,12 @@ Enhancements
   ``linear_attention_transformer`` they used (global linear attention, MIT),
   whose ``forward`` takes no ``**kwargs``; parameter names are unchanged, so
   released checkpoints load as before (:gh:`1273` by `Bruno Aristimunha`_).
+- :func:`torch.jit.script` compiles MAPA and gives the eager output, both for
+  the montage given at construction and for another recording's
+  ``sensor_indices`` passed to ``forward``, so every braindecode model now
+  scripts. The token layout is a tuple of named buffers and the band and region
+  tables are module constants. Eager outputs and state-dict keys are unchanged
+  (:gh:`1276` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================

@@ -2407,7 +2407,28 @@ def test_mapa_token_layout_tracks_the_montage(mapa_model):
     indices[0, 2] = 3
     changed = mapa_model._token_layout(indices, mapa_model.n_frames)
     assert changed is not first
-    assert (changed["token_region"] == 3).any()
+    assert (changed[2] == 3).any()  # token_region
+
+
+@pytest.mark.parametrize("kwargs", [{}, {"region_embed": False, "deep_sup": False}])
+def test_mapa_scripts_on_both_montage_paths(kwargs):
+    """The scripted model reads the construction-time and a foreign montage."""
+    model = MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+        **kwargs,
+    ).eval()
+    scripted = torch.jit.script(model)
+    xa = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    xb = torch.randn(2, len(MAPA_SUBJECT_B), 4096)
+    indices_b = MAPA.sensor_indices(MAPA_SUBJECT_B, ["Left-Hippocampus"] + [None] * 7)
+    with torch.no_grad():
+        torch.testing.assert_close(scripted(xa), model(xa))
+        torch.testing.assert_close(scripted(xb, indices_b), model(xb, indices_b))
 
 
 def _mapa_reference_windows():
