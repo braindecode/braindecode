@@ -19,6 +19,7 @@ from braindecode.models.util import (
     positions_from_chs_info,
     resolve_channel_indices,
     valid_location_mask,
+    warn_if_sfreq_differs,
 )
 from braindecode.modules.util import (
     _pad_shift_array,
@@ -250,3 +251,14 @@ def test_extract_channel_locations_empty_zero_and_requested_count(fill_missing):
     actual = extract_channel_locations_from_chs_info([{"loc": [1, 2, 3]}], num_channels=3, fill_missing=fill_missing)
     expected = [[1, 2, 3], [np.nan] * 3, [np.nan] * 3] if fill_missing else [[1, 2, 3]]
     np.testing.assert_array_equal(actual, np.asarray(expected, dtype=np.float32))
+
+
+@pytest.mark.filterwarnings("error")
+@pytest.mark.parametrize("sfreq", [None, 200, 200.0, 200 + 1e-9])
+def test_warn_if_sfreq_differs_silent(sfreq):
+    warn_if_sfreq_differs("M", sfreq, 200)
+
+
+def test_warn_if_sfreq_differs_warns():
+    with pytest.warns(UserWarning, match="M was pretrained at 200 Hz"):
+        warn_if_sfreq_differs("M", 250, 200)

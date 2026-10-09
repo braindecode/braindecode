@@ -31,6 +31,9 @@ Enhancements
 - Add :class:`braindecode.models.TFMTokenizer`, the time-frequency motif tokenizer
   for single-channel EEG of Pradeepkumar et al. (ICLR 2026) (:gh:`1202` by
   `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
+- Add :class:`braindecode.models.EEGCLIP`, a dual encoder that aligns EEG
+  windows and text descriptions with a symmetric contrastive objective; the
+  text encoder is optional and user-supplied (:gh:`1200` by `lindicaphxag-tech`_).
 - Add :class:`braindecode.augmentation.TrivialAugment`, a tuning-free
   augmentation composition that samples, independently for every example in a
   batch, one transform from a label-preserving pool (time reverse, sign flip,
@@ -95,6 +98,19 @@ Enhancements
   entry points with source-commit attribution and critical-page coverage checks.
 - Add :class:`braindecode.models.NeuroRVQTokenizer`, the released NeuroRVQ
   EEG tokenizer: reconstruction and discrete codes (:gh:`1223` by `lindicaphxag-tech`_).
+- Add :class:`braindecode.models.AXON`, an axis-factorized EEG foundation
+  model whose layers mix a temporal and a spatial attention path with a
+  per-token gate, with pretrained weights on the Hugging Face Hub
+  (:gh:`1182` by `Mahir Jain`_).
+- :class:`braindecode.models.BIOT`, :class:`braindecode.models.BrainBERT`,
+  :class:`braindecode.models.EEGDINO`, :class:`braindecode.models.SleepFM`,
+  :class:`braindecode.models.SleepFMStager`,
+  :class:`braindecode.models.BrainTokenizer` and
+  :class:`braindecode.models.BrainOmni` warn about a sampling rate that differs
+  from the pretrained one through the shared
+  ``braindecode.models.util.warn_if_sfreq_differs``; the warning fires in the
+  same cases as before (up to a 1e-6 Hz tolerance), with one wording
+  (:gh:`1261` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.NeuroRVQ` and
   :class:`braindecode.models.NeuroRVQTokenizer` take ``modality`` (``"eeg"``,
   ``"ecg"``, ``"emg"``, ``"ppg"``), the settings of the authors' four released
@@ -106,6 +122,10 @@ Enhancements
   ``statistic_code_usage=True`` reproduces their eval-time code-usage EMA.
   Builds on :gh:`1090` and :gh:`1223` by `lindicaphxag-tech`_ (:gh:`1254` by
   `Bruno Aristimunha`_).
+
+- Add :class:`braindecode.models.TMSANet`, the motor-imagery convolution and
+  local/global attention model of Zhao and Zhu (2025)
+  (:gh:`1209` by `lindicaphxag-tech`_).
 
 - Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution
   and Transformer seizure detector of Wu et al. (2025) that won the 2025 SzCORE
@@ -2205,6 +2225,7 @@ Authors
 .. _Aditya Singh: https://github.com/adityasingh2400
 .. _Julien Gadonneix: https://github.com/julien-gadonneix
 .. _Li Qing: https://github.com/qinxwew
+.. _Mahir Jain: https://github.com/mahirjain01
 .. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
 

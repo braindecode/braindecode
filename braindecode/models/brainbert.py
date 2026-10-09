@@ -8,8 +8,6 @@ the STFT front-end moved inside the model. See :class:`BrainBERT`.
 
 from __future__ import annotations
 
-import warnings
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,6 +15,7 @@ from einops.layers.torch import Rearrange, Reduce
 
 from braindecode.functional import sinusoidal_positional_encoding, spectral_input
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import warn_if_sfreq_differs
 
 
 class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
@@ -179,12 +178,7 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             )
         self.pool_n_frames = pool_n_frames
         self.min_frames = 1 if pool_n_frames is None else pool_n_frames
-        if self._sfreq is not None and self._sfreq != 2048:
-            warnings.warn(
-                f"BrainBERT was pretrained at 2048 Hz; the STFT bins of a {self._sfreq}"
-                " Hz signal cover other frequencies. Resample to 2048 Hz.",
-                stacklevel=2,
-            )
+        warn_if_sfreq_differs("BrainBERT", self._sfreq, 2048)
 
         self.spectrogram = _STFTSpectrogram(
             nperseg=nperseg,

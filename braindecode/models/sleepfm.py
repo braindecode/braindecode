@@ -17,6 +17,7 @@ from torch import nn
 
 from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin, huggingface_hub
+from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import PatchTokenizer
 
 
@@ -605,13 +606,7 @@ class _SleepFMTokenizer(nn.Module):
         super().__init__()
         if patch_size < 64 or patch_size % 64:
             raise ValueError("patch_size must be at least 64 and divisible by 64.")
-        if sfreq != 128:
-            warnings.warn(
-                f"SleepFM was pretrained at 128 Hz, got {sfreq:g} Hz; resample "
-                "to reuse the released weights.",
-                UserWarning,
-                stacklevel=4,
-            )
+        warn_if_sfreq_differs("SleepFM", sfreq, 128)
         if not 0 < n_times // patch_size <= max_patches:
             raise ValueError(
                 f"n_times={n_times} gives {n_times // patch_size} patches of "

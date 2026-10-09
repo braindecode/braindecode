@@ -29,6 +29,7 @@ from braindecode.models import (
     BENDR,
     BIOT,
     DGCNN,
+    EEGCLIP,
     EEGPT,
     SSTDPN,
     TCN,
@@ -71,6 +72,7 @@ from braindecode.models import (
     SyncNet,
     TFMTokenizer,
     TIDNet,
+    TMSANet,
     TSception,
     USleep,
 )
@@ -1604,6 +1606,29 @@ def test_tsception_dummy(n_times, n_chans, sfreq, n_outputs):
         sfreq=sfreq,
     )
     check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_chans,n_times,n_outputs,embed_dim,att_drop_prob",
+    [
+        (22, 1000, 4, 19, 0.5),  # BCI Competition IV 2a
+        (3, 1000, 2, 6, 0.5),  # BCI Competition IV 2b
+        (44, 1125, 4, 10, 0.7),  # HGD
+    ],
+)
+def test_tmsanet_released_configurations(
+    n_chans, n_times, n_outputs, embed_dim, att_drop_prob
+):
+    model = TMSANet(
+        n_chans=n_chans,
+        n_times=n_times,
+        n_outputs=n_outputs,
+        embed_dim=embed_dim,
+        att_drop_prob=att_drop_prob,
+    ).eval()
+    # Released head width embed_dim // num_heads: 19 -> 16 -> 19 for 2a.
+    assert model.transformer[1].attention.w_q.out_features == embed_dim // 4 * 4
+    assert model(torch.randn(2, n_chans, n_times)).shape == (2, n_outputs)
 
 
 @pytest.mark.parametrize(
@@ -5482,3 +5507,82 @@ def test_csbrain_channel_order_reproduces_reference_topology():
 def test_csbrain_rejects_invalid_channel_order(kwargs, match):
     with pytest.raises(ValueError, match=match):
         CSBrain(n_outputs=2, n_chans=3, n_times=400, n_layer=1, **kwargs)
+
+
+# ----------------------------------------------------------------------------
+# EEGCLIP
+
+
+def test_eegclip_matches_authors_projection_and_clip_loss():
+    """Reference: ``EEGClip/clip_models.py`` and ``loss_methods.py`` @1d6b89b."""
+    torch.manual_seed(0)
+    model = EEGCLIP(
+        n_chans=21, n_times=1200, n_outputs=64, text_embedding_dim=768, drop_prob=0
+    )
+    X, text = torch.randn(4, 21, 1200), torch.randn(4, 768)
+    torch.manual_seed(1)  # same Deep4Net dropout masks in both passes (train mode)
+    paired = model.forward_paired(X, text)
+    torch.manual_seed(1)
+    features = model.eeg_encoder(X)
+    # Authors' Deep4Net ends with a log-softmax over its 128 outputs.
+    torch.testing.assert_close(
+        features.exp().sum(dim=1), torch.ones(4, 519), rtol=0, atol=1e-4
+    )
+    # Authors' ProjectionHead(transpose=True) on [B, N_pred, 128], mean over time.
+    x = features.transpose(1, 2)
+    for layer in model.final_layer:
+        if isinstance(layer, nn.BatchNorm1d):
+            x = layer(x.transpose(1, 2)).transpose(1, 2)
+        else:
+            x = layer(x)
+    eeg = x.mean(dim=1)
+    torch.testing.assert_close(paired["eeg_embeds"], eeg)
+    # ClipLoss: raw (not exponentiated) logit_scale, no L2 normalization.
+    t = model.text_projection(text)
+    labels = torch.arange(4)
+    logits = model.logit_scale * eeg @ t.T
+    expected = (
+        nn.functional.cross_entropy(logits, labels)
+        + nn.functional.cross_entropy(model.logit_scale * t @ eeg.T, labels)
+    ) / 2
+    loss = model.contrastive_loss(paired["eeg_embeds"], paired["text_embeds"])
+    torch.testing.assert_close(loss, expected)
+    loss.backward()
+    assert model.logit_scale.grad is not None
+
+
+def test_eegclip_custom_encoders_and_masked_mean_pooling():
+    class TextEncoder(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.embedding = nn.Embedding(16, 8)
+
+        def forward(self, input_ids, attention_mask=None):
+            return (self.embedding(input_ids),)  # tuple, like return_dict=False
+
+    model = EEGCLIP(
+        n_chans=3,
+        n_times=20,
+        n_outputs=4,
+        eeg_encoder=nn.Flatten(),  # (batch, features) output
+        eeg_embedding_dim=60,
+        text_encoder=TextEncoder(),
+        text_embedding_dim=8,
+        text_pooling="mean",
+    ).eval()
+    tokens = torch.tensor([[1, 2, 3], [4, 5, 6]])
+    mask = torch.tensor([[1, 1, 0], [1, 0, 0]])
+    tok = model.text_encoder.embedding(tokens)
+    expected = torch.stack([tok[0, :2].mean(dim=0), tok[1, :1].mean(dim=0)])
+    torch.testing.assert_close(
+        model.encode_text(tokens, attention_mask=mask),
+        model.text_projection(expected),
+    )
+    paired = model.forward_paired(torch.randn(2, 3, 20), tokens, attention_mask=mask)
+    assert paired["logits_per_eeg"].shape == (2, 2)
+
+    model.reset_head(6)
+    assert model.text_projection[-1].out_features == 6
+    assert model.text_projection.training is False
+    with pytest.raises(ValueError, match="custom encoder"):
+        model.get_config()

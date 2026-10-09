@@ -411,6 +411,7 @@ models_mandatory_parameters: list[
     tuple[str, list[SigArgName], dict[SigArgName, Any] | None | Any]
 ] = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("AXON", ["chs_info", "n_outputs"], {"sfreq": 200.0, "n_times": 1000}),
     (
         "BaRISTA",
         ["chs_info", "n_outputs", "n_times"],
@@ -436,6 +437,7 @@ models_mandatory_parameters: list[
     ("Deep4Net", ["n_chans", "n_outputs", "n_times"], None),
     ("DeepSleepNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGConformer", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGCLIP", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGInceptionERP", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGInceptionMI", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
@@ -497,6 +499,7 @@ models_mandatory_parameters: list[
     ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSCFormer", ["n_chans", "n_outputs", "n_times"], None),
+    ("TMSANet", ["n_chans", "n_outputs", "n_times"], None),
     ("TCFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 250.0}),
     ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
@@ -1144,6 +1147,24 @@ def valid_location_mask(locations: torch.Tensor) -> torch.Tensor:
     return torch.isfinite(locations).all(dim=-1, keepdim=True) & (locations != 0).any(
         dim=-1, keepdim=True
     )
+
+
+def warn_if_sfreq_differs(
+    model_name: str, sfreq: Optional[float], pretrained_sfreq: float
+) -> None:
+    """Warn when ``sfreq`` differs from the rate the released weights expect.
+
+    A randomly initialised model may run at any rate, so this warns instead of
+    raising. ``sfreq=None`` (not given) does not warn.
+    """
+    if sfreq is not None and abs(float(sfreq) - pretrained_sfreq) > 1e-6:
+        warnings.warn(
+            f"{model_name} was pretrained at {pretrained_sfreq:g} Hz, got "
+            f"sfreq={sfreq}. Resample the data to {pretrained_sfreq:g} Hz to use "
+            "the pretrained weights.",
+            UserWarning,
+            stacklevel=3,
+        )
 
 
 def channel_types_from_chs_info(

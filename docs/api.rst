@@ -143,6 +143,7 @@ interface for all EEG models and can derive variable names when needed.
     :recursive:
 
      ATCNet
+     AXON
      AttentionBaseNet
      AttnSleep
      BaRISTA
@@ -163,6 +164,7 @@ interface for all EEG models and can derive variable names when needed.
      Deep4Net
      DeepSleepNet
      EEGConformer
+     EEGCLIP
      EEGDINO
      EEGInceptionERP
      EEGInceptionMI
@@ -211,6 +213,7 @@ interface for all EEG models and can derive variable names when needed.
      TFMTokenizerOutput
      TCFormer
      TIDNet
+     TMSANet
      TSception
      USleep
      ZUNA
