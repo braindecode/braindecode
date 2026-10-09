@@ -316,7 +316,7 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
     def _encode(self, x: torch.Tensor) -> torch.Tensor:
         if x.ndim != 3 or x.shape[-2] != self.n_chans:
             raise ValueError(
-                f"expected (batch, {self.n_chans}, T) input; got {tuple(x.shape)}."
+                f"expected (batch, {self.n_chans}, T) input; got {list(x.shape)}."
             )
         if x.shape[-1] < self._min_n_times:
             raise ValueError(

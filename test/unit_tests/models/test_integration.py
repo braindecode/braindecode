@@ -56,11 +56,6 @@ all_models_dict = dict(models_dict)
 # scripted output differs from the eager one.
 _TORCHSCRIPT_XFAIL = {
     "BIOT": "linear_attention_transformer forward takes **kwargs",
-    "BrainOmni": "rope passed as a callable argument",
-    "BrainTokenizer": "rope passed as a callable argument",
-    "DANCE": "starred unpacking of a tensor shape",
-    "EEGPT": "einops.rearrange call (**axes_lengths)",
-    "Labram": "keyword-only forward argument",
     "MAPA": "f-string error message in forward",
     "MVPFormer": "math.log2 in forward",
     "MetaNeuromotorHand": "einops.pack call",
