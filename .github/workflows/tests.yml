@@ -15,6 +15,11 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    env:
+      # One torch/OpenMP/MKL thread per xdist worker and one worker per vCPU
+      # (-n logical); unpinned, every worker started one torch thread per core.
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -108,13 +113,15 @@ jobs:
         TORCHINDUCTOR_CACHE_DIR: ${{ runner.temp }}/torchinductor
         TORCHINDUCTOR_FX_GRAPH_CACHE: "1"
       # Redistribute individual tests: the integration module dominates runtime.
-      run: pytest -vv --durations=0 -n auto --dist worksteal --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
+      run: pytest -vv --durations=0 -n logical --dist worksteal --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
 
     - name: Run Full Test Suite
       if: ${{ !matrix.run-coverage }}
       env:
         HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
-      run: pytest -vv --durations=0 -n auto --dist worksteal test/
+      # test_model_compiled runs only in the coverage job above, which restores
+      # the TorchInductor cache; elsewhere it recompiled every model cold.
+      run: pytest -vv --durations=0 -n logical --dist worksteal test/ -k "not test_model_compiled"
 
     - name: Save TorchInductor Cache
       if: ${{ matrix.run-coverage && success() && steps.restore-compiler-cache.outputs.cache-hit != 'true' }}
