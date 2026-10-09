@@ -3989,6 +3989,22 @@ def test_medformer_boolean_combinations(no_inter_attn, single_channel, output_at
         assert first_medformer_layer.inter_attention is not None
 
 
+def test_medformer_encoder_layer_keeps_dropout_per_granularity():
+    """Norms and convs run once on all granularities, dropout still per
+    granularity in the original order: same masks as the per-list form."""
+    layer = MEDFormer(n_chans=22, n_outputs=4, n_times=200).encoder.attn_layers[0]
+    x = [torch.randn(2, n, 128) for n in (12, 4, 3)]
+    torch.manual_seed(1)
+    out, _ = layer.train()(x)
+    torch.manual_seed(1)
+    new_x, _ = layer.attention(x)
+    ref = [layer.norm1(a + layer.dropout(b)) for a, b in zip(x, new_x)]
+    y = [layer.dropout(layer.activation(layer.conv1(r.transpose(-1, 1)))) for r in ref]
+    y = [layer.dropout(layer.conv2(v).transpose(-1, 1)) for v in y]
+    for o, r, v in zip(out, ref, y):
+        torch.testing.assert_close(o, layer.norm2(r + v))
+
+
 @pytest.mark.parametrize("patch_len_list", [[2, 8, 16], [4, 8], [2, 4, 8, 16]])
 def test_medformer_patch_len_configurations(patch_len_list):
     """
