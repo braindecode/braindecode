@@ -1429,8 +1429,13 @@ class _Attention(nn.Module):
                 relative_position_bias.permute(2, 0, 1).contiguous().unsqueeze(0)
             )  # 1, nH, Wh*Ww, Wh*Ww
 
-        if not return_attention and (self.attn_drop.p == 0.0 or not self.training):
-            # Fused kernel, same math; it would draw other attention-dropout masks.
+        # Fused kernel, same math. Not on Gaudi (Labram trains ~12 % slower there)
+        # nor with attention dropout in training (it would draw other masks).
+        if (
+            not return_attention
+            and q.device.type != "hpu"
+            and (self.attn_drop.p == 0.0 or not self.training)
+        ):
             x = nn.functional.scaled_dot_product_attention(
                 q, k, v, attn_mask=attn_mask, scale=self.scale
             )
