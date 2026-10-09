@@ -62,12 +62,14 @@ from braindecode.models import (
     MEDFormer,
     MetaNeuromotorHand,
     NeuroRVQ,
+    NeuroRVQTokenizer,
     SCCNet,
     ShallowFBCSPNet,
     SleepStagerBlanco2020,
     SleepStagerChambon2018,
     SPARCNet,
     SyncNet,
+    TFMTokenizer,
     TIDNet,
     TSception,
     USleep,
@@ -93,6 +95,7 @@ from braindecode.models.eegpt import (
     _rotate_half,
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
+from braindecode.models.neurorvq_tokenizer import _EMAVectorQuantizer
 from braindecode.models.usleep import _DecoderBlock
 from braindecode.models.util import (
     _get_possible_signal_params,
@@ -2517,7 +2520,14 @@ def test_models_batch1_train_mode(
 
     BatchNorm layers, when present, must also be restored to train mode
     after temporarily using running statistics for single-sample inputs.
+    Multi-output models (e.g. tokenizers returning ``(target,
+    reconstruction)``) must keep the batch dimension on every output.
     """
+
+    def _assert_batch_one(out):
+        outputs = out if isinstance(out, (tuple, list)) else (out,)
+        assert all(o.shape[0] == 1 for o in outputs)
+
     sp = _get_signal_params(signal_params)
     model_kwargs = _get_possible_signal_params(sp, required_params)[0]
     model = all_models_dict[model_name](**model_kwargs)
@@ -2535,7 +2545,7 @@ def test_models_batch1_train_mode(
     assert model.training
     with torch.no_grad():
         out = model(x)
-    assert out.shape[0] == 1
+    _assert_batch_one(out)
     # Model and BatchNorm layers must be restored to train mode after forward.
     assert model.training
     assert all(batch_norm.training for batch_norm in batch_norms)
@@ -2544,7 +2554,7 @@ def test_models_batch1_train_mode(
     model.eval()
     with torch.no_grad():
         out = model(x)
-    assert out.shape[0] == 1
+    _assert_batch_one(out)
 
 
 def test_batchnorm_decorator_preserves_forward_input_keyword():
@@ -4868,7 +4878,7 @@ def test_neurorvq_output_and_features(neurorvq_model_kwargs):
         ),
         ({"channel_names": ("f3", "f3", "cz")}, "channel_names must be unique"),
         ({"n_times": 1800, "max_patches": 8}, "supports at most 8 patches"),
-        ({"patch_size": 100}, "requires patch_size=200"),
+        ({"modality": "eog"}, "modality must be one of"),
         ({"init_values": None}, "init_values must be a number"),
     ],
 )
@@ -4919,14 +4929,43 @@ def test_neurorvq_default_channel_names_follow_reference_order(neurorvq_model_kw
     assert model.channel_names == NEURORVQ_CHANNELS[:3]
 
 
-def test_neurorvq_pretrained_loading_requires_explicit_channel_mapping(
-    neurorvq_model_kwargs,
+@pytest.mark.parametrize(
+    "modality, sfreq, n_times, names, kernels, n_slots, num_quantizers",
+    [
+        ("eeg", 200, 400, ("f3", "cz"), (21, 9), 105, 8),
+        ("ecg", 200, 80, ("i", "v1"), (21, 9), 16, 8),
+        ("emg", 1000, 400, ("c1", "c9"), (51, 25), 17, 16),
+        ("ppg", 100, 160, ("ppg_c1",), (41, 17), 2, 8),
+    ],
+)
+def test_neurorvq_modality_presets(
+    modality, sfreq, n_times, names, kernels, n_slots, num_quantizers
 ):
-    kwargs = neurorvq_model_kwargs | {"channel_names": None, "chs_info": None}
-    model = NeuroRVQ(**kwargs)
+    geometry = dict(
+        n_chans=len(names),
+        n_times=n_times,
+        sfreq=sfreq,
+        channel_names=names,
+        modality=modality,
+    )
+    model = NeuroRVQ(n_outputs=2, depth=1, **geometry)
+    tokenizer = NeuroRVQTokenizer(
+        encoder_depth=1, decoder_depth=1, n_code=16, **geometry
+    ).eval()
+    x = torch.randn(2, len(names), n_times)
 
-    with pytest.raises(ValueError, match="requires channel_names or chs_info"):
-        model.load_pretrained_weights("checkpoint-is-not-read-before-validation.pt")
+    for m in (model, tokenizer.encoder):
+        conv = m.patch_embed
+        assert (conv.conv1_1.kernel_size[1], conv.conv2_1.kernel_size[1]) == kernels
+        assert m.pos_embed.shape[0] == n_slots
+    assert len(tokenizer.quantize_1.layers) == num_quantizers
+    width = 4 * model.embed_dim
+    if modality != "eeg":  # mean-pooled head
+        assert model(x, return_features=True)["features"].shape == (2, width)
+    assert model(x).shape == (2, 2)
+    target, reconstruction = tokenizer(x)
+    assert target.shape == reconstruction.shape == (2, n_times // model.patch_size * len(names), model.patch_size)
+    assert tokenizer.tokenize(x).shape[:2] == (4, num_quantizers)
 
 
 def test_neurorvq_transformer_block_uses_sequential_residuals():
@@ -4950,6 +4989,109 @@ def test_neurorvq_transformer_block_uses_sequential_residuals():
 
     torch.testing.assert_close(block(x), expected)
 
+# ---------------------------------------------------------------------------
+# NeuroRVQTokenizer
+# ---------------------------------------------------------------------------
+
+
+def _small_neurorvq_tokenizer(**kwargs):
+    params = dict(
+        n_chans=3,
+        n_times=400,
+        sfreq=200,
+        channel_names=("f3", "f4", "cz"),
+        max_patches=4,
+        out_chans=4,
+        num_heads=4,
+        encoder_depth=1,
+        decoder_depth=1,
+        n_code=16,
+        code_dim=16,
+        num_quantizers=2,
+    )
+    return NeuroRVQTokenizer(**{**params, **kwargs})
+
+
+def test_neurorvq_tokenizer_codes_and_cold_codebooks():
+    torch.manual_seed(0)
+    model = _small_neurorvq_tokenizer().eval()
+    signal = torch.randn(2, 3, 400)
+    assert not model.quantize_1.layers[0].embedding.initted.item()
+
+    codes = model.tokenize(signal)  # initializes the cold codebooks once
+    assert codes.shape == (4, 2, 2, 6) and codes.dtype == torch.long
+    state = {k: v.clone() for k, v in model.state_dict().items()}
+    torch.testing.assert_close(model.tokenize(signal), codes)
+    for name, value in state.items():
+        torch.testing.assert_close(model.state_dict()[name], value)
+
+    time, spatial = model._embedding_indices(signal.device)
+    _, forward_codes = model._encode(model._patches(signal), time, spatial)
+    # Later residual stages subtract the straight-through ``z + (q - z)`` instead
+    # of ``q``; the rounding can flip near-ties, so compare the first stage.
+    torch.testing.assert_close(forward_codes[:, 0], codes[:, 0])
+
+    model.train()
+    _, reconstruction = model(signal)
+    assert model.quantize_1.layers[0].cluster_size.sum() > 0
+    reconstruction.square().mean().backward()
+    assert model.encode_task_layer_1[0].weight.grad is not None
+
+
+def test_neurorvq_tokenizer_standardizes_each_window():
+    model = _small_neurorvq_tokenizer().eval()
+    target, reconstruction = model(5.0 * torch.randn(2, 3, 400) + 3.0)
+    assert target.shape == reconstruction.shape == (2, 6, 200)
+    for output in (target, reconstruction):
+        torch.testing.assert_close(output.mean(dim=(1, 2)), torch.zeros(2), atol=1e-5, rtol=0)
+        torch.testing.assert_close(output.std(dim=(1, 2)), torch.ones(2), atol=1e-4, rtol=0)
+
+
+def test_neurorvq_ema_quantizer_matches_normalized_ema_update():
+    quantizer = _EMAVectorQuantizer(n_codes=2, code_dim=2).train()
+    quantizer.decay = 0.5
+    with torch.no_grad():
+        quantizer.embedding.weight.copy_(torch.eye(2))
+        quantizer.embedding.initted.fill_(True)
+
+    _, indices = quantizer(torch.tensor([[[[0.8, -0.6]], [[0.6, 0.8]]]]))
+
+    expected = torch.nn.functional.normalize(torch.tensor([[0.9, 0.3], [-0.3, 0.9]]))
+    assert indices.tolist() == [0, 1]
+    torch.testing.assert_close(quantizer.embedding.weight, expected)
+    torch.testing.assert_close(quantizer.cluster_size, torch.tensor([0.5, 0.5]))
+
+
+@pytest.mark.parametrize("statistic_code_usage", [True, False])
+def test_neurorvq_ema_quantizer_eval_code_usage(statistic_code_usage):
+    quantizer = _EMAVectorQuantizer(2, 2, statistic_code_usage).eval()
+    quantizer.decay = 0.5
+    with torch.no_grad():
+        quantizer.embedding.weight.copy_(torch.eye(2))
+        quantizer.embedding.initted.fill_(True)
+
+    # (batch, code_dim, 1, 3): three vectors, two nearest to code 0.
+    quantizer(torch.tensor([[[[1.0, 0.9, 0.1]], [[0.1, -0.2, 1.0]]]]))
+
+    expected = [1.0, 0.5] if statistic_code_usage else [0.0, 0.0]
+    torch.testing.assert_close(quantizer.cluster_size, torch.tensor(expected))
+    torch.testing.assert_close(quantizer.embedding.weight, torch.eye(2))
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"sfreq": 250}, "200 Hz"),
+        ({"n_times": 401}, "divisible by patch_size"),
+        ({"channel_names": ("f3", "f4", "x")}, "Unsupported NeuroRVQ channel"),
+    ],
+)
+def test_neurorvq_tokenizer_rejects_incompatible_signal_metadata(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        _small_neurorvq_tokenizer(**kwargs)
+
+
+# ---------------------------------------------------------------------------
 
 def test_neurorvq_block_qk_norm_factory_receives_eps():
     """``_Block.qk_norm`` is called as ``qk_norm(head_dim, eps=1e-6)``."""
@@ -5016,6 +5158,64 @@ def test_seizure_transformer_rejects_invalid_construction():
         SeizureTransformer(n_chans=4, n_outputs=1, n_times=256, n_filters=(8, 16))
     with pytest.raises(ValueError, match="num_heads"):
         SeizureTransformer(n_chans=4, n_outputs=1, n_times=256, num_heads=3)
+
+# ---------------------------------------------------------------------------
+# TFMTokenizer
+# ---------------------------------------------------------------------------
+
+
+def _small_tfm_tokenizer(**kwargs):
+    params = dict(
+        sfreq=200,
+        embed_dim=16,
+        codebook_size=32,
+        freq_encoder_depth=1,
+        temporal_encoder_depth=1,
+        decoder_depth=1,
+        max_seq_len=32,
+    )
+    return TFMTokenizer(**{**params, **kwargs})
+
+
+def test_tfm_tokenizer_tokenize_outputs_and_masks():
+    model = _small_tfm_tokenizer().eval()
+    x = torch.randn(2, 3, 500)
+    target = model.compute_spectrogram(x)
+    mask_a, mask_b = model.make_complementary_masks(target)
+
+    # One mask for every trial and channel, and its exact complement.
+    assert torch.equal(mask_b, ~mask_a)
+    assert torch.equal(mask_a[0, 0], mask_a[-1, -1])
+    assert not mask_a.all() and mask_a.any()
+
+    out = model.tokenize(x, spectrogram_mask=mask_a)
+    assert out.reconstruction.shape == target.shape == (2, 3, 100, 4)
+    assert out.token_ids.shape == (2, 3, 4)
+    assert 0 <= out.token_ids.min() and out.token_ids.max() < 32
+    assert out.quantized.shape == out.embeddings.shape == (6, 4, 16)
+    torch.testing.assert_close(out.target_spectrogram, target)
+    torch.testing.assert_close(model(x, spectrogram_mask=mask_a), out.reconstruction)
+
+
+def test_tfm_tokenizer_codebook_is_ema_only():
+    torch.manual_seed(7)
+    model = _small_tfm_tokenizer(codebook_size=64)
+    before = model.quantizer.embed.clone()
+
+    out = model.tokenize(torch.randn(1, 1, 200))
+    out.quantization_loss.backward()
+
+    # The VQ loss alone trains both encoder paths; the codebook moves by EMA.
+    assert model.frequency_patch_embedding[0].weight.grad.norm() > 0
+    assert model.temporal_patch_embedding[0].weight.grad.norm() > 0
+    assert not torch.equal(model.quantizer.embed, before)
+    # No EMA update in eval mode.
+    state = {k: v.clone() for k, v in model.quantizer.state_dict().items()}
+    model.eval().tokenize(torch.randn(1, 1, 200))
+    for k, v in model.quantizer.state_dict().items():
+        torch.testing.assert_close(v, state[k])
+    assert "stft_window" not in model.state_dict()
+
 
 # ---------------------------------------------------------------------------
 # CSBrain

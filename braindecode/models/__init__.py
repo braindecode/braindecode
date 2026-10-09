@@ -50,6 +50,7 @@ from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
 from .neuropose import NeuroPose
 from .neurorvq import NeuroRVQ
+from .neurorvq_tokenizer import NeuroRVQTokenizer
 from .patchedtransformer import PBT
 from .popt import PopulationTransformer
 from .reve import REVE
@@ -73,6 +74,7 @@ from .steegformer import STEEGFormer
 from .syncnet import SyncNet
 from .tcformer import TCFormer
 from .tcn import BDTCN, TCN
+from .tfm_tokenizer import TFMTokenizer, TFMTokenizerOutput
 from .tidnet import TIDNet
 from .tsinception import TSception
 from .usleep import USleep
@@ -144,6 +146,7 @@ __all__ = [
     "MIRepNet",
     "NeuroRVQ",
     "MSCFormer",
+    "NeuroRVQTokenizer",
     "MSVTNet",
     "MVPFormer",
     "PBT",
@@ -166,6 +169,8 @@ __all__ = [
     "STEEGFormer",
     "SyncNet",
     "BDTCN",
+    "TFMTokenizer",
+    "TFMTokenizerOutput",
     "TCFormer",
     "TCN",
     "TIDNet",

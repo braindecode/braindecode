@@ -579,11 +579,6 @@ class GeneralizedGaussianFilter(nn.Module):
             requires_grad=affine_group_delay,
         )
 
-        # Construct filters from parameters and register as a buffer so
-        # torch.export / tracing treats it as a proper module buffer
-        # (it will be recomputed in forward anyway).
-        self.register_buffer("filters", self.construct_filters(), persistent=False)
-
     @staticmethod
     def exponential_power(x, mean, fwhm, shape):
         """
@@ -700,11 +695,11 @@ class GeneralizedGaussianFilter(nn.Module):
 
         """
         # Construct filters from parameters
-        self.filters = self.construct_filters()
+        filters = self.construct_filters()
         # Preserving the original dtype.
         dtype = x.dtype
         if _real_dft.needs_real_dft(x):
-            return self._forward_real_dft(x).to(dtype)
+            return self._forward_real_dft(x, filters).to(dtype)
         # Apply FFT -> (..., channels, freqs, 2)
         x = torch.fft.rfft(spectral_input(x), dim=-1)
         x = torch.view_as_real(x)  # separate real and imag
@@ -713,7 +708,7 @@ class GeneralizedGaussianFilter(nn.Module):
         x = torch.repeat_interleave(x, self.out_channels // self.in_channels, dim=-3)
 
         # Apply filters in the frequency domain
-        x = x * self.filters
+        x = x * filters
 
         # Apply inverse FFT if requested
         if self.inverse_fourier:
@@ -726,11 +721,11 @@ class GeneralizedGaussianFilter(nn.Module):
 
     @torch.jit.unused
     @_real_dft.fp32_island
-    def _forward_real_dft(self, x):
+    def _forward_real_dft(self, x, filters):
         # Real-valued equivalent of the torch.fft path above, for devices
         # without complex tensors (Intel Gaudi / HPU), in float32 with autocast
-        # disabled. ``self.filters`` multiplies the real and imaginary parts
-        # element-wise, exactly like ``x * self.filters`` on the
+        # disabled. ``filters`` multiplies the real and imaginary parts
+        # element-wise, exactly like ``x * filters`` on the
         # ``view_as_real`` layout above (not a complex multiplication).
         # ``torch.jit.unused`` keeps this branch out of the scripted graph:
         # CPU/CUDA never take it, and HPU does not run under torch.jit.script.
@@ -738,7 +733,7 @@ class GeneralizedGaussianFilter(nn.Module):
         repeat = self.out_channels // self.in_channels
         real = torch.repeat_interleave(real, repeat, dim=-2)
         imag = torch.repeat_interleave(imag, repeat, dim=-2)
-        filters = self.filters.to(real.dtype)
+        filters = filters.to(real.dtype)
         out_real = real * filters[..., 0]
         out_imag = imag * filters[..., 1]
         if self.inverse_fourier:

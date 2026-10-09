@@ -315,7 +315,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
                 activation=self.activation,
                 drop_prob=self.drop_prob,
             ),
-            nn.AvgPool3d(kernel_size=(1, 2, 1)),
+            _AvgPoolTime(2),
         )
 
         # Channel merging
@@ -427,6 +427,20 @@ class EEGSym(EEGModuleMixin, nn.Module):
         return x
 
 
+class _AvgPoolTime(nn.Module):
+    """``nn.AvgPool3d((1, k, 1))`` as ``avg_pool2d``, which also has CPU
+    bfloat16/float16 kernels (``avg_pool3d`` does not)."""
+
+    def __init__(self, k: int):
+        super().__init__()
+        self.k = k
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        b, c, d, t, s = x.shape
+        y = nn.functional.avg_pool2d(x.reshape(b, c * d, t, s), (self.k, 1))
+        return y.reshape(b, c, d, y.shape[2], s)
+
+
 class _InceptionBlock(nn.Module):
     r"""Inception module used in EEGSym architecture.
 
@@ -507,11 +521,7 @@ class _InceptionBlock(nn.Module):
                     )
                 )
 
-        self.pool = (
-            nn.AvgPool3d(kernel_size=(1, average_pool, 1))
-            if average_pool != 1
-            else nn.Identity()
-        )
+        self.pool = _AvgPoolTime(average_pool) if average_pool != 1 else nn.Identity()
 
     def forward(self, x_list: list[torch.Tensor]) -> list[torch.Tensor]:
         outputs: list[torch.Tensor] = []
@@ -598,7 +608,7 @@ class _ResidualBlock(nn.Module):
         )
 
         # Average pooling
-        self.avg_pool = nn.AvgPool3d(kernel_size=(1, average_pool, 1))
+        self.avg_pool = _AvgPoolTime(average_pool)
 
         # Spatial convolutions (multiple repetitions like in InceptionBlock)
         if ncha != 1:
