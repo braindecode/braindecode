@@ -208,12 +208,12 @@ Enhancements
   parallelism, preserving the test cases and gallery training workloads
   (:gh:`1161` by `Bruno Aristimunha`_).
 
-- CI: one torch/OpenMP/MKL thread per pytest-xdist worker and one worker per
-  vCPU; ``test_model_compiled`` runs only in the Linux job that restores the
-  TorchInductor cache; a pull request's docs build executes only the gallery
-  examples it changes (the full gallery runs on master, tags, ``release/*``
-  branches and a weekly schedule), and only non-PR docs runs save the MNE and
-  Hugging Face caches (:gh:`1263` by `Bruno Aristimunha`_).
+- CI: torch threads per pytest-xdist worker so that threads times workers equal
+  the runner's vCPUs (one per worker on macOS); ``test_model_compiled`` runs
+  only in the Linux job that restores the TorchInductor cache; a pull request's
+  docs build executes only the gallery examples it changes (the full gallery
+  runs on master, tags, ``release/*`` branches and a weekly schedule), and only
+  non-PR docs runs save the MNE and Hugging Face caches (:gh:`1263` by `Bruno Aristimunha`_).
 
 - Add a bounded SAE activation analysis tutorial on BCI IV 2a (BNCI2014_001)
   using optional SAE Lens, without adding an SAE implementation to Braindecode
