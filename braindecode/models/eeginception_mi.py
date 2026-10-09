@@ -313,8 +313,10 @@ class _InceptionModuleMI(nn.Module):
 
         X1 = [conv(X1) for conv in self.conv_list]
 
-        X2 = self.pooling(X)
-        X2 = self.pooling_conv(X2)
+        # channels_last: same values and indices, but torch's CPU max pool
+        # vectorises over channels instead of looping over them.
+        X2 = self.pooling(X.contiguous(memory_format=torch.channels_last))
+        X2 = self.pooling_conv(X2.contiguous())
         # Get the target length from one of the conv branches
         target_len = X1[0].shape[-1]
 
