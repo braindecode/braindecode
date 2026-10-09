@@ -5129,26 +5129,27 @@ def test_neurorvq_tokenizer_standardizes_each_window():
         torch.testing.assert_close(output.std(dim=(1, 2)), torch.ones(2), atol=1e-4, rtol=0)
 
 
-def test_neurorvq_scales_batched_match_per_scale_loop(neurorvq_model_kwargs):
-    """One pass over the four scales stacked on the batch axis = one per scale."""
+def test_neurorvq_scales_stacked_match_per_scale_loop(
+    neurorvq_model_kwargs, monkeypatch
+):
+    """The four scales stacked on the batch axis (accelerators) = one pass per
+    scale (CPU), for NeuroRVQ and the tokenizer's encoder/decoder stack."""
+    import braindecode.models.neurorvq as neurorvq_module
+    import braindecode.models.neurorvq_tokenizer as tokenizer_module
+
     torch.manual_seed(0)
-    model = NeuroRVQ(**neurorvq_model_kwargs)
-    tokenizer = _small_neurorvq_tokenizer()
-    x, signal = torch.randn(2, 3, 600), torch.randn(2, 3, 400)
-    time, spatial = tokenizer._embedding_indices(signal.device)
+    model = NeuroRVQ(**neurorvq_model_kwargs).eval()
+    tokenizer = _small_neurorvq_tokenizer().eval()
+    x = torch.randn(2, 3, 600)
+    tokens = [torch.randn(2, 6, 100) for _ in range(4)]
+    embeddings = tokenizer.encoder.embeddings(*tokenizer._embedding_indices(x.device))
+    assert not neurorvq_module._stack_scales(x, False)
     with torch.no_grad():
-        batched = model.eval()(x)
-        latents = tokenizer.eval()._branch_latents(
-            tokenizer._patches(signal), time, spatial
-        )
-        # The per-scale loop that training takes when dropout is on (p = 0 here).
-        model._dropout = tokenizer.encoder._dropout = True
-        looped = model.train()(x)
-        looped_latents = tokenizer.train()._branch_latents(
-            tokenizer._patches(signal), time, spatial
-        )
-    torch.testing.assert_close(looped, batched)
-    for a, b in zip(looped_latents, latents):
+        looped = [model(x), *tokenizer.encoder(tokens, *embeddings)]
+        for module in (neurorvq_module, tokenizer_module):
+            monkeypatch.setattr(module, "_stack_scales", lambda x, dropout: True)
+        stacked = [model(x), *tokenizer.encoder(tokens, *embeddings)]
+    for a, b in zip(stacked, looped):
         torch.testing.assert_close(a, b)
 
 

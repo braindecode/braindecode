@@ -20,6 +20,7 @@ from braindecode.models.neurorvq import (
     _channel_slots,
     _modality,
     _MultiScaleTemporalConv,
+    _stack_scales,
 )
 from braindecode.modules.quantization import _all_reduce_sum
 
@@ -215,9 +216,7 @@ class _BranchTransformer(nn.Module):
         self, scales: List[Tensor], spatial: Tensor, temporal: Tensor
     ) -> List[Tensor]:
         """Encode the four scales' ``(batch, n_tokens, embed_dim)`` tokens."""
-        # One pass over the scales stacked on the batch axis, or one pass per
-        # scale while dropout draws masks (RNG order).
-        if not (self.training and self._dropout):
+        if _stack_scales(scales[0], self.training and self._dropout):
             scales = [torch.cat(scales)]
         outs = []
         for tokens in scales:

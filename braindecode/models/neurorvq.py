@@ -206,6 +206,16 @@ def _channel_slots(model, channel_names, channels: tuple[str, ...]):
     return names, torch.tensor([channels.index(name) for name in names])
 
 
+def _stack_scales(x: Tensor, dropout: bool) -> bool:
+    """Whether the four scales run the shared blocks as one batch.
+
+    Yes on accelerators (2-3x faster on Gaudi). Not on CPU, where the 4x taller
+    GEMMs are not faster at batch 32 and round differently at small batches,
+    nor while dropout draws masks (the per-scale order keeps the RNG stream).
+    """
+    return x.device.type != "cpu" and not dropout
+
+
 class _Block(nn.Module):
     def __init__(
         self,
@@ -573,12 +583,9 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         batch = x.shape[0]
         x = x.reshape(batch, self.n_chans, self.num_patches, self.patch_size)
         b1, b2, b3, b4 = self.patch_embed(x)
-        # The scales share the blocks: one pass over them stacked on the batch
-        # axis, or one pass per scale while dropout draws masks (RNG order).
-        if self.training and self._dropout:
-            branches = [b1, b2, b3, b4]
-        else:
-            branches = [torch.cat((b1, b2, b3, b4))]
+        branches = [b1, b2, b3, b4]
+        if _stack_scales(x, self.training and self._dropout):
+            branches = [torch.cat(branches)]
         scales = []
         spatial_ix = self.spatial_embedding_ix.repeat_interleave(self.num_patches)
         spatial_ix = F.pad(spatial_ix, (1, 0), value=0.0)
