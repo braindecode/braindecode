@@ -4011,6 +4011,18 @@ def test_medformer_patch_len_configurations(patch_len_list):
     assert len(model.enc_embedding.value_embeddings) == len(patch_len_list)
 
 
+@pytest.mark.parametrize("single_channel", [False, True])
+def test_medformer_token_embedding_matches_its_conv2d(single_channel):
+    """The full-height patch kernel runs as a conv1d (Gaudi2 rejects conv
+    kernels taller than 256 rows) and gives the values of its Conv2d."""
+    model = MEDFormer(
+        n_chans=22, n_outputs=4, n_times=1000, single_channel=single_channel
+    )
+    emb = model.enc_embedding.value_embeddings[1]
+    x = torch.randn(2, 1, emb.token_conv.kernel_size[0], 30)
+    torch.testing.assert_close(emb(x), emb.token_conv(x))
+
+
 def test_eegitnet_mapping_targets():
     # mapping values should point to real keys in the model state dict
     model = EEGITNet(
