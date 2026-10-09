@@ -92,6 +92,15 @@ Enhancements
   model whose layers mix a temporal and a spatial attention path with a
   per-token gate, with pretrained weights on the Hugging Face Hub
   (:gh:`1182` by `Mahir Jain`_).
+- :class:`braindecode.models.BIOT`, :class:`braindecode.models.BrainBERT`,
+  :class:`braindecode.models.EEGDINO`, :class:`braindecode.models.SleepFM`,
+  :class:`braindecode.models.SleepFMStager`,
+  :class:`braindecode.models.BrainTokenizer` and
+  :class:`braindecode.models.BrainOmni` warn about a sampling rate that differs
+  from the pretrained one through the shared
+  ``braindecode.models.util.warn_if_sfreq_differs``; the warning fires in the
+  same cases as before (up to a 1e-6 Hz tolerance), with one wording
+  (:gh:`1261` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.NeuroRVQ` and
   :class:`braindecode.models.NeuroRVQTokenizer` take ``modality`` (``"eeg"``,
   ``"ecg"``, ``"emg"``, ``"ppg"``), the settings of the authors' four released
