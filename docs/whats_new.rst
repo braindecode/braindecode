@@ -276,6 +276,11 @@ Enhancements
   longer keyword-only. A scripted BrainOmni needs its tokenizer in eval mode.
   Eager outputs and state-dict keys are unchanged (:gh:`1270` by
   `Bruno Aristimunha`_).
+- :func:`torch.jit.script` compiles BIOT and TFMTokenizer and gives the eager
+  output. They now run ``braindecode.modules.linear_attention``, the part of
+  ``linear_attention_transformer`` they used (global linear attention, MIT),
+  whose ``forward`` takes no ``**kwargs``; parameter names are unchanged, so
+  released checkpoints load as before (:gh:`1273` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
