@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.MVPFormer` builds its attention masks and channel-shift index once per forward instead of in every layer: forward 19-25 % faster on Gaudi and 2-12 % on CPU, outputs and gradients unchanged bit for bit (:gh:`1280` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.AttnSleep`, :class:`braindecode.models.Brant`, :class:`braindecode.models.MSVTNet` and :class:`braindecode.models.PBT` no longer compute tensors their forward discards (AttnSleep's first attention product, Brant's reconstruction projection, MSVTNet's branch heads without ``return_features``, PBT's class-token index); outputs and gradients unchanged bit for bit (:gh:`1281` by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.FilterBankLayer` broadcasts each FIR band filter over the channels instead of repeating it, so its FFT is computed once per band: :class:`braindecode.models.FBCNet`, :class:`braindecode.models.FBMSNet`, :class:`braindecode.models.FBLightConvNet` and :class:`braindecode.models.IFNet` steps 1-10 % faster on CPU and 8-29 % on Gaudi at batch 2, 0-3 % at batch 32; outputs and gradients change by float rounding only at 22 channels, within master's own float32-vs-float64 difference, and not at all at 3 channels (:gh:`1278` by `Bruno Aristimunha`_).
 - :func:`braindecode.functional.plv_time` copies the real and imaginary phasor parts once instead of in every matmul for each batch matrix: :class:`braindecode.models.EEGMiner` CPU forward 1.5x and train step 1.4x faster (22 channels, batch 32, 2 threads); outputs and gradients change by float rounding only, within master's own float32-vs-float64 difference (:gh:`1277` by `Bruno Aristimunha`_).
@@ -343,6 +344,9 @@ Requirements
 Bug fixes
 ==========
 
+- Preserve the final samples in :class:`braindecode.augmentation.SegmentationReconstruction`
+  when the window length is not divisible by the segment count, instead of
+  replacing them with zeros (:gh:`1279` by `Anton Soloviev`_).
 - Model fixes caught by new CPU-only integration checks (complex tensors, host syncs, kernel gaps, device/dtype follow, training after ``inference_mode``, deepcopy/pickle): BrainOmni/BrainTokenizer SELU trains on Gaudi, EEGSym pools with ``avg_pool2d``, FBCNet/FBMSNet/FBLightConvNet and LUNA run in float16, EEGMiner and AttnSleep deep-copy after training, Labram and NeuroRVQ pickle, SignalJEPA heads accept ``channel_strategy``, and tensors built in ``forward`` follow the input in CodeBrain, TCFormer, LUNA, MVPFormer, BrainOmni, ZUNA, DIVER1 and EEGDINO; float32 outputs unchanged (:gh:`1253` by `Bruno Aristimunha`_)
 - :func:`braindecode.functional.hilbert_freq` returns float16 for float16 input (it
   returned float32), so :class:`braindecode.models.EEGMiner` runs after
@@ -2233,6 +2237,7 @@ Authors
 ========
 
 .. _Arnaud Delorme: https://github.com/arnodelorme
+.. _Anton Soloviev: https://github.com/antonsoo
 .. _Hubert Banville: https://github.com/hubertjb
 .. _Robin Tibor Schirrmeister: https://github.com/robintibor
 .. _Lukas Gemein: https://github.com/gemeinl
