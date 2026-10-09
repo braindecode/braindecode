@@ -27,6 +27,7 @@ import pytest
 import torch
 
 from braindecode.models import (
+    AXON,
     BENDR,
     BIOT,
     DIVER1,
@@ -55,6 +56,7 @@ from braindecode.models import (
     SleepFM,
     SleepFMStager,
     STEEGFormer,
+    TFMTokenizer,
 )
 from braindecode.models.bendr import BENDR_CHANNEL_ORDER
 from braindecode.models.biot import BIOT_CHANNEL_ORDER
@@ -264,6 +266,14 @@ COMPAT = {
         channels="coords",
         coords_checked=False,
     ),
+    "AXON": dict(
+        cls=AXON,
+        sfreq=200,
+        n_times=800,
+        canon=TEN_TWENTY,
+        channels="coords",
+        coords_checked=False,
+    ),
     "MIRepNet": dict(
         cls=MIRepNet,
         sfreq=250,
@@ -303,6 +313,13 @@ COMPAT = {
         canon=None,
         channels="agnostic",
         min_n_times=640,
+    ),
+    "TFMTokenizer": dict(
+        cls=TFMTokenizer,
+        sfreq=200,
+        n_times=1000,
+        canon=TEN_TWENTY,
+        channels="agnostic",
     ),
     "NeuroRVQ": dict(
         cls=NeuroRVQ,
@@ -456,7 +473,7 @@ def test_geometry_contract(name, gname, gkw):
 NATIVE_ONLY = {"SleepFM", "SleepFMStager"}
 
 # No ``channel_strategy`` argument (not part of the #1241 channel layer).
-NO_STRATEGY = {"NeuroRVQ", "MAPA", "BrainOmni", "BrainTokenizer"}
+NO_STRATEGY = {"NeuroRVQ", "MAPA", "BrainOmni", "BrainTokenizer", "TFMTokenizer"}
 
 
 # BIOT's canonical input is bipolar; under a strategy it takes electrodes.
@@ -502,6 +519,31 @@ def test_channel_strategy_smoke(name, strategy):
             y = model(torch.randn(1, len(chs), spec["n_times"]))
     assert model.get_config()["channel_strategy"] == strategy
     assert y.shape[0] == 1 and torch.isfinite(y).all()
+
+
+@pytest.mark.parametrize(
+    "name", [n for n in COMPAT if n not in NATIVE_ONLY | NO_STRATEGY]
+)
+def test_channel_strategy_round_trip(name):
+    """Under a strategy, ``model(x)`` equals ``model.forward(x)`` and the
+    config keeps the input montage, so ``from_config`` rebuilds the same model."""
+    spec = COMPAT[name]
+    chs = chs_from_montage(TEN_TWENTY[:8], kind=spec.get("kind", "eeg"))
+    kw = dict(n_outputs=2, chs_info=chs, sfreq=spec["sfreq"], n_times=spec["n_times"])
+    x = torch.randn(1, len(chs), spec["n_times"])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        model = spec["cls"](**kw, **spec.get("kwargs", {}), channel_strategy="spline")
+        model.eval()
+        config = json.loads(json.dumps(model.get_config()))
+        rebuilt = spec["cls"].from_config(config).eval()
+        rebuilt.load_state_dict(model.state_dict())
+        with torch.no_grad():
+            y = model(x)
+            torch.testing.assert_close(model.forward(x), y)
+            torch.testing.assert_close(rebuilt(x), y)
+    assert [c["ch_name"] for c in rebuilt.channel_layer.chs_info] == TEN_TWENTY[:8]
+    assert rebuilt.get_config()["chs_info"] == config["chs_info"]
 
 
 @pytest.mark.parametrize("name", sorted(NATIVE_ONLY))

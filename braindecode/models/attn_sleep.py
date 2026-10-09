@@ -436,7 +436,6 @@ class _MultiHeadedAttention(nn.Module):
         h = int(h)
         self.d_per_head = d_model // h
         self.h = h
-        self.attn = torch.empty(0)
 
         base_conv = CausalConv1d(
             in_channels=after_reduced_cnn_size,
@@ -470,9 +469,6 @@ class _MultiHeadedAttention(nn.Module):
         attn = self.dropout(attn_weights)
         # recompute the weighted sum with dropped weights
         x = torch.matmul(attn, value)
-
-        # stash the pre‑dropout weights if you need them
-        self.attn = attn_weights
 
         # merge heads and project
         x = x.transpose(1, 2).contiguous().view(nbatches, -1, self.h * self.d_per_head)

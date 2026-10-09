@@ -185,7 +185,7 @@ categories can be found in the respective sections below.
 - In contrast, several methods employ **attention/transformer** modules
   (:bdg-info:`Attention/Transformer`) to capture longer-range dependencies efficiently,
   e.g., :class:`EEGConformer`, :class:`CTNet`, :class:`ATCNet`,
-  :class:`AttentionBaseNet`, and :class:`EEGPT`
+  :class:`AttentionBaseNet`, :class:`TMSANet`, and :class:`EEGPT`
   (:cite:label:`song2022eeg,zhao2024ctnet,altaheri2022atcnet`).
 - **SPD / Riemannian** (:bdg-dark:`SPD`) methods operate on covariance (or connectivity)
   matrices as points on the SPD manifold, combining layers such as BiMap, ReEig, and
@@ -204,8 +204,9 @@ categories can be found in the respective sections below.
 - **Foundation Model / Transformer** (:bdg-danger:`Foundation Model`) approaches
   pretrain attention-based encoders on diverse biosignals and fine-tune for EEG tasks;
   e.g., :class:`BIOT` (:cite:label:`yang2023biot`), :class:`Labram`
-  (:cite:label:`jiang2024large`), and :class:`EEGPT` (:cite:label:`eegpt2024`). These
-  typically need a heavily self-supervised pre-training before decoding.
+  (:cite:label:`jiang2024large`), :class:`EEGPT` (:cite:label:`eegpt2024`), and
+  :class:`TFMTokenizer` (:cite:label:`pradeepkumar2026tfm`). These typically need a
+  heavily self-supervised pre-training before decoding.
 - **Cross-modal contrastive** models learn a shared space for brain signals and
   descriptions, enabling text-conditioned retrieval and zero-shot decoding. The
   :class:`EEGCLIP` implementation follows the EEG/text alignment objective in

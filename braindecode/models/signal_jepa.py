@@ -618,6 +618,8 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         channel_embedding: str = "scratch",
         _init_feature_encoder: bool = True,
         _init_transformer: bool = True,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -642,6 +644,8 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             channel_embedding=channel_embedding,
             _init_feature_encoder=_init_feature_encoder,
             _init_transformer=_init_transformer,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self._clf_conv_layers_spec = feature_encoder__conv_layers_spec
@@ -864,6 +868,8 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         transformer__nhead: int = 8,
         # other
         _init_feature_encoder: bool = True,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -887,6 +893,8 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
             transformer__nhead=transformer__nhead,
             _init_feature_encoder=_init_feature_encoder,
             _init_transformer=False,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self._clf_conv_layers_spec = feature_encoder__conv_layers_spec
@@ -1092,6 +1100,8 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         transformer__nhead: int = 8,
         # other
         _init_feature_encoder: bool = True,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         self.n_spat_filters = n_spat_filters
         super().__init__(
@@ -1116,6 +1126,8 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
             transformer__nhead=transformer__nhead,
             _init_feature_encoder=_init_feature_encoder,
             _init_transformer=False,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.spatial_conv = nn.Sequential(

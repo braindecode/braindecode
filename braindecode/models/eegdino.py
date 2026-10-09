@@ -9,7 +9,6 @@ from typing import Sequence
 from warnings import warn
 
 import torch
-import torch.nn.functional as F
 from torch import nn
 
 from braindecode.functional import spectral_input
@@ -430,9 +429,13 @@ class _PatchEmbedding(nn.Module):
         # Decoupled positional embedding: one-hot channel + depthwise temporal conv.
         # The one-hot uses the first ``n_chans`` of the ``n_channel_embeddings``
         # slots, so the released 19-slot embedding serves any n_chans <= 19.
-        channel_ids = torch.arange(n_chans, device=x.device)
-        one_hot = F.one_hot(channel_ids, self.n_channel_embeddings).to(
-            self.channel_embedding.weight.dtype
+        # one_hot(arange(n_chans)) as an identity slice: F.one_hot reads the
+        # index range on the host (a device sync).
+        one_hot = torch.eye(
+            n_chans,
+            self.n_channel_embeddings,
+            device=x.device,
+            dtype=self.channel_embedding.weight.dtype,
         )
         channel_emb = self.channel_embedding(one_hot)
         patch_emb = patch_emb + channel_emb.unsqueeze(0).unsqueeze(2)
