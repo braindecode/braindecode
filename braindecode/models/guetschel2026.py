@@ -580,7 +580,11 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError(
                 f"mask_radius must be one of {_MASK_RADII}, got {mask_radius!r}."
             )
-        if isinstance(mask_length, bool) or mask_length not in _MASK_LENGTHS:
+        if (
+            isinstance(mask_length, bool)
+            or not isinstance(mask_length, numbers.Integral)
+            or mask_length not in _MASK_LENGTHS
+        ):
             raise ValueError(
                 f"mask_length must be one of {_MASK_LENGTHS}, got {mask_length!r}."
             )

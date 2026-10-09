@@ -34,8 +34,16 @@ try:
 except ImportError:  # pragma: no cover
     HAS_SAFETENSORS = False
 
+try:
+    import huggingface_hub  # noqa: F401
+
+    HAS_HF_HUB = True
+except ImportError:  # pragma: no cover
+    HAS_HF_HUB = False
+
 needs_safetensors = pytest.mark.skipif(
-    not HAS_SAFETENSORS, reason="safetensors and huggingface_hub are required"
+    not (HAS_SAFETENSORS and HAS_HF_HUB),
+    reason="safetensors and huggingface_hub are required",
 )
 
 # ----------------------------------------------------------------------------
@@ -983,6 +991,7 @@ def test_hub_repo_id_refuses_the_untrained_cell(pretext):
         (("mae", "9cm", 0), "mask_length"),
         (("mae", "9cm", "2"), "mask_length"),
         (("mae", "9cm", True), "mask_length"),
+        (("mae", "9cm", 2.0), "mask_length"),
         (("mae", "9cm", None), "mask_length"),
     ],
 )
