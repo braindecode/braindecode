@@ -309,7 +309,7 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         time_z = self.temporal_encoder(tokens, power)
         # 4. spatial encoder over the channels of each patch
         time_z = self.split_time(time_z)  # (batch * seq_len, n_chans, embed_dim)
-        ch_z, _ = self.spatial_encoder(time_z)  # (batch * seq_len, n_chans, embed_dim)
+        ch_z = self.spatial_encoder(time_z)  # (batch * seq_len, n_chans, embed_dim)
         emb = self.merge_time(ch_z)  # (batch, n_chans, seq_len, embed_dim)
         # 5. pool over channels and patches, then classify
         pooled = self.pool(emb)  # (batch, embed_dim)
@@ -474,6 +474,7 @@ class _BrantSpatialEncoder(nn.Module):
         )
         self.trans_enc = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
 
-    def forward(self, time_z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        ch_z = self.trans_enc(time_z)
-        return ch_z, self.proj_out(ch_z)
+    def forward(self, time_z: torch.Tensor) -> torch.Tensor:
+        # proj_out (the reconstruction head) is kept for checkpoints, not run:
+        # classification does not use its output.
+        return self.trans_enc(time_z)
