@@ -357,6 +357,9 @@ class _PatchEmbedding(nn.Module):
     decoupled positional embedding.
     """
 
+    # Hub configs store the conv spec as nested lists, which TorchScript cannot type.
+    __jit_unused_properties__ = ["emb_dim"]
+
     def __init__(
         self,
         patch_size,
