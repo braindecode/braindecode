@@ -4834,6 +4834,14 @@ def test_barista_forward_rejects_out_of_range_indices(bad):
         model(torch.randn(1, 4, 128), spatial_indices=torch.tensor(bad))
 
 
+def test_barista_default_indices_not_read_on_host():
+    """Default indices are range-checked at build time, so the spatial embedding
+    does not read them on the host again (a device sync, a graph break on Gaudi)."""
+    model = _barista_model("parcels", spatial_indices=[1, 2, 3, 4])
+    with mock.patch.object(torch.Tensor, "__bool__", side_effect=AssertionError):
+        model.spatial_emb()
+
+
 def test_barista_learned_pooling_needs_construction_grid():
     model = _barista_model("parcels", pooling="learned", spatial_indices=[1, 2, 3, 4])
     with pytest.raises(ValueError, match="pooling='mean'"):

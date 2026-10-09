@@ -487,6 +487,8 @@ class _SpatialEmbedding(nn.Module):
 
     def forward(self, indices: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Return the ``(n_chans, d_model)`` spatial encoding of a montage."""
+        # The default indices were range-checked when the model was built.
+        checked = indices is None
         if indices is None:
             default = self.default_indices
             if default is None:
@@ -512,9 +514,10 @@ class _SpatialEmbedding(nn.Module):
             )
         grid = grid.to(self.tables[0].weight.device)
         # Value check only in eager mode: it branches on tensor data, which
-        # TorchScript, torch.export and torch.compile graphs cannot express.
+        # TorchScript, torch.export and torch.compile graphs cannot express,
+        # and reads it on the host (a device sync, a graph break on Gaudi).
         if not torch.jit.is_scripting():
-            if not torch.compiler.is_compiling():
+            if not torch.compiler.is_compiling() and not checked:
                 n_slots = self.tables[0].num_embeddings
                 if bool((grid < 0).any()) or bool((grid >= n_slots).any()):
                     raise ValueError(
