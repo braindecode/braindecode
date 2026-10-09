@@ -37,17 +37,24 @@ _MAX_CH_DIST = 0.20
 _MAX_LISTED_CHANNELS = 5
 
 
-def _pos_encode_xyz(ch_pos, x_min, x_max, n_dim):
+def _xyz_div_term(n_dim):
+    """Frequencies of the coordinate encoding, as ``pos_encode_continuous_batched``.
+
+    Computed once, on the CPU in the default dtype, as the reference does at each
+    call; stored as a buffer, it then follows the model dtype exactly (a float32
+    to float64 cast is exact).
+    """
+    return torch.exp((1 - torch.arange(0, n_dim, 2) / n_dim) * 2 * math.pi)
+
+
+def _pos_encode_xyz(ch_pos, x_min, x_max, div_term):
     """Sinusoidal encoding of the coordinates, ``(..., 3) -> (..., 3, n_dim)``.
 
     The order of the operations is the one of the reference implementation
     (``pos_encode_continuous_batched``): a float64 intermediate or another
     order changes the float32 results by up to 5.7e-5.
     """
-    out = ch_pos.new_empty(ch_pos.shape + (n_dim,))
-    div_term = torch.exp(
-        (1 - torch.arange(0, n_dim, 2, device=out.device) / n_dim) * 2 * math.pi
-    )
+    out = ch_pos.new_empty(ch_pos.shape + (2 * div_term.shape[0],))
     xx = ((ch_pos - x_min) / (x_max - x_min)).unsqueeze(-1)
     out[..., 0::2] = torch.sin(xx * div_term)
     out[..., 1::2] = torch.cos(xx * div_term)
@@ -112,6 +119,11 @@ class _PositionalEncoder(nn.Module):
         self.pos_half_range, self.max_n_times = pos_half_range, max_n_times
         self.register_buffer("ch_pos", ch_pos, persistent=False)
         self.register_buffer(
+            "div_term",
+            _xyz_div_term(self.coord_dim).to(torch.get_default_device()),
+            persistent=False,
+        )
+        self.register_buffer(
             "encoding_time",
             # formula values until the weights are loaded: the checkpoints all store
             # the same table, which overwrites them. Computed on the CPU, then moved
@@ -129,7 +141,7 @@ class _PositionalEncoder(nn.Module):
         # value depending on its place in the flattened tensor and on the number
         # of threads, so another layout breaks the bit-for-bit parity.
         ch_pos = self.ch_pos[None].expand(batch_size, -1, -1)
-        spat = _pos_encode_xyz(ch_pos, -h, h, self.coord_dim).flatten(-2)  # (B, C, 3d)
+        spat = _pos_encode_xyz(ch_pos, -h, h, self.div_term).flatten(-2)  # (B, C, 3d)
         if n_patches <= self.encoding_time.shape[0]:
             # the stored table: a recomputation differs in the last bits depending on
             # the platform's math library, so the checkpoint's values are used
@@ -722,5 +734,5 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
             )
         z = self.model(self.feature_encoder(self._scale(x)))  # (B, C, P, embed_dim)
         if return_features:
-            return {"features": z, "cls_token": None}
+            return {"features": z, "cls_token": None}  # nosec B105
         return self.final_layer(z)

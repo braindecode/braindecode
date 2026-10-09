@@ -4,7 +4,7 @@
 # License: BSD (3-clause)
 
 import inspect
-import subprocess
+import subprocess  # nosec B404: runs a constant snippet with sys.executable
 import sys
 import warnings
 
@@ -324,7 +324,9 @@ def test_import_does_not_load_the_fixture_montage():
         "import braindecode.models.util as u;"
         "assert u._fixture_montage_chs.cache_info().currsize == 0"
     )
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    result = subprocess.run(  # nosec B603: constant code, sys.executable
+        [sys.executable, "-c", code], capture_output=True, text=True
+    )
     assert result.returncode == 0, result.stderr
 
 
