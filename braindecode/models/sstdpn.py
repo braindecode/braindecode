@@ -335,9 +335,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         # vector (``||s_i|| <= S``), i.e. renorm along dim=0.
         with torch.no_grad():  # in place, like ``.data =`` (not scriptable)
             self.proto_sep.copy_(
-                torch.renorm(
-                    self.proto_sep, p=2, dim=0, maxnorm=self.proto_sep_maxnorm
-                )
+                torch.renorm(self.proto_sep, p=2, dim=0, maxnorm=self.proto_sep_maxnorm)
             )
         logits = torch.einsum("bd,cd->bc", features, self.proto_sep)  # (b, n_outputs)
         logits = self.final_layer(logits)
