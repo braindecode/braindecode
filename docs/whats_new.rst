@@ -247,7 +247,7 @@ Enhancements
   the four :class:`braindecode.models.SignalJEPA` variants: einops calls as
   ``reshape``/``permute``, typed dict/tuple returns, the NeuroRVQ branches without
   computed-name ``getattr``, and LUNA's reconstruction head kept eager-only. Eager
-  outputs and state-dict keys are unchanged (:gh:`PRNUM` by `Bruno Aristimunha`_).
+  outputs and state-dict keys are unchanged (:gh:`1262` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
