@@ -35,6 +35,9 @@ Enhancements
   :meth:`~braindecode.models.Guetschel2026.hub_repo_id` builds their names. The head is a
   flatten, a fixed Gaussian random projection (``random_projection=5000``, optional) and a
   linear layer (:gh:`1260` by `Pierre Guetschel`_).
+- Add :class:`braindecode.models.TFMTokenizer`, the time-frequency motif tokenizer
+  for single-channel EEG of Pradeepkumar et al. (ICLR 2026) (:gh:`1202` by
+  `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
 - The pretrained-compatibility test now covers every model class with released weights (NeuroRVQ, MAPA, BrainOmni, BrainTokenizer and the SignalJEPA heads added), checks that the list is complete, and runs REVE's cases without network access (:gh:`1252` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.NeuroRVQ` now reuses the LaBraM attention block
   instead of a private copy, and the K-means codebook initialisation in
@@ -89,6 +92,10 @@ Enhancements
   entry points with source-commit attribution and critical-page coverage checks.
 - Add :class:`braindecode.models.NeuroRVQTokenizer`, the released NeuroRVQ
   EEG tokenizer: reconstruction and discrete codes (:gh:`1223` by `lindicaphxag-tech`_).
+- Add :class:`braindecode.models.AXON`, an axis-factorized EEG foundation
+  model whose layers mix a temporal and a spatial attention path with a
+  per-token gate, with pretrained weights on the Hugging Face Hub
+  (:gh:`1182` by `Mahir Jain`_).
 - :class:`braindecode.models.NeuroRVQ` and
   :class:`braindecode.models.NeuroRVQTokenizer` take ``modality`` (``"eeg"``,
   ``"ecg"``, ``"emg"``, ``"ppg"``), the settings of the authors' four released
@@ -100,6 +107,10 @@ Enhancements
   ``statistic_code_usage=True`` reproduces their eval-time code-usage EMA.
   Builds on :gh:`1090` and :gh:`1223` by `lindicaphxag-tech`_ (:gh:`1254` by
   `Bruno Aristimunha`_).
+
+- Add :class:`braindecode.models.TMSANet`, the motor-imagery convolution and
+  local/global attention model of Zhao and Zhu (2025)
+  (:gh:`1209` by `lindicaphxag-tech`_).
 
 - Add :class:`braindecode.models.SeizureTransformer`, the U-shaped convolution
   and Transformer seizure detector of Wu et al. (2025) that won the 2025 SzCORE
@@ -249,6 +260,7 @@ Requirements
 Bug fixes
 ==========
 
+- Model fixes caught by new CPU-only integration checks (complex tensors, host syncs, kernel gaps, device/dtype follow, training after ``inference_mode``, deepcopy/pickle): BrainOmni/BrainTokenizer SELU trains on Gaudi, EEGSym pools with ``avg_pool2d``, FBCNet/FBMSNet/FBLightConvNet and LUNA run in float16, EEGMiner and AttnSleep deep-copy after training, Labram and NeuroRVQ pickle, SignalJEPA heads accept ``channel_strategy``, and tensors built in ``forward`` follow the input in CodeBrain, TCFormer, LUNA, MVPFormer, BrainOmni, ZUNA, DIVER1 and EEGDINO; float32 outputs unchanged (:gh:`1253` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.BrainOmni` and :class:`braindecode.models.BrainTokenizer`
   now run forward on Intel Gaudi (HPU) in lazy mode: the SEANet LSTM input is
   permuted as a 4D view, which Gaudi compiles; values are unchanged
@@ -2198,6 +2210,7 @@ Authors
 .. _Aditya Singh: https://github.com/adityasingh2400
 .. _Julien Gadonneix: https://github.com/julien-gadonneix
 .. _Li Qing: https://github.com/qinxwew
+.. _Mahir Jain: https://github.com/mahirjain01
 .. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
 

@@ -51,11 +51,16 @@ class StatLayer(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.stat_fn(x, dim=self.dim, keepdim=self.keepdim)
+        if self.clamp_range is None and not self.apply_log:
+            return out
+        dtype = out.dtype
+        # Clamp and log in at least float32: the bounds overflow float16.
+        out = out.to(torch.promote_types(dtype, torch.float32))
         if self.clamp_range is not None:
             out = torch.clamp(out, min=self.clamp_range[0], max=self.clamp_range[1])
         if self.apply_log:
             out = torch.log(out)
-        return out
+        return out.to(dtype)
 
 
 # make things more simple

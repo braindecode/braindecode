@@ -396,10 +396,11 @@ class _RotaryPositionEmbedding(nn.Module):
         rotary_sine = rotary_sine.unsqueeze(0).unsqueeze(2)
 
         batch_size, sequence_length, num_heads, head_dim = query.shape
-        query_pairs = query.float().reshape(
+        work = torch.promote_types(query.dtype, torch.float32)
+        query_pairs = query.to(work).reshape(
             batch_size, sequence_length, num_heads, head_dim // 2, 2
         )
-        key_pairs = key.float().reshape(
+        key_pairs = key.to(work).reshape(
             batch_size, sequence_length, num_heads, head_dim // 2, 2
         )
         rotated_query = self.merge_rotary_pairs(
@@ -409,10 +410,10 @@ class _RotaryPositionEmbedding(nn.Module):
             torch.stack((-key_pairs[..., 1], key_pairs[..., 0]), dim=-1)
         )
 
-        query = (query.float() * rotary_cosine + rotated_query * rotary_sine).type_as(
+        query = (query.to(work) * rotary_cosine + rotated_query * rotary_sine).type_as(
             query
         )
-        key = (key.float() * rotary_cosine + rotated_key * rotary_sine).type_as(key)
+        key = (key.to(work) * rotary_cosine + rotated_key * rotary_sine).type_as(key)
         return query, key
 
 

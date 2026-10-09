@@ -3,6 +3,7 @@
 from .atcnet import ATCNet
 from .attentionbasenet import AttentionBaseNet
 from .attn_sleep import AttnSleep
+from .axon import AXON
 from .barista import BaRISTA
 from .base import EEGModuleMixin
 from .bendr import BENDR
@@ -75,7 +76,9 @@ from .steegformer import STEEGFormer
 from .syncnet import SyncNet
 from .tcformer import TCFormer
 from .tcn import BDTCN, TCN
+from .tfm_tokenizer import TFMTokenizer, TFMTokenizerOutput
 from .tidnet import TIDNet
+from .tmsanet import TMSANet
 from .tsinception import TSception
 from .usleep import USleep
 from .util import (
@@ -94,6 +97,7 @@ _init_models_dict()
 
 __all__ = [
     "ATCNet",
+    "AXON",
     "AttnSleep",
     "AttentionBaseNet",
     "BaRISTA",
@@ -170,9 +174,12 @@ __all__ = [
     "STEEGFormer",
     "SyncNet",
     "BDTCN",
+    "TFMTokenizer",
+    "TFMTokenizerOutput",
     "TCFormer",
     "TCN",
     "TIDNet",
+    "TMSANet",
     "TSception",
     "USleep",
     "ZUNA",

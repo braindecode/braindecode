@@ -299,14 +299,15 @@ def _build_rotary_cache(
 ) -> tuple[Tensor, Tensor]:
     """Return ``(cos, sin)`` each of shape ``(seq_len, head_dim)``.
 
-    Angles are computed in float32 for precision; the returned cos/sin are
-    cast to ``dtype`` (the token dtype) so attention stays in the working
-    precision under autocast.
+    Angles are computed in at least float32 for precision; the returned
+    cos/sin are cast to ``dtype`` (the token dtype) so attention stays in the
+    working precision under autocast.
     """
+    work = torch.promote_types(dtype or torch.float32, torch.float32)
     theta = 1.0 / (
-        10000 ** (torch.arange(0, head_dim, 2, device=device).float() / head_dim)
+        10000 ** (torch.arange(0, head_dim, 2, device=device, dtype=work) / head_dim)
     )
-    seq_idx = torch.arange(seq_len, device=device).float()
+    seq_idx = torch.arange(seq_len, device=device, dtype=work)
     freqs = torch.outer(seq_idx, theta)  # (seq_len, head_dim/2)
     emb = torch.cat((freqs, freqs), dim=-1)  # (seq_len, head_dim)
     cos, sin = emb.cos(), emb.sin()

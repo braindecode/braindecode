@@ -306,6 +306,11 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             )  # (B, N, 1), since a patch is either fully masked or not
             x_masked = torch.where(mask.bool(), mask_tokens, x_masked)
 
+        dtype = channel_locations.dtype
+        # Normalise in at least float32: the 1e-8 below underflows float16.
+        channel_locations = channel_locations.to(
+            torch.promote_types(dtype, torch.float32)
+        )
         channel_min = torch.min(channel_locations, dim=1, keepdim=True)[0]
         channel_max = torch.max(channel_locations, dim=1, keepdim=True)[0]
         channel_locations = (channel_locations - channel_min) / (
@@ -319,7 +324,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
         channel_locations = nerf_positional_encoding(
             channel_locations, self.patch_embed_size
-        )
+        ).to(dtype)
         channel_locations_emb = self.channel_location_embedder(channel_locations)
 
         x_tokenized = rearrange(x_masked, "B (C t) D -> (B t) C D", C=num_channels)
@@ -449,7 +454,8 @@ def nerf_positional_encoding(coords: torch.Tensor, embed_size: int) -> torch.Ten
     device = coords.device
     freqs = embed_size // (2 * dim)
     leftover = embed_size - freqs * 2 * dim
-    freq_bands = 2.0 ** torch.arange(freqs, device=device).float()
+    work = torch.promote_types(coords.dtype, torch.float32)
+    freq_bands = 2.0 ** torch.arange(freqs, device=device, dtype=work)
     scaled_coords = coords.unsqueeze(-1) * freq_bands.view(
         1, 1, 1, -1
     )  # (N, C, dim, freqs)
