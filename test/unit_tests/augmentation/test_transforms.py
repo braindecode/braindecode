@@ -1,8 +1,11 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
+#          Li Qing <325196192+qinxwew@users.noreply.github.com>
 #
 # License: BSD (3-clause)
+import pickle  # nosec B403 - only round-trips objects built in the tests
+
 import numpy as np
 import pytest
 import torch
@@ -38,6 +41,7 @@ from braindecode.augmentation.transforms import (
     SignFlip,
     SmoothTimeMask,
     TimeReverse,
+    TrivialAugment,
     _get_standard_10_20_positions,
 )
 from braindecode.models import ShallowFBCSPNet
@@ -854,6 +858,65 @@ def test_band_rotation_transform_seed_reproducibility():
     assert torch.equal(BandRotation(**{**kw, "probability": 0.0})(X), X)
 
 
+def test_trivial_augment_transform():
+    X = torch.from_numpy(np.random.RandomState(31).randn(200, 8, 100)).float()
+    y = torch.arange(200) % 4
+    common_transform_assertions((X, y), TrivialAugment(random_state=0)(X, y))
+
+
+def test_trivial_augment_pool():
+    default_ops = [
+        "TimeReverse",
+        "SignFlip",
+        "FTSurrogate",
+        "ChannelsDropout",
+        "ChannelsShuffle",
+        "SmoothTimeMask",
+        "GaussianNoise",
+        "AmplitudeScale",
+    ]
+    assert TrivialAugment().op_names == default_ops
+    assert TrivialAugment(sfreq=250).op_names == default_ops + [
+        "BandstopFilter",
+        "FrequencyShift",
+    ]
+    positions = _get_standard_10_20_positions(ordered_ch_names=MONTAGE_10_20)
+    assert TrivialAugment(sensors_positions_matrix=positions).op_names == (
+        default_ops + ["SensorsRotation"]
+    )
+    with pytest.raises(ValueError, match="too small"):
+        TrivialAugment(sfreq=6)
+    with pytest.raises(ValueError, match="num_bins"):
+        TrivialAugment(num_bins=0)
+
+
+def test_trivial_augment_per_example_strengths():
+    """Strengths are sampled per example (not per batch) from the grid."""
+    transform = TrivialAugment(num_bins=4, random_state=2)
+    grid = [1.0, 2.0, 3.0, 4.0]
+    # white-box: a single deterministic op, so each row's scale is its strength
+    transform._pool = [("Scale", grid, [lambda X, y, s=s: (X * s, y) for s in grid])]
+    X = torch.from_numpy(np.random.RandomState(5).randn(100, 8, 50)).float()
+    y = torch.zeros(100)
+    tr_X, tr_y = transform(X, y)
+    row_scale = (tr_X / X).mean(dim=(1, 2))
+    assert all(torch.isclose(s, torch.tensor(grid)).any() for s in row_scale)
+    assert row_scale.unique().numel() > 1
+    assert torch.equal(tr_y, y)
+
+
+def test_trivial_augment_picklable():
+    # DataLoader workers pickle the transform; the copy must keep the rng state
+    transform = TrivialAugment(sfreq=250, random_state=0)
+    restored = pickle.loads(pickle.dumps(transform))  # nosec B301 - own object
+    # windows long enough for BandstopFilter's default filter length
+    X = torch.from_numpy(np.random.RandomState(3).randn(32, 8, 2000)).float()
+    y = torch.zeros(32)
+    tr_a, y_a = transform(X, y)
+    tr_b, y_b = restored(X, y)
+    assert torch.equal(tr_a, tr_b) and torch.equal(y_a, y_b)
+
+
 @pytest.mark.parametrize(
     "augmentation,kwargs",
     [
@@ -879,6 +942,7 @@ def test_band_rotation_transform_seed_reproducibility():
         (SensorsZRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
         (SegmentationReconstruction, {"probability": 0.5}),
         (MaskEncoding, {"probability": 0.5}),
+        (TrivialAugment, {"probability": 0.5, "sfreq": 100}),
     ],
 )
 def test_set_params(augmented_mock_clf, augmentation, kwargs, random_batch):
