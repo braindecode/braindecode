@@ -32,7 +32,9 @@ def _xyz_div_term(n_dim):
     call; stored as a buffer, it then follows the model dtype exactly (a float32
     to float64 cast is exact).
     """
-    return torch.exp((1 - torch.arange(0, n_dim, 2) / n_dim) * 2 * math.pi)
+    # on the CPU whatever the default-device context, which would change the last bits
+    freqs = torch.arange(0, n_dim, 2, device="cpu")
+    return torch.exp((1 - freqs / n_dim) * 2 * math.pi)
 
 
 def _pos_encode_xyz(ch_pos, x_min, x_max, div_term):

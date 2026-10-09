@@ -1489,3 +1489,20 @@ def test_rejects_inputs_with_another_number_of_channels(return_features):
         x = torch.randn(2, n_chans, model.n_times) * 1e-5
         with pytest.raises(ValueError, match="channels"):
             model(x, return_features=return_features)
+
+
+def test_spatial_frequencies_are_computed_on_the_cpu_whatever_the_default_device(
+    monkeypatch,
+):
+    devices = []
+    exp = torch.exp
+
+    def spy(x, *args, **kwargs):
+        devices.append(x.device.type)
+        return exp(x, *args, **kwargs)
+
+    monkeypatch.setattr(torch, "exp", spy)
+    with torch.device("meta"):
+        model = _model(random_projection=None)
+    assert devices and set(devices) == {"cpu"}
+    assert model.model.pos_encoder.div_term.device.type == "meta"
