@@ -1016,6 +1016,29 @@ def test_eeginception_mi_binary_n_params(n_filter, reported):
     assert n_params == reported
 
 
+@pytest.mark.parametrize("dtype, rtol", [(torch.float32, 1e-5), (torch.float64, 1e-10)])
+def test_eeginception_mi_fft_conv(dtype, rtol):
+    """The FFT path equals the direct convolution up to rounding (outputs and
+    gradients); on CPU the default takes the direct one on a small input and
+    the FFT one past the crossover."""
+    kw = dict(n_chans=3, n_outputs=2, n_times=256, sfreq=128, n_filters=8)
+    models = {}
+    for mode in (False, True, None):
+        torch.manual_seed(0)
+        models[mode] = EEGInceptionMI(fft_conv=mode, **kw).to(dtype).eval()
+    x = torch.randn(8, 3, 256, dtype=dtype)
+    outs, grads = {}, {}
+    for mode in (False, True):
+        outs[mode] = models[mode](x)
+        outs[mode].square().sum().backward()
+        grads[mode] = torch.cat([p.grad.flatten() for p in models[mode].parameters()])
+    for got, ref in ((outs[True], outs[False]), (grads[True], grads[False])):
+        assert (got - ref).abs().max() <= rtol * ref.abs().max()
+    with torch.no_grad():  # largest kernel: 108 samples
+        assert torch.equal(models[None](x[:1]), models[False](x[:1]))
+        assert torch.equal(models[None](x), models[True](x))
+
+
 def test_atcnet(input_sizes):
     sfreq = 250
     input_sizes["n_in_times"] = 1125
