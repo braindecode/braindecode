@@ -1232,22 +1232,18 @@ def test_luna_variants_device_compatibility(
             assert output_cuda.device.type == "cuda"
 
 
-def test_luna_variants_different_channel_counts(
-    luna_base_config, luna_large_config, luna_huge_config
-):
-    """Test LUNA variants handle different channel counts."""
-    configs = [luna_base_config, luna_large_config, luna_huge_config]
-
+def test_luna_variants_different_channel_counts(luna_base_config):
+    """Test LUNA handles different channel counts (the variants differ only in
+    width and depth; test_luna_variants_output_consistency forwards each)."""
     for n_chans in [1, 4, 8, 16, 32, 64]:
-        for config in configs:
-            config["n_chans"] = n_chans
-            model = LUNA(**config)
-            model.eval()
+        luna_base_config["n_chans"] = n_chans
+        model = LUNA(**luna_base_config)
+        model.eval()
 
-            x = torch.randn(2, n_chans, 1000)
-            with torch.no_grad():
-                output = model(x)
-            assert output.shape == (2, 2)
+        x = torch.randn(2, n_chans, 1000)
+        with torch.no_grad():
+            output = model(x)
+        assert output.shape == (2, 2)
 
 
 def test_luna_variants_output_consistency(
