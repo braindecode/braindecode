@@ -1,10 +1,12 @@
 import numpy as np
 import pytest
 import torch
+from scipy.fft import next_fast_len
 from scipy.signal import hilbert
 
 from braindecode.functional import (
     _real_dft,
+    fft_conv1d,
     hilbert_freq,
     plv_time,
     rotate_pairs,
@@ -273,3 +275,31 @@ def test_real_dft_basis_rejects_lengths_that_overflow_the_phase_index():
     assert cosine.shape == sine.shape == (32769, 65536)
     with pytest.raises(ValueError, match="65536"):
         _real_dft.real_dft_basis(65537, device="cpu", dtype=torch.float32)
+
+
+@pytest.mark.parametrize("kernel_size", [7, 8])
+@pytest.mark.parametrize("dtype, tol", [(torch.float32, 1e-5), (torch.float64, 1e-12)])
+def test_fft_conv1d_matches_conv1d_same(kernel_size, dtype, tol):
+    """Odd and even kernels, aligned like ``padding="same"``; gradients too."""
+    x = torch.randn(3, 4, 50, dtype=dtype, requires_grad=True)
+    w = torch.randn(5, 4, kernel_size, dtype=dtype, requires_grad=True)
+    b = torch.randn(5, dtype=dtype, requires_grad=True)
+    ref = torch.nn.functional.conv1d(x, w, b, padding="same")
+    out = fft_conv1d(x, w, b)
+    assert out.dtype == dtype
+    torch.testing.assert_close(out, ref, rtol=0, atol=tol * ref.abs().max().item())
+    g = torch.randn_like(ref)
+    got = torch.autograd.grad(out, (x, w, b), g)
+    want = torch.autograd.grad(ref, (x, w, b), g)
+    for a, e in zip(got, want):
+        torch.testing.assert_close(a, e, rtol=0, atol=tol * e.abs().max().item())
+    half = fft_conv1d(x.detach().bfloat16(), w.detach().bfloat16())
+    assert half.dtype == torch.bfloat16
+    ref = fft_conv1d(x.detach().bfloat16().float(), w.detach().bfloat16().float())
+    torch.testing.assert_close(half, ref.bfloat16(), rtol=0, atol=0)
+
+
+def test_fft_len_matches_scipy():
+    from braindecode.functional.functions import _next_fast_len
+
+    assert all(_next_fast_len(n) == next_fast_len(n, real=True) for n in range(1, 5000))

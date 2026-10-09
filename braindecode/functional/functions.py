@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 import numpy as np
 import torch
@@ -52,6 +53,91 @@ def spectral_input(x: torch.Tensor) -> torch.Tensor:
     if x.device.type == "hpu":
         x = x.cpu()
     return x.to(torch.promote_types(x.dtype, torch.float32))
+
+
+def fft_conv1d(
+    x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor] = None
+) -> torch.Tensor:
+    """``F.conv1d(x, weight, bias, padding="same")`` computed with FFTs.
+
+    Equal to the direct convolution up to float rounding: the FFT is long
+    enough for a linear (not circular) convolution. Its cost barely grows with
+    the kernel size, so it is faster than the direct one for long kernels on
+    CPU (see :func:`prefer_fft_conv`). float16/bfloat16 inputs are computed in
+    float32 (:func:`spectral_input`) and cast back.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input of shape ``(batch, in_channels, n_times)``.
+    weight : torch.Tensor
+        Kernels of shape ``(out_channels, in_channels, kernel_size)``.
+    bias : torch.Tensor | None
+        Bias of shape ``(out_channels,)``.
+
+    Returns
+    -------
+    torch.Tensor
+        Output of shape ``(batch, out_channels, n_times)``, dtype and device of
+        ``x``. For an even ``kernel_size`` it is aligned like torch's
+        ``padding="same"`` (the extra zero padded on the right).
+    """
+    n_times, kernel_size = x.shape[-1], weight.shape[-1]
+    # >= n_times + kernel_size - 1 (no circular wrap-around), even and
+    # 5-smooth: the fast cases of a real FFT
+    n_fft = 2 * _next_fast_len((n_times + kernel_size) // 2)
+    xs = spectral_input(x)
+    # conv1d is a cross-correlation: a convolution with the flipped kernel
+    x_f = torch.fft.rfft(xs, n=n_fft).permute(2, 0, 1)  # (freq, batch, in)
+    w_f = torch.fft.rfft(weight.to(xs).flip(-1), n=n_fft).permute(2, 1, 0)
+    # Per frequency (batch, in) @ (in, out) in complex numbers, as one real
+    # matmul (a complex one is slower on CPU): [Re x; Im x] @ [Re w, Im w]
+    # (columns interleaved) holds the four real products.
+    p = torch.cat([x_f.real, x_f.imag], 1) @ torch.view_as_real(w_f).flatten(2)
+    p = p.unflatten(1, [2, x.shape[0]]).unflatten(3, [-1, 2])  # x re/im, w re/im
+    y_f = torch.complex(
+        p[:, 0, :, :, 0] - p[:, 1, :, :, 1], p[:, 0, :, :, 1] + p[:, 1, :, :, 0]
+    )
+    y = torch.fft.irfft(y_f.permute(1, 2, 0), n=n_fft)
+    # "same" output t is sample t + kernel_size // 2 of the full convolution
+    y = y[..., kernel_size // 2 : kernel_size // 2 + n_times]
+    if bias is not None:
+        y = y + bias.to(y).unsqueeze(-1)
+    return y.to(x)
+
+
+def prefer_fft_conv(x: torch.Tensor, kernel_size: int) -> bool:
+    """Whether :func:`fft_conv1d` is expected to beat a direct convolution.
+
+    Rule measured for :class:`~braindecode.models.EEGInceptionMI` (48 to 240
+    channels, 128-500 Hz, 2 CPU threads, oneDNN on and off): on CPU the FFT
+    wins for float16/bfloat16 inputs (no fast half-precision CPU convolution)
+    and from ``batch_size * kernel_size >= 600``. GPUs and HPUs (no complex
+    dtype) keep the direct convolution.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input of the convolution, ``(batch, in_channels, n_times)``.
+    kernel_size : int
+        Kernel length in samples.
+    """
+    return x.device.type == "cpu" and (
+        x.element_size() == 2 or x.shape[0] * kernel_size >= 600
+    )
+
+
+def _next_fast_len(n: int) -> int:
+    """Smallest ``2^a 3^b 5^c >= n`` (scipy's ``next_fast_len(n, real=True)``)."""
+    n -= 1
+    m = 0
+    while m != 1:
+        n += 1
+        m = n
+        for p in [2, 3, 5]:
+            while m % p == 0:
+                m = m // p
+    return n
 
 
 def drop_path(
