@@ -185,6 +185,7 @@ class _BranchTransformer(nn.Module):
         self.pos_embed = nn.Parameter(torch.zeros(n_channels + 1, embed_dim))
         self.time_embed = nn.Parameter(torch.zeros(max_patches, embed_dim))
         self.pos_drop = nn.Dropout(drop_prob)
+        self._dropout = max(drop_prob, attn_drop_rate, drop_path_rate) > 0
         drop_paths = torch.linspace(0, drop_path_rate, depth).tolist()
         self.blocks = nn.ModuleList(
             [
@@ -211,27 +212,31 @@ class _BranchTransformer(nn.Module):
         return spatial, self.time_embed[time_indices]
 
     def forward(
-        self, tokens: Tensor, spatial: Tensor, temporal: Tensor, branch: int
-    ) -> Tensor:
-        """Encode ``(batch, n_tokens, embed_dim)`` tokens of scale ``branch`` (1-4)."""
-        tokens = torch.cat(
-            (self.cls_token.expand(tokens.shape[0], -1, -1), tokens), dim=1
-        )
-        tokens = tokens + spatial
-        tokens[:, 1:] = tokens[:, 1:] + temporal
-        tokens = self.pos_drop(tokens)
-        for block in self.blocks:
-            tokens = block(tokens)
-        # Unrolled (no getattr with a computed name) so TorchScript compiles it.
-        if branch == 1:
-            return self.fc_norm_1(tokens[:, 1:])
-        if branch == 2:
-            return self.fc_norm_2(tokens[:, 1:])
-        if branch == 3:
-            return self.fc_norm_3(tokens[:, 1:])
-        if branch == 4:
-            return self.fc_norm_4(tokens[:, 1:])
-        raise ValueError(f"branch must be 1, 2, 3 or 4, got {branch}.")
+        self, scales: List[Tensor], spatial: Tensor, temporal: Tensor
+    ) -> List[Tensor]:
+        """Encode the four scales' ``(batch, n_tokens, embed_dim)`` tokens."""
+        # One pass over the scales stacked on the batch axis, or one pass per
+        # scale while dropout draws masks (RNG order).
+        if not (self.training and self._dropout):
+            scales = [torch.cat(scales)]
+        outs = []
+        for tokens in scales:
+            tokens = torch.cat(
+                (self.cls_token.expand(tokens.shape[0], -1, -1), tokens), dim=1
+            )
+            tokens = tokens + spatial
+            tokens[:, 1:] = tokens[:, 1:] + temporal
+            tokens = self.pos_drop(tokens)
+            for block in self.blocks:
+                tokens = block(tokens)
+            outs.append(tokens[:, 1:])
+        f1, f2, f3, f4 = torch.cat(outs).chunk(4)
+        return [
+            self.fc_norm_1(f1),
+            self.fc_norm_2(f2),
+            self.fc_norm_3(f3),
+            self.fc_norm_4(f4),
+        ]
 
 
 class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
@@ -521,11 +526,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         batch, channels, n_patches, _ = patches.shape
         b1, b2, b3, b4 = self.encoder.patch_embed(patches)
         spatial, temporal = self.encoder.embeddings(time, spatial)
-        # The four scales unrolled (no getattr with a computed name) for TorchScript.
-        f1 = self.encoder(b1, spatial, temporal, 1)
-        f2 = self.encoder(b2, spatial, temporal, 2)
-        f3 = self.encoder(b3, spatial, temporal, 3)
-        f4 = self.encoder(b4, spatial, temporal, 4)
+        f1, f2, f3, f4 = self.encoder([b1, b2, b3, b4], spatial, temporal)
         latents = [
             self.encode_task_layer_1(f1),
             self.encode_task_layer_2(f2),
@@ -585,20 +586,14 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         quantized, _ = self._encode(patches, time, spatial)
         q1, q2, q3, q4 = quantized
         # The four scales unrolled (no getattr with a computed name) for TorchScript.
-        features = []
-        tokens = self.decoder.patch_embed_1(q1)
-        spatial_1, temporal_1 = self.decoder.embeddings(time, spatial)
-        features.append(self.decoder(tokens, spatial_1, temporal_1, 1))
-        tokens = self.decoder.patch_embed_2(q2)
-        spatial_2, temporal_2 = self.decoder.embeddings(time, spatial)
-        features.append(self.decoder(tokens, spatial_2, temporal_2, 2))
-        tokens = self.decoder.patch_embed_3(q3)
-        spatial_3, temporal_3 = self.decoder.embeddings(time, spatial)
-        features.append(self.decoder(tokens, spatial_3, temporal_3, 3))
-        tokens = self.decoder.patch_embed_4(q4)
-        spatial_4, temporal_4 = self.decoder.embeddings(time, spatial)
-        features.append(self.decoder(tokens, spatial_4, temporal_4, 4))
-        decoded = torch.cat(features, dim=-1)
+        tokens = [
+            self.decoder.patch_embed_1(q1),
+            self.decoder.patch_embed_2(q2),
+            self.decoder.patch_embed_3(q3),
+            self.decoder.patch_embed_4(q4),
+        ]
+        spatial, temporal = self.decoder.embeddings(time, spatial)
+        decoded = torch.cat(self.decoder(tokens, spatial, temporal), dim=-1)
         rec_amp = self.decode_task_layer_amplitude(decoded)
         rec_sin = self.decode_task_layer_angle_sin(decoded).reshape_as(patches)
         rec_cos = self.decode_task_layer_angle_cos(decoded).reshape_as(patches)

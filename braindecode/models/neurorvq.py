@@ -517,6 +517,7 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         )
         self.time_embed = nn.Parameter(torch.zeros(max_patches, embed_dim))
         self.pos_drop = nn.Dropout(drop_prob)
+        self._dropout = max(drop_prob, attn_drop_rate, drop_path_rate) > 0
         drop_paths = torch.linspace(0, drop_path_rate, depth).tolist()
         # LaBraM's attention builds ``qk_norm(head_dim, eps=1e-6)``.
         norm = nn.LayerNorm if qk_norm else None
@@ -571,7 +572,13 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             )
         batch = x.shape[0]
         x = x.reshape(batch, self.n_chans, self.num_patches, self.patch_size)
-        branches = self.patch_embed(x)
+        b1, b2, b3, b4 = self.patch_embed(x)
+        # The scales share the blocks: one pass over them stacked on the batch
+        # axis, or one pass per scale while dropout draws masks (RNG order).
+        if self.training and self._dropout:
+            branches = [b1, b2, b3, b4]
+        else:
+            branches = [torch.cat((b1, b2, b3, b4))]
         scales = []
         spatial_ix = self.spatial_embedding_ix.repeat_interleave(self.num_patches)
         spatial_ix = F.pad(spatial_ix, (1, 0), value=0.0)
@@ -580,8 +587,8 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             self.max_patches - self.num_patches, self.max_patches, device=x.device
         ).repeat(self.n_chans)
         temporal = self.time_embed[temporal_ix].unsqueeze(0)
-        cls = self.cls_token.expand(batch, -1, -1)
         for branch in branches:
+            cls = self.cls_token.expand(branch.shape[0], -1, -1)
             branch = torch.cat((cls, branch), dim=1)
             branch = branch + spatial
             branch[:, 1:] = branch[:, 1:] + temporal
@@ -589,7 +596,7 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             for block in self.blocks:
                 branch = block(branch)
             scales.append(self.norm(branch[:, 1:]))
-        tokens = torch.cat(scales, dim=-1)
+        tokens = torch.cat(torch.cat(scales).chunk(4), dim=-1)
         return tokens.flatten(1) if self.head_pooling == "flatten" else tokens.mean(1)
 
     def forward(
