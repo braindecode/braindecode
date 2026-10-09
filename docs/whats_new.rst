@@ -246,6 +246,14 @@ Enhancements
   ``input_window_seconds`` (as in Hub configs) (:gh:`1256` by
   `Bruno Aristimunha`_).
 
+- :func:`torch.jit.script` compiles MetaNeuromotorHand, NeuroRVQTokenizer, REVE,
+  SleepFM and SleepFMStager and gives the eager output (einops calls written as
+  ``reshape``/``permute``, NeuroRVQTokenizer's four scales without a
+  computed-name ``getattr``). Scripted REVE leaves out the autocast-off block
+  around its Fourier features (TorchScript needs a constant autocast device).
+  Eager outputs and state-dict keys are unchanged (:gh:`1271` by
+  `Bruno Aristimunha`_).
+
 - Shrink the slowest unit tests, keeping what each one checks: EEGInceptionMI's
   500 Hz case on 2 windows instead of 64; 1 s DANCE and ZUNA and 5-patch
   CodeBrain windows in the shared model test geometry; one ``EEGClassifier`` fit

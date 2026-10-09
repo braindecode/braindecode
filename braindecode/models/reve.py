@@ -8,12 +8,11 @@ import json
 import logging
 import math
 import os
-from typing import Optional, Union
+from typing import Dict, List, Optional, Union
 
 import pooch
 import torch
 import torch.nn.functional as F
-from einops import rearrange
 from mne.datasets.utils import _get_path
 from torch import nn
 from torch.nn import RMSNorm
@@ -238,6 +237,10 @@ class REVE(EEGModuleMixin, nn.Module):
     requiring matched layouts between pretraining and downstream tasks.
     """
 
+    # Constant, so TorchScript compiles only the head in use (``cls_query_token``
+    # exists only with attention pooling).
+    __constants__ = ["use_attention_pooling"]
+
     def __init__(
         self,
         n_outputs=None,
@@ -376,7 +379,7 @@ class REVE(EEGModuleMixin, nn.Module):
         pos: Optional[torch.Tensor] = None,
         return_output: bool = False,
         return_features: bool = False,
-    ) -> Union[torch.Tensor, list[torch.Tensor], dict]:
+    ) -> Union[torch.Tensor, List[torch.Tensor], Dict[str, Optional[torch.Tensor]]]:
         """
         Forward pass of the model.
 
@@ -439,35 +442,20 @@ class REVE(EEGModuleMixin, nn.Module):
         # Flatten spatial and temporal dimensions into a single sequence dimension
         # (batch, channels, n_patches, embed_dim) -> (batch, channels * n_patches, embed_dim)
         # This creates a sequence of tokens where each token represents one patch from one channel
-        x = (
-            rearrange(
-                patch_embeddings,
-                "batch chan patch emb -> batch (chan patch) emb",
-                chan=channel,
-                patch=n_patches,
-                emb=self.embed_dim,
-            )
-            + pos_embed
-        )
-        x = self.transformer(x, return_output)
+        x = patch_embeddings.flatten(1, 2) + pos_embed
+        encoded = self.transformer(x, return_output)
 
-        if return_output:
-            return x
+        if not isinstance(encoded, torch.Tensor):  # return_output: one per layer
+            return encoded
 
         # Reshape back from flattened sequence to separate channel and temporal dimensions
         # (batch, channels * n_patches, embed_dim) -> (batch, channels, n_patches, embed_dim)
         # This recovers the spatio-temporal structure for downstream processing
-        x = rearrange(
-            x,
-            "batch (chan patch) emb -> batch chan patch emb",
-            batch=batch_size,
-            chan=channel,
-            patch=n_patches,
-            emb=self.embed_dim,
-        )
+        x = encoded.reshape(batch_size, channel, n_patches, self.embed_dim)
 
         if return_features:
-            return {"features": x, "cls_token": None}
+            out: Dict[str, Optional[torch.Tensor]] = {"features": x, "cls_token": None}
+            return out
 
         if self.use_attention_pooling:
             x = self._attention_pooling(x)
@@ -494,13 +482,7 @@ class REVE(EEGModuleMixin, nn.Module):
         batch_size, n_channels, seq_len, embed_dim = x.shape
         # Flatten channel and sequence dimensions for attention pooling
         # (batch, channels, seq_len, embed_dim) -> (batch, channels * seq_len, embed_dim)
-        x = rearrange(
-            x,
-            "batch chan seq emb -> batch (chan seq) emb",
-            chan=n_channels,
-            seq=seq_len,
-            emb=embed_dim,
-        )
+        x = x.flatten(1, 2)
         query_output = self.cls_query_token.expand(batch_size, -1, -1)  # (B, 1, E)
         attention_scores = torch.matmul(query_output, x.transpose(-1, -2)) / (
             self.embed_dim**0.5
@@ -555,16 +537,13 @@ class Attention(nn.Module):
 
     def forward(self, x):
         x = self.norm(x)
-        qkv = self.to_qkv(x)
-        q, k, v = (
-            rearrange(
-                t, "batch seq (heads dim) -> batch heads seq dim", heads=self.heads
-            )
-            for t in qkv.chunk(3, dim=-1)
-        )
+        q, k, v = self.to_qkv(x).chunk(3, dim=-1)
+        # (batch, seq, heads * dim) -> (batch, heads, seq, dim), and back
+        q = q.unflatten(-1, (self.heads, -1)).transpose(1, 2)
+        k = k.unflatten(-1, (self.heads, -1)).transpose(1, 2)
+        v = v.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         out = F.scaled_dot_product_attention(q, k, v)
-        out = rearrange(out, "batch heads seq dim -> batch seq (heads dim)")
-        return self.to_out(out)
+        return self.to_out(out.transpose(1, 2).flatten(2))
 
 
 #################################################################################
@@ -596,15 +575,17 @@ class TransformerBackbone(nn.Module):
             )
 
     def forward(
-        self, x, return_out_layers=False
-    ) -> Union[torch.Tensor, list[torch.Tensor]]:
+        self, x, return_out_layers: bool = False
+    ) -> Union[torch.Tensor, List[torch.Tensor]]:
         out_layers = [x] if return_out_layers else []
-        for attn, ff in self.layers:
-            x = attn(x) + x
-            x = ff(x) + x
+        for layer in self.layers:  # (attention, feed-forward)
+            x = layer[0](x) + x
+            x = layer[1](x) + x
             if return_out_layers:
                 out_layers.append(x)
-        return out_layers if return_out_layers else x
+        if return_out_layers:
+            return out_layers
+        return x
 
 
 ##################################################################################
@@ -643,8 +624,12 @@ class FourierEmb4D(nn.Module):
     def forward(self, positions_: torch.Tensor) -> torch.Tensor:
         # In float32 with autocast off: Intel Gaudi (HPU) autocast also downcasts
         # the position * frequency products to bf16 before sin/cos (~3 % off).
-        with torch.autocast(device_type=positions_.device.type, enabled=False):
-            return self._embed(positions_.float()).to(positions_.dtype)
+        if torch.jit.is_scripting():  # TorchScript needs a constant autocast device
+            emb = self._embed(positions_.float()).to(positions_.dtype)
+        else:
+            with torch.autocast(device_type=positions_.device.type, enabled=False):
+                emb = self._embed(positions_.float()).to(positions_.dtype)
+        return emb
 
     def _embed(self, positions_: torch.Tensor) -> torch.Tensor:
         positions = positions_.clone()
@@ -686,8 +671,8 @@ class FourierEmb4D(nn.Module):
         emb = torch.cat([torch.cos(loc), torch.sin(loc)], dim=-1)
         return emb
 
-    @classmethod
-    def add_time_patch(cls, pos: torch.Tensor, num_patches: int) -> torch.Tensor:
+    @staticmethod
+    def add_time_patch(pos: torch.Tensor, num_patches: int) -> torch.Tensor:
         """
         Expand the position tensor by adding a time dimension, handling batched data.
 
@@ -806,7 +791,8 @@ class RevePositionBank(torch.nn.Module):
                 f"Invalid position data format in the downloaded config: {e}"
             ) from e
 
-    def forward(self, channel_names: list[str]):
+    @torch.jit.unused  # name lookup at construction; never part of a scripted forward
+    def forward(self, channel_names: list[str]) -> torch.Tensor:
         indices = [self.mapping[q] for q in channel_names if q in self.mapping]
 
         if len(indices) < len(channel_names):
