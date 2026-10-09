@@ -13,16 +13,9 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin, huggingface_hub
+from braindecode.models.base import EEGModuleMixin
 from braindecode.models.labram import _Attention
 from braindecode.modules import MLP, DropPath
-
-_PRETRAINED_REPO_ID = "ntinosbarmpas/NeuroRVQ"
-_PRETRAINED_REVISION = "d944b87f44ae0ba2923b2f10d0518f23f6803b76"
-_PRETRAINED_FILENAME = (
-    "pretrained_models/foundation_models/NeuroRVQ_EEG_foundation_model_v1.pt"
-)
-
 
 # Channel order used to train NeuroRVQ-EEG v1. Keep in sync with the released
 # inference module: https://github.com/KonstantinosBarmpas/NeuroRVQ
@@ -133,6 +126,84 @@ NEURORVQ_CHANNELS = (
     "tp9",
 )
 
+# The four released packages (ntinosbarmpas/NeuroRVQ, NeuroRVQ_{EEG,ECG,EMG,PPG})
+# differ only in these values: sampling rate, patch size, temporal-embedding
+# length, the two rows of temporal kernel sizes, the fine-tuning head pooling,
+# the residual codebooks per scale and the channel list.
+_MODALITIES = {
+    "eeg": dict(
+        sfreq=200,
+        patch_size=200,
+        max_patches=256,
+        kernels=((21, 15, 9, 5), (9, 7, 5, 3)),
+        head_pooling="flatten",
+        num_quantizers=8,
+        channels=NEURORVQ_CHANNELS,
+    ),
+    "ecg": dict(
+        sfreq=200,
+        patch_size=40,
+        max_patches=600,
+        kernels=((21, 15, 9, 5), (9, 7, 5, 3)),
+        head_pooling="mean",
+        num_quantizers=8,
+        channels=tuple("avf avl avr i ii iii v1 v2 v3 v4 v5 v6 vx vy vz".split()),
+    ),
+    "emg": dict(
+        sfreq=1000,
+        patch_size=200,
+        max_patches=256,
+        kernels=((51, 17, 8, 5), (25, 9, 4, 3)),
+        head_pooling="mean",
+        num_quantizers=16,
+        channels=tuple(sorted(f"c{i}" for i in range(1, 17))),
+    ),
+    "ppg": dict(
+        sfreq=100,
+        patch_size=80,
+        max_patches=12,
+        kernels=((41, 31, 17, 9), (17, 13, 9, 5)),
+        head_pooling="mean",
+        num_quantizers=8,
+        channels=("ppg_c1",),
+    ),
+}
+
+
+def _modality(model, modality: str) -> dict:
+    """Return the preset of ``modality`` after checking the sampling rate."""
+    if modality not in _MODALITIES:
+        raise ValueError(f"modality must be one of {sorted(_MODALITIES)}.")
+    preset = _MODALITIES[modality]
+    model_sfreq = model._sfreq
+    if model_sfreq is None and model._input_window_seconds is not None:
+        model_sfreq = model.n_times / model._input_window_seconds
+    if model_sfreq is not None and model_sfreq != preset["sfreq"]:
+        raise ValueError(
+            f"NeuroRVQ-{modality.upper()} was trained at {preset['sfreq']} Hz; "
+            "resample before calling the model."
+        )
+    return preset
+
+
+def _channel_slots(model, channel_names, channels: tuple[str, ...]):
+    """Normalized channel names and their slots in the pretrained ``channels``."""
+    if channel_names is None and model._chs_info is not None:
+        channel_names = [ch["ch_name"] for ch in model._chs_info]
+    if channel_names is None:
+        # Fallback for training from scratch; pass channel_names or chs_info
+        # with pretrained weights so electrodes map to their spatial slots.
+        channel_names = channels[: model.n_chans]
+    if len(channel_names) != model.n_chans:
+        raise ValueError("channel_names must have one entry per input channel.")
+    names = tuple(str(name).strip().lower() for name in channel_names)
+    if len(set(names)) != len(names):
+        raise ValueError("channel_names must be unique.")
+    unknown = [name for name in names if name not in channels]
+    if unknown:
+        raise ValueError(f"Unsupported NeuroRVQ channel name(s): {unknown}.")
+    return names, torch.tensor([channels.index(name) for name in names])
+
 
 class _Block(nn.Module):
     def __init__(
@@ -188,11 +259,11 @@ class _Block(nn.Module):
 
 
 class _MultiScaleTemporalConv(nn.Module):
-    """Released four-branch EEG patch embedding."""
+    """Released four-branch patch embedding; ``kernels`` = (first, second) rows."""
 
-    def __init__(self, out_chans: int = 8, activation: type[nn.Module] = nn.GELU):
+    def __init__(self, out_chans: int, activation: type[nn.Module], kernels):
         super().__init__()
-        for i, kernel in enumerate((21, 15, 9, 5), start=1):
+        for i, kernel in enumerate(kernels[0], start=1):
             setattr(
                 self,
                 f"conv1_{i}",
@@ -200,7 +271,7 @@ class _MultiScaleTemporalConv(nn.Module):
             )
             setattr(self, f"norm1_{i}", nn.GroupNorm(4, out_chans))
             setattr(self, f"pool1_{i}", nn.AvgPool2d((1, 2)))
-        for i, kernel in enumerate((9, 7, 5, 3), start=1):
+        for i, kernel in enumerate(kernels[1], start=1):
             setattr(
                 self,
                 f"conv2_{i}",
@@ -232,62 +303,78 @@ class _MultiScaleTemporalConv(nn.Module):
 
 
 class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
-    r"""NeuroRVQ-EEG foundation model from Barmpas et al. [neurorvq]_.
+    r"""NeuroRVQ foundation model for EEG, ECG and EMG from Barmpas et al. [neurorvq]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`
 
     The model combines four temporal convolution scales with a shared
-    Transformer encoder and learned channel/time embeddings. The released EEG
-    checkpoint contains a 6M-parameter masked-token foundation model; this
-    class adapts its pretrained encoder to Braindecode's window classifier API.
+    Transformer encoder and learned channel/time embeddings; this class adapts
+    the pretrained encoder to Braindecode's window classifier API.
 
-    Inputs are ``(batch, channels, time)``. Windows must be sampled at 200 Hz,
-    contain whole 200-sample patches, and use channels supported by the
-    pretrained model when ``channel_names`` or ``chs_info`` are provided. The
-    source EEG preprocessing example applies a 0.5--45 Hz band-pass, resamples
-    to 200 Hz, and clips amplitudes to +/-500 before inference. This model does
-    not preprocess signals.
+    Inputs are ``(batch, channels, time)``, sampled at the modality's rate
+    (EEG 200 Hz, ECG 200 Hz, EMG 1000 Hz, PPG 100 Hz), made of whole patches
+    (EEG 200, ECG 40, EMG 200, PPG 80 samples), with channel names from the
+    modality's pretrained list. This model does not preprocess signals; the
+    authors' EEG example applies a 0.5--45 Hz band-pass, resamples to 200 Hz
+    and clips amplitudes to +/-500.
 
-    The upstream implementation and checkpoint are licensed CC BY-NC 4.0.
+    The upstream implementation and checkpoints are licensed CC BY-NC 4.0.
     This is a non-commercial research license.
 
     `License <https://github.com/KonstantinosBarmpas/NeuroRVQ/blob/main/LICENSE>`_
 
-    Load the published EEG foundation checkpoint (the task-specific
-    classification head remains randomly initialized)::
+    .. important::
+       **Pre-trained Weights Available**
 
-        model = NeuroRVQ(
-            n_chans=3, n_outputs=4, n_times=800, sfreq=200,
-            channel_names=("f3", "f4", "cz"),
-        )
-    model.load_pretrained_weights()
+       The released foundation models (`ntinosbarmpas/NeuroRVQ
+       <https://huggingface.co/ntinosbarmpas/NeuroRVQ>`_, revision ``d944b87``,
+       CC BY-NC 4.0) are hosted as ``braindecode/neurorvq-eeg-pretrained``,
+       ``braindecode/neurorvq-ecg-pretrained`` and
+       ``braindecode/neurorvq-emg-pretrained``; the tokenizers are in
+       ``braindecode/neurorvq-tokenizer-{eeg,ecg,emg,ppg}-pretrained``
+       (:class:`NeuroRVQTokenizer`). The classification head is not
+       pretrained:
+
+       .. code-block:: python
+
+           from braindecode.models import NeuroRVQ
+
+           model = NeuroRVQ.from_pretrained(
+               "braindecode/neurorvq-eeg-pretrained", chs_info=raw.info["chs"], n_outputs=4
+           )
 
     Parameters
     ----------
     n_outputs : int
         Number of task-specific output classes.
     n_chans : int
-        Number of EEG channels in each input window.
+        Number of channels in each input window.
     chs_info : list of dict or None
         MNE channel metadata. Channel names are used to select the pretrained
         spatial embedding slots when ``channel_names`` is not provided.
     n_times : int
-        Number of input time samples. Must be divisible by 200 and no greater
-        than ``patch_size * max_patches``.
+        Number of input time samples. Must be divisible by ``patch_size`` and
+        no greater than ``patch_size * max_patches``.
     sfreq : float or None
-        Sampling frequency. If provided or inferable, it must be 200 Hz.
+        Sampling frequency. If provided or inferable, it must be the
+        modality's rate.
     channel_names : tuple of str, list of str, or None
-        Ordered electrode names. Names are case-insensitive and must occur in
-        the released 104-channel montage. If omitted, names are read from
-        ``chs_info``; without either, randomly initialized models use the first
-        entries in the released channel order. Loading released pretrained
-        weights requires explicit ``channel_names`` or ``chs_info`` to avoid
-        silently assigning input electrodes to the wrong spatial embeddings.
-    patch_size : int, default=200
-        Samples per temporal patch. NeuroRVQ-EEG v1 requires 200.
-    max_patches : int, default=256
-        Maximum number of patches represented by the pretrained temporal
-        embedding table.
+        Ordered channel names. Names are case-insensitive and must occur in
+        the modality's pretrained list (EEG: 104 electrodes; ECG: the 12
+        standard leads and ``vx``, ``vy``, ``vz``; EMG: ``c1``-``c16``; PPG:
+        ``ppg_c1``). If omitted,
+        names are read from ``chs_info``; without either, the first entries
+        of that list are used, which only suits training from scratch.
+    modality : {"eeg", "ecg", "emg", "ppg"}, default="eeg"
+        Released configuration: sampling rate, temporal kernel sizes, channel
+        list, head pooling (EEG flattens the tokens, the others average them)
+        and the defaults of ``patch_size`` and ``max_patches``. No PPG
+        foundation model was released.
+    patch_size : int or None, default=None
+        Samples per temporal patch; ``None`` uses the modality's value.
+    max_patches : int or None, default=None
+        Length of the temporal embedding table (EEG 256, ECG 600, EMG 256,
+        PPG 12); ``None`` uses the modality's value.
     depth : int, default=12
         Number of shared Transformer blocks applied to each temporal branch.
     num_heads : int, default=10
@@ -321,7 +408,9 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     ------------
     By default, ``(batch, n_outputs)`` logits. With ``return_features=True``,
     returns a dictionary whose ``"features"`` entry has shape
-    ``(batch, 4 * embed_dim * n_chans * (n_times // patch_size))``.
+    ``(batch, 4 * embed_dim * n_chans * (n_times // patch_size))`` for EEG
+    and ``(batch, 4 * embed_dim)`` for the other modalities, where
+    ``embed_dim = out_chans * patch_size // 8``.
 
     .. versionadded:: 1.8
 
@@ -342,8 +431,9 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         sfreq: float | None = None,
         *,
         channel_names: tuple[str, ...] | list[str] | None = None,
-        patch_size: int = 200,
-        max_patches: int = 256,
+        modality: str = "eeg",
+        patch_size: int | None = None,
+        max_patches: int | None = None,
         depth: int = 12,
         num_heads: int = 10,
         mlp_ratio: float = 4.0,
@@ -365,21 +455,13 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        if patch_size != 200:
-            raise ValueError(
-                "NeuroRVQ-EEG v1 requires patch_size=200 (200 Hz sampling)."
-            )
+        preset = _modality(self, modality)
+        patch_size = patch_size or preset["patch_size"]
+        max_patches = max_patches or preset["max_patches"]
         if self.n_times % patch_size:
-            raise ValueError("n_times must be divisible by patch_size (200 samples).")
+            raise ValueError(f"n_times must be divisible by patch_size ({patch_size}).")
         if self.n_times // patch_size > max_patches:
             raise ValueError(f"n_times supports at most {max_patches} patches.")
-        model_sfreq = self._sfreq
-        if model_sfreq is None and self._input_window_seconds is not None:
-            model_sfreq = self.n_times / self._input_window_seconds
-        if model_sfreq is not None and model_sfreq != 200:
-            raise ValueError(
-                "NeuroRVQ-EEG v1 was trained at 200 Hz; resample before calling the model."
-            )
         for name, value in (
             ("depth", depth),
             ("num_heads", num_heads),
@@ -403,27 +485,19 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         self.embed_dim = embed_dim
         self.patch_size = patch_size
         self.max_patches = max_patches
+        self.head_pooling = preset["head_pooling"]
         self.num_patches = self.n_times // patch_size
-        self._has_explicit_channel_mapping = (
-            channel_names is not None or self._chs_info is not None
+        self.channel_names, slots = _channel_slots(
+            self, channel_names, preset["channels"]
         )
-        self.channel_names = self._resolve_channel_names(channel_names)
-        channel_to_index = {name: i for i, name in enumerate(NEURORVQ_CHANNELS)}
-        unknown = [name for name in self.channel_names if name not in channel_to_index]
-        if unknown:
-            raise ValueError(f"Unsupported NeuroRVQ channel name(s): {unknown}.")
-        self.register_buffer(
-            "spatial_embedding_ix",
-            torch.tensor([channel_to_index[name] for name in self.channel_names]),
-            persistent=False,
-        )
+        self.register_buffer("spatial_embedding_ix", slots, persistent=False)
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.patch_embed = _MultiScaleTemporalConv(
-            out_chans=out_chans, activation=activation
+            out_chans, activation, preset["kernels"]
         )
         self.pos_embed = nn.Parameter(
-            torch.zeros(len(NEURORVQ_CHANNELS) + 1, embed_dim)
+            torch.zeros(len(preset["channels"]) + 1, embed_dim)
         )
         self.time_embed = nn.Parameter(torch.zeros(max_patches, embed_dim))
         self.pos_drop = nn.Dropout(drop_prob)
@@ -447,24 +521,12 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             ]
         )
         self.norm = nn.Identity()
-        head_dim = embed_dim * 4 * self.n_chans * self.num_patches
+        head_dim = embed_dim * 4
+        if self.head_pooling == "flatten":
+            head_dim *= self.n_chans * self.num_patches
         self.fc_norm = nn.LayerNorm(head_dim)
         self.final_layer = nn.Linear(head_dim, self.n_outputs)
         self._init_weights()
-
-    def _resolve_channel_names(self, channel_names):
-        if channel_names is None and self._chs_info is not None:
-            channel_names = [ch["ch_name"] for ch in self._chs_info]
-        if channel_names is None:
-            # This fallback is useful for training from scratch. For pretrained
-            # inference pass channel_names or chs_info to select spatial slots.
-            channel_names = NEURORVQ_CHANNELS[: self.n_chans]
-        if len(channel_names) != self.n_chans:
-            raise ValueError("channel_names must have one entry per input channel.")
-        normalized = tuple(str(name).strip().lower() for name in channel_names)
-        if len(set(normalized)) != len(normalized):
-            raise ValueError("channel_names must be unique.")
-        return normalized
 
     def _init_weights(self):
         nn.init.trunc_normal_(self.cls_token, std=0.02)
@@ -481,8 +543,7 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         with torch.no_grad():
             for i, block in enumerate(self.blocks, start=1):
                 block.attn.proj.weight.div_(math.sqrt(2.0 * i))
-                # block.mlp[2] is the MLP's output Linear (named fc2 upstream);
-                # see the mlp.fc1/mlp.fc2 -> mlp.0/mlp.2 key remap below.
+                # block.mlp[2] is the MLP's output Linear (``mlp.fc2`` upstream).
                 block.mlp[2].weight.div_(math.sqrt(2.0 * i))
 
     def _features(self, x: Tensor) -> Tensor:
@@ -510,7 +571,8 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             for block in self.blocks:
                 branch = block(branch)
             tokens.append(self.norm(branch[:, 1:]))
-        return torch.cat(tokens, dim=-1).flatten(1)
+        tokens = torch.cat(tokens, dim=-1)
+        return tokens.flatten(1) if self.head_pooling == "flatten" else tokens.mean(1)
 
     def forward(self, x: Tensor, return_features: bool = False):
         features = self.fc_norm(self._features(x))
@@ -526,88 +588,3 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             device=self.final_layer.weight.device,
             dtype=self.final_layer.weight.dtype,
         )
-
-    def load_pretrained_weights(self, checkpoint_path: str | None = None):
-        """Load the released NeuroRVQ-EEG v1 foundation checkpoint.
-
-        Parameters
-        ----------
-        checkpoint_path : str or None
-            Local checkpoint path. If ``None``, download the upstream file at
-            the pinned revision from Hugging Face Hub.
-
-        Returns
-        -------
-        self : NeuroRVQ
-            The model with the pretrained encoder weights loaded. The
-            classifier head is left at its current initialization.
-
-        Notes
-        -----
-        The source checkpoint also contains masked-token prediction heads that
-        are not used by this downstream classifier. They are intentionally
-        ignored; all shared encoder tensors must load successfully. Pretrained
-        spatial embeddings are electrode-specific, so ``channel_names`` or
-        ``chs_info`` must have been provided when constructing the model.
-        """
-        if not self._has_explicit_channel_mapping:
-            raise ValueError(
-                "Loading pretrained NeuroRVQ weights requires channel_names or "
-                "chs_info so input electrodes map to the released spatial "
-                "embedding slots. The implicit first-N channel fallback is only "
-                "supported for randomly initialized training."
-            )
-        if checkpoint_path is None:
-            if not HAS_HF_HUB:
-                raise ImportError(
-                    "Loading NeuroRVQ weights from the Hub requires "
-                    "huggingface_hub. Install braindecode[hub] or pass a local "
-                    "checkpoint_path."
-                )
-            checkpoint_path = huggingface_hub.hf_hub_download(
-                repo_id=_PRETRAINED_REPO_ID,
-                filename=_PRETRAINED_FILENAME,
-                revision=_PRETRAINED_REVISION,
-            )
-        state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-        state_dict = _remap_mlp_state_dict_keys(state_dict)
-        incompatible = self.load_state_dict(state_dict, strict=False)
-        expected_missing = {
-            "fc_norm.weight",
-            "fc_norm.bias",
-            "final_layer.weight",
-            "final_layer.bias",
-        }
-        ignored_unexpected = {
-            key
-            for key in incompatible.unexpected_keys
-            if key == "mask_token" or key.startswith(("norm_pre.", "head_pre_"))
-        }
-        unexpected = set(incompatible.unexpected_keys) - ignored_unexpected
-        if set(incompatible.missing_keys) != expected_missing or unexpected:
-            raise RuntimeError(
-                "The NeuroRVQ checkpoint does not match the expected encoder "
-                f"schema (missing={incompatible.missing_keys}, "
-                f"unexpected={sorted(unexpected)})."
-            )
-        return self
-
-
-def _remap_mlp_state_dict_keys(state_dict: dict) -> dict:
-    """Rename the released checkpoint's ``mlp.fc1``/``mlp.fc2`` keys.
-
-    The released checkpoint was produced against the upstream module, whose
-    feed-forward block names its two linear layers ``fc1``/``fc2``. The port
-    reuses :class:`braindecode.modules.MLP`, an ``nn.Sequential`` that names
-    the same two layers ``0``/``2``. Renaming here keeps the checkpoint format
-    untouched and isolates the key mapping to this one load path.
-    """
-    key_map = {".mlp.fc1.": ".mlp.0.", ".mlp.fc2.": ".mlp.2."}
-    renamed = {}
-    for key, value in state_dict.items():
-        for old, new in key_map.items():
-            if old in key:
-                key = key.replace(old, new)
-                break
-        renamed[key] = value
-    return renamed
