@@ -7,9 +7,9 @@
 from __future__ import annotations
 
 import math
+from typing import Dict, Optional
 
 import torch
-from einops import rearrange, repeat
 from torch import nn
 
 from braindecode.functional import sinusoidal_positional_encoding
@@ -92,7 +92,7 @@ class SimpleConv(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        positions: "torch.Tensor | None" = None,
+        positions: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         # x: (B, in_channels, T); positions: (B, in_channels, 2) when merger set.
         length = x.shape[-1]
@@ -108,7 +108,7 @@ class SimpleConv(nn.Module):
         return x[..., :length]
 
 
-def _fourier_encode(x, max_freq, num_bands):
+def _fourier_encode(x, max_freq: float, num_bands: int):
     # Transcribed verbatim from dance/dance/models/perceiver.py:14-21
     # (== perceiver_pytorch.fourier_encode). x: (...); returns
     # (..., 2*num_bands + 1): [sin(num_bands), cos(num_bands), original_position].
@@ -117,7 +117,7 @@ def _fourier_encode(x, max_freq, num_bands):
     scales = torch.linspace(
         1.0, max_freq / 2, num_bands, device=x.device, dtype=x.dtype
     )
-    scales = scales[(*((None,) * (x.ndim - 1)), Ellipsis)]
+    scales = scales.reshape([1] * (x.dim() - 1) + [num_bands])
     x = x * scales * math.pi
     x = torch.cat([x.sin(), x.cos()], dim=-1)
     return torch.cat((x, orig), dim=-1)
@@ -145,11 +145,15 @@ class _PreNorm(nn.Module):
             nn.LayerNorm(context_dim) if context_dim is not None else None
         )
 
-    def forward(self, x, **kwargs):
+    def forward(self, x, context: Optional[torch.Tensor] = None):
         x = self.norm(x)
-        if self.norm_context is not None and "context" in kwargs:
-            kwargs["context"] = self.norm_context(kwargs["context"])
-        return self.fn(x, **kwargs)
+        # ``norm_context`` is None (static under TorchScript) for the
+        # feed-forward and self-attention blocks, which take no context.
+        if self.norm_context is None or context is None:
+            out = self.fn(x)
+        else:
+            out = self.fn(x, context=self.norm_context(context))
+        return out
 
 
 class _Attention(nn.Module):
@@ -163,15 +167,19 @@ class _Attention(nn.Module):
         self.to_kv = nn.Linear(context_dim, inner * 2, bias=False)
         self.to_out = nn.Linear(inner, query_dim)
 
-    def forward(self, x, context=None):
+    def forward(self, x, context: Optional[torch.Tensor] = None):
         h = self.heads
         context = context if context is not None else x
         q = self.to_q(x)
         k, v = self.to_kv(context).chunk(2, dim=-1)
-        q, k, v = (rearrange(t, "b n (h d) -> (b h) n d", h=h) for t in (q, k, v))
+        # (b, n, h * d) -> (b * h, n, d)
+        q = q.unflatten(-1, (h, -1)).transpose(1, 2).flatten(0, 1)
+        k = k.unflatten(-1, (h, -1)).transpose(1, 2).flatten(0, 1)
+        v = v.unflatten(-1, (h, -1)).transpose(1, 2).flatten(0, 1)
         attn = (q @ k.transpose(-1, -2) * self.scale).softmax(dim=-1)
         out = attn @ v
-        out = rearrange(out, "(b h) n d -> b n (h d)", h=h)
+        # (b * h, n, d) -> (b, n, h * d)
+        out = out.unflatten(0, (-1, h)).transpose(1, 2).flatten(2)
         return self.to_out(out)
 
 
@@ -249,19 +257,20 @@ class Perceiver(nn.Module):
         axis_pos = [
             torch.linspace(-1.0, 1.0, steps=t, device=data.device, dtype=data.dtype)
         ]
-        pos = torch.stack(torch.meshgrid(*axis_pos, indexing="ij"), dim=-1)  # (T, 1)
+        pos = torch.stack(torch.meshgrid(axis_pos, indexing="ij"), dim=-1)  # (T, 1)
         enc_pos = _fourier_encode(pos, self.max_freq, self.num_freq_bands)  # (T,1,13)
-        enc_pos = rearrange(enc_pos, "... n d -> ... (n d)")  # (T, 13)
-        enc_pos = repeat(enc_pos, "... -> b ...", b=b)  # (B, T, 13)
+        enc_pos = enc_pos.flatten(-2)  # (T, 13)
+        enc_pos = enc_pos.unsqueeze(0).expand(b, -1, -1)  # (B, T, 13)
         data = torch.cat((data, enc_pos), dim=-1)  # (B, T, 141)
-        data = rearrange(data, "b ... d -> b (...) d")  # (B, T, 141)
-        x = repeat(self.latents, "n d -> b n d", b=b)
-        for cross_attn, cross_ff, self_attns in self.layers:
-            x = cross_attn(x, context=data) + x
-            x = cross_ff(x) + x
-            for self_attn, self_ff in self_attns:
-                x = self_attn(x) + x
-                x = self_ff(x) + x
+        data = data.reshape(b, -1, data.shape[-1])  # (B, T, 141)
+        x = self.latents.unsqueeze(0).expand(b, -1, -1)
+        # Each layer is (cross_attn, cross_ff, [(self_attn, self_ff), ...]).
+        for layer in self.layers:
+            x = layer[0](x, context=data) + x
+            x = layer[1](x) + x
+            for self_block in layer[2]:
+                x = self_block[0](x) + x
+                x = self_block[1](x) + x
         return self.to_logits(x)
 
 
@@ -318,7 +327,7 @@ class DanceDetrDecoder(nn.Module):
         self.start_head = nn.Linear(dim, 1)
         self.end_head = nn.Linear(dim, 1)
 
-    def forward(self, memory: torch.Tensor) -> dict:
+    def forward(self, memory: torch.Tensor) -> Dict[str, torch.Tensor]:
         b, t, _ = memory.shape
         memory = self.input_proj(memory)  # (B, T, dim)
         pe = sinusoidal_positional_encoding(t, memory.shape[-1]).to(memory)

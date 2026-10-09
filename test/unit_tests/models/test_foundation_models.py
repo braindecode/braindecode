@@ -739,7 +739,7 @@ def test_labram_forward_return_flags_remain_positional(chs_info, n_outputs, n_ch
     with torch.no_grad():
         out_default = model(x)
         # Positional: return_patch_tokens=False, return_all_tokens=True.
-        # ch_names is keyword-only, so this triggers the all-tokens path
+        # ch_names comes after the return flags, so this triggers the all-tokens path
         # without forcing callers to switch to kwargs for the return flags.
         out_all = model(x, False, True)
 

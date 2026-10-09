@@ -14,7 +14,6 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange
 
 
 def _is_distributed() -> bool:
@@ -37,7 +36,7 @@ def _all_reduce_sum(tensor: torch.Tensor) -> None:
 
 def _efficient_rotation_trick_transform(u, q, e):
     # Householder reflection + rank-1 correction: e - 2<e,w>w + 2<e,u>q, w = normalize(u+q).
-    w = F.normalize(u + q, p=2, dim=1, eps=1e-6).detach()
+    w = F.normalize(u + q, p=2.0, dim=1, eps=1e-6).detach()
     ew = (e * w).sum(dim=1, keepdim=True)
     eu = (e * u.detach()).sum(dim=1, keepdim=True)
     return e - 2 * ew * w + 2 * eu * q.detach()
@@ -48,8 +47,8 @@ def _rotate_to(src: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
     orig_shape = src.shape
     src = src.reshape(-1, orig_shape[-1])
     tgt = tgt.reshape(-1, orig_shape[-1])
-    norm_src = src.norm(dim=-1, keepdim=True).clamp(min=1e-6)
-    norm_tgt = tgt.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+    norm_src = torch.linalg.vector_norm(src, 2, dim=-1, keepdim=True).clamp(min=1e-6)
+    norm_tgt = torch.linalg.vector_norm(tgt, 2, dim=-1, keepdim=True).clamp(min=1e-6)
     rotated = _efficient_rotation_trick_transform(src / norm_src, tgt / norm_tgt, src)
     rotated = rotated * (norm_tgt / norm_src).detach()
     return rotated.reshape(orig_shape)
@@ -130,9 +129,11 @@ class EMACodebook(nn.Module):
             indices = torch.randint(0, num_samples, (num,), device=device)
         return samples[indices]
 
-    @torch.no_grad()
+    # No ``@torch.no_grad()`` decorators here: TorchScript resolves a decorated
+    # method's names in torch's wrapper module. Only init_embed_ calls this,
+    # under no_grad.
     def _kmeans(self, samples: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        samples = rearrange(samples, "... dim -> (...) dim")
+        samples = samples.reshape(-1, samples.shape[-1])
         dim, dtype = samples.shape[1], samples.dtype
         if samples.shape[0] < self.codebook_size:
             noise = torch.randn(
@@ -169,7 +170,6 @@ class EMACodebook(nn.Module):
             centers = torch.where(empty.unsqueeze(-1), centers, new_centers)
         return centers, bins
 
-    @torch.no_grad()
     def init_embed_(self, data: torch.Tensor) -> None:
         """Initialize fresh codebooks from data and synchronize rank-zero state."""
         # First-batch K-means is deliberately stateful and data-dependent, so it
@@ -182,14 +182,16 @@ class EMACodebook(nn.Module):
             return
         if bool(self.inited.item()):
             return
-        data = rearrange(data, "... dim -> (...) dim")
-        sampled = self._sample_vectors(data, 4096)
-        embed, cluster_size = self._kmeans(sampled)
-        self.embed.copy_(embed)
-        self.embed_avg.copy_(embed)
-        self.cluster_size.copy_(cluster_size)
-        self.inited.fill_(1)
-        _broadcast_tensors(self.buffers())
+        with torch.no_grad():
+            data = data.reshape(-1, data.shape[-1])
+            sampled = self._sample_vectors(data, 4096)
+            embed, cluster_size = self._kmeans(sampled)
+            self.embed.copy_(embed)
+            self.embed_avg.copy_(embed)
+            self.cluster_size.copy_(cluster_size)
+            self.inited.fill_(1)
+            if not torch.jit.is_scripting():
+                _broadcast_tensors(self.buffers())
 
     def replace_(self, samples: torch.Tensor, mask: torch.Tensor) -> None:
         modified = torch.where(
@@ -205,34 +207,36 @@ class EMACodebook(nn.Module):
         expired = self.cluster_size < self.threshold_ema_dead_code
         if not torch.any(expired):
             return
-        batch_samples = rearrange(batch_samples, "... dim -> (...) dim")
+        batch_samples = batch_samples.reshape(-1, batch_samples.shape[-1])
         self.replace_(batch_samples, expired)
-        _broadcast_tensors(self.buffers())
+        if not torch.jit.is_scripting():
+            _broadcast_tensors(self.buffers())
 
-    @torch.no_grad()
     def quantize(self, x: torch.Tensor) -> torch.Tensor:
-        work = torch.promote_types(x.dtype, torch.float32)
-        x = x.to(work)
-        embed = self.embed.t().to(work)
-        dist = (
-            x.pow(2).sum(1, keepdim=True)
-            - 2 * x @ embed
-            + embed.pow(2).sum(0, keepdim=True)
-        )
-        return dist.argmin(dim=-1)
+        with torch.no_grad():
+            work = torch.promote_types(x.dtype, torch.float32)
+            x = x.to(work)
+            embed = self.embed.t().to(work)
+            dist = (
+                x.pow(2).sum(1, keepdim=True)
+                - 2 * x @ embed
+                + embed.pow(2).sum(0, keepdim=True)
+            )
+            indices = dist.argmin(dim=-1)
+        return indices
 
     def dequantize(self, embed_ind: torch.Tensor) -> torch.Tensor:
         return F.embedding(embed_ind, self.embed)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         shape, dtype = x.shape, x.dtype
-        x = rearrange(x, "... dim -> (...) dim")
+        x = x.reshape(-1, shape[-1])
         self.init_embed_(x)
         embed_ind = self.quantize(x)
         # F.one_hot reads the index range on the host (a device sync).
         codes = torch.arange(self.codebook_size, device=embed_ind.device)
         embed_onehot = (embed_ind.unsqueeze(-1) == codes).type(dtype)
-        embed_ind = embed_ind.view(*shape[:-1])
+        embed_ind = embed_ind.view(shape[:-1])
         quantize = self.dequantize(embed_ind).type(dtype)
 
         if self.training:
@@ -242,12 +246,14 @@ class EMACodebook(nn.Module):
             self.expire_codes_(x)
             # EMA update of the cluster sizes and code sums (.data detaches grad).
             one_hot_sum = embed_onehot.sum(0)
-            _all_reduce_sum(one_hot_sum)
+            if not torch.jit.is_scripting():
+                _all_reduce_sum(one_hot_sum)
             self.cluster_size.data.mul_(self.decay).add_(
                 one_hot_sum, alpha=1 - self.decay
             )
             embed_sum = (embed_onehot.t() @ x).to(torch.float32)
-            _all_reduce_sum(embed_sum)
+            if not torch.jit.is_scripting():
+                _all_reduce_sum(embed_sum)
             self.embed_avg.data.mul_(self.decay).add_(embed_sum, alpha=1 - self.decay)
             smoothed = (self.cluster_size + self.epsilon) / (
                 self.cluster_size.sum() + self.epsilon * self.codebook_size
@@ -396,7 +402,8 @@ class ResidualVectorQuantizer(nn.Module):
         self, x: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = F.normalize(x, p=2.0, dim=-1)
-        quantized_out: torch.Tensor | float = 0.0
+        # A 0-dim zero adds and promotes like the scalar 0.0 (TorchScript-typable).
+        quantized_out = x.new_zeros(())
         residual = x
         all_losses: list[torch.Tensor] = []
         all_indices: list[torch.Tensor] = []
@@ -408,4 +415,4 @@ class ResidualVectorQuantizer(nn.Module):
             all_indices.append(indices)
         all_losses_t = torch.stack(all_losses, dim=-1)
         all_indices_t = torch.stack(all_indices, dim=-1)
-        return quantized_out, all_indices_t, all_losses_t.mean()  # type: ignore[return-value]
+        return quantized_out, all_indices_t, all_losses_t.mean()

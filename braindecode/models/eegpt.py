@@ -5,11 +5,10 @@
 
 import math
 from functools import partial
-from typing import Literal, Optional
+from typing import Dict, Literal, Optional, Union
 
 import mne
 import torch
-from einops import rearrange, repeat
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -407,7 +406,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
         state_dict.pop(prefix + "chans_id", None)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
-    def forward(self, x, return_features=False):
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """
         Forward pass.
 
@@ -431,7 +432,11 @@ class EEGPT(EEGModuleMixin, nn.Module):
         z = self.target_encoder(x, self.chans_id)
 
         if return_features:
-            return {"features": z.flatten(2), "cls_token": None}
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": z.flatten(2),
+                "cls_token": None,
+            }
+            return out
 
         if self.return_encoder_output:
             return z
@@ -646,13 +651,15 @@ def _rotate_half(x):
     torch.Tensor
         Rotated tensor of the same shape.
     """
-    x = x.reshape((*x.shape[:-1], x.shape[-1] // 2, 2))
+    x = x.unflatten(-1, (-1, 2))
     x1, x2 = x.unbind(dim=-1)
     x = torch.stack((-x2, x1), dim=-1)
     return x.flatten(-2)
 
 
-def _apply_rotary_emb(freqs, t, start_index=0, scale=1.0):
+def _apply_rotary_emb(
+    freqs: torch.Tensor, t: torch.Tensor, start_index: int = 0, scale: float = 1.0
+) -> torch.Tensor:
     """Apply rotary positional embeddings (RoPE) to input tensor.
 
     Parameters
@@ -718,42 +725,29 @@ def _apply_mask(mask, x):
     batch_size, n_patches, n_chans, embed_dim = x.shape
 
     # Flatten patches and channels: (b, n, c, d) -> (b, n*c, d)
-    x_flat = rearrange(x, "b n c d -> b (n c) d")
+    x_flat = x.reshape(batch_size, n_patches * n_chans, embed_dim)
 
     if len(mask.shape) == 2:
         n_masked_patches, n_masked_chans = mask.shape
 
         # Flatten mask: (mn, mc) -> (mn*mc)
-        mask_flat = rearrange(mask, "mn mc -> (mn mc)")
+        mask_flat = mask.reshape(-1)
 
         # Prepare indices for gathering: (1, mn*mc, 1) -> (b, mn*mc, d)
-        mask_keep = repeat(
-            mask_flat,
-            "m -> b m d",
-            b=batch_size,
-            d=embed_dim,
-        )
+        mask_keep = mask_flat[None, :, None].expand(batch_size, -1, embed_dim)
 
         # Gather selected patch-channel pairs
         masked_x_flat = torch.gather(x_flat, dim=1, index=mask_keep)
 
         # Reshape back to 2D structure: (b, mn*mc, d) -> (b, mn, mc, d)
-        masked_x = rearrange(
-            masked_x_flat,
-            "b (mn mc) d -> b mn mc d",
-            mn=n_masked_patches,
-            mc=n_masked_chans,
+        masked_x = masked_x_flat.reshape(
+            batch_size, n_masked_patches, n_masked_chans, embed_dim
         )
     else:
         # Mask is 1D: (n_masked_items,)
 
         # Prepare indices for gathering: (m, ) -> (b, m, d)
-        mask_keep = repeat(
-            mask,
-            "m -> b m d",
-            b=batch_size,
-            d=embed_dim,
-        )
+        mask_keep = mask[None, :, None].expand(batch_size, -1, embed_dim)
 
         # Gather
         masked_x = torch.gather(x_flat, dim=1, index=mask_keep)
@@ -791,12 +785,7 @@ def _apply_mask_t(mask_t, x):
     """
     batch_size, n_patches, embed_dim = x.shape
 
-    mask_keep = repeat(
-        mask_t,
-        "n -> b n d",
-        b=batch_size,
-        d=embed_dim,
-    )
+    mask_keep = mask_t[None, :, None].expand(batch_size, -1, embed_dim)
 
     masked_x = torch.gather(x, dim=1, index=mask_keep)
     return masked_x
@@ -902,7 +891,7 @@ class _Attention(nn.Module):
         self.is_causal = is_causal
         self.return_attention = return_attention
 
-    def forward(self, x, freqs=None):
+    def forward(self, x, freqs: Optional[torch.Tensor] = None):
         """
         Forward pass of the attention layer.
 
@@ -917,18 +906,16 @@ class _Attention(nn.Module):
         qkv = self.qkv(x)
 
         # Reshape to (3, batch, num_heads, seq_len, head_dim)
-        qkv = rearrange(
-            qkv,
-            "batch seq_len (three num_heads head_dim) -> three batch num_heads seq_len head_dim",
-            three=3,
-            num_heads=self.num_heads,
-        )
+        qkv = qkv.reshape(qkv.shape[0], qkv.shape[1], 3, self.num_heads, -1)
+        qkv = qkv.permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]  # batch, num_heads, seq_len, head_dim
 
         # 1. Rotary Positional Embeddings (RoPE)
         # Unlike standard absolute positional encodings, RoPE rotates the
         # query and key vectors to encode relative positions.
         if self.use_rope:
+            if freqs is None:
+                raise ValueError("use_rope=True needs freqs.")
             q = _apply_rotary_emb(freqs, q)
             k = _apply_rotary_emb(freqs, k)
 
@@ -965,15 +952,12 @@ class _Attention(nn.Module):
             k,
             v,
             attn_mask=None,
-            dropout_p=self.attn_drop.p if self.training else 0,
+            dropout_p=self.attn_drop.p if self.training else 0.0,
             is_causal=self.is_causal,
         )
 
         # Reshape back: (batch, num_heads, seq_len, head_dim) -> (batch, seq_len, embed_dim)
-        x = rearrange(
-            y,
-            "batch num_heads seq_len head_dim -> batch seq_len (num_heads head_dim)",
-        )
+        x = y.transpose(1, 2).flatten(2)
 
         x = self.proj(x)
         x = self.proj_drop(x)
@@ -1058,7 +1042,7 @@ class _Block(nn.Module):
             drop=drop,
         )
 
-    def forward(self, x, freqs=None):
+    def forward(self, x, freqs: Optional[torch.Tensor] = None):
         y = self.attn(self.norm1(x), freqs)
         if self.return_attention:
             return y
@@ -1088,6 +1072,10 @@ class _PatchEmbed(nn.Module):
     embed_dim : int, default=768
         Dimension of the output embeddings.
     """
+
+    # Constant, so TorchScript compiles only the branch in use (``unfold``
+    # exists only with ``apply_norm``).
+    __constants__ = ["apply_norm"]
 
     def __init__(
         self,
@@ -1137,18 +1125,14 @@ class _PatchEmbed(nn.Module):
         """
         # x: batch, n_chans, n_times
         x = self.padding_layer(x)
-        x = rearrange(x, "batch n_chans n_times -> batch 1 n_chans n_times")
+        x = x.unsqueeze(1)  # (batch, 1, n_chans, n_times)
 
         if self.apply_norm:
             x = self.unfold(x)
             # (batch, patch_size, n_patches * n_chans)
 
-            # Rearrange using Einops to (batch, n_patches, n_chans, patch_size)
-            x = rearrange(
-                x,
-                "batch patch_size (n_chans n_patches) -> batch n_patches n_chans patch_size",
-                n_chans=self.n_chans,
-            )
+            # Rearrange to (batch, n_patches, n_chans, patch_size)
+            x = x.unflatten(2, (self.n_chans, -1)).permute(0, 3, 2, 1)
 
             x = torch.layer_norm(x, (self.patch_size,))
             x = self.proj(x)  # (batch, n_patches, n_chans, embed_dim)
@@ -1157,11 +1141,7 @@ class _PatchEmbed(nn.Module):
             # Convolve and rearrange:
             # (batch, embed_dim, n_chans, n_patches) -> (batch, n_patches, n_chans, embed_dim)
             x = self.proj(x)
-            x = rearrange(
-                x,
-                "batch embed_dim n_chans n_patches -> batch n_patches n_chans embed_dim",
-            )
-            return x
+            return x.permute(0, 3, 2, 1)
 
     def _configure_padding(self):
         """
@@ -1361,7 +1341,13 @@ class _EEGTransformer(nn.Module):
         elif isinstance(m, nn.Embedding):
             torch.nn.init.normal_(m.weight, mean=0.0, std=0.02)
 
-    def forward(self, x, chan_ids=None, mask_x=None, mask_t=None):
+    def forward(
+        self,
+        x,
+        chan_ids: Optional[torch.Tensor] = None,
+        mask_x: Optional[torch.Tensor] = None,
+        mask_t: Optional[torch.Tensor] = None,
+    ):
         """
         Forward pass.
 
@@ -1410,10 +1396,7 @@ class _EEGTransformer(nn.Module):
 
         # Flatten batch and patches dimensions for Transformer processing
         # (batch, n_patches, n_chans, embed_dim) -> (batch * n_patches, n_chans, embed_dim)
-        x = rearrange(
-            x,
-            "batch n_patches n_chans embed_dim -> (batch n_patches) n_chans embed_dim",
-        )
+        x = x.flatten(0, 1)
 
         # -- concat summary token
         # summary_token shape: (batch * n_patches, embed_num, embed_dim)
@@ -1434,25 +1417,15 @@ class _EEGTransformer(nn.Module):
         if self.norm is not None:
             x = self.norm(x)
 
-        # Instead of flatten+reshape, let's just rearrange back to separate batch/patches explicitly
-        x = rearrange(
-            x,
-            "(batch n_patches) embed_num embed_dim -> batch n_patches (embed_num embed_dim)",
-            batch=batch,
-        )
+        # (batch * n_patches, embed_num, embed_dim) -> (batch, n_patches, embed_num * embed_dim)
+        x = x.reshape(batch, -1, x.shape[1] * x.shape[2])
 
         if mask_t is not None:
             mask_t = mask_t.to(x.device)
             x = _apply_mask_t(mask_t, x)
 
         # Reshape to final output format: (batch, n_patches, embed_num, embed_dim)
-        x = rearrange(
-            x,
-            "batch n_patches (embed_num embed_dim) -> batch n_patches embed_num embed_dim",
-            embed_num=self.embed_num,
-        )
-
-        return x
+        return x.unflatten(2, (self.embed_num, -1))
 
 
 EEGPT._channel_target = EEGPT_19_CHANNELS
