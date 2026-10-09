@@ -211,6 +211,7 @@ _UNUSED_IN_FORWARD = {
     "Brant": r"spatial_encoder\.proj_out\.",  # reconstruction head
     "CodeBrain": r"residual_blocks\.7\.(rms_norm|res_conv)|^lm_head_",  # skip-only last block, tokenizer heads
     "DANCE": r"^decoder\.",  # event decoder of detect()
+    "EEGCLIP": r"^(text_projection\.|logit_scale$)",  # text side, trained via forward_paired()
     "MSVTNet": r"^branch_head\.",  # auxiliary branch heads (return_features)
     "PopulationTransformer": r"^spec_prediction_head\.",  # pretraining head
     "SignalJEPA": r"^transformer\.decoder\.",  # pretraining decoder

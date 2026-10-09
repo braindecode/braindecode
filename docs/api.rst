@@ -164,6 +164,7 @@ interface for all EEG models and can derive variable names when needed.
      Deep4Net
      DeepSleepNet
      EEGConformer
+     EEGCLIP
      EEGDINO
      EEGInceptionERP
      EEGInceptionMI
