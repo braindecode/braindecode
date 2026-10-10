@@ -262,9 +262,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             )
         if not distributed:
             if eeg_embeds.shape[0] == 0:
-                raise ValueError(
-                    "contrastive_loss requires a nonempty paired batch."
-                )
+                raise ValueError("contrastive_loss requires a nonempty paired batch.")
             logits_per_eeg, logits_per_text = self.compute_logits(
                 eeg_embeds, text_embeds
             )
@@ -311,10 +309,9 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         labels = labels + sum(sizes[:rank])
         eeg_logits = self.logit_scale * eeg_embeds @ all_text.T
         text_logits = self.logit_scale * text_embeds @ all_eeg.T
-        local_loss_sum = (
-            F.cross_entropy(eeg_logits, labels, reduction="sum")
-            + F.cross_entropy(text_logits, labels, reduction="sum")
-        )
+        local_loss_sum = F.cross_entropy(
+            eeg_logits, labels, reduction="sum"
+        ) + F.cross_entropy(text_logits, labels, reduction="sum")
         # DDP averages parameter gradients across ranks. Multiplying the
         # local sum by world_size / global_count precisely compensates this
         # average while counting each global query exactly once.
