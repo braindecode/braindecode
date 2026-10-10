@@ -368,6 +368,7 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.LUNA`, :class:`braindecode.models.SignalJEPA` and :class:`braindecode.models.SignalJEPA_Contextual` gave NaN outputs, and :class:`braindecode.models.DGCNN` raised ``Input contains NaN``, when ``chs_info`` has channels without a position (MNE stores a NaN ``loc``, e.g. bipolar or EOG/ECG channels): LUNA falls back to its default positions, SignalJEPA starts those channel embeddings at zero and DGCNN looks the names up in ``standard_1005``; outputs with finite positions unchanged bit for bit (:gh:`1309` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MEDFormer` runs its patch embedding, a Conv2d kernel as tall as ``n_times``, as the equivalent conv1d with ``n_times`` input channels: MEDFormer now runs on Gaudi2, whose convolution kernels are limited to 256 rows (it failed to compile for ``n_times > 256``), and its CPU train step is 15-35 % faster; same state dict, outputs change by float rounding only (:gh:`1287` by `Bruno Aristimunha`_).
 - Fix coordinate ordering in :class:`braindecode.augmentation.SensorsRotation` with ``spherical_splines=False``, which raised an error or interpolated the wrong locations (:gh:`1295` by `Anton Soloviev`_).
 - Preserve the final samples in :class:`braindecode.augmentation.SegmentationReconstruction`
