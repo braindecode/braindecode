@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.NeuroRVQTokenizer` sums the per-code counts and vectors of its EMA codebook update with ``index_add_`` instead of a dense one-hot matrix and GEMM: CPU train step 1.3x faster (22 channels, batch 32, 2 threads), Gaudi unchanged; outputs, gradients and token ids unchanged, the updated codebooks change by float rounding only (:gh:`1308` by `Bruno Aristimunha`_).
 - The TUH datasets read the ``_date.txt`` file kept beside each EDF with :func:`json.load` instead of :func:`pandas.read_json`: 2.9 s -> 0.04 s for the 2993 TUAB date files; descriptions unchanged (:gh:`1300` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Guetschel2026`, the encoder shared by the 58 MAE and JEPA
   checkpoints of the EEG masking-geometry study (Guetschel et al., 2026). The checkpoints
