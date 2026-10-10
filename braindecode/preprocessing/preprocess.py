@@ -15,6 +15,7 @@ from __future__ import annotations
 import platform
 import sys
 from collections.abc import Iterable
+from copy import copy
 from functools import cached_property, partial
 from importlib import import_module
 from inspect import signature
@@ -386,6 +387,14 @@ def _preprocess(
         for preproc in preprocessors:
             raw_or_epochs = preproc.apply(raw_or_epochs)
         return raw_or_epochs
+
+    if save_dir is not None:
+        # preprocess() swaps in the reloaded saved copy, so work on copies: with
+        # n_jobs=1 the caller's datasets otherwise stay loaded until the end.
+        ds = copy(ds)
+        kind = "raw" if hasattr(ds, "raw") else "windows"
+        if hasattr(ds, kind):
+            setattr(ds, kind, getattr(ds, kind).copy())
 
     if hasattr(ds, "raw"):
         if isinstance(ds, EEGWindowsDataset):
