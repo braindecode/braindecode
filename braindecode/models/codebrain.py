@@ -705,16 +705,22 @@ class _ResidualBlock(nn.Module):
         ):
             # A one-wide window keeps only the diagonal: the softmax weights are
             # exactly 1 and 0, so the attention returns its value projection.
-            # GEMM, then bias, as in nn.MultiheadAttention's in-projection. (In
+            # Same projection calls as nn.MultiheadAttention (on its (seq,
+            # batch, embed) view), so the output is unchanged bit for bit. (In
             # training the weights carry dropout; on Gaudi the full attention
             # was faster.)
-            # ponytail: the unused query/key projections are computed too, which
-            # keeps master's rounding; in_proj_weight[2E:] alone is ~2x less
-            # GEMM if one-ulp changes become acceptable.
-            v_start = 2 * self.attention.embed_dim
-            qkv = h_attn @ self.attention.in_proj_weight.t()
-            value = qkv[..., v_start:] + self.attention.in_proj_bias[v_start:]
-            h_attn = self.attention.out_proj(value)
+            # ponytail: the unused query/key projections are computed too, to
+            # keep the rounding; in_proj_weight[2E:] alone is ~2x less GEMM.
+            embed_dim = self.attention.embed_dim
+            seq_first = h_attn.transpose(0, 1)
+            value = F.linear(
+                seq_first, self.attention.in_proj_weight, self.attention.in_proj_bias
+            )[..., 2 * embed_dim :]
+            h_attn = (
+                self.attention.out_proj(value.reshape(-1, embed_dim))
+                .view(seq_first.shape)
+                .transpose(0, 1)
+            )
         else:
             swa_mask = self.generate_local_window_mask(
                 seq_len, self.swa_window_size, x.device, x.dtype
