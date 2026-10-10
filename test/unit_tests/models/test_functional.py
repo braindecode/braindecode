@@ -9,6 +9,7 @@ from braindecode.functional import (
     fft_conv1d,
     hilbert_freq,
     plv_time,
+    prefer_fft_conv,
     rotate_pairs,
     sinusoidal_positional_encoding,
 )
@@ -297,6 +298,14 @@ def test_fft_conv1d_matches_conv1d_same(kernel_size, dtype, tol):
     assert half.dtype == torch.bfloat16
     ref = fft_conv1d(x.detach().bfloat16().float(), w.detach().bfloat16().float())
     torch.testing.assert_close(half, ref.bfloat16(), rtol=0, atol=0)
+
+
+def test_prefer_fft_conv_needs_input_channels():
+    """Direct for a 1-channel k=31 conv (MSVTNet: FFT 2-3x slower); FFT for
+    EEGInceptionMI's 48 filters at k_max 108/225/450 (128/250/500 Hz)."""
+    assert not prefer_fft_conv(torch.empty(32, 1, 1000), 31)
+    for k_max in (108, 225, 450):
+        assert prefer_fft_conv(torch.empty(32, 48, 1, 1000), k_max)
 
 
 def test_fft_len_matches_scipy():
