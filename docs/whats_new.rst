@@ -368,12 +368,12 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.models.MEDFormer` crashed in ``forward`` for windows longer than 5000 samples (e.g. 30 s at 200 Hz): its time-indexed positional table now has ``max(5000, n_times)`` rows; shorter windows unchanged bit for bit (:gh:`1311` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MEDFormer` runs its patch embedding, a Conv2d kernel as tall as ``n_times``, as the equivalent conv1d with ``n_times`` input channels: MEDFormer now runs on Gaudi2, whose convolution kernels are limited to 256 rows (it failed to compile for ``n_times > 256``), and its CPU train step is 15-35 % faster; same state dict, outputs change by float rounding only (:gh:`1287` by `Bruno Aristimunha`_).
 - Fix coordinate ordering in :class:`braindecode.augmentation.SensorsRotation` with ``spherical_splines=False``, which raised an error or interpolated the wrong locations (:gh:`1295` by `Anton Soloviev`_).
 - Preserve the final samples in :class:`braindecode.augmentation.SegmentationReconstruction`
   when the window length is not divisible by the segment count, instead of
   replacing them with zeros (:gh:`1279` by `Anton Soloviev`_).
+- :class:`braindecode.models.MEDFormer` crashed in ``forward`` for windows longer than 5000 samples (e.g. 30 s at 200 Hz): its time-indexed positional table now has ``max(5000, n_times)`` rows; shorter windows unchanged bit for bit (:gh:`1311` by `Bruno Aristimunha`_).
 - Preserve regression windows whose target is at the final recording sample in :func:`braindecode.preprocessing.create_windows_from_target_channels`, independently of the recording time origin (:gh:`1296` by `Anton Soloviev`_).
 - Model fixes caught by new CPU-only integration checks (complex tensors, host syncs, kernel gaps, device/dtype follow, training after ``inference_mode``, deepcopy/pickle): BrainOmni/BrainTokenizer SELU trains on Gaudi, EEGSym pools with ``avg_pool2d``, FBCNet/FBMSNet/FBLightConvNet and LUNA run in float16, EEGMiner and AttnSleep deep-copy after training, Labram and NeuroRVQ pickle, SignalJEPA heads accept ``channel_strategy``, and tensors built in ``forward`` follow the input in CodeBrain, TCFormer, LUNA, MVPFormer, BrainOmni, ZUNA, DIVER1 and EEGDINO; float32 outputs unchanged (:gh:`1253` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.EEGSym` trains on Gaudi: its depthwise spatial ``Conv3d`` with a ``(1, 1, n_chans)`` kernel runs as a conv2d on a view, since the Gaudi graph compiler segfaulted on the depthwise conv3d backward; same state dict, outputs unchanged, gradients change by float rounding only (:gh:`1289` by `Bruno Aristimunha`_).
