@@ -11,6 +11,7 @@ TUH Abnormal EEG Corpus.
 from __future__ import annotations
 
 import glob
+import json
 import os
 import re
 import warnings
@@ -290,7 +291,8 @@ def _read_date(file_path):
     date_path = file_path.replace(".edf", "_date.txt")
     # if date file exists, read it
     if os.path.exists(date_path):
-        description = pd.read_json(date_path, typ="series").to_dict()
+        with open(date_path) as f:
+            description = json.load(f)
     # otherwise read edf file, extract date and store to file
     else:
         raw = mne.io.read_raw_edf(file_path, preload=False, verbose="error")
