@@ -697,10 +697,35 @@ class _ResidualBlock(nn.Module):
         # Sliding-window attention branch
         # (batch, 2*res_channels, seq_len) -> (batch, seq_len, 2*res_channels)
         h_attn = h_ssm.transpose(1, 2)
-        swa_mask = self.generate_local_window_mask(
-            seq_len, self.swa_window_size, x.device, x.dtype
-        )
-        h_attn, _ = self.attention(h_attn, h_attn, h_attn, attn_mask=swa_mask)
+        if (
+            self.swa_window_size == 1
+            and not self.training
+            and not torch.is_grad_enabled()
+            and h_attn.device.type == "cpu"
+        ):
+            # A one-wide window keeps only the diagonal: the softmax weights are
+            # exactly 1 and 0, so the attention returns its value projection.
+            # Same projection calls as nn.MultiheadAttention (on its (seq,
+            # batch, embed) view), so the output is unchanged bit for bit. (In
+            # training the weights carry dropout; on Gaudi the full attention
+            # was faster.)
+            # ponytail: the unused query/key projections are computed too, to
+            # keep the rounding; in_proj_weight[2E:] alone is ~2x less GEMM.
+            embed_dim = self.attention.embed_dim
+            seq_first = h_attn.transpose(0, 1)
+            value = F.linear(
+                seq_first, self.attention.in_proj_weight, self.attention.in_proj_bias
+            )[..., 2 * embed_dim :]
+            h_attn = (
+                self.attention.out_proj(value.reshape(-1, embed_dim))
+                .view(seq_first.shape)
+                .transpose(0, 1)
+            )
+        else:
+            swa_mask = self.generate_local_window_mask(
+                seq_len, self.swa_window_size, x.device, x.dtype
+            )
+            h_attn, _ = self.attention(h_attn, h_attn, h_attn, attn_mask=swa_mask)
         # (batch, seq_len, 2*res_channels) -> (batch, 2*res_channels, seq_len)
         h_attn = h_attn.transpose(1, 2)
 
