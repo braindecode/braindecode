@@ -221,6 +221,8 @@ class _ContextualEncoder(nn.Module):
 class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
     r"""Encoder of the EEG masking-geometry study from Guetschel et al. (2026) [guetschel2026]_.
 
+    Official website of the study: https://pierregtch.github.io/eeg-fm-masking/
+
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
     :bdg-dark-line:`Channel`
 
@@ -356,10 +358,13 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
        **Differences from the reference implementation.** The backbone gives
        bit-identical features. Around it:
 
-       - the head is sized for the true number of overlapping patches (the
-         original head fails for most window lengths);
+       - the head takes the actual number of overlapping patches,
+         ``(n_times - 200) // 180 + 1``. The original wrapper sizes its head for
+         ``n_times // 200`` patches, which ignores the overlap, so that head
+         only fits short windows (not 2000 or 6000 samples, for instance);
+         OpenEEGBench replaces it, so the paper's results do not depend on it;
        - the random projection head is new;
-       - channel positions are validated (the original only rejects NaN);
+       - channel positions are validated;
        - attention dropout is off in eval mode.
 
     Parameters
@@ -398,6 +403,14 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
         (see "Random projection head" above).
     random_projection_seed : int, default=0
         Seed of the random projection.
+
+    Raises
+    ------
+    ValueError
+        If the channel positions are missing, not in metres (every channel
+        must be 5 to 20 cm from the origin) or not in the MNE head frame, if
+        an architecture argument is invalid, or if the signal-related
+        parameters are missing and cannot be inferred.
 
     References
     ----------
