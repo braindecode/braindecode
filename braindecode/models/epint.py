@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-import math
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -43,11 +41,8 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
     4. The class token of each channel is averaged over channels and
        ``final_layer`` (dropout and one linear layer) classifies it.
 
-    Pretraining masks patches, replaces them with Gaussian noise and predicts,
-    per masked patch, the index of a frozen random codebook vector closest to a
-    frozen random circular convolution of the patch (the "frequency domain
-    mapping quantizer"). Neither the masking nor the quantizer is used
-    downstream, so neither is part of this module.
+    The pretraining mask token and frequency-domain mapping quantizer are not
+    used downstream, so they are not part of this module.
 
     .. rubric:: Fixed sequence length
 
@@ -60,9 +55,11 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
 
     .. important::
        **Pretrained weights.** The authors release the pretrained backbone
-       (``weights/representations.bin``) under the MIT licence. The default
-       hyper-parameters are those of that checkpoint, and its 102 tensors load
-       through :attr:`mapping` with only the pretraining mask token unused::
+       (``weights/representations.bin``,
+       `License <https://github.com/RunKZhang/EpiNT/blob/master/LICENSE>`_).
+       The default hyper-parameters are those of that checkpoint, and its 102
+       tensors load through :attr:`mapping` with only the pretraining mask
+       token unused::
 
            state = torch.load("representations.bin", map_location="cpu")
            model = EpiNT(n_chans=1, n_outputs=2, n_times=3072)
@@ -147,23 +144,6 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
             )
         n_tokens = self.n_patches + 1
 
-        self.mapping = {
-            "norm.weight": "instance_norm.weight",
-            "norm.bias": "instance_norm.bias",
-            "embed.proj.weight": "patch_embedding.weight",
-            "embed.proj.bias": "patch_embedding.bias",
-            "embed.cls_embed": "cls_token",
-            "head.weight": "final_layer.1.weight",
-            "head.bias": "final_layer.1.bias",
-        }
-        self.mapping.update(
-            {
-                f"transformer_encoder.{up}": f"encoder.{port}"
-                for i in range(n_layers)
-                for up, port in _EpiNTLayer.state_keys(i).items()
-            }
-        )
-
         self.merge_channels = Rearrange("batch chans times -> (batch chans) 1 times")
         self.instance_norm = nn.InstanceNorm1d(1, affine=True)
         self.patchify = Rearrange(
@@ -172,7 +152,13 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
         self.patch_embedding = nn.Linear(patch_size, embed_dim)
         self.cls_token = nn.Parameter(torch.empty(embed_dim))
         nn.init.normal_(self.cls_token, std=0.1)
-        self.rotary = _RotaryTable(embed_dim // n_heads, n_tokens, rope_theta)
+        # Interleaved-pair RoPE angles, as ``precompute_freqs_cis`` upstream.
+        head_dim = embed_dim // n_heads
+        inv_freq = 1.0 / rope_theta ** (torch.arange(0, head_dim, 2).float() / head_dim)
+        angles = torch.outer(torch.arange(n_tokens).float(), inv_freq)
+        angles = angles.repeat_interleave(2, dim=-1)  # (tokens, head_dim)
+        self.register_buffer("rope_cos", angles.cos(), persistent=False)
+        self.register_buffer("rope_sin", angles.sin(), persistent=False)
         self.encoder = nn.ModuleList(
             [
                 _EpiNTLayer(
@@ -190,6 +176,22 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
         )
         nn.init.kaiming_uniform_(self.final_layer[1].weight)
         nn.init.zeros_(self.final_layer[1].bias)
+
+        self.mapping = {
+            "norm.weight": "instance_norm.weight",
+            "norm.bias": "instance_norm.bias",
+            "embed.proj.weight": "patch_embedding.weight",
+            "embed.proj.bias": "patch_embedding.bias",
+            "embed.cls_embed": "cls_token",
+            "head.weight": "final_layer.1.weight",
+            "head.bias": "final_layer.1.bias",
+        }
+        # Upstream calls the encoder ``transformer_encoder`` and the FFN linears
+        # ``linear1``/``linear2`` (here ``FeedForwardBlock`` children 0 and 3).
+        for key in self.encoder.state_dict():
+            upstream = key.replace("ffn.0.", "ffn.linear1.")
+            upstream = upstream.replace("ffn.3.", "ffn.linear2.")
+            self.mapping[f"transformer_encoder.{upstream}"] = f"encoder.{key}"
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""
@@ -229,7 +231,7 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
         z = self.patch_embedding(self.patchify(z))  # (batch*chans, patches, dim)
         cls = self.cls_token.expand(z.shape[0], 1, -1).to(z)
         z = torch.cat([cls, z], dim=1)  # (batch*chans, tokens, dim)
-        cos, sin = self.rotary(z)
+        cos, sin = self.rope_cos.to(z), self.rope_sin.to(z)
         for layer in self.encoder:
             z = layer(z, cos, sin)
         cls_token = self.split_channels(z[:, 0])  # (batch, chans, dim)
@@ -240,21 +242,6 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
                 return logits
             return {"features": pooled, "cls_token": cls_token}
         return logits
-
-
-class _RotaryTable(nn.Module):
-    """Interleaved-pair RoPE angles, as ``precompute_freqs_cis`` upstream."""
-
-    def __init__(self, head_dim: int, n_tokens: int, theta: float):
-        super().__init__()
-        inv_freq = 1.0 / theta ** (torch.arange(0, head_dim, 2).float() / head_dim)
-        angles = torch.outer(torch.arange(n_tokens).float(), inv_freq)
-        angles = angles.repeat_interleave(2, dim=-1)  # (tokens, head_dim)
-        self.register_buffer("cos", angles.cos(), persistent=False)
-        self.register_buffer("sin", angles.sin(), persistent=False)
-
-    def forward(self, ref: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        return self.cos.to(ref), self.sin.to(ref)
 
 
 class _RoPEAttention(nn.Module):
@@ -282,9 +269,7 @@ class _RoPEAttention(nn.Module):
         v = self.split_heads(self.w_v(x))
         q = q * cos + rotate_pairs(q) * sin
         k = k * cos + rotate_pairs(k) * sin
-        out = F.scaled_dot_product_attention(
-            q, k, v, scale=1.0 / math.sqrt(q.shape[-1])
-        )
+        out = F.scaled_dot_product_attention(q, k, v)  # scale 1 / sqrt(head_dim)
         return self.w_concat(self.merge_heads(out))
 
 
@@ -314,26 +299,6 @@ class _EpiNTLayer(nn.Module):
         )
         self.norm2 = nn.LayerNorm([n_tokens, embed_dim])
         self.dropout2 = nn.Dropout(drop_prob)
-
-    @staticmethod
-    def state_keys(index: int) -> dict[str, str]:
-        """Upstream to port parameter names of layer ``index``."""
-        names = {
-            f"attention.{proj}.{p}": f"attention.{proj}.{p}"
-            for proj in ("w_q", "w_k", "w_v", "w_concat")
-            for p in ("weight", "bias")
-        }
-        names |= {
-            f"{n}.{p}": f"{n}.{p}"
-            for n in ("norm1", "norm2")
-            for p in ("weight", "bias")
-        }
-        names |= {
-            f"ffn.{up}.{p}": f"ffn.{port}.{p}"
-            for up, port in (("linear1", "0"), ("linear2", "3"))
-            for p in ("weight", "bias")
-        }
-        return {f"{index}.{up}": f"{index}.{port}" for up, port in names.items()}
 
     def forward(
         self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
