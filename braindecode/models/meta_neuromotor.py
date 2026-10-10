@@ -668,11 +668,6 @@ class _FrequencyBandAverager(nn.Module):
             self.register_buffer("freq_masks", freq_masks)
             self.n_output_freqs = len(frequency_bins)
 
-        self.add_band_axis = Rearrange(
-            "batch time freq channels1 channels2 -> "
-            "batch time 1 freq channels1 channels2"
-        )
-
     @staticmethod
     def _build_freq_masks(
         n_fft: int,
@@ -695,8 +690,9 @@ class _FrequencyBandAverager(nn.Module):
             return x
 
         freq_masks = self.freq_masks.to(x)
-        weighted = self.add_band_axis(x) * freq_masks
-        return weighted.sum(dim=3) / freq_masks.sum(dim=3)
+        # Sum each band's bins as one matmul with the (band, freq) masks.
+        summed = torch.einsum("btfij,nf->btnij", x, freq_masks[0, 0, :, :, 0, 0])
+        return summed / freq_masks.sum(dim=3)
 
 
 class _CrossSpectralDensity(nn.Module):
