@@ -781,3 +781,18 @@ def test_serialization(preprocessor_name, args, kwargs):
         assert preprocessor._same_attr(deserialized, attr), err_msg
     # Identical to above:
     assert preprocessor == deserialized
+
+
+def test_preprocess_save_dir_leaves_lazy_inputs_unloaded(base_concat_ds, tmp_path):
+    """With save_dir, preprocess() returns the reloaded saved copies; the lazy
+    input recordings are not loaded and kept in memory meanwhile (n_jobs=1)."""
+    base_concat_ds.save(str(tmp_path / "in"))
+    lazy = load_concat_dataset(str(tmp_path / "in"), preload=False)
+    inputs = [ds.raw for ds in lazy.datasets]
+    preprocessors = [
+        Preprocessor("crop", tmax=10, include_tmax=False),
+        Preprocessor("resample", sfreq=125),  # needs the data loaded
+    ]
+    out = preprocess(lazy, preprocessors, save_dir=str(tmp_path / "out"), n_jobs=1)
+    assert not any(raw.preload for raw in inputs)
+    assert all(ds.raw.info["sfreq"] == 125 for ds in out.datasets)
