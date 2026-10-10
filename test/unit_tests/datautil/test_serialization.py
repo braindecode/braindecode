@@ -516,3 +516,17 @@ def test_load_concat_windows_dataset_channel_targets(tmp_path):
         x_after, y_after, _ = loaded[i]
         np.testing.assert_allclose(x_after, x_before, rtol=1e-4, atol=1e-5)
         np.testing.assert_allclose(y_after, y_before, rtol=1e-4, atol=1e-5)
+
+
+def test_save_with_offset_expects_sibling_subdirectories(
+    setup_concat_raw_dataset, tmpdir
+):
+    """preprocess(save_dir) saves recording i at offset i into one directory:
+    the siblings are expected, so no scan of them and no warning listing them."""
+    concat_raw_dataset = setup_concat_raw_dataset
+    n = len(concat_raw_dataset.datasets)
+    concat_raw_dataset.save(path=tmpdir, offset=0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        concat_raw_dataset.save(path=tmpdir, offset=n)
+    assert len(load_concat_dataset(tmpdir, preload=False).datasets) == 2 * n
