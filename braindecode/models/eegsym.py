@@ -441,6 +441,22 @@ class _AvgPoolTime(nn.Module):
         return y.reshape(b, c, d, y.shape[2], s)
 
 
+class _SpatialConv3d(nn.Conv3d):
+    """``nn.Conv3d`` with a ``(1, 1, k)`` kernel run as ``conv2d`` on the
+    ``(batch, ch, z * time, space)`` view; same parameters. The depthwise
+    ``conv3d`` backward segfaults on Gaudi (synapse 1.21)."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        b, c, z, t, s = x.shape
+        y = nn.functional.conv2d(
+            x.reshape(b, c, z * t, s),
+            self.weight.squeeze(2),
+            self.bias,
+            groups=self.groups,
+        )
+        return y.reshape(b, -1, z, t, y.shape[-1])
+
+
 class _InceptionBlock(nn.Module):
     r"""Inception module used in EEGSym architecture.
 
@@ -500,7 +516,7 @@ class _InceptionBlock(nn.Module):
             for _ in range(spatial_resnet_repetitions):
                 self.spatial_convs.append(
                     nn.Sequential(
-                        nn.Conv3d(
+                        _SpatialConv3d(
                             in_channels=filters_per_branch * len(scales_samples),
                             out_channels=filters_per_branch * len(scales_samples),
                             kernel_size=(1, 1, ncha),

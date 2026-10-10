@@ -1075,20 +1075,26 @@ class _RotationInvariantMPFMLP(nn.Module):
             raise ValueError("hidden_dims must be non-empty")
         self.offsets = list(offsets)
         self.activation = activation()
-        self.vectorize = _VectorizeSymmetricMatrix(
+        # Roll both channel axes by each offset, half-vectorize and flatten
+        # (freqs, covariance) as one gather: entry (row, col) of rotation
+        # ``offset`` reads entry ((row - offset) % C, (col - offset) % C).
+        kept = _VectorizeSymmetricMatrix(
             num_channels=num_channels,
             num_adjacent_cov=num_adjacent_cov,
-        )
-        self.flatten_features = Rearrange(
-            "batch time rotation freqs covariance -> "
-            "batch time rotation (freqs covariance)"
-        )
-        # Stacked rotations come out of torch.stack as
-        # (batch, freqs, c1, c2, time, rotation); put time first so the MLP
-        # broadcasts cleanly across (time, rotation).
-        self.rotations_to_time_major = Rearrange(
-            "batch freqs channels1 channels2 time rotation -> "
-            "batch time rotation freqs channels1 channels2"
+        ).flattened_matrix_indices
+        rows, cols = kept // num_channels, kept % num_channels
+        self.register_buffer(
+            "rotation_index",
+            torch.cat(
+                [
+                    freq * num_channels**2
+                    + (rows - offset) % num_channels * num_channels
+                    + (cols - offset) % num_channels
+                    for offset in self.offsets
+                    for freq in range(num_freqs)
+                ]
+            ),
+            persistent=False,
         )
         self.features_to_time_last = Rearrange(
             "batch time features -> batch features time"
@@ -1103,18 +1109,10 @@ class _RotationInvariantMPFMLP(nn.Module):
             dim = hidden_dim
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        # Gaudi eager mode rolls a non-contiguous tensor wrongly.
-        inputs = inputs.contiguous()
-        x = torch.stack(
-            [
-                inputs.roll(shifts=[offset, offset], dims=[2, 3])
-                for offset in self.offsets
-            ],
-            dim=-1,
-        )
-        x = self.rotations_to_time_major(x)
-        x = self.vectorize(x)
-        x = self.flatten_features(x)
+        # (batch, freqs, c1, c2, time) -> (batch, time, rotation, features)
+        x = inputs.permute(0, 4, 1, 2, 3).flatten(2)
+        x = x.index_select(-1, self.rotation_index)
+        x = x.unflatten(-1, (len(self.offsets), -1))
         for layer in self.fully_connected_layers:
             x = self.activation(layer(x))
         x = x.mean(dim=2)  # average over the rotations
