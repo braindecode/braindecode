@@ -271,3 +271,14 @@ def test_tuh_events(version):
     assert description.run.to_list() == [0, 2, 0]
     assert description.age.to_list() == [36, 68, 19]
     assert description.gender.to_list() == ["F", "F", "F"]
+
+
+@pytest.mark.parametrize("date", [{"year": 2013, "month": 8, "day": 15}, {}])
+def test_read_date_side_file_roundtrip(tmp_path, date):
+    """_read_date returns what _read_date wrote (the `_date.txt` beside each EDF)."""
+    from braindecode.datasets.tuh import _read_date
+
+    edf = str(tmp_path / "aaaaaaav_s004_t000.edf")
+    pd.Series(date).to_json(edf.replace(".edf", "_date.txt"))
+    assert _read_date(edf) == date
+    assert all(type(v) is int for v in _read_date(edf).values())
