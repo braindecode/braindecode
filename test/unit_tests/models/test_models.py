@@ -5643,3 +5643,25 @@ def test_eegclip_custom_encoders_and_masked_mean_pooling():
     assert model.text_projection.training is False
     with pytest.raises(ValueError, match="custom encoder"):
         model.get_config()
+
+
+def _cz():
+    info = mne.create_info(["Cz"], 256.0, "eeg")
+    return info.set_montage("standard_1005")["chs"]
+
+
+@pytest.mark.parametrize(
+    "name, kwargs, match",
+    [
+        ("AttnSleep", dict(n_chans=2, n_times=3000, sfreq=100.0), "single-channel"),
+        ("BDTCN", dict(n_chans=2, n_times=50), "receptive field"),
+        ("CSBrain", dict(n_chans=2, n_times=250), "multiple of patch_size"),
+        ("DGCNN", dict(chs_info=_cz(), n_times=1000), "at least 2 channels"),
+        ("REVE", dict(chs_info=[{"ch_name": "Cz"}], n_times=100), "patch_size"),
+        ("REVE", dict(chs_info=[{"ch_name": "X1"}], n_times=1000), "position bank"),
+        ("ZUNA", dict(chs_info=_cz(), n_times=10000, sfreq=256.0), "max_seqlen"),
+    ],
+)
+def test_unsupported_geometry_raises_at_construction(name, kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        all_models_dict[name](n_outputs=2, **kwargs)
