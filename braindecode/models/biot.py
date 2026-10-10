@@ -543,10 +543,15 @@ class _BIOTEncoder(nn.Module):
         emb: Tensor
             (batch_size, emb_size)
         """
+        batch_size, n_chans, n_times = x.shape
+        # One spectrogram for all channels, channel-major so that each
+        # channel's (batch, freq, ts) block is contiguous
+        spec = self.stft(x.transpose(0, 1).reshape(n_chans * batch_size, 1, n_times))
+        spec = spec.unflatten(0, [n_chans, batch_size])
         emb_seq = []
-        for i in range(x.shape[1]):
+        for i in range(n_chans):
             # Getting the spectrogram
-            channel_spec_emb = self.stft(x[:, i : i + 1, :])
+            channel_spec_emb = spec[i]
             # Linear layer to learn some representation over the frequency domain
             # with permutation
             channel_spec_emb = self.patch_embedding(channel_spec_emb)
