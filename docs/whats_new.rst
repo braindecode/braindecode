@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.TIDNet` and :class:`braindecode.models.EEGNeX` compute their long temporal convolutions with :func:`braindecode.functional.fft_conv1d` on CPU where :func:`braindecode.functional.prefer_fft_conv` expects it to be faster (TIDNet in float64): train step 1.8x (TIDNet) and 1.3x (EEGNeX) faster at 22 channels, batch 32 (2 threads); small batches, GPUs and Gaudi keep the direct convolution; outputs and gradients change by float rounding only, as close to the float64 result as master (:gh:`1305` by `Bruno Aristimunha`_).
 - The TUH datasets read the ``_date.txt`` file kept beside each EDF with :func:`json.load` instead of :func:`pandas.read_json`: 2.9 s -> 0.04 s for the 2993 TUAB date files; descriptions unchanged (:gh:`1300` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Guetschel2026`, the encoder shared by the 58 MAE and JEPA
   checkpoints of the EEG masking-geometry study (Guetschel et al., 2026). The checkpoints
