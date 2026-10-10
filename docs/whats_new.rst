@@ -67,6 +67,11 @@ Enhancements
 - Add :class:`braindecode.models.EEGCLIP`, a dual encoder that aligns EEG
   windows and text descriptions with a symmetric contrastive objective; the
   text encoder is optional and user-supplied (:gh:`1200` by `lindicaphxag-tech`_).
+- Add :class:`braindecode.models.EpiNT`, a port of the EpiNT epilepsy foundation
+  model for scalp and intracranial EEG (Zhang et al., 2025): a channel-independent
+  transformer with rotary attention over 256-sample patches of a 3072-sample
+  window. The authors' released ``representations.bin`` loads with
+  ``load_state_dict(strict=False)`` (:gh:`1266` by `Julien Gadonneix`_).
 - Add :class:`braindecode.augmentation.TrivialAugment`, which applies to each
   example one transform and strength sampled from a label-preserving pool; also
   list :class:`braindecode.augmentation.BandRotation` in the API docs

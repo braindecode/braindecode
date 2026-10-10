@@ -179,6 +179,7 @@ interface for all EEG models and can derive variable names when needed.
      EEGSym
      EEGTCNet
      EMG2QwertyNet
+     EpiNT
      FBCNet
      FBLightConvNet
      FBMSNet
