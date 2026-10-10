@@ -530,3 +530,14 @@ def test_save_with_offset_expects_sibling_subdirectories(
         warnings.simplefilter("error")
         concat_raw_dataset.save(path=tmpdir, offset=n)
     assert len(load_concat_dataset(tmpdir, preload=False).datasets) == 2 * n
+
+
+def test_load_concat_dataset_closes_json_files(setup_concat_raw_dataset, tmpdir):
+    """Reloading reads target_name.json and the kwargs JSONs without leaking file handles."""
+    concat_raw_dataset = setup_concat_raw_dataset
+    preprocess(concat_raw_dataset, [Preprocessor("pick_channels", ch_names=["C3"])])
+    concat_raw_dataset.save(tmpdir, overwrite=False)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        load_concat_dataset(tmpdir, preload=False)
+    assert not [w for w in record if issubclass(w.category, ResourceWarning)]

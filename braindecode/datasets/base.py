@@ -1672,7 +1672,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 kwargs_path = os.path.join(path, ".".join([kwarg_name, "json"]))
                 kwargs = getattr(self, kwarg_name)
                 if kwargs is not None:
-                    json.dump(kwargs, open(kwargs_path, "w"))
+                    with open(kwargs_path, "w") as f:
+                        json.dump(kwargs, f)
 
     @property
     def description(self) -> pd.DataFrame:
