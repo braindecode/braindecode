@@ -20,8 +20,10 @@ import shutil
 import warnings
 from abc import abstractmethod
 from collections import Counter
-from collections.abc import Callable, Hashable
+from collections.abc import Callable, Hashable, Sequence
 from glob import glob
+from itertools import chain
+from operator import attrgetter
 from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
 
@@ -222,6 +224,61 @@ def _compute_ch_pos(info, targets_from):
     return pos
 
 
+_TAG_ROW = attrgetter("kind", "type", "size", "next", "pos")
+
+
+def _tag_rows(tags):
+    """(kind, type, size, next, pos) of FIF tags as an int64 array (n, 5)."""
+    flat = chain.from_iterable(map(_TAG_ROW, tags))
+    return np.fromiter(flat, np.int64, 5 * len(tags)).reshape(-1, 5)
+
+
+class _FifTagTable(Sequence):
+    """The data-buffer tags of a lazy FIF raw as one int64 array.
+
+    mne's FIF reader keeps one ``Tag`` object per data buffer in
+    ``raw._raw_extras[i]["ent"]`` (one per second of signal with mne's default
+    buffers), each with its attribute dict and integers once unpickled. A lazy
+    dataset of many recordings holds millions of them in RAM, and every forked
+    DataLoader worker copies the memory pages of those it reads (reference
+    counts). This holds the same fields in 40 bytes per buffer and returns an
+    equal ``Tag`` on access, so mne's own reads are unchanged.
+    """
+
+    def __init__(self, tags):
+        self.tag_class = type(tags[0])
+        self.table = _tag_rows(tags)
+
+    def __len__(self):
+        return len(self.table)
+
+    def __getitem__(self, i):
+        if isinstance(i, slice):
+            return [self.tag_class(*row) for row in self.table[i].tolist()]
+        return self.tag_class(*self.table[i].tolist())
+
+
+_TAG_FIELDS = ("kind", "type", "size", "next", "pos", "data")
+
+
+def _compact_fif_tags(inst):
+    """Swap the ``Tag`` lists of a FIF raw for `_FifTagTable` (in place).
+
+    Only gap-free lists of directory tags (no ``None``, no ``data``) with mne's
+    ``Tag`` fields are swapped; anything else is left as mne built it.
+    """
+    for extra in getattr(inst, "_raw_extras", ()):
+        tags = extra.get("ent")
+        if not isinstance(tags, list) or not tags:
+            continue
+        cls = type(tags[0])
+        if tuple(getattr(cls, "__dataclass_fields__", ())) == _TAG_FIELDS and all(
+            type(t) is cls and t.data is None for t in tags
+        ):
+            extra["ent"] = _FifTagTable(tags)
+    return inst
+
+
 def _read_fif_window(raw, start, stop):
     """Samples ``start:stop`` of a lazy FIF raw, copied from the file in one go.
 
@@ -248,16 +305,23 @@ def _read_fif_window(raw, start, stop):
         return None
     start, stop = start + raw._first_samps[0], stop + raw._first_samps[0]
     first = np.searchsorted(bounds, start, side="right") - 1
-    ents = extra["ent"][first : np.searchsorted(bounds, stop)]
-    if not ents or any(e is None or e.type != FIFF.FIFFT_FLOAT for e in ents):
+    tags = extra["ent"]
+    if isinstance(tags, _FifTagTable):
+        rows = tags.table[first : np.searchsorted(bounds, stop)]
+    else:
+        tags = tags[first : np.searchsorted(bounds, stop)]
+        if any(t is None for t in tags):
+            return None
+        rows = _tag_rows(tags)
+    if not len(rows) or (rows[:, 1] != FIFF.FIFFT_FLOAT).any():
         return None
-    pos = ents[0].pos
+    size, pos = rows[:, 2].tolist(), rows[:, 4].tolist()
     # mmap: no copy through a 4 MB read buffer, and a cold file is read around
     # the window by the kernel (as mne's 4 MB reads did), not window by window
     with open(fname, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
-        buf = m[pos : ents[-1].pos + 16 + ents[-1].size]
+        buf = m[pos[0] : pos[-1] + 16 + size[-1]]
     one = np.concatenate(
-        [np.frombuffer(buf, ">f4", e.size // 4, e.pos + 16 - pos) for e in ents]
+        [np.frombuffer(buf, ">f4", s // 4, p + 16 - pos[0]) for s, p in zip(size, pos)]
     ).reshape(-1, extra["orig_nchan"])[start - bounds[first] : stop - bounds[first]]
     picked = one[:, raw._read_picks[0]].T
     return np.multiply(picked, raw._cals[:, np.newaxis], order="C")
