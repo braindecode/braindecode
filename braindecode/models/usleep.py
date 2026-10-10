@@ -211,8 +211,9 @@ class USleep(EEGModuleMixin, nn.Module):
                 time_conv_size += 1
             else:
                 raise ValueError(
-                    "time_conv_size must be an odd number to accommodate the "
-                    "upsampling step in the decoder blocks."
+                    f"time_conv_size = round(time_conv_size_s * sfreq) = "
+                    f"{time_conv_size} must be odd for the upsampling step in the "
+                    "decoder blocks; pass ensure_odd_conv_size=True."
                 )
 
         channels = [self.n_chans]

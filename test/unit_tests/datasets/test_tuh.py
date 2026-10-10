@@ -300,3 +300,27 @@ def test_read_date_side_file_roundtrip(tmp_path, date):
     pd.Series(date).to_json(edf.replace(".edf", "_date.txt"))
     assert _read_date(edf) == date
     assert all(type(v) is int for v in _read_date(edf).values())
+
+
+@pytest.mark.parametrize(
+    "date,year", [({"year": 1899, "month": 12, "day": 30}, 1899), ({}, 1)]
+)
+def test_tuh_date_fif_cannot_store_stays_in_description(tmp_path, date, year):
+    """De-identified (1899-12-30) and undated recordings save; the date stays in the description."""
+    from unittest import mock
+
+    from braindecode.datasets import BaseConcatDataset
+    from braindecode.datasets.tuh import TUH, _fake_raw
+    from braindecode.datautil import load_concat_dataset
+
+    path = "tuh_abnormal_eeg/v3.0.1/edf/train/normal/01_tcp_ar/aaaaaaav_s004_t000.edf"
+    header = b"0       aaaaaaav M 01-JAN-1961 aaaaaaav Age:53" + b" " * 40
+    with (
+        mock.patch("mne.io.read_raw_edf", new=_fake_raw),
+        mock.patch("braindecode.datasets.tuh._read_edf_header", return_value=header),
+    ):
+        ds = TUH._create_dataset(pd.Series({"path": path, **date}), None, False, False, False, False)
+    BaseConcatDataset([ds]).save(str(tmp_path))  # FIF refuses dates before 1901-12-13
+    reloaded = load_concat_dataset(tmp_path, preload=False)
+    assert reloaded.description["year"].tolist() == [year]
+    assert reloaded.datasets[0].raw.info["meas_date"] is None

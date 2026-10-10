@@ -143,6 +143,10 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        if self._n_chans_for_jit not in (None, 1):
+            raise ValueError(
+                f"AttnSleep takes single-channel input; got n_chans={self._n_chans_for_jit}."
+            )
 
         self.mapping = {
             "fc.weight": "final_layer.weight",

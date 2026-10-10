@@ -278,6 +278,10 @@ class REVE(EEGModuleMixin, nn.Module):
         self.freqs = freqs
         self.patch_size = patch_size
         self.patch_overlap = patch_overlap
+        if self._n_times is not None and self._n_times < patch_size:
+            raise ValueError(
+                f"n_times ({self._n_times}) must be at least patch_size ({patch_size})."
+            )
         self.depth = depth
         self.heads = heads
         self.head_dim = head_dim
@@ -318,7 +322,15 @@ class REVE(EEGModuleMixin, nn.Module):
 
         self.default_pos = None
         if chs_info is not None:
-            self.default_pos = self.get_positions([ch["ch_name"] for ch in chs_info])
+            names = [ch["ch_name"] for ch in chs_info]
+            missing = [n for n in names if n not in self._position_bank.mapping]
+            if missing:
+                raise ValueError(
+                    f"The REVE position bank has no position for {missing}. Use "
+                    "its channel names (RevePositionBank().get_all_positions()), "
+                    "or build without chs_info and pass pos to forward."
+                )
+            self.default_pos = self.get_positions(names)
 
     def _get_flattened_output_dim(self) -> int:
         """Helper function to compute the flattened output dimension after the transformer."""
