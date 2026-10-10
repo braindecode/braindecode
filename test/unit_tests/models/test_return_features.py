@@ -16,6 +16,7 @@ from braindecode.models import (
     BrainBERT,
     Brant,
     CBraMod,
+    EpiNT,
     Guetschel2026,
     Labram,
     MIRepNet,
@@ -125,6 +126,13 @@ _MODELS = [
     pytest.param(BrainBERT, N_CHANS, {}, False, id="BrainBERT"),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
     pytest.param(PopulationTransformer, N_CHANS, {}, True, id="PopulationTransformer"),
+    pytest.param(
+        EpiNT,
+        N_CHANS,
+        {"embed_dim": 32, "n_layers": 1, "n_heads": 4, "ffn_dim": 64},
+        True,
+        id="EpiNT",
+    ),
     pytest.param(EEGDINO, 16, {}, True, id="EEGDINO"),
     pytest.param(
         STEEGFormer,
