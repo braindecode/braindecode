@@ -29,15 +29,21 @@ from braindecode.modules.quantization import ResidualVectorQuantizer
 
 
 class _SELU(nn.SELU):
-    """``nn.SELU`` written as ``scale * x`` / ELU: same values and gradients, and
-    trainable on Gaudi, whose ELU backward only supports ``scale == 1``."""
+    """``nn.SELU`` as ``ELU(x, alpha * scale)`` times ``scale`` where ``x > 0``:
+    same values and gradients, and trainable on Gaudi, whose ELU backward only
+    supports ``scale == 1``."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         alpha, scale = (
             1.6732632423543772848170429916717,
             1.0507009873554804934193349852946,
         )
-        return torch.where(x > 0, x * scale, F.elu(x, alpha * scale))
+        # ELU is x on the positive side, so this equals the where(x > 0, x * scale,
+        # elu) form bit for bit, without its zero-filled where backward. The
+        # factor is at least float32, like the scalar multiply's compute type.
+        one = x.new_ones((), dtype=torch.promote_types(x.dtype, torch.float32))
+        factor = torch.where(x > 0, one * scale, one)
+        return (F.elu(x, alpha * scale) * factor).to(x.dtype)
 
 
 class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
