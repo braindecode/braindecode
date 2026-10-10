@@ -260,10 +260,11 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             raise ValueError(
                 "contrastive_loss requires matching 2D EEG/text embeddings."
             )
-        if eeg_embeds.shape[0] == 0:
-            raise ValueError("contrastive_loss requires a nonempty paired batch.")
-
         if not distributed:
+            if eeg_embeds.shape[0] == 0:
+                raise ValueError(
+                    "contrastive_loss requires a nonempty paired batch."
+                )
             logits_per_eeg, logits_per_text = self.compute_logits(
                 eeg_embeds, text_embeds
             )
