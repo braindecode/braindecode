@@ -14,6 +14,7 @@ from __future__ import annotations
 import bisect
 import html as _html
 import json
+import mmap
 import os
 import shutil
 import warnings
@@ -28,6 +29,7 @@ import mne
 import mne.io
 import numpy as np
 import pandas as pd
+from mne.io.constants import FIFF
 from mne.utils import _soft_import
 from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset, IterableDataset
@@ -218,6 +220,47 @@ def _compute_ch_pos(info, targets_from):
             UserWarning,
         )
     return pos
+
+
+def _read_fif_window(raw, start, stop):
+    """Samples ``start:stop`` of a lazy FIF raw, copied from the file in one go.
+
+    mne reads, casts and calibrates the FIF data buffers of a range one at a
+    time (60 Python steps for a 60-s window saved with 1-s buffers, each through
+    a buffered file whose buffer is 4 MB on network file systems). Here one
+    slice of the memory-mapped file holds the bytes of every buffer in the
+    range and one multiply calibrates them, with mne's arithmetic (float64 data
+    times ``raw._cals``), so the values equal ``raw._getitem``'s. Returns None
+    (the caller uses mne) unless ``raw`` is a lazy, single-file, uncompressed
+    FIF raw of float32 buffers without projector, compensation or gaps.
+    """
+    if (
+        not isinstance(raw, mne.io.Raw)
+        or raw.preload
+        or len(raw._raw_extras) != 1
+        or raw._projector is not None
+        or raw._comp is not None
+    ):
+        return None
+    extra = raw._raw_extras[0]
+    fname, bounds = extra["filename"], extra["bounds"]
+    if not isinstance(fname, Path) or fname.suffix == ".gz":
+        return None
+    start, stop = start + raw._first_samps[0], stop + raw._first_samps[0]
+    first = np.searchsorted(bounds, start, side="right") - 1
+    ents = extra["ent"][first : np.searchsorted(bounds, stop)]
+    if not ents or any(e is None or e.type != FIFF.FIFFT_FLOAT for e in ents):
+        return None
+    pos = ents[0].pos
+    # mmap: no copy through a 4 MB read buffer, and a cold file is read around
+    # the window by the kernel (as mne's 4 MB reads did), not window by window
+    with open(fname, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
+        buf = m[pos : ents[-1].pos + 16 + ents[-1].size]
+    one = np.concatenate(
+        [np.frombuffer(buf, ">f4", e.size // 4, e.pos + 16 - pos) for e in ents]
+    ).reshape(-1, extra["orig_nchan"])[start - bounds[first] : stop - bounds[first]]
+    picked = one[:, raw._read_picks[0]].T
+    return np.multiply(picked, raw._cals[:, np.newaxis], order="C")
 
 
 def _window_info(crop_inds, sfreq):
@@ -823,9 +866,11 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         if self._zarr_data is not None:
             X = self._zarr_data[:, i_start:i_stop]
         else:
-            X = self.raw._getitem(
-                (slice(None), slice(i_start, i_stop)), return_times=False
-            )
+            X = _read_fif_window(self.raw, i_start, i_stop)
+            if X is None:
+                X = self.raw._getitem(
+                    (slice(None), slice(i_start, i_stop)), return_times=False
+                )
         X = np.array(X, dtype="float32")
         if self.transform is not None:
             X = self.transform(X)
