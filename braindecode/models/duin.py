@@ -13,16 +13,15 @@
 from __future__ import annotations
 
 import math
-from collections import OrderedDict
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 
 from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
+from braindecode.modules import FeedForwardBlock, MultiHeadAttention
 
 
 class DuIN(EEGModuleMixin, nn.Module, license="mit"):
@@ -203,23 +202,6 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        n_filters, kernel_sizes, strides = (
-            tuple(n_filters),
-            tuple(kernel_sizes),
-            tuple(strides),
-        )
-        if not len(n_filters) == len(kernel_sizes) == len(strides) >= 1:
-            raise ValueError(
-                "n_filters, kernel_sizes and strides must have the same, "
-                f"non-zero length; got {len(n_filters)}, {len(kernel_sizes)} "
-                f"and {len(strides)}."
-            )
-        total_stride = math.prod(strides)
-        if patch_size % total_stride:
-            raise ValueError(
-                f"patch_size ({patch_size}) must be divisible by the product of "
-                f"strides ({total_stride})."
-            )
         if self.n_times % patch_size or self.n_times < patch_size:
             raise ValueError(
                 f"n_times ({self.n_times}) must be a positive multiple of "
@@ -227,37 +209,28 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
             )
         warn_if_sfreq_differs("DuIN", self._sfreq, 1000)
 
-        self.patch_size = patch_size
-        self.n_neural = n_neural
-        self.n_filters = n_filters
-        self.kernel_sizes = kernel_sizes
-        self.strides = strides
-        self.n_layers = n_layers
-        self.n_heads = n_heads
-        self.head_dim = head_dim
-        self.ffn_dim = ffn_dim
-        self.head_hidden_dim = head_hidden_dim
-        self.attn_drop_prob = attn_drop_prob
-        self.drop_prob = drop_prob
         self.n_patches = self.n_times // patch_size
         # Time-major flattening of the last convolution: (frames, filters).
-        self.embed_dim = n_filters[-1] * (patch_size // total_stride)
-        if self.embed_dim % 2:
-            raise ValueError(
-                f"The patch embedding size ({self.embed_dim}) must be even for "
-                "the sinusoidal temporal embedding."
-            )
+        self.embed_dim = n_filters[-1] * (patch_size // math.prod(strides))
 
         self.spatial_projection = nn.Linear(self.n_chans, n_neural)
         self.to_patches = Rearrange(
             "batch neural (patches time) -> (batch patches) neural time",
             time=patch_size,
         )
+        # Conv1d + BatchNorm1d per block, no activation, as upstream
+        # PatchTokenizer: strided convolutions pad (kernel_size - 1) // 2.
         blocks = []
         in_channels = n_neural
-        for out_channels, kernel_size, stride in zip(n_filters, kernel_sizes, strides):
+        for out_channels, kernel_size, stride in zip(
+            n_filters, kernel_sizes, strides, strict=True
+        ):
+            padding = "same" if stride == 1 else (kernel_size - 1) // 2
             blocks.append(
-                _DuINConvBlock(in_channels, out_channels, kernel_size, stride)
+                nn.Sequential(
+                    nn.Conv1d(in_channels, out_channels, kernel_size, stride, padding),
+                    nn.BatchNorm1d(out_channels),
+                )
             )
             in_channels = out_channels
         self.spatial_encoder = nn.Sequential(*blocks)
@@ -270,16 +243,16 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
             sinusoidal_positional_encoding(self.n_patches, self.embed_dim),
             persistent=False,
         )
-        self.encoder = nn.ModuleList(
-            [
+        self.encoder = nn.Sequential(
+            *[
                 _DuINTransformerLayer(
-                    embed_dim=self.embed_dim,
-                    n_heads=n_heads,
-                    head_dim=head_dim,
-                    ffn_dim=ffn_dim,
-                    activation=activation,
-                    attn_drop_prob=attn_drop_prob,
-                    drop_prob=drop_prob,
+                    self.embed_dim,
+                    n_heads,
+                    head_dim,
+                    ffn_dim,
+                    activation,
+                    attn_drop_prob,
+                    drop_prob,
                 )
                 for _ in range(n_layers)
             ]
@@ -295,10 +268,8 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
             self.head_hidden = nn.Identity()
         self.final_layer = nn.Linear(n_features, self.n_outputs)
 
-        self._init_weights()
-
-    def _init_weights(self) -> None:
-        """Upstream initialisation (truncated normal, depth-scaled Transformer)."""
+        # Upstream initialisation: truncated normal for the linear layers, and
+        # the Transformer ones scaled by 1 / sqrt(2 * depth).
         nn.init.trunc_normal_(self.spatial_projection.weight, std=0.02)
         nn.init.zeros_(self.spatial_projection.bias)
         for depth, layer in enumerate(self.encoder, start=1):
@@ -321,7 +292,9 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
         load such a checkpoint with ``strict=False``.
         """
         if "subj_block.subj_layer.W.weight" in state_dict:
-            state_dict = _convert_upstream_state_dict(state_dict, self.n_neural)
+            state_dict = _convert_upstream_state_dict(
+                state_dict, self.spatial_projection.out_features
+            )
         return super().load_state_dict(state_dict, *args, **kwargs)
 
     def reset_head(self, n_outputs: int) -> None:
@@ -350,8 +323,8 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
             Class logits of shape ``(batch, n_outputs)``, or the feature dict
             when ``return_features`` is set.
         """
-        if x.shape[1] != self.n_chans:
-            raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}.")
+        # A wrong multiple of patch_size would silently regroup the batch in
+        # to_tokens, so check the length here.
         if x.shape[-1] != self.n_times:
             raise ValueError(
                 f"DuIN was configured for {self.n_times} time samples, "
@@ -362,9 +335,7 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
         # 2. one token per patch: (batch, n_patches, embed_dim)
         tokens = self.to_tokens(self.spatial_encoder(self.to_patches(h)))
         # 3. temporal embedding and Transformer encoder
-        z = tokens + self.time_embedding.to(tokens.dtype)
-        for layer in self.encoder:
-            z = layer(z)
+        z = self.encoder(tokens + self.time_embedding.to(tokens.dtype))
         # 4. flatten and classify
         features = self.flatten(z)
         logits = self.final_layer(self.head_hidden(features))
@@ -375,61 +346,8 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
         return logits
 
 
-class _DuINConvBlock(nn.Module):
-    """``Conv1d`` + ``BatchNorm1d`` over the samples of a patch.
-
-    Strided convolutions pad by ``(kernel_size - 1) // 2`` and the others use
-    ``"same"`` padding, as upstream ``PatchTokenizer``.
-    """
-
-    def __init__(
-        self, in_channels: int, out_channels: int, kernel_size: int, stride: int
-    ):
-        super().__init__()
-        padding: int | str = "same" if stride == 1 else (kernel_size - 1) // 2
-        self.conv = nn.Conv1d(
-            in_channels, out_channels, kernel_size, stride=stride, padding=padding
-        )
-        self.bn = nn.BatchNorm1d(out_channels)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.bn(self.conv(x))
-
-
-class _DuINAttention(nn.Module):
-    """Multi-head self-attention with layer-normalised queries and keys."""
-
-    def __init__(
-        self, embed_dim: int, n_heads: int, head_dim: int, attn_drop_prob: float
-    ):
-        super().__init__()
-        self.n_heads = n_heads
-        self.head_dim = head_dim
-        self.attn_drop_prob = attn_drop_prob
-        inner_dim = n_heads * head_dim
-        self.q = nn.Linear(embed_dim, inner_dim)
-        self.k = nn.Linear(embed_dim, inner_dim)
-        self.v = nn.Linear(embed_dim, inner_dim)
-        self.q_norm = nn.LayerNorm(head_dim)
-        self.k_norm = nn.LayerNorm(head_dim)
-        self.proj = nn.Linear(inner_dim, embed_dim)
-        self.split_heads = Rearrange(
-            "batch seq (heads dim) -> batch heads seq dim", heads=n_heads
-        )
-        self.merge_heads = Rearrange("batch heads seq dim -> batch seq (heads dim)")
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        q = self.q_norm(self.split_heads(self.q(x)))
-        k = self.k_norm(self.split_heads(self.k(x)))
-        v = self.split_heads(self.v(x))
-        out = F.scaled_dot_product_attention(
-            q, k, v, dropout_p=self.attn_drop_prob if self.training else 0.0
-        )
-        return self.proj(self.merge_heads(out))
-
-
 class _DuINTransformerLayer(nn.Module):
-    """Post-norm Transformer layer (attention, then feed-forward)."""
+    """Post-norm Transformer layer (upstream ``TransformerBlock``)."""
 
     def __init__(
         self,
@@ -442,13 +360,12 @@ class _DuINTransformerLayer(nn.Module):
         drop_prob: float,
     ):
         super().__init__()
-        self.attn = _DuINAttention(embed_dim, n_heads, head_dim, attn_drop_prob)
+        self.attn = MultiHeadAttention(
+            embed_dim, n_heads, attn_drop_prob, head_dim=head_dim, qk_norm=True
+        )
         self.norm_attn = nn.LayerNorm(embed_dim)
-        self.ffn = nn.Sequential(
-            nn.Linear(embed_dim, ffn_dim),
-            activation(),
-            nn.Dropout(drop_prob),
-            nn.Linear(ffn_dim, embed_dim),
+        self.ffn = FeedForwardBlock(
+            embed_dim, 1, drop_prob, activation, hidden_features=ffn_dim
         )
         self.norm_ffn = nn.LayerNorm(embed_dim)
 
@@ -457,14 +374,14 @@ class _DuINTransformerLayer(nn.Module):
         return self.norm_ffn(x + self.ffn(x))
 
 
-# Upstream module prefixes -> this implementation, for the encoder layers.
+# Upstream encoder-layer prefixes -> DuIN keys.
 _UPSTREAM_LAYER_KEYS = {
-    "mha.W_q.W.": "attn.q.",
-    "mha.W_k.W.": "attn.k.",
-    "mha.W_v.W.": "attn.v.",
+    "mha.W_q.W.": "attn.queries.",
+    "mha.W_k.W.": "attn.keys.",
+    "mha.W_v.W.": "attn.values.",
     "mha.norm_q.": "attn.q_norm.",
     "mha.norm_k.": "attn.k_norm.",
-    "mha.proj.0.": "attn.proj.",
+    "mha.proj.0.": "attn.projection.",
     "norm_mha.": "norm_attn.",
     "ffn.fc1.0.": "ffn.0.",
     "ffn.fc2.0.": "ffn.3.",
@@ -472,11 +389,18 @@ _UPSTREAM_LAYER_KEYS = {
 }
 
 
-def _convert_upstream_state_dict(state_dict, n_neural: int) -> OrderedDict:
-    """Rename an upstream Du-IN state dict to :class:`DuIN` keys."""
-    converted = OrderedDict()
+def _convert_upstream_state_dict(state_dict, n_neural: int) -> dict:
+    """Rename an upstream Du-IN state dict to :class:`DuIN` keys.
+
+    Keys without a counterpart (``mask_emb``, the fixed ``emb_time`` table, the
+    attention scale constants, ``vq_block``, ``contra_block``, the upstream
+    heads) are dropped.
+    """
+    converted = {}
     for key, value in state_dict.items():
         if key == "subj_block.subj_layer.W.weight":
+            # The subject layer of an n-subject model holds one matrix per
+            # subject; keeping column 0 of a multi-subject one would be wrong.
             if value.shape[1] != 1:
                 raise ValueError(
                     "Only single-subject Du-IN checkpoints can be loaded; this "
@@ -488,23 +412,13 @@ def _convert_upstream_state_dict(state_dict, n_neural: int) -> OrderedDict:
             )
         elif key == "subj_block.subj_layer.B.weight":
             converted["spatial_projection.bias"] = value[:, 0]
-        elif key.startswith("subj_block."):
-            raise ValueError(f"Unsupported upstream subject-block parameter {key!r}.")
         elif key.startswith("tokenizer.conv_blocks."):
-            # tokenizer.conv_blocks.<i>.<0: conv | 1: batch norm>.1.<param>
-            block, part, _, param = key[len("tokenizer.conv_blocks.") :].split(".", 3)
-            name = "conv" if part == "0" else "bn"
-            converted[f"spatial_encoder.{block}.{name}.{param}"] = value
+            # tokenizer.conv_blocks.<block>.<0: conv | 1: batch norm>.1.<param>
+            _, _, block, part, _, param = key.split(".", 5)
+            converted[f"spatial_encoder.{block}.{part}.{param}"] = value
         elif key.startswith("encoder.1.xfmr_blocks."):
-            layer, rest = key[len("encoder.1.xfmr_blocks.") :].split(".", 1)
-            if rest == "mha.attention.scale":  # fixed 1 / sqrt(head_dim)
-                continue
+            _, _, _, layer, rest = key.split(".", 4)
             for src, dst in _UPSTREAM_LAYER_KEYS.items():
                 if rest.startswith(src):
                     converted[f"encoder.{layer}.{dst}{rest[len(src) :]}"] = value
-                    break
-            else:
-                raise ValueError(f"Unknown upstream encoder parameter {key!r}.")
-        # mask_emb, emb_time (fixed table), vq_block, contra_block and the
-        # upstream heads (cls_block) have no counterpart here.
     return converted

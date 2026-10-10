@@ -39,8 +39,9 @@ Enhancements
   an sEEG speech decoder that fuses the channels of a brain region into one
   token per 100 ms patch before a Transformer encoder. The authors'
   per-subject Du-IN MAE checkpoints load directly through
-  ``load_state_dict`` and match the upstream encoder to float precision
-  (:gh:`1269` by `Adam Mounir`_).
+  ``load_state_dict`` and match the upstream encoder to float precision.
+  :class:`braindecode.modules.MultiHeadAttention` gains ``head_dim`` and
+  ``qk_norm`` for it (:gh:`1269` by `Adam Mounir`_).
 - :class:`braindecode.models.MetaNeuromotorHand` rotates and half-vectorizes the MPF matrices with one precomputed ``index_select`` instead of three rolls, a stack and a permute copy: CPU train step about 2 % faster, Gaudi neutral; outputs, gradients and state dict unchanged bit for bit (:gh:`1292` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` skips the attention scores in eval mode on CPU at the default ``swa_window_size=1``, where the window keeps only the diagonal and the attention reduces to its value projection: CPU eval forward 1.25x faster at 19 x 6000 (batch 32); training unchanged; outputs unchanged bit for bit (:gh:`1293` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MAPA` folds the (batch, array) axes before its within-array attention, so CPU attention runs as one fused 4-D :func:`torch.nn.functional.scaled_dot_product_attention` call instead of the 5-D math fallback: CPU forward 1.16x and train step 1.03x faster at 22 contacts (batch 32), 4.2 GB less peak memory in training; Gaudi unchanged; outputs and gradients change by float rounding only (relative differences below 1e-6) (:gh:`1294` by `Bruno Aristimunha`_).

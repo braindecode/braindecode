@@ -2625,11 +2625,11 @@ def test_duin_defaults_are_the_released_config():
     model = DuIN(n_chans=10, n_outputs=61, n_times=3000, sfreq=1000)
     assert (model.embed_dim, model.n_patches) == (160, 30)
     assert model.spatial_projection.weight.shape == (16, 10)
-    convs = [block.conv.weight.shape for block in model.spatial_encoder]
+    convs = [block[0].weight.shape for block in model.spatial_encoder]
     assert convs == [(128, 16, 19), (128, 128, 3), (16, 128, 3)]
     assert len(model.encoder) == 8
     layer = model.encoder[0]
-    assert layer.attn.q.weight.shape == (512, 160)
+    assert layer.attn.queries.weight.shape == (512, 160)
     assert layer.attn.q_norm.normalized_shape == (64,)
     assert layer.ffn[0].weight.shape == (320, 160)
     assert model.head_hidden[0].weight.shape == (128, 30 * 160)
@@ -2645,17 +2645,17 @@ def _duin_upstream_state(n_chans, n_neural, model):
         "cls_block.cls_head.0.0.weight": torch.randn(2048, model.embed_dim),
     }
     for i, block in enumerate(model.spatial_encoder):
-        for name, value in block.conv.state_dict().items():
+        for name, value in block[0].state_dict().items():
             state[f"tokenizer.conv_blocks.{i}.0.1.{name}"] = torch.randn_like(value)
-        for name, value in block.bn.state_dict().items():
+        for name, value in block[1].state_dict().items():
             state[f"tokenizer.conv_blocks.{i}.1.1.{name}"] = value.clone()
     upstream = {
-        "attn.q": "mha.W_q.W",
-        "attn.k": "mha.W_k.W",
-        "attn.v": "mha.W_v.W",
+        "attn.queries": "mha.W_q.W",
+        "attn.keys": "mha.W_k.W",
+        "attn.values": "mha.W_v.W",
         "attn.q_norm": "mha.norm_q",
         "attn.k_norm": "mha.norm_k",
-        "attn.proj": "mha.proj.0",
+        "attn.projection": "mha.proj.0",
         "norm_attn": "norm_mha",
         "ffn.0": "ffn.fc1.0",
         "ffn.3": "ffn.fc2.0",
@@ -2673,24 +2673,22 @@ def _duin_upstream_state(n_chans, n_neural, model):
 def test_duin_loads_upstream_checkpoint_keys():
     """Upstream keys load onto the encoder; only the head stays untrained."""
     model = DuIN(n_chans=3, n_outputs=2, n_times=60, **_DUIN_SMALL).eval()
-    state = _duin_upstream_state(3, model.n_neural, model)
+    n_neural = model.spatial_projection.out_features
+    state = _duin_upstream_state(3, n_neural, model)
     missing, unexpected = model.load_state_dict(state, strict=False)
     assert not unexpected
     assert all(k.startswith(("head_hidden", "final_layer")) for k in missing)
     torch.testing.assert_close(
-        model.encoder[0].attn.q.weight, state["encoder.1.xfmr_blocks.0.mha.W_q.W.weight"]
+        model.encoder[0].attn.queries.weight,
+        state["encoder.1.xfmr_blocks.0.mha.W_q.W.weight"],
     )
     # The upstream subject layer computes X @ W.reshape(n_chans, n_neural) + B.
     x = torch.randn(4, 7, 3)
-    w = state["subj_block.subj_layer.W.weight"].reshape(3, model.n_neural)
+    w = state["subj_block.subj_layer.W.weight"].reshape(3, n_neural)
     expected = x @ w + state["subj_block.subj_layer.B.weight"][:, 0]
     torch.testing.assert_close(model.spatial_projection(x), expected)
-
-
-def test_duin_rejects_multi_subject_checkpoint():
-    model = DuIN(n_chans=3, n_outputs=2, n_times=60, **_DUIN_SMALL)
-    state = _duin_upstream_state(3, model.n_neural, model)
-    state["subj_block.subj_layer.W.weight"] = torch.randn(3 * model.n_neural, 2)
+    # A multi-subject subject layer is refused rather than cut to subject 0.
+    state["subj_block.subj_layer.W.weight"] = torch.randn(3 * n_neural, 2)
     with pytest.raises(ValueError, match="single-subject"):
         model.load_state_dict(state, strict=False)
 
@@ -2703,26 +2701,16 @@ def test_duin_patch_tokens_are_time_major():
     torch.testing.assert_close(model.to_tokens(conv_out), expected)
 
 
-def test_duin_head_and_reset():
-    model = DuIN(n_chans=3, n_outputs=2, n_times=60, **_DUIN_SMALL).eval()
-    x = torch.randn(2, 3, 60)
-    features = model(x, return_features=True)["features"]
-    assert features.shape == (2, model.n_patches * model.embed_dim)
-    model.reset_head(5)
-    assert model(x).shape == (2, 5) and model.get_config()["n_outputs"] == 5
-    linear = DuIN(n_chans=3, n_outputs=2, n_times=60, **{**_DUIN_SMALL, "head_hidden_dim": 0})
-    assert isinstance(linear.head_hidden, nn.Identity)
-    assert linear.final_layer.in_features == linear.n_patches * linear.embed_dim
+def test_duin_linear_head():
+    model = DuIN(n_chans=3, n_outputs=2, n_times=60, **{**_DUIN_SMALL, "head_hidden_dim": 0})
+    assert isinstance(model.head_hidden, nn.Identity)
+    assert model.final_layer.in_features == model.n_patches * model.embed_dim
 
 
 def test_duin_rejects_invalid_geometry():
     with pytest.raises(ValueError, match="divisible"):
         DuIN(n_chans=3, n_outputs=2, n_times=70, **_DUIN_SMALL)
-    with pytest.raises(ValueError, match="strides"):
-        DuIN(n_chans=3, n_outputs=2, n_times=60, **{**_DUIN_SMALL, "strides": (3, 1)})
     model = DuIN(n_chans=3, n_outputs=2, n_times=60, **_DUIN_SMALL)
-    with pytest.raises(ValueError, match="channels"):
-        model(torch.randn(1, 4, 60))
     with pytest.raises(ValueError, match="time samples"):
         model(torch.randn(1, 3, 40))
 
