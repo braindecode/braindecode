@@ -29,6 +29,7 @@ Enhancements
 ============
 
 - :class:`braindecode.datasets.EEGWindowsDataset` reads a window of a lazily loaded FIF recording (what ``preprocess(..., save_dir=...)`` and :func:`braindecode.datautil.load_concat_dataset` produce) from one slice of the memory-mapped file instead of one 1-s FIF buffer at a time through a 4 MB read buffer: one epoch of 60-s TUAB windows 1.3-1.4x faster from a cold page cache and 1.5-2.1x faster from a warm one (num_workers 0-8), windows unchanged (:gh:`1318` by `Bruno Aristimunha`_).
+- ``braindecode.modules.EMACodebook`` sums its training EMA statistics per code with ``index_add_`` instead of a dense one-hot matrix and GEMM: :class:`braindecode.models.TFMTokenizer` CPU train step 5 % faster and :class:`braindecode.models.BrainTokenizer` 1-3 % (22 channels, batch 32, 2 threads); outputs, gradients and token ids unchanged, the EMA buffers change by float rounding only (:gh:`1306` by `Bruno Aristimunha`_).
 - The TUH datasets read the ``_date.txt`` file kept beside each EDF with :func:`json.load` instead of :func:`pandas.read_json`: 2.9 s -> 0.04 s for the 2993 TUAB date files; descriptions unchanged (:gh:`1300` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Guetschel2026`, the encoder shared by the 58 MAE and JEPA
   checkpoints of the EEG masking-geometry study (Guetschel et al., 2026). The checkpoints
@@ -370,7 +371,9 @@ Bug fixes
 ==========
 
 - :class:`braindecode.models.MEDFormer` runs its patch embedding, a Conv2d kernel as tall as ``n_times``, as the equivalent conv1d with ``n_times`` input channels: MEDFormer now runs on Gaudi2, whose convolution kernels are limited to 256 rows (it failed to compile for ``n_times > 256``), and its CPU train step is 15-35 % faster; same state dict, outputs change by float rounding only (:gh:`1287` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.REVE`, :class:`braindecode.models.CSBrain`, :class:`braindecode.models.AttnSleep`, :class:`braindecode.models.BDTCN`, :class:`braindecode.models.ZUNA` and :class:`braindecode.models.DGCNN` raise a :class:`ValueError` at construction for input geometries they cannot run (channel names missing from REVE's position bank or windows shorter than its patch, CSBrain windows that are not a multiple of ``patch_size``, more than one AttnSleep channel, windows shorter than the BDTCN receptive field, more ZUNA time patches than ``max_seqlen``, a single DGCNN channel) instead of failing in ``forward`` or with an unrelated error; the :class:`braindecode.models.USleep` error for an even kernel size names ``ensure_odd_conv_size`` (:gh:`1313` by `Bruno Aristimunha`_).
 - Fix coordinate ordering in :class:`braindecode.augmentation.SensorsRotation` with ``spherical_splines=False``, which raised an error or interpolated the wrong locations (:gh:`1295` by `Anton Soloviev`_).
+- :class:`braindecode.models.Deep4Net` with ``stride_before_pool=True`` or an integer ``final_conv_length`` crashed in ``forward`` for windows between its approximate and exact minimum length, e.g. 441-681 samples for :class:`braindecode.models.EEGCLIP` (2 s at 250 Hz); those windows now shrink the temporal kernels like shorter ones, other windows unchanged bit for bit (:gh:`1310` by `Bruno Aristimunha`_).
 - Preserve the final samples in :class:`braindecode.augmentation.SegmentationReconstruction`
   when the window length is not divisible by the segment count, instead of
   replacing them with zeros (:gh:`1279` by `Anton Soloviev`_).

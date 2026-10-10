@@ -262,6 +262,12 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             raise ValueError("ZUNA requires finite 3D locations for every channel.")
         if head_dim % 8 != 0:
             raise ValueError("head_dim must be divisible by eight for 4D RoPE.")
+        if coarse_time_points > max_seqlen:
+            raise ValueError(
+                f"n_times ({self.n_times}) gives {coarse_time_points} patches of "
+                f"{fine_time_pts} samples; max_seqlen={max_seqlen} allows at most "
+                f"{max_seqlen * fine_time_pts} samples."
+            )
 
         # Layers
         self.patch_embedding = nn.Sequential(
