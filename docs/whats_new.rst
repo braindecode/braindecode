@@ -367,6 +367,7 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.datasets.TUH`, :class:`braindecode.datasets.TUHAbnormal` and :class:`braindecode.datasets.TUHEvents` keep a recording date that FIF cannot store (before 1901-12-13: the year-1 placeholder of undated recordings, the de-identified 1899-12-30 of 16 TUAB v3.0.1 EDFs) in the description only and leave the raw's ``meas_date`` empty, so :func:`braindecode.preprocessing.preprocess` with ``save_dir`` no longer aborts on them (:gh:`1307` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MEDFormer` runs its patch embedding, a Conv2d kernel as tall as ``n_times``, as the equivalent conv1d with ``n_times`` input channels: MEDFormer now runs on Gaudi2, whose convolution kernels are limited to 256 rows (it failed to compile for ``n_times > 256``), and its CPU train step is 15-35 % faster; same state dict, outputs change by float rounding only (:gh:`1287` by `Bruno Aristimunha`_).
 - Fix coordinate ordering in :class:`braindecode.augmentation.SensorsRotation` with ``spherical_splines=False``, which raised an error or interpolated the wrong locations (:gh:`1295` by `Anton Soloviev`_).
 - Preserve the final samples in :class:`braindecode.augmentation.SegmentationReconstruction`
