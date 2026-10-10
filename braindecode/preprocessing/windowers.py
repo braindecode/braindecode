@@ -619,7 +619,9 @@ def create_fixed_length_windows(
             f"Window size {window_size_samples} exceeds trial duration {lengths.min()}."
         )
 
-    list_of_windows_ds = Parallel(n_jobs=n_jobs)(
+    # Threads: each recording costs well under a millisecond, while worker
+    # processes would pickle every raw there and every windowed dataset back.
+    list_of_windows_ds = Parallel(n_jobs=n_jobs, prefer="threads")(
         delayed(_create_fixed_length_windows)(
             ds,
             start_offset_samples,
