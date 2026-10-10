@@ -44,6 +44,7 @@ from braindecode.models import (
     Brant,
     CBraMod,
     CodeBrain,
+    Guetschel2026,
     Labram,
     MIRepNet,
     MVPFormer,
@@ -361,6 +362,20 @@ COMPAT = {
         coords_checked=True,
         windows=(256, 1024),
         skip=("G2",),
+    ),
+    # random_projection=64 exercises the projection head with a light buffer:
+    # 5000 components in float32 take 3.3 GB on the 64-channel cell (G2, 5
+    # patches) and 6.4 GB on the 6000-sample one (G5b, 19 channels, 33 patches).
+    "Guetschel2026": dict(
+        cls=Guetschel2026,
+        sfreq=200,
+        n_times=1000,
+        canon=TEN_TWENTY,
+        channels="coords",
+        coords_checked=True,
+        min_n_times=200,
+        short_match="n_times",
+        kwargs=dict(random_projection=64),
     ),
 }
 

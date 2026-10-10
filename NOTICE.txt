@@ -52,6 +52,7 @@ The following components are licensed under the MIT License:
 - `braindecode/modules/linear_attention.py`
 - `braindecode/models/seizure_transformer.py`
 - `docs/_static/model/seizure_transformer_arch.png`
+- `braindecode/models/guetschel2026.py`
 - `braindecode/models/tmsanet.py`
 
 The `brainomni.py` file is a derivative of `OpenTSLab/BrainOmni` (MIT), whose

@@ -28,6 +28,13 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.Guetschel2026`, the encoder shared by the 58 MAE and JEPA
+  checkpoints of the EEG masking-geometry study (Guetschel et al., 2026). The checkpoints
+  load with ``from_pretrained`` from the original Hugging Face repositories, with backbone
+  features identical to the reference implementation, and
+  :meth:`~braindecode.models.Guetschel2026.hub_repo_id` builds their names. The head is a
+  flatten and a linear layer, with an optional fixed Gaussian random projection in between
+  (``random_projection``, as in the OpenEEGBench probe) (:gh:`1260` by `Pierre Guetschel`_).
 - :class:`braindecode.models.MetaNeuromotorHand` rotates and half-vectorizes the MPF matrices with one precomputed ``index_select`` instead of three rolls, a stack and a permute copy: CPU train step about 2 % faster, Gaudi neutral; outputs, gradients and state dict unchanged bit for bit (:gh:`1292` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` skips the attention scores in eval mode on CPU at the default ``swa_window_size=1``, where the window keeps only the diagonal and the attention reduces to its value projection: CPU eval forward 1.25x faster at 19 x 6000 (batch 32); training unchanged; outputs unchanged bit for bit (:gh:`1293` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` computes its rotary self-attention with :func:`torch.nn.functional.scaled_dot_product_attention`: CPU forward 1-4 % faster, train step neutral to 2.4 % faster; outputs and gradients change by float rounding only, within master's own float32-vs-float64 difference, also with the released ``PulpBio/LUNA`` weights (:gh:`1282` by `Bruno Aristimunha`_).
