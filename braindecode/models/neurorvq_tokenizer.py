@@ -91,19 +91,22 @@ class _EMAVectorQuantizer(nn.Module):
         if self.training or self.statistic_code_usage:
             with torch.no_grad():
                 weight = self.embedding.weight
-                encodings = F.one_hot(indices, weight.shape[0]).to(z.dtype)
-                counts = encodings.sum(0)
+                # Per-code counts and sums by index_add_ (at least float32: exact
+                # counts) instead of a dense (N, n_codes) one-hot GEMM; no host sync
+                # (bincount reads the index range).
+                work = torch.promote_types(vectors.dtype, torch.float32)
+                ones = vectors.new_ones(indices.shape[0], dtype=work)
+                counts = ones.new_zeros(weight.shape[0]).index_add_(0, indices, ones)
                 if not torch.jit.is_scripting():
                     _all_reduce_sum(counts)
                 self.cluster_size.mul_(self.decay).add_(counts, alpha=1 - self.decay)
                 if self.training:
                     safe_counts = counts.masked_fill(counts == 0, 1.0)
-                    embed_sum = vectors.T @ encodings
+                    embed_sum = ones.new_zeros(weight.shape)
+                    embed_sum = embed_sum.index_add_(0, indices, vectors.to(work))
                     if not torch.jit.is_scripting():
                         _all_reduce_sum(embed_sum)
-                    means = F.normalize(
-                        (embed_sum / safe_counts.unsqueeze(0)).T, dim=-1
-                    )
+                    means = F.normalize(embed_sum / safe_counts.unsqueeze(1), dim=-1)
                     means = torch.where(counts[:, None] == 0, weight, means)
                     weight.mul_(self.decay).add_(means, alpha=1 - self.decay)
                     weight.copy_(F.normalize(weight, dim=-1))
