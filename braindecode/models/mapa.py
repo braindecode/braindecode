@@ -892,8 +892,14 @@ class _WithinArrayBlock(nn.Module):
 
         # Padded contacts are blocked as keys, so they cannot reach a real
         # token; their own rows are computed and then dropped by the caller.
+        # (batch, array) as one batch axis: CPU SDPA has a fused kernel for
+        # 4-D inputs only, and falls back to the math path for 5-D ones.
+        last = 0 if query.device.type == "hpu" else 1  # Gaudi: 5-D is faster
         attention = F.scaled_dot_product_attention(
-            query, key, value, attn_mask=key_mask
-        )
+            query.flatten(0, last),
+            key.flatten(0, last),
+            value.flatten(0, last),
+            attn_mask=key_mask.expand(query.shape[0], -1, -1, -1, -1).flatten(0, last),
+        ).view(query.shape)
         x = x + self.out(self.merge_heads(attention))
         return x + self.mlp(self.norm2(x))
