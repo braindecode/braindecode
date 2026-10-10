@@ -29,6 +29,7 @@ Enhancements
 ============
 
 - :class:`braindecode.models.NeuroRVQTokenizer` accumulates the ``-2 * vectors @ codes.T`` term of its code distances inside the GEMM (one ``addmm_``) instead of a separate product and subtraction: CPU forward 8 % and train step 3 % faster (22 channels, batch 32, 2 threads); distances and token ids unchanged bit for bit (:gh:`1315` by `Bruno Aristimunha`_).
+- ``braindecode.modules.EMACodebook`` sums its training EMA statistics per code with ``index_add_`` instead of a dense one-hot matrix and GEMM: :class:`braindecode.models.TFMTokenizer` CPU train step 5 % faster and :class:`braindecode.models.BrainTokenizer` 1-3 % (22 channels, batch 32, 2 threads); outputs, gradients and token ids unchanged, the EMA buffers change by float rounding only (:gh:`1306` by `Bruno Aristimunha`_).
 - The TUH datasets read the ``_date.txt`` file kept beside each EDF with :func:`json.load` instead of :func:`pandas.read_json`: 2.9 s -> 0.04 s for the 2993 TUAB date files; descriptions unchanged (:gh:`1300` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Guetschel2026`, the encoder shared by the 58 MAE and JEPA
   checkpoints of the EEG masking-geometry study (Guetschel et al., 2026). The checkpoints
