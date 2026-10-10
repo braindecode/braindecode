@@ -682,27 +682,40 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
         )
 
     def load_state_dict(self, state_dict, *args, **kwargs):
-        """Load a state dict, allowing only the head to be missing.
+        """Load a state dict whose backbone matches this model exactly.
 
         Arguments are passed on to :meth:`torch.nn.Module.load_state_dict`.
-        Keys under ``final_layer.*`` may be absent, because the pretrained
-        checkpoints carry no head. Any other missing key raises an error.
+        Keys under ``final_layer.*`` (and ``channel_layer.*``) may be absent or
+        extra, because the pretrained checkpoints carry no head. Any other
+        missing or unexpected key raises an error.
 
         Raises
         ------
         RuntimeError
-            If a backbone key is missing, even with ``strict=False``
-            (:meth:`from_pretrained` loads with ``strict=False``).
+            If a backbone key is missing or unexpected, even with
+            ``strict=False`` (:meth:`from_pretrained` loads with
+            ``strict=False``).
         """
         result = super().load_state_dict(state_dict, *args, **kwargs)
-        missing = [k for k in result.missing_keys if not k.startswith("final_layer.")]
-        if missing:
-            # from_pretrained loads with strict=False: never keep random backbone weights.
+
+        def backbone(keys):
+            return [
+                k for k in keys if not k.startswith(("final_layer.", "channel_layer."))
+            ]
+
+        missing, unexpected = (
+            backbone(result.missing_keys),
+            backbone(result.unexpected_keys),
+        )
+        if missing or unexpected:
+            # from_pretrained loads with strict=False: never keep random backbone
+            # weights, nor silently drop pretrained ones (e.g. depth=2 on a
+            # 4-layer checkpoint).
             raise RuntimeError(
-                f"Guetschel2026: the state dict misses backbone weights {missing}. "
-                "Only the head (final_layer.*) may be absent; check that the checkpoint "
-                "is one of the eeg-fm-masking repositories and that the architecture "
-                "arguments are the defaults."
+                "Guetschel2026: the state dict does not match the backbone (missing: "
+                f"{missing}, unexpected: {unexpected}). Only the head (final_layer.*) "
+                "may differ; check that the checkpoint is one of the eeg-fm-masking "
+                "repositories and that the architecture arguments are the defaults."
             )
         return result
 

@@ -808,7 +808,7 @@ def test_partial_state_dict_raises():
     model = _model(random_projection=16)
     sd = _reference_state_dict()
     partial = {k: v for k, v in sd.items() if k != "model.transformer.layers.0.linear1.weight"}
-    with pytest.raises(RuntimeError, match="misses backbone"):
+    with pytest.raises(RuntimeError, match="does not match the backbone"):
         model.load_state_dict(partial, strict=False)
 
     # The released files have no head: its keys (projection and linear) are
@@ -925,7 +925,7 @@ def test_from_pretrained_rejects_a_checkpoint_missing_backbone_weights(tmp_path)
     sd = _reference_state_dict()
     del sd["feature_encoder.linear.bias"]
     save_file(sd, str(repo / "model.safetensors"))
-    with pytest.raises(RuntimeError, match="misses backbone"):
+    with pytest.raises(RuntimeError, match="does not match the backbone"):
         Guetschel2026.from_pretrained(
             str(repo), chs_info=_chs(), n_times=1000, n_outputs=2, sfreq=200.0,
             random_projection=16,
@@ -1523,3 +1523,19 @@ def test_accepts_head_frame_or_missing_coord_frame(coord_frame):
     if coord_frame is not None:
         chs = [{**ch, "coord_frame": coord_frame} for ch in chs]
     Guetschel2026(chs_info=chs, n_times=1000, n_outputs=2, sfreq=200.0)
+
+
+def test_truncated_backbone_rejects_the_extra_pretrained_layers():
+    # depth=2 would load layers 0-1 and silently drop layers 2-3
+    model = _model(depth=2, random_projection=None)
+    with pytest.raises(RuntimeError, match="unexpected: .*layers\\.2\\."):
+        model.load_state_dict(_reference_state_dict(), strict=False)
+
+
+def test_extra_head_keys_are_allowed():
+    # a head with a projection, saved by braindecode, loads into a plain head
+    sd = _model(random_projection=16).state_dict()
+    sd.update(_reference_state_dict())
+    result = _model(random_projection=None).load_state_dict(sd, strict=False)
+    assert all(k.startswith("final_layer.") for k in result.unexpected_keys)
+    assert result.unexpected_keys
