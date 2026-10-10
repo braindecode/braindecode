@@ -423,7 +423,10 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 channel_info, num_channels=num_channels
             )
             if locs is not None and len(locs) == num_channels:
-                return torch.from_numpy(locs).float()
+                locs = torch.from_numpy(locs).float()
+                # MNE stores NaN for a channel without a position.
+                if locs.isfinite().all():
+                    return locs
 
         # Fallback: generate default linear spacing along x-axis
         positions = torch.linspace(-1.0, 1.0, steps=num_channels, dtype=torch.float32)

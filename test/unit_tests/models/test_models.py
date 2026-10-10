@@ -1808,6 +1808,17 @@ def test_dgcnn_dummy(n_times, n_chans, sfreq, n_outputs):
     check_forward_pass_3d(model, input_sizes)
 
 
+@pytest.mark.parametrize("name", ["DGCNN", "LUNA", "SignalJEPA"])
+def test_channels_without_positions_give_finite_outputs(name):
+    # MNE stores NaN locs for channels without a montage position.
+    chs_info = mne.create_info(["Cz", "C3", "C4", "Pz"], 250.0, "eeg")["chs"]
+    model = all_models_dict[name](
+        n_outputs=2, n_chans=4, chs_info=chs_info, n_times=1000, sfreq=250.0
+    ).eval()
+    with torch.no_grad():
+        assert torch.isfinite(model(torch.randn(2, 4, 1000))).all()
+
+
 @pytest.mark.parametrize(
     "n_times, n_chans, sfreq, n_outputs",
     [
