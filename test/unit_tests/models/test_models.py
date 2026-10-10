@@ -308,6 +308,14 @@ def test_deep4net_explicit_final_conv_length_without_n_times():
     assert y.shape[:2] == (2, 2)
 
 
+@pytest.mark.parametrize("n_times", [500, 681])
+def test_eegclip_windows_between_the_deep4net_bounds(n_times):
+    # Its Deep4Net has stride_before_pool=True and final_conv_length=2.
+    model = EEGCLIP(n_chans=3, n_outputs=4, n_times=n_times).eval()
+    with torch.no_grad():
+        assert model(torch.randn(2, 3, n_times)).shape == (2, 4)
+
+
 
 
 def test_deep4net_without_split_first_layer(input_sizes):
