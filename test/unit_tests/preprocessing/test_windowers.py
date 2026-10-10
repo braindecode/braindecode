@@ -4,6 +4,7 @@
 #          Hubert Banville <hubert.jbanville@gmail.com>
 #          Matthew Chen <matt.chen42601@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
+#          Anton Soloviev <anton@praviel.com>
 #
 # License: BSD-3
 
@@ -1328,6 +1329,37 @@ def test_windower_from_target_channels_all_targets(dataset_target_time_series):
         np.testing.assert_array_almost_equal(
             np.array([i, i * 5 + 1, target_idx + 1]), window_inds
         )
+
+
+@pytest.mark.parametrize("first_samp", [-100, 0, 100])
+@pytest.mark.parametrize("window_size", [10, 20])
+@pytest.mark.parametrize("last_target_only", [True, False])
+def test_windower_from_target_channels_includes_last_sample(
+    first_samp, window_size, last_target_only
+):
+    """Target windows use relative, exclusive stops regardless of time origin."""
+    signal = np.arange(20, dtype=float)[None, :]
+    targets = np.full((2, 20), np.nan)
+    targets[0, 8] = 0.5  # insufficient preceding data for either window size
+    targets[0, 9] = 1.5
+    targets[1, -1] = 2.5  # a valid target in only the second target channel
+    info = mne.create_info(["eeg", "target0", "target1"], 10, ["eeg", "misc", "misc"])
+    raw = mne.io.RawArray(np.concatenate([signal, targets]), info, first_samp=first_samp)
+
+    windows = create_windows_from_target_channels(
+        BaseConcatDataset([RawDataset(raw)]),
+        window_size_samples=window_size,
+        last_target_only=last_target_only,
+    )
+
+    expected_stops = [10, 20] if window_size == 10 else [20]
+    assert len(windows) == len(expected_stops)
+    for i, stop in enumerate(expected_stops):
+        actual_X, actual_y, indices = windows[i]
+        np.testing.assert_array_equal(actual_X, signal[:, stop - window_size : stop])
+        expected_y = targets[:, stop - 1] if last_target_only else targets[:, stop - window_size : stop]
+        np.testing.assert_array_equal(actual_y, expected_y)
+        assert indices == [i, stop - window_size, stop]
 
 
 def test_windower_from_target_channels_partial_targets():
