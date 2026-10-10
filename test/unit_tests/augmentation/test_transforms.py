@@ -36,6 +36,7 @@ from braindecode.augmentation.transforms import (
     MaskEncoding,
     Mixup,
     SegmentationReconstruction,
+    SensorsRotation,
     SensorsXRotation,
     SensorsYRotation,
     SensorsZRotation,
@@ -528,6 +529,47 @@ def test_torch_normalize_vectors(cuda, grads_on):
                 for r in torch.linalg.norm(new_rr, axis=1).cpu().detach().numpy()
             ]
         )
+
+
+@pytest.mark.parametrize("n_channels", [3, 6])
+def test_rbf_sensors_rotation_zero_angle(n_channels):
+    """No rotation must preserve each channel, including three-channel inputs."""
+    points = np.array([[0.8, -0.9, 0.1], [0.2, 0.1, -0.8], [0.5, 0.6, 0.9]])
+    positions = np.concatenate([points, -points], axis=1)[:, :n_channels]
+    X = torch.arange(2 * n_channels * 5).float().reshape(2, n_channels, 5)
+    y = torch.tensor([0, 1])
+    transform = SensorsRotation(
+        probability=1,
+        sensors_positions_matrix=positions,
+        max_degrees=0,
+        spherical_splines=False,
+        random_state=42,
+    )
+
+    actual, actual_y = transform(X, y)
+
+    torch.testing.assert_close(actual, X)
+    assert torch.equal(actual_y, y)
+
+
+@pytest.mark.parametrize(
+    "axis,permutation",
+    [("x", [0, 4, 5, 3, 1, 2]), ("y", [3, 1, 5, 0, 4, 2]), ("z", [3, 4, 2, 0, 1, 5])],
+)
+def test_rbf_sensors_rotation_swaps_opposite_electrodes(axis, permutation):
+    """A half turn maps the six axis-aligned electrodes onto known channels."""
+    positions = torch.cat([torch.eye(3), -torch.eye(3)], dim=1)
+    X = torch.arange(2 * 6 * 5).float().reshape(2, 6, 5)
+    original = X.clone()
+    y = torch.tensor([0, 1])
+
+    actual, actual_y = sensors_rotation(
+        X, y, positions, axis, [180, 180], spherical_splines=False
+    )
+
+    torch.testing.assert_close(actual, X[:, permutation])
+    assert torch.equal(actual_y, y)
+    assert torch.equal(X, original)
 
 
 def test_sensors_rotation_functional():
