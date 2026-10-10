@@ -710,8 +710,7 @@ class _CSBrainEncoderLayer(nn.Module):
         for start, stop in self.region_bounds:
             region_global = x[:, start:stop, :, :].mean(dim=1, keepdim=True)
             region_global = region_global.permute(0, 2, 1, 3).reshape(batch * T, 1, Fea)
-            for idx in range(start, stop):
-                global_features[:, idx : idx + 1, :] = region_global
+            global_features[:, start:stop, :] = region_global
         x_enhanced = x_flat + self.global_fc(global_features)
 
         attn_output = self.inter_region_attn(

@@ -10,6 +10,7 @@ import math
 from typing import Dict, Optional
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from braindecode.functional import sinusoidal_positional_encoding
@@ -172,15 +173,13 @@ class _Attention(nn.Module):
         context = context if context is not None else x
         q = self.to_q(x)
         k, v = self.to_kv(context).chunk(2, dim=-1)
-        # (b, n, h * d) -> (b * h, n, d)
-        q = q.unflatten(-1, (h, -1)).transpose(1, 2).flatten(0, 1)
-        k = k.unflatten(-1, (h, -1)).transpose(1, 2).flatten(0, 1)
-        v = v.unflatten(-1, (h, -1)).transpose(1, 2).flatten(0, 1)
-        attn = (q @ k.transpose(-1, -2) * self.scale).softmax(dim=-1)
-        out = attn @ v
-        # (b * h, n, d) -> (b, n, h * d)
-        out = out.unflatten(0, (-1, h)).transpose(1, 2).flatten(2)
-        return self.to_out(out)
+        # (b, n, h * d) -> (b, h, n, d)
+        q = q.unflatten(-1, (h, -1)).transpose(1, 2)
+        k = k.unflatten(-1, (h, -1)).transpose(1, 2)
+        v = v.unflatten(-1, (h, -1)).transpose(1, 2)
+        out = F.scaled_dot_product_attention(q, k, v, scale=self.scale)
+        # (b, h, n, d) -> (b, n, h * d)
+        return self.to_out(out.transpose(1, 2).flatten(2))
 
 
 class Perceiver(nn.Module):

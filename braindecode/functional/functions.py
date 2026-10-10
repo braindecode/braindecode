@@ -112,8 +112,11 @@ def prefer_fft_conv(x: torch.Tensor, kernel_size: int) -> bool:
     Rule measured for :class:`~braindecode.models.EEGInceptionMI` (48 to 240
     channels, 128-500 Hz, 2 CPU threads, oneDNN on and off): on CPU the FFT
     wins for float16/bfloat16 inputs (no fast half-precision CPU convolution)
-    and from ``batch_size * kernel_size >= 600``. GPUs and HPUs (no complex
-    dtype) keep the direct convolution.
+    and from ``batch_size * kernel_size >= 600`` if also
+    ``in_channels * kernel_size >= 120``: with one or two input channels a
+    float32 direct convolution stays cheaper up to k = 85 / 31 (13 long
+    temporal convolutions of the model zoo, 22 channels x batch 32). GPUs and
+    HPUs (no complex dtype) keep the direct convolution.
 
     Parameters
     ----------
@@ -123,7 +126,8 @@ def prefer_fft_conv(x: torch.Tensor, kernel_size: int) -> bool:
         Kernel length in samples.
     """
     return x.device.type == "cpu" and (
-        x.element_size() == 2 or x.shape[0] * kernel_size >= 600
+        x.element_size() == 2
+        or (x.shape[0] * kernel_size >= 600 and x.shape[1] * kernel_size >= 120)
     )
 
 
