@@ -28,11 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
-- Add :class:`braindecode.models.EpiNT`, a port of the EpiNT epilepsy foundation
-  model for scalp and intracranial EEG (Zhang et al., 2025): a channel-independent
-  transformer with rotary attention over 256-sample patches of a 3072-sample
-  window. The authors' released ``representations.bin`` loads with
-  ``load_state_dict(strict=False)`` (:gh:`1266` by `Julien Gadonneix`_).
+- The TUH datasets read the ``_date.txt`` file kept beside each EDF with :func:`json.load` instead of :func:`pandas.read_json`: 2.9 s -> 0.04 s for the 2993 TUAB date files; descriptions unchanged (:gh:`1300` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Guetschel2026`, the encoder shared by the 58 MAE and JEPA
   checkpoints of the EEG masking-geometry study (Guetschel et al., 2026). The checkpoints
   load with ``from_pretrained`` from the original Hugging Face repositories, with backbone
@@ -64,6 +60,11 @@ Enhancements
 - Add :class:`braindecode.models.EEGCLIP`, a dual encoder that aligns EEG
   windows and text descriptions with a symmetric contrastive objective; the
   text encoder is optional and user-supplied (:gh:`1200` by `lindicaphxag-tech`_).
+- Add :class:`braindecode.models.EpiNT`, a port of the EpiNT epilepsy foundation
+  model for scalp and intracranial EEG (Zhang et al., 2025): a channel-independent
+  transformer with rotary attention over 256-sample patches of a 3072-sample
+  window. The authors' released ``representations.bin`` loads with
+  ``load_state_dict(strict=False)`` (:gh:`1266` by `Julien Gadonneix`_).
 - Add :class:`braindecode.augmentation.TrivialAugment`, which applies to each
   example one transform and strength sampled from a label-preserving pool; also
   list :class:`braindecode.augmentation.BandRotation` in the API docs
@@ -368,9 +369,11 @@ Bug fixes
 ==========
 
 - :class:`braindecode.models.MEDFormer` runs its patch embedding, a Conv2d kernel as tall as ``n_times``, as the equivalent conv1d with ``n_times`` input channels: MEDFormer now runs on Gaudi2, whose convolution kernels are limited to 256 rows (it failed to compile for ``n_times > 256``), and its CPU train step is 15-35 % faster; same state dict, outputs change by float rounding only (:gh:`1287` by `Bruno Aristimunha`_).
+- Fix coordinate ordering in :class:`braindecode.augmentation.SensorsRotation` with ``spherical_splines=False``, which raised an error or interpolated the wrong locations (:gh:`1295` by `Anton Soloviev`_).
 - Preserve the final samples in :class:`braindecode.augmentation.SegmentationReconstruction`
   when the window length is not divisible by the segment count, instead of
   replacing them with zeros (:gh:`1279` by `Anton Soloviev`_).
+- Preserve regression windows whose target is at the final recording sample in :func:`braindecode.preprocessing.create_windows_from_target_channels`, independently of the recording time origin (:gh:`1296` by `Anton Soloviev`_).
 - Model fixes caught by new CPU-only integration checks (complex tensors, host syncs, kernel gaps, device/dtype follow, training after ``inference_mode``, deepcopy/pickle): BrainOmni/BrainTokenizer SELU trains on Gaudi, EEGSym pools with ``avg_pool2d``, FBCNet/FBMSNet/FBLightConvNet and LUNA run in float16, EEGMiner and AttnSleep deep-copy after training, Labram and NeuroRVQ pickle, SignalJEPA heads accept ``channel_strategy``, and tensors built in ``forward`` follow the input in CodeBrain, TCFormer, LUNA, MVPFormer, BrainOmni, ZUNA, DIVER1 and EEGDINO; float32 outputs unchanged (:gh:`1253` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.EEGSym` trains on Gaudi: its depthwise spatial ``Conv3d`` with a ``(1, 1, n_chans)`` kernel runs as a conv2d on a view, since the Gaudi graph compiler segfaulted on the depthwise conv3d backward; same state dict, outputs unchanged, gradients change by float rounding only (:gh:`1289` by `Bruno Aristimunha`_).
 - :func:`braindecode.functional.hilbert_freq` returns float16 for float16 input (it

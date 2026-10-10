@@ -13,6 +13,7 @@
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Matthew Chen <matt.chen42601@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
+#          Anton Soloviev <anton@praviel.com>
 #
 # License: BSD (3-clause)
 
@@ -1166,8 +1167,6 @@ def _create_windows_from_target_channels(
     window_kwargs = [
         (create_windows_from_target_channels.__name__, _get_windowing_kwargs(locals())),
     ]
-    stop = ds.raw.n_times + ds.raw.first_samp
-
     target = ds.raw.get_data(picks="misc")
 
     # check all misc channels for valid targets, not just the first one.
@@ -1175,7 +1174,7 @@ def _create_windows_from_target_channels(
     # where others are nan. using any() across channels catches all of them.
     has_target = np.any(~np.isnan(target), axis=0)
     stops = np.nonzero(has_target)[0] + 1
-    stops = stops[(stops < stop) & (stops >= window_size_samples)]
+    stops = stops[stops >= window_size_samples]
     stops = stops.astype(int)
     metadata = pd.DataFrame(
         {
