@@ -80,6 +80,43 @@ def _worker(rank, sizes, rendezvous, result_path):
         dist.destroy_process_group()
 
 
+def _empty_rank_worker(rank, rendezvous):
+    # Error across ALL ranks, not a rank-local exception before a collective.
+    torch.set_num_threads(1)
+    dist.init_process_group(
+        "gloo", init_method="file://" + rendezvous,
+        rank=rank, world_size=2,
+    )
+    try:
+        model = EEGCLIP(
+            n_chans=4, n_times=20, n_outputs=4,
+            eeg_encoder=nn.Identity(), eeg_embedding_dim=4,
+            text_embedding_dim=4, projection_layers=1,
+        )
+        local = torch.empty(rank, 4)
+        with pytest.raises(ValueError, match="Every rank needs"):
+            model.contrastive_loss(local, local, distributed=True)
+        # A successful barrier proves both ranks exited the collective.
+        dist.barrier()
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Gloo file rendezvous is Linux/macOS only"
+)
+def test_eegclip_distributed_rejects_empty_rank_without_deadlock():
+    if not dist.is_available() or not dist.is_gloo_available():
+        pytest.skip("PyTorch Gloo distributed backend is unavailable")
+    with tempfile.TemporaryDirectory() as directory:
+        mp.spawn(
+            _empty_rank_worker,
+            args=(os.path.join(directory, "empty_rank"),),
+            nprocs=2,
+            join=True,
+        )
+
+
 def test_eegclip_distributed_falls_back_to_local_without_process_group():
     model = EEGCLIP(
         n_chans=4, n_times=20, n_outputs=4,
