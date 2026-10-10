@@ -25,50 +25,28 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
        :align: center
        :alt: EpiNT architecture
 
-    .. rubric:: Architecture Overview
+    .. versionadded:: 1.9
 
     EpiNT (Epilepsy Neurophysiological Transformer) is pretrained on 2,700 hours
     of scalp EEG and intracranial EEG (ECoG, sEEG) from 1,199 patients. It is
     **channel independent**: every channel is encoded alone, so one checkpoint
     serves any montage and modality.
 
+    .. rubric:: Architecture Overview
+
     1. ``instance_norm`` z-scores each channel over time (affine, one scale and
        one offset shared by all channels).
     2. ``patch_embedding`` projects non-overlapping patches of ``patch_size``
        samples to ``embed_dim``, and a learned ``cls_token`` is prepended.
     3. ``encoder`` is a stack of post-norm Transformer layers with rotary
-       position embeddings (RoPE) in the self-attention.
+       position embeddings (RoPE) in the self-attention. As upstream, each
+       ``LayerNorm`` spans the token **and** feature axes, so the number of
+       patches (``n_times // patch_size``) is fixed at construction.
     4. The class token of each channel is averaged over channels and
        ``final_layer`` (dropout and one linear layer) classifies it.
 
     The pretraining mask token and frequency-domain mapping quantizer are not
     used downstream, so they are not part of this module.
-
-    .. rubric:: Fixed sequence length
-
-    Each encoder ``LayerNorm`` normalises over the token **and** feature axes
-    (``nn.LayerNorm([n_patches + 1, embed_dim])``), as upstream. The number of
-    patches, i.e. ``n_times // patch_size``, is therefore fixed at
-    construction, and the input must have exactly ``n_times`` samples. The
-    released checkpoint uses ``n_times=3072``: 12 s at 256 Hz for scalp EEG and
-    3 s at 1024 Hz for iEEG, the two rates of the pretraining corpus.
-
-    .. important::
-       **Pretrained weights.** The authors release the pretrained backbone
-       (``weights/representations.bin``,
-       `License <https://github.com/RunKZhang/EpiNT/blob/master/LICENSE>`_).
-       The default hyper-parameters are those of that checkpoint, and its 102
-       tensors load through :attr:`mapping` with only the pretraining mask
-       token unused::
-
-           state = torch.load("representations.bin", map_location="cpu")
-           model = EpiNT(n_chans=1, n_outputs=2, n_times=3072)
-           model.load_state_dict(state, strict=False)
-
-       With ``n_chans=1``, the logits and the class token match the upstream
-       ``EpiNT`` in classification mode within 1e-5.
-
-    .. versionadded:: 1.9
 
     Parameters
     ----------
@@ -91,6 +69,37 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
         RoPE base frequency. Default 10000.
     activation : type[nn.Module], optional
         Feed-forward activation. Default ``nn.ReLU``, as pretrained.
+
+    Notes
+    -----
+    **Input.** The pretrained weights expect ``n_times=3072``: 12 s at 256 Hz
+    (scalp EEG) or 3 s at 1024 Hz (iEEG), in microvolts as the authors prepare
+    them (``instance_norm`` has ``eps=1e-5``, so signals in volts are not scaled
+    to unit variance). The authors classify single-channel samples
+    (``n_chans=1``).
+
+    **Weights.** The authors' weights are plain files in their repository, not
+    a release (`License <https://github.com/RunKZhang/EpiNT/blob/master/LICENSE>`_):
+    ``weights/representations.bin`` (the pretrained backbone) and
+    ``weights/finetune_on_MAYO.bin`` (a linear probe of it on MAYO). Both load
+    through :attr:`mapping`, the probe with ``strict=True``::
+
+        state = torch.load("representations.bin", map_location="cpu")
+        model = EpiNT(n_chans=1, n_outputs=2, n_times=3072)
+        model.load_state_dict(state, strict=False)  # no head, mask token unused
+
+    The authors' fine-tuning code at the time of the paper applies the
+    cross-entropy to softmax outputs (changed upstream in August 2025); with it
+    and seed 0 their code trains a MAYO probe with the scores of
+    ``finetune_on_MAYO.bin`` (F1 0.916, accuracy 0.851).
+
+    **Replication.** With the released weights, the port matches the authors'
+    code within float rounding (logits within 1.4e-6 in float32). Fine-tuned
+    with the authors' protocol, the three MAYO cells of Table 3 (the authors'
+    test patients) are within 3 % of the paper. Linear probing on CHB-MIT and
+    FNUSA gives 0.73-0.76 with both the port and the authors' code (paper: 0.857
+    and 0.805); the paper does not publish its test patients for these two
+    datasets or the runs behind its mean ± std.
 
     References
     ----------
@@ -194,7 +203,6 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
             self.mapping[f"transformer_encoder.{upstream}"] = f"encoder.{key}"
 
     def reset_head(self, n_outputs: int) -> None:
-        """Swap the classification head for a new number of outputs."""
         self._set_n_outputs(n_outputs)
         old = self.final_layer[1]
         head = nn.Linear(old.in_features, n_outputs).to(old.weight)
@@ -236,12 +244,9 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
             z = layer(z, cos, sin)
         cls_token = self.split_channels(z[:, 0])  # (batch, chans, dim)
         pooled = self.pool(cls_token)
-        logits = self.final_layer(pooled)
-        if return_features:
-            if torch.jit.is_scripting():
-                return logits
+        if not torch.jit.is_scripting() and return_features:
             return {"features": pooled, "cls_token": cls_token}
-        return logits
+        return self.final_layer(pooled)
 
 
 class _RoPEAttention(nn.Module):
@@ -249,7 +254,6 @@ class _RoPEAttention(nn.Module):
 
     def __init__(self, embed_dim: int, n_heads: int):
         super().__init__()
-        self.n_heads = n_heads
         self.w_q = nn.Linear(embed_dim, embed_dim)
         self.w_k = nn.Linear(embed_dim, embed_dim)
         self.w_v = nn.Linear(embed_dim, embed_dim)
@@ -269,7 +273,7 @@ class _RoPEAttention(nn.Module):
         v = self.split_heads(self.w_v(x))
         q = q * cos + rotate_pairs(q) * sin
         k = k * cos + rotate_pairs(k) * sin
-        out = F.scaled_dot_product_attention(q, k, v)  # scale 1 / sqrt(head_dim)
+        out = F.scaled_dot_product_attention(q, k, v)
         return self.w_concat(self.merge_heads(out))
 
 
