@@ -932,7 +932,7 @@ def _rotate_signals(
         transformed_X = X.clone()
         sensors_positions = list(sensors_positions_matrix)
         for s, rot_sensors_matrix in enumerate(rot_sensors_matrices):
-            rot_sensors_positions = list(rot_sensors_matrix.T)
+            rot_sensors_positions = list(rot_sensors_matrix)
             for time in range(X.shape[-1]):
                 interpolator_t = Rbf(*sensors_positions, X[s, :, time])
                 transformed_X[s, :, time] = torch.from_numpy(
