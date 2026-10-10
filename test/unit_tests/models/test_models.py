@@ -4005,6 +4005,12 @@ def test_medformer_encoder_layer_keeps_dropout_per_granularity():
         torch.testing.assert_close(o, layer.norm2(r + v))
 
 
+def test_medformer_window_longer_than_5000_samples():
+    model = MEDFormer(n_chans=2, n_outputs=4, n_times=6000).eval()
+    with torch.no_grad():
+        assert model(torch.randn(2, 2, 6000)).shape == (2, 4)
+
+
 @pytest.mark.parametrize("patch_len_list", [[2, 8, 16], [4, 8], [2, 4, 8, 16]])
 def test_medformer_patch_len_configurations(patch_len_list):
     """
