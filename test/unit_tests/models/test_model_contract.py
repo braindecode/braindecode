@@ -211,6 +211,7 @@ _UNUSED_IN_FORWARD = {
     "Brant": r"spatial_encoder\.proj_out\.",  # reconstruction head
     "CodeBrain": r"residual_blocks\.7\.(rms_norm|res_conv)|^lm_head_",  # skip-only last block, tokenizer heads
     "DANCE": r"^decoder\.",  # event decoder of detect()
+    "EEGCLIP": r"^(text_projection\.|logit_scale$)",  # text side, trained via forward_paired()
     "MSVTNet": r"^branch_head\.",  # auxiliary branch heads (return_features)
     "PopulationTransformer": r"^spec_prediction_head\.",  # pretraining head
     "SignalJEPA": r"^transformer\.decoder\.",  # pretraining decoder
@@ -467,9 +468,9 @@ _SYNC_OPS = {
 }
 # Allowed per model: (findings, reason).
 _QUANTIZER = (
-    ("_local_scalar_dense", "index_put_ with a boolean mask"),
-    "codebook k-means init flag, first-batch k-means and dead-code expiry "
-    "(the released EuclideanCodebook)",
+    ("_local_scalar_dense", "index_put_ with a boolean mask", "unique_dim"),
+    "codebook k-means init flag, first-batch k-means (on its distinct rows) and "
+    "dead-code expiry (the released EuclideanCodebook)",
 )
 _HOST_SYNC = {
     "BaRISTA": (("_local_scalar_dense",), "eager-only spatial_indices range check"),

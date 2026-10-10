@@ -1,12 +1,15 @@
 import numpy as np
 import pytest
 import torch
+from scipy.fft import next_fast_len
 from scipy.signal import hilbert
 
 from braindecode.functional import (
     _real_dft,
+    fft_conv1d,
     hilbert_freq,
     plv_time,
+    prefer_fft_conv,
     rotate_pairs,
     sinusoidal_positional_encoding,
 )
@@ -56,6 +59,16 @@ def test_hilbert_freq_matches_scipy(seq_len):
     expected = hilbert(x, axis=-1)
     np.testing.assert_allclose(output[..., 0].numpy(), expected.real, atol=1e-10)
     np.testing.assert_allclose(output[..., 1].numpy(), expected.imag, atol=1e-10)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.int16])
+def test_hilbert_freq_dtype(dtype):
+    """Floating input keeps its dtype; integer input returns float32, not truncated."""
+    x = (torch.randn(2, 64) * 100).to(dtype)
+    out = hilbert_freq(x)
+    assert out.dtype == (dtype if dtype.is_floating_point else torch.float32)
+    expected = hilbert_freq(x.float())
+    torch.testing.assert_close(out.float(), expected, atol=0.5, rtol=1e-2)
 
 
 def test_plv_time_shape():
@@ -263,3 +276,39 @@ def test_real_dft_basis_rejects_lengths_that_overflow_the_phase_index():
     assert cosine.shape == sine.shape == (32769, 65536)
     with pytest.raises(ValueError, match="65536"):
         _real_dft.real_dft_basis(65537, device="cpu", dtype=torch.float32)
+
+
+@pytest.mark.parametrize("kernel_size", [7, 8])
+@pytest.mark.parametrize("dtype, tol", [(torch.float32, 1e-5), (torch.float64, 1e-12)])
+def test_fft_conv1d_matches_conv1d_same(kernel_size, dtype, tol):
+    """Odd and even kernels, aligned like ``padding="same"``; gradients too."""
+    x = torch.randn(3, 4, 50, dtype=dtype, requires_grad=True)
+    w = torch.randn(5, 4, kernel_size, dtype=dtype, requires_grad=True)
+    b = torch.randn(5, dtype=dtype, requires_grad=True)
+    ref = torch.nn.functional.conv1d(x, w, b, padding="same")
+    out = fft_conv1d(x, w, b)
+    assert out.dtype == dtype
+    torch.testing.assert_close(out, ref, rtol=0, atol=tol * ref.abs().max().item())
+    g = torch.randn_like(ref)
+    got = torch.autograd.grad(out, (x, w, b), g)
+    want = torch.autograd.grad(ref, (x, w, b), g)
+    for a, e in zip(got, want):
+        torch.testing.assert_close(a, e, rtol=0, atol=tol * e.abs().max().item())
+    half = fft_conv1d(x.detach().bfloat16(), w.detach().bfloat16())
+    assert half.dtype == torch.bfloat16
+    ref = fft_conv1d(x.detach().bfloat16().float(), w.detach().bfloat16().float())
+    torch.testing.assert_close(half, ref.bfloat16(), rtol=0, atol=0)
+
+
+def test_prefer_fft_conv_needs_input_channels():
+    """Direct for a 1-channel k=31 conv (MSVTNet: FFT 2-3x slower); FFT for
+    EEGInceptionMI's 48 filters at k_max 108/225/450 (128/250/500 Hz)."""
+    assert not prefer_fft_conv(torch.empty(32, 1, 1000), 31)
+    for k_max in (108, 225, 450):
+        assert prefer_fft_conv(torch.empty(32, 48, 1, 1000), k_max)
+
+
+def test_fft_len_matches_scipy():
+    from braindecode.functional.functions import _next_fast_len
+
+    assert all(_next_fast_len(n) == next_fast_len(n, real=True) for n in range(1, 5000))

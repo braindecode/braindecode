@@ -17,8 +17,9 @@ Braindecode Adaptation: Bruno Aristimunha
 
 from __future__ import annotations
 
+from typing import Dict, Optional, Tuple, Union
+
 import torch
-from einops import rearrange, reduce, repeat
 from torch import nn
 
 from braindecode.functional import daubechies_filters, wavelet_decomposition
@@ -257,6 +258,7 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.segment_len = segment_len
         self.d_model = d_model
         self.pooling = pooling
+        self.local_window = local_window
         # Ceil division because PatchTokenizer pads the last partial segment.
         self.n_segments = -(-self.n_times // self.segment_len)
         if self.n_segments > max_segments:
@@ -317,35 +319,36 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # Match fresh construction (std=0.02), not the default Linear init.
         self._init_weights(self.final_layer)
 
-    def forward(self, x, return_features: bool = False):
+    def forward(
+        self, x, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         # x: (batch, n_chans, n_times)
         patches = self.patch_tokenizer(x)  # (batch, channel, segment, segment_len)
         embeds = self.patch_embed(patches)  # (batch, channel, segment, d_model)
-        embeds = rearrange(
-            embeds, "batch channel segment d_model -> batch segment channel d_model"
-        )
+        embeds = embeds.permute(0, 2, 1, 3)  # (batch, segment, channel, d_model)
         _, n_segments, n_channels, _ = embeds.shape
-        position_embeds = rearrange(
-            self.positional_embedding(torch.arange(n_segments, device=x.device)),
-            "segment d_model -> 1 segment d_model",
-        )
-        channel_embeds = rearrange(
-            self.channel_embedding(torch.arange(n_channels, device=x.device)),
-            "channel d_model -> 1 channel d_model",
-        )
+        position_embeds = self.positional_embedding(
+            torch.arange(n_segments, device=x.device)
+        ).unsqueeze(0)  # (1, segment, d_model)
+        channel_embeds = self.channel_embedding(
+            torch.arange(n_channels, device=x.device)
+        ).unsqueeze(0)  # (1, channel, d_model)
         hidden = self.drop(embeds)
+        masks = _mvpa_masks(n_segments, n_channels, self.local_window, x.device)
         for block in self.blocks:
-            hidden = block(hidden, position_embeds, channel_embeds)
+            hidden = block(hidden, position_embeds, channel_embeds, masks)
         hidden = self.ln_f(hidden)  # (batch, segment, channel, d_model)
         pooled = hidden[:, -1]  # last segment: (batch, channel, d_model)
         if self.pooling == "mean":
-            pooled = reduce(pooled, "batch channel d_model -> batch d_model", "mean")
+            pooled = pooled.mean(dim=1)  # (batch, d_model)
         else:
-            pooled = rearrange(
-                pooled, "batch channel d_model -> batch (channel d_model)"
-            )
+            pooled = pooled.flatten(1)  # (batch, channel * d_model)
         if return_features:
-            return {"features": pooled, "cls_token": None}
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": pooled,
+                "cls_token": None,
+            }
+            return out
         return self.final_layer(pooled)
 
 
@@ -385,6 +388,50 @@ class _WaveletPatchEmbed(nn.Module):
         feats = self.ln(feats)
         # Match the projection weight dtype (robust across AMP / float16 inputs).
         return self.proj(feats.to(self.proj.weight.dtype))
+
+
+def _repeat_segment_mask(mask: torch.Tensor, n_channels: int) -> torch.Tensor:
+    """``(query_segment, key_segment)`` -> ``(query_segment * n_channels,
+    key_segment * n_channels)``, each segment entry repeated per channel."""
+    n_query, n_key = mask.shape
+    mask = mask[:, None, :, None].expand(-1, n_channels, -1, n_channels)
+    return mask.reshape(n_query * n_channels, n_key * n_channels)
+
+
+def _mvpa_masks(
+    n_segments: int, n_channels: int, local_window: int, device: torch.device
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """What every MVPA layer of one forward shares, built once.
+
+    The local-window mask (the last segment sees the whole context) and the
+    causal mask, both ``(segment * channel, segment * channel)``, and the
+    ``(segment * channel, channel)`` gather index of the channel-relative
+    shift: ``n_channels - 1 - |query channel - key channel|``.
+    """
+    ones = torch.ones((n_segments, n_segments), device=device, dtype=torch.bool)
+    window_mask = torch.logical_and(
+        torch.tril(ones, diagonal=local_window),
+        torch.triu(ones, diagonal=-local_window),
+    )
+    # (query_segment, key_segment)
+    # -> (query_segment * query_channel, key_segment * key_channel)
+    window_mask = _repeat_segment_mask(window_mask, n_channels).clone()
+    window_mask[-n_channels:] = 1
+    causal_mask = _repeat_segment_mask(torch.tril(ones), n_channels)
+    channel = torch.arange(n_channels, device=device)
+    shift = n_channels - 1 - (channel[:, None] - channel).abs()
+    return window_mask, causal_mask, shift.repeat(n_segments, 1)
+
+
+def _finfo_min(dtype: torch.dtype) -> float:
+    """``torch.finfo(dtype).min`` of a float dtype (TorchScript has no finfo)."""
+    if dtype == torch.float16:
+        return -65504.0
+    if dtype == torch.bfloat16:
+        return -3.3895313892515355e38
+    if dtype == torch.float64:
+        return -1.7976931348623157e308
+    return -3.4028234663852886e38
 
 
 class _MVPAttention(nn.Module):
@@ -470,227 +517,154 @@ class _MVPAttention(nn.Module):
         self.resid_dropout = nn.Dropout(resid_drop)
 
     # -- shape helpers (segment = "time"/position axis, channel axis) ----------
+    # The shape helpers below run the ops einops ran (reshape, permute,
+    # unsqueeze + expand + reshape), so outputs and gradients are unchanged.
     @staticmethod
-    def _repeat_kv(x, n_rep):
-        # grouped-query attention: replicate each kv head into ``n_rep`` query heads.
+    def _repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
+        # grouped-query attention: replicate each kv head into ``n_rep`` query heads,
+        # (batch, kv_head, ...) -> (batch, kv_head * group, ...).
         # Repeat a contiguous copy: on Intel Gaudi (HPU) the einops repeat of the
         # permuted singleton-axis relative keys returns scrambled values.
-        return repeat(
-            x.contiguous(),
-            "batch kv_head segment channel head_dim "
-            "-> batch (kv_head group) segment channel head_dim",
-            group=n_rep,
-        )
+        x = x.contiguous()
+        batch, kv_heads, segment, channel, head_dim = x.shape
+        x = x.unsqueeze(2).expand(-1, -1, n_rep, -1, -1, -1)
+        return x.reshape(batch, kv_heads * n_rep, segment, channel, head_dim)
 
     @staticmethod
-    def _repeat_channel(x, n_rep):
-        # broadcast a per-segment (time-relative) score across every channel
-        return repeat(
-            x,
-            "batch head query key_segment -> batch head query (key_segment channel)",
-            channel=n_rep,
-        )
+    def _repeat_channel(x: torch.Tensor, n_rep: int) -> torch.Tensor:
+        # broadcast a per-segment (time-relative) score across every channel:
+        # (batch, head, query, key_segment) -> (..., key_segment * channel)
+        return x.unsqueeze(-1).expand(-1, -1, -1, -1, n_rep).flatten(3)
 
     @staticmethod
-    def _repeat_time(x, n_rep):
-        # broadcast a per-channel score across every time segment
-        return repeat(
-            x,
-            "batch head query key_channel -> batch head query (segment key_channel)",
-            segment=n_rep,
-        )
+    def _repeat_time(x: torch.Tensor, n_rep: int) -> torch.Tensor:
+        # broadcast a per-channel score across every time segment:
+        # (batch, head, query, key_channel) -> (..., segment * key_channel)
+        return x.unsqueeze(3).expand(-1, -1, -1, n_rep, -1).flatten(3)
 
     @staticmethod
-    def _rel_shift(x):
+    def _rel_shift(x: torch.Tensor) -> torch.Tensor:
         # Transformer-XL relative shift along the segment axis.
-        zero_pad_shape = x.size()[:2] + (x.size(3), 1)
-        x_review_shape = x.size()[:2] + (x.size(3), x.size(2))
-        zero_pad = torch.zeros(zero_pad_shape, device=x.device, dtype=x.dtype)
-        x_padded = torch.cat([zero_pad, x.view(x_review_shape)], dim=-1)
-        x_padded_shape = x.size()[:2] + (x.size(2) + 1, x.size(3))
-        x_padded = x_padded.view(*x_padded_shape)
+        batch, head, n_query, n_key = x.shape
+        zero_pad = torch.zeros((batch, head, n_key, 1), device=x.device, dtype=x.dtype)
+        x_padded = torch.cat([zero_pad, x.view(batch, head, n_key, n_query)], dim=-1)
+        x_padded = x_padded.view(batch, head, n_query + 1, n_key)
         return x_padded[..., 1:, :].view_as(x)
 
     @staticmethod
-    def _rel_shift_chan(x):
+    def _rel_shift_chan(x: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
         # Relative shift along the channel axis (symmetric distance), as a single
-        # ``torch.gather`` whose backward is a ``scatter_add``. Advanced indexing
-        # would backpropagate through ``index_put_(accumulate=True)``, which Intel
-        # Gaudi (HPU) runs on the host, slowly and with wrong gradients. Index
-        # tensors are built on x.device with long dtype.
-        device = x.device
-        chan_size = x.shape[-1]
-        if chan_size > 1:
-            upper_val = torch.cat(
-                [
-                    torch.arange(1, chan_size - i, dtype=torch.long, device=device)
-                    for i in range(chan_size - 1)
-                ]
-            )
-        else:
-            upper_val = torch.tensor([], dtype=torch.long, device=device)
-        idxes = torch.triu_indices(chan_size, chan_size, offset=1, device=device)
-        shifting_idxes = torch.zeros(
-            chan_size, chan_size, dtype=torch.long, device=device
-        )
-        shifting_idxes[..., idxes[0], idxes[1]] = upper_val
-        shifting_idxes.transpose(-2, -1)[..., idxes[0], idxes[1]] = upper_val
-        shifting_idxes = (chan_size - 1 - shifting_idxes).repeat(
-            x.shape[-2] // chan_size, 1
-        )
-        return torch.gather(
-            x, -1, shifting_idxes.expand(*x.shape[:-2], *shifting_idxes.shape)
-        )
+        # ``torch.gather`` (index from ``_mvpa_masks``) whose backward is a
+        # ``scatter_add``. Advanced indexing would backpropagate through
+        # ``index_put_(accumulate=True)``, which Intel Gaudi (HPU) runs on the
+        # host, slowly and with wrong gradients.
+        return torch.gather(x, -1, index.expand(list(x.shape[:-2]) + list(index.shape)))
 
-    def _split_heads(self, tensor, num_heads):
-        return rearrange(
-            tensor,
-            "batch segment channel (head head_dim) "
-            "-> batch head segment channel head_dim",
-            head=num_heads,
-        )
+    def _split_heads(self, tensor: torch.Tensor, num_heads: int) -> torch.Tensor:
+        # (batch, segment, channel, head * head_dim)
+        # -> (batch, head, segment, channel, head_dim)
+        return tensor.unflatten(-1, (num_heads, -1)).permute(0, 3, 1, 2, 4)
 
-    def _merge_heads(self, tensor):
-        return rearrange(
-            tensor,
-            "batch head segment channel head_dim "
-            "-> batch segment channel (head head_dim)",
-        )
+    def _merge_heads(self, tensor: torch.Tensor) -> torch.Tensor:
+        # (batch, head, segment, channel, head_dim)
+        # -> (batch, segment, channel, head * head_dim)
+        return tensor.permute(0, 2, 3, 1, 4).flatten(3)
+
+    def _as_bias(self, bias: torch.Tensor) -> torch.Tensor:
+        # (kv_dim,) -> (1, n_heads, 1, 1, head_dim)
+        bias = bias.reshape(1, self.n_head_kv, 1, 1, -1)
+        return self._repeat_kv(bias, self.n_kv_groups)
 
     def _rel_attn(
-        self, query, content_key, time_key, channel_key, value, attention_mask
-    ):
+        self,
+        query: torch.Tensor,
+        content_key: torch.Tensor,
+        time_key: torch.Tensor,
+        channel_key: torch.Tensor,
+        value: torch.Tensor,
+        masks: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        attention_mask: Optional[torch.Tensor],
+    ) -> torch.Tensor:
         _, _, n_segments, n_channels, _ = query.size()
+        window_mask, causal_mask, channel_shift = masks
         global_bias, time_bias, channel_bias = self.attn_bias.split(self.kv_dim, dim=0)
 
-        def as_bias(bias):  # (kv_dim,) -> (1, n_heads, 1, 1, head_dim)
-            bias = rearrange(
-                bias,
-                "(kv_head head_dim) -> 1 kv_head 1 1 head_dim",
-                kv_head=self.n_head_kv,
-            )
-            return self._repeat_kv(bias, self.n_kv_groups)
-
-        time_bias = as_bias(time_bias)
-        channel_bias = as_bias(channel_bias)
+        time_bias = self._as_bias(time_bias)
+        channel_bias = self._as_bias(channel_bias)
 
         # Relative keys: the time key depends only on the segment, the channel key
         # only on the channel (the broadcast singleton axis is squeezed out).
-        time_key = rearrange(
-            self._repeat_kv(time_key, self.n_kv_groups),
-            "batch head segment 1 head_dim -> batch head head_dim segment",
-        )
-        channel_key = rearrange(
-            self._repeat_kv(channel_key, self.n_kv_groups),
-            "batch head 1 channel head_dim -> batch head head_dim channel",
-        )
+        # (batch, head, segment, 1, head_dim) -> (batch, head, head_dim, segment)
+        time_key = self._repeat_kv(time_key, self.n_kv_groups).squeeze(3)
+        time_key = time_key.permute(0, 1, 3, 2)
+        # (batch, head, 1, channel, head_dim) -> (batch, head, head_dim, channel)
+        channel_key = self._repeat_kv(channel_key, self.n_kv_groups).squeeze(2)
+        channel_key = channel_key.permute(0, 1, 3, 2)
 
-        time_q = rearrange(
-            query + time_bias,
-            "batch head segment channel head_dim "
-            "-> batch head (segment channel) head_dim",
-        )
-        channel_q = rearrange(
-            query + channel_bias,
-            "batch head segment channel head_dim "
-            "-> batch head (segment channel) head_dim",
-        )
+        # (batch, head, segment, channel, head_dim)
+        # -> (batch, head, segment * channel, head_dim)
+        time_q = (query + time_bias).flatten(2, 3)
+        channel_q = (query + channel_bias).flatten(2, 3)
         time_att = self._rel_shift(torch.matmul(time_q, time_key))
-        channel_att = self._rel_shift_chan(torch.matmul(channel_q, channel_key))
+        channel_att = self._rel_shift_chan(
+            torch.matmul(channel_q, channel_key), channel_shift
+        )
         attn_weights = self._repeat_channel(time_att, n_channels) + self._repeat_time(
             channel_att, n_segments
         )
 
         if self.global_att:
-            global_bias = as_bias(global_bias)
-            global_key = rearrange(
-                self._repeat_kv(content_key, self.n_kv_groups),
-                "batch head segment channel head_dim "
-                "-> batch head head_dim (segment channel)",
-            )
-            global_q = rearrange(
-                query + global_bias,
-                "batch head segment channel head_dim "
-                "-> batch head (segment channel) head_dim",
-            )
+            global_bias = self._as_bias(global_bias)
+            # (batch, head, segment, channel, head_dim)
+            # -> (batch, head, head_dim, segment * channel)
+            global_key = self._repeat_kv(content_key, self.n_kv_groups)
+            global_key = global_key.permute(0, 1, 4, 2, 3).flatten(3)
+            global_q = (query + global_bias).flatten(2, 3)
             global_att = torch.matmul(global_q, global_key)
-            window = self.local_window
-            ones = torch.ones((n_segments, n_segments), device=query.device, dtype=bool)
-            window_mask = torch.logical_and(
-                torch.tril(ones, diagonal=window),
-                torch.triu(ones, diagonal=-window),
-            )
-            window_mask = (
-                repeat(
-                    window_mask,
-                    "query_segment key_segment "
-                    "-> (query_segment query_channel) (key_segment key_channel)",
-                    query_channel=n_channels,
-                    key_channel=n_channels,
-                ).clone()
-            )  # repeat() returns a memory-sharing view; clone before in-place write
-            window_mask[-n_channels:] = 1
             attn_weights = attn_weights + global_att.masked_fill(~window_mask, 0.0)
 
         if self.scale_attn:
             attn_weights = attn_weights / (value.size(-1) ** 0.5)
-        if self.scale_by_layer_idx:
-            attn_weights = attn_weights / float(self.layer_idx + 1)
+        layer_idx = self.layer_idx
+        if self.scale_by_layer_idx and layer_idx is not None:
+            attn_weights = attn_weights / float(layer_idx + 1)
 
-        causal_mask = repeat(
-            torch.tril(
-                torch.ones((n_segments, n_segments), device=query.device, dtype=bool)
-            ),
-            "query_segment key_segment "
-            "-> (query_segment query_channel) (key_segment key_channel)",
-            query_channel=n_channels,
-            key_channel=n_channels,
-        )
-        attn_weights = attn_weights.masked_fill(
-            ~causal_mask, torch.finfo(attn_weights.dtype).min
-        )
+        if torch.jit.is_scripting():  # torch.finfo is not scriptable
+            min_value = _finfo_min(attn_weights.dtype)
+        else:
+            min_value = torch.finfo(attn_weights.dtype).min
+        attn_weights = attn_weights.masked_fill(~causal_mask, min_value)
         if attention_mask is not None:
             attn_weights = attn_weights + attention_mask
 
         attn_weights = torch.nn.functional.softmax(attn_weights, dim=-1)
         attn_weights = self.attn_dropout(attn_weights)
         value = self._repeat_kv(value, self.n_kv_groups)
-        attn_output = torch.matmul(
-            attn_weights,
-            rearrange(
-                value,
-                "batch head segment channel head_dim "
-                "-> batch head (segment channel) head_dim",
-            ),
-        )
-        return rearrange(
-            attn_output,
-            "batch head (segment channel) head_dim "
-            "-> batch head segment channel head_dim",
-            channel=n_channels,
-        )
+        attn_output = torch.matmul(attn_weights, value.flatten(2, 3))
+        # (batch, head, segment * channel, head_dim)
+        # -> (batch, head, segment, channel, head_dim)
+        return attn_output.unflatten(2, (-1, n_channels))
 
     def forward(
-        self, hidden_states, position_embeds, channel_embeds, attention_mask=None
+        self,
+        hidden_states,
+        position_embeds,
+        channel_embeds,
+        masks: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        attention_mask: Optional[torch.Tensor] = None,
     ):
         query = self.q_attn(hidden_states)
         content_key, value = self.c_attn(hidden_states).split(self.kv_dim, dim=-1)
         # add the broadcast axis (channel for the time key, segment for the channel key)
-        time_key = rearrange(
-            self.position_net(position_embeds),
-            "batch segment kv_dim -> batch segment 1 kv_dim",
-        )
-        channel_key = rearrange(
-            self.channel_net(channel_embeds),
-            "batch channel kv_dim -> batch 1 channel kv_dim",
-        )
+        time_key = self.position_net(position_embeds).unsqueeze(2)
+        channel_key = self.channel_net(channel_embeds).unsqueeze(1)
         query = self._split_heads(query, self.n_heads)
         content_key = self._split_heads(content_key, self.n_head_kv)
         value = self._split_heads(value, self.n_head_kv)
         time_key = self._split_heads(time_key, self.n_head_kv)
         channel_key = self._split_heads(channel_key, self.n_head_kv)
         attn_output = self._rel_attn(
-            query, content_key, time_key, channel_key, value, attention_mask
+            query, content_key, time_key, channel_key, value, masks, attention_mask
         )
         attn_output = self._merge_heads(attn_output)
         attn_output = self.c_proj(attn_output)
@@ -754,9 +728,16 @@ class _MVPABlock(nn.Module):
         self.mlp = _SwiGLUMLP(d_model, d_inner, activation=activation)
 
     def forward(
-        self, hidden_states, position_embeds, channel_embeds, attention_mask=None
+        self,
+        hidden_states,
+        position_embeds,
+        channel_embeds,
+        masks: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        attention_mask: Optional[torch.Tensor] = None,
     ):
         normed = self.ln_1(hidden_states)
-        attn_output = self.attn(normed, position_embeds, channel_embeds, attention_mask)
+        attn_output = self.attn(
+            normed, position_embeds, channel_embeds, masks, attention_mask
+        )
         mlp_output = self.mlp(normed)
         return hidden_states + mlp_output + attn_output

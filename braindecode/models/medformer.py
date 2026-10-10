@@ -364,8 +364,14 @@ class _CrossChannelTokenEmbedding(nn.Module):
                 )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.token_conv(x)
-        return x
+        # The kernel spans all c_in rows: run it as a conv1d with c_in input
+        # channels. Gaudi2 rejects conv kernels taller than 256 (c_in = n_times).
+        x = nn.functional.conv1d(
+            x.squeeze(1),
+            self.token_conv.weight.squeeze(1),
+            stride=self.token_conv.stride[1],
+        )
+        return x.unsqueeze(2)
 
 
 class _ListPatchEmbedding(nn.Module):
@@ -425,17 +431,13 @@ class _ListPatchEmbedding(nn.Module):
             # Reshape to treat each channel independently: (batch_size * n_chans, 1, n_times)
             x = torch.reshape(x, (batch_size * self.n_chans, 1, self.n_times))
 
+        # add positional embedding to tag each channel (only when not single_channel)
+        if not self.single_channel:
+            x = x + self.channel_embedding(x)
+
         x_list = []
         for padding, value_embedding in zip(self.paddings, self.value_embeddings):
-            x_copy = x.clone()
-            # add positional embedding to tag each channel (only when not single_channel)
-            if not self.single_channel:
-                x_new = x_copy + self.channel_embedding(x_copy)
-            else:
-                x_new = x_copy
-            x_new = padding(x_new).unsqueeze(
-                1
-            )  # (batch_size, 1, enc_in, seq_len+stride)
+            x_new = padding(x).unsqueeze(1)  # (batch_size, 1, enc_in, seq_len+stride)
             x_new = value_embedding(x_new)  # (batch_size, d_model, 1, patch_num)
             x_new = x_new.squeeze(2).transpose(1, 2)  # (batch_size, patch_num, d_model)
             x_list.append(x_new)
@@ -693,16 +695,19 @@ class _EncoderLayer(nn.Module):
         delta: Optional[torch.Tensor] = None,
     ) -> Tuple[List[torch.Tensor], List[Optional[torch.Tensor]]]:
         new_x, attn = self.attention(x, attn_mask=attn_mask, tau=tau, delta=delta)
-        x = [x_orig + self.dropout(x_new) for x_orig, x_new in zip(x, new_x)]
-
-        y = x = [self.norm1(x_val) for x_val in x]
-        y = [
-            self.dropout(self.activation(self.conv1(y_val.transpose(-1, 1))))
-            for y_val in y
-        ]
+        lengths = [x_val.shape[1] for x_val in x]
+        # Norms and kernel-1 convs act per token: run them once on all
+        # granularities. Dropout stays per granularity (same RNG stream).
+        x_all = self.norm1(
+            torch.cat(
+                [x_orig + self.dropout(x_new) for x_orig, x_new in zip(x, new_x)], dim=1
+            )
+        )
+        y = self.activation(self.conv1(x_all.transpose(-1, 1))).split(lengths, dim=-1)
+        y = [self.dropout(y_val) for y_val in y]
         y = [self.dropout(self.conv2(y_val).transpose(-1, 1)) for y_val in y]
 
-        return [self.norm2(x_val + y_val) for x_val, y_val in zip(x, y)], attn
+        return list(self.norm2(x_all + torch.cat(y, dim=1)).split(lengths, dim=1)), attn
 
 
 class _Encoder(nn.Module):

@@ -27,6 +27,7 @@ import pytest
 import torch
 
 from braindecode.models import (
+    AXON,
     BENDR,
     BIOT,
     DIVER1,
@@ -43,6 +44,7 @@ from braindecode.models import (
     Brant,
     CBraMod,
     CodeBrain,
+    Guetschel2026,
     Labram,
     MIRepNet,
     MVPFormer,
@@ -55,6 +57,7 @@ from braindecode.models import (
     SleepFM,
     SleepFMStager,
     STEEGFormer,
+    TFMTokenizer,
 )
 from braindecode.models.bendr import BENDR_CHANNEL_ORDER
 from braindecode.models.biot import BIOT_CHANNEL_ORDER
@@ -264,6 +267,14 @@ COMPAT = {
         channels="coords",
         coords_checked=False,
     ),
+    "AXON": dict(
+        cls=AXON,
+        sfreq=200,
+        n_times=800,
+        canon=TEN_TWENTY,
+        channels="coords",
+        coords_checked=False,
+    ),
     "MIRepNet": dict(
         cls=MIRepNet,
         sfreq=250,
@@ -303,6 +314,13 @@ COMPAT = {
         canon=None,
         channels="agnostic",
         min_n_times=640,
+    ),
+    "TFMTokenizer": dict(
+        cls=TFMTokenizer,
+        sfreq=200,
+        n_times=1000,
+        canon=TEN_TWENTY,
+        channels="agnostic",
     ),
     "NeuroRVQ": dict(
         cls=NeuroRVQ,
@@ -344,6 +362,20 @@ COMPAT = {
         coords_checked=True,
         windows=(256, 1024),
         skip=("G2",),
+    ),
+    # random_projection=64 exercises the projection head with a light buffer:
+    # 5000 components in float32 take 3.3 GB on the 64-channel cell (G2, 5
+    # patches) and 6.4 GB on the 6000-sample one (G5b, 19 channels, 33 patches).
+    "Guetschel2026": dict(
+        cls=Guetschel2026,
+        sfreq=200,
+        n_times=1000,
+        canon=TEN_TWENTY,
+        channels="coords",
+        coords_checked=True,
+        min_n_times=200,
+        short_match="n_times",
+        kwargs=dict(random_projection=64),
     ),
 }
 
@@ -456,7 +488,7 @@ def test_geometry_contract(name, gname, gkw):
 NATIVE_ONLY = {"SleepFM", "SleepFMStager"}
 
 # No ``channel_strategy`` argument (not part of the #1241 channel layer).
-NO_STRATEGY = {"NeuroRVQ", "MAPA", "BrainOmni", "BrainTokenizer"}
+NO_STRATEGY = {"NeuroRVQ", "MAPA", "BrainOmni", "BrainTokenizer", "TFMTokenizer"}
 
 
 # BIOT's canonical input is bipolar; under a strategy it takes electrodes.

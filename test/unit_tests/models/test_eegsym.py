@@ -3,6 +3,7 @@ import torch
 from torch import nn
 
 from braindecode.models import EEGSym
+from braindecode.models.eegsym import _SpatialConv3d
 
 _EEGSYM_8CH_CHS = [
     {"ch_name": ch} for ch in ["F3", "C3", "P3", "Cz", "Pz", "F4", "C4", "P4"]
@@ -99,3 +100,13 @@ def test_eegsym_filters_per_branch_must_be_positive_multiple_of_8(filters_per_br
             left_right_chs=_EEGSYM_8CH_LEFT_RIGHT_CHS,
             middle_chs=_EEGSYM_8CH_MIDDLE_CHS,
         )
+
+
+def test_spatial_conv3d_matches_conv3d():
+    """The (1, 1, k) spatial conv runs as conv2d on a view (Gaudi segfaults in the
+    depthwise conv3d backward); same values as the Conv3d with the same weights."""
+    conv = nn.Conv3d(24, 24, (1, 1, 5), groups=24, bias=False)
+    spatial = _SpatialConv3d(24, 24, (1, 1, 5), groups=24, bias=False)
+    spatial.load_state_dict(conv.state_dict())
+    x = torch.randn(2, 24, 2, 50, 5)
+    torch.testing.assert_close(spatial(x), conv(x))

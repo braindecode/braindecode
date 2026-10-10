@@ -29,6 +29,7 @@ from braindecode.models import (
     BENDR,
     BIOT,
     DGCNN,
+    EEGCLIP,
     EEGPT,
     SSTDPN,
     TCN,
@@ -69,7 +70,9 @@ from braindecode.models import (
     SleepStagerChambon2018,
     SPARCNet,
     SyncNet,
+    TFMTokenizer,
     TIDNet,
+    TMSANet,
     TSception,
     USleep,
 )
@@ -1013,6 +1016,29 @@ def test_eeginception_mi_binary_n_params(n_filter, reported):
     assert n_params == reported
 
 
+@pytest.mark.parametrize("dtype, rtol", [(torch.float32, 1e-5), (torch.float64, 1e-10)])
+def test_eeginception_mi_fft_conv(dtype, rtol):
+    """The FFT path equals the direct convolution up to rounding (outputs and
+    gradients); on CPU the default takes the direct one on a small input and
+    the FFT one past the crossover."""
+    kw = dict(n_chans=3, n_outputs=2, n_times=256, sfreq=128, n_filters=8)
+    models = {}
+    for mode in (False, True, None):
+        torch.manual_seed(0)
+        models[mode] = EEGInceptionMI(fft_conv=mode, **kw).to(dtype).eval()
+    x = torch.randn(8, 3, 256, dtype=dtype)
+    outs, grads = {}, {}
+    for mode in (False, True):
+        outs[mode] = models[mode](x)
+        outs[mode].square().sum().backward()
+        grads[mode] = torch.cat([p.grad.flatten() for p in models[mode].parameters()])
+    for got, ref in ((outs[True], outs[False]), (grads[True], grads[False])):
+        assert (got - ref).abs().max() <= rtol * ref.abs().max()
+    with torch.no_grad():  # largest kernel: 108 samples
+        assert torch.equal(models[None](x[:1]), models[False](x[:1]))
+        assert torch.equal(models[None](x), models[True](x))
+
+
 def test_atcnet(input_sizes):
     sfreq = 250
     input_sizes["n_in_times"] = 1125
@@ -1606,6 +1632,29 @@ def test_tsception_dummy(n_times, n_chans, sfreq, n_outputs):
 
 
 @pytest.mark.parametrize(
+    "n_chans,n_times,n_outputs,embed_dim,att_drop_prob",
+    [
+        (22, 1000, 4, 19, 0.5),  # BCI Competition IV 2a
+        (3, 1000, 2, 6, 0.5),  # BCI Competition IV 2b
+        (44, 1125, 4, 10, 0.7),  # HGD
+    ],
+)
+def test_tmsanet_released_configurations(
+    n_chans, n_times, n_outputs, embed_dim, att_drop_prob
+):
+    model = TMSANet(
+        n_chans=n_chans,
+        n_times=n_times,
+        n_outputs=n_outputs,
+        embed_dim=embed_dim,
+        att_drop_prob=att_drop_prob,
+    ).eval()
+    # Released head width embed_dim // num_heads: 19 -> 16 -> 19 for 2a.
+    assert model.transformer[1].attention.w_q.out_features == embed_dim // 4 * 4
+    assert model(torch.randn(2, n_chans, n_times)).shape == (2, n_outputs)
+
+
+@pytest.mark.parametrize(
     "n_times, n_chans, sfreq, n_outputs",
     [
         (125, 32, 500.0, 2),
@@ -1637,7 +1686,8 @@ def test_sccnet_dummy(n_times, n_chans, sfreq, n_outputs):
     ],
 )
 def test_eeginceptionmi_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 64
+    # 64 windows held 6.3 GB of activations; a macOS runner has 7 GB for 3 workers.
+    batch_size = 2
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -1858,9 +1908,12 @@ def test_model_trainable_parameters(model):
     assert trainable_final_layer_parameters == 66
 
 
-@pytest.mark.parametrize("n_chans", (2 ** np.arange(8)).tolist())
-@pytest.mark.parametrize("n_outputs", [2, 3, 4, 5, 50])
-@pytest.mark.parametrize("input_size_s", [1, 2, 5, 10, 15, 30])
+# Every channel count, output size and window length once, not their 240-case product.
+@pytest.mark.parametrize(
+    "n_chans, n_outputs, input_size_s",
+    [(1, 2, 1), (2, 3, 2), (4, 4, 5), (8, 5, 10), (16, 50, 15), (32, 2, 30),
+     (64, 3, 1), (128, 4, 2)],
+)
 def test_biot(n_chans, n_outputs, input_size_s):
     rng = check_random_state(42)
     sfreq = 200
@@ -3347,9 +3400,9 @@ def test_brain_module_glu(brain_module_params, glu, glu_context, depth):
 
     # Verify GLU modules only created when glu > 0
     if glu > 0:
-        assert any(g is not None for g in model.encoder.glus)
+        assert not all(isinstance(g, nn.Identity) for g in model.encoder.glus)
     else:
-        assert all(g is None for g in model.encoder.glus)
+        assert all(isinstance(g, nn.Identity) for g in model.encoder.glus)
 
 
 @pytest.mark.parametrize("depth", [2, 4, 6])
@@ -3910,16 +3963,17 @@ def test_medformer_boolean_combinations(no_inter_attn, single_channel, output_at
     """
     set_random_seeds(0, False)
 
+    # 200 samples: single_channel attends over time patches of every channel.
     model = MEDFormer(
         n_chans=22,
         n_outputs=4,
-        n_times=1000,
+        n_times=200,
         no_inter_attn=no_inter_attn,
         single_channel=single_channel,
         output_attention=output_attention,
     )
 
-    x = torch.randn(2, 22, 1000)
+    x = torch.randn(2, 22, 200)
     y = model(x)
     assert y.shape == (2, 4)
 
@@ -3933,6 +3987,22 @@ def test_medformer_boolean_combinations(no_inter_attn, single_channel, output_at
         assert first_medformer_layer.inter_attention is None
     else:
         assert first_medformer_layer.inter_attention is not None
+
+
+def test_medformer_encoder_layer_keeps_dropout_per_granularity():
+    """Norms and convs run once on all granularities, dropout still per
+    granularity in the original order: same masks as the per-list form."""
+    layer = MEDFormer(n_chans=22, n_outputs=4, n_times=200).encoder.attn_layers[0]
+    x = [torch.randn(2, n, 128) for n in (12, 4, 3)]
+    torch.manual_seed(1)
+    out, _ = layer.train()(x)
+    torch.manual_seed(1)
+    new_x, _ = layer.attention(x)
+    ref = [layer.norm1(a + layer.dropout(b)) for a, b in zip(x, new_x)]
+    y = [layer.dropout(layer.activation(layer.conv1(r.transpose(-1, 1)))) for r in ref]
+    y = [layer.dropout(layer.conv2(v).transpose(-1, 1)) for v in y]
+    for o, r, v in zip(out, ref, y):
+        torch.testing.assert_close(o, layer.norm2(r + v))
 
 
 @pytest.mark.parametrize("patch_len_list", [[2, 8, 16], [4, 8], [2, 4, 8, 16]])
@@ -3955,6 +4025,19 @@ def test_medformer_patch_len_configurations(patch_len_list):
 
     # Check that the number of patch embeddings matches
     assert len(model.enc_embedding.value_embeddings) == len(patch_len_list)
+
+
+@pytest.mark.parametrize("single_channel", [False, True])
+def test_medformer_token_embedding_matches_its_conv2d(single_channel):
+    """The full-height patch kernel runs as a conv1d (Gaudi2 rejects conv
+    kernels taller than 256 rows) and gives the values of its Conv2d.
+    float64: in float32 the two summation orders differ by rounding."""
+    model = MEDFormer(
+        n_chans=22, n_outputs=4, n_times=1000, single_channel=single_channel
+    ).double()
+    emb = model.enc_embedding.value_embeddings[1]
+    x = torch.randn(2, 1, emb.token_conv.kernel_size[0], 30, dtype=torch.float64)
+    torch.testing.assert_close(emb(x), emb.token_conv(x))
 
 
 def test_eegitnet_mapping_targets():
@@ -5159,6 +5242,64 @@ def test_seizure_transformer_rejects_invalid_construction():
         SeizureTransformer(n_chans=4, n_outputs=1, n_times=256, num_heads=3)
 
 # ---------------------------------------------------------------------------
+# TFMTokenizer
+# ---------------------------------------------------------------------------
+
+
+def _small_tfm_tokenizer(**kwargs):
+    params = dict(
+        sfreq=200,
+        embed_dim=16,
+        codebook_size=32,
+        freq_encoder_depth=1,
+        temporal_encoder_depth=1,
+        decoder_depth=1,
+        max_seq_len=32,
+    )
+    return TFMTokenizer(**{**params, **kwargs})
+
+
+def test_tfm_tokenizer_tokenize_outputs_and_masks():
+    model = _small_tfm_tokenizer().eval()
+    x = torch.randn(2, 3, 500)
+    target = model.compute_spectrogram(x)
+    mask_a, mask_b = model.make_complementary_masks(target)
+
+    # One mask for every trial and channel, and its exact complement.
+    assert torch.equal(mask_b, ~mask_a)
+    assert torch.equal(mask_a[0, 0], mask_a[-1, -1])
+    assert not mask_a.all() and mask_a.any()
+
+    out = model.tokenize(x, spectrogram_mask=mask_a)
+    assert out.reconstruction.shape == target.shape == (2, 3, 100, 4)
+    assert out.token_ids.shape == (2, 3, 4)
+    assert 0 <= out.token_ids.min() and out.token_ids.max() < 32
+    assert out.quantized.shape == out.embeddings.shape == (6, 4, 16)
+    torch.testing.assert_close(out.target_spectrogram, target)
+    torch.testing.assert_close(model(x, spectrogram_mask=mask_a), out.reconstruction)
+
+
+def test_tfm_tokenizer_codebook_is_ema_only():
+    torch.manual_seed(7)
+    model = _small_tfm_tokenizer(codebook_size=64)
+    before = model.quantizer.embed.clone()
+
+    out = model.tokenize(torch.randn(1, 1, 200))
+    out.quantization_loss.backward()
+
+    # The VQ loss alone trains both encoder paths; the codebook moves by EMA.
+    assert model.frequency_patch_embedding[0].weight.grad.norm() > 0
+    assert model.temporal_patch_embedding[0].weight.grad.norm() > 0
+    assert not torch.equal(model.quantizer.embed, before)
+    # No EMA update in eval mode.
+    state = {k: v.clone() for k, v in model.quantizer.state_dict().items()}
+    model.eval().tokenize(torch.randn(1, 1, 200))
+    for k, v in model.quantizer.state_dict().items():
+        torch.testing.assert_close(v, state[k])
+    assert "stft_window" not in model.state_dict()
+
+
+# ---------------------------------------------------------------------------
 # CSBrain
 # ---------------------------------------------------------------------------
 
@@ -5423,3 +5564,82 @@ def test_csbrain_channel_order_reproduces_reference_topology():
 def test_csbrain_rejects_invalid_channel_order(kwargs, match):
     with pytest.raises(ValueError, match=match):
         CSBrain(n_outputs=2, n_chans=3, n_times=400, n_layer=1, **kwargs)
+
+
+# ----------------------------------------------------------------------------
+# EEGCLIP
+
+
+def test_eegclip_matches_authors_projection_and_clip_loss():
+    """Reference: ``EEGClip/clip_models.py`` and ``loss_methods.py`` @1d6b89b."""
+    torch.manual_seed(0)
+    model = EEGCLIP(
+        n_chans=21, n_times=1200, n_outputs=64, text_embedding_dim=768, drop_prob=0
+    )
+    X, text = torch.randn(4, 21, 1200), torch.randn(4, 768)
+    torch.manual_seed(1)  # same Deep4Net dropout masks in both passes (train mode)
+    paired = model.forward_paired(X, text)
+    torch.manual_seed(1)
+    features = model.eeg_encoder(X)
+    # Authors' Deep4Net ends with a log-softmax over its 128 outputs.
+    torch.testing.assert_close(
+        features.exp().sum(dim=1), torch.ones(4, 519), rtol=0, atol=1e-4
+    )
+    # Authors' ProjectionHead(transpose=True) on [B, N_pred, 128], mean over time.
+    x = features.transpose(1, 2)
+    for layer in model.final_layer:
+        if isinstance(layer, nn.BatchNorm1d):
+            x = layer(x.transpose(1, 2)).transpose(1, 2)
+        else:
+            x = layer(x)
+    eeg = x.mean(dim=1)
+    torch.testing.assert_close(paired["eeg_embeds"], eeg)
+    # ClipLoss: raw (not exponentiated) logit_scale, no L2 normalization.
+    t = model.text_projection(text)
+    labels = torch.arange(4)
+    logits = model.logit_scale * eeg @ t.T
+    expected = (
+        nn.functional.cross_entropy(logits, labels)
+        + nn.functional.cross_entropy(model.logit_scale * t @ eeg.T, labels)
+    ) / 2
+    loss = model.contrastive_loss(paired["eeg_embeds"], paired["text_embeds"])
+    torch.testing.assert_close(loss, expected)
+    loss.backward()
+    assert model.logit_scale.grad is not None
+
+
+def test_eegclip_custom_encoders_and_masked_mean_pooling():
+    class TextEncoder(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.embedding = nn.Embedding(16, 8)
+
+        def forward(self, input_ids, attention_mask=None):
+            return (self.embedding(input_ids),)  # tuple, like return_dict=False
+
+    model = EEGCLIP(
+        n_chans=3,
+        n_times=20,
+        n_outputs=4,
+        eeg_encoder=nn.Flatten(),  # (batch, features) output
+        eeg_embedding_dim=60,
+        text_encoder=TextEncoder(),
+        text_embedding_dim=8,
+        text_pooling="mean",
+    ).eval()
+    tokens = torch.tensor([[1, 2, 3], [4, 5, 6]])
+    mask = torch.tensor([[1, 1, 0], [1, 0, 0]])
+    tok = model.text_encoder.embedding(tokens)
+    expected = torch.stack([tok[0, :2].mean(dim=0), tok[1, :1].mean(dim=0)])
+    torch.testing.assert_close(
+        model.encode_text(tokens, attention_mask=mask),
+        model.text_projection(expected),
+    )
+    paired = model.forward_paired(torch.randn(2, 3, 20), tokens, attention_mask=mask)
+    assert paired["logits_per_eeg"].shape == (2, 2)
+
+    model.reset_head(6)
+    assert model.text_projection[-1].out_features == 6
+    assert model.text_projection.training is False
+    with pytest.raises(ValueError, match="custom encoder"):
+        model.get_config()

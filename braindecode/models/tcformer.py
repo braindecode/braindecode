@@ -6,10 +6,10 @@
 from __future__ import annotations
 
 import torch
-from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
+from braindecode.functional import rotate_pairs
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import CausalConv1d, Conv1dWithConstraint, DropPath
 
@@ -295,7 +295,10 @@ class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
 # Rotary positional embedding (verbatim port of the reference; see plan note on
 # the deliberate NeoX-cache / interleaved-rotate mismatch).
 def _build_rotary_cache(
-    head_dim: int, seq_len: int, device=None, dtype=None
+    head_dim: int,
+    seq_len: int,
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
 ) -> tuple[Tensor, Tensor]:
     """Return ``(cos, sin)`` each of shape ``(seq_len, head_dim)``.
 
@@ -303,7 +306,7 @@ def _build_rotary_cache(
     cos/sin are cast to ``dtype`` (the token dtype) so attention stays in the
     working precision under autocast.
     """
-    work = torch.promote_types(dtype or torch.float32, torch.float32)
+    work = torch.float32 if dtype is None else torch.promote_types(dtype, torch.float32)
     theta = 1.0 / (
         10000 ** (torch.arange(0, head_dim, 2, device=device, dtype=work) / head_dim)
     )
@@ -324,14 +327,8 @@ def _apply_rope(
     Both have shape ``(batch, n_heads, seq_len, head_dim)``.
     """
 
-    def rotate(tensor: Tensor) -> Tensor:
-        even = tensor[..., 0::2]
-        odd = tensor[..., 1::2]
-        pairs = torch.stack((-odd, even), dim=-1)
-        return rearrange(pairs, "... half two -> ... (half two)")
-
-    query_rotated = (query * cos) + (rotate(query) * sin)
-    key_rotated = (key * cos) + (rotate(key) * sin)
+    query_rotated = (query * cos) + (rotate_pairs(query) * sin)
+    key_rotated = (key * cos) + (rotate_pairs(key) * sin)
     return query_rotated, key_rotated
 
 
@@ -361,36 +358,26 @@ class _GroupedQueryAttention(nn.Module):
 
     def forward(self, x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
         seq_len = x.shape[1]
-        query = rearrange(
-            self.query_proj(x),
-            "batch seq (heads dim) -> batch heads seq dim",
-            heads=self.n_query_heads,
+        # (batch, seq, heads * dim) -> (batch, heads, seq, dim)
+        query = (
+            self.query_proj(x).unflatten(-1, (self.n_query_heads, -1)).transpose(1, 2)
         )
-        key, value = rearrange(
-            self.key_value_proj(x),
-            "batch seq (heads two dim) -> two batch heads seq dim",
-            two=2,
-            heads=self.n_kv_heads,
+        # (batch, seq, heads * 2 * dim) -> 2 x (batch, heads, seq, dim)
+        key, value = (
+            self.key_value_proj(x)
+            .unflatten(-1, (self.n_kv_heads, 2, -1))
+            .permute(3, 0, 2, 1, 4)
+            .unbind(0)
         )
         # share each key/value group across its query heads
         groups_per_kv = self.n_query_heads // self.n_kv_heads
-        key = repeat(
-            key,
-            "batch heads seq dim -> batch (heads repeats) seq dim",
-            repeats=groups_per_kv,
-        )
-        value = repeat(
-            value,
-            "batch heads seq dim -> batch (heads repeats) seq dim",
-            repeats=groups_per_kv,
-        )
+        key = key.repeat_interleave(groups_per_kv, dim=1)
+        value = value.repeat_interleave(groups_per_kv, dim=1)
         query, key = _apply_rope(query, key, cos[:seq_len], sin[:seq_len])
-        key_t = rearrange(key, "batch heads seq dim -> batch heads dim seq")
+        key_t = key.transpose(-2, -1)
         attention = ((query @ key_t) * self.scale).softmax(dim=-1)
         attention = self.drop(attention)
-        context = rearrange(
-            attention @ value, "batch heads seq dim -> batch seq (heads dim)"
-        )
+        context = (attention @ value).transpose(1, 2).flatten(2)
         return self.out_proj(context)
 
 
@@ -449,18 +436,8 @@ class _ChannelGroupAttention(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         descriptor = self.pool(x)
         gate = self.sigmoid(self.att_fc2(self.relu(self.att_fc1(descriptor))))
-        grouped = rearrange(
-            x,
-            "batch (groups chans) height width -> batch groups chans height width",
-            groups=self.num_groups,
-        )
-        gate = rearrange(
-            gate, "batch groups height width -> batch groups 1 height width"
-        )
-        return rearrange(
-            grouped * gate,
-            "batch groups chans height width -> batch (groups chans) height width",
-        )
+        grouped = x.unflatten(1, (self.num_groups, -1))
+        return (grouped * gate.unsqueeze(2)).flatten(1, 2)
 
 
 # ----------------------------------------------------------------------------- #
@@ -495,7 +472,7 @@ class _MultiKernelConvBlock(nn.Module):
                         (k // 2 - 1, k // 2, 0, 0)
                         if k % 2 == 0
                         else (k // 2, k // 2, 0, 0),
-                        0,
+                        0.0,
                     ),
                     nn.Conv2d(1, n_filters_time, (1, k), bias=False),
                     nn.BatchNorm2d(n_filters_time),
@@ -556,7 +533,7 @@ class _MultiKernelConvBlock(nn.Module):
             x = x + self.group_attn(x)
         x = self.drop2(self.pool2(x))
         # drop the singleton spatial axis -> (batch, d_model, n_tokens)
-        return rearrange(x, "batch feat 1 time -> batch feat time")
+        return x.squeeze(2)
 
 
 # ----------------------------------------------------------------------------- #

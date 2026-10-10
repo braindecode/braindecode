@@ -1,5 +1,6 @@
 ﻿Model,Application,Type,Sampling Frequency (Hz),Hyperparameters,#Parameters,get_#Parameters,Categorization,Modality
 ATCNet,General,Prediction,250,"n_chans, n_outputs, n_times",113732,"ATCNet(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Recurrent,Attention/Transformer",EEG
+AXON,General,"Classification,Embedding",200,"chs_info, n_outputs",118630108,"AXON(chs_info=<user>, n_outputs=4, n_times=1000)","Foundation Model,Channel,Attention/Transformer",EEG
 AttentionBaseNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",3692,"AttentionBaseNet(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
 BaRISTA,General,"Prediction, Embedding",2048,"chs_info, n_outputs, n_times",870324,"BaRISTA(n_chans=22, chs_info=<user>, n_outputs=4, n_times=6144, sfreq=2048)","Attention/Transformer,Foundation Model,Channel",iEEG
 BDTCN,Normal Abnormal,Prediction,100,"n_chans, n_outputs, n_times",456502,"BDTCN(n_chans=21, n_outputs=2, n_times=6000, n_blocks=5, n_filters=55, kernel_size=16)","Convolution,Recurrent",EEG
@@ -13,6 +14,7 @@ CTNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",26900,"CTNet(n_
 Deep4Net,General,Prediction,250,"n_chans, n_outputs, n_times",282879,"Deep4Net(n_chans=22, n_outputs=4, n_times=1000)","Convolution",EEG
 DeepSleepNet,Sleep Staging,Prediction,256,"n_chans, n_outputs",24744837,"DeepSleepNet(n_chans=1, n_outputs=5, n_times=7680, sfreq=256)","Convolution,Recurrent",EEG
 EEGConformer,General,Prediction,250,"n_chans, n_outputs, n_times",789572,"EEGConformer(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
+EEGCLIP,General,"Embedding, Prediction",250,"n_chans, n_outputs, n_times",530603,"EEGCLIP(n_chans=21, n_outputs=64, n_times=1000)","Foundation Model,Convolution",EEG
 EEGPT,General,Prediction,256,"n_chans, n_outputs, n_times",25477635,"EEGPT(n_chans=58, n_outputs=4, n_times=1024)","Foundation Model,Attention/Transformer",EEG
 EEGInceptionERP,"ERP, SSVEP",Prediction,128,"n_chans, n_outputs",14926,"EEGInceptionERP(n_chans=8, n_outputs=2, n_times=128, sfreq=128)","Convolution",EEG
 EEGInceptionMI,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",558028,"EEGInceptionMI(n_chans=22, n_outputs=4, n_times=1000, n_convs=5, n_filters=12)","Convolution",EEG
@@ -26,6 +28,7 @@ EEGTCNet,Motor Imagery,Prediction,250,"n_chans, n_outputs",4516,"EEGTCNet(n_chan
 Labram,General,"Prediction, Embedding",200,"n_chans, n_outputs, n_times",5866180,"Labram(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,Foundation Model",EEG
 MSVTNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",75494," MSVTNet(n_chans=22,  n_outputs=4,  n_times=1000)","Convolution,Recurrent,Attention/Transformer",EEG
 MSCFormer,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",150724,"MSCFormer(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
+TMSANet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",20303,"TMSANet(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
 SCCNet,Motor Imagery,Prediction,125,"n_chans, n_outputs, n_times, sfreq",12070,"SCCNet(n_chans=22,  n_outputs=4,  n_times=1000, sfreq=125)","Convolution",EEG
 SignalJEPA,"Motor Imagery, ERP, SSVEP",Embedding,128,"n_times, chs_info",3456882,"SignalJEPA(n_times=512, chs_info=Lee2019_MI().get_data(subjects=[1])[1]['0']['1train'].info[""chs""][:62])","Convolution,Channel,Foundation Model",EEG
 SignalJEPA_Contextual,"Motor Imagery, ERP, SSVEP",Prediction,128,"n_outputs, n_times, chs_info",3459184,"SignalJEPA_Contextual(n_outputs=2, input_window_seconds=4.19, sfreq=128, chs_info=Lee2019_MI().get_data(subjects=[1])[1]['0']['1train'].info[""chs""][:62])","Convolution,Channel,Foundation Model",EEG
@@ -68,6 +71,7 @@ DIVER1,General,Prediction,500,"chs_info, n_outputs, n_times",12711366,"DIVER1(ch
 BrainOmni,General,"Prediction, Embedding",256,"chs_info, n_outputs, n_times, sfreq",13998310,"BrainOmni(chs_info=chs_info, n_outputs=4, n_times=1024, sfreq=256.0)","Foundation Model,Attention/Transformer","EEG, MEG"
 BrainTokenizer,General,Embedding,256,"chs_info, n_times, sfreq",5050338,"BrainTokenizer(chs_info=chs_info, n_times=1024, sfreq=256.0)","Foundation Model","EEG, MEG"
 TCFormer,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times",77820,"TCFormer(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
+TFMTokenizer,General,"Pretraining, Tokenization",200,"n_chans, n_outputs, n_times, sfreq",1166100,"TFMTokenizer(n_chans=3, n_outputs=2, n_times=1000, sfreq=200)","Foundation Model,Attention/Transformer",EEG
 EEGDINO,General,Classification,200,"n_chans, n_outputs, n_times",4539698,"EEGDINO(n_chans=19, n_outputs=4, n_times=1000)","Foundation Model,Attention/Transformer",EEG
 DANCE,General,Event Detection,200,"n_chans, n_outputs, n_times, sfreq, chs_info",29813542,"DANCE(n_chans=19, n_outputs=4, n_times=6400, sfreq=200, input_window_seconds=32.0, chs_info=[{'ch_name': f'E{i+1}', 'kind': 'eeg', 'loc': numpy.random.default_rng(2024).random(12)} for i in range(19)])","Convolution,Attention/Transformer,Channel",EEG
 STEEGFormer,General,Classification,250,"n_chans, n_outputs, n_times",25305604,"STEEGFormer(n_chans=22, n_outputs=4, n_times=1000)","Attention/Transformer,Foundation Model",EEG
@@ -77,3 +81,4 @@ MIRepNet,Motor Imagery,"Prediction, Embedding",250,"n_chans, n_outputs",5143300,
 NeuroRVQ,General,"Prediction, Embedding",200,"n_chans, n_outputs, n_times, sfreq, channel_names",7097892,"NeuroRVQ(n_chans=64, n_outputs=4, n_times=800, sfreq=200)","Convolution,Attention/Transformer,Foundation Model,Channel",EEG
 SeizureTransformer,Epilepsy,Event Detection,256,"n_chans, n_outputs, n_times",37848897,"SeizureTransformer(n_chans=19, n_outputs=1, n_times=15360)","Convolution,Attention/Transformer",EEG
 NeuroRVQTokenizer,General,Embedding,200,"n_chans, n_times, sfreq, chs_info",75726448,"NeuroRVQTokenizer(n_chans=3, n_times=200, sfreq=200)","Convolution,Attention/Transformer,Foundation Model,Channel",EEG
+Guetschel2026,General,"Prediction, Embedding",200,"chs_info, n_outputs, n_times",12882436,"Guetschel2026(chs_info=<user>, n_outputs=4, n_times=1000, sfreq=200)","Foundation Model,Attention/Transformer,Channel",EEG

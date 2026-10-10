@@ -592,7 +592,8 @@ def test_preprocessor_overwrites_apply_on_array():
 @pytest.mark.parametrize("kind", ["raw", "windows"])
 @pytest.mark.parametrize("save", [True, False])
 @pytest.mark.parametrize("overwrite", [True, False])
-@pytest.mark.parametrize("n_jobs", [-1, 1, 2, None])
+# None and 1 take the same sequential path, -1 and 2 the same joblib one.
+@pytest.mark.parametrize("n_jobs", [None, 2])
 def test_preprocess_save_dir(
     base_concat_ds, windows_concat_ds, tmp_path, kind, save, overwrite, n_jobs
 ):

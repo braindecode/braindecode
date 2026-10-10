@@ -6,7 +6,7 @@
 import inspect
 import warnings
 from copy import deepcopy
-from functools import wraps
+from functools import lru_cache, wraps
 from pathlib import Path
 from typing import Any, Callable, Dict, Literal, Optional, Sequence, cast
 
@@ -272,22 +272,119 @@ SigArgName = Literal[
 #   the model tested in case the default_signal_params are not
 #   compatible with this model.  May also be a zero-argument
 #   callable returning a dict (used to defer imports that would
-#   create circular dependencies).
+#   create circular dependencies, or the fixture-montage load).
 #   The keys of this dictionary can only be among those of
 #   default_signal_params.
 ################################################################
 
 _rng = np.random.default_rng(12)
-# Default 3-channel chs_info used by most model tests
+
+
+@lru_cache(maxsize=1)
+def _fixture_montage_chs() -> tuple[tuple[str, tuple[float, ...]], ...]:
+    """Channels of the montage that supplies the test fixtures' real positions.
+
+    The montage is ``standard_1005``, spelled ``colin27_1005`` on MNE >= 1.13
+    (see :func:`braindecode.util.resolve_montage_name`; the positions are
+    identical). The positions are read back from ``info["chs"][i]["loc"]``
+    after :meth:`mne.Info.set_montage`, i.e. in the head frame and in metres,
+    exactly what a user gets from ``raw.set_montage(...)``. ``loc[3:]`` is set
+    to zeros rather than to MNE's ``[0, 0, 0, nan, ...]`` padding, like the
+    other canonical fixtures of this module (LaBraM, BENDR, BaRISTA): a NaN
+    would only add noise to models that check ``np.isfinite(loc).all()``.
+
+    The four legacy 10-20 aliases that the montage lists at exactly the
+    position of their modern name (T3=T7, T4=T8, T5=P7, T6=P8) are dropped:
+    a channel is kept only if no channel listed before it has the same
+    position, so that no two channels share a position (339 channels remain).
+
+    Loading the montage costs about 5 ms once ``braindecode`` is imported
+    (about 0.2 s in a process where ``mne.channels`` is not imported yet). It
+    is deferred to the first call and cached, so that importing ``braindecode``
+    never reads the montage file nor risks a montage-name deprecation warning.
+
+    Returns
+    -------
+    tuple of (str, tuple of float)
+        ``(ch_name, loc)`` for every channel of the montage except the
+        dropped co-located legacy aliases (339 channels), ``loc`` having the
+        12 elements of MNE's format.
+    """
+    montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
+    info = mne.create_info(montage.ch_names, 1.0, "eeg")
+    info.set_montage(montage)
+    chs = []
+    seen = set()
+    for ch in info["chs"]:
+        position = tuple(np.round(ch["loc"][:3], 6).tolist())
+        if position in seen:  # legacy alias of a channel listed before
+            continue
+        seen.add(position)
+        loc = np.zeros(12)
+        loc[:3] = ch["loc"][:3]
+        chs.append((ch["ch_name"], tuple(loc.tolist())))
+    return tuple(chs)
+
+
+def _draw_chs_info(n_chans: int, rng: np.random.Generator) -> list[dict]:
+    """Draw ``n_chans`` distinct real EEG channels of the fixture montage.
+
+    "Distinct" holds for the names and for the positions (see
+    :func:`_fixture_montage_chs`).
+
+    Each channel keeps its real name together with its real head-frame
+    position, so that models that look channels up by name see the position
+    that goes with the name.
+
+    Parameters
+    ----------
+    n_chans : int
+        Number of distinct channels to draw.
+    rng : numpy.random.Generator
+        Source of the draw. Same state, same channels.
+
+    Returns
+    -------
+    list of dict
+        ``{"ch_name": str, "kind": "eeg", "loc": ndarray of 12 floats}``.
+
+    Raises
+    ------
+    ValueError
+        If the montage has fewer than ``n_chans`` channels.
+    """
+    montage_chs = _fixture_montage_chs()
+    if n_chans > len(montage_chs):
+        raise ValueError(
+            f"Cannot draw {n_chans} distinct channels from a montage of "
+            f"{len(montage_chs)} channels; pass chs_info explicitly."
+        )
+    return [
+        {
+            "ch_name": montage_chs[i][0],
+            "kind": "eeg",
+            "loc": np.array(montage_chs[i][1]),
+        }
+        for i in rng.choice(len(montage_chs), size=n_chans, replace=False)
+    ]
+
+
+# Default 3-channel chs_info used by most model tests: the real 10-10 channels
+# C1, C2 and C3 of the montage of ``_fixture_montage_chs`` (head frame, metres).
+# They are inlined, as loading the montage here would slow ``import
+# braindecode`` down; ``test_chs_info_3ch_matches_the_montage`` checks them.
 _chs_info_3ch = [
-    {
-        "ch_name": f"C{i}",
-        "kind": "eeg",
-        "loc": _rng.random(12),
-    }
-    for i in range(1, 4)
+    {"ch_name": name, "kind": "eeg", "loc": np.array([x, y, z, *[0.0] * 9])}
+    for name, (x, y, z) in {
+        "C1": (-0.03793783, 0.02633745, 0.12977061),
+        "C2": (0.03589271, 0.02635814, 0.12841234),
+        "C3": (-0.06714873, 0.02335823, 0.10451068),
+    }.items()
 ]
-# Draws of a removed 4-channel fixture, kept so later random locs are unchanged.
+# Draws of the former random locs (3 channels, then a removed 4-channel
+# fixture), kept so that the sEEG locs that the BaRISTA entry below still draws
+# from ``_rng`` are unchanged; BaRISTA is the only later reader of ``_rng``.
+_rng.random(3 * 12)
 _rng.random(4 * 12)
 
 
@@ -407,10 +504,29 @@ def dkt_region_slots() -> tuple[str, ...]:
     )
 
 
+def _dance_signal_params() -> dict[str, Any]:
+    """DANCE signal parameters, deferred as their channels come from a montage.
+
+    19 distinct real channels, drawn with a fixed seed: the same channels on
+    every call, whatever the order of the tests.
+    """
+    return {
+        "n_chans": 19,
+        # 1 s @ 200 Hz: CPU float16/bfloat16 dilated convolutions take a
+        # scalar path, so 32 s windows took 25 min per dtype case.
+        "n_times": 200,
+        "sfreq": 200.0,
+        "input_window_seconds": 1.0,
+        "n_outputs": 4,
+        "chs_info": _draw_chs_info(19, np.random.default_rng(19)),
+    }
+
+
 models_mandatory_parameters: list[
     tuple[str, list[SigArgName], dict[SigArgName, Any] | None | Any]
 ] = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("AXON", ["chs_info", "n_outputs"], {"sfreq": 200.0, "n_times": 1000}),
     (
         "BaRISTA",
         ["chs_info", "n_outputs", "n_times"],
@@ -436,6 +552,7 @@ models_mandatory_parameters: list[
     ("Deep4Net", ["n_chans", "n_outputs", "n_times"], None),
     ("DeepSleepNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGConformer", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGCLIP", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGInceptionERP", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGInceptionMI", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
@@ -497,6 +614,7 @@ models_mandatory_parameters: list[
     ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSCFormer", ["n_chans", "n_outputs", "n_times"], None),
+    ("TMSANet", ["n_chans", "n_outputs", "n_times"], None),
     ("TCFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 250.0}),
     ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
@@ -595,6 +713,11 @@ models_mandatory_parameters: list[
     ),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("MIRepNet", ["n_chans", "n_outputs"], None),
+    (
+        "TFMTokenizer",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {"sfreq": 200.0, "n_times": 1000},
+    ),
     ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
     (
         "MVPFormer",
@@ -616,7 +739,8 @@ models_mandatory_parameters: list[
     (
         "CodeBrain",
         ["n_chans", "n_outputs", "n_times"],
-        {"n_chans": 19, "n_times": 6000},
+        # 5 patches; test_foundation_models runs the pretraining 19 x 6000 geometry
+        {"n_chans": 19, "n_times": 1000},
     ),
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
     ("BrainOmni", ["chs_info", "n_outputs", "n_times", "sfreq"], None),
@@ -654,29 +778,15 @@ models_mandatory_parameters: list[
     (
         "DANCE",
         ["n_outputs", "n_chans", "n_times", "sfreq", "chs_info"],
-        {
-            "n_chans": 19,
-            "n_times": 6400,  # 32 s @ 200 Hz, above the depth-10 stack minimum
-            "sfreq": 200.0,
-            "input_window_seconds": 32.0,
-            "n_outputs": 4,
-            "chs_info": [
-                {
-                    "ch_name": f"E{i + 1}",
-                    "kind": "eeg",
-                    "loc": _rng.random(12),
-                }
-                for i in range(19)
-            ],
-        },
+        _dance_signal_params,
     ),
     (
         "ZUNA",
         ["chs_info", "n_outputs", "n_times"],
         {
-            "n_times": 1280,
+            "n_times": 256,  # 1 s: 8 patches per channel for the 172M-parameter model
             "sfreq": 256.0,
-            "input_window_seconds": 5.0,
+            "input_window_seconds": 1.0,
         },
     ),
     (
@@ -688,6 +798,7 @@ models_mandatory_parameters: list[
             "sfreq": 256.0,
         },
     ),
+    ("Guetschel2026", ["chs_info", "n_outputs", "n_times"], {"sfreq": 200.0}),
 ]
 
 ################################################################
@@ -707,6 +818,7 @@ non_classification_models = [
     "EMG2QwertyNet",
     # Returns a reconstruction tensor (VQ-VAE output), not class logits.
     "BrainTokenizer",
+    "TFMTokenizer",
     # Dense per-frame pose sequences (batch, T, n_joints), not logits.
     "VEMG2Pose",
     "NeuroPose",
@@ -738,8 +850,14 @@ def _get_signal_params(
     """Get signal parameters for model initialization in tests.
 
     ``signal_params`` may also be a zero-argument callable that returns a
-    ``dict``; this is used to defer imports that would cause circular
-    dependencies at module-load time (e.g. the Labram canonical channel list).
+    ``dict``; this defers work that should not run at module-load time:
+    imports that would cause circular dependencies (e.g. the Labram canonical
+    channel list), or loading the fixture montage (e.g. DANCE, whose channels
+    are drawn from it).
+
+    When only ``n_chans`` is given, ``chs_info`` is made of ``n_chans`` distinct
+    real channels of the fixture montage, drawn with a seed that depends only on
+    ``n_chans`` (deterministic, independent of the test order).
     """
     if callable(signal_params):
         signal_params = signal_params()
@@ -749,10 +867,10 @@ def _get_signal_params(
         if "chs_info" in signal_params and "n_chans" not in signal_params:
             sp["n_chans"] = len(signal_params["chs_info"])
         if "n_chans" in signal_params and "chs_info" not in signal_params:
-            sp["chs_info"] = [
-                {"ch_name": f"C{i}", "kind": "eeg", "loc": _rng.random(12)}
-                for i in range(signal_params["n_chans"])
-            ]
+            n = signal_params["n_chans"]
+            # Fixed seed per n_chans: same names and positions whatever the
+            # order of the tests.
+            sp["chs_info"] = _draw_chs_info(n, np.random.default_rng(n))
         assert isinstance(sp["n_times"], int)
         assert isinstance(sp["sfreq"], float)
         assert isinstance(sp["input_window_seconds"], float)
@@ -1140,6 +1258,24 @@ def valid_location_mask(locations: torch.Tensor) -> torch.Tensor:
     return torch.isfinite(locations).all(dim=-1, keepdim=True) & (locations != 0).any(
         dim=-1, keepdim=True
     )
+
+
+def warn_if_sfreq_differs(
+    model_name: str, sfreq: Optional[float], pretrained_sfreq: float
+) -> None:
+    """Warn when ``sfreq`` differs from the rate the released weights expect.
+
+    A randomly initialised model may run at any rate, so this warns instead of
+    raising. ``sfreq=None`` (not given) does not warn.
+    """
+    if sfreq is not None and abs(float(sfreq) - pretrained_sfreq) > 1e-6:
+        warnings.warn(
+            f"{model_name} was pretrained at {pretrained_sfreq:g} Hz, got "
+            f"sfreq={sfreq}. Resample the data to {pretrained_sfreq:g} Hz to use "
+            "the pretrained weights.",
+            UserWarning,
+            stacklevel=3,
+        )
 
 
 def channel_types_from_chs_info(

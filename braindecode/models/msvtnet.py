@@ -1,7 +1,7 @@
 # Authors: Tao Yang <sheeptao@outlook.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 #
-from typing import Type, Union
+from typing import Tuple, Type, Union
 
 import torch
 import torch.nn as nn
@@ -168,16 +168,14 @@ class MSVTNet(EEGModuleMixin, nn.Module):
             x = [_.flatten(start_dim=1, end_dim=-1) for _ in x]
         return x
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         # x with shape: (batch, n_chans, n_times)
         x = self.ensure_dim(x)
         # x with shape: (batch, 1, n_chans, n_times)
         x_list = [tsconv(x) for tsconv in self.mstsconv]
         # x_list contains 4 tensors, each of shape: [batch_size, seq_len, embed_dim]
-        branch_preds = [
-            branch(x_list[idx]) for idx, branch in enumerate(self.branch_head)
-        ]
-        # branch_preds contains 4 tensors, each of shape: [batch_size, num_classes]
         x = torch.stack(x_list, dim=2)
         x = x.view(x.size(0), x.size(1), -1)
         # x shape after concatenation: [batch_size, seq_len, total_embed_dim]
@@ -192,6 +190,9 @@ class MSVTNet(EEGModuleMixin, nn.Module):
             # ``lambda * CE(main) + (1 - lambda) * sum_i CE(branch_i)`` and lets
             # callers score on the main head.
             # x: [batch_size, n_classes]; branches: [n_branches, batch_size, n_classes]
+            branch_preds = [
+                branch(x_list[idx]) for idx, branch in enumerate(self.branch_head)
+            ]
             return x, torch.stack(branch_preds)
         return x
 

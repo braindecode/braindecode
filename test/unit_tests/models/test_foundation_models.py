@@ -28,6 +28,7 @@ except ImportError:
     HAS_SAFETENSORS = False
 
 from braindecode.models import (
+    AXON,
     DIVER1,
     LUNA,
     MAPA,
@@ -738,7 +739,7 @@ def test_labram_forward_return_flags_remain_positional(chs_info, n_outputs, n_ch
     with torch.no_grad():
         out_default = model(x)
         # Positional: return_patch_tokens=False, return_all_tokens=True.
-        # ch_names is keyword-only, so this triggers the all-tokens path
+        # ch_names comes after the return flags, so this triggers the all-tokens path
         # without forcing callers to switch to kwargs for the return flags.
         out_all = model(x, False, True)
 
@@ -1231,22 +1232,18 @@ def test_luna_variants_device_compatibility(
             assert output_cuda.device.type == "cuda"
 
 
-def test_luna_variants_different_channel_counts(
-    luna_base_config, luna_large_config, luna_huge_config
-):
-    """Test LUNA variants handle different channel counts."""
-    configs = [luna_base_config, luna_large_config, luna_huge_config]
-
+def test_luna_variants_different_channel_counts(luna_base_config):
+    """Test LUNA handles different channel counts (the variants differ only in
+    width and depth; test_luna_variants_output_consistency forwards each)."""
     for n_chans in [1, 4, 8, 16, 32, 64]:
-        for config in configs:
-            config["n_chans"] = n_chans
-            model = LUNA(**config)
-            model.eval()
+        luna_base_config["n_chans"] = n_chans
+        model = LUNA(**luna_base_config)
+        model.eval()
 
-            x = torch.randn(2, n_chans, 1000)
-            with torch.no_grad():
-                output = model(x)
-            assert output.shape == (2, 2)
+        x = torch.randn(2, n_chans, 1000)
+        with torch.no_grad():
+            output = model(x)
+        assert output.shape == (2, 2)
 
 
 def test_luna_variants_output_consistency(
@@ -1720,6 +1717,102 @@ def test_sleepfm_pretrained_loads():
         assert not torch.equal(
             stager.get_parameter(name), reference.get_parameter(name)
         )
+
+
+# ==============================================================================
+# Tests for AXON Model
+# ==============================================================================
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_axon_pretrained_loads():
+    chs_info = [{"ch_name": n, "kind": "eeg"} for n in ["Fz", "C3", "Cz", "C4", "Pz"]]
+    model = AXON.from_pretrained(
+        "MannasAI/axon-eeg", chs_info=chs_info, n_outputs=2, n_times=800
+    )
+    out = model(torch.randn(2, 5, 800))
+    assert out.shape == (2, 2)
+
+
+_AXON_SMALL = dict(embed_dim=64, depth=2, num_heads=4)
+_AXON_NAMES = ["Fp1", "Fp2", "F3", "F4", "C3", "Cz", "C4", "P3", "P4", "O1", "O2"]
+
+
+def _axon_chs(names=_AXON_NAMES):
+    info = mne.create_info(names, sfreq=200.0, ch_types="eeg")
+    info.set_montage(resolve_montage_name("standard_1005"), match_case=False)
+    return info["chs"]
+
+
+def _axon_model(chs_info, **kw):
+    torch.manual_seed(0)
+    return AXON(chs_info=chs_info, n_outputs=3, sfreq=200.0, **{**_AXON_SMALL, **kw}).eval()
+
+
+def test_axon_channel_order_does_not_matter():
+    """Electrodes are identified by position, so permuting channels together
+    with chs_info must leave the pooled embedding unchanged."""
+    chs = _axon_chs()
+    model = _axon_model(chs)
+    perm = torch.randperm(len(_AXON_NAMES))
+    permuted = _axon_model([chs[i] for i in perm])
+    permuted.load_state_dict(model.state_dict())
+    x = torch.randn(2, len(_AXON_NAMES), 1000)
+    with torch.no_grad():
+        a = model(x, return_features=True)["features"]
+        b = permuted(x[:, perm], return_features=True)["features"]
+    torch.testing.assert_close(a, b, atol=1e-5, rtol=1e-5)
+
+
+def test_axon_positions_from_channel_names():
+    """Without 'loc', standard channel names resolve to the same positions."""
+    with_loc = _axon_model(_axon_chs())
+    without_loc = _axon_model([{"ch_name": n, "kind": "eeg"} for n in _AXON_NAMES])
+    torch.testing.assert_close(
+        with_loc.encoder.channel_positions, without_loc.encoder.channel_positions
+    )
+
+
+def test_axon_unknown_channel_without_position_raises():
+    chs = [{"ch_name": "Fp1", "kind": "eeg"}, {"ch_name": "NOT_A_CHANNEL", "kind": "eeg"}]
+    with pytest.raises(ValueError, match="NOT_A_CHANNEL"):
+        _axon_model(chs)
+
+
+def test_axon_weights_load_onto_another_montage():
+    """Channel positions are not stored in the weights."""
+    source = _axon_model(_axon_chs())
+    target = _axon_model(_axon_chs(["C3", "Cz", "C4", "FC3", "CP4"]))
+    target.load_state_dict(source.state_dict(), strict=True)
+    assert "encoder.channel_positions" not in source.state_dict()
+
+
+def test_axon_input_unit_does_not_matter():
+    """Microvolts and volts (MNE's default) give the same output."""
+    model = _axon_model(_axon_chs())
+    x_uv = 20.0 * torch.randn(2, len(_AXON_NAMES), 600) + 5.0
+    with torch.no_grad():
+        torch.testing.assert_close(model(x_uv), model(x_uv * 1e-6), atol=1e-4, rtol=1e-4)
+
+
+def test_axon_block_without_band_equals_all_true_band():
+    # Windows of <= temporal_window + 1 patches run the blocks with band=None.
+    block = _axon_model(_axon_chs()).encoder.blocks[0]
+    tokens = torch.randn(2, 3, 5, _AXON_SMALL["embed_dim"])
+    band = torch.ones(5, 5, dtype=torch.bool)
+    with torch.no_grad():
+        torch.testing.assert_close(block(tokens, None), block(tokens, band))
+
+
+def test_axon_too_short_window_raises():
+    with pytest.raises(ValueError, match="patch_size"):
+        AXON(chs_info=_axon_chs(), n_outputs=2, n_times=100, **_AXON_SMALL)
+
+
+def test_axon_warns_on_non_200_hz():
+    with pytest.warns(UserWarning, match="200 Hz"):
+        AXON(chs_info=_axon_chs(), n_outputs=2, sfreq=250.0, **_AXON_SMALL)
 
 
 @pytest.fixture
@@ -2323,7 +2416,28 @@ def test_mapa_token_layout_tracks_the_montage(mapa_model):
     indices[0, 2] = 3
     changed = mapa_model._token_layout(indices, mapa_model.n_frames)
     assert changed is not first
-    assert (changed["token_region"] == 3).any()
+    assert (changed[2] == 3).any()  # token_region
+
+
+@pytest.mark.parametrize("kwargs", [{}, {"region_embed": False, "deep_sup": False}])
+def test_mapa_scripts_on_both_montage_paths(kwargs):
+    """The scripted model reads the construction-time and a foreign montage."""
+    model = MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+        **kwargs,
+    ).eval()
+    scripted = torch.jit.script(model)
+    xa = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    xb = torch.randn(2, len(MAPA_SUBJECT_B), 4096)
+    indices_b = MAPA.sensor_indices(MAPA_SUBJECT_B, ["Left-Hippocampus"] + [None] * 7)
+    with torch.no_grad():
+        torch.testing.assert_close(scripted(xa), model(xa))
+        torch.testing.assert_close(scripted(xb, indices_b), model(xb, indices_b))
 
 
 def _mapa_reference_windows():

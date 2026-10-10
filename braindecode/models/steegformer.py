@@ -11,9 +11,9 @@ from __future__ import annotations
 import json
 import warnings
 from functools import lru_cache
+from typing import Dict, Union
 
 import torch
-from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
 
@@ -521,7 +521,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             )
         return torch.arange(self.n_chans)
 
-    def forward(self, x: torch.Tensor, return_features: bool = False):
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
         """Encode an EEG batch into class logits (or encoder features).
 
         Parameters
@@ -617,7 +619,7 @@ class _TemporalPositionalEncoding(nn.Module):
             )
         # Positions 1..seq (position 0 is reserved for the CLS token) ->
         # (1, seq, 1, embed_dim) to broadcast over batch and channels.
-        return rearrange(self.pe[1 : seq + 1], "seq embed_dim -> 1 seq 1 embed_dim")
+        return self.pe[1 : seq + 1][None, :, None]
 
 
 class _ChannelPositionalEmbed(nn.Module):
@@ -646,7 +648,7 @@ class _ChannelPositionalEmbed(nn.Module):
     def forward(self, channel_indices: torch.Tensor) -> torch.Tensor:
         emb = self.embedding(channel_indices)  # (n_chans, embed_dim)
         # -> (1, 1, n_chans, embed_dim) to broadcast over batch and patches.
-        return rearrange(emb, "n_chans embed_dim -> 1 1 n_chans embed_dim")
+        return emb[None, None]
 
 
 class _ResidualAdd(nn.Module):

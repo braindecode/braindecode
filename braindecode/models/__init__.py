@@ -3,6 +3,7 @@
 from .atcnet import ATCNet
 from .attentionbasenet import AttentionBaseNet
 from .attn_sleep import AttnSleep
+from .axon import AXON
 from .barista import BaRISTA
 from .base import EEGModuleMixin
 from .bendr import BENDR
@@ -21,6 +22,7 @@ from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
 from .dgcnn import DGCNN
 from .diver1 import DIVER1
+from .eeg_clip import EEGCLIP
 from .eegconformer import EEGConformer
 from .eegdino import EEGDINO
 from .eeginception_erp import EEGInceptionERP
@@ -38,6 +40,7 @@ from .epint import EpiNT
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
+from .guetschel2026 import Guetschel2026
 from .hybrid import HybridNet
 from .ifnet import IFNet
 from .labram import Labram
@@ -75,7 +78,9 @@ from .steegformer import STEEGFormer
 from .syncnet import SyncNet
 from .tcformer import TCFormer
 from .tcn import BDTCN, TCN
+from .tfm_tokenizer import TFMTokenizer, TFMTokenizerOutput
 from .tidnet import TIDNet
+from .tmsanet import TMSANet
 from .tsinception import TSception
 from .usleep import USleep
 from .util import (
@@ -94,6 +99,7 @@ _init_models_dict()
 
 __all__ = [
     "ATCNet",
+    "AXON",
     "AttnSleep",
     "AttentionBaseNet",
     "BaRISTA",
@@ -114,6 +120,7 @@ __all__ = [
     "DIVER1",
     "BrainModule",
     "Brant",
+    "EEGCLIP",
     "EEGConformer",
     "EEGDINO",
     "EEGPT",
@@ -135,6 +142,7 @@ __all__ = [
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",
+    "Guetschel2026",
     "MetaNeuromotorHand",
     "HybridNet",
     "IFNet",
@@ -170,9 +178,12 @@ __all__ = [
     "STEEGFormer",
     "SyncNet",
     "BDTCN",
+    "TFMTokenizer",
+    "TFMTokenizerOutput",
     "TCFormer",
     "TCN",
     "TIDNet",
+    "TMSANet",
     "TSception",
     "USleep",
     "ZUNA",
