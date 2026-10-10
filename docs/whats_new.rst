@@ -28,7 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
-- :func:`braindecode.preprocessing.preprocess` with ``save_dir`` preprocesses a copy of each recording, so with ``n_jobs=1`` the input datasets are no longer loaded and held in memory until the saved copies are reloaded: peak memory on 64 TUAB recordings 1.8 GB -> 0.6 GB (it grew by ~22 MB per recording, ~65 GB for the whole corpus); saved files and returned datasets unchanged (:gh:`PRNUM` by `Bruno Aristimunha`_).
+- :func:`braindecode.preprocessing.preprocess` with ``save_dir`` preprocesses a copy of each recording, so with ``n_jobs=1`` the input datasets are no longer loaded and held in memory until the saved copies are reloaded: peak memory on 64 TUAB recordings 1.8 GB -> 0.6 GB (it grew by ~22 MB per recording, ~65 GB for the whole corpus); saved files and returned datasets unchanged (:gh:`1301` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Guetschel2026`, the encoder shared by the 58 MAE and JEPA
   checkpoints of the EEG masking-geometry study (Guetschel et al., 2026). The checkpoints
   load with ``from_pretrained`` from the original Hugging Face repositories, with backbone
