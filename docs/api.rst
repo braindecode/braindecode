@@ -163,6 +163,7 @@ interface for all EEG models and can derive variable names when needed.
      CTNet
      DGCNN
      DIVER1
+     DuIN
      Deep4Net
      DeepSleepNet
      EEGConformer

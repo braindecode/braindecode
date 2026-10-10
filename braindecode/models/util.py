@@ -594,6 +594,11 @@ models_mandatory_parameters: list[
         {"n_times": 2048, "sfreq": 2048.0},  # the pretraining rate, 1 s windows
     ),
     ("PopulationTransformer", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "DuIN",
+        ["n_chans", "n_outputs", "n_times"],
+        {"n_times": 3000, "sfreq": 1000.0},  # the downstream 3 s windows at 1 kHz
+    ),
     ("AttentionBaseNet", ["n_chans", "n_outputs", "n_times"], None),
     (
         "Labram",

@@ -40,6 +40,7 @@ The following components are licensed under the MIT License:
 
 - `braindecode/models/ctnet.py`
 - `braindecode/models/dance.py`
+- `braindecode/models/duin.py`
 - `braindecode/models/medformer.py`
 - `braindecode/models/tcformer.py`
 - `braindecode/models/ifnet.py`

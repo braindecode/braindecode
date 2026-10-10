@@ -36,6 +36,7 @@ from braindecode.models import (
     ZUNA,
     CBraMod,
     CodeBrain,
+    DuIN,
     Labram,
     PopulationTransformer,
     SleepFM,
@@ -2600,6 +2601,123 @@ def test_popt_head_is_upstream_linear_and_loads_legacy_head():
     reloaded.load_state_dict(legacy, strict=True)
     torch.testing.assert_close(reloaded.final_layer.weight, fc_weight)
     torch.testing.assert_close(reloaded.final_layer.bias, fc_bias)
+
+
+# ==============================================================================
+# Tests for DuIN
+# ==============================================================================
+
+_DUIN_SMALL = dict(
+    patch_size=20,
+    n_filters=(8, 4),
+    kernel_sizes=(5, 3),
+    strides=(5, 1),
+    n_layers=1,
+    n_heads=2,
+    head_dim=8,
+    ffn_dim=16,
+    head_hidden_dim=8,
+)
+
+
+def test_duin_defaults_are_the_released_config():
+    """A default DuIN has the tensor shapes of the released MAE checkpoints."""
+    model = DuIN(n_chans=10, n_outputs=61, n_times=3000, sfreq=1000)
+    assert (model.embed_dim, model.n_patches) == (160, 30)
+    assert model.spatial_projection.weight.shape == (16, 10)
+    convs = [block[0].weight.shape for block in model.spatial_encoder]
+    assert convs == [(128, 16, 19), (128, 128, 3), (16, 128, 3)]
+    assert len(model.encoder) == 8
+    layer = model.encoder[0]
+    assert layer.attn.queries.weight.shape == (512, 160)
+    assert layer.attn.q_norm.normalized_shape == (64,)
+    assert layer.ffn[0].weight.shape == (320, 160)
+    assert model.head_hidden[0].weight.shape == (128, 30 * 160)
+
+
+def _duin_upstream_state(n_chans, n_neural, model):
+    """Random tensors under the upstream ``duin_mae`` key names."""
+    state = {
+        "mask_emb": torch.randn(model.embed_dim),
+        "subj_block.subj_layer.W.weight": torch.randn(n_chans * n_neural, 1),
+        "subj_block.subj_layer.B.weight": torch.randn(n_neural, 1),
+        "emb_time.time_encodings": torch.randn(40, model.embed_dim),
+        "cls_block.cls_head.0.0.weight": torch.randn(2048, model.embed_dim),
+    }
+    for i, block in enumerate(model.spatial_encoder):
+        for name, value in block[0].state_dict().items():
+            state[f"tokenizer.conv_blocks.{i}.0.1.{name}"] = torch.randn_like(value)
+        for name, value in block[1].state_dict().items():
+            state[f"tokenizer.conv_blocks.{i}.1.1.{name}"] = value.clone()
+    upstream = {
+        "attn.queries": "mha.W_q.W",
+        "attn.keys": "mha.W_k.W",
+        "attn.values": "mha.W_v.W",
+        "attn.q_norm": "mha.norm_q",
+        "attn.k_norm": "mha.norm_k",
+        "attn.projection": "mha.proj.0",
+        "norm_attn": "norm_mha",
+        "ffn.0": "ffn.fc1.0",
+        "ffn.3": "ffn.fc2.0",
+        "norm_ffn": "norm_ffn",
+    }
+    for i, layer in enumerate(model.encoder):
+        prefix = f"encoder.1.xfmr_blocks.{i}"
+        state[f"{prefix}.mha.attention.scale"] = torch.tensor(0.125)
+        for ours, theirs in upstream.items():
+            for name, value in layer.get_submodule(ours).state_dict().items():
+                state[f"{prefix}.{theirs}.{name}"] = torch.randn_like(value)
+    return state
+
+
+def test_duin_loads_upstream_checkpoint_keys():
+    """Upstream keys load onto the encoder; only the head stays untrained."""
+    model = DuIN(n_chans=3, n_outputs=2, n_times=60, **_DUIN_SMALL).eval()
+    n_neural = model.spatial_projection.out_features
+    state = _duin_upstream_state(3, n_neural, model)
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    assert not unexpected
+    assert all(k.startswith(("head_hidden", "final_layer")) for k in missing)
+    torch.testing.assert_close(
+        model.encoder[0].attn.queries.weight,
+        state["encoder.1.xfmr_blocks.0.mha.W_q.W.weight"],
+    )
+    # The upstream subject layer computes X @ W.reshape(n_chans, n_neural) + B.
+    x = torch.randn(4, 7, 3)
+    w = state["subj_block.subj_layer.W.weight"].reshape(3, n_neural)
+    expected = x @ w + state["subj_block.subj_layer.B.weight"][:, 0]
+    torch.testing.assert_close(model.spatial_projection(x), expected)
+    # A multi-subject subject layer is refused rather than cut to subject 0.
+    state["subj_block.subj_layer.W.weight"] = torch.randn(3 * n_neural, 2)
+    with pytest.raises(ValueError, match="single-subject"):
+        model.load_state_dict(state, strict=False)
+
+
+def test_duin_patch_tokens_are_time_major():
+    """Patch embeddings flatten the last convolution as (frames, filters)."""
+    model = DuIN(n_chans=3, n_outputs=2, n_times=60, **_DUIN_SMALL)
+    conv_out = torch.randn(2 * model.n_patches, 4, 4)  # (batch*patches, filters, frames)
+    expected = conv_out.transpose(1, 2).reshape(2, model.n_patches, -1)
+    torch.testing.assert_close(model.to_tokens(conv_out), expected)
+
+
+def test_duin_linear_head():
+    model = DuIN(n_chans=3, n_outputs=2, n_times=60, **{**_DUIN_SMALL, "head_hidden_dim": 0})
+    assert isinstance(model.head_hidden, nn.Identity)
+    assert model.final_layer.in_features == model.n_patches * model.embed_dim
+
+
+def test_duin_rejects_invalid_geometry():
+    with pytest.raises(ValueError, match="divisible"):
+        DuIN(n_chans=3, n_outputs=2, n_times=70, **_DUIN_SMALL)
+    model = DuIN(n_chans=3, n_outputs=2, n_times=60, **_DUIN_SMALL)
+    with pytest.raises(ValueError, match="time samples"):
+        model(torch.randn(1, 3, 40))
+
+
+def test_duin_warns_off_the_pretraining_rate():
+    with pytest.warns(UserWarning, match="1000 Hz"):
+        DuIN(n_chans=3, n_outputs=2, n_times=60, sfreq=250, **_DUIN_SMALL)
 
 
 _TEN_TWENTY = [

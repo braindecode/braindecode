@@ -851,6 +851,12 @@ class MultiHeadAttention(nn.Module):
     scale : float, optional
         Multiplier applied to attention scores before softmax. When ``None``,
         PyTorch's default ``head_dim ** -0.5`` is used.
+    head_dim : int, optional
+        Width of each head. When ``None``, ``emb_size // num_heads``; otherwise
+        the query/key/value projections are ``num_heads * head_dim`` wide.
+    qk_norm : bool, optional
+        Apply a :class:`~torch.nn.LayerNorm` over ``head_dim`` to the queries
+        and keys of each head (as in LaBraM and Du-IN). Default ``False``.
 
     Examples
     --------
@@ -863,21 +869,34 @@ class MultiHeadAttention(nn.Module):
     torch.Size([2, 10, 32])
     """
 
-    def __init__(self, emb_size, num_heads, dropout=0.0, scale: float | None = None):
+    def __init__(
+        self,
+        emb_size,
+        num_heads,
+        dropout=0.0,
+        scale: float | None = None,
+        head_dim: int | None = None,
+        qk_norm: bool = False,
+    ):
         super().__init__()
-        if emb_size % num_heads != 0:
-            raise ValueError(
-                f"emb_size ({emb_size}) must be divisible by num_heads ({num_heads})."
-            )
+        if head_dim is None:
+            if emb_size % num_heads != 0:
+                raise ValueError(
+                    f"emb_size ({emb_size}) must be divisible by num_heads ({num_heads})."
+                )
+            head_dim = emb_size // num_heads
+        inner_dim = num_heads * head_dim
         self.emb_size = emb_size
         self.num_heads = num_heads
-        self.head_dim = emb_size // num_heads
+        self.head_dim = head_dim
         self.scale = scale
-        self.keys = nn.Linear(emb_size, emb_size)
-        self.queries = nn.Linear(emb_size, emb_size)
-        self.values = nn.Linear(emb_size, emb_size)
+        self.keys = nn.Linear(emb_size, inner_dim)
+        self.queries = nn.Linear(emb_size, inner_dim)
+        self.values = nn.Linear(emb_size, inner_dim)
+        self.q_norm = nn.LayerNorm(head_dim) if qk_norm else None
+        self.k_norm = nn.LayerNorm(head_dim) if qk_norm else None
         self.att_drop = dropout
-        self.projection = nn.Linear(emb_size, emb_size)
+        self.projection = nn.Linear(inner_dim, emb_size)
 
         self.rearrange_stack = Rearrange(
             "batch seq (heads head_dim) -> batch heads seq head_dim",
@@ -903,6 +922,10 @@ class MultiHeadAttention(nn.Module):
         queries = self.rearrange_stack(self.queries(x))
         keys = self.rearrange_stack(self.keys(x))
         values = self.rearrange_stack(self.values(x))
+        if self.q_norm is not None:
+            queries = self.q_norm(queries)
+        if self.k_norm is not None:
+            keys = self.k_norm(keys)
 
         dp = self.att_drop if self.training else 0.0
         if self.scale is not None:
