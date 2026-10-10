@@ -314,6 +314,11 @@ class CSBrain(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
+        n_times = self._n_times_or_none()
+        if n_times is not None and n_times % patch_size:
+            raise ValueError(
+                f"n_times ({n_times}) must be a multiple of patch_size ({patch_size})."
+            )
 
         self.rearrange = Rearrange(
             "batch n_chans (n_patch patch_size) -> batch n_chans n_patch patch_size",
