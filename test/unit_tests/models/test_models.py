@@ -97,6 +97,7 @@ from braindecode.models.eegpt import (
     _PatchEmbed,
     _rotate_half,
 )
+from braindecode.models.gcnsnet import _GraphCoarsening
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.neurorvq_tokenizer import _EMAVectorQuantizer
 from braindecode.models.usleep import _DecoderBlock
@@ -1849,6 +1850,7 @@ def test_gcnsnet_dummy(n_times, n_chans, n_outputs):
 
     assert output.shape == (batch_size, n_outputs)
 
+
 def test_gcnsnet_infer_model_kwargs():
     X = torch.randn(5, 64, 100)
 
@@ -1872,6 +1874,86 @@ def test_gcnsnet_adjacency():
     torch.testing.assert_close(adjacency, adjacency.T)
     torch.testing.assert_close(adjacency.diag(), torch.zeros(64))
     assert torch.all(adjacency >= 0)
+
+
+@pytest.mark.parametrize(
+    "node_order, expected_clusters, expected_adjacency",
+    [
+        pytest.param(
+            [0, 1, 2, 3, 4],
+            [0, 1, 0, 1, 2],
+            [
+                [1.6, 0.9, 0.0],
+                [0.9, 1.6, 0.7],
+                [0.0, 0.7, 0.0],
+            ],
+            id="forward-order",
+        ),
+        pytest.param(
+            [4, 3, 2, 1, 0],
+            [2, 0, 2, 1, 0],
+            [
+                [1.4, 0.8, 0.9],
+                [0.8, 0.0, 0.0],
+                [0.9, 0.0, 1.6],
+            ],
+            id="reverse-order",
+        ),
+    ],
+)
+def test_gcnsnet_graph_coarsening_one_level(
+    node_order,
+    expected_clusters,
+    expected_adjacency,
+):
+    adjacency = torch.tensor(
+        [
+            [0.0, 0.9, 0.8, 0.0, 0.0],
+            [0.9, 0.0, 0.0, 0.8, 0.7],
+            [0.8, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.8, 0.0, 0.0, 0.0],
+            [0.0, 0.7, 0.0, 0.0, 0.0],
+        ]
+    )
+    node_order = torch.tensor(node_order)
+    weights = adjacency.sum(dim=0) - adjacency.diagonal()
+
+    coarsening = _GraphCoarsening()
+    clusters = coarsening._cluster_one_level(
+        adjacency,
+        node_order,
+        weights,
+    )
+
+    torch.testing.assert_close(
+        clusters,
+        torch.tensor(expected_clusters),
+    )
+
+    coarsened_adjacency = coarsening._coarsen_adjacency(
+        adjacency,
+        clusters,
+    )
+    torch.testing.assert_close(
+        coarsened_adjacency,
+        torch.tensor(expected_adjacency),
+    )
+
+
+def test_gcnsnet_compute_perm():
+    clusters = [
+        torch.tensor([4, 1, 1, 2, 2, 3, 0, 0, 3]),
+        torch.tensor([2, 1, 0, 1, 0]),
+    ]
+
+    permutations = _GraphCoarsening()._compute_perm(clusters)
+
+    expected_permutations = [
+        [3, 4, 0, 9, 1, 2, 5, 8, 6, 7, 10, 11],
+        [2, 4, 1, 3, 0, 5],
+        [0, 1, 2],
+    ]
+    assert permutations == expected_permutations
 
 
 @pytest.mark.parametrize(

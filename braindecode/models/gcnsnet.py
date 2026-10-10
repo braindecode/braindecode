@@ -7,7 +7,6 @@ import torch
 import torch.nn.functional as F
 from scipy.sparse.csgraph import laplacian
 from torch import nn
-from torch_geometric.nn.pool import graclus
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.dgcnn import _ChebyshevGraphConvolution
@@ -20,20 +19,15 @@ class _GraphCoarsening:
     """
 
     def __call__(self, adjacency, levels):
-        adjacencies = [adjacency]
-        clusters = []
-
-        for _ in range(levels):
-            cluster = self._cluster(adjacencies[-1])
-            clusters.append(cluster)
-
-            coarsened_adjacency = self._coarsen_adjacency(
-                adjacencies[-1],
-                cluster,
-            )
-            adjacencies.append(coarsened_adjacency)
+        adjacencies, clusters = self._metis(
+            adjacency,
+            levels,
+        )
 
         permutations = self._compute_perm(clusters)
+
+        for adjacency_matrix in adjacencies:
+            adjacency_matrix.fill_diagonal_(0)
 
         for i in range(levels):
             adjacencies[i] = self._perm_adjacency(
@@ -43,24 +37,81 @@ class _GraphCoarsening:
 
         return adjacencies, permutations[0] if levels > 0 else None
 
-    def _cluster(self, adjacency):
-        row, col = adjacency.nonzero(as_tuple=True)
-        edge_index = torch.stack([row, col])
-        edge_weight = adjacency[row, col]
+    @staticmethod
+    def _cluster_one_level(adjacency, node_order, weights):
+        n_nodes = adjacency.shape[0]
 
-        clusters = graclus(
-            edge_index,
-            weight=edge_weight,
-            num_nodes=adjacency.shape[0],
+        marked = torch.zeros(
+            n_nodes,
+            dtype=torch.bool,
+            device=adjacency.device,
+        )
+        clusters = torch.empty(
+            n_nodes,
+            dtype=torch.long,
+            device=adjacency.device,
         )
 
-        _, clusters = torch.unique(
-            clusters,
-            sorted=True,
-            return_inverse=True,
-        )
+        cluster_id = 0
+
+        for node in node_order.tolist():
+            if marked[node]:
+                continue
+
+            marked[node] = True
+            clusters[node] = cluster_id
+
+            neighbors = torch.nonzero(
+                adjacency[node],
+                as_tuple=True,
+            )[0]
+            neighbors = neighbors[~marked[neighbors]]
+
+            if neighbors.numel() > 0:
+                scores = adjacency[node, neighbors] * (
+                    1.0 / weights[node] + 1.0 / weights[neighbors]
+                )
+
+                best_index = torch.argmax(scores)
+
+                if scores[best_index] > 0:
+                    best_neighbor = neighbors[best_index]
+                    clusters[best_neighbor] = cluster_id
+                    marked[best_neighbor] = True
+
+            cluster_id += 1
 
         return clusters
+
+    def _metis(self, adjacency, levels):
+        adjacencies = [adjacency]
+        clusters = []
+
+        n_nodes = adjacency.shape[0]
+        node_order = torch.randperm(
+            n_nodes,
+            device=adjacency.device,
+        )
+        degree = adjacency.sum(dim=0) - adjacency.diagonal()
+
+        for _ in range(levels):
+            cluster = self._cluster_one_level(
+                adjacency,
+                node_order,
+                degree,
+            )
+            clusters.append(cluster)
+
+            adjacency = self._coarsen_adjacency(
+                adjacency,
+                cluster,
+            )
+            adjacencies.append(adjacency)
+
+            degree = adjacency.sum(dim=0)
+            node_order = torch.argsort(degree)
+
+        return adjacencies, clusters
 
     def _coarsen_adjacency(self, adjacency, clusters):
         n_clusters = int(clusters.max().item()) + 1
@@ -71,7 +122,6 @@ class _GraphCoarsening:
         ).to(adjacency.dtype)
 
         coarsened_adjacency = membership.T @ adjacency @ membership
-        coarsened_adjacency.fill_diagonal_(0)
 
         return coarsened_adjacency
 
