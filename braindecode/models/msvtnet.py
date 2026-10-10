@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, _too_short_input_error
 
 
 class MSVTNet(EEGModuleMixin, nn.Module):
@@ -152,7 +152,10 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         self, cat: bool = True
     ) -> Union[torch.Tensor, list[torch.Tensor]]:
         x = torch.randn(1, 1, self.n_chans, self.n_times)
-        x = [tsconv(x) for tsconv in self.mstsconv]
+        try:
+            x = [tsconv(x) for tsconv in self.mstsconv]
+        except RuntimeError as exc:
+            raise _too_short_input_error(exc, self.input_shape) or exc
         if cat:
             x = torch.cat(x, dim=2)
         return x
