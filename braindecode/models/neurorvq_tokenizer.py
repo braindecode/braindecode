@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from typing import List, Tuple
+
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
@@ -33,26 +35,29 @@ class _EMAEmbedding(nn.Module):
         self.embed_avg = nn.Parameter(weights.clone(), requires_grad=False)
         self.register_buffer("initted", torch.tensor([0.0]))
 
-    @torch.no_grad()
     def initialize(self, vectors: Tensor) -> None:
         if bool(self.initted.item()):
             return
-        n_codes, n_samples = self.weight.shape[0], vectors.shape[0]
-        if n_samples >= n_codes:
-            indices = torch.randperm(n_samples, device=vectors.device)[:n_codes]
-        else:
-            indices = torch.randint(n_samples, (n_codes,), device=vectors.device)
-        means = vectors[indices]
-        for _ in range(10):
-            assignments = (vectors @ means.T).argmax(dim=-1)
-            counts = torch.bincount(assignments, minlength=n_codes)
-            sums = torch.zeros_like(means)
-            sums.index_add_(0, assignments, vectors)
-            updated = F.normalize(sums / counts.clamp_min(1).unsqueeze(-1), dim=-1)
-            means = torch.where(counts[:, None] == 0, means, updated)
-        self.weight.copy_(means)
-        self.cluster_size.copy_(counts)
-        self.initted.fill_(True)
+        # ``with``, not ``@torch.no_grad()``: TorchScript resolves a decorated
+        # method's names in torch's wrapper module.
+        with torch.no_grad():
+            n_codes, n_samples = self.weight.shape[0], vectors.shape[0]
+            if n_samples >= n_codes:
+                indices = torch.randperm(n_samples, device=vectors.device)[:n_codes]
+            else:
+                indices = torch.randint(n_samples, (n_codes,), device=vectors.device)
+            means = vectors[indices]
+            counts = torch.zeros((n_codes,), dtype=torch.long, device=vectors.device)
+            for _ in range(10):
+                assignments = (vectors @ means.T).argmax(dim=-1)
+                counts = torch.bincount(assignments, minlength=n_codes)
+                sums = torch.zeros_like(means)
+                sums.index_add_(0, assignments, vectors)
+                updated = F.normalize(sums / counts.clamp_min(1).unsqueeze(-1), dim=-1)
+                means = torch.where(counts[:, None] == 0, means, updated)
+            self.weight.copy_(means)
+            self.cluster_size.copy_(counts)
+            self.initted.fill_(1.0)
 
 
 class _EMAVectorQuantizer(nn.Module):
@@ -90,12 +95,14 @@ class _EMAVectorQuantizer(nn.Module):
                 weight = self.embedding.weight
                 encodings = F.one_hot(indices, weight.shape[0]).to(z.dtype)
                 counts = encodings.sum(0)
-                _all_reduce_sum(counts)
+                if not torch.jit.is_scripting():
+                    _all_reduce_sum(counts)
                 self.cluster_size.mul_(self.decay).add_(counts, alpha=1 - self.decay)
                 if self.training:
                     safe_counts = counts.masked_fill(counts == 0, 1.0)
                     embed_sum = vectors.T @ encodings
-                    _all_reduce_sum(embed_sum)
+                    if not torch.jit.is_scripting():
+                        _all_reduce_sum(embed_sum)
                     means = F.normalize(
                         (embed_sum / safe_counts.unsqueeze(0)).T, dim=-1
                     )
@@ -200,7 +207,7 @@ class _BranchTransformer(nn.Module):
 
     def embeddings(self, time_indices: Tensor, spatial_indices: Tensor):
         """Spatial (class-token slot 0 prepended) and temporal embeddings."""
-        spatial = self.pos_embed[F.pad(spatial_indices, (1, 0), value=0)]
+        spatial = self.pos_embed[F.pad(spatial_indices, (1, 0), value=0.0)]
         return spatial, self.time_embed[time_indices]
 
     def forward(
@@ -215,7 +222,16 @@ class _BranchTransformer(nn.Module):
         tokens = self.pos_drop(tokens)
         for block in self.blocks:
             tokens = block(tokens)
-        return getattr(self, f"fc_norm_{branch}")(tokens[:, 1:])
+        # Unrolled (no getattr with a computed name) so TorchScript compiles it.
+        if branch == 1:
+            return self.fc_norm_1(tokens[:, 1:])
+        if branch == 2:
+            return self.fc_norm_2(tokens[:, 1:])
+        if branch == 3:
+            return self.fc_norm_3(tokens[:, 1:])
+        if branch == 4:
+            return self.fc_norm_4(tokens[:, 1:])
+        raise ValueError(f"branch must be 1, 2, 3 or 4, got {branch}.")
 
 
 class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
@@ -490,36 +506,51 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     def _patches(self, x: Tensor) -> Tensor:
         """Validate ``(batch, n_chans, n_times)`` input and split it into patches."""
-        if x.ndim != 3 or tuple(x.shape[1:]) != (self.n_chans, self.n_times):
+        if x.ndim != 3 or x.shape[1] != self.n_chans or x.shape[2] != self.n_times:
             raise ValueError(
-                f"Expected input shape (batch, {self.n_chans}, {self.n_times}), "
-                f"got {tuple(x.shape)}."
+                "Expected input shape (batch, {}, {}), got {}.".format(
+                    self.n_chans, self.n_times, list(x.shape)
+                )
             )
         return x.reshape(x.shape[0], self.n_chans, self.num_patches, self.patch_size)
 
-    def _branch_latents(self, patches: Tensor, time: Tensor, spatial: Tensor):
+    def _branch_latents(
+        self, patches: Tensor, time: Tensor, spatial: Tensor
+    ) -> List[Tensor]:
         """Project the four encoder scales to ``(batch, code_dim, n_chans, n_patches)``."""
         batch, channels, n_patches, _ = patches.shape
-        branches = self.encoder.patch_embed(patches)
+        b1, b2, b3, b4 = self.encoder.patch_embed(patches)
         spatial, temporal = self.encoder.embeddings(time, spatial)
-        features = [
-            self.encoder(branch, spatial, temporal, i)
-            for i, branch in enumerate(branches, start=1)
+        # The four scales unrolled (no getattr with a computed name) for TorchScript.
+        f1 = self.encoder(b1, spatial, temporal, 1)
+        f2 = self.encoder(b2, spatial, temporal, 2)
+        f3 = self.encoder(b3, spatial, temporal, 3)
+        f4 = self.encoder(b4, spatial, temporal, 4)
+        latents = [
+            self.encode_task_layer_1(f1),
+            self.encode_task_layer_2(f2),
+            self.encode_task_layer_3(f3),
+            self.encode_task_layer_4(f4),
         ]
-        latents = []
-        for i, feature in enumerate(features, start=1):
-            latent = getattr(self, f"encode_task_layer_{i}")(feature)
-            latent = latent.reshape(batch, channels, n_patches, self.code_dim)
-            latents.append(latent.permute(0, 3, 1, 2).contiguous())
-        return latents
+        return [
+            latent.reshape(batch, channels, n_patches, self.code_dim)
+            .permute(0, 3, 1, 2)
+            .contiguous()
+            for latent in latents
+        ]
 
-    def _encode(self, x: Tensor, time: Tensor, spatial: Tensor):
-        quantized, codes = [], []
-        for i, latent in enumerate(self._branch_latents(x, time, spatial), start=1):
-            q, branch_codes = getattr(self, f"quantize_{i}")(latent)
-            quantized.append(q)
-            codes.append(branch_codes.reshape(self.num_quantizers, x.shape[0], -1))
-        return quantized, torch.stack(codes)
+    def _encode(
+        self, x: Tensor, time: Tensor, spatial: Tensor
+    ) -> Tuple[List[Tensor], Tensor]:
+        l1, l2, l3, l4 = self._branch_latents(x, time, spatial)
+        q1, c1 = self.quantize_1(l1)
+        q2, c2 = self.quantize_2(l2)
+        q3, c3 = self.quantize_3(l3)
+        q4, c4 = self.quantize_4(l4)
+        codes = [
+            c.reshape(self.num_quantizers, x.shape[0], -1) for c in [c1, c2, c3, c4]
+        ]
+        return [q1, q2, q3, q4], torch.stack(codes)
 
     @torch.no_grad()
     def tokenize(self, x: Tensor) -> Tensor:
@@ -552,11 +583,21 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         amplitude = torch.log1p(spectrum.abs()).to(patches)
         amplitude, amp_mean, amp_std = self._standardize(amplitude)
         quantized, _ = self._encode(patches, time, spatial)
+        q1, q2, q3, q4 = quantized
+        # The four scales unrolled (no getattr with a computed name) for TorchScript.
         features = []
-        for i, q in enumerate(quantized, start=1):
-            tokens = getattr(self.decoder, f"patch_embed_{i}")(q)
-            embeddings = self.decoder.embeddings(time, spatial)
-            features.append(self.decoder(tokens, *embeddings, i))
+        tokens = self.decoder.patch_embed_1(q1)
+        spatial_1, temporal_1 = self.decoder.embeddings(time, spatial)
+        features.append(self.decoder(tokens, spatial_1, temporal_1, 1))
+        tokens = self.decoder.patch_embed_2(q2)
+        spatial_2, temporal_2 = self.decoder.embeddings(time, spatial)
+        features.append(self.decoder(tokens, spatial_2, temporal_2, 2))
+        tokens = self.decoder.patch_embed_3(q3)
+        spatial_3, temporal_3 = self.decoder.embeddings(time, spatial)
+        features.append(self.decoder(tokens, spatial_3, temporal_3, 3))
+        tokens = self.decoder.patch_embed_4(q4)
+        spatial_4, temporal_4 = self.decoder.embeddings(time, spatial)
+        features.append(self.decoder(tokens, spatial_4, temporal_4, 4))
         decoded = torch.cat(features, dim=-1)
         rec_amp = self.decode_task_layer_amplitude(decoded)
         rec_sin = self.decode_task_layer_angle_sin(decoded).reshape_as(patches)

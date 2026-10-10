@@ -1,12 +1,13 @@
+from typing import Dict, Optional, Tuple, Union
 from warnings import warn
 
 import torch
 import torch.nn as nn
-from linear_attention_transformer import LinearAttentionTransformer
 
 from braindecode.functional import sinusoidal_positional_encoding, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
+from braindecode.modules.linear_attention import LinearAttentionTransformer
 
 # -----------------------------------------------------------------------------
 # Canonical BIOT channel order: the 18-channel TCP bipolar montage used by
@@ -230,7 +231,13 @@ class BIOT(EEGModuleMixin, nn.Module):
             activation=self._head_activation,
         )
 
-    def forward(self, x, return_features=False):
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[
+        torch.Tensor,
+        Tuple[torch.Tensor, torch.Tensor],
+        Dict[str, Optional[torch.Tensor]],
+    ]:
         """
         Pass the input through the BIOT encoder, and then through the
         classification head.
@@ -255,7 +262,11 @@ class BIOT(EEGModuleMixin, nn.Module):
         emb = self.encoder(x)
 
         if return_features:
-            return {"features": emb, "cls_token": None}
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": emb,
+                "cls_token": None,
+            }
+            return out
 
         x = self.final_layer(emb)
 
@@ -454,9 +465,7 @@ class _BIOTEncoder(nn.Module):
             dim=emb_size,
             heads=num_heads,
             depth=n_layers,
-            max_seq_len=max_seq_len,
             attn_layer_dropout=attn_layer_dropout,
-            attn_dropout=attn_dropout,
         )
         self.positional_encoding = _PositionalEncoding(emb_size, drop_prob=drop_prob)
 
@@ -497,7 +506,7 @@ class _BIOTEncoder(nn.Module):
         )
         return torch.abs(spectral).to(sample)
 
-    def forward(self, x, n_channel_offset=0, perturb=False):
+    def forward(self, x, n_channel_offset: int = 0, perturb: bool = False):
         """
         Forward pass of the BIOT encoder.
 
@@ -534,10 +543,15 @@ class _BIOTEncoder(nn.Module):
         emb: Tensor
             (batch_size, emb_size)
         """
+        batch_size, n_chans, n_times = x.shape
+        # One spectrogram for all channels, channel-major so that each
+        # channel's (batch, freq, ts) block is contiguous
+        spec = self.stft(x.transpose(0, 1).reshape(n_chans * batch_size, 1, n_times))
+        spec = spec.unflatten(0, [n_chans, batch_size])
         emb_seq = []
-        for i in range(x.shape[1]):
+        for i in range(n_chans):
             # Getting the spectrogram
-            channel_spec_emb = self.stft(x[:, i : i + 1, :])
+            channel_spec_emb = spec[i]
             # Linear layer to learn some representation over the frequency domain
             # with permutation
             channel_spec_emb = self.patch_embedding(channel_spec_emb)
@@ -569,7 +583,7 @@ class _BIOTEncoder(nn.Module):
             # of time steps.
             if perturb:
                 ts = channel_emb.shape[1]
-                ts_new = torch.randint(low=ts // 2, high=ts, size=(1,)).item()
+                ts_new = int(torch.randint(low=ts // 2, high=ts, size=(1,)).item())
                 selected_ts = torch.randperm(ts)[:ts_new]
                 channel_emb = channel_emb[:, selected_ts]
             emb_seq.append(channel_emb)

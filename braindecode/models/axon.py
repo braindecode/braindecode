@@ -363,8 +363,11 @@ class _AXONEncoder(nn.Module):
         position = spatial.unsqueeze(1) + temporal.unsqueeze(0)  # (C, P, D)
         tokens = tokens + position.unsqueeze(0).to(tokens.dtype)
 
-        index = torch.arange(n_patches, device=tokens.device)
-        band = (index.unsqueeze(0) - index.unsqueeze(1)).abs() <= self.temporal_window
+        # Up to temporal_window + 1 patches the band covers every pair: no mask.
+        band: Optional[torch.Tensor] = None
+        if n_patches > self.temporal_window + 1:
+            index = torch.arange(n_patches, device=tokens.device)
+            band = (index[None] - index[:, None]).abs() <= self.temporal_window
 
         for block in self.blocks:
             tokens = block(tokens, band)
@@ -464,19 +467,23 @@ class _AxisAttention(nn.Module):
         )
         return attended.transpose(1, 2).reshape(n_seq, length, -1)
 
-    def forward(self, x: torch.Tensor, band: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, band: Optional[torch.Tensor]) -> torch.Tensor:
         batch, n_chans, n_patches, dim = x.shape
         axis_weights = self.axis_gate(x)  # (B, C, P, 2)
         scale_weights = self.scale_gate(x)  # (B, C, P, 2)
 
-        # Temporal path: one sequence of P tokens per electrode.
+        # Temporal path: one sequence of P tokens per electrode. Without a band
+        # the restricted branch is the full one; attend once unless the two
+        # branches draw their own attention dropout.
         per_channel = self.temporal_qkv(x.reshape(batch * n_chans, n_patches, dim))
         restricted = self.temporal_out(self._attend(per_channel, band)).reshape(
             batch, n_chans, n_patches, dim
         )
-        full = self.temporal_out(self._attend(per_channel, None)).reshape(
-            batch, n_chans, n_patches, dim
-        )
+        full = restricted
+        if band is not None or (self.training and self.att_drop_prob > 0):
+            full = self.temporal_out(self._attend(per_channel, None)).reshape(
+                batch, n_chans, n_patches, dim
+            )
         temporal = scale_weights[..., 0:1] * restricted + scale_weights[..., 1:2] * full
 
         # Spatial path: one sequence of C tokens per time step.
@@ -511,6 +518,6 @@ class _AXONBlock(nn.Module):
         self.norm_ffn = nn.RMSNorm(embed_dim, eps=1e-8)
         self.ffn = _GatedFeedForward(embed_dim, ffn_expansion)
 
-    def forward(self, x: torch.Tensor, band: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, band: Optional[torch.Tensor]) -> torch.Tensor:
         x = x + self.attn(self.norm_attn(x), band)
         return x + self.ffn(self.norm_ffn(x))

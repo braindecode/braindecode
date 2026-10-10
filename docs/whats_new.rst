@@ -35,13 +35,33 @@ Enhancements
   :meth:`~braindecode.models.Guetschel2026.hub_repo_id` builds their names. The head is a
   flatten and a linear layer, with an optional fixed Gaussian random projection in between
   (``random_projection``, as in the OpenEEGBench probe) (:gh:`1260` by `Pierre Guetschel`_).
+- :class:`braindecode.models.MetaNeuromotorHand` rotates and half-vectorizes the MPF matrices with one precomputed ``index_select`` instead of three rolls, a stack and a permute copy: CPU train step about 2 % faster, Gaudi neutral; outputs, gradients and state dict unchanged bit for bit (:gh:`1292` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.CodeBrain` skips the attention scores in eval mode on CPU at the default ``swa_window_size=1``, where the window keeps only the diagonal and the attention reduces to its value projection: CPU eval forward 1.25x faster at 19 x 6000 (batch 32); training unchanged; outputs unchanged bit for bit (:gh:`1293` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.LUNA` computes its rotary self-attention with :func:`torch.nn.functional.scaled_dot_product_attention`: CPU forward 1-4 % faster, train step neutral to 2.4 % faster; outputs and gradients change by float rounding only, within master's own float32-vs-float64 difference, also with the released ``PulpBio/LUNA`` weights (:gh:`1282` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.DANCE` computes the Perceiver and decoder attention with :func:`torch.nn.functional.scaled_dot_product_attention` instead of an explicit softmax: eval forward 0.7 % faster on CPU and 1.4 % on Gaudi (22 channels, 32 s, batch 32), train step unchanged; outputs and gradients change by float rounding only, within master's own float32-vs-float64 difference (:gh:`1291` by `Bruno Aristimunha`_).
+- :func:`braindecode.functional.prefer_fft_conv` picks the FFT for a float32 convolution only if also ``in_channels * kernel_size >= 120``: with one or two input channels the direct convolution is up to 2.5x cheaper on CPU; :class:`braindecode.models.EEGInceptionMI` decisions and outputs unchanged (:gh:`1283` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.BIOT` computes the spectrograms of all channels with one STFT instead of one per channel: Gaudi forward 1.6x and train step 1.35x faster (22 channels, batch 32), CPU registry forward 3 % faster; outputs and gradients unchanged bit for bit, also with the released weights (:gh:`1284` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.MVPFormer` builds its attention masks and channel-shift index once per forward instead of in every layer: forward 19-25 % faster on Gaudi and 2-12 % on CPU, outputs and gradients unchanged bit for bit (:gh:`1280` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.AttnSleep`, :class:`braindecode.models.Brant`, :class:`braindecode.models.MSVTNet` and :class:`braindecode.models.PBT` no longer compute tensors their forward discards (AttnSleep's first attention product, Brant's reconstruction projection, MSVTNet's branch heads without ``return_features``, PBT's class-token index); outputs and gradients unchanged bit for bit (:gh:`1281` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.CSBrain` copies each region's mean feature into its electrodes with one slice assignment per region instead of one per electrode: train step about 10 % and forward 7 % faster on Gaudi (22 channels, batch 32), unchanged on CPU; outputs are unchanged and gradients change by float rounding only, within master's own float32-vs-float64 difference (:gh:`1285` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.AXON` runs one temporal attention per block instead of two when the window has at most ``temporal_window + 1`` patches (every window up to 5.5 s at the defaults), where the restricted and full temporal branches are identical: train step 7 % faster on CPU and 12 % on Gaudi (22 channels, 5 s, batch 32); outputs are unchanged and gradients change by float rounding only, within master's own float32-vs-float64 difference (:gh:`1286` by `Bruno Aristimunha`_).
+- :class:`braindecode.modules.FilterBankLayer` broadcasts each FIR band filter over the channels instead of repeating it, so its FFT is computed once per band: :class:`braindecode.models.FBCNet`, :class:`braindecode.models.FBMSNet`, :class:`braindecode.models.FBLightConvNet` and :class:`braindecode.models.IFNet` steps 1-10 % faster on CPU and 8-29 % on Gaudi at batch 2, 0-3 % at batch 32; outputs and gradients change by float rounding only at 22 channels, within master's own float32-vs-float64 difference, and not at all at 3 channels (:gh:`1278` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.MEDFormer` adds its channel embedding once instead of once per granularity, and runs its layer norms and kernel-1 feed-forward convolutions once on all granularities (dropout stays per granularity, same masks): train step 3-7 % faster on CPU and 6-7 % on Gaudi; outputs change by float rounding only (:gh:`1288` by `Bruno Aristimunha`_).
+- :func:`braindecode.functional.plv_time` copies the real and imaginary phasor parts once instead of in every matmul for each batch matrix: :class:`braindecode.models.EEGMiner` CPU forward 1.5x and train step 1.4x faster (22 channels, batch 32, 2 threads); outputs and gradients change by float rounding only, within master's own float32-vs-float64 difference (:gh:`1277` by `Bruno Aristimunha`_).
+- ``braindecode.modules.EMACodebook`` builds its one-hot code matrix only in training, where the EMA update reads it: eval forward of :class:`braindecode.models.TFMTokenizer` 5 % faster on CPU (22 channels, batch 32; 208 MB less temporary memory) and of :class:`braindecode.models.BrainTokenizer` / :class:`braindecode.models.BrainOmni` 0.5-2 %; outputs, gradients, buffers and token ids unchanged bit for bit (:gh:`1290` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.EEGInceptionMI` runs its max pooling in channels-last layout and pads even kernels once per inception module: CPU forward 1.1-1.25x faster, outputs, gradients and state dict unchanged (:gh:`1267` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.EEGInceptionMI` computes its temporal convolutions with an FFT on CPU when the input is float16/bfloat16 or ``batch_size * largest_kernel >= 600`` (new ``fft_conv`` argument; ``None`` by default, ``False`` keeps the direct convolution bit for bit): float32 CPU steps 1.5-8.8x faster from batch 8 (2 threads), float16/bfloat16 17-117x; outputs change by float rounding (<= 3.6e-7 relative) (:gh:`1268` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.EEGInceptionMI` takes its FFT convolution from the new :func:`braindecode.functional.fft_conv1d` (automatic choice in :func:`braindecode.functional.prefer_fft_conv`) and uses plain ``padding="same"`` convolutions again: direct-path outputs, gradients and state dict unchanged bit for bit, CPU steps 0.98-1.45x master's (FFT path faster from batch 8) (:gh:`1274` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.TFMTokenizer`, the time-frequency motif tokenizer
   for single-channel EEG of Pradeepkumar et al. (ICLR 2026) (:gh:`1202` by
   `lindicaphxag-tech <https://github.com/lindicaphxag-tech>`_).
 - Add :class:`braindecode.models.EEGCLIP`, a dual encoder that aligns EEG
   windows and text descriptions with a symmetric contrastive objective; the
   text encoder is optional and user-supplied (:gh:`1200` by `lindicaphxag-tech`_).
+- Add :class:`braindecode.augmentation.TrivialAugment`, which applies to each
+  example one transform and strength sampled from a label-preserving pool; also
+  list :class:`braindecode.augmentation.BandRotation` in the API docs
+  (:gh:`1255` by `Li Qing`_).
 - The pretrained-compatibility test now covers every model class with released weights (NeuroRVQ, MAPA, BrainOmni, BrainTokenizer and the SignalJEPA heads added), checks that the list is complete, and runs REVE's cases without network access (:gh:`1252` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.NeuroRVQ` now reuses the LaBraM attention block
   instead of a private copy, and the K-means codebook initialisation in
@@ -248,6 +268,20 @@ Enhancements
   ``input_window_seconds`` (as in Hub configs) (:gh:`1256` by
   `Bruno Aristimunha`_).
 
+- :func:`torch.jit.script` compiles MetaNeuromotorHand, NeuroRVQTokenizer, REVE,
+  SleepFM and SleepFMStager and gives the eager output (einops calls written as
+  ``reshape``/``permute``, NeuroRVQTokenizer's four scales without a
+  computed-name ``getattr``). Scripted REVE leaves out the autocast-off block
+  around its Fourier features (TorchScript needs a constant autocast device).
+  Eager outputs and state-dict keys are unchanged (:gh:`1271` by
+  `Bruno Aristimunha`_).
+
+- :func:`torch.jit.script` compiles MVPFormer and gives the eager output: its
+  einops calls are written as the reshapes and expands einops ran, and
+  :func:`~braindecode.functional.dwt_max_level` finds the level in integers
+  instead of with ``math.log2``. Eager outputs and state-dict keys are
+  unchanged (:gh:`1272` by `Bruno Aristimunha`_).
+
 - Shrink the slowest unit tests, keeping what each one checks: EEGInceptionMI's
   500 Hz case on 2 windows instead of 64; 1 s DANCE and ZUNA and 5-patch
   CodeBrain windows in the shared model test geometry; one ``EEGClassifier`` fit
@@ -262,6 +296,25 @@ Enhancements
   longer use a computed-name ``getattr`` and LUNA's reconstruction head stays
   eager-only. Eager outputs and state-dict keys are unchanged (:gh:`1262` by
   `Bruno Aristimunha`_).
+- :func:`torch.jit.script` compiles BrainOmni, BrainTokenizer, DANCE, EEGPT and
+  Labram and gives the eager output: the shared EMA codebook
+  (``braindecode.modules.quantization``), DANCE's Fourier position embedding and
+  Perceiver, and EEGPT no longer use einops functions, ``**kwargs`` or
+  ``@torch.no_grad()`` methods in ``forward``, and Labram's ``ch_names`` is no
+  longer keyword-only. A scripted BrainOmni needs its tokenizer in eval mode.
+  Eager outputs and state-dict keys are unchanged (:gh:`1270` by
+  `Bruno Aristimunha`_).
+- :func:`torch.jit.script` compiles BIOT and TFMTokenizer and gives the eager
+  output. They now run ``braindecode.modules.linear_attention``, the part of
+  ``linear_attention_transformer`` they used (global linear attention, MIT),
+  whose ``forward`` takes no ``**kwargs``; parameter names are unchanged, so
+  released checkpoints load as before (:gh:`1273` by `Bruno Aristimunha`_).
+- :func:`torch.jit.script` compiles MAPA and gives the eager output, both for
+  the montage given at construction and for another recording's
+  ``sensor_indices`` passed to ``forward``, so every braindecode model now
+  scripts. The token layout is a tuple of named buffers and the band and region
+  tables are module constants. Eager outputs and state-dict keys are unchanged
+  (:gh:`1276` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
@@ -308,7 +361,12 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.MEDFormer` runs its patch embedding, a Conv2d kernel as tall as ``n_times``, as the equivalent conv1d with ``n_times`` input channels: MEDFormer now runs on Gaudi2, whose convolution kernels are limited to 256 rows (it failed to compile for ``n_times > 256``), and its CPU train step is 15-35 % faster; same state dict, outputs change by float rounding only (:gh:`1287` by `Bruno Aristimunha`_).
+- Preserve the final samples in :class:`braindecode.augmentation.SegmentationReconstruction`
+  when the window length is not divisible by the segment count, instead of
+  replacing them with zeros (:gh:`1279` by `Anton Soloviev`_).
 - Model fixes caught by new CPU-only integration checks (complex tensors, host syncs, kernel gaps, device/dtype follow, training after ``inference_mode``, deepcopy/pickle): BrainOmni/BrainTokenizer SELU trains on Gaudi, EEGSym pools with ``avg_pool2d``, FBCNet/FBMSNet/FBLightConvNet and LUNA run in float16, EEGMiner and AttnSleep deep-copy after training, Labram and NeuroRVQ pickle, SignalJEPA heads accept ``channel_strategy``, and tensors built in ``forward`` follow the input in CodeBrain, TCFormer, LUNA, MVPFormer, BrainOmni, ZUNA, DIVER1 and EEGDINO; float32 outputs unchanged (:gh:`1253` by `Bruno Aristimunha`_)
+- :class:`braindecode.models.EEGSym` trains on Gaudi: its depthwise spatial ``Conv3d`` with a ``(1, 1, n_chans)`` kernel runs as a conv2d on a view, since the Gaudi graph compiler segfaulted on the depthwise conv3d backward; same state dict, outputs unchanged, gradients change by float rounding only (:gh:`1289` by `Bruno Aristimunha`_).
 - :func:`braindecode.functional.hilbert_freq` returns float16 for float16 input (it
   returned float32), so :class:`braindecode.models.EEGMiner` runs after
   ``model.to(torch.float16)`` (:gh:`1259` by `Bruno Aristimunha`_)
@@ -2198,6 +2256,7 @@ Authors
 ========
 
 .. _Arnaud Delorme: https://github.com/arnodelorme
+.. _Anton Soloviev: https://github.com/antonsoo
 .. _Hubert Banville: https://github.com/hubertjb
 .. _Robin Tibor Schirrmeister: https://github.com/robintibor
 .. _Lukas Gemein: https://github.com/gemeinl

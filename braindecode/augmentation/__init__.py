@@ -23,6 +23,7 @@ from .transforms import (
     SignFlip,
     SmoothTimeMask,
     TimeReverse,
+    TrivialAugment,
 )
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "IdentityTransform",
     "Compose",
     "AugmentedDataLoader",
+    "TrivialAugment",
     "TimeReverse",
     "SignFlip",
     "FTSurrogate",

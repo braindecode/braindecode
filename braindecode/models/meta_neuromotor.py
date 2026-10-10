@@ -12,13 +12,13 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Sequence
-from typing import Literal, cast
+from typing import Literal
 
 import torch
 import torch.nn.functional as F
 import torchaudio.functional as ta_functional
 import torchaudio.transforms as ta_transforms
-from einops import pack, rearrange, reduce, repeat, unpack
+from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
 
@@ -694,7 +694,7 @@ class _FrequencyBandAverager(nn.Module):
         if self.frequency_bins is None:
             return x
 
-        freq_masks = cast(torch.Tensor, self.freq_masks).to(x)
+        freq_masks = self.freq_masks.to(x)
         weighted = self.add_band_axis(x) * freq_masks
         return weighted.sum(dim=3) / freq_masks.sum(dim=3)
 
@@ -749,11 +749,11 @@ class _CrossSpectralDensity(nn.Module):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         window_size = inputs.shape[-1]
-        # Pack over all leading dims so matmul broadcasts uniformly.
-        outputs, packed_shape = pack([inputs], "* channels window")
+        # Flatten all leading dims so matmul broadcasts uniformly.
+        outputs = inputs.reshape(-1, inputs.shape[-2], window_size)
         outputs = (outputs @ self.transpose_last_two(outputs.conj())) / window_size
         outputs = outputs.abs().pow(2)
-        return unpack(outputs, packed_shape, "* channels1 channels2")[0]
+        return outputs.unflatten(0, inputs.shape[:-2])
 
 
 class _SPDMatrixLog(nn.Module):
@@ -1046,7 +1046,7 @@ class _VectorizeSymmetricMatrix(nn.Module):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         inputs = self.flatten_matrix(inputs)
-        indices = cast(torch.Tensor, self.flattened_matrix_indices)
+        indices = self.flattened_matrix_indices
         return torch.index_select(inputs, dim=-1, index=indices)
 
 
@@ -1075,20 +1075,26 @@ class _RotationInvariantMPFMLP(nn.Module):
             raise ValueError("hidden_dims must be non-empty")
         self.offsets = list(offsets)
         self.activation = activation()
-        self.vectorize = _VectorizeSymmetricMatrix(
+        # Roll both channel axes by each offset, half-vectorize and flatten
+        # (freqs, covariance) as one gather: entry (row, col) of rotation
+        # ``offset`` reads entry ((row - offset) % C, (col - offset) % C).
+        kept = _VectorizeSymmetricMatrix(
             num_channels=num_channels,
             num_adjacent_cov=num_adjacent_cov,
-        )
-        self.flatten_features = Rearrange(
-            "batch time rotation freqs covariance -> "
-            "batch time rotation (freqs covariance)"
-        )
-        # Stacked rotations come out of torch.stack as
-        # (batch, freqs, c1, c2, time, rotation); put time first so the MLP
-        # broadcasts cleanly across (time, rotation).
-        self.rotations_to_time_major = Rearrange(
-            "batch freqs channels1 channels2 time rotation -> "
-            "batch time rotation freqs channels1 channels2"
+        ).flattened_matrix_indices
+        rows, cols = kept // num_channels, kept % num_channels
+        self.register_buffer(
+            "rotation_index",
+            torch.cat(
+                [
+                    freq * num_channels**2
+                    + (rows - offset) % num_channels * num_channels
+                    + (cols - offset) % num_channels
+                    for offset in self.offsets
+                    for freq in range(num_freqs)
+                ]
+            ),
+            persistent=False,
         )
         self.features_to_time_last = Rearrange(
             "batch time features -> batch features time"
@@ -1103,21 +1109,13 @@ class _RotationInvariantMPFMLP(nn.Module):
             dim = hidden_dim
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        # Gaudi eager mode rolls a non-contiguous tensor wrongly.
-        inputs = inputs.contiguous()
-        x = torch.stack(
-            [
-                inputs.roll(shifts=[offset, offset], dims=[2, 3])
-                for offset in self.offsets
-            ],
-            dim=-1,
-        )
-        x = self.rotations_to_time_major(x)
-        x = self.vectorize(x)
-        x = self.flatten_features(x)
+        # (batch, freqs, c1, c2, time) -> (batch, time, rotation, features)
+        x = inputs.permute(0, 4, 1, 2, 3).flatten(2)
+        x = x.index_select(-1, self.rotation_index)
+        x = x.unflatten(-1, (len(self.offsets), -1))
         for layer in self.fully_connected_layers:
             x = self.activation(layer(x))
-        x = reduce(x, "batch time rotation features -> batch time features", "mean")
+        x = x.mean(dim=2)  # average over the rotations
         return self.features_to_time_last(x)
 
 
@@ -1164,7 +1162,7 @@ class _MaskAug(nn.Module):
 
         # Pre-resolve the mask schedule, in canonical "CFT" order, so forward
         # is a plain nested loop with no dict lookups or class indirection.
-        plans: list[tuple[int, int, tuple[int, ...]]] = []
+        plans: list[tuple[int, int, list[int]]] = []
         for dim in "CFT":
             if dim not in dims or dim not in axes_by_coord:
                 continue
@@ -1176,7 +1174,7 @@ class _MaskAug(nn.Module):
                 (
                     int(max_num_masks[idx]),
                     int(max_mask_lengths[idx]),
-                    axes_by_coord[dim],
+                    list(axes_by_coord[dim]),  # one list type for TorchScript
                 )
             )
         self._plans = plans
@@ -1207,7 +1205,7 @@ class _MaskAug(nn.Module):
                 # training and cast back to long for indexing.
                 start_range = (data_length - mask_length).to(torch.float32)
                 mask_start = (
-                    torch.rand(batch, device=x.device, dtype=torch.float32)
+                    torch.rand((batch,), device=x.device, dtype=torch.float32)
                     * start_range
                 ).to(torch.long)
                 mask_end = mask_start + mask_length
@@ -1337,7 +1335,7 @@ class _Window(nn.Module):
         # the lpad-mode branching, so the unfold and dilation slice stay
         # inline here rather than being factored into separate modules.
         if self.state_size > 0:
-            inputs = F.pad(inputs, (0, 0, self.state_size, 0), "constant", 0)
+            inputs = F.pad(inputs, (0, 0, self.state_size, 0), "constant", 0.0)
         windows = inputs.unfold(
             dimension=1, size=self.receptive_field, step=self.stride
         )
@@ -1458,7 +1456,7 @@ class _MultiHeadAttention(nn.Module):
         self.register_buffer("attn_mask", attn_mask)
 
     def _get_attn_mask(self) -> torch.Tensor:
-        return cast(torch.Tensor, self.attn_mask)
+        return self.attn_mask
 
     def _windows(self, inputs: torch.Tensor) -> torch.Tensor:
         inputs = self.flatten_trailing(inputs)
@@ -1484,13 +1482,12 @@ class _MultiHeadAttention(nn.Module):
         t_end: int,
     ) -> torch.Tensor:
         T_out = windows.shape[1]
-        warmup_idx = slice(
-            max(t_start, self.extra_left_context),
-            min(t_end, self.window_size - 1),
-            self.stride,
-        )
         attn_mask = self._get_attn_mask()
-        attn_mask_warmup = attn_mask[warmup_idx]
+        attn_mask_warmup = attn_mask[
+            max(t_start, self.extra_left_context) : min(
+                t_end, self.window_size - 1
+            ) : self.stride
+        ]
         T_out_warmup = len(attn_mask_warmup)
         T_out_steady = T_out - T_out_warmup
         if T_out_steady < 0:
@@ -1506,11 +1503,11 @@ class _MultiHeadAttention(nn.Module):
     ) -> torch.Tensor:
         batch_size, output_time = windows.shape[:2]
         attn_mask = self._attn_mask_op(windows, t_start, t_end)
-        return repeat(
-            attn_mask,
-            "time window -> (batch time heads) window",
-            batch=batch_size,
-            heads=self.op.num_heads,
+        # (time, window) -> (batch * time * heads, window)
+        return (
+            attn_mask[None, :, None]
+            .expand(batch_size, -1, self.op.num_heads, -1)
+            .reshape(-1, attn_mask.shape[-1])
         )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:

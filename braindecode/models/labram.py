@@ -7,13 +7,12 @@ License: BSD 3 clause
 """
 
 from collections import OrderedDict
-from typing import Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 from warnings import warn
 
 import numpy as np
 import torch
 import torch.nn as nn
-from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch.nn.init import trunc_normal_
 
@@ -365,6 +364,9 @@ class Labram(EEGModuleMixin, nn.Module):
     """
 
     _channel_target = _LABRAM_TARGET_CHS_INFO
+    # Constant, so TorchScript compiles only the mode in use (the decoder-only
+    # locals do not exist in tokenizer mode).
+    __constants__ = ["neural_tokenizer"]
 
     def __init__(
         self,
@@ -429,6 +431,8 @@ class Labram(EEGModuleMixin, nn.Module):
                     UserWarning,
                 )
 
+        # A module attribute, so the scripted forward can resolve ch_names.
+        self._canonical_index = _LABRAM_CANONICAL_INDEX
         self.patch_size = patch_size
         self.num_features = self.embed_dim = embed_dim
         self.neural_tokenizer = neural_tokenizer
@@ -644,8 +648,8 @@ class Labram(EEGModuleMixin, nn.Module):
         self,
         x,
         input_chans,
-        return_patch_tokens=False,
-        return_all_tokens=False,
+        return_patch_tokens: bool = False,
+        return_all_tokens: bool = False,
     ):
         """
         Forward the features of the model.
@@ -740,7 +744,9 @@ class Labram(EEGModuleMixin, nn.Module):
         x = self.pos_drop(x)
 
         for blk in self.blocks:
-            x = blk(x)
+            out = blk(x)
+            assert isinstance(out, torch.Tensor)  # narrows the Union for TorchScript
+            x = out
 
         x = self.norm(x)
         if self.fc_norm is not None:
@@ -759,13 +765,12 @@ class Labram(EEGModuleMixin, nn.Module):
 
     def forward(
         self,
-        x,
-        return_patch_tokens=False,
-        return_all_tokens=False,
-        return_features=False,
-        *,
-        ch_names: list[str] | None = None,
-    ):
+        x: torch.Tensor,
+        return_patch_tokens: bool = False,
+        return_all_tokens: bool = False,
+        return_features: bool = False,
+        ch_names: Optional[List[str]] = None,
+    ) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
         """
         Forward the input EEG data through the model.
 
@@ -782,7 +787,7 @@ class Labram(EEGModuleMixin, nn.Module):
             If True, return a dict with ``"features"`` (patch tokens) and
             ``"cls_token"`` instead of the classification output.
         ch_names : list of str, optional
-            Keyword-only. Channel names matching the channel axis of ``x``.
+            Channel names matching the channel axis of ``x``.
             Matched case-insensitively against :data:`LABRAM_CHANNEL_ORDER`
             to select the corresponding position embeddings, so callers can
             forward an arbitrary subset of canonical channels. If ``None``
@@ -797,42 +802,46 @@ class Labram(EEGModuleMixin, nn.Module):
         torch.Tensor or dict
             The output of the model with dimensions (batch, n_outputs)
         """
+        n_canonical = len(self._canonical_index)  # len(LABRAM_CHANNEL_ORDER)
         if ch_names is None:
-            if x.shape[1] != len(LABRAM_CHANNEL_ORDER):
+            if x.shape[1] != n_canonical:
                 raise ValueError(
                     f"x has {x.shape[1]} channels but ch_names is None; "
-                    f"expected {len(LABRAM_CHANNEL_ORDER)} canonical channels "
+                    f"expected {n_canonical} canonical channels "
                     f"in LABRAM_CHANNEL_ORDER. Either pass "
                     f"ch_names=<your channel names> matching x.shape[1], or "
                     f"use channel_strategy='spline' to project from an arbitrary "
                     f"montage onto the canonical 128-channel layout."
                 )
             input_chans = torch.arange(
-                len(LABRAM_CHANNEL_ORDER) + 1, device=x.device, dtype=torch.long
+                n_canonical + 1, device=x.device, dtype=torch.long
             )
         else:
             if len(ch_names) != x.shape[1]:
                 raise ValueError(
                     f"len(ch_names)={len(ch_names)} != x.shape[1]={x.shape[1]}"
                 )
-            try:
-                matched = [_LABRAM_CANONICAL_INDEX[n.upper()] for n in ch_names]
-            except KeyError as exc:
-                raise ValueError(
-                    f"ch_names contains a name not in LABRAM_CHANNEL_ORDER: "
-                    f"{exc.args[0]!r}. Filter unknown channels before calling "
-                    f"forward, or use channel_strategy='spline'."
-                ) from exc
             # CLS token at index 0; canonical channel indices are offset by 1.
-            input_chans = torch.tensor(
-                [0] + [i + 1 for i in matched], device=x.device, dtype=torch.long
-            )
+            matched = [0]
+            for name in ch_names:
+                if name.upper() not in self._canonical_index:
+                    raise ValueError(
+                        "ch_names contains a name not in LABRAM_CHANNEL_ORDER: "
+                        f"'{name.upper()}'. Filter unknown channels before calling "
+                        "forward, or use channel_strategy='spline'."
+                    )
+                matched.append(self._canonical_index[name.upper()] + 1)
+            input_chans = torch.tensor(matched, device=x.device, dtype=torch.long)
 
         if return_features:
             x = self.forward_features(
                 x, input_chans=input_chans, return_all_tokens=True
             )
-            return {"features": x[:, 1:, :], "cls_token": x[:, 0, :]}
+            out: Dict[str, torch.Tensor] = {
+                "features": x[:, 1:, :],
+                "cls_token": x[:, 0, :],
+            }
+            return out
 
         x = self.forward_features(
             x,
@@ -872,7 +881,7 @@ class Labram(EEGModuleMixin, nn.Module):
         self._update_init_kwargs(n_outputs=n_outputs)
         self.reset_classifier(n_outputs)
 
-    def _adj_temporal_embedding(self, num_ch, batch_size, n_patches):
+    def _adj_temporal_embedding(self, num_ch: int, batch_size: int, n_patches: int):
         """
         Adjust the dimensions of the time embedding to match the
         number of channels and patches.
@@ -976,7 +985,7 @@ class Labram(EEGModuleMixin, nn.Module):
             error_msgs,
         )
 
-    def _adj_position_embedding(self, pos_embed_used, batch_size):
+    def _adj_position_embedding(self, pos_embed_used, batch_size: int):
         """Copy/pasted from https://github.com/935963004/LaBraM/blob/c431221e6cfd23dbfa9950e0180682fb322b0548/modeling_finetune.py#L358-L362"""
         input_time_window = self.patch_embed[0].n_patchs
         pos_embed = (
@@ -1025,6 +1034,9 @@ class _SegmentPatch(nn.Module):
     x_patched: torch.Tensor
         Output tensor of shape (batch, n_chans, num_patches, emb_dim).
     """
+
+    # Constant, so TorchScript skips the branch whose layers do not exist.
+    __constants__ = ["learned_patcher"]
 
     def __init__(
         self,
@@ -1101,12 +1113,9 @@ class _SegmentPatch(nn.Module):
             # as output, which keeps channel information
             # This treats each patch embedding as a feature alongside channels
             # Use actual number of channels from input, not self.n_chans
-            x = rearrange(
-                x,
-                pattern="(batch nchans) embed npatchs -> batch nchans npatchs embed",
-                batch=batch_size,
-                nchans=n_chans_actual,
-            )
+            # (batch * nchans, embed, npatchs) -> (batch, nchans, npatchs, embed)
+            x = x.reshape(batch_size, n_chans_actual, x.shape[1], x.shape[2])
+            x = x.permute(0, 1, 3, 2)
         else:
             x = x.view(
                 batch_size,
@@ -1539,7 +1548,9 @@ class _WindowsAttentionBlock(nn.Module):
         else:
             self.gamma_1, self.gamma_2 = None, None
 
-    def forward(self, x, return_attention=False, return_qkv=False):
+    def forward(
+        self, x, return_attention: bool = False, return_qkv: bool = False
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Apply the attention mechanism to the input tensor.
         Parameters
@@ -1561,16 +1572,20 @@ class _WindowsAttentionBlock(nn.Module):
         if return_attention:
             return self.attn(self.norm1(x), return_attention=True)
         if return_qkv:
-            y, qkv = self.attn(self.norm1(x), return_qkv=return_qkv)
+            out = self.attn(self.norm1(x), return_qkv=return_qkv)
+            assert isinstance(out, tuple)  # narrows the Union for TorchScript
+            y, qkv = out
             x = x + self.drop_path(self.gamma_1 * y)
             x = x + self.drop_path(self.gamma_2 * self.mlp(self.norm2(x)))
             return x, qkv
 
+        y = self.attn(self.norm1(x))
+        assert isinstance(y, torch.Tensor)  # narrows the Union for TorchScript
         if self.gamma_1 is None:
-            x = x + self.drop_path(self.attn(self.norm1(x)))
+            x = x + self.drop_path(y)
             x = x + self.drop_path(self.mlp(self.norm2(x)))
         else:
-            x = x + self.drop_path(self.gamma_1 * self.attn(self.norm1(x)))
+            x = x + self.drop_path(self.gamma_1 * y)
             x = x + self.drop_path(self.gamma_2 * self.mlp(self.norm2(x)))
         return x
 

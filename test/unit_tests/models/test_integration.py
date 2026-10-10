@@ -52,26 +52,6 @@ rng = np.random.default_rng(12)
 
 all_models_dict = dict(models_dict)
 
-# First blocker of each model that torch.jit.script cannot compile, or whose
-# scripted output differs from the eager one.
-_TORCHSCRIPT_XFAIL = {
-    "BIOT": "linear_attention_transformer forward takes **kwargs",
-    "BrainOmni": "rope passed as a callable argument",
-    "BrainTokenizer": "rope passed as a callable argument",
-    "DANCE": "starred unpacking of a tensor shape",
-    "EEGPT": "einops.rearrange call (**axes_lengths)",
-    "Guetschel2026": "forward returns a Dict or a Tensor",
-    "Labram": "keyword-only forward argument",
-    "MAPA": "f-string error message in forward",
-    "MVPFormer": "math.log2 in forward",
-    "MetaNeuromotorHand": "einops.pack call",
-    "NeuroRVQTokenizer": "getattr with a computed name",
-    "REVE": "einops.rearrange call (**axes_lengths)",
-    "SleepFM": "einops.rearrange call (**axes_lengths)",
-    "SleepFMStager": "einops.rearrange call (**axes_lengths)",
-    "TFMTokenizer": "linear_attention_transformer forward takes **kwargs",
-}
-
 _MODEL_CASES = {
     name: (required, signal_params)
     for name, required, signal_params in models_mandatory_parameters
@@ -429,18 +409,7 @@ def test_model_exported(model):
     assert isinstance(exported_prog, ExportedProgram)
 
 
-@pytest.mark.parametrize(
-    "model_name",
-    [
-        pytest.param(
-            name,
-            marks=pytest.mark.xfail(reason=_TORCHSCRIPT_XFAIL[name], strict=True)
-            if name in _TORCHSCRIPT_XFAIL
-            else (),
-        )
-        for name in _MODEL_CASES
-    ],
-)
+@pytest.mark.parametrize("model_name", list(_MODEL_CASES))
 def test_torch_script(model_name):
     """Models script directly and the scripted output equals the eager one.
 

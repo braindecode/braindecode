@@ -459,10 +459,12 @@ The functional module contains various functions that can be used like functiona
     :recursive:
 
      drop_path
+     fft_conv1d
      glorot_weight_zero_bias
      hilbert_freq
      identity
      plv_time
+     prefer_fft_conv
      rescale_parameter
      safe_log
      sinusoidal_positional_encoding
@@ -758,7 +760,9 @@ transformations, frequency'domain transformations, and spatial transformations.
      SegmentationReconstruction
      MaskEncoding
      AmplitudeScale
+     BandRotation
      ChannelsReref
+     TrivialAugment
 
 The functional augmentation API contains the same transformations as the transforms API,
 but they are implemented as functions.
