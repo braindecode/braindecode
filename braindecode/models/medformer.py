@@ -364,8 +364,14 @@ class _CrossChannelTokenEmbedding(nn.Module):
                 )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.token_conv(x)
-        return x
+        # The kernel spans all c_in rows: run it as a conv1d with c_in input
+        # channels. Gaudi2 rejects conv kernels taller than 256 (c_in = n_times).
+        x = nn.functional.conv1d(
+            x.squeeze(1),
+            self.token_conv.weight.squeeze(1),
+            stride=self.token_conv.stride[1],
+        )
+        return x.unsqueeze(2)
 
 
 class _ListPatchEmbedding(nn.Module):
