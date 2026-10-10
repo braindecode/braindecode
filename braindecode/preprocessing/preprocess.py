@@ -311,6 +311,8 @@ def preprocess(
             preload=False,
             target_name=None,
             ids_to_load=ids_to_load,
+            # mne Epochs cannot be read in parallel with preload=False
+            n_jobs=n_jobs if hasattr(concat_ds.datasets[0], "raw") else 1,
         )
         _replace_inplace(concat_ds, concat_ds_reloaded)
     else:

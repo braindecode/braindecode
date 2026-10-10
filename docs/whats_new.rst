@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :func:`braindecode.preprocessing.preprocess` with ``save_dir`` reloads the saved recordings with its ``n_jobs`` instead of one at a time: TUAB (2993 recordings, ``n_jobs=16``) preprocess 626.8 s -> 386.4 s, the final reload 260.1 s -> 65.4 s; saved files and returned datasets unchanged (:gh:`PRNUM` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Guetschel2026`, the encoder shared by the 58 MAE and JEPA
   checkpoints of the EEG masking-geometry study (Guetschel et al., 2026). The checkpoints
   load with ``from_pretrained`` from the original Hugging Face repositories, with backbone
