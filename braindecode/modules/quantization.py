@@ -237,21 +237,25 @@ class EMACodebook(nn.Module):
         quantize = self.dequantize(embed_ind).type(dtype)
 
         if self.training:
-            # F.one_hot reads the index range on the host (a device sync).
-            codes = torch.arange(self.codebook_size, device=flat_ind.device)
-            embed_onehot = (flat_ind.unsqueeze(-1) == codes).type(dtype)
             # As in the released encodec/BrainOmni ``EuclideanCodebook``, the
             # replacement writes ``embed`` only, and the EMA step below rebuilds
             # ``embed`` from ``embed_avg``. Kept as released for checkpoint parity.
             self.expire_codes_(x)
-            # EMA update of the cluster sizes and code sums (.data detaches grad).
-            one_hot_sum = embed_onehot.sum(0)
+            # EMA update of the cluster sizes and code sums (.data detaches grad),
+            # summed per code by index_add_ (at least float32: exact counts) instead
+            # of a dense (N, codebook_size) one-hot and GEMM; no host sync either
+            # (bincount and F.one_hot read the index range).
+            work = torch.promote_types(dtype, torch.float32)
+            ones = x.new_ones(flat_ind.shape[0], dtype=work)
+            one_hot_sum = ones.new_zeros(self.codebook_size)
+            one_hot_sum = one_hot_sum.index_add_(0, flat_ind, ones).type(dtype)
             if not torch.jit.is_scripting():
                 _all_reduce_sum(one_hot_sum)
             self.cluster_size.data.mul_(self.decay).add_(
                 one_hot_sum, alpha=1 - self.decay
             )
-            embed_sum = (embed_onehot.t() @ x).to(torch.float32)
+            embed_sum = ones.new_zeros(self.codebook_size, x.shape[1])
+            embed_sum = embed_sum.index_add_(0, flat_ind, x.to(work)).to(torch.float32)
             if not torch.jit.is_scripting():
                 _all_reduce_sum(embed_sum)
             self.embed_avg.data.mul_(self.decay).add_(embed_sum, alpha=1 - self.decay)

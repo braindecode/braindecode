@@ -167,6 +167,8 @@ def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
                 "with 3-D positions or that channel names match a standard montage."
             )
 
+    if n_chans < 2:
+        raise ValueError("DGCNN needs at least 2 channels to build its channel graph.")
     n_neighbors_capped = min(n_neighbors, n_chans - 1)
 
     # Pairwise Euclidean distances
