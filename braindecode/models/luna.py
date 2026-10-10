@@ -576,7 +576,6 @@ class _RotarySelfAttentionBlock(nn.Module):
 
         self.qkv_proj = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = attn_drop
-        self.attn_drop_fn = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
@@ -602,17 +601,13 @@ class _RotarySelfAttentionBlock(nn.Module):
         q, k, v = qkv[0], qkv[1], qkv[2]
         q = self._rotate_queries_or_keys(q)
         k = self._rotate_queries_or_keys(k)
-        # Calculate attention scores
-        attn_weights = (q @ k.transpose(-2, -1)) * self.scale  # (B, H, N, N)
-
-        # Apply softmax to get attention probabilities
-        attn_weights = torch.softmax(attn_weights, dim=-1)
-
-        # Apply dropout
-        attn_weights = self.attn_drop_fn(attn_weights)
-
-        # Apply attention weights to values
-        attn = attn_weights @ v  # (B, H, N, D)
+        attn = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            dropout_p=self.attn_drop if self.training else 0.0,
+            scale=self.scale,
+        )  # (B, H, N, D)
         attn = attn.transpose(1, 2).flatten(2)  # (B, N, H * D)
         return self.proj_drop(self.proj(attn))
 
