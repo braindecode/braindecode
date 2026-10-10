@@ -7,9 +7,26 @@ import torch
 import torch.nn.functional as F
 from scipy.sparse.csgraph import laplacian
 from torch import nn
+from torch.nn.modules.lazy import LazyModuleMixin
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.dgcnn import _ChebyshevGraphConvolution
+
+
+class _NodeBias(LazyModuleMixin, nn.Module):
+    """One bias per vertex per filter."""
+
+    def __init__(self):
+        super().__init__()
+        self.bias = nn.UninitializedParameter()
+
+    def initialize_parameters(self, x):
+        if self.has_uninitialized_params():
+            self.bias.materialize((1, x.shape[1], x.shape[2]))
+            nn.init.constant_(self.bias, 0.1)
+
+    def forward(self, x):
+        return x + self.bias
 
 
 class _GraphCoarsening:
@@ -403,12 +420,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             in_features = out_features
 
         # Bias, batch normalization and activation of each layer.
-        self.biases = nn.ParameterList(
-            [
-                nn.Parameter(torch.full((1, 1, n_feature), 0.1))
-                for n_feature in n_features
-            ]
-        )
+        self.biases = nn.ModuleList([_NodeBias() for _ in n_features])
 
         self.batch_norms = nn.ModuleList(
             [nn.BatchNorm1d(n_feature) for n_feature in n_features]
@@ -492,7 +504,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         Output:
         N x M x Fout = Number of samples x Number of nodes x Number of output features
         """
-        x = x + self.biases[layer_index]
+        x = self.biases[layer_index](x)
 
         x = x.transpose(1, 2)
         x = self.batch_norms[layer_index](x)

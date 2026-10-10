@@ -1997,6 +1997,29 @@ def test_gcnsnet_variable_pool_sizes():
     assert output.shape == (2, 4)
 
 
+def test_gcnsnet_node_biases():
+    model = GCNsNet(
+        n_chans=64,
+        n_outputs=4,
+        n_times=128,
+    )
+    model.eval()
+
+    with torch.no_grad():
+        model(torch.randn(2, 64, 128))
+
+    for i, (bias, n_feature) in enumerate(
+        zip(model.biases, model.n_features)
+    ):
+        n_nodes = getattr(model, f"laplacian_{i}").shape[0]
+
+        assert bias.bias.shape == (1, n_nodes, n_feature)
+        torch.testing.assert_close(
+            bias.bias,
+            torch.full_like(bias.bias, 0.1),
+        )
+
+
 @pytest.mark.parametrize(
     "n_times, n_chans, sfreq, n_outputs",
     [
