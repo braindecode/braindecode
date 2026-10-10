@@ -16,6 +16,7 @@ import os
 import re
 import warnings
 from datetime import datetime, timezone
+from functools import cache
 from pathlib import Path
 from typing import Iterable, Literal
 from unittest import mock
@@ -184,11 +185,8 @@ class TUH(BaseConcatDataset):
         }
         raw.rename_channels(mapping_strip)
 
-        montage1005 = mne.channels.make_standard_montage(
-            resolve_montage_name("standard_1005")
-        )
         mapping_eeg_names = {
-            c.upper(): c for c in montage1005.ch_names if c.upper() in raw.ch_names
+            c.upper(): c for c in _standard_1005().ch_names if c.upper() in raw.ch_names
         }
 
         # Set channels whose type could not be inferred (defaulted to "eeg") to "misc":
@@ -211,10 +209,7 @@ class TUH(BaseConcatDataset):
 
     @staticmethod
     def _set_montage(raw):
-        montage = mne.channels.make_standard_montage(
-            resolve_montage_name("standard_1005")
-        )
-        raw.set_montage(montage, on_missing="ignore")
+        raw.set_montage(_standard_1005(), on_missing="ignore")
 
     @staticmethod
     def _create_dataset(
@@ -268,6 +263,12 @@ class TUH(BaseConcatDataset):
         description = pd.concat([description, additional_description])
         base_dataset = RawDataset(raw, description, target_name=target_name)
         return base_dataset
+
+
+@cache
+def _standard_1005():
+    # Built once per process: set_montage copies the montage before using it.
+    return mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
 
 
 def _create_description(file_paths, version, ds_name):

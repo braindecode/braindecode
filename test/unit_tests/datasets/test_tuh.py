@@ -273,6 +273,24 @@ def test_tuh_events(version):
     assert description.gender.to_list() == ["F", "F", "F"]
 
 
+@pytest.mark.skipif(platform.system() == "Windows", reason="Not supported on Windows")
+def test_tuh_shared_montage_matches_a_fresh_one():
+    """Every recording gets the positions of a fresh standard_1005 montage."""
+    import mne
+
+    from braindecode.datasets.tuh import _standard_1005
+    from braindecode.util import resolve_montage_name
+
+    tuh = _TUHMock(
+        path="", rename_channels=True, set_montage=True, n_jobs=1, version="v1.1.0"
+    )
+    fresh = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
+    assert _standard_1005() == fresh
+    for ds in tuh.datasets:
+        ref = ds.raw.copy().set_montage(fresh, on_missing="ignore")
+        assert ds.raw.info["dig"] == ref.info["dig"]
+
+
 @pytest.mark.parametrize("date", [{"year": 2013, "month": 8, "day": 15}, {}])
 def test_read_date_side_file_roundtrip(tmp_path, date):
     """_read_date returns what _read_date wrote (the `_date.txt` beside each EDF)."""
