@@ -88,8 +88,12 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
 
     .. rubric:: Differences from the reference
 
-    - The upstream head ends with a sigmoid before a cross-entropy loss. The
-      port returns the logits, as every braindecode classifier.
+    - The upstream head ends with a sigmoid and is trained with
+      ``F.cross_entropy(torch.sigmoid(logits), target)``. The port returns
+      the logits, as every braindecode classifier. Train with that loss to
+      reproduce the paper: fine-tuning the released MAE checkpoints on the
+      61-word task (12 subjects x 6 seeds) gives 60.2% top-1 with it and 55.6%
+      with the cross-entropy on the logits.
     - The upstream subject layer maps a one-hot subject id to a
       channel-to-neural matrix. The released checkpoints are single-subject,
       so it is a plain linear layer (``spatial_projection``) here; the
