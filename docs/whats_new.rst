@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.MetaNeuromotorHand` rotates and half-vectorizes the MPF matrices with one precomputed ``index_select`` instead of three rolls, a stack and a permute copy: CPU train step about 2 % faster, Gaudi neutral; outputs, gradients and state dict unchanged bit for bit (:gh:`1292` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` computes its rotary self-attention with :func:`torch.nn.functional.scaled_dot_product_attention`: CPU forward 1-4 % faster, train step neutral to 2.4 % faster; outputs and gradients change by float rounding only, within master's own float32-vs-float64 difference, also with the released ``PulpBio/LUNA`` weights (:gh:`1282` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.DANCE` computes the Perceiver and decoder attention with :func:`torch.nn.functional.scaled_dot_product_attention` instead of an explicit softmax: eval forward 0.7 % faster on CPU and 1.4 % on Gaudi (22 channels, 32 s, batch 32), train step unchanged; outputs and gradients change by float rounding only, within master's own float32-vs-float64 difference (:gh:`1291` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MVPFormer` builds its attention masks and channel-shift index once per forward instead of in every layer: forward 19-25 % faster on Gaudi and 2-12 % on CPU, outputs and gradients unchanged bit for bit (:gh:`1280` by `Bruno Aristimunha`_).
