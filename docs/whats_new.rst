@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :func:`braindecode.preprocessing.create_fixed_length_windows` runs its per-recording calls in threads when ``n_jobs > 1``, instead of pickling every recording to worker processes and back: TUAB (2993 recordings) with ``n_jobs=8`` 52.3 s -> 5.5 s (``n_jobs=1``: 1.8 s, unchanged); windows unchanged (:gh:`PRNUM` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Guetschel2026`, the encoder shared by the 58 MAE and JEPA
   checkpoints of the EEG masking-geometry study (Guetschel et al., 2026). The checkpoints
   load with ``from_pretrained`` from the original Hugging Face repositories, with backbone
