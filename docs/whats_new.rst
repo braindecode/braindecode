@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.datasets.TUH`, :class:`braindecode.datasets.TUHAbnormal` and :class:`braindecode.datasets.TUHEvents` build the standard_1005 montage once per process instead of twice per recording for ``rename_channels`` / ``set_montage``: 2993 TUAB recordings, ``rename_channels`` + ``set_montage`` 37.5 s -> 14.5 s (2.6x), 23 s less per ``TUHAbnormal`` indexing with ``n_jobs=1``; channel names, types, positions and descriptions unchanged (:gh:`PRNUM` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Guetschel2026`, the encoder shared by the 58 MAE and JEPA
   checkpoints of the EEG masking-geometry study (Guetschel et al., 2026). The checkpoints
   load with ``from_pretrained`` from the original Hugging Face repositories, with backbone
