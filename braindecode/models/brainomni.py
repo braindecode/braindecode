@@ -7,12 +7,13 @@
 # derives from Meta's EnCodec (MIT).
 from __future__ import annotations
 
+from typing import Dict, Optional, Union
+
 import mne
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange
 from mne.io.constants import FIFF
 from torch.nn import RMSNorm
 from torch.nn.utils.parametrizations import weight_norm
@@ -276,8 +277,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             feat, indices, _, _ = self._encode_quantize(x, overlap_ratio)
         finally:
             self.train(was_training)
-        flat = "batch chans nwin tok dim -> batch chans (nwin tok) dim"
-        return rearrange(feat, flat), rearrange(indices, flat)
+        return feat.flatten(2, 3), indices.flatten(2, 3)
 
 
 class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
@@ -488,18 +488,33 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         """L2-normalized ``(batch, n_neuro, n_tokens, lm_dim)`` embedding."""
-        feat, _ = self.tokenizer.tokenize(x, overlap_ratio=self.overlap_ratio)
+        if torch.jit.is_scripting():
+            # TorchScript cannot switch modes, so tokenize() is not scriptable.
+            if self.tokenizer.training:
+                raise RuntimeError("Scripted BrainOmni needs tokenizer.eval().")
+            with torch.no_grad():
+                feat = self.tokenizer._encode_quantize(x, self.overlap_ratio)[0]
+            feat = feat.flatten(2, 3)
+        else:
+            feat, _ = self.tokenizer.tokenize(x, overlap_ratio=self.overlap_ratio)
         neuro = self.tokenizer.encoder.neuros.detach().to(feat.dtype)
         h = self.projection(feat + neuro.view(1, feat.shape[1], 1, -1))
-        for block in self.blocks[:-1]:
-            h = block(h)
+        for i, block in enumerate(self.blocks):  # the last block is unused, as released
+            if i < len(self.blocks) - 1:
+                h = block(h)
         return F.normalize(h, p=2.0, dim=-1, eps=1e-6)
 
-    def forward(self, x: torch.Tensor, return_features: bool = False):
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """Classify ``x`` or return the pooled features."""
         feat = self.encode(x).mean(dim=2).flatten(1)  # (batch, n_neuro * lm_dim)
         if return_features:
-            return {"features": feat, "cls_token": None}  # nosec B105
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": feat,
+                "cls_token": None,  # nosec B105
+            }
+            return out
         return self.final_layer(feat)
 
 
@@ -583,11 +598,11 @@ def _geometry_from_chs_info(chs_info):
     return pos, sensor_type
 
 
-def _attend(q, k, v, n_head: int, dropout_p: float, rope=None) -> torch.Tensor:
+def _attend(q, k, v, n_head: int, dropout_p: float) -> torch.Tensor:
     """SDPA over ``(batch, seq, n_head * head_dim)`` inputs."""
-    q, k, v = (t.unflatten(-1, (n_head, -1)) for t in (q, k, v))
-    if rope is not None:
-        q, k = rope(q, k)
+    q = q.unflatten(-1, (n_head, -1))
+    k = k.unflatten(-1, (n_head, -1))
+    v = v.unflatten(-1, (n_head, -1))
     out = F.scaled_dot_product_attention(
         q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), dropout_p=dropout_p
     )
@@ -609,12 +624,13 @@ class _SpatialTemporalBlock(nn.Module):
         self.ff = FeedForwardBlock(n_dim, 4, 0.0, _SELU, output_drop_p=dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch, _, _, dim = x.shape
+        batch, chans, times, dim = x.shape
         h = self.pre_attn_norm(x)
-        xs = rearrange(h[..., dim // 2 :], "b c t d -> (b t) c d")
-        xt = rearrange(h[..., : dim // 2], "b c t d -> (b c) t d")
-        xs = rearrange(self.spatial_attn(xs), "(b t) c d -> b c t d", b=batch)
-        xt = rearrange(self.time_attn(xt), "(b c) t d -> b c t d", b=batch)
+        # (b, c, t, d) -> (b * t, c, d) and (b * c, t, d), and back
+        xs = h[..., dim // 2 :].permute(0, 2, 1, 3).reshape(batch * times, chans, -1)
+        xt = h[..., : dim // 2].reshape(batch * chans, times, -1)
+        xs = self.spatial_attn(xs).reshape(batch, times, chans, -1).permute(0, 2, 1, 3)
+        xt = self.time_attn(xt).reshape(batch, chans, times, -1)
         # Spatial half first: the halves swap, as released.
         x = x + torch.cat([xs, xt], dim=-1)
         return x + self.ff(self.pre_ff_norm(x))
@@ -628,6 +644,10 @@ class _RotaryPositionalEmbedding(nn.Module):
     cache from ``freqs`` and later calls keep it (not saved). The caches stay
     float32 under a dtype cast, ``freqs`` follows it.
     """
+
+    # TorchScript types the ``rebuilt`` buffer from this; a postponed string
+    # annotation would not resolve.
+    __annotations__ = {"rebuilt": Optional[torch.Tensor]}
 
     def __init__(self, n_dim, base=10000):
         super().__init__()
@@ -658,13 +678,15 @@ class _RotaryPositionalEmbedding(nn.Module):
     def forward(self, q, k):
         """Rotate ``q`` and ``k`` of shape ``(batch, seq, n_heads, head_dim)``."""
         _, seq, heads, _ = q.shape
-        rotate = self.rotate if self.rebuilt is None else self.rebuilt
+        rebuilt = self.rebuilt
+        rotate = self.rotate if rebuilt is None else rebuilt
         if seq > rotate.shape[0]:
-            self.rebuilt = rotate = self._polar(seq)
+            rotate = self._polar(seq)
+            self.rebuilt = rotate
         # In at least float32 (the cache's dtype), float64 for float64 inputs.
         work = torch.promote_types(q.dtype, torch.float32)
         rotate = rotate.to(work)[:seq].repeat_interleave(2, dim=1)
-        rotate = rearrange(rotate, "s (h d) two -> s h d two", h=heads)
+        rotate = rotate.unflatten(1, (heads, -1))  # (seq, heads, head_dim, 2)
         cos, sin = rotate[..., 0], rotate[..., 1]
         q_float, k_float = q.to(work), k.to(work)
         q_out = q_float * cos + rotate_pairs(q_float) * sin
@@ -687,7 +709,12 @@ class _MultiHeadAttentionRoPE(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         q, k, v = torch.split(self.qkv(x), self.n_dim, dim=-1)
         dropout_p = self.dropout if self.training else 0.0
-        out = _attend(q, k, v, self.n_head, dropout_p, self.rope_embedding_layer)
+        if self.rope_embedding_layer is not None:  # on (batch, seq, heads, head_dim)
+            q, k = self.rope_embedding_layer(
+                q.unflatten(-1, (self.n_head, -1)), k.unflatten(-1, (self.n_head, -1))
+            )
+            q, k = q.flatten(2), k.flatten(2)
+        out = _attend(q, k, v, self.n_head, dropout_p)
         return self.proj(out)
 
 
@@ -765,19 +792,22 @@ class _TokenizerEncoder(nn.Module):
         self.k_proj = nn.Linear(n_dim, n_dim)
 
     def forward(self, x: torch.Tensor, sensor_embedding: torch.Tensor):
-        batch, chans, nwin, _ = x.shape
-        x = self.seanet_encoder(rearrange(x, "b c w l -> (b c w) 1 l"))
-        x = rearrange(x, "(b c w) d t -> b c (w t) d", b=batch, c=chans, w=nwin)
-        tokens = x.shape[2]
-        sensor_embedding = rearrange(
-            sensor_embedding.unsqueeze(2).repeat(1, 1, tokens, 1),
-            "b c t d -> (b t) c d",
-        )
-        x = rearrange(x, "b c t d -> (b t) c d")
+        batch, chans, nwin, length = x.shape
+        x = self.seanet_encoder(x.reshape(batch * chans * nwin, 1, length))
+        # (b c w) d t -> b c (w t) d
+        x = x.reshape(batch, chans, nwin, x.shape[1], -1).permute(0, 1, 2, 4, 3)
+        x = x.reshape(batch, chans, -1, x.shape[-1])
+        tokens, dim = x.shape[2], x.shape[3]
+        # b c t d -> (b t) c d
+        sensor_embedding = sensor_embedding.unsqueeze(2).repeat(1, 1, tokens, 1)
+        sensor_embedding = sensor_embedding.permute(0, 2, 1, 3).reshape(-1, chans, dim)
+        x = x.permute(0, 2, 1, 3).reshape(-1, chans, dim)
         neuros = self.neuros.type_as(x).unsqueeze(0).repeat(x.shape[0], 1, 1)
         x = self.backwardsolution(neuros, self.k_proj(x + sensor_embedding), x)
-        x = rearrange(x, "(b w t) c d -> b c (w t) d", b=batch, w=nwin)
-        return rearrange(x, "b c (w t) d -> b c w t d", w=nwin)
+        # (b w t) c d -> b c (w t) d -> b c w t d
+        x = x.reshape(batch, nwin, -1, x.shape[1], dim).permute(0, 3, 1, 2, 4)
+        x = x.reshape(batch, x.shape[1], -1, dim)
+        return x.reshape(batch, x.shape[1], nwin, -1, dim)
 
 
 class _TokenizerDecoder(nn.Module):
@@ -800,16 +830,21 @@ class _TokenizerDecoder(nn.Module):
         )
 
     def forward(self, x: torch.Tensor, sensor_embedding: torch.Tensor):
-        batch, _, nwin, tok, dim = x.shape
-        x = rearrange(x, "b c w t d -> (b w t) c d")
-        sensor_embedding = rearrange(
-            sensor_embedding.view(batch, -1, 1, 1, dim).repeat(1, 1, nwin, tok, 1),
-            "b c w t d -> (b w t) c d",
+        batch, sources, nwin, tok, dim = x.shape
+        # b c w t d -> (b w t) c d
+        x = x.permute(0, 2, 3, 1, 4).reshape(-1, sources, dim)
+        sensor_embedding = sensor_embedding.view(batch, -1, 1, 1, dim)
+        chans = sensor_embedding.shape[1]
+        sensor_embedding = sensor_embedding.repeat(1, 1, nwin, tok, 1)
+        sensor_embedding = sensor_embedding.permute(0, 2, 3, 1, 4).reshape(
+            -1, chans, dim
         )
         x = self.forwardsolution(sensor_embedding, x)
-        x = rearrange(x, "(b w t) c d -> (b c w) d t", b=batch, w=nwin, t=tok)
-        x = self.seanet_decoder(x)
-        return rearrange(x, "(b c w) 1 l -> b c w l", b=batch, w=nwin)
+        # (b w t) c d -> (b c w) d t
+        x = x.reshape(batch, nwin, tok, chans, dim).permute(0, 3, 1, 4, 2)
+        x = self.seanet_decoder(x.reshape(-1, dim, tok))
+        # (b c w) 1 l -> b c w l
+        return x.reshape(batch, chans, nwin, x.shape[-1])
 
 
 class _SEANetConv1d(nn.Module):

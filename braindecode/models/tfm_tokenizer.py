@@ -7,11 +7,11 @@ from typing import NamedTuple
 
 import torch
 import torch.nn.functional as F
-from linear_attention_transformer import LinearAttentionTransformer
 from torch import nn
 
 from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.linear_attention import LinearAttentionTransformer
 from braindecode.modules.quantization import EMACodebook
 
 
@@ -212,14 +212,9 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         self.max_seq_len = max_seq_len
         self.commitment_cost = commitment_cost
 
-        def lat(depth, seq_len):
+        def lat(depth):
             return LinearAttentionTransformer(
-                dim=embed_dim,
-                heads=8,
-                depth=depth,
-                max_seq_len=seq_len,
-                attn_layer_dropout=drop_prob,
-                attn_dropout=drop_prob,
+                dim=embed_dim, heads=8, depth=depth, attn_layer_dropout=drop_prob
             )
 
         def conv_block(kernel_size, stride, out_dim):
@@ -239,9 +234,7 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         self.frequency_patch_embedding = conv_block(
             freq_patch_size, freq_patch_size, embed_dim
         )
-        self.frequency_encoder = lat(
-            freq_encoder_depth, self.n_freqs // freq_patch_size
-        )
+        self.frequency_encoder = lat(freq_encoder_depth)
         self.frequency_attention = nn.Sequential(
             nn.Conv1d(
                 embed_dim,
@@ -257,7 +250,7 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         self.temporal_patch_embedding = conv_block(
             self.window_size, self.window_size // 2, embed_dim // 2
         )
-        self.temporal_encoder = lat(temporal_encoder_depth, max_seq_len)
+        self.temporal_encoder = lat(temporal_encoder_depth)
         # The reference EMA codebook: no k-means init, no dead-code expiry.
         self.quantizer = EMACodebook(
             embed_dim,
@@ -268,7 +261,7 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         )
         nn.init.uniform_(self.quantizer.embed, -1 / codebook_size, 1 / codebook_size)
         self.quantizer.embed_avg.copy_(self.quantizer.embed)
-        self.decoder = lat(decoder_depth, max_seq_len)
+        self.decoder = lat(decoder_depth)
         # Reconstruction head (spectrum bins per token), named for the
         # braindecode head contract.
         self.final_layer = nn.Sequential(
@@ -320,7 +313,7 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             x.reshape(batch_size * n_chans, 1, -1)
         ).transpose(1, 2)
         embeddings = self.temporal_encoder(torch.cat((freq, temporal), dim=-1))
-        return F.normalize(embeddings, p=2, dim=-1)
+        return F.normalize(embeddings, p=2.0, dim=-1)
 
     def make_complementary_masks(
         self,
@@ -388,7 +381,7 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             if spectrogram_mask.shape != target.shape:
                 raise ValueError(
                     "spectrogram_mask must match the computed spectrogram shape "
-                    f"{target.shape}, got {tuple(spectrogram_mask.shape)}."
+                    f"{list(target.shape)}, got {list(spectrogram_mask.shape)}."
                 )
             visible = target * spectrogram_mask
         embeddings = self.encode(

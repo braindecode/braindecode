@@ -740,7 +740,7 @@ def test_labram_forward_return_flags_remain_positional(chs_info, n_outputs, n_ch
     with torch.no_grad():
         out_default = model(x)
         # Positional: return_patch_tokens=False, return_all_tokens=True.
-        # ch_names is keyword-only, so this triggers the all-tokens path
+        # ch_names comes after the return flags, so this triggers the all-tokens path
         # without forcing callers to switch to kwargs for the return flags.
         out_all = model(x, False, True)
 
@@ -1233,22 +1233,18 @@ def test_luna_variants_device_compatibility(
             assert output_cuda.device.type == "cuda"
 
 
-def test_luna_variants_different_channel_counts(
-    luna_base_config, luna_large_config, luna_huge_config
-):
-    """Test LUNA variants handle different channel counts."""
-    configs = [luna_base_config, luna_large_config, luna_huge_config]
-
+def test_luna_variants_different_channel_counts(luna_base_config):
+    """Test LUNA handles different channel counts (the variants differ only in
+    width and depth; test_luna_variants_output_consistency forwards each)."""
     for n_chans in [1, 4, 8, 16, 32, 64]:
-        for config in configs:
-            config["n_chans"] = n_chans
-            model = LUNA(**config)
-            model.eval()
+        luna_base_config["n_chans"] = n_chans
+        model = LUNA(**luna_base_config)
+        model.eval()
 
-            x = torch.randn(2, n_chans, 1000)
-            with torch.no_grad():
-                output = model(x)
-            assert output.shape == (2, 2)
+        x = torch.randn(2, n_chans, 1000)
+        with torch.no_grad():
+            output = model(x)
+        assert output.shape == (2, 2)
 
 
 def test_luna_variants_output_consistency(
@@ -1799,6 +1795,15 @@ def test_axon_input_unit_does_not_matter():
     x_uv = 20.0 * torch.randn(2, len(_AXON_NAMES), 600) + 5.0
     with torch.no_grad():
         torch.testing.assert_close(model(x_uv), model(x_uv * 1e-6), atol=1e-4, rtol=1e-4)
+
+
+def test_axon_block_without_band_equals_all_true_band():
+    # Windows of <= temporal_window + 1 patches run the blocks with band=None.
+    block = _axon_model(_axon_chs()).encoder.blocks[0]
+    tokens = torch.randn(2, 3, 5, _AXON_SMALL["embed_dim"])
+    band = torch.ones(5, 5, dtype=torch.bool)
+    with torch.no_grad():
+        torch.testing.assert_close(block(tokens, None), block(tokens, band))
 
 
 def test_axon_too_short_window_raises():
@@ -2412,7 +2417,28 @@ def test_mapa_token_layout_tracks_the_montage(mapa_model):
     indices[0, 2] = 3
     changed = mapa_model._token_layout(indices, mapa_model.n_frames)
     assert changed is not first
-    assert (changed["token_region"] == 3).any()
+    assert (changed[2] == 3).any()  # token_region
+
+
+@pytest.mark.parametrize("kwargs", [{}, {"region_embed": False, "deep_sup": False}])
+def test_mapa_scripts_on_both_montage_paths(kwargs):
+    """The scripted model reads the construction-time and a foreign montage."""
+    model = MAPA(
+        n_outputs=4,
+        n_chans=len(MAPA_SUBJECT_A),
+        n_times=2048,
+        sfreq=2048,
+        contact_labels=MAPA_SUBJECT_A,
+        d_model=64,
+        **kwargs,
+    ).eval()
+    scripted = torch.jit.script(model)
+    xa = torch.randn(2, len(MAPA_SUBJECT_A), 2048)
+    xb = torch.randn(2, len(MAPA_SUBJECT_B), 4096)
+    indices_b = MAPA.sensor_indices(MAPA_SUBJECT_B, ["Left-Hippocampus"] + [None] * 7)
+    with torch.no_grad():
+        torch.testing.assert_close(scripted(xa), model(xa))
+        torch.testing.assert_close(scripted(xb, indices_b), model(xb, indices_b))
 
 
 def _mapa_reference_windows():

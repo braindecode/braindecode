@@ -4,18 +4,27 @@
 # License: BSD (3-clause)
 
 import inspect
+import subprocess  # nosec B404: runs a constant snippet with sys.executable
+import sys
+import warnings
 
 import mne
 import numpy as np
 import pytest
 import torch
+from scipy.spatial.distance import pdist
 from sklearn.preprocessing import OneHotEncoder
 
 from braindecode import models
 from braindecode.models.util import (
+    _chs_info_3ch,
+    _draw_chs_info,
+    _fixture_montage_chs,
+    _get_signal_params,
     extract_channel_locations_from_chs_info,
     has_valid_locations,
     models_dict,
+    models_mandatory_parameters,
     positions_from_chs_info,
     resolve_channel_indices,
     valid_location_mask,
@@ -251,6 +260,133 @@ def test_extract_channel_locations_empty_zero_and_requested_count(fill_missing):
     actual = extract_channel_locations_from_chs_info([{"loc": [1, 2, 3]}], num_channels=3, fill_missing=fill_missing)
     expected = [[1, 2, 3], [np.nan] * 3, [np.nan] * 3] if fill_missing else [[1, 2, 3]]
     np.testing.assert_array_equal(actual, np.asarray(expected, dtype=np.float32))
+
+
+def _montage_head_locs(names):
+    """Head-frame ``loc`` of ``names``, as a user gets them from ``set_montage``."""
+    montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
+    info = mne.create_info(list(montage.ch_names), 250.0, "eeg")
+    info.set_montage(montage)
+    by_name = {ch["ch_name"]: ch["loc"][:3] for ch in info["chs"]}
+    return np.array([by_name[name] for name in names])
+
+
+def _assert_real_chs_info(chs_info, distinct=True):
+    """Names are real 10-05 names, positions are the head-frame ones, in metres."""
+    names = [ch["ch_name"] for ch in chs_info]
+    if distinct:
+        assert len(set(names)) == len(names)
+        # Two names for one electrode (legacy aliases) do not exist in a recording.
+        locs_head = np.array([ch["loc"][:3] for ch in chs_info])
+        if len(chs_info) > 1:
+            assert pdist(locs_head).min() > 1e-6
+    assert set(names) <= set(mne.channels.make_standard_montage(
+        resolve_montage_name("standard_1005")
+    ).ch_names)
+    locs = np.array([ch["loc"] for ch in chs_info])
+    assert locs.shape == (len(chs_info), 12)
+    assert all(ch["kind"] == "eeg" for ch in chs_info)
+    np.testing.assert_allclose(locs[:, :3], _montage_head_locs(names), atol=1e-8)
+    np.testing.assert_array_equal(locs[:, 3:], 0.0)
+    # Head frame, in metres: scalp sensors 5 to 20 cm away from the origin.
+    radius = np.linalg.norm(locs[:, :3], axis=1)
+    assert ((radius > 0.05) & (radius < 0.20)).all()
+
+
+def test_chs_info_3ch_matches_the_montage():
+    assert [ch["ch_name"] for ch in _chs_info_3ch] == ["C1", "C2", "C3"]
+    _assert_real_chs_info(_chs_info_3ch)
+
+
+def test_fixture_montage_is_loaded_without_warning():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        chs = _fixture_montage_chs.__wrapped__()
+    assert len(chs) > 300
+    assert len({name for name, _ in chs}) == len(chs)
+
+
+def test_fixture_montage_has_no_colocated_legacy_aliases():
+    chs = _fixture_montage_chs()
+    assert len(chs) > 300
+    positions = np.array([loc[:3] for _, loc in chs])
+    assert pdist(positions).min() > 1e-6
+    names = {name for name, _ in chs}
+    # The modern name is kept, its legacy 10-20 alias is dropped.
+    assert {"T7", "T8", "P7", "P8"} <= names
+    assert not names & {"T3", "T4", "T5", "T6"}
+
+
+def test_import_does_not_load_the_fixture_montage():
+    # No warning filter here: that the montage loads without a warning is
+    # checked in-process above, and an unrelated import-time warning of a
+    # dependency must not fail this test.
+    code = (
+        "import braindecode.models.util as u;"
+        "assert u._fixture_montage_chs.cache_info().currsize == 0"
+    )
+    result = subprocess.run(  # nosec B603: constant code, sys.executable
+        [sys.executable, "-c", code], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("n_chans", [1, 3, 19, 32])
+def test_draw_chs_info_real_distinct_channels(n_chans):
+    chs_info = _draw_chs_info(n_chans, np.random.default_rng(0))
+    assert len(chs_info) == n_chans
+    _assert_real_chs_info(chs_info)
+
+
+def test_draw_chs_info_is_determined_by_the_rng():
+    def names(seed):
+        return [ch["ch_name"] for ch in _draw_chs_info(19, np.random.default_rng(seed))]
+
+    assert names(0) == names(0)
+    assert names(0) != names(1)
+    # The draw moves the stream on, so successive draws differ.
+    rng = np.random.default_rng(0)
+    first, second = (_draw_chs_info(19, rng) for _ in range(2))
+    assert [ch["ch_name"] for ch in first] != [ch["ch_name"] for ch in second]
+
+
+def test_draw_chs_info_returns_independent_arrays():
+    first = _draw_chs_info(3, np.random.default_rng(0))
+    first[0]["loc"][:] = 99.0
+    second = _draw_chs_info(3, np.random.default_rng(0))
+    assert second[0]["loc"][0] != 99.0
+
+
+def test_draw_chs_info_with_more_channels_than_the_montage():
+    n_montage = len(_fixture_montage_chs())
+    assert len(_draw_chs_info(n_montage, np.random.default_rng(0))) == n_montage
+    with pytest.raises(ValueError, match="Cannot draw .* distinct channels"):
+        _draw_chs_info(n_montage + 1, np.random.default_rng(0))
+
+
+def test_get_signal_params_draws_real_channels_for_n_chans():
+    chs_info = _get_signal_params({"n_chans": 16})["chs_info"]
+    assert len(chs_info) == 16
+    _assert_real_chs_info(chs_info)
+
+
+def test_get_signal_params_channels_do_not_depend_on_the_test_order():
+    def names():
+        return [ch["ch_name"] for ch in _get_signal_params({"n_chans": 16})["chs_info"]]
+
+    first = names()
+    _get_signal_params({"n_chans": 5})  # other draws in between
+    assert names() == first
+
+
+def test_dance_signal_params_are_real_channels_and_stable():
+    signal_params = {name: sp for name, _, sp in models_mandatory_parameters}["DANCE"]
+    first, second = signal_params(), signal_params()
+    assert first["n_chans"] == len(first["chs_info"]) == 19
+    _assert_real_chs_info(first["chs_info"])
+    assert [ch["ch_name"] for ch in first["chs_info"]] == [
+        ch["ch_name"] for ch in second["chs_info"]
+    ]
 
 
 @pytest.mark.filterwarnings("error")

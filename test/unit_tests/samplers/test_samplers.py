@@ -204,14 +204,8 @@ def dist_sampler_init_process(rank, world_size, windows_ds, init_method):
 @pytest.mark.skipif(platform.system() == 'Windows',
                     reason="Not supported on Windows because of use_libuv compatibility")
 def test_distributed_recording_sampler(windows_ds, tmp_path):
-    world_size = 1  # Test single process - no dataset splitting
-    init_method = (tmp_path / "rendezvous-1").as_uri()
-    mp.spawn(
-        dist_sampler_init_process,
-        args=(world_size, windows_ds, init_method),
-        nprocs=world_size,
-        join=True,
-    )
+    # Single process - no dataset splitting; runs in this process.
+    dist_sampler_init_process(0, 1, windows_ds, (tmp_path / "rendezvous-1").as_uri())
     world_size = 3  # Test multiple processes - dataset splitting
     init_method = (tmp_path / "rendezvous-3").as_uri()
     mp.spawn(
@@ -341,52 +335,10 @@ def distributed_relative_positioning_sampler_init_process(
                     reason="Not supported on Windows because of use_libuv compatibility")
 @pytest.mark.parametrize("same_rec_neg", [True, False])
 def test_distributed_relative_positioning_sampler(windows_ds, same_rec_neg, tmp_path):
-    world_size = 1
-    init_method = (tmp_path / "rendezvous").as_uri()
-    mp.spawn(
-        distributed_relative_positioning_sampler_init_process,
-        args=(world_size, windows_ds, same_rec_neg, init_method),
-        nprocs=world_size,
-        join=True,
+    # One process: runs in this process instead of a spawned one.
+    distributed_relative_positioning_sampler_init_process(
+        0, 1, windows_ds, same_rec_neg, (tmp_path / "rendezvous").as_uri()
     )
-
-
-def distributed_relative_positioning_sampler_n_examples_check(
-    rank, world_size, windows_ds, n_examples_total, init_method
-):
-    """Test that n_examples calculation uses correct operator precedence."""
-    dist.init_process_group(
-        backend="gloo",
-        init_method=init_method,
-        rank=rank,
-        world_size=world_size
-    )
-
-    tau_pos, tau_neg = 2000, 3000
-    sampler = DistributedRelativePositioningSampler(
-        windows_ds.get_metadata(),
-        tau_pos=tau_pos,
-        tau_neg=tau_neg,
-        n_examples=n_examples_total,
-        tau_max=None,
-        same_rec_neg=True,
-        random_state=33,
-    )
-
-    # Calculate expected n_examples for this rank
-    # Formula should be: n_examples_total * n_recordings_for_rank // total_recordings
-    total_recordings = sampler.info.shape[0]
-    recordings_per_rank = sampler.n_recordings
-    expected_n_examples = n_examples_total * recordings_per_rank // total_recordings
-
-    assert sampler.n_examples == expected_n_examples, (
-        f"Rank {rank}: Expected {expected_n_examples} examples but got {sampler.n_examples}. "
-        f"total_recordings={total_recordings}, recordings_per_rank={recordings_per_rank}, "
-        f"n_examples_total={n_examples_total}"
-    )
-
-    # Cleanup
-    dist.destroy_process_group()
 
 
 @pytest.mark.skipif(platform.system() == 'Windows',
@@ -405,17 +357,30 @@ def test_distributed_relative_positioning_sampler_n_examples_calculation(
     - Buggy: n_examples // total_recordings * recordings_per_rank (double truncation)
     - Fixed: n_examples * recordings_per_rank // total_recordings (single division)
     """
-    mp.spawn(
-        distributed_relative_positioning_sampler_n_examples_check,
-        args=(
-            world_size,
-            windows_ds,
-            n_examples_total,
-            (tmp_path / "rendezvous").as_uri(),
-        ),
-        nprocs=world_size,
-        join=True
+    # Every rank in this process, passed to DistributedSampler explicitly; the
+    # one-process group only serves the sampler's dist.get_rank() log line.
+    dist.init_process_group(
+        backend="gloo",
+        init_method=(tmp_path / "rendezvous").as_uri(),
+        rank=0,
+        world_size=1,
     )
+    try:
+        for rank in range(world_size):
+            sampler = DistributedRelativePositioningSampler(
+                windows_ds.get_metadata(),
+                tau_pos=2000,
+                tau_neg=3000,
+                n_examples=n_examples_total,
+                random_state=33,
+                num_replicas=world_size,
+                rank=rank,
+            )
+            total_recordings = sampler.info.shape[0]
+            expected = n_examples_total * sampler.n_recordings // total_recordings
+            assert sampler.n_examples == expected, f"rank {rank}"
+    finally:
+        dist.destroy_process_group()
 
 
 @pytest.mark.parametrize("n_windows,n_windows_stride", [[10, 5], [10, 100], [1, 1]])

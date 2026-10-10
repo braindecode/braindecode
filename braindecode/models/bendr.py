@@ -4,6 +4,7 @@
 # License: BSD (3-clause)
 
 import copy
+from typing import Dict, Optional, Union
 
 import numpy as np
 import torch
@@ -364,7 +365,9 @@ class BENDR(EEGModuleMixin, nn.Module):
         self._update_init_kwargs(final_layer=True)
         self._build_head(n_outputs)
 
-    def forward(self, x, return_features=False):
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         if self.channel_tokenizer is not None:
             x = self.channel_tokenizer(x)[0]
         encoded = self.encoder(x)
@@ -394,7 +397,11 @@ class BENDR(EEGModuleMixin, nn.Module):
             # feature: [batch_size, encoder_h]
 
         if return_features:
-            return {"features": feature, "cls_token": None}
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": feature,
+                "cls_token": None,
+            }
+            return out
 
         if self.final_layer is not None:
             feature = self.final_layer(feature)
@@ -468,6 +475,23 @@ class _ConvEncoderBENDR(nn.Module):
         return self.encoder(x)
 
 
+class _TFixupEncoderLayer(nn.TransformerEncoderLayer):
+    """Post-norm layer without the fast path (never taken: ``batch_first=False``),
+    which reads ``norm1.weight``, an Identity under T-Fixup, and cannot be scripted."""
+
+    def forward(
+        self,
+        src: torch.Tensor,
+        src_mask: Optional[torch.Tensor] = None,
+        src_key_padding_mask: Optional[torch.Tensor] = None,
+        is_causal: bool = False,
+    ) -> torch.Tensor:
+        x = self.norm1(
+            src + self._sa_block(src, src_mask, src_key_padding_mask, is_causal)
+        )
+        return self.norm2(x + self._ff_block(x))
+
+
 class _BENDRContextualizer(nn.Module):
     r"""Transformer-based contextualizer for BENDR."""
 
@@ -526,7 +550,7 @@ class _BENDRContextualizer(nn.Module):
         # --- Transformer Encoder Layers ---
         # Paper uses T-Fixup: remove internal LayerNorm layers
 
-        encoder_layer = nn.TransformerEncoderLayer(
+        encoder_layer = _TFixupEncoderLayer(
             d_model=self.transformer_dim,  # Use projected dimension
             nhead=heads,
             dim_feedforward=hidden_feedforward,
@@ -588,7 +612,6 @@ class _BENDRContextualizer(nn.Module):
                 float(self.start_token),
                 device=x.device,
                 dtype=x.dtype,
-                requires_grad=False,
             )
             x = torch.cat([token_emb, x], dim=0)
         # x: [seq_len + 1, batch_size, transformer_dim]
@@ -604,7 +627,7 @@ class _BENDRContextualizer(nn.Module):
         # x: [seq_len + 1, batch_size, transformer_dim]
 
         # Permute to (B, C, T) format for Conv1d output layer
-        x = Rearrange("time batch channel -> batch channel time")(x)
+        x = x.permute(1, 2, 0)
         # x: [batch_size, transformer_dim, seq_len + 1]
 
         # Apply output projection (Conv1d expects B, C, T)

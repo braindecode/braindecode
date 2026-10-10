@@ -262,6 +262,19 @@ def test_codebook_kmeans_matches_broadcast_reference(make_samples):
     torch.testing.assert_close(centers, ref_centers, rtol=0, atol=0)
 
 
+def test_codebook_kmeans_searches_each_distinct_row_once(monkeypatch):
+    """A small first batch is drawn with replacement; the nearest-center search
+    runs on its distinct rows (10 s per fresh BrainOmni on CPU otherwise)."""
+    rows, cdist = [], torch.cdist
+    monkeypatch.setattr(
+        torch, "cdist", lambda a, b, **kw: rows.append(len(a)) or cdist(a, b, **kw)
+    )
+    torch.manual_seed(0)
+    codebook = _Codebook(dim=4, codebook_size=8, kmeans_iters=2)
+    codebook.init_embed_(torch.randn(5, 4))  # 5 rows drawn 4096 times
+    assert rows == [5, 5]
+
+
 @pytest.mark.parametrize("train", [True, False])
 def test_quantizer_codebook_ema_only_in_train(train):
     torch.manual_seed(0)

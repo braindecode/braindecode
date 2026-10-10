@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import math
-from collections import deque
 
 import torch
 from einops.layers.torch import Rearrange
@@ -255,24 +254,16 @@ class FourierEmb(nn.Module):
         pos = 2 * math.pi * freqs / width
         self.register_buffer("pos", pos)
 
-    @staticmethod
-    def _outer_sum(x: torch.Tensor) -> torch.Tensor:
-        # Outer sum over the last (n_dims) axes -> grid of size n_freqs**n_dims.
-        inds = deque([slice(None)] + [None] * (x.shape[-1] - 1))
-        out = x[..., 0][(...,) + tuple(inds)]
-        for i in range(1, x.shape[-1]):
-            inds.rotate()
-            out = out + x[..., i][(...,) + tuple(inds)]
-        return out
-
     def forward(self, positions: torch.Tensor) -> torch.Tensor:
         # positions: (B, n_chans, 2) in [0, 1].
-        *o, d = positions.shape
+        d = positions.shape[-1]
         if d != self.n_dims:
             raise ValueError(f"Expected {self.n_dims} positions, got {d}.")
         positions = positions + self.margin
-        locs = torch.einsum("bcd,f->bcfd", positions, self.pos)
-        loc_grid = self._outer_sum(locs).view(*o, -1)  # (B, n_chans, n_freqs**2)
+        locs = torch.einsum("bcd,f->bcfd", [positions, self.pos])
+        # Outer sum over the n_dims = 2 axes -> grid of n_freqs**2 frequencies.
+        loc_grid = locs[..., 0].unsqueeze(-1) + locs[..., 1].unsqueeze(-2)
+        loc_grid = loc_grid.flatten(positions.dim() - 1)  # (B, n_chans, n_freqs**2)
         emb = torch.cat([torch.cos(loc_grid), torch.sin(loc_grid)], dim=-1)
         return emb  # (B, n_chans, (n_freqs**2)*2) == (..., dimension)
 
@@ -327,17 +318,17 @@ class ChannelMerger(nn.Module):
         # score_offset lives on ``positions``' device (the invalid_mask is derived
         # from positions) and in ``x``'s dtype (so the final ``weights @ x`` works
         # under half precision); numerics-neutral in the usual fp32 same-device case.
-        score_offset = torch.zeros(B, C, device=positions.device, dtype=x.dtype)
+        score_offset = torch.zeros((B, C), device=positions.device, dtype=x.dtype)
         invalid_mask = (positions == self.invalid_value).all(dim=-1)
         score_offset = score_offset.masked_fill(invalid_mask, float("-inf"))
-        if self.training and self.dropout:
-            center = torch.rand(self.n_dims, device=positions.device)
-            banned = (positions[:, :, : self.n_dims] - center).norm(
-                dim=-1
-            ) <= self.dropout
+        if self.training and self.dropout != 0.0:
+            center = torch.rand((self.n_dims,), device=positions.device)
+            distance = positions[:, :, : self.n_dims] - center
+            banned = torch.linalg.vector_norm(distance, 2, dim=-1) <= self.dropout
             score_offset = score_offset.masked_fill(banned, float("-inf"))
         heads = self.heads[None].expand(B, -1, -1)  # (B, out, pos_dim)
-        scores = torch.einsum("bcd,bod->boc", embedding, heads)  # (B, out, n_chans)
+        # (B, out, n_chans)
+        scores = torch.einsum("bcd,bod->boc", [embedding, heads])
         scores = scores + score_offset[:, None]
         weights = torch.softmax(scores, dim=2).nan_to_num()  # over n_chans
         out = weights @ x  # (B, out, n_chans) @ (B, n_chans, T) -> (B, out, T)

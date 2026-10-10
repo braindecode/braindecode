@@ -6,7 +6,7 @@ from __future__ import annotations
 import math
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Union
 
 import torch
 from einops.layers.torch import Rearrange
@@ -231,10 +231,6 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
     _init_transformer : bool
         Do not change the default value (used for internal purposes).
     """
-
-    feature_encoder: _ConvFeatureEncoder | None
-    pos_encoder: _PosEncoder | None
-    transformer: nn.Transformer | None
 
     _feature_encoder_channels: str = "n_chans"
     _channel_target = [ch["ch_name"] for ch in _PRETRAIN_CHS_INFO]
@@ -488,13 +484,19 @@ class SignalJEPA(_BaseSignalJEPA):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.final_layer = nn.Identity()
 
-    def forward(self, X, return_features=False):  # type: ignore
+    def forward(
+        self, X: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         local_features = self.feature_encoder(X)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features += pos_encoding  # type: ignore
         contextual_features = self.transformer.encoder(local_features)  # type: ignore
         if return_features:
-            return {"features": contextual_features, "cls_token": None}
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": contextual_features,
+                "cls_token": None,
+            }
+            return out
         y = self.final_layer(contextual_features)  # type: ignore
         return y  # type: ignore
 
@@ -669,13 +671,19 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             n_spat_filters=self._clf_n_spat_filters,
         )
 
-    def forward(self, X, return_features=False):  # type: ignore
+    def forward(
+        self, X: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         local_features = self.feature_encoder(X)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features += pos_encoding  # type: ignore
         contextual_features = self.transformer.encoder(local_features)  # type: ignore
         if return_features:
-            return {"features": contextual_features, "cls_token": None}
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": contextual_features,
+                "cls_token": None,
+            }
+            return out
         y = self.final_layer(contextual_features)  # type: ignore
         return y  # type: ignore
 
@@ -977,10 +985,16 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         new_model.feature_encoder = deepcopy(feature_encoder)
         return new_model
 
-    def forward(self, X, return_features=False):
-        local_features = self.feature_encoder(X)
+    def forward(
+        self, X: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
+        local_features = self.feature_encoder(X)  # type: ignore[misc]
         if return_features:
-            return {"features": local_features, "cls_token": None}
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": local_features,
+                "cls_token": None,
+            }
+            return out
         y = self.final_layer(local_features)
         return y
 
@@ -1212,11 +1226,17 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         new_model.feature_encoder = deepcopy(feature_encoder)
         return new_model
 
-    def forward(self, X, return_features=False):
+    def forward(
+        self, X: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         X = self.spatial_conv(X)
-        local_features = self.feature_encoder(X)
+        local_features = self.feature_encoder(X)  # type: ignore[misc]
         if return_features:
-            return {"features": local_features, "cls_token": None}
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": local_features,
+                "cls_token": None,
+            }
+            return out
         y = self.final_layer(local_features)
         return y
 

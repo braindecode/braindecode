@@ -74,6 +74,8 @@ interface for all EEG models and can derive variable names when needed.
       prediction
     - :class:`CSBrain` - Cross-scale spatiotemporal brain foundation model with
       structured sparse attention
+    - :class:`Guetschel2026` - 58 MAE/JEPA encoders sharing one backbone, from the EEG
+      masking-geometry study
     - :class:`Labram` - Large Brain Model with pre-trained weights
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
@@ -181,6 +183,7 @@ interface for all EEG models and can derive variable names when needed.
      FBCNet
      FBLightConvNet
      FBMSNet
+     Guetschel2026
      IFNet
      Labram
      LUNA
@@ -457,10 +460,12 @@ The functional module contains various functions that can be used like functiona
     :recursive:
 
      drop_path
+     fft_conv1d
      glorot_weight_zero_bias
      hilbert_freq
      identity
      plv_time
+     prefer_fft_conv
      rescale_parameter
      safe_log
      sinusoidal_positional_encoding
@@ -756,7 +761,9 @@ transformations, frequency'domain transformations, and spatial transformations.
      SegmentationReconstruction
      MaskEncoding
      AmplitudeScale
+     BandRotation
      ChannelsReref
+     TrivialAugment
 
 The functional augmentation API contains the same transformations as the transforms API,
 but they are implemented as functions.

@@ -1016,6 +1016,29 @@ def test_eeginception_mi_binary_n_params(n_filter, reported):
     assert n_params == reported
 
 
+@pytest.mark.parametrize("dtype, rtol", [(torch.float32, 1e-5), (torch.float64, 1e-10)])
+def test_eeginception_mi_fft_conv(dtype, rtol):
+    """The FFT path equals the direct convolution up to rounding (outputs and
+    gradients); on CPU the default takes the direct one on a small input and
+    the FFT one past the crossover."""
+    kw = dict(n_chans=3, n_outputs=2, n_times=256, sfreq=128, n_filters=8)
+    models = {}
+    for mode in (False, True, None):
+        torch.manual_seed(0)
+        models[mode] = EEGInceptionMI(fft_conv=mode, **kw).to(dtype).eval()
+    x = torch.randn(8, 3, 256, dtype=dtype)
+    outs, grads = {}, {}
+    for mode in (False, True):
+        outs[mode] = models[mode](x)
+        outs[mode].square().sum().backward()
+        grads[mode] = torch.cat([p.grad.flatten() for p in models[mode].parameters()])
+    for got, ref in ((outs[True], outs[False]), (grads[True], grads[False])):
+        assert (got - ref).abs().max() <= rtol * ref.abs().max()
+    with torch.no_grad():  # largest kernel: 108 samples
+        assert torch.equal(models[None](x[:1]), models[False](x[:1]))
+        assert torch.equal(models[None](x), models[True](x))
+
+
 def test_atcnet(input_sizes):
     sfreq = 250
     input_sizes["n_in_times"] = 1125
@@ -1663,7 +1686,8 @@ def test_sccnet_dummy(n_times, n_chans, sfreq, n_outputs):
     ],
 )
 def test_eeginceptionmi_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 64
+    # 64 windows held 6.3 GB of activations; a macOS runner has 7 GB for 3 workers.
+    batch_size = 2
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -1884,9 +1908,12 @@ def test_model_trainable_parameters(model):
     assert trainable_final_layer_parameters == 66
 
 
-@pytest.mark.parametrize("n_chans", (2 ** np.arange(8)).tolist())
-@pytest.mark.parametrize("n_outputs", [2, 3, 4, 5, 50])
-@pytest.mark.parametrize("input_size_s", [1, 2, 5, 10, 15, 30])
+# Every channel count, output size and window length once, not their 240-case product.
+@pytest.mark.parametrize(
+    "n_chans, n_outputs, input_size_s",
+    [(1, 2, 1), (2, 3, 2), (4, 4, 5), (8, 5, 10), (16, 50, 15), (32, 2, 30),
+     (64, 3, 1), (128, 4, 2)],
+)
 def test_biot(n_chans, n_outputs, input_size_s):
     rng = check_random_state(42)
     sfreq = 200
@@ -3373,9 +3400,9 @@ def test_brain_module_glu(brain_module_params, glu, glu_context, depth):
 
     # Verify GLU modules only created when glu > 0
     if glu > 0:
-        assert any(g is not None for g in model.encoder.glus)
+        assert not all(isinstance(g, nn.Identity) for g in model.encoder.glus)
     else:
-        assert all(g is None for g in model.encoder.glus)
+        assert all(isinstance(g, nn.Identity) for g in model.encoder.glus)
 
 
 @pytest.mark.parametrize("depth", [2, 4, 6])
@@ -3936,16 +3963,17 @@ def test_medformer_boolean_combinations(no_inter_attn, single_channel, output_at
     """
     set_random_seeds(0, False)
 
+    # 200 samples: single_channel attends over time patches of every channel.
     model = MEDFormer(
         n_chans=22,
         n_outputs=4,
-        n_times=1000,
+        n_times=200,
         no_inter_attn=no_inter_attn,
         single_channel=single_channel,
         output_attention=output_attention,
     )
 
-    x = torch.randn(2, 22, 1000)
+    x = torch.randn(2, 22, 200)
     y = model(x)
     assert y.shape == (2, 4)
 
@@ -3959,6 +3987,22 @@ def test_medformer_boolean_combinations(no_inter_attn, single_channel, output_at
         assert first_medformer_layer.inter_attention is None
     else:
         assert first_medformer_layer.inter_attention is not None
+
+
+def test_medformer_encoder_layer_keeps_dropout_per_granularity():
+    """Norms and convs run once on all granularities, dropout still per
+    granularity in the original order: same masks as the per-list form."""
+    layer = MEDFormer(n_chans=22, n_outputs=4, n_times=200).encoder.attn_layers[0]
+    x = [torch.randn(2, n, 128) for n in (12, 4, 3)]
+    torch.manual_seed(1)
+    out, _ = layer.train()(x)
+    torch.manual_seed(1)
+    new_x, _ = layer.attention(x)
+    ref = [layer.norm1(a + layer.dropout(b)) for a, b in zip(x, new_x)]
+    y = [layer.dropout(layer.activation(layer.conv1(r.transpose(-1, 1)))) for r in ref]
+    y = [layer.dropout(layer.conv2(v).transpose(-1, 1)) for v in y]
+    for o, r, v in zip(out, ref, y):
+        torch.testing.assert_close(o, layer.norm2(r + v))
 
 
 @pytest.mark.parametrize("patch_len_list", [[2, 8, 16], [4, 8], [2, 4, 8, 16]])
@@ -3981,6 +4025,19 @@ def test_medformer_patch_len_configurations(patch_len_list):
 
     # Check that the number of patch embeddings matches
     assert len(model.enc_embedding.value_embeddings) == len(patch_len_list)
+
+
+@pytest.mark.parametrize("single_channel", [False, True])
+def test_medformer_token_embedding_matches_its_conv2d(single_channel):
+    """The full-height patch kernel runs as a conv1d (Gaudi2 rejects conv
+    kernels taller than 256 rows) and gives the values of its Conv2d.
+    float64: in float32 the two summation orders differ by rounding."""
+    model = MEDFormer(
+        n_chans=22, n_outputs=4, n_times=1000, single_channel=single_channel
+    ).double()
+    emb = model.enc_embedding.value_embeddings[1]
+    x = torch.randn(2, 1, emb.token_conv.kernel_size[0], 30, dtype=torch.float64)
+    torch.testing.assert_close(emb(x), emb.token_conv(x))
 
 
 def test_eegitnet_mapping_targets():

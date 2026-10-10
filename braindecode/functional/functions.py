@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 import numpy as np
 import torch
@@ -52,6 +53,95 @@ def spectral_input(x: torch.Tensor) -> torch.Tensor:
     if x.device.type == "hpu":
         x = x.cpu()
     return x.to(torch.promote_types(x.dtype, torch.float32))
+
+
+def fft_conv1d(
+    x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor] = None
+) -> torch.Tensor:
+    """``F.conv1d(x, weight, bias, padding="same")`` computed with FFTs.
+
+    Equal to the direct convolution up to float rounding: the FFT is long
+    enough for a linear (not circular) convolution. Its cost barely grows with
+    the kernel size, so it is faster than the direct one for long kernels on
+    CPU (see :func:`prefer_fft_conv`). float16/bfloat16 inputs are computed in
+    float32 (:func:`spectral_input`) and cast back.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input of shape ``(batch, in_channels, n_times)``.
+    weight : torch.Tensor
+        Kernels of shape ``(out_channels, in_channels, kernel_size)``.
+    bias : torch.Tensor | None
+        Bias of shape ``(out_channels,)``.
+
+    Returns
+    -------
+    torch.Tensor
+        Output of shape ``(batch, out_channels, n_times)``, dtype and device of
+        ``x``. For an even ``kernel_size`` it is aligned like torch's
+        ``padding="same"`` (the extra zero padded on the right).
+    """
+    n_times, kernel_size = x.shape[-1], weight.shape[-1]
+    # >= n_times + kernel_size - 1 (no circular wrap-around), even and
+    # 5-smooth: the fast cases of a real FFT
+    n_fft = 2 * _next_fast_len((n_times + kernel_size) // 2)
+    xs = spectral_input(x)
+    # conv1d is a cross-correlation: a convolution with the flipped kernel
+    x_f = torch.fft.rfft(xs, n=n_fft).permute(2, 0, 1)  # (freq, batch, in)
+    w_f = torch.fft.rfft(weight.to(xs).flip(-1), n=n_fft).permute(2, 1, 0)
+    # Per frequency (batch, in) @ (in, out) in complex numbers, as one real
+    # matmul (a complex one is slower on CPU): [Re x; Im x] @ [Re w, Im w]
+    # (columns interleaved) holds the four real products.
+    p = torch.cat([x_f.real, x_f.imag], 1) @ torch.view_as_real(w_f).flatten(2)
+    p = p.unflatten(1, [2, x.shape[0]]).unflatten(3, [-1, 2])  # x re/im, w re/im
+    y_f = torch.complex(
+        p[:, 0, :, :, 0] - p[:, 1, :, :, 1], p[:, 0, :, :, 1] + p[:, 1, :, :, 0]
+    )
+    y = torch.fft.irfft(y_f.permute(1, 2, 0), n=n_fft)
+    # "same" output t is sample t + kernel_size // 2 of the full convolution
+    y = y[..., kernel_size // 2 : kernel_size // 2 + n_times]
+    if bias is not None:
+        y = y + bias.to(y).unsqueeze(-1)
+    return y.to(x)
+
+
+def prefer_fft_conv(x: torch.Tensor, kernel_size: int) -> bool:
+    """Whether :func:`fft_conv1d` is expected to beat a direct convolution.
+
+    Rule measured for :class:`~braindecode.models.EEGInceptionMI` (48 to 240
+    channels, 128-500 Hz, 2 CPU threads, oneDNN on and off): on CPU the FFT
+    wins for float16/bfloat16 inputs (no fast half-precision CPU convolution)
+    and from ``batch_size * kernel_size >= 600`` if also
+    ``in_channels * kernel_size >= 120``: with one or two input channels a
+    float32 direct convolution stays cheaper up to k = 85 / 31 (13 long
+    temporal convolutions of the model zoo, 22 channels x batch 32). GPUs and
+    HPUs (no complex dtype) keep the direct convolution.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input of the convolution, ``(batch, in_channels, n_times)``.
+    kernel_size : int
+        Kernel length in samples.
+    """
+    return x.device.type == "cpu" and (
+        x.element_size() == 2
+        or (x.shape[0] * kernel_size >= 600 and x.shape[1] * kernel_size >= 120)
+    )
+
+
+def _next_fast_len(n: int) -> int:
+    """Smallest ``2^a 3^b 5^c >= n`` (scipy's ``next_fast_len(n, real=True)``)."""
+    n -= 1
+    m = 0
+    while m != 1:
+        n += 1
+        m = n
+        for p in [2, 3, 5]:
+            while m % p == 0:
+                m = m // p
+    return n
 
 
 def drop_path(
@@ -281,18 +371,24 @@ def plv_time(
     )
     # Normalize the analytic signal to obtain unit vectors (phasors).
     unit_phasor = analytic_signal / amplitude.unsqueeze(-1)
+    # The real/imaginary slices are strided (step 2): matmul copied each of
+    # them for every product, per batch matrix. Copy them once.
+    real = unit_phasor[..., 0].contiguous()
+    imag = unit_phasor[..., 1].contiguous()
+    real_t = real.transpose(-2, -1).contiguous()
+    imag_t = imag.transpose(-2, -1).contiguous()
 
     # Compute the real part of the outer product between phasors of
     # different channels.
-    real_real = torch.matmul(unit_phasor[..., 0], unit_phasor[..., 0].transpose(-2, -1))
+    real_real = torch.matmul(real, real_t)
 
     # Compute the imaginary part of the outer product between phasors of
     # different channels.
-    imag_imag = torch.matmul(unit_phasor[..., 1], unit_phasor[..., 1].transpose(-2, -1))
+    imag_imag = torch.matmul(imag, imag_t)
 
     # Compute the cross-terms for the real and imaginary parts.
-    real_imag = torch.matmul(unit_phasor[..., 0], unit_phasor[..., 1].transpose(-2, -1))
-    imag_real = torch.matmul(unit_phasor[..., 1], unit_phasor[..., 0].transpose(-2, -1))
+    real_imag = torch.matmul(real, imag_t)
+    imag_real = torch.matmul(imag, real_t)
 
     # Combine the real and imaginary parts to form the complex correlation.
     correlation_real = real_real + imag_imag
@@ -412,7 +508,14 @@ def dwt_max_level(n_times: int, filter_len: int) -> int:
     """
     if n_times < filter_len:
         return 0
-    return max(0, int(math.floor(math.log2(n_times / (filter_len - 1)))))
+    # floor(log2(n_times / (filter_len - 1))) in integers (TorchScript has no
+    # math.log2): the largest level with (filter_len - 1) * 2**level <= n_times.
+    ratio = n_times // (filter_len - 1)
+    level = 0
+    while ratio >= 2:
+        ratio = ratio // 2
+        level += 1
+    return level
 
 
 def wavelet_decomposition(
@@ -456,8 +559,9 @@ def wavelet_decomposition(
         )
         approx, detail = F.conv1d(padded, weight, stride=2).unbind(dim=1)
         details.append(detail)
-    out = torch.cat([approx, *reversed(details)], dim=-1)
-    return out.reshape(*leading, -1)
+    details.reverse()  # [cD_n, ..., cD_1]
+    out = torch.cat([approx] + details, dim=-1)
+    return out.reshape(list(leading) + [-1])
 
 
 def sinusoidal_positional_encoding(

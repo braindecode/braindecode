@@ -50,14 +50,18 @@ The following components are licensed under the MIT License:
 - `braindecode/modules/popt_modules.py`
 - `braindecode/models/brainomni.py`
 - `braindecode/modules/quantization.py`
+- `braindecode/modules/linear_attention.py`
 - `braindecode/models/seizure_transformer.py`
 - `docs/_static/model/seizure_transformer_arch.png`
+- `braindecode/models/guetschel2026.py`
 - `braindecode/models/tmsanet.py`
 
 The `brainomni.py` file is a derivative of `OpenTSLab/BrainOmni` (MIT), whose
 SEANet codec derives from Meta's `facebookresearch/encodec` (MIT). The
 `quantization.py` module holds the residual vector quantization derived from
 `lucidrains/vector-quantize-pytorch` (MIT) and the BrainOmni port.
+The `linear_attention.py` module is the part of
+`lucidrains/linear-attention-transformer` (MIT) that BIOT and TFMTokenizer run.
 
 ### Apache-2.0 Licensed Files
 

@@ -52,42 +52,6 @@ rng = np.random.default_rng(12)
 
 all_models_dict = dict(models_dict)
 
-# First blocker of each model that torch.jit.script cannot compile, or whose
-# scripted output differs from the eager one.
-_TORCHSCRIPT_XFAIL = {
-    "BENDR": "TransformerEncoderLayer fast path reads norm1.weight (Identity)",
-    "BIOT": "linear_attention_transformer forward takes **kwargs",
-    "BrainModule": "ModuleList with None entries: scripted zip drops them",
-    "BrainOmni": "rope passed as a callable argument",
-    "BrainTokenizer": "rope passed as a callable argument",
-    "CBraMod": "einops.rearrange call (**axes_lengths)",
-    "CSBrain": "einops.rearrange call (**axes_lengths)",
-    "CodeBrain": "einops.rearrange call (**axes_lengths)",
-    "DANCE": "starred unpacking of a tensor shape",
-    "EEGDINO": "forward returns a Dict or a Tensor",
-    "EEGPT": "einops.rearrange call (**axes_lengths)",
-    "LUNA": "einops.rearrange call (**axes_lengths)",
-    "Labram": "keyword-only forward argument",
-    "MAPA": "f-string error message in forward",
-    "MIRepNet": "forward returns a Dict or a Tensor",
-    "MSVTNet": "forward returns a Tensor or a tuple",
-    "MVPFormer": "math.log2 in forward",
-    "MetaNeuromotorHand": "einops.pack call",
-    "NeuroRVQ": "getattr with a computed name",
-    "NeuroRVQTokenizer": "getattr with a computed name",
-    "REVE": "einops.rearrange call (**axes_lengths)",
-    "SSTDPN": "einops.rearrange call (**axes_lengths)",
-    "STEEGFormer": "einops.rearrange call (**axes_lengths)",
-    "SignalJEPA": "'_ConvFeatureEncoder | None' annotation",
-    "SignalJEPA_Contextual": "'_ConvFeatureEncoder | None' annotation",
-    "SignalJEPA_PostLocal": "'_ConvFeatureEncoder | None' annotation",
-    "SignalJEPA_PreLocal": "forward returns a Dict or a Tensor",
-    "SleepFM": "einops.rearrange call (**axes_lengths)",
-    "SleepFMStager": "einops.rearrange call (**axes_lengths)",
-    "TCFormer": "nn.ConstantPad with an int value",
-    "TFMTokenizer": "linear_attention_transformer forward takes **kwargs",
-}
-
 _MODEL_CASES = {
     name: (required, signal_params)
     for name, required, signal_params in models_mandatory_parameters
@@ -192,7 +156,8 @@ def test_model_integration_full(model_name, required_params, signal_params):
     """
     Full test of the models compatibility with the skorch wrappers.
     In particular, it tests if the wrappers can set the signal-related parameters
-    and if the model can be found by name.
+    and if the model can be found by name, and that the fitted module keeps a
+    layer named 'final_layer' among its last two children.
 
     Parameters
     ----------
@@ -204,57 +169,6 @@ def test_model_integration_full(model_name, required_params, signal_params):
         The characteristics of the signal that should be passed to the model tested
         in case the default_signal_params are not compatible with this model.
         The keys of this dictionary can only be among those of default_signal_params.
-
-    """
-    if model_name in non_classification_models:
-        pytest.skip(f"Skipping {model_name} as not meant for classification")
-
-    epo, y = get_epochs_y(signal_params, n_epochs=10)
-
-    LEARNING_RATE = 0.0625 * 0.01
-    BATCH_SIZE = 2
-    EPOCH = 1
-    seed = 2409
-    valid_split = 0.2
-
-    clf = EEGClassifier(
-        module=model_name,
-        optimizer=torch.optim.Adam,
-        optimizer__lr=LEARNING_RATE,
-        batch_size=BATCH_SIZE,
-        max_epochs=EPOCH,
-        classes=[0, 1],
-        train_split=ValidSplit(valid_split, random_state=seed),
-        verbose=0,
-    )
-
-    clf.fit(X=epo, y=y)
-
-
-@pytest.mark.parametrize(
-    "model_name, required_params, signal_params", models_mandatory_parameters
-)
-def test_model_integration_full_last_layer(model_name, required_params, signal_params):
-    """
-    Test that the last layers of the model include a layer named 'final_layer'.
-
-    This test iterates over various models defined in `models_mandatory_parameters`
-    to ensure that each model has a layer named 'final_layer' among its last two layers.
-    Models that only support cropped datasets are skipped.
-
-    Parameters
-    ----------
-    model_name : str
-        Name of the model to be tested.
-    required_params : dict
-        Required parameters for the model.
-    signal_params : dict
-        Parameters related to the input signals.
-
-    Raises
-    ------
-    AssertionError
-        If 'final_layer' is not found among the last two layers of the model.
 
     """
     if model_name in non_classification_models:
@@ -495,18 +409,7 @@ def test_model_exported(model):
     assert isinstance(exported_prog, ExportedProgram)
 
 
-@pytest.mark.parametrize(
-    "model_name",
-    [
-        pytest.param(
-            name,
-            marks=pytest.mark.xfail(reason=_TORCHSCRIPT_XFAIL[name], strict=True)
-            if name in _TORCHSCRIPT_XFAIL
-            else (),
-        )
-        for name in _MODEL_CASES
-    ],
-)
+@pytest.mark.parametrize("model_name", list(_MODEL_CASES))
 def test_torch_script(model_name):
     """Models script directly and the scripted output equals the eager one.
 

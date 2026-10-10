@@ -7,6 +7,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode.functional import fft_conv1d, prefer_fft_conv
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import Ensure4d
 
@@ -36,11 +37,11 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
     Parameters
     ----------
     input_window_seconds : float, optional
-        Size of the input, in seconds. Set to 4.5 s as in [1]_ for dataset
-        BCI IV 2a.
+        Size of the input, in seconds. [1]_ uses 3 s (750 samples at 250 Hz).
     sfreq : float, optional
         EEG sampling frequency in Hz. Defaults to 250 Hz as in [1]_ for dataset
-        BCI IV 2a.
+        BCI IV 2a. Kernels are set in seconds, so compute grows with sfreq^2:
+        resampling 500 Hz data to 250 Hz makes the model about 4x cheaper.
     n_convs : int, optional
         Number of convolution per inception wide branching. Defaults to 5 as
         in [1]_ for dataset BCI IV 2a.
@@ -54,6 +55,12 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         0.9 here for ``n_convs=5``). Defaults to 0.1 s.
     activation: nn.Module
         Activation function. Defaults to ReLU activation.
+    fft_conv : bool | None, optional
+        Compute the temporal convolutions of the inception modules with an FFT
+        (:func:`~braindecode.functional.fft_conv1d`: same parameters, equal up
+        to float rounding) instead of a direct convolution. ``None`` (default)
+        decides per input with :func:`~braindecode.functional.prefer_fft_conv`
+        (FFT on CPU where it was faster in benchmarks, direct on GPU and HPU).
 
     References
     ----------
@@ -75,6 +82,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         activation: type[nn.Module] = nn.ReLU,
         chs_info=None,
         n_times=None,
+        fft_conv: bool | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -90,6 +98,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         self.n_filters = n_filters
         self.kernel_unit_s = kernel_unit_s
         self.activation = activation
+        self.fft_conv = fft_conv
 
         self.ensuredims = Ensure4d()
         self.dimshuffle = Rearrange("batch C T 1 -> batch C 1 T")
@@ -108,6 +117,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             kernel_unit_s=self.kernel_unit_s,
             sfreq=self.sfreq,
             activation=self.activation,
+            fft_conv=self.fft_conv,
         )
 
         intermediate_in_channels = (self.n_convs + 1) * self.n_filters
@@ -121,6 +131,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
                     kernel_unit_s=self.kernel_unit_s,
                     sfreq=self.sfreq,
                     activation=self.activation,
+                    fft_conv=self.fft_conv,
                 )
                 for _ in range(2)
             ]
@@ -141,6 +152,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
                     kernel_unit_s=self.kernel_unit_s,
                     sfreq=self.sfreq,
                     activation=self.activation,
+                    fft_conv=self.fft_conv,
                 )
                 for _ in range(3)
             ]
@@ -249,8 +261,10 @@ class _InceptionModuleMI(nn.Module):
         kernel_unit_s=0.1,
         sfreq=250,
         activation: type[nn.Module] = nn.ReLU,
+        fft_conv: bool | None = None,
     ):
         super().__init__()
+        self.fft_conv = fft_conv
         self.in_channels = in_channels
         self.n_filters = n_filters
         self.n_convs = n_convs
@@ -305,20 +319,33 @@ class _InceptionModuleMI(nn.Module):
         X: torch.Tensor,
     ) -> torch.Tensor:
         X1 = self.bottleneck(X)
+        k_max = self.conv_list[-1].kernel_size[1]
+        if self.fft_conv is None:
+            use_fft = prefer_fft_conv(X1, k_max)
+        else:
+            use_fft = self.fft_conv
+        if use_fft:
+            # The parallel convs as one: kernels zero-padded (centred) to the
+            # longest, stacked along the output channels.
+            weights, biases = [], []
+            for conv in self.conv_list:
+                pad = (k_max - conv.kernel_size[1]) // 2
+                weights.append(nn.functional.pad(conv.weight.squeeze(2), [pad, pad]))
+                bias = conv.bias
+                if bias is not None:
+                    biases.append(bias)
+            X1 = fft_conv1d(X1.squeeze(2), torch.cat(weights), torch.cat(biases))
+            X1 = X1.unsqueeze(2)
+        else:
+            X1 = torch.cat([conv(X1) for conv in self.conv_list], 1)
 
-        X1 = [conv(X1) for conv in self.conv_list]
+        # channels_last: same values, but torch's CPU max pool then vectorises
+        # over channels instead of looping over them.
+        X2 = self.pooling(X.contiguous(memory_format=torch.channels_last))
+        # An even kernel_unit pools n_times + 1 samples: drop the last one.
+        X2 = self.pooling_conv(X2.contiguous())[..., : X.shape[-1]]
 
-        X2 = self.pooling(X)
-        X2 = self.pooling_conv(X2)
-        # Get the target length from one of the conv branches
-        target_len = X1[0].shape[-1]
-
-        # Crop the pooling output if its length does not match
-        if X2.shape[-1] != target_len:
-            X2 = X2[..., :target_len]
-
-        out = torch.cat(X1 + [X2], 1)
-
+        out = torch.cat([X1, X2], 1)
         out = self.bn(out)
         return self.activation(out)
 

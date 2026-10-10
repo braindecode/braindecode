@@ -296,7 +296,6 @@ class PBT(EEGModuleMixin, nn.Module):
         tokens = self.patching_projection(X)
 
         cls_token = self.cls_token.expand(X.size(0), 1, -1)
-        cls_idx = torch.zeros((X.size(0), 1), dtype=torch.long, device=X.device)
 
         tokens = torch.cat([cls_token, tokens], dim=1)
         pos_emb = self.pos_embedding(int_pos)

@@ -15,6 +15,11 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    env:
+      # torch/OpenMP/MKL threads x xdist workers (-n auto) = vCPUs: macOS 3 x 1,
+      # Linux/Windows 2 x 2. Unpinned, each worker used every core; 4 workers x 1
+      # thread stopped both 16 GB Linux runners mid-suite.
+      OMP_NUM_THREADS: ${{ matrix.os == 'macos-latest' && '1' || '2' }}
     strategy:
       fail-fast: false
       matrix:
@@ -114,7 +119,9 @@ jobs:
       if: ${{ !matrix.run-coverage }}
       env:
         HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
-      run: pytest -vv --durations=0 -n auto --dist worksteal test/
+      # test_model_compiled runs only in the coverage job above, which restores
+      # the TorchInductor cache; elsewhere it recompiled every model cold.
+      run: pytest -vv --durations=0 -n auto --dist worksteal test/ -k "not test_model_compiled"
 
     - name: Save TorchInductor Cache
       if: ${{ matrix.run-coverage && success() && steps.restore-compiler-cache.outputs.cache-hit != 'true' }}

@@ -20,7 +20,6 @@ import torch
 import torch.fft as fft
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange
 
 from braindecode.functional import rotate_pairs, spectral_input
 from braindecode.models.base import EEGModuleMixin
@@ -298,13 +297,12 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             mask_tokens = self.mask_token.repeat(
                 x_masked.shape[0], x_masked.shape[1], 1
             )  # (B, N, D) N = C * num_patches_per_channel
-            mask = rearrange(
-                mask, "B C (S P) -> B (C S) P", P=self.patch_size
-            )  # (B, C, T) -> (B, N, P)
+            # (B, C, T) -> (B, N, P)
+            mask = mask.unflatten(-1, (-1, self.patch_size)).flatten(1, 2)
             mask = (
                 (mask.sum(dim=-1) > 0).unsqueeze(-1).float()
             )  # (B, N, 1), since a patch is either fully masked or not
-            x_masked = torch.where(mask.bool(), mask_tokens, x_masked)
+            x_masked = torch.where(mask.to(torch.bool), mask_tokens, x_masked)
 
         dtype = channel_locations.dtype
         # Normalise in at least float32: the 1e-8 below underflows float16.
@@ -327,7 +325,10 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         ).to(dtype)
         channel_locations_emb = self.channel_location_embedder(channel_locations)
 
-        x_tokenized = rearrange(x_masked, "B (C t) D -> (B t) C D", C=num_channels)
+        # (B, C * t, D) -> (B * t, C, D)
+        x_tokenized = (
+            x_masked.unflatten(1, (num_channels, -1)).transpose(1, 2).flatten(0, 1)
+        )
         channel_locations_emb = (
             channel_locations_emb.repeat_interleave(  # was repeat(), wrong dim ordering
                 num_patches_per_channel, dim=0
@@ -360,20 +361,27 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             x_signal, channel_locations, mask=mask
         )
         x, _ = self.cross_attn(x)
-        x = rearrange(x, "(B t) Q D -> B t (Q D)", B=B)
-        num_patches = x.shape[1]
-
+        x = x.unflatten(0, (B, -1)).flatten(2)  # (B * t, Q, D) -> (B, t, Q * D)
         for blk in self.blocks:
             x = blk(x)
         x_latent = self.norm(x)
 
         if self.num_classes > 0:
             return self.final_layer(x_latent)
+        return self._reconstruct(x_latent, channel_locations_emb, channel_names)
 
+    @torch.jit.unused
+    def _reconstruct(
+        self,
+        x_latent: torch.Tensor,
+        channel_locations_emb: torch.Tensor,
+        channel_names: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        # Reconstruction head (num_classes == 0): eager only, so the classifier scripts.
         if channel_names is None:
             raise ValueError("channel_names must be provided for reconstruction tasks.")
         channel_emb = self.channel_emb(channel_names)
-        channel_emb = channel_emb.repeat(num_patches, 1, 1)
+        channel_emb = channel_emb.repeat(x_latent.shape[1], 1, 1)
         decoder_queries = channel_locations_emb + channel_emb
         return self.decoder_head(x_latent, decoder_queries)
 
@@ -544,7 +552,7 @@ class _FrequencyFeatureEmbedder(nn.Module):
         embedded = self.frequency_to_embed(
             freq_features
         )  # (B, C, num_patches, embed_dim)
-        embedded = rearrange(embedded, "B C t D -> B (C t) D")
+        embedded = embedded.flatten(1, 2)  # (B, C * num_patches, embed_dim)
         return embedded
 
 
@@ -568,7 +576,6 @@ class _RotarySelfAttentionBlock(nn.Module):
 
         self.qkv_proj = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = attn_drop
-        self.attn_drop_fn = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
@@ -579,7 +586,7 @@ class _RotarySelfAttentionBlock(nn.Module):
         freqs = self.rotary_emb(positions)
 
         # Keep the full-head reshape (including its empty-input boundary).
-        pairs = tensor.reshape(*tensor.shape[:-1], -1, 2)
+        pairs = tensor.reshape(list(tensor.shape[:-1]) + [-1, 2])
         rotated = rotate_pairs(pairs.flatten(-2))
         transformed = tensor * freqs.cos() + rotated * freqs.sin()
         return transformed.to(tensor.dtype)
@@ -594,18 +601,14 @@ class _RotarySelfAttentionBlock(nn.Module):
         q, k, v = qkv[0], qkv[1], qkv[2]
         q = self._rotate_queries_or_keys(q)
         k = self._rotate_queries_or_keys(k)
-        # Calculate attention scores
-        attn_weights = (q @ k.transpose(-2, -1)) * self.scale  # (B, H, N, N)
-
-        # Apply softmax to get attention probabilities
-        attn_weights = torch.softmax(attn_weights, dim=-1)
-
-        # Apply dropout
-        attn_weights = self.attn_drop_fn(attn_weights)
-
-        # Apply attention weights to values
-        attn = attn_weights @ v  # (B, H, N, D)
-        attn = rearrange(attn, "B H N D -> B N (H D)")
+        attn = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            dropout_p=self.attn_drop if self.training else 0.0,
+            scale=self.scale,
+        )  # (B, H, N, D)
+        attn = attn.transpose(1, 2).flatten(2)  # (B, N, H * D)
         return self.proj_drop(self.proj(attn))
 
 
@@ -718,11 +721,12 @@ class _PatchReconstructionHeadWithQueries(nn.Module):
         """
 
         B, num_patches, embed_dim = enc.shape
-        enc = rearrange(enc, "B t (Q D) -> (B t) Q D", Q=self.num_queries)
+        enc = enc.unflatten(-1, (self.num_queries, -1)).flatten(0, 1)  # (B * t, Q, D)
         out = self.decoder_pred(decoder_queries, enc)  # (B*t, C, D)
         out = self.norm(out)
         out = self.decoder_linear(out)  # (B*t, C, patch_size)
-        out = rearrange(out, "(B t) C P -> B C (t P)", B=B)
+        # (B * t, C, P) -> (B, C, t * P)
+        out = out.unflatten(0, (B, -1)).permute(0, 2, 1, 3).flatten(2)
         return out
 
 
@@ -833,7 +837,7 @@ class _CrossAttentionBlock(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         # x is the input with shape (batch_size*num_patches, num_channels, embed_dim)
         batch_size, _, _ = x.size()
         queries = self.query_embed.repeat(batch_size, 1, 1)
@@ -903,10 +907,10 @@ class _PatchEmbedNetwork(nn.Module):
         output: (B, C*S, D) where D = embed_dim and S = ceil(T / patch_size)
         for ``on_non_divisible="pad"``, T // patch_size otherwise
         """
-        x = rearrange(self.tokenizer(x), "B C S P -> B (C S) P")
+        x = self.tokenizer(x).flatten(1, 2)  # (B, C * S, P)
         x = x.unsqueeze(1)
         x = self.proj_in(x)
-        x = rearrange(x, "B E CS D -> B CS (D E)")
+        x = x.permute(0, 2, 3, 1).flatten(2)  # (B, CS, D * E)
         return x
 
 

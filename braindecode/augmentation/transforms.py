@@ -1457,3 +1457,188 @@ class BandRotation(Transform):
             "circular_jitter": self.circular_jitter,
             "random_state": self.rng,
         }
+
+
+class TrivialAugment(Transform):
+    """Apply one randomly sampled label-preserving augmentation per example.
+
+    For every example, independently samples one transform from the pool
+    below and one of ``num_bins`` strengths evenly spaced between that
+    transform's bounds, as in TrivialAugment [1]_. Examples that draw the
+    same transform and strength are transformed in one call; each pooled
+    transform still draws its own randomness per example.
+
+    Default pool (no assumption on the signal's unit, sampling frequency or
+    montage):
+
+    * :class:`TimeReverse` — no strength parameter.
+    * :class:`SignFlip` — no strength parameter.
+    * :class:`FTSurrogate` — phase noise magnitude, 0.2 to 1.
+    * :class:`ChannelsDropout` — channel drop probability, 0.05 to 0.4.
+    * :class:`ChannelsShuffle` — shuffle probability, 0.1 to 0.75.
+    * :class:`SmoothTimeMask` — mask length as a fraction of the window
+      length, 0.05 to 0.25.
+    * :class:`GaussianNoise` — noise standard deviation as a fraction of the
+      sub-batch standard deviation (volts or microvolts alike), 0.02 to 0.3.
+    * :class:`AmplitudeScale` — scale interval ``(1/s, s)``, ``s`` from 1.25
+      to 2.5.
+
+    ``sfreq`` adds :class:`BandstopFilter` (bandwidth 0.5 to 4 Hz, capped
+    2.5 Hz below Nyquist) and :class:`FrequencyShift` (maximum shift 0.5 to
+    2 Hz); ``sensors_positions_matrix`` adds :class:`SensorsRotation` around
+    the z axis (5 to 25 degrees).
+
+    Parameters
+    ----------
+    probability : float, optional
+        Probability of augmenting each example. Defaults to 1.0.
+    sfreq : float | None, optional
+        Sampling frequency of the signals, in Hz. Defaults to None.
+    sensors_positions_matrix : array-like | None, optional
+        Sensor positions of shape ``(3, n_channels)`` (see
+        :class:`SensorsRotation`). Defaults to None.
+    num_bins : int, optional
+        Number of strength levels per transform. Defaults to 10.
+    random_state : int | numpy.random.RandomState, optional
+        Seed shared by the per-example sampler and every pooled transform.
+        Defaults to None.
+
+    Attributes
+    ----------
+    op_names : list of str
+        Names of the transforms in the pool, in sampling order.
+
+    References
+    ----------
+    .. [1] Müller, S. G., & Hutter, F. (2021). TrivialAugment:
+       Tuning-free Yet State-of-the-Art Data Augmentation. Proceedings of
+       the IEEE/CVF International Conference on Computer Vision (ICCV),
+       pp. 774-782.
+    """
+
+    def __init__(
+        self,
+        probability=1.0,
+        sfreq=None,
+        sensors_positions_matrix=None,
+        num_bins=10,
+        random_state=None,
+    ):
+        super().__init__(probability=probability, random_state=random_state)
+        if not isinstance(num_bins, (int, np.integer)) or num_bins < 1:
+            raise ValueError(f"num_bins must be a positive integer, got {num_bins}")
+        self.num_bins = int(num_bins)
+        rng = self.rng
+        # (name, strength bounds or None, make(strength) or None: built per call)
+        specs = [
+            ("TimeReverse", None, lambda s: TimeReverse(1.0, random_state=rng)),
+            ("SignFlip", None, lambda s: SignFlip(1.0, random_state=rng)),
+            (
+                "FTSurrogate",
+                (0.2, 1.0),
+                lambda s: FTSurrogate(1.0, phase_noise_magnitude=s, random_state=rng),
+            ),
+            (
+                "ChannelsDropout",
+                (0.05, 0.4),
+                lambda s: ChannelsDropout(1.0, p_drop=s, random_state=rng),
+            ),
+            (
+                "ChannelsShuffle",
+                (0.1, 0.75),
+                lambda s: ChannelsShuffle(1.0, p_shuffle=s, random_state=rng),
+            ),
+            ("SmoothTimeMask", (0.05, 0.25), None),
+            ("GaussianNoise", (0.02, 0.3), None),
+            (
+                "AmplitudeScale",
+                (1.25, 2.5),
+                lambda s: AmplitudeScale(1.0, interval=(1.0 / s, s), random_state=rng),
+            ),
+        ]
+        if sfreq is not None:
+            nyquist = sfreq / 2.0
+            # BandstopFilter needs bandwidth < nyquist - 2; keep a margin
+            max_bandwidth = min(4.0, nyquist - 2.5)
+            if max_bandwidth <= 0.5:
+                raise ValueError(
+                    f"sfreq={sfreq} is too small to sample valid band-stop "
+                    "bandwidths (needs at least 6.0 Hz)."
+                )
+            specs += [
+                (
+                    "BandstopFilter",
+                    (0.5, max_bandwidth),
+                    lambda s: BandstopFilter(
+                        1.0,
+                        sfreq=sfreq,
+                        bandwidth=s,
+                        max_freq=nyquist,
+                        random_state=rng,
+                    ),
+                ),
+                (
+                    "FrequencyShift",
+                    (0.5, 2.0),
+                    lambda s: FrequencyShift(
+                        1.0, sfreq=sfreq, max_delta_freq=s, random_state=rng
+                    ),
+                ),
+            ]
+        if sensors_positions_matrix is not None:
+            specs.append(
+                (
+                    "SensorsRotation",
+                    (5.0, 25.0),
+                    lambda s: SensorsRotation(
+                        1.0,
+                        sensors_positions_matrix=sensors_positions_matrix,
+                        max_degrees=s,
+                        random_state=rng,
+                    ),
+                )
+            )
+
+        self._pool = []
+        for name, bounds, make in specs:
+            if bounds is None:
+                strengths = [None]
+            else:
+                strengths = np.linspace(*bounds, self.num_bins).tolist()
+            variants = None if make is None else [make(s) for s in strengths]
+            self._pool.append((name, strengths, variants))
+        # pre-built transforms as submodules (pickle, ``.to()``)
+        self._static_transforms = torch.nn.ModuleList(
+            v for _, _, variants in self._pool if variants for v in variants
+        )
+        self.op_names = [name for name, _, _ in self._pool]
+
+    def operation(self, X, y):
+        """Apply one sampled transform and strength to each example of X."""
+        n_strengths = np.array([len(strengths) for _, strengths, _ in self._pool])
+        op_ids = self.rng.randint(0, len(self._pool), size=X.shape[0])
+        bin_ids = self.rng.randint(0, self.num_bins, size=X.shape[0])
+        # magnitude-free transforms collapse all examples onto bin 0
+        bin_ids[n_strengths[op_ids] == 1] = 0
+        keys = op_ids * self.num_bins + bin_ids
+
+        out_X, out_y = X.clone(), y.clone()
+        for key in np.unique(keys):
+            group = torch.from_numpy(np.flatnonzero(keys == key)).to(X.device)
+            op_i, bin_j = divmod(int(key), self.num_bins)
+            name, strengths, variants = self._pool[op_i]
+            X_sub = X[group]
+            if variants is not None:
+                transform = variants[bin_j]
+            elif name == "SmoothTimeMask":
+                n_mask = max(1, int(round(strengths[bin_j] * X.shape[-1])))
+                transform = SmoothTimeMask(
+                    1.0, mask_len_samples=n_mask, random_state=self.rng
+                )
+            else:  # GaussianNoise, std relative to the sub-batch (unit-free)
+                std = strengths[bin_j] * X_sub.std().item()
+                transform = GaussianNoise(1.0, std=std, random_state=self.rng)
+            tr_X, tr_y = transform(X_sub, y[group])
+            out_X[group] = tr_X.to(out_X.dtype)
+            out_y[group] = tr_y
+        return out_X, out_y
