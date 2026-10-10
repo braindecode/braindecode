@@ -9,6 +9,7 @@
 import math
 import numbers
 import warnings
+from typing import Dict, Optional, Union
 
 import numpy as np
 import torch
@@ -703,7 +704,9 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
             x = x.clamp(-self.clip_sigma, self.clip_sigma)
         return x.to(dtype)
 
-    def forward(self, x: torch.Tensor, return_features: bool = False):
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """Forward pass.
 
         Parameters
