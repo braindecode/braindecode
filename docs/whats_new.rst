@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.datasets.EEGWindowsDataset` reads a window of a lazily loaded FIF recording (what ``preprocess(..., save_dir=...)`` and :func:`braindecode.datautil.load_concat_dataset` produce) from one slice of the memory-mapped file instead of one 1-s FIF buffer at a time through a 4 MB read buffer: one epoch of 60-s TUAB windows 1.3-1.4x faster from a cold page cache and 1.5-2.1x faster from a warm one (num_workers 0-8), windows unchanged (:gh:`1318` by `Bruno Aristimunha`_).
 - The TUH datasets read the ``_date.txt`` file kept beside each EDF with :func:`json.load` instead of :func:`pandas.read_json`: 2.9 s -> 0.04 s for the 2993 TUAB date files; descriptions unchanged (:gh:`1300` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Guetschel2026`, the encoder shared by the 58 MAE and JEPA
   checkpoints of the EEG masking-geometry study (Guetschel et al., 2026). The checkpoints
