@@ -5154,6 +5154,30 @@ def test_neurorvq_tokenizer_standardizes_each_window():
         torch.testing.assert_close(output.std(dim=(1, 2)), torch.ones(2), atol=1e-4, rtol=0)
 
 
+def test_neurorvq_scales_stacked_match_per_scale_loop(
+    neurorvq_model_kwargs, monkeypatch
+):
+    """The four scales stacked on the batch axis (accelerators) = one pass per
+    scale (CPU), for NeuroRVQ and the tokenizer's encoder/decoder stack."""
+    import braindecode.models.neurorvq as neurorvq_module
+    import braindecode.models.neurorvq_tokenizer as tokenizer_module
+
+    torch.manual_seed(0)
+    model = NeuroRVQ(**neurorvq_model_kwargs).eval()
+    tokenizer = _small_neurorvq_tokenizer().eval()
+    x = torch.randn(2, 3, 600)
+    tokens = [torch.randn(2, 6, 100) for _ in range(4)]
+    embeddings = tokenizer.encoder.embeddings(*tokenizer._embedding_indices(x.device))
+    assert not neurorvq_module._stack_scales(x, False)
+    with torch.no_grad():
+        looped = [model(x), *tokenizer.encoder(tokens, *embeddings)]
+        for module in (neurorvq_module, tokenizer_module):
+            monkeypatch.setattr(module, "_stack_scales", lambda x, dropout: True)
+        stacked = [model(x), *tokenizer.encoder(tokens, *embeddings)]
+    for a, b in zip(stacked, looped):
+        torch.testing.assert_close(a, b)
+
+
 def test_neurorvq_ema_quantizer_matches_normalized_ema_update():
     quantizer = _EMAVectorQuantizer(n_codes=2, code_dim=2).train()
     quantizer.decay = 0.5
