@@ -411,7 +411,10 @@ class _ListPatchEmbedding(nn.Module):
         ]
         self.value_embeddings = nn.ModuleList(linear_layers)
         self.position_embedding = _PositionalEmbedding(d_model=d_model)
-        self.channel_embedding = _PositionalEmbedding(d_model=seq_len)
+        # One row per time sample: windows longer than 5000 samples need more.
+        self.channel_embedding = _PositionalEmbedding(
+            d_model=seq_len, max_len=max(5000, enc_in)
+        )
         self.dropout = nn.Dropout(dropout)
 
         self.learnable_embeddings = nn.ParameterList(
