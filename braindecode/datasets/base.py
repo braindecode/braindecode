@@ -1742,7 +1742,10 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         # Create path if it doesn't exist
         os.makedirs(path, exist_ok=True)
 
-        path_contents = os.listdir(path)
+        # With an offset the caller fills one directory piece by piece (preprocess
+        # saves each recording at its index), so the other entries are expected:
+        # skip the scan that would stat them all on every call and list them in a warning.
+        path_contents = os.listdir(path) if offset == 0 else []
         n_sub_dirs = len(
             [e for e in path_contents if os.path.isdir(os.path.join(path, e))]
         )

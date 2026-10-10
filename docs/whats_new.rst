@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :meth:`braindecode.datasets.BaseConcatDataset.save` with an ``offset`` no longer lists and stats every entry of the target directory (and no longer warns with that listing): :func:`braindecode.preprocessing.preprocess` saves each recording at its offset into one directory, which made the scan quadratic; 2993 TUAB recordings 223 s -> 15 s of ``save`` calls and 2992 -> 0 warnings (33 MB); saved files unchanged (:gh:`PRNUM` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Guetschel2026`, the encoder shared by the 58 MAE and JEPA
   checkpoints of the EEG masking-geometry study (Guetschel et al., 2026). The checkpoints
   load with ``from_pretrained`` from the original Hugging Face repositories, with backbone
