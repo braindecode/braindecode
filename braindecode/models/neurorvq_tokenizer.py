@@ -73,12 +73,10 @@ class _EMAVectorQuantizer(nn.Module):
     def _indices(self, vectors: Tensor) -> Tensor:
         self.embedding.initialize(vectors)
         weight = self.embedding.weight
-        distances = (
-            vectors.square().sum(dim=1, keepdim=True)
-            + weight.square().sum(dim=1)
-            - 2 * vectors @ weight.T
-        )
-        return distances.argmin(dim=1)
+        distances = vectors.square().sum(dim=1, keepdim=True)
+        distances = distances + weight.square().sum(dim=1)
+        # - 2 * vectors @ weight.T, accumulated in place by the GEMM (one pass less)
+        return distances.addmm_(vectors, weight.T, alpha=-2).argmin(dim=1)
 
     def encode(self, z: Tensor) -> Tensor:
         z = F.normalize(z.permute(0, 2, 3, 1), dim=-1)
