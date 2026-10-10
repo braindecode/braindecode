@@ -368,6 +368,7 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.Deep4Net` with ``stride_before_pool=True`` or an integer ``final_conv_length`` crashed in ``forward`` for windows between its approximate and exact minimum length, e.g. 441-681 samples for :class:`braindecode.models.EEGCLIP` (2 s at 250 Hz); those windows now shrink the temporal kernels like shorter ones, other windows unchanged bit for bit (:gh:`1310` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MEDFormer` runs its patch embedding, a Conv2d kernel as tall as ``n_times``, as the equivalent conv1d with ``n_times`` input channels: MEDFormer now runs on Gaudi2, whose convolution kernels are limited to 256 rows (it failed to compile for ``n_times > 256``), and its CPU train step is 15-35 % faster; same state dict, outputs change by float rounding only (:gh:`1287` by `Bruno Aristimunha`_).
 - Fix coordinate ordering in :class:`braindecode.augmentation.SensorsRotation` with ``spherical_splines=False``, which raised an error or interpolated the wrong locations (:gh:`1295` by `Anton Soloviev`_).
 - Preserve the final samples in :class:`braindecode.augmentation.SegmentationReconstruction`
