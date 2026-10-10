@@ -241,7 +241,11 @@ class TUH(BaseConcatDataset):
         # file paths, use this instead as before
         if "year" in description:
             meas_date = meas_date.replace(*description[["year", "month", "day"]])
-        raw.set_meas_date(meas_date)
+        # FIF (e.g. preprocess(..., save_dir=...)) stores dates from 1901-12-13 to
+        # 2038-01-19 only: undated recordings (year 1 above) and de-identified ones
+        # (TUAB has 1899-12-30) keep their date in the description only.
+        in_fif_range = -(2**31) <= meas_date.timestamp() < 2**31
+        raw.set_meas_date(meas_date if in_fif_range else None)
 
         d = {
             "age": int(age),
@@ -251,9 +255,9 @@ class TUH(BaseConcatDataset):
         # if not, get it from meas_date in raw.info and add to description
         # if meas_date is None, create fake one
         if "year" not in description:
-            d["year"] = raw.info["meas_date"].year
-            d["month"] = raw.info["meas_date"].month
-            d["day"] = raw.info["meas_date"].day
+            d["year"] = meas_date.year
+            d["month"] = meas_date.month
+            d["day"] = meas_date.day
 
         # read info relevant for preprocessing from raw without loading it
         if add_physician_reports:
