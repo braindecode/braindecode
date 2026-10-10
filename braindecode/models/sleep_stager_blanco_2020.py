@@ -5,7 +5,7 @@
 import torch
 from torch import nn
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, _too_short_input_error
 
 
 class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
@@ -142,9 +142,12 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
     def _len_last_layer(self, n_channels, input_size):
         self.feature_extractor.eval()
         with torch.no_grad():
-            out = self.feature_extractor(
-                torch.Tensor(1, n_channels, 1, input_size)
-            )  # batch_size,n_channels,height,width
+            try:
+                out = self.feature_extractor(
+                    torch.Tensor(1, n_channels, 1, input_size)
+                )  # batch_size,n_channels,height,width
+            except RuntimeError as exc:
+                raise _too_short_input_error(exc, self.input_shape) or exc
         self.feature_extractor.train()
         return len(out.flatten())
 

@@ -7,7 +7,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, _too_short_input_error
 from braindecode.modules import FeedForwardBlock, MultiHeadAttention
 
 
@@ -276,7 +276,10 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         return x
 
     def get_fc_size(self):
-        out = self.patch_embedding(torch.ones((1, 1, self.n_chans, self.n_times)))
+        try:
+            out = self.patch_embedding(torch.ones((1, 1, self.n_chans, self.n_times)))
+        except RuntimeError as exc:
+            raise _too_short_input_error(exc, self.input_shape) or exc
         size_embedding_1 = out.cpu().data.numpy().shape[1]
         size_embedding_2 = out.cpu().data.numpy().shape[2]
 
