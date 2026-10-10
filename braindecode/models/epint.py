@@ -223,7 +223,7 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
         if x.shape[1] != self.n_chans or x.shape[2] != self.n_times:
             raise ValueError(
                 f"EpiNT was built for (n_chans, n_times)=({self.n_chans}, "
-                f"{self.n_times}) and got {tuple(x.shape[1:])}; its LayerNorms "
+                f"{self.n_times}) and got ({x.shape[1]}, {x.shape[2]}); its LayerNorms "
                 "fix the number of patches."
             )
         x = x[..., : self.n_patches * self.patch_size]
