@@ -255,23 +255,23 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
     EEG MI signals. The end-to-end flow is:
 
     - (i) based on the absolute Pearson's matrix (PCC) of overall signals, the
-    graph Laplacian is built up to represent the topological relationship of
-    EEG electrodes.
+          graph Laplacian is built up to represent the topological relationship of
+          EEG electrodes.
     - (ii) GCNs-Net built on the graph convolutional layers learns the
-    generalized features.
+           generalized features.
     - (iii) followed pooling layers reduce dimensionality.
     - (iv) fully-connected (FC) softmax layer derives the final prediction.
 
     The framework of this work, as shown in Fig. 1.:
 
     - (i) 64-channel raw EEG signals are acquired as one of the inputs of the
-    GCNs-Net.
+          GCNs-Net.
     - (ii) The PCC matrix, absolute PCC matrix, adjacency matrix, and graph
-    Laplacian are introduced to represent the correlations between electrodes.
+           Laplacian are introduced to represent the correlations between electrodes.
     - (iii) The graph representation, another input of the GCNs-Net, is
-    represented by the graph Laplacian.
+            represented by the graph Laplacian.
     - (iv) The GCNs-Net is applied to decode EEG MI signals, where N denotes
-    the number of electrodes and l denotes the lth graph pooling layer.
+           the number of electrodes and l denotes the lth graph pooling layer.
 
     .. rubric:: Macro Components
 
@@ -405,9 +405,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
 
         self.graph_coarsening = _GraphCoarsening()
 
-        self.laplacians = nn.ModuleList(
-            [_LaplacianModule() for _ in n_features]
-        )
+        self.laplacians = nn.ModuleList([_LaplacianModule() for _ in n_features])
 
         if adjacency is not None:
             adjacency = torch.as_tensor(
@@ -515,9 +513,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
 
         return adjacencies, permutation
 
-    def _max_pool(
-        self, x: torch.Tensor, pool_size: int
-    ) -> torch.Tensor:
+    def _max_pool(self, x: torch.Tensor, pool_size: int) -> torch.Tensor:
         """Max pooling of size pool_size. Should be a power of 2."""
         if pool_size > 1:
             x = x.transpose(1, 2)
@@ -542,9 +538,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         return laplacian_matrix - identity
 
     @staticmethod
-    def _perm_data(
-        x: torch.Tensor, indices: torch.Tensor | None
-    ) -> torch.Tensor:
+    def _perm_data(x: torch.Tensor, indices: torch.Tensor | None) -> torch.Tensor:
         """
         Permute data matrix, i.e. exchange node ids,
         so that binary unions form the clustering tree.
@@ -563,8 +557,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
 
     def _prepare_graph_state(self, module, state_dict, prefix, *_):
         graph_keys = [
-            f"{prefix}laplacians.{i}.matrix"
-            for i in range(len(self.laplacians))
+            f"{prefix}laplacians.{i}.matrix" for i in range(len(self.laplacians))
         ]
 
         if self._compute_pooling_levels(self.pool_sizes)[-1] > 0:
@@ -593,8 +586,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
             )
 
         self.graph_initialized = all(
-            laplacian.matrix is not None
-            for laplacian in self.laplacians
+            laplacian.matrix is not None for laplacian in self.laplacians
         ) and (
             self.permutation is not None
             or self._compute_pooling_levels(self.pool_sizes)[-1] == 0
@@ -616,7 +608,9 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         """
         if torch.jit.is_scripting():
             if not self.graph_initialized:
-                raise RuntimeError("GCNsNet graph must be initialized before scripted inference.")
+                raise RuntimeError(
+                    "GCNsNet graph must be initialized before scripted inference."
+                )
         elif not self.graph_initialized:
             adjacency = self._adjacency(x)
             self._initialize_graph(adjacency)
