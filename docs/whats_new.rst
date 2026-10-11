@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.DIVER1` builds and overlap-adds its STCPE sliding windows with one gather and one ``index_add`` instead of ``unfold``/``fold``: Gaudi forward 1.25-1.36x and train step 1.13-1.32x faster, CPU 0-1 % faster; outputs and released-checkpoint outputs unchanged, gradients change by float rounding only (:gh:`1333` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.NeuroRVQTokenizer` sums the per-code counts and vectors of its EMA codebook update with ``index_add_`` instead of a dense one-hot matrix and GEMM: CPU train step 1.3x faster (22 channels, batch 32, 2 threads), Gaudi unchanged; outputs, gradients and token ids unchanged, the updated codebooks change by float rounding only (:gh:`1308` by `Bruno Aristimunha`_).
 - ``braindecode.modules.EMACodebook`` sums its training EMA statistics per code with ``index_add_`` instead of a dense one-hot matrix and GEMM: :class:`braindecode.models.TFMTokenizer` CPU train step 5 % faster and :class:`braindecode.models.BrainTokenizer` 1-3 % (22 channels, batch 32, 2 threads); outputs, gradients and token ids unchanged, the EMA buffers change by float rounding only (:gh:`1306` by `Bruno Aristimunha`_).
 - The TUH datasets read the ``_date.txt`` file kept beside each EDF with :func:`json.load` instead of :func:`pandas.read_json`: 2.9 s -> 0.04 s for the 2993 TUAB date files; descriptions unchanged (:gh:`1300` by `Bruno Aristimunha`_).
