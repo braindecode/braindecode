@@ -287,23 +287,42 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         # dimension, otherwise-healthy peers may hang in all_gather().
         local_size = eeg_embeds.shape[0] if eeg_embeds.ndim >= 1 else 0
         local_dim = eeg_embeds.shape[1] if eeg_embeds.ndim == 2 else -1
+        # Autograd all_gather requires an identical dtype on every rank.
+        # A cross-rank float32/float64 mismatch can abort inside Gloo instead
+        # of raising a catchable Python exception. Encode supported training
+        # dtypes into the fixed-size integer preflight collective.
+        supported_dtypes = (
+            torch.float16, torch.bfloat16, torch.float32, torch.float64
+        )
+        dtype_code = (
+            supported_dtypes.index(eeg_embeds.dtype)
+            if eeg_embeds.dtype in supported_dtypes
+            else -1
+        )
+        local_valid = (
+            valid_pair
+            and eeg_embeds.dtype == text_embeds.dtype
+            and dtype_code >= 0
+        )
         metadata = torch.tensor(
-            [local_size, local_dim, int(valid_pair)],
+            [local_size, local_dim, dtype_code, int(local_valid)],
             device=eeg_embeds.device,
             dtype=torch.int64,
         )
         gathered_metadata = [torch.zeros_like(metadata) for _ in range(world_size)]
         dist.all_gather(gathered_metadata, metadata, group=group)
-        if any(not int(item[2]) for item in gathered_metadata):
+        if any(not int(item[3]) for item in gathered_metadata):
             raise ValueError(
                 "contrastive_loss requires matching 2D EEG/text embeddings "
-                "on every rank."
+                "and supported floating dtypes on every rank."
             )
         sizes = [int(item[0]) for item in gathered_metadata]
         if any(size == 0 for size in sizes):
             raise ValueError("Every rank needs at least one EEG/text pair.")
         if any(int(item[1]) != local_dim for item in gathered_metadata):
             raise ValueError("All ranks need the same embedding dimension.")
+        if any(int(item[2]) != dtype_code for item in gathered_metadata):
+            raise ValueError("All ranks need the same embedding dtype.")
 
         max_size = max(sizes)
         rank = dist.get_rank(group)
