@@ -340,8 +340,12 @@ class _InceptionModuleMI(nn.Module):
             X1 = torch.cat([conv(X1) for conv in self.conv_list], 1)
 
         # channels_last: same values, but torch's CPU max pool then vectorises
-        # over channels instead of looping over them.
-        X2 = self.pooling(X.contiguous(memory_format=torch.channels_last))
+        # over channels instead of looping over them. CPU only: on other
+        # devices the two layout copies cost more than they save.
+        X2 = X
+        if X.device.type == "cpu":
+            X2 = X.contiguous(memory_format=torch.channels_last)
+        X2 = self.pooling(X2)
         # An even kernel_unit pools n_times + 1 samples: drop the last one.
         X2 = self.pooling_conv(X2.contiguous())[..., : X.shape[-1]]
 
