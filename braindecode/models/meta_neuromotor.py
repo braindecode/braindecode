@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
 import torch
@@ -752,6 +753,32 @@ class _CrossSpectralDensity(nn.Module):
         return outputs.unflatten(0, inputs.shape[:-2])
 
 
+@torch.jit.unused
+def _cpu_eigh(inputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """``torch.linalg.eigh`` of a batch of matrices on all CPU threads.
+
+    torch's CPU ``eigh`` solves a batch one matrix after another on one
+    thread. Chunks of the batch in a thread pool (the op releases the GIL)
+    give the same per-matrix results on every thread.
+    """
+    flat = inputs.reshape(-1, inputs.shape[-2], inputs.shape[-1])
+    # ponytail: at least 256 matrices per chunk so small batches skip the pool.
+    n_chunks = min(torch.get_num_threads(), flat.shape[0] // 256)
+    if n_chunks < 2:
+        return torch.linalg.eigh(inputs)
+    grad_enabled = torch.is_grad_enabled()
+
+    def eigh(chunk):  # grad mode is thread-local
+        with torch.set_grad_enabled(grad_enabled):
+            return torch.linalg.eigh(chunk)
+
+    with ThreadPoolExecutor(n_chunks) as pool:
+        parts = list(pool.map(eigh, flat.chunk(n_chunks)))
+    eigvals = torch.cat([part[0] for part in parts]).reshape(inputs.shape[:-1])
+    eigvecs = torch.cat([part[1] for part in parts]).reshape(inputs.shape)
+    return eigvals, eigvecs
+
+
 class _SPDMatrixLog(nn.Module):
     """SPD matrix logarithm via eigendecomposition (Log-Euclidean framework).
 
@@ -788,7 +815,10 @@ class _SPDMatrixLog(nn.Module):
         self.transpose_eigvecs = Rearrange("... row col -> ... col row")
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        eigvals, eigvecs = torch.linalg.eigh(inputs)
+        if not torch.jit.is_scripting() and inputs.device.type == "cpu":
+            eigvals, eigvecs = _cpu_eigh(inputs)
+        else:
+            eigvals, eigvecs = torch.linalg.eigh(inputs)
         eigvals = eigvals.log().nan_to_num(nan=0.0, neginf=0.0)
         return (eigvecs * self.broadcast_eigvals(eigvals)) @ self.transpose_eigvecs(
             eigvecs

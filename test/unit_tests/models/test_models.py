@@ -4225,6 +4225,24 @@ def test_gni_default_contract(gni_default):
     assert lengths[1] > lengths[0]
 
 
+def test_gni_threaded_cpu_eigh_equals_eigh():
+    from braindecode.models.meta_neuromotor import _cpu_eigh
+
+    a = torch.randn(2, 600, 6, 5, 5, dtype=torch.float64)
+    a = (a @ a.transpose(-1, -2)).requires_grad_()
+    n_threads = torch.get_num_threads()
+    torch.set_num_threads(4)
+    try:
+        values, vectors = _cpu_eigh(a)
+    finally:
+        torch.set_num_threads(n_threads)
+    ref_values, ref_vectors = torch.linalg.eigh(a)
+    assert torch.equal(values, ref_values) and torch.equal(vectors, ref_vectors)
+    grad = torch.autograd.grad((values.sum() + vectors.square().sum()), a)[0]
+    ref_grad = torch.autograd.grad((ref_values.sum() + ref_vectors.square().sum()), a)[0]
+    assert torch.equal(grad, ref_grad)
+
+
 def test_gni_head_log_softmax_and_config():
     m = _small_gni(log_softmax=True).eval()
     with torch.no_grad():
