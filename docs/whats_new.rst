@@ -38,8 +38,9 @@ Enhancements
 - Add :class:`braindecode.models.DuIN` (Du-IN, Zheng et al., NeurIPS 2024),
   an sEEG speech decoder that fuses the channels of a brain region into one
   token per 100 ms patch before a Transformer encoder. The authors'
-  per-subject Du-IN MAE checkpoints load directly through
-  ``load_state_dict`` and match the upstream encoder to float precision.
+  per-subject Du-IN checkpoints (MAE and VQ-VAE stages, 12 subjects) are on
+  the Hub at ``braindecode/duin-pretrained`` and match the upstream encoder
+  to float precision.
   :class:`braindecode.modules.MultiHeadAttention` gains ``head_dim`` and
   ``qk_norm`` for it (:gh:`1269` by `Adam Mounir`_).
 - :class:`braindecode.models.MetaNeuromotorHand` rotates and half-vectorizes the MPF matrices with one precomputed ``index_select`` instead of three rolls, a stack and a permute copy: CPU train step about 2 % faster, Gaudi neutral; outputs, gradients and state dict unchanged bit for bit (:gh:`1292` by `Bruno Aristimunha`_).

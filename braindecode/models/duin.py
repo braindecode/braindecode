@@ -7,7 +7,8 @@
 
 * paper: https://arxiv.org/abs/2405.11459
 * code: https://github.com/liulab-repository/Du-IN
-* weights: https://huggingface.co/datasets/liulab-repository/Du-IN
+* weights: https://huggingface.co/braindecode/duin-pretrained (converted from
+  https://huggingface.co/datasets/liulab-repository/Du-IN)
 """
 
 from __future__ import annotations
@@ -104,22 +105,25 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
       in the state dict (it has no parameters).
 
     .. important::
-       **Pre-trained weights.** The authors release one Du-IN MAE checkpoint
-       per subject of their 61-word dataset (Hugging Face dataset
-       ``liulab-repository/Du-IN``, ``pretrains/duin/<subject>/mae/model/
-       checkpoint-399.pth``, CC BY 4.0). Each was trained on that subject's 10
-       selected channels at 1000 Hz, so it only fits that subject's montage.
-       ``load_state_dict`` accepts the upstream keys directly; the head is not
-       pretrained::
+       **Pre-trained weights.** The authors release one Du-IN checkpoint per
+       subject (001 to 012) and pretraining stage (``mae``, the paper's
+       Du-IN, and ``vqvae``) of their 61-word dataset (CC BY 4.0). They are
+       converted to this class on the Hugging Face Hub at
+       ``braindecode/duin-pretrained`` (``subj-<subject>/<stage>/
+       model.safetensors``; the root ``model.safetensors`` is
+       ``subj-001/mae``). Each was trained on that subject's 10 selected
+       channels at 1000 Hz, so it only fits that subject's montage. The head
+       is not pretrained::
 
-           model = DuIN(n_chans=10, n_outputs=61, n_times=3000, sfreq=1000)
-           state = torch.load(
-               "checkpoint-399.pth", map_location="cpu", weights_only=True
+           model = DuIN.from_pretrained(
+               "braindecode/duin-pretrained",
+               filename="subj-002/mae/model.safetensors",
            )
-           model.load_state_dict(state, strict=False)
 
-       The encoder then matches the upstream ``duin_cls`` model to float
-       precision on identical inputs.
+       The encoder matches the upstream ``duin_cls`` model to float precision
+       on identical inputs. ``load_state_dict`` also accepts the original
+       upstream checkpoints (``liulab-repository/Du-IN``, ``pretrains/duin/
+       <subject>/<stage>/model/checkpoint-399.pth``) with ``strict=False``.
 
     .. versionadded:: 1.8.2
 
