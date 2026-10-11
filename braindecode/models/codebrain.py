@@ -15,6 +15,7 @@ from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 
 from braindecode.functional import spectral_input
+from braindecode.functional.functions import _next_fast_len
 from braindecode.models.base import EEGModuleMixin
 
 
@@ -521,16 +522,21 @@ class _GConv(nn.Module):
             kernel = F.pad(k_fwd, (0, seq_len)) + F.pad(k_bwd.flip(-1), (seq_len, 0))
 
         # FFT-based convolution: O(N log N)
+        # The bidirectional kernel is circular (lags 0..L-1, then -L..-1).
+        # Rolled to lags -L..L-1 it is a linear convolution read from lag 0,
+        # so any FFT length >= 2 * seq_len works: take a 5-smooth (fast) one.
+        start = seq_len if self.bidirectional else 0
+        n_fft = 2 * _next_fast_len(seq_len)
         # kernel_freq: (channels, d_model, freq_bins)
         # spectral_input(x) dtype: x's, at least float32 (the reference's .float()).
         x_in = spectral_input(x)
-        kernel_freq = torch.fft.rfft(kernel.to(x_in), n=2 * seq_len)
+        kernel_freq = torch.fft.rfft(kernel.roll(start, -1).to(x_in), n=n_fft)
         # x_freq: (batch, d_model, freq_bins)
-        x_freq = torch.fft.rfft(x_in, n=2 * seq_len)
+        x_freq = torch.fft.rfft(x_in, n=n_fft)
         # out_freq: (batch, channels, d_model, freq_bins)
         out_freq = torch.einsum("bhl,chl->bchl", x_freq, kernel_freq)
         # out: (batch, channels, d_model, seq_len)
-        out = torch.fft.irfft(out_freq, n=2 * seq_len)[..., :seq_len].to(x)
+        out = torch.fft.irfft(out_freq, n=n_fft)[..., start : start + seq_len].to(x)
 
         # Skip connection via learnable D matrix
         # (batch, channels, d_model, seq_len)
