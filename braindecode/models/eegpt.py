@@ -908,7 +908,9 @@ class _Attention(nn.Module):
         # Reshape to (3, batch, num_heads, seq_len, head_dim)
         qkv = qkv.reshape(qkv.shape[0], qkv.shape[1], 3, self.num_heads, -1)
         qkv = qkv.permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]  # batch, num_heads, seq_len, head_dim
+        # unbind, not qkv[0..2]: the backward of three selects writes three
+        # zero-filled copies of the whole qkv tensor and sums them.
+        q, k, v = qkv.unbind(0)  # batch, num_heads, seq_len, head_dim
 
         # 1. Rotary Positional Embeddings (RoPE)
         # Unlike standard absolute positional encodings, RoPE rotates the
