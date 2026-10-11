@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.CSBrain` runs its region embedding and the region means of every encoder layer for all regions at once (a 0/1 neighbour-selection matmul and one batched matmul per kernel; one ``index_add_``) instead of one convolution and one mean per region: about half the operators per forward, CPU forward and train step 1.14-1.17x faster, Gaudi forward 1.30-1.45x and train step 1.36-1.56x faster; outputs change by float rounding only (:gh:`1335` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.DIVER1` computes the amplitude spectrum of its spectral embedding on the device on accelerators without complex tensors (Intel Gaudi / HPU) instead of a host FFT round trip: Gaudi forward 1.02-1.12x and train step 1.02-1.10x faster; CPU unchanged (:gh:`1334` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.DIVER1` builds and overlap-adds its STCPE sliding windows with one gather and one ``index_add`` instead of ``unfold``/``fold``: Gaudi forward 1.25-1.36x and train step 1.13-1.32x faster, CPU 0-1 % faster; outputs and released-checkpoint outputs unchanged, gradients change by float rounding only (:gh:`1333` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ContraWR` computes its STFT magnitude on the device on accelerators without complex tensors (Intel Gaudi / HPU) instead of a host STFT and a host-to-device copy of the spectrogram: Gaudi forward 4.2-7.1x and train step 2.4-5.2x faster; CPU unchanged (:gh:`1332` by `Bruno Aristimunha`_).
