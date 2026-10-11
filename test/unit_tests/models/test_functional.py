@@ -300,6 +300,25 @@ def test_fft_conv1d_matches_conv1d_same(kernel_size, dtype, tol):
     torch.testing.assert_close(half, ref.bfloat16(), rtol=0, atol=0)
 
 
+@pytest.mark.parametrize("kernel_size", [7, 8, 90])
+def test_fft_conv1d_real_matches_conv1d_same(kernel_size):
+    """The HPU path (overlap-save blocks, real DFT matmuls), run on CPU."""
+    x = torch.randn(3, 4, 500, dtype=torch.float64, requires_grad=True)
+    w = torch.randn(5, 4, kernel_size, dtype=torch.float64, requires_grad=True)
+    b = torch.randn(5, dtype=torch.float64, requires_grad=True)
+    ref = torch.nn.functional.conv1d(x, w, b, padding="same")
+    out = _real_dft.fft_conv1d_real(x, w, b)
+    torch.testing.assert_close(out, ref, rtol=0, atol=1e-12 * ref.abs().max().item())
+    g = torch.randn_like(ref)
+    got = torch.autograd.grad(out, (x, w, b), g)
+    want = torch.autograd.grad(ref, (x, w, b), g)
+    for a, e in zip(got, want):
+        torch.testing.assert_close(a, e, rtol=0, atol=1e-12 * e.abs().max().item())
+    assert _real_dft.fft_conv1d_real(x.bfloat16(), w.bfloat16(), None).dtype == (
+        torch.bfloat16
+    )
+
+
 def test_prefer_fft_conv_needs_input_channels():
     """Direct for a 1-channel k=31 conv (MSVTNet: FFT 2-3x slower); FFT for
     EEGInceptionMI's 48 filters at k_max 108/225/450 (128/250/500 Hz)."""
