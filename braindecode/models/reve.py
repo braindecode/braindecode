@@ -15,9 +15,9 @@ import torch
 import torch.nn.functional as F
 from mne.datasets.utils import _get_path
 from torch import nn
-from torch.nn import RMSNorm
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.layers import RMSNorm
 
 logger = logging.getLogger(__name__)
 
