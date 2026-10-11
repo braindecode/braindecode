@@ -356,7 +356,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
 
 
 class _TemporalConv(nn.Conv2d):
-    """``(1, k)`` Conv2d with "same" output length; on CPU, through
+    """``(1, k)`` Conv2d with "same" output length; on CPU and HPU, through
     :func:`~braindecode.functional.fft_conv1d` where
     :func:`~braindecode.functional.prefer_fft_conv` expects it to be faster."""
 

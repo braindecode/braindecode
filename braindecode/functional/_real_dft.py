@@ -12,8 +12,10 @@ never downcast, so callers wrap the numerically sensitive parts with
 #
 # License: BSD (3-clause)
 import functools
+from typing import Optional
 
 import torch
+from torch import nn
 
 
 def needs_real_dft(x: torch.Tensor) -> bool:
@@ -136,3 +138,56 @@ def hilbert_freq_real(x: torch.Tensor, forward_fourier: bool) -> torch.Tensor:
         return torch.stack((out_real, out_imag), dim=-1)
 
     return compute(x)
+
+
+@torch.jit.unused
+def fft_conv1d_real(
+    x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor]
+) -> torch.Tensor:
+    """Real-valued equivalent of :func:`braindecode.functional.fft_conv1d`.
+
+    Overlap-save: the input is cut into blocks of ``n`` samples (the power of
+    two ``>= 2 * kernel_size``) that advance by ``n - kernel_size + 1`` outputs,
+    each block's DFT is a matmul against the cosine/sine basis, and per
+    frequency the complex product with the kernels, summed over the input
+    channels, is one real matmul.
+    """
+
+    @fp32_island
+    def compute(x, weight):
+        n_times, kernel_size = x.shape[-1], weight.shape[-1]
+        n = 1 << (2 * kernel_size - 1).bit_length()
+        hop = n - kernel_size + 1
+        n_blocks = -(-n_times // hop)
+        n_freqs = n // 2 + 1
+        # "same" alignment: torch pads the extra zero of an even kernel on the right
+        left = (kernel_size - 1) // 2
+        x = nn.functional.pad(x, (left, (n_blocks + 1) * hop - n_times - left))
+        hops = x.unflatten(-1, (n_blocks + 1, hop))
+        # block i = hop i + the first kernel_size - 1 samples of hop i + 1
+        blocks = torch.cat([hops[:, :, :-1], hops[:, :, 1:, : kernel_size - 1]], -1)
+        cosine, sine = real_dft_basis(n, device=x.device, dtype=x.dtype)
+        basis = torch.cat([cosine, -sine]).transpose(0, 1)  # -> [Re | Im] of rfft
+        x_f = blocks @ basis  # (batch, in, blocks, 2 * n_freqs)
+        w_f = nn.functional.pad(weight.to(x), (0, n - kernel_size)) @ basis
+        w_re, w_im = w_f[..., :n_freqs], w_f[..., n_freqs:]
+        # conv1d is a cross-correlation: x_f * conj(w_f), summed over the input
+        # channels. Per frequency [Re x, Im x] @ [[Re w, -Im w], [Im w, Re w]].
+        w_f = torch.cat([torch.cat([w_re, -w_im]), torch.cat([w_im, w_re])], 1)
+        x_f = x_f.unflatten(-1, (2, n_freqs)).permute(4, 0, 2, 3, 1).flatten(1, 2)
+        y_f = torch.bmm(x_f.flatten(2), w_f.permute(2, 1, 0))  # (freq, ., 2 * out)
+        y_f = y_f.unflatten(1, (x.shape[0], n_blocks)).unflatten(-1, (2, -1))
+        y_f = y_f.permute(1, 4, 2, 3, 0).flatten(
+            -2
+        )  # (batch, out, blocks, 2 * n_freqs)
+        # inverse DFT of the first `hop` samples, the ones without wrap-around
+        scale = torch.full((n_freqs, 1), 2.0 / n, dtype=x.dtype, device=x.device)
+        scale[0] = 1.0 / n
+        scale[-1] = 1.0 / n  # Nyquist (n is even)
+        inverse = torch.cat([scale * cosine[:, :hop], -scale * sine[:, :hop]])
+        return (y_f @ inverse).flatten(-2)[..., :n_times]
+
+    y = compute(x, weight)
+    if bias is not None:
+        y = y + bias.to(y).unsqueeze(-1)
+    return y.to(x)

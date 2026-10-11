@@ -18,6 +18,7 @@ from torch import nn
 from torch.nn import RMSNorm
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.attention import _scaled_dot_product_attention
 
 logger = logging.getLogger(__name__)
 
@@ -554,7 +555,7 @@ class Attention(nn.Module):
         q = q.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         k = k.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         v = v.unflatten(-1, (self.heads, -1)).transpose(1, 2)
-        out = F.scaled_dot_product_attention(q, k, v)
+        out = _scaled_dot_product_attention(q, k, v)
         return self.to_out(out.transpose(1, 2).flatten(2))
 
 

@@ -7,13 +7,13 @@ from __future__ import annotations
 from typing import Optional
 
 import torch
-import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import GatedLinearUnit, PatchTokenizer
+from braindecode.modules.attention import _scaled_dot_product_attention
 
 
 class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
@@ -689,7 +689,7 @@ class _RotarySelfAttention(nn.Module):
 
         # Dropout falls on the attention output rather than on the weights,
         # through dropout_p, because the reference disables the latter outright.
-        attention = F.scaled_dot_product_attention(query, key, value)
+        attention = _scaled_dot_product_attention(query, key, value)
         attention = self.dropout(attention)
         attention = self.merge_heads(attention)
         return self.o_proj(attention)
