@@ -119,8 +119,10 @@ def prefer_fft_conv(x: torch.Tensor, kernel_size: int) -> bool:
     ``in_channels * kernel_size >= 120``: with one or two input channels a
     float32 direct convolution stays cheaper up to k = 85 / 31 (13 long
     temporal convolutions of the model zoo, 22 channels x batch 32). On Intel
-    Gaudi (HPU) the FFT wins from ``in_channels * kernel_size >= 1024``. GPUs
-    keep the direct convolution.
+    Gaudi (HPU) a direct convolution costs about ``batch_size * n_times *
+    kernel_size`` and the FFT about a fixed few milliseconds in eager mode: the
+    FFT wins from 8 input channels and ``batch_size * n_times * kernel_size >=
+    8e6``. GPUs keep the direct convolution.
 
     Parameters
     ----------
@@ -130,7 +132,7 @@ def prefer_fft_conv(x: torch.Tensor, kernel_size: int) -> bool:
         Kernel length in samples.
     """
     if x.device.type == "hpu":
-        return x.shape[1] * kernel_size >= 1024
+        return x.shape[1] >= 8 and x.shape[0] * x.shape[-1] * kernel_size >= 8e6
     return x.device.type == "cpu" and (
         x.element_size() == 2
         or (x.shape[0] * kernel_size >= 600 and x.shape[1] * kernel_size >= 120)
