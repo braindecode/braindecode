@@ -2064,6 +2064,22 @@ def test_model_trainable_parameters_labram(default_labram_params):
     assert labram_huge.get_num_layers() == 48
 
 
+def test_labram_attention_fused_path_matches_its_weights():
+    """The fused attention = its softmax weights (manual path) applied to v."""
+    from braindecode.models.labram import _Attention as _LabramAttention
+
+    torch.manual_seed(0)
+    attn = _LabramAttention(
+        16, num_heads=4, qkv_bias=True, qk_norm=nn.LayerNorm, window_size=(1, 5)
+    ).eval()
+    nn.init.normal_(attn.relative_position_bias_table)  # attn_mask of the fused call
+    x = torch.randn(2, 6, 16)
+    weights = attn(x, return_attention=True)
+    out, qkv = attn(x, return_qkv=True)
+    expected = attn.proj((weights @ qkv[2]).transpose(1, 2).reshape(2, 6, 16))
+    torch.testing.assert_close(out, expected)
+
+
 @pytest.mark.parametrize("use_mean_pooling", [True, False])
 def test_labram_returns(default_labram_params, use_mean_pooling):
     """
