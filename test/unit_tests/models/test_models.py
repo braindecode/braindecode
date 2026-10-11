@@ -84,6 +84,8 @@ from braindecode.models.csbrain import (
     REGION_PARIETAL,
     REGION_TEMPORAL,
     CSBrain,
+    _CSBrainEncoderLayer,
+    _RegionEmbedding,
     build_region_attention_mask,
     derive_brain_regions,
     make_area_config,
@@ -5475,6 +5477,36 @@ def test_csbrain_forward_with_region_structure():
     assert model(torch.randn(2, 22, 800)).shape == (2, 4)
     feats = model(torch.randn(1, 22, 800), return_features=True)
     assert feats["features"].shape == (1, 22, 4, 200)
+
+
+def test_csbrain_batched_regions_match_per_region_loops():
+    # Regions of 1 (zero padding), 2 and 4 electrodes (circular padding).
+    area_config = make_area_config([0, 1, 1, 2, 2, 2, 2])
+    embed = _RegionEmbedding(200, 200, area_config).double()
+    layer = _CSBrainEncoderLayer(200, 8, area_config=area_config).double()
+    x = torch.randn(2, 7, 3, 200, dtype=torch.float64)
+
+    expected = torch.zeros_like(x)
+    expected_global = torch.zeros(6, 7, 200, dtype=torch.float64)
+    for (start, stop), blocks in zip(embed.region_bounds, embed.region_blocks.values()):
+        n = stop - start
+        xr = x[:, start:stop].permute(0, 2, 1, 3).reshape(-1, n, 200)
+        xr = xr.permute(0, 2, 1).unsqueeze(-1)
+        fmaps = []
+        for conv in blocks:
+            pad = (conv.kernel_size[0] - 1) // 2
+            mode = "constant" if n == 1 else "circular"
+            fmaps.append(conv(torch.nn.functional.pad(xr, (0, 0, pad, pad), mode=mode)))
+        out = torch.cat(fmaps, dim=1).squeeze(-1).permute(0, 2, 1)
+        expected[:, start:stop] = out.reshape(2, 3, n, 200).permute(0, 2, 1, 3)
+        region_mean = x[:, start:stop].mean(dim=1, keepdim=True)
+        expected_global[:, start:stop] = region_mean.permute(0, 2, 1, 3).reshape(6, 1, 200)
+    torch.testing.assert_close(embed(x), expected, rtol=0, atol=1e-12)
+
+    captured = []
+    layer.global_fc.register_forward_hook(lambda m, a, o: captured.append(a[0]))
+    layer._inter_region_attention(x)
+    torch.testing.assert_close(captured[0], expected_global, rtol=0, atol=0)
 
 
 def test_csbrain_masked_forward_replaces_patches():
