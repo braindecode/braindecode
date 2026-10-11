@@ -1606,10 +1606,12 @@ def test_codebrain_one_wide_attention_train_equals_multihead_attention():
         torch.manual_seed(0)
         out = m(x)
         out.square().sum().backward()
-        outs.append((out, torch.get_rng_state(), [p.grad for p in m.parameters() if p.requires_grad]))
+        grads = {n: p.grad for n, p in m.named_parameters() if p.grad is not None}
+        outs.append((out, torch.get_rng_state(), grads))
     assert torch.equal(outs[0][0], outs[1][0])
     assert torch.equal(outs[0][1], outs[1][1])
-    assert all(torch.equal(a, b) for a, b in zip(outs[0][2], outs[1][2]))
+    assert outs[0][2].keys() == outs[1][2].keys()
+    assert all(torch.equal(g, outs[1][2][n]) for n, g in outs[0][2].items())
 
 
 # ==============================================================================
