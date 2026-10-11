@@ -9,10 +9,10 @@ import math
 from typing import Optional
 
 import torch
+import torch.nn.functional as F
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
-from torch.nn import RMSNorm
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
@@ -382,6 +382,43 @@ def _build_rotary_frequency_table(
     return angles.repeat_interleave(2, dim=-1)[:, :axis_dim]
 
 
+@torch.jit.unused
+def _hpu_fused_rms_norm(
+    input_tensor: torch.Tensor, weight: torch.Tensor, eps: float
+) -> torch.Tensor:
+    from habana_frameworks.torch.hpex.normalization import FusedRMSNorm
+
+    return FusedRMSNorm.apply(input_tensor, weight, eps)
+
+
+def _rms_norm(
+    input_tensor: torch.Tensor, weight: torch.Tensor, eps: float
+) -> torch.Tensor:
+    """RMS norm over the last dimension; Gaudi's fused kernel on HPU.
+
+    On HPU, PyTorch's RMS norm runs as six kernels forward (square, mean,
+    add, rsqrt and two multiplies) and more backward; the bridge's fused
+    kernel is one each way.
+    """
+    if (
+        not torch.jit.is_scripting()
+        and input_tensor.device.type == "hpu"
+        and input_tensor.dtype == weight.dtype
+    ):
+        return _hpu_fused_rms_norm(input_tensor, weight, eps)
+    return F.rms_norm(input_tensor, (input_tensor.shape[-1],), weight, eps)
+
+
+class _RMSNorm(nn.RMSNorm):
+    """``nn.RMSNorm`` (same parameters) through :func:`_rms_norm`."""
+
+    def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
+        weight, eps = self.weight, self.eps
+        if weight is None or eps is None:
+            return F.rms_norm(input_tensor, self.normalized_shape, weight, eps)
+        return _rms_norm(input_tensor, weight, eps)
+
+
 class _RotaryPositionEmbedding(nn.Module):
     def __init__(self):
         super().__init__()
@@ -444,8 +481,8 @@ class _Attention(nn.Module):
         self.wk = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
         self.wv = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
         self.wo = nn.Linear(n_heads * head_dim, embedding_dim, bias=False)
-        self.q_norm = RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
-        self.k_norm = RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
+        self.q_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
+        self.k_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
         self.rotary_embedding = _RotaryPositionEmbedding()
 
     def forward(
@@ -532,13 +569,13 @@ class _TransformerBlock(nn.Module):
             ffn_dim_multiplier=ffn_dim_multiplier,
             activation=activation,
         )
-        self.attention_norm = RMSNorm(embedding_dim, eps=norm_eps)
-        self.ffn_norm = RMSNorm(embedding_dim, eps=norm_eps)
+        self.attention_norm = _RMSNorm(embedding_dim, eps=norm_eps)
+        self.ffn_norm = _RMSNorm(embedding_dim, eps=norm_eps)
         self.attention_norm_post = (
-            RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
+            _RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
         )
         self.ffn_norm_post = (
-            RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
+            _RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
         )
 
     def forward(
@@ -598,7 +635,7 @@ class _ZUNAEncoder(nn.Module):
             )
             for _ in range(n_layers)
         )
-        self.norm = RMSNorm(dim, eps=norm_eps)
+        self.norm = _RMSNorm(dim, eps=norm_eps)
         self.output = nn.Linear(dim, output_dim, bias=False)
 
         # Buffers
