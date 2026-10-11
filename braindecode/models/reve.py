@@ -519,6 +519,7 @@ class GEGLU(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, dim: int, hidden_dim: int, geglu: bool):
         super().__init__()
+        self.geglu = geglu
         self.net = nn.Sequential(
             RMSNorm(dim, eps=1e-6),
             nn.Linear(dim, hidden_dim * 2 if geglu else hidden_dim, bias=False),
@@ -527,7 +528,15 @@ class FeedForward(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        if not self.geglu:
+            return self.net(x)
+        # GEGLU halves as two matmuls on the weight's row halves: contiguous
+        # outputs instead of strided views of one output (copied on HPU).
+        x = self.net[0](x)
+        weight = self.net[1].weight
+        half = weight.shape[0] // 2
+        x, gates = F.linear(x, weight[:half]), F.linear(x, weight[half:])
+        return self.net[3](F.gelu(gates) * x)
 
 
 #################################################################################
