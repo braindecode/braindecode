@@ -62,9 +62,10 @@ def fft_conv1d(
 
     Equal to the direct convolution up to float rounding: the FFT is long
     enough for a linear (not circular) convolution. Its cost barely grows with
-    the kernel size, so it is faster than the direct one for long kernels on
-    CPU (see :func:`prefer_fft_conv`). float16/bfloat16 inputs are computed in
-    float32 (:func:`spectral_input`) and cast back.
+    the kernel size, so it is faster than the direct one for long kernels
+    (see :func:`prefer_fft_conv`). float16/bfloat16 inputs are computed in
+    float32 (:func:`spectral_input`) and cast back. On Intel Gaudi (HPU, no
+    complex dtype) the DFTs are real matmuls over overlapping blocks.
 
     Parameters
     ----------
@@ -82,6 +83,8 @@ def fft_conv1d(
         ``x``. For an even ``kernel_size`` it is aligned like torch's
         ``padding="same"`` (the extra zero padded on the right).
     """
+    if _real_dft.needs_real_dft(x):
+        return _real_dft.fft_conv1d_real(x, weight, bias)
     n_times, kernel_size = x.shape[-1], weight.shape[-1]
     # >= n_times + kernel_size - 1 (no circular wrap-around), even and
     # 5-smooth: the fast cases of a real FFT
@@ -115,8 +118,9 @@ def prefer_fft_conv(x: torch.Tensor, kernel_size: int) -> bool:
     and from ``batch_size * kernel_size >= 600`` if also
     ``in_channels * kernel_size >= 120``: with one or two input channels a
     float32 direct convolution stays cheaper up to k = 85 / 31 (13 long
-    temporal convolutions of the model zoo, 22 channels x batch 32). GPUs and
-    HPUs (no complex dtype) keep the direct convolution.
+    temporal convolutions of the model zoo, 22 channels x batch 32). On Intel
+    Gaudi (HPU) the FFT wins from ``in_channels * kernel_size >= 1024``. GPUs
+    keep the direct convolution.
 
     Parameters
     ----------
@@ -125,6 +129,8 @@ def prefer_fft_conv(x: torch.Tensor, kernel_size: int) -> bool:
     kernel_size : int
         Kernel length in samples.
     """
+    if x.device.type == "hpu":
+        return x.shape[1] * kernel_size >= 1024
     return x.device.type == "cpu" and (
         x.element_size() == 2
         or (x.shape[0] * kernel_size >= 600 and x.shape[1] * kernel_size >= 120)
