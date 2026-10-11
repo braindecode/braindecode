@@ -251,16 +251,17 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         contribute to both encoder and learned-logit-scale gradients.
 
         All ranks in ``group`` must call this method collectively, and
-        must contain at least one EEG/text pair. When no process group is
+        must contain matching nonempty EEG/text pairs and the same feature\n        dimension. Rank-local validation is synchronized before feature\n        gathering. When no process group is
         initialized or its world size is one, this is the local-batch loss.
         ``forward_paired`` still returns local-batch logits; use the
         returned embeddings to compute this global-negative training loss.
         """
-        if eeg_embeds.ndim != 2 or text_embeds.shape != eeg_embeds.shape:
-            raise ValueError(
-                "contrastive_loss requires matching 2D EEG/text embeddings."
-            )
+        valid_pair = eeg_embeds.ndim == 2 and text_embeds.shape == eeg_embeds.shape
         if not distributed:
+            if not valid_pair:
+                raise ValueError(
+                    "contrastive_loss requires matching 2D EEG/text embeddings."
+                )
             if eeg_embeds.shape[0] == 0:
                 raise ValueError("contrastive_loss requires a nonempty paired batch.")
             logits_per_eeg, logits_per_text = self.compute_logits(
@@ -281,15 +282,28 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         if world_size == 1:
             return self.contrastive_loss(eeg_embeds, text_embeds)
 
-        local_size = eeg_embeds.shape[0]
-        local_count = torch.tensor(
-            [local_size], device=eeg_embeds.device, dtype=torch.int64
+        # Validate on *every* rank before the autograd collectives. If one
+        # rank raises locally for mismatched inputs or a different feature
+        # dimension, otherwise-healthy peers may hang in all_gather().
+        local_size = eeg_embeds.shape[0] if eeg_embeds.ndim >= 1 else 0
+        local_dim = eeg_embeds.shape[1] if eeg_embeds.ndim == 2 else -1
+        metadata = torch.tensor(
+            [local_size, local_dim, int(valid_pair)],
+            device=eeg_embeds.device,
+            dtype=torch.int64,
         )
-        gathered_counts = [torch.zeros_like(local_count) for _ in range(world_size)]
-        dist.all_gather(gathered_counts, local_count, group=group)
-        sizes = [int(count.item()) for count in gathered_counts]
+        gathered_metadata = [torch.zeros_like(metadata) for _ in range(world_size)]
+        dist.all_gather(gathered_metadata, metadata, group=group)
+        if any(not int(item[2]) for item in gathered_metadata):
+            raise ValueError(
+                "contrastive_loss requires matching 2D EEG/text embeddings "
+                "on every rank."
+            )
+        sizes = [int(item[0]) for item in gathered_metadata]
         if any(size == 0 for size in sizes):
             raise ValueError("Every rank needs at least one EEG/text pair.")
+        if any(int(item[1]) != local_dim for item in gathered_metadata):
+            raise ValueError("All ranks need the same embedding dimension.")
 
         max_size = max(sizes)
         rank = dist.get_rank(group)
