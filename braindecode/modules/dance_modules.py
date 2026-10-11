@@ -10,11 +10,11 @@ import math
 from typing import Dict, Optional
 
 import torch
-import torch.nn.functional as F
 from torch import nn
 
 from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.modules.activation import GatedLinearUnit
+from braindecode.modules.attention import _scaled_dot_product_attention
 from braindecode.modules.layers import ChannelMerger
 
 
@@ -189,7 +189,8 @@ class _Attention(nn.Module):
         q = q.unflatten(-1, (h, -1)).transpose(1, 2)
         k = k.unflatten(-1, (h, -1)).transpose(1, 2)
         v = v.unflatten(-1, (h, -1)).transpose(1, 2)
-        out = F.scaled_dot_product_attention(q, k, v, scale=self.scale)
+        # scale = dim_head ** -0.5 = SDPA's default 1 / sqrt(q.shape[-1])
+        out = _scaled_dot_product_attention(q, k, v)
         # (b, h, n, d) -> (b, n, h * d)
         return self.to_out(out.transpose(1, 2).flatten(2))
 
