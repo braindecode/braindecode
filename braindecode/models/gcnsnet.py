@@ -243,7 +243,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-light:`Graph Neural Network` :bdg-dark-line:`Channel`
 
-    .. figure:: ../_static/model/GCNsNet.jpeg
+    .. figure:: ../_static/model/gcnsnet_arch.png
         :align: center
         :alt: GCNs-Net Architecture
         :width: 600px
