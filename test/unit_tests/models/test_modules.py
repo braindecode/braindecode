@@ -918,6 +918,25 @@ def test_filter_bank_layer_fir_bands_equal_torchaudio_fftconvolve():
         assert torch.equal(out[:, band], fftconvolve(x, fir[None, None], mode="same"))
 
 
+@pytest.mark.parametrize("phase", ["zero", "minimum"])
+def test_filter_bank_layer_direct_bank_matches_fft_bank(phase):
+    """The direct-convolution bank (HPU path) equals the FFT bank, filters of different lengths."""
+    x = torch.randn(
+        2, 3, 1000, dtype=torch.float64, generator=torch.Generator().manual_seed(0)
+    )
+    layer = FilterBankLayer(
+        n_chans=3,
+        sfreq=250,
+        band_filters=[(4, 8), (13, 30), (30, 45)],
+        phase=phase,
+        verbose=False,
+    ).double()
+    assert len({fir.shape[-1] for fir in layer.fir_list}) > 1
+    torch.testing.assert_close(
+        layer._apply_fir_bank_direct(x), layer(x), rtol=0, atol=1e-10
+    )
+
+
 @pytest.mark.parametrize(
     "method", ["fir"]
 )  # "iir" is not working to 4-8, 8-12, 12-16. I think "sos" solve, but not implemented in Torch.

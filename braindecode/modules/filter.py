@@ -327,6 +327,8 @@ class FilterBankLayer(nn.Module):
         Tensor
             Filtered tensor of shape (batch_size, n_bands, n_chans, n_times).
         """
+        if _real_dft.needs_real_dft(x):
+            return self._apply_fir_bank_direct(x)
         # spectral_input: float32 at least, on the CPU for HPU inputs (no
         # complex FFT nor float64 there); the output goes back with .to(x).
         x_in = spectral_input(x)
@@ -345,6 +347,33 @@ class FilterBankLayer(nn.Module):
             start = (fir.shape[-1] - 1) // 2
             outs.append(full[..., start : start + n_times])
         return torch.stack(outs, dim=1).to(x)
+
+    def _apply_fir_bank_direct(self, x: Tensor) -> Tensor:
+        """The FIR bank as one direct convolution on the device (HPU: no complex FFT).
+
+        Every filter sits in one zero-padded kernel, shifted so that its own
+        "same" window (start ``(filter_length - 1) // 2``) lines up with the
+        others'; flipped, since ``conv1d`` is a cross-correlation.
+        """
+        x32 = x.to(torch.promote_types(x.dtype, torch.float32))
+        start, length = 0, 0
+        for fir in self.fir_list:
+            start = max(start, (fir.shape[-1] - 1) // 2)
+        for fir in self.fir_list:
+            length = max(length, start - (fir.shape[-1] - 1) // 2 + fir.shape[-1])
+        kernels = []
+        for fir in self.fir_list:
+            left = start - (fir.shape[-1] - 1) // 2
+            kernel = nn.functional.pad(
+                fir.to(x32), [left, length - left - fir.shape[-1]]
+            )
+            kernels.append(kernel.flip(-1))
+        batch, n_chans, n_times = x32.shape
+        padded = nn.functional.pad(
+            x32.reshape(batch * n_chans, 1, n_times), [length - 1 - start, start]
+        )
+        out = nn.functional.conv1d(padded, torch.stack(kernels).unsqueeze(1))
+        return out.reshape(batch, n_chans, -1, n_times).transpose(1, 2).to(x)
 
     @staticmethod
     def _apply_fir(
