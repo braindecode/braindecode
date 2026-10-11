@@ -601,7 +601,9 @@ class _RotarySelfAttentionBlock(nn.Module):
             .reshape(B, N, 3, self.num_heads, C // self.num_heads)
             .permute(2, 0, 3, 1, 4)
         )  # (K, B, H, N, D)
-        q, k, v = qkv[0], qkv[1], qkv[2]
+        # unbind, not qkv[0..2]: the backward of three selects writes three
+        # zero-filled copies of the whole qkv tensor and sums them.
+        q, k, v = qkv.unbind(0)
         q = self._rotate_queries_or_keys(q)
         k = self._rotate_queries_or_keys(k)
         attn = F.scaled_dot_product_attention(
