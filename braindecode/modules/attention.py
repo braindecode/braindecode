@@ -835,7 +835,14 @@ class CATLite(nn.Module):
 
 
 @torch.jit.unused
-def _hpu_fused_sdpa(query: Tensor, key: Tensor, value: Tensor) -> Tensor:
+def _hpu_eager_fused_sdpa(
+    query: Tensor, key: Tensor, value: Tensor
+) -> Optional[Tensor]:
+    # Lazy mode: None, the graph compiler already fuses torch's SDPA there.
+    from habana_frameworks.torch.utils.internal import is_lazy
+
+    if is_lazy():
+        return None
     from habana_frameworks.torch.hpex.kernels import FusedSDPA
 
     return FusedSDPA.apply(query, key, value, None, 0.0, False, None, "None", False)
@@ -850,10 +857,10 @@ def _scaled_dot_product_attention(
 ) -> Tensor:
     """``F.scaled_dot_product_attention``; Gaudi's fused kernel on HPU.
 
-    On HPU, torch's SDPA runs the math decomposition (the full
-    ``(batch, heads, seq, seq)`` scores in device memory), 2-3.5x slower in
-    eager mode on long sequences. The fused kernel is used without a mask or
-    dropout (its dropout would draw other masks).
+    In HPU eager mode, torch's SDPA runs op by op (the full
+    ``(batch, heads, seq, seq)`` scores in device memory), 2-3.5x slower than
+    the bridge's fused kernel on long sequences. The fused kernel is used
+    without a mask or dropout (its dropout would draw other masks).
     """
     if (
         not torch.jit.is_scripting()
@@ -862,7 +869,9 @@ def _scaled_dot_product_attention(
         and dropout_p == 0.0
         and (query.dtype == torch.float32 or query.dtype == torch.bfloat16)
     ):
-        return _hpu_fused_sdpa(query, key, value)
+        out = _hpu_eager_fused_sdpa(query, key, value)
+        if out is not None:
+            return out
     return F.scaled_dot_product_attention(
         query, key, value, attn_mask=attn_mask, dropout_p=dropout_p
     )
