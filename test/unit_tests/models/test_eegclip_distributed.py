@@ -4,6 +4,8 @@ import json
 import os
 import sys
 import tempfile
+from datetime import timedelta
+from pathlib import Path
 
 import pytest
 import torch
@@ -19,7 +21,8 @@ def _worker(rank, sizes, rendezvous, result_path):
     # Deterministic CPU/Gloo demonstration of the *actual model method*.
     torch.set_num_threads(1)
     dist.init_process_group(
-        "gloo", init_method="file://" + rendezvous,
+        "gloo", init_method=Path(rendezvous).resolve().as_uri(),
+        timeout=timedelta(seconds=40),
         rank=rank, world_size=len(sizes),
     )
     try:
@@ -84,7 +87,8 @@ def _empty_rank_worker(rank, rendezvous):
     # Error across ALL ranks, not a rank-local exception before a collective.
     torch.set_num_threads(1)
     dist.init_process_group(
-        "gloo", init_method="file://" + rendezvous,
+        "gloo", init_method=Path(rendezvous).resolve().as_uri(),
+        timeout=timedelta(seconds=40),
         rank=rank, world_size=2,
     )
     try:
@@ -157,3 +161,82 @@ def test_eegclip_distributed_requires_paired_embeddings():
         model.contrastive_loss(torch.randn(2, 4), torch.randn(3, 4))
     with pytest.raises(ValueError, match="nonempty"):
         model.contrastive_loss(torch.empty(0, 4), torch.empty(0, 4))
+
+
+def _run_with_rank_zero_in_test_process(worker, *args):
+    """Execute rank zero inside pytest so coverage sees distributed branches."""
+    # mp.spawn() places *every* rank in a child process, so subprocess coverage
+    # may report the entire distributed branch as uncovered despite passing
+    # multiprocess tests. This is a real two-rank Gloo test, not a mock.
+    peer = mp.get_context("spawn").Process(target=worker, args=(1, *args))
+    peer.start()
+    try:
+        worker(0, *args)
+        peer.join(timeout=90)
+        assert peer.exitcode == 0, f"Peer rank failed: {peer.exitcode}"
+    finally:
+        if peer.is_alive():
+            peer.terminate()
+            peer.join(timeout=15)
+
+
+def _preflight_shape_worker(rank, rendezvous, case):
+    torch.set_num_threads(1)
+    dist.init_process_group(
+        "gloo",
+        init_method=Path(rendezvous).resolve().as_uri(),
+        timeout=timedelta(seconds=40),
+        rank=rank,
+        world_size=2,
+    )
+    try:
+        model = EEGCLIP(
+            n_chans=4,
+            n_times=20,
+            n_outputs=4,
+            eeg_encoder=nn.Identity(),
+            eeg_embedding_dim=4,
+            text_embedding_dim=4,
+            projection_layers=1,
+        )
+        dim = 3 if rank == 1 and case == "different_rank_width" else 4
+        eeg = torch.randn(2, dim)
+        text_dim = 3 if rank == 1 and case == "mismatched_pair" else dim
+        text = torch.randn(2, text_dim)
+        error = (
+            "matching 2D" if case == "mismatched_pair"
+            else "same embedding dimension"
+        )
+        with pytest.raises(ValueError, match=error):
+            model.contrastive_loss(eeg, text, distributed=True)
+        # A successful barrier establishes that *both* ranks left the
+        # preflight collectively instead of one rank hanging in all_gather.
+        dist.barrier()
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Autograd Gloo all-gather Windows not verified"
+)
+@pytest.mark.parametrize("case", ["mismatched_pair", "different_rank_width"])
+def test_eegclip_distributed_preflight_rejects_malformed_rank(tmp_path, case):
+    if not dist.is_available() or not dist.is_gloo_available():
+        pytest.skip("PyTorch Gloo distributed backend is unavailable")
+    _run_with_rank_zero_in_test_process(
+        _preflight_shape_worker, str(tmp_path / f"preflight-{case}"), case
+    )
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Autograd Gloo all-gather Windows not verified"
+)
+def test_eegclip_distributed_real_collectives_visible_to_coverage(tmp_path):
+    if not dist.is_available() or not dist.is_gloo_available():
+        pytest.skip("PyTorch Gloo distributed backend is unavailable")
+    result_path = tmp_path / "rank-zero-covered.json"
+    _run_with_rank_zero_in_test_process(
+        _worker, (2, 3), str(tmp_path / "covered-gloo"), str(result_path)
+    )
+    with result_path.open(encoding="utf-8") as result:
+        assert json.load(result)["max_abs_error"] < 1e-11
