@@ -836,7 +836,7 @@ class CATLite(nn.Module):
 
 @torch.jit.unused
 def _hpu_eager_fused_sdpa(
-    query: Tensor, key: Tensor, value: Tensor
+    query: Tensor, key: Tensor, value: Tensor, scale: Optional[float] = None
 ) -> Optional[Tensor]:
     # Lazy mode: None, the graph compiler already fuses torch's SDPA there.
     from habana_frameworks.torch.utils.internal import is_lazy
@@ -845,7 +845,7 @@ def _hpu_eager_fused_sdpa(
         return None
     from habana_frameworks.torch.hpex.kernels import FusedSDPA
 
-    return FusedSDPA.apply(query, key, value, None, 0.0, False, None, "None", False)
+    return FusedSDPA.apply(query, key, value, None, 0.0, False, scale, "None", False)
 
 
 def _scaled_dot_product_attention(

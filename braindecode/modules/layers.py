@@ -333,7 +333,13 @@ class ChannelMerger(nn.Module):
         scores = torch.einsum("bcd,bod->boc", [embedding, heads])
         scores = scores + score_offset[:, None]
         weights = torch.softmax(scores, dim=2).nan_to_num()  # over n_chans
-        out = weights @ x  # (B, out, n_chans) @ (B, n_chans, T) -> (B, out, T)
+        # (B, out, n_chans) @ (B, n_chans, T) -> (B, out, T). On HPU as
+        # (x^T @ weights^T)^T: Gaudi's lazy-mode graph compiler fails on
+        # ``weights @ x`` feeding a convolution's backward.
+        if x.device.type == "hpu":
+            out = (x.transpose(1, 2) @ weights.transpose(1, 2)).transpose(1, 2)
+        else:
+            out = weights @ x
         return out  # (B, out_channels, T)
 
 

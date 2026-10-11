@@ -28,7 +28,19 @@ class _ConvBlock(nn.Module):
         self.act = None if last else activation()
 
     def forward(self, x):
-        x = self.conv(x)
+        # Taps more than (T - 1) // dilation steps off-centre only ever read the
+        # zero padding: drop them (the same sum without its zero terms, fewer
+        # multiply-adds at long dilations).
+        d = self.conv.dilation[0]
+        half = self.conv.kernel_size[0] // 2
+        reach = (x.shape[-1] - 1) // d
+        if reach < half:
+            weight = self.conv.weight[:, :, half - reach : half + reach + 1]
+            x = nn.functional.conv1d(
+                x, weight, self.conv.bias, padding=reach * d, dilation=d
+            )
+        else:
+            x = self.conv(x)
         if self.act is not None:
             x = self.act(x)
         return x
