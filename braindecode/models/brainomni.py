@@ -869,9 +869,13 @@ class _SEANetConv1d(nn.Module):
         extra = (kernel_size - padding_total - x.shape[-1]) % stride
         right = padding_total // 2
         padding = (padding_total - right, right + extra)
+        if max(padding) == 0:  # 1x1 convs: padding would only copy x
+            return self.conv(x)
         # Zero-extend a signal too short to reflect, as EnCodec does.
         short = max(max(padding) - x.shape[-1] + 1, 0)
-        x = F.pad(F.pad(x, (0, short)), padding, mode="reflect")
+        if short > 0:  # F.pad with nothing to pad still copies x
+            x = F.pad(x, (0, short))
+        x = F.pad(x, padding, mode="reflect")
         return self.conv(x[..., : x.shape[-1] - short])
 
 
