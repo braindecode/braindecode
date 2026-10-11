@@ -440,7 +440,8 @@ class REVE(EEGModuleMixin, nn.Module):
                 raise ValueError(
                     "No positions provided and no default positions available. Please provide channel positions."
                 )
-            pos = self.default_pos.expand(batch_size, -1, -1).to(eeg.device)
+            # One copy for the whole batch: the embedding below broadcasts.
+            pos = self.default_pos.unsqueeze(0).to(eeg.device)
 
         pos = FourierEmb4D.add_time_patch(pos, n_patches)
         # Positions stay in float32 for the Fourier features; the embedding
