@@ -1950,28 +1950,40 @@ def test_diver1_reset_head_preserves_zero_outputs(diver1_model, n_outputs):
     sys.platform == "win32",
     reason="bfloat16 fold crashes Windows CI runners (0xC000001D, illegal instruction)",
 )
-def test_diver1_stcpe_preserves_low_precision_overlap(monkeypatch):
-    # BF16 fold accumulates 257 overlapping ones to 256, not scalar 257.
-    model = _STCPE(8, 4, 257, torch.nn.SiLU, 1).bfloat16().eval()
-    original_fold = torch.nn.functional.fold
-    calls = []
-
-    def capture_fold(*args, **kwargs):
-        out = original_fold(*args, **kwargs)
-        calls.append(out)
-        return out
-
-    monkeypatch.setattr(torch.nn.functional, "fold", capture_fold)
-    x = torch.randn(1, 1, 1, 8, dtype=torch.bfloat16, requires_grad=True)
+def test_diver1_stcpe_matches_unfold_fold(monkeypatch):
+    # Gathered windows and the index_add overlap-add equal F.unfold / F.fold
+    # (outputs and input grads, bit for bit).
+    fn = torch.nn.functional
+    model = _STCPE(16, 4, 7, torch.nn.SiLU, 6).eval()
+    x = torch.randn(2, 3, 6, 16, requires_grad=True)
+    b, c, p, _ = x.shape
+    h = model.down(x)
+    d = h.shape[-1]
+    kw = dict(kernel_size=(c, 7), padding=(0, 6))
+    cols = fn.unfold(h.permute(0, 3, 1, 2).reshape(b * d, 1, c, p), **kw)
+    n_win = cols.shape[-1]
+    windows = cols.view(b, d, c * 7, n_win).permute(0, 3, 2, 1).reshape(-1, c * 7, d)
+    var_id, time_id = torch.arange(c).repeat_interleave(7), torch.arange(7).repeat(c)
+    enc = model.encoder(windows, var_id=var_id, time_id=time_id)
+    cols = enc.view(b, n_win, c * 7, d).permute(0, 3, 2, 1).reshape(b * d, c * 7, n_win)
+    overlap = fn.fold(torch.ones(1, c * 7, n_win), (c, p), **kw)
+    folded = fn.fold(cols, (c, p), **kw) / overlap
+    expected = model.up(folded.view(b, d, c, p).permute(0, 2, 3, 1))
     actual = model(x)
-    assert len(calls) == 2
-    folded, overlap = calls
-    torch.testing.assert_close(overlap, torch.full_like(overlap, 256))
-    expected = model.up(model.unfold_features(folded / overlap))
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-    actual_grad = torch.autograd.grad(actual.sum(), x, retain_graph=True)[0]
-    expected_grad = torch.autograd.grad(expected.sum(), x)[0]
-    torch.testing.assert_close(actual_grad, expected_grad, rtol=0, atol=0)
+    grad = torch.autograd.grad(actual.sum(), x, retain_graph=True)[0]
+    torch.testing.assert_close(
+        grad, torch.autograd.grad(expected.sum(), x)[0], rtol=0, atol=0
+    )
+
+    # BF16 counts 257 overlapping windows to 256 (as BF16 sums do), not 257.
+    model = _STCPE(8, 4, 257, torch.nn.SiLU, 1).bfloat16().eval()
+    monkeypatch.setattr(
+        model.encoder, "forward", lambda w, var_id, time_id: torch.ones_like(w)
+    )
+    monkeypatch.setattr(model.up, "forward", lambda t: t)
+    out = model(torch.randn(1, 1, 1, 8, dtype=torch.bfloat16))
+    torch.testing.assert_close(out, torch.ones_like(out), rtol=0, atol=0)
 
 
 @pytest.mark.parametrize("patch_size", [50, 500])
