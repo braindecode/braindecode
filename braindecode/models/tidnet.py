@@ -6,6 +6,7 @@ from torch import nn
 from torch.nn import init
 from torch.nn.utils.parametrizations import weight_norm
 
+from braindecode.functional import fft_conv1d, prefer_fft_conv
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import Ensure4d
 
@@ -300,7 +301,7 @@ class _TemporalFilter(nn.Module):
         for i in range(depth):
             dil = depth - i
             conv = weight_norm(
-                nn.Conv2d(
+                _TemporalConv(
                     n_chans if i == 0 else filters,
                     filters,
                     kernel_size=(1, temp_len),
@@ -389,3 +390,19 @@ class _TIDNetFeatures(nn.Module):
         x = self.temporal(x)
         x = self.spatial(x)
         return self.extract_features(x)
+
+
+class _TemporalConv(nn.Conv2d):
+    """``(1, k)`` Conv2d with "same" output length; on CPU, through
+    :func:`~braindecode.functional.fft_conv1d` where
+    :func:`~braindecode.functional.prefer_fft_conv` expects it to be faster."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # dilated layers stay direct (fft_conv1d takes dense kernels)
+        if self.dilation[1] > 1 or not prefer_fft_conv(x, self.kernel_size[1]):
+            return self._conv_forward(x, self.weight, self.bias)
+        b, _, h, t = x.shape  # the conv1d of each of the b * h rows
+        rows = x.transpose(1, 2).reshape(b * h, -1, t)
+        # float64: TIDNet's ill-conditioned gradients amplify float32 FFT rounding
+        y = fft_conv1d(rows.double(), self.weight.squeeze(2), self.bias).to(x.dtype)
+        return y.unflatten(0, [b, h]).transpose(1, 2)

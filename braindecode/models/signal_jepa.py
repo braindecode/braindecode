@@ -1379,12 +1379,17 @@ class _ChannelEmbedding(nn.Embedding):
     def __init__(
         self, channel_locations: list[list[float] | None], embedding_dim: int, **kwargs
     ):
+        # MNE stores NaN for a channel without a position: embed it as None.
+        channel_locations = [
+            None if loc is None or not all(map(math.isfinite, loc[:3])) else loc
+            for loc in channel_locations
+        ]
         self.coordinate_ranges = [
             (min(coords), max(coords))
             for coords in zip(
                 *[loc[:3] for loc in channel_locations if loc is not None]
             )
-        ]
+        ] or [(0.0, 0.0)] * 3  # no channel has a position
         channel_mins, channel_maxs = zip(*self.coordinate_ranges)
         global_min = min(channel_mins)
         global_max = max(channel_maxs)

@@ -14,13 +14,16 @@ from __future__ import annotations
 import bisect
 import html as _html
 import json
+import mmap
 import os
 import shutil
 import warnings
 from abc import abstractmethod
 from collections import Counter
-from collections.abc import Callable, Hashable
+from collections.abc import Callable, Hashable, Sequence
 from glob import glob
+from itertools import chain
+from operator import attrgetter
 from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
 
@@ -28,6 +31,7 @@ import mne
 import mne.io
 import numpy as np
 import pandas as pd
+from mne.io.constants import FIFF
 from mne.utils import _soft_import
 from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset, IterableDataset
@@ -218,6 +222,109 @@ def _compute_ch_pos(info, targets_from):
             UserWarning,
         )
     return pos
+
+
+_TAG_ROW = attrgetter("kind", "type", "size", "next", "pos")
+
+
+def _tag_rows(tags):
+    """(kind, type, size, next, pos) of FIF tags as an int64 array (n, 5)."""
+    flat = chain.from_iterable(map(_TAG_ROW, tags))
+    return np.fromiter(flat, np.int64, 5 * len(tags)).reshape(-1, 5)
+
+
+class _FifTagTable(Sequence):
+    """The data-buffer tags of a lazy FIF raw as one int64 array.
+
+    mne's FIF reader keeps one ``Tag`` object per data buffer in
+    ``raw._raw_extras[i]["ent"]`` (one per second of signal with mne's default
+    buffers), each with its attribute dict and integers once unpickled. A lazy
+    dataset of many recordings holds millions of them in RAM, and every forked
+    DataLoader worker copies the memory pages of those it reads (reference
+    counts). This holds the same fields in 40 bytes per buffer and returns an
+    equal ``Tag`` on access, so mne's own reads are unchanged.
+    """
+
+    def __init__(self, tags):
+        self.tag_class = type(tags[0])
+        self.table = _tag_rows(tags)
+
+    def __len__(self):
+        return len(self.table)
+
+    def __getitem__(self, i):
+        if isinstance(i, slice):
+            return [self.tag_class(*row) for row in self.table[i].tolist()]
+        return self.tag_class(*self.table[i].tolist())
+
+
+_TAG_FIELDS = ("kind", "type", "size", "next", "pos", "data")
+
+
+def _compact_fif_tags(inst):
+    """Swap the ``Tag`` lists of a FIF raw for `_FifTagTable` (in place).
+
+    Only gap-free lists of directory tags (no ``None``, no ``data``) with mne's
+    ``Tag`` fields are swapped; anything else is left as mne built it.
+    """
+    for extra in getattr(inst, "_raw_extras", ()):
+        tags = extra.get("ent")
+        if not isinstance(tags, list) or not tags:
+            continue
+        cls = type(tags[0])
+        if tuple(getattr(cls, "__dataclass_fields__", ())) == _TAG_FIELDS and all(
+            type(t) is cls and t.data is None for t in tags
+        ):
+            extra["ent"] = _FifTagTable(tags)
+    return inst
+
+
+def _read_fif_window(raw, start, stop):
+    """Samples ``start:stop`` of a lazy FIF raw, copied from the file in one go.
+
+    mne reads, casts and calibrates the FIF data buffers of a range one at a
+    time (60 Python steps for a 60-s window saved with 1-s buffers, each through
+    a buffered file whose buffer is 4 MB on network file systems). Here one
+    slice of the memory-mapped file holds the bytes of every buffer in the
+    range and one multiply calibrates them, with mne's arithmetic (float64 data
+    times ``raw._cals``), so the values equal ``raw._getitem``'s. Returns None
+    (the caller uses mne) unless ``raw`` is a lazy, single-file, uncompressed
+    FIF raw of float32 buffers without projector, compensation or gaps.
+    """
+    if (
+        not isinstance(raw, mne.io.Raw)
+        or raw.preload
+        or len(raw._raw_extras) != 1
+        or raw._projector is not None
+        or raw._comp is not None
+    ):
+        return None
+    extra = raw._raw_extras[0]
+    fname, bounds = extra["filename"], extra["bounds"]
+    if not isinstance(fname, Path) or fname.suffix == ".gz":
+        return None
+    start, stop = start + raw._first_samps[0], stop + raw._first_samps[0]
+    first = np.searchsorted(bounds, start, side="right") - 1
+    tags = extra["ent"]
+    if isinstance(tags, _FifTagTable):
+        rows = tags.table[first : np.searchsorted(bounds, stop)]
+    else:
+        tags = tags[first : np.searchsorted(bounds, stop)]
+        if any(t is None for t in tags):
+            return None
+        rows = _tag_rows(tags)
+    if not len(rows) or (rows[:, 1] != FIFF.FIFFT_FLOAT).any():
+        return None
+    size, pos = rows[:, 2].tolist(), rows[:, 4].tolist()
+    # mmap: no copy through a 4 MB read buffer, and a cold file is read around
+    # the window by the kernel (as mne's 4 MB reads did), not window by window
+    with open(fname, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
+        buf = m[pos[0] : pos[-1] + 16 + size[-1]]
+    one = np.concatenate(
+        [np.frombuffer(buf, ">f4", s // 4, p + 16 - pos[0]) for s, p in zip(size, pos)]
+    ).reshape(-1, extra["orig_nchan"])[start - bounds[first] : stop - bounds[first]]
+    picked = one[:, raw._read_picks[0]].T
+    return np.multiply(picked, raw._cals[:, np.newaxis], order="C")
 
 
 def _window_info(crop_inds, sfreq):
@@ -823,9 +930,11 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         if self._zarr_data is not None:
             X = self._zarr_data[:, i_start:i_stop]
         else:
-            X = self.raw._getitem(
-                (slice(None), slice(i_start, i_stop)), return_times=False
-            )
+            X = _read_fif_window(self.raw, i_start, i_stop)
+            if X is None:
+                X = self.raw._getitem(
+                    (slice(None), slice(i_start, i_stop)), return_times=False
+                )
         X = np.array(X, dtype="float32")
         if self.transform is not None:
             X = self.transform(X)
@@ -1672,7 +1781,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 kwargs_path = os.path.join(path, ".".join([kwarg_name, "json"]))
                 kwargs = getattr(self, kwarg_name)
                 if kwargs is not None:
-                    json.dump(kwargs, open(kwargs_path, "w"))
+                    with open(kwargs_path, "w") as f:
+                        json.dump(kwargs, f)
 
     @property
     def description(self) -> pd.DataFrame:

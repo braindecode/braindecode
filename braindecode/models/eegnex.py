@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
 
+from braindecode.functional import fft_conv1d, prefer_fft_conv
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import Conv2dWithConstraint, LinearWithConstraint
 
@@ -234,7 +235,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         )
 
         self.block_2 = nn.Sequential(
-            nn.Conv2d(
+            _TemporalConv(
                 in_channels=self.filter_1,
                 out_channels=self.filter_2,
                 kernel_size=self.kernel_block_1_2,
@@ -352,3 +353,17 @@ class EEGNeX(EEGModuleMixin, nn.Module):
             self.filter_1 * T5
         )  # filter_1 is the number of channels before flatten
         return final_in_features
+
+
+class _TemporalConv(nn.Conv2d):
+    """``(1, k)`` Conv2d with "same" output length; on CPU, through
+    :func:`~braindecode.functional.fft_conv1d` where
+    :func:`~braindecode.functional.prefer_fft_conv` expects it to be faster."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not prefer_fft_conv(x, self.kernel_size[1]):
+            return self._conv_forward(x, self.weight, self.bias)
+        b, _, h, t = x.shape  # the conv1d of each of the b * h rows
+        x = x.transpose(1, 2).reshape(b * h, -1, t)
+        x = fft_conv1d(x, self.weight.squeeze(2), self.bias)
+        return x.unflatten(0, [b, h]).transpose(1, 2)

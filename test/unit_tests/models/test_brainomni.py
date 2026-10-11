@@ -17,6 +17,7 @@ from braindecode.models import BrainOmni, BrainTokenizer
 from braindecode.models.brainomni import (
     _geometry_from_chs_info,
     _RotaryPositionalEmbedding,
+    _SEANetConv1d,
     _SpatialTemporalBlock,
 )
 from braindecode.modules.quantization import EMACodebook as _Codebook
@@ -340,6 +341,24 @@ def test_braintokenizer_crops_each_window_when_hop_does_not_divide_it():
         window = model(x[..., 10:20])
     torch.testing.assert_close(full[..., 10:20], window)
     torch.testing.assert_close(reconstruction, full, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize(
+    "kernel_size, stride, n_times", [(1, 1, 7), (3, 1, 7), (4, 2, 7), (7, 1, 2)]
+)
+def test_seanet_conv1d_equals_encodec_padding(kernel_size, stride, n_times):
+    """Bit-identical to EnCodec's zero-extend + reflect pad + crop, padding skipped or not."""
+    conv = _SEANetConv1d(2, 3, kernel_size, stride)
+    x = torch.randn(1, 2, n_times)
+    total = kernel_size - stride
+    extra = (kernel_size - total - n_times) % stride
+    padding = (total - total // 2, total // 2 + extra)
+    short = max(max(padding) - n_times + 1, 0)
+    padded = torch.nn.functional.pad(
+        torch.nn.functional.pad(x, (0, short)), padding, mode="reflect"
+    )
+    expected = conv.conv(padded[..., : padded.shape[-1] - short])
+    assert torch.equal(conv(x), expected)
 
 
 def test_braintokenizer_tokenize_restores_train_mode():

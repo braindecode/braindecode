@@ -29,15 +29,21 @@ from braindecode.modules.quantization import ResidualVectorQuantizer
 
 
 class _SELU(nn.SELU):
-    """``nn.SELU`` written as ``scale * x`` / ELU: same values and gradients, and
-    trainable on Gaudi, whose ELU backward only supports ``scale == 1``."""
+    """``nn.SELU`` as ``ELU(x, alpha * scale)`` times ``scale`` where ``x > 0``:
+    same values and gradients, and trainable on Gaudi, whose ELU backward only
+    supports ``scale == 1``."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         alpha, scale = (
             1.6732632423543772848170429916717,
             1.0507009873554804934193349852946,
         )
-        return torch.where(x > 0, x * scale, F.elu(x, alpha * scale))
+        # ELU is x on the positive side, so this equals the where(x > 0, x * scale,
+        # elu) form bit for bit, without its zero-filled where backward. The
+        # factor is at least float32, like the scalar multiply's compute type.
+        one = x.new_ones((), dtype=torch.promote_types(x.dtype, torch.float32))
+        factor = torch.where(x > 0, one * scale, one)
+        return (F.elu(x, alpha * scale) * factor).to(x.dtype)
 
 
 class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
@@ -863,9 +869,13 @@ class _SEANetConv1d(nn.Module):
         extra = (kernel_size - padding_total - x.shape[-1]) % stride
         right = padding_total // 2
         padding = (padding_total - right, right + extra)
+        if max(padding) == 0:  # 1x1 convs: padding would only copy x
+            return self.conv(x)
         # Zero-extend a signal too short to reflect, as EnCodec does.
         short = max(max(padding) - x.shape[-1] + 1, 0)
-        x = F.pad(F.pad(x, (0, short)), padding, mode="reflect")
+        if short > 0:  # F.pad with nothing to pad still copies x
+            x = F.pad(x, (0, short))
+        x = F.pad(x, padding, mode="reflect")
         return self.conv(x[..., : x.shape[-1] - short])
 
 

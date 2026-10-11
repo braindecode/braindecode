@@ -1030,3 +1030,35 @@ def test_get_metadata_leaves_dataset_metadata_untouched(concat_ds_targets):
     for ds, before in zip(windows_ds.datasets, metadata_before):
         pd.testing.assert_frame_equal(ds.metadata, before)
     assert [y for _, y, _ in windows_ds] == targets_before
+
+
+def test_lazy_fif_window_read_matches_mne(tmp_path):
+    """One-read windows of a lazy FIF raw equal mne's buffer-by-buffer read."""
+    from braindecode.datasets.base import _read_fif_window
+
+    info = mne.create_info(["a", "b", "c"], sfreq=100.0, ch_types="eeg")
+    raw = mne.io.RawArray(np.random.RandomState(0).randn(3, 1234) * 1e-5, info)
+    raw.save(tmp_path / "x-raw.fif", buffer_size_sec=0.37)  # 37-sample buffers
+    lazy = mne.io.read_raw_fif(tmp_path / "x-raw.fif", preload=False)
+    lazy.crop(tmin=0.05).pick(["c", "a"])  # first_samp offset, lazy channel picks
+    n = lazy.n_times
+    for start, stop in [(0, 1), (0, n), (30, 40), (36, 37), (500, 1000), (1100, n)]:
+        X = _read_fif_window(lazy, start, stop)
+        assert X.flags.c_contiguous
+        np.testing.assert_array_equal(
+            X, lazy._getitem((slice(None), slice(start, stop)), return_times=False)
+        )
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(lazy, pd.Series({"subject": 1}))]),
+        window_size_samples=150,
+        window_stride_samples=140,
+        drop_last_window=False,
+    )
+    loaded = lazy.copy().load_data()
+    assert _read_fif_window(loaded, 0, 10) is None
+    for ds in windows.datasets:
+        for i in range(len(ds)):
+            _, i_start, i_stop = ds.crop_inds[i]
+            np.testing.assert_array_equal(
+                ds[i][0], loaded.get_data(start=i_start, stop=i_stop).astype("float32")
+            )

@@ -2,10 +2,12 @@
 #
 # License: BSD (3-clause)
 
+import math
+
 import torch
 from torch import nn
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, _too_short_input_error
 
 
 class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
@@ -30,8 +32,9 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         Kernel and stride of the max pooling layers.
     n_groups : int
         Number of groups for the convolution. Set to 2 in [Blanco2020]_ for 2 Channel EEG.
-        Controls the connections between inputs and outputs. ``n_chans`` and
-        ``n_conv_chans`` must be divisible by ``n_groups``.
+        Controls the connections between inputs and outputs. ``n_conv_chans``
+        must be divisible by ``n_groups``; if ``n_chans`` is not, the first
+        convolution uses ``gcd(n_chans, n_groups)`` groups.
     drop_prob : float
         Dropout rate before the output dense layer.
     apply_batch_norm : bool
@@ -84,6 +87,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         }
 
         batch_norm = nn.BatchNorm2d if apply_batch_norm else nn.Identity
+        n_groups = math.gcd(self.n_chans, n_groups)
 
         self.feature_extractor = nn.Sequential(
             nn.Conv2d(self.n_chans, n_conv_chans, (1, 7), groups=n_groups, padding=0),
@@ -142,9 +146,12 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
     def _len_last_layer(self, n_channels, input_size):
         self.feature_extractor.eval()
         with torch.no_grad():
-            out = self.feature_extractor(
-                torch.Tensor(1, n_channels, 1, input_size)
-            )  # batch_size,n_channels,height,width
+            try:
+                out = self.feature_extractor(
+                    torch.Tensor(1, n_channels, 1, input_size)
+                )  # batch_size,n_channels,height,width
+            except RuntimeError as exc:
+                raise _too_short_input_error(exc, self.input_shape) or exc
         self.feature_extractor.train()
         return len(out.flatten())
 
