@@ -22,7 +22,7 @@ from braindecode.models.neurorvq import (
     _MultiScaleTemporalConv,
     _stack_scales,
 )
-from braindecode.modules.quantization import _all_reduce_sum
+from braindecode.modules.quantization import _all_reduce_sum, _broadcast_tensors
 
 
 class _EMAEmbedding(nn.Module):
@@ -59,6 +59,15 @@ class _EMAEmbedding(nn.Module):
             self.weight.copy_(means)
             self.cluster_size.copy_(counts)
             self.initted.fill_(1.0)
+            # A cold quantizer can be initialized from different first batches
+            # on different DDP ranks. Global EMA count/sum reductions are not
+            # sufficient if the initial code assignments already disagree.
+            # Broadcast the complete rank-zero codebook state once, before
+            # computing any token indices. Pretrained/initted paths are unchanged.
+            if not torch.jit.is_scripting():
+                _broadcast_tensors(
+                    (self.weight, self.cluster_size, self.embed_avg, self.initted)
+                )
 
 
 class _EMAVectorQuantizer(nn.Module):
