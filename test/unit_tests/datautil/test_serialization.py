@@ -541,3 +541,30 @@ def test_load_concat_dataset_closes_json_files(setup_concat_raw_dataset, tmpdir)
         warnings.simplefilter("always")
         load_concat_dataset(tmpdir, preload=False)
     assert not [w for w in record if issubclass(w.category, ResourceWarning)]
+
+
+def test_load_concat_dataset_keeps_fif_tags_as_one_array(tmp_path):
+    """Reloaded lazy FIF raws hold their buffer tags as one array; reads unchanged."""
+    import pickle
+
+    from braindecode.datasets.base import _FifTagTable, _read_fif_window
+
+    info = mne.create_info(["a", "b", "c"], sfreq=100.0, ch_types="eeg")
+    raw = mne.io.RawArray(np.random.RandomState(0).randn(3, 1234) * 1e-5, info)
+    BaseConcatDataset([RawDataset(raw, description={"recording": 0})]).save(tmp_path)
+    fif = tmp_path / "0" / "0-raw.fif"
+    mne_raw = mne.io.read_raw_fif(fif, preload=False)
+    for _ in range(2):  # reads the fif and writes the pickle, then reads the pickle
+        lazy = load_concat_dataset(tmp_path, preload=False).datasets[0].raw
+        table = lazy._raw_extras[0]["ent"]
+        assert isinstance(table, _FifTagTable)
+        assert len(table) == 13 and list(table) == mne_raw._raw_extras[0]["ent"]
+    with open(fif.with_suffix(".pkl"), "rb") as f:  # mne's own layout on disk
+        assert isinstance(pickle.load(f)._raw_extras[0]["ent"], list)
+    expected = mne_raw.get_data()
+    for copy in (lazy, lazy.copy(), pickle.loads(pickle.dumps(lazy))):
+        np.testing.assert_array_equal(copy.get_data(), expected)  # mne's own read
+        for start, stop in [(0, 1), (90, 310), (99, 100), (1100, 1234)]:
+            np.testing.assert_array_equal(
+                _read_fif_window(copy, start, stop), expected[:, start:stop]
+            )
