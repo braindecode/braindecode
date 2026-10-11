@@ -279,7 +279,7 @@ def _compact_fif_tags(inst):
     return inst
 
 
-def _read_fif_window(raw, start, stop):
+def _read_fif_window(raw, start, stop, willneed=False):
     """Samples ``start:stop`` of a lazy FIF raw, copied from the file in one go.
 
     mne reads, casts and calibrates the FIF data buffers of a range one at a
@@ -290,6 +290,10 @@ def _read_fif_window(raw, start, stop):
     times ``raw._cals``), so the values equal ``raw._getitem``'s. Returns None
     (the caller uses mne) unless ``raw`` is a lazy, single-file, uncompressed
     FIF raw of float32 buffers without projector, compensation or gaps.
+
+    With ``willneed=True`` nothing is read and None is returned: the OS is
+    only asked to start reading the window's bytes into the page cache in the
+    background (``posix_fadvise(POSIX_FADV_WILLNEED)``).
     """
     if (
         not isinstance(raw, mne.io.Raw)
@@ -316,6 +320,18 @@ def _read_fif_window(raw, start, stop):
     if not len(rows) or (rows[:, 1] != FIFF.FIFFT_FLOAT).any():
         return None
     size, pos = rows[:, 2].tolist(), rows[:, 4].tolist()
+    if willneed:  # only a hint: any error is left to the read itself
+        try:
+            with open(fname, "rb") as f:
+                os.posix_fadvise(
+                    f.fileno(),
+                    pos[0],
+                    pos[-1] + 16 + size[-1] - pos[0],
+                    os.POSIX_FADV_WILLNEED,
+                )
+        except OSError:
+            pass
+        return None
     # mmap: no copy through a 4 MB read buffer, and a cold file is read around
     # the window by the kernel (as mne's 4 MB reads did), not window by window
     with open(fname, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
@@ -1362,7 +1378,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     def __len__(self):
         return self._ensure_cumulative_sizes()[-1]
 
-    def _get_single_item(self, idx: int):
+    def _locate(self, idx: int):
+        """The dataset that holds item ``idx`` and the item's index in it."""
         if idx < 0:
             if -idx > len(self):
                 raise ValueError(
@@ -1376,7 +1393,31 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             sample_idx = idx
         else:
             sample_idx = idx - cumulative_sizes[dataset_idx - 1]
-        return self.datasets[dataset_idx][sample_idx]
+        return self.datasets[dataset_idx], sample_idx
+
+    def _get_single_item(self, idx: int):
+        ds, i = self._locate(idx)
+        return ds[i]
+
+    def __getitems__(self, indices):
+        """Items ``indices``, as ``[self[i] for i in indices]``.
+
+        A :class:`~torch.utils.data.DataLoader` fetches each batch through
+        this. The lazy FIF windows of the batch are first requested from the
+        OS all at once (``posix_fadvise(POSIX_FADV_WILLNEED)``, where it
+        exists), so their reads from disk overlap instead of running one after
+        another: on a network file system a batch read from cold files then
+        costs about one round trip, not one per window.
+        """
+        # ponytail: advises the whole batch at once; chunk it if a batch's
+        # windows ever outgrow the page cache
+        if hasattr(os, "posix_fadvise"):
+            for idx in indices:
+                ds, i = self._locate(idx)
+                if isinstance(ds, EEGWindowsDataset) and ds._zarr_data is None:
+                    _, start, stop = ds.crop_inds[i].tolist()
+                    _read_fif_window(ds.raw, start, stop, willneed=True)
+        return [self[idx] for idx in indices]
 
     def __getitem__(self, idx: int | list):
         """

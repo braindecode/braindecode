@@ -4,6 +4,8 @@
 #
 # License: BSD (3-clause)
 
+import os
+
 import mne
 import numpy as np
 import pandas as pd
@@ -1062,3 +1064,53 @@ def test_lazy_fif_window_read_matches_mne(tmp_path):
             np.testing.assert_array_equal(
                 ds[i][0], loaded.get_data(start=i_start, stop=i_stop).astype("float32")
             )
+
+
+@pytest.mark.skipif(not hasattr(os, "posix_fadvise"), reason="no posix_fadvise")
+def test_getitems_advises_the_batch_before_reading_it(tmp_path, monkeypatch):
+    """A batch fetch asks the OS for every lazy FIF window first, then reads
+    them in order; the items equal ``__getitem__``'s."""
+    from torch.utils.data import DataLoader
+
+    from braindecode.datasets.base import EEGWindowsDataset
+
+    info = mne.create_info(["a", "b"], sfreq=100.0, ch_types="eeg")
+    raws = []
+    for k in range(2):
+        data = np.random.RandomState(k).randn(2, 1000) * 1e-5
+        mne.io.RawArray(data, info).save(tmp_path / f"{k}-raw.fif", buffer_size_sec=0.3)
+        raws.append(mne.io.read_raw_fif(tmp_path / f"{k}-raw.fif", preload=False))
+    raws.append(raws[0].copy().load_data())  # preloaded: nothing to advise
+    windows = create_fixed_length_windows(
+        BaseConcatDataset(
+            [RawDataset(r, pd.Series({"subject": k})) for k, r in enumerate(raws)]
+        ),
+        window_size_samples=150,
+        window_stride_samples=150,
+        drop_last_window=True,
+    )
+    events = []
+    fadvise, getitem = os.posix_fadvise, EEGWindowsDataset.__getitem__
+
+    def advise(fd, offset, length, advice):
+        assert advice == os.POSIX_FADV_WILLNEED and length >= 2 * 150 * 4
+        events.append("advise")
+        return fadvise(fd, offset, length, advice)
+
+    def read(self, index):
+        events.append("read")
+        return getitem(self, index)
+
+    monkeypatch.setattr(os, "posix_fadvise", advise)
+    monkeypatch.setattr(EEGWindowsDataset, "__getitem__", read)
+    n_lazy = len(windows.datasets[0]) + len(windows.datasets[1])
+    lazy, preloaded = [0, n_lazy - 1, 3, n_lazy - 2], [n_lazy, len(windows) - 1]
+    batch = lazy + preloaded
+    items = windows.__getitems__(batch)
+    assert events == ["advise"] * len(lazy) + ["read"] * len(batch)
+    for item, i in zip(items, batch):
+        X, y, inds = windows[i]
+        np.testing.assert_array_equal(item[0], X)
+        assert item[1:] == (y, inds)
+    (X, y, inds), = DataLoader(windows, batch_sampler=[batch])
+    np.testing.assert_array_equal(X.numpy(), np.stack([windows[i][0] for i in batch]))
