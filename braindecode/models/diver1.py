@@ -18,7 +18,7 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import rotate_pairs, spectral_input
+from braindecode.functional import _real_dft, rotate_pairs, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     INTRACRANIAL_CH_TYPES,
@@ -397,10 +397,13 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         tokens = self.patch_tokenizer(x)
         tokens = self.patch_cnn(tokens)
         if self.spectral_emb is not None:
-            # At least float32, as the reference's float32 FFT.
-            fft_input = spectral_input(tokens)
-            spectrum = torch.fft.rfft(fft_input, dim=-1, norm="forward")
-            amplitude = spectrum.abs().to(tokens)
+            if _real_dft.needs_real_dft(tokens):
+                amplitude = self._amplitude_real_dft(tokens).to(tokens)
+            else:
+                # At least float32, as the reference's float32 FFT.
+                fft_input = spectral_input(tokens)
+                spectrum = torch.fft.rfft(fft_input, dim=-1, norm="forward")
+                amplitude = spectrum.abs().to(tokens)
             spectral_emb = self.spectral_emb(amplitude)
             tokens = tokens + spectral_emb
         if self.chan_emb is not None:
@@ -438,6 +441,16 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         else:
             pooled = tokens.mean(dim=(1, 2))
         return self.final_layer(pooled)
+
+    @torch.jit.unused
+    @_real_dft.fp32_island
+    def _amplitude_real_dft(self, tokens):
+        # |rfft(tokens, norm="forward")| on the device for accelerators without
+        # complex tensors (Intel Gaudi / HPU), instead of a host FFT. The norm
+        # keeps abs()'s zero gradient at an all-zero bin.
+        real, imag = _real_dft.real_rfft(tokens)
+        magnitude = torch.linalg.vector_norm(torch.stack((real, imag)), dim=0)
+        return magnitude / tokens.shape[-1]
 
 
 class _PatchCNN(nn.Sequential):
