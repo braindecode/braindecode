@@ -291,18 +291,14 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         # A cross-rank float32/float64 mismatch can abort inside Gloo instead
         # of raising a catchable Python exception. Encode supported training
         # dtypes into the fixed-size integer preflight collective.
-        supported_dtypes = (
-            torch.float16, torch.bfloat16, torch.float32, torch.float64
-        )
+        supported_dtypes = (torch.float16, torch.bfloat16, torch.float32, torch.float64)
         dtype_code = (
             supported_dtypes.index(eeg_embeds.dtype)
             if eeg_embeds.dtype in supported_dtypes
             else -1
         )
         local_valid = (
-            valid_pair
-            and eeg_embeds.dtype == text_embeds.dtype
-            and dtype_code >= 0
+            valid_pair and eeg_embeds.dtype == text_embeds.dtype and dtype_code >= 0
         )
         metadata = torch.tensor(
             [local_size, local_dim, dtype_code, int(local_valid)],
