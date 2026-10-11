@@ -60,7 +60,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         (:func:`~braindecode.functional.fft_conv1d`: same parameters, equal up
         to float rounding) instead of a direct convolution. ``None`` (default)
         decides per input with :func:`~braindecode.functional.prefer_fft_conv`
-        (FFT on CPU where it was faster in benchmarks, direct on GPU and HPU).
+        (FFT on CPU and HPU where it was faster in benchmarks, direct on GPU).
 
     References
     ----------
