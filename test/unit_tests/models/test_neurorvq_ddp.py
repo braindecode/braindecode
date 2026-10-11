@@ -117,7 +117,9 @@ def _distributed_ddp_wrapped_forward(rank, world_size, init_file, out_dir):
                 "weight": emb.weight.detach().clone(),
                 "cluster_size": emb.cluster_size.detach().clone(),
                 "initted": emb.initted.detach().clone(),
-                "usage_cluster_size": wrapped.module.quantizer.cluster_size.detach().clone(),
+                "usage_cluster_size": (
+                    wrapped.module.quantizer.cluster_size.detach().clone()
+                ),
                 "scale_grad": wrapped.module.scale.grad.detach().clone(),
             },
             Path(out_dir) / f"ddp-rank-{rank}.pt",
