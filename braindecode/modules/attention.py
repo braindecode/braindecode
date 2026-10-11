@@ -834,6 +834,40 @@ class CATLite(nn.Module):
         return channel_score * x
 
 
+@torch.jit.unused
+def _hpu_fused_sdpa(query: Tensor, key: Tensor, value: Tensor) -> Tensor:
+    from habana_frameworks.torch.hpex.kernels import FusedSDPA
+
+    return FusedSDPA.apply(query, key, value, None, 0.0, False, None, "None", False)
+
+
+def _scaled_dot_product_attention(
+    query: Tensor,
+    key: Tensor,
+    value: Tensor,
+    attn_mask: Optional[Tensor] = None,
+    dropout_p: float = 0.0,
+) -> Tensor:
+    """``F.scaled_dot_product_attention``; Gaudi's fused kernel on HPU.
+
+    On HPU, torch's SDPA runs the math decomposition (the full
+    ``(batch, heads, seq, seq)`` scores in device memory), 2-3.5x slower in
+    eager mode on long sequences. The fused kernel is used without a mask or
+    dropout (its dropout would draw other masks).
+    """
+    if (
+        not torch.jit.is_scripting()
+        and query.device.type == "hpu"
+        and attn_mask is None
+        and dropout_p == 0.0
+        and (query.dtype == torch.float32 or query.dtype == torch.bfloat16)
+    ):
+        return _hpu_fused_sdpa(query, key, value)
+    return F.scaled_dot_product_attention(
+        query, key, value, attn_mask=attn_mask, dropout_p=dropout_p
+    )
+
+
 class MultiHeadAttention(nn.Module):
     """Multi-head self-attention block.
 
@@ -907,12 +941,8 @@ class MultiHeadAttention(nn.Module):
         dp = self.att_drop if self.training else 0.0
         if self.scale is not None:
             queries = queries * (self.scale * self.head_dim**0.5)
-        out = F.scaled_dot_product_attention(
-            queries,
-            keys,
-            values,
-            attn_mask=mask,
-            dropout_p=dp,
+        out = _scaled_dot_product_attention(
+            queries, keys, values, attn_mask=mask, dropout_p=dp
         )
 
         out = self.rearrange_unstack(out)
