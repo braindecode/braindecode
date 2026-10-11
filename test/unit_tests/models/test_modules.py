@@ -903,6 +903,21 @@ def test_filter_bank_layer_fftconvolve_comparison_fir(
     )
 
 
+def test_filter_bank_layer_fir_bands_equal_torchaudio_fftconvolve():
+    """Each FIR band is bit-identical to its own torchaudio fftconvolve (shared input FFTs)."""
+    from torchaudio.functional import fftconvolve
+
+    x = torch.randn(2, 3, 1000, generator=torch.Generator().manual_seed(0))
+    layer = FilterBankLayer(
+        n_chans=3, sfreq=250, band_filters=[(4, 8), (8, 12), (13, 30)], verbose=False
+    )
+    lengths = [fir.shape[-1] for fir in layer.fir_list]
+    assert lengths[0] == lengths[1] != lengths[2]  # one FFT reused, one not
+    out = layer(x)
+    for band, fir in enumerate(layer.fir_list):
+        assert torch.equal(out[:, band], fftconvolve(x, fir[None, None], mode="same"))
+
+
 @pytest.mark.parametrize(
     "method", ["fir"]
 )  # "iir" is not working to 4-8, 8-12, 12-16. I think "sos" solve, but not implemented in Torch.

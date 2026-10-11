@@ -11,7 +11,7 @@ from mne.filter import _check_coefficients, create_filter
 from mne.utils import warn
 from torch import Tensor, from_numpy, nn
 from torch.fft import fftfreq
-from torchaudio.functional import fftconvolve, filtfilt, lfilter
+from torchaudio.functional import filtfilt, lfilter
 
 from braindecode.functional import _real_dft, spectral_input
 
@@ -23,8 +23,8 @@ class FilterBankLayer(nn.Module):
     It uses MNE's `create_filter` function to create the band-specific filters and
     applies them to multi-channel time-series data. Each filter in the bank corresponds to a
     specific frequency band and is applied to all channels of the input data. The filtering is
-    performed using FFT-based convolution via the ``torchaudio.functional`` if the method is FIR,
-    and ``torchaudio.functional`` if the method is IIR.
+    performed using FFT-based convolution if the method is FIR (bands whose filters have the
+    same length share one FFT of the input), and ``torchaudio.functional`` if the method is IIR.
 
     The default configuration creates 9 non-overlapping frequency bands with a 4 Hz bandwidth,
     spanning from 4 Hz to 40 Hz (i.e., 4-8 Hz, 8-12 Hz, ..., 36-40 Hz). This setup is based on the
@@ -300,6 +300,8 @@ class FilterBankLayer(nn.Module):
                         forward_filter=self.forward_filter,
                     )
                 )
+        elif not self.forward_filter:
+            return self._apply_fir_bank(x)
         else:
             for fir, fir_a in zip(self.fir_list, self.fir_a_list):
                 # Pass FIR filter directly
@@ -308,33 +310,59 @@ class FilterBankLayer(nn.Module):
                         x=x,
                         filt=fir,
                         a_coeffs=fir_a,
-                        forward_filter=self.forward_filter,
                     )
                 )
 
         return torch.cat(outs, dim=1)
+
+    def _apply_fir_bank(self, x: Tensor) -> Tensor:
+        """Every band's ``torchaudio.functional.fftconvolve(x, filt, mode="same")``.
+
+        Same FFT length (``n_times + filter_length - 1``) and operations per
+        band, so bit-identical; adjacent bands with the same filter length
+        reuse the input's FFT, and HPU inputs cross to the CPU and back once.
+
+        Returns
+        -------
+        Tensor
+            Filtered tensor of shape (batch_size, n_bands, n_chans, n_times).
+        """
+        # spectral_input: float32 at least, on the CPU for HPU inputs (no
+        # complex FFT nor float64 there); the output goes back with .to(x).
+        x_in = spectral_input(x)
+        n_times = x_in.shape[-1]
+        n_fft, x_fft = 0, x_in
+        outs = []
+        for fir in self.fir_list:
+            n = n_times + fir.shape[-1] - 1
+            if n != n_fft:
+                # ponytail: reuses the previous band's FFT only (MNE's "auto"
+                # lengths shrink with frequency); a dict if banks need more.
+                n_fft, x_fft = n, torch.fft.rfft(x_in, n=n)
+            full = torch.fft.irfft(
+                x_fft * torch.fft.rfft(fir.to(x_in)[None, None], n=n), n=n
+            )
+            start = (fir.shape[-1] - 1) // 2
+            outs.append(full[..., start : start + n_times])
+        return torch.stack(outs, dim=1).to(x)
 
     @staticmethod
     def _apply_fir(
         x,
         filt: Tensor,
         a_coeffs: Tensor,
-        forward_filter: bool = False,
     ) -> Tensor:
         """
-        Apply an FIR filter to the input tensor.
+        Apply an FIR filter once in the forward direction (causal phases).
 
         Parameters
         ----------
         x : Tensor
             Input tensor of shape (batch_size, n_chans, n_times).
-        filter : dict
-            Dictionary containing IIR filter coefficients.
-            - "b": Tensor of numerator coefficients.
+        filt : Tensor
+            FIR numerator coefficients.
         a_coeffs: Tensor
             FIR denominator coefficients for one-pass filtering.
-        forward_filter : bool
-            If True, apply the FIR coefficients once in the forward direction.
 
         Returns
         -------
@@ -342,28 +370,12 @@ class FilterBankLayer(nn.Module):
             Filtered tensor of shape (batch_size, 1, n_chans, n_times).
         """
         # spectral_input: float32 at least, on the CPU for HPU inputs (no
-        # complex FFT nor float64 there); the output goes back with .to(x).
-        x_in = spectral_input(x)
-        if forward_filter:
-            x64 = x_in.double()
-            filtered = lfilter(
-                x64, a_coeffs=a_coeffs.to(x64), b_coeffs=filt.to(x64), clamp=False
-            )
-            return filtered.to(x).unsqueeze(1)
-
-        # Perform FFT-based convolution; the (1, 1, filter_length) filter
-        # broadcasts over batch and channels, so its FFT is computed once.
-        # Input x shape: (batch_size, n_chans, n_times)
-        # After convolution: (batch_size, n_chans, n_times)
-        filtered = fftconvolve(x_in, filt.to(x_in)[None, None], mode="same").to(
-            x
-        )  # Shape: (batch_size, nchans, time_points)
-
-        # Add a new dimension for the band
-        # Shape after unsqueeze: (batch_size, 1, n_chans, n_times)
-        filtered = filtered.unsqueeze(1)
-        # returning the filtered
-        return filtered
+        # float64 there); the output goes back with .to(x).
+        x64 = spectral_input(x).double()
+        filtered = lfilter(
+            x64, a_coeffs=a_coeffs.to(x64), b_coeffs=filt.to(x64), clamp=False
+        )
+        return filtered.to(x).unsqueeze(1)
 
     @staticmethod
     def _apply_iir(
