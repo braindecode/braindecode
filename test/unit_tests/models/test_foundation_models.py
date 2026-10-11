@@ -1832,6 +1832,23 @@ def test_axon_block_without_band_equals_all_true_band():
         torch.testing.assert_close(block(tokens, None), block(tokens, band))
 
 
+def test_axon_two_scale_attention_equals_gated_branches():
+    # One score matrix and one product with the values give the scale-gated
+    # sum of the banded and the full attention (the gate weights sum to one).
+    attn = _axon_model(_axon_chs()).encoder.blocks[0].attn
+    projected = torch.randn(6, 9, 3 * _AXON_SMALL["embed_dim"])
+    index = torch.arange(9)
+    band = (index[None] - index[:, None]).abs() <= 2
+    weights = torch.randn(6, 9, 2).softmax(-1)
+    expected = weights[..., :1] * attn._attend(projected, band) + weights[
+        ..., 1:
+    ] * attn._attend(projected, None)
+    with torch.no_grad():
+        torch.testing.assert_close(
+            attn._attend_two_scales(projected, band, weights), expected
+        )
+
+
 def test_axon_too_short_window_raises():
     with pytest.raises(ValueError, match="patch_size"):
         AXON(chs_info=_axon_chs(), n_outputs=2, n_times=100, **_AXON_SMALL)
