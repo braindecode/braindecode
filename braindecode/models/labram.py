@@ -19,6 +19,7 @@ from torch.nn.init import trunc_normal_
 from braindecode.functional import rescale_parameter
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import MLP, DropPath
+from braindecode.modules.attention import _hpu_eager_fused_sdpa
 from braindecode.modules.blocks import PatchTokenizer
 
 # -----------------------------------------------------------------------------
@@ -1429,17 +1430,24 @@ class _Attention(nn.Module):
                 relative_position_bias.permute(2, 0, 1).contiguous().unsqueeze(0)
             )  # 1, nH, Wh*Ww, Wh*Ww
 
-        # Fused kernel, same math. Not on Gaudi (Labram trains ~12 % slower there)
-        # nor with attention dropout in training (it would draw other masks).
-        if (
-            not return_attention
-            and q.device.type != "hpu"
-            and (self.attn_drop.p == 0.0 or not self.training)
-        ):
-            x = nn.functional.scaled_dot_product_attention(
+        # Fused kernel, same math. Not with attention dropout in training (it
+        # would draw other masks). On Gaudi, torch's SDPA trains ~12 % slower
+        # than the plain ops; the bridge's own fused kernel (eager mode, no
+        # mask) is used instead.
+        fused = not return_attention and (self.attn_drop.p == 0.0 or not self.training)
+        out: Optional[torch.Tensor] = None
+        if fused and q.device.type != "hpu":
+            out = nn.functional.scaled_dot_product_attention(
                 q, k, v, attn_mask=attn_mask, scale=self.scale
             )
-        else:
+        elif (
+            fused
+            and attn_mask is None
+            and not torch.jit.is_scripting()
+            and (q.dtype == torch.float32 or q.dtype == torch.bfloat16)
+        ):
+            out = _hpu_eager_fused_sdpa(q, k, v, self.scale)
+        if out is None:
             attn = (q * self.scale) @ k.transpose(-2, -1)
             if attn_mask is not None:
                 attn = attn + attn_mask
@@ -1447,6 +1455,8 @@ class _Attention(nn.Module):
             if return_attention:
                 return attn
             x = attn @ v
+        else:
+            x = out
         x = x.transpose(1, 2).reshape(B, N, -1)
 
         x = self.proj(x)

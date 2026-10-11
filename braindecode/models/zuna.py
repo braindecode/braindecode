@@ -12,11 +12,12 @@ import torch
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
-from torch.nn import RMSNorm, functional
+from torch.nn import RMSNorm
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import PatchTokenizer
+from braindecode.modules.attention import _scaled_dot_product_attention
 
 
 class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -465,7 +466,7 @@ class _Attention(nn.Module):
         value = self.wv(input_tensor).reshape(attention_shape)
         query, key = self.rotary_embedding(query, key, rotary_cosine, rotary_sine)
 
-        attention_output = functional.scaled_dot_product_attention(
+        attention_output = _scaled_dot_product_attention(
             query.transpose(1, 2),
             key.transpose(1, 2),
             value.transpose(1, 2),

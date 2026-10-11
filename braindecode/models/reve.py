@@ -18,6 +18,7 @@ from torch import nn
 from torch.nn import RMSNorm
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.attention import _scaled_dot_product_attention
 
 logger = logging.getLogger(__name__)
 
@@ -439,7 +440,8 @@ class REVE(EEGModuleMixin, nn.Module):
                 raise ValueError(
                     "No positions provided and no default positions available. Please provide channel positions."
                 )
-            pos = self.default_pos.expand(batch_size, -1, -1).to(eeg.device)
+            # One copy for the whole batch: the embedding below broadcasts.
+            pos = self.default_pos.unsqueeze(0).to(eeg.device)
 
         pos = FourierEmb4D.add_time_patch(pos, n_patches)
         # Positions stay in float32 for the Fourier features; the embedding
@@ -518,6 +520,7 @@ class GEGLU(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, dim: int, hidden_dim: int, geglu: bool):
         super().__init__()
+        self.geglu = geglu
         self.net = nn.Sequential(
             RMSNorm(dim, eps=1e-6),
             nn.Linear(dim, hidden_dim * 2 if geglu else hidden_dim, bias=False),
@@ -526,7 +529,15 @@ class FeedForward(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        if not self.geglu:
+            return self.net(x)
+        # GEGLU halves as two matmuls on the weight's row halves: contiguous
+        # outputs instead of strided views of one output (copied on HPU).
+        x = self.net[0](x)
+        weight = self.net[1].weight
+        half = weight.shape[0] // 2
+        x, gates = F.linear(x, weight[:half]), F.linear(x, weight[half:])
+        return self.net[3](F.gelu(gates) * x)
 
 
 #################################################################################
@@ -554,7 +565,7 @@ class Attention(nn.Module):
         q = q.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         k = k.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         v = v.unflatten(-1, (self.heads, -1)).transpose(1, 2)
-        out = F.scaled_dot_product_attention(q, k, v)
+        out = _scaled_dot_product_attention(q, k, v)
         return self.to_out(out.transpose(1, 2).flatten(2))
 
 
