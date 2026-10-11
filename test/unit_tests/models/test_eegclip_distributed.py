@@ -200,13 +200,25 @@ def _preflight_shape_worker(rank, rendezvous, case):
             projection_layers=1,
         )
         dim = 3 if rank == 1 and case == "different_rank_width" else 4
-        eeg = torch.randn(2, dim)
-        text_dim = 3 if rank == 1 and case == "mismatched_pair" else dim
-        text = torch.randn(2, text_dim)
-        error = (
-            "matching 2D" if case == "mismatched_pair"
-            else "same embedding dimension"
+        dtype = (
+            torch.float64
+            if rank == 1 and case == "different_rank_dtype"
+            else torch.float32
         )
+        eeg = torch.randn(2, dim, dtype=dtype)
+        text_dim = 3 if rank == 1 and case == "mismatched_pair" else dim
+        text_dtype = (
+            torch.float64
+            if rank == 1 and case == "mismatched_local_dtype"
+            else dtype
+        )
+        text = torch.randn(2, text_dim, dtype=text_dtype)
+        if case in ("mismatched_pair", "mismatched_local_dtype"):
+            error = "matching 2D"
+        elif case == "different_rank_width":
+            error = "same embedding dimension"
+        else:
+            error = "same embedding dtype"
         with pytest.raises(ValueError, match=error):
             model.contrastive_loss(eeg, text, distributed=True)
         # A successful barrier establishes that *both* ranks left the
@@ -219,7 +231,15 @@ def _preflight_shape_worker(rank, rendezvous, case):
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Autograd Gloo all-gather Windows not verified"
 )
-@pytest.mark.parametrize("case", ["mismatched_pair", "different_rank_width"])
+@pytest.mark.parametrize(
+    "case",
+    [
+        "mismatched_pair",
+        "different_rank_width",
+        "different_rank_dtype",
+        "mismatched_local_dtype",
+    ],
+)
 def test_eegclip_distributed_preflight_rejects_malformed_rank(tmp_path, case):
     if not dist.is_available() or not dist.is_gloo_available():
         pytest.skip("PyTorch Gloo distributed backend is unavailable")
