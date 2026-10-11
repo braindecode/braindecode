@@ -2,6 +2,8 @@
 #
 # License: BSD (3-clause)
 
+import math
+
 import torch
 from torch import nn
 
@@ -30,8 +32,9 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         Kernel and stride of the max pooling layers.
     n_groups : int
         Number of groups for the convolution. Set to 2 in [Blanco2020]_ for 2 Channel EEG.
-        Controls the connections between inputs and outputs. ``n_chans`` and
-        ``n_conv_chans`` must be divisible by ``n_groups``.
+        Controls the connections between inputs and outputs. ``n_conv_chans``
+        must be divisible by ``n_groups``; if ``n_chans`` is not, the first
+        convolution uses ``gcd(n_chans, n_groups)`` groups.
     drop_prob : float
         Dropout rate before the output dense layer.
     apply_batch_norm : bool
@@ -84,6 +87,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         }
 
         batch_norm = nn.BatchNorm2d if apply_batch_norm else nn.Identity
+        n_groups = math.gcd(self.n_chans, n_groups)
 
         self.feature_extractor = nn.Sequential(
             nn.Conv2d(self.n_chans, n_conv_chans, (1, 7), groups=n_groups, padding=0),

@@ -1332,7 +1332,7 @@ def test_attn_sleep_activation_reaches_afr():
 
 @pytest.mark.parametrize(
     "n_channels,sfreq,n_groups,n_classes,input_size_s",
-    [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)],
+    [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30), (19, 100, 2, 5, 30)],
 )
 def test_blanco_2020(n_channels, sfreq, n_groups, n_classes, input_size_s):
     rng = np.random.RandomState(42)
