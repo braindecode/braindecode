@@ -54,6 +54,14 @@ class _NodeBias(LazyModuleMixin, nn.Module):
         return x + self.bias
 
 
+class _LaplacianModule(nn.Module):
+    """Registered Laplacian matrix for one graph-convolution layer."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("matrix", None)
+
+
 class _GraphCoarsening:
     """
     To carry out pooling to reduce dimensionality, the Graclus multilevel
@@ -227,29 +235,6 @@ class _GraphCoarsening:
 
         return adjacency[indices][:, indices]
 
-    def _perm_data(self, x, indices):
-        """
-        Permute data matrix, i.e. exchange node ids,
-        so that binary unions form the clustering tree.
-        """
-        if indices is None:
-            return x
-
-        n_nodes = x.shape[1]
-        n_nodes_new = len(indices)
-
-        if n_nodes_new > n_nodes:
-            padding = n_nodes_new - n_nodes
-            x = F.pad(x, (0, padding))
-
-        indices = torch.tensor(
-            indices,
-            dtype=torch.long,
-            device=x.device,
-        )
-
-        return x[:, indices]
-
 
 class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
     r"""GCNs-Net: A Graph Convolutional Neural Network
@@ -415,13 +400,14 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         self.cheb_orders = cheb_orders
         self.pool_sizes = pool_sizes
         self.graph_initialized = False
-        self.permutation = None
+        self.register_buffer("permutation", None)
         self.dropout = nn.Dropout(drop_prob)
 
         self.graph_coarsening = _GraphCoarsening()
 
-        for i in range(len(n_features)):
-            self.register_buffer(f"laplacian_{i}", None)
+        self.laplacians = nn.ModuleList(
+            [_LaplacianModule() for _ in n_features]
+        )
 
         if adjacency is not None:
             adjacency = torch.as_tensor(
@@ -455,6 +441,8 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
 
         # Final classification layer.
         self.final_layer = nn.LazyLinear(self.n_outputs)
+
+        self.register_load_state_dict_pre_hook(self._prepare_graph_state)
 
     @classmethod
     def _infer_model_kwargs(cls, X, y=None):
@@ -494,7 +482,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
     @staticmethod
     def _compute_pooling_levels(pool_sizes):
         """Compute the graph coarsening level used by each convolution."""
-        levels = []
+        levels: list[int] = []
         level = 0
 
         for pool_size in pool_sizes:
@@ -512,32 +500,24 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
             levels=n_pooling_levels,
         )
 
-        self.permutation = permutation
+        self.permutation = (
+            torch.tensor(permutation, dtype=torch.long, device=adjacency.device)
+            if permutation is not None
+            else None
+        )
 
         for i, level in enumerate(pooling_levels):
             laplacian_matrix = self._laplacian(adjacencies[level])
             laplacian_matrix = self._rescale_laplacian(laplacian_matrix)
-            setattr(self, f"laplacian_{i}", laplacian_matrix)
+            self.laplacians[i].matrix = laplacian_matrix
 
         self.graph_initialized = True
 
         return adjacencies, permutation
 
-    def _bias_norm_activation(self, x, layer_index):
-        """
-        Apply bias, batch normalization, and activation.
-        Output:
-        N x M x Fout = Number of samples x Number of nodes x Number of output features
-        """
-        x = self.biases[layer_index](x)
-
-        x = x.transpose(1, 2)
-        x = self.batch_norms[layer_index](x)
-        x = x.transpose(1, 2)
-
-        return self.activation(x)
-
-    def _max_pool(self, x, pool_size):
+    def _max_pool(
+        self, x: torch.Tensor, pool_size: int
+    ) -> torch.Tensor:
         """Max pooling of size pool_size. Should be a power of 2."""
         if pool_size > 1:
             x = x.transpose(1, 2)
@@ -561,6 +541,65 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
 
         return laplacian_matrix - identity
 
+    @staticmethod
+    def _perm_data(
+        x: torch.Tensor, indices: torch.Tensor | None
+    ) -> torch.Tensor:
+        """
+        Permute data matrix, i.e. exchange node ids,
+        so that binary unions form the clustering tree.
+        """
+        if indices is None:
+            return x
+
+        n_nodes = x.shape[1]
+        n_nodes_new = indices.numel()
+
+        if n_nodes_new > n_nodes:
+            padding = n_nodes_new - n_nodes
+            x = F.pad(x, (0, padding))
+
+        return x[:, indices]
+
+    def _prepare_graph_state(self, module, state_dict, prefix, *_):
+        graph_keys = [
+            f"{prefix}laplacians.{i}.matrix"
+            for i in range(len(self.laplacians))
+        ]
+
+        if self._compute_pooling_levels(self.pool_sizes)[-1] > 0:
+            graph_keys.append(f"{prefix}permutation")
+
+        present = [key in state_dict for key in graph_keys]
+
+        if any(present) and not all(present):
+            raise RuntimeError("Incomplete GCNsNet graph state in checkpoint.")
+
+        reference = next(self.parameters())
+
+        for i, laplacian_module in enumerate(self.laplacians):
+            key = f"{prefix}laplacians.{i}.matrix"
+            if key in state_dict:
+                laplacian_module.matrix = torch.empty_like(
+                    state_dict[key],
+                    device=reference.device,
+                    dtype=reference.dtype,
+                )
+
+        key = f"{prefix}permutation"
+        if key in state_dict:
+            self.permutation = torch.empty_like(
+                state_dict[key], device=reference.device
+            )
+
+        self.graph_initialized = all(
+            laplacian.matrix is not None
+            for laplacian in self.laplacians
+        ) and (
+            self.permutation is not None
+            or self._compute_pooling_levels(self.pool_sizes)[-1] == 0
+        )
+
     def forward(self, x) -> torch.Tensor:
         """
         Forward pass of the GCNs-Net model.
@@ -575,7 +614,10 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         torch.Tensor
             Output tensor of shape (batch_size, n_outputs).
         """
-        if not self.graph_initialized:
+        if torch.jit.is_scripting():
+            if not self.graph_initialized:
+                raise RuntimeError("GCNsNet graph must be initialized before scripted inference.")
+        elif not self.graph_initialized:
             adjacency = self._adjacency(x)
             self._initialize_graph(adjacency)
 
@@ -583,15 +625,26 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
 
         x = x.transpose(1, 2)
         x = x.reshape(batch_size * n_times, n_chans)
-        x = self.graph_coarsening._perm_data(x, self.permutation)
+        x = self._perm_data(x, self.permutation)
         x = x.unsqueeze(-1)
 
-        for i, graph_conv in enumerate(self.graph_convs):
-            laplacian_matrix = getattr(self, f"laplacian_{i}")
+        for graph_conv, bias, batch_norm, laplacian_module, pool_size in zip(
+            self.graph_convs,
+            self.biases,
+            self.batch_norms,
+            self.laplacians,
+            self.pool_sizes,
+        ):
+            if laplacian_module.matrix is None:
+                raise RuntimeError("GCNsNet graph Laplacians are not initialized.")
 
-            x = graph_conv(x, laplacian_matrix)
-            x = self._bias_norm_activation(x, i)
-            x = self._max_pool(x, self.pool_sizes[i])
+            x = graph_conv(x, laplacian_module.matrix)
+
+            x = bias(x)
+            x = batch_norm(x.transpose(1, 2)).transpose(1, 2)
+            x = self.activation(x)
+
+            x = self._max_pool(x, pool_size)
 
         x = torch.flatten(x, 1)
         x = self.dropout(x)

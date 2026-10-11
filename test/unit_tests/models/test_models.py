@@ -2011,13 +2011,49 @@ def test_gcnsnet_node_biases():
     for i, (bias, n_feature) in enumerate(
         zip(model.biases, model.n_features)
     ):
-        n_nodes = getattr(model, f"laplacian_{i}").shape[0]
+        n_nodes = model.laplacians[i].matrix.shape[0]
 
         assert bias.bias.shape == (1, n_nodes, n_feature)
         torch.testing.assert_close(
             bias.bias,
             torch.full_like(bias.bias, 0.1),
         )
+
+
+def test_gcnsnet_state_dict_round_trip():
+    torch.manual_seed(0)
+
+    model = GCNsNet(n_chans=64, n_outputs=4, n_times=128).eval()
+    x = torch.randn(2, 64, 128)
+
+    with torch.no_grad():
+        expected = model(x)
+
+    restored = GCNsNet(n_chans=64, n_outputs=4, n_times=128).eval()
+    restored.load_state_dict(model.state_dict())
+
+    with torch.no_grad():
+        actual = restored(x)
+
+    torch.testing.assert_close(actual, expected)
+    torch.testing.assert_close(
+        restored.permutation, model.permutation
+    )
+
+
+def test_gcnsnet_incomplete_graph_state():
+    model = GCNsNet(n_chans=64, n_outputs=4, n_times=128).eval()
+
+    with torch.no_grad():
+        model(torch.randn(2, 64, 128))
+
+    state_dict = model.state_dict()
+    state_dict.pop("permutation")
+
+    restored = GCNsNet(n_chans=64, n_outputs=4, n_times=128)
+
+    with pytest.raises(RuntimeError, match="Incomplete GCNsNet graph state"):
+        restored.load_state_dict(state_dict)
 
 
 @pytest.mark.parametrize(
