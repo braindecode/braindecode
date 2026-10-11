@@ -16,7 +16,7 @@ def _distributed_cold_start(rank, world_size, init_file, out_dir):
     """Use distinct rank-local inputs, then compare actual quantizer states."""
     dist.init_process_group(
         backend="gloo",
-        init_method=f"file://{init_file}",
+        init_method=Path(init_file).resolve().as_uri(),
         rank=rank,
         world_size=world_size,
     )
@@ -96,7 +96,7 @@ class _DDPWrappedTokenizer(torch.nn.Module):
 def _distributed_ddp_wrapped_forward(rank, world_size, init_file, out_dir):
     dist.init_process_group(
         backend="gloo",
-        init_method=f"file://{init_file}",
+        init_method=Path(init_file).resolve().as_uri(),
         rank=rank,
         world_size=world_size,
     )
