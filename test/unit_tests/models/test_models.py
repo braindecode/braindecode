@@ -2268,6 +2268,17 @@ def test_parameters_contrawr():
     assert np.round(n_params / 1e6, 1) == 1.6
 
 
+@pytest.mark.parametrize("sfreq, n_times", [(100.0, 600), (250.0, 1000)])
+def test_contrawr_real_dft_stft_matches_torch_stft(sfreq, n_times):
+    # The HPU path (no complex tensors) equals torch.stft's magnitude.
+    model = ContraWR(n_outputs=2, n_chans=3, sfreq=sfreq, n_times=n_times).double()
+    x = torch.randn(2, 3, n_times, dtype=torch.float64)
+    stft = model.torch_stft
+    torch.testing.assert_close(
+        stft._forward_real_dft(x), stft(x), rtol=0, atol=1e-10
+    )
+
+
 def test_parameters_SPARCNet():
 
     model = SPARCNet(n_outputs=2, n_chans=16, n_times=400)

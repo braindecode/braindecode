@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from mne.utils import warn
 
-from braindecode.functional import spectral_input
+from braindecode.functional import _real_dft, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
@@ -297,6 +297,8 @@ class _STFTModule(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, C, T)
+        if _real_dft.needs_real_dft(x) and self.center and self.one_sided:
+            return self._forward_real_dft(x).to(x)
         B, C, T = x.shape
         # flatten batch & channel into one dim
         x_flat = spectral_input(x.reshape(B * C, T))
@@ -319,3 +321,23 @@ class _STFTModule(nn.Module):
         spec = spec_flat.view(B, C, F, L)
 
         return torch.abs(spec).to(x)
+
+    @torch.jit.unused
+    @_real_dft.fp32_island
+    def _forward_real_dft(self, x):
+        # The magnitude above without complex tensors, on the device (Intel
+        # Gaudi / HPU), instead of a host STFT and a host-to-device copy of
+        # the whole spectrogram: reflect-padded frames (gathered, not a
+        # strided unfold) times the one-sided DFT basis. No annotations: with
+        # postponed annotations torch.jit.unused cannot resolve them.
+        pad = self.n_fft // 2
+        x = nn.functional.pad(x, (pad, pad), mode="reflect")
+        n_frames = 1 + (x.shape[-1] - self.n_fft) // self.hop_length
+        starts = torch.arange(n_frames, device=x.device) * self.hop_length
+        index = (starts[:, None] + torch.arange(self.n_fft, device=x.device)).flatten()
+        frames = x.index_select(-1, index).unflatten(-1, (n_frames, self.n_fft))
+        real, imag = _real_dft.real_rfft(frames)
+        magnitude = torch.sqrt(real * real + imag * imag)
+        if self.normalized:
+            magnitude = magnitude / self.n_fft**0.5
+        return magnitude.transpose(-1, -2)
