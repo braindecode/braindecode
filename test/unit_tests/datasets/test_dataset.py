@@ -1106,11 +1106,14 @@ def test_getitems_advises_the_batch_before_reading_it(tmp_path, monkeypatch):
     n_lazy = len(windows.datasets[0]) + len(windows.datasets[1])
     lazy, preloaded = [0, n_lazy - 1, 3, n_lazy - 2], [n_lazy, len(windows) - 1]
     batch = lazy + preloaded
-    items = windows.__getitems__(batch)
-    assert events == ["advise"] * len(lazy) + ["read"] * len(batch)
+    seq = (1, 2)  # a SequenceSampler item: read, not advised
+    items = windows.__getitems__(batch + [seq])
+    assert events == ["advise"] * len(lazy) + ["read"] * (len(batch) + len(seq))
     for item, i in zip(items, batch):
         X, y, inds = windows[i]
         np.testing.assert_array_equal(item[0], X)
         assert item[1:] == (y, inds)
+    for a, b in zip(items[-1], windows[seq]):
+        np.testing.assert_array_equal(a, b)
     (X, y, inds), = DataLoader(windows, batch_sampler=[batch])
     np.testing.assert_array_equal(X.numpy(), np.stack([windows[i][0] for i in batch]))

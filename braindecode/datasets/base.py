@@ -1413,6 +1413,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         # windows ever outgrow the page cache
         if hasattr(os, "posix_fadvise"):
             for idx in indices:
+                if not isinstance(idx, (int, np.integer)):
+                    continue  # e.g. a SequenceSampler tuple: read, not advised
                 ds, i = self._locate(idx)
                 if isinstance(ds, EEGWindowsDataset) and ds._zarr_data is None:
                     _, start, stop = ds.crop_inds[i].tolist()
