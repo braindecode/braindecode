@@ -12,12 +12,12 @@ import torch
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
-from torch.nn import RMSNorm
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import PatchTokenizer
 from braindecode.modules.attention import _scaled_dot_product_attention
+from braindecode.modules.layers import RMSNorm
 
 
 class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
