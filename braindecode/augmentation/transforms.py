@@ -3,6 +3,7 @@
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #          Bruna Lopes <brunajaflopes@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
+#          Anton Soloviev <anton@praviel.com>
 #
 # License: BSD (3-clause)
 
@@ -1283,7 +1284,7 @@ class MaskEncoding(Transform):
         )
 
         time_start = self.rng.randint(
-            0, n_times - segment_length, (batch_size, self.n_segments)
+            0, n_times - segment_length + 1, (batch_size, self.n_segments)
         )
         time_start = torch.from_numpy(time_start)
 
