@@ -1587,6 +1587,33 @@ def test_codebrain_trains_after_inference_mode():
     assert all(not b.is_inference() for b in model.buffers())
 
 
+def test_codebrain_one_wide_attention_train_equals_multihead_attention():
+    # The CPU one-wide window path vs nn.MultiheadAttention with its mask, in
+    # training (dropout 0.5): same output, gradients and RNG stream.
+    class _NotOne(int):  # == 1 is False, so the block takes the masked path
+        def __eq__(self, other):
+            return False
+
+        __hash__ = int.__hash__
+
+    model = CodeBrain(n_chans=2, n_outputs=2, n_times=400, drop_prob=0.5).train()
+    ref = copy.deepcopy(model)
+    for block in ref.residual_layer.residual_blocks:
+        block.swa_window_size = _NotOne(1)
+    x = torch.randn(3, 2, 400)
+    outs = []
+    for m in (model, ref):
+        torch.manual_seed(0)
+        out = m(x)
+        out.square().sum().backward()
+        grads = {n: p.grad for n, p in m.named_parameters() if p.grad is not None}
+        outs.append((out, torch.get_rng_state(), grads))
+    assert torch.equal(outs[0][0], outs[1][0])
+    assert torch.equal(outs[0][1], outs[1][1])
+    assert outs[0][2].keys() == outs[1][2].keys()
+    assert all(torch.equal(g, outs[1][2][n]) for n, g in outs[0][2].items())
+
+
 # ==============================================================================
 # Tests for SleepFM and SleepFMStager: masks and the release's two-stage
 # pipeline (shapes, features and compilation are in the shared suites)
