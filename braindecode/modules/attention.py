@@ -836,12 +836,13 @@ class CATLite(nn.Module):
 
 @torch.jit.unused
 def _hpu_eager_fused_sdpa(
-    query: Tensor, key: Tensor, value: Tensor
+    query: Tensor, key: Tensor, value: Tensor, fused_in_lazy: bool = False
 ) -> Optional[Tensor]:
-    # Lazy mode: None, the graph compiler already fuses torch's SDPA there.
+    # Lazy mode: None, the graph compiler already fuses torch's SDPA there
+    # (unless the caller measured the fused kernel faster for its shapes).
     from habana_frameworks.torch.utils.internal import is_lazy
 
-    if is_lazy():
+    if is_lazy() and not fused_in_lazy:
         return None
     from habana_frameworks.torch.hpex.kernels import FusedSDPA
 
@@ -854,13 +855,16 @@ def _scaled_dot_product_attention(
     value: Tensor,
     attn_mask: Optional[Tensor] = None,
     dropout_p: float = 0.0,
+    fused_in_lazy: bool = False,
 ) -> Tensor:
     """``F.scaled_dot_product_attention``; Gaudi's fused kernel on HPU.
 
     In HPU eager mode, torch's SDPA runs op by op (the full
     ``(batch, heads, seq, seq)`` scores in device memory), 2-3.5x slower than
     the bridge's fused kernel on long sequences. The fused kernel is used
-    without a mask or dropout (its dropout would draw other masks).
+    without a mask or dropout (its dropout would draw other masks). In lazy
+    mode only with ``fused_in_lazy=True``: the graph compiler fuses torch's
+    SDPA too, faster on long sequences, slower on short ones.
     """
     if (
         not torch.jit.is_scripting()
@@ -869,7 +873,7 @@ def _scaled_dot_product_attention(
         and dropout_p == 0.0
         and (query.dtype == torch.float32 or query.dtype == torch.bfloat16)
     ):
-        out = _hpu_eager_fused_sdpa(query, key, value)
+        out = _hpu_eager_fused_sdpa(query, key, value, fused_in_lazy)
         if out is not None:
             return out
     return F.scaled_dot_product_attention(
