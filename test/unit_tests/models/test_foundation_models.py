@@ -1923,6 +1923,19 @@ def test_diver1_rejects_incompatible_montage(diver1_model, metadata, pooling, ma
         model(torch.randn(1, 9, 1000), metadata)
 
 
+def test_diver1_real_dft_amplitude_matches_fft(diver1_model):
+    # The HPU path (no complex tensors) equals the FFT amplitude, zero grad at 0.
+    tokens = torch.randn(2, 6, 2, 64, dtype=torch.float64)
+    tokens[0, 0, 0] = 0.0
+    tokens.requires_grad_(True)
+    amplitude = diver1_model.double()._amplitude_real_dft(tokens)
+    expected = torch.fft.rfft(tokens, dim=-1, norm="forward").abs()
+    torch.testing.assert_close(amplitude, expected, rtol=0, atol=1e-12)
+    (grad,) = torch.autograd.grad(amplitude.sum(), tokens)
+    (expected_grad,) = torch.autograd.grad(expected.sum(), tokens)
+    torch.testing.assert_close(grad, expected_grad, rtol=0, atol=1e-10)
+
+
 @pytest.mark.parametrize("n_outputs", [0, 5])
 def test_diver1_reset_head_preserves_zero_outputs(diver1_model, n_outputs):
     diver1_model.reset_head(n_outputs)
