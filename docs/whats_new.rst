@@ -332,6 +332,10 @@ Enhancements
   tables are module constants. Eager outputs and state-dict keys are unchanged
   (:gh:`1276` by `Bruno Aristimunha`_).
 
+- Add :class:`braindecode.models.GCNsNet`, a graph convolutional neural network
+  for decoding time-resolved EEG motor imagery signals, from Hou et al. (2022).
+  By `Seáic Mac Murchadha`_.
+
 API and behavior changes
 ========================
 
@@ -2352,3 +2356,4 @@ Authors
 .. _Raghav Rathi: https://github.com/raghav-rathi
 
 .. _lindicaphxag-tech: https://github.com/lindicaphxag-tech
+.. _Seáic Mac Murchadha: https://github.com/seaic-mac-murchadha

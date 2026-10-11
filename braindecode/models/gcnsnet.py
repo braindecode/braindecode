@@ -1,3 +1,8 @@
+# Authors: Shuyue Jia <shuyuej@ieee.org> (original implementation)
+#          Seáic Mac Murchadha <seaicmacmurchadha@yahoo.com> (braindecode adaptation)
+#
+# License: MIT
+
 from __future__ import annotations
 
 from math import log2
