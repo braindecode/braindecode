@@ -764,7 +764,8 @@ def _cpu_eigh(inputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     flat = inputs.reshape(-1, inputs.shape[-2], inputs.shape[-1])
     # ponytail: at least 256 matrices per chunk so small batches skip the pool.
     n_chunks = min(torch.get_num_threads(), flat.shape[0] // 256)
-    if n_chunks < 2:
+    # torch.compile / torch.export trace on this thread only.
+    if n_chunks < 2 or torch.compiler.is_compiling():
         return torch.linalg.eigh(inputs)
     grad_enabled = torch.is_grad_enabled()
 
