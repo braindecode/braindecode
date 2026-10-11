@@ -260,3 +260,88 @@ def test_eegclip_distributed_real_collectives_visible_to_coverage(tmp_path):
     )
     with result_path.open(encoding="utf-8") as result:
         assert json.load(result)["max_abs_error"] < 1e-11
+
+
+class _RealDDPContrastive(nn.Module):
+    """Train the actual EEGCLIP loss through a genuine DDP parameter reducer."""
+
+    def __init__(self):
+        super().__init__()
+        self.clip = EEGCLIP(
+            n_chans=4,
+            n_times=20,
+            n_outputs=4,
+            eeg_encoder=nn.Identity(),
+            eeg_embedding_dim=4,
+            text_embedding_dim=4,
+            projection_layers=1,
+        ).double()
+        self.projection = nn.Linear(4, 4, bias=False, dtype=torch.float64)
+
+    def forward(self, eeg, text, *, distributed=False):
+        return self.clip.contrastive_loss(
+            self.projection(eeg),
+            self.projection(text),
+            distributed=distributed,
+        )
+
+
+def _actual_ddp_worker(rank, rendezvous, result_path):
+    torch.set_num_threads(1)
+    dist.init_process_group(
+        "gloo",
+        init_method=Path(rendezvous).resolve().as_uri(),
+        timeout=timedelta(seconds=40),
+        rank=rank,
+        world_size=2,
+    )
+    try:
+        torch.manual_seed(111)
+        eeg = torch.randn(5, 4, dtype=torch.float64)
+        text = torch.randn(5, 4, dtype=torch.float64)
+        torch.manual_seed(222)
+        trained = _RealDDPContrastive()
+        ddp = nn.parallel.DistributedDataParallel(
+            trained, find_unused_parameters=True
+        )
+        start, stop = ((0, 2) if rank == 0 else (2, 5))
+        loss = ddp(eeg[start:stop], text[start:stop], distributed=True)
+        loss.backward()
+        projection_grad = trained.projection.weight.grad.detach().clone()
+        scale_grad = trained.clip.logit_scale.grad.detach().clone()
+
+        torch.manual_seed(222)
+        reference = _RealDDPContrastive()
+        central_loss = reference(eeg, text)
+        central_loss.backward()
+        mean_loss = loss.detach().clone()
+        dist.all_reduce(mean_loss)
+        mean_loss /= 2
+        errors = torch.stack(
+            [
+                (projection_grad - reference.projection.weight.grad).abs().max(),
+                (scale_grad - reference.clip.logit_scale.grad).abs().max(),
+                (mean_loss - central_loss).abs(),
+            ]
+        )
+        dist.all_reduce(errors, op=dist.ReduceOp.MAX)
+        if rank == 0:
+            with open(result_path, "w", encoding="utf-8") as result:
+                json.dump({"max_abs_error": float(errors.max())}, result)
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="DDP CPU/Gloo Windows not verified"
+)
+def test_eegclip_distributed_actual_ddp_matches_global_reference(tmp_path):
+    """Validate DDP's own gradient mean, not an emulated manual all-reduce."""
+    if not dist.is_available() or not dist.is_gloo_available():
+        pytest.skip("PyTorch Gloo distributed backend is unavailable")
+    result_path = tmp_path / "real-ddp-reference.json"
+    _run_with_rank_zero_in_test_process(
+        _actual_ddp_worker, str(tmp_path / "real-ddp"), str(result_path)
+    )
+    with result_path.open(encoding="utf-8") as result:
+        assert json.load(result)["max_abs_error"] < 1e-11
