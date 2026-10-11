@@ -78,6 +78,76 @@ def test_neurorvq_cold_codebook_ddp_rank_consistency(tmp_path):
     assert states[0]["updated"]["usage_cluster_size"].sum().item() > 0
 
 
+class _DDPWrappedTokenizer(torch.nn.Module):
+    """Exercise lazy quantizer init inside an actual DDP forward/backward."""
+
+    def __init__(self):
+        super().__init__()
+        # DDP requires at least one trainable parameter, while NeuroRVQ's
+        # EMA codebook parameters deliberately do not require gradients.
+        self.scale = torch.nn.Parameter(torch.tensor(1.0))
+        self.quantizer = _EMAVectorQuantizer(n_codes=8, code_dim=4)
+
+    def forward(self, x):
+        quantized, _ = self.quantizer(x * self.scale)
+        return quantized
+
+
+def _distributed_ddp_wrapped_forward(rank, world_size, init_file, out_dir):
+    dist.init_process_group(
+        backend="gloo",
+        init_method=f"file://{init_file}",
+        rank=rank,
+        world_size=world_size,
+    )
+    try:
+        torch.manual_seed(177 + rank)
+        wrapped = torch.nn.parallel.DistributedDataParallel(
+            _DDPWrappedTokenizer().train()
+        )
+        # DDP synchronizes initial parameters/buffers on construction,
+        # not the rank-dependent K-means centroids created inside forward.
+        torch.manual_seed(991 + rank)
+        x = torch.randn(2, 4, 2, 4) + 3.0 * rank
+        wrapped(x).mean().backward()
+
+        emb = wrapped.module.quantizer.embedding
+        torch.save(
+            {
+                "weight": emb.weight.detach().clone(),
+                "cluster_size": emb.cluster_size.detach().clone(),
+                "initted": emb.initted.detach().clone(),
+                "usage_cluster_size": wrapped.module.quantizer.cluster_size.detach().clone(),
+                "scale_grad": wrapped.module.scale.grad.detach().clone(),
+            },
+            Path(out_dir) / f"ddp-rank-{rank}.pt",
+        )
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(
+    not dist.is_available() or not dist.is_gloo_available(),
+    reason="Gloo torch.distributed is unavailable",
+)
+def test_neurorvq_cold_codebook_with_actual_ddp_wrapper(tmp_path):
+    """DDP's construction-time broadcast must not mask lazy-init divergence."""
+    mp.spawn(
+        _distributed_ddp_wrapped_forward,
+        args=(2, str(tmp_path / "ddp-init"), str(tmp_path)),
+        nprocs=2,
+        join=True,
+    )
+    states = [
+        torch.load(tmp_path / f"ddp-rank-{rank}.pt", weights_only=True)
+        for rank in (0, 1)
+    ]
+    for key, first_rank in states[0].items():
+        torch.testing.assert_close(first_rank, states[1][key], rtol=0, atol=0)
+    assert states[0]["initted"].item() == 1
+    assert states[0]["usage_cluster_size"].sum().item() > 0
+
+
 def test_neurorvq_cold_codebook_single_process_does_not_require_dist():
     """The same fix must not change ordinary CPU first-batch initialization."""
     quantizer = _EMAVectorQuantizer(n_codes=8, code_dim=4).train()
