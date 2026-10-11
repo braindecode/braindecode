@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.DIVER1` computes the amplitude spectrum of its spectral embedding on the device on accelerators without complex tensors (Intel Gaudi / HPU) instead of a host FFT round trip: Gaudi forward 1.02-1.12x and train step 1.02-1.10x faster; CPU unchanged (:gh:`1334` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.NeuroRVQTokenizer` sums the per-code counts and vectors of its EMA codebook update with ``index_add_`` instead of a dense one-hot matrix and GEMM: CPU train step 1.3x faster (22 channels, batch 32, 2 threads), Gaudi unchanged; outputs, gradients and token ids unchanged, the updated codebooks change by float rounding only (:gh:`1308` by `Bruno Aristimunha`_).
 - ``braindecode.modules.EMACodebook`` sums its training EMA statistics per code with ``index_add_`` instead of a dense one-hot matrix and GEMM: :class:`braindecode.models.TFMTokenizer` CPU train step 5 % faster and :class:`braindecode.models.BrainTokenizer` 1-3 % (22 channels, batch 32, 2 threads); outputs, gradients and token ids unchanged, the EMA buffers change by float rounding only (:gh:`1306` by `Bruno Aristimunha`_).
 - The TUH datasets read the ``_date.txt`` file kept beside each EDF with :func:`json.load` instead of :func:`pandas.read_json`: 2.9 s -> 0.04 s for the 2993 TUAB date files; descriptions unchanged (:gh:`1300` by `Bruno Aristimunha`_).
