@@ -850,6 +850,9 @@ def _hpu_eager_fused_sdpa(
         return None
     from habana_frameworks.torch.hpex.kernels import FusedSDPA
 
+    # Strided q/k/v views (heads split off a projection) give wrong outputs and
+    # gradients at some shapes; contiguous copies give the right result.
+    query, key, value = query.contiguous(), key.contiguous(), value.contiguous()
     return FusedSDPA.apply(query, key, value, None, 0.0, False, scale, "None", False)
 
 
