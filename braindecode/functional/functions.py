@@ -91,16 +91,27 @@ def fft_conv1d(
     n_fft = 2 * _next_fast_len((n_times + kernel_size) // 2)
     xs = spectral_input(x)
     # conv1d is a cross-correlation: a convolution with the flipped kernel
-    x_f = torch.fft.rfft(xs, n=n_fft).permute(2, 0, 1)  # (freq, batch, in)
+    x_f = torch.fft.rfft(xs, n=n_fft)  # (batch, in, freq)
     w_f = torch.fft.rfft(weight.to(xs).flip(-1), n=n_fft).permute(2, 1, 0)
     # Per frequency (batch, in) @ (in, out) in complex numbers, as one real
-    # matmul (a complex one is slower on CPU): [Re x; Im x] @ [Re w, Im w]
-    # (columns interleaved) holds the four real products.
-    p = torch.cat([x_f.real, x_f.imag], 1) @ torch.view_as_real(w_f).flatten(2)
-    p = p.unflatten(1, [2, x.shape[0]]).unflatten(3, [-1, 2])  # x re/im, w re/im
-    y_f = torch.complex(
-        p[:, 0, :, :, 0] - p[:, 1, :, :, 1], p[:, 0, :, :, 1] + p[:, 1, :, :, 0]
-    )
+    # matmul (a complex one is slower on CPU).
+    needs_grad = torch.is_grad_enabled() and (x.requires_grad or weight.requires_grad)
+    if needs_grad or x.shape[0] >= 2 * x.shape[1]:
+        # [Re x, Im x] @ [[Re w, Im w], [-Im w, Re w]] (rows of i * w): the
+        # output columns are the (Re, Im) pairs of the result, read as complex
+        # without a copy (and without a costly backward).
+        w_mat = torch.view_as_real(torch.stack([w_f, w_f * 1j], 1)).flatten(1, 2)
+        y_f = torch.view_as_real(x_f).permute(2, 0, 3, 1).flatten(2) @ w_mat.flatten(2)
+        y_f = torch.view_as_complex(y_f.unflatten(-1, [-1, 2]))
+    else:
+        # Forward only with fewer rows than twice the input channels: the
+        # doubled weight costs more than combining [Re x; Im x] @ [Re w, Im w].
+        x_f = x_f.permute(2, 0, 1)
+        p = torch.cat([x_f.real, x_f.imag], 1) @ torch.view_as_real(w_f).flatten(2)
+        p = p.unflatten(1, [2, x.shape[0]]).unflatten(3, [-1, 2])
+        y_f = torch.complex(
+            p[:, 0, :, :, 0] - p[:, 1, :, :, 1], p[:, 0, :, :, 1] + p[:, 1, :, :, 0]
+        )
     y = torch.fft.irfft(y_f.permute(1, 2, 0), n=n_fft)
     # "same" output t is sample t + kernel_size // 2 of the full convolution
     y = y[..., kernel_size // 2 : kernel_size // 2 + n_times]
