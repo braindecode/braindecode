@@ -11,13 +11,19 @@ Test for samplers.
 import bisect
 import platform
 
+import mne
 import numpy as np
 import pandas as pd
 import pytest
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from braindecode.datasets import BaseConcatDataset, RawDataset
+from braindecode.datasets import (
+    BaseConcatDataset,
+    RawDataset,
+    create_from_mne_epochs,
+    create_from_X_y,
+)
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
     create_fixed_length_windows,
@@ -450,9 +456,7 @@ def test_balanced_sequence_sampler(target_windows_ds, n_sequences, n_windows):
         start_ind, rec_ind, class_ind = sampler._sample_seq_start_ind()
         seq_targets = md.iloc[start_ind : start_ind + n_windows + 1]["target"]
         assert class_ind in seq_targets.values
-        rec_info = sampler.info.iloc[rec_ind].name
-        rec_info_md = md.iloc[start_ind][["subject", "session", "run"]]
-        assert rec_info == tuple(rec_info_md.tolist())
+        assert start_ind in sampler.info.iloc[rec_ind]["index"]
 
 
 def test_balanced_sequence_sampler_single_category(target_windows_ds):
@@ -462,7 +466,7 @@ def test_balanced_sequence_sampler_single_category(target_windows_ds):
     n_windows = 3
     n_sequences = 10
 
-    md = target_windows_ds.get_metadata().drop(columns=["session", "run"])
+    md = target_windows_ds.get_metadata().drop(columns=["session", "run", "i_dataset"])
     sampler = BalancedSequenceSampler(
         md, n_windows, n_sequences=n_sequences, random_state=87
     )
@@ -555,3 +559,149 @@ def test_balanced_sequence_sampler_rejects_empty_metadata():
             n_sequences=5,
             random_state=87,
         )
+
+
+def _event_windows(descriptions, n_trials=12):
+    """One recording per description, one window per 1-s trial, targets 0/1."""
+    rng = np.random.RandomState(0)
+    info = mne.create_info(["C3", "C4"], sfreq=100.0, ch_types="eeg")
+    datasets = []
+    for description in descriptions:
+        raw = mne.io.RawArray(rng.randn(2, 100 * (n_trials + 1)), info, verbose=False)
+        raw.set_annotations(
+            mne.Annotations(
+                onset=np.arange(n_trials),
+                duration=1.0,
+                description=["a", "b"] * (n_trials // 2),
+            )
+        )
+        datasets.append(RawDataset(raw, description))
+    return create_windows_from_events(
+        BaseConcatDataset(datasets), mapping={"a": 0, "b": 1}
+    )
+
+
+TWO_NIGHTS = [{"subject": 0, "recording": 1}, {"subject": 0, "recording": 2}]
+NO_SESSION_RUN = [
+    {"subject": "01", "session": None, "run": None},
+    {"subject": "02", "session": None, "run": None},
+]
+NO_SUBJECT = [{"age": 30}, {"age": 40}]
+
+
+@pytest.mark.parametrize(
+    "descriptions",
+    [TWO_NIGHTS, NO_SESSION_RUN, NO_SUBJECT],
+    ids=["two_nights_of_one_subject", "no_session_or_run", "no_subject"],
+)
+def test_samplers_keep_recordings_apart(descriptions):
+    """Subject, session and run do not identify a recording: SleepPhysionet
+    has two nights per subject, BIDS recordings may lack session and run, and
+    some datasets describe no subject at all."""
+    windows = _event_windows(descriptions)
+    md = windows.get_metadata()
+    recording = np.repeat([0, 1], [len(ds) for ds in windows.datasets])
+
+    sequences = SequenceSampler(md, n_windows=3, n_windows_stride=1)
+    assert sequences.n_recordings == 2
+    assert len(sequences) == 2 * (12 - 3 + 1)
+    assert all(len(set(recording[list(seq)])) == 1 for seq in sequences)
+
+    balanced = BalancedSequenceSampler(md, 3, n_sequences=50, random_state=0)
+    assert all(len(set(recording[list(seq)])) == 1 for seq in balanced)
+
+    pairs = RelativePositioningSampler(
+        md, tau_pos=100, tau_neg=300, n_examples=50, random_state=0
+    )
+    assert all(recording[w1] == recording[w2] for w1, w2, _ in pairs)
+    pairs = RelativePositioningSampler(
+        md, tau_pos=100, tau_neg=300, n_examples=50, same_rec_neg=False, random_state=0
+    )
+    assert all((recording[w1] == recording[w2]) == (y == 1) for w1, w2, y in pairs)
+
+    distributed = DistributedRecordingSampler(
+        md, random_state=0, num_replicas=1, rank=0
+    )
+    assert distributed.n_recordings == 2
+
+
+def test_samplers_without_i_dataset_group_by_subject_session_run():
+    """Metadata without ``i_dataset`` (built by hand) still tells recordings
+    apart by subject, session and run, and keeps those missing a session."""
+    md = _event_windows(NO_SESSION_RUN).get_metadata()
+    md = md.drop(columns="i_dataset", errors="ignore")
+    assert SequenceSampler(md, n_windows=3, n_windows_stride=1).n_recordings == 2
+    balanced = BalancedSequenceSampler(md, 3, n_sequences=20, random_state=0)
+    assert len(list(balanced)) == 20
+
+
+def test_samplers_on_concatenated_metadata():
+    """Metadata of separately built datasets may be concatenated, so i_dataset
+    starts again at 0; their recordings must still be told apart."""
+    first = _event_windows(TWO_NIGHTS[:1])
+    second = _event_windows(TWO_NIGHTS)
+    md = pd.concat([first.get_metadata(), second.get_metadata()])
+    recording = np.repeat([0, 1, 2], 12)
+    sequences = SequenceSampler(md, n_windows=3, n_windows_stride=1)
+    assert sequences.n_recordings == 3
+    assert all(len(set(recording[list(seq)])) == 1 for seq in sequences)
+
+
+@pytest.mark.parametrize("builder", ["mne_epochs", "x_y"])
+def test_samplers_group_one_trial_datasets_without_i_dataset(builder):
+    """create_from_mne_epochs and create_from_X_y build one dataset per trial:
+    without i_dataset, the trials of a subject form one recording again."""
+    rng = np.random.RandomState(0)
+    if builder == "mne_epochs":
+        info = mne.create_info(["C3", "C4"], sfreq=100.0, ch_types="eeg")
+        events = np.c_[np.arange(10) * 100, np.zeros(10, int), np.ones(10, int)]
+        epochs = [
+            mne.EpochsArray(rng.randn(10, 2, 100), info, events=events, verbose=False)
+            for _ in range(2)
+        ]
+        windows = create_from_mne_epochs(
+            epochs, 50, 50, False, descriptions=[{"subject": 0}, {"subject": 1}]
+        )
+    else:
+        windows = create_from_X_y(
+            rng.randn(20, 2, 100),
+            np.zeros(20, int),
+            False,
+            sfreq=100.0,
+            window_size_samples=50,
+            window_stride_samples=50,
+        )
+        windows.set_description({"subject": [0] * 10 + [1] * 10})
+    md = windows.get_metadata().drop(columns="i_dataset", errors="ignore")
+    sequences = SequenceSampler(md, n_windows=3, n_windows_stride=1)
+    assert sequences.n_recordings == 2
+    assert len(sequences) == 2 * (20 - 3 + 1)
+
+
+def test_relative_positioning_sampler_with_windows_sharing_a_start():
+    """Two windows of a recording may start at the same sample (two events at
+    one onset): their start samples must stay aligned with the windows."""
+    starts = np.repeat(np.arange(6) * 100, 2)
+    md = pd.DataFrame(
+        {"i_start_in_trial": starts, "i_stop_in_trial": starts + 100, "subject": 0}
+    )
+    pairs = RelativePositioningSampler(
+        md, tau_pos=100, tau_neg=300, n_examples=50, random_state=0
+    )
+    for w1, w2, y in pairs:
+        gap = abs(starts[w1] - starts[w2])
+        assert 0 < gap <= 100 if y == 1 else gap >= 300
+
+
+def test_samplers_keep_the_subject_session_run_order():
+    """Recordings stay sorted by subject, session and run, so seeded sampling
+    is unchanged where those keys already told the recordings apart."""
+    md = _event_windows([{"subject": s} for s in [2, 0, 1]]).get_metadata()
+    subject = md["subject"].to_numpy()
+    sampled = []
+    for md_ in (md, md.drop(columns="i_dataset")):
+        sequences = SequenceSampler(md_, 3, 1, randomize=True, random_state=0)
+        assert list(subject[sequences.start_inds[::10]]) == [0, 1, 2]
+        balanced = BalancedSequenceSampler(md_, 3, n_sequences=20, random_state=0)
+        sampled.append((list(sequences), list(balanced)))
+    assert sampled[0] == sampled[1]
