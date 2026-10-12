@@ -288,11 +288,14 @@ class _TSConv(nn.Sequential):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self[1](self[0](x))
-        # The depthwise (n_channels, 1) convolution as a matmul over the
-        # channel axis: same values, a faster backward than the grouped
-        # convolution's.
-        b, f, c, t = x.shape
-        x = torch.matmul(self[2].weight.view(f, -1, c), x).view(b, -1, 1, t)
+        if torch.is_grad_enabled() or x.device.type != "hpu":
+            # The depthwise (n_channels, 1) convolution as a matmul over the
+            # channel axis: same values, a faster backward than the grouped
+            # convolution's (on HPU the grouped forward is the faster one).
+            b, f, c, t = x.shape
+            x = torch.matmul(self[2].weight.view(f, -1, c), x).view(b, -1, 1, t)
+        else:
+            x = self[2](x)
         for i, layer in enumerate(self):
             if i > 2:
                 x = layer(x)
