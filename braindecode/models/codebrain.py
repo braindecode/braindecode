@@ -14,10 +14,14 @@ import torch.nn.functional as F
 from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 
-from braindecode.functional import spectral_input
+from braindecode.functional import _real_dft, spectral_input
 from braindecode.functional.functions import _next_fast_len
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules.attention import _hpu_lazy
+
+# Cache of one-sided DFT cosine/sine bases keyed by (device, n_fft): the TUEG
+# geometry reuses one basis for every block, forward and backward.
+_REAL_DFT_BASIS: Dict[Tuple[str, int], Tuple[torch.Tensor, torch.Tensor]] = {}
 
 
 class CodeBrain(EEGModuleMixin, nn.Module):
@@ -528,16 +532,23 @@ class _GConv(nn.Module):
         # so any FFT length >= 2 * seq_len works: take a 5-smooth (fast) one.
         start = seq_len if self.bidirectional else 0
         n_fft = 2 * _next_fast_len(seq_len)
-        # kernel_freq: (channels, d_model, freq_bins)
-        # spectral_input(x) dtype: x's, at least float32 (the reference's .float()).
-        x_in = spectral_input(x)
-        kernel_freq = torch.fft.rfft(kernel.roll(start, -1).to(x_in), n=n_fft)
-        # x_freq: (batch, d_model, freq_bins)
-        x_freq = torch.fft.rfft(x_in, n=n_fft)
-        # out_freq: (batch, channels, d_model, freq_bins)
-        out_freq = torch.einsum("bhl,chl->bchl", x_freq, kernel_freq)
-        # out: (batch, channels, d_model, seq_len)
-        out = torch.fft.irfft(out_freq, n=n_fft)[..., start : start + seq_len].to(x)
+        if not torch.jit.is_scripting() and _real_dft.needs_real_dft(x):
+            # Intel Gaudi (HPU) has no complex tensors: the torch.fft path
+            # below is offloaded to the host (~120 ms/block/step in copies).
+            # The real-valued equivalent runs the DFT as MME matmuls on the
+            # device (~32 ms/block). CPU/CUDA keep the torch.fft path.
+            out = self._forward_real_dft(x, kernel, start, n_fft).to(x.dtype)
+        else:
+            # kernel_freq: (channels, d_model, freq_bins)
+            # spectral_input(x) dtype: x's, at least float32 (the reference's .float()).
+            x_in = spectral_input(x)
+            kernel_freq = torch.fft.rfft(kernel.roll(start, -1).to(x_in), n=n_fft)
+            # x_freq: (batch, d_model, freq_bins)
+            x_freq = torch.fft.rfft(x_in, n=n_fft)
+            # out_freq: (batch, channels, d_model, freq_bins)
+            out_freq = torch.einsum("bhl,chl->bchl", x_freq, kernel_freq)
+            # out: (batch, channels, d_model, seq_len)
+            out = torch.fft.irfft(out_freq, n=n_fft)[..., start : start + seq_len].to(x)
 
         # Skip connection via learnable D matrix
         # (batch, channels, d_model, seq_len)
@@ -561,6 +572,50 @@ class _GConv(nn.Module):
         if return_kernel:
             return out, kernel
         return out, None
+
+    @torch.jit.unused
+    @_real_dft.fp32_island
+    def _forward_real_dft(self, x, kernel, start, n_fft):
+        # Real-valued equivalent of the torch.fft spectral section above, for
+        # devices without complex tensors (Intel Gaudi / HPU), in float32 with
+        # autocast disabled. The kernel is rolled to lags -L..L-1 exactly as
+        # above, so the bins match torch.fft.rfft(..., n=n_fft); the product
+        # is the complex multiplication as 4 real broadcast elementwise ops;
+        # the inverse is _real_dft.real_irfft and the [start:start+seq_len]
+        # read matches the torch path's window. ``torch.jit.unused`` keeps
+        # this branch out of the scripted graph: CPU/CUDA never take it, and
+        # HPU does not run under torch.jit.script. The cosine/sine basis is
+        # cached per (device, n_fft): one basis serves every block.
+        key = (str(x.device), n_fft)
+        basis = _REAL_DFT_BASIS.get(key)
+        if basis is None:
+            cosine, sine = _real_dft.real_dft_basis(
+                n_fft, device=x.device, dtype=torch.float32
+            )
+            basis = (cosine, sine)
+            _REAL_DFT_BASIS[key] = basis
+        cosine, sine = basis
+        seq_len = x.size(-1)
+        k_rolled = kernel.roll(start, -1)
+        # Re/Im of rfft(kernel, n=n_fft): zero-pad rows to n_fft, matmul.
+        k_pad = F.pad(k_rolled.float(), (0, n_fft - seq_len))
+        k_re = k_pad @ cosine.transpose(0, 1)
+        k_im = -(k_pad @ sine.transpose(0, 1))
+        # Re/Im of rfft(x, n=n_fft) (x already padded below via the same op).
+        x_pad = F.pad(x.float(), (0, n_fft - seq_len))
+        x_re = x_pad @ cosine.transpose(0, 1)
+        x_im = -(x_pad @ sine.transpose(0, 1))
+        # Complex product as 4 real broadcast elementwise ops.
+        out_re = x_re.unsqueeze(1) * k_re.unsqueeze(0) - x_im.unsqueeze(
+            1
+        ) * k_im.unsqueeze(0)
+        out_im = x_re.unsqueeze(1) * k_im.unsqueeze(0) + x_im.unsqueeze(
+            1
+        ) * k_re.unsqueeze(0)
+        out = _real_dft.real_irfft(out_re, out_im, n=n_fft)[
+            ..., start : start + seq_len
+        ]
+        return out
 
 
 class _Conv(nn.Module):
