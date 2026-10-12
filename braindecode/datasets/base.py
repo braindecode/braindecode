@@ -1518,7 +1518,9 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         metadata : pd.DataFrame
             DataFrame containing as many rows as there are windows in the
             BaseConcatDataset, with the metadata and description information
-            for each window.
+            for each window, and an ``i_dataset`` column giving the position
+            in ``datasets`` of the dataset (recording) each window comes from.
+            Samplers use it to keep recordings apart.
         """
         if not all(
             [
@@ -1544,9 +1546,16 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                     "Dataset descriptions cannot contain the reserved window "
                     "metadata key 'i_trial_in_dataset'."
                 )
+            description = () if ds.description is None else ds.description
+            if "i_dataset" in df.columns or "i_dataset" in description:
+                raise ValueError(
+                    "Window metadata and dataset descriptions cannot contain the "
+                    "key 'i_dataset', which get_metadata() reserves for the "
+                    "position of the dataset each window comes from. Rename it."
+                )
 
         all_dfs = list()
-        for ds in self.datasets:
+        for i_ds, ds in enumerate(self.datasets):
             if hasattr(ds, "_windows") and ds._windows is not None:
                 df = ds._windows.metadata
             else:
@@ -1556,6 +1565,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 df = df.copy()
             for k, v in ds.description.items():
                 df[k] = v
+            df["i_dataset"] = i_ds
             all_dfs.append(df)
 
         return pd.concat(all_dfs)
