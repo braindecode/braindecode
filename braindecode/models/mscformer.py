@@ -335,7 +335,11 @@ class _MultiScalePatchEmbeddingCNN(nn.Module):
             bias = spatial.weight.sum((1, 2, 3)) * bias_time + bias_spat
             z = F.conv2d(x, spatial.weight)
             z = F.conv2d(
-                z, temporal.weight, bias, padding="same", groups=temporal.out_channels
+                z,
+                temporal.weight,
+                bias,
+                padding="same",
+                groups=temporal.weight.shape[0],
             )
             for i, layer in enumerate(branch):
                 if i > 1:
