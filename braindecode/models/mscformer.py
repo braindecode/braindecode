@@ -323,24 +323,20 @@ class _MultiScalePatchEmbeddingCNN(nn.Module):
             Embedded patches of shape (batch_size, n_patches, embedding_dim).
         """
         # The temporal and the depth-wise spatial convolution of a branch are
-        # both linear and nothing runs between them, so they run spatial
-        # first: the channels are projected onto each filter, then each
-        # projection is filtered in time. Same parameters, without the
-        # (batch, filters, n_chans, n_times) intermediate.
+        # both linear with nothing in between, so they run as one convolution
+        # over the channels with the composed weight and bias: same
+        # parameters, without the (batch, filters, n_chans, n_times)
+        # intermediate.
+        x = x.squeeze(1)
         outs = []
         for branch in self.branches:
             temporal, spatial = branch[0], branch[1]
             bias_time, bias_spat = temporal.bias, spatial.bias
             assert bias_time is not None and bias_spat is not None
-            bias = spatial.weight.sum((1, 2, 3)) * bias_time + bias_spat
-            z = F.conv2d(x, spatial.weight)
-            z = F.conv2d(
-                z,
-                temporal.weight,
-                bias,
-                padding="same",
-                groups=temporal.weight.shape[0],
-            )
+            w_spat = spatial.weight.flatten(1)  # (filters, n_chans)
+            weight = w_spat.unsqueeze(2) * temporal.weight.flatten(1).unsqueeze(1)
+            bias = w_spat.sum(1) * bias_time + bias_spat
+            z = F.conv1d(x, weight, bias, padding="same").unsqueeze(2)
             for i, layer in enumerate(branch):
                 if i > 1:
                     z = layer(z)
