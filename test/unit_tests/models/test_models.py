@@ -5848,6 +5848,103 @@ def test_eegclip_distributed_loss_matches_concatenated_batch(tmp_path):
         torch.testing.assert_close(out, grads)
 
 
+
+def test_eegclip_rank_local_gather_math_without_worker_coverage_gap(monkeypatch):
+    """Exercise the actual all-gather path in the coverage-owning process.
+
+    Real 2-rank CPU/Gloo gradients are independently tested by
+    test_eegclip_distributed_loss_matches_concatenated_batch. That worker
+    executes in mp.spawn children, which pytest-cov does NOT necessarily
+    include in the parent process's coverage report. Here the collective
+    communication alone is replaced with a deterministic two-rank stub;
+    the production padding, trimming, row labels and CE remain real.
+    """
+    from torch.distributed.nn import functional as dist_functional
+
+    model = EEGCLIP(
+        n_chans=3, n_times=4, n_outputs=4,
+        eeg_encoder=nn.Flatten(), eeg_embedding_dim=12,
+        text_embedding_dim=5, projection_layers=1,
+    ).double()
+    eeg = torch.tensor([[1., 2., 1.], [2., 1., 3.]], dtype=torch.float64)
+    text = torch.tensor([[1., 1., 2.], [2., 3., 1.]], dtype=torch.float64)
+    remote_eeg = torch.tensor(
+        [[0., 1., 1.], [1., 0., 2.], [3., 1., 0.]],
+        dtype=torch.float64,
+    )
+    remote_text = torch.tensor(
+        [[1., 0., 1.], [2., 2., 0.], [0., 2., 1.]],
+        dtype=torch.float64,
+    )
+    group = object()
+    monkeypatch.setattr(dist, "is_available", lambda: True)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda g: 2 if g is group else 0)
+    monkeypatch.setattr(dist, "get_rank", lambda g: 0 if g is group else -1)
+
+    def gather_sizes(outputs, size, *, group=None):
+        assert group is globals_group
+        assert size.tolist() == [2]
+        outputs[0].fill_(2)
+        outputs[1].fill_(3)
+
+    globals_group = group
+    monkeypatch.setattr(dist, "all_gather", gather_sizes)
+    calls = []
+
+    def gather_embeddings(padded, *, group=None):
+        assert group is globals_group
+        assert padded.shape == (3, 3)
+        calls.append(padded)
+        remote = remote_text if len(calls) == 1 else remote_eeg
+        return padded, remote
+
+    monkeypatch.setattr(dist_functional, "all_gather", gather_embeddings)
+    result = model.contrastive_loss(eeg, text, distributed=True, group=group)
+    scale = model.logit_scale
+    label = torch.arange(2)
+    full_text = torch.cat([text, remote_text])
+    full_eeg = torch.cat([eeg, remote_eeg])
+    manual = (
+        torch.nn.functional.cross_entropy(
+            scale * eeg @ full_text.T, label, reduction="sum"
+        )
+        + torch.nn.functional.cross_entropy(
+            scale * text @ full_eeg.T, label, reduction="sum"
+        )
+    ) / 5  # world_size / (2 * total pairs) = 2 / (2 * 5)
+    torch.testing.assert_close(result, manual)
+    assert len(calls) == 2
+    torch.testing.assert_close(calls[0][:2], text)
+    torch.testing.assert_close(calls[1][:2], eeg)
+
+
+def test_eegclip_distributed_single_process_group_matches_default(monkeypatch):
+    """The initialized world_size=1 branch must remain local and loss-identical."""
+    model = EEGCLIP(
+        n_chans=3, n_times=4, n_outputs=4,
+        eeg_encoder=nn.Flatten(), eeg_embedding_dim=12,
+        text_embedding_dim=5, projection_layers=1,
+    ).double()
+    torch.manual_seed(12)
+    eeg, text = torch.randn(3, 4, dtype=torch.float64), torch.randn(
+        3, 4, dtype=torch.float64
+    )
+    local = model.contrastive_loss(eeg, text)
+    group = object()
+    monkeypatch.setattr(dist, "is_available", lambda: True)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda g: 1 if g is group else 0)
+    monkeypatch.setattr(
+        dist, "all_gather",
+        lambda *_args, **_kw: pytest.fail(
+            "single process group must not enter collectives"
+        )
+    )
+    observed = model.contrastive_loss(eeg, text, distributed=True, group=group)
+    torch.testing.assert_close(observed, local, rtol=0, atol=0)
+
+
 def _cz():
     info = mne.create_info(["Cz"], 256.0, "eeg")
     return info.set_montage("standard_1005")["chs"]
