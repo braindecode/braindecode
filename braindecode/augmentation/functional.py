@@ -1075,6 +1075,67 @@ def mixup(
     return X_mix, (y_a, y_b, lam)
 
 
+def cutmix(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    idx_perm: torch.Tensor,
+    cut_t_start: torch.Tensor,
+    cut_t_len: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Paste time regions of shuffled examples into the original examples.
+
+    See [1]_ for details.
+    Implementation follows the torchvision semantics: the effective mixing
+    coefficient is recomputed per example from the length of the region that
+    is actually pasted, so that examples whose region is truncated at the
+    trial boundaries keep a consistent target.
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        EEG data in form ``batch_size, n_channels, n_times``
+    y : torch.Tensor
+        Target of length ``batch_size``
+    idx_perm : torch.Tensor
+        Permuted indices of example that are mixed into original examples.
+    cut_t_start : torch.Tensor
+        Start index of the pasted time region for each example.
+    cut_t_len : torch.Tensor
+        Length of the pasted time region for each example.
+
+    Returns
+    -------
+    tuple
+        ``X``, ``y``. Where ``X`` is augmented and ``y`` is a tuple of length
+        3 containing the labels of the two mixed examples and the effective
+        mixing coefficient of each example (the fraction of the trial that
+        is kept from the original example).
+
+    References
+    ----------
+    .. [1] Sangdoo Yun, Dongyoon Han, Seong Joon Oh, Sanghyuk Chun,
+        Junsuk Choe, Youngjoon Yoo (2019). CutMix: Regularization Strategy
+        to Train Strong Classifiers with Localizable Features. In 2019
+        IEEE/CVF International Conference on Computer Vision (ICCV)
+        Online: https://arxiv.org/abs/1905.04899
+    """
+    device = X.device
+    batch_size, _, n_times = X.shape
+
+    X_mix = X.clone()
+    y_a = y.clone()
+    y_b = y[idx_perm].clone()
+
+    lam_eff = torch.ones(batch_size, dtype=X.dtype, device=device)
+    for idx in range(batch_size):
+        start = int(cut_t_start[idx])
+        end = start + int(cut_t_len[idx])
+        X_mix[idx, :, start:end] = X[idx_perm[idx], :, start:end]
+        lam_eff[idx] = 1.0 - (end - start) / n_times
+
+    return X_mix, (y_a, y_b, lam_eff)
+
+
 def segmentation_reconstruction(
     X: torch.Tensor,
     y: torch.Tensor,
