@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional, Union
 
+import torch.nn.functional as F
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -300,9 +301,16 @@ class _PatchEmbedding(nn.Module):
         self.projection = nn.Conv2d(n_filters_spat, embed_dim, kernel_size=(1, 1))
 
     def forward(self, x: Tensor) -> Tensor:
-        x = x.unsqueeze(1)
-        x = self.conv1(x)
-        x = self.conv2(x)
+        # Nothing runs between the temporal and the spatial convolution, so
+        # they run as one convolution over the channels with the composed
+        # weight and bias, without the (batch, filters, chans, time)
+        # intermediate.
+        bias_time, bias_spat = self.conv1.bias, self.conv2.bias
+        assert bias_time is not None and bias_spat is not None
+        w_spat = self.conv2.weight.squeeze(-1).transpose(1, 2)  # (spat, chans, time)
+        weight = w_spat @ self.conv1.weight.flatten(1)  # (spat, chans, kernel)
+        bias = self.conv2.weight.sum((2, 3)) @ bias_time + bias_spat
+        x = F.conv1d(x, weight, bias).unsqueeze(2)
         x = self.bn(x)
         x = self.elu(x)
         x = self.pool(x)
