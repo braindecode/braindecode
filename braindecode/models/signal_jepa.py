@@ -13,7 +13,10 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.attention import _hpu_lazy
+from braindecode.modules.attention import (
+    _hpu_lazy,
+    _scaled_dot_product_attention,
+)
 
 _DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.1875s, stride 1s
     (8, 32, 8),
@@ -330,6 +333,56 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
                 batch_first=True,
             )
 
+    def _encode(self, x: torch.Tensor) -> torch.Tensor:
+        if self.training and not torch.jit.is_scripting():
+            return self._encode_train(x)
+        return self.transformer.encoder(x)  # type: ignore
+
+    @torch.jit.unused
+    def _encode_train(self, x: torch.Tensor) -> torch.Tensor:
+        """``self.transformer.encoder(x)`` in training, without SDPA's ``_safe_softmax``.
+
+        With dropout, torch's attention takes SDPA's math path, whose
+        ``_safe_softmax`` adds four passes over the (batch, heads, tokens,
+        tokens) scores to zero the rows a mask hides; there is no mask here.
+        Ops, layouts and dropout draws are otherwise torch's: outputs and
+        gradients are bit-identical on CPU.
+        """
+        encoder = self.transformer.encoder  # type: ignore
+        for layer in encoder.layers:
+            x = layer.norm1(x + layer.dropout1(_self_attention(layer.self_attn, x)))
+            h = layer.dropout(layer.activation(layer.linear1(x)))
+            x = layer.norm2(x + layer.dropout2(layer.linear2(h)))
+        if encoder.norm is not None:
+            x = encoder.norm(x)
+        return x
+
+
+def _self_attention(mha: nn.MultiheadAttention, x: torch.Tensor) -> torch.Tensor:
+    """``mha(x, x, x, need_weights=False)[0]`` (batch first, no mask) as
+    ``F.multi_head_attention_forward`` runs it, with the attention itself
+    through braindecode's SDPA helper (no ``_safe_softmax`` pass)."""
+    x = x.transpose(1, 0)
+    n_tokens, batch_size, emb_dim = x.shape
+    n_heads = mha.num_heads
+    head_dim = emb_dim // n_heads
+    qkv = nn.functional.linear(x, mha.in_proj_weight, mha.in_proj_bias)
+    qkv = qkv.unflatten(-1, (3, emb_dim)).unsqueeze(0).transpose(0, -2)
+    qkv = qkv.squeeze(-2).contiguous()
+    q, k, v = (
+        t.view(n_tokens, batch_size * n_heads, head_dim)
+        .transpose(0, 1)
+        .view(batch_size, n_heads, n_tokens, head_dim)
+        for t in (qkv[0], qkv[1], qkv[2])
+    )
+    out = _scaled_dot_product_attention(
+        q, k, v, dropout_p=mha.dropout if mha.training else 0.0
+    )
+    out = out.permute(2, 0, 1, 3).contiguous()
+    out = out.view(batch_size * n_tokens, emb_dim)
+    out = nn.functional.linear(out, mha.out_proj.weight, mha.out_proj.bias)
+    return out.view(n_tokens, batch_size, emb_dim).transpose(1, 0)
+
 
 class SignalJEPA(_BaseSignalJEPA):
     r"""Architecture introduced in signal-JEPA for self-supervised pre-training, Guetschel, P et al (2024) [1]_
@@ -491,7 +544,7 @@ class SignalJEPA(_BaseSignalJEPA):
         local_features = self.feature_encoder(X)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features += pos_encoding  # type: ignore
-        contextual_features = self.transformer.encoder(local_features)  # type: ignore
+        contextual_features = self._encode(local_features)  # type: ignore
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": contextual_features,
@@ -678,7 +731,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         local_features = self.feature_encoder(X)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features += pos_encoding  # type: ignore
-        contextual_features = self.transformer.encoder(local_features)  # type: ignore
+        contextual_features = self._encode(local_features)  # type: ignore
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": contextual_features,
