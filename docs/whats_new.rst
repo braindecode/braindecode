@@ -389,8 +389,8 @@ Enhancements
   (:gh:`1276` by `Bruno Aristimunha`_).
 
 - Add :class:`braindecode.models.GCNsNet`, a graph convolutional neural network
-  for decoding time-resolved EEG motor imagery signals, from Hou et al. (2022).
-  By `Seáic Mac Murchadha`_.
+  for decoding time-resolved EEG motor imagery signals, from Hou et al. (2022)
+  (:gh:`1331` by `Seáic Mac Murchadha`_).
 
 API and behavior changes
 ========================
