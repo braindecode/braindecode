@@ -315,9 +315,12 @@ class SeizureTransformer(EEGModuleMixin, nn.Module, license="mit"):
 
         features = self.res_blocks(x)
         steps = self.to_steps(features)
-        steps = steps + self.positional_encoding[: steps.shape[1]]
+        # Sums take their first operand's memory layout: the contiguous
+        # operand goes first, so the encoder and the decoder do not read the
+        # transposed views.
+        steps = self.positional_encoding[: steps.shape[1]] + steps
         steps = self.transformer(self.positional_dropout(steps))
-        x = self.to_features(steps) + features
+        x = features + self.to_features(steps)
 
         for level, block in enumerate(self.decoder):
             skip = skips[len(skips) - 1 - level]
