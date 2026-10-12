@@ -233,8 +233,10 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
             assert matrix is not None
             x = bias(graph_conv(x, matrix))
             x = self.activation(batch_norm(x.transpose(1, 2)))
-            # Pooling merges the node pairs of the coarsening tree.
-            x = F.max_pool1d(x, pool_size, ceil_mode=True).transpose(1, 2)
+            if pool_size > 1:
+                # Pooling merges the node pairs of the coarsening tree.
+                x = F.max_pool1d(x, pool_size, ceil_mode=True)
+            x = x.transpose(1, 2)
 
         x = self.final_layer(self.dropout(x.flatten(1)))
         # Average the per-sample logits over time.
