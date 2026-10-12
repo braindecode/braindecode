@@ -433,6 +433,10 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.SincShallowNet` now round-trips through
+  ``save_pretrained``/``from_pretrained``: its ``window`` buffer viewed a larger
+  storage, which safetensors refuses, so ``model.safetensors`` was never written
+  (:gh:`1385` by `Li Qing`_).
 - Attention on Intel Gaudi in HPU eager mode no longer returns wrong outputs and gradients at some shapes: the bridge's fused SDPA kernel, used since :gh:`1338` through a shared helper by :class:`braindecode.modules.MultiHeadAttention` (EEGConformer, CTNet, MSCFormer, MIRepNet, STEEGFormer), :class:`braindecode.models.ZUNA`, :class:`braindecode.models.DANCE`, :class:`braindecode.models.Labram`, :class:`braindecode.models.BaRISTA`, :class:`braindecode.models.NeuroRVQ`, :class:`braindecode.models.NeuroRVQTokenizer`, :class:`braindecode.models.REVE`, :class:`braindecode.models.PBT` and :class:`braindecode.models.EEGPT`, received q/k/v as strided head views and gave values unrelated to the right ones for some of them (for example EEGConformer with 64 tokens per window at batch 4). The helper now passes contiguous copies; train-step time unchanged (:gh:`1358` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.NeuroRVQTokenizer` now synchronizes its cold-start
   EMA codebook weights, counts and initialization state from rank zero before
