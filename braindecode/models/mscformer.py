@@ -335,7 +335,7 @@ class _MultiScalePatchEmbeddingCNN(nn.Module):
             assert bias_time is not None and bias_spat is not None
             w_spat = spatial.weight.flatten(1)  # (filters, n_chans)
             weight = w_spat.unsqueeze(2) * temporal.weight.flatten(1).unsqueeze(1)
-            bias = w_spat.sum(1) * bias_time + bias_spat
+            bias = torch.addcmul(bias_spat, w_spat.sum(1), bias_time)
             z = F.conv1d(x, weight, bias, padding="same").unsqueeze(2)
             for i, layer in enumerate(branch):
                 if i > 1:
