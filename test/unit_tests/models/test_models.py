@@ -5397,6 +5397,33 @@ def test_tfm_tokenizer_codebook_is_ema_only():
     assert "stft_window" not in model.state_dict()
 
 
+def test_tfm_tokenizer_group_norm_mean_var_matches_group_norm_fp64():
+    # The HPU path of tfm_tokenizer._GroupNorm (mean/var formula, no
+    # aten::group_norm) against F.group_norm in float64, forward + backward.
+    from braindecode.models.tfm_tokenizer import _group_norm_mean_var
+
+    torch.manual_seed(0)
+    for shape, groups in (((7, 64, 10), 16), ((5, 32, 4, 6), 8)):
+        base = torch.randn(*shape, dtype=torch.float64)
+        base_w = torch.randn(shape[1], dtype=torch.float64)
+        base_b = torch.randn(shape[1], dtype=torch.float64)
+        g = torch.randn(*shape, dtype=torch.float64)
+        x = base.clone().requires_grad_()
+        w = base_w.clone().requires_grad_()
+        b = base_b.clone().requires_grad_()
+        y = _group_norm_mean_var(x, groups, w, b, 1e-5)
+        xr = base.clone().requires_grad_()
+        wr = base_w.clone().requires_grad_()
+        br = base_b.clone().requires_grad_()
+        ref = torch.nn.functional.group_norm(xr, groups, wr, br, 1e-5)
+        torch.testing.assert_close(y, ref, rtol=1e-12, atol=1e-12)
+        y.backward(g)
+        ref.backward(g)
+        torch.testing.assert_close(x.grad, xr.grad, rtol=1e-12, atol=1e-12)
+        torch.testing.assert_close(w.grad, wr.grad, rtol=1e-12, atol=1e-12)
+        torch.testing.assert_close(b.grad, br.grad, rtol=1e-12, atol=1e-12)
+
+
 # ---------------------------------------------------------------------------
 # CSBrain
 # ---------------------------------------------------------------------------
