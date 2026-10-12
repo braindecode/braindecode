@@ -1678,6 +1678,25 @@ def test_multi_head_attention_supports_torch_2_0_sdpa(monkeypatch):
     )
 
 
+def test_sdpa_helper_dropout_matches_torch_sdpa():
+    """With dropout, the helper's CPU math path draws the same masks as torch."""
+    from braindecode.modules.attention import _scaled_dot_product_attention
+
+    q, k, v = (torch.randn(2, 3, 7, 4, requires_grad=True) for _ in range(3))
+    outs, grads = [], []
+    for fn in (
+        _scaled_dot_product_attention,
+        torch.nn.functional.scaled_dot_product_attention,
+    ):
+        torch.manual_seed(0)
+        out = fn(q, k, v, dropout_p=0.3)
+        outs.append(out)
+        grads.append(torch.autograd.grad(out.square().sum(), (q, k, v)))
+    torch.testing.assert_close(outs[0], outs[1])
+    for g0, g1 in zip(*grads):
+        torch.testing.assert_close(g0, g1)
+
+
 def test_multi_head_attention_bool_mask():
     from braindecode.modules import MultiHeadAttention
 
@@ -1704,6 +1723,32 @@ def test_multi_head_attention_invalid_emb_size():
 
     with pytest.raises(ValueError, match="divisible"):
         MultiHeadAttention(emb_size=33, num_heads=4)
+
+
+def test_hpu_fused_sdpa_gets_contiguous_inputs(monkeypatch):
+    # Gaudi's FusedSDPA gives wrong results for some strided q/k/v views.
+    import sys
+    import types
+
+    from braindecode.modules.attention import _hpu_eager_fused_sdpa
+
+    seen = []
+
+    class FusedSDPA:
+        @staticmethod
+        def apply(q, k, v, *args):
+            seen.append([t.is_contiguous() for t in (q, k, v)])
+            return q
+
+    internal = types.ModuleType("habana_frameworks.torch.utils.internal")
+    internal.is_lazy = lambda: False
+    kernels = types.ModuleType("habana_frameworks.torch.hpex.kernels")
+    kernels.FusedSDPA = FusedSDPA
+    monkeypatch.setitem(sys.modules, internal.__name__, internal)
+    monkeypatch.setitem(sys.modules, kernels.__name__, kernels)
+    qkv = torch.randn(2, 5, 3, 4, 8).permute(2, 0, 3, 1, 4)  # heads split off
+    _hpu_eager_fused_sdpa(*qkv.unbind(0))
+    assert seen == [[True, True, True]]
 
 
 def test_forward_pass_ifnet_output_shape():

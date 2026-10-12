@@ -17,6 +17,7 @@ from torch.nn.utils.parametrizations import weight_norm
 from braindecode.functional import spectral_input
 from braindecode.functional.functions import _next_fast_len
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.attention import _hpu_lazy
 
 
 class CodeBrain(EEGModuleMixin, nn.Module):
@@ -703,18 +704,15 @@ class _ResidualBlock(nn.Module):
         # Sliding-window attention branch
         # (batch, 2*res_channels, seq_len) -> (batch, seq_len, 2*res_channels)
         h_attn = h_ssm.transpose(1, 2)
-        if (
-            self.swa_window_size == 1
-            and not self.training
-            and not torch.is_grad_enabled()
-            and h_attn.device.type == "cpu"
-        ):
+        if self.swa_window_size == 1 and h_attn.device.type == "cpu":
             # A one-wide window keeps only the diagonal: the softmax weights are
-            # exactly 1 and 0, so the attention returns its value projection.
-            # Same projection calls as nn.MultiheadAttention (on its (seq,
-            # batch, embed) view), so the output is unchanged bit for bit. (In
-            # training the weights carry dropout; on Gaudi the full attention
-            # was faster.)
+            # exactly 1 and 0, so the attention returns its value projection,
+            # times the weights' dropout in training (the same (batch * heads,
+            # L, L) mask nn.MultiheadAttention draws, of which only the
+            # diagonal reaches the output). Same projection calls as
+            # nn.MultiheadAttention (on its (seq, batch, embed) view), so
+            # outputs and gradients are unchanged bit for bit, and so is the
+            # RNG stream. (On Gaudi the full attention was faster.)
             # ponytail: the unused query/key projections are computed too, to
             # keep the rounding; in_proj_weight[2E:] alone is ~2x less GEMM.
             embed_dim = self.attention.embed_dim
@@ -722,6 +720,16 @@ class _ResidualBlock(nn.Module):
             value = F.linear(
                 seq_first, self.attention.in_proj_weight, self.attention.in_proj_bias
             )[..., 2 * embed_dim :]
+            p = self.attention.dropout
+            if self.training and p > 0.0:
+                n_rows = seq_first.shape[1] * self.attention.num_heads
+                keep = (
+                    value.new_empty(n_rows, seq_len, seq_len)
+                    .bernoulli_(1 - p)
+                    .diagonal(dim1=1, dim2=2)
+                    .div(1 - p)
+                )
+                value = value.reshape(seq_len, n_rows, -1) * keep.t().unsqueeze(-1)
             h_attn = (
                 self.attention.out_proj(value.reshape(-1, embed_dim))
                 .view(seq_first.shape)
@@ -824,10 +832,20 @@ class _ResidualGroup(nn.Module):
     def forward(self, input_data: torch.Tensor) -> torch.Tensor:
         noise = input_data
         h = noise
-        skip = torch.zeros((), dtype=h.dtype, device=h.device)
-        for block in self.residual_blocks:
-            h, skip_n = block((h, noise))
-            skip = skip_n + skip
+        if not torch.jit.is_scripting() and h.device.type == "hpu" and _hpu_lazy():
+            # Gaudi's lazy-mode graph compiler fails on the backward of the
+            # sequential skip sum (one skip_conv dedw node lands in two
+            # pipeline bundles); one n-ary stack-sum reduction compiles.
+            skip_list = []
+            for block in self.residual_blocks:
+                h, skip_n = block((h, noise))
+                skip_list.append(skip_n)
+            skip = torch.stack(skip_list, dim=0).sum(dim=0)
+        else:
+            skip = torch.zeros((), dtype=h.dtype, device=h.device)
+            for block in self.residual_blocks:
+                h, skip_n = block((h, noise))
+                skip = skip_n + skip
 
         return skip * math.sqrt(1.0 / self.num_res_layers)
 

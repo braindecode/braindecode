@@ -1576,6 +1576,46 @@ def test_codebrain_return_features():
     assert out["cls_token"] is None
 
 
+def test_codebrain_residual_group_skip_sum_equivalence_fp64():
+    # On HPU lazy mode _ResidualGroup aggregates the block skips with one
+    # n-ary torch.stack(skips).sum(0) (Gaudi's lazy graph compiler fails on
+    # the sequential sum's backward); elsewhere it keeps the sequential sum.
+    # The two forms must agree within fp64 rounding, outputs and grads.
+    from braindecode.models.codebrain import _ResidualGroup
+
+    torch.manual_seed(0)
+    group = _ResidualGroup(
+        8, 8, 4, s4_lmax=64, s4_d_state=8, s4_dropout=0.0,
+        s4_bidirectional=True, s4_layernorm=False,
+    ).double()
+    x = torch.randn(2, 8, 32, dtype=torch.float64, requires_grad=True)
+    out_seq = group(x)
+    loss_seq = out_seq.square().mean()
+    # allow_unused: e.g. SGConv layernorm weights when s4_layernorm=False.
+    grads_seq = torch.autograd.grad(
+        loss_seq, list(group.parameters()) + [x], allow_unused=True
+    )
+    # Reference: same blocks, n-ary stack-sum aggregation (the HPU formula).
+    x2 = x.detach().clone().requires_grad_(True)
+    h, noise, skips = x2, x2, []
+    for block in group.residual_blocks:
+        h, skip_n = block((h, noise))
+        skips.append(skip_n)
+    out_stack = torch.stack(skips, dim=0).sum(dim=0) * (1.0 / 4) ** 0.5
+    loss_stack = out_stack.square().mean()
+    grads_stack = torch.autograd.grad(
+        loss_stack, list(group.parameters()) + [x2], allow_unused=True
+    )
+    scale = out_seq.detach().abs().max()
+    assert ((out_seq - out_stack).abs().max() / scale) < 1e-12
+    for g_seq, g_stack in zip(grads_seq, grads_stack):
+        assert (g_seq is None) == (g_stack is None)
+        if g_seq is None:
+            continue
+        denom = max(g_seq.detach().abs().max().item(), 1e-300)
+        assert ((g_seq - g_stack).abs().max().item() / denom) < 1e-10
+
+
 def test_codebrain_trains_after_inference_mode():
     # The lazily initialised kernel norm must not become an inference tensor.
     model = CodeBrain(n_chans=2, n_outputs=2, n_times=400).eval()
@@ -1585,6 +1625,33 @@ def test_codebrain_trains_after_inference_mode():
     model.train()
     model(x).sum().backward()
     assert all(not b.is_inference() for b in model.buffers())
+
+
+def test_codebrain_one_wide_attention_train_equals_multihead_attention():
+    # The CPU one-wide window path vs nn.MultiheadAttention with its mask, in
+    # training (dropout 0.5): same output, gradients and RNG stream.
+    class _NotOne(int):  # == 1 is False, so the block takes the masked path
+        def __eq__(self, other):
+            return False
+
+        __hash__ = int.__hash__
+
+    model = CodeBrain(n_chans=2, n_outputs=2, n_times=400, drop_prob=0.5).train()
+    ref = copy.deepcopy(model)
+    for block in ref.residual_layer.residual_blocks:
+        block.swa_window_size = _NotOne(1)
+    x = torch.randn(3, 2, 400)
+    outs = []
+    for m in (model, ref):
+        torch.manual_seed(0)
+        out = m(x)
+        out.square().sum().backward()
+        grads = {n: p.grad for n, p in m.named_parameters() if p.grad is not None}
+        outs.append((out, torch.get_rng_state(), grads))
+    assert torch.equal(outs[0][0], outs[1][0])
+    assert torch.equal(outs[0][1], outs[1][1])
+    assert outs[0][2].keys() == outs[1][2].keys()
+    assert all(torch.equal(g, outs[1][2][n]) for n, g in outs[0][2].items())
 
 
 # ==============================================================================
@@ -1803,6 +1870,23 @@ def test_axon_block_without_band_equals_all_true_band():
     band = torch.ones(5, 5, dtype=torch.bool)
     with torch.no_grad():
         torch.testing.assert_close(block(tokens, None), block(tokens, band))
+
+
+def test_axon_two_scale_attention_equals_gated_branches():
+    # One score matrix and one product with the values give the scale-gated
+    # sum of the banded and the full attention (the gate weights sum to one).
+    attn = _axon_model(_axon_chs()).encoder.blocks[0].attn
+    projected = torch.randn(6, 9, 3 * _AXON_SMALL["embed_dim"])
+    index = torch.arange(9)
+    band = (index[None] - index[:, None]).abs() <= 2
+    weights = torch.randn(6, 9, 2).softmax(-1)
+    expected = weights[..., :1] * attn._attend(projected, band) + weights[
+        ..., 1:
+    ] * attn._attend(projected, None)
+    with torch.no_grad():
+        torch.testing.assert_close(
+            attn._attend_two_scales(projected, band, weights), expected
+        )
 
 
 def test_axon_too_short_window_raises():
