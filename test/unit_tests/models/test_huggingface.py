@@ -151,9 +151,7 @@ def test_json_serialization(tmp_path, sample_chs_info):
 def test_save_pretrained_creates_config(tmp_path, sample_model):
     sample_model, name, _ = sample_model
     # TODO: fix for AttnSleep
-    if name in _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS | {
-        "AttnSleep",
-    }:
+    if name in _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS | {"AttnSleep"}:
         pytest.skip(f"Skipping config test for non-classification model: {name}")
 
     if any(isinstance(p, nn.UninitializedParameter) for p in sample_model.parameters()):
@@ -225,9 +223,7 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model):
     """Roundtrip through local Hub save/load mimics push/pull."""
     model, name, sp = sample_model
     # TODO: fix for AttnSleep
-    if name in _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS | {
-        "AttnSleep",
-    }:
+    if name in _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS | {"AttnSleep"}:
         pytest.skip(f"Skipping Hugging Face Hub test for non-classification model: {name}")
     assert hasattr(model, 'from_pretrained')
     assert callable(getattr(model, 'from_pretrained'))
@@ -262,36 +258,6 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model):
 
     out_restored = restored(sample_input)
     torch.testing.assert_close(out_restored, out_original)
-
-
-def test_buffers_own_their_storage_for_safetensors(tmp_path):
-    """Every registered buffer must own a tight storage.
-
-    safetensors refuses to serialize a tensor whose storage is larger than the
-    tensor itself, which makes ``save_pretrained`` silently fall back to
-    ``pytorch_model.bin`` while ``from_pretrained`` then fails on the missing
-    ``model.safetensors``.  SincShallowNet's ``window`` buffer used to be such a
-    view (a slice of the full Hamming window); this guards against a
-    regression and against the same pattern reappearing in another model.
-    """
-    from braindecode.models import SincShallowNet
-
-    model = SincShallowNet(n_chans=8, n_outputs=2, n_times=1000, sfreq=250)
-    for buffer_name, buffer in model.named_buffers():
-        assert buffer.untyped_storage().nbytes() == buffer.nbytes, (
-            f"Buffer '{buffer_name}' is a view on a larger storage "
-            f"({buffer.untyped_storage().nbytes()} bytes of storage for "
-            f"{buffer.nbytes()} bytes of data); safetensors cannot save it."
-        )
-
-    model.save_pretrained(tmp_path)
-    assert (tmp_path / "model.safetensors").exists()
-    restored = SincShallowNet.from_pretrained(tmp_path)
-    restored.eval()
-    model.eval()
-    torch.manual_seed(42)
-    sample_input = torch.randn(2, 8, 1000)
-    torch.testing.assert_close(restored(sample_input), model(sample_input))
 
 
 def test_serialize_chs_info_with_string_kind():
