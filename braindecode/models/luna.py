@@ -23,6 +23,7 @@ import torch.nn.functional as F
 
 from braindecode.functional import rotate_pairs, spectral_input
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.signal_jepa import _GroupNorm
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules.blocks import PatchTokenizer
 from braindecode.modules.layers import DropPath
@@ -884,7 +885,7 @@ class _PatchEmbedNetwork(nn.Module):
                 stride=(1, self.kernel_size // 2),
                 padding=(0, self.kernel_size // 2 - 1),
             ),
-            nn.GroupNorm(self.groups, self.out_channels),
+            _GroupNorm(self.groups, self.out_channels),
             nn.GELU(),
             nn.Conv2d(
                 in_channels=self.out_channels,
@@ -893,7 +894,7 @@ class _PatchEmbedNetwork(nn.Module):
                 stride=(1, 1),
                 padding=(0, 1),
             ),
-            nn.GroupNorm(self.groups, self.out_channels),
+            _GroupNorm(self.groups, self.out_channels),
             nn.GELU(),
             nn.Conv2d(
                 in_channels=self.out_channels,
@@ -902,7 +903,7 @@ class _PatchEmbedNetwork(nn.Module):
                 stride=(1, 1),
                 padding=(0, 1),
             ),
-            nn.GroupNorm(self.groups, self.out_channels),
+            _GroupNorm(self.groups, self.out_channels),
             nn.GELU(),
         )
 

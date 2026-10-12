@@ -289,6 +289,10 @@ def test_fft_conv1d_matches_conv1d_same(kernel_size, dtype, tol):
     out = fft_conv1d(x, w, b)
     assert out.dtype == dtype
     torch.testing.assert_close(out, ref, rtol=0, atol=tol * ref.abs().max().item())
+    with torch.no_grad():  # forward only with 3 rows < 2 x 4 channels: other product
+        torch.testing.assert_close(
+            fft_conv1d(x, w, b), ref, rtol=0, atol=tol * ref.abs().max().item()
+        )
     g = torch.randn_like(ref)
     got = torch.autograd.grad(out, (x, w, b), g)
     want = torch.autograd.grad(ref, (x, w, b), g)
