@@ -378,7 +378,15 @@ class _PatchEmbeddingEEGNet(nn.Module):
         Tensor
             Embedded patches of shape (batch_size, num_patches, embedding_dim).
         """
-        x = self.eegnet_module(x)
+        layers = self.eegnet_module
+        x = layers[1](layers[0](x))
+        # The depthwise (n_chans, 1) convolution as a matmul over the channel
+        # axis: same values, a faster backward than the grouped convolution's.
+        b, f, c, t = x.shape
+        x = torch.matmul(layers[2].weight.view(f, -1, c), x).view(b, -1, 1, t)
+        for i, layer in enumerate(layers):
+            if i > 2:
+                x = layer(x)
         x = self.projection(x)
         return x
 

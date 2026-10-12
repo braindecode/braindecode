@@ -3,7 +3,7 @@ import torch
 from torch import nn
 
 from braindecode.models import EEGSym
-from braindecode.models.eegsym import _SpatialConv3d
+from braindecode.models.eegsym import _BatchNorm3d, _SpatialConv3d, _TemporalConv3d
 
 _EEGSYM_8CH_CHS = [
     {"ch_name": ch} for ch in ["F3", "C3", "P3", "Cz", "Pz", "F4", "C4", "P4"]
@@ -110,3 +110,27 @@ def test_spatial_conv3d_matches_conv3d():
     spatial.load_state_dict(conv.state_dict())
     x = torch.randn(2, 24, 2, 50, 5)
     torch.testing.assert_close(spatial(x), conv(x))
+
+
+@pytest.mark.parametrize(
+    "kernel, padding, groups", [(5, "same", 1), (4, "same", 2), (7, (0, 0, 0), 2)]
+)
+def test_temporal_conv3d_time_last_matches_conv3d(kernel, padding, groups):
+    # the conv1d form used on HPU against the Conv3d it replaces (run on CPU)
+    torch.manual_seed(0)
+    conv = _TemporalConv3d(4, 6, (1, kernel, 1), padding=padding, groups=groups)
+    x = torch.randn(2, 4, 2, 37, 3)
+    torch.testing.assert_close(conv._time_last(x), conv(x))
+
+
+def test_batchnorm3d_matches_torch():
+    # train-mode output, running statistics and counter, then eval output
+    ref = nn.BatchNorm3d(4, eps=1e-3, momentum=0.01)
+    bn = _BatchNorm3d(4, eps=1e-3, momentum=0.01)
+    x = torch.randn(3, 4, 2, 7, 5)
+    torch.testing.assert_close(bn(x), ref(x))
+    for a, b in zip(bn.buffers(), ref.buffers()):
+        torch.testing.assert_close(a, b)
+    bn.eval()
+    ref.eval()
+    torch.testing.assert_close(bn(x), ref(x))

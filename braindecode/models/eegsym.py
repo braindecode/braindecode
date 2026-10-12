@@ -457,6 +457,58 @@ class _SpatialConv3d(nn.Conv3d):
         return y.reshape(b, -1, z, t, y.shape[-1])
 
 
+class _BatchNorm3d(nn.BatchNorm3d):
+    """``nn.BatchNorm3d`` with running statistics (as built here); on HPU it
+    normalises the ``(batch, channels, -1)`` view, same statistics and
+    buffers: Gaudi's 5-D batch norm backward is 2-7x slower than its 3-D one
+    on these activations. Elsewhere the same ``batch_norm`` call as torch's."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.training and self.num_batches_tracked is not None:
+            self.num_batches_tracked.add_(1)
+        y = nn.functional.batch_norm(
+            x.flatten(2) if x.device.type == "hpu" else x,
+            self.running_mean,
+            self.running_var,
+            self.weight,
+            self.bias,
+            self.training,
+            self.momentum,  # type: ignore[arg-type]
+            self.eps,
+        )
+        return y.view_as(x)
+
+
+class _TemporalConv3d(nn.Conv3d):
+    """``nn.Conv3d`` with a ``(1, k, 1)`` kernel (padding on time only); on HPU
+    it runs as ``conv1d`` on a ``(batch * z * space, channels, time)`` copy of
+    the input, same parameters. Gaudi's conv3d along time, which is not the
+    innermost axis here, is 10-50x slower than that conv1d."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.time_padding = (
+            self.padding if isinstance(self.padding, str) else self.padding[1]
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.device.type == "hpu":
+            return self._time_last(x)
+        return self._conv_forward(x, self.weight, self.bias)
+
+    def _time_last(self, x: torch.Tensor) -> torch.Tensor:
+        b, c, z, t, s = x.shape
+        y = nn.functional.conv1d(
+            x.permute(0, 2, 4, 1, 3).reshape(b * z * s, c, t),
+            self.weight.flatten(2),
+            self.bias,
+            padding=self.time_padding,
+            groups=self.groups,
+        )
+        y = y.reshape(b, z, s, y.shape[1], y.shape[2])
+        return y.permute(0, 3, 1, 4, 2).contiguous()
+
+
 class _InceptionBlock(nn.Module):
     r"""Inception module used in EEGSym architecture.
 
@@ -498,13 +550,13 @@ class _InceptionBlock(nn.Module):
         for scale in scales_samples:
             self.temporal_convs.append(
                 nn.Sequential(
-                    nn.Conv3d(
+                    _TemporalConv3d(
                         in_channels=in_channels,
                         out_channels=filters_per_branch,
                         kernel_size=(1, scale, 1),
                         padding="same",
                     ),
-                    nn.BatchNorm3d(filters_per_branch, eps=1e-3, momentum=0.01),
+                    _BatchNorm3d(filters_per_branch, eps=1e-3, momentum=0.01),
                     activation,
                     nn.Dropout(drop_prob),
                 )
@@ -527,7 +579,7 @@ class _InceptionBlock(nn.Module):
                             groups=filters_per_branch * len(scales_samples),
                             bias=False,
                         ),
-                        nn.BatchNorm3d(
+                        _BatchNorm3d(
                             filters_per_branch * len(scales_samples),
                             eps=1e-3,
                             momentum=0.01,
@@ -598,13 +650,13 @@ class _ResidualBlock(nn.Module):
 
         # Temporal convolution
         self.temporal_conv = nn.Sequential(
-            nn.Conv3d(
+            _TemporalConv3d(
                 in_channels=in_channels,
                 out_channels=filters,
                 kernel_size=(1, kernel_size, 1),
                 padding="same",
             ),
-            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
+            _BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -618,7 +670,7 @@ class _ResidualBlock(nn.Module):
                 kernel_size=(1, 1, 1),
                 bias=False,
             ),
-            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
+            _BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -642,7 +694,7 @@ class _ResidualBlock(nn.Module):
                             groups=1,
                             bias=False,
                         ),
-                        nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
+                        _BatchNorm3d(filters, eps=1e-3, momentum=0.01),
                         activation,
                         nn.Dropout(drop_prob),
                     )
@@ -694,14 +746,14 @@ class _TemporalBlock(nn.Module):
         super().__init__()
 
         self.conv = nn.Sequential(
-            nn.Conv3d(
+            _TemporalConv3d(
                 in_channels=in_channels,
                 out_channels=filters,
                 kernel_size=(1, kernel_size, 1),
                 padding="same",
                 bias=False,
             ),
-            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
+            _BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -762,7 +814,7 @@ class _ChannelMergingBlock(nn.Module):
                         padding=(0, 0, 0),  # Valid padding
                         bias=False,
                     ),
-                    nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
+                    _BatchNorm3d(filters, eps=1e-3, momentum=0.01),
                     activation,
                     nn.Dropout(drop_prob),
                 )
@@ -779,7 +831,7 @@ class _ChannelMergingBlock(nn.Module):
                 padding=(0, 0, 0),
                 bias=False,
             ),
-            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
+            _BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -837,21 +889,21 @@ class _TemporalMergingBlock(nn.Module):
 
         # Residual convolution (collapses time dimension)
         self.residual_conv = nn.Sequential(
-            nn.Conv3d(
+            _TemporalConv3d(
                 in_channels=in_channels,
                 out_channels=in_channels,  # Same channels for residual
                 kernel_size=(1, self.temporal_kernel, 1),  # (Z, Time, Space)
                 padding=(0, 0, 0),  # Valid padding - reduces time to 1
                 bias=False,
             ),
-            nn.BatchNorm3d(in_channels, eps=1e-3, momentum=0.01),
+            _BatchNorm3d(in_channels, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
 
         # Grouped convolution (collapses time dimension, doubles filters)
         self.grouped_conv = nn.Sequential(
-            nn.Conv3d(
+            _TemporalConv3d(
                 in_channels=in_channels,
                 out_channels=filters,  # Double the channels
                 kernel_size=(1, self.temporal_kernel, 1),  # (Z, Time, Space)
@@ -859,7 +911,7 @@ class _TemporalMergingBlock(nn.Module):
                 padding=(0, 0, 0),
                 bias=False,
             ),
-            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
+            _BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -908,7 +960,7 @@ class _OutputBlock(nn.Module):
                         padding=(0, 0, 0),
                         bias=False,
                     ),
-                    nn.BatchNorm3d(in_channels, eps=1e-3, momentum=0.01),
+                    _BatchNorm3d(in_channels, eps=1e-3, momentum=0.01),
                     activation,
                     nn.Dropout(drop_prob),
                 )
