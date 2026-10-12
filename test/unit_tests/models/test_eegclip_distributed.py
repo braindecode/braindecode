@@ -168,6 +168,15 @@ def _run_with_rank_zero_in_test_process(worker, *args):
     # mp.spawn() places *every* rank in a child process, so subprocess coverage
     # may report the entire distributed branch as uncovered despite passing
     # multiprocess tests. This is a real two-rank Gloo test, not a mock.
+    if sys.platform == "darwin":
+        # On heavily loaded macOS pytest-xdist workers, combining the live
+        # pytest process with a freshly spawned rank can time out at Gloo
+        # rendezvous (observed on macOS/Python 3.13). Launch both ranks with
+        # identical spawn semantics. Linux still executes rank 0 in pytest,
+        # preserving line coverage of the real collective/autograd path.
+        mp.spawn(worker, args=args, nprocs=2, join=True)
+        return
+
     peer = mp.get_context("spawn").Process(target=worker, args=(1, *args))
     peer.start()
     try:
