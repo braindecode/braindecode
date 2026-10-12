@@ -16,6 +16,7 @@ from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.labram import _Attention
+from braindecode.models.signal_jepa import _GroupNorm
 from braindecode.modules import MLP, DropPath
 
 # Channel order used to train NeuroRVQ-EEG v1. Keep in sync with the released
@@ -281,7 +282,7 @@ class _MultiScaleTemporalConv(nn.Module):
                 f"conv1_{i}",
                 nn.Conv2d(1, out_chans, (1, kernel), padding=(0, kernel // 2)),
             )
-            setattr(self, f"norm1_{i}", nn.GroupNorm(4, out_chans))
+            setattr(self, f"norm1_{i}", _GroupNorm(4, out_chans))
             setattr(self, f"pool1_{i}", nn.AvgPool2d((1, 2)))
         for i, kernel in enumerate(kernels[1], start=1):
             setattr(
@@ -289,7 +290,7 @@ class _MultiScaleTemporalConv(nn.Module):
                 f"conv2_{i}",
                 nn.Conv2d(out_chans, out_chans, (1, kernel), padding=(0, kernel // 2)),
             )
-            setattr(self, f"norm2_{i}", nn.GroupNorm(4, out_chans))
+            setattr(self, f"norm2_{i}", _GroupNorm(4, out_chans))
             setattr(self, f"pool2_{i}", nn.AvgPool2d((1, 4)))
         self.gelu1 = activation()
         self.gelu2 = activation()
