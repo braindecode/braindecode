@@ -237,11 +237,9 @@ def preprocess(
         When ``save_dir`` is provided, controls whether to delete the old
         subdirectories that will be written to under ``save_dir``. If False and
         the corresponding subdirectories already exist, a ``FileExistsError`` is raised.
-        A recording read lazily from the subdirectory another recording is
-        saved into is refused before anything is processed. One that still
-        reads lazily from its own subdirectory when it is saved (the
-        preprocessors did not load its data) raises a ``ValueError`` before
-        that subdirectory is deleted; recordings saved before stay replaced.
+        A ``ValueError`` is raised before deleting a subdirectory that a
+        recording still reads lazily: load the data first or use another
+        ``save_dir``.
     n_jobs : int | None
         Number of jobs for parallel execution. See ``joblib.Parallel`` for details.
     offset : int
@@ -270,9 +268,8 @@ def preprocess(
     if save_dir is not None and not overwrite:
         _check_save_dir_empty(save_dir)
     elif save_dir is not None:
-        # Each recording is saved, its subdirectory deleted first, right after
-        # it is processed, in any order with joblib. Its own subdirectory is
-        # checked when it is saved; reading another one's is refused here.
+        # save() checks each recording's own subdirectory; joblib saves in any
+        # order, so reading another recording's subdirectory is refused here.
         for i_ds, i_target, target_dir in _overwrite_conflicts(
             concat_ds.datasets, save_dir, offset
         ):

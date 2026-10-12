@@ -812,20 +812,6 @@ def _save_recordings(path, n_recordings):
     return [ds.raw.get_data() for ds in stored.datasets]
 
 
-@pytest.mark.parametrize("n_jobs", [1, 2])
-def test_preprocess_overwrite_keeps_recordings_still_read_lazily(tmp_path, n_jobs):
-    """In place, preprocessors that leave the data lazy (crop) had each
-    recording deleted before mne refused to write it."""
-    signals = _save_recordings(tmp_path, n_recordings=3)
-    lazy = load_concat_dataset(str(tmp_path), preload=False)
-    crop = [Preprocessor("crop", tmax=4, include_tmax=False)]
-    with pytest.raises(ValueError):
-        preprocess(lazy, crop, save_dir=str(tmp_path), overwrite=True, n_jobs=n_jobs)
-    reloaded = load_concat_dataset(str(tmp_path), preload=True)
-    for ds, x in zip(reloaded.datasets, signals):
-        np.testing.assert_array_equal(ds.raw.get_data(), x)
-
-
 def test_preprocess_overwrite_in_place_once_the_data_is_loaded(tmp_path):
     """Preprocessors that load the data may still save it back in place."""
     signals = _save_recordings(tmp_path, n_recordings=2)
@@ -838,12 +824,14 @@ def test_preprocess_overwrite_in_place_once_the_data_is_loaded(tmp_path):
 
 
 @pytest.mark.parametrize("n_jobs", [1, 2])
-@pytest.mark.parametrize("ids_to_load", [[1, 0], [1, 2]])
-def test_preprocess_overwrite_across_recordings(tmp_path, ids_to_load, n_jobs):
-    """Recording i is saved into subdirectory i, deleting it first. With
-    ids_to_load=[1, 0] the second recording's file was replaced before it was
-    read, which wrote wrong data without an error; with [1, 2] recording 0,
-    never loaded, was deleted, and with joblib the order is not known."""
+@pytest.mark.parametrize("ids_to_load", [None, [1, 0], [1, 2]])
+def test_preprocess_overwrite_keeps_recordings_still_read_lazily(
+    tmp_path, ids_to_load, n_jobs
+):
+    """Recording i is saved into subdirectory i, deleting it first. A crop keeps
+    the data lazy, so in place it was deleted before being written; with
+    ids_to_load=[1, 0] wrong data was written silently, with [1, 2] the never
+    loaded recording 0 was deleted."""
     signals = _save_recordings(tmp_path, n_recordings=3)
     lazy = load_concat_dataset(str(tmp_path), preload=False, ids_to_load=ids_to_load)
     crop = [Preprocessor("crop", tmax=4, include_tmax=False)]

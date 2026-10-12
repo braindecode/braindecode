@@ -1282,11 +1282,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
 
 
 def _lazy_source_files(ds) -> list:
-    """Return the files ``ds`` reads its signal from on access.
-
-    Empty when the signal is in memory, the only state in which those files may
-    be replaced (mne refuses to save a lazily read object over its own file).
-    """
+    """Return the files ``ds`` still reads its signal from (none once preloaded)."""
     signal = ds.raw if hasattr(ds, "raw") else getattr(ds, "windows", None)
     if signal is None or getattr(signal, "preload", True):
         return []
@@ -1305,33 +1301,10 @@ def _dir_key(directory):
     return stat.st_dev, stat.st_ino
 
 
-def _containing_dir_keys(file):
-    """Identify every directory whose deletion removes ``file`` or its name."""
-    keys = set()
-    # the directory of the name (a symlink, say) and of the file it points to
-    for directory in {
-        os.path.dirname(os.path.abspath(file)),
-        os.path.dirname(os.path.realpath(file)),
-    }:
-        while True:
-            try:
-                keys.add(_dir_key(directory))
-            except OSError:
-                pass
-            parent = os.path.dirname(directory)
-            if parent == directory:
-                break
-            directory = parent
-    return keys
-
-
 def _overwrite_conflicts(datasets, path, offset):
-    """Find datasets that still read from a directory saving them deletes.
-
-    Saving ``datasets`` with ``overwrite=True`` deletes ``path/<i + offset>``
-    before writing dataset ``i`` into it. Yields ``(i_ds, i_target, target_dir)``
-    for each dataset ``i_ds`` that reads its data lazily from inside the
-    existing ``target_dir`` of dataset ``i_target``.
+    """Yield ``(i_ds, i_target, target_dir)`` for each dataset ``i_ds`` that
+    lazily reads from inside ``target_dir = path/<i_target + offset>``, which
+    ``save(overwrite=True)`` deletes before writing dataset ``i_target``.
     """
     targets = {}
     for i in range(len(datasets)):
@@ -1342,9 +1315,13 @@ def _overwrite_conflicts(datasets, path, offset):
         return
     for i_ds, ds in enumerate(datasets):
         for file in _lazy_source_files(ds):
-            for key in _containing_dir_keys(file):
-                if key in targets:
-                    yield (i_ds, *targets[key])
+            # ancestors of the name and of the file it links to (DataLad)
+            parents = {
+                *Path(os.path.abspath(file)).parents,
+                *Path(os.path.realpath(file)).parents,
+            }
+            for key in {_dir_key(p) for p in parents if p.is_dir()} & targets.keys():
+                yield (i_ds, *targets[key])
 
 
 @register_dataset
