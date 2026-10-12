@@ -13,6 +13,7 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath
+from braindecode.modules.attention import _scaled_dot_product_attention
 from braindecode.modules.convolution import Conv1dWithConstraint
 from braindecode.modules.linear import LinearWithConstraint
 from braindecode.util import resolve_montage_name
@@ -949,14 +950,17 @@ class _Attention(nn.Module):
         # 3. Flash Attention
         # Use PyTorch's optimized scaled_dot_product_attention (SDPA)
         # which internally uses FlashAttention or EfficientAttention kernels.
-        y = torch.nn.functional.scaled_dot_product_attention(
-            q,
-            k,
-            v,
-            attn_mask=None,
-            dropout_p=self.attn_drop.p if self.training else 0.0,
-            is_causal=self.is_causal,
-        )
+        dropout_p = self.attn_drop.p if self.training else 0.0
+        if self.is_causal:
+            y = torch.nn.functional.scaled_dot_product_attention(
+                q, k, v, attn_mask=None, dropout_p=dropout_p, is_causal=True
+            )
+        else:
+            # Gaudi's fused kernel also in lazy mode: faster for EEGPT's
+            # 23-token sequences except on the shortest inputs (256 samples).
+            y = _scaled_dot_product_attention(
+                q, k, v, dropout_p=dropout_p, fused_in_lazy=True
+            )
 
         # Reshape back: (batch, num_heads, seq_len, head_dim) -> (batch, seq_len, embed_dim)
         x = y.transpose(1, 2).flatten(2)
