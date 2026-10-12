@@ -4,6 +4,7 @@
 import warnings
 
 import torch
+import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
@@ -346,7 +347,19 @@ class _PatchEmbedding(nn.Module):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        x = self.shallownet(x)
+        # Nothing runs between the temporal and the spatial convolution, so
+        # they run as one convolution with the composed weight and bias (as
+        # CombinedConv does), without the (batch, filters, chans, time)
+        # intermediate.
+        conv_time, conv_spat = self.shallownet[0], self.shallownet[1]
+        bias_time, bias_spat = conv_time.bias, conv_spat.bias
+        assert bias_time is not None and bias_spat is not None
+        weight = (conv_time.weight * conv_spat.weight.permute(1, 0, 2, 3)).sum(0)
+        bias = conv_spat.weight.sum((2, 3)) @ bias_time + bias_spat
+        x = F.conv1d(x.squeeze(1), weight, bias).unsqueeze(2)
+        for i, layer in enumerate(self.shallownet):
+            if i > 1:
+                x = layer(x)
         x = self.projection(x)
         return x
 

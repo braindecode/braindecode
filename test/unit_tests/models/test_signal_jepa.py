@@ -646,3 +646,16 @@ class TestHFRoundTrip:
         assert torch.equal(
             reloaded.pos_encoder.default_ch_idxs, torch.tensor([0, 1, 2])
         )
+
+
+def test_training_encoder_matches_torch_encoder():
+    # The training path writes torch's encoder layers out to route attention
+    # through the shared SDPA helper: same outputs and dropout draws on CPU.
+    chs = [{"ch_name": n, "loc": [0.1 * i, 0.2 * i, 0.3 * i]} for i, n in enumerate("ABC")]
+    model = SignalJEPA(chs_info=chs, n_times=512, sfreq=128).train()
+    x = torch.randn(2, 12, 64)
+    torch.manual_seed(1)
+    ref = model.transformer.encoder(x)
+    torch.manual_seed(1)
+    out = model._encode_train(x)
+    torch.testing.assert_close(out, ref, rtol=0, atol=0)

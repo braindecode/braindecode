@@ -1576,6 +1576,46 @@ def test_codebrain_return_features():
     assert out["cls_token"] is None
 
 
+def test_codebrain_residual_group_skip_sum_equivalence_fp64():
+    # On HPU lazy mode _ResidualGroup aggregates the block skips with one
+    # n-ary torch.stack(skips).sum(0) (Gaudi's lazy graph compiler fails on
+    # the sequential sum's backward); elsewhere it keeps the sequential sum.
+    # The two forms must agree within fp64 rounding, outputs and grads.
+    from braindecode.models.codebrain import _ResidualGroup
+
+    torch.manual_seed(0)
+    group = _ResidualGroup(
+        8, 8, 4, s4_lmax=64, s4_d_state=8, s4_dropout=0.0,
+        s4_bidirectional=True, s4_layernorm=False,
+    ).double()
+    x = torch.randn(2, 8, 32, dtype=torch.float64, requires_grad=True)
+    out_seq = group(x)
+    loss_seq = out_seq.square().mean()
+    # allow_unused: e.g. SGConv layernorm weights when s4_layernorm=False.
+    grads_seq = torch.autograd.grad(
+        loss_seq, list(group.parameters()) + [x], allow_unused=True
+    )
+    # Reference: same blocks, n-ary stack-sum aggregation (the HPU formula).
+    x2 = x.detach().clone().requires_grad_(True)
+    h, noise, skips = x2, x2, []
+    for block in group.residual_blocks:
+        h, skip_n = block((h, noise))
+        skips.append(skip_n)
+    out_stack = torch.stack(skips, dim=0).sum(dim=0) * (1.0 / 4) ** 0.5
+    loss_stack = out_stack.square().mean()
+    grads_stack = torch.autograd.grad(
+        loss_stack, list(group.parameters()) + [x2], allow_unused=True
+    )
+    scale = out_seq.detach().abs().max()
+    assert ((out_seq - out_stack).abs().max() / scale) < 1e-12
+    for g_seq, g_stack in zip(grads_seq, grads_stack):
+        assert (g_seq is None) == (g_stack is None)
+        if g_seq is None:
+            continue
+        denom = max(g_seq.detach().abs().max().item(), 1e-300)
+        assert ((g_seq - g_stack).abs().max().item() / denom) < 1e-10
+
+
 def test_codebrain_trains_after_inference_mode():
     # The lazily initialised kernel norm must not become an inference tensor.
     model = CodeBrain(n_chans=2, n_outputs=2, n_times=400).eval()
