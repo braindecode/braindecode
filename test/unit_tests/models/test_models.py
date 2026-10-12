@@ -99,7 +99,7 @@ from braindecode.models.eegpt import (
     _PatchEmbed,
     _rotate_half,
 )
-from braindecode.models.gcnsnet import _GraphCoarsening
+from braindecode.models.gcnsnet import _cluster_one_level, _compute_perm
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.neurorvq_tokenizer import _EMAVectorQuantizer
 from braindecode.models.usleep import _DecoderBlock
@@ -1831,51 +1831,37 @@ def test_channels_without_positions_give_finite_outputs(name):
         assert torch.isfinite(model(torch.randn(2, 4, 1000))).all()
 
 
-@pytest.mark.parametrize(
-    "n_times, n_chans, n_outputs",
-    [
-        (128, 64, 2),
-        (256, 128, 4),
-    ],
-)
-def test_gcnsnet_dummy(n_times, n_chans, n_outputs):
-    batch_size = 8
-
-    model = GCNsNet(
-        n_chans=n_chans,
-        n_outputs=n_outputs,
-        n_times=n_times,
-    )
-
-    x = torch.randn(batch_size, n_chans, n_times)
-    output = model(x)
-
-    assert output.shape == (batch_size, n_outputs)
-
-
-def test_gcnsnet_infer_model_kwargs():
-    X = torch.randn(5, 64, 100)
-
-    model_kwargs = GCNsNet._infer_model_kwargs(X)
-
-    expected_adjacency = GCNsNet._adjacency(X)
-
-    assert model_kwargs.keys() == {"adjacency"}
-    torch.testing.assert_close(
-        model_kwargs["adjacency"],
-        expected_adjacency,
-    )
-
-
 def test_gcnsnet_adjacency():
     X = torch.randn(5, 64, 100)
-
     adjacency = GCNsNet._adjacency(X)
-
     assert adjacency.shape == (64, 64)
     torch.testing.assert_close(adjacency, adjacency.T)
     torch.testing.assert_close(adjacency.diag(), torch.zeros(64))
     assert torch.all(adjacency >= 0)
+    inferred = GCNsNet._infer_model_kwargs(X)
+    assert inferred.keys() == {"adjacency"}
+    torch.testing.assert_close(inferred["adjacency"], adjacency)
+
+
+def test_gcnsnet_fit_on_windows_dataset():
+    """A dataset has no array to correlate: the first batch gives the graph."""
+    from braindecode import EEGClassifier
+    from braindecode.datasets import create_from_X_y
+
+    rng = np.random.RandomState(0)
+    X = rng.randn(8, 4, 32).astype(np.float32)
+    dataset = create_from_X_y(X, rng.randint(0, 2, 8), False, sfreq=100)
+    net = EEGClassifier(
+        GCNsNet,
+        module__n_features=(4, 8),
+        module__cheb_orders=(2, 2),
+        module__pool_sizes=(2, 2),
+        train_split=None,
+        max_epochs=1,
+        batch_size=4,
+    )
+    net.fit(dataset, y=None)
+    assert net.module_.graph_initialized
 
 
 @pytest.mark.parametrize(
@@ -1884,29 +1870,19 @@ def test_gcnsnet_adjacency():
         pytest.param(
             [0, 1, 2, 3, 4],
             [0, 1, 0, 1, 2],
-            [
-                [1.6, 0.9, 0.0],
-                [0.9, 1.6, 0.7],
-                [0.0, 0.7, 0.0],
-            ],
+            [[1.6, 0.9, 0.0], [0.9, 1.6, 0.7], [0.0, 0.7, 0.0]],
             id="forward-order",
         ),
         pytest.param(
             [4, 3, 2, 1, 0],
             [2, 0, 2, 1, 0],
-            [
-                [1.4, 0.8, 0.9],
-                [0.8, 0.0, 0.0],
-                [0.9, 0.0, 1.6],
-            ],
+            [[1.4, 0.8, 0.9], [0.8, 0.0, 0.0], [0.9, 0.0, 1.6]],
             id="reverse-order",
         ),
     ],
 )
 def test_gcnsnet_graph_coarsening_one_level(
-    node_order,
-    expected_clusters,
-    expected_adjacency,
+    node_order, expected_clusters, expected_adjacency
 ):
     adjacency = torch.tensor(
         [
@@ -1917,28 +1893,12 @@ def test_gcnsnet_graph_coarsening_one_level(
             [0.0, 0.7, 0.0, 0.0, 0.0],
         ]
     )
-    node_order = torch.tensor(node_order)
     weights = adjacency.sum(dim=0) - adjacency.diagonal()
-
-    coarsening = _GraphCoarsening()
-    clusters = coarsening._cluster_one_level(
-        adjacency,
-        node_order,
-        weights,
-    )
-
+    clusters = _cluster_one_level(adjacency, torch.tensor(node_order), weights)
+    torch.testing.assert_close(clusters, torch.tensor(expected_clusters))
+    membership = torch.nn.functional.one_hot(clusters).float()
     torch.testing.assert_close(
-        clusters,
-        torch.tensor(expected_clusters),
-    )
-
-    coarsened_adjacency = coarsening._coarsen_adjacency(
-        adjacency,
-        clusters,
-    )
-    torch.testing.assert_close(
-        coarsened_adjacency,
-        torch.tensor(expected_adjacency),
+        membership.T @ adjacency @ membership, torch.tensor(expected_adjacency)
     )
 
 
@@ -1947,15 +1907,11 @@ def test_gcnsnet_compute_perm():
         torch.tensor([4, 1, 1, 2, 2, 3, 0, 0, 3]),
         torch.tensor([2, 1, 0, 1, 0]),
     ]
-
-    permutations = _GraphCoarsening()._compute_perm(clusters)
-
-    expected_permutations = [
+    assert _compute_perm(clusters) == [
         [3, 4, 0, 9, 1, 2, 5, 8, 6, 7, 10, 11],
         [2, 4, 1, 3, 0, 5],
         [0, 1, 2],
     ]
-    assert permutations == expected_permutations
 
 
 @pytest.mark.parametrize(
@@ -1983,79 +1939,44 @@ def test_gcnsnet_invalid_pool_sizes(pool_sizes):
         )
 
 
-def test_gcnsnet_variable_pool_sizes():
+@pytest.mark.parametrize(
+    "n_chans, pool_sizes", [(64, (1, 2, 4, 2)), (128, (2, 2, 2, 2))]
+)
+def test_gcnsnet_layer_shapes(n_chans, pool_sizes):
     model = GCNsNet(
-        n_chans=64,
+        n_chans=n_chans,
         n_outputs=4,
         n_times=128,
         n_features=(8, 16, 32, 64),
         cheb_orders=(2, 2, 2, 2),
-        pool_sizes=(1, 2, 4, 2),
-    )
-
-    x = torch.randn(2, 64, 128)
-    output = model(x)
-
-    assert output.shape == (2, 4)
-
-
-def test_gcnsnet_node_biases():
-    model = GCNsNet(
-        n_chans=64,
-        n_outputs=4,
-        n_times=128,
-    )
-    model.eval()
-
+        pool_sizes=pool_sizes,
+    ).eval()
     with torch.no_grad():
-        model(torch.randn(2, 64, 128))
-
-    for i, (bias, n_feature) in enumerate(
-        zip(model.biases, model.n_features)
+        assert model(torch.randn(2, n_chans, 128)).shape == (2, 4)
+    for bias, laplacian, n_feature in zip(
+        model.biases, model.laplacians, model.n_features
     ):
-        n_nodes = model.laplacians[i].matrix.shape[0]
-
-        assert bias.bias.shape == (1, n_nodes, n_feature)
-        torch.testing.assert_close(
-            bias.bias,
-            torch.full_like(bias.bias, 0.1),
-        )
+        assert bias.bias.shape == (1, laplacian.matrix.shape[0], n_feature)
+        torch.testing.assert_close(bias.bias, torch.full_like(bias.bias, 0.1))
 
 
 def test_gcnsnet_state_dict_round_trip():
     torch.manual_seed(0)
-
     model = GCNsNet(n_chans=64, n_outputs=4, n_times=128).eval()
     x = torch.randn(2, 64, 128)
-
     with torch.no_grad():
         expected = model(x)
+    state_dict = model.state_dict()
 
     restored = GCNsNet(n_chans=64, n_outputs=4, n_times=128).eval()
-    restored.load_state_dict(model.state_dict())
-
+    restored.load_state_dict(state_dict)
     with torch.no_grad():
-        actual = restored(x)
+        torch.testing.assert_close(restored(x), expected)
+    torch.testing.assert_close(restored.permutation, model.permutation)
 
-    torch.testing.assert_close(actual, expected)
-    torch.testing.assert_close(
-        restored.permutation, model.permutation
-    )
-
-
-def test_gcnsnet_incomplete_graph_state():
-    model = GCNsNet(n_chans=64, n_outputs=4, n_times=128).eval()
-
-    with torch.no_grad():
-        model(torch.randn(2, 64, 128))
-
-    state_dict = model.state_dict()
     state_dict.pop("permutation")
-
-    restored = GCNsNet(n_chans=64, n_outputs=4, n_times=128)
-
     with pytest.raises(RuntimeError, match="Incomplete GCNsNet graph state"):
-        restored.load_state_dict(state_dict)
+        GCNsNet(n_chans=64, n_outputs=4, n_times=128).load_state_dict(state_dict)
 
 
 @pytest.mark.parametrize(

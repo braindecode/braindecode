@@ -201,32 +201,19 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         if classes is None:
             classes = getattr(self, "classes", None)
         signal_kwargs = infer_signal_properties(X, y, mode=self.mode, classes=classes)
-
         module = _get_model(self.module)
-
-        model_kwargs = {}
+        # Model-specific values computed from the data (e.g. GCNsNet's graph);
+        # the signal properties take precedence.
         infer_model_kwargs = getattr(module, "_infer_model_kwargs", None)
-        if callable(infer_model_kwargs):
-            model_kwargs = infer_model_kwargs(X, y)
-
-        # Ensure model parameters do not override signal-inferred parameters.
-        model_kwargs = {
-            param_key: value
-            for param_key, value in model_kwargs.items()
-            if param_key not in signal_kwargs
-        }
-
-        inferred_kwargs = {
-            **signal_kwargs,
-            **model_kwargs,
-        }
-        if not inferred_kwargs:
+        if infer_model_kwargs is not None:
+            signal_kwargs = {**infer_model_kwargs(X, y), **signal_kwargs}
+        if not signal_kwargs:
             return
 
         # kick out missing kwargs:
         module_kwargs = dict()
         all_module_kwargs = inspect.signature(module.__init__).parameters.keys()
-        for k, v in inferred_kwargs.items():
+        for k, v in signal_kwargs.items():
             if v is None:
                 continue
             if k in all_module_kwargs:

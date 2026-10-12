@@ -2,32 +2,14 @@
 #          Seáic Mac Murchadha <seaicmacmurchadha@yahoo.com> (braindecode adaptation)
 #
 # License: MIT
-#
-# Copyright (c) 2020 Shuyue Jia
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
+# Adapted from https://github.com/SuperBruceJia/EEG-DL (MIT).
 
 from __future__ import annotations
 
 from math import log2
 
 import mne
+import numpy as np
 import torch
 import torch.nn.functional as F
 from scipy.sparse.csgraph import laplacian
@@ -35,211 +17,11 @@ from torch import nn
 from torch.nn.modules.lazy import LazyModuleMixin
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.dgcnn import _ChebyshevGraphConvolution
-
-
-class _NodeBias(LazyModuleMixin, nn.Module):
-    """One bias per vertex per filter."""
-
-    def __init__(self):
-        super().__init__()
-        self.bias = nn.UninitializedParameter()
-
-    def initialize_parameters(self, x):
-        if self.has_uninitialized_params():
-            self.bias.materialize((1, x.shape[1], x.shape[2]))
-            nn.init.constant_(self.bias, 0.1)
-
-    def forward(self, x):
-        return x + self.bias
-
-
-class _LaplacianModule(nn.Module):
-    """Registered Laplacian matrix for one graph-convolution layer."""
-
-    def __init__(self):
-        super().__init__()
-        self.register_buffer("matrix", None)
-
-
-class _GraphCoarsening:
-    """
-    To carry out pooling to reduce dimensionality, the Graclus multilevel
-    clustering algorithm is performed.
-    """
-
-    def __call__(self, adjacency, levels):
-        adjacencies, clusters = self._metis(
-            adjacency,
-            levels,
-        )
-
-        permutations = self._compute_perm(clusters)
-
-        for adjacency_matrix in adjacencies:
-            adjacency_matrix.fill_diagonal_(0)
-
-        for i in range(levels):
-            adjacencies[i] = self._perm_adjacency(
-                adjacencies[i],
-                permutations[i],
-            )
-
-        return adjacencies, permutations[0] if levels > 0 else None
-
-    @staticmethod
-    def _cluster_one_level(adjacency, node_order, weights):
-        n_nodes = adjacency.shape[0]
-
-        marked = torch.zeros(
-            n_nodes,
-            dtype=torch.bool,
-            device=adjacency.device,
-        )
-        clusters = torch.empty(
-            n_nodes,
-            dtype=torch.long,
-            device=adjacency.device,
-        )
-
-        cluster_id = 0
-
-        for node in node_order.tolist():
-            if marked[node]:
-                continue
-
-            marked[node] = True
-            clusters[node] = cluster_id
-
-            neighbors = torch.nonzero(
-                adjacency[node],
-                as_tuple=True,
-            )[0]
-            neighbors = neighbors[~marked[neighbors]]
-
-            if neighbors.numel() > 0:
-                scores = adjacency[node, neighbors] * (
-                    1.0 / weights[node] + 1.0 / weights[neighbors]
-                )
-
-                best_index = torch.argmax(scores)
-
-                if scores[best_index] > 0:
-                    best_neighbor = neighbors[best_index]
-                    clusters[best_neighbor] = cluster_id
-                    marked[best_neighbor] = True
-
-            cluster_id += 1
-
-        return clusters
-
-    def _metis(self, adjacency, levels):
-        adjacencies = [adjacency]
-        clusters = []
-
-        n_nodes = adjacency.shape[0]
-        node_order = torch.randperm(
-            n_nodes,
-            device=adjacency.device,
-        )
-        degree = adjacency.sum(dim=0) - adjacency.diagonal()
-
-        for _ in range(levels):
-            cluster = self._cluster_one_level(
-                adjacency,
-                node_order,
-                degree,
-            )
-            clusters.append(cluster)
-
-            adjacency = self._coarsen_adjacency(
-                adjacency,
-                cluster,
-            )
-            adjacencies.append(adjacency)
-
-            degree = adjacency.sum(dim=0)
-            node_order = torch.argsort(degree)
-
-        return adjacencies, clusters
-
-    def _coarsen_adjacency(self, adjacency, clusters):
-        n_clusters = int(clusters.max().item()) + 1
-
-        membership = nn.functional.one_hot(
-            clusters,
-            num_classes=n_clusters,
-        ).to(adjacency.dtype)
-
-        coarsened_adjacency = membership.T @ adjacency @ membership
-
-        return coarsened_adjacency
-
-    def _compute_perm(self, parents):
-        """
-        Return a list of indices to reorder the adjacency and data matrices so
-        that the union of two neighbors from layer to layer forms a binary tree.
-        """
-
-        # Order of last layer is arbitrary (chosen by the clustering algorithm).
-        indices = []
-        if len(parents) > 0:
-            M_last = int(parents[-1].max().item()) + 1
-            indices.append(list(range(M_last)))
-
-        for parent in parents[::-1]:
-            # Fake nodes go after real ones.
-            pool_singletons = len(parent)
-
-            indices_layer = []
-            for i in indices[-1]:
-                indices_node = torch.where(parent == i)[0].tolist()
-
-                if len(indices_node) == 1:
-                    # Add a node to go with a singleton.
-                    indices_node.append(pool_singletons)
-                    pool_singletons += 1
-
-                elif len(indices_node) == 0:
-                    # Add two nodes as children of a singleton in the parent.
-                    indices_node.append(pool_singletons + 0)
-                    indices_node.append(pool_singletons + 1)
-                    pool_singletons += 2
-
-                indices_layer.extend(indices_node)
-            indices.append(indices_layer)
-
-        return indices[::-1]
-
-    def _perm_adjacency(self, adjacency, indices):
-        """
-        Permute adjacency matrix, i.e. exchange node ids,
-        so that binary unions form the clustering tree.
-        """
-        n_nodes = adjacency.shape[0]
-        n_nodes_new = len(indices)
-
-        # Add isolated fake nodes for padding.
-        if n_nodes_new > n_nodes:
-            padding = n_nodes_new - n_nodes
-            adjacency = F.pad(
-                adjacency,
-                (0, padding, 0, padding),
-            )
-
-        indices = torch.tensor(
-            indices,
-            dtype=torch.long,
-            device=adjacency.device,
-        )
-
-        return adjacency[indices][:, indices]
+from braindecode.models.dgcnn import _GraphConvolution
 
 
 class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
-    r"""GCNs-Net: A Graph Convolutional Neural Network
-    Approach for Decoding Time-resolved EEG Motor
-    Imagery Signals from Hou et al. (2022) [hou2022gcns]_.
+    r"""GCNs-Net from Hou et al. (2022) [hou2022gcns]_.
 
     :bdg-light:`Graph Neural Network` :bdg-dark-line:`Channel`
 
@@ -248,100 +30,34 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         :alt: GCNs-Net Architecture
         :width: 600px
 
-    .. rubric:: Architectural Overview
+    Every time sample of a ``(n_chans, n_times)`` window is classified as a
+    graph signal over the electrodes, and the logits are averaged over time.
+    The graph is the absolute Pearson correlation between channels,
+    :math:`A = |P| - I`, coarsened with Graclus so that each pooling layer
+    merges pairs of nodes. Each layer is a Chebyshev graph convolution on the
+    rescaled normalized Laplacian :math:`L = I - D^{-1/2} A D^{-1/2}`,
+    followed by a per-node bias, batch normalization, the activation and
+    graph max pooling; a linear layer gives the logits.
 
-    GCNs-Net is a *graph-based* architecture that models EEG channels as nodes
-    in a graph. It has been introduced as a novel structure of GCNs to decode
-    EEG MI signals. The end-to-end flow is:
-
-    - (i) based on the absolute Pearson's matrix (PCC) of overall signals, the
-          graph Laplacian is built up to represent the topological relationship of
-          EEG electrodes.
-    - (ii) GCNs-Net built on the graph convolutional layers learns the
-           generalized features.
-    - (iii) followed pooling layers reduce dimensionality.
-    - (iv) fully-connected (FC) softmax layer derives the final prediction.
-
-    The framework of this work, as shown in Fig. 1.:
-
-    - (i) 64-channel raw EEG signals are acquired as one of the inputs of the
-          GCNs-Net.
-    - (ii) The PCC matrix, absolute PCC matrix, adjacency matrix, and graph
-           Laplacian are introduced to represent the correlations between electrodes.
-    - (iii) The graph representation, another input of the GCNs-Net, is
-            represented by the graph Laplacian.
-    - (iv) The GCNs-Net is applied to decode EEG MI signals, where N denotes
-           the number of electrodes and l denotes the lth graph pooling layer.
-
-    .. rubric:: Macro Components
-
-    An undirected and weighted graph is represented by :math:`G = \{V,E,A\}`,
-    in which :math:`V` denotes a set of nodes with the number :math:`|V| = N`,
-    :math:`E` denotes a set of edges connecting nodes, and
-    :math:`A \in R^{N \times N}` is a weighted adjacency matrix
-    representing correlations between two nodes.
-
-    To present the degree matrix of a graph, the scale of the graph weights
-    is analysed regardless of the polar relevance, i.e., whether the
-    correlations are positive or negative. So the absolute Pearson
-    Correlation Coefficient (PCC) matrix :math:`|P| \in [0,1]` is introduced,
-    which is the absolute of the PCC matrix :math:`P`, to map the linear
-    correlations between signals.
-
-    :math:`A` is represented as
-
-    .. math::
-
-        A = |P| - I
-
-    where :math:`I` is an identity matrix.
-
-    Furthermore, the degree matrix :math:`D` is obtained, which is a diagonal
-    matrix, and the i-th diagonal element can be computed by:
-
-    .. math::
-
-        D_{ii} = \sum_{j=1}^{N} A_{ij}
-
-    Finally, the combinatorial Laplacian :math:`L \in R^{N \times N}` is
-    represented as
-
-    .. math::
-
-        L = D - A
-
-    And the normalized graph Laplacian
-
-    .. math::
-
-        L = I_N - D^{-1/2} A D^{-1/2}
-
-    represents the correlations between nodes.
+    `License <https://github.com/SuperBruceJia/EEG-DL/blob/master/LICENSE>`_
 
     Parameters
     ----------
-    chs_info : list of dict, optional
-        Information about each channel, typically obtained from
-        ``mne.Info['chs']``.
     adjacency : Tensor, optional
-        Adjacency matrix of shape (n_chans, n_chans). If not provided, adjacency
-        is inferred from the data passed to ``EEGClassifier.fit`` or
-        ``EEGRegressor.fit``, or the first input passed to ``forward``
-        when the model is used directly.
+        Adjacency matrix of shape (n_chans, n_chans). If not provided, it is
+        computed from the array passed to ``EEGClassifier.fit`` /
+        ``EEGRegressor.fit``, otherwise from the first input passed to
+        ``forward``.
     n_features : tuple of int, default=(16, 32, 64, 128, 256, 512)
-        Number of features.
+        Number of filters of each graph convolution.
     cheb_orders : tuple of int, default=(2, 2, 2, 2, 2, 2)
-        Order :math:`K` of the Chebyshev polynomial approximation.
+        Order :math:`K` of the Chebyshev polynomial of each layer.
     pool_sizes : tuple of int, default=(2, 2, 2, 2, 2, 2)
-        Pooling size. Should be 1 (no pooling) or a power of 2
-        (reduction by 2 at each coarser level). Beware to have
-        coarsened enough.
+        Graph pooling size of each layer, 1 (no pooling) or a power of 2.
     activation : nn.Module, default=nn.Softplus
-        Activation function class. Use a PyTorch activation module,
-        default=``nn.Softplus``.
+        Activation function class.
     drop_prob : float, default=0.0
-        Dropout probability. Optional dropout is applied before the final
-        classification layer.
+        Dropout probability before the final layer.
 
     References
     ----------
@@ -375,227 +91,110 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
             sfreq=sfreq,
             input_window_seconds=input_window_seconds,
         )
-
         del n_outputs, n_chans, n_times, input_window_seconds, sfreq
 
         if not (len(n_features) == len(cheb_orders) == len(pool_sizes) != 0):
             raise ValueError(
-                "n_features, cheb_orders, and pool_sizes must be of the same, non-zero length. "
-                "Each value is for a layer of the corresponding index order. "
-                "At least one layer must be present. "
+                "n_features, cheb_orders and pool_sizes must have the same, "
+                "non-zero length (one value per layer)."
             )
-
-        invalid_pool_sizes = [
-            pool_size
-            for pool_size in pool_sizes
-            if (pool_size <= 0 or (pool_size & (pool_size - 1)))
-        ]
-        if invalid_pool_sizes:
-            raise ValueError(
-                "pool_sizes must be 1 or powers of 2. "
-                f"Invalid pool sizes: {', '.join([str(invalid_ps) for invalid_ps in invalid_pool_sizes])}."
-            )
+        if any(p < 1 or p & (p - 1) for p in pool_sizes):
+            raise ValueError(f"pool_sizes must be 1 or powers of 2, got {pool_sizes}.")
 
         self.n_features = n_features
         self.cheb_orders = cheb_orders
         self.pool_sizes = pool_sizes
         self.graph_initialized = False
         self.register_buffer("permutation", None)
-        self.dropout = nn.Dropout(drop_prob)
-
-        self.graph_coarsening = _GraphCoarsening()
-
         self.laplacians = nn.ModuleList([_LaplacianModule() for _ in n_features])
-
         if adjacency is not None:
-            adjacency = torch.as_tensor(
-                adjacency,
-                dtype=torch.float32,
-            )
-            self._initialize_graph(adjacency)
+            self._initialize_graph(torch.as_tensor(adjacency, dtype=torch.float32))
 
-        # Implement Graph Convolutional Neural Network layers.
-        self.graph_convs = nn.ModuleList()
-
-        in_features = 1  # Single scalar input to first layer
-        for out_features, cheb_order in zip(n_features, cheb_orders):
-            self.graph_convs.append(
-                _ChebyshevGraphConvolution(
-                    in_features=in_features,
-                    out_features=out_features,
-                    cheb_order=cheb_order,
-                )
-            )
-            in_features = out_features
-
-        # Bias, batch normalization and activation of each layer.
-        self.biases = nn.ModuleList([_NodeBias() for _ in n_features])
-
-        self.batch_norms = nn.ModuleList(
-            [nn.BatchNorm1d(n_feature) for n_feature in n_features]
+        in_features = [1, *n_features[:-1]]  # one scalar per node at the input
+        self.graph_convs = nn.ModuleList(
+            _GraphConvolution(f_in, f_out, k)
+            for f_in, f_out, k in zip(in_features, n_features, cheb_orders)
         )
-
+        self.biases = nn.ModuleList([_NodeBias() for _ in n_features])
+        self.batch_norms = nn.ModuleList([nn.BatchNorm1d(f) for f in n_features])
         self.activation = activation()
-
-        # Final classification layer.
+        self.dropout = nn.Dropout(drop_prob)
         self.final_layer = nn.LazyLinear(self.n_outputs)
 
         self.register_load_state_dict_pre_hook(self._prepare_graph_state)
 
     @classmethod
     def _infer_model_kwargs(cls, X, y=None):
+        """Adjacency of the whole training array (hook of ``EEGClassifier``)."""
         if isinstance(X, mne.BaseEpochs):
             X = X.get_data(units="uV")
-
-        x = torch.as_tensor(X, dtype=torch.float32)
-        adjacency = cls._adjacency(x)
-
-        return {"adjacency": adjacency}
+        if not isinstance(X, (np.ndarray, torch.Tensor)):
+            # Datasets: the first training batch gives the graph in forward.
+            return {}
+        return {"adjacency": cls._adjacency(torch.as_tensor(X, dtype=torch.float32))}
 
     @staticmethod
     def _adjacency(x):
-        """Compute the adjacency matrix from EEG data."""
-        signals = x.transpose(0, 1).flatten(1)
-
-        pcc = torch.corrcoef(signals)
-
-        adjacency = pcc.abs()
+        """Absolute Pearson correlation between channels, zero diagonal."""
+        adjacency = torch.corrcoef(x.transpose(0, 1).flatten(1)).abs()
         adjacency.fill_diagonal_(0)
-
         return adjacency
-
-    def _laplacian(self, adjacency):
-        """Compute the normalized graph Laplacian from the adjacency matrix."""
-        laplacian_matrix = laplacian(
-            adjacency.detach().cpu().numpy(),
-            normed=True,
-        )
-
-        return torch.as_tensor(
-            laplacian_matrix,
-            dtype=adjacency.dtype,
-            device=adjacency.device,
-        )
 
     @staticmethod
     def _compute_pooling_levels(pool_sizes):
-        """Compute the graph coarsening level used by each convolution."""
-        levels: list[int] = []
-        level = 0
-
-        for pool_size in pool_sizes:
-            levels.append(level)
-            level += int(log2(pool_size))
-
+        """Graph coarsening level each convolution runs on."""
+        levels = [0]
+        for pool_size in pool_sizes[:-1]:
+            levels.append(levels[-1] + int(log2(pool_size)))
         return levels
 
     def _initialize_graph(self, adjacency):
-        pooling_levels = self._compute_pooling_levels(self.pool_sizes)
-        n_pooling_levels = pooling_levels[-1]
-
-        adjacencies, permutation = self.graph_coarsening(
-            adjacency,
-            levels=n_pooling_levels,
-        )
-
+        levels = self._compute_pooling_levels(self.pool_sizes)
+        n_levels = levels[-1]
+        adjacencies, permutation = _coarsen(adjacency, n_levels)
         self.permutation = (
             torch.tensor(permutation, dtype=torch.long, device=adjacency.device)
-            if permutation is not None
+            if n_levels > 0
             else None
         )
-
-        for i, level in enumerate(pooling_levels):
-            laplacian_matrix = self._laplacian(adjacencies[level])
-            laplacian_matrix = self._rescale_laplacian(laplacian_matrix)
-            self.laplacians[i].matrix = laplacian_matrix
-
+        for laplacian_module, level in zip(self.laplacians, levels):
+            normalized = laplacian(
+                adjacencies[level].detach().cpu().numpy(), normed=True
+            )
+            normalized = torch.as_tensor(
+                normalized, dtype=adjacency.dtype, device=adjacency.device
+            )
+            # Rescale the spectrum from [0, 2] to [-1, 1] (lmax = 2).
+            identity = torch.eye(
+                len(normalized), dtype=normalized.dtype, device=normalized.device
+            )
+            laplacian_module.matrix = normalized - identity
         self.graph_initialized = True
 
-        return adjacencies, permutation
-
-    def _max_pool(self, x: torch.Tensor, pool_size: int) -> torch.Tensor:
-        """Max pooling of size pool_size. Should be a power of 2."""
-        if pool_size > 1:
-            x = x.transpose(1, 2)
-            x = nn.functional.max_pool1d(
-                x,
-                kernel_size=pool_size,
-                stride=pool_size,
-                ceil_mode=True,
-            )
-            x = x.transpose(1, 2)
-
-        return x
-
-    def _rescale_laplacian(self, laplacian_matrix):
-        """Rescale Laplacian, without modifying the input Laplacian."""
-        identity = torch.eye(
-            laplacian_matrix.shape[0],
-            dtype=laplacian_matrix.dtype,
-            device=laplacian_matrix.device,
-        )
-
-        return laplacian_matrix - identity
-
-    @staticmethod
-    def _perm_data(x: torch.Tensor, indices: torch.Tensor | None) -> torch.Tensor:
-        """
-        Permute data matrix, i.e. exchange node ids,
-        so that binary unions form the clustering tree.
-        """
-        if indices is None:
-            return x
-
-        n_nodes = x.shape[1]
-        n_nodes_new = indices.numel()
-
-        if n_nodes_new > n_nodes:
-            padding = n_nodes_new - n_nodes
-            x = F.pad(x, (0, padding))
-
-        return x[:, indices]
-
     def _prepare_graph_state(self, module, state_dict, prefix, *_):
-        graph_keys = [
-            f"{prefix}laplacians.{i}.matrix" for i in range(len(self.laplacians))
-        ]
-
-        if self._compute_pooling_levels(self.pool_sizes)[-1] > 0:
-            graph_keys.append(f"{prefix}permutation")
-
-        present = [key in state_dict for key in graph_keys]
-
+        """Allocate the graph buffers a checkpoint holds before loading it."""
+        reference = next(self.parameters())
+        keys = [f"{prefix}laplacians.{i}.matrix" for i in range(len(self.laplacians))]
+        has_pooling = self._compute_pooling_levels(self.pool_sizes)[-1] > 0
+        if has_pooling:
+            keys.append(f"{prefix}permutation")
+        present = [key in state_dict for key in keys]
         if any(present) and not all(present):
             raise RuntimeError("Incomplete GCNsNet graph state in checkpoint.")
-
-        reference = next(self.parameters())
-
-        for i, laplacian_module in enumerate(self.laplacians):
-            key = f"{prefix}laplacians.{i}.matrix"
-            if key in state_dict:
-                laplacian_module.matrix = torch.empty_like(
-                    state_dict[key],
-                    device=reference.device,
-                    dtype=reference.dtype,
-                )
-
-        key = f"{prefix}permutation"
-        if key in state_dict:
-            self.permutation = torch.empty_like(
-                state_dict[key], device=reference.device
+        if not all(present):
+            return
+        for laplacian_module, key in zip(self.laplacians, keys):
+            laplacian_module.matrix = torch.empty_like(
+                state_dict[key], device=reference.device, dtype=reference.dtype
             )
-
-        self.graph_initialized = all(
-            laplacian.matrix is not None for laplacian in self.laplacians
-        ) and (
-            self.permutation is not None
-            or self._compute_pooling_levels(self.pool_sizes)[-1] == 0
-        )
+        if has_pooling:
+            self.permutation = torch.empty_like(
+                state_dict[f"{prefix}permutation"], device=reference.device
+            )
+        self.graph_initialized = True
 
     def forward(self, x) -> torch.Tensor:
         """
-        Forward pass of the GCNs-Net model.
-
         Parameters
         ----------
         x : torch.Tensor
@@ -612,14 +211,15 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
                     "GCNsNet graph must be initialized before scripted inference."
                 )
         elif not self.graph_initialized:
-            adjacency = self._adjacency(x)
-            self._initialize_graph(adjacency)
+            self._initialize_graph(self._adjacency(x))
 
         batch_size, n_chans, n_times = x.shape
-
-        x = x.transpose(1, 2)
-        x = x.reshape(batch_size * n_times, n_chans)
-        x = self._perm_data(x, self.permutation)
+        # Each time sample is one graph signal: (batch * n_times, nodes, 1).
+        x = x.transpose(1, 2).reshape(batch_size * n_times, n_chans)
+        permutation = self.permutation
+        if permutation is not None:
+            # Fake nodes added by the coarsening are zero-padded.
+            x = F.pad(x, (0, permutation.numel() - n_chans))[:, permutation]
         x = x.unsqueeze(-1)
 
         for graph_conv, bias, batch_norm, laplacian_module, pool_size in zip(
@@ -629,23 +229,108 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
             self.laplacians,
             self.pool_sizes,
         ):
-            if laplacian_module.matrix is None:
-                raise RuntimeError("GCNsNet graph Laplacians are not initialized.")
+            matrix = laplacian_module.matrix
+            assert matrix is not None
+            x = bias(graph_conv(x, matrix))
+            x = self.activation(batch_norm(x.transpose(1, 2)))
+            # Pooling merges the node pairs of the coarsening tree.
+            x = F.max_pool1d(x, pool_size, ceil_mode=True).transpose(1, 2)
 
-            x = graph_conv(x, laplacian_module.matrix)
+        x = self.final_layer(self.dropout(x.flatten(1)))
+        # Average the per-sample logits over time.
+        return x.reshape(batch_size, n_times, self.n_outputs).mean(dim=1)
 
-            x = bias(x)
-            x = batch_norm(x.transpose(1, 2)).transpose(1, 2)
-            x = self.activation(x)
 
-            x = self._max_pool(x, pool_size)
+class _NodeBias(LazyModuleMixin, nn.Module):
+    """One bias per node per filter (EEG-DL ``b2relu``), sized at first call."""
 
-        x = torch.flatten(x, 1)
-        x = self.dropout(x)
-        x = self.final_layer(x)
+    def __init__(self):
+        super().__init__()
+        self.bias = nn.UninitializedParameter()
 
-        # Restore dimensions via averaging predictions with respect to time.
-        x = x.reshape(batch_size, n_times, self.n_outputs)
-        x = x.mean(dim=1)
+    def initialize_parameters(self, x):
+        if self.has_uninitialized_params():
+            self.bias.materialize((1, x.shape[1], x.shape[2]))
+            nn.init.constant_(self.bias, 0.1)
 
-        return x
+    def forward(self, x):
+        return x + self.bias
+
+
+class _LaplacianModule(nn.Module):
+    """Laplacian buffer of one layer (sizes differ across layers)."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("matrix", None)
+
+
+def _coarsen(adjacency, levels):
+    """Graclus multilevel coarsening, as ``coarsening.coarsen`` in EEG-DL.
+
+    Returns the adjacency of every level, with the nodes ordered so that
+    pooling pairs ``(2i, 2i + 1)`` are siblings (fake nodes padded), and the
+    permutation of the input nodes.
+    """
+    adjacencies, clusters = [adjacency], []
+    node_order = torch.randperm(len(adjacency), device=adjacency.device)
+    degree = adjacency.sum(dim=0) - adjacency.diagonal()
+    for _ in range(levels):
+        cluster = _cluster_one_level(adjacency, node_order, degree)
+        membership = F.one_hot(cluster).to(adjacency.dtype)
+        adjacency = membership.T @ adjacency @ membership
+        clusters.append(cluster)
+        adjacencies.append(adjacency)
+        degree = adjacency.sum(dim=0)
+        node_order = torch.argsort(degree)
+
+    permutations = _compute_perm(clusters)
+    for i, adjacency in enumerate(adjacencies):
+        adjacency.fill_diagonal_(0)
+        if i < levels:
+            n_pad = len(permutations[i]) - len(adjacency)
+            indices = torch.tensor(permutations[i], device=adjacency.device)
+            adjacencies[i] = F.pad(adjacency, (0, n_pad, 0, n_pad))[indices][:, indices]
+    return adjacencies, permutations[0] if levels > 0 else None
+
+
+def _cluster_one_level(adjacency, node_order, weights):
+    """Greedy Graclus pairing: each unmarked node joins its best neighbor."""
+    marked = torch.zeros(len(adjacency), dtype=torch.bool, device=adjacency.device)
+    clusters = torch.empty(len(adjacency), dtype=torch.long, device=adjacency.device)
+    cluster_id = 0
+    for node in node_order.tolist():
+        if marked[node]:
+            continue
+        marked[node] = True
+        clusters[node] = cluster_id
+        neighbors = torch.nonzero(adjacency[node], as_tuple=True)[0]
+        neighbors = neighbors[~marked[neighbors]]
+        if neighbors.numel() > 0:
+            scores = adjacency[node, neighbors] * (
+                1.0 / weights[node] + 1.0 / weights[neighbors]
+            )
+            best = torch.argmax(scores)
+            if scores[best] > 0:
+                clusters[neighbors[best]] = cluster_id
+                marked[neighbors[best]] = True
+        cluster_id += 1
+    return clusters
+
+
+def _compute_perm(parents):
+    """Node order of every level so that sibling pairs form a binary tree.
+
+    Singletons get a fake sibling, appended after the real nodes.
+    """
+    indices = [list(range(int(parents[-1].max()) + 1))] if parents else []
+    for parent in parents[::-1]:
+        n_nodes = len(parent)
+        layer = []
+        for i in indices[-1]:
+            children = torch.where(parent == i)[0].tolist()
+            n_fake = 2 - len(children)
+            layer += children + list(range(n_nodes, n_nodes + n_fake))
+            n_nodes += n_fake
+        indices.append(layer)
+    return indices[::-1]
