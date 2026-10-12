@@ -1119,7 +1119,7 @@ def cutmix(
     start = cut_t_start[:, None]
     in_cut = (t >= start) & (t < start + cut_t_len[:, None])
     X_mix = torch.where(in_cut[:, None], X[idx_perm], X)
-    lam = 1 - cut_t_len.to(X.dtype) / n_times
+    lam = (n_times - cut_t_len).to(X.dtype) / n_times
     return X_mix, (y.clone(), y[idx_perm].clone(), lam)
 
 
