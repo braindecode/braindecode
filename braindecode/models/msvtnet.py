@@ -286,6 +286,18 @@ class _TSConv(nn.Sequential):
             nn.Dropout(drop_prob),
         )
 
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self[1](self[0](x))
+        # The depthwise (n_channels, 1) convolution as a matmul over the
+        # channel axis: same values, a faster backward than the grouped
+        # convolution's.
+        b, f, c, t = x.shape
+        x = torch.matmul(self[2].weight.view(f, -1, c), x).view(b, -1, 1, t)
+        for i, layer in enumerate(self):
+            if i > 2:
+                x = layer(x)
+        return x
+
 
 class _PositionalEncoding(nn.Module):
     r"""
