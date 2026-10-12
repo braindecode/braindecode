@@ -1546,8 +1546,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                     "Dataset descriptions cannot contain the reserved window "
                     "metadata key 'i_trial_in_dataset'."
                 )
-            description = () if ds.description is None else ds.description
-            if "i_dataset" in df.columns or "i_dataset" in description:
+            if "i_dataset" in df.columns or "i_dataset" in ds.description:
                 raise ValueError(
                     "Window metadata and dataset descriptions cannot contain the "
                     "key 'i_dataset', which get_metadata() reserves for the "

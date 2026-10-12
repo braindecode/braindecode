@@ -17,80 +17,47 @@ from torch.utils.data.sampler import Sampler
 
 
 def _group_windows_by_recording(metadata, required_keys=None):
-    """Group the windows of ``metadata`` by the recording they come from.
+    """Return one row per recording, with the positions (``index``) and start
+    samples (``i_start_in_trial``) of its windows, sorted by subject, session
+    and run.
 
-    Each dataset of a BaseConcatDataset is one recording. A new one starts
-    where ``i_dataset``, the column
-    :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` adds, changes,
-    or where an integer metadata index starts again, as it does at each
-    dataset, so the metadata of several datasets can be concatenated.
-    Metadata without ``i_dataset`` is split where subject, session or run
-    change instead, which lets the windows of several datasets form one
-    recording, as for the one-trial datasets of
-    :func:`~braindecode.datasets.create_from_X_y` or
-    :func:`~braindecode.datasets.create_from_mne_epochs`.
-
-    Parameters
-    ----------
-    metadata : pd.DataFrame
-        Window metadata, one row per window, in dataset order.
-    required_keys : list(str) | None
-        Additional columns of the metadata to group by within each recording.
-
-    Returns
-    -------
-    pd.DataFrame
-        One row per recording (and value of ``required_keys``), in the order
-        of the metadata, with the positions (``index``) and start samples
-        (``i_start_in_trial``) of its windows.
+    A recording is a dataset of the BaseConcatDataset, marked by the
+    ``i_dataset`` column of ``get_metadata()``; an integer index starting
+    again also starts one, for metadata concatenated from several
+    ``get_metadata()`` calls. Without ``i_dataset``, the windows sharing
+    subject, session and run form a recording. With ``required_keys``, rows
+    are indexed by recording position and those keys.
     """
-    new_recording = np.zeros(len(metadata), dtype=bool)
-    new_recording[:1] = True
+    keys = [k for k in ["subject", "session", "run"] if k in metadata.columns]
+    windows = pd.DataFrame({k: metadata[k].to_numpy() for k in keys})
     if "i_dataset" in metadata.columns:
-        i_dataset = metadata["i_dataset"].to_numpy()
-        new_recording[1:] = i_dataset[1:] != i_dataset[:-1]
+        new = metadata["i_dataset"].diff().ne(0).to_numpy()
         if pd.api.types.is_integer_dtype(metadata.index):
-            new_recording[1:] |= np.diff(metadata.index.to_numpy()) <= 0
-    else:
-        keys = [k for k in ["subject", "session", "run"] if k in metadata.columns]
-        if not keys:
-            raise ValueError(
-                "metadata must contain the i_dataset column of "
-                "BaseConcatDataset.get_metadata() or at least one of the "
-                "columns subject, session or run."
-            )
-        # as objects, a missing value (no session, say) is a key like any other
-        key_codes = (
-            metadata[keys]
-            .astype(object)
-            .groupby(keys, dropna=False, sort=False)
-            .ngroup()
-            .to_numpy()
+            new = new | (metadata.index.to_series().diff() <= 0).to_numpy()
+        windows["recording"] = new.cumsum()
+        keys.append("recording")
+    elif not keys:
+        raise ValueError(
+            "metadata must contain the i_dataset column of "
+            "BaseConcatDataset.get_metadata() or at least one of the "
+            "columns subject, session or run."
         )
-        new_recording[1:] = key_codes[1:] != key_codes[:-1]
-    recording = np.cumsum(new_recording) - 1
-    starts = metadata["i_start_in_trial"].to_numpy()
-
+    windows["index"] = np.arange(len(metadata))
     # every window is kept, so that positions and start samples stay aligned
-    if required_keys is None:
-        bounds = np.flatnonzero(new_recording)[1:]
-        rows = np.split(np.arange(len(metadata)), bounds) if len(metadata) else []
-        index = pd.RangeIndex(len(rows), name="recording")
-    else:
+    windows["i_start_in_trial"] = metadata["i_start_in_trial"].to_numpy()
+    if required_keys is not None:
         missing_keys = [k for k in required_keys if k not in metadata.columns]
         if len(missing_keys) > 0:
             raise ValueError(f"Columns {missing_keys} were not found in metadata.")
-        keys = ["recording", *required_keys]
-        windows = pd.DataFrame({"recording": recording})
+        # recordings by position: label lookups fail on a missing session or run
+        windows["i_recording"] = windows.groupby(keys, dropna=False).ngroup()
         for k in required_keys:
             windows[k] = metadata[k].to_numpy()
-        groups = windows.groupby(keys, sort=True).indices
-        labels = sorted(groups)
-        rows = [groups[label] for label in labels]
-        index = pd.MultiIndex.from_tuples(labels, names=keys)
-    return pd.DataFrame(
-        {"index": rows, "i_start_in_trial": [starts[r] for r in rows]}, index=index
-    )
+        keys = ["i_recording", *required_keys]
+    info = windows.groupby(keys, dropna=False)[["index", "i_start_in_trial"]].agg(list)
+    for col in info:
+        info[col] = info[col].map(np.array)
+    return info
 
 
 class RecordingSampler(Sampler):
@@ -99,28 +66,25 @@ class RecordingSampler(Sampler):
     Parameters
     ----------
     metadata : pd.DataFrame
-        DataFrame with one row per window of the BaseConcatDataset to sample
-        examples from, normally obtained with
-        `BaseConcatDataset.get_metadata()`. Each of its datasets, told apart
-        by the ``i_dataset`` column, is one recording. Without ``i_dataset``,
-        the metadata needs at least one of the subject, session and run
-        columns, and a new recording starts where they change: drop
-        ``i_dataset`` to sample the one-trial datasets of `create_from_X_y` or
-        `create_from_mne_epochs` as recordings of their subject. For instance,
+        DataFrame with at least one of {subject, session, run} columns for each
+        window in the BaseConcatDataset to sample examples from. Normally
+        obtained with `BaseConcatDataset.get_metadata()`, whose ``i_dataset``
+        column makes each dataset one recording; without it, the windows
+        sharing subject, session and run form one recording. For instance,
         `metadata.head()` might look like this:
-        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+-----------+
-        | i_window_in_trial | i_start_in_trial| i_stop_in_trial | target | subject  | session   | run   | i_dataset |
-        +===================+=================+=================+========+==========+===========+=======+===========+
-        | 0                 | 0               | 500             | -1     | 4        | session_T | run_0 | 0         |
-        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+-----------+
-        | 1                 | 500             | 1000            | -1     | 4        | session_T | run_0 | 0         |
-        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+-----------+
-        | 2                 | 1000            | 1500            | -1     | 4        | session_T | run_0 | 0         |
-        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+-----------+
-        | 3                 | 1500            | 2000            | -1     | 4        | session_T | run_0 | 0         |
-        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+-----------+
-        | 4                 | 2000            | 2500            | -1     | 4        | session_T | run_0 | 0         |
-        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+-----------+
+        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+
+        | i_window_in_trial | i_start_in_trial| i_stop_in_trial | target | subject  | session   | run   |
+        +===================+=================+=================+========+==========+===========+=======+
+        | 0                 | 0               | 500             | -1     | 4        | session_T | run_0 |
+        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+
+        | 1                 | 500             | 1000            | -1     | 4        | session_T | run_0 |
+        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+
+        | 2                 | 1000            | 1500            | -1     | 4        | session_T | run_0 |
+        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+
+        | 3                 | 1500            | 2000            | -1     | 4        | session_T | run_0 |
+        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+
+        | 4                 | 2000            | 2500            | -1     | 4        | session_T | run_0 |
+        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+
 
     random_state : np.RandomState | int | None
         Random state.
@@ -128,9 +92,9 @@ class RecordingSampler(Sampler):
     Attributes
     ----------
     info : pd.DataFrame
-        One row per recording, indexed by recording, with the positions
-        (``index``) and start samples (``i_start_in_trial``) of its windows
-        for quick sampling of windows.
+        Series with MultiIndex index which contains the subject, session, run,
+        recording and window indices information in an easily accessible
+        structure for quick sampling of windows.
     n_recordings : int
         Number of recordings available.
     """
@@ -182,22 +146,15 @@ class DistributedRecordingSampler(DistributedSampler):
     Parameters
     ----------
     metadata : pd.DataFrame
-        DataFrame with one row per window of the BaseConcatDataset to sample
-        examples from, normally obtained with
-        `BaseConcatDataset.get_metadata()`. Each of its datasets, told apart
-        by the ``i_dataset`` column, is one recording. Without ``i_dataset``,
-        the metadata needs at least one of the subject, session and run
-        columns, and a new recording starts where they change: drop
-        ``i_dataset`` to sample the one-trial datasets of `create_from_X_y` or
-        `create_from_mne_epochs` as recordings of their subject. For instance,
+        See RecordingSampler. For instance,
         `metadata.head()` might look like this::
 
-            i_window_in_trial  i_start_in_trial  i_stop_in_trial  target  subject    session    run  i_dataset
-            0                  0                 0              500      -1        4  session_T  run_0          0
-            1                  1               500             1000      -1        4  session_T  run_0          0
-            2                  2              1000             1500      -1        4  session_T  run_0          0
-            3                  3              1500             2000      -1        4  session_T  run_0          0
-            4                  4              2000             2500      -1        4  session_T  run_0          0
+            i_window_in_trial  i_start_in_trial  i_stop_in_trial  target  subject    session    run
+            0                  0                 0              500      -1        4  session_T  run_0
+            1                  1               500             1000      -1        4  session_T  run_0
+            2                  2              1000             1500      -1        4  session_T  run_0
+            3                  3              1500             2000      -1        4  session_T  run_0
+            4                  4              2000             2500      -1        4  session_T  run_0
 
     random_state : np.RandomState | int | None
         Random state.
@@ -205,9 +162,7 @@ class DistributedRecordingSampler(DistributedSampler):
     Attributes
     ----------
     info : pd.DataFrame
-        One row per recording, indexed by recording, with the positions
-        (``index``) and start samples (``i_start_in_trial``) of its windows
-        for quick sampling of windows.
+        See RecordingSampler.
     n_recordings : int
         Number of recordings available.
     kwargs : dict
@@ -427,7 +382,7 @@ class BalancedSequenceSampler(RecordingSampler):
         """
         if rec_ind is None:
             rec_ind = self.sample_recording()
-        available_classes = self.info_class.loc[self.info.iloc[rec_ind].name].index
+        available_classes = self.info_class.loc[rec_ind].index
         return self.rng.choice(available_classes), rec_ind
 
     def _sample_seq_start_ind(self, rec_ind=None, class_ind=None):
@@ -461,11 +416,7 @@ class BalancedSequenceSampler(RecordingSampler):
         rec_inds = self.info.iloc[rec_ind]["index"]
         len_rec_inds = len(rec_inds)
 
-        row = self.info.iloc[rec_ind].name
-        if not isinstance(row, tuple):
-            # Theres's only one category, e.g. "subject"
-            row = tuple([row])
-        available_indices = self.info_class.loc[row + tuple([class_ind]), "index"]
+        available_indices = self.info_class.loc[(rec_ind, class_ind), "index"]
         win_ind = self.rng.choice(available_indices)
         win_ind_in_rec = np.where(rec_inds == win_ind)[0][0]
 

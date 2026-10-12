@@ -145,6 +145,7 @@ def test_recording_sampler(windows_ds):
 
     # Test info attribute
     assert isinstance(sampler.info, pd.DataFrame)
+    assert isinstance(sampler.info.index, pd.MultiIndex)
     inds = np.concatenate(sampler.info["index"].values)
     assert len(inds) == len(windows_ds)
     assert len(inds) == len(set(inds))
@@ -183,6 +184,7 @@ def dist_sampler_init_process(rank, world_size, windows_ds, init_method):
 
     # Test info attribute
     assert isinstance(sampler.info, pd.DataFrame)
+    assert isinstance(sampler.info.index, pd.MultiIndex)
     inds = np.concatenate(sampler.info["index"].values)
     assert len(inds) == len(windows_ds)
     assert len(inds) == len(set(inds))
@@ -689,3 +691,17 @@ def test_relative_positioning_sampler_with_windows_sharing_a_start():
     for w1, w2, y in pairs:
         gap = abs(starts[w1] - starts[w2])
         assert 0 < gap <= 100 if y == 1 else gap >= 300
+
+
+def test_samplers_keep_the_subject_session_run_order():
+    """Recordings stay sorted by subject, session and run, so seeded sampling
+    is unchanged where those keys already told the recordings apart."""
+    md = _event_windows([{"subject": s} for s in [2, 0, 1]]).get_metadata()
+    subject = md["subject"].to_numpy()
+    sampled = []
+    for md_ in (md, md.drop(columns="i_dataset")):
+        sequences = SequenceSampler(md_, 3, 1, randomize=True, random_state=0)
+        assert list(subject[sequences.start_inds[::10]]) == [0, 1, 2]
+        balanced = BalancedSequenceSampler(md_, 3, n_sequences=20, random_state=0)
+        sampled.append((list(sequences), list(balanced)))
+    assert sampled[0] == sampled[1]
