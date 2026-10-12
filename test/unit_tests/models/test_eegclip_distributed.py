@@ -211,6 +211,8 @@ def _preflight_shape_worker(rank, rendezvous, case):
         dtype = (
             torch.float64
             if rank == 1 and case == "different_rank_dtype"
+            else torch.complex64
+            if rank == 1 and case == "unsupported_rank_dtype"
             else torch.float32
         )
         eeg = torch.randn(2, dim, dtype=dtype)
@@ -221,7 +223,9 @@ def _preflight_shape_worker(rank, rendezvous, case):
             else dtype
         )
         text = torch.randn(2, text_dim, dtype=text_dtype)
-        if case in ("mismatched_pair", "mismatched_local_dtype"):
+        if case in (
+            "mismatched_pair", "mismatched_local_dtype", "unsupported_rank_dtype"
+        ):
             error = "matching 2D"
         elif case == "different_rank_width":
             error = "same embedding dimension"
@@ -246,6 +250,7 @@ def _preflight_shape_worker(rank, rendezvous, case):
         "different_rank_width",
         "different_rank_dtype",
         "mismatched_local_dtype",
+        "unsupported_rank_dtype",
     ],
 )
 def test_eegclip_distributed_preflight_rejects_malformed_rank(tmp_path, case):
@@ -353,3 +358,40 @@ def test_eegclip_distributed_actual_ddp_matches_global_reference(tmp_path):
     )
     with result_path.open(encoding="utf-8") as result:
         assert json.load(result)["max_abs_error"] < 1e-11
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Gloo file rendezvous is Linux/macOS only"
+)
+def test_eegclip_distributed_single_process_group_matches_local_gradients(tmp_path):
+    """Initialized single-rank group retains the exact released loss and AD."""
+    if not dist.is_available() or not dist.is_gloo_available():
+        pytest.skip("PyTorch Gloo distributed backend is unavailable")
+    if dist.is_initialized():
+        pytest.skip("Single-process group test requires independent process state")
+
+    dist.init_process_group(
+        "gloo",
+        init_method=(tmp_path / "one-rank-ddp").resolve().as_uri(),
+        timeout=timedelta(seconds=40),
+        rank=0,
+        world_size=1,
+    )
+    try:
+        model = EEGCLIP(
+            n_chans=4, n_times=20, n_outputs=4,
+            eeg_encoder=nn.Identity(), eeg_embedding_dim=4,
+            text_embedding_dim=4, projection_layers=1,
+        ).double()
+        x = torch.randn(3, 4, dtype=torch.float64, requires_grad=True)
+        y = torch.randn(3, 4, dtype=torch.float64, requires_grad=True)
+        distributed_loss = model.contrastive_loss(x, y, distributed=True)
+        local_loss = model.contrastive_loss(x, y, distributed=False)
+        torch.testing.assert_close(distributed_loss, local_loss)
+        distributed_grad = torch.autograd.grad(
+            distributed_loss, (x, y), retain_graph=True
+        )
+        local_grad = torch.autograd.grad(local_loss, (x, y))
+        for observed, expected in zip(distributed_grad, local_grad):
+            torch.testing.assert_close(observed, expected)
+    finally:
+        dist.destroy_process_group()
