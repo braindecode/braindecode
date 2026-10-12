@@ -597,8 +597,17 @@ class _GConv(nn.Module):
         cosine, sine = basis
         seq_len = x.size(-1)
         k_rolled = kernel.roll(start, -1)
-        # Re/Im of rfft(kernel, n=n_fft): zero-pad rows to n_fft, matmul.
-        k_pad = F.pad(k_rolled.float(), (0, n_fft - seq_len))
+        # Re/Im of rfft(kernel, n=n_fft): pad/crop rows to n_fft, matmul.
+        # NOTE: after the bidirectional combine the kernel length is
+        # 2 * seq_len, not seq_len, so pad by its own length (torch.fft
+        # with n=n_fft pads/crops the same way).
+        k_len = k_rolled.size(-1)
+        if k_len < n_fft:
+            k_pad = F.pad(k_rolled.float(), (0, n_fft - k_len))
+        elif k_len > n_fft:
+            k_pad = k_rolled[..., :n_fft].float()
+        else:
+            k_pad = k_rolled.float()
         k_re = k_pad @ cosine.transpose(0, 1)
         k_im = -(k_pad @ sine.transpose(0, 1))
         # Re/Im of rfft(x, n=n_fft) (x already padded below via the same op).
