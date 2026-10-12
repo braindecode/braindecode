@@ -342,17 +342,13 @@ class _PositionalEmbedding(nn.Module):
 
 
 class _CrossChannelTokenEmbedding(nn.Module):
-    def __init__(
-        self, c_in: int, l_patch: int, d_model: int, stride: Optional[int] = None
-    ):
+    def __init__(self, c_in: int, l_patch: int, d_model: int):
         super().__init__()
-        if stride is None:
-            stride = l_patch
         self.token_conv = nn.Conv2d(
             in_channels=1,
             out_channels=d_model,
             kernel_size=(c_in, l_patch),
-            stride=(1, stride),
+            stride=(1, l_patch),
             padding=0,
             padding_mode="circular",
             bias=False,
@@ -364,14 +360,18 @@ class _CrossChannelTokenEmbedding(nn.Module):
                 )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # The kernel spans all c_in rows: run it as a conv1d with c_in input
-        # channels. Gaudi2 rejects conv kernels taller than 256 (c_in = n_times).
-        x = nn.functional.conv1d(
-            x.squeeze(1),
-            self.token_conv.weight.squeeze(1),
-            stride=self.token_conv.stride[1],
+        # The kernel spans all c_in rows and the patches do not overlap, so
+        # the conv is one GEMM of its weight with the patch-reshaped input
+        # (Gaudi2 rejects conv kernels taller than 256 rows, c_in = n_times).
+        l_patch = self.token_conv.kernel_size[1]
+        n_patches = x.shape[-1] // l_patch
+        x = x[:, 0, :, : n_patches * l_patch].reshape(
+            x.shape[0], x.shape[2], n_patches, l_patch
         )
-        return x.unsqueeze(2)
+        x = torch.matmul(
+            x.transpose(1, 2).flatten(2), self.token_conv.weight.flatten(1).t()
+        )
+        return x.transpose(1, 2).unsqueeze(2)
 
 
 class _ListPatchEmbedding(nn.Module):
