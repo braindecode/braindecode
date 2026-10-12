@@ -261,7 +261,8 @@ class _SincFilter(nn.Module):
         # Precompute constants
         window = torch.hamming_window(kernel_size, periodic=False)
 
-        self.register_buffer("window", window[: kernel_size // 2].unsqueeze(-1))
+        # clone: safetensors refuses a view on a larger storage
+        self.register_buffer("window", window[: kernel_size // 2].unsqueeze(-1).clone())
 
         n_pi = (
             torch.arange(-(kernel_size // 2), 0, dtype=torch.float32)
