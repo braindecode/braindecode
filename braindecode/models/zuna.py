@@ -404,18 +404,16 @@ class _RotaryPositionEmbedding(nn.Module):
 
         batch_size, sequence_length, num_heads, head_dim = query.shape
         work = torch.promote_types(query.dtype, torch.float32)
+        # Each (real, imaginary) pair (a, b) rotates to (-b, a): swap the pair
+        # here; the sign is in ``rotary_sine`` (see _ZUNAEncoder).
         query_pairs = query.to(work).reshape(
             batch_size, sequence_length, num_heads, head_dim // 2, 2
         )
         key_pairs = key.to(work).reshape(
             batch_size, sequence_length, num_heads, head_dim // 2, 2
         )
-        rotated_query = self.merge_rotary_pairs(
-            torch.stack((-query_pairs[..., 1], query_pairs[..., 0]), dim=-1)
-        )
-        rotated_key = self.merge_rotary_pairs(
-            torch.stack((-key_pairs[..., 1], key_pairs[..., 0]), dim=-1)
-        )
+        rotated_query = self.merge_rotary_pairs(query_pairs.flip(-1))
+        rotated_key = self.merge_rotary_pairs(key_pairs.flip(-1))
 
         query = (query.to(work) * rotary_cosine + rotated_query * rotary_sine).type_as(
             query
@@ -607,9 +605,12 @@ class _ZUNAEncoder(nn.Module):
             rotary_frequencies.cos(),
             persistent=False,
         )
+        # Sine with the pair rotation's sign folded in: -sin on the real, +sin
+        # on the imaginary component of every pair (exact, saves a negation).
+        pair_sign = torch.tensor([-1.0, 1.0]).repeat(rotary_frequencies.shape[-1] // 2)
         self.register_buffer(
             "rotary_sine",
-            rotary_frequencies.sin(),
+            rotary_frequencies.sin() * pair_sign,
             persistent=False,
         )
 
