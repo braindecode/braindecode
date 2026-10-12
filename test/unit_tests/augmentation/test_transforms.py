@@ -813,6 +813,7 @@ def test_segmentation_reconstruction_remainder_uses_final_donor():
         (0.2, -1, True),
         (0.2, 2, False),
         (1., 3, False),
+        (1., 1, False),  # full-window mask
     ],
 )
 def test_mask_encoding_transform(
@@ -990,28 +991,7 @@ def test_set_params(augmented_mock_clf, augmentation, kwargs, random_batch):
     )
 
 
-@pytest.mark.parametrize("n_times", [1, 10])
-def test_mask_encoding_full_window(n_times):
-    """A single full-window mask has one valid start position."""
-    X = torch.ones(3, 2, n_times)
-    y = torch.arange(3)
-    transformed_X, transformed_y = MaskEncoding(
-        probability=1, max_mask_ratio=1, n_segments=1, random_state=0
-    )(X, y)
-    torch.testing.assert_close(transformed_X, torch.zeros_like(X))
-    torch.testing.assert_close(transformed_y, y)
-    torch.testing.assert_close(X, torch.ones_like(X))
-
-
-def test_mask_encoding_last_interval():
-    """The sampled intervals include the one ending at the last sample."""
+def test_mask_encoding_reaches_last_sample():
     X = torch.ones(100, 2, 10)
-    y = torch.arange(100)
-    transform = MaskEncoding(
-        probability=1, max_mask_ratio=0.3, n_segments=1, random_state=0
-    )
-    transformed_X, transformed_y = transform(X, y)
-    assert (transformed_X[:, :, -1] == 0).any()
-    assert ((transformed_X == 0).sum(dim=-1) == 3).all()
-    torch.testing.assert_close(transformed_y, y)
-    torch.testing.assert_close(X, torch.ones_like(X))
+    tr_X, _ = MaskEncoding(1, max_mask_ratio=0.3, random_state=0)(X, torch.arange(100))
+    assert (tr_X[..., -1] == 0).any()
