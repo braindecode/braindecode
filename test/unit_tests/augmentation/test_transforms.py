@@ -649,12 +649,14 @@ def test_mixup_transform(rng_seed, random_batch, alpha, beta_per_sample):
         assert torch.equal(X_t, X)
 
 
+@pytest.mark.parametrize("transform_cls", [Mixup, CutMix])
 @pytest.mark.parametrize("beta_per_sample", [False, True])
 @pytest.mark.parametrize("trailing_shape", [(), (1,), (2,)])
 @pytest.mark.parametrize("target_dtype", [torch.float32, torch.float64])
 def test_mixup_preserves_fractional_target_contract(
     rng_seed,
     random_batch,
+    transform_cls,
     beta_per_sample,
     trailing_shape,
     target_dtype,
@@ -669,7 +671,7 @@ def test_mixup_preserves_fractional_target_contract(
         .reshape(batch_size, *trailing_shape)
     )
 
-    _, (y_a, y_b, lam) = Mixup(
+    _, (y_a, y_b, lam) = transform_cls(
         alpha=0.5,
         beta_per_sample=beta_per_sample,
         random_state=rng_seed,
@@ -690,13 +692,14 @@ def test_mixup_preserves_fractional_target_contract(
     assert lam.device == X.device
 
 
+@pytest.mark.parametrize("transform_cls", [Mixup, CutMix])
 @pytest.mark.parametrize("beta_per_sample", [False, True])
-def test_mixup_preserves_unbatched_fractional_target(beta_per_sample):
+def test_mixup_preserves_unbatched_fractional_target(transform_cls, beta_per_sample):
     """An unbatched example keeps its fractional target after internal batching."""
     X = torch.randn(3, 20)
     y = torch.tensor(1.75, dtype=torch.float64)
 
-    transformed_X, (y_a, y_b, lam) = Mixup(
+    transformed_X, (y_a, y_b, lam) = transform_cls(
         alpha=0.5,
         beta_per_sample=beta_per_sample,
         random_state=0,
@@ -720,45 +723,24 @@ def test_cutmix_transform(rng_seed, random_batch, alpha, beta_per_sample):
     X, y = random_batch
     transformed_batch = transform(*random_batch)
 
-    X_t, y_t = transformed_batch
-    y_a, y_b, lam = y_t
+    X_t, (y_a, y_b, lam) = transformed_batch
 
-    # y_a should equal y
     assert torch.equal(y_a.cpu(), y)
-
-    if alpha < 0:
-        # no cut should happen
+    assert torch.sort(y_b.cpu()).values.equal(y)
+    if alpha < 0:  # no cut
         assert torch.equal(lam, torch.ones_like(lam))
         assert torch.equal(X_t, X)
-        return
-
     for i in range(batch_size):
-        pasted = (X_t[i] != X[i]).any(dim=0).nonzero().flatten()
-        if int(y_b[i]) == i:
-            # paired with itself: the pasted region is identical to the
-            # original signal, so nothing visibly changes
-            assert len(pasted) == 0
+        if y_b[i] == i:  # paired with itself: nothing visibly changes
             assert torch.equal(X_t[i], X[i])
             continue
-        # changed positions form one contiguous region
-        if len(pasted) > 0:
-            assert torch.equal(
-                pasted, torch.arange(pasted[0], pasted[0] + len(pasted))
-            )
-        # inside the region the signal must come from the paired example
-        for t in pasted:
-            assert torch.equal(X_t[i, :, t], X[int(y_b[i]), :, t])
-        # outside the region the signal must be unchanged
-        mask = torch.ones(X.shape[2], dtype=torch.bool)
-        if len(pasted) > 0:
-            mask[pasted[0] : pasted[0] + len(pasted)] = False
-        assert torch.equal(X_t[i][:, mask], X[i][:, mask])
-        # effective mixing coefficient matches the pasted length
-        assert torch.allclose(
-            lam[i], torch.tensor(1.0 - len(pasted) / X.shape[2], dtype=lam.dtype)
-        )
-    # y_b must be a permutation of y
-    assert torch.sort(y_b.cpu()).values.equal(y)
+        cut = (X_t[i] != X[i]).any(dim=0).nonzero().flatten()
+        if len(cut):  # one contiguous region...
+            assert torch.equal(cut, torch.arange(cut[0], cut[-1] + 1).to(cut))
+        expected = X[i].clone()  # ...taken from the paired example
+        expected[:, cut] = X[y_b[i]][:, cut]
+        assert torch.equal(X_t[i], expected)
+        assert lam[i].item() == pytest.approx(1 - len(cut) / X.shape[2])
 
 
 def test_cutmix_functional_exact_region():
@@ -782,64 +764,15 @@ def test_cutmix_functional_exact_region():
     assert torch.allclose(lam, torch.tensor([0.7, 1.0]))
 
 
-@pytest.mark.parametrize("beta_per_sample", [False, True])
-@pytest.mark.parametrize("trailing_shape", [(), (1,), (2,)])
-@pytest.mark.parametrize("target_dtype", [torch.float32, torch.float64])
-def test_cutmix_preserves_fractional_target_contract(
-    rng_seed,
-    random_batch,
-    beta_per_sample,
-    trailing_shape,
-    target_dtype,
-):
-    """Mixed targets preserve every target value, dimension, dtype, and device."""
-    X, _ = random_batch
-    batch_size = X.shape[0]
-    n_target_values = batch_size * max(1, np.prod(trailing_shape, dtype=int))
-    y = (
-        torch.arange(n_target_values, device=X.device, dtype=target_dtype)
-        .add(0.25)
-        .reshape(batch_size, *trailing_shape)
+def test_cutmix_cut_ratio_is_one_minus_lam():
+    """The cut covers 1 - lam of the trial (paper's area ratio, in 1-D)."""
+    X = torch.randn(32, 2, 100)
+    # alpha -> inf pins lam to 0.5: at most half of each trial is cut
+    _, (_, _, lam) = CutMix(alpha=1e6, beta_per_sample=True, random_state=0)(
+        X, torch.zeros(32)
     )
-
-    _, (y_a, y_b, lam) = CutMix(
-        alpha=0.5,
-        beta_per_sample=beta_per_sample,
-        random_state=rng_seed,
-    )(X, y)
-
-    assert torch.equal(y_a, y)
-    assert y_a.shape == y_b.shape == y.shape
-    assert y_a.dtype == y_b.dtype == target_dtype
-    assert y_a.device == y_b.device == y.device
-
-    expected_rows = y.reshape(batch_size, -1)
-    actual_rows = y_b.reshape(batch_size, -1)
-    expected_order = expected_rows[:, 0].argsort()
-    actual_order = actual_rows[:, 0].argsort()
-    assert torch.equal(actual_rows[actual_order], expected_rows[expected_order])
-    assert lam.shape == (batch_size,)
-    assert lam.dtype == X.dtype
-    assert lam.device == X.device
-
-
-def test_cutmix_preserves_unbatched_fractional_target():
-    """An unbatched example keeps its fractional target after internal batching."""
-    X = torch.randn(3, 20)
-    y = torch.tensor(1.75, dtype=torch.float64)
-
-    transformed_X, (y_a, y_b, lam) = CutMix(
-        alpha=0.5,
-        beta_per_sample=False,
-        random_state=0,
-    )(X, y)
-
-    assert transformed_X.shape == X.shape
-    assert torch.equal(y_a, y.reshape(1))
-    assert torch.equal(y_b, y.reshape(1))
-    assert y_a.dtype == y_b.dtype == y.dtype
-    assert y_a.device == y_b.device == y.device
-    assert lam.shape == (1,)
+    assert lam.min() >= 0.5
+    assert torch.isclose(lam.min(), torch.tensor(0.5))
 
 
 MONTAGE_10_20 = [

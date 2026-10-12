@@ -1082,13 +1082,9 @@ def cutmix(
     cut_t_start: torch.Tensor,
     cut_t_len: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Paste time regions of shuffled examples into the original examples.
+    """Paste a time region of shuffled examples into the original examples.
 
     See [1]_ for details.
-    Implementation follows the torchvision semantics: the effective mixing
-    coefficient is recomputed per example from the length of the region that
-    is actually pasted, so that examples whose region is truncated at the
-    trial boundaries keep a consistent target.
 
     Parameters
     ----------
@@ -1107,9 +1103,8 @@ def cutmix(
     -------
     tuple
         ``X``, ``y``. Where ``X`` is augmented and ``y`` is a tuple of length
-        3 containing the labels of the two mixed examples and the effective
-        mixing coefficient of each example (the fraction of the trial that
-        is kept from the original example).
+        3 containing the labels of the two mixed examples and the fraction of
+        each example kept from the original, ``1 - cut_t_len / n_times``.
 
     References
     ----------
@@ -1119,21 +1114,13 @@ def cutmix(
         IEEE/CVF International Conference on Computer Vision (ICCV)
         Online: https://arxiv.org/abs/1905.04899
     """
-    device = X.device
-    batch_size, _, n_times = X.shape
-
-    X_mix = X.clone()
-    y_a = y.clone()
-    y_b = y[idx_perm].clone()
-
-    lam_eff = torch.ones(batch_size, dtype=X.dtype, device=device)
-    for idx in range(batch_size):
-        start = int(cut_t_start[idx])
-        end = start + int(cut_t_len[idx])
-        X_mix[idx, :, start:end] = X[idx_perm[idx], :, start:end]
-        lam_eff[idx] = 1.0 - (end - start) / n_times
-
-    return X_mix, (y_a, y_b, lam_eff)
+    n_times = X.shape[-1]
+    t = torch.arange(n_times, device=X.device)
+    start = cut_t_start[:, None]
+    in_cut = (t >= start) & (t < start + cut_t_len[:, None])
+    X_mix = torch.where(in_cut[:, None], X[idx_perm], X)
+    lam = 1 - cut_t_len.to(X.dtype) / n_times
+    return X_mix, (y.clone(), y[idx_perm].clone(), lam)
 
 
 def segmentation_reconstruction(

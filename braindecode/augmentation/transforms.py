@@ -1096,32 +1096,26 @@ class Mixup(Transform):
         }
 
 
-class CutMix(Transform):
+class CutMix(Mixup):
     """Implements CutMix for EEG data.
 
-    A random contiguous time region of each example is replaced by the same
-    time region of a randomly shuffled example of the batch. See [1]_.
+    A random time region of each example is replaced by the same region of
+    a shuffled example of the batch, see [1]_. As in the reference code, a
+    coefficient ``lam`` is drawn from a Beta distribution, the region is
+    ``(1 - lam) * n_times`` long (the 1-D analogue of the cut area ratio
+    ``1 - lam``) around a uniformly drawn center, it is clipped at the trial
+    boundaries, and ``lam`` is then recomputed from the pasted length.
 
-    The size of the region follows the torchvision implementation of CutMix:
-    a mixing coefficient ``lam`` is drawn from a Beta distribution, the
-    region length is ``sqrt(1 - lam)`` of the number of time points, and its
-    center is drawn uniformly at random. Because the region can be truncated
-    at the trial boundaries, the effective mixing coefficient ``lam_eff`` is
-    recomputed per example from the length of the region that is actually
-    pasted.
-
-    Like :class:`Mixup`, this transform has to be applied to whole batches
-    and returns a triplet of targets ``(y_a, y_b, lam_eff)`` meant to be
-    combined with the provided ``mixup_criterion``.
+    Like :class:`Mixup`, it applies to whole batches and returns targets
+    ``(y_a, y_b, lam)`` for :func:`braindecode.training.mixup_criterion`.
 
     Parameters
     ----------
     alpha : float
-        CutMix hyperparameter controlling the Beta distribution from which
-        the region size is sampled.
+        Parameter of the Beta distribution of ``lam``. ``alpha <= 0`` cuts
+        nothing.
     beta_per_sample : bool (default=False)
-        By default, one region-size coefficient per batch is drawn from a
-        beta distribution. If True, one coefficient per sample is drawn.
+        By default, one ``lam`` per batch is drawn. If True, one per sample.
     random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
@@ -1137,67 +1131,17 @@ class CutMix(Transform):
 
     operation = staticmethod(cutmix)  # type: ignore[assignment]
 
-    def __init__(self, alpha, beta_per_sample=False, random_state=None):
-        super().__init__(
-            probability=1.0,  # CutMix has to be applied to whole batches
-            random_state=random_state,
-        )
-        self.alpha = alpha
-        self.beta_per_sample = beta_per_sample
-
     def get_augmentation_params(self, *batch):
-        """Return transform parameters.
-
-        Parameters
-        ----------
-        X : tensor.Tensor
-            The data.
-        y : tensor.Tensor
-            The labels.
-
-        Returns
-        -------
-        params : dict
-            Contains the permuted indices of examples that are mixed into
-            original examples (idx_perm), the start indices of the pasted
-            time regions (cut_t_start) and their lengths (cut_t_len).
-        """
-        X = batch[0]
-        device = X.device
-        batch_size, _, n_times = X.shape
-
-        if self.alpha > 0:
-            if self.beta_per_sample:
-                lam = torch.as_tensor(self.rng.beta(self.alpha, self.alpha, batch_size))
-            else:
-                lam = torch.full((batch_size,), self.rng.beta(self.alpha, self.alpha))
-        else:
-            lam = torch.ones(batch_size)
-
-        # Region length follows the torchvision implementation: a fraction
-        # sqrt(1 - lam) of the time dimension.
-        cut_t_len = (n_times * torch.sqrt(1.0 - lam.clamp(max=1.0))).floor().long()
-        cut_t_len = cut_t_len.clamp(max=n_times)
-
-        # Random region centers, clamped so regions stay inside the trials.
-        # Truncation at the boundaries is what makes lam_eff differ from lam.
-        centers = torch.as_tensor(
-            self.rng.randint(0, n_times, size=batch_size),
-        )
-        cut_t_start = (centers - cut_t_len // 2).clamp(min=0)
-        cut_t_start = cut_t_start.clamp(max=n_times - cut_t_len)
-
-        idx_perm = torch.as_tensor(
-            self.rng.permutation(
-                batch_size,
-            )
-        )
-
-        return {
-            "idx_perm": idx_perm.to(device),
-            "cut_t_start": cut_t_start.to(device),
-            "cut_t_len": cut_t_len.to(device),
-        }
+        """Return idx_perm and the cut_t_start, cut_t_len of each region."""
+        params = super().get_augmentation_params(*batch)
+        lam = params.pop("lam")
+        n_times = batch[0].shape[-1]
+        half = ((1 - lam) * n_times).long() // 2
+        center = torch.as_tensor(self.rng.randint(n_times, size=len(lam)))
+        center = center.to(lam.device)
+        start = (center - half).clamp(min=0)
+        end = (center + half).clamp(max=n_times)
+        return dict(params, cut_t_start=start, cut_t_len=end - start)
 
 
 class SegmentationReconstruction(Transform):
