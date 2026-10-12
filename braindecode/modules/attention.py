@@ -856,6 +856,25 @@ def _hpu_eager_fused_sdpa(
     return FusedSDPA.apply(query, key, value, None, 0.0, False, scale, "None", False)
 
 
+@torch.jit.unused
+def _hpu_lazy() -> bool:
+    from habana_frameworks.torch.utils.internal import is_lazy
+
+    return is_lazy()
+
+
+def _sdpa_math_dropout(
+    query: Tensor, key: Tensor, value: Tensor, dropout_p: float
+) -> Tensor:
+    # torch's math path for SDPA with dropout, op for op, without the pass of
+    # ``_safe_softmax`` that zeroes fully masked rows (none without a mask):
+    # same values, same dropout draws.
+    scale = math.sqrt(1.0 / math.sqrt(query.size(-1)))
+    attn = torch.matmul(query * scale, key.transpose(-2, -1) * scale)
+    attn = F.dropout(attn.softmax(-1), dropout_p, True)
+    return torch.matmul(attn, value)
+
+
 def _scaled_dot_product_attention(
     query: Tensor,
     key: Tensor,
@@ -883,6 +902,18 @@ def _scaled_dot_product_attention(
         out = _hpu_eager_fused_sdpa(query, key, value, fused_in_lazy=fused_in_lazy)
         if out is not None:
             return out
+    if (
+        not torch.jit.is_scripting()
+        and dropout_p > 0.0
+        and attn_mask is None
+        and (query.dtype == torch.float32 or query.dtype == torch.float64)
+        and (
+            query.device.type == "cpu"
+            or (query.device.type == "hpu" and not _hpu_lazy())
+        )
+    ):
+        # CPU and HPU eager run SDPA with dropout through the math path.
+        return _sdpa_math_dropout(query, key, value, dropout_p)
     return F.scaled_dot_product_attention(
         query, key, value, attn_mask=attn_mask, dropout_p=dropout_p
     )
