@@ -283,7 +283,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             labels,
             reduction="sum",
         )
-        return loss * world_size / (2 * sum(sizes))
+        return loss * (world_size / (2 * sum(sizes)))
 
     def forward_paired(self, X, text_inputs, attention_mask=None, **text_kwargs):
         """Return paired EEG/text embeddings and bidirectional similarity logits."""
