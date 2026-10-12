@@ -457,6 +457,36 @@ class _SpatialConv3d(nn.Conv3d):
         return y.reshape(b, -1, z, t, y.shape[-1])
 
 
+class _TemporalConv3d(nn.Conv3d):
+    """``nn.Conv3d`` with a ``(1, k, 1)`` kernel (padding on time only); on HPU
+    it runs as ``conv1d`` on a ``(batch * z * space, channels, time)`` copy of
+    the input, same parameters. Gaudi's conv3d along time, which is not the
+    innermost axis here, is 10-50x slower than that conv1d."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.time_padding = (
+            self.padding if isinstance(self.padding, str) else self.padding[1]
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.device.type == "hpu":
+            return self._time_last(x)
+        return self._conv_forward(x, self.weight, self.bias)
+
+    def _time_last(self, x: torch.Tensor) -> torch.Tensor:
+        b, c, z, t, s = x.shape
+        y = nn.functional.conv1d(
+            x.permute(0, 2, 4, 1, 3).reshape(b * z * s, c, t),
+            self.weight.flatten(2),
+            self.bias,
+            padding=self.time_padding,
+            groups=self.groups,
+        )
+        y = y.reshape(b, z, s, y.shape[1], y.shape[2])
+        return y.permute(0, 3, 1, 4, 2).contiguous()
+
+
 class _InceptionBlock(nn.Module):
     r"""Inception module used in EEGSym architecture.
 
@@ -498,7 +528,7 @@ class _InceptionBlock(nn.Module):
         for scale in scales_samples:
             self.temporal_convs.append(
                 nn.Sequential(
-                    nn.Conv3d(
+                    _TemporalConv3d(
                         in_channels=in_channels,
                         out_channels=filters_per_branch,
                         kernel_size=(1, scale, 1),
@@ -598,7 +628,7 @@ class _ResidualBlock(nn.Module):
 
         # Temporal convolution
         self.temporal_conv = nn.Sequential(
-            nn.Conv3d(
+            _TemporalConv3d(
                 in_channels=in_channels,
                 out_channels=filters,
                 kernel_size=(1, kernel_size, 1),
@@ -694,7 +724,7 @@ class _TemporalBlock(nn.Module):
         super().__init__()
 
         self.conv = nn.Sequential(
-            nn.Conv3d(
+            _TemporalConv3d(
                 in_channels=in_channels,
                 out_channels=filters,
                 kernel_size=(1, kernel_size, 1),
@@ -837,7 +867,7 @@ class _TemporalMergingBlock(nn.Module):
 
         # Residual convolution (collapses time dimension)
         self.residual_conv = nn.Sequential(
-            nn.Conv3d(
+            _TemporalConv3d(
                 in_channels=in_channels,
                 out_channels=in_channels,  # Same channels for residual
                 kernel_size=(1, self.temporal_kernel, 1),  # (Z, Time, Space)
@@ -851,7 +881,7 @@ class _TemporalMergingBlock(nn.Module):
 
         # Grouped convolution (collapses time dimension, doubles filters)
         self.grouped_conv = nn.Sequential(
-            nn.Conv3d(
+            _TemporalConv3d(
                 in_channels=in_channels,
                 out_channels=filters,  # Double the channels
                 kernel_size=(1, self.temporal_kernel, 1),  # (Z, Time, Space)
