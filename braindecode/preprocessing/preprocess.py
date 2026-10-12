@@ -39,6 +39,7 @@ from braindecode.datasets.base import (
     RawDataset,
     RecordDataset,
     WindowsDataset,
+    _overwrite_conflicts,
 )
 from braindecode.datautil.serialization import (
     _check_save_dir_empty,
@@ -236,6 +237,11 @@ def preprocess(
         When ``save_dir`` is provided, controls whether to delete the old
         subdirectories that will be written to under ``save_dir``. If False and
         the corresponding subdirectories already exist, a ``FileExistsError`` is raised.
+        A recording read lazily from the subdirectory another recording is
+        saved into is refused before anything is processed. One that still
+        reads lazily from its own subdirectory when it is saved (the
+        preprocessors did not load its data) raises a ``ValueError`` before
+        that subdirectory is deleted; recordings saved before stay replaced.
     n_jobs : int | None
         Number of jobs for parallel execution. See ``joblib.Parallel`` for details.
     offset : int
@@ -263,6 +269,20 @@ def preprocess(
     """
     if save_dir is not None and not overwrite:
         _check_save_dir_empty(save_dir)
+    elif save_dir is not None:
+        # Each recording is saved, its subdirectory deleted first, right after
+        # it is processed, in any order with joblib. Its own subdirectory is
+        # checked when it is saved; reading another one's is refused here.
+        for i_ds, i_target, target_dir in _overwrite_conflicts(
+            concat_ds.datasets, save_dir, offset
+        ):
+            if i_target != i_ds:
+                raise ValueError(
+                    f"Preprocessing with overwrite=True would delete {target_dir} "
+                    f"when saving dataset {i_target}, while dataset {i_ds} still "
+                    "reads its data from it. Save to another directory or load "
+                    "the data into memory first (preload=True)."
+                )
 
     if not isinstance(preprocessors, Iterable):
         raise ValueError("preprocessors must be a list of Preprocessor objects.")
