@@ -316,7 +316,10 @@ class _PatchEmbedding(nn.Module):
         x = self.pool(x)
         x = self.dropout(x)
         x = self.projection(x)
-        return x.flatten(start_dim=2).transpose(1, 2)
+        # Contiguous tokens: each residual add takes its first operand's
+        # layout, so a transposed view here would keep every add and layer
+        # norm of the encoder reading strided memory.
+        return x.flatten(start_dim=2).transpose(1, 2).contiguous()
 
 
 class _ResidualAdd(nn.Module):
