@@ -1706,6 +1706,32 @@ def test_multi_head_attention_invalid_emb_size():
         MultiHeadAttention(emb_size=33, num_heads=4)
 
 
+def test_hpu_fused_sdpa_gets_contiguous_inputs(monkeypatch):
+    # Gaudi's FusedSDPA gives wrong results for some strided q/k/v views.
+    import sys
+    import types
+
+    from braindecode.modules.attention import _hpu_eager_fused_sdpa
+
+    seen = []
+
+    class FusedSDPA:
+        @staticmethod
+        def apply(q, k, v, *args):
+            seen.append([t.is_contiguous() for t in (q, k, v)])
+            return q
+
+    internal = types.ModuleType("habana_frameworks.torch.utils.internal")
+    internal.is_lazy = lambda: False
+    kernels = types.ModuleType("habana_frameworks.torch.hpex.kernels")
+    kernels.FusedSDPA = FusedSDPA
+    monkeypatch.setitem(sys.modules, internal.__name__, internal)
+    monkeypatch.setitem(sys.modules, kernels.__name__, kernels)
+    qkv = torch.randn(2, 5, 3, 4, 8).permute(2, 0, 3, 1, 4)  # heads split off
+    _hpu_eager_fused_sdpa(*qkv.unbind(0))
+    assert seen == [[True, True, True]]
+
+
 def test_forward_pass_ifnet_output_shape():
     block = _SpatioTemporalFeatureBlock(
         n_times=128,  # divisible by stride_factor
