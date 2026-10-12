@@ -143,9 +143,8 @@ def test_eegclip_distributed_matches_global_loss_and_ddp_gradients(sizes):
     with tempfile.TemporaryDirectory() as directory:
         rendezvous = os.path.join(directory, "gloo_init")
         result_path = os.path.join(directory, "result.json")
-        mp.spawn(
-            _worker, args=(sizes, rendezvous, result_path),
-            nprocs=len(sizes), join=True,
+        _run_with_rank_zero_in_test_process(
+            _worker, sizes, rendezvous, result_path
         )
         with open(result_path, encoding="utf-8") as result:
             assert json.load(result)["max_abs_error"] < 1e-11
