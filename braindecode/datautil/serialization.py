@@ -21,6 +21,7 @@ from ..datasets.base import (
     EEGWindowsDataset,
     RawDataset,
     WindowsDataset,
+    _compact_fif_tags,
 )
 
 
@@ -142,7 +143,7 @@ def _load_signals(fif_file, preload, is_raw):
         if all(Path(f).exists() for f in signals.filenames):
             if preload:
                 signals.load_data()
-            return signals
+            return _compact_fif_tags(signals)
         else:  # This may happen if the file has been moved together with the pickle file.
             warnings.warn(
                 f"Pickle file {pkl_file} exists, but the referenced fif "
@@ -172,7 +173,8 @@ def _load_signals(fif_file, preload, is_raw):
             if preload:
                 signals._data, signals.preload = data, True
 
-    return signals
+    # after the pickle above, which keeps mne's own layout on disk
+    return _compact_fif_tags(signals)
 
 
 def load_concat_dataset(path, preload, ids_to_load=None, target_name=None, n_jobs=1):

@@ -356,12 +356,16 @@ class EEGNeX(EEGModuleMixin, nn.Module):
 
 
 class _TemporalConv(nn.Conv2d):
-    """``(1, k)`` Conv2d with "same" output length; on CPU, through
+    """``(1, k)`` Conv2d with "same" output length; on CPU and HPU, through
     :func:`~braindecode.functional.fft_conv1d` where
-    :func:`~braindecode.functional.prefer_fft_conv` expects it to be faster."""
+    :func:`~braindecode.functional.prefer_fft_conv` expects it to be faster.
+    On HPU only when gradients are computed: the FFT pays off in the
+    backward, and Gaudi's direct forward alone is cheaper."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if not prefer_fft_conv(x, self.kernel_size[1]):
+        if not prefer_fft_conv(x, self.kernel_size[1]) or (
+            x.device.type == "hpu" and not torch.is_grad_enabled()
+        ):
             return self._conv_forward(x, self.weight, self.bias)
         b, _, h, t = x.shape  # the conv1d of each of the b * h rows
         x = x.transpose(1, 2).reshape(b * h, -1, t)

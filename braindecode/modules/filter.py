@@ -14,6 +14,7 @@ from torch.fft import fftfreq
 from torchaudio.functional import filtfilt, lfilter
 
 from braindecode.functional import _real_dft, spectral_input
+from braindecode.functional.functions import _next_fast_len
 
 
 class FilterBankLayer(nn.Module):
@@ -23,8 +24,8 @@ class FilterBankLayer(nn.Module):
     It uses MNE's `create_filter` function to create the band-specific filters and
     applies them to multi-channel time-series data. Each filter in the bank corresponds to a
     specific frequency band and is applied to all channels of the input data. The filtering is
-    performed using FFT-based convolution if the method is FIR (bands whose filters have the
-    same length share one FFT of the input), and ``torchaudio.functional`` if the method is IIR.
+    performed using FFT-based convolution if the method is FIR (one FFT of the input for all
+    bands), and ``torchaudio.functional`` if the method is IIR.
 
     The default configuration creates 9 non-overlapping frequency bands with a 4 Hz bandwidth,
     spanning from 4 Hz to 40 Hz (i.e., 4-8 Hz, 8-12 Hz, ..., 36-40 Hz). This setup is based on the
@@ -316,35 +317,68 @@ class FilterBankLayer(nn.Module):
         return torch.cat(outs, dim=1)
 
     def _apply_fir_bank(self, x: Tensor) -> Tensor:
-        """Every band's ``torchaudio.functional.fftconvolve(x, filt, mode="same")``.
+        """Every band's ``fftconvolve(x, filt, mode="same")`` with one FFT of ``x``.
 
-        Same FFT length (``n_times + filter_length - 1``) and operations per
-        band, so bit-identical; adjacent bands with the same filter length
-        reuse the input's FFT, and HPU inputs cross to the CPU and back once.
+        Each filter is shifted (zeros on the left) so that its own "same"
+        window starts where the longest filter's does; the FFT length is the
+        5-smooth ``n >= n_times + filter_length - 1`` (a linear convolution, not
+        a circular one). Equal to the per-band convolution up to float rounding.
+        HPU inputs take one direct convolution on the device instead.
 
         Returns
         -------
         Tensor
             Filtered tensor of shape (batch_size, n_bands, n_chans, n_times).
         """
-        # spectral_input: float32 at least, on the CPU for HPU inputs (no
-        # complex FFT nor float64 there); the output goes back with .to(x).
+        if _real_dft.needs_real_dft(x):
+            return self._apply_fir_bank_direct(x)
         x_in = spectral_input(x)
-        n_times = x_in.shape[-1]
-        n_fft, x_fft = 0, x_in
-        outs = []
+        n_times = x.shape[-1]
+        length = max([fir.shape[-1] for fir in self.fir_list])
+        start = (length - 1) // 2
+        n_fft = 2 * _next_fast_len((n_times + length) // 2)
+        bank = torch.stack(
+            [
+                torch.fft.rfft(
+                    nn.functional.pad(
+                        fir.to(x_in), [start - (fir.shape[-1] - 1) // 2, 0]
+                    ),
+                    n=n_fft,
+                )
+                for fir in self.fir_list
+            ]
+        )
+        # (batch, 1, n_chans, freq) * (n_bands, 1, freq) -> (batch, n_bands, n_chans, freq)
+        spectra = torch.fft.rfft(x_in, n=n_fft).unsqueeze(1) * bank.unsqueeze(1)
+        filtered = torch.fft.irfft(spectra, n=n_fft)[..., start : start + n_times]
+        return filtered.to(x)
+
+    def _apply_fir_bank_direct(self, x: Tensor) -> Tensor:
+        """The FIR bank as one direct convolution on the device (HPU: no complex FFT).
+
+        Every filter sits in one zero-padded kernel, shifted so that its own
+        "same" window (start ``(filter_length - 1) // 2``) lines up with the
+        others'; flipped, since ``conv1d`` is a cross-correlation.
+        """
+        x32 = x.to(torch.promote_types(x.dtype, torch.float32))
+        start, length = 0, 0
         for fir in self.fir_list:
-            n = n_times + fir.shape[-1] - 1
-            if n != n_fft:
-                # ponytail: reuses the previous band's FFT only (MNE's "auto"
-                # lengths shrink with frequency); a dict if banks need more.
-                n_fft, x_fft = n, torch.fft.rfft(x_in, n=n)
-            full = torch.fft.irfft(
-                x_fft * torch.fft.rfft(fir.to(x_in)[None, None], n=n), n=n
+            start = max(start, (fir.shape[-1] - 1) // 2)
+        for fir in self.fir_list:
+            length = max(length, start - (fir.shape[-1] - 1) // 2 + fir.shape[-1])
+        kernels = []
+        for fir in self.fir_list:
+            left = start - (fir.shape[-1] - 1) // 2
+            kernel = nn.functional.pad(
+                fir.to(x32), [left, length - left - fir.shape[-1]]
             )
-            start = (fir.shape[-1] - 1) // 2
-            outs.append(full[..., start : start + n_times])
-        return torch.stack(outs, dim=1).to(x)
+            kernels.append(kernel.flip(-1))
+        batch, n_chans, n_times = x32.shape
+        padded = nn.functional.pad(
+            x32.reshape(batch * n_chans, 1, n_times), [length - 1 - start, start]
+        )
+        out = nn.functional.conv1d(padded, torch.stack(kernels).unsqueeze(1))
+        return out.reshape(batch, n_chans, -1, n_times).transpose(1, 2).to(x)
 
     @staticmethod
     def _apply_fir(

@@ -342,17 +342,13 @@ class _PositionalEmbedding(nn.Module):
 
 
 class _CrossChannelTokenEmbedding(nn.Module):
-    def __init__(
-        self, c_in: int, l_patch: int, d_model: int, stride: Optional[int] = None
-    ):
+    def __init__(self, c_in: int, l_patch: int, d_model: int):
         super().__init__()
-        if stride is None:
-            stride = l_patch
         self.token_conv = nn.Conv2d(
             in_channels=1,
             out_channels=d_model,
             kernel_size=(c_in, l_patch),
-            stride=(1, stride),
+            stride=(1, l_patch),
             padding=0,
             padding_mode="circular",
             bias=False,
@@ -364,14 +360,18 @@ class _CrossChannelTokenEmbedding(nn.Module):
                 )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # The kernel spans all c_in rows: run it as a conv1d with c_in input
-        # channels. Gaudi2 rejects conv kernels taller than 256 (c_in = n_times).
-        x = nn.functional.conv1d(
-            x.squeeze(1),
-            self.token_conv.weight.squeeze(1),
-            stride=self.token_conv.stride[1],
+        # The kernel spans all c_in rows and the patches do not overlap, so
+        # the conv is one GEMM of its weight with the patch-reshaped input
+        # (Gaudi2 rejects conv kernels taller than 256 rows, c_in = n_times).
+        l_patch = self.token_conv.kernel_size[1]
+        n_patches = x.shape[-1] // l_patch
+        x = x[:, 0, :, : n_patches * l_patch].reshape(
+            x.shape[0], x.shape[2], n_patches, l_patch
         )
-        return x.unsqueeze(2)
+        x = torch.matmul(
+            x.transpose(1, 2).flatten(2), self.token_conv.weight.flatten(1).t()
+        )
+        return x.transpose(1, 2).unsqueeze(2)
 
 
 class _ListPatchEmbedding(nn.Module):
@@ -493,11 +493,32 @@ class _AttentionLayer(nn.Module):
         _, key_len, _ = keys.shape
         num_heads = self.num_heads
 
-        queries = self.query_projection(queries).view(
-            batch_size, query_len, num_heads, -1
-        )  # multi-head
-        keys = self.key_projection(keys).view(batch_size, key_len, num_heads, -1)
-        values = self.value_projection(values).view(batch_size, key_len, num_heads, -1)
+        if queries is keys and keys is values:
+            # Self-attention: one GEMM for the three projections.
+            weight = torch.cat(
+                [
+                    self.query_projection.weight,
+                    self.key_projection.weight,
+                    self.value_projection.weight,
+                ]
+            )
+            bias = torch.cat(
+                [
+                    self.query_projection.bias,
+                    self.key_projection.bias,
+                    self.value_projection.bias,
+                ]
+            )
+            queries, keys, values = nn.functional.linear(queries, weight, bias).chunk(
+                3, dim=-1
+            )
+        else:
+            queries = self.query_projection(queries)
+            keys = self.key_projection(keys)
+            values = self.value_projection(values)
+        queries = queries.view(batch_size, query_len, num_heads, -1)  # multi-head
+        keys = keys.view(batch_size, key_len, num_heads, -1)
+        values = values.view(batch_size, key_len, num_heads, -1)
 
         out, attn = self.inner_attention(
             queries, keys, values, attn_mask, tau=tau, delta=delta
@@ -561,7 +582,13 @@ class _FullAttention(nn.Module):
         else:
             scale = self.scale
 
-        scores = torch.einsum("blhe,bshe->bhls", queries, keys)
+        # (batch, heads, len, dim) operands: both products are batched GEMMs.
+        queries, keys, values = (
+            queries.transpose(1, 2),
+            keys.transpose(1, 2),
+            values.transpose(1, 2),
+        )
+        scores = torch.matmul(queries, keys.transpose(-2, -1))
 
         if self.mask_flag:
             if attn_mask is None:
@@ -577,7 +604,7 @@ class _FullAttention(nn.Module):
         attention_weights = self.dropout(
             torch.softmax(scale * scores, dim=-1)
         )  # Scaled Dot-Product Attention
-        output_values = torch.einsum("bhls,bshd->blhd", attention_weights, values)
+        output_values = torch.matmul(attention_weights, values).transpose(1, 2)
 
         if self.output_attention:
             return output_values.contiguous(), attention_weights

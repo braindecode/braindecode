@@ -9,10 +9,12 @@
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 import torch
+import torch.nn.functional as F
 from einops.layers.torch import Rearrange
-from torch import nn
+from torch import Tensor, nn
 
 from braindecode.functional import drop_path
 
@@ -331,5 +333,42 @@ class ChannelMerger(nn.Module):
         scores = torch.einsum("bcd,bod->boc", [embedding, heads])
         scores = scores + score_offset[:, None]
         weights = torch.softmax(scores, dim=2).nan_to_num()  # over n_chans
-        out = weights @ x  # (B, out, n_chans) @ (B, n_chans, T) -> (B, out, T)
+        # (B, out, n_chans) @ (B, n_chans, T) -> (B, out, T). On HPU as
+        # (x^T @ weights^T)^T: Gaudi's lazy-mode graph compiler fails on
+        # ``weights @ x`` feeding a convolution's backward.
+        if x.device.type == "hpu":
+            out = (x.transpose(1, 2) @ weights.transpose(1, 2)).transpose(1, 2)
+        else:
+            out = weights @ x
         return out  # (B, out_channels, T)
+
+
+@torch.jit.unused
+def _hpu_fused_rms_norm(x: Tensor, weight: Tensor, eps: Optional[float]) -> Tensor:
+    from habana_frameworks.torch.hpex.normalization import FusedRMSNorm
+
+    return FusedRMSNorm.apply(
+        x, weight, torch.finfo(x.dtype).eps if eps is None else eps
+    )
+
+
+class RMSNorm(nn.RMSNorm):
+    """:class:`torch.nn.RMSNorm`; Gaudi's fused kernel on HPU.
+
+    On HPU, torch's RMSNorm runs op by op (square, mean, rsqrt, two products,
+    and their backward ops). With a weight over the last dimension, in float32
+    or bfloat16, the bridge's fused kernel runs it instead. Same parameters and
+    state dict; other devices are unchanged.
+    """
+
+    def forward(self, x: Tensor) -> Tensor:
+        if (
+            not torch.jit.is_scripting()
+            and x.device.type == "hpu"
+            and self.weight is not None
+            and len(self.normalized_shape) == 1
+            and x.dtype == self.weight.dtype
+            and (x.dtype == torch.float32 or x.dtype == torch.bfloat16)
+        ):
+            return _hpu_fused_rms_norm(x, self.weight, self.eps)
+        return F.rms_norm(x, self.normalized_shape, self.weight, self.eps)

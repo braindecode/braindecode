@@ -903,19 +903,45 @@ def test_filter_bank_layer_fftconvolve_comparison_fir(
     )
 
 
-def test_filter_bank_layer_fir_bands_equal_torchaudio_fftconvolve():
-    """Each FIR band is bit-identical to its own torchaudio fftconvolve (shared input FFTs)."""
-    from torchaudio.functional import fftconvolve
-
-    x = torch.randn(2, 3, 1000, generator=torch.Generator().manual_seed(0))
-    layer = FilterBankLayer(
-        n_chans=3, sfreq=250, band_filters=[(4, 8), (8, 12), (13, 30)], verbose=False
+@pytest.mark.parametrize("phase", ["zero", "minimum"])
+def test_filter_bank_layer_bands_match_per_band_fftconvolve(phase):
+    """All FIR bands at once (filters of different lengths) equal each band's own convolution."""
+    x = torch.randn(
+        2, 3, 1000, dtype=torch.float64, generator=torch.Generator().manual_seed(0)
     )
-    lengths = [fir.shape[-1] for fir in layer.fir_list]
-    assert lengths[0] == lengths[1] != lengths[2]  # one FFT reused, one not
+    layer = FilterBankLayer(
+        n_chans=3,
+        sfreq=250,
+        band_filters=[(4, 8), (13, 30), (30, 45)],
+        phase=phase,
+        verbose=False,
+    ).double()
+    assert len({fir.shape[-1] for fir in layer.fir_list}) > 1
     out = layer(x)
     for band, fir in enumerate(layer.fir_list):
-        assert torch.equal(out[:, band], fftconvolve(x, fir[None, None], mode="same"))
+        expected = fftconvolve_scipy(
+            x.numpy(), fir.detach().numpy()[None, None], mode="same", axes=2
+        )
+        np.testing.assert_allclose(out[:, band].numpy(), expected, atol=1e-10)
+
+
+@pytest.mark.parametrize("phase", ["zero", "minimum"])
+def test_filter_bank_layer_direct_bank_matches_fft_bank(phase):
+    """The direct-convolution bank (HPU path) equals the FFT bank, filters of different lengths."""
+    x = torch.randn(
+        2, 3, 1000, dtype=torch.float64, generator=torch.Generator().manual_seed(0)
+    )
+    layer = FilterBankLayer(
+        n_chans=3,
+        sfreq=250,
+        band_filters=[(4, 8), (13, 30), (30, 45)],
+        phase=phase,
+        verbose=False,
+    ).double()
+    assert len({fir.shape[-1] for fir in layer.fir_list}) > 1
+    torch.testing.assert_close(
+        layer._apply_fir_bank_direct(x), layer(x), rtol=0, atol=1e-10
+    )
 
 
 @pytest.mark.parametrize(
@@ -1652,6 +1678,25 @@ def test_multi_head_attention_supports_torch_2_0_sdpa(monkeypatch):
     )
 
 
+def test_sdpa_helper_dropout_matches_torch_sdpa():
+    """With dropout, the helper's CPU math path draws the same masks as torch."""
+    from braindecode.modules.attention import _scaled_dot_product_attention
+
+    q, k, v = (torch.randn(2, 3, 7, 4, requires_grad=True) for _ in range(3))
+    outs, grads = [], []
+    for fn in (
+        _scaled_dot_product_attention,
+        torch.nn.functional.scaled_dot_product_attention,
+    ):
+        torch.manual_seed(0)
+        out = fn(q, k, v, dropout_p=0.3)
+        outs.append(out)
+        grads.append(torch.autograd.grad(out.square().sum(), (q, k, v)))
+    torch.testing.assert_close(outs[0], outs[1])
+    for g0, g1 in zip(*grads):
+        torch.testing.assert_close(g0, g1)
+
+
 def test_multi_head_attention_bool_mask():
     from braindecode.modules import MultiHeadAttention
 
@@ -1678,6 +1723,32 @@ def test_multi_head_attention_invalid_emb_size():
 
     with pytest.raises(ValueError, match="divisible"):
         MultiHeadAttention(emb_size=33, num_heads=4)
+
+
+def test_hpu_fused_sdpa_gets_contiguous_inputs(monkeypatch):
+    # Gaudi's FusedSDPA gives wrong results for some strided q/k/v views.
+    import sys
+    import types
+
+    from braindecode.modules.attention import _hpu_eager_fused_sdpa
+
+    seen = []
+
+    class FusedSDPA:
+        @staticmethod
+        def apply(q, k, v, *args):
+            seen.append([t.is_contiguous() for t in (q, k, v)])
+            return q
+
+    internal = types.ModuleType("habana_frameworks.torch.utils.internal")
+    internal.is_lazy = lambda: False
+    kernels = types.ModuleType("habana_frameworks.torch.hpex.kernels")
+    kernels.FusedSDPA = FusedSDPA
+    monkeypatch.setitem(sys.modules, internal.__name__, internal)
+    monkeypatch.setitem(sys.modules, kernels.__name__, kernels)
+    qkv = torch.randn(2, 5, 3, 4, 8).permute(2, 0, 3, 1, 4)  # heads split off
+    _hpu_eager_fused_sdpa(*qkv.unbind(0))
+    assert seen == [[True, True, True]]
 
 
 def test_forward_pass_ifnet_output_shape():
