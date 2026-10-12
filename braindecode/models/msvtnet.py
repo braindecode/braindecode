@@ -5,6 +5,7 @@ from typing import Tuple, Type, Union
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin, _too_short_input_error
@@ -287,19 +288,118 @@ class _TSConv(nn.Sequential):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self[1](self[0](x))
-        if torch.is_grad_enabled() or x.device.type != "hpu":
+        if not torch.is_grad_enabled() and x.device.type == "hpu":
+            # On HPU without autograd the grouped convolution's forward is the
+            # faster one.
+            x = self[2](self[1](self[0](x)))
+        elif x.numel() * self[0].weight.shape[0] >= 2**26:
+            # ponytail: size heuristic. The spatial-first form adds ~50 small ops
+            # per branch; they pay off once the (batch, filters, chans, times)
+            # tensor it avoids reaches 2**26 elements (Gaudi lazy-mode crossover;
+            # eager mode and CPU gain from smaller inputs already).
+            x = self._spatial_first(x)
+        else:
             # The depthwise (n_channels, 1) convolution as a matmul over the
             # channel axis: same values, a faster backward than the grouped
-            # convolution's (on HPU the grouped forward is the faster one).
+            # convolution's.
+            x = self[1](self[0](x))
             b, f, c, t = x.shape
             x = torch.matmul(self[2].weight.view(f, -1, c), x).view(b, -1, 1, t)
-        else:
-            x = self[2](x)
         for i, layer in enumerate(self):
             if i > 2:
                 x = layer(x)
         return x
+
+    def _spatial_first(self, x: torch.Tensor) -> torch.Tensor:
+        """Temporal conv, batch norm and depthwise spatial conv (layers 0-2).
+
+        The three are linear per filter, so the spatial weights project the
+        input first and each filter's temporal kernel then runs on its
+        projections; in training the batch norm's statistics come from
+        :func:`_same_conv_moments`. The (batch, filters, chans, times) tensor
+        is never built.
+        """
+        b, _, c, t = x.shape
+        w = self[0].weight.flatten(1)
+        f, k = w.shape
+        w2 = self[2].weight.view(-1, c)
+        d = w2.shape[0] // f
+        if self[1].training or self[1].running_mean is None:
+            mean, var = _same_conv_moments(x.reshape(b * c, t), w)
+            if self[1].training and self[1].track_running_stats:
+                self[1].num_batches_tracked.add_(1)
+                momentum = self[1].momentum
+                if momentum is None:
+                    factor = 1.0 / float(self[1].num_batches_tracked)
+                else:
+                    factor = momentum
+                n = b * c * t
+                self[1].running_mean.mul_(1 - factor).add_(mean.detach(), alpha=factor)
+                self[1].running_var.mul_(1 - factor).add_(
+                    var.detach(), alpha=factor * n / (n - 1)
+                )
+        else:
+            mean, var = self[1].running_mean, self[1].running_var
+        scale = self[1].weight * torch.rsqrt(var + self[1].eps)
+        shift = (self[1].bias - mean * scale).unsqueeze(1) * w2.sum(1).view(f, d)
+        y = F.conv1d(
+            torch.matmul(w2, x.reshape(b, c, t)),
+            w.unsqueeze(1).expand(f, d, k).reshape(f * d, 1, k),
+            padding="same",
+            groups=f * d,
+        )
+        scale = scale.unsqueeze(1).expand(f, d).reshape(-1, 1)
+        return torch.addcmul(shift.view(-1, 1), y, scale).unsqueeze(2)
+
+
+def _same_conv_moments(
+    x: torch.Tensor, w: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Mean and biased variance per filter of ``conv1d(x, w, padding="same")``.
+
+    Over all rows and times, for ``x`` of shape (rows, times) and ``w`` of shape
+    (filters, k), without building the (rows, filters, times) output: the sum of
+    squares is the filter's autocorrelation against the input's (one matmul over
+    blocks of k samples), minus the outputs that "same" crops at both ends. The
+    input is centred first so the variance does not cancel against a large mean.
+    """
+    rows, t = x.shape
+    f, k = w.shape
+    n = rows * t
+    m = x.mean()
+    x = x - m
+    # a[l] = sum over rows and s of x[s] x[s + l], for l < k
+    nb = (t + k - 1) // k
+    blk = F.pad(x, (0, (nb + 1) * k - t)).view(rows, nb + 1, k)
+    nxt = torch.cat([blk[:, :nb], blk[:, 1:, : k - 1]], 2).reshape(-1, 2 * k - 1)
+    a = blk[:, :nb].reshape(-1, k).t() @ nxt
+    a = F.pad(a.reshape(-1), (0, k)).view(k, 2 * k)[:, :k].sum(0)
+    # sum of squares over every output of the full (uncropped) correlation
+    ww = F.conv1d(w.unsqueeze(0), w.unsqueeze(1), padding=k - 1, groups=f)[0]
+    sq = torch.mv(ww, torch.cat([a[1:].flip([0]), a]))
+    if k > 1:
+        right = k - 1 - (k - 1) // 2
+        pad = max(0, k - 1 - t)
+        ends = torch.cat(
+            [
+                F.pad(x[:, : k - 1], (k - 1, pad)),
+                F.pad(x[:, t - min(t, k - 1) :], (pad, k - 1)),
+            ]
+        )
+        ends = F.conv1d(ends.unsqueeze(1), w.unsqueeze(1)).view(2, rows, f, k - 1)
+        ends = ends.square().sum(1)
+        sq = sq - ends[0, :, :right].sum(1) - ends[1, :, right:].sum(1)
+    # undo the centring: conv(x + m) = conv(x) + m * v, v = conv(ones)
+    u = F.conv1d(x.sum(0).view(1, 1, t), w.unsqueeze(1), padding="same")[0]
+    v = F.conv1d(torch.ones_like(x[:1]).unsqueeze(0), w.unsqueeze(1), padding="same")[0]
+    mean_c = u.sum(1) / n
+    dv = v - v.mean(1, keepdim=True)
+    var = (
+        sq / n
+        - mean_c.square()
+        + m * (m * dv.square().mean(1) + 2 * (u * dv).sum(1) / n)
+    )
+    return mean_c + m * v.mean(1), var
 
 
 class _PositionalEncoding(nn.Module):
