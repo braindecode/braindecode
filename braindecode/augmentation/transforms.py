@@ -1100,8 +1100,8 @@ class CutMix(Mixup):
     """Implements CutMix for EEG data.
 
     A random time region of each example is replaced by the same region of
-    a shuffled example of the batch, see [1]_. As in the reference code, a
-    coefficient ``lam`` is drawn from a Beta distribution, the region is
+    a shuffled example of the batch, see [1]_. As in the reference code [2]_,
+    a coefficient ``lam`` is drawn from a Beta distribution, the region is
     ``(1 - lam) * n_times`` long (the 1-D analogue of the cut area ratio
     ``1 - lam``) around a uniformly drawn center, it is clipped at the trial
     boundaries, and ``lam`` is then recomputed from the pasted length.
@@ -1127,6 +1127,7 @@ class CutMix(Mixup):
        to Train Strong Classifiers with Localizable Features. In 2019
        IEEE/CVF International Conference on Computer Vision (ICCV)
        Online: https://arxiv.org/abs/1905.04899
+    .. [2] https://github.com/clovaai/CutMix-PyTorch/blob/master/train.py
     """
 
     operation = staticmethod(cutmix)  # type: ignore[assignment]
