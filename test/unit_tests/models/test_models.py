@@ -20,6 +20,8 @@ import mne
 import numpy as np
 import pytest
 import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
 from scipy.signal import stft
 from sklearn.utils import check_random_state
 from torch import nn
@@ -5769,6 +5771,54 @@ def test_eegclip_custom_encoders_and_masked_mean_pooling():
     assert model.text_projection.training is False
     with pytest.raises(ValueError, match="custom encoder"):
         model.get_config()
+
+
+def _eegclip_toy_step(sl=slice(None), distributed=False):
+    torch.manual_seed(0)
+    model = EEGCLIP(
+        n_chans=3,
+        n_times=4,
+        n_outputs=4,
+        eeg_encoder=nn.Flatten(),
+        eeg_embedding_dim=12,
+        text_embedding_dim=5,
+        projection_layers=1,
+    ).double()
+    X, text = torch.randn(5, 3, 4).double(), torch.randn(5, 5).double()
+    paired = model.forward_paired(X[sl], text[sl])
+    loss = model.contrastive_loss(
+        paired["eeg_embeds"], paired["text_embeds"], distributed=distributed
+    )
+    loss.backward()
+    return loss.detach(), {n: p.grad for n, p in model.named_parameters()}
+
+
+def _eegclip_rank(rank, init_file, out_dir):
+    dist.init_process_group(
+        "gloo", init_method=f"file://{init_file}", rank=rank, world_size=2
+    )
+    try:  # uneven shards: 2 + 3 pairs
+        loss, grads = _eegclip_toy_step(slice(0, 2) if rank == 0 else slice(2, 5), True)
+        for value in [loss, *grads.values()]:
+            dist.all_reduce(value)  # DDP's mean over ranks
+            value /= 2
+        torch.save({"loss": loss, **grads}, f"{out_dir}/rank{rank}.pt")
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(not dist.is_available(), reason="torch.distributed is unavailable")
+def test_eegclip_distributed_loss_matches_concatenated_batch(tmp_path):
+    loss, grads = _eegclip_toy_step()
+    # No process group: distributed=True is the local loss, bit for bit.
+    assert torch.equal(_eegclip_toy_step(distributed=True)[0], loss)
+    mp.spawn(
+        _eegclip_rank, args=(str(tmp_path / "init"), str(tmp_path)), nprocs=2
+    )
+    for rank in (0, 1):
+        out = torch.load(tmp_path / f"rank{rank}.pt", weights_only=True)
+        torch.testing.assert_close(out.pop("loss"), loss)
+        torch.testing.assert_close(out, grads)
 
 
 def _cz():

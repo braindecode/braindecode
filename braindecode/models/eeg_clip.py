@@ -38,6 +38,7 @@ from __future__ import annotations
 import math
 
 import torch
+import torch.distributed as dist
 from torch import nn
 from torch.nn import functional as F
 
@@ -237,35 +238,20 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
     def contrastive_loss(
         self, eeg_embeds, text_embeds, *, distributed=False, group=None
     ):
-        """Symmetric EEG/text cross-entropy over correctly paired negatives.
+        """Symmetric cross-entropy over a batch of paired EEG/text embeddings.
 
-        By default, preserve the released implementation's local-batch loss.
-        With ``distributed=True``, use every participating rank's EEG/text
-        examples as negatives, including uneven nonempty local batches.
-
-        The loss uses only local queries against all gathered keys, and
-        scales each rank's summed loss by ``world_size / global_batch_size``.
-        That scaling is needed for equivalence to a single global-batch
-        loss after DDP's *mean* gradient reduction, even when local batch
-        sizes differ. Collectives are autograd-aware so remote negatives
-        contribute to both encoder and learned-logit-scale gradients.
-
-        All ranks in ``group`` must call this method collectively, and
-        must contain matching nonempty EEG/text pairs with the same
-        feature dimension and floating dtype. Rank-local validation runs
-        collectively before feature gathering. When no process group is
-        initialized or its world size is one, this is the local-batch loss.
-        ``forward_paired`` still returns local-batch logits; use the
-        returned embeddings to compute this global-negative training loss.
+        With ``distributed=True`` in an initialized process group, the pairs of
+        every rank of ``group`` serve as negatives (ranks may hold different
+        batch sizes), and all its ranks must call this method. Each rank's loss
+        is scaled so that DDP's gradient mean gives the gradient of the loss on
+        the concatenated batch, which equals the mean of the ranks' losses.
         """
-        valid_pair = eeg_embeds.ndim == 2 and text_embeds.shape == eeg_embeds.shape
-        if not distributed:
-            if not valid_pair:
-                raise ValueError(
-                    "contrastive_loss requires matching 2D EEG/text embeddings."
-                )
-            if eeg_embeds.shape[0] == 0:
-                raise ValueError("contrastive_loss requires a nonempty paired batch.")
+        if not (
+            distributed
+            and dist.is_available()
+            and dist.is_initialized()
+            and dist.get_world_size(group) > 1
+        ):
             logits_per_eeg, logits_per_text = self.compute_logits(
                 eeg_embeds, text_embeds
             )
@@ -275,78 +261,29 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
                 + F.cross_entropy(logits_per_text, labels)
             ) / 2
 
-        import torch.distributed as dist
         from torch.distributed.nn.functional import all_gather
 
-        if not dist.is_available() or not dist.is_initialized():
-            return self.contrastive_loss(eeg_embeds, text_embeds)
-        world_size = dist.get_world_size(group)
-        if world_size == 1:
-            return self.contrastive_loss(eeg_embeds, text_embeds)
+        world_size, rank = dist.get_world_size(group), dist.get_rank(group)
+        size = torch.tensor([eeg_embeds.shape[0]], device=eeg_embeds.device)
+        sizes = [torch.zeros_like(size) for _ in range(world_size)]
+        dist.all_gather(sizes, size, group=group)
+        sizes = [int(s) for s in sizes]
 
-        # Validate on *every* rank before the autograd collectives. If one
-        # rank raises locally for mismatched inputs or a different feature
-        # dimension, otherwise-healthy peers may hang in all_gather().
-        local_size = eeg_embeds.shape[0] if eeg_embeds.ndim >= 1 else 0
-        local_dim = eeg_embeds.shape[1] if eeg_embeds.ndim == 2 else -1
-        # Autograd all_gather requires an identical dtype on every rank.
-        # A cross-rank float32/float64 mismatch can abort inside Gloo instead
-        # of raising a catchable Python exception. Encode supported training
-        # dtypes into the fixed-size integer preflight collective.
-        supported_dtypes = (torch.float16, torch.bfloat16, torch.float32, torch.float64)
-        dtype_code = (
-            supported_dtypes.index(eeg_embeds.dtype)
-            if eeg_embeds.dtype in supported_dtypes
-            else -1
+        def gather(x):  # autograd all_gather needs equal shapes: pad, then trim
+            x = F.pad(x, (0, 0, 0, max(sizes) - sizes[rank]))
+            return torch.cat([p[:n] for p, n in zip(all_gather(x, group=group), sizes)])
+
+        labels = torch.arange(sizes[rank], device=eeg_embeds.device) + sum(sizes[:rank])
+        loss = F.cross_entropy(
+            self.logit_scale * eeg_embeds @ gather(text_embeds).T,
+            labels,
+            reduction="sum",
+        ) + F.cross_entropy(
+            self.logit_scale * text_embeds @ gather(eeg_embeds).T,
+            labels,
+            reduction="sum",
         )
-        local_valid = (
-            valid_pair and eeg_embeds.dtype == text_embeds.dtype and dtype_code >= 0
-        )
-        metadata = torch.tensor(
-            [local_size, local_dim, dtype_code, int(local_valid)],
-            device=eeg_embeds.device,
-            dtype=torch.int64,
-        )
-        gathered_metadata = [torch.zeros_like(metadata) for _ in range(world_size)]
-        dist.all_gather(gathered_metadata, metadata, group=group)
-        if any(not int(item[3]) for item in gathered_metadata):
-            raise ValueError(
-                "contrastive_loss requires matching 2D EEG/text embeddings "
-                "and supported floating dtypes on every rank."
-            )
-        sizes = [int(item[0]) for item in gathered_metadata]
-        if any(size == 0 for size in sizes):
-            raise ValueError("Every rank needs at least one EEG/text pair.")
-        if any(int(item[1]) != local_dim for item in gathered_metadata):
-            raise ValueError("All ranks need the same embedding dimension.")
-        if any(int(item[2]) != dtype_code for item in gathered_metadata):
-            raise ValueError("All ranks need the same embedding dtype.")
-
-        max_size = max(sizes)
-        rank = dist.get_rank(group)
-
-        def gather_keys(features):
-            # Autograd all_gather requires equal tensor sizes. Pad only the
-            # first dimension, then remove padding before constructing logits.
-            padded = F.pad(features, (0, 0, 0, max_size - local_size))
-            gathered = all_gather(padded, group=group)
-            return torch.cat(
-                [part[:size] for part, size in zip(gathered, sizes)], dim=0
-            )
-
-        all_eeg = gather_keys(eeg_embeds)
-        all_text = gather_keys(text_embeds)
-        labels = torch.arange(local_size, device=eeg_embeds.device)
-        labels = labels + sum(sizes[:rank])
-        eeg_logits = self.logit_scale * eeg_embeds @ all_text.T
-        text_logits = self.logit_scale * text_embeds @ all_eeg.T
-        local_loss_sum = F.cross_entropy(
-            eeg_logits, labels, reduction="sum"
-        ) + F.cross_entropy(text_logits, labels, reduction="sum")
-        # DDP averages parameter gradients across ranks. Multiplying the
-        # local sum by world_size / global_count precisely compensates this
-        # average while counting each global query exactly once.
-        return local_loss_sum * (world_size / (2 * sum(sizes)))
+        return loss * world_size / (2 * sum(sizes))
 
     def forward_paired(self, X, text_inputs, attention_mask=None, **text_kwargs):
         """Return paired EEG/text embeddings and bidirectional similarity logits."""
