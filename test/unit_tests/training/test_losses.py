@@ -19,15 +19,16 @@ def test_mixup_criterion():
     lam = torch.arange(0.1, 1, 1 / n_samples)
 
     preds = torch.Tensor(np.random.RandomState(42).randn(n_samples, n_classes))
+    log_probs = preds.log_softmax(dim=1)
 
     target = (y_a, y_b, lam)
     loss = mixup_criterion(preds, target)
-    expected = -(lam * preds[:, 0] + (1 - lam) * preds[:, 1]).mean()
+    expected = -(lam * log_probs[:, 0] + (1 - lam) * log_probs[:, 1]).mean()
     assert loss == pytest.approx(expected)
 
     target = y_a
     loss = mixup_criterion(preds, target)
-    expected = -preds[:, 0].mean()
+    expected = -log_probs[:, 0].mean()
     assert loss == pytest.approx(expected)
 
 
@@ -38,7 +39,7 @@ def test_mixup_criterion_plain_target(n_samples):
     target = torch.zeros(n_samples, dtype=torch.int64)
 
     loss = mixup_criterion(preds, target)
-    expected = -preds[:, 0].mean()
+    expected = -preds.log_softmax(dim=1)[:, 0].mean()
     assert loss == pytest.approx(expected)
 
 
@@ -48,10 +49,26 @@ def test_mixup_criterion_accepts_list_target():
     y_b = torch.ones(n_samples, dtype=torch.int64)
     lam = torch.arange(0.1, 1, 1 / n_samples)
     preds = torch.Tensor(np.random.RandomState(42).randn(n_samples, 2))
+    log_probs = preds.log_softmax(dim=1)
 
     loss = mixup_criterion(preds, [y_a, y_b, lam])
-    expected = -(lam * preds[:, 0] + (1 - lam) * preds[:, 1]).mean()
+    expected = -(lam * log_probs[:, 0] + (1 - lam) * log_probs[:, 1]).mean()
     assert loss == pytest.approx(expected)
+
+
+def test_mixup_criterion_takes_logits_or_log_probabilities():
+    # braindecode models output logits; a log-softmax output gives the same loss
+    rng = np.random.RandomState(42)
+    logits = torch.as_tensor(10 * rng.randn(6, 4), dtype=torch.float32)
+    y_a = torch.as_tensor([0, 1, 2, 3, 0, 1])
+    y_b = torch.as_tensor([3, 2, 1, 0, 2, 3])
+    lam = torch.as_tensor(rng.uniform(size=6), dtype=torch.float32)
+    for target in [(y_a, y_b, lam), y_a]:
+        loss = mixup_criterion(logits, target)
+        assert loss >= 0
+        assert loss == pytest.approx(
+            mixup_criterion(logits.log_softmax(dim=1), target).item(), rel=1e-5
+        )
 
 
 def test_cropped_loss_accepts_mixup_target():
