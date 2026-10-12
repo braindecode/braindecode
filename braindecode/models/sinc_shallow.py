@@ -261,7 +261,12 @@ class _SincFilter(nn.Module):
         # Precompute constants
         window = torch.hamming_window(kernel_size, periodic=False)
 
-        self.register_buffer("window", window[: kernel_size // 2].unsqueeze(-1))
+        # The slice below is a view on the full window's storage, and
+        # safetensors refuses to serialize a tensor whose storage is larger
+        # than the tensor itself ("None is covering the entire storage").
+        # Clone it so the buffer owns a tight storage and save_pretrained /
+        # from_pretrained round-trips through model.safetensors.
+        self.register_buffer("window", window[: kernel_size // 2].unsqueeze(-1).clone())
 
         n_pi = (
             torch.arange(-(kernel_size // 2), 0, dtype=torch.float32)
