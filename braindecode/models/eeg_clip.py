@@ -251,7 +251,9 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         contribute to both encoder and learned-logit-scale gradients.
 
         All ranks in ``group`` must call this method collectively, and
-        must contain matching nonempty EEG/text pairs and the same feature\n        dimension. Rank-local validation is synchronized before feature\n        gathering. When no process group is
+        must contain matching nonempty EEG/text pairs with the same
+        feature dimension and floating dtype. Rank-local validation runs
+        collectively before feature gathering. When no process group is
         initialized or its world size is one, this is the local-batch loss.
         ``forward_paired`` still returns local-batch logits; use the
         returned embeddings to compute this global-negative training loss.
