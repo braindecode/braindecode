@@ -307,10 +307,8 @@ class _PatchEmbedding(nn.Module):
         # intermediate.
         bias_time, bias_spat = self.conv1.bias, self.conv2.bias
         assert bias_time is not None and bias_spat is not None
-        # (filters_spat, chans, filters_time) @ (filters_time, kernel)
-        weight = self.conv2.weight.squeeze(-1).transpose(
-            1, 2
-        ) @ self.conv1.weight.flatten(1)
+        w_spat = self.conv2.weight.squeeze(-1).transpose(1, 2)  # (spat, chans, time)
+        weight = w_spat @ self.conv1.weight.flatten(1)  # (spat, chans, kernel)
         bias = self.conv2.weight.sum((2, 3)) @ bias_time + bias_spat
         x = F.conv1d(x, weight, bias).unsqueeze(2)
         x = self.bn(x)

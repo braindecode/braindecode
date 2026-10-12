@@ -2,6 +2,7 @@
 #
 # License: BSD (3-clause)
 import pytest
+import torch
 
 from braindecode.models.mirepnet import MIRepNet
 
@@ -48,3 +49,23 @@ def test_mirepnet_edge_cases(kwargs, message):
 
     with pytest.raises(ValueError, match=message):
         MIRepNet(**model_kwargs)
+
+
+def test_mirepnet_stem_is_the_two_convolutions():
+    torch.manual_seed(0)
+    model = MIRepNet(n_chans=5, n_outputs=2, n_times=200, embed_dim=16).double()
+    emb = model.embedding.eval()
+    x = torch.randn(3, 5, 200, dtype=torch.float64)
+    params = [emb.conv1.weight, emb.conv1.bias, emb.conv2.weight, emb.conv2.bias]
+    out = emb(x)
+    out.square().sum().backward()
+    grads = [p.grad.clone() for p in params]
+    emb.zero_grad()
+    ref = emb.conv2(emb.conv1(x.unsqueeze(1)))
+    for layer in (emb.bn, emb.elu, emb.pool, emb.dropout, emb.projection):
+        ref = layer(ref)
+    ref = ref.flatten(start_dim=2).transpose(1, 2)
+    ref.square().sum().backward()
+    torch.testing.assert_close(out, ref)
+    for g, p in zip(grads, params):
+        torch.testing.assert_close(g, p.grad)
