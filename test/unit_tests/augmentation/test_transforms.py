@@ -880,6 +880,7 @@ def test_segmentation_reconstruction_remainder_uses_final_donor():
         (0.2, -1, True),
         (0.2, 2, False),
         (1., 3, False),
+        (1., 1, False),  # full-window mask
     ],
 )
 def test_mask_encoding_transform(
@@ -1055,3 +1056,9 @@ def test_set_params(augmented_mock_clf, augmentation, kwargs, random_batch):
     assert isinstance(
         augmented_mock_clf.train_split, type(predefined_split(random_batch))
     )
+
+
+def test_mask_encoding_reaches_last_sample():
+    X = torch.ones(100, 2, 10)
+    tr_X, _ = MaskEncoding(1, max_mask_ratio=0.3, random_state=0)(X, torch.arange(100))
+    assert (tr_X[..., -1] == 0).any()

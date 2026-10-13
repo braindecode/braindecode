@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 
 import torch
+import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from mne.utils import warn
 from torch import Tensor, nn
@@ -321,7 +322,26 @@ class _MultiScalePatchEmbeddingCNN(nn.Module):
         Tensor
             Embedded patches of shape (batch_size, n_patches, embedding_dim).
         """
-        x = torch.cat([branch(x) for branch in self.branches], dim=1)
+        # The temporal and the depth-wise spatial convolution of a branch are
+        # both linear with nothing in between, so they run as one convolution
+        # over the channels with the composed weight and bias: same
+        # parameters, without the (batch, filters, n_chans, n_times)
+        # intermediate.
+        x = x.squeeze(1)
+        outs = []
+        for branch in self.branches:
+            temporal, spatial = branch[0], branch[1]
+            bias_time, bias_spat = temporal.bias, spatial.bias
+            assert bias_time is not None and bias_spat is not None
+            # (filters, n_chans, 1) * (filters, 1, kernel)
+            weight = spatial.weight.squeeze(1) * temporal.weight.squeeze(1)
+            bias = torch.addcmul(bias_spat, spatial.weight.sum((1, 2, 3)), bias_time)
+            z = F.conv1d(x, weight, bias, padding="same").unsqueeze(2)
+            for i, layer in enumerate(branch):
+                if i > 1:
+                    z = layer(z)
+            outs.append(z)
+        x = torch.cat(outs, dim=1)
         x = self.projection(x)
         return x
 
