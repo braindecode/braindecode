@@ -16,6 +16,7 @@ from braindecode.models import (
     BrainBERT,
     Brant,
     CBraMod,
+    DuIN,
     EpiNT,
     Guetschel2026,
     Labram,
@@ -124,6 +125,7 @@ _MODELS = [
     ),
     pytest.param(Brant, N_CHANS, {"sfreq": 250.0}, False, id="Brant"),
     pytest.param(BrainBERT, N_CHANS, {}, False, id="BrainBERT"),
+    pytest.param(DuIN, N_CHANS, {"sfreq": 1000.0}, False, id="DuIN"),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
     pytest.param(PopulationTransformer, N_CHANS, {}, True, id="PopulationTransformer"),
     pytest.param(

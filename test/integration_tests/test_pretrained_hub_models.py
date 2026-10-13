@@ -334,6 +334,7 @@ class TestSTEEGFormerPretrained:
         ("MIRepNet", "braindecode/mirepnet-pretrained", 45),
         ("STEEGFormer", "braindecode/STEEGFormer-small", 22),
         ("BrainBERT", "braindecode/brainbert-pretrained", 1),
+        ("DuIN", "braindecode/duin-pretrained", 10),
     ],
 )
 def test_all_pretrained_models_load(
@@ -367,6 +368,7 @@ def test_all_pretrained_models_load(
         ("MIRepNet", "braindecode/mirepnet-pretrained"),
         ("STEEGFormer", "braindecode/STEEGFormer-small"),
         ("BrainBERT", "braindecode/brainbert-pretrained"),
+        ("DuIN", "braindecode/duin-pretrained"),
     ],
 )
 def test_pretrained_models_forward_pass(model_cls, repo_id, hub_cache_dir):

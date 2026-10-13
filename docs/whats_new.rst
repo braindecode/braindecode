@@ -61,6 +61,14 @@ Enhancements
   :meth:`~braindecode.models.Guetschel2026.hub_repo_id` builds their names. The head is a
   flatten and a linear layer, with an optional fixed Gaussian random projection in between
   (``random_projection``, as in the OpenEEGBench probe) (:gh:`1260` by `Pierre Guetschel`_).
+- Add :class:`braindecode.models.DuIN` (Du-IN, Zheng et al., NeurIPS 2024),
+  an sEEG speech decoder that fuses the channels of a brain region into one
+  token per 100 ms patch before a Transformer encoder. The authors'
+  per-subject Du-IN checkpoints (MAE and VQ-VAE stages, 12 subjects) are on
+  the Hub at ``braindecode/duin-pretrained`` and match the upstream encoder
+  to float precision.
+  :class:`braindecode.modules.MultiHeadAttention` gains ``head_dim`` and
+  ``qk_norm`` for it (:gh:`1269` by `Adam Mounir`_).
 - :class:`braindecode.models.MetaNeuromotorHand` sums the cross-spectral bins of each frequency band with one einsum instead of a broadcast product and a sum: CPU forward and train step 3-7 % faster, Gaudi 2-10 % faster; outputs and gradients differ from before by more than float32 rounding (up to 1.6x master's own float32-vs-float64 difference, amplified by the eigendecomposition), argmax unchanged (:gh:`1330` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MetaNeuromotorHand` rotates and half-vectorizes the MPF matrices with one precomputed ``index_select`` instead of three rolls, a stack and a permute copy: CPU train step about 2 % faster, Gaudi neutral; outputs, gradients and state dict unchanged bit for bit (:gh:`1292` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MetaNeuromotorHand` solves the eigendecompositions of its matrix logarithm in chunks on all CPU threads instead of one matrix after another on one thread (torch's CPU ``eigh``): train step 2.5x faster at 24 threads (21 channels x 32,000 samples, batch 64), 11-15 % at 2 threads (batch 32), 1.5x on Gaudi (the featurizer runs on the host CPU); bit-identical outputs and gradients (:gh:`1336` by `Bruno Aristimunha`_).
