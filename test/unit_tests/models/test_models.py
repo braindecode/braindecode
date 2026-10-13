@@ -6130,6 +6130,65 @@ def test_eegclip_global_collective_shape_and_empty_counters_covered(monkeypatch)
         )
 
 
+
+
+def _eegclip_one_empty_rank_actual_ddp(rank, init_file, result_dir):
+    """An empty local rank still joins global negatives and DDP backward."""
+    from datetime import timedelta
+
+    dist.init_process_group(
+        "gloo", init_method=f"file://{init_file}",
+        rank=rank, world_size=2, timeout=timedelta(seconds=30),
+    )
+    try:
+        torch.manual_seed(0)
+        net = _EEGCLIPActualDDPTraining()
+        wrapped = nn.parallel.DistributedDataParallel(net)
+        X, text = torch.randn(5, 3, 4).double(), torch.randn(5, 5).double()
+        shard = slice(0, 0) if rank == 0 else slice(0, 5)
+        local_loss = wrapped(X[shard], text[shard], distributed=True)
+        local_loss.backward()
+        grads = {
+            key: param.grad.detach().clone()
+            for key, param in wrapped.module.named_parameters()
+        }
+        global_loss = local_loss.detach().clone()
+        dist.all_reduce(global_loss)
+        global_loss /= 2
+        torch.save(
+            {"loss": global_loss, "grads": grads},
+            f"{result_dir}/empty_rank{rank}.pt",
+        )
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(not dist.is_available(), reason="torch.distributed unavailable")
+def test_eegclip_one_empty_rank_nonempty_global_matches_ddp_oracle(tmp_path):
+    """Empty rank versus nonempty rank must give exact centralized gradients."""
+    torch.manual_seed(0)
+    model = _EEGCLIPActualDDPTraining()
+    X, text = torch.randn(5, 3, 4).double(), torch.randn(5, 5).double()
+    reference_loss = model(X, text)
+    reference_loss.backward()
+    reference_grads = {
+        key: param.grad.detach().clone()
+        for key, param in model.named_parameters()
+    }
+    mp.spawn(
+        _eegclip_one_empty_rank_actual_ddp,
+        args=(str(tmp_path / "empty-rank-init"), str(tmp_path)),
+        nprocs=2,
+    )
+    for rank in (0, 1):
+        got = torch.load(
+            tmp_path / f"empty_rank{rank}.pt", weights_only=True,
+        )
+        torch.testing.assert_close(got["loss"], reference_loss.detach())
+        for name, expected_grad in reference_grads.items():
+            torch.testing.assert_close(got["grads"][name], expected_grad)
+
+
 def _cz():
     info = mne.create_info(["Cz"], 256.0, "eeg")
     return info.set_montage("standard_1005")["chs"]
