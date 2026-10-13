@@ -388,6 +388,13 @@ Enhancements
   tables are module constants. Eager outputs and state-dict keys are unchanged
   (:gh:`1276` by `Bruno Aristimunha`_).
 
+- :class:`braindecode.models.CodeBrain` computes its bidirectional long convolution
+  on Intel Gaudi (HPU) as a real-valued DFT (device matmuls against a cached
+  cosine/sine basis) instead of a host ``torch.fft`` round trip: Gaudi lazy TUEG
+  batch 64 now trains (~3.5 s/step, previously synStatus 26); CPU and CUDA keep
+  the ``torch.fft`` path (bit-identical), TorchScript and state dict unchanged
+  (:gh:`1390` by `Bruno Aristimunha`_).
+
 API and behavior changes
 ========================
 
