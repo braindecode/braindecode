@@ -40,6 +40,7 @@ from .epint import EpiNT
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
+from .gcnsnet import GCNsNet
 from .guetschel2026 import Guetschel2026
 from .hybrid import HybridNet
 from .ifnet import IFNet
@@ -142,6 +143,7 @@ __all__ = [
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",
+    "GCNsNet",
     "Guetschel2026",
     "MetaNeuromotorHand",
     "HybridNet",

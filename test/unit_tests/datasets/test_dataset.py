@@ -258,6 +258,32 @@ def test_no_metadata(concat_ds_targets):
         concat_ds_targets[0].get_metadata()
 
 
+def test_metadata_gives_the_dataset_of_each_window(concat_windows_dataset):
+    n_windows = [len(ds) for ds in concat_windows_dataset.datasets]
+    md = concat_windows_dataset.get_metadata()
+    np.testing.assert_array_equal(
+        md["i_dataset"], np.repeat(np.arange(len(n_windows)), n_windows)
+    )
+    # positions refer to the concat the metadata is taken from
+    subset = concat_windows_dataset.split([[2, 0]])["0"]
+    np.testing.assert_array_equal(
+        subset.get_metadata()["i_dataset"],
+        np.repeat([0, 1], [n_windows[2], n_windows[0]]),
+    )
+
+
+def test_metadata_rejects_a_description_named_i_dataset():
+    raw = mne.io.RawArray(np.zeros((1, 200)), mne.create_info(1, 100.0, "eeg"))
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw, {"i_dataset": 7})]),
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+    )
+    with pytest.raises(ValueError, match="i_dataset"):
+        windows.get_metadata()
+
+
 def test_on_the_fly_transforms_base_dataset(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     original_X = concat_ds[0][0]

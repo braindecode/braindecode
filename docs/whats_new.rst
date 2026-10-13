@@ -388,9 +388,14 @@ Enhancements
   tables are module constants. Eager outputs and state-dict keys are unchanged
   (:gh:`1276` by `Bruno Aristimunha`_).
 
+- Add :class:`braindecode.models.GCNsNet`, a graph convolutional neural network
+  for decoding time-resolved EEG motor imagery signals, from Hou et al. (2022)
+  (:gh:`1331` by `Seáic Mac Murchadha`_).
+
 API and behavior changes
 ========================
 
+- :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` returns an ``i_dataset`` column with the position of the dataset each window comes from, and raises a :class:`ValueError` if a description or the window metadata already has that key. The samplers in :mod:`braindecode.samplers` take each dataset as one recording; pass the metadata without ``i_dataset`` to group the one-trial datasets of :func:`braindecode.datasets.create_from_X_y` or :func:`braindecode.datasets.create_from_mne_epochs` by subject, session and run as before. The samplers' ``info`` gets a ``recording`` index level after subject, session and run (:gh:`1369` by `Raghav Rathi`_).
 - :class:`braindecode.models.Labram`, :class:`braindecode.models.CBraMod` and
   :class:`braindecode.models.LUNA` tokenize the time axis with the shared
   :class:`braindecode.modules.PatchTokenizer` and accept a window that is not a
@@ -433,6 +438,10 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.SincShallowNet` now round-trips through
+  ``save_pretrained``/``from_pretrained``: its ``window`` buffer viewed a larger
+  storage, which safetensors refuses, so ``model.safetensors`` was never written
+  (:gh:`1385` by `Li Qing`_).
 - Attention on Intel Gaudi in HPU eager mode no longer returns wrong outputs and gradients at some shapes: the bridge's fused SDPA kernel, used since :gh:`1338` through a shared helper by :class:`braindecode.modules.MultiHeadAttention` (EEGConformer, CTNet, MSCFormer, MIRepNet, STEEGFormer), :class:`braindecode.models.ZUNA`, :class:`braindecode.models.DANCE`, :class:`braindecode.models.Labram`, :class:`braindecode.models.BaRISTA`, :class:`braindecode.models.NeuroRVQ`, :class:`braindecode.models.NeuroRVQTokenizer`, :class:`braindecode.models.REVE`, :class:`braindecode.models.PBT` and :class:`braindecode.models.EEGPT`, received q/k/v as strided head views and gave values unrelated to the right ones for some of them (for example EEGConformer with 64 tokens per window at batch 4). The helper now passes contiguous copies; train-step time unchanged (:gh:`1358` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.NeuroRVQTokenizer` now synchronizes its cold-start
   EMA codebook weights, counts and initialization state from rank zero before
@@ -440,8 +449,11 @@ Bug fixes
   previously produced incompatible codebooks despite later all-reduced EMA
   statistics (:gh:`1319` by `lindicaphxag-tech`_).
 - :class:`braindecode.augmentation.MaskEncoding` can mask the last valid interval and a full window (``max_mask_ratio=1``, ``n_segments=1``), which raised ``ValueError: high <= 0`` (:gh:`1323` by `Anton Soloviev`_).
+- :meth:`braindecode.datasets.BaseConcatDataset.save` and :func:`braindecode.preprocessing.preprocess` with ``overwrite=True`` raise a :class:`ValueError` instead of deleting a subdirectory a lazily loaded dataset still reads from; saving such a dataset back where it was loaded from lost its recordings, or with ``ids_to_load`` in another order wrote wrong data silently (:gh:`1367` by `Raghav Rathi`_).
 - :class:`braindecode.datasets.TUH`, :class:`braindecode.datasets.TUHAbnormal` and :class:`braindecode.datasets.TUHEvents` keep a recording date that FIF cannot store (before 1901-12-13: the year-1 placeholder of undated recordings, the de-identified 1899-12-30 of 16 TUAB v3.0.1 EDFs) in the description only and leave the raw's ``meas_date`` empty, so :func:`braindecode.preprocessing.preprocess` with ``save_dir`` no longer aborts on them (:gh:`1307` by `Bruno Aristimunha`_).
+- The samplers in :mod:`braindecode.samplers` took the windows sharing ``subject``, ``session`` and ``run`` for one recording. The two nights of a :class:`braindecode.datasets.SleepPhysionet` subject were one recording, so :class:`braindecode.samplers.SequenceSampler` and :class:`braindecode.samplers.BalancedSequenceSampler` built sequences running from one night into the other and :class:`braindecode.samplers.RelativePositioningSampler` raised an ``IndexError``; the same happened to the segments of a TUH session. Windows of BIDS recordings without session or run were dropped, so a dataset without these entities raised an error, and datasets without any of these columns could not be sampled. Each dataset is now one recording, which the new ``i_dataset`` column of :meth:`~braindecode.datasets.BaseConcatDataset.get_metadata` marks, and :class:`braindecode.samplers.RelativePositioningSampler` no longer fails when two windows of a recording start at the same sample (:gh:`1369` by `Raghav Rathi`_).
 - :class:`braindecode.models.MEDFormer` runs its patch embedding, a Conv2d kernel as tall as ``n_times``, as the equivalent conv1d with ``n_times`` input channels: MEDFormer now runs on Gaudi2, whose convolution kernels are limited to 256 rows (it failed to compile for ``n_times > 256``), and its CPU train step is 15-35 % faster; same state dict, outputs change by float rounding only (:gh:`1287` by `Bruno Aristimunha`_).
+- :func:`braindecode.training.mixup_criterion` uses ``cross_entropy`` instead of ``nll_loss``: the models output logits since :gh:`624`, so its loss had no lower bound and training with :class:`braindecode.augmentation.Mixup` diverged without an error; log-probabilities still give the same loss (:gh:`1389` by `Raghav Rathi`_).
 - :class:`braindecode.models.REVE`, :class:`braindecode.models.CSBrain`, :class:`braindecode.models.AttnSleep`, :class:`braindecode.models.BDTCN`, :class:`braindecode.models.ZUNA` and :class:`braindecode.models.DGCNN` raise a :class:`ValueError` at construction for input geometries they cannot run (channel names missing from REVE's position bank or windows shorter than its patch, CSBrain windows that are not a multiple of ``patch_size``, more than one AttnSleep channel, windows shorter than the BDTCN receptive field, more ZUNA time patches than ``max_seqlen``, a single DGCNN channel) instead of failing in ``forward`` or with an unrelated error; the :class:`braindecode.models.USleep` error for an even kernel size names ``ensure_odd_conv_size`` (:gh:`1313` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.SleepStagerBlanco2020`, :class:`braindecode.models.EEGConformer` and :class:`braindecode.models.MSVTNet` raise the :class:`ValueError` naming ``n_times`` and the input shape when the window is too short for the dummy forward that sizes their head at construction, instead of a torch ``RuntimeError`` (:gh:`1322` by `Bruno Aristimunha`_).
 - Fix coordinate ordering in :class:`braindecode.augmentation.SensorsRotation` with ``spherical_splines=False``, which raised an error or interpolated the wrong locations (:gh:`1295` by `Anton Soloviev`_).
@@ -2415,3 +2427,4 @@ Authors
 .. _Raghav Rathi: https://github.com/raghav-rathi
 
 .. _lindicaphxag-tech: https://github.com/lindicaphxag-tech
+.. _Seáic Mac Murchadha: https://github.com/seaic-mac-murchadha
