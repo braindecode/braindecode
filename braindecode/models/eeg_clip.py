@@ -264,10 +264,26 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         from torch.distributed.nn.functional import all_gather
 
         world_size, rank = dist.get_world_size(group), dist.get_rank(group)
-        size = torch.tensor([eeg_embeds.shape[0]], device=eeg_embeds.device)
-        sizes = [torch.zeros_like(size) for _ in range(world_size)]
-        dist.all_gather(sizes, size, group=group)
-        sizes = [int(s) for s in sizes]
+        # Preflight all ranks with ONE collective before any autograd gather.
+        # A rank-local early error would leave peers blocked in collectives.
+        # Derive both EEG and text row counts, not just EEG row counts.
+        local_rows = torch.tensor(
+            [eeg_embeds.shape[0], text_embeds.shape[0]],
+            device=eeg_embeds.device,
+        )
+        per_rank_rows = [torch.zeros_like(local_rows) for _ in range(world_size)]
+        dist.all_gather(per_rank_rows, local_rows, group=group)
+        if any(int(rows[0]) != int(rows[1]) for rows in per_rank_rows):
+            raise ValueError(
+                "Distributed EEGCLIP requires equal EEG/text paired rows "
+                "on every rank."
+            )
+        sizes = [int(rows[0]) for rows in per_rank_rows]
+        if sum(sizes) == 0:
+            raise ValueError(
+                "Distributed EEGCLIP needs at least one paired sample "
+                "globally; every rank is empty."
+            )
 
         def gather(x):  # autograd all_gather needs equal shapes: pad, then trim
             x = F.pad(x, (0, 0, 0, max(sizes) - sizes[rank]))
