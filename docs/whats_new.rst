@@ -77,6 +77,12 @@ Enhancements
 - :class:`braindecode.modules.ChannelMerger` (DANCE, ``BrainModule(use_merger=True)``) computes its channel mix as ``(x^T @ weights^T)^T`` on HPU, where Gaudi's lazy-mode graph compiler failed on ``weights @ x`` feeding a convolution's backward: DANCE now trains in Gaudi lazy mode (train step 622 ms vs 844 ms in eager mode, 21 channels x 6000 samples, batch 64); other devices run the same code as before (:gh:`1351` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.BrainModule` computes its GLU gates as ``a * sigmoid(b)`` in Intel Gaudi (HPU) lazy mode, where the graph compiler failed on ``aten.glu`` after the gate's convolution: BrainModule now trains in Gaudi lazy mode (train step 306 ms vs 554 ms in eager mode, 21 channels x 6000 samples, batch 64); eager mode and other devices run the same code as before (:gh:`1371` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` aggregates its residual skip connections as one ``torch.stack(skips).sum(0)`` reduction in Intel Gaudi (HPU) lazy mode, where the graph compiler failed on the backward of the sequential sum (a skip-convolution weight-gradient node landed in two pipeline bundles): CodeBrain now trains in Gaudi lazy mode (train step 3498 ms vs 3691 ms in eager mode, 21 channels x 6000 samples, batch 64); eager mode and other devices run the same code as before (:gh:`1387` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.CodeBrain` computes its bidirectional long convolution
+  on Intel Gaudi (HPU) as a real-valued DFT (device matmuls against a cached
+  cosine/sine basis) instead of a host ``torch.fft`` round trip: Gaudi lazy TUEG
+  batch 64 now trains (~3.5 s/step, previously synStatus 26); CPU and CUDA keep
+  the ``torch.fft`` path (bit-identical), TorchScript and state dict unchanged
+  (:gh:`1390` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MSVTNet` computes the depthwise spatial convolution of each branch as a matmul over the channel axis when gradients are computed (and on CPU): same values, a faster backward than the grouped convolution's. Gaudi train step 0.86x in eager and 0.87x in lazy mode, CPU 0.88x at 22 channels x 1000 samples (batch 32) and 0.98x at 21 x 6000 (batch 64); evaluation on Gaudi keeps the grouped convolution; outputs and batch-norm statistics unchanged on CPU, gradients change by float rounding (:gh:`1380` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MSVTNet` with large inputs (when a branch's (batch, filters, channels, times) activation would reach 2**26 elements, e.g. 21 channels x 6000 samples at batch 64) applies each branch's spatial weights to the input first and runs each filter's temporal kernel on its projections, with the first batch norm's statistics computed from the input's autocorrelation, so that activation is never built: same function and state dict, numerical differences only. Train step at 21 x 6000, batch 64: Intel Gaudi 0.57x in eager mode and 0.78x in lazy mode, CPU 0.23x (:gh:`1384` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.TFMTokenizer` computes the group norms of its frequency- and temporal-path convolutional blocks from mean and variance on Intel Gaudi (HPU), where the graph compiler failed on the native group-norm backward at the TUEG batch size ("SRAM capping too big"): TFMTokenizer now trains on Gaudi (train step about 1.5 s in eager and 8 s in lazy mode, 21 channels x 6000 samples, batch 64); CPU, CUDA and TorchScript run the same ``group_norm`` call as before (bit-identical on CPU), same state dict (:gh:`1386` by `Bruno Aristimunha`_).
@@ -387,13 +393,6 @@ Enhancements
   scripts. The token layout is a tuple of named buffers and the band and region
   tables are module constants. Eager outputs and state-dict keys are unchanged
   (:gh:`1276` by `Bruno Aristimunha`_).
-
-- :class:`braindecode.models.CodeBrain` computes its bidirectional long convolution
-  on Intel Gaudi (HPU) as a real-valued DFT (device matmuls against a cached
-  cosine/sine basis) instead of a host ``torch.fft`` round trip: Gaudi lazy TUEG
-  batch 64 now trains (~3.5 s/step, previously synStatus 26); CPU and CUDA keep
-  the ``torch.fft`` path (bit-identical), TorchScript and state dict unchanged
-  (:gh:`1390` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
