@@ -1281,6 +1281,49 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         )
 
 
+def _lazy_source_files(ds) -> list:
+    """Return the files ``ds`` still reads its signal from (none once preloaded)."""
+    signal = ds.raw if hasattr(ds, "raw") else getattr(ds, "windows", None)
+    if signal is None or getattr(signal, "preload", True):
+        return []
+    files = list(
+        getattr(signal, "filenames", None) or [getattr(signal, "filename", None)]
+    )
+    raw = getattr(signal, "_raw", None)
+    if isinstance(raw, mne.io.BaseRaw) and not raw.preload:
+        files += raw.filenames  # mne.Epochs of a lazily read Raw read through it
+    return [f for f in files if f is not None]
+
+
+def _dir_key(directory):
+    """Identify a directory by device and inode, whatever its spelling."""
+    stat = os.stat(directory)
+    return stat.st_dev, stat.st_ino
+
+
+def _overwrite_conflicts(datasets, path, offset):
+    """Yield ``(i_ds, i_target, target_dir)`` for each dataset ``i_ds`` that
+    lazily reads from inside ``target_dir = path/<i_target + offset>``, which
+    ``save(overwrite=True)`` deletes before writing dataset ``i_target``.
+    """
+    targets = {}
+    for i in range(len(datasets)):
+        target_dir = os.path.join(path, str(i + offset))
+        if os.path.isdir(target_dir):
+            targets[_dir_key(target_dir)] = (i, target_dir)
+    if not targets:
+        return
+    for i_ds, ds in enumerate(datasets):
+        for file in _lazy_source_files(ds):
+            # ancestors of the name and of the file it links to (DataLad)
+            parents = {
+                *Path(os.path.abspath(file)).parents,
+                *Path(os.path.realpath(file)).parents,
+            }
+            for key in {_dir_key(p) for p in parents if p.is_dir()} & targets.keys():
+                yield (i_ds, *targets[key])
+
+
 @register_dataset
 class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     """A base class for concatenated datasets.
@@ -1887,7 +1930,9 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
              -raw.fif | -epo.fif and .json files to.
         overwrite : bool
             Whether to delete old subdirectories that will be saved to in this
-            call.
+            call. If a dataset still reads its data lazily from one of them, a
+            ``ValueError`` is raised before anything is deleted: load the data
+            into memory first (``preload=True``) or save to another directory.
         offset : int
             If provided, the integer is added to the id of the dataset in the
             concat. This is useful in the setting of very large datasets, where
@@ -1900,6 +1945,13 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
         ):
             raise ValueError("dataset should have either raw or windows attribute")
+        if overwrite:
+            for _, _, target_dir in _overwrite_conflicts(self.datasets, path, offset):
+                raise ValueError(
+                    f"Saving with overwrite=True would delete {target_dir} while "
+                    "a dataset still reads its data from it. Load the data into "
+                    "memory first (preload=True) or save to another directory."
+                )
 
         # Create path if it doesn't exist
         os.makedirs(path, exist_ok=True)
