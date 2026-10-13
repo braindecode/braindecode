@@ -275,8 +275,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         dist.all_gather(per_rank_rows, local_rows, group=group)
         if any(int(rows[0]) != int(rows[1]) for rows in per_rank_rows):
             raise ValueError(
-                "Distributed EEGCLIP requires equal EEG/text paired rows "
-                "on every rank."
+                "Distributed EEGCLIP requires equal EEG/text paired rows on every rank."
             )
         sizes = [int(rows[0]) for rows in per_rank_rows]
         if sum(sizes) == 0:
