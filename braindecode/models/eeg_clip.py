@@ -205,7 +205,9 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         # Project every dense prediction, then average over time.
         per_step = features.transpose(1, 2).reshape(-1, features.shape[1])
         projected = self.final_layer(per_step)
-        return projected.reshape(batch_size, features.shape[-1], projected.shape[-1]).mean(dim=1)
+        return projected.reshape(
+            batch_size, features.shape[-1], projected.shape[-1]
+        ).mean(dim=1)
 
     def encode_text(self, text_inputs, attention_mask=None, **text_kwargs):
         """Encode text tokens or features as shared-space projection vectors."""
