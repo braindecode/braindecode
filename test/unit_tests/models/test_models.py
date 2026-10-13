@@ -5884,9 +5884,9 @@ def test_eegclip_rank_local_gather_math_without_worker_coverage_gap(monkeypatch)
 
     def gather_sizes(outputs, size, *, group=None):
         assert group is globals_group
-        assert size.tolist() == [2]
-        outputs[0].fill_(2)
-        outputs[1].fill_(3)
+        assert size.tolist() == [2, 2]
+        outputs[0].copy_(torch.tensor([2, 2]))
+        outputs[1].copy_(torch.tensor([3, 3]))
 
     globals_group = group
     monkeypatch.setattr(dist, "all_gather", gather_sizes)
@@ -6023,6 +6023,111 @@ def test_eegclip_actual_ddp_wrapper_matches_full_batch_gradient(tmp_path):
         torch.testing.assert_close(result["loss"], reference_loss.detach())
         for name, grad in reference_grads.items():
             torch.testing.assert_close(result["grads"][name], grad)
+
+
+
+
+def _eegclip_collective_preflight_rank(rank, init_file, result_dir, case):
+    """Both peers must fail together rather than deadlock on a later gather."""
+    from datetime import timedelta
+
+    dist.init_process_group(
+        "gloo", init_method=f"file://{init_file}", rank=rank,
+        world_size=2, timeout=timedelta(seconds=20),
+    )
+    try:
+        model = EEGCLIP(
+            n_chans=3, n_times=4, n_outputs=4,
+            eeg_encoder=nn.Flatten(), eeg_embedding_dim=12,
+            text_embedding_dim=5, projection_layers=1,
+        ).double()
+        if case == "all_empty":
+            eeg_rows = text_rows = 0
+            expected = "at least one paired sample"
+        elif case == "single_rank_unpaired":
+            eeg_rows = 2 if rank == 0 else 3
+            text_rows = 2
+            expected = "equal EEG/text paired rows"
+        else:
+            raise ValueError("Unknown worker test case")
+        eeg = torch.zeros(eeg_rows, 4, dtype=torch.float64)
+        text = torch.zeros(text_rows, 4, dtype=torch.float64)
+        try:
+            model.contrastive_loss(eeg, text, distributed=True)
+        except ValueError as exc:
+            assert expected in str(exc), str(exc)
+            result = "refused"
+        else:
+            result = "unexpected_accept"
+        torch.save(
+            {"rank": rank, "result": result},
+            f"{result_dir}/{case}_rank{rank}.pt",
+        )
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(not dist.is_available(), reason="torch.distributed unavailable")
+@pytest.mark.parametrize("case", ["all_empty", "single_rank_unpaired"])
+def test_eegclip_global_collective_preflight_never_hangs(tmp_path, case):
+    """One mismatched participant or zero global pairs: synchronized refusal."""
+    mp.spawn(
+        _eegclip_collective_preflight_rank,
+        args=(str(tmp_path / f"init-{case}"), str(tmp_path), case),
+        nprocs=2,
+    )
+    for rank in (0, 1):
+        record = torch.load(
+            tmp_path / f"{case}_rank{rank}.pt", weights_only=True,
+        )
+        assert record == {"rank": rank, "result": "refused"}
+
+
+def test_eegclip_global_collective_shape_and_empty_counters_covered(monkeypatch):
+    """Cover the rank-sized invariant check under pytest-cov parent process."""
+    model = EEGCLIP(
+        n_chans=3, n_times=4, n_outputs=4,
+        eeg_encoder=nn.Flatten(), eeg_embedding_dim=12,
+        text_embedding_dim=5, projection_layers=1,
+    ).double()
+    monkeypatch.setattr(dist, "is_available", lambda: True)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda _g: 2)
+    monkeypatch.setattr(dist, "get_rank", lambda _g: 0)
+
+    expected = None
+
+    def fake_pair_counts(outputs, local, *, group=None):
+        if expected == "unequal":
+            outputs[0].copy_(torch.tensor([2, 2]))
+            outputs[1].copy_(torch.tensor([3, 2]))
+        elif expected == "empty":
+            outputs[0].copy_(torch.tensor([0, 0]))
+            outputs[1].copy_(torch.tensor([0, 0]))
+        else:
+            raise AssertionError("Unexpected collective")
+
+    monkeypatch.setattr(dist, "all_gather", fake_pair_counts)
+    from torch.distributed.nn import functional as dist_f
+
+    monkeypatch.setattr(
+        dist_f, "all_gather",
+        lambda *_args, **_kw: pytest.fail(
+            "bad pair shapes must be refused before embedding gather"
+        ),
+    )
+    expected = "unequal"
+    with pytest.raises(ValueError, match="equal EEG/text paired rows"):
+        model.contrastive_loss(
+            torch.zeros(2, 4, dtype=torch.float64),
+            torch.zeros(2, 4, dtype=torch.float64), distributed=True,
+        )
+    expected = "empty"
+    with pytest.raises(ValueError, match="at least one paired sample"):
+        model.contrastive_loss(
+            torch.zeros(0, 4, dtype=torch.float64),
+            torch.zeros(0, 4, dtype=torch.float64), distributed=True,
+        )
 
 
 def _cz():
