@@ -459,6 +459,89 @@ def test_save_varying_number_of_datasets_with_overwrite(
         assert len(raised_warnings) == 1
 
 
+def _save_two_recordings(path, kind):
+    rng = np.random.RandomState(0)
+    info = mne.create_info(["C3", "C4"], sfreq=100.0, ch_types="eeg")
+    raws = [mne.io.RawArray(rng.randn(2, 1000), info, verbose=False) for _ in range(2)]
+    for raw in raws:
+        raw.set_annotations(mne.Annotations([1, 5], [1, 1], ["a", "b"]))
+    concat_ds = BaseConcatDataset(
+        [RawDataset(raw, {"subject": i}) for i, raw in enumerate(raws)]
+    )
+    if kind == "windows":
+        concat_ds = create_fixed_length_windows(
+            concat_ds,
+            window_size_samples=100,
+            window_stride_samples=100,
+            on_last_window="drop",
+        )
+    elif kind == "epochs":
+        concat_ds = create_windows_from_events(concat_ds, use_mne_epochs=True)
+    concat_ds.save(str(path))
+
+
+def _signals(concat_ds):
+    return [
+        ds.raw.get_data() if hasattr(ds, "raw") else ds.windows.get_data()
+        for ds in concat_ds.datasets
+    ]
+
+
+@pytest.mark.parametrize("kind", ["raw", "windows", "epochs", "epochs_of_lazy_raw"])
+def test_save_overwrite_keeps_the_files_a_lazy_dataset_reads(tmp_path, kind):
+    # Saving a lazily loaded dataset over the directory it reads from deleted
+    # each recording before mne refused (or failed) to write it: data lost.
+    _save_two_recordings(tmp_path, "raw" if kind == "epochs_of_lazy_raw" else kind)
+    expected = _signals(load_concat_dataset(tmp_path, preload=True))
+    lazy = load_concat_dataset(tmp_path, preload=False)
+    if kind == "epochs_of_lazy_raw":
+        lazy = create_windows_from_events(lazy, use_mne_epochs=True, preload=False)
+    with pytest.raises(ValueError):
+        lazy.save(str(tmp_path), overwrite=True)
+    reloaded = load_concat_dataset(tmp_path, preload=True)
+    for x_expected, x in zip(expected, _signals(reloaded)):
+        np.testing.assert_array_equal(x, x_expected)
+
+
+@pytest.mark.parametrize("spelling", ["other_case", "file_symlink"])
+def test_save_overwrite_recognizes_the_source_directory(tmp_path, spelling):
+    """The directory may be named with other letter case (case-insensitive file
+    systems) or hold symlinks to the data (DataLad, git-annex)."""
+    source = tmp_path / "data"
+    _save_two_recordings(source, "raw")
+    expected = _signals(load_concat_dataset(source, preload=True))
+    target = source
+    if spelling == "other_case":
+        target = tmp_path / "DATA"
+        if not target.exists():
+            pytest.skip("case-sensitive file system")
+    else:
+        (tmp_path / "store").mkdir()
+        for i in range(2):
+            fif = source / str(i) / f"{i}-raw.fif"
+            stored = fif.rename(tmp_path / "store" / fif.name)
+            try:
+                fif.symlink_to(stored)
+            except OSError:
+                pytest.skip("symlinks not supported")
+    lazy = load_concat_dataset(source, preload=False)
+    with pytest.raises(ValueError):
+        lazy.save(str(target), overwrite=True)
+    reloaded = load_concat_dataset(source, preload=True)
+    for x_expected, x in zip(expected, _signals(reloaded)):
+        np.testing.assert_array_equal(x, x_expected)
+
+
+def test_save_overwrite_in_place_once_the_data_is_loaded(tmp_path):
+    """Data in memory may still be saved back where it was loaded from."""
+    _save_two_recordings(tmp_path, "raw")
+    loaded = load_concat_dataset(tmp_path, preload=True)
+    loaded.set_description({"group": ["a", "b"]})
+    loaded.save(str(tmp_path), overwrite=True)
+    reloaded = load_concat_dataset(tmp_path, preload=False)
+    assert list(reloaded.description["group"]) == ["a", "b"]
+
+
 def test_directory_contains_file(setup_concat_windows_dataset, tmpdir):
     with open(os.path.join(tmpdir, "test.txt"), "w") as f:
         f.write("test")
