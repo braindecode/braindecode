@@ -183,6 +183,7 @@ interface for all EEG models and can derive variable names when needed.
      FBCNet
      FBLightConvNet
      FBMSNet
+     GCNsNet
      Guetschel2026
      IFNet
      Labram
