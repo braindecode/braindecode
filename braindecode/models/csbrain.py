@@ -314,6 +314,11 @@ class CSBrain(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
+        n_times = self._n_times_or_none()
+        if n_times is not None and n_times % patch_size:
+            raise ValueError(
+                f"n_times ({n_times}) must be a multiple of patch_size ({patch_size})."
+            )
 
         self.rearrange = Rearrange(
             "batch n_chans (n_patch patch_size) -> batch n_chans n_patch patch_size",
@@ -536,6 +541,7 @@ class _RegionEmbedding(nn.Module):
     """
 
     region_bounds: List[Tuple[int, int]]
+    tap_starts: List[int]
 
     def __init__(
         self,
@@ -569,42 +575,61 @@ class _RegionEmbedding(nn.Module):
                 for region_key in area_config
             }
         )
+        # All regions in one pass: tap j of the widest kernel reads, for every
+        # electrode, the electrode at offset j - half on its region's ring
+        # (circular padding), or nothing (zero padding of a one-electrode
+        # region); kernel k uses the middle k taps. As a 0/1 matrix, so the
+        # gather and its backward are matmuls.
+        half = (max(kernel_sizes) - 1) // 2
+        n_taps = 2 * half + 1
+        self.tap_starts = [half - (k - 1) // 2 for k in kernel_sizes]
+        n_chans = self.region_bounds[-1][1] if self.region_bounds else 0
+        chan_region = []
+        tap_select = torch.zeros(n_chans * n_taps, n_chans)
+        for i, (start, stop) in enumerate(self.region_bounds):
+            n = stop - start
+            for p in range(n):
+                chan_region.append(i)
+                for d in range(-half, half + 1) if n > 1 else [0]:
+                    row = (start + p) * n_taps + d + half
+                    tap_select[row, start + (p + d) % n] = 1.0
+        self.register_buffer(
+            "chan_region", torch.tensor(chan_region, dtype=torch.long), False
+        )
+        self.register_buffer("tap_select", tap_select, False)
 
     def forward(self, x):
         batch, chans, T, dim_in = x.shape
-        output = torch.zeros(
-            (batch, chans, T, self.dim_out), device=x.device, dtype=x.dtype
-        )
-        for i, blocks in enumerate(self.region_blocks.values()):
-            start, stop = self.region_bounds[i]
-            n_electrodes = stop - start
-            x_region = x[:, start:stop, :, :]
-            x_trans = (
-                x_region.permute(0, 2, 1, 3)
-                .reshape(-1, n_electrodes, dim_in)
-                .permute(0, 2, 1)
-                .unsqueeze(-1)
+        if len(self.region_bounds) == 0:
+            return torch.zeros(
+                (batch, chans, T, self.dim_out), device=x.device, dtype=x.dtype
             )
-            fmap_outputs = []
-            for conv in blocks:
-                k = conv.kernel_size[0]
-                pad = (k - 1) // 2
-                if n_electrodes == 1:
-                    x_padded = F.pad(
-                        x_trans, (0, 0, pad, pad), mode="constant", value=0.0
-                    )
-                else:
-                    x_padded = F.pad(x_trans, (0, 0, pad, pad), mode="circular")
-                fmap_outputs.append(conv(x_padded))
-            fmap_cat = torch.cat(fmap_outputs, dim=1)
-            fmap_out = (
-                fmap_cat.squeeze(-1)
-                .permute(0, 2, 1)
-                .reshape(batch, T, n_electrodes, self.dim_out)
-                .permute(0, 2, 1, 3)
+        # (batch, chans, n_taps, T, dim_in): every electrode's ring neighbours
+        taps = torch.matmul(self.tap_select, x.reshape(batch, chans, T * dim_in))
+        taps = taps.reshape(batch, chans, -1, T, dim_in)
+        # Per kernel, one batched matmul over electrodes, each with its
+        # region's weights: (chans, batch * T, k * dim_in) @ (chans, k * dim_in, out)
+        weights: List[List[Tensor]] = [[] for _ in self.tap_starts]
+        biases: List[List[Tensor]] = [[] for _ in self.tap_starts]
+        for blocks in self.region_blocks.values():
+            for j, conv in enumerate(blocks):
+                bias = conv.bias
+                assert bias is not None
+                weights[j].append(conv.weight)
+                biases[j].append(bias)
+        outs = []
+        for j, start in enumerate(self.tap_starts):
+            w = torch.stack(weights[j]).index_select(0, self.chan_region)
+            k = w.shape[3]
+            w = w.squeeze(-1).permute(0, 3, 2, 1).reshape(chans, k * dim_in, -1)
+            t = taps[:, :, start : start + k].permute(1, 0, 3, 2, 4)
+            b = torch.stack(biases[j]).index_select(0, self.chan_region)
+            outs.append(
+                torch.bmm(t.reshape(chans, batch * T, k * dim_in), w) + b.unsqueeze(1)
             )
-            output[:, start:stop, :, :] = fmap_out
-        return output
+        out = torch.cat(outs, dim=-1).view(chans, batch, T, self.dim_out)
+        # contiguous: the residual sum keeps this layout and the next layer views it
+        return out.permute(1, 0, 2, 3).contiguous()
 
 
 class _CSBrainEncoderLayer(nn.Module):
@@ -670,6 +695,17 @@ class _CSBrainEncoderLayer(nn.Module):
             )
         else:
             self.region_attn_mask = None
+        # Region of every electrode and electrodes per region, for the
+        # region means of all regions at once (index_add_ sums in channel
+        # order, as the per-region mean did).
+        sizes = [stop - start for start, stop in self.region_bounds]
+        chan_region = [i for i, n in enumerate(sizes) for _ in range(n)]
+        self.register_buffer(
+            "chan_region", torch.tensor(chan_region, dtype=torch.long), False
+        )
+        self.register_buffer(
+            "region_sizes", torch.tensor(sizes, dtype=torch.long)[:, None], False
+        )
 
     def forward(self, src: Tensor) -> Tensor:
         x = src
@@ -706,11 +742,13 @@ class _CSBrainEncoderLayer(nn.Module):
     def _inter_region_attention(self, x: Tensor) -> Tensor:
         batch, chans, T, Fea = x.shape
         x_flat = x.permute(0, 2, 1, 3).reshape(batch * T, chans, Fea)
-        global_features = torch.zeros_like(x_flat)
-        for start, stop in self.region_bounds:
-            region_global = x[:, start:stop, :, :].mean(dim=1, keepdim=True)
-            region_global = region_global.permute(0, 2, 1, 3).reshape(batch * T, 1, Fea)
-            global_features[:, start:stop, :] = region_global
+        if len(self.region_bounds) == 0:
+            global_features = torch.zeros_like(x_flat)
+        else:
+            region_sum = x_flat.new_zeros(batch * T, len(self.region_bounds), Fea)
+            region_sum.index_add_(1, self.chan_region, x_flat)
+            region_mean = region_sum / self.region_sizes
+            global_features = region_mean.index_select(1, self.chan_region)
         x_enhanced = x_flat + self.global_fc(global_features)
 
         attn_output = self.inter_region_attn(

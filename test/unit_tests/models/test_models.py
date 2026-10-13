@@ -57,6 +57,7 @@ from braindecode.models import (
     FBCNet,
     FBLightConvNet,
     FBMSNet,
+    GCNsNet,
     HybridNet,
     IFNet,
     Labram,
@@ -84,6 +85,8 @@ from braindecode.models.csbrain import (
     REGION_PARIETAL,
     REGION_TEMPORAL,
     CSBrain,
+    _CSBrainEncoderLayer,
+    _RegionEmbedding,
     build_region_attention_mask,
     derive_brain_regions,
     make_area_config,
@@ -96,6 +99,7 @@ from braindecode.models.eegpt import (
     _PatchEmbed,
     _rotate_half,
 )
+from braindecode.models.gcnsnet import _cluster_one_level, _compute_perm
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.neurorvq_tokenizer import _EMAVectorQuantizer
 from braindecode.models.usleep import _DecoderBlock
@@ -306,6 +310,14 @@ def test_deep4net_explicit_final_conv_length_without_n_times():
         y = model(x)
 
     assert y.shape[:2] == (2, 2)
+
+
+@pytest.mark.parametrize("n_times", [500, 681])
+def test_eegclip_windows_between_the_deep4net_bounds(n_times):
+    # Its Deep4Net has stride_before_pool=True and final_conv_length=2.
+    model = EEGCLIP(n_chans=3, n_outputs=4, n_times=n_times).eval()
+    with torch.no_grad():
+        assert model(torch.randn(2, 3, n_times)).shape == (2, 4)
 
 
 
@@ -1324,7 +1336,7 @@ def test_attn_sleep_activation_reaches_afr():
 
 @pytest.mark.parametrize(
     "n_channels,sfreq,n_groups,n_classes,input_size_s",
-    [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)],
+    [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30), (19, 100, 2, 5, 30)],
 )
 def test_blanco_2020(n_channels, sfreq, n_groups, n_classes, input_size_s):
     rng = np.random.RandomState(42)
@@ -1808,6 +1820,165 @@ def test_dgcnn_dummy(n_times, n_chans, sfreq, n_outputs):
     check_forward_pass_3d(model, input_sizes)
 
 
+@pytest.mark.parametrize("name", ["DGCNN", "LUNA", "SignalJEPA"])
+def test_channels_without_positions_give_finite_outputs(name):
+    # MNE stores NaN locs for channels without a montage position.
+    chs_info = mne.create_info(["Cz", "C3", "C4", "Pz"], 250.0, "eeg")["chs"]
+    model = all_models_dict[name](
+        n_outputs=2, n_chans=4, chs_info=chs_info, n_times=1000, sfreq=250.0
+    ).eval()
+    with torch.no_grad():
+        assert torch.isfinite(model(torch.randn(2, 4, 1000))).all()
+
+
+def test_gcnsnet_adjacency():
+    X = torch.randn(5, 64, 100)
+    adjacency = GCNsNet._adjacency(X)
+    assert adjacency.shape == (64, 64)
+    torch.testing.assert_close(adjacency, adjacency.T)
+    torch.testing.assert_close(adjacency.diag(), torch.zeros(64))
+    assert torch.all(adjacency >= 0)
+    inferred = GCNsNet._infer_model_kwargs(X)
+    assert inferred.keys() == {"adjacency"}
+    torch.testing.assert_close(inferred["adjacency"], adjacency)
+
+
+def test_gcnsnet_fit_on_windows_dataset():
+    """A dataset has no array to correlate: the first batch gives the graph."""
+    from braindecode import EEGClassifier
+    from braindecode.datasets import create_from_X_y
+
+    rng = np.random.RandomState(0)
+    X = rng.randn(8, 4, 32).astype(np.float32)
+    dataset = create_from_X_y(X, rng.randint(0, 2, 8), False, sfreq=100)
+    net = EEGClassifier(
+        GCNsNet,
+        module__n_features=(4, 8),
+        module__cheb_orders=(2, 2),
+        module__pool_sizes=(2, 2),
+        train_split=None,
+        max_epochs=1,
+        batch_size=4,
+    )
+    net.fit(dataset, y=None)
+    assert net.module_.graph_initialized
+
+
+@pytest.mark.parametrize(
+    "node_order, expected_clusters, expected_adjacency",
+    [
+        pytest.param(
+            [0, 1, 2, 3, 4],
+            [0, 1, 0, 1, 2],
+            [[1.6, 0.9, 0.0], [0.9, 1.6, 0.7], [0.0, 0.7, 0.0]],
+            id="forward-order",
+        ),
+        pytest.param(
+            [4, 3, 2, 1, 0],
+            [2, 0, 2, 1, 0],
+            [[1.4, 0.8, 0.9], [0.8, 0.0, 0.0], [0.9, 0.0, 1.6]],
+            id="reverse-order",
+        ),
+    ],
+)
+def test_gcnsnet_graph_coarsening_one_level(
+    node_order, expected_clusters, expected_adjacency
+):
+    adjacency = torch.tensor(
+        [
+            [0.0, 0.9, 0.8, 0.0, 0.0],
+            [0.9, 0.0, 0.0, 0.8, 0.7],
+            [0.8, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.8, 0.0, 0.0, 0.0],
+            [0.0, 0.7, 0.0, 0.0, 0.0],
+        ]
+    )
+    weights = adjacency.sum(dim=0) - adjacency.diagonal()
+    clusters = _cluster_one_level(adjacency, torch.tensor(node_order), weights)
+    torch.testing.assert_close(clusters, torch.tensor(expected_clusters))
+    membership = torch.nn.functional.one_hot(clusters).float()
+    torch.testing.assert_close(
+        membership.T @ adjacency @ membership, torch.tensor(expected_adjacency)
+    )
+
+
+def test_gcnsnet_compute_perm():
+    clusters = [
+        torch.tensor([4, 1, 1, 2, 2, 3, 0, 0, 3]),
+        torch.tensor([2, 1, 0, 1, 0]),
+    ]
+    assert _compute_perm(clusters) == [
+        [3, 4, 0, 9, 1, 2, 5, 8, 6, 7, 10, 11],
+        [2, 4, 1, 3, 0, 5],
+        [0, 1, 2],
+    ]
+
+
+@pytest.mark.parametrize(
+    "pool_sizes, expected_levels",
+    [
+        ((2, 2, 2, 2), [0, 1, 2, 3]),
+        ((1, 2, 4, 2), [0, 0, 1, 3]),
+        ((1, 1, 1), [0, 0, 0]),
+    ],
+)
+def test_gcnsnet_compute_pooling_levels(pool_sizes, expected_levels):
+    assert GCNsNet._compute_pooling_levels(pool_sizes) == expected_levels
+
+
+@pytest.mark.parametrize("pool_sizes", [(0, 2), (3, 2), (-1, 2)])
+def test_gcnsnet_invalid_pool_sizes(pool_sizes):
+    with pytest.raises(ValueError, match="pool_sizes must be 1 or powers of 2"):
+        GCNsNet(
+            n_chans=64,
+            n_outputs=2,
+            n_times=128,
+            n_features=(8, 16),
+            cheb_orders=(2, 2),
+            pool_sizes=pool_sizes,
+        )
+
+
+@pytest.mark.parametrize(
+    "n_chans, pool_sizes", [(64, (1, 2, 4, 2)), (128, (2, 2, 2, 2))]
+)
+def test_gcnsnet_layer_shapes(n_chans, pool_sizes):
+    model = GCNsNet(
+        n_chans=n_chans,
+        n_outputs=4,
+        n_times=128,
+        n_features=(8, 16, 32, 64),
+        cheb_orders=(2, 2, 2, 2),
+        pool_sizes=pool_sizes,
+    ).eval()
+    with torch.no_grad():
+        assert model(torch.randn(2, n_chans, 128)).shape == (2, 4)
+    for bias, laplacian, n_feature in zip(
+        model.biases, model.laplacians, model.n_features
+    ):
+        assert bias.bias.shape == (1, laplacian.matrix.shape[0], n_feature)
+        torch.testing.assert_close(bias.bias, torch.full_like(bias.bias, 0.1))
+
+
+def test_gcnsnet_state_dict_round_trip():
+    torch.manual_seed(0)
+    model = GCNsNet(n_chans=64, n_outputs=4, n_times=128).eval()
+    x = torch.randn(2, 64, 128)
+    with torch.no_grad():
+        expected = model(x)
+    state_dict = model.state_dict()
+
+    restored = GCNsNet(n_chans=64, n_outputs=4, n_times=128).eval()
+    restored.load_state_dict(state_dict)
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x), expected)
+    torch.testing.assert_close(restored.permutation, model.permutation)
+
+    state_dict.pop("permutation")
+    with pytest.raises(RuntimeError, match="Incomplete GCNsNet graph state"):
+        GCNsNet(n_chans=64, n_outputs=4, n_times=128).load_state_dict(state_dict)
+
+
 @pytest.mark.parametrize(
     "n_times, n_chans, sfreq, n_outputs",
     [
@@ -2045,6 +2216,22 @@ def test_model_trainable_parameters_labram(default_labram_params):
     assert labram_huge.get_num_layers() == 48
 
 
+def test_labram_attention_fused_path_matches_its_weights():
+    """The fused attention = its softmax weights (manual path) applied to v."""
+    from braindecode.models.labram import _Attention as _LabramAttention
+
+    torch.manual_seed(0)
+    attn = _LabramAttention(
+        16, num_heads=4, qkv_bias=True, qk_norm=nn.LayerNorm, window_size=(1, 5)
+    ).eval()
+    nn.init.normal_(attn.relative_position_bias_table)  # attn_mask of the fused call
+    x = torch.randn(2, 6, 16)
+    weights = attn(x, return_attention=True)
+    out, qkv = attn(x, return_qkv=True)
+    expected = attn.proj((weights @ qkv[2]).transpose(1, 2).reshape(2, 6, 16))
+    torch.testing.assert_close(out, expected)
+
+
 @pytest.mark.parametrize("use_mean_pooling", [True, False])
 def test_labram_returns(default_labram_params, use_mean_pooling):
     """
@@ -2231,6 +2418,17 @@ def test_parameters_contrawr():
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     # 1.6M parameters according to the Labram paper, table 1
     assert np.round(n_params / 1e6, 1) == 1.6
+
+
+@pytest.mark.parametrize("sfreq, n_times", [(100.0, 600), (250.0, 1000)])
+def test_contrawr_real_dft_stft_matches_torch_stft(sfreq, n_times):
+    # The HPU path (no complex tensors) equals torch.stft's magnitude.
+    model = ContraWR(n_outputs=2, n_chans=3, sfreq=sfreq, n_times=n_times).double()
+    x = torch.randn(2, 3, n_times, dtype=torch.float64)
+    stft = model.torch_stft
+    torch.testing.assert_close(
+        stft._forward_real_dft(x), stft(x), rtol=0, atol=1e-10
+    )
 
 
 def test_parameters_SPARCNet():
@@ -4005,6 +4203,12 @@ def test_medformer_encoder_layer_keeps_dropout_per_granularity():
         torch.testing.assert_close(o, layer.norm2(r + v))
 
 
+def test_medformer_window_longer_than_5000_samples():
+    model = MEDFormer(n_chans=2, n_outputs=4, n_times=6000).eval()
+    with torch.no_grad():
+        assert model(torch.randn(2, 2, 6000)).shape == (2, 4)
+
+
 @pytest.mark.parametrize("patch_len_list", [[2, 8, 16], [4, 8], [2, 4, 8, 16]])
 def test_medformer_patch_len_configurations(patch_len_list):
     """
@@ -4171,6 +4375,24 @@ def test_gni_default_contract(gni_default):
     assert y.shape == (1, 38, 100)
     assert lengths[0].item() == y.shape[1]
     assert lengths[1] > lengths[0]
+
+
+def test_gni_threaded_cpu_eigh_equals_eigh():
+    from braindecode.models.meta_neuromotor import _cpu_eigh
+
+    a = torch.randn(2, 600, 6, 5, 5, dtype=torch.float64)
+    a = (a @ a.transpose(-1, -2)).requires_grad_()
+    n_threads = torch.get_num_threads()
+    torch.set_num_threads(4)
+    try:
+        values, vectors = _cpu_eigh(a)
+    finally:
+        torch.set_num_threads(n_threads)
+    ref_values, ref_vectors = torch.linalg.eigh(a)
+    assert torch.equal(values, ref_values) and torch.equal(vectors, ref_vectors)
+    grad = torch.autograd.grad((values.sum() + vectors.square().sum()), a)[0]
+    ref_grad = torch.autograd.grad((ref_values.sum() + ref_vectors.square().sum()), a)[0]
+    assert torch.equal(grad, ref_grad)
 
 
 def test_gni_head_log_softmax_and_config():
@@ -5129,6 +5351,30 @@ def test_neurorvq_tokenizer_standardizes_each_window():
         torch.testing.assert_close(output.std(dim=(1, 2)), torch.ones(2), atol=1e-4, rtol=0)
 
 
+def test_neurorvq_scales_stacked_match_per_scale_loop(
+    neurorvq_model_kwargs, monkeypatch
+):
+    """The four scales stacked on the batch axis (accelerators) = one pass per
+    scale (CPU), for NeuroRVQ and the tokenizer's encoder/decoder stack."""
+    import braindecode.models.neurorvq as neurorvq_module
+    import braindecode.models.neurorvq_tokenizer as tokenizer_module
+
+    torch.manual_seed(0)
+    model = NeuroRVQ(**neurorvq_model_kwargs).eval()
+    tokenizer = _small_neurorvq_tokenizer().eval()
+    x = torch.randn(2, 3, 600)
+    tokens = [torch.randn(2, 6, 100) for _ in range(4)]
+    embeddings = tokenizer.encoder.embeddings(*tokenizer._embedding_indices(x.device))
+    assert not neurorvq_module._stack_scales(x, False)
+    with torch.no_grad():
+        looped = [model(x), *tokenizer.encoder(tokens, *embeddings)]
+        for module in (neurorvq_module, tokenizer_module):
+            monkeypatch.setattr(module, "_stack_scales", lambda x, dropout: True)
+        stacked = [model(x), *tokenizer.encoder(tokens, *embeddings)]
+    for a, b in zip(stacked, looped):
+        torch.testing.assert_close(a, b)
+
+
 def test_neurorvq_ema_quantizer_matches_normalized_ema_update():
     quantizer = _EMAVectorQuantizer(n_codes=2, code_dim=2).train()
     quantizer.decay = 0.5
@@ -5299,6 +5545,33 @@ def test_tfm_tokenizer_codebook_is_ema_only():
     assert "stft_window" not in model.state_dict()
 
 
+def test_tfm_tokenizer_group_norm_mean_var_matches_group_norm_fp64():
+    # The HPU path of tfm_tokenizer._GroupNorm (mean/var formula, no
+    # aten::group_norm) against F.group_norm in float64, forward + backward.
+    from braindecode.models.tfm_tokenizer import _group_norm_mean_var
+
+    torch.manual_seed(0)
+    for shape, groups in (((7, 64, 10), 16), ((5, 32, 4, 6), 8)):
+        base = torch.randn(*shape, dtype=torch.float64)
+        base_w = torch.randn(shape[1], dtype=torch.float64)
+        base_b = torch.randn(shape[1], dtype=torch.float64)
+        g = torch.randn(*shape, dtype=torch.float64)
+        x = base.clone().requires_grad_()
+        w = base_w.clone().requires_grad_()
+        b = base_b.clone().requires_grad_()
+        y = _group_norm_mean_var(x, groups, w, b, 1e-5)
+        xr = base.clone().requires_grad_()
+        wr = base_w.clone().requires_grad_()
+        br = base_b.clone().requires_grad_()
+        ref = torch.nn.functional.group_norm(xr, groups, wr, br, 1e-5)
+        torch.testing.assert_close(y, ref, rtol=1e-12, atol=1e-12)
+        y.backward(g)
+        ref.backward(g)
+        torch.testing.assert_close(x.grad, xr.grad, rtol=1e-12, atol=1e-12)
+        torch.testing.assert_close(w.grad, wr.grad, rtol=1e-12, atol=1e-12)
+        torch.testing.assert_close(b.grad, br.grad, rtol=1e-12, atol=1e-12)
+
+
 # ---------------------------------------------------------------------------
 # CSBrain
 # ---------------------------------------------------------------------------
@@ -5399,6 +5672,36 @@ def test_csbrain_forward_with_region_structure():
     assert model(torch.randn(2, 22, 800)).shape == (2, 4)
     feats = model(torch.randn(1, 22, 800), return_features=True)
     assert feats["features"].shape == (1, 22, 4, 200)
+
+
+def test_csbrain_batched_regions_match_per_region_loops():
+    # Regions of 1 (zero padding), 2 and 4 electrodes (circular padding).
+    area_config = make_area_config([0, 1, 1, 2, 2, 2, 2])
+    embed = _RegionEmbedding(200, 200, area_config).double()
+    layer = _CSBrainEncoderLayer(200, 8, area_config=area_config).double()
+    x = torch.randn(2, 7, 3, 200, dtype=torch.float64)
+
+    expected = torch.zeros_like(x)
+    expected_global = torch.zeros(6, 7, 200, dtype=torch.float64)
+    for (start, stop), blocks in zip(embed.region_bounds, embed.region_blocks.values()):
+        n = stop - start
+        xr = x[:, start:stop].permute(0, 2, 1, 3).reshape(-1, n, 200)
+        xr = xr.permute(0, 2, 1).unsqueeze(-1)
+        fmaps = []
+        for conv in blocks:
+            pad = (conv.kernel_size[0] - 1) // 2
+            mode = "constant" if n == 1 else "circular"
+            fmaps.append(conv(torch.nn.functional.pad(xr, (0, 0, pad, pad), mode=mode)))
+        out = torch.cat(fmaps, dim=1).squeeze(-1).permute(0, 2, 1)
+        expected[:, start:stop] = out.reshape(2, 3, n, 200).permute(0, 2, 1, 3)
+        region_mean = x[:, start:stop].mean(dim=1, keepdim=True)
+        expected_global[:, start:stop] = region_mean.permute(0, 2, 1, 3).reshape(6, 1, 200)
+    torch.testing.assert_close(embed(x), expected, rtol=0, atol=1e-12)
+
+    captured = []
+    layer.global_fc.register_forward_hook(lambda m, a, o: captured.append(a[0]))
+    layer._inter_region_attention(x)
+    torch.testing.assert_close(captured[0], expected_global, rtol=0, atol=0)
 
 
 def test_csbrain_masked_forward_replaces_patches():
@@ -5643,3 +5946,25 @@ def test_eegclip_custom_encoders_and_masked_mean_pooling():
     assert model.text_projection.training is False
     with pytest.raises(ValueError, match="custom encoder"):
         model.get_config()
+
+
+def _cz():
+    info = mne.create_info(["Cz"], 256.0, "eeg")
+    return info.set_montage("standard_1005")["chs"]
+
+
+@pytest.mark.parametrize(
+    "name, kwargs, match",
+    [
+        ("AttnSleep", dict(n_chans=2, n_times=3000, sfreq=100.0), "single-channel"),
+        ("BDTCN", dict(n_chans=2, n_times=50), "receptive field"),
+        ("CSBrain", dict(n_chans=2, n_times=250), "multiple of patch_size"),
+        ("DGCNN", dict(chs_info=_cz(), n_times=1000), "at least 2 channels"),
+        ("REVE", dict(chs_info=[{"ch_name": "Cz"}], n_times=100), "patch_size"),
+        ("REVE", dict(chs_info=[{"ch_name": "X1"}], n_times=1000), "position bank"),
+        ("ZUNA", dict(chs_info=_cz(), n_times=10000, sfreq=256.0), "max_seqlen"),
+    ],
+)
+def test_unsupported_geometry_raises_at_construction(name, kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        all_models_dict[name](n_outputs=2, **kwargs)

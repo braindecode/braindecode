@@ -446,6 +446,23 @@ def test_raised_runtimeerror_output_size_get_output_shape(dummy_module: DummyMod
         dummy_module.get_output_shape()
 
 
+@pytest.mark.parametrize("name", ["CTNet", "SleepStagerChambon2018", "SignalJEPA_PreLocal"])
+def test_window_shorter_than_the_layers_raises_value_error(name):
+    from braindecode.models.util import models_dict
+
+    model = models_dict[name](n_chans=2, n_outputs=2, n_times=50, sfreq=100.0)
+    with pytest.raises(ValueError, match=r"too small `n_times`.*\(2, 2, 50\)"):
+        model(torch.randn(2, 2, 50))
+
+
+@pytest.mark.parametrize("name", ["SleepStagerBlanco2020", "EEGConformer", "MSVTNet"])
+def test_window_shorter_than_the_layers_raises_value_error_at_init(name):
+    from braindecode.models.util import models_dict
+
+    with pytest.raises(ValueError, match=r"too small `n_times`.*\(1, 2, 50\)"):
+        models_dict[name](n_chans=2, n_outputs=2, n_times=50, sfreq=100.0)
+
+
 @pytest.mark.parametrize(
     "n_times, input_window_seconds, sfreq",
     [

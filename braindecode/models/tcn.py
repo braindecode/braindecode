@@ -79,6 +79,11 @@ class BDTCN(EEGModuleMixin, nn.Module):
             drop_prob=drop_prob,
             activation=activation,
         )
+        if self._n_times is not None and self._n_times < self.base_tcn.min_len:
+            raise ValueError(
+                f"n_times ({self._n_times}) must be at least {self.base_tcn.min_len}, "
+                "the receptive field of the temporal blocks."
+            )
 
         self.final_layer = torch.nn.Sequential(
             torch.nn.AdaptiveAvgPool1d(1), torch.nn.Flatten()

@@ -170,6 +170,10 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         ):
             resolved_n_times = round(self._input_window_seconds * self._sfreq)
 
+        if resolved_n_times is not None and resolved_n_times >= min_n_times:
+            # The bound above ignores stride_before_pool and an integer
+            # final_conv_length; inputs it admits are checked with the exact one.
+            min_n_times = self._get_min_n_times(exact=True)
         if resolved_n_times is not None and resolved_n_times < min_n_times:
             scaling_factor = resolved_n_times / min_n_times
             warn(
@@ -363,13 +367,15 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
 
         self.train()
 
-    def _get_min_n_times(self) -> int:
+    def _get_min_n_times(self, exact: bool = False) -> int:
         """
         Calculate the minimum number of time samples required for the model
         to work with the given temporal parameters.
         """
         # Start with the minimum valid output length of the network (1)
         min_len = 1
+        if exact and isinstance(self.final_conv_length, int):
+            min_len = self.final_conv_length
 
         # List of conv kernel sizes and pool parameters for the 4 blocks, in reverse order
         # Each tuple: (filter_length, pool_length, pool_stride)
@@ -382,6 +388,9 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
 
         # Work backward from the last layer to the input
         for filter_len, pool_len, pool_stride in block_params:
+            if exact and self.stride_before_pool:  # strided conv, then pool stride 1
+                min_len = pool_stride * (min_len + pool_len - 2) + filter_len
+                continue
             # Reverse the pooling operation
             # L_in = stride * (L_out - 1) + kernel_size
             min_len = pool_stride * (min_len - 1) + pool_len

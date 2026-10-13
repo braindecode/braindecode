@@ -14,13 +14,16 @@ from __future__ import annotations
 import bisect
 import html as _html
 import json
+import mmap
 import os
 import shutil
 import warnings
 from abc import abstractmethod
 from collections import Counter
-from collections.abc import Callable, Hashable
+from collections.abc import Callable, Hashable, Sequence
 from glob import glob
+from itertools import chain
+from operator import attrgetter
 from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
 
@@ -28,6 +31,7 @@ import mne
 import mne.io
 import numpy as np
 import pandas as pd
+from mne.io.constants import FIFF
 from mne.utils import _soft_import
 from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset, IterableDataset
@@ -218,6 +222,125 @@ def _compute_ch_pos(info, targets_from):
             UserWarning,
         )
     return pos
+
+
+_TAG_ROW = attrgetter("kind", "type", "size", "next", "pos")
+
+
+def _tag_rows(tags):
+    """(kind, type, size, next, pos) of FIF tags as an int64 array (n, 5)."""
+    flat = chain.from_iterable(map(_TAG_ROW, tags))
+    return np.fromiter(flat, np.int64, 5 * len(tags)).reshape(-1, 5)
+
+
+class _FifTagTable(Sequence):
+    """The data-buffer tags of a lazy FIF raw as one int64 array.
+
+    mne's FIF reader keeps one ``Tag`` object per data buffer in
+    ``raw._raw_extras[i]["ent"]`` (one per second of signal with mne's default
+    buffers), each with its attribute dict and integers once unpickled. A lazy
+    dataset of many recordings holds millions of them in RAM, and every forked
+    DataLoader worker copies the memory pages of those it reads (reference
+    counts). This holds the same fields in 40 bytes per buffer and returns an
+    equal ``Tag`` on access, so mne's own reads are unchanged.
+    """
+
+    def __init__(self, tags):
+        self.tag_class = type(tags[0])
+        self.table = _tag_rows(tags)
+
+    def __len__(self):
+        return len(self.table)
+
+    def __getitem__(self, i):
+        if isinstance(i, slice):
+            return [self.tag_class(*row) for row in self.table[i].tolist()]
+        return self.tag_class(*self.table[i].tolist())
+
+
+_TAG_FIELDS = ("kind", "type", "size", "next", "pos", "data")
+
+
+def _compact_fif_tags(inst):
+    """Swap the ``Tag`` lists of a FIF raw for `_FifTagTable` (in place).
+
+    Only gap-free lists of directory tags (no ``None``, no ``data``) with mne's
+    ``Tag`` fields are swapped; anything else is left as mne built it.
+    """
+    for extra in getattr(inst, "_raw_extras", ()):
+        tags = extra.get("ent")
+        if not isinstance(tags, list) or not tags:
+            continue
+        cls = type(tags[0])
+        if tuple(getattr(cls, "__dataclass_fields__", ())) == _TAG_FIELDS and all(
+            type(t) is cls and t.data is None for t in tags
+        ):
+            extra["ent"] = _FifTagTable(tags)
+    return inst
+
+
+def _read_fif_window(raw, start, stop, willneed=False):
+    """Samples ``start:stop`` of a lazy FIF raw, copied from the file in one go.
+
+    mne reads, casts and calibrates the FIF data buffers of a range one at a
+    time (60 Python steps for a 60-s window saved with 1-s buffers, each through
+    a buffered file whose buffer is 4 MB on network file systems). Here one
+    slice of the memory-mapped file holds the bytes of every buffer in the
+    range and one multiply calibrates them, with mne's arithmetic (float64 data
+    times ``raw._cals``), so the values equal ``raw._getitem``'s. Returns None
+    (the caller uses mne) unless ``raw`` is a lazy, single-file, uncompressed
+    FIF raw of float32 buffers without projector, compensation or gaps.
+
+    With ``willneed=True`` nothing is read and None is returned: the OS is
+    only asked to start reading the window's bytes into the page cache in the
+    background (``posix_fadvise(POSIX_FADV_WILLNEED)``).
+    """
+    if (
+        not isinstance(raw, mne.io.Raw)
+        or raw.preload
+        or len(raw._raw_extras) != 1
+        or raw._projector is not None
+        or raw._comp is not None
+    ):
+        return None
+    extra = raw._raw_extras[0]
+    fname, bounds = extra["filename"], extra["bounds"]
+    if not isinstance(fname, Path) or fname.suffix == ".gz":
+        return None
+    start, stop = start + raw._first_samps[0], stop + raw._first_samps[0]
+    first = np.searchsorted(bounds, start, side="right") - 1
+    tags = extra["ent"]
+    if isinstance(tags, _FifTagTable):
+        rows = tags.table[first : np.searchsorted(bounds, stop)]
+    else:
+        tags = tags[first : np.searchsorted(bounds, stop)]
+        if any(t is None for t in tags):
+            return None
+        rows = _tag_rows(tags)
+    if not len(rows) or (rows[:, 1] != FIFF.FIFFT_FLOAT).any():
+        return None
+    size, pos = rows[:, 2].tolist(), rows[:, 4].tolist()
+    if willneed:  # only a hint: any error is left to the read itself
+        try:
+            with open(fname, "rb") as f:
+                os.posix_fadvise(
+                    f.fileno(),
+                    pos[0],
+                    pos[-1] + 16 + size[-1] - pos[0],
+                    os.POSIX_FADV_WILLNEED,
+                )
+        except OSError:
+            pass
+        return None
+    # mmap: no copy through a 4 MB read buffer, and a cold file is read around
+    # the window by the kernel (as mne's 4 MB reads did), not window by window
+    with open(fname, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
+        buf = m[pos[0] : pos[-1] + 16 + size[-1]]
+    one = np.concatenate(
+        [np.frombuffer(buf, ">f4", s // 4, p + 16 - pos[0]) for s, p in zip(size, pos)]
+    ).reshape(-1, extra["orig_nchan"])[start - bounds[first] : stop - bounds[first]]
+    picked = one[:, raw._read_picks[0]].T
+    return np.multiply(picked, raw._cals[:, np.newaxis], order="C")
 
 
 def _window_info(crop_inds, sfreq):
@@ -823,9 +946,11 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         if self._zarr_data is not None:
             X = self._zarr_data[:, i_start:i_stop]
         else:
-            X = self.raw._getitem(
-                (slice(None), slice(i_start, i_stop)), return_times=False
-            )
+            X = _read_fif_window(self.raw, i_start, i_stop)
+            if X is None:
+                X = self.raw._getitem(
+                    (slice(None), slice(i_start, i_stop)), return_times=False
+                )
         X = np.array(X, dtype="float32")
         if self.transform is not None:
             X = self.transform(X)
@@ -1156,6 +1281,49 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         )
 
 
+def _lazy_source_files(ds) -> list:
+    """Return the files ``ds`` still reads its signal from (none once preloaded)."""
+    signal = ds.raw if hasattr(ds, "raw") else getattr(ds, "windows", None)
+    if signal is None or getattr(signal, "preload", True):
+        return []
+    files = list(
+        getattr(signal, "filenames", None) or [getattr(signal, "filename", None)]
+    )
+    raw = getattr(signal, "_raw", None)
+    if isinstance(raw, mne.io.BaseRaw) and not raw.preload:
+        files += raw.filenames  # mne.Epochs of a lazily read Raw read through it
+    return [f for f in files if f is not None]
+
+
+def _dir_key(directory):
+    """Identify a directory by device and inode, whatever its spelling."""
+    stat = os.stat(directory)
+    return stat.st_dev, stat.st_ino
+
+
+def _overwrite_conflicts(datasets, path, offset):
+    """Yield ``(i_ds, i_target, target_dir)`` for each dataset ``i_ds`` that
+    lazily reads from inside ``target_dir = path/<i_target + offset>``, which
+    ``save(overwrite=True)`` deletes before writing dataset ``i_target``.
+    """
+    targets = {}
+    for i in range(len(datasets)):
+        target_dir = os.path.join(path, str(i + offset))
+        if os.path.isdir(target_dir):
+            targets[_dir_key(target_dir)] = (i, target_dir)
+    if not targets:
+        return
+    for i_ds, ds in enumerate(datasets):
+        for file in _lazy_source_files(ds):
+            # ancestors of the name and of the file it links to (DataLad)
+            parents = {
+                *Path(os.path.abspath(file)).parents,
+                *Path(os.path.realpath(file)).parents,
+            }
+            for key in {_dir_key(p) for p in parents if p.is_dir()} & targets.keys():
+                yield (i_ds, *targets[key])
+
+
 @register_dataset
 class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     """A base class for concatenated datasets.
@@ -1253,7 +1421,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     def __len__(self):
         return self._ensure_cumulative_sizes()[-1]
 
-    def _get_single_item(self, idx: int):
+    def _locate(self, idx: int):
+        """The dataset that holds item ``idx`` and the item's index in it."""
         if idx < 0:
             if -idx > len(self):
                 raise ValueError(
@@ -1267,7 +1436,33 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             sample_idx = idx
         else:
             sample_idx = idx - cumulative_sizes[dataset_idx - 1]
-        return self.datasets[dataset_idx][sample_idx]
+        return self.datasets[dataset_idx], sample_idx
+
+    def _get_single_item(self, idx: int):
+        ds, i = self._locate(idx)
+        return ds[i]
+
+    def __getitems__(self, indices):
+        """Items ``indices``, as ``[self[i] for i in indices]``.
+
+        A :class:`~torch.utils.data.DataLoader` fetches each batch through
+        this. The lazy FIF windows of the batch are first requested from the
+        OS all at once (``posix_fadvise(POSIX_FADV_WILLNEED)``, where it
+        exists), so their reads from disk overlap instead of running one after
+        another: on a network file system a batch read from cold files then
+        costs about one round trip, not one per window.
+        """
+        # ponytail: advises the whole batch at once; chunk it if a batch's
+        # windows ever outgrow the page cache
+        if hasattr(os, "posix_fadvise"):
+            for idx in indices:
+                if not isinstance(idx, (int, np.integer)):
+                    continue  # e.g. a SequenceSampler tuple: read, not advised
+                ds, i = self._locate(idx)
+                if isinstance(ds, EEGWindowsDataset) and ds._zarr_data is None:
+                    _, start, stop = ds.crop_inds[i].tolist()
+                    _read_fif_window(ds.raw, start, stop, willneed=True)
+        return [self[idx] for idx in indices]
 
     def __getitem__(self, idx: int | list):
         """
@@ -1366,7 +1561,9 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         metadata : pd.DataFrame
             DataFrame containing as many rows as there are windows in the
             BaseConcatDataset, with the metadata and description information
-            for each window.
+            for each window, and an ``i_dataset`` column giving the position
+            in ``datasets`` of the dataset (recording) each window comes from.
+            Samplers use it to keep recordings apart.
         """
         if not all(
             [
@@ -1392,9 +1589,15 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                     "Dataset descriptions cannot contain the reserved window "
                     "metadata key 'i_trial_in_dataset'."
                 )
+            if "i_dataset" in df.columns or "i_dataset" in ds.description:
+                raise ValueError(
+                    "Window metadata and dataset descriptions cannot contain the "
+                    "key 'i_dataset', which get_metadata() reserves for the "
+                    "position of the dataset each window comes from. Rename it."
+                )
 
         all_dfs = list()
-        for ds in self.datasets:
+        for i_ds, ds in enumerate(self.datasets):
             if hasattr(ds, "_windows") and ds._windows is not None:
                 df = ds._windows.metadata
             else:
@@ -1404,6 +1607,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 df = df.copy()
             for k, v in ds.description.items():
                 df[k] = v
+            df["i_dataset"] = i_ds
             all_dfs.append(df)
 
         return pd.concat(all_dfs)
@@ -1672,7 +1876,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 kwargs_path = os.path.join(path, ".".join([kwarg_name, "json"]))
                 kwargs = getattr(self, kwarg_name)
                 if kwargs is not None:
-                    json.dump(kwargs, open(kwargs_path, "w"))
+                    with open(kwargs_path, "w") as f:
+                        json.dump(kwargs, f)
 
     @property
     def description(self) -> pd.DataFrame:
@@ -1725,7 +1930,9 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
              -raw.fif | -epo.fif and .json files to.
         overwrite : bool
             Whether to delete old subdirectories that will be saved to in this
-            call.
+            call. If a dataset still reads its data lazily from one of them, a
+            ``ValueError`` is raised before anything is deleted: load the data
+            into memory first (``preload=True``) or save to another directory.
         offset : int
             If provided, the integer is added to the id of the dataset in the
             concat. This is useful in the setting of very large datasets, where
@@ -1738,11 +1945,21 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
         ):
             raise ValueError("dataset should have either raw or windows attribute")
+        if overwrite:
+            for _, _, target_dir in _overwrite_conflicts(self.datasets, path, offset):
+                raise ValueError(
+                    f"Saving with overwrite=True would delete {target_dir} while "
+                    "a dataset still reads its data from it. Load the data into "
+                    "memory first (preload=True) or save to another directory."
+                )
 
         # Create path if it doesn't exist
         os.makedirs(path, exist_ok=True)
 
-        path_contents = os.listdir(path)
+        # With an offset the caller fills one directory piece by piece (preprocess
+        # saves each recording at its index), so the other entries are expected:
+        # skip the scan that would stat them all on every call and list them in a warning.
+        path_contents = os.listdir(path) if offset == 0 else []
         n_sub_dirs = len(
             [e for e in path_contents if os.path.isdir(os.path.join(path, e))]
         )

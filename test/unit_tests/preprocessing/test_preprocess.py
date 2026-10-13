@@ -781,3 +781,62 @@ def test_serialization(preprocessor_name, args, kwargs):
         assert preprocessor._same_attr(deserialized, attr), err_msg
     # Identical to above:
     assert preprocessor == deserialized
+
+
+def test_preprocess_save_dir_leaves_lazy_inputs_unloaded(base_concat_ds, tmp_path):
+    """With save_dir, preprocess() returns the reloaded saved copies; the lazy
+    input recordings are not loaded and kept in memory meanwhile (n_jobs=1)."""
+    base_concat_ds.save(str(tmp_path / "in"))
+    lazy = load_concat_dataset(str(tmp_path / "in"), preload=False)
+    inputs = [ds.raw for ds in lazy.datasets]
+    preprocessors = [
+        Preprocessor("crop", tmax=10, include_tmax=False),
+        Preprocessor("resample", sfreq=125),  # needs the data loaded
+    ]
+    out = preprocess(lazy, preprocessors, save_dir=str(tmp_path / "out"), n_jobs=1)
+    assert not any(raw.preload for raw in inputs)
+    assert all(ds.raw.info["sfreq"] == 125 for ds in out.datasets)
+
+
+def _save_recordings(path, n_recordings):
+    """Save short recordings to ``path``; return their signals as stored."""
+    rng = np.random.RandomState(0)
+    info = mne.create_info(["C3", "C4"], sfreq=100.0, ch_types="eeg")
+    BaseConcatDataset(
+        [
+            RawDataset(mne.io.RawArray(rng.randn(2, 1000), info, verbose=False), {})
+            for _ in range(n_recordings)
+        ]
+    ).save(str(path))
+    stored = load_concat_dataset(str(path), preload=True)
+    return [ds.raw.get_data() for ds in stored.datasets]
+
+
+def test_preprocess_overwrite_in_place_once_the_data_is_loaded(tmp_path):
+    """Preprocessors that load the data may still save it back in place."""
+    signals = _save_recordings(tmp_path, n_recordings=2)
+    lazy = load_concat_dataset(str(tmp_path), preload=False)
+    double = [Preprocessor(lambda x: 2 * x)]  # loads the data to apply
+    preprocess(lazy, double, save_dir=str(tmp_path), overwrite=True)
+    reloaded = load_concat_dataset(str(tmp_path), preload=True)
+    for ds, x in zip(reloaded.datasets, signals):
+        np.testing.assert_array_equal(ds.raw.get_data(), 2 * x)
+
+
+@pytest.mark.parametrize("n_jobs", [1, 2])
+@pytest.mark.parametrize("ids_to_load", [None, [1, 0], [1, 2]])
+def test_preprocess_overwrite_keeps_recordings_still_read_lazily(
+    tmp_path, ids_to_load, n_jobs
+):
+    """Recording i is saved into subdirectory i, deleting it first. A crop keeps
+    the data lazy, so in place it was deleted before being written; with
+    ids_to_load=[1, 0] wrong data was written silently, with [1, 2] the never
+    loaded recording 0 was deleted."""
+    signals = _save_recordings(tmp_path, n_recordings=3)
+    lazy = load_concat_dataset(str(tmp_path), preload=False, ids_to_load=ids_to_load)
+    crop = [Preprocessor("crop", tmax=4, include_tmax=False)]
+    with pytest.raises(ValueError):
+        preprocess(lazy, crop, save_dir=str(tmp_path), overwrite=True, n_jobs=n_jobs)
+    reloaded = load_concat_dataset(str(tmp_path), preload=True)
+    for ds, x in zip(reloaded.datasets, signals):
+        np.testing.assert_array_equal(ds.raw.get_data(), x)

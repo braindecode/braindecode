@@ -15,9 +15,10 @@ import torch
 import torch.nn.functional as F
 from mne.datasets.utils import _get_path
 from torch import nn
-from torch.nn import RMSNorm
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.attention import _scaled_dot_product_attention
+from braindecode.modules.layers import RMSNorm
 
 logger = logging.getLogger(__name__)
 
@@ -278,6 +279,10 @@ class REVE(EEGModuleMixin, nn.Module):
         self.freqs = freqs
         self.patch_size = patch_size
         self.patch_overlap = patch_overlap
+        if self._n_times is not None and self._n_times < patch_size:
+            raise ValueError(
+                f"n_times ({self._n_times}) must be at least patch_size ({patch_size})."
+            )
         self.depth = depth
         self.heads = heads
         self.head_dim = head_dim
@@ -318,7 +323,15 @@ class REVE(EEGModuleMixin, nn.Module):
 
         self.default_pos = None
         if chs_info is not None:
-            self.default_pos = self.get_positions([ch["ch_name"] for ch in chs_info])
+            names = [ch["ch_name"] for ch in chs_info]
+            missing = [n for n in names if n not in self._position_bank.mapping]
+            if missing:
+                raise ValueError(
+                    f"The REVE position bank has no position for {missing}. Use "
+                    "its channel names (RevePositionBank().get_all_positions()), "
+                    "or build without chs_info and pass pos to forward."
+                )
+            self.default_pos = self.get_positions(names)
 
     def _get_flattened_output_dim(self) -> int:
         """Helper function to compute the flattened output dimension after the transformer."""
@@ -427,7 +440,8 @@ class REVE(EEGModuleMixin, nn.Module):
                 raise ValueError(
                     "No positions provided and no default positions available. Please provide channel positions."
                 )
-            pos = self.default_pos.expand(batch_size, -1, -1).to(eeg.device)
+            # One copy for the whole batch: the embedding below broadcasts.
+            pos = self.default_pos.unsqueeze(0).to(eeg.device)
 
         pos = FourierEmb4D.add_time_patch(pos, n_patches)
         # Positions stay in float32 for the Fourier features; the embedding
@@ -506,6 +520,7 @@ class GEGLU(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, dim: int, hidden_dim: int, geglu: bool):
         super().__init__()
+        self.geglu = geglu
         self.net = nn.Sequential(
             RMSNorm(dim, eps=1e-6),
             nn.Linear(dim, hidden_dim * 2 if geglu else hidden_dim, bias=False),
@@ -514,7 +529,15 @@ class FeedForward(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        if not self.geglu:
+            return self.net(x)
+        # GEGLU halves as two matmuls on the weight's row halves: contiguous
+        # outputs instead of strided views of one output (copied on HPU).
+        x = self.net[0](x)
+        weight = self.net[1].weight
+        half = weight.shape[0] // 2
+        x, gates = F.linear(x, weight[:half]), F.linear(x, weight[half:])
+        return self.net[3](F.gelu(gates) * x)
 
 
 #################################################################################
@@ -542,7 +565,8 @@ class Attention(nn.Module):
         q = q.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         k = k.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         v = v.unflatten(-1, (self.heads, -1)).transpose(1, 2)
-        out = F.scaled_dot_product_attention(q, k, v)
+        # ~700-token sequences: the fused kernel also beats lazy mode's graph.
+        out = _scaled_dot_product_attention(q, k, v, fused_in_lazy=True)
         return self.to_out(out.transpose(1, 2).flatten(2))
 
 

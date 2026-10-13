@@ -14,6 +14,7 @@ from torch import nn
 from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
+from braindecode.modules.attention import _scaled_dot_product_attention
 from braindecode.modules.channels import _resolve
 
 
@@ -462,9 +463,31 @@ class _AxisAttention(nn.Module):
             .unbind(0)
         )
         drop = self.att_drop_prob if self.training else 0.0
-        attended = F.scaled_dot_product_attention(
+        attended = _scaled_dot_product_attention(
             query, key, value, attn_mask=mask, dropout_p=drop
         )
+        return attended.transpose(1, 2).reshape(n_seq, length, -1)
+
+    def _attend_two_scales(
+        self, projected: torch.Tensor, band: torch.Tensor, weights: torch.Tensor
+    ) -> torch.Tensor:
+        """Banded and full attention from one score matrix, mixed per query.
+
+        ``weights`` (N, L, 2) are the scale-gate weights. Both softmaxes share
+        the scores and one product with the values serves the mixture.
+        """
+        n_seq, length, _ = projected.shape
+        query, key, value = (
+            projected.reshape(n_seq, length, 3, self.num_heads, self.head_dim)
+            .permute(2, 0, 3, 1, 4)
+            .unbind(0)
+        )
+        scores = torch.matmul(query, key.transpose(-2, -1)) * self.head_dim**-0.5
+        weights = weights.reshape(n_seq, 1, length, 2)
+        probs = weights[..., 0:1] * scores.masked_fill(~band, float("-inf")).softmax(
+            -1
+        ) + weights[..., 1:2] * scores.softmax(-1)
+        attended = torch.matmul(probs, value)
         return attended.transpose(1, 2).reshape(n_seq, length, -1)
 
     def forward(self, x: torch.Tensor, band: Optional[torch.Tensor]) -> torch.Tensor:
@@ -476,15 +499,26 @@ class _AxisAttention(nn.Module):
         # the restricted branch is the full one; attend once unless the two
         # branches draw their own attention dropout.
         per_channel = self.temporal_qkv(x.reshape(batch * n_chans, n_patches, dim))
-        restricted = self.temporal_out(self._attend(per_channel, band)).reshape(
-            batch, n_chans, n_patches, dim
-        )
-        full = restricted
-        if band is not None or (self.training and self.att_drop_prob > 0):
-            full = self.temporal_out(self._attend(per_channel, None)).reshape(
+        dropout = self.training and self.att_drop_prob > 0
+        if band is not None and not dropout:
+            # The scale-gate weights sum to one, so the two branches share the
+            # scores, the product with the values and temporal_out.
+            attended = self._attend_two_scales(per_channel, band, scale_weights)
+            temporal = self.temporal_out(attended).reshape(
                 batch, n_chans, n_patches, dim
             )
-        temporal = scale_weights[..., 0:1] * restricted + scale_weights[..., 1:2] * full
+        else:
+            restricted = self.temporal_out(self._attend(per_channel, band)).reshape(
+                batch, n_chans, n_patches, dim
+            )
+            full = restricted
+            if dropout:
+                full = self.temporal_out(self._attend(per_channel, None)).reshape(
+                    batch, n_chans, n_patches, dim
+                )
+            temporal = (
+                scale_weights[..., 0:1] * restricted + scale_weights[..., 1:2] * full
+            )
 
         # Spatial path: one sequence of C tokens per time step.
         per_step = self.spatial_qkv(

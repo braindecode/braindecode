@@ -4,6 +4,7 @@
 #          Hubert Banville <hubert.jbanville@gmail.com>
 #          Matthew Chen <matt.chen42601@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
+#          Anton Soloviev <anton@praviel.com>
 #
 # License: BSD-3
 
@@ -1330,6 +1331,29 @@ def test_windower_from_target_channels_all_targets(dataset_target_time_series):
         )
 
 
+@pytest.mark.parametrize("first_samp", [-100, 0, 100])
+def test_windower_from_target_channels_includes_last_sample(first_samp):
+    """Target windows use relative, exclusive stops regardless of time origin."""
+    signal = np.arange(20, dtype=float)[None, :]
+    targets = np.full((2, 20), np.nan)
+    targets[0, 8] = 0.5  # insufficient preceding data
+    targets[0, 9] = 1.5
+    targets[1, -1] = 2.5  # final sample, in the second target channel only
+    info = mne.create_info(["eeg", "target0", "target1"], 10, ["eeg", "misc", "misc"])
+    raw = mne.io.RawArray(np.concatenate([signal, targets]), info, first_samp=first_samp)
+
+    windows = create_windows_from_target_channels(
+        BaseConcatDataset([RawDataset(raw)]), window_size_samples=10
+    )
+
+    assert len(windows) == 2
+    for i, stop in enumerate([10, 20]):
+        X, y, indices = windows[i]
+        np.testing.assert_array_equal(X, signal[:, stop - 10 : stop])
+        np.testing.assert_array_equal(y, targets[:, stop - 1])
+        assert indices == [i, stop - 10, stop]
+
+
 def test_windower_from_target_channels_partial_targets():
     # when target channels have values @ diff timepoints, windows should be
     # created at the union of all non nan positions across channels, not just the first
@@ -1373,7 +1397,7 @@ def test_windower_from_target_channels_partial_targets():
     )
 
     # all 8 positions should produce valid windows
-    # (all are >= window_size and < n_samples + first_samp)
+    # (all are >= window_size)
     all_positions = sorted(ch0_positions + ch1_positions)
     expected_stops = [
         p + 1

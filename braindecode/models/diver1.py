@@ -18,7 +18,7 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import rotate_pairs, spectral_input
+from braindecode.functional import _real_dft, rotate_pairs, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     INTRACRANIAL_CH_TYPES,
@@ -397,10 +397,13 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         tokens = self.patch_tokenizer(x)
         tokens = self.patch_cnn(tokens)
         if self.spectral_emb is not None:
-            # At least float32, as the reference's float32 FFT.
-            fft_input = spectral_input(tokens)
-            spectrum = torch.fft.rfft(fft_input, dim=-1, norm="forward")
-            amplitude = spectrum.abs().to(tokens)
+            if _real_dft.needs_real_dft(tokens):
+                amplitude = self._amplitude_real_dft(tokens).to(tokens)
+            else:
+                # At least float32, as the reference's float32 FFT.
+                fft_input = spectral_input(tokens)
+                spectrum = torch.fft.rfft(fft_input, dim=-1, norm="forward")
+                amplitude = spectrum.abs().to(tokens)
             spectral_emb = self.spectral_emb(amplitude)
             tokens = tokens + spectral_emb
         if self.chan_emb is not None:
@@ -438,6 +441,16 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         else:
             pooled = tokens.mean(dim=(1, 2))
         return self.final_layer(pooled)
+
+    @torch.jit.unused
+    @_real_dft.fp32_island
+    def _amplitude_real_dft(self, tokens):
+        # |rfft(tokens, norm="forward")| on the device for accelerators without
+        # complex tensors (Intel Gaudi / HPU), instead of a host FFT. The norm
+        # keeps abs()'s zero gradient at an all-zero bin.
+        real, imag = _real_dft.real_rfft(tokens)
+        magnitude = torch.linalg.vector_norm(torch.stack((real, imag)), dim=0)
+        return magnitude / tokens.shape[-1]
 
 
 class _PatchCNN(nn.Sequential):
@@ -618,28 +631,13 @@ class _STCPE(nn.Module):
             inner_heads -= 1
         self.window = window
         self.n_patches = n_patches
-        # Full-height windows, padded in time to include partial overlaps.
-        self.stride = (1, 1)
-        self.padding = (0, window - 1)
+        # Full-height windows, padded in time to include partial overlaps:
+        # window w holds patches w - (window - 1) .. w. Entry j * n_windows + w
+        # is the padded patch index of offset j in window w (offset outermost,
+        # the order in which F.unfold / F.fold accumulate).
         self.n_windows = n_patches + window - 1
-        # Fold features into batch; each temporal window spans every channel.
-        self.fold_features = Rearrange(
-            "batch chan patch dim -> (batch dim) 1 chan patch"
-        )
-        self.unfold_features = Rearrange(
-            "(batch dim) 1 chan patch -> batch chan patch dim", dim=inner_dim
-        )
-        # One sequence per window for the inner encoder, and back again.
-        self.windows_to_batch = Rearrange(
-            "(batch dim) (chan window) n_win -> (batch n_win) (chan window) dim",
-            dim=inner_dim,
-            window=window,
-        )
-        self.batch_to_windows = Rearrange(
-            "(batch n_win) (chan window) dim -> (batch dim) (chan window) n_win",
-            n_win=self.n_windows,
-            window=window,
-        )
+        offsets = torch.arange(window)[:, None] + torch.arange(self.n_windows)
+        self.register_buffer("window_index", offsets.flatten(), persistent=False)
         self.down = nn.Linear(d_model, inner_dim)
         self.encoder = _AnyVariateEncoder(
             d_model=inner_dim,
@@ -655,49 +653,43 @@ class _STCPE(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Map a token grid to a positional bias of the same shape."""
-        n_chans = x.shape[1]
-        kernel_size = (n_chans, self.window)
-        grid_size = (n_chans, self.n_patches)
+        batch, n_chans, n_patches, _ = x.shape
+        window, n_windows = self.window, self.n_windows
 
         x = self.down(x)
-        flat = self.fold_features(x)
-        unfolded = F.unfold(
-            flat,
-            kernel_size=kernel_size,
-            stride=self.stride,
-            padding=self.padding,
+        dim = x.shape[-1]
+        # Every window gathered at once (a strided unfold and its fold-shaped
+        # backward are slow on some accelerators, e.g. Intel Gaudi).
+        windows = (
+            F.pad(x, (0, 0, window - 1, window - 1))
+            .index_select(2, self.window_index)
+            .view(batch, n_chans, window, n_windows, dim)
+            .permute(0, 3, 1, 2, 4)
+            .reshape(batch * n_windows, n_chans * window, dim)
         )
-        windows = self.windows_to_batch(unfolded)
 
         var_id = torch.arange(n_chans, device=x.device).repeat_interleave(self.window)
         time_id = torch.arange(self.window, device=x.device).repeat(n_chans)
         encoded = self.encoder(windows, var_id=var_id, time_id=time_id)
-        encoded = self.batch_to_windows(encoded)
+        encoded = (
+            encoded.view(batch, n_windows, n_chans, window, dim)
+            .permute(0, 2, 3, 1, 4)
+            .reshape(batch, n_chans, window * n_windows, dim)
+        )
 
-        folded = F.fold(
-            encoded,
-            output_size=grid_size,
-            kernel_size=kernel_size,
-            stride=self.stride,
-            padding=self.padding,
+        # Overlap-add back onto the padded patches, then drop the padding.
+        n_padded = n_patches + 2 * (window - 1)
+        folded = encoded.new_zeros(batch, n_chans, n_padded, dim).index_add(
+            2, self.window_index, encoded
         )
-        # Fold in the working dtype: a scalar window divisor changes BF16
+        # Count in the working dtype: a scalar window divisor changes BF16
         # accumulation for large windows (e.g. 259 overlaps accumulate to 256).
-        overlap = F.fold(
-            torch.ones(
-                1,
-                n_chans * self.window,
-                self.n_windows,
-                dtype=x.dtype,
-                device=x.device,
-            ),
-            output_size=grid_size,
-            kernel_size=kernel_size,
-            stride=self.stride,
-            padding=self.padding,
+        overlap = x.new_zeros(n_padded).index_add(
+            0, self.window_index, x.new_ones(window * n_windows)
         )
-        averaged = folded / overlap
-        return self.up(self.unfold_features(averaged))
+        start, stop = window - 1, window - 1 + n_patches
+        averaged = folded[:, :, start:stop] / overlap[start:stop, None]
+        return self.up(averaged)
 
 
 class _AnyVariateEncoder(nn.Module):

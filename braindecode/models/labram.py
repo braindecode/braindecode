@@ -19,6 +19,7 @@ from torch.nn.init import trunc_normal_
 from braindecode.functional import rescale_parameter
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import MLP, DropPath
+from braindecode.modules.attention import _hpu_eager_fused_sdpa
 from braindecode.modules.blocks import PatchTokenizer
 
 # -----------------------------------------------------------------------------
@@ -1416,9 +1417,7 @@ class _Attention(nn.Module):
         if self.k_norm is not None:
             k = self.k_norm(k).type_as(v)
 
-        q = q * self.scale
-        attn = q @ k.transpose(-2, -1)
-
+        attn_mask: Optional[torch.Tensor] = None
         if self.relative_position_bias_table is not None:
             relative_position_bias = self.relative_position_bias_table[
                 self.relative_position_index.view(-1)
@@ -1427,18 +1426,38 @@ class _Attention(nn.Module):
                 self.window_size[0] * self.window_size[1] + 1,
                 -1,
             )  # Wh*Ww,Wh*Ww,nH
-            relative_position_bias = relative_position_bias.permute(
-                2, 0, 1
-            ).contiguous()  # nH, Wh*Ww, Wh*Ww
-            attn = attn + relative_position_bias.unsqueeze(0)
+            attn_mask = (
+                relative_position_bias.permute(2, 0, 1).contiguous().unsqueeze(0)
+            )  # 1, nH, Wh*Ww, Wh*Ww
 
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-
-        if return_attention:
-            return attn
-
-        x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
+        # Fused kernel, same math. Not with attention dropout in training (it
+        # would draw other masks). On Gaudi, torch's SDPA trains ~12 % slower
+        # than the plain ops; the bridge's own fused kernel (eager mode, no
+        # mask) is used instead.
+        fused = not return_attention and (self.attn_drop.p == 0.0 or not self.training)
+        out: Optional[torch.Tensor] = None
+        if fused and q.device.type != "hpu":
+            out = nn.functional.scaled_dot_product_attention(
+                q, k, v, attn_mask=attn_mask, scale=self.scale
+            )
+        elif (
+            fused
+            and attn_mask is None
+            and not torch.jit.is_scripting()
+            and (q.dtype == torch.float32 or q.dtype == torch.bfloat16)
+        ):
+            out = _hpu_eager_fused_sdpa(q, k, v, self.scale)
+        if out is None:
+            attn = (q * self.scale) @ k.transpose(-2, -1)
+            if attn_mask is not None:
+                attn = attn + attn_mask
+            attn = self.attn_drop(attn.softmax(dim=-1))
+            if return_attention:
+                return attn
+            x = attn @ v
+        else:
+            x = out
+        x = x.transpose(1, 2).reshape(B, N, -1)
 
         x = self.proj(x)
         x = self.proj_drop(x)

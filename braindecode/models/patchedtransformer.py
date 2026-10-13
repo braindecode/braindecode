@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.attention import _scaled_dot_product_attention
 
 
 class PBT(EEGModuleMixin, nn.Module):
@@ -411,13 +412,8 @@ class _MHSA(nn.Module):
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
 
-        y = torch.nn.functional.scaled_dot_product_attention(
-            q,
-            k,
-            v,
-            attn_mask=None,
-            dropout_p=self.drop_prob if self.training else 0.0,
-            is_causal=False,
+        y = _scaled_dot_product_attention(
+            q, k, v, dropout_p=self.drop_prob if self.training else 0.0
         )
 
         # re-assemble heads -> (B, T, C)

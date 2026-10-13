@@ -20,8 +20,9 @@ from braindecode.models.neurorvq import (
     _channel_slots,
     _modality,
     _MultiScaleTemporalConv,
+    _stack_scales,
 )
-from braindecode.modules.quantization import _all_reduce_sum
+from braindecode.modules.quantization import _all_reduce_sum, _broadcast_tensors
 
 
 class _EMAEmbedding(nn.Module):
@@ -58,6 +59,15 @@ class _EMAEmbedding(nn.Module):
             self.weight.copy_(means)
             self.cluster_size.copy_(counts)
             self.initted.fill_(1.0)
+            # A cold quantizer can be initialized from different first batches
+            # on different DDP ranks. Global EMA count/sum reductions are not
+            # sufficient if the initial code assignments already disagree.
+            # Broadcast the complete rank-zero codebook state once, before
+            # computing any token indices. Pretrained/initted paths are unchanged.
+            if not torch.jit.is_scripting():
+                _broadcast_tensors(
+                    (self.weight, self.cluster_size, self.embed_avg, self.initted)
+                )
 
 
 class _EMAVectorQuantizer(nn.Module):
@@ -73,12 +83,10 @@ class _EMAVectorQuantizer(nn.Module):
     def _indices(self, vectors: Tensor) -> Tensor:
         self.embedding.initialize(vectors)
         weight = self.embedding.weight
-        distances = (
-            vectors.square().sum(dim=1, keepdim=True)
-            + weight.square().sum(dim=1)
-            - 2 * vectors @ weight.T
-        )
-        return distances.argmin(dim=1)
+        distances = vectors.square().sum(dim=1, keepdim=True)
+        distances = distances + weight.square().sum(dim=1)
+        # - 2 * vectors @ weight.T, accumulated in place by the GEMM (one pass less)
+        return distances.addmm_(vectors, weight.T, alpha=-2).argmin(dim=1)
 
     def encode(self, z: Tensor) -> Tensor:
         z = F.normalize(z.permute(0, 2, 3, 1), dim=-1)
@@ -93,19 +101,22 @@ class _EMAVectorQuantizer(nn.Module):
         if self.training or self.statistic_code_usage:
             with torch.no_grad():
                 weight = self.embedding.weight
-                encodings = F.one_hot(indices, weight.shape[0]).to(z.dtype)
-                counts = encodings.sum(0)
+                # Per-code counts and sums by index_add_ (at least float32: exact
+                # counts) instead of a dense (N, n_codes) one-hot GEMM; no host sync
+                # (bincount reads the index range).
+                work = torch.promote_types(vectors.dtype, torch.float32)
+                ones = vectors.new_ones(indices.shape[0], dtype=work)
+                counts = ones.new_zeros(weight.shape[0]).index_add_(0, indices, ones)
                 if not torch.jit.is_scripting():
                     _all_reduce_sum(counts)
                 self.cluster_size.mul_(self.decay).add_(counts, alpha=1 - self.decay)
                 if self.training:
                     safe_counts = counts.masked_fill(counts == 0, 1.0)
-                    embed_sum = vectors.T @ encodings
+                    embed_sum = ones.new_zeros(weight.shape)
+                    embed_sum = embed_sum.index_add_(0, indices, vectors.to(work))
                     if not torch.jit.is_scripting():
                         _all_reduce_sum(embed_sum)
-                    means = F.normalize(
-                        (embed_sum / safe_counts.unsqueeze(0)).T, dim=-1
-                    )
+                    means = F.normalize(embed_sum / safe_counts.unsqueeze(1), dim=-1)
                     means = torch.where(counts[:, None] == 0, weight, means)
                     weight.mul_(self.decay).add_(means, alpha=1 - self.decay)
                     weight.copy_(F.normalize(weight, dim=-1))
@@ -185,6 +196,7 @@ class _BranchTransformer(nn.Module):
         self.pos_embed = nn.Parameter(torch.zeros(n_channels + 1, embed_dim))
         self.time_embed = nn.Parameter(torch.zeros(max_patches, embed_dim))
         self.pos_drop = nn.Dropout(drop_prob)
+        self._dropout = max(drop_prob, attn_drop_rate, drop_path_rate) > 0
         drop_paths = torch.linspace(0, drop_path_rate, depth).tolist()
         self.blocks = nn.ModuleList(
             [
@@ -211,27 +223,29 @@ class _BranchTransformer(nn.Module):
         return spatial, self.time_embed[time_indices]
 
     def forward(
-        self, tokens: Tensor, spatial: Tensor, temporal: Tensor, branch: int
-    ) -> Tensor:
-        """Encode ``(batch, n_tokens, embed_dim)`` tokens of scale ``branch`` (1-4)."""
-        tokens = torch.cat(
-            (self.cls_token.expand(tokens.shape[0], -1, -1), tokens), dim=1
-        )
-        tokens = tokens + spatial
-        tokens[:, 1:] = tokens[:, 1:] + temporal
-        tokens = self.pos_drop(tokens)
-        for block in self.blocks:
-            tokens = block(tokens)
-        # Unrolled (no getattr with a computed name) so TorchScript compiles it.
-        if branch == 1:
-            return self.fc_norm_1(tokens[:, 1:])
-        if branch == 2:
-            return self.fc_norm_2(tokens[:, 1:])
-        if branch == 3:
-            return self.fc_norm_3(tokens[:, 1:])
-        if branch == 4:
-            return self.fc_norm_4(tokens[:, 1:])
-        raise ValueError(f"branch must be 1, 2, 3 or 4, got {branch}.")
+        self, scales: List[Tensor], spatial: Tensor, temporal: Tensor
+    ) -> List[Tensor]:
+        """Encode the four scales' ``(batch, n_tokens, embed_dim)`` tokens."""
+        if _stack_scales(scales[0], self.training and self._dropout):
+            scales = [torch.cat(scales)]
+        outs = []
+        for tokens in scales:
+            tokens = torch.cat(
+                (self.cls_token.expand(tokens.shape[0], -1, -1), tokens), dim=1
+            )
+            tokens = tokens + spatial
+            tokens[:, 1:] = tokens[:, 1:] + temporal
+            tokens = self.pos_drop(tokens)
+            for block in self.blocks:
+                tokens = block(tokens)
+            outs.append(tokens[:, 1:])
+        f1, f2, f3, f4 = torch.cat(outs).chunk(4)
+        return [
+            self.fc_norm_1(f1),
+            self.fc_norm_2(f2),
+            self.fc_norm_3(f3),
+            self.fc_norm_4(f4),
+        ]
 
 
 class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
@@ -521,11 +535,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         batch, channels, n_patches, _ = patches.shape
         b1, b2, b3, b4 = self.encoder.patch_embed(patches)
         spatial, temporal = self.encoder.embeddings(time, spatial)
-        # The four scales unrolled (no getattr with a computed name) for TorchScript.
-        f1 = self.encoder(b1, spatial, temporal, 1)
-        f2 = self.encoder(b2, spatial, temporal, 2)
-        f3 = self.encoder(b3, spatial, temporal, 3)
-        f4 = self.encoder(b4, spatial, temporal, 4)
+        f1, f2, f3, f4 = self.encoder([b1, b2, b3, b4], spatial, temporal)
         latents = [
             self.encode_task_layer_1(f1),
             self.encode_task_layer_2(f2),
@@ -585,20 +595,14 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         quantized, _ = self._encode(patches, time, spatial)
         q1, q2, q3, q4 = quantized
         # The four scales unrolled (no getattr with a computed name) for TorchScript.
-        features = []
-        tokens = self.decoder.patch_embed_1(q1)
-        spatial_1, temporal_1 = self.decoder.embeddings(time, spatial)
-        features.append(self.decoder(tokens, spatial_1, temporal_1, 1))
-        tokens = self.decoder.patch_embed_2(q2)
-        spatial_2, temporal_2 = self.decoder.embeddings(time, spatial)
-        features.append(self.decoder(tokens, spatial_2, temporal_2, 2))
-        tokens = self.decoder.patch_embed_3(q3)
-        spatial_3, temporal_3 = self.decoder.embeddings(time, spatial)
-        features.append(self.decoder(tokens, spatial_3, temporal_3, 3))
-        tokens = self.decoder.patch_embed_4(q4)
-        spatial_4, temporal_4 = self.decoder.embeddings(time, spatial)
-        features.append(self.decoder(tokens, spatial_4, temporal_4, 4))
-        decoded = torch.cat(features, dim=-1)
+        tokens = [
+            self.decoder.patch_embed_1(q1),
+            self.decoder.patch_embed_2(q2),
+            self.decoder.patch_embed_3(q3),
+            self.decoder.patch_embed_4(q4),
+        ]
+        spatial, temporal = self.decoder.embeddings(time, spatial)
+        decoded = torch.cat(self.decoder(tokens, spatial, temporal), dim=-1)
         rec_amp = self.decode_task_layer_amplitude(decoded)
         rec_sin = self.decode_task_layer_angle_sin(decoded).reshape_as(patches)
         rec_cos = self.decode_task_layer_angle_cos(decoded).reshape_as(patches)

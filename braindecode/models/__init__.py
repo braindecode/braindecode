@@ -37,9 +37,11 @@ from .eegsimpleconv import EEGSimpleConv
 from .eegsym import EEGSym
 from .eegtcnet import EEGTCNet
 from .emg2qwerty import EMG2QwertyNet
+from .epint import EpiNT
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
+from .gcnsnet import GCNsNet
 from .guetschel2026 import Guetschel2026
 from .hybrid import HybridNet
 from .ifnet import IFNet
@@ -136,12 +138,14 @@ __all__ = [
     "EEGTCNet",
     "DGCNN",
     "EMG2QwertyNet",
+    "EpiNT",
     "NeuroPose",
     "SensingDynamics",
     "VEMG2Pose",
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",
+    "GCNsNet",
     "Guetschel2026",
     "MetaNeuromotorHand",
     "HybridNet",

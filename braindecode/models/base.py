@@ -46,6 +46,24 @@ _GEOMETRY_KWARGS = (
 )
 
 
+def _too_short_input_error(exc: RuntimeError, input_shape) -> Optional[ValueError]:
+    """ValueError for a layer that found the input too short, else None."""
+    if not str(exc).endswith(
+        (
+            "Output size is too small",
+            "Kernel size can't be greater than actual input size",
+        )
+    ):
+        return None
+    return ValueError(
+        "During model prediction RuntimeError was thrown showing that at some "
+        f"layer `{str(exc).split('.')[-1]}` (see above in the stacktrace). This "
+        "could be caused by providing too small `n_times`/`input_window_seconds`. "
+        "Model may require longer chunks of signal in the input than "
+        f"{input_shape}."
+    )
+
+
 _HF_INSTALL_HINT = (
     "requires the `huggingface_hub` package. "
     "Install with: pip install 'braindecode[hub]'"
@@ -483,6 +501,18 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         # Called by torch.jit.script before compiling the model.
         return make_parametrizations_scriptable(self)
 
+    def __call__(self, *args, **kwargs):
+        # An input shorter than the layers need raises ValueError, not a torch
+        # RuntimeError from deep inside forward.
+        try:
+            return super().__call__(*args, **kwargs)
+        except RuntimeError as exc:
+            shape = tuple(args[0].shape) if args and hasattr(args[0], "shape") else None
+            error = _too_short_input_error(exc, shape)
+            if error is None:
+                raise
+            raise error from exc
+
     def get_output_shape(self) -> tuple[int, ...]:
         """Returns shape of neural network output for batch size equal 1.
 
@@ -506,21 +536,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     .shape
                 )
             except RuntimeError as exc:
-                if str(exc).endswith(
-                    (
-                        "Output size is too small",
-                        "Kernel size can't be greater than actual input size",
-                    )
-                ):
-                    msg = (
-                        "During model prediction RuntimeError was thrown showing that at some "
-                        f"layer `{str(exc).split('.')[-1]}` (see above in the stacktrace). This "
-                        "could be caused by providing too small `n_times`/`input_window_seconds`. "
-                        "Model may require longer chunks of signal in the input than "
-                        f"{self.input_shape}."
-                    )
-                    raise ValueError(msg) from exc
-                raise exc
+                error = _too_short_input_error(exc, self.input_shape)
+                if error is None:
+                    raise
+                raise error from exc
 
     def get_config(self) -> dict:
         """Return a JSON-serializable dict of all ``__init__`` parameters.

@@ -690,6 +690,8 @@ models_mandatory_parameters: list[
     ("SSTDPN", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("BrainModule", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("Brant", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    # 3072 samples, the pretrained length: 12 s at 256 Hz or 3 s at 1024 Hz
+    ("EpiNT", ["n_chans", "n_outputs", "n_times"], {"n_times": 3072, "sfreq": 256.0}),
     (
         "BENDR",
         ["n_chans", "n_outputs", "n_times"],
@@ -746,6 +748,7 @@ models_mandatory_parameters: list[
         {"n_chans": 19, "n_times": 1000},
     ),
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
+    ("GCNsNet", ["n_chans", "n_outputs", "n_times"], None),
     ("BrainOmni", ["chs_info", "n_outputs", "n_times", "sfreq"], None),
     ("BrainTokenizer", ["chs_info", "n_times", "sfreq"], None),
     (

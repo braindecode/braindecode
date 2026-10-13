@@ -4,6 +4,8 @@
 #
 # License: BSD (3-clause)
 
+import os
+
 import mne
 import numpy as np
 import pandas as pd
@@ -254,6 +256,32 @@ def test_metadata(concat_windows_dataset):
 def test_no_metadata(concat_ds_targets):
     with pytest.raises(TypeError, match="Metadata dataframe can only be"):
         concat_ds_targets[0].get_metadata()
+
+
+def test_metadata_gives_the_dataset_of_each_window(concat_windows_dataset):
+    n_windows = [len(ds) for ds in concat_windows_dataset.datasets]
+    md = concat_windows_dataset.get_metadata()
+    np.testing.assert_array_equal(
+        md["i_dataset"], np.repeat(np.arange(len(n_windows)), n_windows)
+    )
+    # positions refer to the concat the metadata is taken from
+    subset = concat_windows_dataset.split([[2, 0]])["0"]
+    np.testing.assert_array_equal(
+        subset.get_metadata()["i_dataset"],
+        np.repeat([0, 1], [n_windows[2], n_windows[0]]),
+    )
+
+
+def test_metadata_rejects_a_description_named_i_dataset():
+    raw = mne.io.RawArray(np.zeros((1, 200)), mne.create_info(1, 100.0, "eeg"))
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw, {"i_dataset": 7})]),
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+    )
+    with pytest.raises(ValueError, match="i_dataset"):
+        windows.get_metadata()
 
 
 def test_on_the_fly_transforms_base_dataset(concat_ds_targets):
@@ -1030,3 +1058,88 @@ def test_get_metadata_leaves_dataset_metadata_untouched(concat_ds_targets):
     for ds, before in zip(windows_ds.datasets, metadata_before):
         pd.testing.assert_frame_equal(ds.metadata, before)
     assert [y for _, y, _ in windows_ds] == targets_before
+
+
+def test_lazy_fif_window_read_matches_mne(tmp_path):
+    """One-read windows of a lazy FIF raw equal mne's buffer-by-buffer read."""
+    from braindecode.datasets.base import _read_fif_window
+
+    info = mne.create_info(["a", "b", "c"], sfreq=100.0, ch_types="eeg")
+    raw = mne.io.RawArray(np.random.RandomState(0).randn(3, 1234) * 1e-5, info)
+    raw.save(tmp_path / "x-raw.fif", buffer_size_sec=0.37)  # 37-sample buffers
+    lazy = mne.io.read_raw_fif(tmp_path / "x-raw.fif", preload=False)
+    lazy.crop(tmin=0.05).pick(["c", "a"])  # first_samp offset, lazy channel picks
+    n = lazy.n_times
+    for start, stop in [(0, 1), (0, n), (30, 40), (36, 37), (500, 1000), (1100, n)]:
+        X = _read_fif_window(lazy, start, stop)
+        assert X.flags.c_contiguous
+        np.testing.assert_array_equal(
+            X, lazy._getitem((slice(None), slice(start, stop)), return_times=False)
+        )
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(lazy, pd.Series({"subject": 1}))]),
+        window_size_samples=150,
+        window_stride_samples=140,
+        drop_last_window=False,
+    )
+    loaded = lazy.copy().load_data()
+    assert _read_fif_window(loaded, 0, 10) is None
+    for ds in windows.datasets:
+        for i in range(len(ds)):
+            _, i_start, i_stop = ds.crop_inds[i]
+            np.testing.assert_array_equal(
+                ds[i][0], loaded.get_data(start=i_start, stop=i_stop).astype("float32")
+            )
+
+
+@pytest.mark.skipif(not hasattr(os, "posix_fadvise"), reason="no posix_fadvise")
+def test_getitems_advises_the_batch_before_reading_it(tmp_path, monkeypatch):
+    """A batch fetch asks the OS for every lazy FIF window first, then reads
+    them in order; the items equal ``__getitem__``'s."""
+    from torch.utils.data import DataLoader
+
+    from braindecode.datasets.base import EEGWindowsDataset
+
+    info = mne.create_info(["a", "b"], sfreq=100.0, ch_types="eeg")
+    raws = []
+    for k in range(2):
+        data = np.random.RandomState(k).randn(2, 1000) * 1e-5
+        mne.io.RawArray(data, info).save(tmp_path / f"{k}-raw.fif", buffer_size_sec=0.3)
+        raws.append(mne.io.read_raw_fif(tmp_path / f"{k}-raw.fif", preload=False))
+    raws.append(raws[0].copy().load_data())  # preloaded: nothing to advise
+    windows = create_fixed_length_windows(
+        BaseConcatDataset(
+            [RawDataset(r, pd.Series({"subject": k})) for k, r in enumerate(raws)]
+        ),
+        window_size_samples=150,
+        window_stride_samples=150,
+        drop_last_window=True,
+    )
+    events = []
+    fadvise, getitem = os.posix_fadvise, EEGWindowsDataset.__getitem__
+
+    def advise(fd, offset, length, advice):
+        assert advice == os.POSIX_FADV_WILLNEED and length >= 2 * 150 * 4
+        events.append("advise")
+        return fadvise(fd, offset, length, advice)
+
+    def read(self, index):
+        events.append("read")
+        return getitem(self, index)
+
+    monkeypatch.setattr(os, "posix_fadvise", advise)
+    monkeypatch.setattr(EEGWindowsDataset, "__getitem__", read)
+    n_lazy = len(windows.datasets[0]) + len(windows.datasets[1])
+    lazy, preloaded = [0, n_lazy - 1, 3, n_lazy - 2], [n_lazy, len(windows) - 1]
+    batch = lazy + preloaded
+    seq = (1, 2)  # a SequenceSampler item: read, not advised
+    items = windows.__getitems__(batch + [seq])
+    assert events == ["advise"] * len(lazy) + ["read"] * (len(batch) + len(seq))
+    for item, i in zip(items, batch):
+        X, y, inds = windows[i]
+        np.testing.assert_array_equal(item[0], X)
+        assert item[1:] == (y, inds)
+    for a, b in zip(items[-1], windows[seq]):
+        np.testing.assert_array_equal(a, b)
+    (X, y, inds), = DataLoader(windows, batch_sampler=[batch])
+    np.testing.assert_array_equal(X.numpy(), np.stack([windows[i][0] for i in batch]))

@@ -21,6 +21,7 @@ from ..datasets.base import (
     EEGWindowsDataset,
     RawDataset,
     WindowsDataset,
+    _compact_fif_tags,
 )
 
 
@@ -79,7 +80,8 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
     for path in paths:
         if is_raw and target_name is None:
             target_file_name = path / "target_name.json"
-            target_name = json.load(open(target_file_name, "r"))["target_name"]
+            with open(target_file_name) as f:
+                target_name = json.load(f)["target_name"]
 
         all_signals, description = _load_signals_and_description(
             path=path, preload=preload, is_raw=is_raw, ids_to_load=ids_to_load
@@ -141,7 +143,7 @@ def _load_signals(fif_file, preload, is_raw):
         if all(Path(f).exists() for f in signals.filenames):
             if preload:
                 signals.load_data()
-            return signals
+            return _compact_fif_tags(signals)
         else:  # This may happen if the file has been moved together with the pickle file.
             warnings.warn(
                 f"Pickle file {pkl_file} exists, but the referenced fif "
@@ -171,7 +173,8 @@ def _load_signals(fif_file, preload, is_raw):
             if preload:
                 signals._data, signals.preload = data, True
 
-    return signals
+    # after the pickle above, which keeps mne's own layout on disk
+    return _compact_fif_tags(signals)
 
 
 def load_concat_dataset(path, preload, ids_to_load=None, target_name=None, n_jobs=1):
@@ -264,7 +267,8 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
     target_file_path = sub_dir / "target_name.json"
     target_name = None
     if target_file_path.exists():
-        target_name = json.load(open(target_file_path, "r"))["target_name"]
+        with open(target_file_path) as f:
+            target_name = json.load(f)["target_name"]
 
     if is_raw and (not has_stored_windows):
         dataset = RawDataset(signals, description, target_name)
@@ -304,8 +308,8 @@ def _load_kwargs_json(kwargs_name, sub_dir):
     kwargs_file_name = ".".join([kwargs_name, "json"])
     kwargs_file_path = os.path.join(sub_dir, kwargs_file_name)
     if os.path.exists(kwargs_file_path):
-        kwargs = json.load(open(kwargs_file_path, "r"))
-        return kwargs
+        with open(kwargs_file_path) as f:
+            return json.load(f)
 
 
 def _is_outdated_saved(path):

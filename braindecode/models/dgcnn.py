@@ -142,6 +142,11 @@ def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
     electrode_positions = extract_channel_locations_from_chs_info(
         chs_info, num_channels=n_chans
     )
+    # MNE stores NaN for a channel without a position.
+    if electrode_positions is not None and not (
+        len(electrode_positions) == n_chans and np.isfinite(electrode_positions).all()
+    ):
+        electrode_positions = None
 
     if electrode_positions is None and chs_info is not None:
         # Try to infer positions from channel names via a standard montage
@@ -162,6 +167,8 @@ def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
                 "with 3-D positions or that channel names match a standard montage."
             )
 
+    if n_chans < 2:
+        raise ValueError("DGCNN needs at least 2 channels to build its channel graph.")
     n_neighbors_capped = min(n_neighbors, n_chans - 1)
 
     # Pairwise Euclidean distances

@@ -530,6 +530,22 @@ def test_torch_normalize_vectors(cuda, grads_on):
         )
 
 
+@pytest.mark.parametrize(
+    "axis,permutation",
+    [("x", [0, 4, 5, 3, 1, 2]), ("y", [3, 1, 5, 0, 4, 2]), ("z", [3, 4, 2, 0, 1, 5])],
+)
+def test_rbf_sensors_rotation_swaps_opposite_electrodes(axis, permutation):
+    """A half turn maps the six axis-aligned electrodes onto known channels."""
+    positions = torch.cat([torch.eye(3), -torch.eye(3)], dim=1)
+    X = torch.arange(2 * 6 * 5).float().reshape(2, 6, 5)
+
+    actual, _ = sensors_rotation(
+        X, torch.zeros(2), positions, axis, [180, 180], spherical_splines=False
+    )
+
+    torch.testing.assert_close(actual, X[:, permutation])
+
+
 def test_sensors_rotation_functional():
     channels = ["C4", "C3"]
     batch_size = 5

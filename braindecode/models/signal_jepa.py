@@ -13,6 +13,10 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.attention import (
+    _hpu_lazy,
+    _scaled_dot_product_attention,
+)
 
 _DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.1875s, stride 1s
     (8, 32, 8),
@@ -329,6 +333,56 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
                 batch_first=True,
             )
 
+    def _encode(self, x: torch.Tensor) -> torch.Tensor:
+        if self.training and not torch.jit.is_scripting():
+            return self._encode_train(x)
+        return self.transformer.encoder(x)  # type: ignore
+
+    @torch.jit.unused
+    def _encode_train(self, x: torch.Tensor) -> torch.Tensor:
+        """``self.transformer.encoder(x)`` in training, without SDPA's ``_safe_softmax``.
+
+        With dropout, torch's attention takes SDPA's math path, whose
+        ``_safe_softmax`` adds four passes over the (batch, heads, tokens,
+        tokens) scores to zero the rows a mask hides; there is no mask here.
+        Ops, layouts and dropout draws are otherwise torch's: outputs and
+        gradients are bit-identical on CPU.
+        """
+        encoder = self.transformer.encoder  # type: ignore
+        for layer in encoder.layers:
+            x = layer.norm1(x + layer.dropout1(_self_attention(layer.self_attn, x)))
+            h = layer.dropout(layer.activation(layer.linear1(x)))
+            x = layer.norm2(x + layer.dropout2(layer.linear2(h)))
+        if encoder.norm is not None:
+            x = encoder.norm(x)
+        return x
+
+
+def _self_attention(mha: nn.MultiheadAttention, x: torch.Tensor) -> torch.Tensor:
+    """``mha(x, x, x, need_weights=False)[0]`` (batch first, no mask) as
+    ``F.multi_head_attention_forward`` runs it, with the attention itself
+    through braindecode's SDPA helper (no ``_safe_softmax`` pass)."""
+    x = x.transpose(1, 0)
+    n_tokens, batch_size, emb_dim = x.shape
+    n_heads = mha.num_heads
+    head_dim = emb_dim // n_heads
+    qkv = nn.functional.linear(x, mha.in_proj_weight, mha.in_proj_bias)
+    qkv = qkv.unflatten(-1, (3, emb_dim)).unsqueeze(0).transpose(0, -2)
+    qkv = qkv.squeeze(-2).contiguous()
+    q, k, v = (
+        t.view(n_tokens, batch_size * n_heads, head_dim)
+        .transpose(0, 1)
+        .view(batch_size, n_heads, n_tokens, head_dim)
+        for t in (qkv[0], qkv[1], qkv[2])
+    )
+    out = _scaled_dot_product_attention(
+        q, k, v, dropout_p=mha.dropout if mha.training else 0.0
+    )
+    out = out.permute(2, 0, 1, 3).contiguous()
+    out = out.view(batch_size * n_tokens, emb_dim)
+    out = nn.functional.linear(out, mha.out_proj.weight, mha.out_proj.bias)
+    return out.view(n_tokens, batch_size, emb_dim).transpose(1, 0)
+
 
 class SignalJEPA(_BaseSignalJEPA):
     r"""Architecture introduced in signal-JEPA for self-supervised pre-training, Guetschel, P et al (2024) [1]_
@@ -490,7 +544,7 @@ class SignalJEPA(_BaseSignalJEPA):
         local_features = self.feature_encoder(X)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features += pos_encoding  # type: ignore
-        contextual_features = self.transformer.encoder(local_features)  # type: ignore
+        contextual_features = self._encode(local_features)  # type: ignore
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": contextual_features,
@@ -677,7 +731,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         local_features = self.feature_encoder(X)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features += pos_encoding  # type: ignore
-        contextual_features = self.transformer.encoder(local_features)  # type: ignore
+        contextual_features = self._encode(local_features)  # type: ignore
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": contextual_features,
@@ -1351,7 +1405,7 @@ class _ConvFeatureEncoder(nn.Sequential):
             return nn.Sequential(
                 conv,
                 nn.Dropout(p=drop_prob),
-                nn.GroupNorm(output_channels, output_channels, affine=True),
+                _GroupNorm(output_channels, output_channels, affine=True),
                 activation(),
             )
         else:
@@ -1359,6 +1413,30 @@ class _ConvFeatureEncoder(nn.Sequential):
 
     def n_times_out(self, n_times):
         return _n_times_out(self.conv_layers_spec, n_times)
+
+
+class _GroupNorm(nn.GroupNorm):
+    """``nn.GroupNorm``; in HPU eager mode written out with mean and variance.
+
+    In HPU eager mode the backward of torch's group norm compiles new graphs at
+    every call (about 0.2 s per call on the feature encoder's first block);
+    the same normalisation from mean/var ops runs from cached kernels.
+    Elsewhere (CPU, CUDA, HPU lazy) this is ``F.group_norm``.
+    """
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not torch.jit.is_scripting() and x.device.type == "hpu" and not _hpu_lazy():
+            xg = x.reshape(x.shape[0], self.num_groups, -1)
+            mean = xg.mean(-1, keepdim=True)
+            var = xg.var(-1, unbiased=False, keepdim=True)
+            x = ((xg - mean) * torch.rsqrt(var + self.eps)).reshape(x.shape)
+            if self.affine:
+                shape = (1, -1) + (1,) * (x.dim() - 2)
+                x = x * self.weight.reshape(shape) + self.bias.reshape(shape)
+            return x
+        return nn.functional.group_norm(
+            x, self.num_groups, self.weight, self.bias, self.eps
+        )
 
 
 class _ChannelEmbedding(nn.Embedding):
@@ -1379,12 +1457,17 @@ class _ChannelEmbedding(nn.Embedding):
     def __init__(
         self, channel_locations: list[list[float] | None], embedding_dim: int, **kwargs
     ):
+        # MNE stores NaN for a channel without a position: embed it as None.
+        channel_locations = [
+            None if loc is None or not all(map(math.isfinite, loc[:3])) else loc
+            for loc in channel_locations
+        ]
         self.coordinate_ranges = [
             (min(coords), max(coords))
             for coords in zip(
                 *[loc[:3] for loc in channel_locations if loc is not None]
             )
-        ]
+        ] or [(0.0, 0.0)] * 3  # no channel has a position
         channel_mins, channel_maxs = zip(*self.coordinate_ranges)
         global_min = min(channel_mins)
         global_max = max(channel_maxs)

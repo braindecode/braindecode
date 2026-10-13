@@ -12,11 +12,12 @@ import torch
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
-from torch.nn import RMSNorm, functional
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import PatchTokenizer
+from braindecode.modules.attention import _scaled_dot_product_attention
+from braindecode.modules.layers import RMSNorm
 
 
 class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -262,6 +263,12 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             raise ValueError("ZUNA requires finite 3D locations for every channel.")
         if head_dim % 8 != 0:
             raise ValueError("head_dim must be divisible by eight for 4D RoPE.")
+        if coarse_time_points > max_seqlen:
+            raise ValueError(
+                f"n_times ({self.n_times}) gives {coarse_time_points} patches of "
+                f"{fine_time_pts} samples; max_seqlen={max_seqlen} allows at most "
+                f"{max_seqlen * fine_time_pts} samples."
+            )
 
         # Layers
         self.patch_embedding = nn.Sequential(
@@ -397,18 +404,16 @@ class _RotaryPositionEmbedding(nn.Module):
 
         batch_size, sequence_length, num_heads, head_dim = query.shape
         work = torch.promote_types(query.dtype, torch.float32)
+        # Each (real, imaginary) pair (a, b) rotates to (-b, a): swap the pair
+        # here; the sign is in ``rotary_sine`` (see _ZUNAEncoder).
         query_pairs = query.to(work).reshape(
             batch_size, sequence_length, num_heads, head_dim // 2, 2
         )
         key_pairs = key.to(work).reshape(
             batch_size, sequence_length, num_heads, head_dim // 2, 2
         )
-        rotated_query = self.merge_rotary_pairs(
-            torch.stack((-query_pairs[..., 1], query_pairs[..., 0]), dim=-1)
-        )
-        rotated_key = self.merge_rotary_pairs(
-            torch.stack((-key_pairs[..., 1], key_pairs[..., 0]), dim=-1)
-        )
+        rotated_query = self.merge_rotary_pairs(query_pairs.flip(-1))
+        rotated_key = self.merge_rotary_pairs(key_pairs.flip(-1))
 
         query = (query.to(work) * rotary_cosine + rotated_query * rotary_sine).type_as(
             query
@@ -459,7 +464,7 @@ class _Attention(nn.Module):
         value = self.wv(input_tensor).reshape(attention_shape)
         query, key = self.rotary_embedding(query, key, rotary_cosine, rotary_sine)
 
-        attention_output = functional.scaled_dot_product_attention(
+        attention_output = _scaled_dot_product_attention(
             query.transpose(1, 2),
             key.transpose(1, 2),
             value.transpose(1, 2),
@@ -600,9 +605,12 @@ class _ZUNAEncoder(nn.Module):
             rotary_frequencies.cos(),
             persistent=False,
         )
+        # Sine with the pair rotation's sign folded in: -sin on the real, +sin
+        # on the imaginary component of every pair (exact, saves a negation).
+        pair_sign = torch.tensor([-1.0, 1.0]).repeat(rotary_frequencies.shape[-1] // 2)
         self.register_buffer(
             "rotary_sine",
-            rotary_frequencies.sin(),
+            rotary_frequencies.sin() * pair_sign,
             persistent=False,
         )
 

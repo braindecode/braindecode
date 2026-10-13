@@ -4,10 +4,11 @@
 import warnings
 
 import torch
+import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin, _too_short_input_error
 from braindecode.modules import FeedForwardBlock, MultiHeadAttention
 
 
@@ -276,7 +277,10 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         return x
 
     def get_fc_size(self):
-        out = self.patch_embedding(torch.ones((1, 1, self.n_chans, self.n_times)))
+        try:
+            out = self.patch_embedding(torch.ones((1, 1, self.n_chans, self.n_times)))
+        except RuntimeError as exc:
+            raise _too_short_input_error(exc, self.input_shape) or exc
         size_embedding_1 = out.cpu().data.numpy().shape[1]
         size_embedding_2 = out.cpu().data.numpy().shape[2]
 
@@ -343,7 +347,19 @@ class _PatchEmbedding(nn.Module):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        x = self.shallownet(x)
+        # Nothing runs between the temporal and the spatial convolution, so
+        # they run as one convolution with the composed weight and bias (as
+        # CombinedConv does), without the (batch, filters, chans, time)
+        # intermediate.
+        conv_time, conv_spat = self.shallownet[0], self.shallownet[1]
+        bias_time, bias_spat = conv_time.bias, conv_spat.bias
+        assert bias_time is not None and bias_spat is not None
+        weight = (conv_time.weight * conv_spat.weight.permute(1, 0, 2, 3)).sum(0)
+        bias = conv_spat.weight.sum((2, 3)) @ bias_time + bias_spat
+        x = F.conv1d(x.squeeze(1), weight, bias).unsqueeze(2)
+        for i, layer in enumerate(self.shallownet):
+            if i > 1:
+                x = layer(x)
         x = self.projection(x)
         return x
 

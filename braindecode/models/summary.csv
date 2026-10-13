@@ -57,6 +57,7 @@ FBLightConvNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq"
 IFNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",9860,"IFNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank",EEG
 BrainModule,Speech Decoding,Prediction,250,"n_chans, n_outputs, n_times, sfreq",6186909,"BrainModule(n_chans=64, n_outputs=29, n_times=160, sfreq=1000)","Convolution","EEG, MEG"
 Brant,Epilepsy,Prediction,250,"n_chans, n_outputs, n_times, sfreq",2902780,"Brant(n_chans=16, n_outputs=2, n_times=3000, sfreq=250)","Foundation Model,Attention/Transformer",iEEG
+EpiNT,Epilepsy,"Prediction, Embedding",256,"n_chans, n_outputs, n_times",19194884,"EpiNT(n_chans=17, n_outputs=2, n_times=3072, sfreq=256)","Foundation Model,Attention/Transformer","EEG, iEEG"
 PBT,General,Prediction,250,"n_chans, n_outputs, n_times",818948,"PBT(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Foundation Model",EEG
 PopulationTransformer,General,"Prediction, Embedding",2048,"n_chans, n_outputs, n_times",19967746,"PopulationTransformer(n_chans=8, n_outputs=2, n_times=768)","Foundation Model,Attention/Transformer",iEEG
 SSTDPN,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",19502,"SSTDPN(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
@@ -82,3 +83,4 @@ NeuroRVQ,General,"Prediction, Embedding",200,"n_chans, n_outputs, n_times, sfreq
 SeizureTransformer,Epilepsy,Event Detection,256,"n_chans, n_outputs, n_times",37848897,"SeizureTransformer(n_chans=19, n_outputs=1, n_times=15360)","Convolution,Attention/Transformer",EEG
 NeuroRVQTokenizer,General,Embedding,200,"n_chans, n_times, sfreq, chs_info",75726448,"NeuroRVQTokenizer(n_chans=3, n_times=200, sfreq=200)","Convolution,Attention/Transformer,Foundation Model,Channel",EEG
 Guetschel2026,General,"Prediction, Embedding",200,"chs_info, n_outputs, n_times",12882436,"Guetschel2026(chs_info=<user>, n_outputs=4, n_times=1000, sfreq=200)","Foundation Model,Attention/Transformer,Channel",EEG
+GCNsNet,Motor Imagery,Prediction,160,"n_chans, n_outputs, n_times",359428,"GCNsNet(n_chans=64, n_outputs=4, n_times=640)","Graph Neural Network,Channel",EEG
