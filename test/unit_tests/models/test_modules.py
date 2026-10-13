@@ -1663,6 +1663,10 @@ def test_multi_head_attention_invalid_emb_size():
 
     with pytest.raises(ValueError, match="divisible"):
         MultiHeadAttention(emb_size=33, num_heads=4)
+    with pytest.raises(ValueError, match="positive"):
+        MultiHeadAttention(emb_size=32, num_heads=4, head_dim=0)
+    with pytest.raises(ValueError, match="positive"):
+        MultiHeadAttention(emb_size=32, num_heads=0, head_dim=8)
 
 
 def test_forward_pass_ifnet_output_shape():

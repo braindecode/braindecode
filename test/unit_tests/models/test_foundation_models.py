@@ -2710,6 +2710,10 @@ def test_duin_linear_head():
 def test_duin_rejects_invalid_geometry():
     with pytest.raises(ValueError, match="divisible"):
         DuIN(n_chans=3, n_outputs=2, n_times=70, **_DUIN_SMALL)
+    with pytest.raises(ValueError, match="positive"):
+        DuIN(n_chans=3, n_outputs=2, n_times=60, **{**_DUIN_SMALL, "patch_size": 0})
+    with pytest.raises(ValueError, match="product of strides"):
+        DuIN(n_chans=3, n_outputs=2, n_times=60, **{**_DUIN_SMALL, "strides": (3, 1)})
     model = DuIN(n_chans=3, n_outputs=2, n_times=60, **_DUIN_SMALL)
     with pytest.raises(ValueError, match="time samples"):
         model(torch.randn(1, 3, 40))

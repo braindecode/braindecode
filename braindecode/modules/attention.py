@@ -845,7 +845,8 @@ class MultiHeadAttention(nn.Module):
     emb_size : int
         The embedding dimension.
     num_heads : int
-        Number of attention heads. Must evenly divide ``emb_size``.
+        Number of attention heads. Must evenly divide ``emb_size`` when
+        ``head_dim`` is ``None``.
     dropout : float, optional
         Dropout probability applied to attention weights. Default: 0.0.
     scale : float, optional
@@ -879,6 +880,10 @@ class MultiHeadAttention(nn.Module):
         qk_norm: bool = False,
     ):
         super().__init__()
+        if num_heads < 1 or (head_dim is not None and head_dim < 1):
+            raise ValueError(
+                f"num_heads ({num_heads}) and head_dim ({head_dim}) must be positive."
+            )
         if head_dim is None:
             if emb_size % num_heads != 0:
                 raise ValueError(

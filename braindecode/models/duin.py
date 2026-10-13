@@ -210,6 +210,15 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        if patch_size < 1 or any(s < 1 for s in strides):
+            raise ValueError(
+                f"patch_size ({patch_size}) and strides ({strides}) must be positive."
+            )
+        if patch_size % math.prod(strides):
+            raise ValueError(
+                f"patch_size ({patch_size}) must be divisible by the product of "
+                f"strides ({math.prod(strides)})."
+            )
         if self.n_times % patch_size or self.n_times < patch_size:
             raise ValueError(
                 f"n_times ({self.n_times}) must be a positive multiple of "
