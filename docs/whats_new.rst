@@ -28,6 +28,14 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.augmentation.LabelSmoothing` and
+  :func:`braindecode.augmentation.functional.label_smoothing`, which replace
+  class-index
+  targets, or existing target distributions, with their convex combination
+  with the uniform distribution over the classes; the signals are unchanged
+  and the smoothed targets train with any distribution-accepting loss
+  (:gh:`1401` by `Li Qing`_).
+
 - :class:`braindecode.augmentation.CutMix` pastes a random time region of a shuffled example into each example of the batch (Yun et al., 2019) and, like :class:`braindecode.augmentation.Mixup`, returns targets for :func:`braindecode.training.mixup_criterion` (:gh:`1372` by `Li Qing`_).
 - :meth:`braindecode.models.EEGCLIP.contrastive_loss` takes ``distributed=True`` to use every DDP rank's pairs as negatives, with the gradient of the loss on the concatenated batch even for uneven per-rank batches; the default local-batch loss is unchanged (:gh:`1320` by `lindicaphxag-tech`_).
 - :func:`braindecode.functional.fft_conv1d` on CPU computes its per-frequency channel product as one real matmul whose output columns are the (real, imaginary) pairs of the result, read as a complex tensor without a copy: the backward no longer allocates four zero-filled copies of the product. CPU train step of :class:`braindecode.models.EEGNeX` 2.6x faster on 60-s windows at 100 Hz, batch 64, 24 threads (0.47x of 1.8.1; it had become 1.17x slower) and 2.5x on 4-s windows at 250 Hz, batch 32, 2 threads; :class:`braindecode.models.TIDNet` 2.0-2.7x, :class:`braindecode.models.EEGInceptionMI` 1.15-1.6x; EEGNeX train-step peak memory halved. Forward-only calls with fewer rows than twice the input channels keep the previous product. Outputs and gradients change by float rounding only (:gh:`1362` by `Bruno Aristimunha`_).
