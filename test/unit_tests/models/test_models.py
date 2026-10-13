@@ -5945,6 +5945,86 @@ def test_eegclip_distributed_single_process_group_matches_default(monkeypatch):
     torch.testing.assert_close(observed, local, rtol=0, atol=0)
 
 
+
+class _EEGCLIPActualDDPTraining(nn.Module):
+    """Exercise the actual DDP reducer, not a manual gradient mean."""
+
+    def __init__(self):
+        super().__init__()
+        self.clip = EEGCLIP(
+            n_chans=3,
+            n_times=4,
+            n_outputs=4,
+            eeg_encoder=nn.Flatten(),
+            eeg_embedding_dim=12,
+            text_embedding_dim=5,
+            projection_layers=1,
+        ).double()
+
+    def forward(self, X, text, *, distributed=False):
+        paired = self.clip.forward_paired(X, text)
+        return self.clip.contrastive_loss(
+            paired["eeg_embeds"], paired["text_embeds"],
+            distributed=distributed,
+        )
+
+
+def _eegclip_actual_ddp_rank(rank, init_file, out_dir):
+    dist.init_process_group(
+        "gloo", init_method=f"file://{init_file}", rank=rank, world_size=2
+    )
+    try:
+        torch.manual_seed(0)
+        model = _EEGCLIPActualDDPTraining()
+        wrapped = nn.parallel.DistributedDataParallel(model)
+        X, text = torch.randn(5, 3, 4).double(), torch.randn(5, 5).double()
+        shard = slice(0, 2) if rank == 0 else slice(2, 5)
+        local_loss = wrapped(X[shard], text[shard], distributed=True)
+        local_loss.backward()
+        # Distinct ranks have different local row losses. DDP synchronizes the
+        # gradients of BOTH projections and logit scale automatically.
+        grads = {
+            key: par.grad.detach().clone()
+            for key, par in wrapped.module.named_parameters()
+        }
+        global_loss = local_loss.detach().clone()
+        dist.all_reduce(global_loss)
+        global_loss /= dist.get_world_size()
+        torch.save(
+            {"loss": global_loss, "grads": grads},
+            f"{out_dir}/actual_ddp_rank{rank}.pt",
+        )
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(not dist.is_available(), reason="torch.distributed is unavailable")
+def test_eegclip_actual_ddp_wrapper_matches_full_batch_gradient(tmp_path):
+    """Real DDP, 2+3 uneven pairs, 2 encoders/projections, centralized oracle."""
+    torch.manual_seed(0)
+    model = _EEGCLIPActualDDPTraining()
+    X, text = torch.randn(5, 3, 4).double(), torch.randn(5, 5).double()
+    reference_loss = model(X, text)
+    reference_loss.backward()
+    reference_grads = {
+        name: parameter.grad.detach().clone()
+        for name, parameter in model.named_parameters()
+    }
+
+    mp.spawn(
+        _eegclip_actual_ddp_rank,
+        args=(str(tmp_path / "ddp-init"), str(tmp_path)),
+        nprocs=2,
+    )
+    for rank in (0, 1):
+        result = torch.load(
+            tmp_path / f"actual_ddp_rank{rank}.pt", weights_only=True
+        )
+        torch.testing.assert_close(result["loss"], reference_loss.detach())
+        for name, grad in reference_grads.items():
+            torch.testing.assert_close(result["grads"][name], grad)
+
+
 def _cz():
     info = mne.create_info(["Cz"], 256.0, "eeg")
     return info.set_montage("standard_1005")["chs"]
