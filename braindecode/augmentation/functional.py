@@ -1075,6 +1075,54 @@ def mixup(
     return X_mix, (y_a, y_b, lam)
 
 
+def cutmix(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    idx_perm: torch.Tensor,
+    cut_t_start: torch.Tensor,
+    cut_t_len: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Paste a time region of shuffled examples into the original examples.
+
+    See [1]_ for details.
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        EEG data in form ``batch_size, n_channels, n_times``
+    y : torch.Tensor
+        Target of length ``batch_size``
+    idx_perm : torch.Tensor
+        Permuted indices of example that are mixed into original examples.
+    cut_t_start : torch.Tensor
+        Start index of the pasted time region for each example.
+    cut_t_len : torch.Tensor
+        Length of the pasted time region for each example.
+
+    Returns
+    -------
+    tuple
+        ``X``, ``y``. Where ``X`` is augmented and ``y`` is a tuple of length
+        3 containing the labels of the two mixed examples and the fraction of
+        each example kept from the original, ``1 - cut_t_len / n_times``.
+
+    References
+    ----------
+    .. [1] Sangdoo Yun, Dongyoon Han, Seong Joon Oh, Sanghyuk Chun,
+        Junsuk Choe, Youngjoon Yoo (2019). CutMix: Regularization Strategy
+        to Train Strong Classifiers with Localizable Features. In 2019
+        IEEE/CVF International Conference on Computer Vision (ICCV)
+        Online: https://arxiv.org/abs/1905.04899
+    """
+    n_times = X.shape[-1]
+    t = torch.arange(n_times, device=X.device)
+    start = cut_t_start[:, None]
+    in_cut = (t >= start) & (t < start + cut_t_len[:, None])
+    X_mix = torch.where(in_cut[:, None], X[idx_perm], X)
+    lam = (n_times - cut_t_len).to(X.dtype) / n_times
+    return X_mix, (y.clone(), y[idx_perm].clone(), lam)
+
+
 def segmentation_reconstruction(
     X: torch.Tensor,
     y: torch.Tensor,
