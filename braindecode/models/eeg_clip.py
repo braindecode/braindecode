@@ -38,6 +38,7 @@ from __future__ import annotations
 import math
 
 import torch
+import torch.distributed as dist
 from torch import nn
 from torch.nn import functional as F
 
@@ -204,7 +205,9 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         # Project every dense prediction, then average over time.
         per_step = features.transpose(1, 2).reshape(-1, features.shape[1])
         projected = self.final_layer(per_step)
-        return projected.reshape(batch_size, -1, projected.shape[-1]).mean(dim=1)
+        return projected.reshape(
+            batch_size, features.shape[-1], projected.shape[-1]
+        ).mean(dim=1)
 
     def encode_text(self, text_inputs, attention_mask=None, **text_kwargs):
         """Encode text tokens or features as shared-space projection vectors."""
@@ -234,14 +237,70 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         logits_per_eeg = self.logit_scale * eeg_embeds @ text_embeds.T
         return logits_per_eeg, logits_per_eeg.T
 
-    def contrastive_loss(self, eeg_embeds, text_embeds):
-        """Symmetric cross-entropy over a batch of paired EEG/text embeddings."""
-        logits_per_eeg, logits_per_text = self.compute_logits(eeg_embeds, text_embeds)
-        labels = torch.arange(eeg_embeds.shape[0], device=eeg_embeds.device)
-        return (
-            F.cross_entropy(logits_per_eeg, labels)
-            + F.cross_entropy(logits_per_text, labels)
-        ) / 2
+    def contrastive_loss(
+        self, eeg_embeds, text_embeds, *, distributed=False, group=None
+    ):
+        """Symmetric cross-entropy over a batch of paired EEG/text embeddings.
+
+        With ``distributed=True`` in an initialized process group, the pairs of
+        every rank of ``group`` serve as negatives (ranks may hold different
+        batch sizes), and all its ranks must call this method. Each rank's loss
+        is scaled so that DDP's gradient mean gives the gradient of the loss on
+        the concatenated batch, which equals the mean of the ranks' losses.
+        """
+        if not (
+            distributed
+            and dist.is_available()
+            and dist.is_initialized()
+            and dist.get_world_size(group) > 1
+        ):
+            logits_per_eeg, logits_per_text = self.compute_logits(
+                eeg_embeds, text_embeds
+            )
+            labels = torch.arange(eeg_embeds.shape[0], device=eeg_embeds.device)
+            return (
+                F.cross_entropy(logits_per_eeg, labels)
+                + F.cross_entropy(logits_per_text, labels)
+            ) / 2
+
+        from torch.distributed.nn.functional import all_gather
+
+        world_size, rank = dist.get_world_size(group), dist.get_rank(group)
+        # Preflight all ranks with ONE collective before any autograd gather.
+        # A rank-local early error would leave peers blocked in collectives.
+        # Derive both EEG and text row counts, not just EEG row counts.
+        local_rows = torch.tensor(
+            [eeg_embeds.shape[0], text_embeds.shape[0]],
+            device=eeg_embeds.device,
+        )
+        per_rank_rows = [torch.zeros_like(local_rows) for _ in range(world_size)]
+        dist.all_gather(per_rank_rows, local_rows, group=group)
+        if any(int(rows[0]) != int(rows[1]) for rows in per_rank_rows):
+            raise ValueError(
+                "Distributed EEGCLIP requires equal EEG/text paired rows on every rank."
+            )
+        sizes = [int(rows[0]) for rows in per_rank_rows]
+        if sum(sizes) == 0:
+            raise ValueError(
+                "Distributed EEGCLIP needs at least one paired sample "
+                "globally; every rank is empty."
+            )
+
+        def gather(x):  # autograd all_gather needs equal shapes: pad, then trim
+            x = F.pad(x, (0, 0, 0, max(sizes) - sizes[rank]))
+            return torch.cat([p[:n] for p, n in zip(all_gather(x, group=group), sizes)])
+
+        labels = torch.arange(sizes[rank], device=eeg_embeds.device) + sum(sizes[:rank])
+        loss = F.cross_entropy(
+            self.logit_scale * eeg_embeds @ gather(text_embeds).T,
+            labels,
+            reduction="sum",
+        ) + F.cross_entropy(
+            self.logit_scale * text_embeds @ gather(eeg_embeds).T,
+            labels,
+            reduction="sum",
+        )
+        return loss * (world_size / (2 * sum(sizes)))
 
     def forward_paired(self, X, text_inputs, attention_mask=None, **text_kwargs):
         """Return paired EEG/text embeddings and bidirectional similarity logits."""

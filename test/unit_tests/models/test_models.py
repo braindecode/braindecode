@@ -20,6 +20,8 @@ import mne
 import numpy as np
 import pytest
 import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
 from scipy.signal import stft
 from sklearn.utils import check_random_state
 from torch import nn
@@ -5946,6 +5948,395 @@ def test_eegclip_custom_encoders_and_masked_mean_pooling():
     assert model.text_projection.training is False
     with pytest.raises(ValueError, match="custom encoder"):
         model.get_config()
+
+
+def _eegclip_toy_step(sl=slice(None), distributed=False):
+    torch.manual_seed(0)
+    model = EEGCLIP(
+        n_chans=3,
+        n_times=4,
+        n_outputs=4,
+        eeg_encoder=nn.Flatten(),
+        eeg_embedding_dim=12,
+        text_embedding_dim=5,
+        projection_layers=1,
+    ).double()
+    X, text = torch.randn(5, 3, 4).double(), torch.randn(5, 5).double()
+    paired = model.forward_paired(X[sl], text[sl])
+    loss = model.contrastive_loss(
+        paired["eeg_embeds"], paired["text_embeds"], distributed=distributed
+    )
+    loss.backward()
+    return loss.detach(), {n: p.grad for n, p in model.named_parameters()}
+
+
+def _eegclip_rank(rank, init_file, out_dir):
+    dist.init_process_group(
+        "gloo", init_method=f"file://{init_file}", rank=rank, world_size=2
+    )
+    try:  # uneven shards: 2 + 3 pairs
+        loss, grads = _eegclip_toy_step(slice(0, 2) if rank == 0 else slice(2, 5), True)
+        for value in [loss, *grads.values()]:
+            dist.all_reduce(value)  # DDP's mean over ranks
+            value /= 2
+        torch.save({"loss": loss, **grads}, f"{out_dir}/rank{rank}.pt")
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(not dist.is_available(), reason="torch.distributed is unavailable")
+def test_eegclip_distributed_loss_matches_concatenated_batch(tmp_path):
+    loss, grads = _eegclip_toy_step()
+    # No process group: distributed=True is the local loss, bit for bit.
+    assert torch.equal(_eegclip_toy_step(distributed=True)[0], loss)
+    mp.spawn(
+        _eegclip_rank, args=(str(tmp_path / "init"), str(tmp_path)), nprocs=2
+    )
+    for rank in (0, 1):
+        out = torch.load(tmp_path / f"rank{rank}.pt", weights_only=True)
+        torch.testing.assert_close(out.pop("loss"), loss)
+        torch.testing.assert_close(out, grads)
+
+
+
+def test_eegclip_rank_local_gather_math_without_worker_coverage_gap(monkeypatch):
+    """Exercise the actual all-gather path in the coverage-owning process.
+
+    Real 2-rank CPU/Gloo gradients are independently tested by
+    test_eegclip_distributed_loss_matches_concatenated_batch. That worker
+    executes in mp.spawn children, which pytest-cov does NOT necessarily
+    include in the parent process's coverage report. Here the collective
+    communication alone is replaced with a deterministic two-rank stub;
+    the production padding, trimming, row labels and CE remain real.
+    """
+    from torch.distributed.nn import functional as dist_functional
+
+    model = EEGCLIP(
+        n_chans=3, n_times=4, n_outputs=4,
+        eeg_encoder=nn.Flatten(), eeg_embedding_dim=12,
+        text_embedding_dim=5, projection_layers=1,
+    ).double()
+    eeg = torch.tensor([[1., 2., 1.], [2., 1., 3.]], dtype=torch.float64)
+    text = torch.tensor([[1., 1., 2.], [2., 3., 1.]], dtype=torch.float64)
+    remote_eeg = torch.tensor(
+        [[0., 1., 1.], [1., 0., 2.], [3., 1., 0.]],
+        dtype=torch.float64,
+    )
+    remote_text = torch.tensor(
+        [[1., 0., 1.], [2., 2., 0.], [0., 2., 1.]],
+        dtype=torch.float64,
+    )
+    group = object()
+    monkeypatch.setattr(dist, "is_available", lambda: True)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda g: 2 if g is group else 0)
+    monkeypatch.setattr(dist, "get_rank", lambda g: 0 if g is group else -1)
+
+    def gather_sizes(outputs, size, *, group=None):
+        assert group is globals_group
+        assert size.tolist() == [2, 2]
+        outputs[0].copy_(torch.tensor([2, 2]))
+        outputs[1].copy_(torch.tensor([3, 3]))
+
+    globals_group = group
+    monkeypatch.setattr(dist, "all_gather", gather_sizes)
+    calls = []
+
+    def gather_embeddings(padded, *, group=None):
+        assert group is globals_group
+        assert padded.shape == (3, 3)
+        calls.append(padded)
+        remote = remote_text if len(calls) == 1 else remote_eeg
+        return padded, remote
+
+    monkeypatch.setattr(dist_functional, "all_gather", gather_embeddings)
+    result = model.contrastive_loss(eeg, text, distributed=True, group=group)
+    scale = model.logit_scale
+    label = torch.arange(2)
+    full_text = torch.cat([text, remote_text])
+    full_eeg = torch.cat([eeg, remote_eeg])
+    manual = (
+        torch.nn.functional.cross_entropy(
+            scale * eeg @ full_text.T, label, reduction="sum"
+        )
+        + torch.nn.functional.cross_entropy(
+            scale * text @ full_eeg.T, label, reduction="sum"
+        )
+    ) / 5  # world_size / (2 * total pairs) = 2 / (2 * 5)
+    torch.testing.assert_close(result, manual)
+    assert len(calls) == 2
+    torch.testing.assert_close(calls[0][:2], text)
+    torch.testing.assert_close(calls[1][:2], eeg)
+
+
+def test_eegclip_distributed_single_process_group_matches_default(monkeypatch):
+    """The initialized world_size=1 branch must remain local and loss-identical."""
+    model = EEGCLIP(
+        n_chans=3, n_times=4, n_outputs=4,
+        eeg_encoder=nn.Flatten(), eeg_embedding_dim=12,
+        text_embedding_dim=5, projection_layers=1,
+    ).double()
+    torch.manual_seed(12)
+    eeg, text = torch.randn(3, 4, dtype=torch.float64), torch.randn(
+        3, 4, dtype=torch.float64
+    )
+    local = model.contrastive_loss(eeg, text)
+    group = object()
+    monkeypatch.setattr(dist, "is_available", lambda: True)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda g: 1 if g is group else 0)
+    monkeypatch.setattr(
+        dist, "all_gather",
+        lambda *_args, **_kw: pytest.fail(
+            "single process group must not enter collectives"
+        )
+    )
+    observed = model.contrastive_loss(eeg, text, distributed=True, group=group)
+    torch.testing.assert_close(observed, local, rtol=0, atol=0)
+
+
+
+class _EEGCLIPActualDDPTraining(nn.Module):
+    """Exercise the actual DDP reducer, not a manual gradient mean."""
+
+    def __init__(self):
+        super().__init__()
+        self.clip = EEGCLIP(
+            n_chans=3,
+            n_times=4,
+            n_outputs=4,
+            eeg_encoder=nn.Flatten(),
+            eeg_embedding_dim=12,
+            text_embedding_dim=5,
+            projection_layers=1,
+        ).double()
+
+    def forward(self, X, text, *, distributed=False):
+        paired = self.clip.forward_paired(X, text)
+        return self.clip.contrastive_loss(
+            paired["eeg_embeds"], paired["text_embeds"],
+            distributed=distributed,
+        )
+
+
+def _eegclip_actual_ddp_rank(rank, init_file, out_dir):
+    dist.init_process_group(
+        "gloo", init_method=f"file://{init_file}", rank=rank, world_size=2
+    )
+    try:
+        torch.manual_seed(0)
+        model = _EEGCLIPActualDDPTraining()
+        wrapped = nn.parallel.DistributedDataParallel(model)
+        X, text = torch.randn(5, 3, 4).double(), torch.randn(5, 5).double()
+        shard = slice(0, 2) if rank == 0 else slice(2, 5)
+        local_loss = wrapped(X[shard], text[shard], distributed=True)
+        local_loss.backward()
+        # Distinct ranks have different local row losses. DDP synchronizes the
+        # gradients of BOTH projections and logit scale automatically.
+        grads = {
+            key: par.grad.detach().clone()
+            for key, par in wrapped.module.named_parameters()
+        }
+        global_loss = local_loss.detach().clone()
+        dist.all_reduce(global_loss)
+        global_loss /= dist.get_world_size()
+        torch.save(
+            {"loss": global_loss, "grads": grads},
+            f"{out_dir}/actual_ddp_rank{rank}.pt",
+        )
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(not dist.is_available(), reason="torch.distributed is unavailable")
+def test_eegclip_actual_ddp_wrapper_matches_full_batch_gradient(tmp_path):
+    """Real DDP, 2+3 uneven pairs, 2 encoders/projections, centralized oracle."""
+    torch.manual_seed(0)
+    model = _EEGCLIPActualDDPTraining()
+    X, text = torch.randn(5, 3, 4).double(), torch.randn(5, 5).double()
+    reference_loss = model(X, text)
+    reference_loss.backward()
+    reference_grads = {
+        name: parameter.grad.detach().clone()
+        for name, parameter in model.named_parameters()
+    }
+
+    mp.spawn(
+        _eegclip_actual_ddp_rank,
+        args=(str(tmp_path / "ddp-init"), str(tmp_path)),
+        nprocs=2,
+    )
+    for rank in (0, 1):
+        result = torch.load(
+            tmp_path / f"actual_ddp_rank{rank}.pt", weights_only=True
+        )
+        torch.testing.assert_close(result["loss"], reference_loss.detach())
+        for name, grad in reference_grads.items():
+            torch.testing.assert_close(result["grads"][name], grad)
+
+
+
+
+def _eegclip_collective_preflight_rank(rank, init_file, result_dir, case):
+    """Both peers must fail together rather than deadlock on a later gather."""
+    from datetime import timedelta
+
+    dist.init_process_group(
+        "gloo", init_method=f"file://{init_file}", rank=rank,
+        world_size=2, timeout=timedelta(seconds=20),
+    )
+    try:
+        model = EEGCLIP(
+            n_chans=3, n_times=4, n_outputs=4,
+            eeg_encoder=nn.Flatten(), eeg_embedding_dim=12,
+            text_embedding_dim=5, projection_layers=1,
+        ).double()
+        if case == "all_empty":
+            eeg_rows = text_rows = 0
+            expected = "at least one paired sample"
+        elif case == "single_rank_unpaired":
+            eeg_rows = 2 if rank == 0 else 3
+            text_rows = 2
+            expected = "equal EEG/text paired rows"
+        else:
+            raise ValueError("Unknown worker test case")
+        eeg = torch.zeros(eeg_rows, 4, dtype=torch.float64)
+        text = torch.zeros(text_rows, 4, dtype=torch.float64)
+        try:
+            model.contrastive_loss(eeg, text, distributed=True)
+        except ValueError as exc:
+            assert expected in str(exc), str(exc)
+            result = "refused"
+        else:
+            result = "unexpected_accept"
+        torch.save(
+            {"rank": rank, "result": result},
+            f"{result_dir}/{case}_rank{rank}.pt",
+        )
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(not dist.is_available(), reason="torch.distributed unavailable")
+@pytest.mark.parametrize("case", ["all_empty", "single_rank_unpaired"])
+def test_eegclip_global_collective_preflight_never_hangs(tmp_path, case):
+    """One mismatched participant or zero global pairs: synchronized refusal."""
+    mp.spawn(
+        _eegclip_collective_preflight_rank,
+        args=(str(tmp_path / f"init-{case}"), str(tmp_path), case),
+        nprocs=2,
+    )
+    for rank in (0, 1):
+        record = torch.load(
+            tmp_path / f"{case}_rank{rank}.pt", weights_only=True,
+        )
+        assert record == {"rank": rank, "result": "refused"}
+
+
+def test_eegclip_global_collective_shape_and_empty_counters_covered(monkeypatch):
+    """Cover the rank-sized invariant check under pytest-cov parent process."""
+    model = EEGCLIP(
+        n_chans=3, n_times=4, n_outputs=4,
+        eeg_encoder=nn.Flatten(), eeg_embedding_dim=12,
+        text_embedding_dim=5, projection_layers=1,
+    ).double()
+    monkeypatch.setattr(dist, "is_available", lambda: True)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda _g: 2)
+    monkeypatch.setattr(dist, "get_rank", lambda _g: 0)
+
+    expected = None
+
+    def fake_pair_counts(outputs, local, *, group=None):
+        if expected == "unequal":
+            outputs[0].copy_(torch.tensor([2, 2]))
+            outputs[1].copy_(torch.tensor([3, 2]))
+        elif expected == "empty":
+            outputs[0].copy_(torch.tensor([0, 0]))
+            outputs[1].copy_(torch.tensor([0, 0]))
+        else:
+            raise AssertionError("Unexpected collective")
+
+    monkeypatch.setattr(dist, "all_gather", fake_pair_counts)
+    from torch.distributed.nn import functional as dist_f
+
+    monkeypatch.setattr(
+        dist_f, "all_gather",
+        lambda *_args, **_kw: pytest.fail(
+            "bad pair shapes must be refused before embedding gather"
+        ),
+    )
+    expected = "unequal"
+    with pytest.raises(ValueError, match="equal EEG/text paired rows"):
+        model.contrastive_loss(
+            torch.zeros(2, 4, dtype=torch.float64),
+            torch.zeros(2, 4, dtype=torch.float64), distributed=True,
+        )
+    expected = "empty"
+    with pytest.raises(ValueError, match="at least one paired sample"):
+        model.contrastive_loss(
+            torch.zeros(0, 4, dtype=torch.float64),
+            torch.zeros(0, 4, dtype=torch.float64), distributed=True,
+        )
+
+
+
+
+def _eegclip_one_empty_rank_actual_ddp(rank, init_file, result_dir):
+    """An empty local rank still joins global negatives and DDP backward."""
+    from datetime import timedelta
+
+    dist.init_process_group(
+        "gloo", init_method=f"file://{init_file}",
+        rank=rank, world_size=2, timeout=timedelta(seconds=30),
+    )
+    try:
+        torch.manual_seed(0)
+        net = _EEGCLIPActualDDPTraining()
+        wrapped = nn.parallel.DistributedDataParallel(net)
+        X, text = torch.randn(5, 3, 4).double(), torch.randn(5, 5).double()
+        shard = slice(0, 0) if rank == 0 else slice(0, 5)
+        local_loss = wrapped(X[shard], text[shard], distributed=True)
+        local_loss.backward()
+        grads = {
+            key: param.grad.detach().clone()
+            for key, param in wrapped.module.named_parameters()
+        }
+        global_loss = local_loss.detach().clone()
+        dist.all_reduce(global_loss)
+        global_loss /= 2
+        torch.save(
+            {"loss": global_loss, "grads": grads},
+            f"{result_dir}/empty_rank{rank}.pt",
+        )
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(not dist.is_available(), reason="torch.distributed unavailable")
+def test_eegclip_one_empty_rank_nonempty_global_matches_ddp_oracle(tmp_path):
+    """Empty rank versus nonempty rank must give exact centralized gradients."""
+    torch.manual_seed(0)
+    model = _EEGCLIPActualDDPTraining()
+    X, text = torch.randn(5, 3, 4).double(), torch.randn(5, 5).double()
+    reference_loss = model(X, text)
+    reference_loss.backward()
+    reference_grads = {
+        key: param.grad.detach().clone()
+        for key, param in model.named_parameters()
+    }
+    mp.spawn(
+        _eegclip_one_empty_rank_actual_ddp,
+        args=(str(tmp_path / "empty-rank-init"), str(tmp_path)),
+        nprocs=2,
+    )
+    for rank in (0, 1):
+        got = torch.load(
+            tmp_path / f"empty_rank{rank}.pt", weights_only=True,
+        )
+        torch.testing.assert_close(got["loss"], reference_loss.detach())
+        for name, expected_grad in reference_grads.items():
+            torch.testing.assert_close(got["grads"][name], expected_grad)
 
 
 def _cz():
