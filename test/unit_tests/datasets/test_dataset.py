@@ -1147,8 +1147,10 @@ def test_getitems_advises_the_batch_before_reading_it(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("as_frame", [False, True])
 @pytest.mark.parametrize("offset", [-3, -1, 1])
-def test_set_description_rejects_wrong_length(concat_ds_targets, as_frame, offset):
-    dataset = concat_ds_targets[0]
+def test_set_description_rejects_wrong_length(set_up, as_frame, offset):
+    dataset = BaseConcatDataset(
+        [RawDataset(set_up[0], {"subject": i}) for i in range(3)]
+    )
     before = dataset.description.copy(deep=True)
     description = {"new_column": list(range(len(dataset.datasets) + offset))}
     if as_frame:
@@ -1158,8 +1160,10 @@ def test_set_description_rejects_wrong_length(concat_ds_targets, as_frame, offse
     pd.testing.assert_frame_equal(dataset.description, before)
 
 
-def test_set_description_empty_mapping_is_noop(concat_ds_targets):
-    dataset = concat_ds_targets[0]
+def test_set_description_empty_mapping_is_noop(set_up):
+    dataset = BaseConcatDataset(
+        [RawDataset(set_up[0], {"subject": i}) for i in range(3)]
+    )
     before = dataset.description.copy(deep=True)
     dataset.set_description({})
     pd.testing.assert_frame_equal(dataset.description, before)
