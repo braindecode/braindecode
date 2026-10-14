@@ -6377,7 +6377,11 @@ def _cz():
             "divisible by patch_size",
         ),
         ("DGCNN", dict(chs_info=_cz(), n_times=1000), "at least 2 channels"),
-        ("REVE", dict(chs_info=[{"ch_name": "Cz"}], n_times=100), "patch_size"),
+        (
+            "REVE",
+            dict(chs_info=[{"ch_name": "Cz"}], n_times=100, on_non_divisible="crop"),
+            "full patch",
+        ),
         ("REVE", dict(chs_info=[{"ch_name": "X1"}], n_times=1000), "position bank"),
         ("ZUNA", dict(chs_info=_cz(), n_times=10000, sfreq=256.0), "max_seqlen"),
     ],
