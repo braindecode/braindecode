@@ -257,7 +257,7 @@ COMPAT = {
         canon=None,
         kind="seeg",
         channels="fixed_order_unchecked",
-        n_times_multiple=100,
+        # on_non_divisible="pad": any window (the last patch zero-padded)
         windows=(1000, 10000),
     ),
     "BaRISTA": dict(
