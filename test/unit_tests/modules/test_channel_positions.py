@@ -62,7 +62,7 @@ def small_reve(chs_info, **kw):
     return REVE(
         n_outputs=2,
         chs_info=chs_info,
-        n_times=400,
+        n_times=380,  # 200 + 180: the overlapping patches tile it, no padding warning
         sfreq=200,
         embed_dim=32,
         depth=1,
@@ -255,7 +255,7 @@ def test_reve_default_pos_is_the_bank_lookup(reve_bank):
         warnings.simplefilter("error")
         located = small_reve(from_montage("standard_1005", TEN_TWENTY))
     assert torch.equal(located.default_pos, old[: len(TEN_TWENTY)])
-    x = torch.randn(2, len(ns), 400)
+    x = torch.randn(2, len(ns), 380)
     with torch.no_grad():
         assert torch.equal(model(x), model(x, pos=old.expand(2, -1, -1)))
     assert torch.equal(bank(ns), old)
@@ -284,7 +284,7 @@ def test_reve_drop_reads_the_kept_channels(reve_bank):
     with pytest.warns(UserWarning, match="dropped"):
         model = small_reve(names(["Cz", "Fpzz", "Pz"]), on_missing="drop")
     assert model.default_pos.shape == (2, 3)
-    x = torch.randn(2, 3, 400)
+    x = torch.randn(2, 3, 380)
     with torch.no_grad():
         out = model(x)
         assert out.shape == (2, 2)
