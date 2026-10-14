@@ -461,6 +461,7 @@ print(
 #    The cell below evaluates the checkpoint on the tutorial's subject 3
 #    windows. If loading fails, it evaluates the locally trained model instead.
 
+import copy
 import warnings
 
 repo_id = "braindecode/plot_dance_event_detection"
@@ -469,13 +470,15 @@ model_source = "locally trained short-run model"
 try:
     from huggingface_hub import hf_hub_download
 
-    model.load_state_dict(
-        torch.load(
-            hf_hub_download(repo_id, "model.pt", revision=revision),
-            map_location=device,
-            weights_only=True,
-        )
+    checkpoint_state = torch.load(
+        hf_hub_download(repo_id, "model.pt", revision=revision),
+        map_location=device,
+        weights_only=True,
     )
+    # A failed strict load can partially update a module; keep the fallback intact.
+    checkpoint_model = copy.deepcopy(model)
+    checkpoint_model.load_state_dict(checkpoint_state)
+    model = checkpoint_model
     model_source = "published checkpoint (subject 3 used for epoch selection)"
     print(f"Loaded the pretrained checkpoint from {repo_id} at {revision}.")
 except Exception as exc:
