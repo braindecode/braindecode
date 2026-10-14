@@ -41,6 +41,7 @@ from braindecode.modules import (
     TDSConvEncoder,
     TimeDistributed,
 )
+from braindecode.modules.quantization import EMACodebook
 
 
 @pytest.mark.parametrize(
@@ -2067,3 +2068,42 @@ def test_feed_forward_block_options(gated):
     assert next(module.parameters()).shape == (13, 8)
     assert torch.count_nonzero(module(torch.randn(2, 3, 8))) == 0
     torch.jit.script(module)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64])
+@pytest.mark.parametrize("n_rows", [0, 1, 64])
+def test_ema_codebook_quantize_preserves_distances(dtype, n_rows):
+    torch.manual_seed(42)
+    codebook = EMACodebook(16, 32, kmeans_init=False).to(dtype)
+    # Equal code vectors exercise argmin's first-index tie convention.
+    codebook.embed[1].copy_(codebook.embed[0])
+    x = torch.randn(n_rows, 32, dtype=dtype)[:, ::2]
+    before = x.clone()
+    embed_before = codebook.embed.clone()
+    work = torch.promote_types(dtype, torch.float32)
+    values, embed = x.to(work), codebook.embed.t().to(work)
+    distances = (
+        values.pow(2).sum(1, keepdim=True)
+        - 2 * values @ embed
+        + embed.pow(2).sum(0, keepdim=True)
+    )
+    assert torch.equal(codebook.quantize(x), distances.argmin(dim=-1))
+    assert torch.equal(x, before)
+    assert torch.equal(codebook.embed, embed_before)
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+def test_ema_codebook_quantize_preserves_autocast_distances(dtype):
+    codebook = EMACodebook(1, 2, kmeans_init=False)
+    codebook.embed.copy_(torch.tensor([[1.0001], [1.0]]))
+    x = torch.zeros(1, 1)
+    with torch.autocast("cpu", dtype=dtype):
+        embed = codebook.embed.t()
+        distances = (
+            x.pow(2).sum(1, keepdim=True)
+            - 2 * x @ embed
+            + embed.pow(2).sum(0, keepdim=True)
+        )
+        expected = distances.argmin(dim=-1)
+        assert expected.item() == 1
+        assert torch.equal(codebook.quantize(x), expected)
