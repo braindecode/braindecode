@@ -269,6 +269,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
        https://openreview.net/forum?id=5Xwm8e6vbh
     """
 
+    # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
+    _legacy_on_non_divisible = "crop"
+
     def __init__(
         self,
         # --- signal-related (handled by EEGModuleMixin) ---

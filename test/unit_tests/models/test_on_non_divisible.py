@@ -362,3 +362,50 @@ def test_on_non_divisible_is_in_the_config(name):
         warnings.simplefilter("ignore")
         rebuilt = type(model).from_config(json.loads(json.dumps(config)))
     rebuilt.load_state_dict(model.state_dict())
+
+
+_LEGACY_CROP = [
+    n for n in _NAMES if getattr(_MODELS[n][0], "_legacy_on_non_divisible", None)
+]
+
+
+def test_legacy_crop_models_are_the_ones_that_cropped():
+    assert sorted({_MODELS[n][0].__name__ for n in _LEGACY_CROP}) == sorted(
+        ["STEEGFormer", "Brant", "BaRISTA", "SleepFM", "SleepFMStager", "REVE"]
+    )
+
+
+@pytest.mark.parametrize("name", _NAMES)
+def test_config_without_the_key_rebuilds_the_old_model(name):
+    """A config saved before ``on_non_divisible`` existed has no such key: models
+    that used to crop rebuild with ``"crop"`` (same shapes as the saved weights),
+    the others (which used to raise) keep the new default."""
+    n_times = _MODELS[name][5]
+    legacy = "crop" if name in _LEGACY_CROP else "pad"
+    model = _build(name, n_times, on_non_divisible=legacy)
+    config = model.get_config()
+    del config["on_non_divisible"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        rebuilt = type(model).from_config(json.loads(json.dumps(config)))
+    assert rebuilt.get_config()["on_non_divisible"] == legacy
+    rebuilt.load_state_dict(model.state_dict(), strict=True)
+
+
+@pytest.mark.parametrize("name", _LEGACY_CROP)
+def test_checkpoint_without_the_key_loads_as_crop(name, tmp_path):
+    """``from_pretrained`` of a pre-``on_non_divisible`` save loads strictly."""
+    pytest.importorskip("huggingface_hub")
+    n_times = _MODELS[name][5]
+    model = _build(name, n_times, on_non_divisible="crop")
+    ckpt = tmp_path / "ckpt"
+    model.save_pretrained(ckpt)
+    config = json.loads((ckpt / "config.json").read_text())
+    del config["on_non_divisible"]
+    (ckpt / "config.json").write_text(json.dumps(config))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        loaded = type(model).from_pretrained(str(ckpt), strict=True)
+    assert loaded.get_config()["on_non_divisible"] == "crop"
+    x = torch.randn(2, _n_chans(name), n_times)
+    torch.testing.assert_close(_run(loaded.eval(), x), _run(model, x))

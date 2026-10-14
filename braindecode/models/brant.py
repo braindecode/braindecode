@@ -164,6 +164,9 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
        NeurIPS. Code: https://github.com/yzz673/Brant (Apache-2.0).
     """
 
+    # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
+    _legacy_on_non_divisible = "crop"
+
     def __init__(
         self,
         # braindecode parameters

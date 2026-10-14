@@ -113,6 +113,9 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        https://doi.org/10.1038/s41591-025-04133-4
     """
 
+    # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
+    _legacy_on_non_divisible = "crop"
+
     def __init__(
         self,
         n_outputs=None,
@@ -369,6 +372,9 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        *Nature Medicine*, 32, 752–762.
        https://doi.org/10.1038/s41591-025-04133-4
     """
+
+    # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
+    _legacy_on_non_divisible = "crop"
 
     def __init__(
         self,

@@ -260,6 +260,9 @@ class REVE(EEGModuleMixin, nn.Module):
     # exists only with attention pooling).
     __constants__ = ["use_attention_pooling"]
 
+    # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
+    _legacy_on_non_divisible = "crop"
+
     def __init__(
         self,
         n_outputs=None,
