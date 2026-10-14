@@ -444,7 +444,7 @@ API and behavior changes
   state dicts and outputs. A config or checkpoint saved before this option existed
   (no ``on_non_divisible`` key) still rebuilds with ``"crop"`` in the models that
   cropped, through :meth:`~braindecode.models.base.EEGModuleMixin.from_config` and
-  ``from_pretrained``, so its weights load unchanged (by `Bruno Aristimunha`_).
+  ``from_pretrained``, so its weights load unchanged (:gh:`1399` by `Bruno Aristimunha`_).
 
 - :class:`braindecode.models.Labram` defaults to ``use_mean_pooling=True``
   again, the documented value and the readout of the original fine-tuning
