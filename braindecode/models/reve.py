@@ -8,6 +8,7 @@ import json
 import logging
 import math
 import os
+import warnings
 from typing import Dict, List, Optional, Union
 
 import pooch
@@ -18,6 +19,11 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules.attention import _scaled_dot_product_attention
+from braindecode.modules.blocks import (
+    _check_on_non_divisible,
+    _pad_or_crop_to_patches,
+    _patch_count,
+)
 from braindecode.modules.channels import resolve_channel_positions
 from braindecode.modules.layers import RMSNorm
 
@@ -91,9 +97,12 @@ class REVE(EEGModuleMixin, nn.Module):
     - ``REVE.to_patch_embedding`` **Patch Tokenization**
 
       The EEG signal is split into overlapping patches along the time dimension, generating
-      :math:`p = \left\lceil \frac{T - w}{w - o} \right\rceil + \mathbf{1}[(T - w) \bmod (w - o) \neq 0]`
-      patches of size :math:`w` with overlap :math:`o`, where :math:`T` is the signal length.
-      Each patch is linearly projected to the embedding dimension.
+      :math:`p = \left\lceil \frac{T - w}{w - o} \right\rceil + 1` patches of size :math:`w`
+      with overlap :math:`o`, where :math:`T \geq w` is the signal length: by default
+      (``on_non_divisible="pad"``) the signal is right zero-padded so the last patch ends
+      at its end (a signal shorter than :math:`w` gives one padded patch).
+      ``on_non_divisible="crop"`` drops the trailing samples instead, as the reference
+      does: :math:`p = \left\lfloor \frac{T - w}{w - o} \right\rfloor + 1`. Each patch is linearly projected to the embedding dimension.
 
     - ``REVE.fourier4d`` + ``REVE.mlp4d`` **4D Positional Embedding (4DPE)**
 
@@ -211,6 +220,15 @@ class REVE(EEGModuleMixin, nn.Module):
         Temporal patch size in samples (200 samples = 1 second at 200 Hz).
     patch_overlap : int, default=20
         Overlap between patches in samples.
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How the overlapping patches (step ``patch_size - patch_overlap``)
+        treat a window they do not tile, i.e. ``(n_times - patch_size) % step
+        != 0`` or ``n_times < patch_size``: right zero-pad to the next tiled
+        length, crop the trailing samples, or raise. The reference
+        implementation crops (``"crop"``, as :meth:`torch.Tensor.unfold`);
+        all three give the same model and output for a tiled window. With the
+        default ``patch_size=200`` and ``patch_overlap=20``, ``n_times=1000``
+        is not tiled: ``"pad"`` gives 6 patches, ``"crop"`` 5.
     attention_pooling : bool, default=False
         Pooling strategy for aggregating transformer outputs before classification.
         If ``False`` (default), all tokens are flattened into a single vector of size
@@ -262,6 +280,9 @@ class REVE(EEGModuleMixin, nn.Module):
     # Typed for TorchScript: ``None`` unless on_missing="drop" removed channels.
     channel_index: Optional[torch.Tensor]
 
+    # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
+    _legacy_on_non_divisible = "crop"
+
     def __init__(
         self,
         n_outputs=None,
@@ -283,6 +304,7 @@ class REVE(EEGModuleMixin, nn.Module):
         attention_pooling: bool = False,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
+        on_non_divisible: str = "pad",
         montage: Optional[str] = None,
         on_missing: str = "error",
     ):
@@ -301,10 +323,36 @@ class REVE(EEGModuleMixin, nn.Module):
         self.freqs = freqs
         self.patch_size = patch_size
         self.patch_overlap = patch_overlap
-        if self._n_times is not None and self._n_times < patch_size:
+        if patch_overlap >= patch_size:
             raise ValueError(
-                f"n_times ({self._n_times}) must be at least patch_size ({patch_size})."
+                f"patch_overlap ({patch_overlap}) must be smaller than patch_size "
+                f"({patch_size}): the patch step would not be positive."
             )
+        _check_on_non_divisible(on_non_divisible)
+        self.on_non_divisible = on_non_divisible
+        try:
+            known_n_times = self.n_times
+        except ValueError:  # unknown length: nothing to check at construction
+            known_n_times = None
+        if known_n_times is not None:
+            step = patch_size - patch_overlap
+            # Raises for "crop" below one patch and for "error" on an untiled window.
+            _patch_count(known_n_times, patch_size, on_non_divisible, step)
+            if on_non_divisible == "pad" and known_n_times < patch_size:
+                warnings.warn(
+                    f"Time dimension ({known_n_times}) is shorter than patch_size "
+                    f"({patch_size}). Input will be padded.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            elif on_non_divisible == "pad" and (known_n_times - patch_size) % step:
+                warnings.warn(
+                    f"Time dimension ({known_n_times}) minus patch_size "
+                    f"({patch_size}) is not divisible by the patch step ({step}). "
+                    "Input will be padded.",
+                    UserWarning,
+                    stacklevel=2,
+                )
         self.depth = depth
         self.heads = heads
         self.head_dim = head_dim
@@ -373,14 +421,13 @@ class REVE(EEGModuleMixin, nn.Module):
         if self.use_attention_pooling:
             return self.embed_dim
 
-        n_patches = math.ceil(
-            (self.n_times - self.patch_size) / (self.patch_size - self.patch_overlap)
+        # The count forward produces (padded patch included with "pad").
+        n_patches = _patch_count(
+            self.n_times,
+            self.patch_size,
+            self.on_non_divisible,
+            self.patch_size - self.patch_overlap,
         )
-
-        if (self.n_times - self.patch_size) % (
-            self.patch_size - self.patch_overlap
-        ) == 0:
-            n_patches += 1
 
         n_chans = self.n_chans if self._n_pos_chans is None else self._n_pos_chans
         flat_dim = n_chans * n_patches * self.embed_dim
@@ -468,11 +515,11 @@ class REVE(EEGModuleMixin, nn.Module):
         channel_index = self.channel_index
         if pos is None and channel_index is not None:
             eeg = eeg.index_select(1, channel_index.to(eeg.device))
-        patches = eeg.unfold(
-            dimension=2,
-            size=self.patch_size,
-            step=self.patch_size - self.patch_overlap,
-        )
+        step = self.patch_size - self.patch_overlap
+        # Right zero-pad (or crop) so the overlapping patches tile the window;
+        # a tiled window is passed through untouched.
+        eeg = _pad_or_crop_to_patches(eeg, self.patch_size, self.on_non_divisible, step)
+        patches = eeg.unfold(dimension=2, size=self.patch_size, step=step)
         batch_size, channel, n_patches, _ = patches.shape
 
         if pos is None:

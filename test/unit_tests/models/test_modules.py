@@ -1815,6 +1815,72 @@ def test_patch_tokenizer():
     assert set(tok_linear.state_dict()) == {"proj.weight", "proj.bias"}
 
 
+@pytest.mark.parametrize("n_times", [1, 37, 199, 200, 201, 950, 1000, 1001])
+@pytest.mark.parametrize("mode", ["pad", "crop", "error"])
+def test_patch_count_matches_patch_tokenizer(n_times, mode):
+    """The shared patch count is the patch count PatchTokenizer produces:
+    ceil for pad, floor for crop, exact or raise for error."""
+    from braindecode.modules import PatchTokenizer
+    from braindecode.modules.blocks import _patch_count
+
+    with catch_warnings():
+        simplefilter("ignore")
+        tok = PatchTokenizer(patch_size=200, n_times=200, on_non_divisible=mode)
+    x = torch.randn(1, 2, n_times)
+    divisible = n_times % 200 == 0
+    if mode == "error" and not divisible or mode == "crop" and n_times < 200:
+        with pytest.raises(ValueError):
+            _patch_count(n_times, 200, mode)
+        with pytest.raises(ValueError):
+            tok(x)
+        return
+    expected = -(-n_times // 200) if mode == "pad" else n_times // 200
+    assert _patch_count(n_times, 200, mode) == expected
+    assert tok.n_patches(n_times) == expected
+    assert tok(x).shape[2] == expected
+
+
+@pytest.mark.parametrize(
+    "n_times, mode, expected",
+    [
+        (1000, "pad", 6),  # (1000 - 200) % 180 = 80: one padded patch more
+        (1000, "crop", 5),  # what unfold alone gives (tail dropped)
+        (920, "pad", 5),  # (920 - 200) % 180 = 0: tiles exactly
+        (920, "crop", 5),
+        (920, "error", 5),
+        (150, "pad", 1),  # shorter than one patch: padded to one patch
+    ],
+)
+def test_pad_or_crop_to_patches_overlapping(n_times, mode, expected):
+    """Overlapping patches (step < patch_size) tile the padded/cropped axis."""
+    from braindecode.modules.blocks import _pad_or_crop_to_patches, _patch_count
+
+    x = torch.randn(2, 3, n_times)
+    y = _pad_or_crop_to_patches(x, 200, mode, step=180)
+    assert _patch_count(n_times, 200, mode, step=180) == expected
+    assert (y.shape[-1] - 200) % 180 == 0
+    patches = y.unfold(-1, 200, 180)
+    assert patches.shape[2] == expected
+    n_kept = min(n_times, y.shape[-1])
+    assert torch.equal(y[..., :n_kept], x[..., :n_kept])
+    assert not y[..., n_kept:].any()  # padding is zeros
+    if mode == "crop":
+        torch.testing.assert_close(patches, x.unfold(-1, 200, 180), rtol=0, atol=0)
+    if y.shape[-1] == n_times:
+        assert y is x  # a tiled axis is returned untouched
+
+
+def test_pad_or_crop_to_patches_rejects():
+    from braindecode.modules.blocks import _pad_or_crop_to_patches, _patch_count
+
+    with pytest.raises(ValueError, match="divisible by the patch step"):
+        _pad_or_crop_to_patches(torch.randn(1, 1, 1000), 200, "error", step=180)
+    with pytest.raises(ValueError, match="at least one full patch"):
+        _pad_or_crop_to_patches(torch.randn(1, 1, 150), 200, "crop", step=180)
+    with pytest.raises(ValueError, match="divisible"):
+        _patch_count(150, 200, "error", step=180)
+
+
 def test_gated_linear_unit_geglu_semantics():
     """GatedLinearUnit halves the last dim and gates with the given activation."""
     from braindecode.modules import GatedLinearUnit

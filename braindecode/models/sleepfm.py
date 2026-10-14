@@ -19,6 +19,7 @@ from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin, huggingface_hub
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import PatchTokenizer
+from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
 
 
 class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
@@ -38,7 +39,8 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     PSG from SSC, BioSerenity, MESA and MrOS; SHHS was held out.
 
     Every channel is cut into non-overlapping 5-second patches (``patch_size``
-    samples at 128 Hz; trailing samples are dropped) and embedded by a shared
+    samples at 128 Hz; a trailing partial patch is right zero-padded by
+    default, see ``on_non_divisible``) and embedded by a shared
     convolutional tokenizer. Attention pools the variable channel set of each
     patch, a Transformer models the patch sequence and a second attention
     layer pools it into one trial-level vector (see :meth:`encode`).
@@ -67,6 +69,12 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         Maximum number of patches (length of the positional table).
     activation : type[nn.Module], default=nn.ELU
         Tokenizer activation; ``nn.ELU`` matches the released weights.
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
+        is not a multiple of ``patch_size`` (right zero-pad, crop, or raise).
+        The reference implementation crops (``"crop"``); both give the same
+        output when ``n_times`` is a multiple of ``patch_size``. The
+        ``max_seq_length`` check counts the padded patch.
 
     Notes
     -----
@@ -105,6 +113,9 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        https://doi.org/10.1038/s41591-025-04133-4
     """
 
+    # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
+    _legacy_on_non_divisible = "crop"
+
     def __init__(
         self,
         n_outputs=None,
@@ -123,6 +134,7 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         activation: type[nn.Module] = nn.ELU,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
+        on_non_divisible: str = "pad",
     ) -> None:
         if channel_strategy != "native" or channel_strategy_kwargs:
             raise ValueError(
@@ -139,10 +151,17 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             sfreq=sfreq,
         )
         self.patch_size = patch_size
+        self.on_non_divisible = on_non_divisible
         self.embed_dim = embed_dim
 
         self.patch_embedding = _SleepFMTokenizer(
-            patch_size, embed_dim, activation, self.n_times, self.sfreq, max_seq_length
+            patch_size,
+            embed_dim,
+            activation,
+            self.n_times,
+            self.sfreq,
+            max_seq_length,
+            on_non_divisible,
         )
         _add_context_layers(
             self,
@@ -203,7 +222,7 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             mask = torch.zeros(x.shape[:2], dtype=torch.bool, device=x.device)
         else:
             patch_mask = mask.unsqueeze(2).expand(
-                -1, -1, x.shape[-1] // self.patch_size
+                -1, -1, self.patch_embedding.patchify.n_patches(x.shape[-1])
             )
         tokens = self.patch_embedding(x, patch_mask)
         tokens = self.spatial_pooling.per_patch(tokens, mask)
@@ -302,6 +321,13 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         Maximum number of patches.
     activation : type[nn.Module], default=nn.ELU
         Tokenizer activation; ``nn.ELU`` matches the released weights.
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
+        is not a multiple of ``patch_size`` (right zero-pad, crop, or raise).
+        The reference implementation crops (``"crop"``); both give the same
+        output when ``n_times`` is a multiple of ``patch_size``. With
+        ``"pad"`` the last prediction covers the padded patch, and
+        ``temporal_mask`` has ``ceil(n_times / patch_size)`` columns.
 
     Notes
     -----
@@ -347,6 +373,9 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        https://doi.org/10.1038/s41591-025-04133-4
     """
 
+    # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
+    _legacy_on_non_divisible = "crop"
+
     def __init__(
         self,
         n_outputs=None,
@@ -371,6 +400,7 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         activation: type[nn.Module] = nn.ELU,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
+        on_non_divisible: str = "pad",
     ) -> None:
         if channel_strategy != "native" or channel_strategy_kwargs:
             raise ValueError(
@@ -405,12 +435,19 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         )
         self.channel_modalities = channel_modalities
         self.patch_size = patch_size
+        self.on_non_divisible = on_non_divisible
         self.embed_dim = embed_dim
         self.encoder_chunk_patches = encoder_chunk_patches
 
         # Same modules and parameter names as SleepFM's encoder.
         self.patch_embedding = _SleepFMTokenizer(
-            patch_size, embed_dim, activation, self.n_times, self.sfreq, max_seq_length
+            patch_size,
+            embed_dim,
+            activation,
+            self.n_times,
+            self.sfreq,
+            max_seq_length,
+            on_non_divisible,
         )
         _add_context_layers(
             self,
@@ -499,7 +536,8 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         temporal_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Return patch-wise logits, or the per-patch LSTM features."""
-        n_patches = x.shape[-1] // self.patch_size
+        # The count the tokenizer produces (padded patch included with "pad").
+        n_patches = self.patch_embedding.patchify.n_patches(x.shape[-1])
         patch_mask = _check_mask(
             temporal_mask, [x.shape[0], n_patches], x, "temporal_mask"
         )
@@ -589,26 +627,38 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 class _SleepFMTokenizer(nn.Module):
     """Embed every ``patch_size``-sample patch of every channel independently.
 
-    Patches are cut by :class:`~braindecode.modules.PatchTokenizer` (trailing
-    samples cropped), then six stride-2 convolution blocks reduce each patch
-    to one ``embed_dim`` vector.
+    Patches are cut by :class:`~braindecode.modules.PatchTokenizer` (a
+    trailing partial patch padded, cropped or rejected as set by
+    ``on_non_divisible``), then six stride-2 convolution blocks reduce each
+    patch to one ``embed_dim`` vector.
     """
 
     def __init__(
-        self, patch_size, embed_dim, activation, n_times, sfreq, max_patches
+        self,
+        patch_size,
+        embed_dim,
+        activation,
+        n_times,
+        sfreq,
+        max_patches,
+        on_non_divisible="pad",
     ) -> None:
         super().__init__()
         if patch_size < 64 or patch_size % 64:
             raise ValueError("patch_size must be at least 64 and divisible by 64.")
         warn_if_sfreq_differs("SleepFM", sfreq, 128)
-        if not 0 < n_times // patch_size <= max_patches:
+        _check_on_non_divisible(on_non_divisible)
+        n_patches = _patch_count(n_times, patch_size, on_non_divisible)
+        if not 0 < n_patches <= max_patches:
             raise ValueError(
-                f"n_times={n_times} gives {n_times // patch_size} patches of "
+                f"n_times={n_times} gives {n_patches} patches of "
                 f"{patch_size} samples; between 1 and max_seq_length={max_patches} "
                 "are needed."
             )
         self.embed_dim = embed_dim
-        self.patchify = PatchTokenizer(patch_size, n_times, on_non_divisible="crop")
+        self.patchify = PatchTokenizer(
+            patch_size, n_times, on_non_divisible=on_non_divisible
+        )
         layers: list[nn.Module] = []
         in_channels = 1
         for block_index, out_channels in enumerate((4, 8, 16, 32, 64, 128), 1):

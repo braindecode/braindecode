@@ -5,6 +5,117 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
+_ON_NON_DIVISIBLE = ("pad", "crop", "error")
+
+
+def _check_on_non_divisible(on_non_divisible: str) -> None:
+    """Raise a ``ValueError`` for an unknown ``on_non_divisible`` value."""
+    if on_non_divisible not in _ON_NON_DIVISIBLE:
+        raise ValueError(
+            "on_non_divisible must be 'pad', 'crop', or 'error', "
+            f"got {on_non_divisible!r}."
+        )
+
+
+def _patch_count(
+    n_times: int, patch_size: int, on_non_divisible: str = "pad", step: int = 0
+) -> int:
+    """Number of patches a time axis of ``n_times`` samples is cut into.
+
+    The single source of the patch count of the patch-based models: their
+    positional tables, flatten heads and ``max_patches`` guards are sized
+    with it, so they agree with what the tokenizer produces at ``forward``.
+
+    Parameters
+    ----------
+    n_times : int
+        Number of time samples.
+    patch_size : int
+        Number of samples per patch.
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        ``"pad"`` counts the right zero-padded last patch
+        (``ceil``), ``"crop"`` only the complete patches (``floor``), and
+        ``"error"`` raises when patches do not tile the axis exactly.
+    step : int, default=0
+        Hop between consecutive patch starts; ``0`` means ``patch_size``
+        (non-overlapping patches). Overlapping patches (``step <
+        patch_size``) tile the axis when ``(n_times - patch_size) % step ==
+        0``.
+
+    Returns
+    -------
+    int
+        The number of patches, at least 1.
+    """
+    if step <= 0:
+        step = patch_size
+    if n_times < 1:
+        raise ValueError(f"n_times must be positive, got {n_times}.")
+    if n_times < patch_size:
+        if on_non_divisible == "pad":
+            return 1
+        if on_non_divisible == "crop":
+            raise ValueError(
+                f"Need at least one full patch of {patch_size} samples, got {n_times}."
+            )
+        raise ValueError(
+            f"Time dimension ({n_times}) is not divisible by patch_size "
+            f"({patch_size}): it is shorter than one patch."
+        )
+    n_complete = (n_times - patch_size) // step + 1
+    if (n_times - patch_size) % step == 0:
+        return n_complete
+    if on_non_divisible == "pad":
+        return n_complete + 1
+    if on_non_divisible == "crop":
+        return n_complete
+    if step == patch_size:
+        raise ValueError(
+            f"Time dimension ({n_times}) is not divisible by patch_size ({patch_size})."
+        )
+    raise ValueError(
+        f"Time dimension ({n_times}) minus patch_size ({patch_size}) is not "
+        f"divisible by the patch step ({step})."
+    )
+
+
+def _pad_or_crop_to_patches(
+    x: torch.Tensor, patch_size: int, on_non_divisible: str = "pad", step: int = 0
+) -> torch.Tensor:
+    """Right zero-pad or crop the last axis of ``x`` so patches tile it.
+
+    After this call, cutting patches of ``patch_size`` samples every ``step``
+    samples (``0`` means ``patch_size``) covers the whole axis and yields
+    :func:`_patch_count` patches. An axis that is already tiled is returned
+    unchanged (the same tensor), so divisible inputs are bit-identical.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input of shape ``(..., n_times)``.
+    patch_size : int
+        Number of samples per patch.
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        See :func:`_patch_count`.
+    step : int, default=0
+        Hop between patch starts; ``0`` means ``patch_size``.
+
+    Returns
+    -------
+    torch.Tensor
+        ``x`` padded, cropped or unchanged.
+    """
+    n_times = x.shape[-1]
+    n_patches = _patch_count(n_times, patch_size, on_non_divisible, step)
+    if step <= 0:
+        step = patch_size
+    target = patch_size + (n_patches - 1) * step
+    if target > n_times:
+        return nn.functional.pad(x, (0, target - n_times))
+    if target < n_times:
+        return x[..., :target]
+    return x
+
 
 class PatchTokenizer(nn.Module):
     r"""Tokenize an EEG signal into non-overlapping temporal patches.
@@ -79,11 +190,7 @@ class PatchTokenizer(nn.Module):
         output_order="channel_patch",
     ):
         super().__init__()
-        if on_non_divisible not in ("pad", "crop", "error"):
-            raise ValueError(
-                "on_non_divisible must be 'pad', 'crop', or 'error', "
-                f"got {on_non_divisible!r}."
-            )
+        _check_on_non_divisible(on_non_divisible)
         if projection not in ("conv", "linear"):
             raise ValueError(
                 f"projection must be 'conv' or 'linear', got {projection!r}."
@@ -122,6 +229,15 @@ class PatchTokenizer(nn.Module):
             self.patcher = nn.Conv1d(1, self.emb_dim, patch_size, stride=patch_size)
         elif learnable and projection == "linear":
             self.proj = nn.Linear(patch_size, self.emb_dim)
+
+    def n_patches(self, n_times: int) -> int:
+        """Number of patches ``forward`` returns for ``n_times`` samples.
+
+        ``ceil(n_times / patch_size)`` for ``on_non_divisible="pad"``,
+        ``n_times // patch_size`` for ``"crop"``; ``"error"`` raises for a
+        non-divisible ``n_times``.
+        """
+        return _patch_count(n_times, self.patch_size, self.on_non_divisible)
 
     def prepare_input(self, x):
         """Pad, crop or reject a time axis not divisible by ``patch_size``.

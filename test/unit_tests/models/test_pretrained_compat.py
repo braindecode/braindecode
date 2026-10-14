@@ -257,7 +257,7 @@ COMPAT = {
         canon=None,
         kind="seeg",
         channels="fixed_order_unchecked",
-        n_times_multiple=100,
+        # on_non_divisible="pad": any window (the last patch zero-padded)
         windows=(1000, 10000),
     ),
     "BaRISTA": dict(
@@ -268,7 +268,6 @@ COMPAT = {
         kind="seeg",
         channels="coords",
         coords_checked=True,
-        min_n_times=512,
     ),
     "DIVER1": dict(
         cls=DIVER1,
@@ -310,13 +309,13 @@ COMPAT = {
         channels="coords",
         coords_checked=False,
     ),
+    # Windows shorter than one patch are zero-padded to one patch ("pad").
     "SleepFM": dict(
         cls=SleepFM,
         sfreq=128,
         n_times=3840,
         canon=None,
         channels="agnostic",
-        min_n_times=640,
     ),
     "SleepFMStager": dict(
         cls=SleepFMStager,
@@ -324,7 +323,6 @@ COMPAT = {
         n_times=3840,
         canon=None,
         channels="agnostic",
-        min_n_times=640,
     ),
     "TFMTokenizer": dict(
         cls=TFMTokenizer,
@@ -340,7 +338,6 @@ COMPAT = {
         canon=TEN_TWENTY,
         channels="names",
         vocab=NEURORVQ_CHANNELS,
-        n_times_multiple=200,
         windows=(100, 400),
     ),
     "MAPA": dict(

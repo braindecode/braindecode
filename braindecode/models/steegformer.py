@@ -98,8 +98,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
     .. rubric:: Macro Components
 
     - **Patch + token embedding** (``STEEGFormer.patch_embed``).
-      *Operations:* cut each channel into ``seq = n_times // patch_size``
-      non-overlapping patches of ``patch_size`` samples and linearly project
+      *Operations:* cut each channel into ``seq`` non-overlapping patches
+      of ``patch_size`` samples (``ceil(n_times / patch_size)``, the last one
+      right zero-padded, by default; see ``on_non_divisible``) and linearly project
       each to an ``embed_dim`` token. *Role:* turn a ``C``-channel segment into
       ``C * seq`` tokens (one per (channel, time-patch) pair).
     - **Positional embeddings** (``STEEGFormer.temporal_pos``,
@@ -227,6 +228,11 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
     ----------
     patch_size : int
         Temporal patch size (unfold), default 16.
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
+        is not a multiple of ``patch_size`` (right zero-pad, crop, or raise).
+        The reference implementation crops (``"crop"``); both give the same
+        output when ``n_times`` is a multiple of ``patch_size``.
     embed_dim : int
         Token embedding dimension (512 / 768 / 1024 across variants).
     depth : int
@@ -263,6 +269,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
        https://openreview.net/forum?id=5Xwm8e6vbh
     """
 
+    # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
+    _legacy_on_non_divisible = "crop"
+
     def __init__(
         self,
         # --- signal-related (handled by EEGModuleMixin) ---
@@ -286,6 +295,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         chan_pos_idx=None,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
+        on_non_divisible: str = "pad",
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -315,6 +325,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         mlp_ratio = int(mlp_ratio)
 
         self.patch_size = patch_size
+        self.on_non_divisible = on_non_divisible
         self.embed_dim = embed_dim
         self.depth = depth
         self.num_heads = num_heads
@@ -367,7 +378,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             n_times=self.n_times,
             emb_dim=embed_dim,
             learnable=True,
-            on_non_divisible="crop",
+            on_non_divisible=on_non_divisible,
             projection="linear",
             output_order="patch_channel",
         )
@@ -542,19 +553,15 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             Class logits of shape ``(batch, n_outputs)``, or the feature dict
             ``{"features", "cls_token"}`` when ``return_features`` is set.
         """
-        seq = x.shape[-1] // self.patch_size
-        if seq < 1:
-            raise ValueError(
-                f"STEEGFormer requires at least one full temporal patch of "
-                f"{self.patch_size} samples, got input with {x.shape[-1]} samples."
-            )
         if x.shape[1] != self.n_chans:
             raise ValueError(
                 f"STEEGFormer was built for {self.n_chans} channels but got input "
                 f"with {x.shape[1]}; rebuild the model for this montage."
             )
         # Tokens + positional embeddings, kept on the (seq, channel) grid.
+        # Pads, crops or rejects a non-multiple of patch_size (on_non_divisible).
         tokens = self.patch_embed(x)  # (batch, seq, n_chans, embed_dim)
+        seq = tokens.shape[1]
         tokens = (
             tokens + self.temporal_pos(seq) + self.channel_pos(self.channel_indices)
         )

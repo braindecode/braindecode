@@ -13,6 +13,7 @@ from einops.layers.torch import Rearrange, Reduce
 from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PatchTokenizer
+from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
 
 # Standard rhythmic-activity bands (Hz) used by Brant's frequency encoding,
 # from the paper (§ Frequency encoding): theta, alpha, beta, gamma1-5.
@@ -96,6 +97,8 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
     ``return_features=True`` returns ``cls_token=None``. The learned temporal
     positions require the runtime signal length to equal the configured
     ``n_times``, and the input must have the configured ``n_chans`` channels.
+    A window that is not a multiple of ``patch_size`` is right zero-padded to
+    ``ceil(n_times / patch_size)`` patches by default (``on_non_divisible``).
 
     The upstream model operates on signals down-sampled to **250 Hz**, but its
     band-power features are computed at a fixed 256 Hz (upstream
@@ -127,6 +130,11 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
     patch_size : int, optional
         Number of time samples per patch fed to the encoders. Default 250
         (1 s at 250 Hz). The paper's large architecture uses 1500 (see above).
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
+        is not a multiple of ``patch_size`` (right zero-pad, crop, or raise).
+        The reference implementation crops (``"crop"``); both give the same
+        model and output when ``n_times`` is a multiple of ``patch_size``.
     embed_dim : int, optional
         Model width ``D`` (patch embedding size). Default 256.
     ffn_dim : int, optional
@@ -156,6 +164,9 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
        NeurIPS. Code: https://github.com/yzz673/Brant (Apache-2.0).
     """
 
+    # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
+    _legacy_on_non_divisible = "crop"
+
     def __init__(
         self,
         # braindecode parameters
@@ -168,6 +179,7 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         *,
         # model-specific parameters
         patch_size: int = 250,
+        on_non_divisible: str = "pad",
         embed_dim: int = 256,
         ffn_dim: int = 384,
         temporal_n_layers: int = 4,
@@ -192,6 +204,7 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.patch_size = patch_size
+        self.on_non_divisible = on_non_divisible
         self.embed_dim = embed_dim
         self.ffn_dim = ffn_dim
         self.temporal_n_layers = temporal_n_layers
@@ -207,12 +220,10 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
             )
         # Number of patches per channel, fixed by the input length. The learnable
         # temporal positional encoding is sized to it, hence n_times is required.
-        self.seq_len = self.n_times // self.patch_size
-        if self.seq_len < 1:
-            raise ValueError(
-                f"n_times ({self.n_times}) must be >= patch_size "
-                f"({self.patch_size}) to form at least one patch."
-            )
+        # ceil for "pad", floor for "crop" (raises below one patch), exact for
+        # "error" (raises otherwise): the count the tokenizer produces.
+        _check_on_non_divisible(on_non_divisible)
+        self.seq_len = _patch_count(self.n_times, self.patch_size, on_non_divisible)
 
         # Shared non-overlapping patching (same tokenizer as the other
         # transformer foundation models); non-learnable, so it is a pure reshape
@@ -222,7 +233,7 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
             patch_size=self.patch_size,
             n_times=self.n_times,
             learnable=False,
-            on_non_divisible="crop",
+            on_non_divisible=on_non_divisible,
         )
         # braindecode-native: band-power computed inside forward (see module).
         self.band_power = _BandPowerFeatures(

@@ -608,8 +608,23 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         """
         config = dict(config)  # shallow copy
         config.pop("braindecode_version", None)
+        cls._fill_legacy_defaults(config)
         resolve_type_kwargs(cls, config)
         return cls(**config)
+
+    @classmethod
+    def _fill_legacy_defaults(cls, kwargs: dict) -> None:
+        """Rebuild configs saved before ``on_non_divisible`` existed as they were.
+
+        Models that used to crop a time axis not divisible by their patch size
+        set ``_legacy_on_non_divisible = "crop"``. A saved config or checkpoint
+        without the ``on_non_divisible`` key then loads with ``"crop"``, so its
+        head and position tables keep their shapes; a new model defaults to
+        ``"pad"``.
+        """
+        legacy = getattr(cls, "_legacy_on_non_divisible", None)
+        if legacy is not None and "on_non_divisible" not in kwargs:
+            kwargs["on_non_divisible"] = legacy
 
     def _set_n_outputs(self, n_outputs: int) -> None:
         """Record a new ``n_outputs`` on the model and its saved configs.
@@ -911,6 +926,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ):
             model_kwargs.pop("braindecode_version", None)
             filename = model_kwargs.pop("filename", None)
+            # The Hub mixin passes only the keys of config.json (plus the
+            # caller's), so a missing key means a pre-on_non_divisible save.
+            cls._fill_legacy_defaults(model_kwargs)
             resolve_type_kwargs(cls, model_kwargs)
 
             # Read saved n_outputs from config.json to detect when the
