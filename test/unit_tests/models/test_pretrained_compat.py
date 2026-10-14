@@ -268,7 +268,6 @@ COMPAT = {
         kind="seeg",
         channels="coords",
         coords_checked=True,
-        min_n_times=512,
     ),
     "DIVER1": dict(
         cls=DIVER1,
