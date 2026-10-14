@@ -1143,3 +1143,27 @@ def test_getitems_advises_the_batch_before_reading_it(tmp_path, monkeypatch):
         np.testing.assert_array_equal(a, b)
     (X, y, inds), = DataLoader(windows, batch_sampler=[batch])
     np.testing.assert_array_equal(X.numpy(), np.stack([windows[i][0] for i in batch]))
+
+
+@pytest.mark.parametrize("as_frame", [False, True])
+@pytest.mark.parametrize("offset", [-3, -1, 1])
+def test_set_description_rejects_wrong_length(set_up, as_frame, offset):
+    dataset = BaseConcatDataset(
+        [RawDataset(set_up[0], {"subject": i}) for i in range(3)]
+    )
+    before = dataset.description.copy(deep=True)
+    description = {"new_column": list(range(len(dataset.datasets) + offset))}
+    if as_frame:
+        description = pd.DataFrame(description)
+    with pytest.raises(ValueError, match="Length of values .* does not match"):
+        dataset.set_description(description)
+    pd.testing.assert_frame_equal(dataset.description, before)
+
+
+def test_set_description_empty_mapping_is_noop(set_up):
+    dataset = BaseConcatDataset(
+        [RawDataset(set_up[0], {"subject": i}) for i in range(3)]
+    )
+    before = dataset.description.copy(deep=True)
+    dataset.set_description({})
+    pd.testing.assert_frame_equal(dataset.description, before)
