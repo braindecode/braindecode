@@ -480,6 +480,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`PRNUM` by `Bruno Aristimunha`_).
+
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.SincShallowNet` now round-trips through
   ``save_pretrained``/``from_pretrained``: its ``window`` buffer viewed a larger
