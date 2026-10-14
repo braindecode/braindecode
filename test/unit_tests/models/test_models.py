@@ -6349,7 +6349,11 @@ def _cz():
     [
         ("AttnSleep", dict(n_chans=2, n_times=3000, sfreq=100.0), "single-channel"),
         ("BDTCN", dict(n_chans=2, n_times=50), "receptive field"),
-        ("CSBrain", dict(n_chans=2, n_times=250), "multiple of patch_size"),
+        (
+            "CSBrain",
+            dict(n_chans=2, n_times=250, on_non_divisible="error"),
+            "divisible by patch_size",
+        ),
         ("DGCNN", dict(chs_info=_cz(), n_times=1000), "at least 2 channels"),
         ("REVE", dict(chs_info=[{"ch_name": "Cz"}], n_times=100), "patch_size"),
         ("REVE", dict(chs_info=[{"ch_name": "X1"}], n_times=1000), "position bank"),
