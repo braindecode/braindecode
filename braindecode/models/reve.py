@@ -316,18 +316,12 @@ class REVE(EEGModuleMixin, nn.Module):
             step = patch_size - patch_overlap
             # Raises for "crop" below one patch and for "error" on an untiled window.
             _patch_count(known_n_times, patch_size, on_non_divisible, step)
-            if on_non_divisible == "pad" and known_n_times < patch_size:
+            if on_non_divisible == "pad" and (
+                known_n_times < patch_size or (known_n_times - patch_size) % step
+            ):
                 warnings.warn(
-                    f"Time dimension ({known_n_times}) is shorter than patch_size "
-                    f"({patch_size}). Input will be padded.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-            elif on_non_divisible == "pad" and (known_n_times - patch_size) % step:
-                warnings.warn(
-                    f"Time dimension ({known_n_times}) minus patch_size "
-                    f"({patch_size}) is not divisible by the patch step ({step}). "
-                    "Input will be padded.",
+                    f"REVE's patches do not tile {known_n_times} samples: the input "
+                    "will be padded.",
                     UserWarning,
                     stacklevel=2,
                 )
