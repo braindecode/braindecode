@@ -375,8 +375,9 @@ def resolve_channel_positions(
         for p in parts:
             m = by_name(p)
             ends.append(table[m[1]] if m is not None else placed.get(p.lower()))
-        if all(e is not None for e in ends):
-            pos[i] = (ends[0] + ends[1]) / 2
+        first, second = ends
+        if first is not None and second is not None:
+            pos[i] = (first + second) / 2
             prov[i].update(
                 rule="bipolar", note=f"midpoint of {parts[0]} and {parts[1]}"
             )
