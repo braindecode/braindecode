@@ -14,6 +14,7 @@ A target named ``A-B`` is the derivation ``V(A) - V(B)`` (BIOT).
 from __future__ import annotations
 
 import difflib
+import re
 import warnings
 from collections import OrderedDict
 from functools import lru_cache
@@ -83,6 +84,82 @@ def _resolve(chs_info: list[dict]):
     given = np.isfinite(loc).all(1) & (np.abs(loc).max(1) >= 1e-8)
     pos = np.where(given[:, None], loc, std)
     return names, pos, std, types, given
+
+
+def resolve_channel_positions(chs_info, bank, montage=None, on_missing="error"):
+    """Positions of ``chs_info`` in a name -> position ``bank`` (REVE's bank).
+
+    Each channel takes, in order: ``"<montage>_<name>"`` when ``montage`` is
+    given (``"biosemi128"``), its name, its name ignoring case and an ``EEG``
+    prefix or ``-REF`` suffix, its legacy alias (``T3`` -> ``T7``), or for a
+    bipolar ``A-B`` the midpoint of ``A`` and ``B``. Other channels follow
+    ``on_missing``: ``"error"`` raises, ``"drop"`` leaves them out, and
+    ``"nearest"`` takes the bank entry closest to the channel's ``loc`` (in the
+    bank's frame), or drops it when it has no ``loc``. No position is invented.
+
+    Returns
+    -------
+    positions : numpy.ndarray
+        ``(n_kept, 3)`` positions.
+    kept : list of int
+        Indices of the channels of ``chs_info`` that got a position.
+    """
+    if on_missing not in ("error", "drop", "nearest"):
+        raise ValueError(
+            f"on_missing must be error, drop or nearest; got {on_missing!r}"
+        )
+    lower = {k.lower(): k for k in bank}
+
+    def lookup(name):
+        name = re.sub(r"^eeg\s+|-(ref|le|ar)$", "", name.strip(), flags=re.I)
+        for key in (
+            f"{montage}_{name}" if montage else None,
+            name,
+            _ALIASES.get(name.lower()),
+        ):
+            if key is not None and key.lower() in lower:
+                return np.asarray(bank[lower[key.lower()]], float)
+        ends = name.split("-")
+        if len(ends) == 2 and all(ends):
+            a, b = lookup(ends[0]), lookup(ends[1])
+            if a is not None and b is not None:
+                return (a + b) / 2
+        return None
+
+    keys = list(bank)
+    table = np.asarray([bank[k] for k in keys], float)
+    positions, kept, missing = [], [], []
+    for i, ch in enumerate(chs_info):
+        pos = lookup(str(ch["ch_name"]))
+        loc = np.asarray(
+            ch.get("loc") if ch.get("loc") is not None else [np.nan] * 3, float
+        )[:3]
+        if (
+            pos is None
+            and on_missing == "nearest"
+            and np.isfinite(loc).all()
+            and loc.any()
+        ):
+            pos = table[np.linalg.norm(table - loc, axis=1).argmin()]
+        if pos is None:
+            missing.append(ch["ch_name"])
+        else:
+            positions.append(pos)
+            kept.append(i)
+    if missing and (on_missing == "error" or not kept):
+        raise ValueError(
+            f"No position in the bank for {missing}; pass montage=, on_missing="
+            '"drop" or "nearest", or positions to forward.'
+        )
+    if missing:
+        warnings.warn(
+            f"Channels without a position are dropped: {missing}.", UserWarning
+        )
+    return np.asarray(positions), kept
+
+
+# T5/T6 are P7/P8 in 10-10 (MNE's own alias table maps them to T9/T10 sites).
+_ALIASES = {"t3": "T7", "t4": "T8", "t5": "P7", "t6": "P8"}
 
 
 def _interp(method: str, src_pos, tgt_pos, reg: float) -> np.ndarray:
