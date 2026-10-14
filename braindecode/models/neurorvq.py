@@ -7,12 +7,14 @@
 from __future__ import annotations
 
 import math
+import warnings
 from collections.abc import Callable
 from typing import Dict, Optional, Union
 
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
+from torchaudio.transforms import Resample
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.labram import _Attention
@@ -173,15 +175,21 @@ _MODALITIES = {
 }
 
 
-def _modality(model, modality: str) -> dict:
-    """Return the preset of ``modality`` after checking the sampling rate."""
+def _input_sfreq(model) -> float | None:
+    """The input's sampling rate, given or inferred from the window length."""
+    if model._sfreq is None and model._input_window_seconds is not None:
+        return model.n_times / model._input_window_seconds
+    return model._sfreq
+
+
+def _modality(model, modality: str, resample: bool = False) -> dict:
+    """Return the preset of ``modality``; without ``resample`` the input must be
+    at the modality's rate."""
     if modality not in _MODALITIES:
         raise ValueError(f"modality must be one of {sorted(_MODALITIES)}.")
     preset = _MODALITIES[modality]
-    model_sfreq = model._sfreq
-    if model_sfreq is None and model._input_window_seconds is not None:
-        model_sfreq = model.n_times / model._input_window_seconds
-    if model_sfreq is not None and model_sfreq != preset["sfreq"]:
+    model_sfreq = _input_sfreq(model)
+    if not resample and model_sfreq is not None and model_sfreq != preset["sfreq"]:
         raise ValueError(
             f"NeuroRVQ-{modality.upper()} was trained at {preset['sfreq']} Hz; "
             "resample before calling the model."
@@ -189,8 +197,11 @@ def _modality(model, modality: str) -> dict:
     return preset
 
 
-def _channel_slots(model, channel_names, channels: tuple[str, ...]):
-    """Normalized channel names and their slots in the pretrained ``channels``."""
+def _channel_slots(
+    model, channel_names, channels: tuple[str, ...], on_missing: str = "error"
+):
+    """Normalized channel names, their slots in the pretrained ``channels`` and
+    the indices of the input channels kept (``None``: all of them)."""
     if channel_names is None and model._chs_info is not None:
         channel_names = [ch["ch_name"] for ch in model._chs_info]
     if channel_names is None:
@@ -203,9 +214,21 @@ def _channel_slots(model, channel_names, channels: tuple[str, ...]):
     if len(set(names)) != len(names):
         raise ValueError("channel_names must be unique.")
     unknown = [name for name in names if name not in channels]
-    if unknown:
-        raise ValueError(f"Unsupported NeuroRVQ channel name(s): {unknown}.")
-    return names, torch.tensor([channels.index(name) for name in names])
+    if not unknown:
+        return names, torch.tensor([channels.index(name) for name in names]), None
+    if on_missing != "drop" or len(unknown) == len(names):
+        raise ValueError(
+            f"Unsupported NeuroRVQ channel name(s): {unknown}. Pass "
+            'on_missing="drop" to leave them out of the input.'
+        )
+    warnings.warn(
+        f"NeuroRVQ has no pretrained slot for {unknown}; these channels are dropped.",
+        UserWarning,
+    )
+    keep = [i for i, name in enumerate(names) if name in channels]
+    names = tuple(names[i] for i in keep)
+    slots = torch.tensor([channels.index(name) for name in names])
+    return names, slots, torch.tensor(keep)
 
 
 def _stack_scales(x: Tensor, dropout: bool) -> bool:
@@ -385,8 +408,10 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         (``ceil(n_times / patch_size)`` by default, see ``on_non_divisible``),
         at most ``max_patches``.
     sfreq : float or None
-        Sampling frequency. If provided or inferable, it must be the
-        modality's rate.
+        Sampling frequency. An integer rate other than the modality's (EEG
+        200 Hz) is resampled to it inside the model with
+        :class:`torchaudio.transforms.Resample`, with a warning; the patch count
+        follows the resampled length.
     channel_names : tuple of str, list of str, or None
         Ordered channel names. Names are case-insensitive and must occur in
         the modality's pretrained list (EEG: 104 electrodes; ECG: the 12
@@ -407,6 +432,10 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         The reference implementation requires a multiple (``"error"``); all
         three give the same model and output when ``n_times`` is a multiple of
         ``patch_size``.
+    on_missing : {"error", "drop"}, default="error"
+        Input channels whose name has no pretrained slot: ``"error"`` raises,
+        ``"drop"`` leaves them out of the input (with a warning), so the model
+        reads the channels it knows. Channels are never mapped by guesswork.
     max_patches : int or None, default=None
         Length of the temporal embedding table (EEG 256, ECG 600, EMG 256,
         PPG 12); ``None`` uses the modality's value.
@@ -469,6 +498,7 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         modality: str = "eeg",
         patch_size: int | None = None,
         on_non_divisible: str = "pad",
+        on_missing: str = "error",
         max_patches: int | None = None,
         depth: int = 12,
         num_heads: int = 10,
@@ -491,12 +521,33 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        preset = _modality(self, modality)
+        if on_missing not in ("error", "drop"):
+            raise ValueError(
+                f'on_missing must be "error" or "drop", got {on_missing!r}.'
+            )
+        preset = _modality(self, modality, resample=True)
         patch_size = patch_size or preset["patch_size"]
         max_patches = max_patches or preset["max_patches"]
         _check_on_non_divisible(on_non_divisible)
+        # Another input rate is resampled to the modality's rate inside forward.
+        in_sfreq = _input_sfreq(self)
+        self.resample: nn.Module = nn.Identity()
+        self._n_times_model = self.n_times
+        if in_sfreq is not None and in_sfreq != preset["sfreq"]:
+            if in_sfreq != round(in_sfreq):
+                raise ValueError(
+                    f"NeuroRVQ resamples integer rates only, got {in_sfreq}."
+                )
+            warnings.warn(
+                f"NeuroRVQ-{modality.upper()} was trained at {preset['sfreq']} Hz; the "
+                f"{in_sfreq:g} Hz input is resampled inside the model.",
+                UserWarning,
+            )
+            self.resample = Resample(int(in_sfreq), preset["sfreq"])
+            # torchaudio's output length.
+            self._n_times_model = math.ceil(self.n_times * preset["sfreq"] / in_sfreq)
         # ceil for "pad", floor for "crop", exact for "error" (raises otherwise).
-        num_patches = _patch_count(self.n_times, patch_size, on_non_divisible)
+        num_patches = _patch_count(self._n_times_model, patch_size, on_non_divisible)
         if num_patches > max_patches:
             raise ValueError(
                 f"n_times supports at most {max_patches} patches (got {num_patches})."
@@ -524,18 +575,27 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         self.embed_dim = embed_dim
         self.patch_size = patch_size
         self.on_non_divisible = on_non_divisible
+        self.on_missing = on_missing
         self.max_patches = max_patches
         self.head_pooling = preset["head_pooling"]
         self.num_patches = num_patches
         # Pads, crops or rejects a non-multiple of patch_size at forward; a pure
         # reshape (no parameters) otherwise.
         self.patch_tokenizer = PatchTokenizer(
-            patch_size, self.n_times, on_non_divisible=on_non_divisible
+            patch_size, self._n_times_model, on_non_divisible=on_non_divisible
         )
-        self.channel_names, slots = _channel_slots(
-            self, channel_names, preset["channels"]
+        self.channel_names, slots, keep = _channel_slots(
+            self, channel_names, preset["channels"], on_missing
         )
         self.register_buffer("spatial_embedding_ix", slots, persistent=False)
+        # Input channels read by the backbone (all unless on_missing="drop" left
+        # some out); a flag keeps the full-montage path free of an index copy.
+        self._drops_channels = keep is not None
+        self.register_buffer(
+            "channel_keep_ix",
+            keep if keep is not None else torch.arange(self.n_chans),
+            persistent=False,
+        )
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.patch_embed = _MultiScaleTemporalConv(
@@ -569,7 +629,7 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         self.norm = nn.Identity()
         head_dim = embed_dim * 4
         if self.head_pooling == "flatten":
-            head_dim *= self.n_chans * self.num_patches
+            head_dim *= len(slots) * self.num_patches
         self.fc_norm = nn.LayerNorm(head_dim)
         self.final_layer = nn.Linear(head_dim, self.n_outputs)
         self._init_weights()
@@ -599,6 +659,9 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                     self.n_chans, self.n_times, list(x.shape)
                 )
             )
+        if self._drops_channels:
+            x = x.index_select(1, self.channel_keep_ix)
+        x = self.resample(x)
         # (batch, n_chans, num_patches, patch_size)
         x = self.patch_tokenizer(x)
         b1, b2, b3, b4 = self.patch_embed(x)
@@ -611,7 +674,7 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         spatial = self.pos_embed[spatial_ix].unsqueeze(0)
         temporal_ix = torch.arange(
             self.max_patches - self.num_patches, self.max_patches, device=x.device
-        ).repeat(self.n_chans)
+        ).repeat(self.spatial_embedding_ix.numel())
         temporal = self.time_embed[temporal_ix].unsqueeze(0)
         cls = self.cls_token.expand(branches[0].shape[0], -1, -1)
         for branch in branches:
