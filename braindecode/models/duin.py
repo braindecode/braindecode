@@ -22,7 +22,8 @@ from einops.layers.torch import Rearrange
 from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
-from braindecode.modules import FeedForwardBlock, MultiHeadAttention
+from braindecode.modules import FeedForwardBlock, MultiHeadAttention, PatchTokenizer
+from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
 
 
 class DuIN(EEGModuleMixin, nn.Module, license="mit"):
@@ -131,7 +132,14 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
     ----------
     patch_size : int, optional
         Number of time samples per patch. Default 100 (100 ms at 1000 Hz), as
-        the released model. ``n_times`` must be a multiple of it.
+        the released model.
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
+        is not a multiple of ``patch_size`` (right zero-pad, crop, or raise).
+        The input window is padded or cropped before the spatial projection.
+        The reference implementation requires a multiple (``"error"``); all
+        three give the same model and output when ``n_times`` is a multiple of
+        ``patch_size``.
     n_neural : int, optional
         Number of hidden channels of ``spatial_projection``. Default 16.
     n_filters : tuple of int, optional
@@ -183,6 +191,7 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
         *,
         # model-specific parameters
         patch_size: int = 100,
+        on_non_divisible: str = "pad",
         n_neural: int = 16,
         n_filters: tuple[int, ...] = (128, 128, 16),
         kernel_sizes: tuple[int, ...] = (19, 3, 3),
@@ -219,14 +228,16 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
                 f"patch_size ({patch_size}) must be divisible by the product of "
                 f"strides ({math.prod(strides)})."
             )
-        if self.n_times % patch_size or self.n_times < patch_size:
-            raise ValueError(
-                f"n_times ({self.n_times}) must be a positive multiple of "
-                f"patch_size ({patch_size}): it is not divisible."
-            )
+        _check_on_non_divisible(on_non_divisible)
         warn_if_sfreq_differs("DuIN", self._sfreq, 1000)
 
-        self.n_patches = self.n_times // patch_size
+        # ceil for "pad", floor for "crop" (raises below one patch), exact for
+        # "error" (raises otherwise): the count the tokenizer produces.
+        self.n_patches = _patch_count(self.n_times, patch_size, on_non_divisible)
+        self.on_non_divisible = on_non_divisible
+        self.patch_tokenizer = PatchTokenizer(
+            patch_size, self.n_times, on_non_divisible=on_non_divisible
+        )
         # Time-major flattening of the last convolution: (frames, filters).
         self.embed_dim = n_filters[-1] * (patch_size // math.prod(strides))
 
@@ -347,7 +358,9 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
                 f"DuIN was configured for {self.n_times} time samples, "
                 f"but received {x.shape[-1]}."
             )
-        # 1. channels -> neural space: (batch, n_neural, n_times)
+        # 0. pad, crop or reject a window that is not a multiple of patch_size
+        x = self.patch_tokenizer.prepare_input(x)
+        # 1. channels -> neural space: (batch, n_neural, n_patches * patch_size)
         h = self.spatial_projection(x.transpose(1, 2)).transpose(1, 2)
         # 2. one token per patch: (batch, n_patches, embed_dim)
         tokens = self.to_tokens(self.spatial_encoder(self.to_patches(h)))

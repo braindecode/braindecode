@@ -15,12 +15,12 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
-from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.cbramod import _PatchEmbedding
 from braindecode.modules import FeedForwardBlock
+from braindecode.modules.blocks import PatchTokenizer, _patch_count
 
 log = logging.getLogger(__name__)
 
@@ -210,6 +210,9 @@ class CSBrain(EEGModuleMixin, nn.Module):
     ----------
     patch_size : int, default=200
         Temporal patch size in samples (200 samples = 1 second at 200 Hz).
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
+        is not a multiple of ``patch_size`` (right zero-pad, crop, or raise).
     dim_feedforward : int, default=800
         Dimension of the feedforward network in the encoder layers.
     n_layer : int, default=12
@@ -292,6 +295,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         patch_size: int = 200,
+        on_non_divisible: str = "pad",
         dim_feedforward: int = 800,
         n_layer: int = 12,
         nhead: int = 8,
@@ -314,16 +318,16 @@ class CSBrain(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
-        n_times = self._n_times_or_none()
-        if n_times is not None and n_times % patch_size:
-            raise ValueError(
-                f"n_times ({n_times}) must be a multiple of patch_size ({patch_size})."
-            )
-
-        self.rearrange = Rearrange(
-            "batch n_chans (n_patch patch_size) -> batch n_chans n_patch patch_size",
+        try:
+            tokenizer_n_times = self.n_times
+        except ValueError:  # unknown length: nothing to check at construction
+            tokenizer_n_times = patch_size
+        self.rearrange = PatchTokenizer(
             patch_size=patch_size,
+            n_times=tokenizer_n_times,
+            on_non_divisible=on_non_divisible,
         )
+        self._on_non_divisible = on_non_divisible
         # CBraMod's patch encoder: conv stem + rFFT magnitude + depthwise-conv PE.
         # CBraMod creates the positional-encoding conv before the conv stem, so
         # build it with the RNG forked (CPU and the default device's generator
@@ -429,14 +433,23 @@ class CSBrain(EEGModuleMixin, nn.Module):
         except ValueError:
             return None
 
+    def _n_patch(self) -> int | None:
+        n_times = self._n_times_or_none()
+        if n_times is None:
+            return None
+        # ceil for "pad", floor for "crop" (raises below one patch): the count
+        # the tokenizer produces.
+        return _patch_count(n_times, self._patch_size, self._on_non_divisible)
+
     def _make_task_head(self) -> nn.Sequential:
         # Three-layer MLP head of the reference fine-tuning models: flatten
         # (chans, patches, emb_dim) -> n_patch * emb_dim -> emb_dim -> n_outputs.
         # n_chans / n_times may come from chs_info / input_window_seconds.
         # Without them the layers are lazy and the hidden width falls back to
         # 4 * emb_dim, the reference value for 4 s windows.
-        n_chans, n_times = self._n_chans_or_none(), self._n_times_or_none()
-        if n_times is None or n_chans is None:
+        n_chans = self._n_chans_or_none()
+        n_patch = self._n_patch()
+        if n_patch is None or n_chans is None:
             return nn.Sequential(
                 nn.Flatten(),
                 nn.LazyLinear(self._head_hidden_dim or 4 * self._emb_dim),
@@ -447,7 +460,6 @@ class CSBrain(EEGModuleMixin, nn.Module):
                 nn.Dropout(self._head_drop_prob),
                 nn.LazyLinear(self.n_outputs),
             )
-        n_patch = n_times // self._patch_size
         hidden = self._head_hidden_dim or n_patch * self._emb_dim
         return nn.Sequential(
             nn.Flatten(),

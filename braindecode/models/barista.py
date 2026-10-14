@@ -14,6 +14,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import GatedLinearUnit, PatchTokenizer
 from braindecode.modules.attention import _scaled_dot_product_attention
+from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
 
 
 class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
@@ -77,7 +78,8 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
     - Temporal encoding uses non-overlapping patches and patch-index rotary
-      embeddings. Samples beyond the last complete patch are dropped.
+      embeddings. By default a trailing partial patch is right zero-padded;
+      ``on_non_divisible="crop"`` drops it, as the reference does.
     - Spatial encoding uses dataset-provided coordinate or region indices.
       ``spatial_scale="none"`` disables it.
     - The CNN operates on waveforms. There is no explicit spectral transform.
@@ -94,7 +96,8 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
     Treebank's coordinate convention.
 
     With ``pooling="mean"``, channel counts and window lengths can vary between
-    batches, provided each window contains a full patch. Pass each recording's
+    batches (with ``on_non_divisible="crop"``, provided each window contains a
+    full patch). Pass each recording's
     indices to :meth:`forward`; otherwise it uses the constructor's indices
     or MNE positions. All samples in one batch
     share a montage. The encoder uses PyTorch attention on separate batch
@@ -141,9 +144,13 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         in millimetres when deriving indices from ``chs_info``.
     patch_size : int
         Number of samples per temporal patch, default 512 (250 ms at the
-        paper's 2048 Hz). Windows are tokenized into whole patches, so a window
-        that is not a multiple of ``patch_size`` loses its trailing samples, as
-        in the reference.
+        paper's 2048 Hz).
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
+        is not a multiple of ``patch_size`` (right zero-pad, crop, or raise).
+        The reference implementation crops (``"crop"``: the trailing samples
+        are lost); both give the same model and output when ``n_times`` is a
+        multiple of ``patch_size``.
     d_model : int
         Token embedding dimension.
     n_layers : int
@@ -180,6 +187,9 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
        Systems 38. https://arxiv.org/abs/2512.12135
     """
 
+    # Configs and checkpoints saved before ``on_non_divisible`` existed cropped.
+    _legacy_on_non_divisible = "crop"
+
     def __init__(
         self,
         # --- signal-related (handled by EEGModuleMixin) ---
@@ -195,6 +205,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         spatial_indices: list[int] | list[list[int]] | None = None,
         coord_bins: int = 200,
         patch_size: int = 512,
+        on_non_divisible: str = "pad",
         d_model: int = 64,
         n_layers: int = 12,
         num_heads: int = 4,
@@ -243,8 +254,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
                 raise ValueError(f"{name} must be positive, got {value}.")
         if cnn_depth < 0:
             raise ValueError(f"cnn_depth must be non-negative, got {cnn_depth}.")
-        if self.n_times < patch_size:
-            raise ValueError("n_times must contain at least one full patch.")
+        _check_on_non_divisible(on_non_divisible)
         if d_model % num_heads:
             raise ValueError(
                 f"d_model ({d_model}) must be divisible by num_heads ({num_heads})."
@@ -258,6 +268,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         self.spatial_scale = spatial_scale
         self.coord_bins = coord_bins
         self.patch_size = patch_size
+        self.on_non_divisible = on_non_divisible
         self.d_model = d_model
         self.n_layers = n_layers
         self.num_heads = num_heads
@@ -266,14 +277,15 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         self.drop_prob = drop_prob
         self.activation = activation
 
-        # The trailing samples are dropped when n_times is not a multiple of
-        # patch_size, as in the reference.
-        self.n_patches = self.n_times // patch_size
+        # ceil(n_times / patch_size) with "pad"; floor with "crop" (the
+        # reference: trailing samples dropped, raises below one patch); exact
+        # with "error" (raises otherwise). The learned pooling is sized to it.
+        self.n_patches = _patch_count(self.n_times, patch_size, on_non_divisible)
 
         self.patch_tokenizer = PatchTokenizer(
             patch_size=patch_size,
             n_times=self.n_times,
-            on_non_divisible="crop",
+            on_non_divisible=on_non_divisible,
             output_order="patch_channel",
         )
         # Every (patch, channel) pair is encoded independently, so the grid is

@@ -22,6 +22,8 @@ from braindecode.models.neurorvq import (
     _MultiScaleTemporalConv,
     _stack_scales,
 )
+from braindecode.modules import PatchTokenizer
+from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
 from braindecode.modules.quantization import _all_reduce_sum, _broadcast_tensors
 
 
@@ -259,8 +261,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     Transformer blocks, temporal convolution, channel lists and ``modality``
     presets are shared with :class:`NeuroRVQ`.
 
-    Inputs must be sampled at the modality's rate, contain complete patches
-    and use channel names from the modality's pretrained list (see
+    Inputs must be sampled at the modality's rate and use channel names from the modality's pretrained list (see
     :class:`NeuroRVQ`). The model does not preprocess signals; the released
     EEG example applies notch filters at 50, 60 and 100 Hz, a 0.5-44.5 Hz
     band-pass, clipping at 500 uV and resampling to 200 Hz.
@@ -301,8 +302,9 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     n_chans : int
         Number of channels.
     n_times : int
-        Number of samples; must be divisible by ``patch_size`` and no longer
-        than ``patch_size * max_patches``.
+        Number of samples. It gives ``n_patches`` patches
+        (``ceil(n_times / patch_size)`` by default, see ``on_non_divisible``),
+        at most ``max_patches``.
     sfreq : float
         Sampling frequency; must be the modality's rate.
     channel_names : sequence of str or None
@@ -313,6 +315,13 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         defaults of ``patch_size``, ``max_patches`` and ``num_quantizers``.
     patch_size : int or None, default=None
         Samples per patch; ``None`` uses the modality's value.
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
+        is not a multiple of ``patch_size`` (right zero-pad, crop, or raise).
+        The reference implementation requires a multiple (``"error"``); all
+        three give the same model and output when ``n_times`` is a multiple of
+        ``patch_size``. With ``"pad"`` the zero samples are part of the
+        target (and of its per-window z-scoring).
     max_patches : int or None, default=None
         Length of the temporal embedding table; ``None`` uses the modality's
         value.
@@ -385,6 +394,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         channel_names: tuple[str, ...] | list[str] | None = None,
         modality: str = "eeg",
         patch_size: int | None = None,
+        on_non_divisible: str = "pad",
         max_patches: int | None = None,
         out_chans: int = 8,
         encoder_depth: int = 12,
@@ -413,11 +423,20 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         patch_size = patch_size or preset["patch_size"]
         max_patches = max_patches or preset["max_patches"]
         num_quantizers = num_quantizers or preset["num_quantizers"]
-        if self.n_times % patch_size:
-            raise ValueError(f"n_times must be divisible by patch_size ({patch_size}).")
-        self.num_patches = self.n_times // patch_size
+        _check_on_non_divisible(on_non_divisible)
+        # ceil for "pad", floor for "crop", exact for "error" (raises otherwise).
+        self.num_patches = _patch_count(self.n_times, patch_size, on_non_divisible)
         if self.num_patches > max_patches:
-            raise ValueError(f"n_times supports at most {max_patches} patches.")
+            raise ValueError(
+                f"n_times supports at most {max_patches} patches "
+                f"(got {self.num_patches})."
+            )
+        self.on_non_divisible = on_non_divisible
+        # Pads, crops or rejects a non-multiple of patch_size at forward; a pure
+        # reshape (no parameters) otherwise.
+        self.patch_tokenizer = PatchTokenizer(
+            patch_size, self.n_times, on_non_divisible=on_non_divisible
+        )
         embed_dim = out_chans * (patch_size // 8)
         # LaBraM's attention would silently floor the head width otherwise.
         if embed_dim % num_heads:
@@ -526,7 +545,8 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                     self.n_chans, self.n_times, list(x.shape)
                 )
             )
-        return x.reshape(x.shape[0], self.n_chans, self.num_patches, self.patch_size)
+        # (batch, n_chans, num_patches, patch_size)
+        return self.patch_tokenizer(x)
 
     def _branch_latents(
         self, patches: Tensor, time: Tensor, spatial: Tensor

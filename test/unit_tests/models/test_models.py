@@ -4911,8 +4911,23 @@ def test_brant_rejects_channel_count_mismatch():
 
 
 def test_brant_rejects_invalid_construction():
-    with pytest.raises(ValueError, match="patch_size"):
-        Brant(n_chans=2, n_outputs=2, n_times=1499, patch_size=1500)
+    # a window shorter than one patch only builds with the default "pad"
+    with pytest.raises(ValueError, match="full patch"):
+        Brant(
+            n_chans=2,
+            n_outputs=2,
+            n_times=1499,
+            patch_size=1500,
+            on_non_divisible="crop",
+        )
+    with pytest.raises(ValueError, match="divisible by patch_size"):
+        Brant(
+            n_chans=2,
+            n_outputs=2,
+            n_times=1499,
+            patch_size=1500,
+            on_non_divisible="error",
+        )
     with pytest.raises(ValueError, match="n_freq_bands"):
         Brant(n_chans=2, n_outputs=2, n_times=1500, patch_size=1500, n_freq_bands=5)
 
@@ -5176,7 +5191,11 @@ def test_neurorvq_output_and_features(neurorvq_model_kwargs):
 @pytest.mark.parametrize(
     "kwargs, message",
     [
-        ({"n_times": 601}, "n_times must be divisible by patch_size"),
+        (
+            {"n_times": 601, "on_non_divisible": "error"},
+            "not divisible by patch_size",
+        ),
+        ({"on_non_divisible": "bogus"}, "on_non_divisible must be"),
         ({"sfreq": 250}, "trained at 200 Hz"),
         (
             {"channel_names": ("f3", "f4", "not-an-eeg-channel")},
@@ -5184,6 +5203,8 @@ def test_neurorvq_output_and_features(neurorvq_model_kwargs):
         ),
         ({"channel_names": ("f3", "f3", "cz")}, "channel_names must be unique"),
         ({"n_times": 1800, "max_patches": 8}, "supports at most 8 patches"),
+        # the padded count is the one checked against max_patches
+        ({"n_times": 1601, "max_patches": 8}, "supports at most 8 patches"),
         ({"modality": "eog"}, "modality must be one of"),
         ({"init_values": None}, "init_values must be a number"),
     ],
@@ -5412,7 +5433,8 @@ def test_neurorvq_ema_quantizer_eval_code_usage(statistic_code_usage):
     ("kwargs", "message"),
     [
         ({"sfreq": 250}, "200 Hz"),
-        ({"n_times": 401}, "divisible by patch_size"),
+        ({"n_times": 401, "on_non_divisible": "error"}, "divisible by patch_size"),
+        ({"n_times": 1601, "max_patches": 8}, "supports at most 8 patches"),
         ({"channel_names": ("f3", "f4", "x")}, "Unsupported NeuroRVQ channel"),
     ],
 )
@@ -6349,9 +6371,17 @@ def _cz():
     [
         ("AttnSleep", dict(n_chans=2, n_times=3000, sfreq=100.0), "single-channel"),
         ("BDTCN", dict(n_chans=2, n_times=50), "receptive field"),
-        ("CSBrain", dict(n_chans=2, n_times=250), "multiple of patch_size"),
+        (
+            "CSBrain",
+            dict(n_chans=2, n_times=250, on_non_divisible="error"),
+            "divisible by patch_size",
+        ),
         ("DGCNN", dict(chs_info=_cz(), n_times=1000), "at least 2 channels"),
-        ("REVE", dict(chs_info=[{"ch_name": "Cz"}], n_times=100), "patch_size"),
+        (
+            "REVE",
+            dict(chs_info=[{"ch_name": "Cz"}], n_times=100, on_non_divisible="crop"),
+            "full patch",
+        ),
         ("REVE", dict(chs_info=[{"ch_name": "X1"}], n_times=1000), "position bank"),
         ("ZUNA", dict(chs_info=_cz(), n_times=10000, sfreq=256.0), "max_seqlen"),
     ],
