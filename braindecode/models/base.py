@@ -623,7 +623,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ``"pad"``.
         """
         legacy = getattr(cls, "_legacy_on_non_divisible", None)
-        if legacy is not None and "on_non_divisible" not in kwargs:
+        if legacy is None or "on_non_divisible" in kwargs:
+            return
+        # A subclass with its own signature may not take the argument.
+        params = inspect.signature(cls.__init__).parameters.values()
+        if any(p.name == "on_non_divisible" or p.kind is p.VAR_KEYWORD for p in params):
             kwargs["on_non_divisible"] = legacy
 
     def _set_n_outputs(self, n_outputs: int) -> None:
