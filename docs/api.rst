@@ -314,12 +314,10 @@ The channel layer behind ``channel_strategy=`` (see
     :recursive:
 
     ChannelLayer
-    ResolvedPositions
 
 .. autosummary::
     :toctree: generated/channels
     :template: function_in_subdir
-    :recursive:
 
     resolve_channel_positions
 

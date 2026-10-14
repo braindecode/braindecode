@@ -238,16 +238,13 @@ class REVE(EEGModuleMixin, nn.Module):
         embedding of size ``embed_dim``. Attention pooling is more parameter-efficient
         for long sequences and variable-length inputs.
     montage : str, optional
-        Montage whose qualified names the position bank holds (``"biosemi128"``:
-        channel ``A1`` reads ``biosemi128_A1``, near the vertex, instead of the
-        bank's ``A1`` earlobe). See
-        :func:`~braindecode.modules.resolve_channel_positions`.
+        Prefix of the bank's montage-specific names: with ``"biosemi128"``,
+        ``A1`` reads ``biosemi128_A1`` (near the vertex) instead of the 10-20
+        earlobe ``A1``.
     on_missing : {"error", "drop", "nearest"}, default="error"
-        Channels of ``chs_info`` without a bank name or a ``loc``: ``"error"``
-        raises with the closest bank names as suggestions; ``"drop"`` leaves
-        them out (the model then reads only the kept input channels when
-        ``forward`` gets no ``pos``); ``"nearest"`` also snaps channels placed
-        by their ``loc`` to the nearest bank position.
+        Channels of ``chs_info`` the bank does not name; see
+        :func:`~braindecode.modules.resolve_channel_positions`. Dropped channels
+        are not read when ``forward`` gets no ``pos``.
 
     References
     ----------
@@ -266,12 +263,6 @@ class REVE(EEGModuleMixin, nn.Module):
     standard 10-20/10-10/10-05 electrode names to 3D coordinates. This enables the
     4D positional encoding to generalize across electrode configurations without
     requiring matched layouts between pretraining and downstream tasks.
-
-    The positions of ``chs_info`` come from
-    :func:`~braindecode.modules.resolve_channel_positions`: bank names first
-    (exact names give the checkpoint's own positions), then the normalised name
-    (case, ``EEG``/``-REF``, legacy aliases), the channel's ``loc`` and bipolar
-    midpoints. ``model.channel_provenance`` records the rule used per channel.
     """
 
     # Constant, so TorchScript compiles only the head in use (``cls_query_token``
@@ -365,27 +356,20 @@ class REVE(EEGModuleMixin, nn.Module):
 
         self._position_bank = RevePositionBank()
         self.default_pos = None
-        # Input channels read without ``pos`` (``None``: all); set when
-        # on_missing="drop" removed channels.
-        self.channel_index = None
-        self.channel_provenance: Optional[list] = None
+        self.channel_index = None  # input channels kept by on_missing (None: all)
         self._n_pos_chans: Optional[int] = None
-        chs = self._chs_info
-        if chs is not None:
-            bank = dict(
-                zip(
-                    self._position_bank.position_names,
-                    self._position_bank.embedding.double().numpy(),
-                )
+        if self._chs_info is not None:
+            bank = self._position_bank
+            pos, kept = resolve_channel_positions(
+                self._chs_info,
+                dict(zip(bank.position_names, bank.embedding.numpy())),
+                montage,
+                on_missing,
             )
-            resolved = resolve_channel_positions(chs, bank, montage, on_missing)
-            # float32 bank rows round-trip through float64: exact names give
-            # the same tensor as the bank lookup.
-            self.default_pos = torch.tensor(resolved.positions, dtype=torch.float32)
-            self.channel_provenance = resolved.provenance
-            self._n_pos_chans = len(resolved.index)
-            if len(resolved.index) < len(chs):
-                self.channel_index = torch.as_tensor(resolved.index)
+            self.default_pos = torch.as_tensor(pos, dtype=torch.float32)
+            self._n_pos_chans = len(kept)
+            if len(kept) < len(self._chs_info):
+                self.channel_index = torch.as_tensor(kept)
 
         self.to_patch_embedding = nn.Sequential(
             nn.Linear(in_features=self.patch_size, out_features=self.embed_dim)

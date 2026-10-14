@@ -27,7 +27,7 @@ from .blocks import (
     PatchTokenizer,
     TDSConvEncoder,
 )
-from .channels import ChannelLayer, ResolvedPositions, resolve_channel_positions
+from .channels import ChannelLayer, resolve_channel_positions
 from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
@@ -75,7 +75,6 @@ __all__ = [
     "CAT",
     "CBAM",
     "ChannelLayer",
-    "ResolvedPositions",
     "resolve_channel_positions",
     "ECA",
     "FCA",
