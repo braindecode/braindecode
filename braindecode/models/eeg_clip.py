@@ -44,6 +44,7 @@ from torch.nn import functional as F
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.deep4 import Deep4Net
+from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
 
 class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
@@ -196,6 +197,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             torch.tensor(math.log(1.0 / initial_temperature))
         )
 
+    @_disable_batch_norm_training_if_batch_size_one
     def forward(self, X):
         """Return projected EEG embeddings, shape ``(batch, n_outputs)``."""
         features = self.eeg_encoder(X)
@@ -209,6 +211,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             batch_size, features.shape[-1], projected.shape[-1]
         ).mean(dim=1)
 
+    @_disable_batch_norm_training_if_batch_size_one
     def encode_text(self, text_inputs, attention_mask=None, **text_kwargs):
         """Encode text tokens or features as shared-space projection vectors."""
         features = text_inputs

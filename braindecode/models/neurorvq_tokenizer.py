@@ -444,7 +444,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                 "The derived embedding width must be divisible by num_heads."
             )
 
-        self.channel_names, slots = _channel_slots(
+        self.channel_names, slots, _ = _channel_slots(
             self, channel_names, preset["channels"]
         )
         self.patch_size = patch_size

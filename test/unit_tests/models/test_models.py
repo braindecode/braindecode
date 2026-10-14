@@ -22,6 +22,7 @@ import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+import torchaudio
 from scipy.signal import stft
 from sklearn.utils import check_random_state
 from torch import nn
@@ -2511,6 +2512,18 @@ def test_eegtcnet_batch_size_one_train_mode():
     model = EEGTCNet(n_outputs=4, n_chans=22, n_times=64).train()
     out = model(torch.randn(1, 22, 64))
     assert out.shape == (1, 4)
+
+
+def test_eegclip_batch_size_one_train_mode():
+    """At n_times=480 the dense Deep4Net gives one time step, so the projection
+    head's BatchNorm1d sees a single row in train mode (NeuralBench matrix)."""
+    model = EEGCLIP(n_outputs=4, n_chans=22, n_times=480).train()
+    out = model(torch.randn(1, 22, 480))
+    assert out.shape == (1, 4)
+    out.sum().backward()
+    assert model.training
+    texts = model.encode_text(torch.randn(1, model.text_embedding_dim))
+    assert texts.shape == (1, 4)
 
 
 def test_sstdpn_proto_sep_constrains_class_rows():
@@ -5196,9 +5209,14 @@ def test_neurorvq_output_and_features(neurorvq_model_kwargs):
             "not divisible by patch_size",
         ),
         ({"on_non_divisible": "bogus"}, "on_non_divisible must be"),
-        ({"sfreq": 250}, "trained at 200 Hz"),
+        ({"sfreq": 250.5}, "integer rates only"),
         (
             {"channel_names": ("f3", "f4", "not-an-eeg-channel")},
+            "Unsupported NeuroRVQ channel",
+        ),
+        ({"on_missing": "bogus"}, "on_missing must be"),
+        (
+            {"channel_names": ("x1", "x2", "x3"), "on_missing": "drop"},
             "Unsupported NeuroRVQ channel",
         ),
         ({"channel_names": ("f3", "f3", "cz")}, "channel_names must be unique"),
@@ -5212,6 +5230,42 @@ def test_neurorvq_output_and_features(neurorvq_model_kwargs):
 def test_neurorvq_invalid_configuration(neurorvq_model_kwargs, kwargs, message):
     with pytest.raises(ValueError, match=message):
         NeuroRVQ(**(neurorvq_model_kwargs | kwargs))
+
+
+def test_neurorvq_resamples_another_rate(neurorvq_model_kwargs):
+    """A 250 Hz window is resampled to 200 Hz in the model: same patches and
+    output as the 200 Hz model on the torchaudio-resampled window."""
+    torch.manual_seed(0)
+    at_200 = NeuroRVQ(**neurorvq_model_kwargs).eval()
+    with pytest.warns(UserWarning, match="resampled inside the model"):
+        at_250 = NeuroRVQ(**(neurorvq_model_kwargs | {"sfreq": 250, "n_times": 750}))
+    at_250.load_state_dict(at_200.state_dict())
+    at_250.eval()
+    assert at_250.num_patches == at_200.num_patches
+    x = torch.randn(2, 3, 750)
+    resampled = torchaudio.transforms.Resample(250, 200)(x)
+    with torch.no_grad():
+        torch.testing.assert_close(at_250(x), at_200(resampled))
+
+
+def test_neurorvq_drops_unknown_channels(neurorvq_model_kwargs):
+    """on_missing="drop": the model reads the known channels only, as a model
+    built on those channels with the same weights."""
+    torch.manual_seed(0)
+    known = NeuroRVQ(**neurorvq_model_kwargs).eval()
+    kwargs = neurorvq_model_kwargs | {
+        "n_chans": 4,
+        "channel_names": ("f3", "emg1", "f4", "cz"),
+        "on_missing": "drop",
+    }
+    with pytest.warns(UserWarning, match="emg1"):
+        dropping = NeuroRVQ(**kwargs)
+    dropping.load_state_dict(known.state_dict())
+    dropping.eval()
+    assert dropping.channel_names == ("f3", "f4", "cz")
+    x = torch.randn(2, 4, 600)
+    with torch.no_grad():
+        torch.testing.assert_close(dropping(x), known(x[:, [0, 2, 3]]))
 
 
 def test_neurorvq_reset_head(neurorvq_model_kwargs):
