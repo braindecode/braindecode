@@ -309,13 +309,13 @@ COMPAT = {
         channels="coords",
         coords_checked=False,
     ),
+    # Windows shorter than one patch are zero-padded to one patch ("pad").
     "SleepFM": dict(
         cls=SleepFM,
         sfreq=128,
         n_times=3840,
         canon=None,
         channels="agnostic",
-        min_n_times=640,
     ),
     "SleepFMStager": dict(
         cls=SleepFMStager,
@@ -323,7 +323,6 @@ COMPAT = {
         n_times=3840,
         canon=None,
         channels="agnostic",
-        min_n_times=640,
     ),
     "TFMTokenizer": dict(
         cls=TFMTokenizer,
