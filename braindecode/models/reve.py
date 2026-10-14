@@ -18,6 +18,7 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules.attention import _scaled_dot_product_attention
+from braindecode.modules.channels import resolve_channel_positions
 from braindecode.modules.layers import RMSNorm
 
 logger = logging.getLogger(__name__)
@@ -218,6 +219,17 @@ class REVE(EEGModuleMixin, nn.Module):
         learnable query token that attends to all encoder outputs, producing a single
         embedding of size ``embed_dim``. Attention pooling is more parameter-efficient
         for long sequences and variable-length inputs.
+    montage : str, optional
+        Montage whose qualified names the position bank holds (``"biosemi128"``:
+        channel ``A1`` reads ``biosemi128_A1``, near the vertex, instead of the
+        bank's ``A1`` earlobe). See
+        :func:`~braindecode.modules.resolve_channel_positions`.
+    on_missing : {"error", "drop", "nearest"}, default="error"
+        Channels of ``chs_info`` without a bank name or a ``loc``: ``"error"``
+        raises with the closest bank names as suggestions; ``"drop"`` leaves
+        them out (the model then reads only the kept input channels when
+        ``forward`` gets no ``pos``); ``"nearest"`` also snaps channels placed
+        by their ``loc`` to the nearest bank position.
 
     References
     ----------
@@ -236,11 +248,19 @@ class REVE(EEGModuleMixin, nn.Module):
     standard 10-20/10-10/10-05 electrode names to 3D coordinates. This enables the
     4D positional encoding to generalize across electrode configurations without
     requiring matched layouts between pretraining and downstream tasks.
+
+    The positions of ``chs_info`` come from
+    :func:`~braindecode.modules.resolve_channel_positions`: bank names first
+    (exact names give the checkpoint's own positions), then the normalised name
+    (case, ``EEG``/``-REF``, legacy aliases), the channel's ``loc`` and bipolar
+    midpoints. ``model.channel_provenance`` records the rule used per channel.
     """
 
     # Constant, so TorchScript compiles only the head in use (``cls_query_token``
     # exists only with attention pooling).
     __constants__ = ["use_attention_pooling"]
+    # Typed for TorchScript: ``None`` unless on_missing="drop" removed channels.
+    channel_index: Optional[torch.Tensor]
 
     def __init__(
         self,
@@ -263,6 +283,8 @@ class REVE(EEGModuleMixin, nn.Module):
         attention_pooling: bool = False,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
+        montage: Optional[str] = None,
+        on_missing: str = "error",
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -290,6 +312,32 @@ class REVE(EEGModuleMixin, nn.Module):
         self.use_geglu = use_geglu
 
         self.use_attention_pooling = attention_pooling
+        self.montage = montage
+        self.on_missing = on_missing
+
+        self._position_bank = RevePositionBank()
+        self.default_pos = None
+        # Input channels read without ``pos`` (``None``: all); set when
+        # on_missing="drop" removed channels.
+        self.channel_index = None
+        self.channel_provenance: Optional[list] = None
+        self._n_pos_chans: Optional[int] = None
+        chs = self._chs_info
+        if chs is not None:
+            bank = dict(
+                zip(
+                    self._position_bank.position_names,
+                    self._position_bank.embedding.double().numpy(),
+                )
+            )
+            resolved = resolve_channel_positions(chs, bank, montage, on_missing)
+            # float32 bank rows round-trip through float64: exact names give
+            # the same tensor as the bank lookup.
+            self.default_pos = torch.tensor(resolved.positions, dtype=torch.float32)
+            self.channel_provenance = resolved.provenance
+            self._n_pos_chans = len(resolved.index)
+            if len(resolved.index) < len(chs):
+                self.channel_index = torch.as_tensor(resolved.index)
 
         self.to_patch_embedding = nn.Sequential(
             nn.Linear(in_features=self.patch_size, out_features=self.embed_dim)
@@ -319,20 +367,6 @@ class REVE(EEGModuleMixin, nn.Module):
         if self.use_attention_pooling:
             self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
 
-        self._position_bank = RevePositionBank()
-
-        self.default_pos = None
-        if chs_info is not None:
-            names = [ch["ch_name"] for ch in chs_info]
-            missing = [n for n in names if n not in self._position_bank.mapping]
-            if missing:
-                raise ValueError(
-                    f"The REVE position bank has no position for {missing}. Use "
-                    "its channel names (RevePositionBank().get_all_positions()), "
-                    "or build without chs_info and pass pos to forward."
-                )
-            self.default_pos = self.get_positions(names)
-
     def _get_flattened_output_dim(self) -> int:
         """Helper function to compute the flattened output dimension after the transformer."""
 
@@ -348,7 +382,8 @@ class REVE(EEGModuleMixin, nn.Module):
         ) == 0:
             n_patches += 1
 
-        flat_dim = self.n_chans * n_patches * self.embed_dim
+        n_chans = self.n_chans if self._n_pos_chans is None else self._n_pos_chans
+        flat_dim = n_chans * n_patches * self.embed_dim
         return flat_dim
 
     def _build_head(self, n_outputs):
@@ -408,6 +443,8 @@ class REVE(EEGModuleMixin, nn.Module):
             Input EEG tensor of shape (batch_size, channels, sequence_length).
         pos : torch.Tensor
             Position tensor of shape (batch_size, channels, 3) representing (x, y, z) coordinates.
+            If omitted, the positions resolved from ``chs_info`` are used (and only
+            the kept channels are read when ``on_missing="drop"`` removed some).
         return_output : bool, optional
             If True, returns the output from the transformer directly.
             If False, applies the final layer and returns the processed output. Default is False.
@@ -428,6 +465,9 @@ class REVE(EEGModuleMixin, nn.Module):
                 "return_output and return_features are mutually exclusive."
             )
 
+        channel_index = self.channel_index
+        if pos is None and channel_index is not None:
+            eeg = eeg.index_select(1, channel_index.to(eeg.device))
         patches = eeg.unfold(
             dimension=2,
             size=self.patch_size,
@@ -817,15 +857,22 @@ class RevePositionBank(torch.nn.Module):
 
     @torch.jit.unused  # name lookup at construction; never part of a scripted forward
     def forward(self, channel_names: list[str]) -> torch.Tensor:
-        indices = [self.mapping[q] for q in channel_names if q in self.mapping]
+        """Positions ``(len(channel_names), 3)`` of bank names (exact match).
 
-        if len(indices) < len(channel_names):
-            logger.warning(
-                f"Found {len(indices)} positions out of {len(channel_names)} channels"
+        Raises a :class:`ValueError` for a name the bank does not hold, so the
+        rows always match ``channel_names``; to place other names (case,
+        aliases, ``loc``, bipolar pairs) use
+        :func:`~braindecode.modules.resolve_channel_positions`.
+        """
+        missing = [q for q in channel_names if q not in self.mapping]
+        if missing:
+            raise ValueError(
+                f"The REVE position bank has no position for {missing}; use "
+                "braindecode.modules.resolve_channel_positions to place them "
+                "(case, aliases, 'loc', bipolar pairs) or pass pos to forward."
             )
-
-        indices = torch.tensor(indices, device=self.embedding.device)
-
+        indices = [self.mapping[q] for q in channel_names]
+        indices = torch.tensor(indices, dtype=torch.long, device=self.embedding.device)
         return self.embedding[indices]
 
     def get_all_positions(self):

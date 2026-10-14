@@ -10,7 +10,10 @@ from pathlib import Path
 import mne
 import numpy as np
 import pytest
+import torch
 
+from braindecode.models import REVE
+from braindecode.models.reve import RevePositionBank
 from braindecode.modules import resolve_channel_positions
 from braindecode.util import resolve_montage_name
 
@@ -47,6 +50,26 @@ def resolve(chs, **kw):
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # no warning unless a test expects one
         return resolve_channel_positions(chs, BANK, **kw)
+
+
+@pytest.fixture
+def reve_bank(monkeypatch):
+    """REVE reads the in-repo bank instead of downloading it."""
+    monkeypatch.setenv("REVE_POSITIONS_PATH", str(DATA))
+
+
+def small_reve(chs_info, **kw):
+    return REVE(
+        n_outputs=2,
+        chs_info=chs_info,
+        n_times=400,
+        sfreq=200,
+        embed_dim=32,
+        depth=1,
+        heads=2,
+        head_dim=16,
+        **kw,
+    ).eval()
 
 
 def test_bank_agrees_with_mne_standard_1005():
@@ -217,3 +240,54 @@ def test_on_missing_nearest_snaps_positioned_channels_only():
 def test_unknown_montage_qualifier_raises():
     with pytest.raises(ValueError, match="biosemi128"):
         resolve(names(["A1"]), montage="biosemi64")
+
+
+def test_reve_default_pos_is_the_bank_lookup(reve_bank):
+    """Exact names: the same ``default_pos`` and output as before the resolver."""
+    bank = RevePositionBank()
+    ns = [*TEN_TWENTY, "A1", "E7"]
+    old = bank.embedding[torch.tensor([bank.mapping[n] for n in ns])]
+    torch.manual_seed(0)
+    model = small_reve(names(ns))
+    assert torch.equal(model.default_pos, old)
+    torch.manual_seed(0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        located = small_reve(from_montage("standard_1005", TEN_TWENTY))
+    assert torch.equal(located.default_pos, old[: len(TEN_TWENTY)])
+    x = torch.randn(2, len(ns), 400)
+    with torch.no_grad():
+        assert torch.equal(model(x), model(x, pos=old.expand(2, -1, -1)))
+    assert torch.equal(bank(ns), old)
+
+
+def test_reve_position_bank_never_returns_fewer_rows(reve_bank):
+    with pytest.raises(ValueError, match="X1"):
+        RevePositionBank()(["Cz", "X1"])
+    with pytest.raises(ValueError, match="position bank"):
+        small_reve(names(["Cz", "X1"]))
+
+
+def test_reve_montage_and_loc(reve_bank):
+    chs = from_montage("biosemi128")
+    with pytest.warns(UserWarning, match="BioSemi A1/A2"):
+        model = small_reve(chs)
+    a1 = torch.tensor(BANK["biosemi128_A1"], dtype=torch.float32)
+    assert torch.linalg.norm(model.default_pos[0] - a1) < 1e-3
+    qualified = small_reve(chs, montage="biosemi128")
+    assert torch.equal(qualified.default_pos[0], a1)
+    assert qualified.channel_provenance[0]["name"] == "biosemi128_A1"
+
+
+def test_reve_drop_reads_the_kept_channels(reve_bank):
+    torch.manual_seed(0)
+    with pytest.warns(UserWarning, match="dropped"):
+        model = small_reve(names(["Cz", "Fpzz", "Pz"]), on_missing="drop")
+    assert model.default_pos.shape == (2, 3)
+    x = torch.randn(2, 3, 400)
+    with torch.no_grad():
+        out = model(x)
+        assert out.shape == (2, 2)
+        kept = model(x[:, [0, 2]], pos=model.default_pos.expand(2, -1, -1))
+        assert torch.equal(out, kept)
+        assert torch.equal(torch.jit.script(model)(x), out)
