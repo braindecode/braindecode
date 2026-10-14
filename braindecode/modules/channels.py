@@ -14,9 +14,11 @@ A target named ``A-B`` is the derivation ``V(A) - V(B)`` (BIOT).
 from __future__ import annotations
 
 import difflib
+import re
 import warnings
 from collections import OrderedDict
 from functools import lru_cache
+from typing import NamedTuple
 from unittest import mock
 
 import mne
@@ -29,6 +31,11 @@ from scipy.spatial.distance import cdist
 from torch import Tensor, nn
 
 from braindecode.util import resolve_montage_name
+
+try:  # MNE's published aliases (Cb1 = POO7, T1 = T9, M1 = TP9, VREF = Cz, ...)
+    from mne._fiff.constants import CHANNEL_LOC_ALIASES
+except ImportError:  # pragma: no cover - private module moved
+    CHANNEL_LOC_ALIASES = {"T3": "T7", "T4": "T8"}
 
 STRATEGIES = (
     *("exact", "zero", "nearest", "idw", "spline", "field", "source"),
@@ -83,6 +90,346 @@ def _resolve(chs_info: list[dict]):
     given = np.isfinite(loc).all(1) & (np.abs(loc).max(1) >= 1e-8)
     pos = np.where(given[:, None], loc, std)
     return names, pos, std, types, given
+
+
+# --------------------------------------------------------------------------
+# Channel positions from a name -> position bank (REVE, and later the other
+# name- or position-indexed checkpoints).
+# --------------------------------------------------------------------------
+
+#: Distance (m) under which a channel's ``loc`` agrees with a bank entry
+#: (registration inliers; snapping beyond it warns).
+POSITION_TOLERANCE = 0.015
+#: Distance (m) beyond which a named channel's registered ``loc`` means another
+#: site than the bank entry of that name. MNE's 10-10 montages (BioSemi-32/64,
+#: EasyCap-M1, BrainProducts RNP-BA-128) put a site up to 16.2 mm from REVE's
+#: entry of its name; BioSemi-128's reused names start at 37.7 mm (C2).
+COLLISION_DISTANCE = 0.03
+_ON_MISSING = ("error", "drop", "nearest")
+# 10-10 names of the legacy 10-20 temporal sites (T5 = P7, not MNE's T9).
+_ALIASES = {k.lower(): v for k, v in CHANNEL_LOC_ALIASES.items()}
+_ALIASES.update({"t3": "T7", "t4": "T8", "t5": "P7", "t6": "P8"})
+_PREFIX = re.compile(r"^eeg[\s_-]+", re.IGNORECASE)
+_SUFFIX = re.compile(r"-(ref|le|ar)$", re.IGNORECASE)
+_BIPOLAR = re.compile(r"\s*[-\u2013]\s*")
+
+
+class ResolvedPositions(NamedTuple):
+    """Result of :func:`resolve_channel_positions`.
+
+    Attributes
+    ----------
+    positions : numpy.ndarray
+        ``(K, 3)`` positions of the kept channels, in the bank's frame (m).
+    index : numpy.ndarray
+        ``(K,)`` indices of the kept channels in ``chs_info``; ``arange(C)``
+        unless ``on_missing="drop"`` removed channels.
+    provenance : list of dict
+        One entry per input channel (dropped ones included): ``ch_name``,
+        ``rule`` (``"montage"``, ``"exact"``, ``"normalised"``, ``"loc"``,
+        ``"bipolar"`` or ``"dropped"``), ``name`` (the bank entry used, or
+        the one a ``"nearest"`` channel snapped to; ``None`` otherwise),
+        ``distance`` (m: snap distance, or the registered ``loc``'s distance
+        to the named bank entry; ``None`` when not measured) and ``note``.
+    """
+
+    positions: np.ndarray
+    index: np.ndarray
+    provenance: list
+
+
+def _normalise_name(name: str) -> str:
+    """``"EEG Fp1-REF"`` -> ``"Fp1"`` (prefix ``EEG``, suffixes -REF/-LE/-AR)."""
+    return _SUFFIX.sub("", _PREFIX.sub("", name.strip())).strip()
+
+
+def _similarity(src: np.ndarray, dst: np.ndarray):
+    """Least-squares ``dst ~ s * src @ R.T + t`` (Umeyama, 1991)."""
+    mu_s, mu_d = src.mean(0), dst.mean(0)
+    a, b = src - mu_s, dst - mu_d
+    U, S, Vt = np.linalg.svd(b.T @ a / len(src))
+    D = np.diag([1.0, 1.0, np.sign(np.linalg.det(U) * np.linalg.det(Vt)) or 1.0])
+    R = U @ D @ Vt
+    s = float(np.trace(np.diag(S) @ D) / ((a**2).sum() / len(src)))
+    return s, R, mu_d - s * R @ mu_s
+
+
+def _register(src: np.ndarray, dst: np.ndarray, tol: float):
+    """Fit the montage's ``loc`` frame onto the bank's on the channels named in
+    both, ignoring the ones more than ``tol`` off (name collisions).
+
+    Returns the transform, or ``None`` when the channels do not determine a
+    frame (fewer than 4, collinear, scale outside [0.5, 2]) or fewer than half
+    of them agree with their bank entries.
+    """
+    if len(src) < 4:
+        return None
+    sv = np.linalg.svd(src - src.mean(0), compute_uv=False)
+    if sv[1] <= 1e-3 * sv[0]:  # collinear: no rotation about that line
+        return None
+    # raw.set_montage gives ``loc`` in the head frame; banks such as REVE's are
+    # in the montage files' own frames (standard_1005: 46-57 mm apart).
+    inl = np.linalg.norm(src - dst, axis=1) <= tol
+    if inl.sum() < max(4, len(src) / 2):
+        inl = np.ones(len(src), bool)
+    for _ in range(20):  # trimmed least squares
+        s, R, t = _similarity(src[inl], dst[inl])
+        res = np.linalg.norm(s * src @ R.T + t - dst, axis=1)
+        new = res <= tol
+        if new.sum() < 4 or (new == inl).all():
+            break
+        inl = new
+    if not 0.5 <= s <= 2.0 or (res <= tol).sum() < max(4, len(src) / 2):
+        return None
+    return lambda x: s * np.asarray(x) @ R.T + t
+
+
+def _template_registration(table: np.ndarray, keys: list[str]):
+    """Head frame -> bank frame from the bank's own ``standard_1005`` names
+    (MNE's positions in the head frame, as ``raw.set_montage`` gives them)."""
+    std = _standard_positions()
+    rows = [i for i, k in enumerate(keys) if k.lower() in std]
+    src = np.array([std[keys[i].lower()] for i in rows]).reshape(-1, 3)
+    return _register(src, table[rows], POSITION_TOLERANCE)
+
+
+def resolve_channel_positions(
+    chs_info: list[dict],
+    bank: dict,
+    montage: str | None = None,
+    on_missing: str = "error",
+) -> ResolvedPositions:
+    """Position of each channel of ``chs_info`` in a name -> position bank.
+
+    The shared rule of the models whose checkpoint indexes channels by name or
+    by position (:class:`braindecode.models.REVE`). Each channel takes the first
+    rule that applies:
+
+    1. ``montage`` given: the montage-qualified bank name (``montage="biosemi128"``:
+       ``A1`` -> ``biosemi128_A1``).
+    2. The exact bank name (the checkpoint's own lookup). If the channel's
+       ``loc``, registered onto the bank's frame, lies more than 30 mm
+       (``COLLISION_DISTANCE``) from that entry, the name means another site
+       in this montage (REVE's ``A1``/``A2`` are earlobes, BioSemi's are near
+       the vertex): the registered ``loc`` is used, with a warning.
+    3. The normalised name: case-insensitive, without an ``EEG`` prefix or a
+       ``-REF``/``-LE``/``-AR`` suffix, MNE's location aliases (``M1`` = ``TP9``)
+       and the legacy 10-20 names (``T3``/``T4``/``T5``/``T6`` =
+       ``T7``/``T8``/``P7``/``P8``).
+    4. The channel's ``loc`` (finite, non-zero), registered onto the bank's
+       frame.
+    5. A bipolar name ``A-B`` (or ``A–B``): the midpoint of ``A`` and ``B``,
+       both resolved by rules 1-4.
+    6. Otherwise ``on_missing`` decides.
+
+    Registration: ``raw.set_montage`` gives ``loc`` in the head frame, while a
+    bank such as REVE's holds the montage files' own frames (46-57 mm apart for
+    ``standard_1005``). A similarity transform fitted on the channels whose
+    ``loc`` and bank name are both known (at least 4, not collinear; channels
+    more than 15 mm off are left out of the fit, and at least half must agree)
+    maps ``loc`` onto the bank. Otherwise the transform fitted between MNE's
+    ``standard_1005`` in the head frame and the bank's entries of the same
+    names is used (template frames differ by up to ~30 mm); if the bank has
+    none, ``loc`` is used as given, with a warning. Names are checked against
+    ``loc`` (rule 2) only when at least 4 channels have both: with fewer, the
+    bank name wins (pass ``montage`` for a small BioSemi subset); with 4 or
+    more of which fewer than half agree, the montage reuses the bank's names
+    for other sites (GSN-HydroCel-256 or BioSemi-256 against REVE's
+    GSN-HydroCel-129 and BioSemi-128 names) and each disagreeing channel
+    takes its ``loc``.
+
+    A position is never invented: a channel without a matching name and
+    without a ``loc`` gets none, and name similarity is only suggested.
+
+    Parameters
+    ----------
+    chs_info : list of dict
+        Channels (``ch_name``, optional ``loc`` in metres), as in ``raw.info["chs"]``.
+    bank : dict
+        Bank name -> ``(3,)`` position (metres).
+    montage : str, optional
+        Prefix of the bank's montage-qualified names (e.g. ``"biosemi128"``).
+    on_missing : {"error", "drop", "nearest"}
+        Channels without a position: ``"error"`` raises a :class:`ValueError`
+        listing them with the closest bank names (suggestions only);
+        ``"drop"`` removes them with a warning. ``"nearest"`` (for models
+        that need a bank entry per channel) also snaps every channel placed by
+        its ``loc`` or as a bipolar midpoint to the nearest bank entry, warning
+        beyond 15 mm; it still raises for a channel without a position.
+
+    Returns
+    -------
+    ResolvedPositions
+        ``positions`` ``(K, 3)``, ``index`` of the kept channels and the
+        per-channel ``provenance``.
+    """
+    if on_missing not in _ON_MISSING:
+        raise ValueError(
+            f"on_missing must be one of {_ON_MISSING}; got {on_missing!r}."
+        )
+    keys = list(bank)
+    table = np.array([bank[k] for k in keys], float).reshape(-1, 3)
+    if not len(keys) or not np.isfinite(table).all():
+        raise ValueError("The position bank must hold finite (3,) positions.")
+    row = {k: i for i, k in enumerate(keys)}
+    lower: dict[str, list[int]] = {}
+    for i, k in enumerate(keys):
+        lower.setdefault(k.lower(), []).append(i)
+
+    def caseless(name):  # one position under all spellings, else no match
+        hits = lower.get(name.lower(), [])
+        if hits and np.ptp(table[hits], axis=0).max() < 1e-6:
+            return hits[0]
+        return None
+
+    if montage is not None:
+        qualifiers = sorted({k.split("_")[0] for k in keys if "_" in k})
+        if not any(k.lower().startswith(f"{montage}_".lower()) for k in keys):
+            raise ValueError(
+                f"The position bank has no names qualified by montage {montage!r}; "
+                f"its montages: {qualifiers}."
+            )
+
+    def by_name(name):  # rules 1-3: (rule, bank row, note) or None
+        norm = _normalise_name(name)
+        if montage is not None:
+            for n in dict.fromkeys((name, norm)):
+                j = row.get(f"{montage}_{n}", caseless(f"{montage}_{n}"))
+                if j is not None:
+                    return "montage", j, ""
+        if name in row:
+            return "exact", row[name], ""
+        j = row.get(norm, caseless(norm))
+        if j is not None:
+            return "normalised", j, f"{name!r} read as {keys[j]!r}"
+        alias = _ALIASES.get(norm.lower())
+        j = None if alias is None else row.get(alias, caseless(alias))
+        if j is not None:
+            return "normalised", j, f"{name!r} read as {keys[j]!r} (alias)"
+        return None
+
+    names, pos_or_std, _, _, given = _resolve(chs_info)
+    loc = np.where(given[:, None], pos_or_std, np.nan)
+    named = [by_name(n) for n in names]
+    anchors = [i for i, m in enumerate(named) if m is not None and given[i]]
+    target = table[[named[i][1] for i in anchors]].reshape(-1, 3)
+    transform = None
+    if given.any():
+        transform = _register(loc[anchors], target, POSITION_TOLERANCE)
+        if transform is None:  # too few or disagreeing names: the template
+            transform = _template_registration(table, keys)
+    residual = {}
+    if transform is not None and len(anchors) >= 4:
+        d = np.linalg.norm(transform(loc[anchors]) - target, axis=1)
+        residual = dict(zip(anchors, d.tolist()))
+
+    pos = np.full((len(names), 3), np.nan)
+    prov = [
+        dict(ch_name=n, rule=None, name=None, distance=None, note="") for n in names
+    ]
+    collided, as_given = [], []
+    for i, m in enumerate(named):
+        if m is not None and residual.get(i, 0.0) <= COLLISION_DISTANCE:
+            pos[i] = table[m[1]]
+            prov[i].update(rule=m[0], name=keys[m[1]], note=m[2])
+            if i in residual:
+                prov[i]["distance"] = float(residual[i])
+        elif given[i]:
+            pos[i] = loc[i] if transform is None else transform(loc[i])
+            prov[i]["rule"] = "loc"
+            if m is not None:  # rule 2: the name means another site here
+                collided.append(f"{names[i]} ({residual[i] * 1e3:.0f} mm)")
+                prov[i]["distance"] = float(residual[i])
+                prov[i]["note"] = f"name collision with bank {keys[m[1]]!r}"
+            elif transform is None:
+                as_given.append(names[i])
+                prov[i]["note"] = "loc used as given (not registered)"
+    if collided:
+        if len(collided) > 10:
+            collided = [*collided[:10], f"... {len(collided) - 10} more"]
+        warnings.warn(
+            f"The 'loc' of channels {collided} lies more than "
+            f"{COLLISION_DISTANCE * 1e3:.0f} mm from the bank entry of the same "
+            "name (a montage that reuses another site's name, e.g. BioSemi A1/A2): "
+            "their 'loc' is used. Pass montage=... if the bank qualifies its names.",
+            UserWarning,
+            stacklevel=2,
+        )
+    if as_given:
+        warnings.warn(
+            f"Channels {as_given} are placed at their 'loc' as given: neither "
+            "their montage nor the bank's standard_1005 names register it onto "
+            "the bank's frame, so 'loc' must already be in it.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    placed = {  # rule-4 channels by name, for bipolar halves
+        n.lower(): pos[i] for i, n in enumerate(names) if prov[i]["rule"] == "loc"
+    }
+    for i, n in enumerate(names):  # rule 5: bipolar midpoint
+        parts = _BIPOLAR.split(_normalise_name(n))
+        if prov[i]["rule"] is not None or len(parts) != 2 or not all(parts):
+            continue
+        ends = []
+        for p in parts:
+            m = by_name(p)
+            ends.append(table[m[1]] if m is not None else placed.get(p.lower()))
+        if all(e is not None for e in ends):
+            pos[i] = (ends[0] + ends[1]) / 2
+            prov[i].update(
+                rule="bipolar", note=f"midpoint of {parts[0]} and {parts[1]}"
+            )
+
+    missing = [i for i in range(len(names)) if prov[i]["rule"] is None]
+    if missing and on_missing != "drop":
+        hint = {
+            names[i]: difflib.get_close_matches(_normalise_name(names[i]), keys, n=3)
+            for i in missing
+        }
+        why = (
+            "on_missing='nearest' snaps only channels that have a position (name "
+            "similarity never places a channel)"
+            if on_missing == "nearest"
+            else "Rename them, supply their 'loc', pass montage=..."
+        )
+        raise ValueError(
+            f"No position in the position bank for channels "
+            f"{[names[i] for i in missing]}: no matching name and no finite "
+            f"non-zero 'loc'. Closest bank names (suggestions only, never "
+            f"applied): {hint}. {why}; or pass on_missing='drop' to remove them."
+        )
+    if missing:
+        warnings.warn(
+            f"Channels {[names[i] for i in missing]} have no position in the "
+            "bank and no 'loc'; they are dropped.",
+            UserWarning,
+            stacklevel=2,
+        )
+        for i in missing:
+            prov[i]["rule"] = "dropped"
+
+    if on_missing == "nearest":  # positioned channels -> nearest bank entry
+        far = []
+        for i, p in enumerate(prov):
+            if p["rule"] in ("loc", "bipolar"):
+                d = np.linalg.norm(table - pos[i], axis=1)
+                j = int(np.argmin(d))
+                pos[i] = table[j]
+                p.update(name=keys[j], distance=float(d[j]))
+                p["note"] = (p["note"] + "; " if p["note"] else "") + "snapped"
+                if d[j] > POSITION_TOLERANCE:
+                    far.append(f"{p['ch_name']} -> {keys[j]} ({d[j] * 1e3:.0f} mm)")
+        if far:
+            warnings.warn(
+                f"Channels snapped to a bank entry more than "
+                f"{POSITION_TOLERANCE * 1e3:.0f} mm away: {far}.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+    keep = np.setdiff1d(np.arange(len(names)), missing).astype(int)
+    return ResolvedPositions(pos[keep], keep, prov)
 
 
 def _interp(method: str, src_pos, tgt_pos, reg: float) -> np.ndarray:
