@@ -338,7 +338,6 @@ COMPAT = {
         canon=TEN_TWENTY,
         channels="names",
         vocab=NEURORVQ_CHANNELS,
-        n_times_multiple=200,
         windows=(100, 400),
     ),
     "MAPA": dict(

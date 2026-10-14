@@ -17,7 +17,8 @@ from torch import Tensor, nn
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.labram import _Attention
 from braindecode.models.signal_jepa import _GroupNorm
-from braindecode.modules import MLP, DropPath
+from braindecode.modules import MLP, DropPath, PatchTokenizer
+from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
 
 # Channel order used to train NeuroRVQ-EEG v1. Keep in sync with the released
 # inference module: https://github.com/KonstantinosBarmpas/NeuroRVQ
@@ -380,8 +381,9 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         MNE channel metadata. Channel names are used to select the pretrained
         spatial embedding slots when ``channel_names`` is not provided.
     n_times : int
-        Number of input time samples. Must be divisible by ``patch_size`` and
-        no greater than ``patch_size * max_patches``.
+        Number of input time samples. It gives ``n_patches`` patches
+        (``ceil(n_times / patch_size)`` by default, see ``on_non_divisible``),
+        at most ``max_patches``.
     sfreq : float or None
         Sampling frequency. If provided or inferable, it must be the
         modality's rate.
@@ -399,6 +401,12 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         foundation model was released.
     patch_size : int or None, default=None
         Samples per temporal patch; ``None`` uses the modality's value.
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
+        is not a multiple of ``patch_size`` (right zero-pad, crop, or raise).
+        The reference implementation requires a multiple (``"error"``); all
+        three give the same model and output when ``n_times`` is a multiple of
+        ``patch_size``.
     max_patches : int or None, default=None
         Length of the temporal embedding table (EEG 256, ECG 600, EMG 256,
         PPG 12); ``None`` uses the modality's value.
@@ -435,7 +443,7 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     ------------
     By default, ``(batch, n_outputs)`` logits. With ``return_features=True``,
     returns a dictionary whose ``"features"`` entry has shape
-    ``(batch, 4 * embed_dim * n_chans * (n_times // patch_size))`` for EEG
+    ``(batch, 4 * embed_dim * n_chans * n_patches)`` for EEG
     and ``(batch, 4 * embed_dim)`` for the other modalities, where
     ``embed_dim = out_chans * patch_size // 8``.
 
@@ -460,6 +468,7 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         channel_names: tuple[str, ...] | list[str] | None = None,
         modality: str = "eeg",
         patch_size: int | None = None,
+        on_non_divisible: str = "pad",
         max_patches: int | None = None,
         depth: int = 12,
         num_heads: int = 10,
@@ -485,10 +494,13 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         preset = _modality(self, modality)
         patch_size = patch_size or preset["patch_size"]
         max_patches = max_patches or preset["max_patches"]
-        if self.n_times % patch_size:
-            raise ValueError(f"n_times must be divisible by patch_size ({patch_size}).")
-        if self.n_times // patch_size > max_patches:
-            raise ValueError(f"n_times supports at most {max_patches} patches.")
+        _check_on_non_divisible(on_non_divisible)
+        # ceil for "pad", floor for "crop", exact for "error" (raises otherwise).
+        num_patches = _patch_count(self.n_times, patch_size, on_non_divisible)
+        if num_patches > max_patches:
+            raise ValueError(
+                f"n_times supports at most {max_patches} patches (got {num_patches})."
+            )
         for name, value in (
             ("depth", depth),
             ("num_heads", num_heads),
@@ -511,9 +523,15 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
         self.embed_dim = embed_dim
         self.patch_size = patch_size
+        self.on_non_divisible = on_non_divisible
         self.max_patches = max_patches
         self.head_pooling = preset["head_pooling"]
-        self.num_patches = self.n_times // patch_size
+        self.num_patches = num_patches
+        # Pads, crops or rejects a non-multiple of patch_size at forward; a pure
+        # reshape (no parameters) otherwise.
+        self.patch_tokenizer = PatchTokenizer(
+            patch_size, self.n_times, on_non_divisible=on_non_divisible
+        )
         self.channel_names, slots = _channel_slots(
             self, channel_names, preset["channels"]
         )
@@ -581,8 +599,8 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                     self.n_chans, self.n_times, list(x.shape)
                 )
             )
-        batch = x.shape[0]
-        x = x.reshape(batch, self.n_chans, self.num_patches, self.patch_size)
+        # (batch, n_chans, num_patches, patch_size)
+        x = self.patch_tokenizer(x)
         b1, b2, b3, b4 = self.patch_embed(x)
         branches = [b1, b2, b3, b4]
         if _stack_scales(x, self.training and self._dropout):
