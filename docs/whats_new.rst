@@ -28,6 +28,8 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.NeuroRVQ` takes an input at another integer sampling rate and resamples it to the modality's rate (EEG 200 Hz) inside the model with :class:`torchaudio.transforms.Resample`, with a warning, instead of raising; and ``on_missing="drop"`` leaves out input channels with no pretrained slot (default ``"error"``). At 200 Hz with known channels the model and its output are unchanged. :class:`braindecode.models.EEGCLIP` keeps its BatchNorm layers on running statistics for a single-example batch in train mode, as the other BatchNorm models do (:gh:`1402` by `Bruno Aristimunha`_).
+- Add :func:`braindecode.modules.resolve_channel_positions`: places channels in a name -> position bank by name (case, ``EEG``/``-REF``, ``T3``-``T6`` aliases, montage-qualified names such as ``biosemi128_A1``) or as the midpoint of a bipolar ``A-B``; ``on_missing`` raises, drops, or takes the bank entry nearest the channel's ``loc``. :class:`braindecode.models.REVE` uses it (``montage``, ``on_missing``); exact bank names give the same positions as before (:gh:`1400` by `Bruno Aristimunha`_).
 - :class:`braindecode.augmentation.CutMix` pastes a random time region of a shuffled example into each example of the batch (Yun et al., 2019) and, like :class:`braindecode.augmentation.Mixup`, returns targets for :func:`braindecode.training.mixup_criterion` (:gh:`1372` by `Li Qing`_).
 - :meth:`braindecode.models.EEGCLIP.contrastive_loss` takes ``distributed=True`` to use every DDP rank's pairs as negatives, with the gradient of the loss on the concatenated batch even for uneven per-rank batches; the default local-batch loss is unchanged (:gh:`1320` by `lindicaphxag-tech`_).
 - :func:`braindecode.functional.fft_conv1d` on CPU computes its per-frequency channel product as one real matmul whose output columns are the (real, imaginary) pairs of the result, read as a complex tensor without a copy: the backward no longer allocates four zero-filled copies of the product. CPU train step of :class:`braindecode.models.EEGNeX` 2.6x faster on 60-s windows at 100 Hz, batch 64, 24 threads (0.47x of 1.8.1; it had become 1.17x slower) and 2.5x on 4-s windows at 250 Hz, batch 32, 2 threads; :class:`braindecode.models.TIDNet` 2.0-2.7x, :class:`braindecode.models.EEGInceptionMI` 1.15-1.6x; EEGNeX train-step peak memory halved. Forward-only calls with fewer rows than twice the input channels keep the previous product. Outputs and gradients change by float rounding only (:gh:`1362` by `Bruno Aristimunha`_).
@@ -461,6 +463,7 @@ Requirements
 Bug fixes
 ==========
 
+- ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.SincShallowNet` now round-trips through
   ``save_pretrained``/``from_pretrained``: its ``window`` buffer viewed a larger
   storage, which safetensors refuses, so ``model.safetensors`` was never written
