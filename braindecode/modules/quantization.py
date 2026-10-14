@@ -217,11 +217,11 @@ class EMACodebook(nn.Module):
             work = torch.promote_types(x.dtype, torch.float32)
             x = x.to(work)
             embed = self.embed.t().to(work)
-            dist = (
-                x.pow(2).sum(1, keepdim=True)
-                - 2 * x @ embed
-                + embed.pow(2).sum(0, keepdim=True)
-            )
+            # x2 - 2 x @ e + e2 written into the (N, codebook_size) product:
+            # same operations and rounding, no two more temporaries of that size.
+            dist = 2 * x @ embed
+            dist = torch.sub(x.pow(2).sum(1, keepdim=True), dist, out=dist)
+            dist = dist.add_(embed.pow(2).sum(0, keepdim=True))
             indices = dist.argmin(dim=-1)
         return indices
 

@@ -412,6 +412,8 @@ Enhancements
   for decoding time-resolved EEG motor imagery signals, from Hou et al. (2022)
   (:gh:`1331` by `Seáic Mac Murchadha`_).
 
+- ``braindecode.modules.EMACodebook`` reuses its distance-matrix storage during nearest-code lookup, avoiding two full-sized arithmetic temporaries without changing distance evaluation order (:gh:`PRNUM` by `Bruno Aristimunha`_).
+
 API and behavior changes
 ========================
 
