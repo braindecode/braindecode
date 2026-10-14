@@ -544,6 +544,11 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                 UserWarning,
             )
             self.resample = Resample(int(in_sfreq), preset["sfreq"])
+            # Derived from the rates: kept out of the state dict, so pretrained
+            # (200 Hz) weights load into a resampling model unchanged.
+            self.resample.register_buffer(
+                "kernel", self.resample.kernel, persistent=False
+            )
             # torchaudio's output length.
             self._n_times_model = math.ceil(self.n_times * preset["sfreq"] / in_sfreq)
         # ceil for "pad", floor for "crop", exact for "error" (raises otherwise).
