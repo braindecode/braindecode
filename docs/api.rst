@@ -315,6 +315,12 @@ The channel layer behind ``channel_strategy=`` (see
 
     ChannelLayer
 
+.. autosummary::
+    :toctree: generated/channels
+    :template: function_in_subdir
+
+    resolve_channel_positions
+
 Convolution
 ===========
 
