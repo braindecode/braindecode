@@ -423,28 +423,11 @@ API and behavior changes
   ``on_non_divisible="pad"`` as well (it was ``"error"``). Outputs and state-dict keys
   are unchanged for divisible windows, so released checkpoints load as before
   (:gh:`1226` by `Bruno Aristimunha`_).
-- Every patch-based model now takes ``on_non_divisible={"pad", "crop", "error"}``
-  with the default ``"pad"``, as :class:`braindecode.models.CBraMod` and
-  :class:`braindecode.models.Labram`: a window that is not a multiple of
-  ``patch_size`` is right zero-padded to ``ceil(n_times / patch_size)`` patches
-  (with a warning), and the positional tables, flatten heads and ``max_patches``
-  checks count the padded patch. :class:`braindecode.models.STEEGFormer`,
-  :class:`braindecode.models.Brant`, :class:`braindecode.models.BaRISTA`,
-  :class:`braindecode.models.SleepFM` and :class:`braindecode.models.SleepFMStager`
-  cropped such windows (pass ``on_non_divisible="crop"`` for the former, reference
-  behaviour); :class:`braindecode.models.NeuroRVQ`,
-  :class:`braindecode.models.NeuroRVQTokenizer`, :class:`braindecode.models.DuIN`
-  and :class:`braindecode.models.CSBrain` raised a :class:`ValueError` (now
-  ``on_non_divisible="error"``). :class:`braindecode.models.REVE` pads its
-  overlapping patches until ``(n_times - patch_size) % (patch_size - patch_overlap)
-  == 0``; ``"crop"`` keeps the former ``unfold`` behaviour. With the default
-  ``patch_size=200`` and ``patch_overlap=20``, REVE at ``n_times=1000`` now has 6
-  patches instead of 5, so its flattened head is wider. Windows shorter than one
-  patch build under ``"pad"``. Windows that the patches tile give bit-identical
-  state dicts and outputs. A config or checkpoint saved before this option existed
-  (no ``on_non_divisible`` key) still rebuilds with ``"crop"`` in the models that
-  cropped, through :meth:`~braindecode.models.base.EEGModuleMixin.from_config` and
-  ``from_pretrained``, so its weights load unchanged (:gh:`1399` by `Bruno Aristimunha`_).
+- Every patch-based model takes ``on_non_divisible={"pad", "crop", "error"}``, default
+  ``"pad"``: a window that patches do not tile is zero-padded instead of cropped
+  (STEEGFormer, Brant, BaRISTA, SleepFM, REVE) or rejected (NeuroRVQ, DuIN, CSBrain).
+  Tiled windows are unchanged; configs saved without the key load as before
+  (:gh:`1399` by `Bruno Aristimunha`_).
 
 - :class:`braindecode.models.Labram` defaults to ``use_mean_pooling=True``
   again, the documented value and the readout of the original fine-tuning
