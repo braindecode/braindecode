@@ -2090,3 +2090,20 @@ def test_ema_codebook_quantize_preserves_distances(dtype, n_rows):
     assert torch.equal(codebook.quantize(x), distances.argmin(dim=-1))
     assert torch.equal(x, before)
     assert torch.equal(codebook.embed, embed_before)
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+def test_ema_codebook_quantize_preserves_autocast_distances(dtype):
+    codebook = EMACodebook(1, 2, kmeans_init=False)
+    codebook.embed.copy_(torch.tensor([[1.0001], [1.0]]))
+    x = torch.zeros(1, 1)
+    with torch.autocast("cpu", dtype=dtype):
+        embed = codebook.embed.t()
+        distances = (
+            x.pow(2).sum(1, keepdim=True)
+            - 2 * x @ embed
+            + embed.pow(2).sum(0, keepdim=True)
+        )
+        expected = distances.argmin(dim=-1)
+        assert expected.item() == 1
+        assert torch.equal(codebook.quantize(x), expected)
