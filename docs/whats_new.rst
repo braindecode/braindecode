@@ -428,7 +428,7 @@ API and behavior changes
 - Every patch-based model takes ``on_non_divisible={"pad", "crop", "error"}``, default
   ``"pad"``: a window that patches do not tile is zero-padded instead of cropped
   (STEEGFormer, Brant, BaRISTA, SleepFM, REVE) or rejected (NeuroRVQ, DuIN, CSBrain).
-  Tiled windows are unchanged; configs saved without the key load as before
+  Tiled windows are unchanged; configs saved without the key load as before (subclasses whose ``__init__`` does not take it are left alone)
   (:gh:`1399` by `Bruno Aristimunha`_).
 
 - :class:`braindecode.models.Labram` defaults to ``use_mean_pooling=True``
