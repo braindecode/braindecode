@@ -585,6 +585,8 @@ Bug fixes
   instead of ``patch_size // 2 + 1`` (:gh:`1240` by `Bruno Aristimunha`_).
 - Fix ``from_pretrained`` ignoring the saved geometry when called with an explicit ``chs_info=None`` or ``n_chans=None``, and :class:`braindecode.models.Labram` with ``neural_tokenizer=False`` ignoring ``on_non_divisible`` (:gh:`1250` by `Bruno Aristimunha`_).
 
+- :meth:`braindecode.datasets.BaseConcatDataset.set_description` rejects description columns with the wrong number of rows before modifying datasets, instead of silently truncating or partially applying them. An empty mapping remains a no-op (:gh:`PRNUM` by `Bruno Aristimunha`_).
+
 - Fix :class:`braindecode.models.Deep4Net` short-input auto-scaling with ``split_first_layer=True`` so the scaled ``filter_time_length`` is used by the actual :class:`braindecode.modules.CombinedConv` temporal kernel instead of retaining the original constructor value. By `lindicaphxag-tech`_.
 
 
