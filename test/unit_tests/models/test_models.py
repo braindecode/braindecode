@@ -4911,8 +4911,23 @@ def test_brant_rejects_channel_count_mismatch():
 
 
 def test_brant_rejects_invalid_construction():
-    with pytest.raises(ValueError, match="patch_size"):
-        Brant(n_chans=2, n_outputs=2, n_times=1499, patch_size=1500)
+    # a window shorter than one patch only builds with the default "pad"
+    with pytest.raises(ValueError, match="full patch"):
+        Brant(
+            n_chans=2,
+            n_outputs=2,
+            n_times=1499,
+            patch_size=1500,
+            on_non_divisible="crop",
+        )
+    with pytest.raises(ValueError, match="divisible by patch_size"):
+        Brant(
+            n_chans=2,
+            n_outputs=2,
+            n_times=1499,
+            patch_size=1500,
+            on_non_divisible="error",
+        )
     with pytest.raises(ValueError, match="n_freq_bands"):
         Brant(n_chans=2, n_outputs=2, n_times=1500, patch_size=1500, n_freq_bands=5)
 
