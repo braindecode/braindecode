@@ -145,3 +145,16 @@ def test_checkpoint_without_the_key_loads_as_crop(tmp_path):
     config_file.write_text(json.dumps(config))
     loaded = Brant.from_pretrained(str(tmp_path / "ckpt"), strict=True)
     assert loaded.get_config()["on_non_divisible"] == "crop"
+
+
+
+def test_legacy_fill_skips_a_subclass_without_the_argument():
+    """A subclass with its own signature (e.g. a downstream wrapper) still loads."""
+
+    class Wrapped(STEEGFormer):
+        def __init__(self, n_chans=None, n_outputs=None, n_times=None):
+            super().__init__(n_chans=n_chans, n_outputs=n_outputs, n_times=n_times,
+                             embed_dim=32, depth=1, num_heads=2)
+
+    model = Wrapped.from_config({"n_chans": 3, "n_outputs": 2, "n_times": 64})
+    assert model.on_non_divisible == "pad"
