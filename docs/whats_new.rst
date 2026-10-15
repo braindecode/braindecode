@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- ``recording_ids`` of :class:`braindecode.datasets.TUH` (and :class:`braindecode.datasets.TUHAbnormal`, :class:`braindecode.datasets.TUHEvents`) selects recordings by their chronological position, as documented, instead of by their position in the file listing (:gh:`XXXX` by `Adam Mounir`_).
+- ``recording_ids`` of :class:`braindecode.datasets.TUH` (and :class:`braindecode.datasets.TUHAbnormal`, :class:`braindecode.datasets.TUHEvents`) selects recordings by their chronological position, as documented, instead of by their position in the file listing (:gh:`1412` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
