@@ -1,6 +1,8 @@
 import math
 
+import torch
 from torch import nn
+from torch.nn.utils import parametrize
 
 
 def glorot_weight_zero_bias(model):
@@ -14,12 +16,21 @@ def glorot_weight_zero_bias(model):
     model : Module
     """
     for module in model.modules():
-        if hasattr(module, "weight"):
+        # ``weight``/``bias`` can be None (e.g. BatchNorm with affine=False)
+        # or, on a parametrized module's ``parametrizations``, not a tensor
+        weight = getattr(module, "weight", None)
+        if isinstance(weight, torch.Tensor):
             if "BatchNorm" in module.__class__.__name__:
-                nn.init.constant_(module.weight, 1)
-        if hasattr(module, "bias"):
-            if module.bias is not None:
-                nn.init.constant_(module.bias, 0)
+                nn.init.constant_(weight, 1)
+            elif weight.dim() >= 2:
+                if parametrize.is_parametrized(module, "weight"):
+                    # e.g. max-norm constrained layers: initialize the
+                    # unconstrained tensor the parametrization reads
+                    weight = module.parametrizations.weight.original
+                nn.init.xavier_uniform_(weight, gain=1)
+        bias = getattr(module, "bias", None)
+        if isinstance(bias, torch.Tensor):
+            nn.init.constant_(bias, 0)
 
 
 def rescale_parameter(param, layer_id):

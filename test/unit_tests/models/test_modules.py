@@ -2061,3 +2061,32 @@ def test_ema_codebook_quantize_preserves_autocast_distances(dtype):
         expected = distances.argmin(dim=-1)
         assert expected.item() == 1
         assert torch.equal(codebook.quantize(x), expected)
+
+
+def test_glorot_weight_zero_bias():
+    import math
+
+    from torch.nn.utils import parametrize
+
+    from braindecode.functional import glorot_weight_zero_bias
+    from braindecode.models import EEGNet
+
+    torch.manual_seed(0)
+    model = nn.Sequential(
+        nn.Linear(100, 100),
+        nn.BatchNorm1d(100, affine=False),  # weight and bias are None
+        nn.BatchNorm1d(100),
+        nn.Linear(100, 10),
+    )
+    parametrize.register_parametrization(model[3], "weight", nn.Identity())
+    for layer in (model[0], model[3]):
+        layer.bias.data.fill_(1.0)
+    glorot_weight_zero_bias(model)
+    linear = model[0].weight  # Glorot bound sqrt(6 / 200) = 0.173
+    assert linear.abs().max() > 0.11  # PyTorch's default init is bounded by 0.1
+    assert linear.abs().max() <= math.sqrt(6 / 200)
+    assert model[3].parametrizations.weight.original.abs().max() > 0.11
+    assert torch.all(model[2].weight == 1) and torch.all(model[2].bias == 0)
+    assert torch.all(model[0].bias == 0) and torch.all(model[3].bias == 0)
+    # EEGNet calls it in __init__, also without BatchNorm affine parameters
+    EEGNet(n_chans=4, n_outputs=2, n_times=128, batch_norm_affine=False)
