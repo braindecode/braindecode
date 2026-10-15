@@ -470,6 +470,11 @@ Bug fixes
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
+
+- :class:`braindecode.models.Guetschel2026` places CPU-computed buffers on the
+  active device inside ``torch.device`` contexts on older supported PyTorch
+  versions (by `Anton Soloviev`_).
+
 - :class:`braindecode.models.SincShallowNet` now round-trips through
   ``save_pretrained``/``from_pretrained``: its ``window`` buffer viewed a larger
   storage, which safetensors refuses, so ``model.safetensors`` was never written
