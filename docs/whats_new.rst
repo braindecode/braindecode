@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- ``set_description(..., overwrite=True)`` on a windows dataset no longer deletes the overwritten key from the description of the dataset it was windowed from (the two share one :class:`pandas.Series`), which could make indexing the source dataset raise ``KeyError`` when the key was its target (:gh:`XXXX` by `Adam Mounir`_).
+
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
