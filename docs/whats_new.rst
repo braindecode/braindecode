@@ -471,6 +471,10 @@ Bug fixes
   supplied configuration so it can be saved and reused for other recordings
   (by `Anton Soloviev`_).
 
+- :func:`braindecode.augmentation.functional.frequency_shift` accepts scalar,
+  NumPy and CPU tensor shifts for CUDA inputs, preserving gradients to tensor
+  shifts on another device (by `Anton Soloviev`_).
+
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
