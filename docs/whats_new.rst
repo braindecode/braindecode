@@ -467,6 +467,10 @@ Requirements
 Bug fixes
 ==========
 
+- :meth:`braindecode.preprocessing.Preprocessor.deserialize` preserves the
+  supplied configuration so it can be saved and reused for other recordings
+  (by `Anton Soloviev`_).
+
 - :func:`braindecode.augmentation.functional.frequency_shift` accepts scalar,
   NumPy and CPU tensor shifts for CUDA inputs, preserving gradients to tensor
   shifts on another device (by `Anton Soloviev`_).
