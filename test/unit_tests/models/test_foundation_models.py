@@ -2908,3 +2908,8 @@ def test_cbramod_head_is_concrete_when_geometry_is_derived(tmp_path):
     # n_times alone (no channels) still reaches the tokenizer's divisibility check
     with pytest.raises(ValueError, match="divisible"):
         CBraMod(n_times=1001, n_outputs=2, n_layer=1, on_non_divisible="error")
+
+
+def test_luna_attn_drop_is_used():
+    model = LUNA(n_chans=4, n_outputs=2, n_times=256, attn_drop=0.3)
+    assert all(block.attn.attn_drop == 0.3 for block in model.blocks)
