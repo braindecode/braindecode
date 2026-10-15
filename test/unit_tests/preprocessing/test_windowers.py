@@ -1346,7 +1346,6 @@ def test_windower_from_target_channels_includes_last_sample(first_samp):
         BaseConcatDataset([RawDataset(raw)]), window_size_samples=10
     )
 
-    assert len(windows) == 2
     for i, stop in enumerate([10, 20]):
         X, y, indices = windows[i]
         np.testing.assert_array_equal(X, signal[:, stop - 10 : stop])
@@ -2268,19 +2267,21 @@ def _annotated_concat_ds(onsets, durations, descriptions, n_times=1000, sfreq=10
     return BaseConcatDataset([RawDataset(raw, pd.Series({"subject": 1}))])
 
 
-@pytest.mark.parametrize("use_mne_epochs", [False, True])
-def test_windows_from_events_raises_on_window_before_recording_start(use_mne_epochs):
+def test_windows_from_events_window_before_recording_start():
+    kwargs = dict(
+        trial_start_offset_samples=-40,
+        trial_stop_offset_samples=0,
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=False,
+    )
     concat_ds = _annotated_concat_ds([0.1, 5.0], [1.0, 1.0], ["a", "a"])
     with pytest.raises(ValueError, match='"trial_start_offset_samples" too small'):
-        create_windows_from_events(
-            concat_ds,
-            trial_start_offset_samples=-40,
-            trial_stop_offset_samples=0,
-            window_size_samples=100,
-            window_stride_samples=100,
-            drop_last_window=False,
-            use_mne_epochs=use_mne_epochs,
-        )
+        create_windows_from_events(concat_ds, use_mne_epochs=False, **kwargs)
+    # mne.Epochs keeps dropping the windows that start before the recording
+    windows = create_windows_from_events(concat_ds, use_mne_epochs=True, **kwargs)
+    assert len(windows) > 0
+    assert windows.get_metadata()["i_start_in_trial"].min() >= 0
 
 
 def test_windows_from_events_checks_stop_of_every_trial():

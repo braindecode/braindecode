@@ -884,14 +884,12 @@ def _create_windows_from_events(
         )
         i_trials = [good_event_indices[i_trial] for i_trial in i_trials]
 
-    # Window starts are relative to the recording start, or absolute samples
-    # (offset by first_samp) when the windows are built with mne.Epochs.
-    first_valid_start = ds.raw.first_samp if use_mne_epochs else 0
-    if len(starts) and np.min(starts) < first_valid_start:
+    # A window starting before the recording would be empty; mne.Epochs
+    # instead drops such windows (``NO_DATA`` in its drop log), as before.
+    if not use_mne_epochs and len(starts) and np.min(starts) < 0:
         raise ValueError(
             '"trial_start_offset_samples" too small. A window would start '
-            f"{first_valid_start - np.min(starts)} samples before the start of "
-            "the recording."
+            f"{-np.min(starts)} samples before the start of the recording."
         )
 
     if (on_overlapping_events != "ignore") and any(np.diff(starts) <= 0):
