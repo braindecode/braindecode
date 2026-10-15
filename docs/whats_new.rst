@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.modules.MLP` with ``normalize=True`` builds a :class:`torch.nn.LayerNorm` over the output features of each hidden layer instead of raising ``TypeError`` (:gh:`XXXX` by `Adam Mounir`_).
+- :class:`braindecode.modules.MLP` with ``normalize=True`` builds a :class:`torch.nn.LayerNorm` over the output features of each hidden layer instead of raising ``TypeError`` (:gh:`1423` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
