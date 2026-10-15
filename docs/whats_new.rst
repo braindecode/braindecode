@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.models.LUNA` applies its ``attn_drop`` argument to the attention of its transformer blocks instead of ignoring it (the default 0.0 is unchanged), and documents it (:gh:`XXXX` by `Adam Mounir`_).
+- :class:`braindecode.models.LUNA` applies its ``attn_drop`` argument to the attention of its transformer blocks instead of ignoring it (the default 0.0 is unchanged), and documents it (:gh:`1429` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
