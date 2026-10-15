@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.samplers.DistributedRecordingSampler` (and :class:`braindecode.samplers.DistributedRelativePositioningSampler`) no longer raise ``TypeError`` on the first sample with the default ``random_state=None`` or a ``RandomState``: torch's :class:`~torch.utils.data.distributed.DistributedSampler` gets ``random_state`` as its seed only when it is an int, and seed 0 otherwise, the same on every process (:gh:`XXXX` by `Adam Mounir`_).
+
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
