@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.BIOT` with ``hop_length`` larger than ``sfreq`` falls back to an integer hop of ``sfreq // 2`` and stores it in ``hop_length``, instead of passing a float to :func:`torch.stft` (which raised ``TypeError`` in the forward pass) while keeping the original value in its configuration (:gh:`XXXX` by `Adam Mounir`_).
+
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).

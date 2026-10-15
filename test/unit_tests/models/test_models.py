@@ -6443,3 +6443,11 @@ def _cz():
 def test_unsupported_geometry_raises_at_construction(name, kwargs, match):
     with pytest.raises(ValueError, match=match):
         all_models_dict[name](n_outputs=2, **kwargs)
+
+
+def test_biot_hop_length_larger_than_sfreq():
+    with pytest.warns(UserWarning, match="hop length is larger"):
+        model = BIOT(n_chans=2, n_outputs=2, n_times=1000, sfreq=200.0, hop_length=300)
+    assert model.hop_length == 100 and isinstance(model.hop_length, int)
+    assert model.encoder.hop_length == 100
+    assert model(torch.randn(2, 2, 1000)).shape == (2, 2)
