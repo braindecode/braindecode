@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.augmentation.SmoothTimeMask`, :class:`braindecode.augmentation.FrequencyShift`, the sensor rotations (:class:`braindecode.augmentation.SensorsRotation`, :class:`braindecode.augmentation.SensorsXRotation`, :class:`braindecode.augmentation.SensorsYRotation`, :class:`braindecode.augmentation.SensorsZRotation`) and :class:`braindecode.augmentation.FTSurrogate` run on Apple MPS, which has no float64: their parameters are drawn in single precision there and the spherical-spline matrices are computed on CPU in double precision; results on CPU and CUDA are unchanged (:gh:`XXXX` by `Adam Mounir`_).
+
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
