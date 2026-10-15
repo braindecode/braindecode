@@ -469,6 +469,10 @@ Bug fixes
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
+- :func:`braindecode.datasets.create_from_mne_epochs` no longer shifts targets
+  and window start indices when the input :class:`mne.Epochs` still contain
+  rejected epochs: bad epochs are now dropped on a copy before iterating, so
+  data and ``epochs.events`` stay aligned (:gh:`XXXX` by `Adam Mounir`_).
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.SincShallowNet` now round-trips through
   ``save_pretrained``/``from_pretrained``: its ``window`` buffer viewed a larger
