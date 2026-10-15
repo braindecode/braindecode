@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- :meth:`braindecode.models.base.EEGModuleMixin.get_output_shape` runs its probe forward pass in eval mode and restores each module's mode afterwards, so it no longer updates BatchNorm running statistics or draws dropout masks; models that call it in ``__init__`` (e.g. :class:`braindecode.models.EEGNet`, :class:`braindecode.models.EEGConformer`) start with untouched BatchNorm statistics (:gh:`XXXX` by `Adam Mounir`_).
+- :meth:`braindecode.models.base.EEGModuleMixin.get_output_shape` runs its probe forward pass in eval mode and restores each module's mode afterwards, so it no longer updates BatchNorm running statistics or draws dropout masks; models that call it in ``__init__`` (e.g. :class:`braindecode.models.EEGNet`, :class:`braindecode.models.EEGConformer`) start with untouched BatchNorm statistics (:gh:`1420` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
