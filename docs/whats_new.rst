@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- :func:`braindecode.training.predict_trials` (and ``predict_trials`` of :class:`braindecode.EEGClassifier` / :class:`braindecode.EEGRegressor` in cropped mode) returns one target per trial for multi-value window targets, such as several target channels with ``last_target_only=True``, instead of raising ``IndexError``; only targets with a time axis are treated as sequences. :meth:`braindecode.EEGRegressor.predict_trials` with ``cropped=False`` stacks the targets instead of concatenating them, so scalar targets no longer raise ``ValueError`` and multi-value targets keep one row per trial (:gh:`XXXX` by `Adam Mounir`_).
+- :func:`braindecode.training.predict_trials` (and ``predict_trials`` of :class:`braindecode.EEGClassifier` / :class:`braindecode.EEGRegressor` in cropped mode) returns one target per trial for multi-value window targets, such as several target channels with ``last_target_only=True``, instead of raising ``IndexError``; only targets with a time axis are treated as sequences. :meth:`braindecode.EEGRegressor.predict_trials` with ``cropped=False`` stacks the targets instead of concatenating them, so scalar targets no longer raise ``ValueError`` and multi-value targets keep one row per trial (:gh:`1427` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
