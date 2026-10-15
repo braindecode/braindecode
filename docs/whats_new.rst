@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :func:`braindecode.datautil.load_concat_dataset` reads a copied or moved dataset folder from the copy: the cached ``N-raw.pkl`` is only reused when the fif path it stores is the file next to it, otherwise the fif is read again and the cache re-created. It also skips entries of the folder that are not dataset subdirectories (e.g. ``.DS_Store``, a README) instead of raising ``ValueError`` (:gh:`XXXX` by `Adam Mounir`_).
+
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
