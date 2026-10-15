@@ -472,7 +472,7 @@ Bug fixes
 - :func:`braindecode.datasets.create_from_mne_epochs` no longer shifts targets
   and window start indices when the input :class:`mne.Epochs` still contain
   rejected epochs: bad epochs are now dropped on a copy before iterating, so
-  data and ``epochs.events`` stay aligned (:gh:`XXXX` by `Adam Mounir`_).
+  data and ``epochs.events`` stay aligned (:gh:`1411` by `Adam Mounir`_).
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.SincShallowNet` now round-trips through
   ``save_pretrained``/``from_pretrained``: its ``window`` buffer viewed a larger
