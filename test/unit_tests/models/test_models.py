@@ -6443,3 +6443,17 @@ def _cz():
 def test_unsupported_geometry_raises_at_construction(name, kwargs, match):
     with pytest.raises(ValueError, match=match):
         all_models_dict[name](n_outputs=2, **kwargs)
+
+
+@pytest.mark.parametrize("n_times", [256, 1024])
+def test_medformer_patches_over_time(n_times):
+    model = MEDFormer(n_chans=4, n_outputs=3, n_times=n_times, patch_len_list=[2, 4])
+    # one token per patch of samples, each kernel spanning all channels
+    tokens = model.enc_embedding(torch.randn(2, 4, n_times))
+    assert [t.shape[1] for t in tokens] == [n_times // 2 + 1, n_times // 4 + 1]
+    assert model.patch_num_list == [t.shape[1] for t in tokens]
+    assert [e.token_conv.kernel_size for e in model.enc_embedding.value_embeddings] == [
+        (4, 2),
+        (4, 4),
+    ]
+    assert model.eval()(torch.randn(2, 4, n_times)).shape == (2, 3)
