@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- :func:`braindecode.preprocessing.create_windows_from_events` checks the window bounds of every trial: it raises when a window would start before the recording (negative ``trial_start_offset_samples`` on an early trial gave empty windows) or when any trial, not only the last one, ends past the recording with ``trial_stop_offset_samples``; with per-event-type offsets, each trial is checked with the offset of its own event type, so valid inputs are no longer rejected because another type has a larger offset (:gh:`XXXX` by `Adam Mounir`_).
+- :func:`braindecode.preprocessing.create_windows_from_events` checks the window bounds of every trial: it raises when a window would start before the recording (negative ``trial_start_offset_samples`` on an early trial gave empty windows) or when any trial, not only the last one, ends past the recording with ``trial_stop_offset_samples``; with per-event-type offsets, each trial is checked with the offset of its own event type, so valid inputs are no longer rejected because another type has a larger offset (:gh:`1415` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
