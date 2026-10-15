@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.models.BIOT` with ``hop_length`` larger than ``sfreq`` falls back to an integer hop of ``sfreq // 2`` and stores it in ``hop_length``, instead of passing a float to :func:`torch.stft` (which raised ``TypeError`` in the forward pass) while keeping the original value in its configuration (:gh:`XXXX` by `Adam Mounir`_).
+- :class:`braindecode.models.BIOT` with ``hop_length`` larger than ``sfreq`` falls back to an integer hop of ``sfreq // 2`` and stores it in ``hop_length``, instead of passing a float to :func:`torch.stft` (which raised ``TypeError`` in the forward pass) while keeping the original value in its configuration (:gh:`1428` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
