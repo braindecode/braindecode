@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.ATCNet` with ``concat=True`` concatenates the features of all sliding windows as documented, instead of stopping after the first window and failing with a shape error in the classifier; the default ``concat=False`` output is unchanged (:gh:`XXXX` by `Adam Mounir`_).
+
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
