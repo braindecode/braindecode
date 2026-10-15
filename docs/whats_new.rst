@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.modules.CrissCrossTransformerEncoderLayer` no longer attends across the samples of a batch with its default ``batch_first=False`` (its inner attentions always receive batch-first tensors, which the layer builds itself), and ``norm_first=False`` now gives a post-norm layer, as in :class:`torch.nn.TransformerEncoderLayer`, instead of being ignored. :class:`braindecode.models.CBraMod` (``batch_first=True``, ``norm_first=True``) is unchanged (:gh:`XXXX` by `Adam Mounir`_).
+
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).

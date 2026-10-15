@@ -2061,3 +2061,35 @@ def test_ema_codebook_quantize_preserves_autocast_distances(dtype):
         expected = distances.argmin(dim=-1)
         assert expected.item() == 1
         assert torch.equal(codebook.quantize(x), expected)
+
+
+@pytest.mark.parametrize("batch_first", [False, True])
+def test_crisscross_layer_keeps_samples_independent(batch_first):
+    from braindecode.modules.attention import CrissCrossTransformerEncoderLayer
+
+    torch.manual_seed(0)
+    layer = CrissCrossTransformerEncoderLayer(
+        d_model=8, nhead=4, dim_feedforward=16, batch_first=batch_first
+    ).eval()
+    x = torch.randn(3, 4, 5, 8)  # (batch, channels, n_patches, patch_size)
+    x_perturbed = x.clone()
+    x_perturbed[1] += torch.randn(4, 5, 8)
+    out, out_perturbed = layer(x), layer(x_perturbed)
+    torch.testing.assert_close(out[0], out_perturbed[0])
+    torch.testing.assert_close(out[2], out_perturbed[2])
+
+
+def test_crisscross_layer_norm_first():
+    from braindecode.modules.attention import CrissCrossTransformerEncoderLayer
+
+    torch.manual_seed(0)
+    pre = CrissCrossTransformerEncoderLayer(8, 4, 16, norm_first=True).eval()
+    post = CrissCrossTransformerEncoderLayer(8, 4, 16, norm_first=False).eval()
+    post.load_state_dict(pre.state_dict())
+    x = torch.randn(2, 4, 5, 8)
+    assert not torch.allclose(pre(x), post(x))
+    # post-norm: the output is the output of the last LayerNorm
+    out = post(x)
+    torch.testing.assert_close(
+        out.mean(-1), torch.zeros(out.shape[:-1]), atol=1e-5, rtol=0
+    )
