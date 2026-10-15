@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.models.MEDFormer` patches its input over time, as in the original model: the port kept the original's permute from ``(batch, n_times, n_chans)`` although braindecode inputs are ``(batch, n_chans, n_times)``, and swapped ``n_chans`` and ``n_times`` in the patch embedding, so its token convolutions slid over the channels with kernels spanning the whole window, and the number of tokens did not depend on ``n_times``. The token convolution and channel-embedding shapes change, so MEDFormer weights saved with an earlier version do not load (:gh:`XXXX` by `Adam Mounir`_).
+- :class:`braindecode.models.MEDFormer` patches its input over time, as in the original model: the port kept the original's permute from ``(batch, n_times, n_chans)`` although braindecode inputs are ``(batch, n_chans, n_times)``, and swapped ``n_chans`` and ``n_times`` in the patch embedding, so its token convolutions slid over the channels with kernels spanning the whole window, and the number of tokens did not depend on ``n_times``. The token convolution and channel-embedding shapes change, so MEDFormer weights saved with an earlier version do not load (:gh:`1431` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
