@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- The docstring of :meth:`braindecode.modules.MultiHeadAttention.forward` stated the boolean mask the wrong way round: as in :func:`torch.nn.functional.scaled_dot_product_attention`, which receives the mask unchanged, ``True`` marks a position that takes part in attention and ``False`` one that is ignored (:gh:`XXXX` by `Adam Mounir`_).
+- The docstring of :meth:`braindecode.modules.MultiHeadAttention.forward` stated the boolean mask the wrong way round: as in :func:`torch.nn.functional.scaled_dot_product_attention`, which receives the mask unchanged, ``True`` marks a position that takes part in attention and ``False`` one that is ignored (:gh:`1425` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
