@@ -2061,3 +2061,18 @@ def test_ema_codebook_quantize_preserves_autocast_distances(dtype):
         expected = distances.argmin(dim=-1)
         assert expected.item() == 1
         assert torch.equal(codebook.quantize(x), expected)
+
+
+def test_multihead_attention_boolean_mask_false_ignores_key():
+    from braindecode.modules.attention import MultiHeadAttention
+
+    torch.manual_seed(0)
+    attention = MultiHeadAttention(8, 2, 0.0).eval()
+    x = torch.randn(1, 4, 8)
+    x_changed = x.clone()
+    x_changed[0, 3] += torch.randn(8)
+    mask = torch.ones(4, 4, dtype=torch.bool)
+    mask[:3, 3] = False  # rows 0-2 ignore key 3, as documented
+    torch.testing.assert_close(
+        attention(x, mask)[0, :3], attention(x_changed, mask)[0, :3]
+    )

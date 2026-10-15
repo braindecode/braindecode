@@ -1004,10 +1004,13 @@ class MultiHeadAttention(nn.Module):
         x : Tensor
             Input tensor of shape ``(batch, seq, emb_size)``.
         mask : Tensor, optional
-            Attention mask following PyTorch SDPA convention: for boolean
-            masks ``True`` means **ignore** that position; for float
-            masks the values are **added** to attention scores before
-            softmax.
+            Attention mask following the convention of
+            :func:`torch.nn.functional.scaled_dot_product_attention`: for
+            boolean masks ``True`` means the position **takes part** in
+            attention and ``False`` that it is ignored (the opposite of the
+            ``key_padding_mask`` of :class:`torch.nn.MultiheadAttention`);
+            for float masks the values are **added** to the attention scores
+            before softmax.
         """
         queries = self.rearrange_stack(self.queries(x))
         keys = self.rearrange_stack(self.keys(x))
