@@ -2061,3 +2061,11 @@ def test_ema_codebook_quantize_preserves_autocast_distances(dtype):
         expected = distances.argmin(dim=-1)
         assert expected.item() == 1
         assert torch.equal(codebook.quantize(x), expected)
+
+
+def test_mlp_normalize():
+    model = MLP(in_features=8, hidden_features=(16, 12), out_features=4, normalize=True)
+    norms = [m for m in model if isinstance(m, nn.LayerNorm)]
+    # one LayerNorm after each hidden layer, none after the output layer
+    assert [n.normalized_shape for n in norms] == [(16,), (12,)]
+    assert model(torch.randn(2, 5, 8)).shape == (2, 5, 4)

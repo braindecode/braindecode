@@ -313,7 +313,10 @@ class MLP(nn.Sequential):
         drop=0.0,
         normalize=False,
     ):
-        normalization = nn.LayerNorm if normalize else lambda: None
+        def normalization(n_features):
+            # LayerNorm over the output features of the preceding Linear
+            return nn.LayerNorm(n_features) if normalize else None
+
         self.in_features = in_features
         self.out_features = out_features or self.in_features
         if hidden_features:
@@ -332,7 +335,7 @@ class MLP(nn.Sequential):
                 [
                     nn.Linear(in_features=before, out_features=after),
                     self.activation(),
-                    normalization(),
+                    normalization(after),
                 ]
             )
 
