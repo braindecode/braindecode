@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- EEGPrep preprocessors that remove EEG channels (:class:`braindecode.preprocessing.RemoveFlatChannels`, :class:`braindecode.preprocessing.RemoveBadChannels`, :class:`braindecode.preprocessing.RemoveBadChannelsNoLocs`) no longer raise ``ValueError`` when the recording also has non-EEG channels: the original order is restored for the channels that remain, and the input raw is no longer left without its non-EEG channels if the operation fails (:gh:`XXXX` by `Adam Mounir`_).
+- EEGPrep preprocessors that remove EEG channels (:class:`braindecode.preprocessing.RemoveFlatChannels`, :class:`braindecode.preprocessing.RemoveBadChannels`, :class:`braindecode.preprocessing.RemoveBadChannelsNoLocs`) no longer raise ``ValueError`` when the recording also has non-EEG channels: the original order is restored for the channels that remain, and the input raw is no longer left without its non-EEG channels if the operation fails (:gh:`1416` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
