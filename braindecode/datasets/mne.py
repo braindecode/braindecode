@@ -160,8 +160,10 @@ def create_from_mne_epochs(
     list_of_windows_ds = []
     for i, epochs in enumerate(list_of_epochs):
         # drop rejected epochs first (on a copy) so that iterating over the
-        # epochs stays aligned with ``epochs.events``
-        epochs = epochs.copy().drop_bad()
+        # epochs stays aligned with ``epochs.events``; preloaded epochs have
+        # already dropped them, so skip copying their data
+        if not epochs.preload:
+            epochs = epochs.copy().drop_bad()
         event_descriptions = epochs.events[:, 2]
         original_trial_starts = epochs.events[:, 0]
         stop = len(epochs.times) - window_size_samples
