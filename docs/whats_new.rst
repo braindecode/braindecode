@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.models.ATCNet` with ``concat=True`` concatenates the features of all sliding windows as documented, instead of stopping after the first window and failing with a shape error in the classifier; the default ``concat=False`` output is unchanged (:gh:`XXXX` by `Adam Mounir`_).
+- :class:`braindecode.models.ATCNet` with ``concat=True`` concatenates the features of all sliding windows as documented, instead of stopping after the first window and failing with a shape error in the classifier; the default ``concat=False`` output is unchanged (:gh:`1421` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
