@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- :func:`braindecode.functional.glorot_weight_zero_bias` applies the Glorot (Xavier) uniform initialization its docstring describes again, also to max-norm parametrized layers (it had been reduced to setting BatchNorm weights to one and biases to zero), and skips ``None`` weights, so :class:`braindecode.models.EEGNet` with ``batch_norm_affine=False`` no longer raises ``AttributeError``. This changes the initial weights of :class:`braindecode.models.EEGNet` and :class:`braindecode.models.EEGInceptionERP`, the two models that call it (:gh:`XXXX` by `Adam Mounir`_).
+- :func:`braindecode.functional.glorot_weight_zero_bias` applies the Glorot (Xavier) uniform initialization its docstring describes again, also to max-norm parametrized layers (it had been reduced to setting BatchNorm weights to one and biases to zero), and skips ``None`` weights, so :class:`braindecode.models.EEGNet` with ``batch_norm_affine=False`` no longer raises ``AttributeError``. This changes the initial weights of :class:`braindecode.models.EEGNet` and :class:`braindecode.models.EEGInceptionERP`, the two models that call it (:gh:`1426` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
