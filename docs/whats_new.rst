@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.models.CTNet` applies ``final_drop_prob`` (its dropout layer was built but the forward pass flattened the features without it), and its positional encoding covers the actual sequence length, so ``pool_size_2`` smaller than ``pool_size_1`` no longer raises a size mismatch; parameter shapes and eval-mode outputs of working configurations are unchanged (:gh:`XXXX` by `Adam Mounir`_).
+- :class:`braindecode.models.CTNet` applies ``final_drop_prob`` (its dropout layer was built but the forward pass flattened the features without it), and its positional encoding covers the actual sequence length, so ``pool_size_2`` smaller than ``pool_size_1`` no longer raises a size mismatch; parameter shapes and eval-mode outputs of working configurations are unchanged (:gh:`1422` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
