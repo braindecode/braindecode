@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.models.Labram` warns when, in the Neural Tokenizer mode (the default), the embedding dimension set by its temporal convolution differs from the given ``embed_dim``, which it used to replace silently (e.g. ``patch_size=100`` gives 104 instead of the default 200), and documents this (:gh:`XXXX` by `Adam Mounir`_).
+- :class:`braindecode.models.Labram` warns when, in the Neural Tokenizer mode (the default), the embedding dimension set by its temporal convolution differs from the given ``embed_dim``, which it used to replace silently (e.g. ``patch_size=100`` gives 104 instead of the default 200), and documents this (:gh:`1430` by `Adam Mounir`_).
 
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
