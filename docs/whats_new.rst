@@ -28,7 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
-- :class:`braindecode.models.ZUNA` accepts windows longer than ``max_seqlen`` patches (the release's 8192 samples): the rotary table is extended to the window instead of raising; shorter windows are unchanged (by `Bruno Aristimunha`_).
+- :class:`braindecode.models.ZUNA` accepts windows longer than ``max_seqlen`` patches (the release's 8192 samples): the rotary table is extended to the window instead of raising; shorter windows are unchanged (:gh:`1433` by `Bruno Aristimunha`_).
 - The DANCE event-detection tutorial evaluates the published checkpoint and explains that its reported subject-3 score was used for epoch selection, not independent testing (:gh:`1406` by `Bruno Aristimunha`_).
 
 - :class:`braindecode.models.NeuroRVQ` takes an input at another integer sampling rate and resamples it to the modality's rate (EEG 200 Hz) inside the model with :class:`torchaudio.transforms.Resample`, with a warning, instead of raising; and ``on_missing="drop"`` leaves out input channels with no pretrained slot (default ``"error"``). At 200 Hz with known channels the model and its output are unchanged. :class:`braindecode.models.EEGCLIP` keeps its BatchNorm layers on running statistics for a single-example batch in train mode, as the other BatchNorm models do (:gh:`1402` by `Bruno Aristimunha`_).
@@ -183,7 +183,7 @@ Enhancements
   (:gh:`1178` by `Julien Gadonneix`_).
 - :class:`braindecode.models.MAPA` loads the released ``mapa_vits384`` with
   ``MAPA.from_pretrained("braindecode/mapa-pretrained", ...)``; the key mapping
-  for the original checkpoint is removed (by `Bruno Aristimunha`_).
+  for the original checkpoint is removed (:gh:`1433` by `Bruno Aristimunha`_).
 - Add ``test/unit_tests/models/test_pretrained_compat.py``: every model with released
   weights is built on a grid of input geometries (canonical montage, permuted order,
   a 64-channel montage outside the 10-20 vocabulary, coordinates-only channels, names
@@ -583,20 +583,20 @@ Bug fixes
   already correct. (by `Bruno Aristimunha`_)
 - Fix :meth:`braindecode.models.BrainOmni.reset_head` leaving the new head in
   training mode after ``model.eval()``, so its dropout made inference
-  stochastic; the head now follows the model's mode (by `Bruno Aristimunha`_).
+  stochastic; the head now follows the model's mode (:gh:`1433` by `Bruno Aristimunha`_).
 - Fix :class:`braindecode.models.BrainTokenizer` reconstruction when
   ``window_length`` is not a multiple of ``prod(ratios)``: each decoded window
   is now cropped to ``window_length`` before the windows are joined, so later
   windows keep their position. Configurations with a divisible window, such as
-  the released one, are unchanged (by `Bruno Aristimunha`_).
+  the released one, are unchanged (:gh:`1433` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.BrainTokenizer` and
   :class:`braindecode.models.BrainOmni` now raise ``ValueError`` for
   ``n_filters < 2`` and for attention dimensions that do not split across
   heads, instead of a reshape error or an ``assert``; the tokenizer's sampling
-  rate warning names ``BrainTokenizer`` (by `Bruno Aristimunha`_).
+  rate warning names ``BrainTokenizer`` (:gh:`1433` by `Bruno Aristimunha`_).
 - :attr:`braindecode.models.MAPA.input_shape` now returns the spectrogram shape
   ``(1, n_chans, 20, n_times)`` with ``normalization="session"``, so
-  ``get_output_shape()`` works in that mode (by `Bruno Aristimunha`_).
+  ``get_output_shape()`` works in that mode (:gh:`1433` by `Bruno Aristimunha`_).
 - Fix :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` rejecting a
   caller's ``chs_info`` (``n_chans=… different from chs_info``) and ``n_times``/``sfreq``
   (``n_times different from input_window_seconds * sfreq``): the Hub config filled the
@@ -1617,12 +1617,12 @@ Enhancements
   consistent ``{"features": Tensor, "cls_token": Tensor | None}`` dict across
   all models. Legacy parameters (``return_encoder_output``, ``return_feature``,
   ``return_all_tokens``, etc.) continue to work unchanged
-  (by `Bruno Aristimunha`_).
+  (:gh:`1433` by `Bruno Aristimunha`_).
 - Add :meth:`~braindecode.models.base.EEGModuleMixin.reset_head` to all 7
   foundation models for replacing the classification head with a new number of
   outputs. :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` now
   automatically calls ``reset_head`` when the user passes an ``n_outputs`` that
-  differs from the saved config (by `Bruno Aristimunha`_).
+  differs from the saved config (:gh:`1433` by `Bruno Aristimunha`_).
 - Enable lazy loading from Zarr when using
   :meth:`~braindecode.datasets.BaseConcatDataset.pull_from_hub` or
   ``load_from_zarr`` with ``preload=False``. Data is decompressed lazily
