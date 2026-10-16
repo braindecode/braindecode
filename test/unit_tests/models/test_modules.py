@@ -1836,6 +1836,22 @@ def test_patch_count_and_pad_or_crop(n_times, mode, step, expected):
     assert torch.equal(y[..., :n], x[..., :n]) and not y[..., n:].any()
 
 
+def test_pad_to_min_patches():
+    """min_patches zero-pads a window short of that many patches, on the right
+    or (center) with half the missing patches before it."""
+    from braindecode.modules.blocks import _pad_or_crop_to_patches
+
+    x = torch.randn(1, 2, 500)  # 3 patches of 400 every 50, tiled
+    assert torch.equal(_pad_or_crop_to_patches(x, 400, "pad", 50, min_patches=3), x)
+    y = _pad_or_crop_to_patches(x, 400, "pad", 50, min_patches=30)
+    assert y.shape[-1] == 400 + 29 * 50
+    assert torch.equal(y[..., :500], x) and not y[..., 500:].any()
+    y = _pad_or_crop_to_patches(x, 400, "pad", 50, min_patches=30, center=True)
+    assert y.shape[-1] == 400 + 29 * 50  # 27 missing: 13 before, 14 after
+    assert torch.equal(y[..., 650:1150], x) and not y[..., :650].any()
+    assert not y[..., 1150:].any()
+
+
 def test_gated_linear_unit_geglu_semantics():
     """GatedLinearUnit halves the last dim and gates with the given activation."""
     from braindecode.modules import GatedLinearUnit

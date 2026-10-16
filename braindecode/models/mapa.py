@@ -17,20 +17,17 @@ Braindecode Adaptation: Julien Gadonneix
 
 from __future__ import annotations
 
-import math
 import re
 from numbers import Integral
-from warnings import warn
 
 import torch
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
-from torchaudio.transforms import Resample
 
 from braindecode.functional import rescale_parameter, rotate_pairs, spectral_input
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import dkt_region_slots
+from braindecode.models.util import _in_model_resample, dkt_region_slots
 from braindecode.modules import FeedForwardBlock
 
 # Blocks whose output carries a deep-supervision norm, following V-JEPA 2.1.
@@ -272,22 +269,9 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                     f"MAPA with normalization={normalization!r} needs sfreq="
                     f"{expected_sfreq} Hz, got {self.sfreq} Hz."
                 )
-            if self.sfreq != round(self.sfreq):
-                raise ValueError(
-                    f"MAPA resamples integer rates only, got {self.sfreq} Hz."
-                )
-            warn(
-                f"MAPA was trained at 2048 Hz; the {self.sfreq:g} Hz input is "
-                "resampled inside the model.",
-                UserWarning,
+            self.resample, n_times_model = _in_model_resample(
+                "MAPA", self.sfreq, 2048, self.n_times
             )
-            self.resample = Resample(int(self.sfreq), 2048)
-            # Derived from the rates: kept out of the state dict, so pretrained
-            # weights load into a resampling model unchanged.
-            self.resample.register_buffer(
-                "kernel", self.resample.kernel, persistent=False
-            )
-            n_times_model = math.ceil(self.n_times * 2048 / self.sfreq)
 
         self.d_model = d_model
         self.mlp_ratio = mlp_ratio

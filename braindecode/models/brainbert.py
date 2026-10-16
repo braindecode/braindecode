@@ -8,7 +8,7 @@ the STFT front-end moved inside the model. See :class:`BrainBERT`.
 
 from __future__ import annotations
 
-from warnings import warn
+import warnings
 
 import torch
 import torch.nn as nn
@@ -18,7 +18,11 @@ from einops.layers.torch import Rearrange, Reduce
 from braindecode.functional import sinusoidal_positional_encoding, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
-from braindecode.modules.blocks import _check_on_non_divisible
+from braindecode.modules.blocks import (
+    _check_on_non_divisible,
+    _pad_or_crop_to_patches,
+    _patch_count,
+)
 
 
 class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
@@ -128,10 +132,11 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
     on_non_divisible : {"pad", "crop", "error"}, optional
         A window too short to give the ``pool_n_frames`` frames the pooling
         needs (``n_times < 1401`` with the defaults). ``"pad"`` (default)
-        zero-pads it at both ends to that minimum, with a warning at
-        construction, so the pooled frames stay centred on the window;
-        ``"crop"`` and ``"error"`` raise. A long enough window gives the same
-        output under all three.
+        adds the missing STFT frames as zeros, half before and half after the
+        window, with a warning at construction: the ``stft_clip`` frames at
+        each end are trimmed and the centre ones pooled, so the signal stays
+        in the pooled frames. ``"crop"`` and ``"error"`` raise. A long enough
+        window gives the same output under all three.
 
     References
     ----------
@@ -188,7 +193,6 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
                 "Pass None to average every frame instead."
             )
         _check_on_non_divisible(on_non_divisible)
-        self.on_non_divisible = on_non_divisible
         self.pool_n_frames = pool_n_frames
         self.min_frames = 1 if pool_n_frames is None else pool_n_frames
         warn_if_sfreq_differs("BrainBERT", self._sfreq, 2048)
@@ -199,18 +203,21 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             idx_freq_cutoff=idx_freq_cutoff,
             clip=stft_clip,
             zscore_before_clip=stft_zscore_before_clip,
+            min_frames=self.min_frames if on_non_divisible == "pad" else 0,
         )
         n_frames = self.spectrogram.n_frames(self.n_times)
-        self.min_n_times = self.spectrogram.min_n_times(self.min_frames)
         if n_frames < self.min_frames:
+            min_n_times = self.spectrogram.min_n_times(self.min_frames)
             message = (
                 f"n_times={self.n_times} gives {n_frames} STFT frames; the pooling "
-                f"needs {self.min_frames}, i.e. n_times >= {self.min_n_times} with "
-                "these STFT settings."
+                f"needs {self.min_frames}, i.e. n_times >= {min_n_times} with "
+                "these STFT settings"
             )
             if on_non_divisible != "pad":
-                raise ValueError(message)
-            warn(message + " Input will be zero-padded at both ends.", UserWarning)
+                raise ValueError(message + ".")
+            warnings.warn(
+                message + ": the input will be padded.", UserWarning, stacklevel=2
+            )
             n_frames = self.min_frames
 
         # The re-hosted Hub checkpoint already uses this port's names. The
@@ -291,11 +298,6 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         if x.shape[1] != self.n_chans:
             raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}.")
 
-        # 0. a window too short for the pooling: centred zero-padding.
-        deficit = self.min_n_times - x.shape[-1]
-        if deficit > 0 and self.on_non_divisible == "pad":
-            x = F.pad(x, (deficit // 2, deficit - deficit // 2))
-
         # 1. spectrogram front-end.
         spec = self.spectrogram(x)  # (batch, n_chans, n_frames, idx_freq_cutoff)
         n_frames = spec.shape[2]
@@ -351,6 +353,10 @@ class _STFTSpectrogram(nn.Module):
         Number of boundary frames trimmed from each end.
     zscore_before_clip : bool
         Whether the per-bin z-score over time precedes the trimming.
+    min_frames : int
+        A signal giving fewer output frames gets the missing STFT frames as
+        zeros, half before and half after it. ``0`` (default): scipy's framing
+        only.
     """
 
     def __init__(
@@ -360,6 +366,7 @@ class _STFTSpectrogram(nn.Module):
         idx_freq_cutoff: int = 40,
         clip: int = 10,
         zscore_before_clip: bool = True,
+        min_frames: int = 0,
     ):
         super().__init__()
         if not 0 <= noverlap < nperseg:
@@ -377,6 +384,7 @@ class _STFTSpectrogram(nn.Module):
         self.idx_freq_cutoff = idx_freq_cutoff
         self.clip = clip
         self.zscore_before_clip = zscore_before_clip
+        self.min_frames = min_frames
         # "zscore" as upstream; pipelines that apply their own statistics (the
         # Neuroprobe global z-score recipes) set it to "none" on the instance.
         self.normalizing = "zscore"
@@ -387,15 +395,11 @@ class _STFTSpectrogram(nn.Module):
             "window", torch.hann_window(nperseg, periodic=True), persistent=False
         )
 
-    def _padded_length(self, n_times: int) -> int:
-        """Signal length after scipy's ``boundary="zeros"`` and ``padded=True``."""
-        length = n_times + 2 * self.boundary_pad
-        return length + (-(length - self.nperseg)) % self.step
-
     def n_frames(self, n_times: int) -> int:
-        """Number of output frames for a signal of ``n_times`` samples."""
-        n_seg = (self._padded_length(n_times) - self.nperseg) // self.step + 1
-        return n_seg - 2 * self.clip
+        """Number of frames scipy's framing gives ``n_times`` samples: segments of
+        ``nperseg`` every ``step`` (the last one zero-padded), minus the clip."""
+        length = n_times + 2 * self.boundary_pad
+        return _patch_count(length, self.nperseg, "pad", self.step) - 2 * self.clip
 
     def min_n_times(self, n_frames: int) -> int:
         """Shortest signal that yields at least ``n_frames`` output frames."""
@@ -404,15 +408,20 @@ class _STFTSpectrogram(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """``(batch, n_chans, n_times)`` -> ``(batch, n_chans, n_frames, cutoff)``."""
-        # scipy boundary="zeros": half a window of zeros on each end, then
-        # padded=True: extend so an integer number of segments fits.
         if not x.is_floating_point():
             raise TypeError(
                 f"BrainBERT expects a floating-point signal, got {x.dtype}."
             )
-        n_times = x.shape[-1]
-        right_pad = self._padded_length(n_times) - n_times - self.boundary_pad
-        xp = F.pad(x, (self.boundary_pad, right_pad))  # (batch, n_chans, padded)
+        # scipy boundary="zeros" (half a window of zeros on each end), then
+        # padded=True (right zero-pad so the segments tile the signal). A signal
+        # short of min_frames gets the missing segments as zeros, half before
+        # it: the clip frames at each end are trimmed, so a right pad alone
+        # would leave it outside the frames that are kept.
+        xp = F.pad(x, (self.boundary_pad, self.boundary_pad))
+        min_segments = self.min_frames + 2 * self.clip if self.min_frames else 1
+        xp = _pad_or_crop_to_patches(
+            xp, self.nperseg, "pad", self.step, min_segments, center=True
+        )
         frames = xp.unfold(-1, self.nperseg, self.step)  # (b, c, n_frames, nperseg)
         frames = spectral_input(frames)
         win = self.window.to(frames)

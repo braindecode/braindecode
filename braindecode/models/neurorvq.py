@@ -14,11 +14,11 @@ from typing import Dict, Optional, Union
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
-from torchaudio.transforms import Resample
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.labram import _Attention
 from braindecode.models.signal_jepa import _GroupNorm
+from braindecode.models.util import _in_model_resample
 from braindecode.modules import MLP, DropPath, PatchTokenizer
 from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
 
@@ -534,23 +534,9 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         self.resample: nn.Module = nn.Identity()
         self._n_times_model = self.n_times
         if in_sfreq is not None and in_sfreq != preset["sfreq"]:
-            if in_sfreq != round(in_sfreq):
-                raise ValueError(
-                    f"NeuroRVQ resamples integer rates only, got {in_sfreq}."
-                )
-            warnings.warn(
-                f"NeuroRVQ-{modality.upper()} was trained at {preset['sfreq']} Hz; the "
-                f"{in_sfreq:g} Hz input is resampled inside the model.",
-                UserWarning,
+            self.resample, self._n_times_model = _in_model_resample(
+                f"NeuroRVQ-{modality.upper()}", in_sfreq, preset["sfreq"], self.n_times
             )
-            self.resample = Resample(int(in_sfreq), preset["sfreq"])
-            # Derived from the rates: kept out of the state dict, so pretrained
-            # (200 Hz) weights load into a resampling model unchanged.
-            self.resample.register_buffer(
-                "kernel", self.resample.kernel, persistent=False
-            )
-            # torchaudio's output length.
-            self._n_times_model = math.ceil(self.n_times * preset["sfreq"] / in_sfreq)
         # ceil for "pad", floor for "crop", exact for "error" (raises otherwise).
         num_patches = _patch_count(self._n_times_model, patch_size, on_non_divisible)
         if num_patches > max_patches:
