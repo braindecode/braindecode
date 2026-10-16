@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- The docstring of :meth:`braindecode.modules.MultiHeadAttention.forward` stated the boolean mask the wrong way round: as in :func:`torch.nn.functional.scaled_dot_product_attention`, which receives the mask unchanged, ``True`` marks a position that takes part in attention and ``False`` one that is ignored (:gh:`1425` by `Adam Mounir`_).
+
 - :class:`braindecode.modules.CrissCrossTransformerEncoderLayer` no longer attends across the samples of a batch with its default ``batch_first=False`` (its inner attentions always receive batch-first tensors, which the layer builds itself), and ``norm_first=False`` now gives a post-norm layer, as in :class:`torch.nn.TransformerEncoderLayer`, instead of being ignored. :class:`braindecode.models.CBraMod` (``batch_first=True``, ``norm_first=True``) is unchanged (:gh:`1424` by `Adam Mounir`_).
 
 - :class:`braindecode.modules.MLP` with ``normalize=True`` builds a :class:`torch.nn.LayerNorm` over the output features of each hidden layer instead of raising ``TypeError`` (:gh:`1423` by `Adam Mounir`_).
