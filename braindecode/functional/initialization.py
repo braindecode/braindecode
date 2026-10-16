@@ -2,14 +2,16 @@ import math
 
 import torch
 from torch import nn
-from torch.nn.utils import parametrize
 
 
 def glorot_weight_zero_bias(model):
-    """Initialize parameters of all modules by initializing weights with.
+    """Set the weights of BatchNorm layers to one and all biases to zero.
 
-    glorot uniform/xavier initialization, and setting biases to zero. Weights from
-    batch norm layers are set to 1.
+    Despite its name, this function does not apply the Glorot (Xavier)
+    initialization: other weights keep the initialization of their layer
+    (PyTorch's default, or Xavier uniform for the max-norm constrained layers
+    such as :class:`braindecode.modules.Conv2dWithConstraint`). The name is
+    kept for backward compatibility.
 
     Parameters
     ----------
@@ -17,17 +19,9 @@ def glorot_weight_zero_bias(model):
     """
     for module in model.modules():
         # ``weight``/``bias`` can be None (e.g. BatchNorm with affine=False)
-        # or, on a parametrized module's ``parametrizations``, not a tensor
         weight = getattr(module, "weight", None)
-        if isinstance(weight, torch.Tensor):
-            if "BatchNorm" in module.__class__.__name__:
-                nn.init.constant_(weight, 1)
-            elif weight.dim() >= 2:
-                if parametrize.is_parametrized(module, "weight"):
-                    # e.g. max-norm constrained layers: initialize the
-                    # unconstrained tensor the parametrization reads
-                    weight = module.parametrizations.weight.original
-                nn.init.xavier_uniform_(weight, gain=1)
+        if isinstance(weight, torch.Tensor) and "BatchNorm" in type(module).__name__:
+            nn.init.constant_(weight, 1)
         bias = getattr(module, "bias", None)
         if isinstance(bias, torch.Tensor):
             nn.init.constant_(bias, 0)
