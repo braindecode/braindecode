@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.augmentation.SmoothTimeMask`, :class:`braindecode.augmentation.FrequencyShift`, the sensor rotations (:class:`braindecode.augmentation.SensorsRotation`, :class:`braindecode.augmentation.SensorsXRotation`, :class:`braindecode.augmentation.SensorsYRotation`, :class:`braindecode.augmentation.SensorsZRotation`) and :class:`braindecode.augmentation.FTSurrogate` run on Apple MPS, which has no float64: their parameters are drawn in single precision there and the spherical-spline matrices are computed on CPU in double precision; results on CPU and CUDA are unchanged (:gh:`1419` by `Adam Mounir`_).
+
 - :class:`braindecode.augmentation.Compose` can be called without a target, like any other :class:`braindecode.augmentation.Transform`, and then returns only ``X``: ``Compose(...)(X, None)`` used to unpack the batch along its first axis (returning ``(X[0], X[1])`` for a batch of two) and ``Compose(...)(X)`` raised ``TypeError`` (:gh:`1418` by `Adam Mounir`_).
 
 - :class:`braindecode.samplers.DistributedRecordingSampler` (and :class:`braindecode.samplers.DistributedRelativePositioningSampler`) no longer raise ``TypeError`` on the first sample with the default ``random_state=None`` or a ``RandomState``: torch's :class:`~torch.utils.data.distributed.DistributedSampler` gets ``random_state`` as its seed only when it is an int, and seed 0 otherwise, the same on every process (:gh:`1417` by `Adam Mounir`_).
