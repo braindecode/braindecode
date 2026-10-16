@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.modules.CrissCrossTransformerEncoderLayer` no longer attends across the samples of a batch with its default ``batch_first=False`` (its inner attentions always receive batch-first tensors, which the layer builds itself), and ``norm_first=False`` now gives a post-norm layer, as in :class:`torch.nn.TransformerEncoderLayer`, instead of being ignored. :class:`braindecode.models.CBraMod` (``batch_first=True``, ``norm_first=True``) is unchanged (:gh:`1424` by `Adam Mounir`_).
+
 - :class:`braindecode.modules.MLP` with ``normalize=True`` builds a :class:`torch.nn.LayerNorm` over the output features of each hidden layer instead of raising ``TypeError`` (:gh:`1423` by `Adam Mounir`_).
 
 - :class:`braindecode.models.CTNet` applies ``final_drop_prob`` (its dropout layer was built but the forward pass flattened the features without it), and its positional encoding covers the actual sequence length, so ``pool_size_2`` smaller than ``pool_size_1`` no longer raises a size mismatch; parameter shapes and eval-mode outputs of working configurations are unchanged (:gh:`1422` by `Adam Mounir`_).
