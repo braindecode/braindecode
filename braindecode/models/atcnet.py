@@ -444,8 +444,10 @@ class ATCNet(EEGModuleMixin, nn.Module):
         # ----- Sliding window -----
         sw_concat: list[torch.Tensor] = []  # to store sliding window outputs
         # for w in range(self.n_windows):
-        for idx, (attention, tcn_module, final_layer) in enumerate(
-            zip(self.attention_blocks, self.temporal_conv_nets, self.final_layer)
+        # (final_layer is not zipped in: with concat=True it holds a single
+        # layer, which would stop the loop after the first window)
+        for idx, (attention, tcn_module) in enumerate(
+            zip(self.attention_blocks, self.temporal_conv_nets)
         ):
             conv_feat_w = conv_feat[..., idx : idx + self.Tw]
             # Dimension: (batch_size, F2, Tw)
@@ -458,13 +460,14 @@ class ATCNet(EEGModuleMixin, nn.Module):
             tcn_feat = tcn_module(att_feat)[..., -1]
             # Dimension: (batch_size, F2)
 
-            # Outputs of sliding window can be either averaged after being
-            # mapped by dense layer or concatenated then mapped by a dense
-            # layer
-            if not self.concat:
-                tcn_feat = final_layer(tcn_feat)
-
             sw_concat.append(tcn_feat)
+
+        # Outputs of sliding window can be either averaged after being
+        # mapped by dense layer or concatenated then mapped by a dense
+        # layer
+        if not self.concat:
+            for idx, final_layer in enumerate(self.final_layer):
+                sw_concat[idx] = final_layer(sw_concat[idx])
 
         # ----- Aggregation and prediction -----
         if self.concat:

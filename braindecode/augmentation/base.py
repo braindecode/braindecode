@@ -171,7 +171,13 @@ class Compose(Transform):
         self.transforms = transforms
         super().__init__()
 
-    def forward(self, X, y):
+    def forward(self, X, y=None):
+        # like Transform.forward, return only X when no target is given (each
+        # transform then returns a single tensor, not an (X, y) pair)
+        if y is None:
+            for transform in self.transforms:
+                X = transform(X)
+            return X
         for transform in self.transforms:
             X, y = transform(X, y)
         return X, y

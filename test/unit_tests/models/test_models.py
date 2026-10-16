@@ -6443,3 +6443,34 @@ def _cz():
 def test_unsupported_geometry_raises_at_construction(name, kwargs, match):
     with pytest.raises(ValueError, match=match):
         all_models_dict[name](n_outputs=2, **kwargs)
+
+
+def test_atcnet_concat_uses_every_window():
+    torch.manual_seed(0)
+    model = ATCNet(n_chans=22, n_outputs=4, n_times=1125, concat=True).eval()
+    X = torch.randn(2, 22, 1125)
+    assert model(X).shape == (2, 4)
+    # the classifier sees all n_windows window features
+    assert model.final_layer[0].in_features == model.n_windows * model.F2
+
+
+def test_ctnet_applies_final_dropout():
+    model = all_models_dict["CTNet"](n_chans=4, n_outputs=2, n_times=1000)
+    model.train()
+    X = torch.randn(2, 4, 1000)
+    model.flatten_drop_layer[1].p = 0.0
+    torch.manual_seed(0)
+    out_no_drop = model(X)
+    model.flatten_drop_layer[1].p = 0.99
+    torch.manual_seed(0)
+    out_drop = model(X)
+    assert not torch.allclose(out_no_drop, out_drop)
+
+
+def test_ctnet_unequal_pool_sizes():
+    # sequence length is (n_times / pool_size_1) / pool_size_2, here 125, longer
+    # than n_times / pool_size_1**2 = 62
+    model = all_models_dict["CTNet"](
+        n_chans=4, n_outputs=2, n_times=4000, pool_size_1=8, pool_size_2=4
+    ).eval()
+    assert model(torch.randn(2, 4, 4000)).shape == (2, 2)
