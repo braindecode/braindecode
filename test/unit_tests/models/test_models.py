@@ -6445,6 +6445,15 @@ def test_unsupported_geometry_raises_at_construction(name, kwargs, match):
         all_models_dict[name](n_outputs=2, **kwargs)
 
 
+def test_atcnet_concat_uses_every_window():
+    torch.manual_seed(0)
+    model = ATCNet(n_chans=22, n_outputs=4, n_times=1125, concat=True).eval()
+    X = torch.randn(2, 22, 1125)
+    assert model(X).shape == (2, 4)
+    # the classifier sees all n_windows window features
+    assert model.final_layer[0].in_features == model.n_windows * model.F2
+
+
 def test_ctnet_applies_final_dropout():
     model = all_models_dict["CTNet"](n_chans=4, n_outputs=2, n_times=1000)
     model.train()

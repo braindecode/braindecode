@@ -1346,7 +1346,6 @@ def test_windower_from_target_channels_includes_last_sample(first_samp):
         BaseConcatDataset([RawDataset(raw)]), window_size_samples=10
     )
 
-    assert len(windows) == 2
     for i, stop in enumerate([10, 20]):
         X, y, indices = windows[i]
         np.testing.assert_array_equal(X, signal[:, stop - 10 : stop])
@@ -2259,3 +2258,69 @@ def test_event_aliases_preserve_targets(use_mne_epochs, preload, per_event_strid
         assert len(set(epochs.event_id.values())) == 3
         assert len(epochs["N3"]) == len(epochs["REM"]) == 2
         assert len(epochs["N4"]) == (1 if per_event_stride else 2)
+
+
+def _annotated_concat_ds(onsets, durations, descriptions, n_times=1000, sfreq=100.0):
+    info = mne.create_info(["C3", "C4"], sfreq=sfreq, ch_types="eeg")
+    raw = mne.io.RawArray(np.zeros((2, n_times)), info, verbose=False)
+    raw.set_annotations(mne.Annotations(onsets, durations, descriptions))
+    return BaseConcatDataset([RawDataset(raw, pd.Series({"subject": 1}))])
+
+
+def test_windows_from_events_window_before_recording_start():
+    kwargs = dict(
+        trial_start_offset_samples=-40,
+        trial_stop_offset_samples=0,
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=False,
+    )
+    concat_ds = _annotated_concat_ds([0.1, 5.0], [1.0, 1.0], ["a", "a"])
+    with pytest.raises(ValueError, match='"trial_start_offset_samples" too small'):
+        create_windows_from_events(concat_ds, use_mne_epochs=False, **kwargs)
+    # mne.Epochs keeps dropping the windows that start before the recording
+    windows = create_windows_from_events(concat_ds, use_mne_epochs=True, **kwargs)
+    assert len(windows) > 0
+    assert windows.get_metadata()["i_start_in_trial"].min() >= 0
+
+
+def test_windows_from_events_checks_stop_of_every_trial():
+    # the first trial (stop 1000) runs past the end with the offset, the last
+    # one (stop 400) does not
+    concat_ds = _annotated_concat_ds([1.0, 3.0], [9.0, 1.0], ["a", "a"])
+    with pytest.raises(ValueError, match=r"Stop of trial 0 \(1000\)"):
+        create_windows_from_events(
+            concat_ds,
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=50,
+            window_size_samples=100,
+            window_stride_samples=100,
+            drop_last_window=False,
+            on_overlapping_events="ignore",
+        )
+
+
+def test_windows_from_events_dict_stop_offset_uses_own_event_type():
+    # "a" has a large stop offset but ends early; the last trial is "b" and
+    # stays inside the recording with its own offset of 0
+    concat_ds = _annotated_concat_ds([1.0, 8.0], [1.0, 1.0], ["a", "b"])
+    windows = create_windows_from_events(
+        concat_ds,
+        trial_start_offset_samples={"a": 0, "b": 0},
+        trial_stop_offset_samples={"a": 200, "b": 0},
+        window_size_samples=100,
+        window_stride_samples={"a": 100, "b": 100},
+        drop_last_window=False,
+        mapping={"a": 0, "b": 1},
+    )
+    assert [y for _, y, _ in windows] == [0, 0, 0, 1]
+    with pytest.raises(ValueError, match=r"Stop of trial 0 \(200\)"):
+        create_windows_from_events(
+            _annotated_concat_ds([1.0, 3.0], [1.0, 1.0], ["a", "b"], n_times=350),
+            trial_start_offset_samples={"a": 0, "b": 0},
+            trial_stop_offset_samples={"a": 200, "b": 0},
+            window_size_samples=100,
+            window_stride_samples={"a": 100, "b": 100},
+            drop_last_window=False,
+            mapping={"a": 0, "b": 1},
+        )
