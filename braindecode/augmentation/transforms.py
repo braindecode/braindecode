@@ -18,6 +18,7 @@ from braindecode.util import resolve_montage_name
 
 from .base import Transform
 from .functional import (
+    _max_float_dtype,
     amplitude_scale,
     band_rotation,
     bandstop_filter,
@@ -494,6 +495,7 @@ class SmoothTimeMask(Transform):
                 size=X.shape[0],
             ),
             device=X.device,
+            dtype=_max_float_dtype(X.device),
         ) * (seq_length - mask_len_samples)
         return {
             "mask_start_per_sample": mask_start,
@@ -675,7 +677,11 @@ class FrequencyShift(Transform):
             return super().get_augmentation_params(*batch)
         X = batch[0]
 
-        u = torch.as_tensor(self.rng.uniform(size=X.shape[0]), device=X.device)
+        u = torch.as_tensor(
+            self.rng.uniform(size=X.shape[0]),
+            device=X.device,
+            dtype=_max_float_dtype(X.device),
+        )
         max_delta_freq = self.max_delta_freq
         if isinstance(max_delta_freq, torch.Tensor):
             max_delta_freq = max_delta_freq.to(X.device)
@@ -833,7 +839,10 @@ class SensorsRotation(Transform):
         if isinstance(max_degrees, torch.Tensor):
             max_degrees = max_degrees.to(X.device)
         random_angles = (
-            torch.as_tensor(u, device=X.device) * 2 * max_degrees - max_degrees
+            torch.as_tensor(u, device=X.device, dtype=_max_float_dtype(X.device))
+            * 2
+            * max_degrees
+            - max_degrees
         )
         return {
             "sensors_positions_matrix": self.sensors_positions_matrix,

@@ -113,6 +113,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Normalization layer class. Default: nn.LayerNorm.
     drop_path : float
         Stochastic depth rate. Default: 0.0.
+    attn_drop : float
+        Dropout rate on the attention weights of the transformer encoder
+        blocks (the original LUNA uses 0). Default: 0.0.
 
     References
     ----------
@@ -222,7 +225,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                     mlp_ratio=self.mlp_ratio,
                     qkv_bias=True,
                     drop=0.0,
-                    attn_drop=0.0,
+                    attn_drop=self.attn_drop,
                     drop_path=self.drop_path,
                     norm_layer=norm_layer,
                 )

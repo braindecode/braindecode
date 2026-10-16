@@ -13,6 +13,7 @@ from braindecode import EEGRegressor
 from braindecode.augmentation.base import (
     AugmentedDataLoader,
     Compose,
+    IdentityTransform,
     Transform,
     _AugmentationCollate,
 )
@@ -409,3 +410,15 @@ def test_single_input_aug(concat_windows_dataset):
     transformed_X, transformed_y = transform(X, y)
     assert len(transformed_y.shape) == 1
     assert transformed_X.shape == X.shape
+
+
+@pytest.mark.parametrize("batch_size", [2, 3])
+def test_compose_without_target(batch_size):
+    X = torch.randn(batch_size, 3, 10)
+    composed = Compose([IdentityTransform(), IdentityTransform()])
+    for out in (composed(X), composed(X, None)):
+        assert isinstance(out, torch.Tensor)
+        assert torch.equal(out, X)
+    y = torch.arange(batch_size)
+    out_X, out_y = composed(X, y)
+    assert torch.equal(out_X, X) and torch.equal(out_y, y)

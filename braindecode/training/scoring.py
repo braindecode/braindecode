@@ -472,7 +472,10 @@ def predict_trials(module, dataset, return_targets=True, batch_size=1, num_worke
     )
     preds_per_trial = _stack_trials(preds_per_trial)
     if return_targets:
-        if all_ys[0].shape == ():
+        # Scalar or multi-value (e.g. one value per target channel with
+        # last_target_only=True) window targets: one target per trial.
+        # Only targets with a time axis, (n_targets, n_times), are sequences.
+        if all_ys[0].ndim < 2:
             all_ys = np.array(all_ys)
             ys_per_trial = all_ys[
                 np.diff(torch.cat(all_inds[0::3]), prepend=[np.inf]) != 1
