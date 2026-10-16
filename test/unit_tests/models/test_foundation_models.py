@@ -2911,6 +2911,11 @@ def test_cbramod_head_is_concrete_when_geometry_is_derived(tmp_path):
         CBraMod(n_times=1001, n_outputs=2, n_layer=1, on_non_divisible="error")
 
 
+def test_luna_attn_drop_is_used():
+    model = LUNA(n_chans=4, n_outputs=2, n_times=256, attn_drop=0.3)
+    assert all(block.attn.attn_drop == 0.3 for block in model.blocks)
+
+
 def test_labram_warns_when_tokenizer_overrides_embed_dim():
     with pytest.warns(UserWarning, match="using embed_dim=104 instead"):
         model = Labram(n_chans=4, n_outputs=2, n_times=1000, patch_size=100)

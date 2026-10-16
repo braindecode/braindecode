@@ -184,10 +184,27 @@ def test_tuh(version: Literal["v1.1.0"] | Literal["v1.2.0"]):
         version=version,
     )
     assert len(tuh.datasets) == 1
+    # recording_ids follow chronological order: the first v1.1.0 recording
+    # (2003, subject 58) is male
+    expected = "M" if version == "v1.1.0" else "F"
     x, y = tuh[0]
-    assert y == "F"
+    assert y == expected
     x, y = tuh[-1]
-    assert y == "F"
+    assert y == expected
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Not supported on Windows"
+)  # TODO: Fix this
+@pytest.mark.parametrize("recording_ids", [[0], [0, 1], [1, 0], [3, 1], 2])
+def test_tuh_recording_ids_follow_chronological_order(recording_ids):
+    full = _TUHMock(path="", n_jobs=1, version="v1.1.0").description
+    tuh = _TUHMock(path="", recording_ids=recording_ids, n_jobs=1, version="v1.1.0")
+    ids = range(recording_ids) if isinstance(recording_ids, int) else recording_ids
+    expected = full.iloc[list(ids)].reset_index(drop=True)
+    pd.testing.assert_frame_equal(
+        tuh.description.reset_index(drop=True), expected, check_like=True
+    )
 
 
 # Skip if OS is Windows

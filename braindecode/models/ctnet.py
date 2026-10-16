@@ -181,6 +181,7 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
             drop_prob=self.att_positional_drop_prob,
             n_times=self.n_times,
             pool_size=self.pool_size_1,
+            sequence_length=self.sequence_length,
         )
 
         self.trans = _TransformerEncoder(
@@ -220,7 +221,7 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
         cnn = self.position(cnn)
         trans = self.trans(cnn)
         features = cnn + trans
-        flatten_feature = self.flatten(features)
+        flatten_feature = self.flatten_drop_layer(features)
         out = self.final_layer(flatten_feature)
         return out
 
@@ -516,18 +517,23 @@ class _PositionalEncoding(nn.Module):
         length: int = 100,
         drop_prob: float = 0.1,
         pool_size: int = 8,
+        sequence_length: int | None = None,
     ):
         super().__init__()
         self.pool_size = pool_size
         self.n_times = n_times
 
-        if int(n_times / (pool_size * pool_size)) > length:
+        # n_times / pool_size**2 is the sequence length only when both pooling
+        # sizes are equal; also cover the actual length (e.g. pool_size_2 <
+        # pool_size_1), so that the encoding is never shorter than the input
+        needed = max(int(n_times / (pool_size * pool_size)), sequence_length or 0)
+        if needed > length:
             warn(
                 "the temporal dimensional is too long for this default length. "
                 "The length parameter will be automatically adjusted to "
                 "avoid inference issues."
             )
-            length = int(n_times / (pool_size * pool_size))
+            length = needed
 
         self.dropout = nn.Dropout(drop_prob)
         self.encoding = nn.Parameter(torch.randn(1, length, emb_size))
