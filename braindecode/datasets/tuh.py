@@ -122,7 +122,8 @@ class TUH(BaseConcatDataset):
                 # Assume it is an integer specifying number
                 # of recordings to load
                 recording_ids = range(recording_ids)
-            descriptions = descriptions[recording_ids]
+            # select by chronological position, not by (file listing) label
+            descriptions = descriptions.iloc[:, list(recording_ids)]
 
         # workaround to ensure warnings are suppressed when running in parallel
         def create_dataset(*args, **kwargs):
