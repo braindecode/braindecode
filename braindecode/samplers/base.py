@@ -157,7 +157,10 @@ class DistributedRecordingSampler(DistributedSampler):
             4                  4              2000             2500      -1        4  session_T  run_0
 
     random_state : np.RandomState | int | None
-        Random state.
+        Random state. An int is also used as the ``seed`` with which
+        :class:`torch.utils.data.distributed.DistributedSampler` shuffles the
+        recordings among processes; otherwise that seed is 0 (torch's default),
+        so that every process splits the recordings the same way.
 
     Attributes
     ----------
@@ -179,8 +182,16 @@ class DistributedRecordingSampler(DistributedSampler):
         self.metadata = metadata
         self.info = self._init_info(metadata)
         self.rng = check_random_state(random_state)
+        # DistributedSampler needs an int seed (it shuffles with seed + epoch),
+        # and the same one on every process: None or a RandomState would give
+        # each process its own draw, so fall back to torch's default seed
+        seed = kwargs.pop("seed", None)
+        if seed is None:
+            seed = (
+                int(random_state) if isinstance(random_state, (int, np.integer)) else 0
+            )
         # send information to DistributedSampler parent to handle data splitting among workers
-        super().__init__(self.info, seed=random_state, **kwargs)
+        super().__init__(self.info, seed=seed, **kwargs)
 
     def _init_info(self, metadata, required_keys=None):
         """Initialize ``info`` DataFrame.
