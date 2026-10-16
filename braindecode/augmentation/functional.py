@@ -19,7 +19,7 @@ from mne.filter import notch_filter
 from scipy.interpolate import Rbf
 from sklearn.utils import check_random_state
 from torch.fft import fft, ifft
-from torch.nn.functional import pad
+from torch.nn.functional import one_hot, pad
 
 
 def _max_float_dtype(device: torch.device | str) -> torch.dtype:
@@ -1148,6 +1148,97 @@ def cutmix(
     X_mix = torch.where(in_cut[:, None], X[idx_perm], X)
     lam = (n_times - cut_t_len).to(X.dtype) / n_times
     return X_mix, (y.clone(), y[idx_perm].clone(), lam)
+
+
+def label_smoothing(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    epsilon: float,
+    num_classes: int | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Smooth targets toward the uniform distribution over the classes.
+
+    See [1]_ for details.
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        EEG data in form ``batch_size, n_channels, n_times``. Returned
+        unchanged.
+    y : torch.Tensor
+        Target of length ``batch_size`` holding class indices (float values
+        are accepted when they are integral), or a floating-point tensor of
+        shape ``batch_size, num_classes`` holding target distributions.
+    epsilon : float
+        Smoothing parameter between 0 and 1: the weight of the uniform
+        distribution mixed into the targets. ``0`` returns the unsmoothed
+        targets.
+    num_classes : int | None, optional
+        Number of classes. Required when ``y`` holds class indices; when
+        ``y`` already holds distributions, it must match the size of the
+        last dimension of ``y``. Defaults to None.
+
+    Returns
+    -------
+    tuple
+        ``X``, ``y``. Where ``X`` is unchanged and ``y`` is a
+        floating-point tensor of shape ``batch_size, num_classes`` whose
+        rows sum to one.
+
+    References
+    ----------
+    .. [1] Christian Szegedy, Vincent Vanhoucke, Jonathon Shlens and
+        Zbigniew Wojna (2016). Rethinking the Inception Architecture for
+        Computer Vision. In 2016 IEEE Conference on Computer Vision and
+        Pattern Recognition (CVPR), pp. 2818-2826.
+        Online: https://arxiv.org/abs/1512.00567
+    """
+    if not isinstance(epsilon, Real) or not 0.0 <= float(epsilon) <= 1.0:
+        raise ValueError(
+            f"epsilon should be a real number between 0 and 1. Got {epsilon!r}."
+        )
+    if num_classes is not None and (
+        not isinstance(num_classes, int)
+        or isinstance(num_classes, bool)
+        or num_classes < 2
+    ):
+        raise ValueError(
+            f"num_classes should be an integer of at least 2. Got {num_classes!r}."
+        )
+
+    if y.dim() == 1:
+        # class-index targets: smooth their one-hot encoding
+        if num_classes is None:
+            raise ValueError("num_classes is required when y holds class indices.")
+        if not torch.all(y == y.floor()):
+            raise ValueError(
+                "y holds non-integral values; class-index targets should be "
+                "integers or integral floats."
+            )
+        if y.numel() > 0 and (y.min() < 0 or y.max() >= num_classes):
+            raise ValueError(f"y holds class indices outside [0, {num_classes}).")
+        one_hot_y = one_hot(y.long(), num_classes).to(dtype=X.dtype)
+        return X, one_hot_y * (1.0 - epsilon) + epsilon / num_classes
+
+    if y.is_floating_point() and y.dim() >= 2:
+        # target distributions: interpolate them toward the uniform one
+        n_classes = y.shape[-1]
+        if num_classes is not None and num_classes != n_classes:
+            raise ValueError(
+                f"num_classes ({num_classes}) does not match the size of the "
+                f"last dimension of y ({n_classes})."
+            )
+        if n_classes < 2:
+            raise ValueError(
+                f"y should hold distributions over at least 2 classes. Got {n_classes}."
+            )
+        return X, y * (1.0 - epsilon) + epsilon / n_classes
+
+    raise ValueError(
+        "y should hold class indices or floating-point target distributions "
+        f"with a class dimension; got dtype {y.dtype} and shape "
+        f"{tuple(y.shape)}."
+    )
 
 
 def segmentation_reconstruction(
