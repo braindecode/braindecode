@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :func:`braindecode.datautil.load_concat_dataset` reads a copied or moved dataset folder from the copy: the cached ``N-raw.pkl`` is only reused when the fif path it stores is the file next to it, otherwise the fif is read again and the cache re-created. It also skips entries of the folder that are not dataset subdirectories (e.g. ``.DS_Store``, a README) instead of raising ``ValueError`` (:gh:`1413` by `Adam Mounir`_).
+
 - ``recording_ids`` of :class:`braindecode.datasets.TUH` (and :class:`braindecode.datasets.TUHAbnormal`, :class:`braindecode.datasets.TUHEvents`) selects recordings by their chronological position, as documented, instead of by their position in the file listing (:gh:`1412` by `Adam Mounir`_).
 
 - :meth:`braindecode.preprocessing.Preprocessor.deserialize` preserves the
