@@ -1,4 +1,5 @@
 # Authors: Pierre Guetschel <pierre.guetschel@gmail.com>
+#          Anton Soloviev <anton@praviel.com>
 #
 # License: MIT (see NOTICE.txt)
 #
@@ -72,6 +73,8 @@ class _GaussianRandomProjection(nn.Module):
     def __init__(self, n_features: int, n_components: int, seed: int = 0):
         super().__init__()
         self.n_features, self.n_components = n_features, n_components
+        # A factory also sees temporary device contexts on older torch versions.
+        device = torch.empty(0).device
         generator = torch.Generator(device="cpu").manual_seed(seed)
         projection = torch.empty(
             n_components, n_features, dtype=torch.float32, device="cpu"
@@ -81,9 +84,7 @@ class _GaussianRandomProjection(nn.Module):
         # the draw stays on the CPU, only the result follows the default device
         self.register_buffer(
             "projection",
-            projection.to(
-                device=torch.get_default_device(), dtype=torch.get_default_dtype()
-            ),
+            projection.to(device=device, dtype=torch.get_default_dtype()),
         )
 
     def extra_repr(self) -> str:
@@ -107,12 +108,13 @@ class _LinearPatchEmbedding(nn.Module):
 class _PositionalEncoder(nn.Module):
     def __init__(self, ch_pos, embed_dim, pos_half_range, max_n_times):
         super().__init__()
+        device = torch.empty(0).device
         self.coord_dim = self.time_dim = embed_dim // 4
         self.pos_half_range, self.max_n_times = pos_half_range, max_n_times
         self.register_buffer("ch_pos", ch_pos, persistent=False)
         self.register_buffer(
             "div_term",
-            _xyz_div_term(self.coord_dim).to(torch.get_default_device()),
+            _xyz_div_term(self.coord_dim).to(device),
             persistent=False,
         )
         self.register_buffer(
@@ -121,9 +123,7 @@ class _PositionalEncoder(nn.Module):
             # the same table, which overwrites them. Computed on the CPU, then moved
             # to the default device.
             # 33 = (6000 - 200) // 180 + 1 patches: the 30 s pre-training window
-            _pos_encode_time(33, self.time_dim, max_n_times).to(
-                torch.get_default_device()
-            ),
+            _pos_encode_time(33, self.time_dim, max_n_times).to(device),
         )
 
     def forward(self, n_patches: int, batch_size: int):
@@ -559,7 +559,7 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
             )
         # float32 BEFORE the encoding: float64 then cast gives a 4.2e-5 difference.
         ch_pos_np = ch_pos_f64.astype(np.float32)
-        ch_pos = torch.from_numpy(ch_pos_np).to(torch.get_default_device())
+        ch_pos = torch.from_numpy(ch_pos_np).to(torch.empty(0).device)
         self.normalization: str = normalization
         self.input_scale: float = input_scale
         self.clip_sigma: float = clip_sigma

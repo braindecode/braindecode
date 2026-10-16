@@ -224,3 +224,40 @@ def test_create_from_mne_epochs_descriptions_length_mismatch(epochs_for_params):
             drop_last_window=True,
             descriptions=[{"subject": 1}, {"subject": 2}],
         )
+
+
+def test_create_from_mne_epochs_with_rejected_epochs():
+    """Targets and data stay aligned when some epochs are rejected lazily."""
+    sfreq = 100
+    n_channels = 4
+    rng = np.random.RandomState(0)
+    data = rng.randn(n_channels, 1000) * 1e-6
+    data[:, 350:360] = 1.0  # artifact inside the second epoch only
+    info = mne.create_info(
+        [f"ch{i}" for i in range(n_channels)], sfreq=sfreq, ch_types="eeg"
+    )
+    raw = mne.io.RawArray(data, info)
+    events = np.array([[100, 0, 1], [300, 0, 2], [500, 0, 3], [700, 0, 4]])
+    epochs = mne.Epochs(
+        raw,
+        events,
+        tmin=0,
+        tmax=0.99,
+        baseline=None,
+        reject=dict(eeg=1e-3),
+        preload=False,
+    )
+    windows_ds = create_from_mne_epochs(
+        [epochs],
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=False,
+    )
+    assert len(windows_ds.datasets) == 3
+    for ds, (onset, _, code) in zip(windows_ds.datasets, events[[0, 2, 3]]):
+        x, y, (_, i_start, _) = ds[0]
+        assert y == code
+        assert i_start == onset
+        np.testing.assert_allclose(x, data[:, onset : onset + 100], atol=1e-10)
+    # the user's epochs object is not modified
+    assert len(epochs.events) == 4
