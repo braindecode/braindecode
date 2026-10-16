@@ -6,7 +6,9 @@
 import json
 import os
 import platform
+import shutil
 import warnings
+from pathlib import Path
 
 import mne
 import numpy as np
@@ -651,3 +653,27 @@ def test_load_concat_dataset_keeps_fif_tags_as_one_array(tmp_path):
             np.testing.assert_array_equal(
                 _read_fif_window(copy, start, stop), expected[:, start:stop]
             )
+
+
+def test_load_copied_dataset_reads_the_copy(setup_concat_raw_dataset, tmp_path):
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    setup_concat_raw_dataset.save(path=src, overwrite=False)
+    load_concat_dataset(path=src, preload=False)  # writes the N-raw.pkl caches
+    shutil.copytree(src, dst)  # copies the caches, which point into src
+    with pytest.warns(UserWarning, match="not next to it"):
+        loaded = load_concat_dataset(path=dst, preload=False)
+    for i, ds in enumerate(loaded.datasets):
+        assert Path(ds.raw.filenames[0]).parent.resolve() == (dst / str(i)).resolve()
+    # the re-created caches point into dst: loading again does not warn
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        load_concat_dataset(path=dst, preload=False)
+
+
+def test_load_concat_dataset_ignores_stray_entries(setup_concat_raw_dataset, tmp_path):
+    setup_concat_raw_dataset.save(path=tmp_path, overwrite=False)
+    (tmp_path / ".DS_Store").write_text("")
+    (tmp_path / "README.md").write_text("notes")
+    (tmp_path / "plots").mkdir()
+    loaded = load_concat_dataset(path=tmp_path, preload=False)
+    assert len(loaded.datasets) == len(setup_concat_raw_dataset.datasets)

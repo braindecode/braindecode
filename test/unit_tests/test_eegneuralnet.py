@@ -21,12 +21,13 @@ from torch import optim
 from torch.nn.functional import nll_loss
 
 from braindecode import EEGClassifier, EEGRegressor
-from braindecode.datasets import BaseConcatDataset, WindowsDataset
+from braindecode.datasets import BaseConcatDataset, RawDataset, WindowsDataset
 from braindecode.eegneuralnet import _EEGNeuralNet
 from braindecode.models.base import EEGModuleMixin
 
 # from braindecode.models.util import models_dict
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
+from braindecode.preprocessing import create_fixed_length_windows
 from braindecode.training import CroppedLoss
 from braindecode.training.scoring import predict_trials
 
@@ -652,7 +653,43 @@ def test_EEGRegressor_predict_trials(Xy, preds):
 
     preds, targets = eeg_regressor.predict_trials(X, return_targets=True)
     assert preds.shape[0] == len(X)
-    assert np.array_equal(targets, np.concatenate([X[i][1] for i in range(len(X))]))
+    # X is a plain array here, so X[i][1] is the second row of each example
+    assert np.array_equal(targets, np.stack([X[i][1] for i in range(len(X))]))
+
+
+def test_EEGRegressor_predict_trials_scalar_targets():
+    # windows datasets yield scalar targets, which cannot be concatenated
+    rng = np.random.RandomState(0)
+    info = mne.create_info(4, 100.0, "eeg")
+    datasets = [
+        RawDataset(
+            mne.io.RawArray(rng.randn(4, 1000), info, verbose=False),
+            pd.Series({"target": float(i)}),
+            target_name="target",
+        )
+        for i in range(2)
+    ]
+    windows = create_fixed_length_windows(
+        BaseConcatDataset(datasets),
+        window_size_samples=200,
+        window_stride_samples=200,
+        drop_last_window=True,
+    )
+    regressor = EEGRegressor(
+        ShallowFBCSPNet,
+        module__n_chans=4,
+        module__n_outputs=1,
+        module__n_times=200,
+        module__final_conv_length="auto",
+        cropped=False,
+        batch_size=4,
+        train_split=None,
+        max_epochs=1,
+    )
+    regressor.fit(windows, y=None)
+    with pytest.warns(UserWarning, match="designed to predict trials in cropped"):
+        _, targets = regressor.predict_trials(windows)
+    np.testing.assert_array_equal(targets, [0.0] * 5 + [1.0] * 5)
 
 
 from braindecode.eegneuralnet import CroppedTrialEpochScoring

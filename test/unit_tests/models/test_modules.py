@@ -2061,3 +2061,80 @@ def test_ema_codebook_quantize_preserves_autocast_distances(dtype):
         expected = distances.argmin(dim=-1)
         assert expected.item() == 1
         assert torch.equal(codebook.quantize(x), expected)
+
+
+def test_mlp_normalize():
+    model = MLP(in_features=8, hidden_features=(16, 12), out_features=4, normalize=True)
+    norms = [m for m in model if isinstance(m, nn.LayerNorm)]
+    # one LayerNorm after each hidden layer, none after the output layer
+    assert [n.normalized_shape for n in norms] == [(16,), (12,)]
+    assert model(torch.randn(2, 5, 8)).shape == (2, 5, 4)
+
+
+@pytest.mark.parametrize("batch_first", [False, True])
+def test_crisscross_layer_keeps_samples_independent(batch_first):
+    from braindecode.modules.attention import CrissCrossTransformerEncoderLayer
+
+    torch.manual_seed(0)
+    layer = CrissCrossTransformerEncoderLayer(
+        d_model=8, nhead=4, dim_feedforward=16, batch_first=batch_first
+    ).eval()
+    x = torch.randn(3, 4, 5, 8)  # (batch, channels, n_patches, patch_size)
+    x_perturbed = x.clone()
+    x_perturbed[1] += torch.randn(4, 5, 8)
+    out, out_perturbed = layer(x), layer(x_perturbed)
+    torch.testing.assert_close(out[0], out_perturbed[0])
+    torch.testing.assert_close(out[2], out_perturbed[2])
+
+
+def test_crisscross_layer_norm_first():
+    from braindecode.modules.attention import CrissCrossTransformerEncoderLayer
+
+    torch.manual_seed(0)
+    pre = CrissCrossTransformerEncoderLayer(8, 4, 16, norm_first=True).eval()
+    post = CrissCrossTransformerEncoderLayer(8, 4, 16, norm_first=False).eval()
+    post.load_state_dict(pre.state_dict())
+    x = torch.randn(2, 4, 5, 8)
+    assert not torch.allclose(pre(x), post(x))
+    # post-norm: the output is the output of the last LayerNorm
+    out = post(x)
+    torch.testing.assert_close(
+        out.mean(-1), torch.zeros(out.shape[:-1]), atol=1e-5, rtol=0
+    )
+
+
+def test_multihead_attention_boolean_mask_false_ignores_key():
+    from braindecode.modules.attention import MultiHeadAttention
+
+    torch.manual_seed(0)
+    attention = MultiHeadAttention(8, 2, 0.0).eval()
+    x = torch.randn(1, 4, 8)
+    x_changed = x.clone()
+    x_changed[0, 3] += torch.randn(8)
+    mask = torch.ones(4, 4, dtype=torch.bool)
+    mask[:3, 3] = False  # rows 0-2 ignore key 3, as documented
+    torch.testing.assert_close(
+        attention(x, mask)[0, :3], attention(x_changed, mask)[0, :3]
+    )
+
+
+def test_glorot_weight_zero_bias():
+    from braindecode.functional import glorot_weight_zero_bias
+    from braindecode.models import EEGNet
+
+    torch.manual_seed(0)
+    model = nn.Sequential(
+        nn.Linear(100, 100),
+        nn.BatchNorm1d(100, affine=False),  # weight and bias are None
+        nn.BatchNorm1d(100),
+    )
+    model[0].bias.data.fill_(1.0)
+    model[2].weight.data.fill_(3.0)
+    linear_before = model[0].weight.detach().clone()
+    glorot_weight_zero_bias(model)
+    # other weights keep their own initialization
+    assert torch.equal(model[0].weight, linear_before)
+    assert torch.all(model[2].weight == 1) and torch.all(model[2].bias == 0)
+    assert torch.all(model[0].bias == 0)
+    # EEGNet calls it in __init__, also without BatchNorm affine parameters
+    EEGNet(n_chans=4, n_outputs=2, n_times=128, batch_norm_affine=False)

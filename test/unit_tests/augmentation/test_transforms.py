@@ -17,7 +17,11 @@ from skorch.helper import predefined_split
 from torch import nn
 
 from braindecode import EEGClassifier
-from braindecode.augmentation import AugmentedDataLoader, IdentityTransform
+from braindecode.augmentation import (
+    AugmentedDataLoader,
+    Compose,
+    IdentityTransform,
+)
 from braindecode.augmentation.functional import (
     _frequency_shift,
     _torch_normalize_vectors,
@@ -35,6 +39,7 @@ from braindecode.augmentation.transforms import (
     FrequencyShift,
     FTSurrogate,
     GaussianNoise,
+    LabelSmoothing,
     MaskEncoding,
     Mixup,
     SegmentationReconstruction,
@@ -1062,3 +1067,137 @@ def test_mask_encoding_reaches_last_sample():
     X = torch.ones(100, 2, 10)
     tr_X, _ = MaskEncoding(1, max_mask_ratio=0.3, random_state=0)(X, torch.arange(100))
     assert (tr_X[..., -1] == 0).any()
+
+
+@pytest.mark.skipif(
+    not torch.backends.mps.is_available(), reason="Apple MPS not available"
+)
+@pytest.mark.parametrize(
+    "make_transform",
+    [
+        lambda: SmoothTimeMask(1.0, mask_len_samples=20, random_state=0),
+        lambda: FrequencyShift(1.0, sfreq=100, max_delta_freq=2, random_state=0),
+        lambda: SensorsZRotation(
+            1.0, ordered_ch_names=["Fz", "Cz", "Pz", "C3", "C4", "O1"], random_state=0
+        ),
+        lambda: FTSurrogate(1.0, random_state=0),
+    ],
+    ids=["SmoothTimeMask", "FrequencyShift", "SensorsZRotation", "FTSurrogate"],
+)
+def test_transforms_run_on_mps(make_transform):
+    # MPS has no float64: the sampled parameters must not be float64 there
+    X = torch.randn(4, 6, 200, generator=torch.Generator().manual_seed(0))
+    y = torch.arange(4)
+    out_cpu, _ = make_transform()(X, y)
+    out_mps, _ = make_transform()(X.to("mps"), y.to("mps"))
+    assert out_mps.device.type == "mps" and out_mps.dtype == torch.float32
+    torch.testing.assert_close(out_mps.cpu(), out_cpu, rtol=1e-4, atol=1e-4)
+
+
+
+def test_label_smoothing_transform(rng_seed, random_batch):
+    X, _ = random_batch
+    batch_size = X.shape[0]
+    num_classes, epsilon = 4, 0.1
+    y = torch.arange(batch_size) % num_classes
+
+    X_t, y_t = LabelSmoothing(epsilon, num_classes, random_state=rng_seed)(X, y)
+
+    assert torch.equal(X_t, X)
+    expected = (
+        torch.nn.functional.one_hot(y, num_classes) * (1.0 - epsilon)
+        + epsilon / num_classes
+    )
+    assert y_t.shape == (batch_size, num_classes)
+    assert y_t.dtype == X.dtype
+    assert torch.allclose(y_t, expected.to(y_t.dtype))
+    assert torch.allclose(y_t.sum(-1), torch.ones(batch_size, dtype=y_t.dtype))
+
+
+def test_label_smoothing_zero_epsilon_returns_one_hot():
+    X = torch.randn(3, 2, 10)
+    y = torch.tensor([0, 2, 1])
+    _, y_t = LabelSmoothing(0.0, 3)(X, y)
+    assert torch.equal(y_t, torch.nn.functional.one_hot(y, 3).float())
+
+
+def test_label_smoothing_smooths_existing_distributions():
+    X = torch.randn(4, 2, 10)
+    y = torch.tensor([0, 1, 2, 1])
+    _, y_first = LabelSmoothing(0.2, 3)(X, y)
+    # smoothing an already-smoothed batch interpolates it toward uniform
+    _, y_second = LabelSmoothing(0.5)(X, y_first)
+    assert torch.allclose(y_second, y_first * 0.5 + 0.5 / 3, atol=1e-6)
+    assert torch.allclose(y_second.sum(-1), torch.ones(4))
+
+
+def test_label_smoothing_num_classes_must_match_distributions():
+    X = torch.randn(2, 2, 10)
+    y = torch.nn.functional.one_hot(torch.tensor([0, 1]), 3).float()
+    with pytest.raises(ValueError, match="does not match"):
+        LabelSmoothing(0.1, num_classes=5)(X, y)
+
+
+def test_label_smoothing_rejects_invalid_params():
+    X = torch.randn(2, 2, 10)
+    y = torch.tensor([0, 1])
+    with pytest.raises(ValueError, match="epsilon"):
+        LabelSmoothing(1.5)(X, y)
+    with pytest.raises(ValueError, match="epsilon"):
+        LabelSmoothing(-0.1)(X, y)
+    with pytest.raises(ValueError, match="num_classes"):
+        LabelSmoothing(0.1, num_classes=1)(X, y)
+    with pytest.raises(ValueError, match="num_classes is required"):
+        LabelSmoothing(0.1)(X, y)
+
+
+def test_label_smoothing_rejects_out_of_range_class_indices():
+    X = torch.randn(2, 2, 10)
+    with pytest.raises(ValueError, match="outside"):
+        LabelSmoothing(0.1, num_classes=2)(X, torch.tensor([0, 2]))
+
+
+def test_label_smoothing_deterministic_given_seed():
+    X = torch.randn(4, 2, 10)
+    y = torch.tensor([0, 1, 0, 1])
+    y_a = LabelSmoothing(0.3, 2, random_state=7)(X, y)[1]
+    y_b = LabelSmoothing(0.3, 2, random_state=7)(X, y)[1]
+    assert torch.equal(y_a, y_b)
+
+
+def test_label_smoothing_unbatched_target():
+    X = torch.randn(3, 20)
+    _, y_t = LabelSmoothing(0.2, 3)(X, torch.tensor(1))
+    assert y_t.shape == (1, 3)
+    assert y_t[0, 1] == pytest.approx(0.8 + 0.2 / 3)
+
+
+def test_label_smoothing_composes_before_mixup(rng_seed, random_batch):
+    X, _ = random_batch
+    batch_size = X.shape[0]
+    num_classes = 3
+    y = torch.arange(batch_size) % num_classes
+    smoothing = LabelSmoothing(0.1, num_classes, random_state=rng_seed)
+    _, y_smooth = smoothing(X, y)
+    _, (y_a, y_b, lam) = Compose(
+        [smoothing, Mixup(alpha=0.5, random_state=rng_seed)]
+    )(X, y)
+    assert torch.equal(y_a, y_smooth)
+    assert lam.shape == (batch_size,)
+
+
+def test_label_smoothing_in_augmented_loader(rng_seed):
+    X = torch.randn(6, 2, 20)
+    y = torch.tensor([0, 1, 2, 1, 0, 2])
+    transform = LabelSmoothing(0.1, 3, random_state=rng_seed)
+    # n_augmentation=0 (in place): the fixed-expansion mode cannot keep the
+    # unsmoothed original targets next to the reshaped smoothed copies
+    loader = AugmentedDataLoader(
+        torch.utils.data.TensorDataset(X, y),
+        transforms=transform,
+        batch_size=6,
+    )
+    X_aug, y_aug = next(iter(loader))
+    assert torch.equal(X_aug, X)
+    _, y_expected = transform(X, y)
+    assert torch.equal(y_aug, y_expected)

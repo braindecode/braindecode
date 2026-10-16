@@ -18,6 +18,7 @@ from braindecode.util import resolve_montage_name
 
 from .base import Transform
 from .functional import (
+    _max_float_dtype,
     amplitude_scale,
     band_rotation,
     bandstop_filter,
@@ -29,6 +30,7 @@ from .functional import (
     frequency_shift,
     ft_surrogate,
     gaussian_noise,
+    label_smoothing,
     mask_encoding,
     mixup,
     segmentation_reconstruction,
@@ -494,6 +496,7 @@ class SmoothTimeMask(Transform):
                 size=X.shape[0],
             ),
             device=X.device,
+            dtype=_max_float_dtype(X.device),
         ) * (seq_length - mask_len_samples)
         return {
             "mask_start_per_sample": mask_start,
@@ -675,7 +678,11 @@ class FrequencyShift(Transform):
             return super().get_augmentation_params(*batch)
         X = batch[0]
 
-        u = torch.as_tensor(self.rng.uniform(size=X.shape[0]), device=X.device)
+        u = torch.as_tensor(
+            self.rng.uniform(size=X.shape[0]),
+            device=X.device,
+            dtype=_max_float_dtype(X.device),
+        )
         max_delta_freq = self.max_delta_freq
         if isinstance(max_delta_freq, torch.Tensor):
             max_delta_freq = max_delta_freq.to(X.device)
@@ -833,7 +840,10 @@ class SensorsRotation(Transform):
         if isinstance(max_degrees, torch.Tensor):
             max_degrees = max_degrees.to(X.device)
         random_angles = (
-            torch.as_tensor(u, device=X.device) * 2 * max_degrees - max_degrees
+            torch.as_tensor(u, device=X.device, dtype=_max_float_dtype(X.device))
+            * 2
+            * max_degrees
+            - max_degrees
         )
         return {
             "sensors_positions_matrix": self.sensors_positions_matrix,
@@ -1144,6 +1154,98 @@ class CutMix(Mixup):
         start = (center - half).clamp(min=0)
         end = (center + half).clamp(max=n_times)
         return dict(params, cut_t_start=start, cut_t_len=end - start)
+
+
+class LabelSmoothing(Transform):
+    """Label smoothing from Szegedy et al. (2016) [1]_.
+
+    Replaces each target with its convex combination with the uniform
+    distribution over the classes, penalizing over-confident predictions.
+    The signals are returned unchanged; only the targets change.
+
+    The smoothed targets are floating-point distributions of shape
+    ``batch_size, num_classes`` (each row sums to one), so the training
+    loss must accept target distributions, e.g. soft cross-entropy
+    ``-(y * torch.log_softmax(logits, dim=-1)).sum(-1).mean()`` or
+    ``torch.nn.KLDivLoss``. The transform composes before target-mixing
+    transforms such as :class:`braindecode.augmentation.Mixup`, whose
+    fractional-target path then mixes the smoothed distributions. The
+    fixed-expansion mode (``n_augmentation > 0``) of
+    :class:`braindecode.augmentation.AugmentedDataLoader` is not supported:
+    it cannot concatenate the unsmoothed original targets with the reshaped
+    smoothed copies.
+
+    Parameters
+    ----------
+    epsilon : float
+        Smoothing parameter between 0 and 1: the weight of the uniform
+        distribution mixed into the targets. ``0`` disables smoothing.
+    num_classes : int | None, optional
+        Number of classes. Required when the targets are class indices;
+        when the targets are already distributions of shape
+        ``batch_size, num_classes``, it must match their last dimension.
+        Defaults to None.
+    random_state : int | numpy.random.Generator, optional
+        Seed to be used to instantiate numpy random number generator
+        instance. The transform is deterministic, so the seed only feeds
+        the application-probability machinery, which is inactive here.
+        Defaults to None.
+
+    References
+    ----------
+    .. [1] Christian Szegedy, Vincent Vanhoucke, Jonathon Shlens and
+       Zbigniew Wojna (2016). Rethinking the Inception Architecture for
+       Computer Vision. In 2016 IEEE Conference on Computer Vision and
+       Pattern Recognition (CVPR), pp. 2818-2826.
+       Online: https://arxiv.org/abs/1512.00567
+    """
+
+    operation = staticmethod(label_smoothing)  # type: ignore[assignment]
+
+    def __init__(self, epsilon, num_classes=None, random_state=None):
+        super().__init__(
+            probability=1.0,  # LabelSmoothing has to be applied to whole batches
+            random_state=random_state,
+        )
+        if not isinstance(epsilon, Real) or not 0.0 <= float(epsilon) <= 1.0:
+            raise ValueError(
+                f"epsilon should be a real number between 0 and 1. Got {epsilon!r}."
+            )
+        if num_classes is not None and (
+            not isinstance(num_classes, int)
+            or isinstance(num_classes, bool)
+            or num_classes < 2
+        ):
+            raise ValueError(
+                f"num_classes should be an integer of at least 2. Got {num_classes!r}."
+            )
+        self.epsilon = epsilon
+        self.num_classes = num_classes
+
+    def get_augmentation_params(self, *batch):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+
+        Returns
+        -------
+        params : dict
+            Contains
+
+            * epsilon : float
+                Smoothing parameter between 0 and 1.
+            * num_classes : int | None
+                The number of classes.
+        """
+        return {
+            "epsilon": self.epsilon,
+            "num_classes": self.num_classes,
+        }
 
 
 class SegmentationReconstruction(Transform):
