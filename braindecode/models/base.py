@@ -521,6 +521,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         output_shape : tuple[int, ...]
             shape of the network output for `batch_size==1` (1, ...)
         """
+        # Run in eval mode, so that the probe input does not update BatchNorm
+        # running stats or draw dropout masks; restore each module's own mode
+        # afterwards (some may have been put in eval mode on purpose).
+        modes = {module: module.training for module in self.modules()}
+        self.eval()
         with torch.inference_mode():
             try:
                 return tuple(
@@ -540,6 +545,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 if error is None:
                     raise
                 raise error from exc
+            finally:
+                for module, training in modes.items():
+                    module.training = training
 
     def get_config(self) -> dict:
         """Return a JSON-serializable dict of all ``__init__`` parameters.
