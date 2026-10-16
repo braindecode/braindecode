@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :func:`braindecode.preprocessing.create_windows_from_events` checks the window bounds of every trial: it raises when a window would start before the recording (negative ``trial_start_offset_samples`` on an early trial gave empty windows; with ``use_mne_epochs=True`` such windows are still dropped by :class:`mne.Epochs`) or when any trial, not only the last one, ends past the recording with ``trial_stop_offset_samples``; with per-event-type offsets, each trial is checked with the offset of its own event type, so valid inputs are no longer rejected because another type has a larger offset (:gh:`1415` by `Adam Mounir`_).
+
 - ``set_description(..., overwrite=True)`` on a windows dataset no longer deletes the overwritten key from the description of the dataset it was windowed from (the two share one :class:`pandas.Series`), which could make indexing the source dataset raise ``KeyError`` when the key was its target (:gh:`1414` by `Adam Mounir`_).
 
 - :func:`braindecode.datautil.load_concat_dataset` reads a copied or moved dataset folder from the copy: the cached ``N-raw.pkl`` is only reused when the fif path it stores is the file next to it, otherwise the fif is read again and the cache re-created. It also skips entries of the folder that are not dataset subdirectories (e.g. ``.DS_Store``, a README) instead of raising ``ValueError`` (:gh:`1413` by `Adam Mounir`_).
