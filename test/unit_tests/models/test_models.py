@@ -5077,6 +5077,29 @@ def test_brainbert_mapping_targets():
     assert model.mapping and all(target in state for target in model.mapping.values())
 
 
+def test_brainbert_pads_a_short_window():
+    """on_non_divisible="pad": a window too short for the centre pooling is
+    zero-padded at both ends to the minimum; a long enough one is untouched."""
+    torch.manual_seed(0)
+    model = BrainBERT(n_chans=2, n_outputs=2, n_times=2048).eval()
+    strict = BrainBERT(n_chans=2, n_outputs=2, n_times=2048, on_non_divisible="error")
+    strict.load_state_dict(model.state_dict())
+    strict.eval()
+    x = torch.randn(3, 2, 2048)
+    short = x[..., :500]
+    pad = model.min_n_times - 500
+    with torch.no_grad():
+        assert torch.equal(model(x), strict(x))
+        padded = nn.functional.pad(short, (pad // 2, pad - pad // 2))
+        torch.testing.assert_close(model(short), strict(padded))
+        with pytest.raises(ValueError, match="spectrogram frames"):
+            strict(short)
+    with pytest.warns(UserWarning, match="zero-padded"):
+        BrainBERT(n_chans=2, n_outputs=2, n_times=500)
+    with pytest.raises(ValueError, match="STFT frames"):
+        BrainBERT(n_chans=2, n_outputs=2, n_times=500, on_non_divisible="crop")
+
+
 _BARISTA_SMALL = dict(patch_size=32, d_model=16, n_layers=1, num_heads=2, cnn_depth=1)
 
 

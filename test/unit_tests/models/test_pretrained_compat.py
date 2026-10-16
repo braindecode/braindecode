@@ -257,7 +257,6 @@ COMPAT = {
         n_times=4096,
         canon=["E1"],
         channels="agnostic",
-        min_n_times=1401,
     ),
     "DuIN": dict(
         cls=DuIN,

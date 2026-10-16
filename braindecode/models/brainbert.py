@@ -8,6 +8,8 @@ the STFT front-end moved inside the model. See :class:`BrainBERT`.
 
 from __future__ import annotations
 
+from warnings import warn
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,6 +18,7 @@ from einops.layers.torch import Rearrange, Reduce
 from braindecode.functional import sinusoidal_positional_encoding, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
+from braindecode.modules.blocks import _check_on_non_divisible
 
 
 class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
@@ -122,6 +125,13 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         pretrained).
     drop_prob : float, optional
         Dropout probability. Default 0.1.
+    on_non_divisible : {"pad", "crop", "error"}, optional
+        A window too short to give the ``pool_n_frames`` frames the pooling
+        needs (``n_times < 1401`` with the defaults). ``"pad"`` (default)
+        zero-pads it at both ends to that minimum, with a warning at
+        construction, so the pooled frames stay centred on the window;
+        ``"crop"`` and ``"error"`` raise. A long enough window gives the same
+        output under all three.
 
     References
     ----------
@@ -147,6 +157,7 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         pool_n_frames: int | None = 10,
         activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.1,
+        on_non_divisible: str = "pad",
         # --- braindecode mandatory signal parameters ---
         n_outputs=None,
         n_chans=None,
@@ -176,6 +187,8 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
                 f"pool_n_frames must be positive; got {pool_n_frames}. "
                 "Pass None to average every frame instead."
             )
+        _check_on_non_divisible(on_non_divisible)
+        self.on_non_divisible = on_non_divisible
         self.pool_n_frames = pool_n_frames
         self.min_frames = 1 if pool_n_frames is None else pool_n_frames
         warn_if_sfreq_differs("BrainBERT", self._sfreq, 2048)
@@ -188,13 +201,17 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             zscore_before_clip=stft_zscore_before_clip,
         )
         n_frames = self.spectrogram.n_frames(self.n_times)
+        self.min_n_times = self.spectrogram.min_n_times(self.min_frames)
         if n_frames < self.min_frames:
-            min_n_times = self.spectrogram.min_n_times(self.min_frames)
-            raise ValueError(
+            message = (
                 f"n_times={self.n_times} gives {n_frames} STFT frames; the pooling "
-                f"needs {self.min_frames}, i.e. n_times >= {min_n_times} with these "
-                "STFT settings."
+                f"needs {self.min_frames}, i.e. n_times >= {self.min_n_times} with "
+                "these STFT settings."
             )
+            if on_non_divisible != "pad":
+                raise ValueError(message)
+            warn(message + " Input will be zero-padded at both ends.", UserWarning)
+            n_frames = self.min_frames
 
         # The re-hosted Hub checkpoint already uses this port's names. The
         # authors' original ``.pth`` calls the input block ``input_encoding``;
@@ -273,6 +290,11 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         """
         if x.shape[1] != self.n_chans:
             raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}.")
+
+        # 0. a window too short for the pooling: centred zero-padding.
+        deficit = self.min_n_times - x.shape[-1]
+        if deficit > 0 and self.on_non_divisible == "pad":
+            x = F.pad(x, (deficit // 2, deficit - deficit // 2))
 
         # 1. spectrogram front-end.
         spec = self.spectrogram(x)  # (batch, n_chans, n_frames, idx_freq_cutoff)
