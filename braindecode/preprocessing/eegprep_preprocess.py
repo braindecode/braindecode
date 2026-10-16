@@ -163,7 +163,8 @@ class EEGPrepBasePreprocessor(Preprocessor):
         eeg_idx = mne.pick_types(raw.info, eeg=True, exclude=[])
         if len(eeg_idx) < len(chn_order):
             eeg = raw.copy().pick(eeg_idx)
-            non_eeg = raw.drop_channels(eeg.ch_names)
+            # on a copy, so that a failure below leaves the caller's raw intact
+            non_eeg = raw.copy().drop_channels(eeg.ch_names)
         else:
             eeg = raw
             non_eeg = None
@@ -237,9 +238,11 @@ class EEGPrepBasePreprocessor(Preprocessor):
                 )
             else:
                 # re-insert non-EEG channels, and restore original channel order
+                # of the channels that remain (the operation may remove some)
                 proc.add_channels([non_eeg], force_update_info=True)
-                if proc.ch_names != chn_order:
-                    proc.reorder_channels(chn_order)
+                order = [ch for ch in chn_order if ch in proc.ch_names]
+                if proc.ch_names != order:
+                    proc.reorder_channels(order)
 
         # write result back into raw, discard proc (_apply_op() is in-place)
         if not proc.preload:
