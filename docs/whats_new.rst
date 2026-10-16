@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.ATCNet` with ``concat=True`` concatenates the features of all sliding windows as documented, instead of stopping after the first window and failing with a shape error in the classifier; the default ``concat=False`` output is unchanged (:gh:`1421` by `Adam Mounir`_).
+
 - :meth:`braindecode.models.base.EEGModuleMixin.get_output_shape` runs its probe forward pass in eval mode and restores each module's mode afterwards, so it no longer updates BatchNorm running statistics or draws dropout masks; models that call it in ``__init__`` (e.g. :class:`braindecode.models.EEGNet`, :class:`braindecode.models.EEGConformer`) start with untouched BatchNorm statistics (:gh:`1420` by `Adam Mounir`_).
 
 - :class:`braindecode.augmentation.SmoothTimeMask`, :class:`braindecode.augmentation.FrequencyShift`, the sensor rotations (:class:`braindecode.augmentation.SensorsRotation`, :class:`braindecode.augmentation.SensorsXRotation`, :class:`braindecode.augmentation.SensorsYRotation`, :class:`braindecode.augmentation.SensorsZRotation`) and :class:`braindecode.augmentation.FTSurrogate` run on Apple MPS, which has no float64: their parameters are drawn in single precision there and the spherical-spline matrices are computed on CPU in double precision; results on CPU and CUDA are unchanged (:gh:`1419` by `Adam Mounir`_).
