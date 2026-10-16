@@ -6437,7 +6437,6 @@ def _cz():
             "full patch",
         ),
         ("REVE", dict(chs_info=[{"ch_name": "X1"}], n_times=1000), "position bank"),
-        ("ZUNA", dict(chs_info=_cz(), n_times=10000, sfreq=256.0), "max_seqlen"),
     ],
 )
 def test_unsupported_geometry_raises_at_construction(name, kwargs, match):
@@ -6474,3 +6473,20 @@ def test_ctnet_unequal_pool_sizes():
         n_chans=4, n_outputs=2, n_times=4000, pool_size_1=8, pool_size_2=4
     ).eval()
     assert model(torch.randn(2, 4, 4000)).shape == (2, 2)
+
+
+def test_zuna_accepts_windows_longer_than_max_seqlen():
+    """The rotary table grows with the window; shorter windows are unchanged."""
+    from braindecode.models import ZUNA
+
+    torch.manual_seed(0)
+    short = ZUNA(n_outputs=2, chs_info=_cz(), n_times=512, sfreq=256.0).eval()
+    torch.manual_seed(0)
+    small_table = ZUNA(n_outputs=2, chs_info=_cz(), n_times=512, sfreq=256.0, max_seqlen=64).eval()
+    x = torch.randn(2, 1, 512)
+    with torch.no_grad():
+        torch.testing.assert_close(short(x), small_table(x), rtol=0, atol=0)
+    long = ZUNA(n_outputs=2, chs_info=_cz(), n_times=15360, sfreq=256.0).eval()
+    with torch.no_grad():
+        out = long(torch.randn(1, 1, 15360))
+    assert out.shape == (1, 2) and torch.isfinite(out).all()
