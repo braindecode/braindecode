@@ -467,7 +467,7 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.models.SincShallowNet` and :class:`braindecode.models.TMSANet` raise a :class:`ValueError` at construction for input geometries they cannot run, extending the construction-time checks of :gh:`1313` to two more models: windows that leave fewer samples than ``pool_size`` after the temporal sinc filter or the average pooling (so the classifier head would get a negative or empty feature width, which previously failed with ``Trying to create tensor with negative dimension``), and a missing ``n_times``, which both models need for their head.
+- :class:`braindecode.models.SincShallowNet` and :class:`braindecode.models.TMSANet` raise a :class:`ValueError` at construction for input geometries they cannot run, extending the construction-time checks of :gh:`1313` to two more models: windows that leave fewer samples than ``pool_size`` after the temporal sinc filter or the average pooling (so the classifier head would get a negative or empty feature width, which previously failed with ``Trying to create tensor with negative dimension``), and a missing ``n_times``, which both models need for their head (:gh:`1432` by `Li Qing`_).
 
 - :meth:`braindecode.preprocessing.Preprocessor.deserialize` preserves the
   supplied configuration so it can be saved and reused for other recordings
