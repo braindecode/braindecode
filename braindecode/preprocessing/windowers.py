@@ -747,25 +747,28 @@ def _create_windows_from_events(
     #     `events_from_annotations`
 
     last_samp = ds.raw.first_samp + ds.raw.n_times - 1
-    # `stops` is used exclusively (i.e. `start:stop`), so add back 1
+    # Check every trial, not only the last one: an earlier, longer trial can
+    # also run past the end. With per-event-type offsets, each trial gets the
+    # offset of its own event type.
     if isinstance(trial_stop_offset_samples, dict):
-        # Check the max offset across all event types
-        max_stop_offset = max(trial_stop_offset_samples.values())
-        if stops[-1] + max_stop_offset > last_samp + 1:
-            raise ValueError(
-                '"trial_stop_offset_samples" too large. Stop of last trial '
-                f'({stops[-1]}) + max "trial_stop_offset_samples" '
-                f"({max_stop_offset}) must be smaller than length of"
-                f" recording ({len(ds)})."
-            )
+        code_to_name = {code: name for name, code in events_id.items()}
+        stop_offsets = np.array(
+            [trial_stop_offset_samples[code_to_name[code]] for code in events[:, 2]],
+            dtype=int,
+        )
     else:
-        if stops[-1] + trial_stop_offset_samples > last_samp + 1:
-            raise ValueError(
-                '"trial_stop_offset_samples" too large. Stop of last trial '
-                f'({stops[-1]}) + "trial_stop_offset_samples" '
-                f"({trial_stop_offset_samples}) must be smaller than length of"
-                f" recording ({len(ds)})."
-            )
+        stop_offsets = np.full(len(stops), trial_stop_offset_samples, dtype=int)
+    # `stops` is used exclusively (i.e. `start:stop`), so add back 1
+    too_late = np.flatnonzero(stops + stop_offsets > last_samp + 1)
+    if len(too_late):
+        i_trial = too_late[0]
+        trial = "last trial" if i_trial == len(stops) - 1 else f"trial {i_trial}"
+        raise ValueError(
+            f'"trial_stop_offset_samples" too large. Stop of {trial} '
+            f'({stops[i_trial]}) + "trial_stop_offset_samples" '
+            f"({stop_offsets[i_trial]}) must be smaller than length of"
+            f" recording ({len(ds)})."
+        )
 
     if isinstance(trial_start_offset_samples, dict):
         # Per-event-type windowing: skip inference, group by event type
@@ -880,6 +883,14 @@ def _create_windows_from_events(
             accepted_bads_ratio,
         )
         i_trials = [good_event_indices[i_trial] for i_trial in i_trials]
+
+    # A window starting before the recording would be empty; mne.Epochs
+    # instead drops such windows (``NO_DATA`` in its drop log), as before.
+    if not use_mne_epochs and len(starts) and np.min(starts) < 0:
+        raise ValueError(
+            '"trial_start_offset_samples" too small. A window would start '
+            f"{-np.min(starts)} samples before the start of the recording."
+        )
 
     if (on_overlapping_events != "ignore") and any(np.diff(starts) <= 0):
         msg = "Overlapping trials detected. You can ignore, warn, or raise an error, using the on_overlapping_events argument."
