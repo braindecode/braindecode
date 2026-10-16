@@ -469,9 +469,50 @@ Bug fixes
 
 - :class:`braindecode.modules.CrissCrossTransformerEncoderLayer` no longer attends across the samples of a batch with its default ``batch_first=False`` (its inner attentions always receive batch-first tensors, which the layer builds itself), and ``norm_first=False`` now gives a post-norm layer, as in :class:`torch.nn.TransformerEncoderLayer`, instead of being ignored. :class:`braindecode.models.CBraMod` (``batch_first=True``, ``norm_first=True``) is unchanged (:gh:`1424` by `Adam Mounir`_).
 
+- :class:`braindecode.modules.MLP` with ``normalize=True`` builds a :class:`torch.nn.LayerNorm` over the output features of each hidden layer instead of raising ``TypeError`` (:gh:`1423` by `Adam Mounir`_).
+
+- :class:`braindecode.models.CTNet` applies ``final_drop_prob`` (its dropout layer was built but the forward pass flattened the features without it), and its positional encoding covers the actual sequence length, so ``pool_size_2`` smaller than ``pool_size_1`` no longer raises a size mismatch; parameter shapes and eval-mode outputs of working configurations are unchanged (:gh:`1422` by `Adam Mounir`_).
+
+- :class:`braindecode.models.ATCNet` with ``concat=True`` concatenates the features of all sliding windows as documented, instead of stopping after the first window and failing with a shape error in the classifier; the default ``concat=False`` output is unchanged (:gh:`1421` by `Adam Mounir`_).
+
+- :meth:`braindecode.models.base.EEGModuleMixin.get_output_shape` runs its probe forward pass in eval mode and restores each module's mode afterwards, so it no longer updates BatchNorm running statistics or draws dropout masks; models that call it in ``__init__`` (e.g. :class:`braindecode.models.EEGNet`, :class:`braindecode.models.EEGConformer`) start with untouched BatchNorm statistics (:gh:`1420` by `Adam Mounir`_).
+
+- :class:`braindecode.augmentation.SmoothTimeMask`, :class:`braindecode.augmentation.FrequencyShift`, the sensor rotations (:class:`braindecode.augmentation.SensorsRotation`, :class:`braindecode.augmentation.SensorsXRotation`, :class:`braindecode.augmentation.SensorsYRotation`, :class:`braindecode.augmentation.SensorsZRotation`) and :class:`braindecode.augmentation.FTSurrogate` run on Apple MPS, which has no float64: their parameters are drawn in single precision there and the spherical-spline matrices are computed on CPU in double precision; results on CPU and CUDA are unchanged (:gh:`1419` by `Adam Mounir`_).
+
+- :class:`braindecode.augmentation.Compose` can be called without a target, like any other :class:`braindecode.augmentation.Transform`, and then returns only ``X``: ``Compose(...)(X, None)`` used to unpack the batch along its first axis (returning ``(X[0], X[1])`` for a batch of two) and ``Compose(...)(X)`` raised ``TypeError`` (:gh:`1418` by `Adam Mounir`_).
+
+- :class:`braindecode.samplers.DistributedRecordingSampler` (and :class:`braindecode.samplers.DistributedRelativePositioningSampler`) no longer raise ``TypeError`` on the first sample with the default ``random_state=None`` or a ``RandomState``: torch's :class:`~torch.utils.data.distributed.DistributedSampler` gets ``random_state`` as its seed only when it is an int, and seed 0 otherwise, the same on every process (:gh:`1417` by `Adam Mounir`_).
+
+- EEGPrep preprocessors that remove EEG channels (:class:`braindecode.preprocessing.RemoveFlatChannels`, :class:`braindecode.preprocessing.RemoveBadChannels`, :class:`braindecode.preprocessing.RemoveBadChannelsNoLocs`) no longer raise ``ValueError`` when the recording also has non-EEG channels: the original order is restored for the channels that remain, and the input raw is no longer left without its non-EEG channels if the operation fails (:gh:`1416` by `Adam Mounir`_).
+
+- :func:`braindecode.preprocessing.create_windows_from_events` checks the window bounds of every trial: it raises when a window would start before the recording (negative ``trial_start_offset_samples`` on an early trial gave empty windows; with ``use_mne_epochs=True`` such windows are still dropped by :class:`mne.Epochs`) or when any trial, not only the last one, ends past the recording with ``trial_stop_offset_samples``; with per-event-type offsets, each trial is checked with the offset of its own event type, so valid inputs are no longer rejected because another type has a larger offset (:gh:`1415` by `Adam Mounir`_).
+
+- ``set_description(..., overwrite=True)`` on a windows dataset no longer deletes the overwritten key from the description of the dataset it was windowed from (the two share one :class:`pandas.Series`), which could make indexing the source dataset raise ``KeyError`` when the key was its target (:gh:`1414` by `Adam Mounir`_).
+
+- :func:`braindecode.datautil.load_concat_dataset` reads a copied or moved dataset folder from the copy: the cached ``N-raw.pkl`` is only reused when the fif path it stores is the file next to it, otherwise the fif is read again and the cache re-created. It also skips entries of the folder that are not dataset subdirectories (e.g. ``.DS_Store``, a README) instead of raising ``ValueError`` (:gh:`1413` by `Adam Mounir`_).
+
+- ``recording_ids`` of :class:`braindecode.datasets.TUH` (and :class:`braindecode.datasets.TUHAbnormal`, :class:`braindecode.datasets.TUHEvents`) selects recordings by their chronological position, as documented, instead of by their position in the file listing (:gh:`1412` by `Adam Mounir`_).
+
+- :meth:`braindecode.preprocessing.Preprocessor.deserialize` preserves the
+  supplied configuration so it can be saved and reused for other recordings
+  (by `Anton Soloviev`_).
+
+- :func:`braindecode.augmentation.functional.frequency_shift` accepts scalar,
+  NumPy and CPU tensor shifts for CUDA inputs, preserving gradients to tensor
+  shifts on another device (by `Anton Soloviev`_).
+
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
+- :func:`braindecode.datasets.create_from_mne_epochs` no longer shifts targets
+  and window start indices when the input :class:`mne.Epochs` still contain
+  rejected epochs: bad epochs are now dropped on a copy before iterating, so
+  data and ``epochs.events`` stay aligned (:gh:`1411` by `Adam Mounir`_).
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
+
+- :class:`braindecode.models.Guetschel2026` places CPU-computed buffers on the
+  active device inside ``torch.device`` contexts on older supported PyTorch
+  versions (by `Anton Soloviev`_).
+
 - :class:`braindecode.models.SincShallowNet` now round-trips through
   ``save_pretrained``/``from_pretrained``: its ``window`` buffer viewed a larger
   storage, which safetensors refuses, so ``model.safetensors`` was never written
