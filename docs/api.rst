@@ -767,6 +767,8 @@ transformations, frequency'domain transformations, and spatial transformations.
      SensorsXRotation
      Mixup
      CutMix
+
+     LabelSmoothing
      SegmentationReconstruction
      MaskEncoding
      AmplitudeScale
@@ -798,6 +800,8 @@ but they are implemented as functions.
      sensors_rotation
      mixup
      cutmix
+
+     label_smoothing
      segmentation_reconstruction
      mask_encoding
      amplitude_scale
