@@ -469,9 +469,36 @@ Bug fixes
 
 - :class:`braindecode.samplers.DistributedRecordingSampler` (and :class:`braindecode.samplers.DistributedRelativePositioningSampler`) no longer raise ``TypeError`` on the first sample with the default ``random_state=None`` or a ``RandomState``: torch's :class:`~torch.utils.data.distributed.DistributedSampler` gets ``random_state`` as its seed only when it is an int, and seed 0 otherwise, the same on every process (:gh:`1417` by `Adam Mounir`_).
 
+- EEGPrep preprocessors that remove EEG channels (:class:`braindecode.preprocessing.RemoveFlatChannels`, :class:`braindecode.preprocessing.RemoveBadChannels`, :class:`braindecode.preprocessing.RemoveBadChannelsNoLocs`) no longer raise ``ValueError`` when the recording also has non-EEG channels: the original order is restored for the channels that remain, and the input raw is no longer left without its non-EEG channels if the operation fails (:gh:`1416` by `Adam Mounir`_).
+
+- :func:`braindecode.preprocessing.create_windows_from_events` checks the window bounds of every trial: it raises when a window would start before the recording (negative ``trial_start_offset_samples`` on an early trial gave empty windows; with ``use_mne_epochs=True`` such windows are still dropped by :class:`mne.Epochs`) or when any trial, not only the last one, ends past the recording with ``trial_stop_offset_samples``; with per-event-type offsets, each trial is checked with the offset of its own event type, so valid inputs are no longer rejected because another type has a larger offset (:gh:`1415` by `Adam Mounir`_).
+
+- ``set_description(..., overwrite=True)`` on a windows dataset no longer deletes the overwritten key from the description of the dataset it was windowed from (the two share one :class:`pandas.Series`), which could make indexing the source dataset raise ``KeyError`` when the key was its target (:gh:`1414` by `Adam Mounir`_).
+
+- :func:`braindecode.datautil.load_concat_dataset` reads a copied or moved dataset folder from the copy: the cached ``N-raw.pkl`` is only reused when the fif path it stores is the file next to it, otherwise the fif is read again and the cache re-created. It also skips entries of the folder that are not dataset subdirectories (e.g. ``.DS_Store``, a README) instead of raising ``ValueError`` (:gh:`1413` by `Adam Mounir`_).
+
+- ``recording_ids`` of :class:`braindecode.datasets.TUH` (and :class:`braindecode.datasets.TUHAbnormal`, :class:`braindecode.datasets.TUHEvents`) selects recordings by their chronological position, as documented, instead of by their position in the file listing (:gh:`1412` by `Adam Mounir`_).
+
+- :meth:`braindecode.preprocessing.Preprocessor.deserialize` preserves the
+  supplied configuration so it can be saved and reused for other recordings
+  (by `Anton Soloviev`_).
+
+- :func:`braindecode.augmentation.functional.frequency_shift` accepts scalar,
+  NumPy and CPU tensor shifts for CUDA inputs, preserving gradients to tensor
+  shifts on another device (by `Anton Soloviev`_).
+
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
+- :func:`braindecode.datasets.create_from_mne_epochs` no longer shifts targets
+  and window start indices when the input :class:`mne.Epochs` still contain
+  rejected epochs: bad epochs are now dropped on a copy before iterating, so
+  data and ``epochs.events`` stay aligned (:gh:`1411` by `Adam Mounir`_).
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
+
+- :class:`braindecode.models.Guetschel2026` places CPU-computed buffers on the
+  active device inside ``torch.device`` contexts on older supported PyTorch
+  versions (by `Anton Soloviev`_).
+
 - :class:`braindecode.models.SincShallowNet` now round-trips through
   ``save_pretrained``/``from_pretrained``: its ``window`` buffer viewed a larger
   storage, which safetensors refuses, so ``model.safetensors`` was never written

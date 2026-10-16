@@ -580,6 +580,7 @@ def _frequency_shift(X: torch.Tensor, fs: float, f_shift: float) -> torch.Tensor
         _f_shift = torch.as_tensor(f_shift).float()
     else:
         raise ValueError(f"Invalid f_shift type: {type(f_shift)}")
+    _f_shift = _f_shift.to(X.device)
     f_shift_stack = _f_shift.repeat(N_padded, n_channels, 1)
     reshaped_f_shift = f_shift_stack.permute(
         *torch.arange(f_shift_stack.ndim - 1, -1, -1)
