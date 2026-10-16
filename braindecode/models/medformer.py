@@ -235,17 +235,18 @@ class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
         self.patch_len_list = patch_len_list
         stride_list = patch_len_list  # Using the same values for strides.
         self.stride_list = stride_list
+        # patches run over time (one token per patch of samples)
         patch_num_list = [
-            int((self.n_chans - patch_len) / stride + 2)
+            int((self.n_times - patch_len) / stride + 2)
             for patch_len, stride in zip(patch_len_list, stride_list)
         ]
         self.patch_num_list = patch_num_list
 
         # Initialize the embedding layer.
         self.enc_embedding = _ListPatchEmbedding(
-            enc_in=self.n_times,
+            enc_in=self.n_chans,
             d_model=self.embed_dim,
-            seq_len=self.n_chans,
+            seq_len=self.n_times,
             patch_len_list=self.patch_len_list,
             stride_list=self.stride_list,
             dropout=self.drop_prob,
@@ -362,7 +363,7 @@ class _CrossChannelTokenEmbedding(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # The kernel spans all c_in rows and the patches do not overlap, so
         # the conv is one GEMM of its weight with the patch-reshaped input
-        # (Gaudi2 rejects conv kernels taller than 256 rows, c_in = n_times).
+        # (Gaudi2 rejects conv kernels taller than 256 rows).
         l_patch = self.token_conv.kernel_size[1]
         n_patches = x.shape[-1] // l_patch
         x = x[:, 0, :, : n_patches * l_patch].reshape(
@@ -411,10 +412,9 @@ class _ListPatchEmbedding(nn.Module):
         ]
         self.value_embeddings = nn.ModuleList(linear_layers)
         self.position_embedding = _PositionalEmbedding(d_model=d_model)
-        # One row per time sample: windows longer than 5000 samples need more.
-        self.channel_embedding = _PositionalEmbedding(
-            d_model=seq_len, max_len=max(5000, enc_in)
-        )
+        # One sinusoidal code along time per channel, which tags each channel
+        # (the rows past enc_in that the original max_len=5000 adds are unused)
+        self.channel_embedding = _PositionalEmbedding(d_model=seq_len, max_len=enc_in)
         self.dropout = nn.Dropout(dropout)
 
         self.learnable_embeddings = nn.ParameterList(
@@ -423,15 +423,12 @@ class _ListPatchEmbedding(nn.Module):
 
     def forward(
         self, x: torch.Tensor
-    ) -> List[torch.Tensor]:  # (batch_size, seq_len, enc_in)
-        x = x.permute(0, 2, 1)  # (batch_size, enc_in, seq_len)
+    ) -> List[torch.Tensor]:  # (batch_size, enc_in, seq_len) = (B, n_chans, n_times)
+        # The original code takes (batch_size, seq_len, enc_in) and permutes it
+        # to this layout; braindecode inputs already have it.
         if self.single_channel:
-            # After permute: x.shape = (batch_size, n_times, n_chans)
-            # We want to process each channel independently
+            # Treat each channel independently: (batch_size * n_chans, 1, n_times)
             batch_size = x.shape[0]
-            # Permute to get channels in the middle: (batch_size, n_chans, n_times)
-            x = x.permute(0, 2, 1)
-            # Reshape to treat each channel independently: (batch_size * n_chans, 1, n_times)
             x = torch.reshape(x, (batch_size * self.n_chans, 1, self.n_times))
 
         # add positional embedding to tag each channel (only when not single_channel)

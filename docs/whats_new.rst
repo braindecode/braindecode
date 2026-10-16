@@ -33,6 +33,13 @@ Enhancements
 
 - :class:`braindecode.models.NeuroRVQ` takes an input at another integer sampling rate and resamples it to the modality's rate (EEG 200 Hz) inside the model with :class:`torchaudio.transforms.Resample`, with a warning, instead of raising; and ``on_missing="drop"`` leaves out input channels with no pretrained slot (default ``"error"``). At 200 Hz with known channels the model and its output are unchanged. :class:`braindecode.models.EEGCLIP` keeps its BatchNorm layers on running statistics for a single-example batch in train mode, as the other BatchNorm models do (:gh:`1402` by `Bruno Aristimunha`_).
 - Add :func:`braindecode.modules.resolve_channel_positions`: places channels in a name -> position bank by name (case, ``EEG``/``-REF``, ``T3``-``T6`` aliases, montage-qualified names such as ``biosemi128_A1``) or as the midpoint of a bipolar ``A-B``; ``on_missing`` raises, drops, or takes the bank entry nearest the channel's ``loc``. :class:`braindecode.models.REVE` uses it (``montage``, ``on_missing``); exact bank names give the same positions as before (:gh:`1400` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.augmentation.LabelSmoothing` and
+  :func:`braindecode.augmentation.functional.label_smoothing`, which replace
+  class-index
+  targets, or existing target distributions, with their convex combination
+  with the uniform distribution over the classes; the signals are unchanged
+  and the smoothed targets train with any distribution-accepting loss
+  (:gh:`1401` by `Li Qing`_).
 - :class:`braindecode.augmentation.CutMix` pastes a random time region of a shuffled example into each example of the batch (Yun et al., 2019) and, like :class:`braindecode.augmentation.Mixup`, returns targets for :func:`braindecode.training.mixup_criterion` (:gh:`1372` by `Li Qing`_).
 - :meth:`braindecode.models.EEGCLIP.contrastive_loss` takes ``distributed=True`` to use every DDP rank's pairs as negatives, with the gradient of the loss on the concatenated batch even for uneven per-rank batches; the default local-batch loss is unchanged (:gh:`1320` by `lindicaphxag-tech`_).
 - :func:`braindecode.functional.fft_conv1d` on CPU computes its per-frequency channel product as one real matmul whose output columns are the (real, imaginary) pairs of the result, read as a complex tensor without a copy: the backward no longer allocates four zero-filled copies of the product. CPU train step of :class:`braindecode.models.EEGNeX` 2.6x faster on 60-s windows at 100 Hz, batch 64, 24 threads (0.47x of 1.8.1; it had become 1.17x slower) and 2.5x on 4-s windows at 250 Hz, batch 32, 2 threads; :class:`braindecode.models.TIDNet` 2.0-2.7x, :class:`braindecode.models.EEGInceptionMI` 1.15-1.6x; EEGNeX train-step peak memory halved. Forward-only calls with fewer rows than twice the input channels keep the previous product. Outputs and gradients change by float rounding only (:gh:`1362` by `Bruno Aristimunha`_).
@@ -183,7 +190,7 @@ Enhancements
   (:gh:`1178` by `Julien Gadonneix`_).
 - :class:`braindecode.models.MAPA` loads the released ``mapa_vits384`` with
   ``MAPA.from_pretrained("braindecode/mapa-pretrained", ...)``; the key mapping
-  for the original checkpoint is removed (:gh:`1433` by `Bruno Aristimunha`_).
+  for the original checkpoint is removed (by `Bruno Aristimunha`_).
 - Add ``test/unit_tests/models/test_pretrained_compat.py``: every model with released
   weights is built on a grid of input geometries (canonical montage, permuted order,
   a 64-channel montage outside the 10-20 vocabulary, coordinates-only channels, names
@@ -468,6 +475,20 @@ Requirements
 Bug fixes
 ==========
 
+- :func:`braindecode.functional.glorot_weight_zero_bias` skips ``None`` weights and biases, so :class:`braindecode.models.EEGNet` with ``batch_norm_affine=False`` no longer raises ``AttributeError``, and its docstring now says what it does: it sets BatchNorm weights to one and biases to zero, and leaves the other weights to their layer's initialization (it has not applied the Glorot initialization its name refers to since 1.0). Initial weights are unchanged (:gh:`1426` by `Adam Mounir`_).
+
+- :class:`braindecode.models.MEDFormer` patches its input over time, as in the original model: the port kept the original's permute from ``(batch, n_times, n_chans)`` although braindecode inputs are ``(batch, n_chans, n_times)``, and swapped ``n_chans`` and ``n_times`` in the patch embedding, so its token convolutions slid over the channels with kernels spanning the whole window, and the number of tokens did not depend on ``n_times``. The token convolution and channel-embedding shapes change, so MEDFormer weights saved with an earlier version do not load (:gh:`1431` by `Adam Mounir`_).
+
+- :class:`braindecode.models.Labram` warns when, in the Neural Tokenizer mode (the default), the embedding dimension set by its temporal convolution differs from the given ``embed_dim``, which it used to replace silently (e.g. ``patch_size=100`` gives 104 instead of the default 200), and documents this (:gh:`1430` by `Adam Mounir`_).
+
+- :class:`braindecode.models.LUNA` applies its ``attn_drop`` argument to the attention of its transformer blocks instead of ignoring it (the default 0.0 is unchanged), and documents it (:gh:`1429` by `Adam Mounir`_).
+
+- :class:`braindecode.models.BIOT` with ``hop_length`` larger than ``sfreq`` falls back to an integer hop of ``sfreq // 2`` and stores it in ``hop_length``, instead of passing a float to :func:`torch.stft` (which raised ``TypeError`` in the forward pass) while keeping the original value in its configuration (:gh:`1428` by `Adam Mounir`_).
+
+- :func:`braindecode.training.predict_trials` (and ``predict_trials`` of :class:`braindecode.EEGClassifier` / :class:`braindecode.EEGRegressor` in cropped mode) returns one target per trial for multi-value window targets, such as several target channels with ``last_target_only=True``, instead of raising ``IndexError``; only targets with a time axis are treated as sequences. :meth:`braindecode.EEGRegressor.predict_trials` with ``cropped=False`` stacks the targets instead of concatenating them, so scalar targets no longer raise ``ValueError`` and multi-value targets keep one row per trial (:gh:`1427` by `Adam Mounir`_).
+
+- The docstring of :meth:`braindecode.modules.MultiHeadAttention.forward` stated the boolean mask the wrong way round: as in :func:`torch.nn.functional.scaled_dot_product_attention`, which receives the mask unchanged, ``True`` marks a position that takes part in attention and ``False`` one that is ignored (:gh:`1425` by `Adam Mounir`_).
+
 - :class:`braindecode.modules.CrissCrossTransformerEncoderLayer` no longer attends across the samples of a batch with its default ``batch_first=False`` (its inner attentions always receive batch-first tensors, which the layer builds itself), and ``norm_first=False`` now gives a post-norm layer, as in :class:`torch.nn.TransformerEncoderLayer`, instead of being ignored. :class:`braindecode.models.CBraMod` (``batch_first=True``, ``norm_first=True``) is unchanged (:gh:`1424` by `Adam Mounir`_).
 
 - :class:`braindecode.modules.MLP` with ``normalize=True`` builds a :class:`torch.nn.LayerNorm` over the output features of each hidden layer instead of raising ``TypeError`` (:gh:`1423` by `Adam Mounir`_).
@@ -583,20 +604,20 @@ Bug fixes
   already correct. (by `Bruno Aristimunha`_)
 - Fix :meth:`braindecode.models.BrainOmni.reset_head` leaving the new head in
   training mode after ``model.eval()``, so its dropout made inference
-  stochastic; the head now follows the model's mode (:gh:`1433` by `Bruno Aristimunha`_).
+  stochastic; the head now follows the model's mode (by `Bruno Aristimunha`_).
 - Fix :class:`braindecode.models.BrainTokenizer` reconstruction when
   ``window_length`` is not a multiple of ``prod(ratios)``: each decoded window
   is now cropped to ``window_length`` before the windows are joined, so later
   windows keep their position. Configurations with a divisible window, such as
-  the released one, are unchanged (:gh:`1433` by `Bruno Aristimunha`_).
+  the released one, are unchanged (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.BrainTokenizer` and
   :class:`braindecode.models.BrainOmni` now raise ``ValueError`` for
   ``n_filters < 2`` and for attention dimensions that do not split across
   heads, instead of a reshape error or an ``assert``; the tokenizer's sampling
-  rate warning names ``BrainTokenizer`` (:gh:`1433` by `Bruno Aristimunha`_).
+  rate warning names ``BrainTokenizer`` (by `Bruno Aristimunha`_).
 - :attr:`braindecode.models.MAPA.input_shape` now returns the spectrogram shape
   ``(1, n_chans, 20, n_times)`` with ``normalization="session"``, so
-  ``get_output_shape()`` works in that mode (:gh:`1433` by `Bruno Aristimunha`_).
+  ``get_output_shape()`` works in that mode (by `Bruno Aristimunha`_).
 - Fix :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` rejecting a
   caller's ``chs_info`` (``n_chans=… different from chs_info``) and ``n_times``/``sfreq``
   (``n_times different from input_window_seconds * sfreq``): the Hub config filled the
@@ -1617,12 +1638,12 @@ Enhancements
   consistent ``{"features": Tensor, "cls_token": Tensor | None}`` dict across
   all models. Legacy parameters (``return_encoder_output``, ``return_feature``,
   ``return_all_tokens``, etc.) continue to work unchanged
-  (:gh:`1433` by `Bruno Aristimunha`_).
+  (by `Bruno Aristimunha`_).
 - Add :meth:`~braindecode.models.base.EEGModuleMixin.reset_head` to all 7
   foundation models for replacing the classification head with a new number of
   outputs. :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` now
   automatically calls ``reset_head`` when the user passes an ``n_outputs`` that
-  differs from the saved config (:gh:`1433` by `Bruno Aristimunha`_).
+  differs from the saved config (by `Bruno Aristimunha`_).
 - Enable lazy loading from Zarr when using
   :meth:`~braindecode.datasets.BaseConcatDataset.pull_from_hub` or
   ``load_from_zarr`` with ``preload=False``. Data is decompressed lazily

@@ -6475,6 +6475,28 @@ def test_ctnet_unequal_pool_sizes():
     assert model(torch.randn(2, 4, 4000)).shape == (2, 2)
 
 
+def test_biot_hop_length_larger_than_sfreq():
+    with pytest.warns(UserWarning, match="hop length is larger"):
+        model = BIOT(n_chans=2, n_outputs=2, n_times=1000, sfreq=200.0, hop_length=300)
+    assert model.hop_length == 100 and isinstance(model.hop_length, int)
+    assert model.encoder.hop_length == 100
+    assert model(torch.randn(2, 2, 1000)).shape == (2, 2)
+
+
+@pytest.mark.parametrize("n_times", [256, 1024])
+def test_medformer_patches_over_time(n_times):
+    model = MEDFormer(n_chans=4, n_outputs=3, n_times=n_times, patch_len_list=[2, 4])
+    # one token per patch of samples, each kernel spanning all channels
+    tokens = model.enc_embedding(torch.randn(2, 4, n_times))
+    assert [t.shape[1] for t in tokens] == [n_times // 2 + 1, n_times // 4 + 1]
+    assert model.patch_num_list == [t.shape[1] for t in tokens]
+    assert [e.token_conv.kernel_size for e in model.enc_embedding.value_embeddings] == [
+        (4, 2),
+        (4, 4),
+    ]
+    assert model.eval()(torch.randn(2, 4, n_times)).shape == (2, 3)
+
+
 def test_zuna_accepts_windows_longer_than_max_seqlen():
     """The rotary table grows with the window; shorter windows are unchanged."""
     from braindecode.models import ZUNA
@@ -6482,7 +6504,9 @@ def test_zuna_accepts_windows_longer_than_max_seqlen():
     torch.manual_seed(0)
     short = ZUNA(n_outputs=2, chs_info=_cz(), n_times=512, sfreq=256.0).eval()
     torch.manual_seed(0)
-    small_table = ZUNA(n_outputs=2, chs_info=_cz(), n_times=512, sfreq=256.0, max_seqlen=64).eval()
+    small_table = ZUNA(
+        n_outputs=2, chs_info=_cz(), n_times=512, sfreq=256.0, max_seqlen=64
+    ).eval()
     x = torch.randn(2, 1, 512)
     with torch.no_grad():
         torch.testing.assert_close(short(x), small_table(x), rtol=0, atol=0)
