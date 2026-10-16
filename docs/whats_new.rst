@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.augmentation.Compose` can be called without a target, like any other :class:`braindecode.augmentation.Transform`, and then returns only ``X``: ``Compose(...)(X, None)`` used to unpack the batch along its first axis (returning ``(X[0], X[1])`` for a batch of two) and ``Compose(...)(X)`` raised ``TypeError`` (:gh:`1418` by `Adam Mounir`_).
+
 - :class:`braindecode.samplers.DistributedRecordingSampler` (and :class:`braindecode.samplers.DistributedRelativePositioningSampler`) no longer raise ``TypeError`` on the first sample with the default ``random_state=None`` or a ``RandomState``: torch's :class:`~torch.utils.data.distributed.DistributedSampler` gets ``random_state`` as its seed only when it is an int, and seed 0 otherwise, the same on every process (:gh:`1417` by `Adam Mounir`_).
 
 - EEGPrep preprocessors that remove EEG channels (:class:`braindecode.preprocessing.RemoveFlatChannels`, :class:`braindecode.preprocessing.RemoveBadChannels`, :class:`braindecode.preprocessing.RemoveBadChannelsNoLocs`) no longer raise ``ValueError`` when the recording also has non-EEG channels: the original order is restored for the channels that remain, and the input raw is no longer left without its non-EEG channels if the operation fails (:gh:`1416` by `Adam Mounir`_).
