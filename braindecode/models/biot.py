@@ -186,10 +186,12 @@ class BIOT(EEGModuleMixin, nn.Module):
             warn(
                 "The hop length is larger than the sampling frequency. "
                 + "This may cause aliasing. Consider using a smaller "
-                "hop length.",
+                "hop length. Using sfreq // 2 instead.",
                 UserWarning,
             )
-            hop_length = self.sfreq // 2
+            # torch.stft needs an int, and sfreq is usually a float
+            hop_length = int(self.sfreq // 2)
+            self.hop_length = hop_length
 
         if self.input_window_seconds < 1.0:
             warning_msg = (

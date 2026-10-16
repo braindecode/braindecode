@@ -6,6 +6,7 @@
 # License: BSD-3
 
 import numpy as np
+import pandas as pd
 import pytest
 import sklearn.datasets
 import torch
@@ -575,3 +576,34 @@ def test_post_epoch_train_scoring_uses_batch(monkeypatch):
 
     assert net.history[0]["train_score"] == 0.0
     assert net.evaluation_step_called_with_batch
+
+
+def test_predict_trials_multi_value_targets():
+    # 2 trials x 3 overlapping windows, each window with a 2-value target, as
+    # given by target channels with last_target_only=True
+    class CroppedWindows(torch.utils.data.Dataset):
+        def __init__(self):
+            self.items = [
+                (
+                    np.random.randn(2, 20).astype("float32"),
+                    np.array([trial, trial + 10], dtype="float32"),
+                    [i_window, 10 * i_window, 10 * i_window + 20],
+                )
+                for trial in range(2)
+                for i_window in range(3)
+            ]
+
+        def __len__(self):
+            return len(self.items)
+
+        def __getitem__(self, i):
+            return self.items[i]
+
+        def get_metadata(self):
+            return pd.DataFrame({"i_window_in_trial": [it[2][0] for it in self.items]})
+
+    preds, ys = predict_trials(
+        torch.nn.Conv1d(2, 2, 10), CroppedWindows(), batch_size=2
+    )
+    assert preds.shape[:2] == (2, 2)
+    np.testing.assert_array_equal(ys, [[0, 10], [1, 11]])

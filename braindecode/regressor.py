@@ -173,7 +173,12 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             )
             preds = self.predict(X)
             if return_targets:
-                return preds, np.concatenate([X[i][1] for i in range(len(X))])
+                # stack, not concatenate: scalar targets are 0-d, and
+                # multi-value targets must keep one row per trial
+                ys = np.stack([np.asarray(X[i][1]) for i in range(len(X))])
+                if ys.ndim == 2 and ys.shape[1] == 1:
+                    ys = ys[:, 0]  # single-value targets, as before
+                return preds, ys
             return preds
         self.check_is_fitted()
         return predict_trials(

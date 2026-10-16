@@ -22,6 +22,21 @@ from torch.fft import fft, ifft
 from torch.nn.functional import pad
 
 
+def _max_float_dtype(device: torch.device | str) -> torch.dtype:
+    """float64, or float32 on Apple MPS, which has no float64."""
+    return torch.float32 if torch.device(device).type == "mps" else torch.float64
+
+
+def _to_device(t: torch.Tensor, device: torch.device | str) -> torch.Tensor:
+    """Move ``t`` to ``device``, in single precision on MPS (no float64 there)."""
+    if torch.device(device).type == "mps":
+        if t.dtype == torch.float64:
+            return t.float().to(device)
+        if t.dtype == torch.complex128:
+            return t.to(torch.complex64).to(device)
+    return t.to(device)
+
+
 def identity(X: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Identity operation.
 
@@ -92,10 +107,11 @@ def _new_random_fft_phase_odd(
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
         2j * np.pi * rng.random((batch_size, c, (n - 1) // 2))
-    ).to(device)
+    )
+    random_phase = _to_device(random_phase, device)
     return torch.cat(
         [
-            torch.zeros((batch_size, c, 1), device=device),
+            torch.zeros((batch_size, c, 1), device=device, dtype=random_phase.dtype),
             random_phase,
             -torch.flip(random_phase, [-1]),
         ],
@@ -113,12 +129,13 @@ def _new_random_fft_phase_even(
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
         2j * np.pi * rng.random((batch_size, c, n // 2 - 1))
-    ).to(device)
+    )
+    random_phase = _to_device(random_phase, device)
     return torch.cat(
         [
-            torch.zeros((batch_size, c, 1), device=device),
+            torch.zeros((batch_size, c, 1), device=device, dtype=random_phase.dtype),
             random_phase,
-            torch.zeros((batch_size, c, 1), device=device),
+            torch.zeros((batch_size, c, 1), device=device, dtype=random_phase.dtype),
             -torch.flip(random_phase, [-1]),
         ],
         dim=-1,
@@ -178,7 +195,7 @@ def ft_surrogate(
         and 0 <= phase_noise_magnitude <= 1
     ), f"eps must be a float between 0 and 1. Got {phase_noise_magnitude}."
 
-    f = fft(X.double(), dim=-1)
+    f = fft(X.to(_max_float_dtype(X.device)), dim=-1)
     device = X.device
 
     n = f.shape[-1]
@@ -580,6 +597,7 @@ def _frequency_shift(X: torch.Tensor, fs: float, f_shift: float) -> torch.Tensor
         _f_shift = torch.as_tensor(f_shift).float()
     else:
         raise ValueError(f"Invalid f_shift type: {type(f_shift)}")
+    _f_shift = _f_shift.to(X.device)
     f_shift_stack = _f_shift.repeat(N_padded, n_channels, 1)
     reshaped_f_shift = f_shift_stack.permute(
         *torch.arange(f_shift_stack.ndim - 1, -1, -1)
@@ -911,7 +929,15 @@ def _rotate_signals(
     sensors_positions_matrix: torch.Tensor,
     spherical: bool = True,
 ) -> torch.Tensor:
-    sensors_positions_matrix = sensors_positions_matrix.to(X.device)
+    if X.device.type == "mps":
+        # MPS has no float64: compute the small (n_chans x n_chans) spherical
+        # spline matrices on CPU in double precision, only move the result
+        # (two separate steps: a combined device + dtype .to() from MPS
+        # returns zeros with some torch versions)
+        sensors_positions_matrix = sensors_positions_matrix.cpu().double()
+        rotations = [rotation.cpu().double() for rotation in rotations]
+    else:
+        sensors_positions_matrix = sensors_positions_matrix.to(X.device)
     rot_sensors_matrices = [
         rotation.matmul(sensors_positions_matrix) for rotation in rotations
     ]
@@ -921,9 +947,10 @@ def _rotate_signals(
                 torch.as_tensor(
                     _torch_make_interpolation_matrix(
                         sensors_positions_matrix.T, rot_sensors_matrix.T
-                    ),
-                    device=X.device,
-                ).float()
+                    )
+                )
+                .float()
+                .to(X.device)
                 for rot_sensors_matrix in rot_sensors_matrices
             ]
         )
