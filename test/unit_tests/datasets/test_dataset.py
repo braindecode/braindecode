@@ -1143,3 +1143,46 @@ def test_getitems_advises_the_batch_before_reading_it(tmp_path, monkeypatch):
         np.testing.assert_array_equal(a, b)
     (X, y, inds), = DataLoader(windows, batch_sampler=[batch])
     np.testing.assert_array_equal(X.numpy(), np.stack([windows[i][0] for i in batch]))
+
+
+@pytest.mark.parametrize("as_frame", [False, True])
+@pytest.mark.parametrize("offset", [-3, -1, 1])
+def test_set_description_rejects_wrong_length(set_up, as_frame, offset):
+    dataset = BaseConcatDataset(
+        [RawDataset(set_up[0], {"subject": i}) for i in range(3)]
+    )
+    before = dataset.description.copy(deep=True)
+    description = {"new_column": list(range(len(dataset.datasets) + offset))}
+    if as_frame:
+        description = pd.DataFrame(description)
+    with pytest.raises(ValueError, match="Length of values .* does not match"):
+        dataset.set_description(description)
+    pd.testing.assert_frame_equal(dataset.description, before)
+
+
+def test_set_description_empty_mapping_is_noop(set_up):
+    dataset = BaseConcatDataset(
+        [RawDataset(set_up[0], {"subject": i}) for i in range(3)]
+    )
+    before = dataset.description.copy(deep=True)
+    dataset.set_description({})
+    pd.testing.assert_frame_equal(dataset.description, before)
+
+
+@pytest.mark.parametrize("key", ["subject", "target"])
+def test_set_description_overwrite_on_windows_keeps_source_description(key):
+    info = mne.create_info(["C3", "C4"], sfreq=100.0, ch_types="eeg")
+    raw = mne.io.RawArray(np.zeros((2, 1000)), info, verbose=False)
+    raw_ds = RawDataset(
+        raw, pd.Series({"subject": 1, "target": 0}), target_name="target"
+    )
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([raw_ds]),
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=False,
+    )
+    windows.set_description({key: [5]}, overwrite=True)
+    assert windows.description.loc[0, key] == 5
+    assert raw_ds.description.to_dict() == {"subject": 1, "target": 0}
+    assert raw_ds[0][1] == 0

@@ -451,27 +451,36 @@ print(
 # --------------------------------------------------
 #
 # .. note::
-#    braindecode has not yet published an official pretrained checkpoint for
-#    DANCE on the `Hugging Face Hub <https://huggingface.co/braindecode>`_,
-#    unlike the sleep-staging tutorials. The cell below uses the same loading
-#    pattern as the rest of the gallery, so it starts working automatically
-#    once a checkpoint is released. Until then it falls back to the model
-#    trained above and predicts on one held-out window, so the cell still
-#    runs end-to-end. Training longer closes most of that gap: the 2-epoch,
-#    3-subject model above is far from converged, and the paper's full
-#    protocol (all subjects, up to 100 epochs with early stopping) is what a
-#    released checkpoint would reflect.
+#    A pretrained checkpoint is available on the
+#    `Hugging Face Hub
+#    <https://huggingface.co/braindecode/plot_dance_event_detection>`_.
+#    Its model card reports F1-event 0.495 on BI2014a subject 3 after training
+#    on subjects 1, 2 and 4-9. However, the training script selects the best
+#    epoch using subject 3's F1-event. This is a validation score, not an
+#    independent test estimate or a reproduction of the paper's result.
+#    The cell below evaluates the checkpoint on the tutorial's subject 3
+#    windows. If loading fails, it evaluates the locally trained model instead.
 
+import copy
 import warnings
 
 repo_id = "braindecode/plot_dance_event_detection"
+revision = "b1605cb57c4d5a87cd5c4617de5d9a2eb49c1f45"
+model_source = "locally trained short-run model"
 try:
     from huggingface_hub import hf_hub_download
 
-    model.load_state_dict(
-        torch.load(hf_hub_download(repo_id, "model.pt"), map_location=device)
+    checkpoint_state = torch.load(
+        hf_hub_download(repo_id, "model.pt", revision=revision),
+        map_location=device,
+        weights_only=True,
     )
-    print(f"Loaded the official pretrained checkpoint from {repo_id}.")
+    # A failed strict load can partially update a module; keep the fallback intact.
+    checkpoint_model = copy.deepcopy(model)
+    checkpoint_model.load_state_dict(checkpoint_state)
+    model = checkpoint_model
+    model_source = "published checkpoint (subject 3 used for epoch selection)"
+    print(f"Loaded the pretrained checkpoint from {repo_id} at {revision}.")
 except Exception as exc:
     warnings.warn(
         f"Could not load a pretrained checkpoint from {repo_id} ({exc}); "
@@ -480,6 +489,27 @@ except Exception as exc:
     )
 
 model.eval()
+
+# Evaluate whichever model was loaded; do not label fallback results as checkpoint scores.
+ckpt_ev_f1s = []
+with torch.no_grad():
+    for batch in test_loader:
+        batch = {k: v.to(device) for k, v in batch.items()}
+        out = model.detect(batch["eeg"])
+        pred_events = detections_to_events(out, duration=WINDOW_S)
+        for bi in range(batch["eeg"].shape[0]):
+            gt = [
+                (float(s) * WINDOW_S, float(e) * WINDOW_S, int(c))
+                for s, e, c in zip(
+                    batch["start"][bi], batch["end"][bi], batch["class"][bi]
+                )
+                if int(c) != 0
+            ]
+            preds = [(s, e, c) for (s, e, c, _conf) in pred_events[bi]]
+            ckpt_ev_f1s.append(f1_event(preds, gt, iou_threshold=0.5))
+print(f"Subject {test_subject}, {model_source}: F1-event={np.mean(ckpt_ev_f1s):.3f}")
+
+# Predictions on the first evaluation window.
 with torch.no_grad():
     example = test_samples[0][0].unsqueeze(0).to(device)
     out = model.detect(example)
@@ -496,9 +526,11 @@ for s, e, label, conf in sorted(predicted, key=lambda ev: ev[0])[:10]:
 #
 # This tutorial trained :class:`~braindecode.models.DANCE` on real,
 # continuous P300 EEG, detecting target and non-target flashes directly from
-# unaligned windows, without ever being told where a flash starts. At this
-# reduced scale (3 subjects, 2 epochs), the reported F1 scores are low and
-# should not be compared to the paper's numbers.
+# unaligned windows, without ever being told where a flash starts. The
+# 2-epoch, 3-subject run is only a fast teaching example, so its F1 scores are
+# low. The published checkpoint uses more subjects and longer training,
+# but its reported subject-3 score was used for epoch selection. Evaluating
+# generalization requires a separate subject not used in training or selection.
 #
 # At full scale, following the paper's protocol (BI2014a, all subjects, up to
 # 100 epochs with early stopping and a OneCycle learning rate schedule),

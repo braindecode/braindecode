@@ -1069,6 +1069,31 @@ def test_mask_encoding_reaches_last_sample():
     assert (tr_X[..., -1] == 0).any()
 
 
+@pytest.mark.skipif(
+    not torch.backends.mps.is_available(), reason="Apple MPS not available"
+)
+@pytest.mark.parametrize(
+    "make_transform",
+    [
+        lambda: SmoothTimeMask(1.0, mask_len_samples=20, random_state=0),
+        lambda: FrequencyShift(1.0, sfreq=100, max_delta_freq=2, random_state=0),
+        lambda: SensorsZRotation(
+            1.0, ordered_ch_names=["Fz", "Cz", "Pz", "C3", "C4", "O1"], random_state=0
+        ),
+        lambda: FTSurrogate(1.0, random_state=0),
+    ],
+    ids=["SmoothTimeMask", "FrequencyShift", "SensorsZRotation", "FTSurrogate"],
+)
+def test_transforms_run_on_mps(make_transform):
+    # MPS has no float64: the sampled parameters must not be float64 there
+    X = torch.randn(4, 6, 200, generator=torch.Generator().manual_seed(0))
+    y = torch.arange(4)
+    out_cpu, _ = make_transform()(X, y)
+    out_mps, _ = make_transform()(X.to("mps"), y.to("mps"))
+    assert out_mps.device.type == "mps" and out_mps.dtype == torch.float32
+    torch.testing.assert_close(out_mps.cpu(), out_cpu, rtol=1e-4, atol=1e-4)
+
+
 
 def test_label_smoothing_transform(rng_seed, random_batch):
     X, _ = random_batch

@@ -521,6 +521,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         output_shape : tuple[int, ...]
             shape of the network output for `batch_size==1` (1, ...)
         """
+        # Run in eval mode, so that the probe input does not update BatchNorm
+        # running stats or draw dropout masks; restore each module's own mode
+        # afterwards (some may have been put in eval mode on purpose).
+        modes = {module: module.training for module in self.modules()}
+        self.eval()
         with torch.inference_mode():
             try:
                 return tuple(
@@ -540,6 +545,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 if error is None:
                     raise
                 raise error from exc
+            finally:
+                for module, training in modes.items():
+                    module.training = training
 
     def get_config(self) -> dict:
         """Return a JSON-serializable dict of all ``__init__`` parameters.
@@ -623,7 +631,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ``"pad"``.
         """
         legacy = getattr(cls, "_legacy_on_non_divisible", None)
-        if legacy is not None and "on_non_divisible" not in kwargs:
+        if legacy is None or "on_non_divisible" in kwargs:
+            return
+        # A subclass with its own signature may not take the argument.
+        params = inspect.signature(cls.__init__).parameters.values()
+        if any(p.name == "on_non_divisible" or p.kind is p.VAR_KEYWORD for p in params):
             kwargs["on_non_divisible"] = legacy
 
     def _set_n_outputs(self, n_outputs: int) -> None:

@@ -45,6 +45,7 @@ from braindecode.models import (
     CBraMod,
     CodeBrain,
     DuIN,
+    EpiNT,
     Guetschel2026,
     Labram,
     MIRepNet,
@@ -241,6 +242,14 @@ COMPAT = {
         canon=TEN_TWENTY,
         channels="agnostic",
         kwargs=dict(patch_size=250),
+    ),
+    # Weights on GitHub (RunKZhang/EpiNT), not the Hub; pretrained at 256 and 1024 Hz.
+    "EpiNT": dict(
+        cls=EpiNT,
+        sfreq=256,
+        n_times=3072,
+        canon=TEN_TWENTY,
+        channels="agnostic",
     ),
     "BrainBERT": dict(
         cls=BrainBERT,

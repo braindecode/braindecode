@@ -634,7 +634,9 @@ class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]])
                         f"'{key}' already in description. Please "
                         f"rename or set overwrite to True."
                     )
-                    self._description.pop(key)
+                    # drop on a copy: windows datasets share the description
+                    # Series of the dataset they were created from
+                    self._description = self._description.drop(key)
             self._description = pd.concat([self.description, description])
 
     @property
@@ -1900,6 +1902,11 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             dataset description.
         """
         description = pd.DataFrame(description)
+        if len(description.columns) and len(description) != len(self.datasets):
+            raise ValueError(
+                f"Length of values ({len(description)}) does not match "
+                f"number of datasets ({len(self.datasets)})."
+            )
         for key, value in description.items():
             for ds, value_ in zip(self.datasets, value):
                 ds.set_description({key: value_}, overwrite=overwrite)

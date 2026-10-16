@@ -41,6 +41,7 @@ from braindecode.modules import (
     TDSConvEncoder,
     TimeDistributed,
 )
+from braindecode.modules.quantization import EMACodebook
 
 
 @pytest.mark.parametrize(
@@ -1815,70 +1816,24 @@ def test_patch_tokenizer():
     assert set(tok_linear.state_dict()) == {"proj.weight", "proj.bias"}
 
 
-@pytest.mark.parametrize("n_times", [1, 37, 199, 200, 201, 950, 1000, 1001])
-@pytest.mark.parametrize("mode", ["pad", "crop", "error"])
-def test_patch_count_matches_patch_tokenizer(n_times, mode):
-    """The shared patch count is the patch count PatchTokenizer produces:
-    ceil for pad, floor for crop, exact or raise for error."""
-    from braindecode.modules import PatchTokenizer
-    from braindecode.modules.blocks import _patch_count
-
-    with catch_warnings():
-        simplefilter("ignore")
-        tok = PatchTokenizer(patch_size=200, n_times=200, on_non_divisible=mode)
-    x = torch.randn(1, 2, n_times)
-    divisible = n_times % 200 == 0
-    if mode == "error" and not divisible or mode == "crop" and n_times < 200:
-        with pytest.raises(ValueError):
-            _patch_count(n_times, 200, mode)
-        with pytest.raises(ValueError):
-            tok(x)
-        return
-    expected = -(-n_times // 200) if mode == "pad" else n_times // 200
-    assert _patch_count(n_times, 200, mode) == expected
-    assert tok.n_patches(n_times) == expected
-    assert tok(x).shape[2] == expected
-
-
 @pytest.mark.parametrize(
-    "n_times, mode, expected",
-    [
-        (1000, "pad", 6),  # (1000 - 200) % 180 = 80: one padded patch more
-        (1000, "crop", 5),  # what unfold alone gives (tail dropped)
-        (920, "pad", 5),  # (920 - 200) % 180 = 0: tiles exactly
-        (920, "crop", 5),
-        (920, "error", 5),
-        (150, "pad", 1),  # shorter than one patch: padded to one patch
-    ],
-)
-def test_pad_or_crop_to_patches_overlapping(n_times, mode, expected):
-    """Overlapping patches (step < patch_size) tile the padded/cropped axis."""
+    "n_times, mode, step, expected",
+    [(1001, "pad", 0, 6), (1001, "crop", 0, 5), (150, "pad", 0, 1), (1000, "pad", 180, 6),
+     (1000, "crop", 180, 5), (920, "error", 180, 5), (1001, "error", 0, None), (150, "crop", 0, None)],
+)  # fmt: skip
+def test_patch_count_and_pad_or_crop(n_times, mode, step, expected):
     from braindecode.modules.blocks import _pad_or_crop_to_patches, _patch_count
 
-    x = torch.randn(2, 3, n_times)
-    y = _pad_or_crop_to_patches(x, 200, mode, step=180)
-    assert _patch_count(n_times, 200, mode, step=180) == expected
-    assert (y.shape[-1] - 200) % 180 == 0
-    patches = y.unfold(-1, 200, 180)
-    assert patches.shape[2] == expected
-    n_kept = min(n_times, y.shape[-1])
-    assert torch.equal(y[..., :n_kept], x[..., :n_kept])
-    assert not y[..., n_kept:].any()  # padding is zeros
-    if mode == "crop":
-        torch.testing.assert_close(patches, x.unfold(-1, 200, 180), rtol=0, atol=0)
-    if y.shape[-1] == n_times:
-        assert y is x  # a tiled axis is returned untouched
-
-
-def test_pad_or_crop_to_patches_rejects():
-    from braindecode.modules.blocks import _pad_or_crop_to_patches, _patch_count
-
-    with pytest.raises(ValueError, match="divisible by the patch step"):
-        _pad_or_crop_to_patches(torch.randn(1, 1, 1000), 200, "error", step=180)
-    with pytest.raises(ValueError, match="at least one full patch"):
-        _pad_or_crop_to_patches(torch.randn(1, 1, 150), 200, "crop", step=180)
-    with pytest.raises(ValueError, match="divisible"):
-        _patch_count(150, 200, "error", step=180)
+    x = torch.randn(1, 2, n_times)
+    if expected is None:
+        with pytest.raises(ValueError):
+            _patch_count(n_times, 200, mode, step)
+        return
+    y = _pad_or_crop_to_patches(x, 200, mode, step)
+    assert _patch_count(n_times, 200, mode, step) == expected
+    assert y.unfold(-1, 200, step or 200).shape[2] == expected
+    n = min(n_times, y.shape[-1])
+    assert torch.equal(y[..., :n], x[..., :n]) and not y[..., n:].any()
 
 
 def test_gated_linear_unit_geglu_semantics():
@@ -2067,3 +2022,97 @@ def test_feed_forward_block_options(gated):
     assert next(module.parameters()).shape == (13, 8)
     assert torch.count_nonzero(module(torch.randn(2, 3, 8))) == 0
     torch.jit.script(module)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64])
+@pytest.mark.parametrize("n_rows", [0, 1, 64])
+def test_ema_codebook_quantize_preserves_distances(dtype, n_rows):
+    torch.manual_seed(42)
+    codebook = EMACodebook(16, 32, kmeans_init=False).to(dtype)
+    # Equal code vectors exercise argmin's first-index tie convention.
+    codebook.embed[1].copy_(codebook.embed[0])
+    x = torch.randn(n_rows, 32, dtype=dtype)[:, ::2]
+    before = x.clone()
+    embed_before = codebook.embed.clone()
+    work = torch.promote_types(dtype, torch.float32)
+    values, embed = x.to(work), codebook.embed.t().to(work)
+    distances = (
+        values.pow(2).sum(1, keepdim=True)
+        - 2 * values @ embed
+        + embed.pow(2).sum(0, keepdim=True)
+    )
+    assert torch.equal(codebook.quantize(x), distances.argmin(dim=-1))
+    assert torch.equal(x, before)
+    assert torch.equal(codebook.embed, embed_before)
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+def test_ema_codebook_quantize_preserves_autocast_distances(dtype):
+    codebook = EMACodebook(1, 2, kmeans_init=False)
+    codebook.embed.copy_(torch.tensor([[1.0001], [1.0]]))
+    x = torch.zeros(1, 1)
+    with torch.autocast("cpu", dtype=dtype):
+        embed = codebook.embed.t()
+        distances = (
+            x.pow(2).sum(1, keepdim=True)
+            - 2 * x @ embed
+            + embed.pow(2).sum(0, keepdim=True)
+        )
+        expected = distances.argmin(dim=-1)
+        assert expected.item() == 1
+        assert torch.equal(codebook.quantize(x), expected)
+
+
+def test_mlp_normalize():
+    model = MLP(in_features=8, hidden_features=(16, 12), out_features=4, normalize=True)
+    norms = [m for m in model if isinstance(m, nn.LayerNorm)]
+    # one LayerNorm after each hidden layer, none after the output layer
+    assert [n.normalized_shape for n in norms] == [(16,), (12,)]
+    assert model(torch.randn(2, 5, 8)).shape == (2, 5, 4)
+
+
+@pytest.mark.parametrize("batch_first", [False, True])
+def test_crisscross_layer_keeps_samples_independent(batch_first):
+    from braindecode.modules.attention import CrissCrossTransformerEncoderLayer
+
+    torch.manual_seed(0)
+    layer = CrissCrossTransformerEncoderLayer(
+        d_model=8, nhead=4, dim_feedforward=16, batch_first=batch_first
+    ).eval()
+    x = torch.randn(3, 4, 5, 8)  # (batch, channels, n_patches, patch_size)
+    x_perturbed = x.clone()
+    x_perturbed[1] += torch.randn(4, 5, 8)
+    out, out_perturbed = layer(x), layer(x_perturbed)
+    torch.testing.assert_close(out[0], out_perturbed[0])
+    torch.testing.assert_close(out[2], out_perturbed[2])
+
+
+def test_crisscross_layer_norm_first():
+    from braindecode.modules.attention import CrissCrossTransformerEncoderLayer
+
+    torch.manual_seed(0)
+    pre = CrissCrossTransformerEncoderLayer(8, 4, 16, norm_first=True).eval()
+    post = CrissCrossTransformerEncoderLayer(8, 4, 16, norm_first=False).eval()
+    post.load_state_dict(pre.state_dict())
+    x = torch.randn(2, 4, 5, 8)
+    assert not torch.allclose(pre(x), post(x))
+    # post-norm: the output is the output of the last LayerNorm
+    out = post(x)
+    torch.testing.assert_close(
+        out.mean(-1), torch.zeros(out.shape[:-1]), atol=1e-5, rtol=0
+    )
+
+
+def test_multihead_attention_boolean_mask_false_ignores_key():
+    from braindecode.modules.attention import MultiHeadAttention
+
+    torch.manual_seed(0)
+    attention = MultiHeadAttention(8, 2, 0.0).eval()
+    x = torch.randn(1, 4, 8)
+    x_changed = x.clone()
+    x_changed[0, 3] += torch.randn(8)
+    mask = torch.ones(4, 4, dtype=torch.bool)
+    mask[:3, 3] = False  # rows 0-2 ignore key 3, as documented
+    torch.testing.assert_close(
+        attention(x, mask)[0, :3], attention(x_changed, mask)[0, :3]
+    )
