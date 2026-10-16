@@ -474,6 +474,8 @@ Requirements
 Bug fixes
 ==========
 
+- :func:`braindecode.functional.glorot_weight_zero_bias` skips ``None`` weights and biases, so :class:`braindecode.models.EEGNet` with ``batch_norm_affine=False`` no longer raises ``AttributeError``, and its docstring now says what it does: it sets BatchNorm weights to one and biases to zero, and leaves the other weights to their layer's initialization (it has not applied the Glorot initialization its name refers to since 1.0). Initial weights are unchanged (:gh:`1426` by `Adam Mounir`_).
+
 - :class:`braindecode.models.MEDFormer` patches its input over time, as in the original model: the port kept the original's permute from ``(batch, n_times, n_chans)`` although braindecode inputs are ``(batch, n_chans, n_times)``, and swapped ``n_chans`` and ``n_times`` in the patch embedding, so its token convolutions slid over the channels with kernels spanning the whole window, and the number of tokens did not depend on ``n_times``. The token convolution and channel-embedding shapes change, so MEDFormer weights saved with an earlier version do not load (:gh:`1431` by `Adam Mounir`_).
 
 - :class:`braindecode.models.Labram` warns when, in the Neural Tokenizer mode (the default), the embedding dimension set by its temporal convolution differs from the given ``embed_dim``, which it used to replace silently (e.g. ``patch_size=100`` gives 104 instead of the default 200), and documents this (:gh:`1430` by `Adam Mounir`_).
