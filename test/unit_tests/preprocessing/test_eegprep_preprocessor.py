@@ -285,6 +285,21 @@ def test_remove_flat_channels(base_concat_ds):
 
 
 @pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")
+def test_remove_flat_channels_with_non_eeg_channels():
+    """Removing an EEG channel keeps the non-EEG channels, in original order."""
+    concat_ds = _create_synthetic_dataset(include_non_eeg=True)
+    raw = concat_ds.datasets[0].raw
+    original_ch_names = raw.ch_names.copy()
+    flat_channel_name = original_ch_names[3]
+    raw._data[3, :] = 0.0
+
+    preprocess(concat_ds, [RemoveFlatChannels(max_flatline_duration=5.0)])
+
+    expected = [ch for ch in original_ch_names if ch != flat_channel_name]
+    assert concat_ds.datasets[0].raw.ch_names == expected
+
+
+@pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")
 def test_reinterpolate_removed_channels(base_concat_ds):
     """Test that ReinterpolateRemovedChannels restores removed channels."""
     # Get original channel info

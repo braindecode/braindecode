@@ -1089,14 +1089,16 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
             nhead // 2,
             dropout=dropout,
             bias=bias,
-            batch_first=batch_first,
+            # _sa_block always builds (batch, sequence, features) inputs
+            batch_first=True,
         )
         self.self_attn_t = nn.MultiheadAttention(
             d_model // 2,
             nhead // 2,
             dropout=dropout,
             bias=bias,
-            batch_first=batch_first,
+            # _sa_block always builds (batch, sequence, features) inputs
+            batch_first=True,
         )
 
         # Implementation of Feedforward model
@@ -1104,6 +1106,9 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.linear2 = nn.Linear(dim_feedforward, d_model, bias=bias)
 
+        # kept for the signature of nn.TransformerEncoderLayer: the input is
+        # always (batch, channels, n_patches, patch_size)
+        self.batch_first = batch_first
         self.norm_first = norm_first
         self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -1119,10 +1124,17 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
         is_causal: bool = False,
     ) -> Tensor:
         x = src
-        x = x + self._sa_block(
-            self.norm1(x), src_mask, src_key_padding_mask, is_causal=is_causal
-        )
-        x = x + self._ff_block(self.norm2(x))
+        if self.norm_first:
+            x = x + self._sa_block(
+                self.norm1(x), src_mask, src_key_padding_mask, is_causal=is_causal
+            )
+            x = x + self._ff_block(self.norm2(x))
+        else:
+            x = self.norm1(
+                x
+                + self._sa_block(x, src_mask, src_key_padding_mask, is_causal=is_causal)
+            )
+            x = self.norm2(x + self._ff_block(x))
         return x
 
     # self-attention block

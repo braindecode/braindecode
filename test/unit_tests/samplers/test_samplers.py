@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from torch.utils.data.distributed import DistributedSampler
 
 from braindecode.datasets import (
     BaseConcatDataset,
@@ -705,3 +706,27 @@ def test_samplers_keep_the_subject_session_run_order():
         balanced = BalancedSequenceSampler(md_, 3, n_sequences=20, random_state=0)
         sampled.append((list(sequences), list(balanced)))
     assert sampled[0] == sampled[1]
+
+
+@pytest.mark.parametrize(
+    "random_state", [None, np.random.RandomState(0)], ids=["None", "RandomState"]
+)
+def test_distributed_recording_sampler_non_int_random_state(windows_ds, random_state):
+    # num_replicas and rank given explicitly: no process group needed
+    samplers = [
+        DistributedRecordingSampler(
+            windows_ds.get_metadata(),
+            random_state=random_state,
+            num_replicas=2,
+            rank=rank,
+        )
+        for rank in range(2)
+    ]
+    for sampler in samplers:
+        win_ind, rec_ind = sampler.sample_window()
+        assert find_dataset_ind(windows_ds, win_ind) == rec_ind
+    # every process shuffles with the same seed, so together they cover all
+    # recordings
+    assert samplers[0].seed == samplers[1].seed
+    rec_inds = [set(DistributedSampler.__iter__(s)) for s in samplers]
+    assert rec_inds[0] | rec_inds[1] == set(range(len(samplers[0].info)))

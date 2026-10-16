@@ -140,15 +140,19 @@ def _load_signals(fif_file, preload, is_raw):
         with open(pkl_file, "rb") as f:
             signals = pickle.load(f)
 
-        if all(Path(f).exists() for f in signals.filenames):
+        # The pickle stores absolute paths: check that they exist and point to
+        # this fif file, not to the folder the dataset was copied from.
+        if all(Path(f).exists() for f in signals.filenames) and (
+            Path(signals.filenames[0]).resolve() == fif_file.resolve()
+        ):
             if preload:
                 signals.load_data()
             return _compact_fif_tags(signals)
         else:  # This may happen if the file has been moved together with the pickle file.
             warnings.warn(
                 f"Pickle file {pkl_file} exists, but the referenced fif "
-                "file(s) do not exist. Will read the fif file(s) directly "
-                "and re-create the pickle file.",
+                "file(s) do not exist or are not next to it. Will read the "
+                "fif file(s) directly and re-create the pickle file.",
                 UserWarning,
             )
 
@@ -220,7 +224,10 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None, n_job
     # target_name.json, raw_preproc_kwargs.json, window_kwargs.json,
     # window_preproc_kwargs.json
     if ids_to_load is None:
-        ids_to_load = [p.name for p in path.iterdir()]
+        # skip stray entries such as .DS_Store or a README next to the datasets
+        ids_to_load = [
+            p.name for p in path.iterdir() if p.is_dir() and p.name.isdigit()
+        ]
         ids_to_load = sorted(ids_to_load, key=lambda i: int(i))
     ids_to_load = [str(i) for i in ids_to_load]
     first_raw_fif_path = path / ids_to_load[0] / f"{ids_to_load[0]}-raw.fif"

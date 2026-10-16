@@ -640,3 +640,27 @@ def test_hub_method_install_hint_no_hf():
         M.from_pretrained("any/repo")
     with pytest.raises(ImportError, match=r"M\.push_to_hub.*braindecode\[hub\]"):
         M().push_to_hub("any/repo")
+
+
+def test_get_output_shape_leaves_batchnorm_stats_and_modes_unchanged():
+    from braindecode.models import Deep4Net, EEGNet
+
+    model = Deep4Net(n_chans=4, n_outputs=2, n_times=500)
+    model.train()
+    frozen = model.conv_time_spat
+    frozen.eval()
+    bn = next(m for m in model.modules() if isinstance(m, nn.BatchNorm2d))
+    with torch.no_grad():
+        bn.running_mean.fill_(5.0)
+        bn.running_var.fill_(4.0)
+    tracked = int(bn.num_batches_tracked)
+
+    model.get_output_shape()
+
+    assert torch.all(bn.running_mean == 5.0) and torch.all(bn.running_var == 4.0)
+    assert int(bn.num_batches_tracked) == tracked
+    assert model.training and not frozen.training
+    # models that call get_output_shape in __init__ start with untouched stats
+    for module in EEGNet(n_chans=4, n_outputs=2, n_times=256).modules():
+        if isinstance(module, nn.BatchNorm2d):
+            assert int(module.num_batches_tracked) == 0
