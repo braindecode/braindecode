@@ -7,6 +7,7 @@
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Léo Burgund <leo.burgund@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
+#          Anton Soloviev <anton@praviel.com>
 #
 # License: BSD (3-clause)
 
@@ -170,6 +171,7 @@ class Preprocessor(object):
         Preprocessor
             The deserialized Preprocessor object.
         """
+        data = data.copy()
         class_path = data.pop("__class_path__")
         cls_name = class_path.split(".")[-1]
         cls_module_name = ".".join(class_path.split(".")[:-1])

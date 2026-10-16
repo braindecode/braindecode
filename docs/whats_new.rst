@@ -469,9 +469,26 @@ Bug fixes
 
 - ``recording_ids`` of :class:`braindecode.datasets.TUH` (and :class:`braindecode.datasets.TUHAbnormal`, :class:`braindecode.datasets.TUHEvents`) selects recordings by their chronological position, as documented, instead of by their position in the file listing (:gh:`1412` by `Adam Mounir`_).
 
+- :meth:`braindecode.preprocessing.Preprocessor.deserialize` preserves the
+  supplied configuration so it can be saved and reused for other recordings
+  (by `Anton Soloviev`_).
+
+- :func:`braindecode.augmentation.functional.frequency_shift` accepts scalar,
+  NumPy and CPU tensor shifts for CUDA inputs, preserving gradients to tensor
+  shifts on another device (by `Anton Soloviev`_).
+
 - :class:`braindecode.models.EpiNT` accepts ``channel_strategy`` and ``channel_strategy_kwargs`` through the shared channel layer, including configuration round trips and native checkpoint loading (:gh:`1403` by `Bruno Aristimunha`_).
 
+- :func:`braindecode.datasets.create_from_mne_epochs` no longer shifts targets
+  and window start indices when the input :class:`mne.Epochs` still contain
+  rejected epochs: bad epochs are now dropped on a copy before iterating, so
+  data and ``epochs.events`` stay aligned (:gh:`1411` by `Adam Mounir`_).
 - ``RevePositionBank.forward`` raises for a name it does not hold instead of returning fewer rows than channels (:gh:`1400` by `Bruno Aristimunha`_).
+
+- :class:`braindecode.models.Guetschel2026` places CPU-computed buffers on the
+  active device inside ``torch.device`` contexts on older supported PyTorch
+  versions (by `Anton Soloviev`_).
+
 - :class:`braindecode.models.SincShallowNet` now round-trips through
   ``save_pretrained``/``from_pretrained``: its ``window`` buffer viewed a larger
   storage, which safetensors refuses, so ``model.safetensors`` was never written
