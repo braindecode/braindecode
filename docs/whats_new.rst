@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- ``recording_ids`` of :class:`braindecode.datasets.TUH` (and :class:`braindecode.datasets.TUHAbnormal`, :class:`braindecode.datasets.TUHEvents`) selects recordings by their chronological position, as documented, instead of by their position in the file listing (:gh:`1412` by `Adam Mounir`_).
+
 - :meth:`braindecode.preprocessing.Preprocessor.deserialize` preserves the
   supplied configuration so it can be saved and reused for other recordings
   (by `Anton Soloviev`_).
