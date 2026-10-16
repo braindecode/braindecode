@@ -474,6 +474,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.SincShallowNet` and :class:`braindecode.models.TMSANet` raise a :class:`ValueError` at construction for input geometries they cannot run, extending the construction-time checks of :gh:`1313` to two more models: windows that leave fewer samples than ``pool_size`` after the temporal sinc filter or the average pooling (so the classifier head would get a negative or empty feature width, which previously failed with ``Trying to create tensor with negative dimension``), and a missing ``n_times``, which both models need for their head (:gh:`1432` by `Li Qing`_).
+
 - :func:`braindecode.functional.glorot_weight_zero_bias` skips ``None`` weights and biases, so :class:`braindecode.models.EEGNet` with ``batch_norm_affine=False`` no longer raises ``AttributeError``, and its docstring now says what it does: it sets BatchNorm weights to one and biases to zero, and leaves the other weights to their layer's initialization (it has not applied the Glorot initialization its name refers to since 1.0). Initial weights are unchanged (:gh:`1426` by `Adam Mounir`_).
 
 - :class:`braindecode.models.MEDFormer` patches its input over time, as in the original model: the port kept the original's permute from ``(batch, n_times, n_chans)`` although braindecode inputs are ``(batch, n_chans, n_times)``, and swapped ``n_chans`` and ``n_times`` in the patch embedding, so its token convolutions slid over the channels with kernels spanning the whole window, and the number of tokens did not depend on ``n_times``. The token convolution and channel-embedding shapes change, so MEDFormer weights saved with an earlier version do not load (:gh:`1431` by `Adam Mounir`_).

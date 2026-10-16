@@ -6438,6 +6438,17 @@ def _cz():
         ),
         ("REVE", dict(chs_info=[{"ch_name": "X1"}], n_times=1000), "position bank"),
         ("ZUNA", dict(chs_info=_cz(), n_times=10000, sfreq=256.0), "max_seqlen"),
+        (
+            "SincShallowNet",
+            dict(n_chans=2, n_times=30, sfreq=128.0),
+            "fewer than pool_size",
+        ),
+        (
+            "SincShallowNet",
+            dict(n_chans=2, n_times=20, sfreq=128.0, padding="valid"),
+            "fewer than pool_size",
+        ),
+        ("TMSANet", dict(n_chans=2, n_times=20), "at least pool_size"),
     ],
 )
 def test_unsupported_geometry_raises_at_construction(name, kwargs, match):

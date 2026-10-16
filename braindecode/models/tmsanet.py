@@ -141,7 +141,18 @@ class TMSANet(EEGModuleMixin, nn.Module, license="mit"):
         )
         # The reference flattens (embed_dim, tokens), embedding-major.
         self.flatten = Rearrange("b n d -> b (d n)")
+        if self.n_times is None:
+            raise ValueError(
+                "TMSANet needs to know the input length: pass n_times "
+                "(or input_window_seconds and sfreq)."
+            )
         n_tokens = (self.n_times - pool_size) // pool_stride + 1
+        if n_tokens < 1:
+            raise ValueError(
+                f"n_times ({self.n_times}) must be at least pool_size ({pool_size}) "
+                f"so the average pooling keeps at least one temporal token "
+                f"(would keep {n_tokens})."
+            )
         self.final_layer = nn.Linear(embed_dim * n_tokens, self.n_outputs)
 
     def forward(self, x: Tensor) -> Tensor:
