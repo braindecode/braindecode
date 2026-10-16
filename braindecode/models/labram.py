@@ -296,7 +296,9 @@ class Labram(EEGModuleMixin, nn.Module):
     learned_patcher : bool
         Whether to use a learned patch embedding (via a convolutional layer) or a fixed patch embedding (via rearrangement).
     embed_dim : int
-        The dimension of the embedding.
+        The dimension of the embedding. In the Neural Tokenizer mode, it is
+        set by the temporal convolution (``conv_out_channels`` and
+        ``patch_size``), with a warning if the given value differs.
     conv_in_channels : int
         The number of convolutional input channels.
     conv_out_channels : int
@@ -515,6 +517,14 @@ class Labram(EEGModuleMixin, nn.Module):
             out = self.patch_embed(dummy)
         # out.shape for tokenizer: (1, n_chans, emb_dim)
         # for decoder:        (1, n_patch, patch_size, emb_dim), but we want last dim
+        if neural_tokenizer and out.shape[-1] != self.embed_dim:
+            warn(
+                f"In the Neural Tokenizer mode the embedding dimension is set "
+                f"by the temporal convolution (conv_out_channels, patch_size): "
+                f"using embed_dim={out.shape[-1]} instead of the given "
+                f"embed_dim={self.embed_dim}.",
+                UserWarning,
+            )
         self.embed_dim = out.shape[-1]
         self.num_features = self.embed_dim
 

@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.Labram` warns when, in the Neural Tokenizer mode (the default), the embedding dimension set by its temporal convolution differs from the given ``embed_dim``, which it used to replace silently (e.g. ``patch_size=100`` gives 104 instead of the default 200), and documents this (:gh:`1430` by `Adam Mounir`_).
+
 - :class:`braindecode.models.LUNA` applies its ``attn_drop`` argument to the attention of its transformer blocks instead of ignoring it (the default 0.0 is unchanged), and documents it (:gh:`1429` by `Adam Mounir`_).
 
 - :class:`braindecode.models.BIOT` with ``hop_length`` larger than ``sfreq`` falls back to an integer hop of ``sfreq // 2`` and stores it in ``hop_length``, instead of passing a float to :func:`torch.stft` (which raised ``TypeError`` in the forward pass) while keeping the original value in its configuration (:gh:`1428` by `Adam Mounir`_).

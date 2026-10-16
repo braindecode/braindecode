@@ -6,6 +6,7 @@ import copy
 import json
 import os
 import sys
+import warnings
 from contextlib import nullcontext
 from pathlib import Path
 from urllib.error import URLError
@@ -2913,3 +2914,12 @@ def test_cbramod_head_is_concrete_when_geometry_is_derived(tmp_path):
 def test_luna_attn_drop_is_used():
     model = LUNA(n_chans=4, n_outputs=2, n_times=256, attn_drop=0.3)
     assert all(block.attn.attn_drop == 0.3 for block in model.blocks)
+
+
+def test_labram_warns_when_tokenizer_overrides_embed_dim():
+    with pytest.warns(UserWarning, match="using embed_dim=104 instead"):
+        model = Labram(n_chans=4, n_outputs=2, n_times=1000, patch_size=100)
+    assert model.embed_dim == 104
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*instead of the given embed_dim")
+        Labram(n_chans=4, n_outputs=2, n_times=1000)  # defaults agree
