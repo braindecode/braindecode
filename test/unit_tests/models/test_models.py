@@ -6474,3 +6474,11 @@ def test_ctnet_unequal_pool_sizes():
         n_chans=4, n_outputs=2, n_times=4000, pool_size_1=8, pool_size_2=4
     ).eval()
     assert model(torch.randn(2, 4, 4000)).shape == (2, 2)
+
+
+def test_biot_hop_length_larger_than_sfreq():
+    with pytest.warns(UserWarning, match="hop length is larger"):
+        model = BIOT(n_chans=2, n_outputs=2, n_times=1000, sfreq=200.0, hop_length=300)
+    assert model.hop_length == 100 and isinstance(model.hop_length, int)
+    assert model.encoder.hop_length == 100
+    assert model(torch.randn(2, 2, 1000)).shape == (2, 2)

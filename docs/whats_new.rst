@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.BIOT` with ``hop_length`` larger than ``sfreq`` falls back to an integer hop of ``sfreq // 2`` and stores it in ``hop_length``, instead of passing a float to :func:`torch.stft` (which raised ``TypeError`` in the forward pass) while keeping the original value in its configuration (:gh:`1428` by `Adam Mounir`_).
+
 - :func:`braindecode.training.predict_trials` (and ``predict_trials`` of :class:`braindecode.EEGClassifier` / :class:`braindecode.EEGRegressor` in cropped mode) returns one target per trial for multi-value window targets, such as several target channels with ``last_target_only=True``, instead of raising ``IndexError``; only targets with a time axis are treated as sequences. :meth:`braindecode.EEGRegressor.predict_trials` with ``cropped=False`` stacks the targets instead of concatenating them, so scalar targets no longer raise ``ValueError`` and multi-value targets keep one row per trial (:gh:`1427` by `Adam Mounir`_).
 
 - The docstring of :meth:`braindecode.modules.MultiHeadAttention.forward` stated the boolean mask the wrong way round: as in :func:`torch.nn.functional.scaled_dot_product_attention`, which receives the mask unchanged, ``True`` marks a position that takes part in attention and ``False`` one that is ignored (:gh:`1425` by `Adam Mounir`_).
