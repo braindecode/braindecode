@@ -7,6 +7,7 @@ from braindecode.augmentation.functional import (
     band_rotation,
     channels_rereference,
     channels_shuffle,
+    label_smoothing,
     segmentation_reconstruction,
 )
 
@@ -290,3 +291,26 @@ def test_channel_reref():
     # Check if the output is the same as the input
     assert torch.equal(transformed_X0, X0)
     assert torch.equal(transformed_X1.sum(dim=(1,2)), -100*torch.ones(5))
+
+
+def test_label_smoothing():
+    X = torch.rand((5, 64, 100))
+    y = torch.tensor([0, 1, 2, 1, 0])
+    epsilon, num_classes = 0.1, 3
+
+    transformed_X, transformed_y = label_smoothing(X, y, epsilon, num_classes)
+
+    assert torch.equal(transformed_X, X)
+    expected = torch.eye(num_classes)[y] * (1 - epsilon) + epsilon / num_classes
+    assert torch.allclose(transformed_y, expected)
+    assert torch.allclose(transformed_y.sum(-1), torch.ones(5))
+
+
+def test_label_smoothing_rejects_invalid_targets():
+    X = torch.rand((2, 8, 32))
+    with pytest.raises(ValueError, match="num_classes is required"):
+        label_smoothing(X, torch.tensor([0, 1]), 0.1)
+    with pytest.raises(ValueError, match="non-integral"):
+        label_smoothing(X, torch.tensor([0.0, 1.5]), 0.1, num_classes=3)
+    with pytest.raises(ValueError, match="dtype"):
+        label_smoothing(X, torch.tensor([[0, 1], [1, 0]]), 0.1)
