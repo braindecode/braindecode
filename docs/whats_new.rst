@@ -467,6 +467,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.CTNet` applies ``final_drop_prob`` (its dropout layer was built but the forward pass flattened the features without it), and its positional encoding covers the actual sequence length, so ``pool_size_2`` smaller than ``pool_size_1`` no longer raises a size mismatch; parameter shapes and eval-mode outputs of working configurations are unchanged (:gh:`1422` by `Adam Mounir`_).
+
 - :class:`braindecode.models.ATCNet` with ``concat=True`` concatenates the features of all sliding windows as documented, instead of stopping after the first window and failing with a shape error in the classifier; the default ``concat=False`` output is unchanged (:gh:`1421` by `Adam Mounir`_).
 
 - :meth:`braindecode.models.base.EEGModuleMixin.get_output_shape` runs its probe forward pass in eval mode and restores each module's mode afterwards, so it no longer updates BatchNorm running statistics or draws dropout masks; models that call it in ``__init__`` (e.g. :class:`braindecode.models.EEGNet`, :class:`braindecode.models.EEGConformer`) start with untouched BatchNorm statistics (:gh:`1420` by `Adam Mounir`_).
