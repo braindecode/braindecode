@@ -1031,6 +1031,28 @@ def test_zuna_crop_drops_trailing_samples():
     torch.testing.assert_close(cropped(x), reference(x[..., :992]), rtol=0, atol=0)
 
 
+
+def test_zuna_names_without_locations_take_their_montage_position():
+    chs = _zuna_chs_info()
+    names_only = [{"ch_name": ch["ch_name"], "loc": [0.0] * 12} for ch in chs]
+    kw = dict(n_times=1024, **_ZUNA_SMALL)
+    with pytest.warns(UserWarning, match="standard 10-05 position"):
+        filled = ZUNA(chs_info=names_only, **kw)
+    info = mne.create_info([ch["ch_name"] for ch in chs], 250.0, "eeg")
+    info.set_montage("standard_1005")
+    reference = ZUNA(chs_info=info["chs"], **kw)
+    torch.testing.assert_close(
+        filled.encoder.rotary_cosine, reference.encoder.rotary_cosine
+    )
+    names_only[0]["ch_name"] = "XYZ"
+    with pytest.raises(ValueError, match="XYZ"):
+        ZUNA(chs_info=names_only, **kw)
+    with pytest.warns(UserWarning, match="pretrained at 256 Hz"):
+        ZUNA(chs_info=chs, **kw)  # _ZUNA_SMALL is at 250 Hz
+    in_mm = [dict(ch, loc=ch["loc"] * 1000) for ch in chs]
+    with pytest.warns(UserWarning, match="in metres"):
+        ZUNA(chs_info=in_mm, **kw)
+
 def test_reve_attention_matches_explicit_attention():
     attention = Attention(dim=16, heads=2, head_dim=8)
     x = torch.randn(2, 5, 16, requires_grad=True)
