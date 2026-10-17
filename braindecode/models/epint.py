@@ -13,7 +13,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange, Reduce
 
-from braindecode.functional import init_weights_, rotate_pairs
+from braindecode.functional import (
+    apply_rotary,
+    init_weights_,
+    rotary_angles,
+    rotary_frequencies,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import FeedForwardBlock
 
@@ -174,9 +179,9 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
         nn.init.normal_(self.cls_token, std=0.1)
         # Interleaved-pair RoPE angles, as ``precompute_freqs_cis`` upstream.
         head_dim = embed_dim // n_heads
-        inv_freq = 1.0 / rope_theta ** (torch.arange(0, head_dim, 2).float() / head_dim)
-        angles = torch.outer(torch.arange(n_tokens).float(), inv_freq)
-        angles = angles.repeat_interleave(2, dim=-1)  # (tokens, head_dim)
+        angles = rotary_angles(
+            torch.arange(n_tokens).float(), rotary_frequencies(head_dim, rope_theta)
+        )  # (tokens, head_dim)
         self.register_buffer("rope_cos", angles.cos(), persistent=False)
         self.register_buffer("rope_sin", angles.sin(), persistent=False)
         self.encoder = nn.ModuleList(
@@ -286,8 +291,8 @@ class _RoPEAttention(nn.Module):
         q = self.split_heads(self.w_q(x))
         k = self.split_heads(self.w_k(x))
         v = self.split_heads(self.w_v(x))
-        q = q * cos + rotate_pairs(q) * sin
-        k = k * cos + rotate_pairs(k) * sin
+        q = apply_rotary(q, cos, sin)
+        k = apply_rotary(k, cos, sin)
         out = F.scaled_dot_product_attention(q, k, v)
         return self.w_concat(self.merge_heads(out))
 
