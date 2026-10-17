@@ -27,11 +27,8 @@ from torch.utils._pytree import tree_flatten, tree_map_only
 
 import braindecode.functional
 from braindecode.functional import _real_dft
-from braindecode.models.util import (
-    _get_signal_params,
-    models_dict,
-    models_mandatory_parameters,
-)
+from braindecode.models.util import models_dict, models_mandatory_parameters
+from test.unit_tests.models._fixtures import _get_signal_params
 
 all_models_dict = dict(models_dict)
 

@@ -21,11 +21,8 @@ from braindecode.models import EEGNet
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 
 # importing some fixtures/utilities to help with testing
-from braindecode.models.util import (
-    models_dict,
-    models_mandatory_parameters,
-    non_classification_models,
-)
+from braindecode.models.util import models_dict, models_mandatory_parameters
+from test.unit_tests.models._fixtures import non_classification_models
 
 from .test_integration import get_sp
 
