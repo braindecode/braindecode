@@ -6,14 +6,21 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange, Reduce
 
-from braindecode.functional import rotate_pairs
+from braindecode.functional import init_weights_, rotate_pairs
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import FeedForwardBlock
+
+# Upstream head init: Kaiming-uniform weight, zero bias.
+_init_head = partial(
+    init_weights_, weights={nn.Linear: nn.init.kaiming_uniform_}, norms=()
+)
 
 
 class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
@@ -187,8 +194,7 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.Sequential(
             nn.Dropout(head_drop_prob), nn.Linear(embed_dim, self.n_outputs)
         )
-        nn.init.kaiming_uniform_(self.final_layer[1].weight)
-        nn.init.zeros_(self.final_layer[1].bias)
+        _init_head(self.final_layer[1])
 
         self.mapping = {
             "norm.weight": "instance_norm.weight",
@@ -206,12 +212,17 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
             upstream = upstream.replace("ffn.3.", "ffn.linear2.")
             self.mapping[f"transformer_encoder.{upstream}"] = f"encoder.{key}"
 
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``); the
+        constructor initializes the token and head as it builds them."""
+        nn.init.normal_(self.cls_token, std=0.1)
+        _init_head(self.final_layer[1])
+
     def reset_head(self, n_outputs: int) -> None:
         self._set_n_outputs(n_outputs)
         old = self.final_layer[1]
         head = nn.Linear(old.in_features, n_outputs).to(old.weight)
-        nn.init.kaiming_uniform_(head.weight)
-        nn.init.zeros_(head.bias)
+        _init_head(head)
         self.final_layer[1] = head
 
     def forward(self, x: torch.Tensor, return_features: bool = False):

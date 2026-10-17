@@ -314,6 +314,10 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             in_features=mlp_hidden, out_features=self.n_outputs
         )
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(_init_weights)
 
     def reset_head(self, n_outputs: int) -> None:

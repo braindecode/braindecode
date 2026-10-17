@@ -1,14 +1,19 @@
+from functools import partial
 from math import ceil
 
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
-from torch.nn import init
 from torch.nn.utils.parametrizations import weight_norm
 
-from braindecode.functional import fft_conv1d, prefer_fft_conv
+from braindecode.functional import fft_conv1d, init_weights_, prefer_fft_conv
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import Ensure4d
+
+# Xavier-normal classifier weight, zero bias.
+_init_classifier = partial(
+    init_weights_, weights={nn.Linear: nn.init.xavier_normal_}, norms=()
+)
 
 
 class TIDNet(EEGModuleMixin, nn.Module):
@@ -115,10 +120,14 @@ class TIDNet(EEGModuleMixin, nn.Module):
 
         self.final_layer = self._create_classifier(self.num_features, self.n_outputs)
 
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``); the
+        constructor initializes the classifier as it builds it."""
+        _init_classifier(self.final_layer[0])
+
     def _create_classifier(self, incoming: int, n_outputs: int):
         classifier = nn.Linear(incoming, n_outputs)
-        init.xavier_normal_(classifier.weight)
-        classifier.bias.data.zero_()
+        _init_classifier(classifier)
         seq_clf = nn.Sequential(classifier, nn.Identity())
 
         return seq_clf

@@ -29,6 +29,7 @@ Enhancements
 ============
 
 - Add :class:`braindecode.modules.TimmMlp`, the timm-style MLP (``fc1``/``fc2`` parameter names) that EEGPT and LUNA each defined privately; their parameters and outputs are unchanged (:gh:`1454` by `Bruno Aristimunha`_).
+- Every model has :meth:`~braindecode.models.base.EEGModuleMixin.reset_parameters`, which draws new initial weights with the model's own scheme: the layers' PyTorch defaults, then the model's initialization (``_init_parameters``), which the constructor also runs. Initial weights at construction are unchanged for every model. A new test checks, for all registered models, that seeded construction is reproducible and finite, that ``reset_parameters`` matches the constructor's initialization, and that a model's own initialization is not a no-op (:gh:`1452` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.Residual` and :class:`braindecode.modules.PostNormResidual`, the residual connections that EEGConformer, MIRepNet, STEEGFormer, CTNet and MSCFormer each defined privately; their parameter names and outputs are unchanged (:gh:`1449` by `Bruno Aristimunha`_).
 - Add :func:`braindecode.functional.init_weights_`, a per-layer-type weight initialization applied with ``model.apply``. The 24 models that each wrote their own initialization loop (BaRISTA, BENDR, BrainOmni, CBraMod, CSBrain, DANCE, DuIN, EEGPT, LaBraM, LUNA, MAPA, MEDFormer, MVPFormer, NeuroPose, NeuroRVQ, PBT, SensingDynamics, SPARCNet, STEEGFormer, TCFormer, VEMG2Pose, …) now declare their rule with it; the initial weights of every model are unchanged (:gh:`1448` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ZUNA`: a channel without a location takes the standard 10-05 position of its name (with a warning) instead of raising, and ZUNA warns when ``sfreq`` is not its pretraining 256 Hz or when the coordinates are not in metres (they were silently clipped); channels with locations give the same model and output (:gh:`1437` by `Bruno Aristimunha`_).
@@ -482,6 +483,8 @@ Requirements
 
 Bug fixes
 ==========
+
+- ``reset_head`` builds the new head in the model's dtype, device and train/eval mode for every model: 18 models built it in float32 on the CPU (so a ``.double()`` or GPU model failed at the next forward) and 33 left it in training mode inside an eval model (:gh:`1451` by `Bruno Aristimunha`_).
 
 - Remove dead code: ``braindecode/datasets/bids/format.py`` (an unused copy of ``hub_format.py``, imported nowhere) and two unused private definitions in MEDFormer and the PhysioNet 2018 dataset (:gh:`1444` by `Bruno Aristimunha`_).
 

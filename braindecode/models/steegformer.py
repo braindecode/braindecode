@@ -413,6 +413,10 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         # Upstream MAE init (xavier-uniform Linears, unit/zero LayerNorm) on every
         # submodule, then the faithful-port specials: a normal(std=0.02) CLS token
         # (the channel embedding keeps its zero init from _ChannelPositionalEmbed).
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(_init_weights)
         nn.init.normal_(self.cls_token, std=0.02)
 
@@ -642,6 +646,10 @@ class _ChannelPositionalEmbed(nn.Module):
     def __init__(self, n_vocab: int, embed_dim: int):
         super().__init__()
         self.embedding = nn.Embedding(n_vocab, embed_dim)
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Initialize this block's weights."""
         nn.init.zeros_(self.embedding.weight)
 
     def forward(self, channel_indices: torch.Tensor) -> torch.Tensor:

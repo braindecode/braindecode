@@ -333,6 +333,10 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             nn.Linear(self.n_tokens, 1, bias=False) if pooling == "learned" else None
         )
         self.final_layer = nn.Linear(d_model, self.n_outputs)
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(_init_weights)
 
     def _build_spatial_embedding(

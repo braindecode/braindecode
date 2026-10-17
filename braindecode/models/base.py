@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import json
 import warnings
@@ -118,6 +119,27 @@ class _BraindecodeDocstringMeta(NumpyDocstringInheritanceInitMeta):
         # overwrite _braindecode_init_kwargs captured by the subclass.
         if any(isinstance(b, _BraindecodeDocstringMeta) for b in class_bases):
             track_model_init_kwargs(cls)
+
+
+def _new_head_follows_model(reset_head):
+    """Wrap a ``reset_head`` so that the modules it creates take the model's
+    floating dtype, device and train/eval mode (a new ``nn.Linear`` is float32
+    on the CPU in training mode, whatever the model)."""
+
+    @functools.wraps(reset_head)
+    def wrapper(self, *args, **kwargs):
+        ref = next((p for p in self.parameters() if p.is_floating_point()), None)
+        before = {id(t) for t in self.parameters()} | {id(t) for t in self.buffers()}
+        out = reset_head(self, *args, **kwargs)
+        if ref is not None:
+            for module in self.modules():
+                tensors = [*module.parameters(), *module.buffers()]
+                if tensors and not any(id(t) in before for t in tensors):
+                    module.to(device=ref.device, dtype=ref.dtype)
+                    module.train(self.training)
+        return out
+
+    return wrapper
 
 
 class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
@@ -257,6 +279,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     def __init_subclass__(cls, **kwargs):
         license = kwargs.pop("license", "bsd-3-clause")
+
+        if "reset_head" in cls.__dict__:
+            cls.reset_head = _new_head_follows_model(cls.__dict__["reset_head"])
 
         # TorchScript only honours ``__jit_ignored_attributes__`` for
         # properties defined directly on the concrete class: it collects them
@@ -681,6 +706,34 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             for name, value in init_kwargs.items():
                 if name in config:
                     config[name] = value
+
+    def reset_parameters(self) -> None:
+        """Draw new initial weights, the way the constructor does.
+
+        Every submodule with a ``reset_parameters`` method (PyTorch layers,
+        and blocks with their own initialization) is reset, children before
+        parents, then the model applies its own initialization
+        (:meth:`_init_parameters`). Seed with :func:`torch.manual_seed` for a
+        reproducible draw.
+        """
+
+        def reset(module):
+            if module is self:
+                return
+            # PyTorch layers use reset_parameters; nn.MultiheadAttention and
+            # nn.Transformer use _reset_parameters.
+            for name in ("reset_parameters", "_reset_parameters"):
+                if callable(getattr(module, name, None)):
+                    getattr(module, name)()
+                    break
+
+        self.apply(reset)
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization, run by the constructor after the
+        layers are built and by :meth:`reset_parameters`. The default keeps the
+        layers' PyTorch initialization."""
 
     def reset_head(self, n_outputs):
         """Replace the classification head for a new number of outputs.

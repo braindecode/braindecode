@@ -214,6 +214,10 @@ class EEGMiner(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         # Classifier
         self.batch_layer = nn.BatchNorm1d(self.n_features, affine=False)
         self.final_layer = nn.Linear(self.n_features, self.n_outputs)
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         nn.init.zeros_(self.final_layer.bias)
 
     @_disable_batch_norm_training_if_batch_size_one

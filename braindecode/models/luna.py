@@ -261,9 +261,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 False  # no use of mask token for classification
             )
 
-        self.initialize_weights()
+        self._init_parameters()
 
-    def initialize_weights(self) -> None:
+    def _init_parameters(self) -> None:
         self.cross_attn.initialize_weights()
         trunc_normal_(self.mask_token, std=0.02)
         self.apply(_init_weights)

@@ -625,9 +625,9 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             head_dim *= len(slots) * self.num_patches
         self.fc_norm = nn.LayerNorm(head_dim)
         self.final_layer = nn.Linear(head_dim, self.n_outputs)
-        self._init_weights()
+        self._init_parameters()
 
-    def _init_weights(self):
+    def _init_parameters(self):
         nn.init.trunc_normal_(self.cls_token, std=0.02)
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
         nn.init.trunc_normal_(self.time_embed, std=0.02)
