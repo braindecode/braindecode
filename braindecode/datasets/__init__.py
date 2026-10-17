@@ -13,6 +13,7 @@ from .chb_mit import CHBMIT
 from .collate import pad_channels_collate
 from .mne import create_from_mne_epochs, create_from_mne_raw
 from .moabb import BNCI2014_001, HGD, MOABBDataset
+from .nemar import NEMARDataset
 from .nmt import NMT
 from .siena import SIENA
 from .sleep_physio_challe_18 import SleepPhysionetChallenge2018
@@ -29,6 +30,7 @@ __all__ = [
     "BIDSDataset",
     "BIDSEpochsDataset",
     "MOABBDataset",
+    "NEMARDataset",
     "HGD",
     "BNCI2014_001",
     "create_from_mne_raw",

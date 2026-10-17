@@ -76,6 +76,7 @@ documentation = "https://braindecode.org/stable/index.html"
 moabb = ["moabb>=1.4.3"]
 eegprep = ["eegprep[eeglabio]>=0.2.23"]
 hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.0"]
+nemar = ["zarr>=3.0", "fsspec", "aiohttp", "pyarrow"]
 viz = ["captum>=0.7.0"]
 sae = ["sae-lens==6.51.3"]  # Optional gallery only; not part of core or all.
 tests = [
@@ -125,6 +126,7 @@ all = [
     "braindecode[tests]",
     "braindecode[docs]",
     "braindecode[hub]",
+    "braindecode[nemar]",
     "braindecode[eegprep]",
     "braindecode[typing]",
     "braindecode[viz]",

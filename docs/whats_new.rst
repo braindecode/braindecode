@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.datasets.NEMARDataset`: streams a NEMAR dataset from its Zarr serving copy (https://docs.nemar.org/platform/zarr/) without downloading the BIDS files. Each recording is a lazy :class:`mne.io.BaseRaw`, so windowing, preprocessing and data loaders work unchanged and only the samples read are fetched, one 300 s shard per request, with a per-process cache (``cache_size``). Install with ``pip install braindecode[nemar]`` (:gh:`XXXX` by `Adam Mounir`_).
 - :class:`braindecode.models.ZUNA` accepts windows longer than ``max_seqlen`` patches (the release's 8192 samples): the rotary table is extended to the window instead of raising; shorter windows are unchanged (:gh:`1433` by `Bruno Aristimunha`_).
 - The DANCE event-detection tutorial evaluates the published checkpoint and explains that its reported subject-3 score was used for epoch selection, not independent testing (:gh:`1406` by `Bruno Aristimunha`_).
 
