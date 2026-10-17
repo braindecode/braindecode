@@ -976,14 +976,15 @@ def _pairwise_rope_kernel(x, cos, sin, position_ids, offset, mode):
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 def test_zuna_hpu_fused_rotary_matches_the_formula(monkeypatch, dtype):
-    """The HPU rotary path (fused kernel forward, inverse rotation backward) gives
-    the formula's outputs and gradients."""
+    """The HPU eager rotary path (fused kernel forward, inverse rotation backward)
+    gives the formula's outputs and gradients; lazy mode keeps the formula."""
     import types
 
     kernels = types.ModuleType("habana_frameworks.torch.hpex.kernels")
     kernels.apply_rotary_pos_emb = _pairwise_rope_kernel
     kernels.RotaryPosEmbeddingMode = types.SimpleNamespace(PAIRWISE="PAIRWISE")
     monkeypatch.setitem(sys.modules, kernels.__name__, kernels)
+    monkeypatch.setattr(zuna_module, "_hpu_lazy", lambda: False)
 
     model = ZUNA(chs_info=_zuna_chs_info(), n_times=256, **_ZUNA_SMALL)
     cos, sin = model.encoder.rotary_cosine, model.encoder.rotary_sine
@@ -1001,6 +1002,10 @@ def test_zuna_hpu_fused_rotary_matches_the_formula(monkeypatch, dtype):
         torch.autograd.backward(out, [grad_q, grad_k])
         outputs.append(out)
         grads.append((q.grad, k.grad))
+
+    # Lazy mode keeps the formula (the graph compiler fuses it).
+    monkeypatch.setattr(zuna_module, "_hpu_lazy", lambda: True)
+    assert zuna_module._hpu_fused_rotary(query, key, cos, sin) is None
 
     for expected, actual in zip(outputs[0] + grads[0], outputs[1] + grads[1]):
         assert actual.dtype == expected.dtype
