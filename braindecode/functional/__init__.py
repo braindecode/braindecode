@@ -1,5 +1,7 @@
+from .attention import scaled_dot_product_attention
 from .functions import (
     _get_gaussian_kernel1d,
+    apply_rotary,
     daubechies_filters,
     drop_path,
     dwt_max_level,
@@ -10,6 +12,9 @@ from .functions import (
     pairwise_iou_1d,
     plv_time,
     prefer_fft_conv,
+    rotary_angles,
+    rotary_frequencies,
+    rotate_half,
     rotate_pairs,
     safe_log,
     sinusoidal_positional_encoding,
@@ -25,6 +30,7 @@ from .initialization import (
 
 __all__ = [
     "_get_gaussian_kernel1d",
+    "apply_rotary",
     "daubechies_filters",
     "drop_path",
     "dwt_max_level",
@@ -35,8 +41,12 @@ __all__ = [
     "pairwise_iou_1d",
     "plv_time",
     "prefer_fft_conv",
+    "rotary_angles",
+    "rotary_frequencies",
+    "rotate_half",
     "rotate_pairs",
     "safe_log",
+    "scaled_dot_product_attention",
     "sinusoidal_positional_encoding",
     "spectral_input",
     "square",

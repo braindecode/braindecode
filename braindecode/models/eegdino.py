@@ -13,7 +13,7 @@ from torch import nn
 from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
-from braindecode.modules import DropPath, PatchTokenizer
+from braindecode.modules import DropPath, PatchTokenizer, TimmAttention
 
 
 class EEGDINO(EEGModuleMixin, nn.Module):
@@ -451,7 +451,15 @@ class _TransformerEncoderLayer(nn.Module):
     ):
         super().__init__()
         self.norm1 = nn.LayerNorm(emb_dim)
-        self.attn = _Attention(emb_dim, nhead, attn_drop=drop_prob, proj_drop=drop_prob)
+        # BEiT attention with q/v biases, in the reference op order
+        self.attn = TimmAttention(
+            emb_dim,
+            nhead,
+            qv_bias=True,
+            attn_drop=drop_prob,
+            proj_drop=drop_prob,
+            exact=True,
+        )
         self.drop_path = DropPath(drop_prob) if drop_prob > 0.0 else nn.Identity()
         self.norm2 = nn.LayerNorm(emb_dim)
         self.mlp = _MLP(emb_dim, dim_feedforward, activation=activation, drop=drop_prob)
@@ -460,50 +468,6 @@ class _TransformerEncoderLayer(nn.Module):
         x = x + self.drop_path(self.attn(self.norm1(x)))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
-
-
-class _Attention(nn.Module):
-    """BEiT-style attention: fused ``qkv`` without bias plus separate q/v biases.
-
-    ``head_dim`` is decoupled from ``emb_dim`` (``all_head_dim = head_dim *
-    nhead``) so a custom ``nhead`` need not divide ``emb_dim``. For the released
-    presets ``nhead=8`` divides every ``emb_dim`` (200/512/1024), so this is a
-    no-op there and the released ``qkv``/``proj`` shapes are preserved.
-    """
-
-    def __init__(self, emb_dim, nhead=8, attn_drop=0.0, proj_drop=0.0):
-        super().__init__()
-        if not 1 <= nhead <= emb_dim:
-            raise ValueError(
-                f"nhead ({nhead}) must be in [1, emb_dim={emb_dim}] so head_dim >= 1."
-            )
-        self.nhead = nhead
-        head_dim = emb_dim // nhead
-        all_head_dim = head_dim * nhead
-        self.scale = head_dim**-0.5
-        self.qkv = nn.Linear(emb_dim, all_head_dim * 3, bias=False)
-        self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
-        self.v_bias = nn.Parameter(torch.zeros(all_head_dim))
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(all_head_dim, emb_dim)
-        self.proj_drop = nn.Dropout(proj_drop)
-
-    def forward(self, x):
-        bias = torch.cat((self.q_bias, torch.zeros_like(self.v_bias), self.v_bias))
-        # Call the ``qkv`` module rather than ``F.linear`` on its weight, so
-        # hooks and adapters attached to it (e.g. LoRA) take part in the forward.
-        qkv = self.qkv(x)
-        qkv = qkv + bias.to(qkv.dtype)  # keep autocast dtype
-        batch, tokens, _ = qkv.shape
-        query, key, value = (
-            qkv.reshape(batch, tokens, 3, self.nhead, -1)
-            .permute(2, 0, 3, 1, 4)
-            .unbind(0)
-        )
-        attn = (query * self.scale @ key.transpose(-2, -1)).softmax(dim=-1)
-        attn = self.attn_drop(attn)
-        out = (attn @ value).transpose(1, 2).flatten(2)
-        return self.proj_drop(self.proj(out))
 
 
 class _MLP(nn.Module):

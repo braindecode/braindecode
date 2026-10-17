@@ -1655,7 +1655,7 @@ def test_multi_head_attention_explicit_scale_matches_manual_attention():
 
 
 def test_multi_head_attention_supports_torch_2_0_sdpa(monkeypatch):
-    import braindecode.modules.attention as attention
+    import braindecode.functional.attention as attention
     from braindecode.modules import MultiHeadAttention
 
     received_queries = []
@@ -2246,3 +2246,34 @@ def test_timm_mlp_keys_and_forward():
     assert list(mlp.state_dict()) == ["fc1.weight", "fc1.bias", "fc2.weight", "fc2.bias"]
     x = torch.randn(2, 3, 4)
     torch.testing.assert_close(mlp(x), mlp.fc2(torch.nn.functional.gelu(mlp.fc1(x))))
+
+
+def test_timm_attention_keys_and_weights():
+    import math
+
+    from braindecode.modules import TimmAttention
+
+    torch.manual_seed(0)
+    attn = TimmAttention(16, num_heads=4).eval()
+    assert list(attn.state_dict()) == ["qkv.weight", "proj.weight", "proj.bias"]
+    beit = TimmAttention(16, num_heads=4, qv_bias=True, exact=True).eval()
+    assert list(beit.state_dict()) == [
+        "q_bias",
+        "v_bias",
+        "qkv.weight",
+        "proj.weight",
+        "proj.bias",
+    ]
+    x = torch.randn(2, 5, 16)
+    assert attn(x).shape == (2, 5, 16)
+    weights = attn(x, need_weights=True)
+    assert weights.shape == (2, 4, 5, 5)
+    torch.testing.assert_close(weights.sum(-1), torch.ones(2, 4, 5))
+    # exact: timm's op order, softmax((q * scale) @ k^T) @ v, bit for bit
+    q, k, v = beit._heads(x)
+    ref = ((q * 0.5) @ k.transpose(-2, -1)).softmax(-1) @ v
+    ref = beit.proj(ref.transpose(1, 2).flatten(2))
+    assert torch.equal(beit(x), ref)
+    assert math.isclose(beit.scale, 0.5)
+    with pytest.raises(ValueError, match="num_heads"):
+        TimmAttention(16, num_heads=32)
