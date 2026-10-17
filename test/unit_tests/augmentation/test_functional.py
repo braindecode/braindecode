@@ -39,6 +39,23 @@ def test_mixup_preserves_input_dtype(dtype, default_dtype):
     torch.testing.assert_close(X.grad[1], torch.full_like(X[1], 1.5))
 
 
+@pytest.mark.parametrize("dtype", [torch.int16, torch.int64, torch.bool])
+@pytest.mark.parametrize("default_dtype", [torch.float32, torch.float64])
+def test_mixup_integer_inputs_keep_floating_interpolation(dtype, default_dtype):
+    X = torch.tensor([[[0, 1]], [[1, 0]]], dtype=dtype)
+    y = torch.tensor([0, 1])
+    lam = torch.tensor([0.25, 0.75])
+    original_dtype = torch.get_default_dtype()
+    try:
+        torch.set_default_dtype(default_dtype)
+        mixed, _ = mixup(X, y, lam, torch.tensor([1, 0]))
+    finally:
+        torch.set_default_dtype(original_dtype)
+
+    expected = torch.tensor([[[0.75, 0.25]], [[0.75, 0.25]]], dtype=default_dtype)
+    torch.testing.assert_close(mixed, expected)
+
+
 def test_channels_shuffle():
     X = torch.rand((5, 64, 100))
     # Random EEG data for 5 examples, 64 channels, and 100 time points

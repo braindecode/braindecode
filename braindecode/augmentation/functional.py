@@ -1091,7 +1091,10 @@ def mixup(
     """
     batch_size, n_channels, n_times = X.shape
 
-    X_mix = X.new_zeros((batch_size, n_channels, n_times))
+    X_mix = X.new_zeros(
+        (batch_size, n_channels, n_times),
+        dtype=X.dtype if X.is_floating_point() else torch.get_default_dtype(),
+    )
     y_a = y.clone()
     y_b = y[idx_perm].clone()
 
