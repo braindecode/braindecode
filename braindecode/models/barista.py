@@ -4,17 +4,24 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Optional
 
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import GatedLinearUnit, PatchTokenizer
 from braindecode.modules.attention import _scaled_dot_product_attention
 from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
+
+# Weight initialization of the reference implementation.
+_init_weights = partial(
+    init_weights_, weights={nn.Conv2d: nn.init.kaiming_normal_}, norms=()
+)
 
 
 class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
@@ -326,16 +333,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             nn.Linear(self.n_tokens, 1, bias=False) if pooling == "learned" else None
         )
         self.final_layer = nn.Linear(d_model, self.n_outputs)
-        self.apply(self._init_weights)
-
-    @staticmethod
-    def _init_weights(module: nn.Module) -> None:
-        # Match the reference: Kaiming CNN, unit-variance spatial embeddings,
-        # unit norm scales, and PyTorch's default Linear initialization.
-        if isinstance(module, nn.Conv2d):
-            nn.init.kaiming_normal_(module.weight)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
+        self.apply(_init_weights)
 
     def _build_spatial_embedding(
         self,

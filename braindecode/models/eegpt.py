@@ -11,6 +11,7 @@ import mne
 import torch
 from torch import nn
 
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath
 from braindecode.modules.attention import _scaled_dot_product_attention
@@ -1295,7 +1296,16 @@ class _EEGTransformer(nn.Module):
         self.summary_token = nn.Parameter(torch.zeros(1, embed_num, embed_dim))
 
         nn.init.trunc_normal_(self.summary_token, std=self.init_std)
-        self.apply(self._init_weights)
+        trunc = partial(nn.init.trunc_normal_, std=self.init_std)
+        self.apply(
+            partial(
+                init_weights_,
+                weights={
+                    (nn.Linear, nn.Conv2d): trunc,
+                    nn.Embedding: partial(nn.init.normal_, mean=0.0, std=0.02),
+                },
+            )
+        )
         self.fix_init_weight()
 
     def prepare_chan_ids(self, channels):
@@ -1331,21 +1341,6 @@ class _EEGTransformer(nn.Module):
         for layer_id, layer in enumerate(self.blocks):
             rescale(layer.attn.proj.weight.data, layer_id + 1)
             rescale(layer.mlp.fc2.weight.data, layer_id + 1)
-
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            nn.init.trunc_normal_(m.weight, std=self.init_std)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
-        elif isinstance(m, nn.Conv2d):
-            nn.init.trunc_normal_(m.weight, std=self.init_std)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.Embedding):
-            torch.nn.init.normal_(m.weight, mean=0.0, std=0.02)
 
     def forward(
         self,

@@ -6,15 +6,26 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 import torch
 from einops.layers.torch import Rearrange
 from scipy.signal import butter
 from torch import nn
 
-from braindecode.functional import spectral_input
+from braindecode.functional import init_weights_, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules.activation import SmoothMaximumUnit
+
+# Truncated-normal convolutions and linears, unit/zero normalization layers.
+_init_weights = partial(
+    init_weights_,
+    weights={
+        (nn.Conv1d, nn.Conv2d, nn.Linear): partial(nn.init.trunc_normal_, std=0.02)
+    },
+    norms=(nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.LayerNorm),
+)
 
 
 class SensingDynamics(EEGModuleMixin, nn.Module):
@@ -303,23 +314,7 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             in_features=mlp_hidden, out_features=self.n_outputs
         )
-        self.apply(self._init_weights)
-
-    @staticmethod
-    def _init_weights(module: nn.Module) -> None:
-        """Initialize trainable layers with the Braindecode model convention."""
-        if isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Linear)):
-            nn.init.trunc_normal_(module.weight, std=0.02)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
-        elif isinstance(
-            module,
-            (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.LayerNorm),
-        ):
-            if module.weight is not None:
-                nn.init.ones_(module.weight)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
+        self.apply(_init_weights)
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the output layer for a new output dimensionality."""
@@ -328,7 +323,7 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             in_features=old.in_features, out_features=n_outputs
         ).to(device=old.weight.device, dtype=old.weight.dtype)
-        self._init_weights(self.final_layer)
+        _init_weights(self.final_layer)
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(
