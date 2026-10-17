@@ -5837,6 +5837,41 @@ def test_biot_hop_length_larger_than_sfreq():
     assert model(torch.randn(2, 2, 1000)).shape == (2, 2)
 
 
+@pytest.mark.parametrize(
+    "model_cls,kwargs,geometry,sfreq",
+    [
+        (
+            BIOT,
+            dict(n_chans=2, n_outputs=2, embed_dim=8, num_heads=2, num_layers=1),
+            dict(n_times=512, input_window_seconds=2.0),
+            256,
+        ),
+        (
+            BIOT,
+            dict(n_chans=2, n_outputs=2, embed_dim=8, num_heads=2, num_layers=1),
+            dict(n_times=400),
+            200,
+        ),
+        (EMG2QwertyNet, dict(), dict(n_times=1000, input_window_seconds=1.0), 1000),
+        (EMG2QwertyNet, dict(), dict(n_times=8000), 2000),
+        (
+            MetaNeuromotorHand,
+            # the default frequency bands are set for 2000 Hz
+            dict(mpf_frequency_bins=None),
+            dict(n_times=1000, input_window_seconds=1.0),
+            1000,
+        ),
+        (MetaNeuromotorHand, dict(), dict(n_times=8000), 2000),
+    ],
+)
+def test_default_sfreq_yields_to_given_geometry(model_cls, kwargs, geometry, sfreq):
+    """The default ``sfreq`` is only used when ``n_times`` and
+    ``input_window_seconds`` do not determine it, instead of conflicting."""
+    model = model_cls(**kwargs, **geometry)
+    assert model.n_times == geometry["n_times"]
+    assert model.sfreq == sfreq
+
+
 @pytest.mark.parametrize("n_times", [256, 1024])
 def test_medformer_patches_over_time(n_times):
     model = MEDFormer(n_chans=4, n_outputs=3, n_times=n_times, patch_len_list=[2, 4])
