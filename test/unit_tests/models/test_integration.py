@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import inspect
+import os
 import sys
 from io import BytesIO
 
@@ -316,6 +317,20 @@ def test_model_has_drop_prob_parameter(model_class):
     )
 
 
+# torch.compile takes ~38 min of CI workers over all models. Pull requests
+# compile one model per architecture family; pushes to master (and any run
+# with BRAINDECODE_COMPILE_ALL=1) compile every model.
+_COMPILE_ON_PR = {
+    "ShallowFBCSPNet",  # plain convolutions
+    "Deep4Net",
+    "EEGNeX",  # FFT convolution
+    "TIDNet",
+    "BIOT",  # STFT + linear attention
+    "EEGConformer",  # convolution + transformer
+    "Labram",  # patch-tokenizer foundation model
+}
+
+
 # skip if windows or python 3.14
 @pytest.mark.skipif(
     sys.platform.startswith("win") or sys.version_info >= (3, 14),
@@ -326,6 +341,11 @@ def test_model_compiled(model):
     Verifies that all models can be torch compiled without issue
     and if the outputs are the same.
     """
+    if (
+        os.environ.get("BRAINDECODE_COMPILE_ALL") != "1"
+        and model.__class__.__name__ not in _COMPILE_ON_PR
+    ):
+        pytest.skip("compiled on master only (set BRAINDECODE_COMPILE_ALL=1)")
     not_compilable_models = [
         # torch.compile currently stalls on the STFT/eigendecomposition-based
         # MPF featurizer at the default handwriting input size.
