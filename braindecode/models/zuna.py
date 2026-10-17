@@ -6,15 +6,20 @@
 from __future__ import annotations
 
 import math
+import warnings
 from typing import Optional
 
+import numpy as np
 import torch
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import extract_channel_locations_from_chs_info
+from braindecode.models.util import (
+    extract_channel_locations_from_chs_info,
+    warn_if_sfreq_differs,
+)
 from braindecode.modules import PatchTokenizer
 from braindecode.modules.attention import _scaled_dot_product_attention
 from braindecode.modules.layers import RMSNorm
@@ -48,10 +53,12 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     Signal size and sampling frequency follow the standard Braindecode model
     arguments. Supply either ``n_times`` or both ``input_window_seconds`` and
     ``sfreq``; ZUNA does not set these values implicitly. ZUNA1.1 was trained
-    at 256 Hz with 32-sample tokens. This implementation does not
-    resample, filter, or normalize the input. Channel coordinates are read from
-    ``chs_info`` when the model is constructed and stored in fixed rotary
-    position buffers.
+    at 256 Hz with 32-sample tokens (another ``sfreq`` warns). This
+    implementation does not resample, filter, or normalize the input. Channel
+    coordinates are read from ``chs_info`` (in metres, MNE head frame) when the
+    model is constructed and stored in fixed rotary position buffers; a channel
+    without a location takes the standard 10-05 position of its name, with a
+    warning.
 
     .. rubric:: Architecture Overview
 
@@ -252,17 +259,18 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         rotary_axis_dim = head_dim // 4
 
         # Checks
-        channel_locations = extract_channel_locations_from_chs_info(
-            self._chs_info, num_channels=self.num_channels
+        warn_if_sfreq_differs("ZUNA", self._sfreq, 256)
+        channel_positions = torch.as_tensor(
+            _channel_positions(self._chs_info, self.num_channels), dtype=torch.float32
         )
-        if channel_locations is None:
-            raise ValueError("ZUNA requires channel locations in chs_info.")
-        channel_positions = torch.as_tensor(channel_locations, dtype=torch.float32)
-        if (
-            channel_positions.shape != (self.num_channels, 3)
-            or not torch.isfinite(channel_positions).all()
-        ):
-            raise ValueError("ZUNA requires finite 3D locations for every channel.")
+        if channel_positions.abs().max() > 1.0:  # a head is ~0.1 m across
+            warnings.warn(
+                "ZUNA expects channel locations in metres (MNE head frame); got "
+                f"coordinates up to {float(channel_positions.abs().max()):g}, which "
+                f"are clipped to +/-{pos_half_range} m.",
+                UserWarning,
+                stacklevel=2,
+            )
         if head_dim % 8 != 0:
             raise ValueError("head_dim must be divisible by eight for 4D RoPE.")
 
@@ -358,6 +366,49 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             Rearrange("batch channel latent -> batch (channel latent)"),
             nn.Linear(self.num_channels * self.latent_dim, n_outputs),
         )
+
+
+def _channel_positions(chs_info, n_chans):
+    """``(n_chans, 3)`` locations from ``chs_info``; a channel without a usable
+    ``loc`` takes the standard 10-05 position of its name, as MNE places it."""
+    locs = extract_channel_locations_from_chs_info(
+        chs_info, num_channels=n_chans, fill_missing=True
+    )
+    if locs is None:
+        raise ValueError("ZUNA requires channel locations in chs_info.")
+    missing = np.flatnonzero(~np.isfinite(locs).all(1) | ~locs.any(1))
+    if len(missing) == 0:
+        return locs
+    import mne
+
+    names = [str(chs_info[i].get("ch_name", "")) for i in missing]
+    unknown = [n for n in names if not n]
+    if not unknown:
+        montage = (
+            "colin27_1005"  # standard_1005's name from MNE 1.13
+            if "colin27_1005" in mne.channels.get_builtin_montages()
+            else "standard_1005"
+        )
+        info = mne.create_info(names, 256.0, "eeg")
+        info.set_montage(
+            montage, match_case=False, match_alias=True, on_missing="ignore"
+        )
+        filled = np.array([ch["loc"][:3] for ch in info["chs"]], dtype=locs.dtype)
+        ok = np.isfinite(filled).all(1) & filled.any(1)
+        unknown = [n for n, k in zip(names, ok) if not k]
+    if unknown:
+        raise ValueError(
+            "ZUNA requires finite 3D locations for every channel; "
+            f"{unknown} have none and are not in the standard 10-05 montage."
+        )
+    warnings.warn(
+        f"ZUNA: {len(names)} channel(s) without a location (e.g. {names[0]}) take "
+        "the standard 10-05 position of their name.",
+        UserWarning,
+        stacklevel=3,
+    )
+    locs[missing] = filled
+    return locs
 
 
 def _build_rotary_frequency_table(

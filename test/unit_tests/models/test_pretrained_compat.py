@@ -232,8 +232,7 @@ COMPAT = {
         sfreq=256,
         n_times=1024,
         canon=TEN_TWENTY,
-        channels="coords",
-        coords_checked=True,
+        channels="coords",  # names without a loc take their 10-05 position
     ),
     "Brant": dict(
         cls=Brant,
