@@ -20,6 +20,7 @@ from torch import Tensor, nn
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import (
     FeedForwardBlock,
+    LearnedPositionalEncoding,
     MultiHeadAttention,
     PostNormResidual,
 )
@@ -177,12 +178,20 @@ class CTNet(EEGModuleMixin, nn.Module, license="mit"):
             activation=self.activation_patch,
         )
 
-        self.position = _PositionalEncoding(
-            emb_size=self.embed_dim,
-            drop_prob=self.att_positional_drop_prob,
-            n_times=self.n_times,
-            pool_size=self.pool_size_1,
-            sequence_length=self.sequence_length,
+        length = 100
+        needed = max(
+            int(self.n_times / (self.pool_size_1 * self.pool_size_1)),
+            self.sequence_length or 0,
+        )
+        if needed > length:
+            warn(
+                "the temporal dimensional is too long for this default length. "
+                "The length parameter will be automatically adjusted to "
+                "avoid inference issues."
+            )
+            length = needed
+        self.position = LearnedPositionalEncoding(
+            length, self.embed_dim, self.att_positional_drop_prob
         )
 
         self.trans = _TransformerEncoder(
@@ -480,52 +489,3 @@ class _TransformerEncoder(nn.Module):
             Output tensor after transformer encoder.
         """
         return self.layers(x)
-
-
-class _PositionalEncoding(nn.Module):
-    def __init__(
-        self,
-        n_times: int,
-        emb_size: int,
-        length: int = 100,
-        drop_prob: float = 0.1,
-        pool_size: int = 8,
-        sequence_length: int | None = None,
-    ):
-        super().__init__()
-        self.pool_size = pool_size
-        self.n_times = n_times
-
-        # n_times / pool_size**2 is the sequence length only when both pooling
-        # sizes are equal; also cover the actual length (e.g. pool_size_2 <
-        # pool_size_1), so that the encoding is never shorter than the input
-        needed = max(int(n_times / (pool_size * pool_size)), sequence_length or 0)
-        if needed > length:
-            warn(
-                "the temporal dimensional is too long for this default length. "
-                "The length parameter will be automatically adjusted to "
-                "avoid inference issues."
-            )
-            length = needed
-
-        self.dropout = nn.Dropout(drop_prob)
-        self.encoding = nn.Parameter(torch.randn(1, length, emb_size))
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Forward pass of the positional encoding.
-
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor of shape (batch_size, sequence_length, embedding_dim).
-
-        Returns
-        -------
-        Tensor
-            Tensor with positional encoding added.
-        """
-        seq_length = x.size(1)
-        encoding = self.encoding[:, :seq_length, :]
-        x = x + encoding
-        return self.dropout(x)
