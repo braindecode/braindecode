@@ -812,6 +812,27 @@ def test_atcnet_n_params():
 
 
 @pytest.mark.parametrize(
+    "model_cls,geometry,n_times,sfreq",
+    [
+        (EEGInceptionERP, dict(input_window_seconds=2.0, sfreq=64), 128, 64),
+        (EEGInceptionERP, dict(n_times=256, input_window_seconds=1.0), 256, 256),
+        (EEGInceptionERP, dict(input_window_seconds=1.0), 128, 128),
+        (EEGInceptionERP, dict(), 1000, 128),
+        (ATCNet, dict(n_times=640, input_window_seconds=5.0), 640, 128),
+        (ATCNet, dict(n_times=1125), 1125, 250),
+        (EEGInceptionMI, dict(n_times=384, input_window_seconds=3.0), 384, 128),
+        (EEGInceptionMI, dict(n_times=750), 750, 250),
+    ],
+)
+def test_default_geometry_yields_to_given_geometry(model_cls, geometry, n_times, sfreq):
+    """A default ``n_times``/``sfreq`` is only used when the given geometry
+    does not determine it, instead of conflicting with it."""
+    model = model_cls(n_chans=3, n_outputs=2, **geometry)
+    assert model.n_times == n_times
+    assert model.sfreq == sfreq
+
+
+@pytest.mark.parametrize(
     "n_channels,sfreq,n_classes,input_size_s",
     [(20, 128, 5, 30), (10, 256, 4, 20), (1, 64, 2, 30)],
 )
