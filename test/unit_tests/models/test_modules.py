@@ -2154,3 +2154,24 @@ def test_glorot_weight_zero_bias():
     assert torch.all(model[0].bias == 0)
     # EEGNet calls it in __init__, also without BatchNorm affine parameters
     EEGNet(n_chans=4, n_outputs=2, n_times=128, batch_norm_affine=False)
+
+
+def test_trunc_normal_init_():
+    from braindecode.functional import trunc_normal_init_
+
+    torch.manual_seed(0)
+    model = nn.Sequential(
+        nn.Linear(50, 50),
+        nn.Conv1d(3, 4, 3),
+        nn.LayerNorm(50, elementwise_affine=False),  # no weight: skipped
+        nn.BatchNorm1d(4),
+    )
+    for p in model.parameters():
+        nn.init.constant_(p, 5.0)
+    model.apply(trunc_normal_init_)
+    assert abs(float(model[0].weight.std()) - 0.02) < 0.002
+    assert torch.all(model[0].bias == 0)
+    assert torch.all(model[1].weight == 5.0)  # Conv1d not in the default layers
+    assert torch.all(model[3].weight == 1) and torch.all(model[3].bias == 0)
+    model.apply(lambda m: trunc_normal_init_(m, std=1.0, layers=(nn.Conv1d,)))
+    assert not torch.all(model[1].weight == 5.0)

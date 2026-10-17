@@ -50,3 +50,27 @@ def rescale_parameter(param, layer_id):
     Pre-Training of Image Transformers.
     """
     param.div_(math.sqrt(2.0 * layer_id))
+
+
+def trunc_normal_init_(module, std=0.02, layers=(nn.Linear,)):
+    """Initialize ``module`` as in timm/ViT: weights of ``layers`` from
+    :func:`torch.nn.init.trunc_normal_` (default bounds), zero biases, and unit weight / zero bias for LayerNorm and
+    BatchNorm. Apply to a whole model with ``model.apply(trunc_normal_init_)``.
+
+    Parameters
+    ----------
+    module : torch.nn.Module
+    std : float
+        Standard deviation of the truncated normal.
+    layers : tuple of type
+        Layer types whose ``weight`` is drawn from the truncated normal.
+    """
+    if isinstance(module, layers):
+        nn.init.trunc_normal_(module.weight, std=std)
+        if module.bias is not None:
+            nn.init.zeros_(module.bias)
+    elif isinstance(module, (nn.LayerNorm, nn.modules.batchnorm._BatchNorm)):
+        if module.weight is not None:
+            nn.init.ones_(module.weight)
+        if module.bias is not None:
+            nn.init.zeros_(module.bias)
