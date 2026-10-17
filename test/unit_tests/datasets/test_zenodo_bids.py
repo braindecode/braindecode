@@ -3,8 +3,7 @@
 import pytest
 
 from braindecode.datasets import BIDSDataset
-from braindecode.datasets.chb_mit import CHB_MIT_dataset_params
-from braindecode.datasets.chb_mit import CHBMIT
+from braindecode.datasets.chb_mit import CHBMIT, CHB_MIT_dataset_params
 from braindecode.datasets.siena import SIENA, SIENA_dataset_params
 
 CASES = [
