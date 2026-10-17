@@ -927,11 +927,11 @@ class TimmAttention(nn.Module):
             )
         dropout_p = self.attn_drop.p if self.training else 0.0
         if self.exact:
-            y = _scaled_dot_product_attention(
+            y = scaled_dot_product_attention(
                 q * self.scale, k, v, dropout_p=dropout_p, scale=1.0, exact=True
             )
         else:
-            y = _scaled_dot_product_attention(
+            y = scaled_dot_product_attention(
                 q, k, v, dropout_p=dropout_p, fused_in_lazy=True
             )
         return self.proj_drop(self.proj(y.transpose(1, 2).flatten(2)))

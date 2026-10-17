@@ -10,7 +10,7 @@ import mne
 import torch
 from torch import nn
 
-from braindecode.functional import init_weights_, scaled_dot_product_attention
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath, TimmAttention, TimmMlp
 from braindecode.modules.convolution import Conv1dWithConstraint
