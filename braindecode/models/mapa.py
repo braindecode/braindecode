@@ -27,7 +27,7 @@ from torch import nn
 
 from braindecode.functional import rescale_parameter, rotate_pairs, spectral_input
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import dkt_region_slots
+from braindecode.models.util import _in_model_resample, dkt_region_slots
 from braindecode.modules import FeedForwardBlock
 
 # Blocks whose output carries a deep-supervision norm, following V-JEPA 2.1.
@@ -104,9 +104,11 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     batch share them. Only ``pooling="flatten"`` is tied to one montage and one
     window length.
 
-    *Sampling rate and window length.* Resample to 2048 Hz. A window yields
-    ``1 + n_times // 64`` frames, truncated to a multiple of 8, so it needs at
-    least 448 samples. With ``normalization="session"`` the input is the
+    *Sampling rate and window length.* The model reads 2048 Hz; another
+    integer ``sfreq`` is resampled to 2048 Hz inside the model with
+    :class:`torchaudio.transforms.Resample`, with a warning. A 2048 Hz window
+    yields ``1 + n_times // 64`` frames, truncated to a multiple of 8, so it
+    needs at least 448 samples. With ``normalization="session"`` the input is the
     spectrogram itself (``sfreq=32``, ``n_times`` in frames): the 20 retained
     bins, robust z-scored per contact and bin over the whole recording.
 
@@ -252,18 +254,23 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"{normalization!r}."
             )
         # The bands are FFT bin slices at 2048 Hz on a 32 Hz frame clock, so
-        # another rate would shift the bands and the token rate; session inputs
-        # are already the 32 Hz spectrogram. sfreq is advisory for the
-        # frontend, so it is validated only when it is known, and a wrong
-        # value is a hard error rather than a silent warning.
+        # another raw rate is resampled to 2048 Hz in forward; session inputs
+        # are already the 32 Hz spectrogram. sfreq is validated only when it
+        # is known.
         expected_sfreq = 32 if normalization == "session" else 2048
         sfreq_known = self._sfreq is not None or (
             self._input_window_seconds is not None and self._n_times is not None
         )
+        self.resample: nn.Module = nn.Identity()
+        n_times_model = self.n_times
         if sfreq_known and float(self.sfreq) != expected_sfreq:
-            raise ValueError(
-                f"MAPA with normalization={normalization!r} needs sfreq="
-                f"{expected_sfreq} Hz, got {self.sfreq} Hz."
+            if normalization == "session":
+                raise ValueError(
+                    f"MAPA with normalization={normalization!r} needs sfreq="
+                    f"{expected_sfreq} Hz, got {self.sfreq} Hz."
+                )
+            self.resample, n_times_model = _in_model_resample(
+                "MAPA", self.sfreq, 2048, self.n_times
             )
 
         self.d_model = d_model
@@ -276,7 +283,7 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.activation = activation
 
         self.n_frames = _frame_count(
-            self.n_times, spectrogram=normalization == "session"
+            n_times_model, spectrogram=normalization == "session"
         )
         self.k_full = sum(self.n_frames // stride for *_, stride in _BANDS)
 
@@ -617,6 +624,7 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"(batch, n_chans, n_times), but got {list(x.shape)} with "
                 f"normalization='{self.normalization}'."
             )
+        x = self.resample(x)
         indices = self._resolve_sensor_indices(sensor_indices, x)
         n_frames = _frame_count(x.shape[-1], spectrogram=spectrogram)
         if self.pooling == "flatten" and (

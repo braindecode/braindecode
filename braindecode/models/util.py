@@ -4,6 +4,7 @@
 #
 # License: BSD (3-clause)
 import inspect
+import math
 import warnings
 from copy import deepcopy
 from functools import lru_cache, wraps
@@ -18,6 +19,7 @@ import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` throu
 from mne.io.constants import FIFF
 from sklearn.metrics import pairwise_distances_argmin
 from torch import nn
+from torchaudio.transforms import Resample
 
 from braindecode.util import resolve_montage_name
 
@@ -1282,6 +1284,27 @@ def warn_if_sfreq_differs(
             UserWarning,
             stacklevel=3,
         )
+
+
+def _in_model_resample(
+    model_name: str, sfreq: float, model_sfreq: int, n_times: int
+) -> tuple[Resample, int]:
+    """A :class:`torchaudio.transforms.Resample` from the integer ``sfreq`` to
+    ``model_sfreq``, with a warning, and the resampled length of ``n_times``.
+
+    The kernel follows from the two rates, so it stays out of the state dict and
+    pretrained weights load into a resampling model unchanged.
+    """
+    if sfreq != round(sfreq):
+        raise ValueError(f"{model_name} resamples integer rates only, got {sfreq}.")
+    warnings.warn(
+        f"{model_name} was trained at {model_sfreq} Hz; the {sfreq:g} Hz input is "
+        "resampled inside the model.",
+        UserWarning,
+    )
+    resample = Resample(int(sfreq), model_sfreq)
+    resample.register_buffer("kernel", resample.kernel, persistent=False)
+    return resample, math.ceil(n_times * model_sfreq / sfreq)  # torchaudio's length
 
 
 def channel_types_from_chs_info(
