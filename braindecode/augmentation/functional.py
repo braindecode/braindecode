@@ -1089,10 +1089,12 @@ def mixup(
         Online: https://arxiv.org/abs/1710.09412
     .. [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
-    device = X.device
     batch_size, n_channels, n_times = X.shape
 
-    X_mix = torch.zeros((batch_size, n_channels, n_times)).to(device)
+    X_mix = X.new_zeros(
+        (batch_size, n_channels, n_times),
+        dtype=X.dtype if X.is_floating_point() else torch.get_default_dtype(),
+    )
     y_a = y.clone()
     y_b = y[idx_perm].clone()
 

@@ -654,6 +654,20 @@ def test_mixup_transform(rng_seed, random_batch, alpha, beta_per_sample):
         assert torch.equal(X_t, X)
 
 
+def test_mixup_float32_batch_with_float64_default():
+    X = torch.arange(24, dtype=torch.float32).reshape(2, 3, 4)
+    y = torch.tensor([0, 1])
+    original_dtype = torch.get_default_dtype()
+    try:
+        torch.set_default_dtype(torch.float64)
+        mixed, (_, _, lam) = Mixup(alpha=0.5, random_state=0)(X, y)
+    finally:
+        torch.set_default_dtype(original_dtype)
+
+    assert mixed.dtype == X.dtype
+    assert lam.dtype == X.dtype
+
+
 @pytest.mark.parametrize("transform_cls", [Mixup, CutMix])
 @pytest.mark.parametrize("beta_per_sample", [False, True])
 @pytest.mark.parametrize("trailing_shape", [(), (1,), (2,)])
