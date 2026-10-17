@@ -16,12 +16,7 @@ It reorganizes the file structure to comply with the BIDS specification. To this
 # License: BSD (3-clause)
 from __future__ import annotations
 
-from pathlib import Path
-
-from mne.datasets import fetch_dataset
-
-from braindecode.datasets import BIDSDataset
-from braindecode.datasets.utils import _correct_dataset_path
+from braindecode.datasets.utils import _ZenodoBIDSDataset
 
 CHB_MIT_URL = "https://zenodo.org/records/10259996/files/BIDS_CHB-MIT.zip"
 CHB_MIT_archive_name = "chb_mit_bids.zip"
@@ -38,7 +33,7 @@ CHB_MIT_dataset_params = {
 }
 
 
-class CHBMIT(BIDSDataset):
+class CHBMIT(_ZenodoBIDSDataset):
     """The Children's Hospital Boston EEG Dataset.
 
     This database, collected at the Children's Hospital Boston, consists of EEG recordings
@@ -129,35 +124,6 @@ class CHBMIT(BIDSDataset):
     .. footbibliography::
     """
 
-    def __init__(self, root=None, *args, **kwargs):
-        # Download dataset if not present
-        if root is None:
-            path_root = fetch_dataset(
-                dataset_params=CHB_MIT_dataset_params,
-                path=None,
-                processor="unzip",
-                force_update=False,
-            )
-            # First time we fetch the dataset, we need to move the files to the
-            # correct directory.
-            path_root = _correct_dataset_path(
-                path_root, CHB_MIT_archive_name, "BIDS_CHB-MIT"
-            )
-        else:
-            # Validate that the provided root is a valid BIDS dataset
-            if not Path(f"{root}/participants.tsv").exists():
-                raise ValueError(
-                    f"The provided root directory {root} does not contain a valid "
-                    "BIDS dataset (missing participants.tsv). Please ensure the "
-                    "root points directly to the BIDS dataset directory."
-                )
-            path_root = root
-
-        kwargs["root"] = path_root
-
-        super().__init__(
-            *args,
-            extensions=".edf",
-            check=False,
-            **kwargs,
-        )
+    _dataset_params = CHB_MIT_dataset_params
+    _archive_name = CHB_MIT_archive_name
+    _unzipped_dir = "BIDS_CHB-MIT"
