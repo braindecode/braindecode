@@ -269,6 +269,10 @@ class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = _ClassificationHead(
             d_fused, n_groups + 1, self.n_outputs, classifier_max_norm
         )
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(_init_weights)
 
     def forward(self, x: Tensor) -> Tensor:

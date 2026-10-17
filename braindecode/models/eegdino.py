@@ -245,9 +245,9 @@ class EEGDINO(EEGModuleMixin, nn.Module):
 
         self.final_layer = self._make_head()
 
-        self._init_weights()
+        self._init_parameters()
 
-    def _init_weights(self):
+    def _init_parameters(self):
         nn.init.trunc_normal_(self.global_tokens, std=0.02)
 
     def _make_head(self):

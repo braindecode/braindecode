@@ -826,6 +826,12 @@ class _TCNResidualBlock(nn.Module):
         # (reshaping_conv may be nn.Identity, which the helper skips).
         _register_max_norm(conv_max_norm, self.conv1, self.conv2, self.reshaping_conv)
 
+    def reset_parameters(self) -> None:
+        """Initialize this block's weights (the constructor initializes each
+        convolution as it builds it)."""
+        nn.init.kaiming_uniform_(self.conv1.weight)
+        nn.init.kaiming_uniform_(self.conv2.weight)
+
     def forward(self, X):
         # Dimension: (batch_size, F2, Tw)
         # ----- Double dilated convolutions -----

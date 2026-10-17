@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import math
 from copy import deepcopy
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Union
 
@@ -12,6 +13,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules.attention import (
     _hpu_lazy,
@@ -1365,6 +1367,17 @@ class _ConvFeatureEncoder(nn.Sequential):
             output_channels  # last output dimension becomes the embedding dimension
         )
         self.conv_layers_spec = conv_layers_spec
+
+    def reset_parameters(self) -> None:
+        """Initialize this block's weights (Kaiming-normal convolutions; the
+        constructor initializes each convolution as it builds it)."""
+        self.apply(
+            partial(
+                init_weights_,
+                weights={nn.Conv1d: (nn.init.kaiming_normal_, None)},
+                norms=(),
+            )
+        )
 
     @staticmethod
     def _get_block(

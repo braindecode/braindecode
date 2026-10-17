@@ -279,6 +279,10 @@ class PBT(EEGModuleMixin, nn.Module):
         )
 
         # initialize weights
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(_init_weights)
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:

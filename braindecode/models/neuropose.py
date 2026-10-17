@@ -301,6 +301,10 @@ class NeuroPose(EEGModuleMixin, nn.Module):
             in_features=decoder_channels[-1] * n_electrodes,
             out_features=self.n_outputs,
         )
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(_init_weights)
 
     def reset_head(self, n_outputs: int) -> None:

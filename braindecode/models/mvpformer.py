@@ -311,6 +311,10 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         head_in = d_model if pooling == "mean" else self.n_chans * d_model
         self.final_layer = nn.Linear(head_in, self.n_outputs, bias=False)
 
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(_init_weights)
 
     def reset_head(self, n_outputs):

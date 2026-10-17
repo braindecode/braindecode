@@ -173,9 +173,9 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         # add final convolutional layer
         self.final_layer = nn.Linear(n_channels, self.n_outputs)
 
-        self._init_weights()
+        self._init_parameters()
 
-    def _init_weights(self):
+    def _init_parameters(self):
         """
         Initialize the weights of the model.
 
