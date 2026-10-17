@@ -16,6 +16,7 @@ import pooch
 import pytest
 import torch
 import torch.nn as nn
+from torchaudio.transforms import Resample
 
 import braindecode.models.luna as luna_module
 import braindecode.models.zuna as zuna_module
@@ -2483,6 +2484,32 @@ def test_mapa_bad_sensor_indices_are_rejected(mapa_model, sensor_indices, match)
 def test_mapa_window_shorter_than_one_slow_token_is_rejected(mapa_model):
     with pytest.raises(ValueError, match="at least 448 samples"):
         mapa_model(torch.randn(1, len(MAPA_SUBJECT_A), 256))
+
+
+def test_mapa_resamples_another_rate(mapa_model):
+    """A 250 Hz window is resampled to 2048 Hz in the model: same frames and
+    output as the 2048 Hz model on the torchaudio-resampled window. At 2048 Hz
+    nothing is resampled and the state dict is the same."""
+    assert isinstance(mapa_model.resample, nn.Identity)
+    with pytest.warns(UserWarning, match="resampled inside the model"):
+        at_250 = MAPA(
+            n_outputs=4,
+            n_chans=len(MAPA_SUBJECT_A),
+            n_times=250,
+            sfreq=250,
+            contact_labels=MAPA_SUBJECT_A,
+            d_model=64,
+        )
+    at_250.load_state_dict(mapa_model.state_dict())
+    at_250.eval()
+    assert at_250.n_frames == mapa_model.n_frames
+    x = torch.randn(2, len(MAPA_SUBJECT_A), 250)
+    with torch.no_grad():
+        torch.testing.assert_close(at_250(x), mapa_model(Resample(250, 2048)(x)))
+    with pytest.raises(ValueError, match="integer rates only"):
+        MAPA(n_outputs=4, n_chans=5, n_times=250, sfreq=250.5)
+    with pytest.raises(ValueError, match="needs sfreq=32 Hz"):
+        MAPA(n_outputs=4, n_chans=5, n_times=32, sfreq=250, normalization="session")
 
 
 def _mapa_session_model(**kwargs):
