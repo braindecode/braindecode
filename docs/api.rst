@@ -296,6 +296,7 @@ perceptrons (MLPs) and inception blocks.
     :recursive:
 
     MLP
+    TimmAttention
     TimmMlp
     FeedForwardBlock
     InceptionBlock
@@ -375,6 +376,7 @@ input shapes and dimensions.
     Chomp1d
     DropPath
     PostNormResidual
+    PreNormBlock
     Residual
     Ensure4d
     FourierEmb
@@ -479,7 +481,13 @@ The functional module contains various functions that can be used like functiona
      prefer_fft_conv
      rescale_parameter
      init_weights_
+     apply_rotary
+     rotary_angles
+     rotary_frequencies
+     rotate_half
+     rotate_pairs
      safe_log
+     scaled_dot_product_attention
      sinusoidal_positional_encoding
      spectral_input
      square

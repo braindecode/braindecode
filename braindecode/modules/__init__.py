@@ -19,6 +19,7 @@ from .attention import (
     GSoP,
     MultiHeadAttention,
     SqueezeAndExcitation,
+    TimmAttention,
 )
 from .blocks import (
     MLP,
@@ -46,6 +47,7 @@ from .layers import (
     Ensure4d,
     FourierEmb,
     PostNormResidual,
+    PreNormBlock,
     Residual,
     SqueezeFinalOutput,
     SubjectLayers,
@@ -91,6 +93,7 @@ __all__ = [
     "SqueezeAndExcitation",
     "CrissCrossTransformerEncoderLayer",
     "MLP",
+    "TimmAttention",
     "TimmMlp",
     "FeedForwardBlock",
     "InceptionBlock",
@@ -111,6 +114,7 @@ __all__ = [
     "Chomp1d",
     "DropPath",
     "PostNormResidual",
+    "PreNormBlock",
     "Residual",
     "Ensure4d",
     "SubjectLayers",

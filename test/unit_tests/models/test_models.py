@@ -97,11 +97,8 @@ from braindecode.models.csbrain import (
     region_of_electrode,
 )
 from braindecode.models.eegpt import (
-    _apply_rotary_emb,
-    _Attention,
     _EEGTransformer,
     _PatchEmbed,
-    _rotate_half,
 )
 from braindecode.models.gcnsnet import _cluster_one_level, _compute_perm
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
@@ -821,35 +818,6 @@ def test_eegpt_transformer_masking():
     mask_t = torch.arange(n_patches // 2)
     out_t = model(x, chan_ids=chan_ids, mask_t=mask_t)
     assert out_t.shape[1] == n_patches // 2
-
-
-def test_eegpt_rope_helpers():
-    x = torch.randn(1, 4, 10)
-    rotated = _rotate_half(x)
-    assert rotated.shape == x.shape
-
-    t = torch.randn(1, 4, 10)
-    freqs = torch.randn(1, 4, 10)
-    out = _apply_rotary_emb(freqs, t)
-    assert out.shape == t.shape
-
-
-def test_eegpt_apply_rotary_emb_invalid_dim():
-    t = torch.randn(1, 10, 16)
-    freqs = torch.randn(1, 10, 32)
-    with pytest.raises(ValueError, match="feature dimension"):
-        _apply_rotary_emb(freqs, t)
-
-
-def test_eegpt_attention_with_rope():
-    dim = 16
-    num_heads = 4
-    attn = _Attention(dim, num_heads=num_heads, use_rope=True)
-
-    x = torch.randn(2, 5, dim)
-    freqs = torch.randn(2, num_heads, 5, dim // num_heads)
-    out = attn(x, freqs=freqs)
-    assert out.shape == x.shape
 
 
 def test_eegpt_return_attention_layer():
@@ -5375,9 +5343,9 @@ def test_neurorvq_modality_presets(
 
 
 def test_neurorvq_transformer_block_uses_sequential_residuals():
-    from braindecode.models.neurorvq import _Block
+    from braindecode.models.neurorvq import _block
 
-    block = _Block(
+    block = _block(
         dim=16,
         num_heads=4,
         mlp_ratio=2,
@@ -5553,8 +5521,8 @@ def test_neurorvq_tokenizer_drops_unknown_channels():
 # ---------------------------------------------------------------------------
 
 def test_neurorvq_block_qk_norm_factory_receives_eps():
-    """``_Block.qk_norm`` is called as ``qk_norm(head_dim, eps=1e-6)``."""
-    from braindecode.models.neurorvq import _Block
+    """``_block``'s ``qk_norm`` is called as ``qk_norm(head_dim, eps=1e-6)``."""
+    from braindecode.models.neurorvq import _block
 
     calls = []
 
@@ -5562,7 +5530,7 @@ def test_neurorvq_block_qk_norm_factory_receives_eps():
         calls.append((head_dim, eps))
         return torch.nn.LayerNorm(head_dim, eps=eps)
 
-    _Block(
+    _block(
         dim=16,
         num_heads=4,
         mlp_ratio=2,
