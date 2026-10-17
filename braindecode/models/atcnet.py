@@ -1,7 +1,6 @@
 # Authors: Cedric Rommel <cedric.rommel@inria.fr>
 #
 # License: BSD (3-clause)
-import math
 from typing import Optional
 
 import torch
@@ -10,6 +9,7 @@ from mne.utils import warn
 from torch import nn
 from torch.nn.utils.parametrize import is_parametrized, register_parametrization
 
+from braindecode.functional import scaled_dot_product_attention
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import (
     CausalConv1d,
@@ -934,20 +934,10 @@ class _MHA(nn.Module):
         K_ = torch.cat(K.split(self.head_dim, -1), 0)  # (B', S, D')
         V_ = torch.cat(V.split(self.head_dim, -1), 0)  # (B', S, D')
 
-        # Attention weights of size (num_heads * batch_size, n, m):
-        # measures how similar each pair of Q and K is.
-        W = torch.softmax(
-            Q_.bmm(K_.transpose(-2, -1)) / math.sqrt(self.head_dim),
-            -1,  # (B', D', S)
-        )  # (B', N, M)
-
-        # Multihead output (batch_size, seq_len, dim):
-        # weighted sum of V where a value gets more weight if its corresponding
-        # key has larger dot product with the query.
+        # Multihead output (batch_size, seq_len, dim): softmax(Q K^T / sqrt(d)) V
+        # per head, heads merged back along the feature axis.
         H = torch.cat(
-            (W.bmm(V_)).split(  # (B', S, S)  # (B', S, D')
-                batch_size, 0
-            ),  # [(B, S, D')] * num_heads
+            scaled_dot_product_attention(Q_, K_, V_, exact=True).split(batch_size, 0),
             -1,
         )  # (B, S, D)
 

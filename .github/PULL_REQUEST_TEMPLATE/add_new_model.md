@@ -28,6 +28,7 @@ than marking unrun checks as passing. Suggested title: [models] Add <ModelName>.
 - [ ] Activation parameters use `nn.Module` class defaults (e.g. `activation=nn.ELU`) and dropout parameters use `drop_prob` names, as applicable; explain exceptions against the integration tests
 - [ ] Model docstring describes the architecture, parameters and paper (numpydoc, `[1]_` reference); deviations recorded above or linked to the docstring
 - [ ] Runtime dependency changes declared and justified, or none
+- [ ] Attention, transformer blocks, MLPs, positional encodings, norms and patch embeddings come from `braindecode.modules` / `braindecode.functional`; a private copy is listed in `test/unit_tests/models/test_private_blocks.py` with the reason in its docstring
 
 ### Registration and documentation
 

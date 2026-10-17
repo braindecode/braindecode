@@ -8,13 +8,11 @@
 
 from __future__ import annotations
 
-import math
-
 import torch
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
-from torch.nn import functional as F
 
+from braindecode.functional import scaled_dot_product_attention
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import FeedForwardBlock
 
@@ -205,12 +203,14 @@ class _TMSAAttention(nn.Module):
         k_local = self.split_heads(self.w_k_local(local))
         k_global = self.split_heads(self.w_k_global(x))
         v = self.split_heads(self.w_v(x))
-        # Explicit softmax attention keeps the reference's dropout RNG order.
-        scale = math.sqrt(self.head_dim)
-        attn_local = F.softmax(q @ k_local.transpose(-2, -1) / scale, dim=-1)
-        x_local = self.att_drop(attn_local) @ v
-        attn_global = F.softmax(q @ k_global.transpose(-2, -1) / scale, dim=-1)
-        x_global = self.att_drop(attn_global) @ v
+        # exact: the reference op order and its dropout RNG order
+        dropout_p = self.att_drop.p if self.training else 0.0
+        x_local = scaled_dot_product_attention(
+            q, k_local, v, dropout_p=dropout_p, exact=True
+        )
+        x_global = scaled_dot_product_attention(
+            q, k_global, v, dropout_p=dropout_p, exact=True
+        )
         return self.w_o(self.merge_heads(x_local + x_global))
 
 
