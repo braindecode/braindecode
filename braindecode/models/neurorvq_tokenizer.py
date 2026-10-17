@@ -322,6 +322,11 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         three give the same model and output when ``n_times`` is a multiple of
         ``patch_size``. With ``"pad"`` the zero samples are part of the
         target (and of its per-window z-scoring).
+    on_missing : {"error", "drop"}, default="error"
+        Input channels whose name has no pretrained slot: ``"error"`` raises,
+        ``"drop"`` leaves them out of the input (with a warning), so the
+        tokenizer encodes and reconstructs the channels it knows. Channels are
+        never mapped by guesswork; a montage with no known channel still raises.
     max_patches : int or None, default=None
         Length of the temporal embedding table; ``None`` uses the modality's
         value.
@@ -360,6 +365,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     per window, shaped ``(batch, n_chans * n_patches, patch_size)``; their mean
     squared difference is the reconstruction error. ``tokenize`` returns
     integer codes shaped ``(4, num_quantizers, batch, n_chans * n_patches)``.
+    With ``on_missing="drop"``, ``n_chans`` counts the kept channels.
 
     Examples
     --------
@@ -395,6 +401,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         modality: str = "eeg",
         patch_size: int | None = None,
         on_non_divisible: str = "pad",
+        on_missing: str = "error",
         max_patches: int | None = None,
         out_chans: int = 8,
         encoder_depth: int = 12,
@@ -444,8 +451,20 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                 "The derived embedding width must be divisible by num_heads."
             )
 
-        self.channel_names, slots, _ = _channel_slots(
-            self, channel_names, preset["channels"]
+        if on_missing not in ("error", "drop"):
+            raise ValueError(
+                f'on_missing must be "error" or "drop", got {on_missing!r}.'
+            )
+        self.on_missing = on_missing
+        self.channel_names, slots, keep = _channel_slots(
+            self, channel_names, preset["channels"], on_missing
+        )
+        # Input channels encoded (all unless on_missing="drop" left some out).
+        self._drops_channels = keep is not None
+        self.register_buffer(
+            "channel_keep_ix",
+            keep if keep is not None else torch.arange(self.n_chans),
+            persistent=False,
         )
         self.patch_size = patch_size
         self.max_patches = max_patches
@@ -531,7 +550,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             self.max_patches - self.num_patches,
             self.max_patches,
             device=device,
-        ).repeat(self.n_chans)
+        ).repeat(self.spatial_embedding_ix.numel())
         spatial = self.spatial_embedding_ix.to(device).repeat_interleave(
             self.num_patches
         )
@@ -545,7 +564,9 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                     self.n_chans, self.n_times, list(x.shape)
                 )
             )
-        # (batch, n_chans, num_patches, patch_size)
+        if self._drops_channels:
+            x = x.index_select(1, self.channel_keep_ix)
+        # (batch, n_kept_chans, num_patches, patch_size)
         return self.patch_tokenizer(x)
 
     def _branch_latents(
@@ -641,7 +662,8 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         reconstructed_std, _, _ = self._standardize(
             reconstructed.reshape(x.shape[0], -1, 1, self.patch_size).contiguous()
         )
+        n_tokens = patches.shape[1] * self.num_patches
         return (
-            target_std.reshape(x.shape[0], self.n_chans * self.num_patches, -1),
-            reconstructed_std.reshape(x.shape[0], self.n_chans * self.num_patches, -1),
+            target_std.reshape(x.shape[0], n_tokens, -1),
+            reconstructed_std.reshape(x.shape[0], n_tokens, -1),
         )
