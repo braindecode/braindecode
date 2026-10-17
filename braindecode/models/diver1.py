@@ -18,7 +18,13 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import _real_dft, rotate_pairs, spectral_input
+from braindecode.functional import (
+    _real_dft,
+    apply_rotary,
+    rotary_angles,
+    rotary_frequencies,
+    spectral_input,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     INTRACRANIAL_CH_TYPES,
@@ -848,11 +854,10 @@ class _RotaryEmbedding(nn.Module):
         super().__init__()
         if head_dim % 2:
             raise ValueError(f"head_dim must be even, got {head_dim}.")
-        theta = 1.0 / torch.pow(
-            base, torch.arange(0, head_dim, 2, dtype=torch.float32) / head_dim
+        angles = rotary_angles(
+            torch.arange(max_len, dtype=torch.float32),
+            rotary_frequencies(head_dim, base),
         )
-        angles = torch.outer(torch.arange(max_len, dtype=torch.float32), theta)
-        angles = torch.repeat_interleave(angles, 2, dim=-1)
         self.register_buffer("cos", angles.cos(), persistent=False)
         self.register_buffer("sin", angles.sin(), persistent=False)
 
@@ -860,9 +865,7 @@ class _RotaryEmbedding(nn.Module):
         """Rotate ``(batch, heads, seq, head_dim)`` by the angle of each position."""
         cos = self.cos[position_id].to(x.dtype)
         sin = self.sin[position_id].to(x.dtype)
-        direct = cos * x
-        rotated = rotate_pairs(x)
-        return direct + sin * rotated
+        return apply_rotary(x, cos, sin)
 
 
 def _check_channel_metadata(

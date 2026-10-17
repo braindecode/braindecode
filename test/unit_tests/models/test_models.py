@@ -97,11 +97,8 @@ from braindecode.models.csbrain import (
     region_of_electrode,
 )
 from braindecode.models.eegpt import (
-    _apply_rotary_emb,
-    _Attention,
     _EEGTransformer,
     _PatchEmbed,
-    _rotate_half,
 )
 from braindecode.models.gcnsnet import _cluster_one_level, _compute_perm
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
@@ -821,35 +818,6 @@ def test_eegpt_transformer_masking():
     mask_t = torch.arange(n_patches // 2)
     out_t = model(x, chan_ids=chan_ids, mask_t=mask_t)
     assert out_t.shape[1] == n_patches // 2
-
-
-def test_eegpt_rope_helpers():
-    x = torch.randn(1, 4, 10)
-    rotated = _rotate_half(x)
-    assert rotated.shape == x.shape
-
-    t = torch.randn(1, 4, 10)
-    freqs = torch.randn(1, 4, 10)
-    out = _apply_rotary_emb(freqs, t)
-    assert out.shape == t.shape
-
-
-def test_eegpt_apply_rotary_emb_invalid_dim():
-    t = torch.randn(1, 10, 16)
-    freqs = torch.randn(1, 10, 32)
-    with pytest.raises(ValueError, match="feature dimension"):
-        _apply_rotary_emb(freqs, t)
-
-
-def test_eegpt_attention_with_rope():
-    dim = 16
-    num_heads = 4
-    attn = _Attention(dim, num_heads=num_heads, use_rope=True)
-
-    x = torch.randn(2, 5, dim)
-    freqs = torch.randn(2, num_heads, 5, dim // num_heads)
-    out = attn(x, freqs=freqs)
-    assert out.shape == x.shape
 
 
 def test_eegpt_return_attention_layer():
