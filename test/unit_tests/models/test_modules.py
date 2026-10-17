@@ -2154,3 +2154,17 @@ def test_glorot_weight_zero_bias():
     assert torch.all(model[0].bias == 0)
     # EEGNet calls it in __init__, also without BatchNorm affine parameters
     EEGNet(n_chans=4, n_outputs=2, n_times=128, batch_norm_affine=False)
+
+
+def test_residual_blocks():
+    from braindecode.modules import PostNormResidual, Residual
+
+    torch.manual_seed(0)
+    fn = nn.Linear(4, 4)
+    x = torch.randn(2, 3, 4)
+    torch.testing.assert_close(Residual(fn)(x), x + fn(x))
+    assert list(Residual(fn).state_dict()) == ["fn.weight", "fn.bias"]
+    post = PostNormResidual(fn, 4, 0.0).eval()
+    torch.testing.assert_close(post(x), post.layernorm(fn(x) + x))
+    dropped = Residual(fn, drop_path=1.0).train()
+    torch.testing.assert_close(dropped(x), x)  # the whole branch is dropped

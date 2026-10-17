@@ -14,7 +14,7 @@ from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
-from braindecode.modules import FeedForwardBlock, MultiHeadAttention
+from braindecode.modules import FeedForwardBlock, MultiHeadAttention, Residual
 
 #: Channel order of the released checkpoint (``use_channels_names`` in
 #: ``utils/channel_list.py`` of the original code, revision ``b35d113``).
@@ -322,15 +322,6 @@ class _PatchEmbedding(nn.Module):
         return x.flatten(start_dim=2).transpose(1, 2).contiguous()
 
 
-class _ResidualAdd(nn.Module):
-    def __init__(self, fn: nn.Module):
-        super().__init__()
-        self.fn = fn
-
-    def forward(self, x: Tensor) -> Tensor:
-        return x + self.fn(x)
-
-
 class _TransformerEncoderBlock(nn.Sequential):
     def __init__(
         self,
@@ -345,7 +336,7 @@ class _TransformerEncoderBlock(nn.Sequential):
         if attention_scale is None:
             attention_scale = embed_dim**-0.5
         super().__init__(
-            _ResidualAdd(
+            Residual(
                 nn.Sequential(
                     nn.LayerNorm(embed_dim),
                     MultiHeadAttention(
@@ -357,7 +348,7 @@ class _TransformerEncoderBlock(nn.Sequential):
                     nn.Dropout(att_drop_prob),
                 )
             ),
-            _ResidualAdd(
+            Residual(
                 nn.Sequential(
                     nn.LayerNorm(embed_dim),
                     FeedForwardBlock(
