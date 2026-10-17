@@ -33,7 +33,7 @@ def _assert_same_distribution(name, expected, actual):
             assert torch.equal(a, b), f"{name}.{key}: constant {a.flatten()[0]} changed"
         elif a.numel() >= 256:
             ratio = float(b.double().std() / a.double().std())
-            assert 0.75 < ratio < 1.33, (
+            assert 0.85 < ratio < 1.18, (
                 f"{name}.{key}: std {float(a.std()):.4g} at construction, "
                 f"{float(b.std()):.4g} after reset_parameters()"
             )

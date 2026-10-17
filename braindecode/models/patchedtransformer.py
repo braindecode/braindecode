@@ -581,10 +581,22 @@ class _TransformerEncoder(nn.Module):
         )
 
         # GPT2-like initialization for linear layers
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Initialize this block's weights (GPT-2 scheme, as upstream).
+
+        Inside :class:`PBT`, whose own initialization runs after this one, the
+        ``proj`` weights are redrawn with std 0.02, as in the reference
+        implementation; the scaled draw is kept so the random stream, and thus
+        the initial weights, match it.
+        """
         self.apply(_init_encoder_weights)
         for pn, p in self.named_parameters():
             if pn.endswith("proj.weight"):
-                torch.nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * num_layers))
+                torch.nn.init.normal_(
+                    p, mean=0.0, std=0.02 / math.sqrt(2 * len(self.encoder_block))
+                )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward through all encoder blocks sequentially."""
