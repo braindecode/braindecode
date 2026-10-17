@@ -17,7 +17,7 @@ from braindecode.augmentation.base import (
     Transform,
     _AugmentationCollate,
 )
-from braindecode.augmentation.transforms import Mixup, SmoothTimeMask
+from braindecode.augmentation.transforms import GaussianNoise, Mixup, SmoothTimeMask
 from braindecode.datasets import create_from_mne_epochs
 from braindecode.training.losses import mixup_criterion
 
@@ -243,6 +243,57 @@ def test_augmented_data_loader_n_augmentation():
     assert torch.all(batch_X[batch_size:] == k)
     # Labels are tiled across the clean + augmented copies.
     assert torch.equal(batch_y, y.repeat(6))
+
+
+def _epochs_of_noise(random_state, num_workers, n_epochs=2):
+    from torch.utils.data import TensorDataset
+
+    dataset = TensorDataset(torch.zeros(8, 2, 8), torch.zeros(8, dtype=torch.long))
+    transform = GaussianNoise(1.0, std=1.0, random_state=random_state)
+    loader = AugmentedDataLoader(
+        dataset, transforms=transform, batch_size=4, num_workers=num_workers
+    )
+    return [torch.cat([X for X, _ in loader]) for _ in range(n_epochs)]
+
+
+@pytest.mark.parametrize("random_state", [0, None])
+def test_augmented_data_loader_workers_draw_new_augmentations(random_state):
+    """Transforms in a worker draw new augmentations each epoch.
+
+    The worker used to get a copy of the transform with the generator in the
+    state of the main process (also a pickled copy of the global numpy
+    generator for ``random_state=None`` with spawned workers), so every epoch
+    drew the same noise.
+    """
+    np.random.seed(0)
+    epoch_1, epoch_2 = _epochs_of_noise(random_state, num_workers=1)
+    assert not torch.equal(epoch_1, epoch_2)
+    # still reproducible from the seed
+    np.random.seed(0)
+    again_1, again_2 = _epochs_of_noise(random_state, num_workers=1)
+    assert torch.equal(epoch_1, again_1) and torch.equal(epoch_2, again_2)
+
+
+def test_augmentation_collate_reseeds_per_worker(monkeypatch):
+    """Two workers of one epoch do not draw the same augmentations."""
+    import copy
+    from types import SimpleNamespace
+
+    import braindecode.augmentation.base as base
+
+    noise = GaussianNoise(1.0, std=1.0, random_state=0)
+    collate = _AugmentationCollate(Compose([noise, SmoothTimeMask(0.5)]))
+    collate.draw_worker_seeds()
+    batch = [(torch.zeros(2, 8), 0)] * 4
+    outputs = []
+    for worker_id in (0, 1):
+        # what a worker receives: a copy, generators in the main-process state
+        worker_collate = copy.deepcopy(collate)
+        monkeypatch.setattr(
+            base, "get_worker_info", lambda: SimpleNamespace(id=worker_id)
+        )
+        outputs.append(worker_collate(batch)[0])
+    assert not torch.equal(outputs[0], outputs[1])
 
 
 def test_augmented_data_loader_default_no_expansion():
