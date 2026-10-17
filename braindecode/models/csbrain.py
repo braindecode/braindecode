@@ -11,12 +11,14 @@
 import copy
 import logging
 from collections.abc import Sequence
+from functools import partial
 from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.cbramod import _PatchEmbedding
 from braindecode.modules import FeedForwardBlock
@@ -482,9 +484,14 @@ class CSBrain(EEGModuleMixin, nn.Module):
         # Linear layers are re-initialised. The Conv2d layers keep PyTorch's
         # default init; a fan-out Kaiming init on them makes the residual
         # stream grow ~3x per layer (logits ~1e5 at 12 layers).
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+        # Same rule as the reference ``_weights_init`` (and CBraMod): only the
+        # Linear layers are re-initialised. The Conv2d layers keep PyTorch's
+        # default init; a fan-out Kaiming init on them makes the residual
+        # stream grow ~3x per layer (logits ~1e5 at 12 layers).
+        kaiming = partial(nn.init.kaiming_normal_, mode="fan_out", nonlinearity="relu")
+        self.apply(
+            partial(init_weights_, weights={nn.Linear: (kaiming, None)}, norms=())
+        )
 
     def forward(
         self,

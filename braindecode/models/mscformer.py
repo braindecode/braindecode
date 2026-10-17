@@ -19,7 +19,7 @@ from mne.utils import warn
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import FeedForwardBlock, MultiHeadAttention
+from braindecode.modules import FeedForwardBlock, MultiHeadAttention, PostNormResidual
 
 
 class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -346,34 +346,6 @@ class _MultiScalePatchEmbeddingCNN(nn.Module):
         return x
 
 
-class _ResidualAdd(nn.Module):
-    """Residual connection with dropout and layer normalization."""
-
-    def __init__(self, module: nn.Module, emb_size: int, drop_p: float):
-        super().__init__()
-        self.module = module
-        self.drop = nn.Dropout(drop_p)
-        self.layernorm = nn.LayerNorm(emb_size)
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Forward pass with residual connection.
-
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor.
-
-        Returns
-        -------
-        Tensor
-            Output tensor after applying residual connection.
-        """
-        res = self.module(x)
-        out = self.layernorm(self.drop(res) + x)
-        return out
-
-
 class _TransformerEncoderBlock(nn.Module):
     """Transformer encoder block with post-norm residual connections."""
 
@@ -387,12 +359,12 @@ class _TransformerEncoderBlock(nn.Module):
         activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__()
-        self.attention = _ResidualAdd(
+        self.attention = PostNormResidual(
             MultiHeadAttention(emb_size, num_heads, drop_prob, scale=attention_scale),
             emb_size,
             drop_prob,
         )
-        self.feed_forward = _ResidualAdd(
+        self.feed_forward = PostNormResidual(
             FeedForwardBlock(
                 emb_size,
                 expansion=forward_expansion,

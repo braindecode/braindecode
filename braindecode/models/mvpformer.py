@@ -17,14 +17,26 @@ Braindecode Adaptation: Bruno Aristimunha
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Dict, Optional, Tuple, Union
 
 import torch
 from torch import nn
 
-from braindecode.functional import daubechies_filters, wavelet_decomposition
+from braindecode.functional import (
+    daubechies_filters,
+    init_weights_,
+    wavelet_decomposition,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PatchTokenizer
+
+# Weight initialization of the reference implementation.
+_init_weights = partial(
+    init_weights_,
+    weights={(nn.Linear, nn.Embedding): partial(nn.init.normal_, mean=0.0, std=0.02)},
+    norms=(),
+)
 
 
 class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -299,15 +311,7 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         head_in = d_model if pooling == "mean" else self.n_chans * d_model
         self.final_layer = nn.Linear(head_in, self.n_outputs, bias=False)
 
-        self.apply(self._init_weights)
-
-    @staticmethod
-    def _init_weights(module):
-        """Normal init (std=0.02), matching the reference ``initializer_range``."""
-        if isinstance(module, (nn.Linear, nn.Embedding)):
-            nn.init.normal_(module.weight, mean=0.0, std=0.02)
-            if getattr(module, "bias", None) is not None:
-                nn.init.zeros_(module.bias)
+        self.apply(_init_weights)
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
@@ -317,7 +321,7 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         self.final_layer = nn.Linear(head_in, n_outputs, bias=False)
         # Match fresh construction (std=0.02), not the default Linear init.
-        self._init_weights(self.final_layer)
+        _init_weights(self.final_layer)
 
     def forward(
         self, x, return_features: bool = False

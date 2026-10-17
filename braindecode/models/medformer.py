@@ -6,6 +6,7 @@
 
 """Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification."""
 
+from functools import partial
 from math import sqrt
 from typing import List, Optional, Tuple
 
@@ -13,7 +14,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from braindecode.functional import sinusoidal_positional_encoding
+from braindecode.functional import init_weights_, sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 
 
@@ -354,11 +355,12 @@ class _CrossChannelTokenEmbedding(nn.Module):
             padding_mode="circular",
             bias=False,
         )
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(
-                    m.weight, mode="fan_in", nonlinearity="leaky_relu"
-                )
+        kaiming = partial(
+            nn.init.kaiming_normal_, mode="fan_in", nonlinearity="leaky_relu"
+        )
+        self.apply(
+            partial(init_weights_, weights={nn.Conv2d: (kaiming, None)}, norms=())
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # The kernel spans all c_in rows and the patches do not overlap, so
