@@ -296,6 +296,7 @@ perceptrons (MLPs) and inception blocks.
     :recursive:
 
     MLP
+    TimmMlp
     FeedForwardBlock
     InceptionBlock
     PatchTokenizer

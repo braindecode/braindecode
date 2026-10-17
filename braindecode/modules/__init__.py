@@ -26,6 +26,7 @@ from .blocks import (
     InceptionBlock,
     PatchTokenizer,
     TDSConvEncoder,
+    TimmMlp,
 )
 from .channels import ChannelLayer, resolve_channel_positions
 from .convolution import (
@@ -90,6 +91,7 @@ __all__ = [
     "SqueezeAndExcitation",
     "CrissCrossTransformerEncoderLayer",
     "MLP",
+    "TimmMlp",
     "FeedForwardBlock",
     "InceptionBlock",
     "PatchTokenizer",

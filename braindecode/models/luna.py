@@ -26,6 +26,7 @@ from braindecode.functional import init_weights_, rotate_pairs, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.signal_jepa import _GroupNorm
 from braindecode.models.util import extract_channel_locations_from_chs_info
+from braindecode.modules import TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
 from braindecode.modules.layers import DropPath
 
@@ -206,7 +207,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             embed_dim=self.embed_dim, patch_size=self.patch_size
         )
         # For weight loading, we omit the normalization here to match parameter count
-        self.channel_location_embedder = _Mlp(
+        self.channel_location_embedder = TimmMlp(
             in_features=int(self.patch_embed_size),
             out_features=int(self.patch_embed_size),
             hidden_features=int(self.patch_embed_size * 2),
@@ -520,7 +521,7 @@ class _FrequencyFeatureEmbedder(nn.Module):
         self.patch_size = patch_size
         self.embed_dim = embed_dim
         in_features = 2 * (patch_size // 2 + 1)
-        self.frequency_to_embed = _Mlp(
+        self.frequency_to_embed = TimmMlp(
             in_features=in_features,
             hidden_features=int(4 * in_features),
             out_features=embed_dim,
@@ -711,7 +712,7 @@ class _PatchReconstructionHeadWithQueries(nn.Module):
             num_layers=1,
         )
         self.norm = nn.LayerNorm(embed_dim)
-        self.decoder_linear = _Mlp(
+        self.decoder_linear = TimmMlp(
             embed_dim, int(embed_dim * 4), input_dim, act_layer=nn.GELU, drop=0.0
         )  # nn.Linear(embed_dim, input_dim, bias=True)
 
@@ -749,7 +750,7 @@ class _ClassificationHeadWithQueries(nn.Module):
         self.decoder_attn = nn.MultiheadAttention(
             self.embed_dim, num_heads, batch_first=True, dropout=drop_decoder
         )
-        self.decoder_ffn = _Mlp(
+        self.decoder_ffn = TimmMlp(
             in_features=self.embed_dim,
             hidden_features=int(self.embed_dim * 4),
             out_features=num_classes,
@@ -802,7 +803,7 @@ class _CrossAttentionBlock(nn.Module):
         )
         self.temperature = nn.Parameter(torch.tensor(1.0), requires_grad=False)
 
-        self.ffn = _Mlp(
+        self.ffn = TimmMlp(
             input_embed_dim,
             ff_dim,
             output_embed_dim,
@@ -902,35 +903,4 @@ class _PatchEmbedNetwork(nn.Module):
         x = x.unsqueeze(1)
         x = self.proj_in(x)
         x = x.permute(0, 2, 3, 1).flatten(2)  # (B, CS, D * E)
-        return x
-
-
-class _Mlp(nn.Module):
-    r"""MLP as used in Vision Transformer, MLP-Mixer and related networks.
-
-    Code copied from timm.models.mlp.Mlp
-    """
-
-    def __init__(
-        self,
-        in_features,
-        hidden_features=None,
-        out_features=None,
-        act_layer=nn.GELU,
-        drop=0.0,
-    ):
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
-        self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
-        self.drop = nn.Dropout(drop)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.drop(x)
-        x = self.fc2(x)
-        x = self.drop(x)
         return x

@@ -360,6 +360,46 @@ class MLP(nn.Sequential):
         super().__init__(*layers)
 
 
+class TimmMlp(nn.Module):
+    """Two-layer MLP with timm's parameter names (``fc1``, ``act``, ``fc2``,
+    ``drop``), as in ViT/MAE checkpoints: dropout after the activation and after
+    the second layer. EEGPT and LUNA use it, so their released weights load
+    with the same keys.
+
+    Parameters
+    ----------
+    in_features : int
+    hidden_features : int, optional
+        Defaults to ``in_features``.
+    out_features : int, optional
+        Defaults to ``in_features``.
+    act_layer : type of torch.nn.Module
+        Activation class. Default: ``nn.GELU``.
+    drop : float
+        Dropout rate. Default: ``0.0``.
+    """
+
+    def __init__(
+        self,
+        in_features,
+        hidden_features=None,
+        out_features=None,
+        act_layer=nn.GELU,
+        drop=0.0,
+    ):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x):
+        x = self.drop(self.act(self.fc1(x)))
+        return self.drop(self.fc2(x))
+
+
 class FeedForwardBlock(nn.Sequential):
     """Feedforward network block.
 

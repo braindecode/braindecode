@@ -13,7 +13,7 @@ from torch import nn
 
 from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import DropPath
+from braindecode.modules import DropPath, TimmMlp
 from braindecode.modules.attention import _scaled_dot_product_attention
 from braindecode.modules.convolution import Conv1dWithConstraint
 from braindecode.modules.linear import LinearWithConstraint
@@ -793,52 +793,6 @@ def _apply_mask_t(mask_t, x):
     return masked_x
 
 
-class _MLP(nn.Module):
-    """
-    Multi-Layer Perceptron (MLP) with GELU activation and dropout.
-
-    This block consists of two linear layers with a GELU activation and dropout
-    in between, and another dropout after the second linear layer.
-
-    Parameters
-    ----------
-    in_features : int
-        Number of input features.
-    hidden_features : int, optional
-        Number of hidden features. If None, defaults to `in_features`.
-    out_features : int, optional
-        Number of output features. If None, defaults to `in_features`.
-    act_layer : nn.Module, default=nn.GELU
-        Activation function.
-    drop : float, default=0.0
-        Dropout probability.
-    """
-
-    def __init__(
-        self,
-        in_features,
-        hidden_features=None,
-        out_features=None,
-        act_layer=nn.GELU,
-        drop=0.0,
-    ):
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
-        self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
-        self.drop = nn.Dropout(drop)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.drop(x)
-        x = self.fc2(x)
-        x = self.drop(x)
-        return x
-
-
 class _Attention(nn.Module):
     """
     Multi-head Self-Attention with optional RoPE and Causal Masking.
@@ -1042,7 +996,7 @@ class _Block(nn.Module):
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = _MLP(
+        self.mlp = TimmMlp(
             in_features=dim,
             hidden_features=mlp_hidden_dim,
             act_layer=act_layer,

@@ -2236,3 +2236,13 @@ def test_residual_blocks():
     torch.testing.assert_close(post(x), post.layernorm(fn(x) + x))
     dropped = Residual(fn, drop_path=1.0).train()
     torch.testing.assert_close(dropped(x), x)  # the whole branch is dropped
+
+
+def test_timm_mlp_keys_and_forward():
+    from braindecode.modules import TimmMlp
+
+    torch.manual_seed(0)
+    mlp = TimmMlp(4, hidden_features=8).eval()
+    assert list(mlp.state_dict()) == ["fc1.weight", "fc1.bias", "fc2.weight", "fc2.bias"]
+    x = torch.randn(2, 3, 4)
+    torch.testing.assert_close(mlp(x), mlp.fc2(torch.nn.functional.gelu(mlp.fc1(x))))
