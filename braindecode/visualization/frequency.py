@@ -82,9 +82,12 @@ def amplitude_gradients_per_trial(model, dataset, batch_size):
     -------
     numpy.ndarray of shape ``(n_outputs, n_trials, n_chans, n_freqs)``
         Per-trial amplitude gradients for each output unit, in dataset
-        order.
+        order. Unlike :func:`amplitude_gradients`, the gradients are not
+        divided by the minibatch size.
     """
     loader = torch.utils.data.DataLoader(
         dataset, batch_size=batch_size, drop_last=False, shuffle=False
     )
-    return np.concatenate([amplitude_gradients(model, x) for x, *_ in loader], axis=1)
+    return np.concatenate(
+        [len(x) * amplitude_gradients(model, x) for x, *_ in loader], axis=1
+    )
