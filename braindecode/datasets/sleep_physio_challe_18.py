@@ -57,52 +57,6 @@ def ensure_metafiles_exist():
         _download_if_missing(file_path, url)
 
 
-def _update_pc18_sleep_records(fname=PC18_RECORDS):
-    """Create CSV file with information about available PC18 recordings."""
-    # Load and massage the checksums.
-    sha_train_df = pd.read_csv(
-        PC18_SHA1_TRAINING,
-        sep="  ",
-        header=None,
-        names=["sha", "fname"],
-        engine="python",
-    )
-    sha_test_df = pd.read_csv(
-        PC18_SHA1_TEST, sep="  ", header=None, names=["sha", "fname"], engine="python"
-    )
-    sha_train_df["Split"] = "training"
-    sha_test_df["Split"] = "test"
-    sha_df = pd.concat([sha_train_df, sha_test_df], axis=0, ignore_index=True)
-    select_records = (
-        sha_df.fname.str.startswith("tr") | sha_df.fname.str.startswith("te")
-    ) & ~sha_df.fname.str.endswith("arousal.mat")
-    sha_df = sha_df[select_records]
-    sha_df["Record"] = sha_df["fname"].str.split("/", expand=True)[0]
-    sha_df["fname"] = sha_df[["Split", "fname"]].agg("/".join, axis=1)
-
-    # Load and massage the data.
-    data = pd.read_csv(PC18_INFO)
-
-    data = data.reset_index().rename({"index": "Subject"}, axis=1)
-    data["Sex"] = (
-        data["Sex"].map({"F": "female", "M": "male", "m": "male"}).astype("category")
-    )
-    data = sha_df.merge(data, on="Record")
-
-    data["Record type"] = (
-        data["fname"]
-        .str.split(".", expand=True)[1]
-        .map({"hea": "Header", "mat": "PSG", "arousal": "Arousal"})
-        .astype("category")
-    )
-    data = data[
-        ["Subject", "Record", "Record type", "Split", "Age", "Sex", "sha", "fname"]
-    ].sort_values(by="Subject")
-
-    # Save the data.
-    data.to_csv(fname, index=False)
-
-
 def _data_path(path=None):
     """Get path to local copy of PC18 dataset."""
     key = "PC18_DATASET_PATH"

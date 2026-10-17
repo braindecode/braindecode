@@ -3,6 +3,7 @@
 # License: BSD-3
 """BrainOmni / BrainTokenizer behaviour the shared model suites do not cover."""
 
+import os
 from pathlib import Path
 
 import mne
@@ -198,6 +199,7 @@ def _distributed_codebook_update(rank, world_size, init_file, output_dir):
         torch.save(state, Path(output_dir) / f"rank-{rank}.pt")
     finally:
         dist.destroy_process_group()
+    os._exit(0)  # skip interpreter teardown: it can race gloo threads (SIGABRT)
 
 
 @pytest.mark.skipif(not dist.is_available(), reason="torch.distributed is unavailable")
