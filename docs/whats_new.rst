@@ -475,9 +475,10 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.augmentation.Mixup` keeps its output on the input batch's
-  dtype instead of the global default dtype, avoiding model dtype mismatches;
-  the functional operation also preserves non-float32 inputs
+- :class:`braindecode.augmentation.Mixup` keeps its output in the transform's
+  float32 dtype instead of the global default dtype, avoiding model dtype
+  mismatches. The functional operation preserves floating input dtypes and
+  retains floating interpolation for integer and boolean inputs
   (by `Anton Soloviev`_).
 
 - :class:`braindecode.models.SincShallowNet` and :class:`braindecode.models.TMSANet` raise a :class:`ValueError` at construction for input geometries they cannot run, extending the construction-time checks of :gh:`1313` to two more models: windows that leave fewer samples than ``pool_size`` after the temporal sinc filter or the average pooling (so the classifier head would get a negative or empty feature width, which previously failed with ``Trying to create tensor with negative dimension``), and a missing ``n_times``, which both models need for their head (:gh:`1432` by `Li Qing`_).
