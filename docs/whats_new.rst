@@ -480,6 +480,8 @@ Requirements
 Bug fixes
 ==========
 
+- Remove dead code: ``braindecode/datasets/bids/format.py`` (an unused copy of ``hub_format.py``, imported nowhere) and two unused private definitions in MEDFormer and the PhysioNet 2018 dataset (:gh:`1444` by `Bruno Aristimunha`_).
+
 - The DDP tests of EEGCLIP, BrainOmni and NeuroRVQ no longer abort intermittently (SIGABRT during interpreter teardown of a spawned rank): ranks that succeeded exit with ``os._exit(0)`` (:gh:`1438` by `Bruno Aristimunha`_).
 
 - :class:`braindecode.augmentation.Mixup` keeps its output in the transform's

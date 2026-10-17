@@ -525,24 +525,6 @@ class _AttentionLayer(nn.Module):
         return self.out_projection(out), attn
 
 
-class _TriangularCausalMask:
-    def __init__(
-        self, batch_size: int, seq_len: int, device: Optional[torch.device] = None
-    ):
-        # Normalize device to a torch.device for .to(device)
-        if device is None:
-            device = torch.device("cpu")
-        mask_shape = [batch_size, 1, seq_len, seq_len]
-        with torch.no_grad():
-            self._mask = torch.triu(
-                torch.ones(mask_shape, dtype=torch.bool), diagonal=1
-            ).to(device)
-
-    @property
-    def mask(self) -> torch.Tensor:
-        return self._mask
-
-
 class _FullAttention(nn.Module):
     def __init__(
         self,
