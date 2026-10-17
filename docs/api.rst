@@ -377,6 +377,8 @@ input shapes and dimensions.
     DropPath
     PostNormResidual
     PreNormBlock
+    LearnedPositionalEncoding
+    SinusoidalPositionalEncoding
     Residual
     Ensure4d
     FourierEmb
