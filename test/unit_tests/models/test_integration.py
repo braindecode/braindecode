@@ -38,14 +38,16 @@ from braindecode.models import (
     USleep,
 )
 from braindecode.models.util import (
-    _get_possible_signal_params,
     _summary_table,
-    default_signal_params,
     models_dict,
     models_mandatory_parameters,
+)
+from test.unit_tests.models._fixtures import (
+    _get_possible_signal_params,
+    default_signal_params,
     non_classification_models,
 )
-from braindecode.models.util import _get_signal_params as get_sp
+from test.unit_tests.models._fixtures import _get_signal_params as get_sp
 from test.unit_tests.models.test_model_contract import _record
 
 rng = np.random.default_rng(12)

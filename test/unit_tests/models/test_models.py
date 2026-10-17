@@ -107,13 +107,12 @@ from braindecode.models.gcnsnet import _cluster_one_level, _compute_perm
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.neurorvq_tokenizer import _EMAVectorQuantizer
 from braindecode.models.usleep import _DecoderBlock
-from braindecode.models.util import (
+from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.util import set_random_seeds
+from test.unit_tests.models._fixtures import (
     _get_possible_signal_params,
     _get_signal_params,
-    models_dict,
-    models_mandatory_parameters,
 )
-from braindecode.util import set_random_seeds
 
 all_models_dict = dict(models_dict)
 

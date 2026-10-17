@@ -603,7 +603,8 @@ def test_the_distance_is_the_euclidean_norm_not_one_coordinate():
 
 
 def test_the_registry_fixture_builds():
-    from braindecode.models.util import _get_signal_params, models_mandatory_parameters
+    from braindecode.models.util import models_mandatory_parameters
+    from test.unit_tests.models._fixtures import _get_signal_params
 
     _, required, signal_params = next(
         p for p in models_mandatory_parameters if p[0] == "Guetschel2026"
