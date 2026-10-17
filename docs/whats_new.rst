@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.modules.PreNormBlock`, the pre-norm transformer block with timm's parameter names (``norm1``/``attn``/``norm2``/``mlp``, optional ``gamma_1``/``gamma_2`` layer scale); EEGPT, EEGDINO, LUNA, NeuroRVQ and NeuroRVQTokenizer build their encoders with it, parameters and outputs unchanged (:gh:`1461` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.TimmAttention`, multi-head self-attention with timm's parameter names (``qkv``/``proj``, BEiT's ``q_bias``/``v_bias``); EEGPT and EEGDINO use it with parameters and outputs unchanged (:gh:`1460` by `Bruno Aristimunha`_).
 - Add :func:`braindecode.functional.scaled_dot_product_attention` (the shared SDPA helper, now public, with ``scale`` and an ``exact`` op-order mode); ATCNet, AttnSleep, EEGDINO, TCFormer and TMSA-Net compute their attention through it with outputs, losses and gradients unchanged bit for bit (:gh:`1457` by `Bruno Aristimunha`_).
 - Add :func:`braindecode.functional.rotary_frequencies`, :func:`~braindecode.functional.rotary_angles`, :func:`~braindecode.functional.apply_rotary` and :func:`~braindecode.functional.rotate_half`; BaRISTA, BrainOmni, DIVER-1, EpiNT, LUNA and TCFormer build and apply their rotary embeddings with them (parameters and outputs unchanged), and EEGPT loses a rotary code path it never used (:gh:`1456` by `Bruno Aristimunha`_).
