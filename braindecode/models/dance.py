@@ -302,6 +302,10 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
         # final_layer LAST so it lands in the last two named_children(); init
         # weights AFTER it exists so the dense head gets the custom init too.
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(init_weights_)
 
     def _encode(self, x: torch.Tensor) -> torch.Tensor:

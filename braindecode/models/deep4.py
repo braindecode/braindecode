@@ -335,6 +335,12 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         self.add_module("final_layer", module)
 
         # Initialization, xavier is same as in our paper...
+        self._init_parameters()
+
+        self.train()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         # was default from lasagne
         if self.split_first_layer:
             init.xavier_uniform_(self.conv_time_spat.conv_time.weight, gain=1)
@@ -364,8 +370,6 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
 
         init.xavier_uniform_(self.final_layer.conv_classifier.weight, gain=1)
         init.constant_(self.final_layer.conv_classifier.bias, 0)
-
-        self.train()
 
     def _get_min_n_times(self, exact: bool = False) -> int:
         """

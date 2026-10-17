@@ -208,6 +208,12 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.add_module("final_layer", module)
 
         # Initialization, xavier is same as in paper...
+        self._init_parameters()
+
+        self.train()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         if self.split_first_layer:
             init.xavier_uniform_(self.conv_time_spat.conv_time.weight, gain=1)
             init.constant_(self.conv_time_spat.conv_time.bias, 0)
@@ -223,5 +229,3 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             init.constant_(self.bnorm.bias, 0)
         init.xavier_uniform_(self.final_layer.conv_classifier.weight, gain=1)
         init.constant_(self.final_layer.conv_classifier.bias, 0)
-
-        self.train()

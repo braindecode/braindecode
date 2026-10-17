@@ -707,6 +707,34 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 if name in config:
                     config[name] = value
 
+    def reset_parameters(self) -> None:
+        """Draw new initial weights, the way the constructor does.
+
+        Every submodule with a ``reset_parameters`` method (PyTorch layers,
+        and blocks with their own initialization) is reset, children before
+        parents, then the model applies its own initialization
+        (:meth:`_init_parameters`). Seed with :func:`torch.manual_seed` for a
+        reproducible draw.
+        """
+
+        def reset(module):
+            if module is self:
+                return
+            # PyTorch layers use reset_parameters; nn.MultiheadAttention and
+            # nn.Transformer use _reset_parameters.
+            for name in ("reset_parameters", "_reset_parameters"):
+                if callable(getattr(module, name, None)):
+                    getattr(module, name)()
+                    break
+
+        self.apply(reset)
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization, run by the constructor after the
+        layers are built and by :meth:`reset_parameters`. The default keeps the
+        layers' PyTorch initialization."""
+
     def reset_head(self, n_outputs):
         """Replace the classification head for a new number of outputs.
 

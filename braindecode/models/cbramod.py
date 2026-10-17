@@ -224,7 +224,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
         self._emb_dim = emb_dim
         self._patch_size = patch_size
-        self._weights_init()
+        self._init_parameters()
 
         if return_encoder_output:
             self.final_layer = nn.Identity()
@@ -268,7 +268,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
             return -(-self.n_times // self._patch_size)
         return self.n_times // self._patch_size
 
-    def _weights_init(self):
+    def _init_parameters(self):
         kaiming = partial(nn.init.kaiming_normal_, mode="fan_out", nonlinearity="relu")
         self.apply(
             partial(

@@ -416,7 +416,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         self._d_model = d_model
         self._head_drop_prob = drop_prob if head_drop_prob is None else head_drop_prob
         self._head_hidden_dim = head_hidden_dim
-        self._weights_init()
+        self._init_parameters()
 
         if return_encoder_output:
             self.final_layer = nn.Identity()
@@ -479,7 +479,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         self._update_init_kwargs(return_encoder_output=False)
         self.final_layer = self._make_task_head()
 
-    def _weights_init(self):
+    def _init_parameters(self):
         # Same rule as the reference ``_weights_init`` (and CBraMod): only the
         # Linear layers are re-initialised. The Conv2d layers keep PyTorch's
         # default init; a fan-out Kaiming init on them makes the residual

@@ -579,6 +579,18 @@ class _BENDRContextualizer(nn.Module):
         # Initialize parameters with T-Fixup (paper specification)
         self.apply(self._init_bert_params)
 
+    def reset_parameters(self) -> None:
+        """Initialize this block's weights (T-Fixup); the constructor
+        initializes the positional convolution before its weight norm."""
+        if getattr(self, "relative_position", None) is not None:
+            conv = self.relative_position[0]
+            weight = torch.empty_like(conv.weight)
+            nn.init.normal_(weight, mean=0, std=2 / self.transformer_dim)
+            with torch.no_grad():
+                conv.weight = weight  # through the weight-norm parametrization
+            nn.init.constant_(conv.bias, 0)
+        self.apply(self._init_bert_params)
+
     def _init_bert_params(self, module):
         """Initialize linear layers and apply T-Fixup scaling."""
         scale = 0.67 * len(self.transformer_layers) ** (-0.25)

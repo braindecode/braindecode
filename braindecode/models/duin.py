@@ -299,6 +299,10 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
 
         # Upstream initialisation: truncated normal for the linear layers, and
         # the Transformer ones scaled by 1 / sqrt(2 * depth).
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         trunc = partial(nn.init.trunc_normal_, std=0.02)
         linear_init = partial(init_weights_, weights={nn.Linear: trunc}, norms=())
         linear_init(self.spatial_projection)

@@ -595,6 +595,10 @@ class Labram(EEGModuleMixin, nn.Module):
 
         self.reset_classifier(self.n_outputs)
 
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(init_weights_)
         self.fix_init_weight_and_init_embedding()
 

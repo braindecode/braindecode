@@ -355,6 +355,10 @@ class _CrossChannelTokenEmbedding(nn.Module):
             padding_mode="circular",
             bias=False,
         )
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Initialize this block's weights."""
         kaiming = partial(
             nn.init.kaiming_normal_, mode="fan_in", nonlinearity="leaky_relu"
         )

@@ -533,6 +533,10 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             nn.Tanh(),
         )
         self.final_layer = nn.Identity()
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         task_layers = [getattr(self, f"encode_task_layer_{i}") for i in range(1, 5)]
         task_layers += [
             self.decode_task_layer_amplitude,

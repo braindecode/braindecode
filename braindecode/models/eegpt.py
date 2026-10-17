@@ -1295,6 +1295,10 @@ class _EEGTransformer(nn.Module):
         self.init_std = init_std
         self.summary_token = nn.Parameter(torch.zeros(1, embed_num, embed_dim))
 
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Initialize this block's weights."""
         nn.init.trunc_normal_(self.summary_token, std=self.init_std)
         trunc = partial(nn.init.trunc_normal_, std=self.init_std)
         self.apply(

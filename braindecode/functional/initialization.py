@@ -116,6 +116,8 @@ def init_weights_(
                     if fn is not None:
                         fn(param)
                 return
+            if isinstance(module.weight, nn.parameter.UninitializedParameter):
+                return  # lazy layer: initialized when it gets its shape
             if weight_fn is not None:
                 weight = module.weight
                 if init_parametrized_original and parametrize.is_parametrized(

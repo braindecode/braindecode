@@ -226,6 +226,10 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             last_kernel_size,
             drop_prob,
         )
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
         self.apply(_init_weights)
 
     def _encode_quantize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
@@ -472,9 +476,16 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         self.blocks = nn.ModuleList(
             [_SpatialTemporalBlock(lm_dim, num_heads, drop_prob) for _ in range(depth)]
         )
-        self.apply(_init_weights)
+        self._init_parameters()
         self.final_layer = self._make_head(self.n_outputs)  # default init, as released
         self.tokenizer.requires_grad_(False)
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
+        # The head is built after this, with PyTorch's default init, as released.
+        for name, child in self.named_children():
+            if name != "final_layer":
+                child.apply(_init_weights)
 
     def _make_head(self, n_outputs: int) -> nn.Module:
         return nn.Sequential(
