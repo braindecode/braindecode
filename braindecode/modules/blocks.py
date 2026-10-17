@@ -44,14 +44,26 @@ def _patch_count(
 
 
 def _pad_or_crop_to_patches(
-    x: torch.Tensor, patch_size: int, on_non_divisible: str = "pad", step: int = 0
+    x: torch.Tensor,
+    patch_size: int,
+    on_non_divisible: str = "pad",
+    step: int = 0,
+    min_patches: int = 1,
+    center: bool = False,
 ) -> torch.Tensor:
     """Right zero-pad or crop the last axis so the patches tile it; a tiled axis
-    is returned as is."""
+    is returned as is. An axis short of ``min_patches`` patches is zero-padded
+    up to that many, with half the missing ones (whole steps) before it if
+    ``center``."""
     n_patches = _patch_count(x.shape[-1], patch_size, on_non_divisible, step)
-    target = patch_size + (n_patches - 1) * (step if step > 0 else patch_size)
+    step = step if step > 0 else patch_size
+    left = 0
+    if n_patches < min_patches:
+        left = (min_patches - n_patches) // 2 * step if center else 0
+        n_patches = min_patches
+    target = patch_size + (n_patches - 1) * step
     if target > x.shape[-1]:
-        return nn.functional.pad(x, (0, target - x.shape[-1]))
+        return nn.functional.pad(x, (left, target - x.shape[-1] - left))
     return x[..., :target]
 
 

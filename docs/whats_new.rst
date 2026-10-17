@@ -29,10 +29,13 @@ Enhancements
 ============
 
 - Add :class:`braindecode.datasets.NEMARDataset`: streams a NEMAR dataset from its Zarr serving copy (https://docs.nemar.org/platform/zarr/) without downloading the BIDS files. Each recording is a lazy :class:`mne.io.BaseRaw`, so windowing, preprocessing and data loaders work unchanged and only the samples read are fetched, one 300 s shard per request, with a per-process cache (``cache_size``). Install with ``pip install braindecode[nemar]`` (:gh:`1439` by `Adam Mounir`_).
+- :class:`braindecode.models.ZUNA`: a channel without a location takes the standard 10-05 position of its name (with a warning) instead of raising, and ZUNA warns when ``sfreq`` is not its pretraining 256 Hz or when the coordinates are not in metres (they were silently clipped); channels with locations give the same model and output (:gh:`1437` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.BrainBERT` takes ``on_non_divisible`` (default ``"pad"``): a window too short for the centre-frame pooling (``n_times < 1401`` with the defaults) gets the missing STFT frames as zeros, half before and half after the window, with a warning, instead of raising (``"crop"``/``"error"`` keep raising). :class:`braindecode.models.MAPA` takes an input at another integer sampling rate and resamples it to 2048 Hz inside the model with :class:`torchaudio.transforms.Resample`, with a warning (``normalization="session"`` still needs its 32 Hz spectrogram). Long enough BrainBERT windows and 2048 Hz MAPA inputs give the same model and output as before (:gh:`1434` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ZUNA` accepts windows longer than ``max_seqlen`` patches (the release's 8192 samples): the rotary table is extended to the window instead of raising; shorter windows are unchanged (:gh:`1433` by `Bruno Aristimunha`_).
 - The DANCE event-detection tutorial evaluates the published checkpoint and explains that its reported subject-3 score was used for epoch selection, not independent testing (:gh:`1406` by `Bruno Aristimunha`_).
 
 - :class:`braindecode.models.NeuroRVQ` takes an input at another integer sampling rate and resamples it to the modality's rate (EEG 200 Hz) inside the model with :class:`torchaudio.transforms.Resample`, with a warning, instead of raising; and ``on_missing="drop"`` leaves out input channels with no pretrained slot (default ``"error"``). At 200 Hz with known channels the model and its output are unchanged. :class:`braindecode.models.EEGCLIP` keeps its BatchNorm layers on running statistics for a single-example batch in train mode, as the other BatchNorm models do (:gh:`1402` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.NeuroRVQTokenizer` takes ``on_missing`` as :class:`braindecode.models.NeuroRVQ` does: ``"drop"`` leaves out input channels with no pretrained slot, and the target, reconstruction and codes cover the kept channels; the default ``"error"`` keeps the previous behaviour (:gh:`1435` by `Bruno Aristimunha`_).
 - Add :func:`braindecode.modules.resolve_channel_positions`: places channels in a name -> position bank by name (case, ``EEG``/``-REF``, ``T3``-``T6`` aliases, montage-qualified names such as ``biosemi128_A1``) or as the midpoint of a bipolar ``A-B``; ``on_missing`` raises, drops, or takes the bank entry nearest the channel's ``loc``. :class:`braindecode.models.REVE` uses it (``montage``, ``on_missing``); exact bank names give the same positions as before (:gh:`1400` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.augmentation.LabelSmoothing` and
   :func:`braindecode.augmentation.functional.label_smoothing`, which replace
@@ -475,6 +478,12 @@ Requirements
 
 Bug fixes
 ==========
+
+- :class:`braindecode.augmentation.Mixup` keeps its output in the transform's
+  float32 dtype instead of the global default dtype, avoiding model dtype
+  mismatches. The functional operation preserves floating input dtypes and
+  retains floating interpolation for integer and boolean inputs
+  (by `Anton Soloviev`_).
 
 - :class:`braindecode.models.SincShallowNet` and :class:`braindecode.models.TMSANet` raise a :class:`ValueError` at construction for input geometries they cannot run, extending the construction-time checks of :gh:`1313` to two more models: windows that leave fewer samples than ``pool_size`` after the temporal sinc filter or the average pooling (so the classifier head would get a negative or empty feature width, which previously failed with ``Trying to create tensor with negative dimension``), and a missing ``n_times``, which both models need for their head (:gh:`1432` by `Li Qing`_).
 

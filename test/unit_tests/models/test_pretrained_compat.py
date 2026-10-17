@@ -232,8 +232,7 @@ COMPAT = {
         sfreq=256,
         n_times=1024,
         canon=TEN_TWENTY,
-        channels="coords",
-        coords_checked=True,
+        channels="coords",  # names without a loc take their 10-05 position
     ),
     "Brant": dict(
         cls=Brant,
@@ -257,7 +256,6 @@ COMPAT = {
         n_times=4096,
         canon=["E1"],
         channels="agnostic",
-        min_n_times=1401,
     ),
     "DuIN": dict(
         cls=DuIN,

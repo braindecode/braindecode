@@ -5077,6 +5077,31 @@ def test_brainbert_mapping_targets():
     assert model.mapping and all(target in state for target in model.mapping.values())
 
 
+def test_brainbert_pads_a_short_window():
+    """on_non_divisible="pad": a window too short for the centre pooling gets
+    the missing STFT frames as zeros, half before it; a long one is untouched."""
+    torch.manual_seed(0)
+    model = BrainBERT(n_chans=2, n_outputs=2, n_times=2048).eval()
+    strict = BrainBERT(n_chans=2, n_outputs=2, n_times=2048, on_non_divisible="error")
+    strict.load_state_dict(model.state_dict())
+    strict.eval()
+    x = torch.randn(3, 2, 2048)
+    short = x[..., :500]
+    # 500 samples + 2 * 200 boundary zeros: 11 of the 30 segments (10 pooled +
+    # 2 * 10 clipped) of 400 every 50; 9 missing segments go before the window,
+    # the rest after it, up to 400 + 29 * 50 samples.
+    padded = nn.functional.pad(short, (9 * 50, 1850 - 400 - 9 * 50 - 500))
+    with torch.no_grad():
+        assert torch.equal(model(x), strict(x))
+        assert torch.equal(model(short), strict(padded))
+        with pytest.raises(ValueError, match="spectrogram frames"):
+            strict(short)
+    with pytest.warns(UserWarning, match="will be padded"):
+        BrainBERT(n_chans=2, n_outputs=2, n_times=500)
+    with pytest.raises(ValueError, match="STFT frames"):
+        BrainBERT(n_chans=2, n_outputs=2, n_times=500, on_non_divisible="crop")
+
+
 _BARISTA_SMALL = dict(patch_size=32, d_model=16, n_layers=1, num_heads=2, cnn_depth=1)
 
 
@@ -5490,11 +5515,39 @@ def test_neurorvq_ema_quantizer_eval_code_usage(statistic_code_usage):
         ({"n_times": 401, "on_non_divisible": "error"}, "divisible by patch_size"),
         ({"n_times": 1601, "max_patches": 8}, "supports at most 8 patches"),
         ({"channel_names": ("f3", "f4", "x")}, "Unsupported NeuroRVQ channel"),
+        ({"on_missing": "bogus"}, "on_missing must be"),
+        (
+            {"channel_names": ("x1", "x2", "x3"), "on_missing": "drop"},
+            "Unsupported NeuroRVQ channel",
+        ),
     ],
 )
 def test_neurorvq_tokenizer_rejects_incompatible_signal_metadata(kwargs, message):
     with pytest.raises(ValueError, match=message):
         _small_neurorvq_tokenizer(**kwargs)
+
+
+def test_neurorvq_tokenizer_drops_unknown_channels():
+    """on_missing="drop": the tokenizer encodes and reconstructs the known
+    channels only, as a tokenizer built on those channels with the same weights."""
+    torch.manual_seed(0)
+    known = _small_neurorvq_tokenizer().eval()
+    x = torch.randn(2, 4, 400)
+    expected_codes = known.tokenize(x[:, [0, 2, 3]])  # initializes the cold codebooks
+    with pytest.warns(UserWarning, match="emg1"):
+        dropping = _small_neurorvq_tokenizer(
+            n_chans=4, channel_names=("f3", "emg1", "f4", "cz"), on_missing="drop"
+        )
+    dropping.load_state_dict(known.state_dict())
+    dropping.eval()
+    assert dropping.channel_names == ("f3", "f4", "cz")
+    codes = dropping.tokenize(x)
+    torch.testing.assert_close(codes, expected_codes)
+    assert codes.shape == (4, 2, 2, 3 * 2)
+    with torch.no_grad():
+        for got, expected in zip(dropping(x), known(x[:, [0, 2, 3]])):
+            assert got.shape == (2, 3 * 2, 200)
+            torch.testing.assert_close(got, expected)
 
 
 # ---------------------------------------------------------------------------
