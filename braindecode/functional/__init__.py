@@ -17,7 +17,11 @@ from .functions import (
     square,
     wavelet_decomposition,
 )
-from .initialization import glorot_weight_zero_bias, rescale_parameter
+from .initialization import (
+    glorot_weight_zero_bias,
+    init_weights_,
+    rescale_parameter,
+)
 
 __all__ = [
     "_get_gaussian_kernel1d",
@@ -39,4 +43,5 @@ __all__ = [
     "wavelet_decomposition",
     "glorot_weight_zero_bias",
     "rescale_parameter",
+    "init_weights_",
 ]

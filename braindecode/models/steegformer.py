@@ -10,14 +10,14 @@ from __future__ import annotations
 
 import json
 import warnings
-from functools import lru_cache
+from functools import lru_cache, partial
 from typing import Dict, Union
 
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import sinusoidal_positional_encoding
+from braindecode.functional import init_weights_, sinusoidal_positional_encoding
 from braindecode.models.base import _HF_INSTALL_HINT, EEGModuleMixin, huggingface_hub
 from braindecode.models.util import resolve_channel_indices
 from braindecode.modules import (
@@ -26,6 +26,9 @@ from braindecode.modules import (
     PatchTokenizer,
     Residual,
 )
+
+# Weight initialization of the reference implementation.
+_init_weights = partial(init_weights_, weights={nn.Linear: nn.init.xavier_uniform_})
 
 # Shared montage vocabulary of the official ST-EEGFormer checkpoints: the
 # learned channel embedding has one slot per entry, in this order (the slot
@@ -410,19 +413,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         # Upstream MAE init (xavier-uniform Linears, unit/zero LayerNorm) on every
         # submodule, then the faithful-port specials: a normal(std=0.02) CLS token
         # (the channel embedding keeps its zero init from _ChannelPositionalEmbed).
-        self.apply(self._init_weights)
+        self.apply(_init_weights)
         nn.init.normal_(self.cls_token, std=0.02)
-
-    @staticmethod
-    def _init_weights(module: nn.Module) -> None:
-        """Upstream MAE init: xavier-uniform ``Linear``, unit/zero ``LayerNorm``."""
-        if isinstance(module, nn.Linear):
-            nn.init.xavier_uniform_(module.weight)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.LayerNorm):
-            nn.init.ones_(module.weight)
-            nn.init.zeros_(module.bias)
 
     def reset_head(self, n_outputs):
         """Replace the linear classification head for a new ``n_outputs``.
@@ -433,7 +425,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self._n_outputs = n_outputs
         self._update_init_kwargs(n_outputs=n_outputs)
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
-        self._init_weights(self.final_layer)  # match the constructor's head init
+        _init_weights(self.final_layer)  # match the constructor's head init
 
     def _chan_pos_idx_from_chs_info(self) -> torch.Tensor:
         """Resolve montage-vocabulary slots from the ``chs_info`` electrode names.

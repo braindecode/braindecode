@@ -7,6 +7,7 @@
 # derives from Meta's EnCodec (MIT).
 from __future__ import annotations
 
+from functools import partial
 from typing import Dict, Optional, Union
 
 import mne
@@ -18,7 +19,7 @@ from mne.io.constants import FIFF
 from torch.nn import RMSNorm
 from torch.nn.utils.parametrizations import weight_norm
 
-from braindecode.functional import rotate_pairs
+from braindecode.functional import init_weights_, rotate_pairs
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
@@ -524,16 +525,12 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         return self.final_layer(feat)
 
 
-def _init_weights(module: nn.Module) -> None:
-    """Released init: truncated normal (std 0.02) linears and embeddings."""
-    if isinstance(module, nn.Linear):
-        nn.init.trunc_normal_(module.weight, std=0.02)
-        if module.bias is not None:
-            nn.init.constant_(module.bias, 0.0)
-    elif isinstance(module, nn.Embedding):
-        nn.init.trunc_normal_(module.weight, std=0.02)
-    elif isinstance(module, RMSNorm):
-        nn.init.constant_(module.weight, 1.0)
+# Released init: truncated normal (std 0.02) linears and embeddings.
+_init_weights = partial(
+    init_weights_,
+    weights={(nn.Linear, nn.Embedding): partial(nn.init.trunc_normal_, std=0.02)},
+    norms=(RMSNorm,),
+)
 
 
 _SENSOR_CODE = {"eeg": 0, "mag": 1, "grad": 2}

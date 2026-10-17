@@ -2156,6 +2156,74 @@ def test_glorot_weight_zero_bias():
     EEGNet(n_chans=4, n_outputs=2, n_times=128, batch_norm_affine=False)
 
 
+
+def test_init_weights_():
+    from functools import partial
+
+    from torch.nn.utils import parametrize
+
+    from braindecode.functional import init_weights_
+
+    def fresh():
+        model = nn.Sequential(
+            nn.Linear(50, 50),
+            nn.Conv1d(3, 4, 3),
+            nn.LayerNorm(50, elementwise_affine=False),  # no weight: skipped
+            nn.BatchNorm1d(4),
+            nn.Embedding(10, 50),
+        )
+        for p in model.parameters():
+            nn.init.constant_(p, 5.0)
+        return model
+
+    torch.manual_seed(0)
+    model = fresh()
+    model.apply(init_weights_)  # timm default: Linear + LayerNorm only
+    assert abs(float(model[0].weight.std()) - 0.02) < 0.002
+    assert torch.all(model[0].bias == 0)
+    assert torch.all(model[1].weight == 5.0) and torch.all(model[3].weight == 5.0)
+
+    model = fresh()
+    rules = {nn.Embedding: partial(nn.init.normal_, std=1.0), nn.Conv1d: nn.init.ones_}
+    model.apply(partial(init_weights_, weights=rules, norms=(nn.BatchNorm1d,)))
+    assert torch.all(model[0].weight == 5.0)  # Linear not in the rules
+    assert torch.all(model[1].weight == 1) and torch.all(model[1].bias == 0)
+    assert torch.all(model[3].weight == 1) and torch.all(model[3].bias == 0)
+    assert abs(float(model[4].weight.std()) - 1.0) < 0.1
+
+    class Double(nn.Module):  # computed weight = a new tensor, as max-norm
+        def forward(self, w):
+            return 2 * w
+
+    # a parametrized weight: the computed tensor, or the stored original
+    for original in (False, True):
+        lin = nn.Linear(4, 4)
+        parametrize.register_parametrization(lin, "weight", Double())
+        nn.init.constant_(lin.parametrizations.weight.original, 5.0)
+        init_weights_(
+            lin,
+            weights={nn.Linear: nn.init.zeros_},
+            init_parametrized_original=original,
+        )
+        stored = lin.parametrizations.weight.original
+        assert torch.all(stored == (0.0 if original else 5.0))
+
+
+def test_init_weights_rule_pairs_and_lstm():
+    from braindecode.functional import init_weights_
+
+    lin, lstm = nn.Linear(4, 4), nn.LSTM(4, 3)
+    for p in [*lin.parameters(), *lstm.parameters()]:
+        nn.init.constant_(p, 5.0)
+    rules = {nn.Linear: (None, nn.init.ones_), nn.LSTM: nn.init.zeros_}
+    init_weights_(lin, weights=rules)
+    assert torch.all(lin.weight == 5.0) and torch.all(lin.bias == 1.0)
+    init_weights_(lstm, weights=rules)  # weight_* -> zeros_, bias_* -> zeros_
+    assert all(torch.all(p == 0) for p in lstm.parameters())
+    init_weights_(lin, weights={nn.Linear: (nn.init.zeros_, None)})
+    assert torch.all(lin.weight == 0) and torch.all(lin.bias == 1.0)
+
+
 def test_residual_blocks():
     from braindecode.modules import PostNormResidual, Residual
 

@@ -16,7 +16,7 @@ import torch.nn as nn
 from einops.layers.torch import Rearrange
 from torch.nn.init import trunc_normal_
 
-from braindecode.functional import rescale_parameter
+from braindecode.functional import init_weights_, rescale_parameter
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import MLP, DropPath
 from braindecode.modules.attention import _hpu_eager_fused_sdpa
@@ -595,7 +595,7 @@ class Labram(EEGModuleMixin, nn.Module):
 
         self.reset_classifier(self.n_outputs)
 
-        self.apply(self._init_weights)
+        self.apply(init_weights_)
         self.fix_init_weight_and_init_embedding()
 
     def fix_init_weight_and_init_embedding(self):
@@ -619,35 +619,6 @@ class Labram(EEGModuleMixin, nn.Module):
         if isinstance(self.final_layer, nn.Linear):
             self.final_layer.weight.data.mul_(self.init_scale)
             self.final_layer.bias.data.mul_(self.init_scale)
-
-    @staticmethod
-    def _init_weights(layer):
-        """
-        Initialize the weights of the model for each layer layer.
-
-        If the layer is a linear layer, the weight will be initialized
-        with a truncated normal distribution with std=0.02.
-
-        If m.bias is not None, the bias will be initialized with a constant
-        value of 0.
-
-        If the layer is a layer normalization layer, the bias will be
-        initialized with a constant value of 0, and the weight will be
-        initialized with a constant value of 1.
-
-        Parameters
-        ----------
-        m : torch.nn.Module
-            The layer of the pytorch model
-        """
-
-        if isinstance(layer, nn.Linear):
-            trunc_normal_(layer.weight, std=0.02)
-            if layer.bias is not None:
-                nn.init.constant_(layer.bias, 0)
-        elif isinstance(layer, nn.LayerNorm):
-            nn.init.constant_(layer.bias, 0)
-            nn.init.constant_(layer.weight, 1.0)
 
     def get_num_layers(self):
         """
