@@ -562,3 +562,38 @@ def test_registered_model_avoids_accelerator_gaps(
     bfloat16/float16: test_forward_in_dtype)."""
     found = _findings(model_name)["gaps"]
     assert not found, f"ops with known accelerator/low-precision gaps: {found}"
+
+
+@pytest.mark.parametrize(
+    "model_name,required_params,signal_params",
+    [
+        case
+        for case in models_mandatory_parameters
+        if "reset_head" in vars(all_models_dict[case[0]])
+    ],
+)
+def test_registered_model_reset_head_keeps_dtype_and_config(
+    model_name, required_params, signal_params
+):
+    """After ``.double()``, ``reset_head`` builds the new head in float64 and
+    in the model's eval mode, so the model still runs, and the config records
+    the new ``n_outputs``."""
+    model, x = _build_case(model_name, required_params, signal_params)
+    _materialize(model, x)
+    model = model.double()
+    model.reset_head(3)
+    assert model.n_outputs == 3
+    assert model.get_config()["n_outputs"] == 3
+    head = (
+        [p for p in model.final_layer.parameters()]
+        if hasattr(model, "final_layer")
+        else []
+    )
+    assert all(p.dtype == torch.float64 for p in head), (
+        f"{model_name}.reset_head built its head in {[p.dtype for p in head]}"
+    )
+    assert not any(m.training for m in model.modules()), (
+        f"{model_name}.reset_head left modules in training mode"
+    )
+    with torch.no_grad():
+        model(x.double())
