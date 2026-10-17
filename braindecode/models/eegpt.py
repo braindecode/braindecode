@@ -12,7 +12,7 @@ from torch import nn
 
 from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import DropPath, TimmAttention, TimmMlp
+from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
 from braindecode.modules.convolution import Conv1dWithConstraint
 from braindecode.modules.linear import LinearWithConstraint
 from braindecode.util import resolve_montage_name
@@ -734,84 +734,6 @@ def _apply_mask_t(mask_t, x):
     return masked_x
 
 
-class _Block(nn.Module):
-    """
-    Transformer Block consisting of Self-Attention and MLP.
-
-    This is a standard Transformer encoder block that applies:
-    1. Layer Normalization
-    2. Multi-Head Self-Attention
-    3. Residual Connection with DropPath
-    4. Layer Normalization
-    5. MLP
-    6. Residual Connection with DropPath
-
-    Parameters
-    ----------
-    dim : int
-        Input and output embedding dimension.
-    num_heads : int
-        Number of attention heads.
-    mlp_ratio : float, default=4.0
-        Ratio of MLP hidden dimension to embedding dimension.
-    qkv_bias : bool, default=False
-        If True, add a learnable bias to query, key, value projections.
-    drop : float, default=0.0
-        Dropout probability for MLP and projection layers.
-    attn_drop : float, default=0.0
-        Dropout probability for attention weights.
-    drop_path : float, default=0.0
-        Stochastic depth rate.
-    act_layer : nn.Module, default=nn.GELU
-        Activation function.
-    norm_layer : nn.Module, default=nn.LayerNorm
-        Normalization layer.
-    return_attention : bool, default=False
-        If True, returns attention weights instead of the output tensor.
-    """
-
-    def __init__(
-        self,
-        dim,
-        num_heads,
-        mlp_ratio=4.0,
-        qkv_bias=False,
-        drop=0.0,
-        attn_drop=0.0,
-        drop_path=0.0,
-        act_layer=nn.GELU,
-        norm_layer=nn.LayerNorm,
-        return_attention=False,
-    ):
-        super().__init__()
-        self.return_attention = return_attention
-        self.norm1 = norm_layer(dim)
-        self.attn = TimmAttention(
-            dim,
-            num_heads=num_heads,
-            qkv_bias=qkv_bias,
-            attn_drop=attn_drop,
-            proj_drop=drop,
-        )
-        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.norm2 = norm_layer(dim)
-        mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = TimmMlp(
-            in_features=dim,
-            hidden_features=mlp_hidden_dim,
-            act_layer=act_layer,
-            drop=drop,
-        )
-
-    def forward(self, x):
-        y = self.attn(self.norm1(x), need_weights=self.return_attention)
-        if self.return_attention:
-            return y
-        x = x + self.drop_path(y)
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
-        return x
-
-
 class _PatchEmbed(nn.Module):
     """
     Splits the EEG signal into patches and embeds them.
@@ -1008,6 +930,7 @@ class _EEGTransformer(nn.Module):
         self.embed_dim = embed_dim
         self.embed_num = embed_num
         self.num_heads = num_heads
+        self.return_attention_layer = return_attention_layer
 
         self.patch_embed = patch_module(
             n_chans=n_chans,
@@ -1029,16 +952,22 @@ class _EEGTransformer(nn.Module):
 
         self.blocks = nn.ModuleList(
             [
-                _Block(
-                    dim=embed_dim,
-                    num_heads=num_heads,
-                    mlp_ratio=mlp_ratio,
-                    qkv_bias=qkv_bias,
-                    drop=drop_rate,
-                    attn_drop=attn_drop_rate,
-                    drop_path=dpr[i],
+                PreNormBlock(
+                    embed_dim,
+                    TimmAttention(
+                        embed_dim,
+                        num_heads=num_heads,
+                        qkv_bias=qkv_bias,
+                        attn_drop=attn_drop_rate,
+                        proj_drop=drop_rate,
+                    ),
+                    TimmMlp(
+                        in_features=embed_dim,
+                        hidden_features=int(embed_dim * mlp_ratio),
+                        drop=drop_rate,
+                    ),
                     norm_layer=norm_layer,
-                    return_attention=(i + 1) == return_attention_layer,
+                    drop_path=dpr[i],
                 )
                 for i in range(depth)
             ]
@@ -1163,9 +1092,9 @@ class _EEGTransformer(nn.Module):
 
         # -- fwd prop
         for i, blk in enumerate(self.blocks):
+            if i + 1 == self.return_attention_layer:
+                return blk.attn(blk.norm1(x), need_weights=True)
             x = blk(x)
-            if blk.return_attention:
-                return x
 
         # Extract only the summary tokens (used for global representation)
         # x shape: (batch * n_patches, embed_num, embed_dim)

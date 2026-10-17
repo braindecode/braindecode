@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import Callable, Optional
 
 import torch
 import torch.nn.functional as F
@@ -211,6 +211,78 @@ class PostNormResidual(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.layernorm(self.drop(self.module(x)) + x)
+
+
+class PreNormBlock(nn.Module):
+    """Pre-norm transformer block with timm's parameter names.
+
+    ``x = x + drop_path(gamma_1 * attn(norm1(x)))`` then
+    ``x = x + drop_path(gamma_2 * mlp(norm2(x)))``, as in ViT/MAE/BEiT
+    checkpoints (``norm1``, ``attn``, ``norm2``, ``mlp``; ``gamma_1``,
+    ``gamma_2`` with layer scale). EEGPT, EEGDINO, LUNA and NeuroRVQ use it,
+    so their released weights load with the same keys.
+
+    Parameters
+    ----------
+    dim : int
+        Token width, normalized by ``norm1`` and ``norm2``.
+    attn : torch.nn.Module
+        Token-mixing sub-layer, ``(batch, seq, dim) -> (batch, seq, dim)``.
+    mlp : torch.nn.Module
+        Feed-forward sub-layer, same shape.
+    norm_layer : type of torch.nn.Module, default=torch.nn.LayerNorm
+        Called as ``norm_layer(dim)``.
+    drop_path : float, default=0.0
+        Stochastic depth rate on both sub-layer outputs (:class:`DropPath`);
+        ``0`` disables it.
+    layer_scale : float, optional
+        Initial value of the per-feature ``gamma_1``/``gamma_2`` scales
+        (CaiT/BEiT layer scale); ``None`` adds no such parameters.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from torch import nn
+    >>> from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
+    >>> block = PreNormBlock(16, TimmAttention(16, 4), TimmMlp(16, 32))
+    >>> block(torch.randn(2, 5, 16)).shape
+    torch.Size([2, 5, 16])
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        attn: nn.Module,
+        mlp: nn.Module,
+        norm_layer: Callable[[int], nn.Module] = nn.LayerNorm,
+        drop_path: float = 0.0,
+        layer_scale: Optional[float] = None,
+    ):
+        super().__init__()
+        self.norm1 = norm_layer(dim)
+        self.attn = attn
+        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+        self.norm2 = norm_layer(dim)
+        self.mlp = mlp
+        self.gamma_1: Optional[nn.Parameter]
+        self.gamma_2: Optional[nn.Parameter]
+        if layer_scale is not None:
+            self.gamma_1 = nn.Parameter(layer_scale * torch.ones(dim))
+            self.gamma_2 = nn.Parameter(layer_scale * torch.ones(dim))
+        else:
+            self.gamma_1 = None
+            self.gamma_2 = None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        y = self.attn(self.norm1(x))
+        assert isinstance(y, torch.Tensor)  # narrows a Union return for TorchScript
+        if self.gamma_1 is not None:
+            y = self.gamma_1 * y
+        x = x + self.drop_path(y)
+        y = self.mlp(self.norm2(x))
+        if self.gamma_2 is not None:
+            y = self.gamma_2 * y
+        return x + self.drop_path(y)
 
 
 class SqueezeFinalOutput(nn.Module):

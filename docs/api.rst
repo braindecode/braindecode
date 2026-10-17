@@ -376,6 +376,7 @@ input shapes and dimensions.
     Chomp1d
     DropPath
     PostNormResidual
+    PreNormBlock
     Residual
     Ensure4d
     FourierEmb

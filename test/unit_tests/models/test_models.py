@@ -5343,9 +5343,9 @@ def test_neurorvq_modality_presets(
 
 
 def test_neurorvq_transformer_block_uses_sequential_residuals():
-    from braindecode.models.neurorvq import _Block
+    from braindecode.models.neurorvq import _block
 
-    block = _Block(
+    block = _block(
         dim=16,
         num_heads=4,
         mlp_ratio=2,
@@ -5521,8 +5521,8 @@ def test_neurorvq_tokenizer_drops_unknown_channels():
 # ---------------------------------------------------------------------------
 
 def test_neurorvq_block_qk_norm_factory_receives_eps():
-    """``_Block.qk_norm`` is called as ``qk_norm(head_dim, eps=1e-6)``."""
-    from braindecode.models.neurorvq import _Block
+    """``_block``'s ``qk_norm`` is called as ``qk_norm(head_dim, eps=1e-6)``."""
+    from braindecode.models.neurorvq import _block
 
     calls = []
 
@@ -5530,7 +5530,7 @@ def test_neurorvq_block_qk_norm_factory_receives_eps():
         calls.append((head_dim, eps))
         return torch.nn.LayerNorm(head_dim, eps=eps)
 
-    _Block(
+    _block(
         dim=16,
         num_heads=4,
         mlp_ratio=2,
