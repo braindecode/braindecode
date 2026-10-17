@@ -8,8 +8,35 @@ from braindecode.augmentation.functional import (
     channels_rereference,
     channels_shuffle,
     label_smoothing,
+    mixup,
     segmentation_reconstruction,
 )
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64])
+@pytest.mark.parametrize("default_dtype", [torch.float32, torch.float64])
+def test_mixup_preserves_input_dtype(dtype, default_dtype):
+    X = torch.arange(24, dtype=dtype).reshape(2, 3, 4).requires_grad_()
+    y = torch.tensor([0, 1])
+    lam = torch.tensor([0.25, 0.75], dtype=dtype)
+    idx_perm = torch.tensor([1, 0])
+    original_dtype = torch.get_default_dtype()
+    try:
+        torch.set_default_dtype(default_dtype)
+        mixed, targets = mixup(X, y, lam, idx_perm)
+    finally:
+        torch.set_default_dtype(original_dtype)
+
+    assert mixed.dtype == X.dtype
+    assert mixed.device == X.device
+    expected = torch.arange(9, 21, dtype=dtype).repeat(2, 1).reshape_as(X)
+    torch.testing.assert_close(mixed, expected)
+    assert torch.equal(targets[0], y)
+    assert torch.equal(targets[1], y[idx_perm])
+    assert targets[2] is lam
+    mixed.sum().backward()
+    torch.testing.assert_close(X.grad[0], torch.full_like(X[0], 0.5))
+    torch.testing.assert_close(X.grad[1], torch.full_like(X[1], 1.5))
 
 
 def test_channels_shuffle():
