@@ -138,9 +138,11 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     latent_dim : int, optional
         Per-token output dimension of the encoder. The default is ``32``.
     max_seqlen : int, optional
-        Length of the rotary frequency table. It must be at least
-        ``max(pos_bins, the number of temporal patches)``. The default is
-        ``256``.
+        Minimum length of the rotary frequency table. The table is extended to
+        ``max(pos_bins, the number of temporal patches)`` when the window needs
+        more rows, so longer windows than the release's 8192 samples are
+        accepted (positions past the pretraining range are extrapolated by the
+        rotary embedding). The default is ``256``.
     rope_theta : float, optional
         Base period of the rotary positional embedding. The default is
         ``10000.0``.
@@ -263,12 +265,6 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             raise ValueError("ZUNA requires finite 3D locations for every channel.")
         if head_dim % 8 != 0:
             raise ValueError("head_dim must be divisible by eight for 4D RoPE.")
-        if coarse_time_points > max_seqlen:
-            raise ValueError(
-                f"n_times ({self.n_times}) gives {coarse_time_points} patches of "
-                f"{fine_time_pts} samples; max_seqlen={max_seqlen} allows at most "
-                f"{max_seqlen * fine_time_pts} samples."
-            )
 
         # Layers
         self.patch_embedding = nn.Sequential(
@@ -298,7 +294,11 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
 
         rotary_frequency_table = _build_rotary_frequency_table(
-            torch.arange(max_seqlen, dtype=torch.float32),
+            # RoPE is analytic and the tables are non-persistent buffers: extend the
+            # table to the window instead of capping it (rows < max_seqlen unchanged).
+            torch.arange(
+                max(max_seqlen, pos_bins, coarse_time_points), dtype=torch.float32
+            ),
             axis_dim=rotary_axis_dim,
             theta=rope_theta,
         )

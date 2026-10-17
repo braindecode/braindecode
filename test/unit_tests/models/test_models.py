@@ -5515,11 +5515,39 @@ def test_neurorvq_ema_quantizer_eval_code_usage(statistic_code_usage):
         ({"n_times": 401, "on_non_divisible": "error"}, "divisible by patch_size"),
         ({"n_times": 1601, "max_patches": 8}, "supports at most 8 patches"),
         ({"channel_names": ("f3", "f4", "x")}, "Unsupported NeuroRVQ channel"),
+        ({"on_missing": "bogus"}, "on_missing must be"),
+        (
+            {"channel_names": ("x1", "x2", "x3"), "on_missing": "drop"},
+            "Unsupported NeuroRVQ channel",
+        ),
     ],
 )
 def test_neurorvq_tokenizer_rejects_incompatible_signal_metadata(kwargs, message):
     with pytest.raises(ValueError, match=message):
         _small_neurorvq_tokenizer(**kwargs)
+
+
+def test_neurorvq_tokenizer_drops_unknown_channels():
+    """on_missing="drop": the tokenizer encodes and reconstructs the known
+    channels only, as a tokenizer built on those channels with the same weights."""
+    torch.manual_seed(0)
+    known = _small_neurorvq_tokenizer().eval()
+    x = torch.randn(2, 4, 400)
+    expected_codes = known.tokenize(x[:, [0, 2, 3]])  # initializes the cold codebooks
+    with pytest.warns(UserWarning, match="emg1"):
+        dropping = _small_neurorvq_tokenizer(
+            n_chans=4, channel_names=("f3", "emg1", "f4", "cz"), on_missing="drop"
+        )
+    dropping.load_state_dict(known.state_dict())
+    dropping.eval()
+    assert dropping.channel_names == ("f3", "f4", "cz")
+    codes = dropping.tokenize(x)
+    torch.testing.assert_close(codes, expected_codes)
+    assert codes.shape == (4, 2, 2, 3 * 2)
+    with torch.no_grad():
+        for got, expected in zip(dropping(x), known(x[:, [0, 2, 3]])):
+            assert got.shape == (2, 3 * 2, 200)
+            torch.testing.assert_close(got, expected)
 
 
 # ---------------------------------------------------------------------------
@@ -6462,7 +6490,6 @@ def _cz():
             "full patch",
         ),
         ("REVE", dict(chs_info=[{"ch_name": "X1"}], n_times=1000), "position bank"),
-        ("ZUNA", dict(chs_info=_cz(), n_times=10000, sfreq=256.0), "max_seqlen"),
         (
             "SincShallowNet",
             dict(n_chans=2, n_times=30, sfreq=128.0),
@@ -6510,6 +6537,23 @@ def test_ctnet_unequal_pool_sizes():
         n_chans=4, n_outputs=2, n_times=4000, pool_size_1=8, pool_size_2=4
     ).eval()
     assert model(torch.randn(2, 4, 4000)).shape == (2, 2)
+
+
+def test_zuna_accepts_windows_longer_than_max_seqlen():
+    """The rotary table grows with the window; shorter windows are unchanged."""
+    from braindecode.models import ZUNA
+
+    torch.manual_seed(0)
+    short = ZUNA(n_outputs=2, chs_info=_cz(), n_times=512, sfreq=256.0).eval()
+    torch.manual_seed(0)
+    small_table = ZUNA(n_outputs=2, chs_info=_cz(), n_times=512, sfreq=256.0, max_seqlen=64).eval()
+    x = torch.randn(2, 1, 512)
+    with torch.no_grad():
+        torch.testing.assert_close(short(x), small_table(x), rtol=0, atol=0)
+    long = ZUNA(n_outputs=2, chs_info=_cz(), n_times=15360, sfreq=256.0).eval()
+    with torch.no_grad():
+        out = long(torch.randn(1, 1, 15360))
+    assert out.shape == (1, 2) and torch.isfinite(out).all()
 
 
 def test_biot_hop_length_larger_than_sfreq():
