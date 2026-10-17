@@ -21,7 +21,7 @@ from braindecode.models.util import (
     warn_if_sfreq_differs,
 )
 from braindecode.modules import PatchTokenizer
-from braindecode.modules.attention import _scaled_dot_product_attention
+from braindecode.modules.attention import _hpu_lazy, _scaled_dot_product_attention
 from braindecode.modules.layers import RMSNorm
 
 
@@ -450,6 +450,10 @@ class _RotaryPositionEmbedding(nn.Module):
         rotary_cosine: torch.Tensor,
         rotary_sine: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        if not torch.jit.is_scripting() and query.device.type == "hpu":
+            fused = _hpu_fused_rotary(query, key, rotary_cosine, rotary_sine)
+            if fused is not None:
+                return fused
         rotary_cosine = rotary_cosine.unsqueeze(0).unsqueeze(2)
         rotary_sine = rotary_sine.unsqueeze(0).unsqueeze(2)
 
@@ -471,6 +475,83 @@ class _RotaryPositionEmbedding(nn.Module):
         )
         key = (key.to(work) * rotary_cosine + rotated_key * rotary_sine).type_as(key)
         return query, key
+
+
+def _define_hpu_pairwise_rotary():
+    """Gaudi's fused pairwise RoPE kernel as a custom op.
+
+    A custom op (not an ``autograd.Function``) so that a compiled region keeps it
+    as one opaque node. The kernel has no gradient of its own; the rotation is
+    orthogonal, so the gradient is the same kernel with the opposite angle. Only
+    called on HPU tensors; defining it imports nothing from the Gaudi bridge.
+    """
+    if hasattr(torch.ops.braindecode, "zuna_pairwise_rotary"):  # module reloaded
+        return torch.ops.braindecode.zuna_pairwise_rotary
+
+    # Explicit schema: this module's postponed annotations are strings.
+    @torch.library.custom_op(
+        "braindecode::zuna_pairwise_rotary",
+        mutates_args=(),
+        schema="(Tensor x, Tensor cosine, Tensor sine) -> Tensor",
+    )
+    def rotary(x, cosine, sine):
+        from habana_frameworks.torch.hpex.kernels import (
+            RotaryPosEmbeddingMode,
+            apply_rotary_pos_emb,
+        )
+
+        return apply_rotary_pos_emb(
+            x.contiguous(), cosine, sine, None, 0, RotaryPosEmbeddingMode.PAIRWISE
+        )
+
+    @rotary.register_fake
+    def _(x, cosine, sine):
+        return torch.empty_like(x, memory_format=torch.contiguous_format)
+
+    def setup_context(ctx, inputs, output):
+        ctx.save_for_backward(inputs[1], inputs[2])
+
+    def backward(ctx, grad_output):
+        cosine, sine = ctx.saved_tensors
+        return rotary(grad_output, cosine, -sine), None, None
+
+    rotary.register_autograd(backward, setup_context=setup_context)
+    return rotary
+
+
+_hpu_pairwise_rotary = _define_hpu_pairwise_rotary()
+
+
+@torch.jit.unused
+def _hpu_fused_rotary(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    rotary_cosine: torch.Tensor,
+    rotary_sine: torch.Tensor,
+) -> Optional[tuple[torch.Tensor, torch.Tensor]]:
+    """``_RotaryPositionEmbedding`` in HPU eager mode (and compiled regions).
+
+    Gaudi's fused pairwise RoPE kernel. Not in lazy mode, where the graph
+    compiler fuses the formula itself and the kernel was slower (2.47 -> 2.86 s
+    per train step, 21 channels x 1280 samples, batch 64): None there.
+
+    The formula runs as about ten element-wise ops on float32 copies of the
+    queries and keys (a quarter of a ZUNA block's train-step time at 107,520
+    tokens per batch in eager mode); the kernel does it in one pass, also inside
+    a compiled region. Same float32 arithmetic, so the outputs are identical;
+    the gradient is rounded to the input dtype once instead of once per term.
+    """
+    if not torch.compiler.is_compiling() and _hpu_lazy():
+        return None
+    work = torch.promote_types(query.dtype, torch.float32)
+    cosine = rotary_cosine.unsqueeze(0).unsqueeze(2)
+    # The kernel applies the pair sign itself: pass sin(angle), which is
+    # ``rotary_sine`` at the imaginary component of every pair.
+    sine = rotary_sine[:, 1::2].repeat_interleave(2, dim=-1).unsqueeze(0).unsqueeze(2)
+    return (
+        _hpu_pairwise_rotary(query.to(work), cosine, sine).type_as(query),
+        _hpu_pairwise_rotary(key.to(work), cosine, sine).type_as(key),
+    )
 
 
 class _Attention(nn.Module):
