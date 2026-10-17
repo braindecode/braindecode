@@ -478,6 +478,8 @@ Requirements
 Bug fixes
 ==========
 
+- The DDP tests of EEGCLIP, BrainOmni and NeuroRVQ no longer abort intermittently (SIGABRT during interpreter teardown of a spawned rank): ranks that succeeded exit with ``os._exit(0)`` (:gh:`1438` by `Bruno Aristimunha`_).
+
 - :class:`braindecode.augmentation.Mixup` keeps its output in the transform's
   float32 dtype instead of the global default dtype, avoiding model dtype
   mismatches. The functional operation preserves floating input dtypes and
