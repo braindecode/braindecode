@@ -475,7 +475,7 @@ The functional module contains various functions that can be used like functiona
      plv_time
      prefer_fft_conv
      rescale_parameter
-     trunc_normal_init_
+     init_weights_
      safe_log
      sinusoidal_positional_encoding
      spectral_input

@@ -12,7 +12,7 @@ import warnings
 import torch
 from torch import nn
 
-from braindecode.functional import trunc_normal_init_
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     _disable_batch_norm_training_if_batch_size_one,  # decorates ``forward``
@@ -302,7 +302,7 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
         # final_layer LAST so it lands in the last two named_children(); init
         # weights AFTER it exists so the dense head gets the custom init too.
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
-        self.apply(trunc_normal_init_)
+        self.apply(init_weights_)
 
     def _encode(self, x: torch.Tensor) -> torch.Tensor:
         if x.ndim != 3 or x.shape[-2] != self.n_chans:

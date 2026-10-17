@@ -5,14 +5,31 @@ from __future__ import annotations
 
 import math
 import warnings
+from functools import partial
 from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules.attention import _scaled_dot_product_attention
+
+# Weight initialization of the reference implementation.
+_init_weights = partial(
+    init_weights_,
+    weights={
+        nn.Linear: partial(nn.init.normal_, mean=0.0, std=0.02),
+        nn.Embedding: partial(nn.init.normal_, mean=0.0, std=0.002),
+    },
+    norms=(),
+)
+_init_encoder_weights = partial(
+    init_weights_,
+    weights={nn.Linear: partial(nn.init.normal_, mean=0.0, std=0.02)},
+    norms=(),
+)
 
 
 class PBT(EEGModuleMixin, nn.Module):
@@ -262,17 +279,7 @@ class PBT(EEGModuleMixin, nn.Module):
         )
 
         # initialize weights
-        self.apply(self._init_weights)
-
-    @staticmethod
-    def _init_weights(module: nn.Module) -> None:
-        """Weight initialization following the original implementation."""
-        if isinstance(module, nn.Linear):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-            if module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.Embedding):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.002)
+        self.apply(_init_weights)
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """The implementation follows the original code logic
@@ -570,17 +577,10 @@ class _TransformerEncoder(nn.Module):
         )
 
         # GPT2-like initialization for linear layers
-        self.apply(self._init_weights)
+        self.apply(_init_encoder_weights)
         for pn, p in self.named_parameters():
             if pn.endswith("proj.weight"):
                 torch.nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * num_layers))
-
-    @staticmethod
-    def _init_weights(module: nn.Module) -> None:
-        if isinstance(module, nn.Linear):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-            if module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward through all encoder blocks sequentially."""

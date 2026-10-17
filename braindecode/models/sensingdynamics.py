@@ -13,13 +13,19 @@ from einops.layers.torch import Rearrange
 from scipy.signal import butter
 from torch import nn
 
-from braindecode.functional import spectral_input, trunc_normal_init_
+from braindecode.functional import init_weights_, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules.activation import SmoothMaximumUnit
 
-# Truncated-normal init for convolutions and linear layers.
-_INIT_LAYERS = (nn.Conv1d, nn.Conv2d, nn.Linear)
+# Truncated-normal convolutions and linears, unit/zero normalization layers.
+_init_weights = partial(
+    init_weights_,
+    weights={
+        (nn.Conv1d, nn.Conv2d, nn.Linear): partial(nn.init.trunc_normal_, std=0.02)
+    },
+    norms=(nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.LayerNorm),
+)
 
 
 class SensingDynamics(EEGModuleMixin, nn.Module):
@@ -308,7 +314,7 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             in_features=mlp_hidden, out_features=self.n_outputs
         )
-        self.apply(partial(trunc_normal_init_, layers=_INIT_LAYERS))
+        self.apply(_init_weights)
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the output layer for a new output dimensionality."""
@@ -317,7 +323,7 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             in_features=old.in_features, out_features=n_outputs
         ).to(device=old.weight.device, dtype=old.weight.dtype)
-        trunc_normal_init_(self.final_layer)
+        _init_weights(self.final_layer)
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(

@@ -5,13 +5,23 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 import torch
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
-from braindecode.functional import rotate_pairs
+from braindecode.functional import init_weights_, rotate_pairs
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import CausalConv1d, Conv1dWithConstraint, DropPath
+
+# Weight initialization of the reference implementation.
+_init_weights = partial(
+    init_weights_,
+    weights={(nn.Conv1d, nn.Conv2d, nn.Linear): nn.init.xavier_uniform_},
+    norms=(),
+    init_parametrized_original=True,
+)
 
 
 class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
@@ -259,19 +269,7 @@ class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = _ClassificationHead(
             d_fused, n_groups + 1, self.n_outputs, classifier_max_norm
         )
-        self.apply(self._init_weights)
-
-    @staticmethod
-    def _init_weights(module: nn.Module) -> None:
-        if isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Linear)):
-            params = getattr(module, "parametrizations", None)
-            if params is not None and "weight" in params:
-                # max-norm layers expose a computed .weight; init the leaf
-                nn.init.xavier_uniform_(params.weight.original)
-            elif isinstance(getattr(module, "weight", None), nn.Parameter):
-                nn.init.xavier_uniform_(module.weight)
-            if getattr(module, "bias", None) is not None:
-                nn.init.constant_(module.bias, 0.0)
+        self.apply(_init_weights)
 
     def forward(self, x: Tensor) -> Tensor:
         conv_features = self.conv_block(x)  # (batch, d_model, n_tokens)

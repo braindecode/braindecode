@@ -2156,22 +2156,54 @@ def test_glorot_weight_zero_bias():
     EEGNet(n_chans=4, n_outputs=2, n_times=128, batch_norm_affine=False)
 
 
-def test_trunc_normal_init_():
-    from braindecode.functional import trunc_normal_init_
+
+def test_init_weights_():
+    from functools import partial
+
+    from torch.nn.utils import parametrize
+
+    from braindecode.functional import init_weights_
+
+    def fresh():
+        model = nn.Sequential(
+            nn.Linear(50, 50),
+            nn.Conv1d(3, 4, 3),
+            nn.LayerNorm(50, elementwise_affine=False),  # no weight: skipped
+            nn.BatchNorm1d(4),
+            nn.Embedding(10, 50),
+        )
+        for p in model.parameters():
+            nn.init.constant_(p, 5.0)
+        return model
 
     torch.manual_seed(0)
-    model = nn.Sequential(
-        nn.Linear(50, 50),
-        nn.Conv1d(3, 4, 3),
-        nn.LayerNorm(50, elementwise_affine=False),  # no weight: skipped
-        nn.BatchNorm1d(4),
-    )
-    for p in model.parameters():
-        nn.init.constant_(p, 5.0)
-    model.apply(trunc_normal_init_)
+    model = fresh()
+    model.apply(init_weights_)  # timm default: Linear + LayerNorm only
     assert abs(float(model[0].weight.std()) - 0.02) < 0.002
     assert torch.all(model[0].bias == 0)
-    assert torch.all(model[1].weight == 5.0)  # Conv1d not in the default layers
+    assert torch.all(model[1].weight == 5.0) and torch.all(model[3].weight == 5.0)
+
+    model = fresh()
+    rules = {nn.Embedding: partial(nn.init.normal_, std=1.0), nn.Conv1d: nn.init.ones_}
+    model.apply(partial(init_weights_, weights=rules, norms=(nn.BatchNorm1d,)))
+    assert torch.all(model[0].weight == 5.0)  # Linear not in the rules
+    assert torch.all(model[1].weight == 1) and torch.all(model[1].bias == 0)
     assert torch.all(model[3].weight == 1) and torch.all(model[3].bias == 0)
-    model.apply(lambda m: trunc_normal_init_(m, std=1.0, layers=(nn.Conv1d,)))
-    assert not torch.all(model[1].weight == 5.0)
+    assert abs(float(model[4].weight.std()) - 1.0) < 0.1
+
+    class Double(nn.Module):  # computed weight = a new tensor, as max-norm
+        def forward(self, w):
+            return 2 * w
+
+    # a parametrized weight: the computed tensor, or the stored original
+    for original in (False, True):
+        lin = nn.Linear(4, 4)
+        parametrize.register_parametrization(lin, "weight", Double())
+        nn.init.constant_(lin.parametrizations.weight.original, 5.0)
+        init_weights_(
+            lin,
+            weights={nn.Linear: nn.init.zeros_},
+            init_parametrized_original=original,
+        )
+        stored = lin.parametrizations.weight.original
+        assert torch.all(stored == (0.0 if original else 5.0))

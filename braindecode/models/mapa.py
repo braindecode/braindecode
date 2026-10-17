@@ -26,10 +26,10 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import (
+    init_weights_,
     rescale_parameter,
     rotate_pairs,
     spectral_input,
-    trunc_normal_init_,
 )
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _in_model_resample, dkt_region_slots
@@ -773,7 +773,7 @@ class _PerBandStem(nn.Module):
         super().__init__()
         self.projs = nn.ModuleList(nn.Linear(n_bins, d_model) for n_bins in band_bins)
         self.band_type_emb = nn.Parameter(torch.empty(len(band_bins), d_model))
-        self.projs.apply(trunc_normal_init_)
+        self.projs.apply(init_weights_)
         # Near-zero: the band vector is added to the residual stream.
         nn.init.trunc_normal_(self.band_type_emb, std=1e-6)
 
@@ -823,7 +823,7 @@ class _Encoder(nn.Module):
             else None
         )
         self.norm_out = None if deep_sup else nn.LayerNorm(d_model, eps=1e-6)
-        self.apply(trunc_normal_init_)
+        self.apply(init_weights_)
         for layer, block in enumerate(self.blocks, start=1):
             rescale_parameter(block.out.weight.data, layer)
             rescale_parameter(block.mlp[3].weight.data, layer)

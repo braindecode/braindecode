@@ -19,8 +19,8 @@ from .functions import (
 )
 from .initialization import (
     glorot_weight_zero_bias,
+    init_weights_,
     rescale_parameter,
-    trunc_normal_init_,
 )
 
 __all__ = [
@@ -43,5 +43,5 @@ __all__ = [
     "wavelet_decomposition",
     "glorot_weight_zero_bias",
     "rescale_parameter",
-    "trunc_normal_init_",
+    "init_weights_",
 ]

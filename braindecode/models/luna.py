@@ -14,6 +14,7 @@ the LICENSE Of this file is APACHE-2.0.
 """
 
 import math
+from functools import partial
 from typing import Any, Dict, Optional, Tuple, Type
 
 import torch
@@ -21,12 +22,15 @@ import torch.fft as fft
 import torch.nn as nn
 import torch.nn.functional as F
 
-from braindecode.functional import rotate_pairs, spectral_input
+from braindecode.functional import init_weights_, rotate_pairs, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.signal_jepa import _GroupNorm
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules.blocks import PatchTokenizer
 from braindecode.modules.layers import DropPath
+
+# Weight initialization of the reference implementation.
+_init_weights = partial(init_weights_, weights={nn.Linear: nn.init.xavier_normal_})
 
 
 class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -261,17 +265,8 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     def initialize_weights(self) -> None:
         self.cross_attn.initialize_weights()
         trunc_normal_(self.mask_token, std=0.02)
-        self.apply(self._init_weights)
+        self.apply(_init_weights)
         self.fix_init_weight()
-
-    def _init_weights(self, m: nn.Module) -> None:
-        if isinstance(m, nn.Linear):
-            torch.nn.init.xavier_normal_(m.weight)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
 
     def fix_init_weight(self) -> None:
         def rescale(param: torch.Tensor, layer_id: int) -> None:
@@ -834,17 +829,7 @@ class _CrossAttentionBlock(nn.Module):
 
     def initialize_weights(self) -> None:
         torch.nn.init.orthogonal_(self.query_embed, gain=1.0)
-        self.apply(self._init_weights)
-
-    def _init_weights(self, m: nn.Module) -> None:
-        if isinstance(m, nn.Linear):
-            # we use xavier_uniform following official JAX ViT:
-            torch.nn.init.xavier_normal_(m.weight)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
+        self.apply(_init_weights)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         # x is the input with shape (batch_size*num_patches, num_channels, embed_dim)

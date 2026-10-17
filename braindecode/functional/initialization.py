@@ -2,6 +2,7 @@ import math
 
 import torch
 from torch import nn
+from torch.nn.utils import parametrize
 
 
 def glorot_weight_zero_bias(model):
@@ -52,25 +53,65 @@ def rescale_parameter(param, layer_id):
     param.div_(math.sqrt(2.0 * layer_id))
 
 
-def trunc_normal_init_(module, std=0.02, layers=(nn.Linear,)):
-    """Initialize ``module`` as in timm/ViT: weights of ``layers`` from
-    :func:`torch.nn.init.trunc_normal_` (default bounds), zero biases, and unit weight / zero bias for LayerNorm and
-    BatchNorm. Apply to a whole model with ``model.apply(trunc_normal_init_)``.
+def init_weights_(
+    module,
+    weights=None,
+    norms=(nn.LayerNorm,),
+    init_parametrized_original=False,
+):
+    """Initialize one module by layer type; apply to a model with ``model.apply``.
+
+    The first entry of ``weights`` whose type matches ``module`` initializes its
+    ``weight`` with the given function, and its ``bias`` (if any) is set to zero.
+    Modules of a type in ``norms`` get a unit weight and a zero bias. Nothing
+    else is touched. The default is the timm/ViT scheme (truncated-normal
+    ``nn.Linear`` weights with std 0.02, unit/zero ``nn.LayerNorm``); models pass
+    their own mapping to reproduce their reference initialization exactly.
 
     Parameters
     ----------
     module : torch.nn.Module
-    std : float
-        Standard deviation of the truncated normal.
-    layers : tuple of type
-        Layer types whose ``weight`` is drawn from the truncated normal.
+    weights : dict or None
+        ``{layer type or tuple of types: init function}``, e.g.
+        ``{nn.Linear: nn.init.xavier_uniform_, nn.Embedding:
+        partial(nn.init.normal_, std=0.02)}``. Order matters as in an
+        ``if``/``elif`` chain. ``None`` uses
+        ``{nn.Linear: partial(nn.init.trunc_normal_, std=0.02)}``.
+    norms : tuple of type
+        Normalization layer types set to weight 1 and bias 0 (missing affine
+        parameters are skipped). ``()`` leaves normalization layers alone.
+    init_parametrized_original : bool
+        For a layer whose ``weight`` is parametrized (e.g. max-norm), initialize
+        the unconstrained ``parametrizations.weight.original`` instead of the
+        computed ``weight``.
+
+    Examples
+    --------
+    >>> from functools import partial
+    >>> from torch import nn
+    >>> model = nn.Sequential(nn.Linear(4, 4), nn.LayerNorm(4))
+    >>> _ = model.apply(init_weights_)  # timm/ViT default
+    >>> _ = model.apply(partial(init_weights_, weights={nn.Linear: nn.init.xavier_uniform_}))
     """
-    if isinstance(module, layers):
-        nn.init.trunc_normal_(module.weight, std=std)
-        if module.bias is not None:
-            nn.init.zeros_(module.bias)
-    elif isinstance(module, (nn.LayerNorm, nn.modules.batchnorm._BatchNorm)):
-        if module.weight is not None:
+    if weights is None:
+        weights = {nn.Linear: _trunc_normal_002}
+    for types, init in weights.items():
+        if isinstance(module, types):
+            weight = module.weight
+            if init_parametrized_original and parametrize.is_parametrized(
+                module, "weight"
+            ):
+                weight = module.parametrizations.weight.original
+            init(weight)
+            if getattr(module, "bias", None) is not None:
+                nn.init.zeros_(module.bias)
+            return
+    if norms and isinstance(module, norms):
+        if getattr(module, "weight", None) is not None:
             nn.init.ones_(module.weight)
-        if module.bias is not None:
+        if getattr(module, "bias", None) is not None:
             nn.init.zeros_(module.bias)
+
+
+def _trunc_normal_002(tensor):
+    return nn.init.trunc_normal_(tensor, std=0.02)
