@@ -62,6 +62,41 @@ def test_bids_epochs_dataset(bids_dataset_root):
     assert y in ["left_hand", "right_hand"]
 
 
+def test_bids_epochs_dataset_targets_of_the_kept_epochs(tmp_path):
+    """Targets are the annotations at the time zero of the kept epochs, not all
+    the annotations of the recording, which also hold dropped epochs and BAD
+    segments."""
+    import mne
+    import numpy as np
+
+    info = mne.create_info(["C3", "C4"], 100.0, "eeg")
+    raw = mne.io.RawArray(np.zeros((2, 1200)), info, verbose="ERROR")
+    raw.set_annotations(
+        mne.Annotations(
+            onset=[1, 3, 5, 7, 9, 11], duration=1, description=list("ababa") + ["BAD"]
+        )
+    )
+    events, event_id = mne.events_from_annotations(
+        raw, event_id={"a": 1, "b": 2}, verbose="ERROR"
+    )
+    epochs = mne.Epochs(
+        raw, events, event_id, tmin=0, tmax=0.99, baseline=None, preload=True
+    )
+    epochs.drop([1], verbose="ERROR")  # the first "b"
+    eeg_dir = tmp_path / "sub-01" / "eeg"
+    eeg_dir.mkdir(parents=True)
+    epochs.save(eeg_dir / "sub-01_task-x_epo.fif", verbose="ERROR")
+
+    dataset = BIDSEpochsDataset(tmp_path)
+    assert [dataset[i][1] for i in range(len(dataset))] == ["a", "a", "b", "a"]
+    # without the annotations, the targets are the event names
+    epochs.set_annotations(None)
+    epochs.event_id = {"x": 1, "y": 2}
+    epochs.save(eeg_dir / "sub-01_task-x_epo.fif", overwrite=True, verbose="ERROR")
+    dataset = BIDSEpochsDataset(tmp_path)
+    assert [dataset[i][1] for i in range(len(dataset))] == ["x", "x", "y", "x"]
+
+
 @pytest.fixture(scope="module")
 def emg_bids_root(tmp_path_factory):
     """One real emg2pose-style BrainVision recording + a session-level events sidecar."""

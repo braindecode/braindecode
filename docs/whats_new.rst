@@ -499,6 +499,8 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.datasets.BIDSEpochsDataset` taking all the annotations of the recording as the targets of the epochs, which fails (``All arrays must be of the same length``) when an epoch was dropped or the recording has other annotations (e.g. ``BAD`` segments): each epoch now takes the annotation at its time zero, or its event name when not every epoch has one (:gh:`XXXX` by `Adam Mounir`_).
+
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
   by detaching and moving the input to the CPU before its NumPy FFT
