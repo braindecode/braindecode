@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.modules.TimmMlp`, the timm-style MLP (``fc1``/``fc2`` parameter names) that EEGPT and LUNA each defined privately; their parameters and outputs are unchanged (:gh:`1454` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.Residual` and :class:`braindecode.modules.PostNormResidual`, the residual connections that EEGConformer, MIRepNet, STEEGFormer, CTNet and MSCFormer each defined privately; their parameter names and outputs are unchanged (:gh:`1449` by `Bruno Aristimunha`_).
 - Add :func:`braindecode.functional.init_weights_`, a per-layer-type weight initialization applied with ``model.apply``. The 24 models that each wrote their own initialization loop (BaRISTA, BENDR, BrainOmni, CBraMod, CSBrain, DANCE, DuIN, EEGPT, LaBraM, LUNA, MAPA, MEDFormer, MVPFormer, NeuroPose, NeuroRVQ, PBT, SensingDynamics, SPARCNet, STEEGFormer, TCFormer, VEMG2Pose, …) now declare their rule with it; the initial weights of every model are unchanged (:gh:`1448` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ZUNA`: a channel without a location takes the standard 10-05 position of its name (with a warning) instead of raising, and ZUNA warns when ``sfreq`` is not its pretraining 256 Hz or when the coordinates are not in metres (they were silently clipped); channels with locations give the same model and output (:gh:`1437` by `Bruno Aristimunha`_).
