@@ -20,7 +20,6 @@ from braindecode.models.util import (
     _chs_info_3ch,
     _draw_chs_info,
     _fixture_montage_chs,
-    _get_signal_params,
     extract_channel_locations_from_chs_info,
     has_valid_locations,
     models_dict,
@@ -35,6 +34,7 @@ from braindecode.modules.util import (
     aggregate_probas,
 )
 from braindecode.util import resolve_montage_name
+from test.unit_tests.models._fixtures import _get_signal_params
 
 
 @pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64])
