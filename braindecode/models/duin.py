@@ -20,11 +20,15 @@ import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
 
-from braindecode.functional import init_weights_, sinusoidal_positional_encoding
+from braindecode.functional import (
+    init_weights_,
+    patch_count,
+    sinusoidal_positional_encoding,
+)
+from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import FeedForwardBlock, MultiHeadAttention, PatchTokenizer
-from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
 
 
 class DuIN(EEGModuleMixin, nn.Module, license="mit"):
@@ -234,7 +238,7 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
 
         # ceil for "pad", floor for "crop" (raises below one patch), exact for
         # "error" (raises otherwise): the count the tokenizer produces.
-        self.n_patches = _patch_count(self.n_times, patch_size, on_non_divisible)
+        self.n_patches = patch_count(self.n_times, patch_size, on_non_divisible)
         self.on_non_divisible = on_non_divisible
         self.patch_tokenizer = PatchTokenizer(
             patch_size, self.n_times, on_non_divisible=on_non_divisible

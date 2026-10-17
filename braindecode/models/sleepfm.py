@@ -15,11 +15,11 @@ from typing import Dict, List, Optional
 import torch
 from torch import nn
 
-from braindecode.functional import sinusoidal_positional_encoding
+from braindecode.functional import patch_count, sinusoidal_positional_encoding
+from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin, huggingface_hub
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import PatchTokenizer
-from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
 
 
 class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
@@ -648,7 +648,7 @@ class _SleepFMTokenizer(nn.Module):
             raise ValueError("patch_size must be at least 64 and divisible by 64.")
         warn_if_sfreq_differs("SleepFM", sfreq, 128)
         _check_on_non_divisible(on_non_divisible)
-        n_patches = _patch_count(n_times, patch_size, on_non_divisible)
+        n_patches = patch_count(n_times, patch_size, on_non_divisible)
         if not 0 < n_patches <= max_patches:
             raise ValueError(
                 f"n_times={n_times} gives {n_patches} patches of "

@@ -14,14 +14,15 @@ from torch import nn
 from braindecode.functional import (
     apply_rotary,
     init_weights_,
+    patch_count,
     rotary_angles,
     rotary_frequencies,
 )
+from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import GatedLinearUnit, PatchTokenizer
 from braindecode.modules.attention import _scaled_dot_product_attention
-from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
 
 # Weight initialization of the reference implementation.
 _init_weights = partial(
@@ -292,7 +293,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         # ceil(n_times / patch_size) with "pad"; floor with "crop" (the
         # reference: trailing samples dropped, raises below one patch); exact
         # with "error" (raises otherwise). The learned pooling is sized to it.
-        self.n_patches = _patch_count(self.n_times, patch_size, on_non_divisible)
+        self.n_patches = patch_count(self.n_times, patch_size, on_non_divisible)
 
         self.patch_tokenizer = PatchTokenizer(
             patch_size=patch_size,

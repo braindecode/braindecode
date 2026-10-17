@@ -10,10 +10,10 @@ import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange, Reduce
 
-from braindecode.functional import spectral_input
+from braindecode.functional import patch_count, spectral_input
+from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PatchTokenizer
-from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
 
 # Standard rhythmic-activity bands (Hz) used by Brant's frequency encoding,
 # from the paper (§ Frequency encoding): theta, alpha, beta, gamma1-5.
@@ -223,7 +223,7 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # ceil for "pad", floor for "crop" (raises below one patch), exact for
         # "error" (raises otherwise): the count the tokenizer produces.
         _check_on_non_divisible(on_non_divisible)
-        self.seq_len = _patch_count(self.n_times, self.patch_size, on_non_divisible)
+        self.seq_len = patch_count(self.n_times, self.patch_size, on_non_divisible)
 
         # Shared non-overlapping patching (same tokenizer as the other
         # transformer foundation models); non-learnable, so it is a pure reshape
