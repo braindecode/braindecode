@@ -466,6 +466,8 @@ API and behavior changes
 Requirements
 ============
 
+- ``linear_attention_transformer`` is no longer a dependency: since :gh:`1273` braindecode ships the part BIOT and TFMTokenizer use. ``einops``, which arrived only through it, is now declared directly (:gh:`1443` by `Bruno Aristimunha`_).
+
 - Add ``sphinx-markdown-builder==0.6.11`` and ``pytest<9.1`` to the docs extra
   for version-scoped Markdown exports and their offline contract tests.
 
@@ -477,6 +479,8 @@ Requirements
 
 Bug fixes
 ==========
+
+- Remove dead code: ``braindecode/datasets/bids/format.py`` (an unused copy of ``hub_format.py``, imported nowhere) and two unused private definitions in MEDFormer and the PhysioNet 2018 dataset (:gh:`1444` by `Bruno Aristimunha`_).
 
 - The DDP tests of EEGCLIP, BrainOmni and NeuroRVQ no longer abort intermittently (SIGABRT during interpreter teardown of a spawned rank): ranks that succeeded exit with ``os._exit(0)`` (:gh:`1438` by `Bruno Aristimunha`_).
 
