@@ -16,13 +16,13 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.functional import init_weights_
+from braindecode.functional import init_weights_, patch_count
+from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.labram import _Attention
 from braindecode.models.signal_jepa import _GroupNorm
 from braindecode.models.util import _in_model_resample
 from braindecode.modules import MLP, DropPath, PatchTokenizer
-from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
 
 # Channel order used to train NeuroRVQ-EEG v1. Keep in sync with the released
 # inference module: https://github.com/KonstantinosBarmpas/NeuroRVQ
@@ -540,7 +540,7 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                 f"NeuroRVQ-{modality.upper()}", in_sfreq, preset["sfreq"], self.n_times
             )
         # ceil for "pad", floor for "crop", exact for "error" (raises otherwise).
-        num_patches = _patch_count(self._n_times_model, patch_size, on_non_divisible)
+        num_patches = patch_count(self._n_times_model, patch_size, on_non_divisible)
         if num_patches > max_patches:
             raise ValueError(
                 f"n_times supports at most {max_patches} patches (got {num_patches})."

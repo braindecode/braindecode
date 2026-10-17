@@ -475,6 +475,8 @@ The functional module contains various functions that can be used like functiona
      glorot_weight_zero_bias
      hilbert_freq
      identity
+     pad_or_crop_to_patches
+     patch_count
      plv_time
      prefer_fft_conv
      rescale_parameter
