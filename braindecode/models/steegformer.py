@@ -21,10 +21,10 @@ from braindecode.functional import init_weights_, sinusoidal_positional_encoding
 from braindecode.models.base import _HF_INSTALL_HINT, EEGModuleMixin, huggingface_hub
 from braindecode.models.util import resolve_channel_indices
 from braindecode.modules import (
-    DropPath,
     FeedForwardBlock,
     MultiHeadAttention,
     PatchTokenizer,
+    Residual,
 )
 
 # Weight initialization of the reference implementation.
@@ -650,18 +650,6 @@ class _ChannelPositionalEmbed(nn.Module):
         return emb[None, None]
 
 
-class _ResidualAdd(nn.Module):
-    """Residual connection with optional stochastic depth (``x + drop_path(fn(x))``)."""
-
-    def __init__(self, fn: nn.Module, drop_path: float = 0.0):
-        super().__init__()
-        self.fn = fn
-        self.drop_path = DropPath(drop_path) if drop_path else nn.Identity()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + self.drop_path(self.fn(x))
-
-
 class _TransformerEncoderBlock(nn.Sequential):
     """Pre-norm Transformer encoder block (ViT-style).
 
@@ -682,7 +670,7 @@ class _TransformerEncoderBlock(nn.Sequential):
         activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__(
-            _ResidualAdd(
+            Residual(
                 nn.Sequential(
                     nn.LayerNorm(embed_dim, eps=1e-6),
                     MultiHeadAttention(embed_dim, num_heads, drop_prob),
@@ -690,7 +678,7 @@ class _TransformerEncoderBlock(nn.Sequential):
                 ),
                 drop_path,
             ),
-            _ResidualAdd(
+            Residual(
                 nn.Sequential(
                     nn.LayerNorm(embed_dim, eps=1e-6),
                     FeedForwardBlock(

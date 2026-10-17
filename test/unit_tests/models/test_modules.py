@@ -2222,3 +2222,17 @@ def test_init_weights_rule_pairs_and_lstm():
     assert all(torch.all(p == 0) for p in lstm.parameters())
     init_weights_(lin, weights={nn.Linear: (nn.init.zeros_, None)})
     assert torch.all(lin.weight == 0) and torch.all(lin.bias == 1.0)
+
+
+def test_residual_blocks():
+    from braindecode.modules import PostNormResidual, Residual
+
+    torch.manual_seed(0)
+    fn = nn.Linear(4, 4)
+    x = torch.randn(2, 3, 4)
+    torch.testing.assert_close(Residual(fn)(x), x + fn(x))
+    assert list(Residual(fn).state_dict()) == ["fn.weight", "fn.bias"]
+    post = PostNormResidual(fn, 4, 0.0).eval()
+    torch.testing.assert_close(post(x), post.layernorm(fn(x) + x))
+    dropped = Residual(fn, drop_path=1.0).train()
+    torch.testing.assert_close(dropped(x), x)  # the whole branch is dropped

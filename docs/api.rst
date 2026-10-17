@@ -373,6 +373,8 @@ input shapes and dimensions.
     ChannelMerger
     Chomp1d
     DropPath
+    PostNormResidual
+    Residual
     Ensure4d
     FourierEmb
     SubjectLayers

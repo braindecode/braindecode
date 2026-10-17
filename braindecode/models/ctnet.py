@@ -21,6 +21,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import (
     FeedForwardBlock,
     MultiHeadAttention,
+    PostNormResidual,
 )
 
 
@@ -392,34 +393,6 @@ class _PatchEmbeddingEEGNet(nn.Module):
         return x
 
 
-class _ResidualAdd(nn.Module):
-    def __init__(self, module: nn.Module, emb_size: int, drop_p: float):
-        super().__init__()
-        self.module = module
-        self.drop = nn.Dropout(drop_p)
-        self.layernorm = nn.LayerNorm(emb_size)
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Forward pass with residual connection.
-
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor.
-        **kwargs : Any
-            Additional arguments.
-
-        Returns
-        -------
-        Tensor
-            Output tensor after applying residual connection.
-        """
-        res = self.module(x)
-        out = self.layernorm(self.drop(res) + x)
-        return out
-
-
 class _TransformerEncoderBlock(nn.Module):
     def __init__(
         self,
@@ -431,14 +404,14 @@ class _TransformerEncoderBlock(nn.Module):
         activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__()
-        self.attention = _ResidualAdd(
+        self.attention = PostNormResidual(
             nn.Sequential(
                 MultiHeadAttention(dim_feedforward, num_heads, drop_prob),
             ),
             dim_feedforward,
             drop_prob,
         )
-        self.feed_forward = _ResidualAdd(
+        self.feed_forward = PostNormResidual(
             nn.Sequential(
                 FeedForwardBlock(
                     dim_feedforward,
