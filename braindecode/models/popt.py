@@ -12,7 +12,6 @@
 
 from __future__ import annotations
 
-import math
 import warnings
 from collections import OrderedDict
 
@@ -20,6 +19,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 
@@ -355,13 +355,7 @@ class _PopTSpatialPositionalEncoding(nn.Module):
                 "axis and the sequence id)."
             )
         pe_dim = hidden_dim // 4
-        pe = torch.zeros(max_len, pe_dim)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, pe_dim, 2).float() * (-math.log(10000.0) / pe_dim)
-        )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = sinusoidal_positional_encoding(max_len, pe_dim)
         self.register_buffer("pe", pe.unsqueeze(0), persistent=False)
 
     def forward(

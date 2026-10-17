@@ -201,6 +201,23 @@ def test_sinusoidal_positional_encoding_odd_dim_truncates_contiguously():
     assert torch.equal(pe_odd, sinusoidal_positional_encoding(50, 16)[:, :15])
 
 
+def test_sinusoidal_positional_encoding_base():
+    # ``base`` is the longest wavelength; SignalJEPA's table with max_n_times.
+    import math
+
+    n, dim, base = 100, 32, 3000.0
+    position = torch.arange(n).unsqueeze(1)
+    div_term = torch.exp(torch.arange(0, dim, 2) * (-math.log(base) / dim))
+    expected = torch.empty(n, dim)
+    expected[:, 0::2] = torch.sin(position * div_term)
+    expected[:, 1::2] = torch.cos(position * div_term)
+    assert torch.equal(sinusoidal_positional_encoding(n, dim, base=base), expected)
+    assert torch.equal(
+        sinusoidal_positional_encoding(n, dim, base=10000.0),
+        sinusoidal_positional_encoding(n, dim),
+    )
+
+
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64, torch.bfloat16])
 @pytest.mark.parametrize("shape", [(8,), (2, 3, 8), (2, 0, 8)])
 def test_rotate_pairs(dtype, shape):

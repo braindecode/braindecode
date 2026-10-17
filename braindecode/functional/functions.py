@@ -588,6 +588,7 @@ def sinusoidal_positional_encoding(
     dim: int,
     device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
+    base: float = 10000.0,
 ) -> torch.Tensor:
     r"""Fixed sine/cosine positional-encoding table of shape ``(n_positions, dim)``.
 
@@ -609,6 +610,9 @@ def sinusoidal_positional_encoding(
         Device of the table (default: CPU), for tables built inside ``forward``.
     dtype : torch.dtype
         Floating dtype the table is computed in.
+    base : float, default=10000.0
+        Longest wavelength, the ``10000`` of Vaswani et al.; SignalJEPA uses the
+        largest number of time samples it encodes.
 
     Returns
     -------
@@ -620,7 +624,7 @@ def sinusoidal_positional_encoding(
     position = torch.arange(n_positions, device=device).unsqueeze(1).to(dtype)
     div_term = torch.exp(
         torch.arange(0, dim_even, 2, device=device).to(dtype)
-        * (-math.log(10000.0) / dim_even)
+        * (-math.log(base) / dim_even)
     )
     pe = torch.zeros(n_positions, dim_even, device=device, dtype=dtype)
     pe[:, 0::2] = torch.sin(position * div_term)
