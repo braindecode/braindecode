@@ -1,3 +1,4 @@
+from .attention import scaled_dot_product_attention
 from .functions import (
     _get_gaussian_kernel1d,
     daubechies_filters,
@@ -37,6 +38,7 @@ __all__ = [
     "prefer_fft_conv",
     "rotate_pairs",
     "safe_log",
+    "scaled_dot_product_attention",
     "sinusoidal_positional_encoding",
     "spectral_input",
     "square",

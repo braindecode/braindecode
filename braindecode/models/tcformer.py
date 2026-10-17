@@ -11,7 +11,11 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
-from braindecode.functional import init_weights_, rotate_pairs
+from braindecode.functional import (
+    init_weights_,
+    rotate_pairs,
+    scaled_dot_product_attention,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import CausalConv1d, Conv1dWithConstraint, DropPath
 
@@ -376,10 +380,16 @@ class _GroupedQueryAttention(nn.Module):
         key = key.repeat_interleave(groups_per_kv, dim=1)
         value = value.repeat_interleave(groups_per_kv, dim=1)
         query, key = _apply_rope(query, key, cos[:seq_len], sin[:seq_len])
-        key_t = key.transpose(-2, -1)
-        attention = ((query @ key_t) * self.scale).softmax(dim=-1)
-        attention = self.drop(attention)
-        context = (attention @ value).transpose(1, 2).flatten(2)
+        # exact: the reference op order (q @ k^T) * scale
+        context = scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            dropout_p=self.drop.p if self.training else 0.0,
+            scale=self.scale,
+            exact=True,
+        )
+        context = context.transpose(1, 2).flatten(2)
         return self.out_proj(context)
 
 
