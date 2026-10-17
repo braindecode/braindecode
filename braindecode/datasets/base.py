@@ -1583,15 +1583,17 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 df = ds._windows.metadata
             else:
                 df = ds.metadata
+            # a dataset built without description has description None
+            description = ds.description if ds.description is not None else {}
             if (
                 "i_trial_in_dataset" in df.columns
-                and "i_trial_in_dataset" in ds.description
+                and "i_trial_in_dataset" in description
             ):
                 raise ValueError(
                     "Dataset descriptions cannot contain the reserved window "
                     "metadata key 'i_trial_in_dataset'."
                 )
-            if "i_dataset" in df.columns or "i_dataset" in ds.description:
+            if "i_dataset" in df.columns or "i_dataset" in description:
                 raise ValueError(
                     "Window metadata and dataset descriptions cannot contain the "
                     "key 'i_dataset', which get_metadata() reserves for the "
@@ -1607,7 +1609,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             if isinstance(df, pd.DataFrame):
                 # copy so the description columns stay out of the dataset
                 df = df.copy()
-            for k, v in ds.description.items():
+            description = ds.description if ds.description is not None else {}
+            for k, v in description.items():
                 df[k] = v
             df["i_dataset"] = i_ds
             all_dfs.append(df)

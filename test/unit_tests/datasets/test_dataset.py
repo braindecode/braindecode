@@ -284,6 +284,20 @@ def test_metadata_rejects_a_description_named_i_dataset():
         windows.get_metadata()
 
 
+def test_metadata_of_datasets_without_description():
+    raw = mne.io.RawArray(np.zeros((1, 200)), mne.create_info(1, 100.0, "eeg"))
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw), RawDataset(raw, {"subject": 1})]),
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+    )
+    assert windows.datasets[0].description is None
+    md = windows.get_metadata()
+    assert md["i_dataset"].tolist() == [0, 0, 1, 1]
+    assert md["subject"].isna().tolist() == [True, True, False, False]
+
+
 def test_on_the_fly_transforms_base_dataset(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     original_X = concat_ds[0][0]
