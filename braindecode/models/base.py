@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import json
 import warnings
@@ -118,6 +119,27 @@ class _BraindecodeDocstringMeta(NumpyDocstringInheritanceInitMeta):
         # overwrite _braindecode_init_kwargs captured by the subclass.
         if any(isinstance(b, _BraindecodeDocstringMeta) for b in class_bases):
             track_model_init_kwargs(cls)
+
+
+def _new_head_follows_model(reset_head):
+    """Wrap a ``reset_head`` so that the modules it creates take the model's
+    floating dtype, device and train/eval mode (a new ``nn.Linear`` is float32
+    on the CPU in training mode, whatever the model)."""
+
+    @functools.wraps(reset_head)
+    def wrapper(self, *args, **kwargs):
+        ref = next((p for p in self.parameters() if p.is_floating_point()), None)
+        before = {id(t) for t in self.parameters()} | {id(t) for t in self.buffers()}
+        out = reset_head(self, *args, **kwargs)
+        if ref is not None:
+            for module in self.modules():
+                tensors = [*module.parameters(), *module.buffers()]
+                if tensors and not any(id(t) in before for t in tensors):
+                    module.to(device=ref.device, dtype=ref.dtype)
+                    module.train(self.training)
+        return out
+
+    return wrapper
 
 
 class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
@@ -257,6 +279,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     def __init_subclass__(cls, **kwargs):
         license = kwargs.pop("license", "bsd-3-clause")
+
+        if "reset_head" in cls.__dict__:
+            cls.reset_head = _new_head_follows_model(cls.__dict__["reset_head"])
 
         # TorchScript only honours ``__jit_ignored_attributes__`` for
         # properties defined directly on the concrete class: it collects them
