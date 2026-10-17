@@ -478,6 +478,8 @@ Requirements
 Bug fixes
 ==========
 
+- Remove dead code: ``braindecode/datasets/bids/format.py`` (an unused copy of ``hub_format.py``, imported nowhere) and two unused private definitions in MEDFormer and the PhysioNet 2018 dataset (:gh:`1444` by `Bruno Aristimunha`_).
+
 - :class:`braindecode.augmentation.Mixup` keeps its output in the transform's
   float32 dtype instead of the global default dtype, avoiding model dtype
   mismatches. The functional operation preserves floating input dtypes and
