@@ -2207,3 +2207,18 @@ def test_init_weights_():
         )
         stored = lin.parametrizations.weight.original
         assert torch.all(stored == (0.0 if original else 5.0))
+
+
+def test_init_weights_rule_pairs_and_lstm():
+    from braindecode.functional import init_weights_
+
+    lin, lstm = nn.Linear(4, 4), nn.LSTM(4, 3)
+    for p in [*lin.parameters(), *lstm.parameters()]:
+        nn.init.constant_(p, 5.0)
+    rules = {nn.Linear: (None, nn.init.ones_), nn.LSTM: nn.init.zeros_}
+    init_weights_(lin, weights=rules)
+    assert torch.all(lin.weight == 5.0) and torch.all(lin.bias == 1.0)
+    init_weights_(lstm, weights=rules)  # weight_* -> zeros_, bias_* -> zeros_
+    assert all(torch.all(p == 0) for p in lstm.parameters())
+    init_weights_(lin, weights={nn.Linear: (nn.init.zeros_, None)})
+    assert torch.all(lin.weight == 0) and torch.all(lin.bias == 1.0)

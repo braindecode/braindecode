@@ -61,21 +61,23 @@ def init_weights_(
 ):
     """Initialize one module by layer type; apply to a model with ``model.apply``.
 
-    The first entry of ``weights`` whose type matches ``module`` initializes its
-    ``weight`` with the given function, and its ``bias`` (if any) is set to zero.
-    Modules of a type in ``norms`` get a unit weight and a zero bias. Nothing
-    else is touched. The default is the timm/ViT scheme (truncated-normal
-    ``nn.Linear`` weights with std 0.02, unit/zero ``nn.LayerNorm``); models pass
-    their own mapping to reproduce their reference initialization exactly.
+    The first entry of ``weights`` whose type matches ``module`` gives its rule,
+    as in an ``if``/``elif`` chain; modules of a type in ``norms`` get a unit
+    weight and a zero bias; nothing else is touched. The default is the
+    timm/ViT scheme (truncated-normal ``nn.Linear`` weights with std 0.02,
+    unit/zero ``nn.LayerNorm``). Models pass their own rules to reproduce their
+    reference initialization exactly.
 
     Parameters
     ----------
     module : torch.nn.Module
     weights : dict or None
-        ``{layer type or tuple of types: init function}``, e.g.
-        ``{nn.Linear: nn.init.xavier_uniform_, nn.Embedding:
-        partial(nn.init.normal_, std=0.02)}``. Order matters as in an
-        ``if``/``elif`` chain. ``None`` uses
+        ``{layer type or tuple of types: rule}``. A rule is a function applied
+        to the ``weight`` (the ``bias`` is then set to zero), or a pair
+        ``(weight_fn, bias_fn)`` where either may be ``None`` to leave that
+        tensor as it is. For a layer without a ``weight`` attribute (e.g.
+        ``nn.LSTM``) the functions apply to every parameter whose name contains
+        ``"weight"`` / ``"bias"``. ``None`` uses
         ``{nn.Linear: partial(nn.init.trunc_normal_, std=0.02)}``.
     norms : tuple of type
         Normalization layer types set to weight 1 and bias 0 (missing affine
@@ -91,20 +93,38 @@ def init_weights_(
     >>> from torch import nn
     >>> model = nn.Sequential(nn.Linear(4, 4), nn.LayerNorm(4))
     >>> _ = model.apply(init_weights_)  # timm/ViT default
-    >>> _ = model.apply(partial(init_weights_, weights={nn.Linear: nn.init.xavier_uniform_}))
+    >>> kaiming = partial(nn.init.kaiming_normal_, mode="fan_out")
+    >>> rule = {nn.Linear: (kaiming, None)}  # keep the default bias
+    >>> _ = model.apply(partial(init_weights_, weights=rule, norms=()))
     """
     if weights is None:
         weights = {nn.Linear: _trunc_normal_002}
-    for types, init in weights.items():
+    for types, rule in weights.items():
         if isinstance(module, types):
-            weight = module.weight
-            if init_parametrized_original and parametrize.is_parametrized(
-                module, "weight"
-            ):
-                weight = module.parametrizations.weight.original
-            init(weight)
-            if getattr(module, "bias", None) is not None:
-                nn.init.zeros_(module.bias)
+            weight_fn, bias_fn = (
+                rule if isinstance(rule, tuple) else (rule, nn.init.zeros_)
+            )
+            if not hasattr(module, "weight"):  # e.g. nn.LSTM: weight_ih_l0, ...
+                for name, param in module.named_parameters(recurse=False):
+                    fn = (
+                        weight_fn
+                        if "weight" in name
+                        else bias_fn
+                        if "bias" in name
+                        else None
+                    )
+                    if fn is not None:
+                        fn(param)
+                return
+            if weight_fn is not None:
+                weight = module.weight
+                if init_parametrized_original and parametrize.is_parametrized(
+                    module, "weight"
+                ):
+                    weight = module.parametrizations.weight.original
+                weight_fn(weight)
+            if bias_fn is not None and getattr(module, "bias", None) is not None:
+                bias_fn(module.bias)
             return
     if norms and isinstance(module, norms):
         if getattr(module, "weight", None) is not None:

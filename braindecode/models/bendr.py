@@ -11,6 +11,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules.channels import ChannelLayer
 
@@ -580,18 +581,13 @@ class _BENDRContextualizer(nn.Module):
 
     def _init_bert_params(self, module):
         """Initialize linear layers and apply T-Fixup scaling."""
-        if isinstance(module, nn.Linear):
-            # Standard init
-            nn.init.xavier_uniform_(module.weight.data)
-            if module.bias is not None:
-                module.bias.data.zero_()
-            # Tfixup Scaling
-            module.weight.data = (
-                0.67 * len(self.transformer_layers) ** (-0.25) * module.weight.data
-            )
-        elif isinstance(module, nn.LayerNorm):
-            module.bias.data.zero_()
-            module.weight.data.fill_(1.0)
+        scale = 0.67 * len(self.transformer_layers) ** (-0.25)
+
+        def xavier_tfixup(weight):
+            nn.init.xavier_uniform_(weight.data)
+            weight.data = scale * weight.data  # T-Fixup scaling
+
+        init_weights_(module, weights={nn.Linear: xavier_tfixup})
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Input x: [batch_size, in_features, seq_len]

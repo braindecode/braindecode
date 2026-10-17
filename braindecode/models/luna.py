@@ -507,9 +507,6 @@ class _ChannelEmbeddings(nn.Module):
     def forward(self, indices: torch.Tensor) -> torch.Tensor:
         return self.embeddings(indices)
 
-    def initialize_weights(self) -> None:
-        torch.init.normal_(self.embeddings.weight, std=2.0)
-
 
 class _FrequencyFeatureEmbedder(nn.Module):
     r"""

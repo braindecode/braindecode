@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from functools import partial
 from math import floor, log2
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 
 
@@ -181,14 +183,16 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         and normal for linear layers.
 
         """
-        for m in self.modules():
-            if isinstance(m, nn.Conv1d):
-                nn.init.kaiming_normal_(m.weight.data)
-            elif isinstance(m, nn.BatchNorm1d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-            elif isinstance(m, nn.Linear):
-                m.bias.data.zero_()
+        self.apply(
+            partial(
+                init_weights_,
+                weights={
+                    nn.Conv1d: (nn.init.kaiming_normal_, None),
+                    nn.Linear: (None, nn.init.zeros_),
+                },
+                norms=(nn.BatchNorm1d,),
+            )
+        )
 
     def forward(self, X: torch.Tensor):
         """
