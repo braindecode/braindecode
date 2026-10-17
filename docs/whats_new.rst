@@ -482,6 +482,8 @@ Requirements
 Bug fixes
 ==========
 
+- ``reset_head`` builds the new head in the model's dtype, device and train/eval mode for every model: 18 models built it in float32 on the CPU (so a ``.double()`` or GPU model failed at the next forward) and 33 left it in training mode inside an eval model (:gh:`1451` by `Bruno Aristimunha`_).
+
 - Remove dead code: ``braindecode/datasets/bids/format.py`` (an unused copy of ``hub_format.py``, imported nowhere) and two unused private definitions in MEDFormer and the PhysioNet 2018 dataset (:gh:`1444` by `Bruno Aristimunha`_).
 
 - The DDP tests of EEGCLIP, BrainOmni and NeuroRVQ no longer abort intermittently (SIGABRT during interpreter teardown of a spawned rank): ranks that succeeded exit with ``os._exit(0)`` (:gh:`1438` by `Bruno Aristimunha`_).
