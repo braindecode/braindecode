@@ -18,11 +18,11 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.functional import init_weights_
+from braindecode.functional import init_weights_, patch_count
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.cbramod import _PatchEmbedding
 from braindecode.modules import FeedForwardBlock
-from braindecode.modules.blocks import PatchTokenizer, _patch_count
+from braindecode.modules.blocks import PatchTokenizer
 
 log = logging.getLogger(__name__)
 
@@ -441,7 +441,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
             return None
         # ceil for "pad", floor for "crop" (raises below one patch): the count
         # the tokenizer produces.
-        return _patch_count(n_times, self._patch_size, self._on_non_divisible)
+        return patch_count(n_times, self._patch_size, self._on_non_divisible)
 
     def _make_task_head(self) -> nn.Sequential:
         # Three-layer MLP head of the reference fine-tuning models: flatten
