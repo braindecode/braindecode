@@ -19,7 +19,7 @@ def test_forward_and_presets():
     medium = EEGDINO(n_chans=16, n_outputs=4, n_times=1000, **EEGDINO_CONFIGS["medium"])
     assert medium.emb_dim == 512
     assert len(medium.encoder_layers) == 16
-    assert medium.encoder_layers[0].attn.nhead == 8  # matches the released checkpoint
+    assert medium.encoder_layers[0].attn.num_heads == 8  # matches the released checkpoint
 
 
 def test_from_pretrained_local_roundtrip(tmp_path):

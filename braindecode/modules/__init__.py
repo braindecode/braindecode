@@ -19,6 +19,7 @@ from .attention import (
     GSoP,
     MultiHeadAttention,
     SqueezeAndExcitation,
+    TimmAttention,
 )
 from .blocks import (
     MLP,
@@ -91,6 +92,7 @@ __all__ = [
     "SqueezeAndExcitation",
     "CrissCrossTransformerEncoderLayer",
     "MLP",
+    "TimmAttention",
     "TimmMlp",
     "FeedForwardBlock",
     "InceptionBlock",

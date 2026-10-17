@@ -3,7 +3,6 @@
 #
 # License: BSD-3
 
-import math
 from functools import partial
 from typing import Dict, Literal, Optional, Union
 
@@ -13,8 +12,7 @@ from torch import nn
 
 from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import DropPath, TimmMlp
-from braindecode.modules.attention import _scaled_dot_product_attention
+from braindecode.modules import DropPath, TimmAttention, TimmMlp
 from braindecode.modules.convolution import Conv1dWithConstraint
 from braindecode.modules.linear import LinearWithConstraint
 from braindecode.util import resolve_montage_name
@@ -736,123 +734,6 @@ def _apply_mask_t(mask_t, x):
     return masked_x
 
 
-class _Attention(nn.Module):
-    """
-    Multi-head Self-Attention with optional Causal Masking.
-
-    This layer implements multi-head self-attention using PyTorch's
-    scaled_dot_product_attention (Flash Attention) for efficiency.
-    It supports causal masking.
-
-    Parameters
-    ----------
-    dim : int
-        Input and output embedding dimension.
-    num_heads : int, default=8
-        Number of attention heads.
-    qkv_bias : bool, default=False
-        If True, add a learnable bias to query, key, value projections.
-    attn_drop : float, default=0.0
-        Dropout probability for attention weights.
-    proj_drop : float, default=0.0
-        Dropout probability for output projection.
-    is_causal : bool, default=False
-        If True, applies a causal mask (temporal causality).
-    return_attention : bool, default=False
-        If True, returns the attention weights instead of the output tensor.
-    """
-
-    def __init__(
-        self,
-        dim,
-        num_heads=8,
-        qkv_bias=False,
-        attn_drop=0.0,
-        proj_drop=0.0,
-        is_causal=False,
-        return_attention=False,
-    ):
-        super().__init__()
-
-        self.num_heads = num_heads
-        self.head_dim = dim // num_heads
-        self.scale = self.head_dim**-0.5
-
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
-
-        self.is_causal = is_causal
-        self.return_attention = return_attention
-
-    def forward(self, x):
-        """
-        Forward pass of the attention layer.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor of shape (batch, seq_len, embed_dim).
-        """
-        # qkv: (batch, seq_len, 3 * num_heads * head_dim)
-        qkv = self.qkv(x)
-
-        # Reshape to (3, batch, num_heads, seq_len, head_dim)
-        qkv = qkv.reshape(qkv.shape[0], qkv.shape[1], 3, self.num_heads, -1)
-        qkv = qkv.permute(2, 0, 3, 1, 4)
-        # unbind, not qkv[0..2]: the backward of three selects writes three
-        # zero-filled copies of the whole qkv tensor and sums them.
-        q, k, v = qkv.unbind(0)  # batch, num_heads, seq_len, head_dim
-
-        # 1. Return Attention Weights
-        # If return_attention is True, we manually compute attention scores
-        # because F.scaled_dot_product_attention doesn't return weights.
-        if self.return_attention:
-            if self.is_causal:
-                attn_mask = torch.ones(
-                    q.size(-2), q.size(-2), device=q.device, dtype=torch.bool
-                ).tril(diagonal=0)
-                attn_zeros = torch.zeros(
-                    q.size(-2), q.size(-2), device=q.device, dtype=q.dtype
-                )
-                attn_mask = attn_zeros.masked_fill(
-                    torch.logical_not(attn_mask), -float("inf")
-                )
-                # Naive attention computation for visualization/debugging
-                attn_weight = torch.softmax(
-                    (q @ k.transpose(-2, -1) / math.sqrt(q.size(-1))) + attn_mask,
-                    dim=-1,
-                )
-            else:
-                attn_weight = torch.softmax(
-                    (q @ k.transpose(-2, -1) / math.sqrt(q.size(-1))), dim=-1
-                )
-            return attn_weight
-
-        # 2. Flash Attention
-        # Use PyTorch's optimized scaled_dot_product_attention (SDPA)
-        # which internally uses FlashAttention or EfficientAttention kernels.
-        dropout_p = self.attn_drop.p if self.training else 0.0
-        if self.is_causal:
-            y = torch.nn.functional.scaled_dot_product_attention(
-                q, k, v, attn_mask=None, dropout_p=dropout_p, is_causal=True
-            )
-        else:
-            # Gaudi's fused kernel also in lazy mode: faster for EEGPT's
-            # 23-token sequences except on the shortest inputs (256 samples).
-            y = _scaled_dot_product_attention(
-                q, k, v, dropout_p=dropout_p, fused_in_lazy=True
-            )
-
-        # Reshape back: (batch, num_heads, seq_len, head_dim) -> (batch, seq_len, embed_dim)
-        x = y.transpose(1, 2).flatten(2)
-
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
-
-
 class _Block(nn.Module):
     """
     Transformer Block consisting of Self-Attention and MLP.
@@ -885,8 +766,6 @@ class _Block(nn.Module):
         Activation function.
     norm_layer : nn.Module, default=nn.LayerNorm
         Normalization layer.
-    is_causal : bool, default=False
-        If True, applies a causal mask to attention.
     return_attention : bool, default=False
         If True, returns attention weights instead of the output tensor.
     """
@@ -902,20 +781,17 @@ class _Block(nn.Module):
         drop_path=0.0,
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
-        is_causal=False,
         return_attention=False,
     ):
         super().__init__()
         self.return_attention = return_attention
         self.norm1 = norm_layer(dim)
-        self.attn = _Attention(
+        self.attn = TimmAttention(
             dim,
             num_heads=num_heads,
             qkv_bias=qkv_bias,
             attn_drop=attn_drop,
             proj_drop=drop,
-            is_causal=is_causal,
-            return_attention=return_attention,
         )
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = norm_layer(dim)
@@ -928,7 +804,7 @@ class _Block(nn.Module):
         )
 
     def forward(self, x):
-        y = self.attn(self.norm1(x))
+        y = self.attn(self.norm1(x), need_weights=self.return_attention)
         if self.return_attention:
             return y
         x = x + self.drop_path(y)
@@ -1162,7 +1038,6 @@ class _EEGTransformer(nn.Module):
                     attn_drop=attn_drop_rate,
                     drop_path=dpr[i],
                     norm_layer=norm_layer,
-                    is_causal=False,
                     return_attention=(i + 1) == return_attention_layer,
                 )
                 for i in range(depth)
