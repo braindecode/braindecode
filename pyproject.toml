@@ -55,8 +55,8 @@ dependencies = [
     'torchinfo',
     'pandas',
     'wfdb>=4.3.1',  # requests comes transitively via mne→pooch and wfdb
-    'linear_attention_transformer',
-    'docstring_inheritance',        # we get einops from here
+    'docstring_inheritance',
+    'einops',
     'pydantic>=2.0',
 ]
 

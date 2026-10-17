@@ -10,6 +10,7 @@
 # License: BSD-3
 
 import inspect
+import os
 import re
 import warnings
 from collections import OrderedDict
@@ -6111,6 +6112,7 @@ def _eegclip_rank(rank, init_file, out_dir):
         torch.save({"loss": loss, **grads}, f"{out_dir}/rank{rank}.pt")
     finally:
         dist.destroy_process_group()
+    os._exit(0)  # skip interpreter teardown: it can race gloo threads (SIGABRT)
 
 
 @pytest.mark.skipif(not dist.is_available(), reason="torch.distributed is unavailable")
@@ -6275,6 +6277,7 @@ def _eegclip_actual_ddp_rank(rank, init_file, out_dir):
         )
     finally:
         dist.destroy_process_group()
+    os._exit(0)  # skip interpreter teardown: it can race gloo threads (SIGABRT)
 
 
 @pytest.mark.skipif(not dist.is_available(), reason="torch.distributed is unavailable")
@@ -6344,6 +6347,7 @@ def _eegclip_collective_preflight_rank(rank, init_file, result_dir, case):
         )
     finally:
         dist.destroy_process_group()
+    os._exit(0)  # skip interpreter teardown: it can race gloo threads (SIGABRT)
 
 
 @pytest.mark.skipif(not dist.is_available(), reason="torch.distributed unavailable")
@@ -6440,6 +6444,7 @@ def _eegclip_one_empty_rank_actual_ddp(rank, init_file, result_dir):
         )
     finally:
         dist.destroy_process_group()
+    os._exit(0)  # skip interpreter teardown: it can race gloo threads (SIGABRT)
 
 
 @pytest.mark.skipif(not dist.is_available(), reason="torch.distributed unavailable")

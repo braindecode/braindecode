@@ -1,6 +1,7 @@
 # License: BSD-3
 """NeuroRVQ cold-start consistency across independent distributed ranks."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,7 @@ def _distributed_cold_start(rank, world_size, init_file, out_dir):
         )
     finally:
         dist.destroy_process_group()
+    os._exit(0)  # skip interpreter teardown: it can race gloo threads (SIGABRT)
 
 
 @pytest.mark.skipif(
@@ -126,6 +128,7 @@ def _distributed_ddp_wrapped_forward(rank, world_size, init_file, out_dir):
         )
     finally:
         dist.destroy_process_group()
+    os._exit(0)  # skip interpreter teardown: it can race gloo threads (SIGABRT)
 
 
 @pytest.mark.skipif(
