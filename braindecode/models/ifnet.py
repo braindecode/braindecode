@@ -13,6 +13,7 @@ doi: 10.1109/TNSRE.2023.3257319.
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Optional, Sequence
 
 import torch
@@ -21,6 +22,7 @@ from mne.utils import warn
 from torch import nn
 from torch.nn.init import trunc_normal_
 
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import (
     FilterBankLayer,
@@ -186,30 +188,24 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
         self.flatten = Rearrange("batch ... -> batch (...)")
 
         # Initialize parameters
-        self._initialize_weights(self)
+        self._init_parameters()
 
-    @staticmethod
-    def _initialize_weights(m):
-        """Initializes weights of the network.
+    # Reference ``initParms``: truncated normal (std 0.01) linears and
+    # convolutions, zero biases, unit/zero normalization layers. The max-norm
+    # head is initialized through its stored weight.
+    _initialize_weights = partial(
+        init_weights_,
+        weights={
+            nn.Linear: partial(trunc_normal_, std=0.01),
+            (nn.Conv1d, nn.Conv2d): partial(trunc_normal_, std=0.01),
+        },
+        norms=(nn.LayerNorm, nn.BatchNorm1d, nn.BatchNorm2d),
+        init_parametrized_original=True,
+    )
 
-        Parameters
-        ----------
-        m : nn.Module
-            Module to initialize.
-        """
-        if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=0.01)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, (nn.LayerNorm, nn.BatchNorm1d, nn.BatchNorm2d)):
-            if m.weight is not None:
-                nn.init.constant_(m.weight, 1.0)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, (nn.Conv1d, nn.Conv2d)):
-            trunc_normal_(m.weight, std=0.01)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
+        self.apply(self._initialize_weights)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass of IFNet.
