@@ -632,7 +632,10 @@ def test_if_models_with_embedding_parameter(model):
     [
         pytest.param(name, dtype, id=f"{name}-{str(dtype)[6:]}")
         for name in _MODEL_CASES
-        for dtype in (torch.float64, torch.bfloat16, torch.float16)
+        # No float16: torch's CPU float16 kernels crashed the test worker
+        # outright (no traceback) in about one CI run in seven, always in this
+        # test; bfloat16 checks the same dtype propagation.
+        for dtype in (torch.float64, torch.bfloat16)
     ],
 )
 def test_forward_in_dtype(model_name, dtype):
