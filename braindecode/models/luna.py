@@ -22,7 +22,13 @@ import torch.fft as fft
 import torch.nn as nn
 import torch.nn.functional as F
 
-from braindecode.functional import init_weights_, rotate_pairs, spectral_input
+from braindecode.functional import (
+    apply_rotary,
+    init_weights_,
+    rotary_angles,
+    rotary_frequencies,
+    spectral_input,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.signal_jepa import _GroupNorm
 from braindecode.models.util import extract_channel_locations_from_chs_info
@@ -586,9 +592,8 @@ class _RotarySelfAttentionBlock(nn.Module):
         freqs = self.rotary_emb(positions)
 
         # Keep the full-head reshape (including its empty-input boundary).
-        pairs = tensor.reshape(list(tensor.shape[:-1]) + [-1, 2])
-        rotated = rotate_pairs(pairs.flatten(-2))
-        transformed = tensor * freqs.cos() + rotated * freqs.sin()
+        tensor.reshape(list(tensor.shape[:-1]) + [-1, 2])
+        transformed = apply_rotary(tensor, freqs.cos(), freqs.sin())
         return transformed.to(tensor.dtype)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -619,14 +624,10 @@ class _RotaryEmbedding(nn.Module):
 
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
         super().__init__()
-        frequencies = 1.0 / (
-            theta ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim)
-        )
-        self.freqs = nn.Parameter(frequencies, requires_grad=False)
+        self.freqs = nn.Parameter(rotary_frequencies(dim, theta), requires_grad=False)
 
     def forward(self, positions: torch.Tensor) -> torch.Tensor:
-        angles = positions.to(self.freqs.dtype).unsqueeze(-1) * self.freqs
-        return angles.repeat_interleave(2, dim=-1)
+        return rotary_angles(positions.to(self.freqs.dtype), self.freqs)
 
 
 class _FeedForwardBlock(nn.Module):
