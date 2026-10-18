@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- CI: the shared model tests build a 2-layer ZUNA and a narrow BENDR instead of the released 172M- and 157M-parameter configurations, which took 5.6 GB per test worker to script and serialize and killed CI runners; the registry entry of a model may now carry architecture arguments next to its signal parameters. The released configurations stay covered by ``test_pretrained_compat`` (:gh:`1472` by `Bruno Aristimunha`_).
 - CI: ``test_core_dependencies_are_imported`` parsed the whole package once per installed distribution (215 s, the last test to finish); it parses once. The test job stops after 60 minutes instead of 6 hours when a worker hangs (:gh:`1471` by `Bruno Aristimunha`_).
 - :func:`braindecode.functional.sinusoidal_positional_encoding` takes a ``base`` (longest wavelength); PopulationTransformer and SignalJEPA build their tables with it, unchanged (:gh:`1458` by `Bruno Aristimunha`_).
 - Add :func:`braindecode.functional.scaled_dot_product_attention` (the shared SDPA helper, now public, with ``scale`` and an ``exact`` op-order mode); ATCNet, AttnSleep, EEGDINO, TCFormer and TMSA-Net compute their attention through it with outputs, losses and gradients unchanged bit for bit (:gh:`1457` by `Bruno Aristimunha`_).
