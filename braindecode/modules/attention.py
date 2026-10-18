@@ -16,12 +16,19 @@ import math
 from typing import Optional
 
 import torch
-import torch.nn.functional as F
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
 from braindecode.functional import _get_gaussian_kernel1d
+from braindecode.functional.attention import (  # noqa: F401  (re-exported)
+    _hpu_eager_fused_sdpa,
+    _hpu_lazy,
+    _sdpa_math_dropout,
+)
+from braindecode.functional.attention import (
+    scaled_dot_product_attention as _scaled_dot_product_attention,
+)
 
 
 class SqueezeAndExcitation(nn.Module):
@@ -834,89 +841,103 @@ class CATLite(nn.Module):
         return channel_score * x
 
 
-@torch.jit.unused
-def _hpu_eager_fused_sdpa(
-    query: Tensor,
-    key: Tensor,
-    value: Tensor,
-    scale: Optional[float] = None,
-    fused_in_lazy: bool = False,
-) -> Optional[Tensor]:
-    # Lazy mode: None, the graph compiler already fuses torch's SDPA there
-    # (unless the caller measured the fused kernel faster for its shapes).
-    from habana_frameworks.torch.utils.internal import is_lazy
+class TimmAttention(nn.Module):
+    """Multi-head self-attention with timm's parameter names (``qkv``, ``proj``),
+    as in ViT/MAE/BEiT checkpoints. EEGPT and EEGDINO use it, so their released
+    weights load with the same keys.
 
-    if is_lazy() and not fused_in_lazy:
-        return None
-    from habana_frameworks.torch.hpex.kernels import FusedSDPA
+    Parameters
+    ----------
+    dim : int
+        Token width.
+    num_heads : int, default=8
+        Number of heads; ``head_dim = dim // num_heads``.
+    qkv_bias : bool, default=False
+        Bias of the fused ``qkv`` projection.
+    qv_bias : bool, default=False
+        BEiT's separate ``q_bias`` and ``v_bias`` parameters (the key has none)
+        added after a bias-free ``qkv``.
+    attn_drop : float, default=0.0
+        Dropout on the attention weights.
+    proj_drop : float, default=0.0
+        Dropout after the output projection.
+    exact : bool, default=False
+        timm's op order, ``softmax((q * scale) @ k^T) @ v``, bit-identical to
+        the reference implementations (see
+        :func:`braindecode.functional.scaled_dot_product_attention`); otherwise
+        torch's kernels (Gaudi's fused kernel on HPU).
 
-    # Strided q/k/v views (heads split off a projection) give wrong outputs and
-    # gradients at some shapes; contiguous copies give the right result.
-    query, key, value = query.contiguous(), key.contiguous(), value.contiguous()
-    return FusedSDPA.apply(query, key, value, None, 0.0, False, scale, "None", False)
-
-
-@torch.jit.unused
-def _hpu_lazy() -> bool:
-    from habana_frameworks.torch.utils.internal import is_lazy
-
-    return is_lazy()
-
-
-def _sdpa_math_dropout(
-    query: Tensor, key: Tensor, value: Tensor, dropout_p: float
-) -> Tensor:
-    # torch's math path for SDPA with dropout, op for op, without the pass of
-    # ``_safe_softmax`` that zeroes fully masked rows (none without a mask):
-    # same values, same dropout draws.
-    scale = math.sqrt(1.0 / math.sqrt(query.size(-1)))
-    attn = torch.matmul(query * scale, key.transpose(-2, -1) * scale)
-    attn = F.dropout(attn.softmax(-1), dropout_p, True)
-    return torch.matmul(attn, value)
-
-
-def _scaled_dot_product_attention(
-    query: Tensor,
-    key: Tensor,
-    value: Tensor,
-    attn_mask: Optional[Tensor] = None,
-    dropout_p: float = 0.0,
-    fused_in_lazy: bool = False,
-) -> Tensor:
-    """``F.scaled_dot_product_attention``; Gaudi's fused kernel on HPU.
-
-    In HPU eager mode, torch's SDPA runs op by op (the full
-    ``(batch, heads, seq, seq)`` scores in device memory), 2-3.5x slower than
-    the bridge's fused kernel on long sequences. The fused kernel is used
-    without a mask or dropout (its dropout would draw other masks). In lazy
-    mode only with ``fused_in_lazy=True``: the graph compiler fuses torch's
-    SDPA too, faster on long sequences, slower on short ones.
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import TimmAttention
+    >>> attn = TimmAttention(dim=16, num_heads=4)
+    >>> attn(torch.randn(2, 5, 16)).shape
+    torch.Size([2, 5, 16])
     """
-    if (
-        not torch.jit.is_scripting()
-        and query.device.type == "hpu"
-        and attn_mask is None
-        and dropout_p == 0.0
-        and (query.dtype == torch.float32 or query.dtype == torch.bfloat16)
+
+    def __init__(
+        self,
+        dim: int,
+        num_heads: int = 8,
+        qkv_bias: bool = False,
+        qv_bias: bool = False,
+        attn_drop: float = 0.0,
+        proj_drop: float = 0.0,
+        exact: bool = False,
     ):
-        out = _hpu_eager_fused_sdpa(query, key, value, fused_in_lazy=fused_in_lazy)
-        if out is not None:
-            return out
-    if (
-        not torch.jit.is_scripting()
-        and dropout_p > 0.0
-        and attn_mask is None
-        and (query.dtype == torch.float32 or query.dtype == torch.float64)
-        and (
-            query.device.type == "cpu"
-            or (query.device.type == "hpu" and not _hpu_lazy())
-        )
-    ):
-        # CPU and HPU eager run SDPA with dropout through the math path.
-        return _sdpa_math_dropout(query, key, value, dropout_p)
-    return F.scaled_dot_product_attention(
-        query, key, value, attn_mask=attn_mask, dropout_p=dropout_p
-    )
+        super().__init__()
+        if not 1 <= num_heads <= dim:
+            raise ValueError(
+                f"num_heads ({num_heads}) must be in [1, dim={dim}] so head_dim >= 1."
+            )
+        self.num_heads = num_heads
+        self.head_dim = dim // num_heads
+        all_head_dim = self.head_dim * num_heads
+        self.scale = self.head_dim**-0.5
+        self.exact = exact
+        self.qkv = nn.Linear(dim, all_head_dim * 3, bias=qkv_bias)
+        self.q_bias: Optional[nn.Parameter]
+        self.v_bias: Optional[nn.Parameter]
+        if qv_bias:
+            self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
+            self.v_bias = nn.Parameter(torch.zeros(all_head_dim))
+        else:
+            self.q_bias = None
+            self.v_bias = None
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(all_head_dim, dim)
+        self.proj_drop = nn.Dropout(proj_drop)
+
+    def _heads(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        qkv = self.qkv(x)
+        if self.q_bias is not None and self.v_bias is not None:
+            bias = torch.cat((self.q_bias, torch.zeros_like(self.v_bias), self.v_bias))
+            qkv = qkv + bias.to(qkv.dtype)  # keep autocast dtype
+        qkv = qkv.reshape(qkv.shape[0], qkv.shape[1], 3, self.num_heads, -1)
+        # unbind, not qkv[0..2]: the backward of three selects writes three
+        # zero-filled copies of the whole qkv tensor and sums them.
+        q, k, v = qkv.permute(2, 0, 3, 1, 4).unbind(0)
+        return q, k, v
+
+    def forward(self, x: Tensor, need_weights: bool = False) -> Tensor:
+        """``(batch, seq, dim) -> (batch, seq, dim)``; with ``need_weights`` the
+        attention weights ``(batch, heads, seq, seq)`` instead."""
+        q, k, v = self._heads(x)
+        if need_weights:
+            return torch.softmax(
+                q @ k.transpose(-2, -1) / math.sqrt(q.size(-1)), dim=-1
+            )
+        dropout_p = self.attn_drop.p if self.training else 0.0
+        if self.exact:
+            y = _scaled_dot_product_attention(
+                q * self.scale, k, v, dropout_p=dropout_p, scale=1.0, exact=True
+            )
+        else:
+            y = _scaled_dot_product_attention(
+                q, k, v, dropout_p=dropout_p, fused_in_lazy=True
+            )
+        return self.proj_drop(self.proj(y.transpose(1, 2).flatten(2)))
 
 
 class MultiHeadAttention(nn.Module):

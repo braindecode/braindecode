@@ -11,7 +11,12 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import init_weights_
+from braindecode.functional import (
+    apply_rotary,
+    init_weights_,
+    rotary_angles,
+    rotary_frequencies,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import GatedLinearUnit, PatchTokenizer
@@ -609,7 +614,7 @@ class _Transformer(nn.Module):
     ):
         super().__init__()
         head_dim = d_model // num_heads
-        inv_freq = 1.0 / (10000.0 ** (torch.arange(0, head_dim, 2).float() / head_dim))
+        inv_freq = rotary_frequencies(head_dim)
         self.inv_freq: torch.Tensor
         self.register_buffer("inv_freq", inv_freq, persistent=False)
         self.layers = nn.ModuleList(
@@ -633,8 +638,8 @@ class _Transformer(nn.Module):
         positions = torch.arange(
             n_patches, device=self.inv_freq.device, dtype=self.inv_freq.dtype
         )
-        angles = torch.outer(positions, self.inv_freq)
-        angles = torch.cat((angles, angles), dim=-1).repeat_interleave(n_chans, dim=0)
+        angles = rotary_angles(positions, self.inv_freq, interleaved=False)
+        angles = angles.repeat_interleave(n_chans, dim=0)
         cos = angles.cos()[None, None]
         sin = angles.sin()[None, None]
         for layer in self.layers:
@@ -698,8 +703,9 @@ class _RotarySelfAttention(nn.Module):
         key = self.split_heads(key)
         value = self.split_heads(value)
 
-        query = _apply_rotary(query, cos, sin)
-        key = _apply_rotary(key, cos, sin)
+        cos, sin = cos.to(query.dtype), sin.to(query.dtype)
+        query = apply_rotary(query, cos, sin, interleaved=False)
+        key = apply_rotary(key, cos, sin, interleaved=False)
 
         # Dropout falls on the attention output rather than on the weights,
         # through dropout_p, because the reference disables the latter outright.
@@ -707,11 +713,3 @@ class _RotarySelfAttention(nn.Module):
         attention = self.dropout(attention)
         attention = self.merge_heads(attention)
         return self.o_proj(attention)
-
-
-def _apply_rotary(
-    x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
-) -> torch.Tensor:
-    """Apply the reference's half-split (not interleaved) rotary embedding."""
-    first, second = x.chunk(2, dim=-1)
-    return x * cos.to(x.dtype) + torch.cat((-second, first), dim=-1) * sin.to(x.dtype)

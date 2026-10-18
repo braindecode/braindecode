@@ -9,7 +9,11 @@ from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin, _too_short_input_error
-from braindecode.modules import FeedForwardBlock, MultiHeadAttention, Residual
+from braindecode.modules import (
+    FeedForwardBlock,
+    MultiHeadAttention,
+    PreNormTransformerBlock,
+)
 
 
 class EEGConformer(EEGModuleMixin, nn.Module):
@@ -250,12 +254,21 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         else:
             self.final_fc_length = final_fc_length
 
-        self.transformer = _TransformerEncoder(
-            num_layers=num_layers,
-            emb_size=n_filters_time,
-            num_heads=num_heads,
-            att_drop=att_drop_prob,
-            activation=activation_transfor,
+        self.transformer = nn.Sequential(
+            *[
+                PreNormTransformerBlock(
+                    n_filters_time,
+                    MultiHeadAttention(n_filters_time, num_heads, att_drop_prob),
+                    FeedForwardBlock(
+                        n_filters_time,
+                        expansion=4,
+                        drop_p=att_drop_prob,
+                        activation=activation_transfor,
+                    ),
+                    att_drop_prob,
+                )
+                for _ in range(num_layers)
+            ]
         )
 
         self.fc = _FullyConnected(
@@ -362,74 +375,6 @@ class _PatchEmbedding(nn.Module):
                 x = layer(x)
         x = self.projection(x)
         return x
-
-
-class _TransformerEncoderBlock(nn.Sequential):
-    def __init__(
-        self,
-        emb_size,
-        num_heads,
-        att_drop,
-        forward_expansion=4,
-        activation: type[nn.Module] = nn.GELU,
-    ):
-        super().__init__(
-            Residual(
-                nn.Sequential(
-                    nn.LayerNorm(emb_size),
-                    MultiHeadAttention(emb_size, num_heads, att_drop),
-                    nn.Dropout(att_drop),
-                )
-            ),
-            Residual(
-                nn.Sequential(
-                    nn.LayerNorm(emb_size),
-                    FeedForwardBlock(
-                        emb_size,
-                        expansion=forward_expansion,
-                        drop_p=att_drop,
-                        activation=activation,
-                    ),
-                    nn.Dropout(att_drop),
-                )
-            ),
-        )
-
-
-class _TransformerEncoder(nn.Sequential):
-    r"""Transformer encoder module for the transformer encoder.
-
-    Similar to the layers used in ViT.
-
-    Parameters
-    ----------
-    num_layers : int
-        Number of transformer encoder blocks.
-    emb_size : int
-        Embedding size of the transformer encoder.
-    num_heads : int
-        Number of attention heads.
-    att_drop : float
-        Dropout probability for the attention layers.
-
-    """
-
-    def __init__(
-        self,
-        num_layers,
-        emb_size,
-        num_heads,
-        att_drop,
-        activation: type[nn.Module] = nn.GELU,
-    ):
-        super().__init__(
-            *[
-                _TransformerEncoderBlock(
-                    emb_size, num_heads, att_drop, activation=activation
-                )
-                for _ in range(num_layers)
-            ]
-        )
 
 
 class _FullyConnected(nn.Module):

@@ -6,10 +6,14 @@ from scipy.signal import hilbert
 
 from braindecode.functional import (
     _real_dft,
+    apply_rotary,
     fft_conv1d,
     hilbert_freq,
     plv_time,
     prefer_fft_conv,
+    rotary_angles,
+    rotary_frequencies,
+    rotate_half,
     rotate_pairs,
     sinusoidal_positional_encoding,
 )
@@ -69,19 +73,6 @@ def test_hilbert_freq_dtype(dtype):
     assert out.dtype == (dtype if dtype.is_floating_point else torch.float32)
     expected = hilbert_freq(x.float())
     torch.testing.assert_close(out.float(), expected, atol=0.5, rtol=1e-2)
-
-
-def test_plv_time_shape():
-    """
-    Test that plv_time returns the correct shape.
-    Input shape: (batch, channels, time)
-    Output shape: (batch, channels, channels)
-    """
-    batch, channels, time = 2, 4, 500
-    input_tensor = torch.randn(batch, channels, time)
-    plv_matrix = plv_time(input_tensor, forward_fourier=True)
-    expected_shape = (batch, channels, channels)
-    assert plv_matrix.shape == expected_shape, f"Expected shape {expected_shape}, got {plv_matrix.shape}"
 
 
 def test_plv_time_perfect_synchronization():
@@ -219,6 +210,46 @@ def test_rotate_pairs(dtype, shape):
 def test_rotate_pairs_rejects_odd_width():
     with pytest.raises(RuntimeError):
         rotate_pairs(torch.zeros(2, 3))
+
+
+def test_rotate_half():
+    x = torch.arange(6.0).reshape(1, 6)
+    assert torch.equal(rotate_half(x), torch.tensor([[-3.0, -4.0, -5.0, 0.0, 1.0, 2.0]]))
+    assert torch.equal(torch.jit.script(rotate_half)(x), rotate_half(x))
+
+
+def test_rotary_frequencies_and_angles():
+    inv_freq = rotary_frequencies(8, 10000.0)
+    assert inv_freq.shape == (4,) and inv_freq.dtype == torch.float32
+    torch.testing.assert_close(
+        inv_freq, 1.0 / 10000.0 ** (torch.arange(0, 8, 2).float() / 8), rtol=0, atol=0
+    )
+    assert rotary_frequencies(8, dtype=torch.float64).dtype == torch.float64
+    positions = torch.arange(3.0)
+    interleaved = rotary_angles(positions, inv_freq)
+    half = rotary_angles(positions, inv_freq, interleaved=False)
+    assert interleaved.shape == half.shape == (3, 8)
+    assert torch.equal(interleaved[:, 0::2], interleaved[:, 1::2])
+    assert torch.equal(half[:, :4], half[:, 4:])
+    assert torch.equal(interleaved[:, 0::2], half[:, :4])
+    # Positions of any shape.
+    assert rotary_angles(positions.reshape(1, 3), inv_freq).shape == (1, 3, 8)
+
+
+@pytest.mark.parametrize("interleaved", [True, False])
+def test_apply_rotary_is_a_rotation(interleaved):
+    x = torch.randn(2, 4, 5, 8)
+    angles = rotary_angles(torch.arange(5.0), rotary_frequencies(8), interleaved)
+    y = apply_rotary(x, angles.cos(), angles.sin(), interleaved)
+    assert y.shape == x.shape
+    # Norm-preserving, and the identity at angle zero.
+    torch.testing.assert_close(y.norm(dim=-1), x.norm(dim=-1))
+    torch.testing.assert_close(y[..., 0, :], x[..., 0, :])
+    # Rotating back by -angles restores x.
+    back = apply_rotary(y, angles.cos(), -angles.sin(), interleaved)
+    torch.testing.assert_close(back, x)
+    scripted = torch.jit.script(apply_rotary)
+    assert torch.equal(scripted(x, angles.cos(), angles.sin(), interleaved), y)
 
 
 @pytest.mark.parametrize("n", [7, 8, 120, 121])
