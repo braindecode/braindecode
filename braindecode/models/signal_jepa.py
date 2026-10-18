@@ -13,7 +13,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import init_weights_
+from braindecode.functional import init_weights_, sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules.attention import (
     _hpu_lazy,
@@ -1682,6 +1682,9 @@ def _pos_encode_time(
 ):
     """1-dimensional positional encoding.
 
+    :func:`~braindecode.functional.sinusoidal_positional_encoding` with the
+    largest number of time samples as the longest wavelength.
+
     Parameters
     ----------
         n_times: int
@@ -1698,14 +1701,9 @@ def _pos_encode_time(
         pos_encoding: (n_times, n_dim)
     """
     assert n_dim % 2 == 0
-    position = torch.arange(n_times, device=device).unsqueeze(1)
-    div_term = torch.exp(
-        torch.arange(0, n_dim, 2, device=device) * (-math.log(max_n_times) / n_dim)
+    return sinusoidal_positional_encoding(
+        n_times, n_dim, device=device, base=float(max_n_times)
     )
-    pos_encoding = torch.empty((n_times, n_dim), dtype=torch.float32, device=device)
-    pos_encoding[:, 0::2] = torch.sin(position * div_term)
-    pos_encoding[:, 1::2] = torch.cos(position * div_term)
-    return pos_encoding
 
 
 def _pos_encode_contineous(
