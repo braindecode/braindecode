@@ -149,8 +149,10 @@ def _get_possible_signal_params(
     ):
         time_kwargs.append(dict(n_times=None, sfreq=None, input_window_seconds=None))
 
+    # Architecture arguments of the registry entry (small test instances).
+    extra = {k: v for k, v in sp.items() if k not in default_signal_params}
     return [
-        dict(**o, **c, **t)
+        dict(**o, **c, **t, **extra)
         for o in output_kwargs
         for c in channel_kwargs
         for t in time_kwargs
