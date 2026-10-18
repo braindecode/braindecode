@@ -1934,6 +1934,8 @@ API changes
 Bugs
 ====
 
+- Frequency-domain amplitude attribution preserves existing model parameter gradients, so analysis between optimizer steps does not alter training updates (by `Anton Soloviev`_).
+
 - Fixing the issues with :class:`braindecode.models.ATCNet` (:gh:`782` by `Hamdi
   Altaheri`_)
 - Fixing expired path when loading a preprocessed dataset that was moved (:gh:`786` by
