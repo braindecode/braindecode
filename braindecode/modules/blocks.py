@@ -5,15 +5,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional.patches import (
-    _check_on_non_divisible,
-    pad_or_crop_to_patches,
-    patch_count,
-)
-
-# Private names kept for the models that import them from here.
-_patch_count = patch_count
-_pad_or_crop_to_patches = pad_or_crop_to_patches
+from braindecode.functional.patches import _check_on_non_divisible, patch_count
 
 
 class PatchTokenizer(nn.Module):
