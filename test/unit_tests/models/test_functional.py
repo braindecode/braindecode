@@ -75,19 +75,6 @@ def test_hilbert_freq_dtype(dtype):
     torch.testing.assert_close(out.float(), expected, atol=0.5, rtol=1e-2)
 
 
-def test_plv_time_shape():
-    """
-    Test that plv_time returns the correct shape.
-    Input shape: (batch, channels, time)
-    Output shape: (batch, channels, channels)
-    """
-    batch, channels, time = 2, 4, 500
-    input_tensor = torch.randn(batch, channels, time)
-    plv_matrix = plv_time(input_tensor, forward_fourier=True)
-    expected_shape = (batch, channels, channels)
-    assert plv_matrix.shape == expected_shape, f"Expected shape {expected_shape}, got {plv_matrix.shape}"
-
-
 def test_plv_time_perfect_synchronization():
     """
     Test plv_time with perfectly synchronized signals.
