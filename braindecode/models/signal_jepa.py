@@ -13,12 +13,13 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import init_weights_, sinusoidal_positional_encoding
-from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.attention import (
-    _hpu_lazy,
-    _scaled_dot_product_attention,
+from braindecode.functional import (
+    init_weights_,
+    scaled_dot_product_attention,
+    sinusoidal_positional_encoding,
 )
+from braindecode.functional.attention import _hpu_lazy
+from braindecode.models.base import EEGModuleMixin
 
 _DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.1875s, stride 1s
     (8, 32, 8),
@@ -377,7 +378,7 @@ def _self_attention(mha: nn.MultiheadAttention, x: torch.Tensor) -> torch.Tensor
         .view(batch_size, n_heads, n_tokens, head_dim)
         for t in (qkv[0], qkv[1], qkv[2])
     )
-    out = _scaled_dot_product_attention(
+    out = scaled_dot_product_attention(
         q, k, v, dropout_p=mha.dropout if mha.training else 0.0
     )
     out = out.permute(2, 0, 1, 3).contiguous()

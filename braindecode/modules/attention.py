@@ -20,14 +20,11 @@ from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
-from braindecode.functional import _get_gaussian_kernel1d
+from braindecode.functional import _get_gaussian_kernel1d, scaled_dot_product_attention
 from braindecode.functional.attention import (  # noqa: F401  (re-exported)
     _hpu_eager_fused_sdpa,
     _hpu_lazy,
     _sdpa_math_dropout,
-)
-from braindecode.functional.attention import (
-    scaled_dot_product_attention as _scaled_dot_product_attention,
 )
 
 
@@ -945,7 +942,7 @@ class MultiHeadAttention(nn.Module):
         dp = self.att_drop if self.training else 0.0
         if self.scale is not None:
             queries = queries * (self.scale * self.head_dim**0.5)
-        out = _scaled_dot_product_attention(
+        out = scaled_dot_product_attention(
             queries, keys, values, attn_mask=mask, dropout_p=dp
         )
 

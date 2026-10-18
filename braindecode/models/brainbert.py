@@ -15,14 +15,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange, Reduce
 
-from braindecode.functional import sinusoidal_positional_encoding, spectral_input
+from braindecode.functional import (
+    pad_or_crop_to_patches,
+    patch_count,
+    sinusoidal_positional_encoding,
+    spectral_input,
+)
+from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
-from braindecode.modules.blocks import (
-    _check_on_non_divisible,
-    _pad_or_crop_to_patches,
-    _patch_count,
-)
 
 
 class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
@@ -399,7 +400,7 @@ class _STFTSpectrogram(nn.Module):
         """Number of frames scipy's framing gives ``n_times`` samples: segments of
         ``nperseg`` every ``step`` (the last one zero-padded), minus the clip."""
         length = n_times + 2 * self.boundary_pad
-        return _patch_count(length, self.nperseg, "pad", self.step) - 2 * self.clip
+        return patch_count(length, self.nperseg, "pad", self.step) - 2 * self.clip
 
     def min_n_times(self, n_frames: int) -> int:
         """Shortest signal that yields at least ``n_frames`` output frames."""
@@ -419,7 +420,7 @@ class _STFTSpectrogram(nn.Module):
         # would leave it outside the frames that are kept.
         xp = F.pad(x, (self.boundary_pad, self.boundary_pad))
         min_segments = self.min_frames + 2 * self.clip if self.min_frames else 1
-        xp = _pad_or_crop_to_patches(
+        xp = pad_or_crop_to_patches(
             xp, self.nperseg, "pad", self.step, min_segments, center=True
         )
         frames = xp.unfold(-1, self.nperseg, self.step)  # (b, c, n_frames, nperseg)

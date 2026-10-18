@@ -1681,12 +1681,12 @@ def test_multi_head_attention_supports_torch_2_0_sdpa(monkeypatch):
 
 def test_sdpa_helper_dropout_matches_torch_sdpa():
     """With dropout, the helper's CPU math path draws the same masks as torch."""
-    from braindecode.modules.attention import _scaled_dot_product_attention
+    from braindecode.functional import scaled_dot_product_attention
 
     q, k, v = (torch.randn(2, 3, 7, 4, requires_grad=True) for _ in range(3))
     outs, grads = [], []
     for fn in (
-        _scaled_dot_product_attention,
+        scaled_dot_product_attention,
         torch.nn.functional.scaled_dot_product_attention,
     ):
         torch.manual_seed(0)
@@ -1735,7 +1735,7 @@ def test_hpu_fused_sdpa_gets_contiguous_inputs(monkeypatch):
     import sys
     import types
 
-    from braindecode.modules.attention import _hpu_eager_fused_sdpa
+    from braindecode.functional.attention import _hpu_eager_fused_sdpa
 
     seen = []
 
@@ -1822,15 +1822,15 @@ def test_patch_tokenizer():
      (1000, "crop", 180, 5), (920, "error", 180, 5), (1001, "error", 0, None), (150, "crop", 0, None)],
 )  # fmt: skip
 def test_patch_count_and_pad_or_crop(n_times, mode, step, expected):
-    from braindecode.modules.blocks import _pad_or_crop_to_patches, _patch_count
+    from braindecode.functional import pad_or_crop_to_patches, patch_count
 
     x = torch.randn(1, 2, n_times)
     if expected is None:
         with pytest.raises(ValueError):
-            _patch_count(n_times, 200, mode, step)
+            patch_count(n_times, 200, mode, step)
         return
-    y = _pad_or_crop_to_patches(x, 200, mode, step)
-    assert _patch_count(n_times, 200, mode, step) == expected
+    y = pad_or_crop_to_patches(x, 200, mode, step)
+    assert patch_count(n_times, 200, mode, step) == expected
     assert y.unfold(-1, 200, step or 200).shape[2] == expected
     n = min(n_times, y.shape[-1])
     assert torch.equal(y[..., :n], x[..., :n]) and not y[..., n:].any()
@@ -1839,14 +1839,14 @@ def test_patch_count_and_pad_or_crop(n_times, mode, step, expected):
 def test_pad_to_min_patches():
     """min_patches zero-pads a window short of that many patches, on the right
     or (center) with half the missing patches before it."""
-    from braindecode.modules.blocks import _pad_or_crop_to_patches
+    from braindecode.functional import pad_or_crop_to_patches
 
     x = torch.randn(1, 2, 500)  # 3 patches of 400 every 50, tiled
-    assert torch.equal(_pad_or_crop_to_patches(x, 400, "pad", 50, min_patches=3), x)
-    y = _pad_or_crop_to_patches(x, 400, "pad", 50, min_patches=30)
+    assert torch.equal(pad_or_crop_to_patches(x, 400, "pad", 50, min_patches=3), x)
+    y = pad_or_crop_to_patches(x, 400, "pad", 50, min_patches=30)
     assert y.shape[-1] == 400 + 29 * 50
     assert torch.equal(y[..., :500], x) and not y[..., 500:].any()
-    y = _pad_or_crop_to_patches(x, 400, "pad", 50, min_patches=30, center=True)
+    y = pad_or_crop_to_patches(x, 400, "pad", 50, min_patches=30, center=True)
     assert y.shape[-1] == 400 + 29 * 50  # 27 missing: 13 before, 14 after
     assert torch.equal(y[..., 650:1150], x) and not y[..., :650].any()
     assert not y[..., 1150:].any()

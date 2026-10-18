@@ -15,9 +15,9 @@ from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 
 from braindecode.functional import _real_dft, spectral_input
+from braindecode.functional.attention import _hpu_lazy
 from braindecode.functional.functions import _next_fast_len
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.attention import _hpu_lazy
 
 # Cache of one-sided DFT cosine/sine bases keyed by (device, n_fft): the TUEG
 # geometry reuses one basis for every block, forward and backward.

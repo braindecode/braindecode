@@ -15,13 +15,13 @@ from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode.functional import scaled_dot_product_attention
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
     warn_if_sfreq_differs,
 )
 from braindecode.modules import PatchTokenizer
-from braindecode.modules.attention import _scaled_dot_product_attention
 from braindecode.modules.layers import RMSNorm
 
 
@@ -515,7 +515,7 @@ class _Attention(nn.Module):
         value = self.wv(input_tensor).reshape(attention_shape)
         query, key = self.rotary_embedding(query, key, rotary_cosine, rotary_sine)
 
-        attention_output = _scaled_dot_product_attention(
+        attention_output = scaled_dot_product_attention(
             query.transpose(1, 2),
             key.transpose(1, 2),
             value.transpose(1, 2),

@@ -27,6 +27,7 @@ from .initialization import (
     init_weights_,
     rescale_parameter,
 )
+from .patches import pad_or_crop_to_patches, patch_count
 
 __all__ = [
     "_get_gaussian_kernel1d",
@@ -38,7 +39,9 @@ __all__ = [
     "hilbert_freq",
     "identity",
     "iou_1d",
+    "pad_or_crop_to_patches",
     "pairwise_iou_1d",
+    "patch_count",
     "plv_time",
     "prefer_fft_conv",
     "rotary_angles",
