@@ -6580,3 +6580,22 @@ def test_medformer_patches_over_time(n_times):
         (4, 4),
     ]
     assert model.eval()(torch.randn(2, 4, n_times)).shape == (2, 3)
+
+
+def test_ifnet_initializes_like_the_reference():
+    """IFNet applies its reference init (``self.apply(initParms)`` upstream):
+    truncated normal std 0.01 for convolutions and the (max-norm) head."""
+    from torch.nn.utils import parametrize
+
+    torch.manual_seed(0)
+    model = IFNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)
+    for module in model.modules():
+        if isinstance(module, (nn.Conv1d, nn.Linear)):
+            weight = (
+                module.parametrizations.weight.original
+                if parametrize.is_parametrized(module, "weight")
+                else module.weight
+            )
+            assert abs(float(weight.std()) - 0.01) < 0.002
+            if module.bias is not None:
+                assert torch.all(module.bias == 0)
