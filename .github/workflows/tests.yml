@@ -15,6 +15,7 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60  # a green run takes ~20 min; a stuck worker used to hold the job 6 h
     env:
       # torch/OpenMP/MKL threads x xdist workers (-n auto) = vCPUs: macOS 3 x 1,
       # Linux/Windows 2 x 2. Unpinned, each worker used every core; 4 workers x 1
