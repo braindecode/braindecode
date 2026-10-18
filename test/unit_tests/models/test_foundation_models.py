@@ -1053,6 +1053,83 @@ def test_zuna_names_without_locations_take_their_montage_position():
     with pytest.warns(UserWarning, match="in metres"):
         ZUNA(chs_info=in_mm, **kw)
 
+
+# ==============================================================================
+# Tests for ZUNA's registers option
+# ==============================================================================
+
+
+def _zuna_pair(**kwargs):
+    """A ZUNA with registers and one without, with the same weights."""
+    kw = dict(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL, **kwargs)
+    torch.manual_seed(0)
+    with pytest.warns(UserWarning, match="pretrained at 256 Hz"):
+        with_registers = ZUNA(**kw).eval()
+        without = ZUNA(registers=False, **kw).eval()
+    torch.nn.init.normal_(with_registers.encoder.registers)
+    without.load_state_dict(with_registers.state_dict())  # strict: same keys
+    return with_registers, without
+
+
+def test_zuna_default_keeps_the_registers():
+    """``registers=True`` (the default) is the published encoder: same buffers,
+    two tokens per patch, output identical to a model built without the option."""
+    kw = dict(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL)
+    torch.manual_seed(0)
+    with pytest.warns(UserWarning, match="pretrained at 256 Hz"):
+        default = ZUNA(**kw).eval()
+        explicit = ZUNA(registers=True, **kw).eval()
+    explicit.load_state_dict(default.state_dict())
+    n_tokens = 6 * 1024 // 32
+    assert default.encoder.rotary_cosine.shape[0] == 2 * n_tokens
+    assert default.encoder.registers.requires_grad
+    x = torch.randn(2, 6, 1024)
+    torch.testing.assert_close(default(x), explicit(x), rtol=0, atol=0)
+
+
+def test_zuna_without_registers_runs_on_the_patch_tokens():
+    """``registers=False``: the same parameters, the patch rows of the rotary
+    tables, and the encoder applied to the patch tokens alone."""
+    with_registers, without = _zuna_pair()
+    assert without.encoder.rotary_cosine.shape[0] == 6 * 1024 // 32
+    torch.testing.assert_close(
+        without.encoder.rotary_cosine,
+        with_registers.encoder.rotary_cosine[1::2],
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(
+        without.encoder.rotary_sine,
+        with_registers.encoder.rotary_sine[1::2],
+        rtol=0,
+        atol=0,
+    )
+
+    x = torch.randn(2, 6, 1024)
+    encoder = with_registers.encoder
+    hidden = encoder.tok_embeddings(with_registers.patch_embedding(x))
+    for layer in encoder.layers:
+        hidden = layer(
+            hidden, encoder.rotary_cosine[1::2], encoder.rotary_sine[1::2]
+        )
+    latents = encoder.output(encoder.norm(hidden)).reshape(2, 6, -1, 32).mean(dim=2)
+    expected = with_registers.final_layer(latents)
+    torch.testing.assert_close(without(x), expected)
+    assert not torch.allclose(without(x), with_registers(x))
+
+
+def test_zuna_without_registers_trains_without_the_register_parameter():
+    """The register parameter is loaded but unused: no gradient, frozen."""
+    _, without = _zuna_pair()
+    without.train()
+    assert not without.encoder.registers.requires_grad
+    without(torch.randn(2, 6, 1024)).sum().backward()
+    assert without.encoder.registers.grad is None
+    grads = [
+        p.grad for n, p in without.named_parameters() if n != "encoder.registers"
+    ]
+    assert all(g is not None and torch.isfinite(g).all() for g in grads)
+
 def test_reve_attention_matches_explicit_attention():
     attention = Attention(dim=16, heads=2, head_dim=8)
     x = torch.randn(2, 5, 16, requires_grad=True)
