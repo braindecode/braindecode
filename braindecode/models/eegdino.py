@@ -13,7 +13,7 @@ from torch import nn
 from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
-from braindecode.modules import DropPath, PatchTokenizer, TimmAttention
+from braindecode.modules import PatchTokenizer, PreNormBlock, TimmAttention
 
 
 class EEGDINO(EEGModuleMixin, nn.Module):
@@ -236,8 +236,21 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self.emb_dim = self.patch_embedding.emb_dim
 
         self.encoder_layers = nn.ModuleList(
-            _TransformerEncoderLayer(
-                self.emb_dim, nhead, dim_feedforward, activation, drop_prob
+            PreNormBlock(
+                self.emb_dim,
+                # BEiT attention with q/v biases, in the reference op order
+                TimmAttention(
+                    self.emb_dim,
+                    nhead,
+                    qv_bias=True,
+                    attn_drop=drop_prob,
+                    proj_drop=drop_prob,
+                    exact=True,
+                ),
+                _MLP(
+                    self.emb_dim, dim_feedforward, activation=activation, drop=drop_prob
+                ),
+                drop_path=drop_prob,
             )
             for _ in range(n_layer)
         )
@@ -441,33 +454,6 @@ class _PatchEmbedding(nn.Module):
         patch_emb = patch_emb + channel_emb.unsqueeze(0).unsqueeze(2)
         temporal_emb = self.time_encoding(patch_emb.permute(0, 3, 1, 2))
         return patch_emb + temporal_emb.permute(0, 2, 3, 1)
-
-
-class _TransformerEncoderLayer(nn.Module):
-    """Pre-norm transformer block (no LayerScale, matching the released config)."""
-
-    def __init__(
-        self, emb_dim, nhead, dim_feedforward, activation=nn.GELU, drop_prob=0.1
-    ):
-        super().__init__()
-        self.norm1 = nn.LayerNorm(emb_dim)
-        # BEiT attention with q/v biases, in the reference op order
-        self.attn = TimmAttention(
-            emb_dim,
-            nhead,
-            qv_bias=True,
-            attn_drop=drop_prob,
-            proj_drop=drop_prob,
-            exact=True,
-        )
-        self.drop_path = DropPath(drop_prob) if drop_prob > 0.0 else nn.Identity()
-        self.norm2 = nn.LayerNorm(emb_dim)
-        self.mlp = _MLP(emb_dim, dim_feedforward, activation=activation, drop=drop_prob)
-
-    def forward(self, x):
-        x = x + self.drop_path(self.attn(self.norm1(x)))
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
-        return x
 
 
 class _MLP(nn.Module):

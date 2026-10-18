@@ -2277,3 +2277,29 @@ def test_timm_attention_keys_and_weights():
     assert math.isclose(beit.scale, 0.5)
     with pytest.raises(ValueError, match="num_heads"):
         TimmAttention(16, num_heads=32)
+
+
+def test_pre_norm_block_keys_and_forward():
+    from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
+
+    torch.manual_seed(0)
+    block = PreNormBlock(16, TimmAttention(16, 4), TimmMlp(16, 32)).eval()
+    assert list(block.state_dict())[:3] == [
+        "norm1.weight",
+        "norm1.bias",
+        "attn.qkv.weight",
+    ]
+    x = torch.randn(2, 5, 16)
+    expected = x + block.attn(block.norm1(x))
+    expected = expected + block.mlp(block.norm2(expected))
+    assert torch.equal(block(x), expected)
+
+    scaled = PreNormBlock(
+        16, TimmAttention(16, 4), TimmMlp(16, 32), drop_path=0.1, layer_scale=1e-5
+    ).eval()
+    assert list(scaled.state_dict())[:2] == ["gamma_1", "gamma_2"]
+    assert torch.equal(scaled.gamma_1, torch.full((16,), 1e-5))
+    expected = x + scaled.gamma_1 * scaled.attn(scaled.norm1(x))
+    expected = expected + scaled.gamma_2 * scaled.mlp(scaled.norm2(expected))
+    assert torch.equal(scaled(x), expected)
+    assert torch.jit.script(scaled)(x).shape == x.shape

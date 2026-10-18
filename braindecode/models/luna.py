@@ -32,9 +32,8 @@ from braindecode.functional import (
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.signal_jepa import _GroupNorm
 from braindecode.models.util import extract_channel_locations_from_chs_info
-from braindecode.modules import TimmMlp
+from braindecode.modules import PreNormBlock, TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
-from braindecode.modules.layers import DropPath
 
 # Weight initialization of the reference implementation.
 _init_weights = partial(init_weights_, weights={nn.Linear: nn.init.xavier_normal_})
@@ -230,15 +229,25 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         self.blocks = nn.ModuleList(
             [
-                _RotaryTransformerBlock(
-                    dim=int(self.embed_dim * self.num_queries),
-                    num_heads=int(self.num_heads * self.num_queries),
-                    mlp_ratio=self.mlp_ratio,
-                    qkv_bias=True,
-                    drop=0.0,
-                    attn_drop=self.attn_drop,
-                    drop_path=self.drop_path,
+                PreNormBlock(
+                    int(self.embed_dim * self.num_queries),
+                    _RotarySelfAttentionBlock(
+                        dim=int(self.embed_dim * self.num_queries),
+                        num_heads=int(self.num_heads * self.num_queries),
+                        qkv_bias=True,
+                        qk_scale=None,
+                        attn_drop=self.attn_drop,
+                        proj_drop=0.0,
+                    ),
+                    _FeedForwardBlock(
+                        dim=int(self.embed_dim * self.num_queries),
+                        hidden_dim=int(
+                            int(self.embed_dim * self.num_queries) * self.mlp_ratio
+                        ),
+                        dropout=0.0,
+                    ),
                     norm_layer=norm_layer,
+                    drop_path=self.drop_path,
                 )
                 for i in range(depth)
             ]
@@ -647,42 +656,6 @@ class _FeedForwardBlock(nn.Module):
         x = self.norm(x)
         x = self.fc2(x)
         x = self.dropout2(x)
-        return x
-
-
-class _RotaryTransformerBlock(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        num_heads: int,
-        mlp_ratio: float = 4.0,
-        qkv_bias: bool = False,
-        qk_scale: Optional[float] = None,
-        drop: float = 0.0,
-        attn_drop: float = 0.0,
-        drop_path: float = 0.0,
-        norm_layer: Type[nn.Module] = nn.LayerNorm,
-    ) -> None:
-        super().__init__()
-        self.norm1 = norm_layer(dim)
-        self.attn = _RotarySelfAttentionBlock(
-            dim=dim,
-            num_heads=num_heads,
-            qkv_bias=qkv_bias,
-            qk_scale=qk_scale,
-            attn_drop=attn_drop,
-            proj_drop=drop,
-        )
-        self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.drop_path2 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.norm2 = norm_layer(dim)
-        self.mlp = _FeedForwardBlock(
-            dim=dim, hidden_dim=int(dim * mlp_ratio), dropout=drop
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + self.drop_path1(self.attn(self.norm1(x)))
-        x = x + self.drop_path2(self.mlp(self.norm2(x)))
         return x
 
 
