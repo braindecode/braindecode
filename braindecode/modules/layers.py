@@ -16,7 +16,7 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
-from braindecode.functional import drop_path
+from braindecode.functional import drop_path, sinusoidal_positional_encoding
 
 
 class Ensure4d(nn.Module):
@@ -283,6 +283,66 @@ class PreNormBlock(nn.Module):
         if self.gamma_2 is not None:
             y = self.gamma_2 * y
         return x + self.drop_path(y)
+
+
+class LearnedPositionalEncoding(nn.Module):
+    """Learned additive positional encoding, ``dropout(x + encoding[:, :seq])``.
+
+    The ``encoding`` parameter is drawn from ``N(0, 1)``, shape
+    ``(1, length, dim)``; a shorter sequence uses its first rows. CTNet and
+    MSCFormer use it, so their released weights load with the same keys.
+
+    Parameters
+    ----------
+    length : int
+        Largest sequence length.
+    dim : int
+        Token width.
+    drop_prob : float, default=0.0
+        Dropout after the addition.
+    """
+
+    def __init__(self, length: int, dim: int, drop_prob: float = 0.0):
+        super().__init__()
+        self.dropout = nn.Dropout(drop_prob)
+        self.encoding = nn.Parameter(torch.randn(1, length, dim))
+
+    def forward(self, x: Tensor) -> Tensor:
+        """``(batch, seq, dim) -> (batch, seq, dim)``."""
+        return self.dropout(x + self.encoding[:, : x.size(1), :])
+
+
+class SinusoidalPositionalEncoding(nn.Module):
+    """Fixed sinusoidal positional encoding, ``dropout(x + pe[:, :seq])``.
+
+    The table ``pe`` of shape ``(1, max_len, dim)`` comes from
+    :func:`braindecode.functional.sinusoidal_positional_encoding`.
+
+    Parameters
+    ----------
+    max_len : int
+        Largest sequence length.
+    dim : int
+        Token width.
+    drop_prob : float, default=0.0
+        Dropout after the addition.
+    persistent : bool, default=False
+        Store the table in the ``state_dict`` (released BIOT and MEDFormer
+        checkpoints carry it).
+    """
+
+    def __init__(
+        self, max_len: int, dim: int, drop_prob: float = 0.0, persistent: bool = False
+    ):
+        super().__init__()
+        self.dropout = nn.Dropout(drop_prob)
+        pe = sinusoidal_positional_encoding(max_len, dim).unsqueeze(0)
+        self.pe: Tensor
+        self.register_buffer("pe", pe, persistent=persistent)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """``(batch, seq, dim) -> (batch, seq, dim)``."""
+        return self.dropout(x + self.pe[:, : x.size(1)])
 
 
 class SqueezeFinalOutput(nn.Module):

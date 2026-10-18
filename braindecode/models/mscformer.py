@@ -19,7 +19,12 @@ from mne.utils import warn
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import FeedForwardBlock, MultiHeadAttention, PostNormResidual
+from braindecode.modules import (
+    FeedForwardBlock,
+    LearnedPositionalEncoding,
+    MultiHeadAttention,
+    PostNormResidual,
+)
 
 
 class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -194,10 +199,16 @@ class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # class token.
         n_tokens = math.floor((self.n_times - pooling_size) / pooling_size + 1) + 1
 
-        self.position = _PositionalEncoding(
-            emb_size=self.embed_dim,
-            drop_prob=att_positional_drop_prob,
-            n_tokens=n_tokens,
+        length = 100
+        if n_tokens > length:
+            warn(
+                "The number of tokens is larger than the default length. "
+                "The length parameter will be automatically adjusted to "
+                "avoid inference issues."
+            )
+            length = n_tokens
+        self.position = LearnedPositionalEncoding(
+            length, self.embed_dim, att_positional_drop_prob
         )
 
         attention_scale = (
@@ -437,58 +448,3 @@ class _TransformerEncoder(nn.Module):
             Output tensor after the transformer encoder.
         """
         return self.layers(x)
-
-
-class _PositionalEncoding(nn.Module):
-    """Learnable positional encoding.
-
-    Parameters
-    ----------
-    emb_size : int
-        Embedding dimension.
-    drop_prob : float
-        Dropout probability applied after adding the encoding.
-    n_tokens : int
-        Number of tokens in the input sequence (including the class
-        token). If it exceeds ``length``, the encoding table is enlarged
-        to ``n_tokens`` with a warning.
-    length : int, default=100
-        Length of the learnable encoding table.
-    """
-
-    def __init__(
-        self,
-        emb_size: int,
-        drop_prob: float,
-        n_tokens: int,
-        length: int = 100,
-    ):
-        super().__init__()
-        if n_tokens > length:
-            warn(
-                "The number of tokens is larger than the default length. "
-                "The length parameter will be automatically adjusted to "
-                "avoid inference issues."
-            )
-            length = n_tokens
-        self.dropout = nn.Dropout(drop_prob)
-        self.encoding = nn.Parameter(torch.randn(1, length, emb_size))
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Forward pass of the positional encoding.
-
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor of shape (batch_size, sequence_length, embedding_dim).
-
-        Returns
-        -------
-        Tensor
-            Tensor with positional encoding added.
-        """
-        seq_length = x.size(1)
-        encoding = self.encoding[:, :seq_length, :]
-        x = x + encoding
-        return self.dropout(x)

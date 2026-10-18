@@ -2303,3 +2303,25 @@ def test_pre_norm_block_keys_and_forward():
     expected = expected + scaled.gamma_2 * scaled.mlp(scaled.norm2(expected))
     assert torch.equal(scaled(x), expected)
     assert torch.jit.script(scaled)(x).shape == x.shape
+
+
+def test_positional_encoding_modules():
+    from braindecode.functional import sinusoidal_positional_encoding
+    from braindecode.modules import (
+        LearnedPositionalEncoding,
+        SinusoidalPositionalEncoding,
+    )
+
+    torch.manual_seed(0)
+    learned = LearnedPositionalEncoding(10, 8, drop_prob=0.5).eval()
+    assert list(learned.state_dict()) == ["encoding"]
+    assert learned.encoding.shape == (1, 10, 8)
+    x = torch.randn(2, 6, 8)
+    assert torch.equal(learned(x), x + learned.encoding[:, :6])
+
+    fixed = SinusoidalPositionalEncoding(10, 8).eval()
+    assert list(fixed.state_dict()) == []
+    assert torch.equal(fixed(x), x + sinusoidal_positional_encoding(10, 8)[None, :6])
+    stored = SinusoidalPositionalEncoding(10, 8, persistent=True)
+    assert list(stored.state_dict()) == ["pe"]
+    assert torch.jit.script(stored)(x).shape == x.shape
