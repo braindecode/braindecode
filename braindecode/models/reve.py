@@ -17,10 +17,13 @@ import torch.nn.functional as F
 from mne.datasets.utils import _get_path
 from torch import nn
 
-from braindecode.functional import pad_or_crop_to_patches, patch_count
+from braindecode.functional import (
+    pad_or_crop_to_patches,
+    patch_count,
+    scaled_dot_product_attention,
+)
 from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.attention import _scaled_dot_product_attention
 from braindecode.modules.channels import resolve_channel_positions
 from braindecode.modules.layers import RMSNorm
 
@@ -628,7 +631,7 @@ class Attention(nn.Module):
         k = k.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         v = v.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         # ~700-token sequences: the fused kernel also beats lazy mode's graph.
-        out = _scaled_dot_product_attention(q, k, v, fused_in_lazy=True)
+        out = scaled_dot_product_attention(q, k, v, fused_in_lazy=True)
         return self.to_out(out.transpose(1, 2).flatten(2))
 
 

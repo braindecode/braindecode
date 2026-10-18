@@ -1681,12 +1681,12 @@ def test_multi_head_attention_supports_torch_2_0_sdpa(monkeypatch):
 
 def test_sdpa_helper_dropout_matches_torch_sdpa():
     """With dropout, the helper's CPU math path draws the same masks as torch."""
-    from braindecode.modules.attention import _scaled_dot_product_attention
+    from braindecode.functional import scaled_dot_product_attention
 
     q, k, v = (torch.randn(2, 3, 7, 4, requires_grad=True) for _ in range(3))
     outs, grads = [], []
     for fn in (
-        _scaled_dot_product_attention,
+        scaled_dot_product_attention,
         torch.nn.functional.scaled_dot_product_attention,
     ):
         torch.manual_seed(0)
@@ -1735,7 +1735,7 @@ def test_hpu_fused_sdpa_gets_contiguous_inputs(monkeypatch):
     import sys
     import types
 
-    from braindecode.modules.attention import _hpu_eager_fused_sdpa
+    from braindecode.functional.attention import _hpu_eager_fused_sdpa
 
     seen = []
 

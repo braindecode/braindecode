@@ -17,10 +17,10 @@ import torchaudio as ta
 from torch import nn
 from torch.nn import functional as F
 
+from braindecode.functional.attention import _hpu_lazy
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import has_valid_locations, positions_from_chs_info
 from braindecode.modules import ChannelMerger
-from braindecode.modules.attention import _hpu_lazy
 from braindecode.modules.layers import SubjectLayers
 
 __all__ = ["BrainModule"]

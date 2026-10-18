@@ -11,10 +11,9 @@ import mne
 import torch
 from torch import nn
 
-from braindecode.functional import init_weights_
+from braindecode.functional import init_weights_, scaled_dot_product_attention
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath, TimmMlp
-from braindecode.modules.attention import _scaled_dot_product_attention
 from braindecode.modules.convolution import Conv1dWithConstraint
 from braindecode.modules.linear import LinearWithConstraint
 from braindecode.util import resolve_montage_name
@@ -841,7 +840,7 @@ class _Attention(nn.Module):
         else:
             # Gaudi's fused kernel also in lazy mode: faster for EEGPT's
             # 23-token sequences except on the shortest inputs (256 samples).
-            y = _scaled_dot_product_attention(
+            y = scaled_dot_product_attention(
                 q, k, v, dropout_p=dropout_p, fused_in_lazy=True
             )
 

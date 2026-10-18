@@ -17,12 +17,12 @@ from braindecode.functional import (
     patch_count,
     rotary_angles,
     rotary_frequencies,
+    scaled_dot_product_attention,
 )
 from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import GatedLinearUnit, PatchTokenizer
-from braindecode.modules.attention import _scaled_dot_product_attention
 
 # Weight initialization of the reference implementation.
 _init_weights = partial(
@@ -710,7 +710,7 @@ class _RotarySelfAttention(nn.Module):
 
         # Dropout falls on the attention output rather than on the weights,
         # through dropout_p, because the reference disables the latter outright.
-        attention = _scaled_dot_product_attention(query, key, value)
+        attention = scaled_dot_product_attention(query, key, value)
         attention = self.dropout(attention)
         attention = self.merge_heads(attention)
         return self.o_proj(attention)
