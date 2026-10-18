@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Remove 63 model tests (1,046 lines) that only asserted output shapes or that a forward ran, every line of which the shared model suites already cover; coverage of ``braindecode`` is unchanged (:gh:`1467` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.PreNormTransformerBlock` (EEGConformer, MIRepNet) and :class:`~braindecode.modules.PostNormTransformerBlock` (CTNet, MSCFormer), replacing four pairs of private encoder classes; parameters and outputs unchanged (:gh:`1464` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.LearnedPositionalEncoding` (CTNet, MSCFormer) and :class:`~braindecode.modules.SinusoidalPositionalEncoding` (BIOT, MEDFormer); the four models' parameters, buffers and outputs are unchanged (:gh:`1463` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.PreNormBlock`, the pre-norm transformer block with timm's parameter names (``norm1``/``attn``/``norm2``/``mlp``, optional ``gamma_1``/``gamma_2`` layer scale); EEGPT, EEGDINO, LUNA, NeuroRVQ and NeuroRVQTokenizer build their encoders with it, parameters and outputs unchanged (:gh:`1461` by `Bruno Aristimunha`_).

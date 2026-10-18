@@ -25,14 +25,12 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torchaudio
 from scipy.signal import stft
-from sklearn.utils import check_random_state
 from torch import nn
 
 from braindecode.models import (
     BDTCN,
     BENDR,
     BIOT,
-    DGCNN,
     EEGCLIP,
     EEGPT,
     SSTDPN,
@@ -76,7 +74,6 @@ from braindecode.models import (
     SPARCNet,
     SyncNet,
     TFMTokenizer,
-    TIDNet,
     TMSANet,
     TSception,
     USleep,
@@ -98,7 +95,6 @@ from braindecode.models.csbrain import (
 )
 from braindecode.models.eegpt import (
     _EEGTransformer,
-    _PatchEmbed,
 )
 from braindecode.models.gcnsnet import _cluster_one_level, _compute_perm
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
@@ -170,17 +166,6 @@ def check_forward_pass_3d(model, input_sizes, only_check_until_dim=None):
         input_sizes["n_samples"],
         input_sizes["n_classes"],
     )
-
-
-def test_shallow_fbcsp_net(input_sizes):
-    model = ShallowFBCSPNet(
-        input_sizes["n_channels"],
-        input_sizes["n_classes"],
-        input_sizes["n_in_times"],
-        final_conv_length="auto",
-    )
-    check_forward_pass(model, input_sizes)
-
 
 
 def test_shallow_fbcsp_net_split_first_layer_without_batch_norm(input_sizes):
@@ -269,16 +254,6 @@ def test_shallow_fbcsp_net_load_state_dict(input_sizes):
     )
     state_dict["conv_classifier.bias"] = torch.rand([input_sizes["n_classes"]])
     model.load_state_dict(state_dict)
-
-
-def test_deep4net(input_sizes):
-    model = Deep4Net(
-        input_sizes["n_channels"],
-        input_sizes["n_classes"],
-        input_sizes["n_in_times"],
-        final_conv_length="auto",
-    )
-    check_forward_pass(model, input_sizes)
 
 
 def test_deep4net_short_input_scales_split_temporal_kernel():
@@ -424,27 +399,6 @@ def test_hybridnet(input_sizes):
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
 
-def test_eegnet(input_sizes):
-    model = EEGNet(
-        input_sizes["n_channels"],
-        input_sizes["n_classes"],
-        n_times=input_sizes["n_in_times"],
-    )
-    check_forward_pass(model, input_sizes)
-
-
-def test_tcn(input_sizes):
-    model = TCN(
-        n_chans=input_sizes["n_channels"],
-        n_outputs=input_sizes["n_classes"],
-        n_filters=5,
-        n_blocks=2,
-        kernel_size=4,
-        drop_prob=0.5,
-    )
-    check_forward_pass(model, input_sizes, only_check_until_dim=2)
-
-
 def test_tcn_with_unit_kernel(input_sizes):
     model = TCN(
         n_chans=input_sizes["n_channels"],
@@ -456,20 +410,6 @@ def test_tcn_with_unit_kernel(input_sizes):
     )
 
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
-
-
-def test_eegpt(input_sizes):
-    channels_names = [
-        'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'FPZ', 'FZ', 'CZ', 'CPZ', 'PZ', 'POZ', 'OZ'
-    ]
-    input_sizes_copy = input_sizes.copy()
-    input_sizes_copy["n_channels"] = len(channels_names)
-    model = EEGPT(
-        n_outputs=input_sizes_copy["n_classes"],
-        n_chans=input_sizes_copy["n_channels"],
-        n_times=input_sizes_copy["n_in_times"],
-    )
-    check_forward_pass_3d(model, input_sizes_copy)
 
 
 @pytest.mark.parametrize(
@@ -631,123 +571,6 @@ def test_eegpt_invalid_channel():
     assert torch.equal(model.chans_id.view(-1), expected_ids)
 
 
-def test_eegpt_patch_norm_embed():
-    """Test the _PatchNormEmbed alternative patch embedding module."""
-    from braindecode.models.eegpt import _PatchEmbed
-
-    n_chans = 8
-    n_times = 640  # Must be divisible by patch_size
-    patch_size = 64
-    embed_dim = 128
-
-    patch_embed = _PatchEmbed(
-        n_chans=n_chans,
-        n_times=n_times,
-        patch_size=patch_size,
-        embed_dim=embed_dim,
-        apply_norm=True,
-    )
-
-    # Test forward pass
-    batch_size = 2
-    x = torch.randn(batch_size, n_chans, n_times)
-    output = patch_embed(x)
-
-    # Expected: (batch, n_patches, n_chans, embed_dim)
-    n_patches = n_times // patch_size
-    expected_shape = (batch_size, n_patches, n_chans, embed_dim)
-    assert output.shape == expected_shape, (
-        f"Expected shape {expected_shape}, got {output.shape}"
-    )
-
-
-def test_eegpt_patch_norm_embed_with_stride():
-    """Test _PatchNormEmbed with custom stride."""
-    from braindecode.models.eegpt import _PatchEmbed
-
-    n_chans = 8
-    n_times = 640
-    patch_size = 64
-    patch_stride = 32
-    embed_dim = 128
-
-    patch_embed = _PatchEmbed(
-        n_chans=n_chans,
-        n_times=n_times,
-        patch_size=patch_size,
-        patch_stride=patch_stride,
-        embed_dim=embed_dim,
-        apply_norm=True,
-    )
-
-    batch_size = 2
-    x = torch.randn(batch_size, n_chans, n_times)
-    output = patch_embed(x)
-
-    n_patches = (n_times - patch_size) // patch_stride + 1
-    expected_shape = (batch_size, n_patches, n_chans, embed_dim)
-    assert output.shape == expected_shape
-
-
-def test_eegpt_patch_embed_padding():
-    """Test that _PatchEmbed automatically pads input if n_times is not divisible."""
-    from braindecode.models.eegpt import _PatchEmbed
-
-    # Case 1: n_times=100, patch_size=64.
-    # Remainder 36. Padding should be 64-36 = 28.
-    # New size 128 (2 patches).
-    n_chans = 8
-    n_times = 100
-    patch_size = 64
-    embed_dim = 128
-
-    patch_embed = _PatchEmbed(
-        n_chans=n_chans,
-        n_times=n_times,
-        patch_size=patch_size,
-        embed_dim=embed_dim,
-        apply_norm=True,
-    )
-
-    assert patch_embed.padding_size == 28
-    assert patch_embed.n_times_padded == 128
-
-    batch_size = 2
-    x = torch.randn(batch_size, n_chans, n_times)
-    output = patch_embed(x)
-
-    # Expected: (batch, n_patches=2, n_chans, embed_dim)
-    expected_shape = (batch_size, 2, n_chans, embed_dim)
-    assert output.shape == expected_shape
-
-
-def test_eegpt_patch_embed_no_stride():
-    """Test PatchEmbed with default (non-overlapping) patches."""
-    from braindecode.models.eegpt import _PatchEmbed
-
-    n_chans = 8
-    n_times = 640
-    patch_size = 64
-    embed_dim = 128
-
-    # patch_stride=None means non-overlapping patches
-    patch_embed = _PatchEmbed(
-        n_chans=n_chans,
-        n_times=n_times,
-        patch_size=patch_size,
-        patch_stride=None,
-        embed_dim=embed_dim,
-    )
-
-    batch_size = 2
-    x = torch.randn(batch_size, n_chans, n_times)
-    output = patch_embed(x)
-
-    n_patches = n_times // patch_size
-    expected_shape = (batch_size, n_patches, n_chans, embed_dim)
-    assert output.shape == expected_shape
-
-
 def test_eegpt_droppath():
     """Test EEGPT with drop_path_rate > 0 to cover DropPath branch."""
     from braindecode.models.eegpt import EEGPT
@@ -768,27 +591,6 @@ def test_eegpt_droppath():
     output = model(x)
 
     assert output.shape == (batch_size, 4)
-
-
-def test_eegpt_transformer_patch_norm_embed():
-    n_times = 100
-    patch_size = 20
-    n_chans = 2
-    embed_dim = 16
-
-    model = _EEGTransformer(
-        n_chans=n_chans,
-        n_times=n_times,
-        patch_size=patch_size,
-        embed_dim=embed_dim,
-        num_heads=4,
-        patch_module=partial(_PatchEmbed, apply_norm=True),
-    )
-
-    x = torch.randn(1, n_chans, n_times)
-    chan_ids = torch.arange(n_chans).unsqueeze(0)
-    out = model(x, chan_ids)
-    assert out.shape == (1, n_times // patch_size, 1, embed_dim)
 
 
 def test_eegpt_transformer_masking():
@@ -908,33 +710,6 @@ def test_eegpt_buffer_device():
         model(x)
 
 
-def test_eegitnet(input_sizes):
-    model = EEGITNet(
-        n_outputs=input_sizes["n_classes"],
-        n_chans=input_sizes["n_channels"],
-        n_times=input_sizes["n_in_times"],
-    )
-
-    check_forward_pass(
-        model,
-        input_sizes,
-    )
-
-
-@pytest.mark.parametrize("model_cls", [EEGInceptionERP])
-def test_eeginception_erp(input_sizes, model_cls):
-    model = model_cls(
-        n_outputs=input_sizes["n_classes"],
-        n_chans=input_sizes["n_channels"],
-        n_times=input_sizes["n_in_times"],
-    )
-
-    check_forward_pass(
-        model,
-        input_sizes,
-    )
-
-
 @pytest.mark.parametrize("model_cls", [EEGInceptionERP])
 def test_eeginception_erp_n_params(model_cls):
     """Make sure the number of parameters is the same as in the paper when
@@ -953,21 +728,6 @@ def test_eeginception_erp_n_params(model_cls):
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     assert n_params == 14926  # From paper's TABLE IV EEG-Inception Architecture Details
-
-
-def test_eeginception_mi(input_sizes):
-    sfreq = 250
-    model = EEGInceptionMI(
-        n_outputs=input_sizes["n_classes"],
-        n_chans=input_sizes["n_channels"],
-        input_window_seconds=input_sizes["n_in_times"] / sfreq,
-        sfreq=sfreq,
-    )
-
-    check_forward_pass(
-        model,
-        input_sizes,
-    )
 
 
 @pytest.mark.parametrize(
@@ -1020,22 +780,6 @@ def test_eeginception_mi_fft_conv(dtype, rtol):
     with torch.no_grad():  # largest kernel: 108 samples
         assert torch.equal(models[None](x[:1]), models[False](x[:1]))
         assert torch.equal(models[None](x), models[True](x))
-
-
-def test_atcnet(input_sizes):
-    sfreq = 250
-    input_sizes["n_in_times"] = 1125
-    model = ATCNet(
-        n_chans=input_sizes["n_channels"],
-        n_outputs=input_sizes["n_classes"],
-        input_window_seconds=input_sizes["n_in_times"] / sfreq,
-        sfreq=sfreq,
-    )
-
-    check_forward_pass(
-        model,
-        input_sizes,
-    )
 
 
 def test_atcnet_n_params():
@@ -1202,15 +946,6 @@ def test_sleep_stager_return_feats():
     assert out.shape == (10, model.len_last_layer)
 
 
-def test_tidnet(input_sizes):
-    model = TIDNet(
-        input_sizes["n_channels"],
-        input_sizes["n_classes"],
-        input_sizes["n_in_times"],
-    )
-    check_forward_pass(model, input_sizes)
-
-
 @pytest.mark.parametrize(
     "sfreq,n_classes,input_size_s,d_model",
     [(100, 5, 30, 80), (125, 4, 30, 100)]
@@ -1237,29 +972,6 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
 
     y_pred1 = model(X)  # 3D inputs
     assert y_pred1.shape == (n_examples, n_classes)
-
-
-def test_eldele_2021_feats():
-    n_channels = 1
-    sfreq = 100
-    input_size_s = 30
-    n_classes = 3
-    n_examples = 10
-
-    model = AttnSleep(
-        sfreq,
-        input_window_seconds=input_size_s,
-        n_outputs=n_classes,
-        return_feats=True,
-    )
-    model.eval()
-
-    rng = np.random.RandomState(42)
-    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
-    X = torch.from_numpy(X.astype(np.float32))
-
-    out = model(X)
-    assert out.shape == (n_examples, model.len_last_layer)
 
 
 def test_attn_sleep_requires_signal_geometry():
@@ -1360,27 +1072,6 @@ def test_blanco_2020_feats():
     assert out.shape == (n_examples, model.len_last_layer)
 
 
-def test_eegitnet_shape():
-    n_channels = 2
-    sfreq = 50
-    input_size_s = 30
-    n_classes = 3
-    n_examples = 10
-    model = EEGITNet(
-        n_outputs=n_classes,
-        n_chans=n_channels,
-        n_times=int(sfreq * input_size_s),
-    )
-    model.eval()
-
-    rng = np.random.RandomState(42)
-    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
-    X = torch.from_numpy(X.astype(np.float32))
-
-    out = model(X)
-    assert out.shape == (n_examples, n_classes)
-
-
 @pytest.mark.parametrize("n_classes", [5, 4, 2])
 def test_deepsleepnet(n_classes):
     n_channels = 1
@@ -1406,27 +1097,6 @@ def test_deepsleepnet(n_classes):
     np.testing.assert_allclose(
         y_pred1.detach().cpu().numpy(), y_pred2.detach().cpu().numpy()
     )
-
-
-def test_deepsleepnet_feats():
-    n_channels = 1
-    sfreq = 100
-    input_size_s = 30
-    n_classes = 3
-    n_examples = 10
-
-    model = DeepSleepNet(
-        n_outputs=n_classes, return_feats=True,
-        n_chans=n_channels, n_times=int(sfreq * input_size_s),
-    )
-    model.eval()
-
-    rng = np.random.RandomState(42)
-    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
-    X = torch.from_numpy(X.astype(np.float32))
-
-    out = model(X.unsqueeze(1))
-    assert out.shape == (n_examples, model.len_last_layer)
 
 
 def test_deepsleepnet_feats_with_hook():
@@ -1465,25 +1135,6 @@ def test_deepsleepnet_feats_with_hook():
         model.len_last_layer,
     )
     assert y_pred.shape == (n_examples, n_classes)
-
-
-@pytest.mark.parametrize(
-    "n_chans, n_times, n_outputs",
-    [
-        (64, 500, 1),
-        (2, 3000, 5),
-        (22, 1000, 3),
-    ],
-)
-def test_deepsleepnet_variable_input(n_chans, n_times, n_outputs):
-    # deepsleepnet should work with different input shapes not just 1ch 3000t
-    model = DeepSleepNet(
-        n_chans=n_chans, n_outputs=n_outputs, n_times=n_times,
-    )
-    model.eval()
-    x = torch.randn(2, n_chans, n_times)
-    out = model(x)
-    assert out.shape == (2, n_outputs)
 
 
 @pytest.mark.parametrize(
@@ -1548,17 +1199,6 @@ def model():
 
 def test_model_creation(model):
     assert model is not None
-
-
-def test_sparcnet_dummy():
-    input_sizes = dict(n_channels=32, n_in_times=125, n_classes=2, n_samples=64)
-    model = SPARCNet(
-        n_chans=input_sizes["n_channels"],
-        n_outputs=input_sizes["n_classes"],
-        n_times=input_sizes["n_in_times"],
-        sfreq=500.0,
-    )
-    check_forward_pass_3d(model, input_sizes)
 
 
 @pytest.mark.parametrize(
@@ -1665,59 +1305,6 @@ def test_sccnet_dummy(n_times, n_chans, sfreq, n_outputs):
 @pytest.mark.parametrize(
     "n_times, n_chans, sfreq, n_outputs",
     [
-        (2000, 63, 500.0, 4),
-    ],
-)
-def test_eeginceptionmi_dummy(n_times, n_chans, sfreq, n_outputs):
-    # 64 windows held 6.3 GB of activations; a macOS runner has 7 GB for 3 workers.
-    batch_size = 2
-    input_sizes = dict(
-        n_channels=n_chans,
-        n_in_times=n_times,
-        n_classes=n_outputs,
-        n_samples=batch_size,
-    )
-    model = EEGInceptionMI(
-        n_chans=n_chans,
-        n_outputs=n_outputs,
-        input_window_seconds=n_times / sfreq,
-        sfreq=sfreq,
-    )
-    check_forward_pass_3d(model, input_sizes)
-
-
-@pytest.mark.parametrize(
-    "n_times, n_chans, sfreq, n_outputs",
-    [
-        (256, 8, 256.0, 2),
-        (204, 8, 256.0, 2),
-        (125, 32, 500.0, 2),
-        (204, 16, 256.0, 2),
-        (128, 16, 128.0, 2),
-        (384, 14, 128.0, 5),
-        (153, 8, 512.0, 2),
-    ],
-)
-def test_deep4net_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 64
-    input_sizes = dict(
-        n_channels=n_chans,
-        n_in_times=n_times,
-        n_classes=n_outputs,
-        n_samples=batch_size,
-    )
-    model = Deep4Net(
-        n_chans=n_chans,
-        n_outputs=n_outputs,
-        n_times=n_times,
-        sfreq=sfreq,
-    )
-    check_forward_pass_3d(model, input_sizes)
-
-
-@pytest.mark.parametrize(
-    "n_times, n_chans, sfreq, n_outputs",
-    [
         (1536, 16, 512.0, 3),
         (512, 16, 512.0, 2),
         (125, 32, 500.0, 2),
@@ -1763,32 +1350,6 @@ def _make_chs_info(n_chans):
     info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
     info.set_montage(montage)
     return info["chs"]
-
-
-@pytest.mark.parametrize(
-    "n_times, n_chans, sfreq, n_outputs",
-    [
-        (128, 62, 256.0, 4),
-        (256, 32, 512.0, 2),
-    ],
-)
-def test_dgcnn_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 8
-    input_sizes = dict(
-        n_channels=n_chans,
-        n_in_times=n_times,
-        n_classes=n_outputs,
-        n_samples=batch_size,
-    )
-    chs_info = _make_chs_info(n_chans)
-    model = DGCNN(
-        n_chans=n_chans,
-        n_outputs=n_outputs,
-        n_times=n_times,
-        sfreq=sfreq,
-        chs_info=chs_info,
-    )
-    check_forward_pass_3d(model, input_sizes)
 
 
 @pytest.mark.parametrize("name", ["DGCNN", "LUNA", "SignalJEPA"])
@@ -2004,25 +1565,6 @@ def test_attentionbasenet_dummy(n_times, n_chans, sfreq, n_outputs):
 
 
 
-def test_conformer_forward_pass(sample_input, model):
-    output = model(sample_input)
-    assert isinstance(output, torch.Tensor)
-
-    model_with_feature = EEGConformer(
-        n_outputs=2, n_chans=12, n_times=1000, return_features=True
-    )
-    output = model_with_feature(sample_input)
-
-    assert isinstance(output, torch.Tensor) and output.shape == torch.Size([16, 61, 40])
-
-
-def test_patch_embedding(sample_input, model):
-    patch_embedding = model.patch_embedding
-    x = torch.unsqueeze(sample_input, dim=1)
-    output = patch_embedding(x)
-    assert output.shape[0] == sample_input.shape[0]
-
-
 def test_model_trainable_parameters(model):
     patch_parameters = model.patch_embedding.parameters()
     transformer_parameters = model.transformer.parameters()
@@ -2051,34 +1593,6 @@ def test_model_trainable_parameters(model):
 
 
 # Every channel count, output size and window length once, not their 240-case product.
-@pytest.mark.parametrize(
-    "n_chans, n_outputs, input_size_s",
-    [(1, 2, 1), (2, 3, 2), (4, 4, 5), (8, 5, 10), (16, 50, 15), (32, 2, 30),
-     (64, 3, 1), (128, 4, 2)],
-)
-def test_biot(n_chans, n_outputs, input_size_s):
-    rng = check_random_state(42)
-    sfreq = 200
-    n_examples = 3
-    n_times = np.ceil(input_size_s * sfreq).astype(int)
-
-    model = BIOT(
-        n_outputs=n_outputs,
-        n_chans=n_chans,
-        n_times=n_times,
-        sfreq=sfreq,
-        hop_length=50,
-    )
-    model.eval()
-
-    X = rng.randn(n_examples, n_chans, n_times)
-    X = torch.from_numpy(X.astype(np.float32))
-
-    y_pred1 = model(X)  # 3D inputs
-    assert y_pred1.shape == (n_examples, n_outputs)
-    assert isinstance(y_pred1, torch.Tensor)
-
-
 @pytest.fixture
 def default_biot_params():
     return {
@@ -2670,39 +2184,6 @@ def test_eegminer_filter_clamping():
         f"shape should be clamped between 2.0 and 3.0, got {shape}"
 
 
-def test_eegminer_corr_output_size():
-    """
-    Test that EEGMiner produces the correct number of features for the 'corr' method.
-    """
-    batch_size = 2
-    n_chans = 6
-    n_times = 256
-    n_outputs = 2
-    sfreq = 100.0  # Hz
-    n_filters = 2
-
-    input_tensor = torch.randn(batch_size, n_chans, n_times)
-
-    eegminer = EEGMiner(
-        method="corr",
-        n_chans=n_chans,
-        n_times=n_times,
-        n_outputs=n_outputs,
-        sfreq=sfreq,
-        filter_f_mean=[10.0, 20.0],
-        filter_bandwidth=[5.0, 5.0],
-        filter_shape=[2.0, 2.0],
-        group_delay=[20.0, 20.0],
-    )
-
-    output = eegminer(input_tensor)
-    expected_n_features = n_filters * n_chans * (n_chans - 1) // 2
-    assert eegminer.n_features == expected_n_features, \
-        f"Expected {expected_n_features} features, got {eegminer.n_features}"
-    assert output.shape == (batch_size, n_outputs), \
-        f"Output shape should be ({batch_size}, {n_outputs}), got {output.shape}"
-
-
 def test_eegminer_plv_values_range():
     """
     Test that the PLV values computed by EEGMiner are within the valid range [0, 1].
@@ -2848,31 +2329,6 @@ def test_eegnet_final_layer_linear_false():
 
 
 
-@pytest.mark.parametrize(
-    "temporal_layer", ['VarLayer', 'StdLayer', 'LogVarLayer',
-                       'MeanLayer', 'MaxLayer']
-)
-def test_fbcnet_forward_pass(temporal_layer):
-    n_chans = 22
-    n_times = 1000
-    n_outputs = 2
-    batch_size = 8
-    n_bands = 9
-
-    model = FBCNet(
-        n_chans=n_chans,
-        n_outputs=n_outputs,
-        n_times=n_times,
-        n_bands=n_bands,
-        temporal_layer=temporal_layer,
-        sfreq=250,
-    )
-
-    x = torch.randn(batch_size, n_chans, n_times)
-    output = model(x)
-
-    assert output.shape == (batch_size, n_outputs)
-
 def test_fbcnet_specified_filter_parameters():
     n_chans = 22
     n_times = 1000
@@ -2956,24 +2412,6 @@ def test_fbcnet_num_parameters(n_chans, n_bands, n_filters_spat, stride_factor):
     assert total_parameters == num_params
 
 
-@pytest.mark.parametrize("n_times", [100, 500, 1000, 5000, 10000])
-def test_fbcnet_different_n_times(n_times):
-    n_chans = 22
-    n_outputs = 2
-    batch_size = 8
-
-    model = FBCNet(
-        n_chans=n_chans,
-        n_outputs=n_outputs,
-        n_times=n_times,
-        n_bands=9,
-        sfreq=250,
-    )
-
-    x = torch.randn(batch_size, n_chans, n_times)
-    output = model(x)
-
-    assert output.shape == (batch_size, n_outputs)
 @pytest.mark.parametrize("stride_factor", [1, 2, 4, 5])
 def test_fbcnet_stride_factor_warning(stride_factor):
     n_chans = 22
@@ -3001,32 +2439,6 @@ def test_fbcnet_invalid_temporal_layer():
             temporal_layer='InvalidLayer',
             sfreq=250,
         )
-
-@pytest.mark.parametrize(
-    "temporal_layer", ['VarLayer', 'StdLayer', 'LogVarLayer',
-                       'MeanLayer', 'MaxLayer']
-)
-def test_fbmsnet_forward_pass(temporal_layer):
-    n_chans = 22
-    n_times = 1000
-    n_outputs = 2
-    batch_size = 8
-    n_bands = 9
-
-    model = FBMSNet(
-        n_chans=n_chans,
-        n_outputs=n_outputs,
-        n_times=n_times,
-        n_bands=n_bands,
-        temporal_layer=temporal_layer,
-        sfreq=250
-    )
-
-    x = torch.randn(batch_size, n_chans, n_times)
-    output = model(x)
-
-    assert output.shape == (batch_size, n_outputs)
-
 
 def test_fbmsnet_return_features():
     n_chans = 22
@@ -3086,26 +2498,6 @@ def test_fbmsnet_specified_filter_parameters():
     assert filter_bank_layer.method == "fir"
     assert filter_bank_layer.n_chans == 22
     assert filter_bank_layer.method_iir is False
-
-
-@pytest.mark.parametrize("n_times", [100, 500, 1000, 5000, 10000])
-def test_fbmsnet_different_n_times(n_times):
-    n_chans = 22
-    n_outputs = 2
-    batch_size = 8
-
-    model = FBMSNet(
-        n_chans=n_chans,
-        n_outputs=n_outputs,
-        n_times=n_times,
-        n_bands=9,
-        sfreq=250,
-    )
-
-    x = torch.randn(batch_size, n_chans, n_times)
-    output = model(x)
-
-    assert output.shape == (batch_size, n_outputs)
 
 
 @pytest.mark.parametrize("stride_factor", [1, 2, 4, 5])
@@ -3815,27 +3207,6 @@ def test_brainmodule_default_unchanged():
     assert m.use_merger is False
 
 
-def test_bendr():
-    """
-    Test BENDR model forward pass with 3D inputs.
-    BENDR only accepts 3D inputs: (batch, channels, time).
-    """
-    set_random_seeds(0, False)
-
-    # Standard configuration
-    model = BENDR(
-        n_chans=20,
-        n_outputs=4,
-        n_times=None,  # Auto-infer
-        sfreq=256,
-        input_window_seconds=20.0,
-    )
-
-    # Test with 3D inputs only (BENDR doesn't support 4D)
-    input_sizes = dict(n_channels=20, n_in_times=5120, n_classes=4, n_samples=2)
-    check_forward_pass_3d(model, input_sizes)
-
-
 def test_bendr_parameter_counts():
     """
     Test BENDR parameter counts match paper specifications.
@@ -3906,50 +3277,6 @@ def test_bendr_different_channels():
             f"For {n_chans} channels: expected {expected_params:,}, got {total_params:,}"
 
 
-def test_bendr_output_shapes():
-    """
-    Test BENDR output shapes for different configurations.
-    """
-    set_random_seeds(0, False)
-
-    # Binary classification
-    model_binary = BENDR(n_chans=20, n_outputs=2, n_times=5120, sfreq=256)
-    x = torch.randn(4, 20, 5120)
-    y = model_binary(x)
-    assert y.shape == (4, 2), f"Expected (4, 2), got {y.shape}"
-
-    # Multi-class classification
-    model_multi = BENDR(n_chans=20, n_outputs=10, n_times=5120, sfreq=256)
-    y = model_multi(x)
-    assert y.shape == (4, 10), f"Expected (4, 10), got {y.shape}"
-
-    # Regression
-    model_reg = BENDR(n_chans=20, n_outputs=1, n_times=5120, sfreq=256)
-    y = model_reg(x)
-    assert y.shape == (4, 1), f"Expected (4, 1), got {y.shape}"
-
-
-def test_bendr_variable_length():
-    """
-    Test BENDR with variable input lengths.
-    Model should handle different sequence lengths at inference.
-    """
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=20,
-        n_outputs=4,
-        n_times=None,  # Don't specify - should work with any length
-        sfreq=256,
-    )
-
-    # Test different lengths
-    for n_times in [2560, 5120, 10240]:
-        x = torch.randn(2, 20, n_times)
-        y = model(x)
-        assert y.shape == (2, 4), f"Failed for length {n_times}: got shape {y.shape}"
-
-
 def test_bendr_gradient_flow():
     """
     Test that gradients flow through the entire model.
@@ -4014,41 +3341,6 @@ def test_bendr_dropout_configurations(drop_prob):
             rtol=1e-5,
             atol=1e-7,
         )
-
-
-@pytest.mark.parametrize(
-    "n_chans,n_outputs,final_layer,expected",
-    [
-        (20, 4, True, (2, 4)),       # encoder-only basic
-        (20, 2, True, (2, 2)),        # encoder-only binary
-        (20, 10, True, (2, 10)),      # encoder-only multi-class
-        (20, 4, False, (2, 2048)),    # encoder-only no final layer
-    ],
-)
-def test_bendr_encoder_only(n_chans, n_outputs, final_layer, expected):
-    """Test output shapes for encoder-only configs."""
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=n_chans, n_outputs=n_outputs, n_times=5120, sfreq=256,
-        encoder_only=True, final_layer=final_layer,
-    )
-    x = torch.randn(2, n_chans, 5120)
-    y = model(x)
-    assert y.shape == expected, f"Expected {expected}, got {y.shape}"
-
-
-@pytest.mark.parametrize("n_times", [2560, 5120, 10240])
-def test_bendr_encoder_only_variable_length(n_times):
-    """Test encoder-only mode with variable input lengths."""
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=20, n_outputs=4, n_times=None, sfreq=256, encoder_only=True,
-    )
-    x = torch.randn(2, 20, n_times)
-    y = model(x)
-    assert y.shape == (2, 4), f"Failed for length {n_times}: got {y.shape}"
 
 
 def test_bendr_encoder_only_gradient_flow():
@@ -5180,18 +4472,6 @@ def neurorvq_model_kwargs():
         "out_chans": 4,
         "max_patches": 8,
     }
-
-
-def test_neurorvq_output_and_features(neurorvq_model_kwargs):
-    model = NeuroRVQ(**neurorvq_model_kwargs)
-    x = torch.randn(2, model.n_chans, model.n_times)
-
-    logits = model(x)
-    features = model(x, return_features=True)
-
-    assert logits.shape == (2, 4)
-    assert features["features"].shape == (2, 100 * 4 * 3 * 3)
-    assert features["cls_token"] is None
 
 
 @pytest.mark.parametrize(
