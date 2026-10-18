@@ -377,6 +377,8 @@ input shapes and dimensions.
     DropPath
     PostNormResidual
     PreNormBlock
+    PreNormTransformerBlock
+    PostNormTransformerBlock
     LearnedPositionalEncoding
     SinusoidalPositionalEncoding
     Residual

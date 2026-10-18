@@ -14,7 +14,11 @@ from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
-from braindecode.modules import FeedForwardBlock, MultiHeadAttention, Residual
+from braindecode.modules import (
+    FeedForwardBlock,
+    MultiHeadAttention,
+    PreNormTransformerBlock,
+)
 
 #: Channel order of the released checkpoint (``use_channels_names`` in
 #: ``utils/channel_list.py`` of the original code, revision ``b35d113``).
@@ -241,15 +245,28 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             activation=activation,
             drop_prob=drop_prob,
         )
-        self.transformer = _TransformerEncoder(
-            depth=num_layers,
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            feedforward_expansion=feedforward_expansion,
-            activation=activation_trans,
-            att_drop_prob=att_drop_prob,
-            feedforward_drop_prob=feedforward_drop_prob,
-            attention_scale=attention_scale,
+        if attention_scale is None:
+            attention_scale = embed_dim**-0.5
+        self.transformer = nn.Sequential(
+            *[
+                PreNormTransformerBlock(
+                    embed_dim,
+                    MultiHeadAttention(
+                        emb_size=embed_dim,
+                        num_heads=num_heads,
+                        dropout=att_drop_prob,
+                        scale=attention_scale,
+                    ),
+                    FeedForwardBlock(
+                        emb_size=embed_dim,
+                        expansion=feedforward_expansion,
+                        drop_p=feedforward_drop_prob,
+                        activation=activation_trans,
+                    ),
+                    att_drop_prob,
+                )
+                for _ in range(num_layers)
+            ]
         )
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
 
@@ -320,72 +337,3 @@ class _PatchEmbedding(nn.Module):
         # layout, so a transposed view here would keep every add and layer
         # norm of the encoder reading strided memory.
         return x.flatten(start_dim=2).transpose(1, 2).contiguous()
-
-
-class _TransformerEncoderBlock(nn.Sequential):
-    def __init__(
-        self,
-        embed_dim: int,
-        num_heads: int,
-        feedforward_expansion: int,
-        activation: type[nn.Module],
-        att_drop_prob: float,
-        feedforward_drop_prob: float,
-        attention_scale: float | None,
-    ):
-        if attention_scale is None:
-            attention_scale = embed_dim**-0.5
-        super().__init__(
-            Residual(
-                nn.Sequential(
-                    nn.LayerNorm(embed_dim),
-                    MultiHeadAttention(
-                        emb_size=embed_dim,
-                        num_heads=num_heads,
-                        dropout=att_drop_prob,
-                        scale=attention_scale,
-                    ),
-                    nn.Dropout(att_drop_prob),
-                )
-            ),
-            Residual(
-                nn.Sequential(
-                    nn.LayerNorm(embed_dim),
-                    FeedForwardBlock(
-                        emb_size=embed_dim,
-                        expansion=feedforward_expansion,
-                        drop_p=feedforward_drop_prob,
-                        activation=activation,
-                    ),
-                    nn.Dropout(att_drop_prob),
-                )
-            ),
-        )
-
-
-class _TransformerEncoder(nn.Sequential):
-    def __init__(
-        self,
-        depth: int,
-        embed_dim: int,
-        num_heads: int,
-        feedforward_expansion: int,
-        activation: type[nn.Module],
-        att_drop_prob: float,
-        feedforward_drop_prob: float,
-        attention_scale: float | None,
-    ):
-        super().__init__(
-            *(
-                _TransformerEncoderBlock(
-                    embed_dim=embed_dim,
-                    num_heads=num_heads,
-                    feedforward_expansion=feedforward_expansion,
-                    activation=activation,
-                    att_drop_prob=att_drop_prob,
-                    feedforward_drop_prob=feedforward_drop_prob,
-                    attention_scale=attention_scale,
-                )
-                for _ in range(depth)
-            )
-        )
