@@ -11,6 +11,7 @@ motor imagery classification from Wei Zhao et al. (2025).
 from __future__ import annotations
 
 import math
+from collections import OrderedDict
 
 import torch
 import torch.nn.functional as F
@@ -23,7 +24,7 @@ from braindecode.modules import (
     FeedForwardBlock,
     LearnedPositionalEncoding,
     MultiHeadAttention,
-    PostNormResidual,
+    PostNormTransformerBlock,
 )
 
 
@@ -214,14 +215,31 @@ class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         attention_scale = (
             self.embed_dim**-0.5 if attention_scale is None else attention_scale
         )
-        self.trans = _TransformerEncoder(
-            num_heads=num_heads,
-            depth=num_layers,
-            emb_size=self.embed_dim,
-            drop_prob=att_drop_prob,
-            forward_expansion=forward_expansion,
-            activation=activation_ffn,
-            attention_scale=attention_scale,
+        # ``layers`` keeps the parameter names of saved checkpoints.
+        self.trans = nn.Sequential(
+            OrderedDict(
+                layers=nn.Sequential(
+                    *[
+                        PostNormTransformerBlock(
+                            self.embed_dim,
+                            MultiHeadAttention(
+                                self.embed_dim,
+                                num_heads,
+                                att_drop_prob,
+                                scale=attention_scale,
+                            ),
+                            FeedForwardBlock(
+                                self.embed_dim,
+                                expansion=forward_expansion,
+                                drop_p=att_drop_prob,
+                                activation=activation_ffn,
+                            ),
+                            att_drop_prob,
+                        )
+                        for _ in range(num_layers)
+                    ]
+                )
+            )
         )
 
         self.final_layer = nn.Sequential(
@@ -355,96 +373,3 @@ class _MultiScalePatchEmbeddingCNN(nn.Module):
         x = torch.cat(outs, dim=1)
         x = self.projection(x)
         return x
-
-
-class _TransformerEncoderBlock(nn.Module):
-    """Transformer encoder block with post-norm residual connections."""
-
-    def __init__(
-        self,
-        emb_size: int,
-        num_heads: int,
-        drop_prob: float,
-        forward_expansion: int,
-        attention_scale: float,
-        activation: type[nn.Module] = nn.GELU,
-    ):
-        super().__init__()
-        self.attention = PostNormResidual(
-            MultiHeadAttention(emb_size, num_heads, drop_prob, scale=attention_scale),
-            emb_size,
-            drop_prob,
-        )
-        self.feed_forward = PostNormResidual(
-            FeedForwardBlock(
-                emb_size,
-                expansion=forward_expansion,
-                drop_p=drop_prob,
-                activation=activation,
-            ),
-            emb_size,
-            drop_prob,
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Forward pass of the transformer encoder block.
-
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor.
-
-        Returns
-        -------
-        Tensor
-            Output tensor after transformer encoder block.
-        """
-        x = self.attention(x)
-        x = self.feed_forward(x)
-        return x
-
-
-class _TransformerEncoder(nn.Module):
-    """Stack of transformer encoder blocks."""
-
-    def __init__(
-        self,
-        num_heads: int,
-        depth: int,
-        emb_size: int,
-        drop_prob: float,
-        forward_expansion: int,
-        attention_scale: float,
-        activation: type[nn.Module] = nn.GELU,
-    ):
-        super().__init__()
-        self.layers = nn.Sequential(
-            *[
-                _TransformerEncoderBlock(
-                    emb_size=emb_size,
-                    num_heads=num_heads,
-                    drop_prob=drop_prob,
-                    forward_expansion=forward_expansion,
-                    attention_scale=attention_scale,
-                    activation=activation,
-                )
-                for _ in range(depth)
-            ]
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Forward pass of the transformer encoder.
-
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor.
-
-        Returns
-        -------
-        Tensor
-            Output tensor after the transformer encoder.
-        """
-        return self.layers(x)

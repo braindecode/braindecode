@@ -2325,3 +2325,28 @@ def test_positional_encoding_modules():
     stored = SinusoidalPositionalEncoding(10, 8, persistent=True)
     assert list(stored.state_dict()) == ["pe"]
     assert torch.jit.script(stored)(x).shape == x.shape
+
+
+def test_transformer_block_modules_match_their_layouts():
+    from braindecode.modules import (
+        FeedForwardBlock,
+        MultiHeadAttention,
+        PostNormTransformerBlock,
+        PreNormTransformerBlock,
+    )
+
+    torch.manual_seed(0)
+    x = torch.randn(2, 5, 16)
+    pre = PreNormTransformerBlock(
+        16, MultiHeadAttention(16, 4, 0.0), FeedForwardBlock(16, 2, 0.0), 0.0
+    ).eval()
+    assert list(pre.state_dict())[:3] == ["0.fn.0.weight", "0.fn.0.bias", "0.fn.1.keys.weight"]
+    h = x + pre[0].fn(x)
+    assert torch.equal(pre(x), h + pre[1].fn(h))
+
+    post = PostNormTransformerBlock(
+        16, MultiHeadAttention(16, 4, 0.0), FeedForwardBlock(16, 2, 0.0), 0.0
+    ).eval()
+    assert list(post.state_dict())[0] == "attention.module.keys.weight"
+    assert torch.equal(post(x), post.feed_forward(post.attention(x)))
+    assert torch.jit.script(post)(x).shape == x.shape

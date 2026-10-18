@@ -345,6 +345,59 @@ class SinusoidalPositionalEncoding(nn.Module):
         return self.dropout(x + self.pe[:, : x.size(1)])
 
 
+class PreNormTransformerBlock(nn.Sequential):
+    """Pre-norm transformer block as a plain ``Sequential`` of two residuals.
+
+    ``Residual(LayerNorm -> attn -> Dropout)`` then
+    ``Residual(LayerNorm -> ffn -> Dropout)``; the children are indexed
+    (``0.fn.0``, ``0.fn.1``, ...), as in EEGConformer's released layout.
+    EEGConformer and MIRepNet use it.
+
+    Parameters
+    ----------
+    dim : int
+        Token width, normalized before each sub-layer.
+    attn : torch.nn.Module
+        Token-mixing sub-layer, ``(batch, seq, dim) -> (batch, seq, dim)``.
+    ffn : torch.nn.Module
+        Feed-forward sub-layer, same shape.
+    drop_prob : float
+        Dropout after each sub-layer.
+    """
+
+    def __init__(self, dim: int, attn: nn.Module, ffn: nn.Module, drop_prob: float):
+        super().__init__(
+            Residual(nn.Sequential(nn.LayerNorm(dim), attn, nn.Dropout(drop_prob))),
+            Residual(nn.Sequential(nn.LayerNorm(dim), ffn, nn.Dropout(drop_prob))),
+        )
+
+
+class PostNormTransformerBlock(nn.Module):
+    """Post-norm transformer block: ``attention`` then ``feed_forward``, each a
+    :class:`PostNormResidual` (``LayerNorm(dropout(sub-layer(x)) + x)``).
+    CTNet and MSCFormer use it.
+
+    Parameters
+    ----------
+    dim : int
+        Token width, normalized after each sub-layer.
+    attn : torch.nn.Module
+        Token-mixing sub-layer, ``(batch, seq, dim) -> (batch, seq, dim)``.
+    ffn : torch.nn.Module
+        Feed-forward sub-layer, same shape.
+    drop_prob : float
+        Dropout on each sub-layer's output.
+    """
+
+    def __init__(self, dim: int, attn: nn.Module, ffn: nn.Module, drop_prob: float):
+        super().__init__()
+        self.attention = PostNormResidual(attn, dim, drop_prob)
+        self.feed_forward = PostNormResidual(ffn, dim, drop_prob)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.feed_forward(self.attention(x))
+
+
 class SqueezeFinalOutput(nn.Module):
     """
 
