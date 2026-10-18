@@ -19,7 +19,7 @@ from mne.io.constants import FIFF
 from torch.nn import RMSNorm
 from torch.nn.utils.parametrizations import weight_norm
 
-from braindecode.functional import init_weights_, rotate_pairs
+from braindecode.functional import apply_rotary, init_weights_, rotary_frequencies
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
@@ -666,8 +666,7 @@ class _RotaryPositionalEmbedding(nn.Module):
     def __init__(self, n_dim, base=10000):
         super().__init__()
         self.n_dim = n_dim
-        exponent = torch.arange(0, n_dim, 2).float() / n_dim
-        self.register_buffer("freqs", 1.0 / (base**exponent))
+        self.register_buffer("freqs", rotary_frequencies(n_dim, base))
         self.register_buffer("rotate", self._polar(240))
         self.register_buffer("rebuilt", None, persistent=False)
 
@@ -703,8 +702,8 @@ class _RotaryPositionalEmbedding(nn.Module):
         rotate = rotate.unflatten(1, (heads, -1))  # (seq, heads, head_dim, 2)
         cos, sin = rotate[..., 0], rotate[..., 1]
         q_float, k_float = q.to(work), k.to(work)
-        q_out = q_float * cos + rotate_pairs(q_float) * sin
-        k_out = k_float * cos + rotate_pairs(k_float) * sin
+        q_out = apply_rotary(q_float, cos, sin)
+        k_out = apply_rotary(k_float, cos, sin)
         return q_out.type_as(q), k_out.type_as(k)
 
 

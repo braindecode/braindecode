@@ -16,7 +16,7 @@ from torch import Tensor, nn
 from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.neurorvq import (
-    _Block,
+    _block,
     _channel_slots,
     _modality,
     _MultiScaleTemporalConv,
@@ -202,7 +202,7 @@ class _BranchTransformer(nn.Module):
         drop_paths = torch.linspace(0, drop_path_rate, depth).tolist()
         self.blocks = nn.ModuleList(
             [
-                _Block(
+                _block(
                     embed_dim,
                     num_heads,
                     4.0,

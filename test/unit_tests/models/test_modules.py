@@ -1655,7 +1655,7 @@ def test_multi_head_attention_explicit_scale_matches_manual_attention():
 
 
 def test_multi_head_attention_supports_torch_2_0_sdpa(monkeypatch):
-    import braindecode.modules.attention as attention
+    import braindecode.functional.attention as attention
     from braindecode.modules import MultiHeadAttention
 
     received_queries = []
@@ -2246,3 +2246,107 @@ def test_timm_mlp_keys_and_forward():
     assert list(mlp.state_dict()) == ["fc1.weight", "fc1.bias", "fc2.weight", "fc2.bias"]
     x = torch.randn(2, 3, 4)
     torch.testing.assert_close(mlp(x), mlp.fc2(torch.nn.functional.gelu(mlp.fc1(x))))
+
+
+def test_timm_attention_keys_and_weights():
+    import math
+
+    from braindecode.modules import TimmAttention
+
+    torch.manual_seed(0)
+    attn = TimmAttention(16, num_heads=4).eval()
+    assert list(attn.state_dict()) == ["qkv.weight", "proj.weight", "proj.bias"]
+    beit = TimmAttention(16, num_heads=4, qv_bias=True, exact=True).eval()
+    assert list(beit.state_dict()) == [
+        "q_bias",
+        "v_bias",
+        "qkv.weight",
+        "proj.weight",
+        "proj.bias",
+    ]
+    x = torch.randn(2, 5, 16)
+    assert attn(x).shape == (2, 5, 16)
+    weights = attn(x, need_weights=True)
+    assert weights.shape == (2, 4, 5, 5)
+    torch.testing.assert_close(weights.sum(-1), torch.ones(2, 4, 5))
+    # exact: timm's op order, softmax((q * scale) @ k^T) @ v, bit for bit
+    q, k, v = beit._heads(x)
+    ref = ((q * 0.5) @ k.transpose(-2, -1)).softmax(-1) @ v
+    ref = beit.proj(ref.transpose(1, 2).flatten(2))
+    assert torch.equal(beit(x), ref)
+    assert math.isclose(beit.scale, 0.5)
+    with pytest.raises(ValueError, match="num_heads"):
+        TimmAttention(16, num_heads=32)
+
+
+def test_pre_norm_block_keys_and_forward():
+    from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
+
+    torch.manual_seed(0)
+    block = PreNormBlock(16, TimmAttention(16, 4), TimmMlp(16, 32)).eval()
+    assert list(block.state_dict())[:3] == [
+        "norm1.weight",
+        "norm1.bias",
+        "attn.qkv.weight",
+    ]
+    x = torch.randn(2, 5, 16)
+    expected = x + block.attn(block.norm1(x))
+    expected = expected + block.mlp(block.norm2(expected))
+    assert torch.equal(block(x), expected)
+
+    scaled = PreNormBlock(
+        16, TimmAttention(16, 4), TimmMlp(16, 32), drop_path=0.1, layer_scale=1e-5
+    ).eval()
+    assert list(scaled.state_dict())[:2] == ["gamma_1", "gamma_2"]
+    assert torch.equal(scaled.gamma_1, torch.full((16,), 1e-5))
+    expected = x + scaled.gamma_1 * scaled.attn(scaled.norm1(x))
+    expected = expected + scaled.gamma_2 * scaled.mlp(scaled.norm2(expected))
+    assert torch.equal(scaled(x), expected)
+    assert torch.jit.script(scaled)(x).shape == x.shape
+
+
+def test_positional_encoding_modules():
+    from braindecode.functional import sinusoidal_positional_encoding
+    from braindecode.modules import (
+        LearnedPositionalEncoding,
+        SinusoidalPositionalEncoding,
+    )
+
+    torch.manual_seed(0)
+    learned = LearnedPositionalEncoding(10, 8, drop_prob=0.5).eval()
+    assert list(learned.state_dict()) == ["encoding"]
+    assert learned.encoding.shape == (1, 10, 8)
+    x = torch.randn(2, 6, 8)
+    assert torch.equal(learned(x), x + learned.encoding[:, :6])
+
+    fixed = SinusoidalPositionalEncoding(10, 8).eval()
+    assert list(fixed.state_dict()) == []
+    assert torch.equal(fixed(x), x + sinusoidal_positional_encoding(10, 8)[None, :6])
+    stored = SinusoidalPositionalEncoding(10, 8, persistent=True)
+    assert list(stored.state_dict()) == ["pe"]
+    assert torch.jit.script(stored)(x).shape == x.shape
+
+
+def test_transformer_block_modules_match_their_layouts():
+    from braindecode.modules import (
+        FeedForwardBlock,
+        MultiHeadAttention,
+        PostNormTransformerBlock,
+        PreNormTransformerBlock,
+    )
+
+    torch.manual_seed(0)
+    x = torch.randn(2, 5, 16)
+    pre = PreNormTransformerBlock(
+        16, MultiHeadAttention(16, 4, 0.0), FeedForwardBlock(16, 2, 0.0), 0.0
+    ).eval()
+    assert list(pre.state_dict())[:3] == ["0.fn.0.weight", "0.fn.0.bias", "0.fn.1.keys.weight"]
+    h = x + pre[0].fn(x)
+    assert torch.equal(pre(x), h + pre[1].fn(h))
+
+    post = PostNormTransformerBlock(
+        16, MultiHeadAttention(16, 4, 0.0), FeedForwardBlock(16, 2, 0.0), 0.0
+    ).eval()
+    assert list(post.state_dict())[0] == "attention.module.keys.weight"
+    assert torch.equal(post(x), post.feed_forward(post.attention(x)))
+    assert torch.jit.script(post)(x).shape == x.shape
