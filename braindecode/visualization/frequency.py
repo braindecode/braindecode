@@ -1,6 +1,7 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Anton Soloviev <anton@praviel.com>
 #
 # License: BSD (3-clause)
 
@@ -41,7 +42,7 @@ def amplitude_gradients(model, x):
         ``n_times // 2 + 1`` (the size of an ``rfft``).
     """
     device = next(model.parameters()).device
-    ffted = np.fft.rfft(x, axis=2)
+    ffted = np.fft.rfft(to_numpy(x), axis=2)
     amps = np.abs(ffted)
     phases = np.angle(ffted)
     amps_th = to_tensor(amps.astype(np.float32), device=device).requires_grad_(True)

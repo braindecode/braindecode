@@ -499,6 +499,11 @@ Requirements
 Bug fixes
 ==========
 
+- :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
+  CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
+  by detaching and moving the input to the CPU before its NumPy FFT
+  (by `Anton Soloviev`_).
+
 - ``reset_head`` builds the new head in the model's dtype, device and train/eval mode for every model: 18 models built it in float32 on the CPU (so a ``.double()`` or GPU model failed at the next forward) and 33 left it in training mode inside an eval model (:gh:`1451` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.IFNet` now applies its reference initialization (truncated normal, std 0.01, for the convolutions and the max-norm head; zero biases; unit/zero batch norms): it was called on the model itself instead of through ``apply``, so it initialized nothing and the layers kept PyTorch's defaults. This changes IFNet's initial weights (:gh:`1453` by `Bruno Aristimunha`_).
 
