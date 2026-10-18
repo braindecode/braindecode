@@ -126,7 +126,10 @@ def test_model_integration(model_name, required_params, signal_params):
         signal_params = signal_params()
     assert signal_params is None or isinstance(signal_params, dict)
     if signal_params is not None:
-        assert set(signal_params.keys()) <= set(default_signal_params.keys())
+        # signal parameters, or constructor arguments of a small test instance
+        assert set(signal_params.keys()) <= set(default_signal_params.keys()) | set(
+            inspect.signature(model_class).parameters
+        )
 
     sp = get_sp(signal_params)
 
@@ -171,7 +174,8 @@ def test_model_integration_full(model_name, required_params, signal_params):
     signal_params : dict | None
         The characteristics of the signal that should be passed to the model tested
         in case the default_signal_params are not compatible with this model.
-        The keys of this dictionary can only be among those of default_signal_params.
+        Signal parameters the default test signal does not fit, and
+        architecture arguments that keep the test instance small.
 
     """
     if model_name in non_classification_models:
@@ -185,8 +189,16 @@ def test_model_integration_full(model_name, required_params, signal_params):
     seed = 2409
     valid_split = 0.2
 
+    if callable(signal_params):
+        signal_params = signal_params()
+    extra = {
+        f"module__{k}": v
+        for k, v in (signal_params or {}).items()
+        if k not in default_signal_params
+    }
     clf = EEGClassifier(
         module=model_name,
+        **extra,
         optimizer=torch.optim.Adam,
         optimizer__lr=LEARNING_RATE,
         batch_size=BATCH_SIZE,
