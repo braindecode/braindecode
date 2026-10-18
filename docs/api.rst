@@ -296,6 +296,7 @@ perceptrons (MLPs) and inception blocks.
     :recursive:
 
     MLP
+    TimmMlp
     FeedForwardBlock
     InceptionBlock
     PatchTokenizer
@@ -373,6 +374,8 @@ input shapes and dimensions.
     ChannelMerger
     Chomp1d
     DropPath
+    PostNormResidual
+    Residual
     Ensure4d
     FourierEmb
     SubjectLayers
@@ -475,7 +478,14 @@ The functional module contains various functions that can be used like functiona
      plv_time
      prefer_fft_conv
      rescale_parameter
+     init_weights_
+     apply_rotary
+     rotary_angles
+     rotary_frequencies
+     rotate_half
+     rotate_pairs
      safe_log
+     scaled_dot_product_attention
      sinusoidal_positional_encoding
      spectral_input
      square

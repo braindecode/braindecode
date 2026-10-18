@@ -1,5 +1,7 @@
+from .attention import scaled_dot_product_attention
 from .functions import (
     _get_gaussian_kernel1d,
+    apply_rotary,
     daubechies_filters,
     drop_path,
     dwt_max_level,
@@ -10,6 +12,9 @@ from .functions import (
     pairwise_iou_1d,
     plv_time,
     prefer_fft_conv,
+    rotary_angles,
+    rotary_frequencies,
+    rotate_half,
     rotate_pairs,
     safe_log,
     sinusoidal_positional_encoding,
@@ -17,10 +22,15 @@ from .functions import (
     square,
     wavelet_decomposition,
 )
-from .initialization import glorot_weight_zero_bias, rescale_parameter
+from .initialization import (
+    glorot_weight_zero_bias,
+    init_weights_,
+    rescale_parameter,
+)
 
 __all__ = [
     "_get_gaussian_kernel1d",
+    "apply_rotary",
     "daubechies_filters",
     "drop_path",
     "dwt_max_level",
@@ -31,12 +41,17 @@ __all__ = [
     "pairwise_iou_1d",
     "plv_time",
     "prefer_fft_conv",
+    "rotary_angles",
+    "rotary_frequencies",
+    "rotate_half",
     "rotate_pairs",
     "safe_log",
+    "scaled_dot_product_attention",
     "sinusoidal_positional_encoding",
     "spectral_input",
     "square",
     "wavelet_decomposition",
     "glorot_weight_zero_bias",
     "rescale_parameter",
+    "init_weights_",
 ]

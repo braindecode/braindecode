@@ -10,7 +10,7 @@ from typing import Dict, Optional, Sequence, Union
 import torch
 from torch import nn
 
-from braindecode.functional import spectral_input
+from braindecode.functional import scaled_dot_product_attention, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import DropPath, PatchTokenizer
@@ -245,9 +245,9 @@ class EEGDINO(EEGModuleMixin, nn.Module):
 
         self.final_layer = self._make_head()
 
-        self._init_weights()
+        self._init_parameters()
 
-    def _init_weights(self):
+    def _init_parameters(self):
         nn.init.trunc_normal_(self.global_tokens, std=0.02)
 
     def _make_head(self):
@@ -500,9 +500,16 @@ class _Attention(nn.Module):
             .permute(2, 0, 3, 1, 4)
             .unbind(0)
         )
-        attn = (query * self.scale @ key.transpose(-2, -1)).softmax(dim=-1)
-        attn = self.attn_drop(attn)
-        out = (attn @ value).transpose(1, 2).flatten(2)
+        # exact with q pre-scaled: the reference op order (q * scale) @ k^T
+        out = scaled_dot_product_attention(
+            query * self.scale,
+            key,
+            value,
+            dropout_p=self.attn_drop.p if self.training else 0.0,
+            scale=1.0,
+            exact=True,
+        )
+        out = out.transpose(1, 2).flatten(2)
         return self.proj_drop(self.proj(out))
 
 

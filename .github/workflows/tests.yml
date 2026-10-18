@@ -115,6 +115,8 @@ jobs:
         HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
         TORCHINDUCTOR_CACHE_DIR: ${{ runner.temp }}/torchinductor
         TORCHINDUCTOR_FX_GRAPH_CACHE: "1"
+        # PRs compile one model per family; master compiles every model.
+        BRAINDECODE_COMPILE_ALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
       # Redistribute individual tests: the integration module dominates runtime.
       run: pytest -vv --durations=0 -n auto --dist worksteal --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
 

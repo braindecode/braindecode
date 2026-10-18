@@ -7,12 +7,13 @@
 
 import copy
 import logging
+from functools import partial
 from typing import Dict, Optional, Sequence, Union
 
 import torch
 from torch import Tensor, nn
 
-from braindecode.functional import spectral_input
+from braindecode.functional import init_weights_, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import CrissCrossTransformerEncoderLayer
 from braindecode.modules.blocks import PatchTokenizer
@@ -223,7 +224,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
         self._emb_dim = emb_dim
         self._patch_size = patch_size
-        self._weights_init()
+        self._init_parameters()
 
         if return_encoder_output:
             self.final_layer = nn.Identity()
@@ -267,15 +268,15 @@ class CBraMod(EEGModuleMixin, nn.Module):
             return -(-self.n_times // self._patch_size)
         return self.n_times // self._patch_size
 
-    def _weights_init(self):
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-            elif isinstance(m, nn.Conv1d):
-                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-            elif isinstance(m, nn.BatchNorm1d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+    def _init_parameters(self):
+        kaiming = partial(nn.init.kaiming_normal_, mode="fan_out", nonlinearity="relu")
+        self.apply(
+            partial(
+                init_weights_,
+                weights={(nn.Linear, nn.Conv1d): (kaiming, None)},
+                norms=(nn.BatchNorm1d,),
+            )
+        )
 
     def forward(
         self,

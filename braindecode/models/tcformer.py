@@ -5,13 +5,29 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 import torch
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
-from braindecode.functional import rotate_pairs
+from braindecode.functional import (
+    apply_rotary,
+    init_weights_,
+    rotary_angles,
+    rotary_frequencies,
+    scaled_dot_product_attention,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import CausalConv1d, Conv1dWithConstraint, DropPath
+
+# Weight initialization of the reference implementation.
+_init_weights = partial(
+    init_weights_,
+    weights={(nn.Conv1d, nn.Conv2d, nn.Linear): nn.init.xavier_uniform_},
+    norms=(),
+    init_parametrized_original=True,
+)
 
 
 class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
@@ -259,19 +275,11 @@ class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = _ClassificationHead(
             d_fused, n_groups + 1, self.n_outputs, classifier_max_norm
         )
-        self.apply(self._init_weights)
+        self._init_parameters()
 
-    @staticmethod
-    def _init_weights(module: nn.Module) -> None:
-        if isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Linear)):
-            params = getattr(module, "parametrizations", None)
-            if params is not None and "weight" in params:
-                # max-norm layers expose a computed .weight; init the leaf
-                nn.init.xavier_uniform_(params.weight.original)
-            elif isinstance(getattr(module, "weight", None), nn.Parameter):
-                nn.init.xavier_uniform_(module.weight)
-            if getattr(module, "bias", None) is not None:
-                nn.init.constant_(module.bias, 0.0)
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
+        self.apply(_init_weights)
 
     def forward(self, x: Tensor) -> Tensor:
         conv_features = self.conv_block(x)  # (batch, d_model, n_tokens)
@@ -307,29 +315,14 @@ def _build_rotary_cache(
     working precision under autocast.
     """
     work = torch.float32 if dtype is None else torch.promote_types(dtype, torch.float32)
-    theta = 1.0 / (
-        10000 ** (torch.arange(0, head_dim, 2, device=device, dtype=work) / head_dim)
-    )
+    theta = rotary_frequencies(head_dim, device=device, dtype=work)
     seq_idx = torch.arange(seq_len, device=device, dtype=work)
-    freqs = torch.outer(seq_idx, theta)  # (seq_len, head_dim/2)
-    emb = torch.cat((freqs, freqs), dim=-1)  # (seq_len, head_dim)
+    # Half-split angle layout with pair rotation, as the reference.
+    emb = rotary_angles(seq_idx, theta, interleaved=False)  # (seq_len, head_dim)
     cos, sin = emb.cos(), emb.sin()
     if dtype is not None:
         cos, sin = cos.to(dtype), sin.to(dtype)
     return cos, sin
-
-
-def _apply_rope(
-    query: Tensor, key: Tensor, cos: Tensor, sin: Tensor
-) -> tuple[Tensor, Tensor]:
-    """Apply rotary embedding to ``query`` and ``key``.
-
-    Both have shape ``(batch, n_heads, seq_len, head_dim)``.
-    """
-
-    query_rotated = (query * cos) + (rotate_pairs(query) * sin)
-    key_rotated = (key * cos) + (rotate_pairs(key) * sin)
-    return query_rotated, key_rotated
 
 
 # ----------------------------------------------------------------------------- #
@@ -373,11 +366,18 @@ class _GroupedQueryAttention(nn.Module):
         groups_per_kv = self.n_query_heads // self.n_kv_heads
         key = key.repeat_interleave(groups_per_kv, dim=1)
         value = value.repeat_interleave(groups_per_kv, dim=1)
-        query, key = _apply_rope(query, key, cos[:seq_len], sin[:seq_len])
-        key_t = key.transpose(-2, -1)
-        attention = ((query @ key_t) * self.scale).softmax(dim=-1)
-        attention = self.drop(attention)
-        context = (attention @ value).transpose(1, 2).flatten(2)
+        query = apply_rotary(query, cos[:seq_len], sin[:seq_len])
+        key = apply_rotary(key, cos[:seq_len], sin[:seq_len])
+        # exact: the reference op order (q @ k^T) * scale
+        context = scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            dropout_p=self.drop.p if self.training else 0.0,
+            scale=self.scale,
+            exact=True,
+        )
+        context = context.transpose(1, 2).flatten(2)
         return self.out_proj(context)
 
 

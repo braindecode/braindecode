@@ -7,13 +7,26 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 import torch
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import TDSConvEncoder
+
+# Braindecode model convention: truncated-normal convolutions, linears and LSTM
+# weights, zero biases, unit/zero LayerNorm.
+_init_weights = partial(
+    init_weights_,
+    weights={
+        (nn.Conv1d, nn.Conv2d, nn.Linear): partial(nn.init.trunc_normal_, std=0.02),
+        nn.LSTM: partial(nn.init.normal_, std=0.02),
+    },
+)
 
 
 class VEMG2Pose(
@@ -351,26 +364,11 @@ class VEMG2Pose(
             in_features=head_in,
             out_features=self._head_multiplier * self.n_outputs,
         )
-        self.apply(self._init_weights)
+        self._init_parameters()
 
-    @staticmethod
-    def _init_weights(module: nn.Module) -> None:
-        """Initialize trainable layers with the Braindecode model convention."""
-        if isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Linear)):
-            nn.init.trunc_normal_(module.weight, std=0.02)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.LSTM):
-            for name, parameter in module.named_parameters(recurse=False):
-                if "weight" in name:
-                    nn.init.normal_(parameter, std=0.02)
-                elif "bias" in name:
-                    nn.init.zeros_(parameter)
-        elif isinstance(module, nn.LayerNorm):
-            if module.weight is not None:
-                nn.init.ones_(module.weight)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
+        self.apply(_init_weights)
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the output layer for a new output dimensionality.
@@ -386,12 +384,12 @@ class VEMG2Pose(
             in_features=old.in_features,
             out_features=self._head_multiplier * n_outputs,
         ).to(device=device, dtype=dtype)
-        self._init_weights(self.final_layer)
+        _init_weights(self.final_layer)
         feature_dim = self.encoder[-1].out_channels
         self.decoder = self.decoder.rebuilt(in_features=feature_dim + n_outputs).to(
             device=device, dtype=dtype
         )
-        self.decoder.apply(self._init_weights)
+        self.decoder.apply(_init_weights)
 
     def forward(self, x: torch.Tensor, y0: torch.Tensor | None = None) -> torch.Tensor:
         """Decode hand pose from raw EMG.

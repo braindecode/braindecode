@@ -25,7 +25,12 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import rescale_parameter, rotate_pairs, spectral_input
+from braindecode.functional import (
+    init_weights_,
+    rescale_parameter,
+    rotate_pairs,
+    spectral_input,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _in_model_resample, dkt_region_slots
 from braindecode.modules import FeedForwardBlock
@@ -694,17 +699,6 @@ def _frame_count(
     return n_frames
 
 
-def _vjepa_init(module: nn.Module) -> None:
-    """V-JEPA 2 initialization of linear layers and layer norms."""
-    if isinstance(module, nn.Linear):
-        nn.init.trunc_normal_(module.weight, std=0.02)
-        if module.bias is not None:
-            nn.init.constant_(module.bias, 0.0)
-    elif isinstance(module, nn.LayerNorm):
-        nn.init.constant_(module.weight, 1.0)
-        nn.init.constant_(module.bias, 0.0)
-
-
 class _SpectrogramFrontend(nn.Module):
     """Per-band STFT magnitudes on a shared 32 Hz clock, robust z-scored
     (window), capped and decimated to each band's token rate."""
@@ -779,7 +773,11 @@ class _PerBandStem(nn.Module):
         super().__init__()
         self.projs = nn.ModuleList(nn.Linear(n_bins, d_model) for n_bins in band_bins)
         self.band_type_emb = nn.Parameter(torch.empty(len(band_bins), d_model))
-        self.projs.apply(_vjepa_init)
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Initialize this block's weights."""
+        self.projs.apply(init_weights_)
         # Near-zero: the band vector is added to the residual stream.
         nn.init.trunc_normal_(self.band_type_emb, std=1e-6)
 
@@ -829,10 +827,20 @@ class _Encoder(nn.Module):
             else None
         )
         self.norm_out = None if deep_sup else nn.LayerNorm(d_model, eps=1e-6)
-        self.apply(_vjepa_init)
+        self._init_blocks()
+
+    def _init_blocks(self) -> None:
+        self.apply(init_weights_)
         for layer, block in enumerate(self.blocks, start=1):
             rescale_parameter(block.out.weight.data, layer)
             rescale_parameter(block.mlp[3].weight.data, layer)
+
+    def reset_parameters(self) -> None:
+        """Initialize this block's weights (the constructor initializes the
+        region embedding as it builds it)."""
+        if "embed" in self.region_embed:
+            nn.init.trunc_normal_(self.region_embed["embed"].weight, std=1e-6)
+        self._init_blocks()
 
     def forward(
         self,

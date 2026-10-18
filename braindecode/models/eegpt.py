@@ -11,8 +11,9 @@ import mne
 import torch
 from torch import nn
 
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import DropPath
+from braindecode.modules import DropPath, TimmMlp
 from braindecode.modules.attention import _scaled_dot_product_attention
 from braindecode.modules.convolution import Conv1dWithConstraint
 from braindecode.modules.linear import LinearWithConstraint
@@ -639,63 +640,6 @@ class _ChannelProjection(nn.Module):
         return self.proj(x)
 
 
-def _rotate_half(x):
-    """Rotate half of the dimensions for RoPE.
-
-    Parameters
-    ----------
-    x : torch.Tensor
-        Input tensor of shape (..., d).
-
-    Returns
-    -------
-    torch.Tensor
-        Rotated tensor of the same shape.
-    """
-    x = x.unflatten(-1, (-1, 2))
-    x1, x2 = x.unbind(dim=-1)
-    x = torch.stack((-x2, x1), dim=-1)
-    return x.flatten(-2)
-
-
-def _apply_rotary_emb(
-    freqs: torch.Tensor, t: torch.Tensor, start_index: int = 0, scale: float = 1.0
-) -> torch.Tensor:
-    """Apply rotary positional embeddings (RoPE) to input tensor.
-
-    Parameters
-    ----------
-    freqs : torch.Tensor
-        Frequency tensor for rotation.
-    t : torch.Tensor
-        Input tensor to rotate.
-    start_index : int, default=0
-        Starting index for rotation.
-    scale : float, default=1.0
-        Scaling factor.
-
-    Returns
-    -------
-    torch.Tensor
-        Tensor with rotary embeddings applied.
-    """
-    freqs = freqs.to(t)
-    rot_dim = freqs.shape[-1]
-    end_index = start_index + rot_dim
-    if rot_dim > t.shape[-1]:
-        raise ValueError(
-            f"feature dimension {t.shape[-1]} is not of sufficient size "
-            f"to rotate in all the positions {rot_dim}"
-        )
-    t_left, t_mid, t_right = (
-        t[..., :start_index],
-        t[..., start_index:end_index],
-        t[..., end_index:],
-    )
-    t_mid = (t_mid * freqs.cos() * scale) + (_rotate_half(t_mid) * freqs.sin() * scale)
-    return torch.cat((t_left, t_mid, t_right), dim=-1)
-
-
 def _apply_mask(mask, x):
     r"""Apply mask to select specific patches from input tensor.
 
@@ -792,59 +736,13 @@ def _apply_mask_t(mask_t, x):
     return masked_x
 
 
-class _MLP(nn.Module):
-    """
-    Multi-Layer Perceptron (MLP) with GELU activation and dropout.
-
-    This block consists of two linear layers with a GELU activation and dropout
-    in between, and another dropout after the second linear layer.
-
-    Parameters
-    ----------
-    in_features : int
-        Number of input features.
-    hidden_features : int, optional
-        Number of hidden features. If None, defaults to `in_features`.
-    out_features : int, optional
-        Number of output features. If None, defaults to `in_features`.
-    act_layer : nn.Module, default=nn.GELU
-        Activation function.
-    drop : float, default=0.0
-        Dropout probability.
-    """
-
-    def __init__(
-        self,
-        in_features,
-        hidden_features=None,
-        out_features=None,
-        act_layer=nn.GELU,
-        drop=0.0,
-    ):
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
-        self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
-        self.drop = nn.Dropout(drop)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.drop(x)
-        x = self.fc2(x)
-        x = self.drop(x)
-        return x
-
-
 class _Attention(nn.Module):
     """
-    Multi-head Self-Attention with optional RoPE and Causal Masking.
+    Multi-head Self-Attention with optional Causal Masking.
 
     This layer implements multi-head self-attention using PyTorch's
     scaled_dot_product_attention (Flash Attention) for efficiency.
-    It supports Rotary Positional Embeddings (RoPE) and causal masking.
+    It supports causal masking.
 
     Parameters
     ----------
@@ -860,8 +758,6 @@ class _Attention(nn.Module):
         Dropout probability for output projection.
     is_causal : bool, default=False
         If True, applies a causal mask (temporal causality).
-    use_rope : bool, default=False
-        If True, applies Rotary Positional Embeddings (RoPE) to queries and keys.
     return_attention : bool, default=False
         If True, returns the attention weights instead of the output tensor.
     """
@@ -874,11 +770,9 @@ class _Attention(nn.Module):
         attn_drop=0.0,
         proj_drop=0.0,
         is_causal=False,
-        use_rope=False,
         return_attention=False,
     ):
         super().__init__()
-        self.use_rope = use_rope
 
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
@@ -892,7 +786,7 @@ class _Attention(nn.Module):
         self.is_causal = is_causal
         self.return_attention = return_attention
 
-    def forward(self, x, freqs: Optional[torch.Tensor] = None):
+    def forward(self, x):
         """
         Forward pass of the attention layer.
 
@@ -900,8 +794,6 @@ class _Attention(nn.Module):
         ----------
         x : torch.Tensor
             Input tensor of shape (batch, seq_len, embed_dim).
-        freqs : torch.Tensor, optional
-            Frequencies for Rotary Positional Embeddings (RoPE).
         """
         # qkv: (batch, seq_len, 3 * num_heads * head_dim)
         qkv = self.qkv(x)
@@ -913,16 +805,7 @@ class _Attention(nn.Module):
         # zero-filled copies of the whole qkv tensor and sums them.
         q, k, v = qkv.unbind(0)  # batch, num_heads, seq_len, head_dim
 
-        # 1. Rotary Positional Embeddings (RoPE)
-        # Unlike standard absolute positional encodings, RoPE rotates the
-        # query and key vectors to encode relative positions.
-        if self.use_rope:
-            if freqs is None:
-                raise ValueError("use_rope=True needs freqs.")
-            q = _apply_rotary_emb(freqs, q)
-            k = _apply_rotary_emb(freqs, k)
-
-        # 2. Return Attention Weights
+        # 1. Return Attention Weights
         # If return_attention is True, we manually compute attention scores
         # because F.scaled_dot_product_attention doesn't return weights.
         if self.return_attention:
@@ -947,7 +830,7 @@ class _Attention(nn.Module):
                 )
             return attn_weight
 
-        # 3. Flash Attention
+        # 2. Flash Attention
         # Use PyTorch's optimized scaled_dot_product_attention (SDPA)
         # which internally uses FlashAttention or EfficientAttention kernels.
         dropout_p = self.attn_drop.p if self.training else 0.0
@@ -976,7 +859,7 @@ class _Block(nn.Module):
 
     This is a standard Transformer encoder block that applies:
     1. Layer Normalization
-    2. Multi-Head Self-Attention (with optional RoPE)
+    2. Multi-Head Self-Attention
     3. Residual Connection with DropPath
     4. Layer Normalization
     5. MLP
@@ -1004,8 +887,6 @@ class _Block(nn.Module):
         Normalization layer.
     is_causal : bool, default=False
         If True, applies a causal mask to attention.
-    use_rope : bool, default=False
-        If True, applies Rotary Positional Embeddings (RoPE).
     return_attention : bool, default=False
         If True, returns attention weights instead of the output tensor.
     """
@@ -1022,7 +903,6 @@ class _Block(nn.Module):
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
         is_causal=False,
-        use_rope=False,
         return_attention=False,
     ):
         super().__init__()
@@ -1035,21 +915,20 @@ class _Block(nn.Module):
             attn_drop=attn_drop,
             proj_drop=drop,
             is_causal=is_causal,
-            use_rope=use_rope,
             return_attention=return_attention,
         )
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = _MLP(
+        self.mlp = TimmMlp(
             in_features=dim,
             hidden_features=mlp_hidden_dim,
             act_layer=act_layer,
             drop=drop,
         )
 
-    def forward(self, x, freqs: Optional[torch.Tensor] = None):
-        y = self.attn(self.norm1(x), freqs)
+    def forward(self, x):
+        y = self.attn(self.norm1(x))
         if self.return_attention:
             return y
         x = x + self.drop_path(y)
@@ -1284,7 +1163,6 @@ class _EEGTransformer(nn.Module):
                     drop_path=dpr[i],
                     norm_layer=norm_layer,
                     is_causal=False,
-                    use_rope=False,
                     return_attention=(i + 1) == return_attention_layer,
                 )
                 for i in range(depth)
@@ -1294,8 +1172,21 @@ class _EEGTransformer(nn.Module):
         self.init_std = init_std
         self.summary_token = nn.Parameter(torch.zeros(1, embed_num, embed_dim))
 
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Initialize this block's weights."""
         nn.init.trunc_normal_(self.summary_token, std=self.init_std)
-        self.apply(self._init_weights)
+        trunc = partial(nn.init.trunc_normal_, std=self.init_std)
+        self.apply(
+            partial(
+                init_weights_,
+                weights={
+                    (nn.Linear, nn.Conv2d): trunc,
+                    nn.Embedding: partial(nn.init.normal_, mean=0.0, std=0.02),
+                },
+            )
+        )
         self.fix_init_weight()
 
     def prepare_chan_ids(self, channels):
@@ -1331,21 +1222,6 @@ class _EEGTransformer(nn.Module):
         for layer_id, layer in enumerate(self.blocks):
             rescale(layer.attn.proj.weight.data, layer_id + 1)
             rescale(layer.mlp.fc2.weight.data, layer_id + 1)
-
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            nn.init.trunc_normal_(m.weight, std=self.init_std)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
-        elif isinstance(m, nn.Conv2d):
-            nn.init.trunc_normal_(m.weight, std=self.init_std)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.Embedding):
-            torch.nn.init.normal_(m.weight, mean=0.0, std=0.02)
 
     def forward(
         self,

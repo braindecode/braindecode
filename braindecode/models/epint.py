@@ -6,14 +6,26 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange, Reduce
 
-from braindecode.functional import rotate_pairs
+from braindecode.functional import (
+    apply_rotary,
+    init_weights_,
+    rotary_angles,
+    rotary_frequencies,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import FeedForwardBlock
+
+# Upstream head init: Kaiming-uniform weight, zero bias.
+_init_head = partial(
+    init_weights_, weights={nn.Linear: nn.init.kaiming_uniform_}, norms=()
+)
 
 
 class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
@@ -167,9 +179,9 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
         nn.init.normal_(self.cls_token, std=0.1)
         # Interleaved-pair RoPE angles, as ``precompute_freqs_cis`` upstream.
         head_dim = embed_dim // n_heads
-        inv_freq = 1.0 / rope_theta ** (torch.arange(0, head_dim, 2).float() / head_dim)
-        angles = torch.outer(torch.arange(n_tokens).float(), inv_freq)
-        angles = angles.repeat_interleave(2, dim=-1)  # (tokens, head_dim)
+        angles = rotary_angles(
+            torch.arange(n_tokens).float(), rotary_frequencies(head_dim, rope_theta)
+        )  # (tokens, head_dim)
         self.register_buffer("rope_cos", angles.cos(), persistent=False)
         self.register_buffer("rope_sin", angles.sin(), persistent=False)
         self.encoder = nn.ModuleList(
@@ -187,8 +199,7 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.Sequential(
             nn.Dropout(head_drop_prob), nn.Linear(embed_dim, self.n_outputs)
         )
-        nn.init.kaiming_uniform_(self.final_layer[1].weight)
-        nn.init.zeros_(self.final_layer[1].bias)
+        _init_head(self.final_layer[1])
 
         self.mapping = {
             "norm.weight": "instance_norm.weight",
@@ -206,12 +217,17 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
             upstream = upstream.replace("ffn.3.", "ffn.linear2.")
             self.mapping[f"transformer_encoder.{upstream}"] = f"encoder.{key}"
 
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``); the
+        constructor initializes the token and head as it builds them."""
+        nn.init.normal_(self.cls_token, std=0.1)
+        _init_head(self.final_layer[1])
+
     def reset_head(self, n_outputs: int) -> None:
         self._set_n_outputs(n_outputs)
         old = self.final_layer[1]
         head = nn.Linear(old.in_features, n_outputs).to(old.weight)
-        nn.init.kaiming_uniform_(head.weight)
-        nn.init.zeros_(head.bias)
+        _init_head(head)
         self.final_layer[1] = head
 
     def forward(self, x: torch.Tensor, return_features: bool = False):
@@ -275,8 +291,8 @@ class _RoPEAttention(nn.Module):
         q = self.split_heads(self.w_q(x))
         k = self.split_heads(self.w_k(x))
         v = self.split_heads(self.w_v(x))
-        q = q * cos + rotate_pairs(q) * sin
-        k = k * cos + rotate_pairs(k) * sin
+        q = apply_rotary(q, cos, sin)
+        k = apply_rotary(k, cos, sin)
         out = F.scaled_dot_product_attention(q, k, v)
         return self.w_concat(self.merge_heads(out))
 

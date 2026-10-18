@@ -14,12 +14,13 @@
 from __future__ import annotations
 
 import math
+from functools import partial
 
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
 
-from braindecode.functional import sinusoidal_positional_encoding
+from braindecode.functional import init_weights_, sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import FeedForwardBlock, MultiHeadAttention, PatchTokenizer
@@ -298,18 +299,22 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
 
         # Upstream initialisation: truncated normal for the linear layers, and
         # the Transformer ones scaled by 1 / sqrt(2 * depth).
-        nn.init.trunc_normal_(self.spatial_projection.weight, std=0.02)
-        nn.init.zeros_(self.spatial_projection.bias)
+        self._init_parameters()
+
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
+        trunc = partial(nn.init.trunc_normal_, std=0.02)
+        linear_init = partial(init_weights_, weights={nn.Linear: trunc}, norms=())
+        linear_init(self.spatial_projection)
         for depth, layer in enumerate(self.encoder, start=1):
-            for module in layer.modules():
-                if isinstance(module, nn.Linear):
-                    nn.init.trunc_normal_(module.weight, std=0.02)
-                    nn.init.zeros_(module.bias)
-                    module.weight.data.div_(math.sqrt(2.0 * depth))
-        for module in [*self.head_hidden.modules(), self.final_layer]:
-            if isinstance(module, nn.Linear):
-                nn.init.trunc_normal_(module.weight, std=0.02)
-                nn.init.zeros_(module.bias)
+
+            def scaled(weight, depth=depth):
+                trunc(weight)
+                weight.data.div_(math.sqrt(2.0 * depth))
+
+            layer.apply(partial(init_weights_, weights={nn.Linear: scaled}, norms=()))
+        self.head_hidden.apply(linear_init)
+        linear_init(self.final_layer)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         """Also accept an upstream Du-IN checkpoint (``duin_mae``/``duin_cls``).

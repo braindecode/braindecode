@@ -9,12 +9,14 @@ from __future__ import annotations
 import math
 import warnings
 from collections.abc import Callable
+from functools import partial
 from typing import Dict, Optional, Union
 
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.labram import _Attention
 from braindecode.models.signal_jepa import _GroupNorm
@@ -623,20 +625,14 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             head_dim *= len(slots) * self.num_patches
         self.fc_norm = nn.LayerNorm(head_dim)
         self.final_layer = nn.Linear(head_dim, self.n_outputs)
-        self._init_weights()
+        self._init_parameters()
 
-    def _init_weights(self):
+    def _init_parameters(self):
         nn.init.trunc_normal_(self.cls_token, std=0.02)
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
         nn.init.trunc_normal_(self.time_embed, std=0.02)
-        for module in self.modules():
-            if isinstance(module, (nn.Linear, nn.Conv2d)):
-                nn.init.trunc_normal_(module.weight, std=0.02)
-                if module.bias is not None:
-                    nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.LayerNorm):
-                nn.init.ones_(module.weight)
-                nn.init.zeros_(module.bias)
+        trunc = partial(nn.init.trunc_normal_, std=0.02)
+        self.apply(partial(init_weights_, weights={(nn.Linear, nn.Conv2d): trunc}))
         with torch.no_grad():
             for i, block in enumerate(self.blocks, start=1):
                 block.attn.proj.weight.div_(math.sqrt(2.0 * i))

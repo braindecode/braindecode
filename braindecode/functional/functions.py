@@ -588,6 +588,7 @@ def sinusoidal_positional_encoding(
     dim: int,
     device: torch.device | None = None,
     dtype: torch.dtype = torch.float32,
+    base: float = 10000.0,
 ) -> torch.Tensor:
     r"""Fixed sine/cosine positional-encoding table of shape ``(n_positions, dim)``.
 
@@ -609,6 +610,9 @@ def sinusoidal_positional_encoding(
         Device of the table (default: CPU), for tables built inside ``forward``.
     dtype : torch.dtype
         Floating dtype the table is computed in.
+    base : float, default=10000.0
+        Longest wavelength, the ``10000`` of Vaswani et al.; SignalJEPA uses the
+        largest number of time samples it encodes.
 
     Returns
     -------
@@ -620,7 +624,7 @@ def sinusoidal_positional_encoding(
     position = torch.arange(n_positions, device=device).unsqueeze(1).to(dtype)
     div_term = torch.exp(
         torch.arange(0, dim_even, 2, device=device).to(dtype)
-        * (-math.log(10000.0) / dim_even)
+        * (-math.log(base) / dim_even)
     )
     pe = torch.zeros(n_positions, dim_even, device=device, dtype=dtype)
     pe[:, 0::2] = torch.sin(position * div_term)
@@ -646,3 +650,104 @@ def rotate_pairs(x: torch.Tensor) -> torch.Tensor:
     """
     pairs = x.unflatten(-1, (-1, 2))
     return torch.stack((-pairs[..., 1], pairs[..., 0]), dim=-1).flatten(-2)
+
+
+def rotate_half(x: torch.Tensor) -> torch.Tensor:
+    """Rotate the two feature halves from ``(a, b)`` to ``(-b, a)``.
+
+    The half-split layout of GPT-NeoX / LLaMA rotary embeddings; see
+    :func:`rotate_pairs` for the interleaved layout.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Tensor of shape ``(..., features)`` with an even final dimension.
+
+    Returns
+    -------
+    torch.Tensor
+        Same shape, device and dtype as ``x``.
+    """
+    first, second = x.chunk(2, dim=-1)
+    return torch.cat((-second, first), dim=-1)
+
+
+def rotary_frequencies(
+    head_dim: int,
+    base: float = 10000.0,
+    device: Optional[torch.device] = None,
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    """Inverse frequencies of a rotary embedding, ``1 / base ** (2 i / head_dim)``.
+
+    Parameters
+    ----------
+    head_dim : int
+        Even feature dimension that is rotated.
+    base : float, default=10000.0
+        Base period (``theta``).
+    device : torch.device, optional
+    dtype : torch.dtype, default=torch.float32
+        Precision of the table; the angles inherit it.
+
+    Returns
+    -------
+    torch.Tensor
+        Shape ``(head_dim // 2,)``.
+    """
+    exponent = torch.arange(0, head_dim, 2, device=device, dtype=dtype) / head_dim
+    return 1.0 / (base**exponent)
+
+
+def rotary_angles(
+    positions: torch.Tensor, inv_freq: torch.Tensor, interleaved: bool = True
+) -> torch.Tensor:
+    """Rotation angles of each position, laid out to match the feature layout.
+
+    Parameters
+    ----------
+    positions : torch.Tensor
+        Shape ``(...,)``; same dtype as ``inv_freq`` for exact angles.
+    inv_freq : torch.Tensor
+        Shape ``(head_dim // 2,)``, from :func:`rotary_frequencies`.
+    interleaved : bool, default=True
+        ``True`` repeats each angle for its adjacent pair (:func:`rotate_pairs`);
+        ``False`` concatenates the angles twice (:func:`rotate_half`).
+
+    Returns
+    -------
+    torch.Tensor
+        Shape ``(..., head_dim)``; pass ``.cos()`` and ``.sin()`` to
+        :func:`apply_rotary`.
+    """
+    angles = positions.unsqueeze(-1) * inv_freq
+    if interleaved:
+        return angles.repeat_interleave(2, dim=-1)
+    return torch.cat((angles, angles), dim=-1)
+
+
+def apply_rotary(
+    x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor, interleaved: bool = True
+) -> torch.Tensor:
+    """Rotate ``x`` by the angles whose cosine and sine are given.
+
+    ``x * cos + rotate(x) * sin``, where ``rotate`` is :func:`rotate_pairs`
+    (``interleaved=True``) or :func:`rotate_half`. ``cos`` and ``sin`` must
+    broadcast to ``x``; casting is left to the caller.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Shape ``(..., head_dim)``.
+    cos, sin : torch.Tensor
+        From :func:`rotary_angles`.
+    interleaved : bool, default=True
+        Feature layout, as in :func:`rotary_angles`.
+
+    Returns
+    -------
+    torch.Tensor
+        Same shape as ``x``.
+    """
+    rotated = rotate_pairs(x) if interleaved else rotate_half(x)
+    return x * cos + rotated * sin

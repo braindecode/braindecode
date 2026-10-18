@@ -10,22 +10,25 @@ from __future__ import annotations
 
 import json
 import warnings
-from functools import lru_cache
+from functools import lru_cache, partial
 from typing import Dict, Union
 
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import sinusoidal_positional_encoding
+from braindecode.functional import init_weights_, sinusoidal_positional_encoding
 from braindecode.models.base import _HF_INSTALL_HINT, EEGModuleMixin, huggingface_hub
 from braindecode.models.util import resolve_channel_indices
 from braindecode.modules import (
-    DropPath,
     FeedForwardBlock,
     MultiHeadAttention,
     PatchTokenizer,
+    Residual,
 )
+
+# Weight initialization of the reference implementation.
+_init_weights = partial(init_weights_, weights={nn.Linear: nn.init.xavier_uniform_})
 
 # Shared montage vocabulary of the official ST-EEGFormer checkpoints: the
 # learned channel embedding has one slot per entry, in this order (the slot
@@ -410,19 +413,12 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         # Upstream MAE init (xavier-uniform Linears, unit/zero LayerNorm) on every
         # submodule, then the faithful-port specials: a normal(std=0.02) CLS token
         # (the channel embedding keeps its zero init from _ChannelPositionalEmbed).
-        self.apply(self._init_weights)
-        nn.init.normal_(self.cls_token, std=0.02)
+        self._init_parameters()
 
-    @staticmethod
-    def _init_weights(module: nn.Module) -> None:
-        """Upstream MAE init: xavier-uniform ``Linear``, unit/zero ``LayerNorm``."""
-        if isinstance(module, nn.Linear):
-            nn.init.xavier_uniform_(module.weight)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.LayerNorm):
-            nn.init.ones_(module.weight)
-            nn.init.zeros_(module.bias)
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
+        self.apply(_init_weights)
+        nn.init.normal_(self.cls_token, std=0.02)
 
     def reset_head(self, n_outputs):
         """Replace the linear classification head for a new ``n_outputs``.
@@ -433,7 +429,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self._n_outputs = n_outputs
         self._update_init_kwargs(n_outputs=n_outputs)
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
-        self._init_weights(self.final_layer)  # match the constructor's head init
+        _init_weights(self.final_layer)  # match the constructor's head init
 
     def _chan_pos_idx_from_chs_info(self) -> torch.Tensor:
         """Resolve montage-vocabulary slots from the ``chs_info`` electrode names.
@@ -650,24 +646,16 @@ class _ChannelPositionalEmbed(nn.Module):
     def __init__(self, n_vocab: int, embed_dim: int):
         super().__init__()
         self.embedding = nn.Embedding(n_vocab, embed_dim)
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Initialize this block's weights."""
         nn.init.zeros_(self.embedding.weight)
 
     def forward(self, channel_indices: torch.Tensor) -> torch.Tensor:
         emb = self.embedding(channel_indices)  # (n_chans, embed_dim)
         # -> (1, 1, n_chans, embed_dim) to broadcast over batch and patches.
         return emb[None, None]
-
-
-class _ResidualAdd(nn.Module):
-    """Residual connection with optional stochastic depth (``x + drop_path(fn(x))``)."""
-
-    def __init__(self, fn: nn.Module, drop_path: float = 0.0):
-        super().__init__()
-        self.fn = fn
-        self.drop_path = DropPath(drop_path) if drop_path else nn.Identity()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + self.drop_path(self.fn(x))
 
 
 class _TransformerEncoderBlock(nn.Sequential):
@@ -690,7 +678,7 @@ class _TransformerEncoderBlock(nn.Sequential):
         activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__(
-            _ResidualAdd(
+            Residual(
                 nn.Sequential(
                     nn.LayerNorm(embed_dim, eps=1e-6),
                     MultiHeadAttention(embed_dim, num_heads, drop_prob),
@@ -698,7 +686,7 @@ class _TransformerEncoderBlock(nn.Sequential):
                 ),
                 drop_path,
             ),
-            _ResidualAdd(
+            Residual(
                 nn.Sequential(
                     nn.LayerNorm(embed_dim, eps=1e-6),
                     FeedForwardBlock(

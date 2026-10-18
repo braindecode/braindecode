@@ -16,11 +16,10 @@ if pydantic is False or numpydantic_imported is False:
 import numpy as np
 
 from braindecode.models.config import make_model_config
-from braindecode.models.util import (
+from braindecode.models.util import models_dict, models_mandatory_parameters
+from test.unit_tests.models._fixtures import (
     _get_possible_signal_params,
     _get_signal_params,
-    models_dict,
-    models_mandatory_parameters,
 )
 
 all_models_dict = dict(models_dict)

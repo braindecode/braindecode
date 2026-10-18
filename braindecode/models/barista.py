@@ -4,17 +4,29 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Optional
 
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode.functional import (
+    apply_rotary,
+    init_weights_,
+    rotary_angles,
+    rotary_frequencies,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import GatedLinearUnit, PatchTokenizer
 from braindecode.modules.attention import _scaled_dot_product_attention
 from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
+
+# Weight initialization of the reference implementation.
+_init_weights = partial(
+    init_weights_, weights={nn.Conv2d: nn.init.kaiming_normal_}, norms=()
+)
 
 
 class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
@@ -326,16 +338,11 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             nn.Linear(self.n_tokens, 1, bias=False) if pooling == "learned" else None
         )
         self.final_layer = nn.Linear(d_model, self.n_outputs)
-        self.apply(self._init_weights)
+        self._init_parameters()
 
-    @staticmethod
-    def _init_weights(module: nn.Module) -> None:
-        # Match the reference: Kaiming CNN, unit-variance spatial embeddings,
-        # unit norm scales, and PyTorch's default Linear initialization.
-        if isinstance(module, nn.Conv2d):
-            nn.init.kaiming_normal_(module.weight)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
+    def _init_parameters(self) -> None:
+        """Model-specific initialization (see ``reset_parameters``)."""
+        self.apply(_init_weights)
 
     def _build_spatial_embedding(
         self,
@@ -607,7 +614,7 @@ class _Transformer(nn.Module):
     ):
         super().__init__()
         head_dim = d_model // num_heads
-        inv_freq = 1.0 / (10000.0 ** (torch.arange(0, head_dim, 2).float() / head_dim))
+        inv_freq = rotary_frequencies(head_dim)
         self.inv_freq: torch.Tensor
         self.register_buffer("inv_freq", inv_freq, persistent=False)
         self.layers = nn.ModuleList(
@@ -631,8 +638,8 @@ class _Transformer(nn.Module):
         positions = torch.arange(
             n_patches, device=self.inv_freq.device, dtype=self.inv_freq.dtype
         )
-        angles = torch.outer(positions, self.inv_freq)
-        angles = torch.cat((angles, angles), dim=-1).repeat_interleave(n_chans, dim=0)
+        angles = rotary_angles(positions, self.inv_freq, interleaved=False)
+        angles = angles.repeat_interleave(n_chans, dim=0)
         cos = angles.cos()[None, None]
         sin = angles.sin()[None, None]
         for layer in self.layers:
@@ -696,8 +703,9 @@ class _RotarySelfAttention(nn.Module):
         key = self.split_heads(key)
         value = self.split_heads(value)
 
-        query = _apply_rotary(query, cos, sin)
-        key = _apply_rotary(key, cos, sin)
+        cos, sin = cos.to(query.dtype), sin.to(query.dtype)
+        query = apply_rotary(query, cos, sin, interleaved=False)
+        key = apply_rotary(key, cos, sin, interleaved=False)
 
         # Dropout falls on the attention output rather than on the weights,
         # through dropout_p, because the reference disables the latter outright.
@@ -705,11 +713,3 @@ class _RotarySelfAttention(nn.Module):
         attention = self.dropout(attention)
         attention = self.merge_heads(attention)
         return self.o_proj(attention)
-
-
-def _apply_rotary(
-    x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
-) -> torch.Tensor:
-    """Apply the reference's half-split (not interleaved) rotary embedding."""
-    first, second = x.chunk(2, dim=-1)
-    return x * cos.to(x.dtype) + torch.cat((-second, first), dim=-1) * sin.to(x.dtype)

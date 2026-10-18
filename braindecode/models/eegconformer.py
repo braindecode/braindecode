@@ -9,7 +9,7 @@ from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin, _too_short_input_error
-from braindecode.modules import FeedForwardBlock, MultiHeadAttention
+from braindecode.modules import FeedForwardBlock, MultiHeadAttention, Residual
 
 
 class EEGConformer(EEGModuleMixin, nn.Module):
@@ -364,18 +364,6 @@ class _PatchEmbedding(nn.Module):
         return x
 
 
-class _ResidualAdd(nn.Module):
-    def __init__(self, fn):
-        super().__init__()
-        self.fn = fn
-
-    def forward(self, x):
-        res = x
-        x = self.fn(x)
-        x += res
-        return x
-
-
 class _TransformerEncoderBlock(nn.Sequential):
     def __init__(
         self,
@@ -386,14 +374,14 @@ class _TransformerEncoderBlock(nn.Sequential):
         activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__(
-            _ResidualAdd(
+            Residual(
                 nn.Sequential(
                     nn.LayerNorm(emb_size),
                     MultiHeadAttention(emb_size, num_heads, att_drop),
                     nn.Dropout(att_drop),
                 )
             ),
-            _ResidualAdd(
+            Residual(
                 nn.Sequential(
                     nn.LayerNorm(emb_size),
                     FeedForwardBlock(

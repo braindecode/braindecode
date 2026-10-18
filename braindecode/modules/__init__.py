@@ -26,6 +26,7 @@ from .blocks import (
     InceptionBlock,
     PatchTokenizer,
     TDSConvEncoder,
+    TimmMlp,
 )
 from .channels import ChannelLayer, resolve_channel_positions
 from .convolution import (
@@ -44,6 +45,8 @@ from .layers import (
     DropPath,
     Ensure4d,
     FourierEmb,
+    PostNormResidual,
+    Residual,
     SqueezeFinalOutput,
     SubjectLayers,
     TimeDistributed,
@@ -88,6 +91,7 @@ __all__ = [
     "SqueezeAndExcitation",
     "CrissCrossTransformerEncoderLayer",
     "MLP",
+    "TimmMlp",
     "FeedForwardBlock",
     "InceptionBlock",
     "PatchTokenizer",
@@ -106,6 +110,8 @@ __all__ = [
     "GeneralizedGaussianFilter",
     "Chomp1d",
     "DropPath",
+    "PostNormResidual",
+    "Residual",
     "Ensure4d",
     "SubjectLayers",
     "SqueezeFinalOutput",

@@ -166,6 +166,53 @@ class DropPath(nn.Module):
         return f"p={self.drop_prob}"
 
 
+class Residual(nn.Module):
+    """Residual connection ``x + drop_path(fn(x))``.
+
+    The usual pre-norm transformer sub-layer: the normalization, if any, is
+    part of ``fn``.
+
+    Parameters
+    ----------
+    fn : torch.nn.Module
+        The sub-layer.
+    drop_path : float
+        Stochastic depth rate of the sub-layer's output (:class:`DropPath`).
+        ``0`` (default) disables it.
+    """
+
+    def __init__(self, fn: nn.Module, drop_path: float = 0.0):
+        super().__init__()
+        self.fn = fn
+        self.drop_path = DropPath(drop_path) if drop_path else nn.Identity()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.drop_path(self.fn(x))
+
+
+class PostNormResidual(nn.Module):
+    """Post-norm residual connection ``LayerNorm(dropout(module(x)) + x)``.
+
+    Parameters
+    ----------
+    module : torch.nn.Module
+        The sub-layer.
+    dim : int
+        Size of the last dimension, normalized by the LayerNorm.
+    drop_prob : float
+        Dropout rate on the sub-layer's output.
+    """
+
+    def __init__(self, module: nn.Module, dim: int, drop_prob: float):
+        super().__init__()
+        self.module = module
+        self.drop = nn.Dropout(drop_prob)
+        self.layernorm = nn.LayerNorm(dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.layernorm(self.drop(self.module(x)) + x)
+
+
 class SqueezeFinalOutput(nn.Module):
     """
 

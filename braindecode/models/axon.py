@@ -395,9 +395,14 @@ class _TokenGate(nn.Module):
             activation(),
             nn.Linear(hidden, len(init_bias)),
         )
+        self._init_bias = tuple(init_bias)
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Initialize this block's weights."""
         nn.init.zeros_(self.mlp[-1].weight)
         with torch.no_grad():
-            self.mlp[-1].bias.copy_(torch.tensor(init_bias))
+            self.mlp[-1].bias.copy_(torch.tensor(self._init_bias))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # The gate reads the token but sends no gradient back into the encoder.

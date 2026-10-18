@@ -16,12 +16,19 @@ import math
 from typing import Optional
 
 import torch
-import torch.nn.functional as F
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
 from braindecode.functional import _get_gaussian_kernel1d
+from braindecode.functional.attention import (  # noqa: F401  (re-exported)
+    _hpu_eager_fused_sdpa,
+    _hpu_lazy,
+    _sdpa_math_dropout,
+)
+from braindecode.functional.attention import (
+    scaled_dot_product_attention as _scaled_dot_product_attention,
+)
 
 
 class SqueezeAndExcitation(nn.Module):
@@ -832,91 +839,6 @@ class CATLite(nn.Module):
         channel_score = channel_score.expand(b, c, h, w)
 
         return channel_score * x
-
-
-@torch.jit.unused
-def _hpu_eager_fused_sdpa(
-    query: Tensor,
-    key: Tensor,
-    value: Tensor,
-    scale: Optional[float] = None,
-    fused_in_lazy: bool = False,
-) -> Optional[Tensor]:
-    # Lazy mode: None, the graph compiler already fuses torch's SDPA there
-    # (unless the caller measured the fused kernel faster for its shapes).
-    from habana_frameworks.torch.utils.internal import is_lazy
-
-    if is_lazy() and not fused_in_lazy:
-        return None
-    from habana_frameworks.torch.hpex.kernels import FusedSDPA
-
-    # Strided q/k/v views (heads split off a projection) give wrong outputs and
-    # gradients at some shapes; contiguous copies give the right result.
-    query, key, value = query.contiguous(), key.contiguous(), value.contiguous()
-    return FusedSDPA.apply(query, key, value, None, 0.0, False, scale, "None", False)
-
-
-@torch.jit.unused
-def _hpu_lazy() -> bool:
-    from habana_frameworks.torch.utils.internal import is_lazy
-
-    return is_lazy()
-
-
-def _sdpa_math_dropout(
-    query: Tensor, key: Tensor, value: Tensor, dropout_p: float
-) -> Tensor:
-    # torch's math path for SDPA with dropout, op for op, without the pass of
-    # ``_safe_softmax`` that zeroes fully masked rows (none without a mask):
-    # same values, same dropout draws.
-    scale = math.sqrt(1.0 / math.sqrt(query.size(-1)))
-    attn = torch.matmul(query * scale, key.transpose(-2, -1) * scale)
-    attn = F.dropout(attn.softmax(-1), dropout_p, True)
-    return torch.matmul(attn, value)
-
-
-def _scaled_dot_product_attention(
-    query: Tensor,
-    key: Tensor,
-    value: Tensor,
-    attn_mask: Optional[Tensor] = None,
-    dropout_p: float = 0.0,
-    fused_in_lazy: bool = False,
-) -> Tensor:
-    """``F.scaled_dot_product_attention``; Gaudi's fused kernel on HPU.
-
-    In HPU eager mode, torch's SDPA runs op by op (the full
-    ``(batch, heads, seq, seq)`` scores in device memory), 2-3.5x slower than
-    the bridge's fused kernel on long sequences. The fused kernel is used
-    without a mask or dropout (its dropout would draw other masks). In lazy
-    mode only with ``fused_in_lazy=True``: the graph compiler fuses torch's
-    SDPA too, faster on long sequences, slower on short ones.
-    """
-    if (
-        not torch.jit.is_scripting()
-        and query.device.type == "hpu"
-        and attn_mask is None
-        and dropout_p == 0.0
-        and (query.dtype == torch.float32 or query.dtype == torch.bfloat16)
-    ):
-        out = _hpu_eager_fused_sdpa(query, key, value, fused_in_lazy=fused_in_lazy)
-        if out is not None:
-            return out
-    if (
-        not torch.jit.is_scripting()
-        and dropout_p > 0.0
-        and attn_mask is None
-        and (query.dtype == torch.float32 or query.dtype == torch.float64)
-        and (
-            query.device.type == "cpu"
-            or (query.device.type == "hpu" and not _hpu_lazy())
-        )
-    ):
-        # CPU and HPU eager run SDPA with dropout through the math path.
-        return _sdpa_math_dropout(query, key, value, dropout_p)
-    return F.scaled_dot_product_attention(
-        query, key, value, attn_mask=attn_mask, dropout_p=dropout_p
-    )
 
 
 class MultiHeadAttention(nn.Module):

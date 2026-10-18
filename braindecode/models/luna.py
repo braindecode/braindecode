@@ -14,6 +14,7 @@ the LICENSE Of this file is APACHE-2.0.
 """
 
 import math
+from functools import partial
 from typing import Any, Dict, Optional, Tuple, Type
 
 import torch
@@ -21,12 +22,22 @@ import torch.fft as fft
 import torch.nn as nn
 import torch.nn.functional as F
 
-from braindecode.functional import rotate_pairs, spectral_input
+from braindecode.functional import (
+    apply_rotary,
+    init_weights_,
+    rotary_angles,
+    rotary_frequencies,
+    spectral_input,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.signal_jepa import _GroupNorm
 from braindecode.models.util import extract_channel_locations_from_chs_info
+from braindecode.modules import TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
 from braindecode.modules.layers import DropPath
+
+# Weight initialization of the reference implementation.
+_init_weights = partial(init_weights_, weights={nn.Linear: nn.init.xavier_normal_})
 
 
 class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -202,7 +213,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             embed_dim=self.embed_dim, patch_size=self.patch_size
         )
         # For weight loading, we omit the normalization here to match parameter count
-        self.channel_location_embedder = _Mlp(
+        self.channel_location_embedder = TimmMlp(
             in_features=int(self.patch_embed_size),
             out_features=int(self.patch_embed_size),
             hidden_features=int(self.patch_embed_size * 2),
@@ -256,22 +267,13 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 False  # no use of mask token for classification
             )
 
-        self.initialize_weights()
+        self._init_parameters()
 
-    def initialize_weights(self) -> None:
+    def _init_parameters(self) -> None:
         self.cross_attn.initialize_weights()
         trunc_normal_(self.mask_token, std=0.02)
-        self.apply(self._init_weights)
+        self.apply(_init_weights)
         self.fix_init_weight()
-
-    def _init_weights(self, m: nn.Module) -> None:
-        if isinstance(m, nn.Linear):
-            torch.nn.init.xavier_normal_(m.weight)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
 
     def fix_init_weight(self) -> None:
         def rescale(param: torch.Tensor, layer_id: int) -> None:
@@ -512,9 +514,6 @@ class _ChannelEmbeddings(nn.Module):
     def forward(self, indices: torch.Tensor) -> torch.Tensor:
         return self.embeddings(indices)
 
-    def initialize_weights(self) -> None:
-        torch.init.normal_(self.embeddings.weight, std=2.0)
-
 
 class _FrequencyFeatureEmbedder(nn.Module):
     r"""
@@ -528,7 +527,7 @@ class _FrequencyFeatureEmbedder(nn.Module):
         self.patch_size = patch_size
         self.embed_dim = embed_dim
         in_features = 2 * (patch_size // 2 + 1)
-        self.frequency_to_embed = _Mlp(
+        self.frequency_to_embed = TimmMlp(
             in_features=in_features,
             hidden_features=int(4 * in_features),
             out_features=embed_dim,
@@ -593,9 +592,8 @@ class _RotarySelfAttentionBlock(nn.Module):
         freqs = self.rotary_emb(positions)
 
         # Keep the full-head reshape (including its empty-input boundary).
-        pairs = tensor.reshape(list(tensor.shape[:-1]) + [-1, 2])
-        rotated = rotate_pairs(pairs.flatten(-2))
-        transformed = tensor * freqs.cos() + rotated * freqs.sin()
+        tensor.reshape(list(tensor.shape[:-1]) + [-1, 2])
+        transformed = apply_rotary(tensor, freqs.cos(), freqs.sin())
         return transformed.to(tensor.dtype)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -626,14 +624,10 @@ class _RotaryEmbedding(nn.Module):
 
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
         super().__init__()
-        frequencies = 1.0 / (
-            theta ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim)
-        )
-        self.freqs = nn.Parameter(frequencies, requires_grad=False)
+        self.freqs = nn.Parameter(rotary_frequencies(dim, theta), requires_grad=False)
 
     def forward(self, positions: torch.Tensor) -> torch.Tensor:
-        angles = positions.to(self.freqs.dtype).unsqueeze(-1) * self.freqs
-        return angles.repeat_interleave(2, dim=-1)
+        return rotary_angles(positions.to(self.freqs.dtype), self.freqs)
 
 
 class _FeedForwardBlock(nn.Module):
@@ -719,7 +713,7 @@ class _PatchReconstructionHeadWithQueries(nn.Module):
             num_layers=1,
         )
         self.norm = nn.LayerNorm(embed_dim)
-        self.decoder_linear = _Mlp(
+        self.decoder_linear = TimmMlp(
             embed_dim, int(embed_dim * 4), input_dim, act_layer=nn.GELU, drop=0.0
         )  # nn.Linear(embed_dim, input_dim, bias=True)
 
@@ -757,7 +751,7 @@ class _ClassificationHeadWithQueries(nn.Module):
         self.decoder_attn = nn.MultiheadAttention(
             self.embed_dim, num_heads, batch_first=True, dropout=drop_decoder
         )
-        self.decoder_ffn = _Mlp(
+        self.decoder_ffn = TimmMlp(
             in_features=self.embed_dim,
             hidden_features=int(self.embed_dim * 4),
             out_features=num_classes,
@@ -810,7 +804,7 @@ class _CrossAttentionBlock(nn.Module):
         )
         self.temperature = nn.Parameter(torch.tensor(1.0), requires_grad=False)
 
-        self.ffn = _Mlp(
+        self.ffn = TimmMlp(
             input_embed_dim,
             ff_dim,
             output_embed_dim,
@@ -834,17 +828,7 @@ class _CrossAttentionBlock(nn.Module):
 
     def initialize_weights(self) -> None:
         torch.nn.init.orthogonal_(self.query_embed, gain=1.0)
-        self.apply(self._init_weights)
-
-    def _init_weights(self, m: nn.Module) -> None:
-        if isinstance(m, nn.Linear):
-            # we use xavier_uniform following official JAX ViT:
-            torch.nn.init.xavier_normal_(m.weight)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
+        self.apply(_init_weights)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         # x is the input with shape (batch_size*num_patches, num_channels, embed_dim)
@@ -920,35 +904,4 @@ class _PatchEmbedNetwork(nn.Module):
         x = x.unsqueeze(1)
         x = self.proj_in(x)
         x = x.permute(0, 2, 3, 1).flatten(2)  # (B, CS, D * E)
-        return x
-
-
-class _Mlp(nn.Module):
-    r"""MLP as used in Vision Transformer, MLP-Mixer and related networks.
-
-    Code copied from timm.models.mlp.Mlp
-    """
-
-    def __init__(
-        self,
-        in_features,
-        hidden_features=None,
-        out_features=None,
-        act_layer=nn.GELU,
-        drop=0.0,
-    ):
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
-        self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
-        self.drop = nn.Dropout(drop)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.drop(x)
-        x = self.fc2(x)
-        x = self.drop(x)
         return x
