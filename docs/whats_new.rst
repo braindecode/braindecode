@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- CI: ``test_core_dependencies_are_imported`` parsed the whole package once per installed distribution (215 s, the last test to finish); it parses once. The test job stops after 60 minutes instead of 6 hours when a worker hangs (:gh:`1471` by `Bruno Aristimunha`_).
 - :func:`braindecode.functional.sinusoidal_positional_encoding` takes a ``base`` (longest wavelength); PopulationTransformer and SignalJEPA build their tables with it, unchanged (:gh:`1458` by `Bruno Aristimunha`_).
 - Add :func:`braindecode.functional.scaled_dot_product_attention` (the shared SDPA helper, now public, with ``scale`` and an ``exact`` op-order mode); ATCNet, AttnSleep, EEGDINO, TCFormer and TMSA-Net compute their attention through it with outputs, losses and gradients unchanged bit for bit (:gh:`1457` by `Bruno Aristimunha`_).
 - Add :func:`braindecode.functional.rotary_frequencies`, :func:`~braindecode.functional.rotary_angles`, :func:`~braindecode.functional.apply_rotary` and :func:`~braindecode.functional.rotate_half`; BaRISTA, BrainOmni, DIVER-1, EpiNT, LUNA and TCFormer build and apply their rotary embeddings with them (parameters and outputs unchanged), and EEGPT loses a rotary code path it never used (:gh:`1456` by `Bruno Aristimunha`_).
