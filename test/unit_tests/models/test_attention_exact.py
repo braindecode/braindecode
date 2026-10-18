@@ -73,6 +73,8 @@ def _run(model, x, train):
 def test_attention_matches_old_op_order(name, train, monkeypatch):
     model, x = _build(name)
     module = sys.modules[type(model).__module__]
+    if name == "EEGDINO":  # attention through modules.TimmAttention
+        import braindecode.modules.attention as module
     assert module.scaled_dot_product_attention is scaled_dot_product_attention
     new_out, new_grads = _run(model, x, train)
     monkeypatch.setattr(module, "scaled_dot_product_attention", OLD[name])
