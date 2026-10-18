@@ -12,8 +12,10 @@ from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
 from braindecode.functional import (
+    apply_rotary,
     init_weights_,
-    rotate_pairs,
+    rotary_angles,
+    rotary_frequencies,
     scaled_dot_product_attention,
 )
 from braindecode.models.base import EEGModuleMixin
@@ -313,29 +315,14 @@ def _build_rotary_cache(
     working precision under autocast.
     """
     work = torch.float32 if dtype is None else torch.promote_types(dtype, torch.float32)
-    theta = 1.0 / (
-        10000 ** (torch.arange(0, head_dim, 2, device=device, dtype=work) / head_dim)
-    )
+    theta = rotary_frequencies(head_dim, device=device, dtype=work)
     seq_idx = torch.arange(seq_len, device=device, dtype=work)
-    freqs = torch.outer(seq_idx, theta)  # (seq_len, head_dim/2)
-    emb = torch.cat((freqs, freqs), dim=-1)  # (seq_len, head_dim)
+    # Half-split angle layout with pair rotation, as the reference.
+    emb = rotary_angles(seq_idx, theta, interleaved=False)  # (seq_len, head_dim)
     cos, sin = emb.cos(), emb.sin()
     if dtype is not None:
         cos, sin = cos.to(dtype), sin.to(dtype)
     return cos, sin
-
-
-def _apply_rope(
-    query: Tensor, key: Tensor, cos: Tensor, sin: Tensor
-) -> tuple[Tensor, Tensor]:
-    """Apply rotary embedding to ``query`` and ``key``.
-
-    Both have shape ``(batch, n_heads, seq_len, head_dim)``.
-    """
-
-    query_rotated = (query * cos) + (rotate_pairs(query) * sin)
-    key_rotated = (key * cos) + (rotate_pairs(key) * sin)
-    return query_rotated, key_rotated
 
 
 # ----------------------------------------------------------------------------- #
@@ -379,7 +366,8 @@ class _GroupedQueryAttention(nn.Module):
         groups_per_kv = self.n_query_heads // self.n_kv_heads
         key = key.repeat_interleave(groups_per_kv, dim=1)
         value = value.repeat_interleave(groups_per_kv, dim=1)
-        query, key = _apply_rope(query, key, cos[:seq_len], sin[:seq_len])
+        query = apply_rotary(query, cos[:seq_len], sin[:seq_len])
+        key = apply_rotary(key, cos[:seq_len], sin[:seq_len])
         # exact: the reference op order (q @ k^T) * scale
         context = scaled_dot_product_attention(
             query,

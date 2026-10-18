@@ -29,6 +29,9 @@ Enhancements
 ============
 
 - Add :func:`braindecode.functional.scaled_dot_product_attention` (the shared SDPA helper, now public, with ``scale`` and an ``exact`` op-order mode); ATCNet, AttnSleep, EEGDINO, TCFormer and TMSA-Net compute their attention through it with outputs, losses and gradients unchanged bit for bit (:gh:`1457` by `Bruno Aristimunha`_).
+- Add :func:`braindecode.functional.rotary_frequencies`, :func:`~braindecode.functional.rotary_angles`, :func:`~braindecode.functional.apply_rotary` and :func:`~braindecode.functional.rotate_half`; BaRISTA, BrainOmni, DIVER-1, EpiNT, LUNA and TCFormer build and apply their rotary embeddings with them (parameters and outputs unchanged), and EEGPT loses a rotary code path it never used (:gh:`1456` by `Bruno Aristimunha`_).
+- Add a test that lists every private copy of a standard block (attention, transformer block, MLP, positional encoding, norm, patch embedding, residual) in :mod:`braindecode.models`, so a new copy fails CI unless it is listed with a reason; the new-model checklist asks for the shared blocks (:gh:`1455` by `Bruno Aristimunha`_).
+- Add a test that lists every private copy of a standard block (attention, transformer block, MLP, positional encoding, norm, patch embedding, residual) in :mod:`braindecode.models`, so a new copy fails CI unless it is listed with a reason; the new-model checklist asks for the shared blocks (:gh:`1455` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.TimmMlp`, the timm-style MLP (``fc1``/``fc2`` parameter names) that EEGPT and LUNA each defined privately; their parameters and outputs are unchanged (:gh:`1454` by `Bruno Aristimunha`_).
 - Every model has :meth:`~braindecode.models.base.EEGModuleMixin.reset_parameters`, which draws new initial weights with the model's own scheme: the layers' PyTorch defaults, then the model's initialization (``_init_parameters``), which the constructor also runs. Initial weights at construction are unchanged for every model. A new test checks, for all registered models, that seeded construction is reproducible and finite, that ``reset_parameters`` matches the constructor's initialization, and that a model's own initialization is not a no-op (:gh:`1452` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.Residual` and :class:`braindecode.modules.PostNormResidual`, the residual connections that EEGConformer, MIRepNet, STEEGFormer, CTNet and MSCFormer each defined privately; their parameter names and outputs are unchanged (:gh:`1449` by `Bruno Aristimunha`_).
@@ -486,6 +489,7 @@ Bug fixes
 ==========
 
 - ``reset_head`` builds the new head in the model's dtype, device and train/eval mode for every model: 18 models built it in float32 on the CPU (so a ``.double()`` or GPU model failed at the next forward) and 33 left it in training mode inside an eval model (:gh:`1451` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.IFNet` now applies its reference initialization (truncated normal, std 0.01, for the convolutions and the max-norm head; zero biases; unit/zero batch norms): it was called on the model itself instead of through ``apply``, so it initialized nothing and the layers kept PyTorch's defaults. This changes IFNet's initial weights (:gh:`1453` by `Bruno Aristimunha`_).
 
 - Remove dead code: ``braindecode/datasets/bids/format.py`` (an unused copy of ``hub_format.py``, imported nowhere) and two unused private definitions in MEDFormer and the PhysioNet 2018 dataset (:gh:`1444` by `Bruno Aristimunha`_).
 
