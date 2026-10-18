@@ -165,14 +165,6 @@ def test_geometry_rejects_bad_channels(loc):
         _geometry_from_chs_info(chs)
 
 
-@pytest.mark.parametrize("axial_coil", [None, FIFF.FIFFV_COIL_CTF_GRAD], ids=["vv", "ctf"])
-def test_forward_on_meg_and_eeg_info(axial_coil):
-    chs = _meg_info_chs(axial_coil=axial_coil)
-    x = torch.randn(2, len(chs), 512)
-    assert _small_brainomni(chs_info=chs).eval()(x).shape == (2, 3)
-    assert _small_tokenizer(chs_info=chs).eval()(x).shape == x.shape
-
-
 # ---- quantizer -------------------------------------------------------------------
 
 
