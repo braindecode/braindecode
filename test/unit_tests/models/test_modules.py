@@ -1655,7 +1655,7 @@ def test_multi_head_attention_explicit_scale_matches_manual_attention():
 
 
 def test_multi_head_attention_supports_torch_2_0_sdpa(monkeypatch):
-    import braindecode.modules.attention as attention
+    import braindecode.functional.attention as attention
     from braindecode.modules import MultiHeadAttention
 
     received_queries = []

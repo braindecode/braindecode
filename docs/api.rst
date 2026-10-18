@@ -485,6 +485,7 @@ The functional module contains various functions that can be used like functiona
      rotate_half
      rotate_pairs
      safe_log
+     scaled_dot_product_attention
      sinusoidal_positional_encoding
      spectral_input
      square

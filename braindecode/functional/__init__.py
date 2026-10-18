@@ -1,3 +1,4 @@
+from .attention import scaled_dot_product_attention
 from .functions import (
     _get_gaussian_kernel1d,
     apply_rotary,
@@ -45,6 +46,7 @@ __all__ = [
     "rotate_half",
     "rotate_pairs",
     "safe_log",
+    "scaled_dot_product_attention",
     "sinusoidal_positional_encoding",
     "spectral_input",
     "square",

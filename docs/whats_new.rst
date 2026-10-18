@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :func:`braindecode.functional.scaled_dot_product_attention` (the shared SDPA helper, now public, with ``scale`` and an ``exact`` op-order mode); ATCNet, AttnSleep, EEGDINO, TCFormer and TMSA-Net compute their attention through it with outputs, losses and gradients unchanged bit for bit (:gh:`1457` by `Bruno Aristimunha`_).
 - Add :func:`braindecode.functional.rotary_frequencies`, :func:`~braindecode.functional.rotary_angles`, :func:`~braindecode.functional.apply_rotary` and :func:`~braindecode.functional.rotate_half`; BaRISTA, BrainOmni, DIVER-1, EpiNT, LUNA and TCFormer build and apply their rotary embeddings with them (parameters and outputs unchanged), and EEGPT loses a rotary code path it never used (:gh:`1456` by `Bruno Aristimunha`_).
 - Add a test that lists every private copy of a standard block (attention, transformer block, MLP, positional encoding, norm, patch embedding, residual) in :mod:`braindecode.models`, so a new copy fails CI unless it is listed with a reason; the new-model checklist asks for the shared blocks (:gh:`1455` by `Bruno Aristimunha`_).
 - Add a test that lists every private copy of a standard block (attention, transformer block, MLP, positional encoding, norm, patch embedding, residual) in :mod:`braindecode.models`, so a new copy fails CI unless it is listed with a reason; the new-model checklist asks for the shared blocks (:gh:`1455` by `Bruno Aristimunha`_).
