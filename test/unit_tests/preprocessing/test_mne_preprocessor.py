@@ -31,6 +31,7 @@ from braindecode.preprocessing import (
     ApplyGradientCompensation,
     ApplyHilbert,
     ApplyProj,
+    CombineChannels,
     ComputeBridgedElectrodes,
     ComputeCurrentSourceDensity,
     Crop,
@@ -45,9 +46,11 @@ from braindecode.preprocessing import (
     FixMagCoilTypes,
     FixStimArtifact,
     InterpolateBads,
+    InterpolateBridgedElectrodes,
     NotchFilter,
     OversampledTemporalProjection,
     Pick,
+    RegressArtifact,
     RenameChannels,
     ReorderChannels,
     Resample,
@@ -739,6 +742,50 @@ def test_aux_return_standalone_preprocessor_uses_callable(prep_class, init_kwarg
 
     result = preprocessor.apply(_montage_raw())
     assert isinstance(result, mne.io.BaseRaw)
+
+
+def _raw_with_eog():
+    ch_names = ["Fp1", "Fp2", "C3", "C4", "EOG"]
+    info = mne.create_info(ch_names, sfreq=200.0, ch_types=["eeg"] * 4 + ["eog"])
+    rng = np.random.RandomState(0)
+    data = rng.randn(len(ch_names), 4000) * 1e-5
+    data[:4] += data[4] * 0.5  # EOG leaking into the EEG channels
+    raw = mne.io.RawArray(data, info, verbose=False)
+    raw.set_montage("standard_1020", on_missing="ignore", verbose=False)
+    raw.set_eeg_reference(projection=True, verbose=False)
+    return raw
+
+
+@pytest.mark.parametrize(
+    "prep_class,init_kwargs,expected_ch_names,changed",
+    [
+        (CombineChannels, {"groups": {"left": [0, 2]}}, ["left"], None),
+        (
+            FixStimArtifact,
+            {"events": np.array([[1000, 0, 1]]), "tmin": 0.0, "tmax": 0.01},
+            None,
+            slice(1000, 1002),
+        ),
+        (InterpolateBridgedElectrodes, {"bridged_idx": [(0, 1)]}, None, slice(None)),
+        (RegressArtifact, {"picks_artifact": "eog"}, None, slice(None)),
+    ],
+)
+def test_standalone_preprocessor_returning_instance(
+    prep_class, init_kwargs, expected_ch_names, changed
+):
+    """Standalone MNE functions that return the recording (or ``(inst, ...)``)
+    run through ``preprocess`` instead of failing with an ``AttributeError``."""
+    raw = _raw_with_eog()
+    orig = raw.get_data()
+    concat_ds = BaseConcatDataset([RawDataset(raw)])
+    preprocess(concat_ds, [prep_class(**init_kwargs)], n_jobs=1)
+    out = concat_ds.datasets[0].raw
+    assert isinstance(out, mne.io.BaseRaw)
+    if expected_ch_names is not None:
+        assert out.ch_names == expected_ch_names
+    else:
+        assert out.ch_names == raw.ch_names
+        assert not np.allclose(out.get_data()[0, changed], orig[0, changed])
 
 
 def test_annotate_amplitude_applies_annotations_and_bads():

@@ -32,6 +32,14 @@ _SAFE_STANDALONE_FUNCTIONS = frozenset(
         mne.set_bipolar_reference,
         # returns the Raw with the OTP-cleaned data
         mne.preprocessing.oversampled_temporal_projection,
+        # returns the Raw with the stimulation artifact removed
+        mne.preprocessing.fix_stim_artifact,
+        # returns the Raw with the bridged electrodes interpolated
+        mne.preprocessing.interpolate_bridged_electrodes,
+        # returns the Maxwell-filtered Raw
+        mne.preprocessing.maxwell_filter,
+        # returns a new Raw holding the combined channels
+        mne.channels.combine_channels,
     }
 )
 
@@ -99,6 +107,24 @@ def _wrap_bad_channels_return(func):
     return wrapper
 
 
+def _wrap_instance_tuple_return(func):
+    """Wrap a function that returns ``(inst, ...)``.
+
+    The wrapper calls *func* and returns the first element, the modified
+    recording, e.g. :func:`mne.preprocessing.regress_artifact` returns
+    ``(inst, betas)``.
+    """
+
+    def wrapper(raw, **kwargs):
+        return func(raw, **kwargs)[0]
+
+    wrapper.__name__ = func.__name__
+    wrapper.__qualname__ = func.__qualname__
+    wrapper.__module__ = func.__module__
+    wrapper.__doc__ = func.__doc__
+    return wrapper
+
+
 def _wrap_bridged_electrodes(func):
     """Wrap :func:`mne.preprocessing.compute_bridged_electrodes`.
 
@@ -146,6 +172,9 @@ _AUX_RETURN_WRAPPERS = {
     ),
     mne.preprocessing.find_bad_channels_lof: _wrap_bad_channels_return(
         mne.preprocessing.find_bad_channels_lof
+    ),
+    mne.preprocessing.regress_artifact: _wrap_instance_tuple_return(
+        mne.preprocessing.regress_artifact
     ),
 }
 
