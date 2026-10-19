@@ -679,6 +679,35 @@ def test_samplers_group_one_trial_datasets_without_i_dataset(builder):
     assert len(sequences) == 2 * (20 - 3 + 1)
 
 
+def test_sequence_samplers_with_interleaved_recordings_without_i_dataset():
+    """Without i_dataset, the windows of a subject need not be contiguous in
+    the metadata: sequences must be taken from that subject's windows, not
+    from consecutive positions."""
+    rng = np.random.RandomState(0)
+    windows = create_from_X_y(
+        rng.randn(20, 2, 100),
+        np.arange(20) % 2,
+        False,
+        sfreq=100.0,
+        window_size_samples=50,
+        window_stride_samples=50,
+    )
+    windows.set_description({"subject": [0, 1] * 10})  # alternating trials
+    md = windows.get_metadata().drop(columns="i_dataset")
+    subject = md["subject"].to_numpy()
+
+    sequences = SequenceSampler(md, n_windows=3, n_windows_stride=1)
+    assert len(list(sequences)) == len(sequences) == 2 * (20 - 3 + 1)
+    for seq, start in zip(sequences, sequences.start_inds):
+        assert len(set(subject[list(seq)])) == 1
+        assert seq[0] == start
+    # windows of subject 0 are at positions 0, 1, 4, 5, 8, 9, ...
+    assert next(iter(sequences)) == (0, 1, 4)
+
+    balanced = BalancedSequenceSampler(md, 3, n_sequences=50, random_state=0)
+    assert all(len(set(subject[list(seq)])) == 1 for seq in balanced)
+
+
 def test_relative_positioning_sampler_with_windows_sharing_a_start():
     """Two windows of a recording may start at the same sample (two events at
     one onset): their start samples must stay aligned with the windows."""
