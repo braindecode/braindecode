@@ -14,11 +14,17 @@ are actually read get downloaded.
 
 from __future__ import annotations
 
+import http.client
 import json
+import logging
 import os
 import threading
+import time
+import urllib.error
+import urllib.request
 import warnings
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 
 import mne
 import numpy as np
@@ -34,7 +40,19 @@ from .base import BaseConcatDataset, RawDataset
 zarr = _soft_import("zarr", purpose="streaming NEMAR datasets", strict=False)
 fsspec = _soft_import("fsspec", purpose="streaming NEMAR datasets", strict=False)
 
+log = logging.getLogger(__name__)
+
 NEMAR_ZARR_URL = "https://zarr.nemar.org"
+
+# Shards are fetched as parallel byte ranges, each with a deadline: some S3
+# connections stall at a few tens of kB/s while others run at MB/s, so a
+# whole-shard request can outlast any timeout, again and again when retried.
+# A 4 MiB range takes 1-2 s on a healthy connection; one still running after
+# PART_DEADLINE s is dropped and asked anew, on a new connection.
+PART_SIZE = 4 * 1024**2
+PART_DEADLINE = 20.0
+PART_RETRIES = 10
+N_CONNECTIONS = 8
 
 # mne_bids leaves MEG out of this mapping (it reads MEG types from the raw
 # file), so the BIDS MEG types are added here. Axial gradiometers are "mag"
@@ -95,7 +113,7 @@ class _NEMARRaw(BaseRaw):
     """Raw backed by one channel group of a NEMAR Zarr store, read lazily.
 
     Samples are fetched one shard (NEMAR stores 300 s per shard) at a time,
-    with a single HTTP request each, and the decoded shards are kept in a
+    as parallel byte ranges over HTTP, and the decoded shards are kept in a
     per-process LRU cache of at most ``cache_size`` bytes.
     """
 
@@ -150,17 +168,94 @@ def _get_shard(extra, i):
         if key in shards:
             shards.move_to_end(key)
             return shards[key]
-    arr = _open_level0(extra["url"], extra["group"])
     shard_len = extra["shard_len"]
-    # Reading a whole shard costs one request; zarr fetches the shard object
-    # at once instead of one range request per inner chunk.
-    shard = arr[:, i * shard_len : (i + 1) * shard_len]
+    if extra["url"].startswith(("http://", "https://")):
+        shard = _fetch_shard_http(extra["url"], extra["group"], i, shard_len)
+    else:
+        # Reading a whole shard costs one read; zarr fetches the shard object
+        # at once instead of one per inner chunk.
+        arr = _open_level0(extra["url"], extra["group"])
+        shard = arr[:, i * shard_len : (i + 1) * shard_len]
     if extra["cache_size"]:
         with _LOCK:
             shards[key] = shard
             while sum(s.nbytes for s in shards.values()) > extra["cache_size"]:
                 shards.popitem(last=False)
     return shard
+
+
+def _level0_meta(url, group):
+    _, arrays = _get_shard_cache()
+    key = (url, group, "zarr.json")
+    if key not in arrays:
+        with urllib.request.urlopen(
+            f"{url}/{group}/0/zarr.json", timeout=PART_DEADLINE
+        ) as f:
+            arrays[key] = json.load(f)
+    return arrays[key]
+
+
+def _fetch_range(url, start, stop):
+    """Bytes [start, stop) of url, asked anew when they miss PART_DEADLINE."""
+    for attempt in range(PART_RETRIES):
+        t0 = time.monotonic()
+        try:
+            request = urllib.request.Request(
+                url, headers={"Range": f"bytes={start}-{stop - 1}"}
+            )
+            out = bytearray()
+            with urllib.request.urlopen(request, timeout=PART_DEADLINE) as f:
+                while chunk := f.read(256 * 1024):
+                    out += chunk
+                    if time.monotonic() - t0 > PART_DEADLINE:
+                        raise TimeoutError(f"{len(out)} B in {PART_DEADLINE} s")
+            if len(out) != stop - start:
+                raise OSError(f"{len(out)} B for a range of {stop - start}")
+            return bytes(out)
+        except (OSError, http.client.HTTPException) as e:  # stalls, resets, 5xx
+            client_error = isinstance(e, urllib.error.HTTPError) and e.code < 500
+            if client_error or attempt == PART_RETRIES - 1:
+                raise
+            log.warning(
+                "%s bytes %d-%d: %r, retry %d", url, start, stop, e, attempt + 1
+            )
+            time.sleep(min(2**attempt, 30))
+
+
+def _fetch_shard_http(url, group, i, shard_len):
+    """Shard i of the level-0 array: its bytes in parallel ranges, decoded by zarr."""
+    meta = _level0_meta(url, group)
+    n_channels, n_times = meta["shape"]
+    width = min(shard_len, n_times - i * shard_len)
+    sep = meta.get("chunk_key_encoding", {}).get("configuration", {})
+    sep = sep.get("separator", "/")
+    shard_url = f"{url}/{group}/0/c{sep}0{sep}{i}"
+    try:
+        head = urllib.request.Request(shard_url, method="HEAD")
+        with urllib.request.urlopen(head, timeout=PART_DEADLINE) as f:
+            size = int(f.headers["Content-Length"])
+    except urllib.error.HTTPError as e:
+        # A shard never written holds the fill value; NEMAR's S3 answers 403
+        # rather than 404 for a missing object.
+        if e.code in (403, 404):
+            return np.full(
+                (n_channels, width), meta.get("fill_value", 0), meta["data_type"]
+            )
+        raise
+    bounds = [(a, min(a + PART_SIZE, size)) for a in range(0, size, PART_SIZE)]
+    with ThreadPoolExecutor(N_CONNECTIONS) as pool:
+        data = b"".join(pool.map(lambda b: _fetch_range(shard_url, *b), bounds))
+    # The shard as the only chunk of a one-shard array: same codecs, so zarr
+    # decodes it, and trims the last, partial shard, as it would remotely.
+    one = dict(meta, shape=[n_channels, width])
+    buffer = zarr.core.buffer.default_buffer_prototype().buffer
+    store = zarr.storage.MemoryStore(
+        {
+            "zarr.json": buffer.from_bytes(json.dumps(one).encode()),
+            f"c{sep}0{sep}0": buffer.from_bytes(data),
+        }
+    )
+    return zarr.open_array(store, mode="r", zarr_format=3)[:]
 
 
 def _make_info(group_attrs, array_attrs):
