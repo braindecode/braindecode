@@ -499,7 +499,7 @@ Requirements
 Bug fixes
 ==========
 
-- Fix :class:`braindecode.samplers.SequenceSampler` and :class:`braindecode.samplers.BalancedSequenceSampler` returning sequences that mix recordings when the windows of a recording are not contiguous in metadata without ``i_dataset`` (e.g. alternating subjects): sequences are now taken from the recording's own windows; results are unchanged when they are contiguous (:gh:`XXXX` by `Adam Mounir`_).
+- Fix :class:`braindecode.samplers.SequenceSampler` and :class:`braindecode.samplers.BalancedSequenceSampler` returning sequences that mix recordings when the windows of a recording are not contiguous in metadata without ``i_dataset`` (e.g. alternating subjects): sequences are now taken from the recording's own windows; results are unchanged when they are contiguous (:gh:`1477` by `Adam Mounir`_).
 
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
