@@ -499,7 +499,7 @@ Requirements
 Bug fixes
 ==========
 
-- Fix :func:`braindecode.datautil.infer_signal_properties` (used by :class:`braindecode.EEGRegressor` to set ``n_outputs``) inferring one output for windows with several regression targets: the model was built with ``n_outputs=1`` and trained against all targets through broadcasting (:gh:`XXXX` by `Adam Mounir`_).
+- Fix :func:`braindecode.datautil.infer_signal_properties` (used by :class:`braindecode.EEGRegressor` to set ``n_outputs``) inferring one output for windows with several regression targets: the model was built with ``n_outputs=1`` and trained against all targets through broadcasting (:gh:`1479` by `Adam Mounir`_).
 
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
