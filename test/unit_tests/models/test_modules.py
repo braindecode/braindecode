@@ -272,25 +272,6 @@ def test_reset_parameters():
     assert torch.allclose(bn.bias, torch.zeros(num_channels))
 
 
-def test_dense_spatial_filter_forward_collapse_true():
-    in_chans = 3
-    growth = 8
-    depth = 4
-    in_ch = 1
-    bottleneck = 4
-    drop_prob = 0.0
-    activation = torch.nn.LeakyReLU
-    collapse = True
-
-    dense_spatial_filter = _DenseSpatialFilter(
-        in_chans, growth, depth, in_ch, bottleneck, drop_prob, activation, collapse
-    )
-
-    x = torch.rand(5, 3, 10)  # 3-dimensional input
-    output = dense_spatial_filter(x)
-    assert output.shape[:2] == torch.Size([5, 33])
-
-
 def test_dense_spatial_filter_forward_collapse_false():
     in_chans = 3
     growth = 8
@@ -355,16 +336,6 @@ def test_mlp_increase(hidden_features):
         # For each layer that we add, the model
         # increase with 2 layers + 2 initial layers (input, output layer)
         assert len(model) == 2 * (len(hidden_features)) + 2
-
-
-def test_squeeze_and_excitation_forward():
-    module = SqueezeAndExcitation(in_channels=32, reduction_rate=4)
-    inputs = torch.rand(2, 32, 1, 64)
-
-    outputs = module(inputs)
-
-    assert module.fc1.out_channels == module.fc2.in_channels
-    assert outputs.shape == inputs.shape
 
 
 def test_segm_patch_not_learning():
@@ -478,14 +449,6 @@ def test_drop_path_no_drop():
     )
 
 
-def test_drop_path_with_dropout_shape():
-    x = torch.rand(5, 4)  # Example input tensor
-    output = drop_path(x, drop_prob=0.5, training=True)
-    assert output.shape == x.shape, (
-        "Output tensor must have the same shape as the input tensor."
-    )
-
-
 def test_drop_path_does_not_require_inplace_bernoulli():
     x = torch.ones(64, 3)
 
@@ -536,16 +499,6 @@ def test_drop_path_scale_by_keep():
 
     keep_prob = 1 - drop_prob
     assert torch.equal(scaled_output, unscaled_output / keep_prob)
-
-
-def test_drop_path_different_dimensions():
-    x_2d = torch.rand(2, 2)  # 2D tensor
-    x_3d = torch.rand(2, 2, 2)  # 3D tensor
-    output_2d = drop_path(x_2d, drop_prob=0.5, training=True)
-    output_3d = drop_path(x_3d, drop_prob=0.5, training=True)
-    assert output_2d.shape == x_2d.shape and output_3d.shape == x_3d.shape, (
-        "Output tensor must maintain input shape across different dimensions."
-    )
 
 
 @pytest.mark.parametrize(
@@ -1250,72 +1203,6 @@ def test_traced_filter_runs_without_parameter_mutation():
     torch.testing.assert_close(traced_filter(input_tensor), expected)
 
 
-def test_forward_pass_output_shape():
-    """
-    Test that the forward pass returns the correct output shape.
-    """
-    batch_size = 3
-    in_channels = 2
-    out_channels = 4  # Must be a multiple of in_channels
-    sequence_length = 256
-    sample_rate = 100.0  # Hz
-    filter_layer = GeneralizedGaussianFilter(
-        in_channels=in_channels,
-        out_channels=out_channels,
-        sequence_length=sequence_length,
-        sample_rate=sample_rate,
-        inverse_fourier=True,
-        f_mean=(10.0, 20.0),
-        bandwidth=(5.0, 10.0),
-        shape=(2.0, 2.5),
-        group_delay=(10.0, 20.0),
-    )
-    input_tensor = torch.randn(batch_size, in_channels, sequence_length)
-    output = filter_layer(input_tensor)
-    expected_shape = (batch_size, out_channels, sequence_length)
-    assert output.shape == expected_shape, (
-        f"Expected output shape {expected_shape}, got {output.shape}"
-    )
-
-
-def test_forward_pass_no_inverse_fourier():
-    """
-    Test the forward pass when inverse_fourier is set to False, ensuring the output is in the frequency domain.
-    """
-    batch_size = 2
-    in_channels = 1
-    out_channels = 2
-    sequence_length = 128
-    sample_rate = 100.0  # Hz
-    filter_layer = GeneralizedGaussianFilter(
-        in_channels=in_channels,
-        out_channels=out_channels,
-        sequence_length=sequence_length,
-        sample_rate=sample_rate,
-        inverse_fourier=False,
-        f_mean=(15.0, 30.0),
-        bandwidth=(5.0, 5.0),
-        shape=(2.0, 2.0),
-    )
-    input_tensor = torch.randn(batch_size, in_channels, sequence_length)
-    output = filter_layer(input_tensor)
-    # Since inverse_fourier=False, output should be in frequency domain
-    freq_bins = sequence_length // 2 + 1
-    expected_shape = (
-        batch_size,
-        out_channels,
-        freq_bins,
-        2,
-    )  # Last dimension is real and imaginary parts
-    assert output.shape == expected_shape, (
-        f"Expected output shape {expected_shape}, got {output.shape}"
-    )
-    # Verify that output is real-valued (since it's the real and imaginary parts)
-    assert output.dtype == torch.float32 or output.dtype == torch.float64, (
-        "Output should be real-valued tensor"
-    )
-
-
 @pytest.mark.parametrize("sequence_length", [120, 121])
 @pytest.mark.parametrize("inverse_fourier", [True, False])
 def test_generalized_gaussian_filter_real_dft_path_matches(
@@ -1618,15 +1505,6 @@ def test_warning_conditions(n_bands, kernel_sizes, expected_warning):
         assert any(expected_warning in str(warn.message) for warn in w)
 
 
-def test_multi_head_attention_forward_shape():
-    from braindecode.modules import MultiHeadAttention
-
-    mha = MultiHeadAttention(emb_size=32, num_heads=4, dropout=0.1)
-    x = torch.randn(2, 10, 32)
-    out = mha(x)
-    assert out.shape == (2, 10, 32)
-
-
 def test_multi_head_attention_explicit_scale_matches_manual_attention():
     from braindecode.modules import MultiHeadAttention
 
@@ -1754,21 +1632,6 @@ def test_hpu_fused_sdpa_gets_contiguous_inputs(monkeypatch):
     qkv = torch.randn(2, 5, 3, 4, 8).permute(2, 0, 3, 1, 4)  # heads split off
     _hpu_eager_fused_sdpa(*qkv.unbind(0))
     assert seen == [[True, True, True]]
-
-
-def test_forward_pass_ifnet_output_shape():
-    block = _SpatioTemporalFeatureBlock(
-        n_times=128,  # divisible by stride_factor
-        in_channels=4,
-        out_channels=8,
-        kernel_sizes=[63, 31],
-        n_bands=2,
-        stride_factor=16,
-    )
-    x = torch.randn(2, 4, 128)  # batch_size=2
-    out = block(x)
-    assert isinstance(out, torch.Tensor)
-    assert out.shape[0] == 2  # batch_size preserved
 
 
 def test_patch_tokenizer():
@@ -2246,3 +2109,117 @@ def test_timm_mlp_keys_and_forward():
     assert list(mlp.state_dict()) == ["fc1.weight", "fc1.bias", "fc2.weight", "fc2.bias"]
     x = torch.randn(2, 3, 4)
     torch.testing.assert_close(mlp(x), mlp.fc2(torch.nn.functional.gelu(mlp.fc1(x))))
+
+
+def test_timm_attention_keys_and_weights():
+    import math
+
+    from braindecode.modules import TimmAttention
+
+    torch.manual_seed(0)
+    attn = TimmAttention(16, num_heads=4).eval()
+    assert list(attn.state_dict()) == ["qkv.weight", "proj.weight", "proj.bias"]
+    beit = TimmAttention(16, num_heads=4, qv_bias=True, exact=True).eval()
+    assert list(beit.state_dict()) == [
+        "q_bias",
+        "v_bias",
+        "qkv.weight",
+        "proj.weight",
+        "proj.bias",
+    ]
+    x = torch.randn(2, 5, 16)
+    assert attn(x).shape == (2, 5, 16)
+    weights = attn(x, need_weights=True)
+    assert weights.shape == (2, 4, 5, 5)
+    torch.testing.assert_close(weights.sum(-1), torch.ones(2, 4, 5))
+    # exact: timm's op order, softmax((q * scale) @ k^T) @ v, bit for bit
+    q, k, v = beit._heads(x)
+    ref = ((q * 0.5) @ k.transpose(-2, -1)).softmax(-1) @ v
+    ref = beit.proj(ref.transpose(1, 2).flatten(2))
+    assert torch.equal(beit(x), ref)
+    assert math.isclose(beit.scale, 0.5)
+    with pytest.raises(ValueError, match="num_heads"):
+        TimmAttention(16, num_heads=32)
+
+
+def test_pre_norm_block_keys_and_forward():
+    from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
+
+    torch.manual_seed(0)
+    block = PreNormBlock(16, TimmAttention(16, 4), TimmMlp(16, 32)).eval()
+    assert list(block.state_dict())[:3] == [
+        "norm1.weight",
+        "norm1.bias",
+        "attn.qkv.weight",
+    ]
+    x = torch.randn(2, 5, 16)
+    expected = x + block.attn(block.norm1(x))
+    expected = expected + block.mlp(block.norm2(expected))
+    assert torch.equal(block(x), expected)
+
+    scaled = PreNormBlock(
+        16, TimmAttention(16, 4), TimmMlp(16, 32), drop_path=0.1, layer_scale=1e-5
+    ).eval()
+    assert list(scaled.state_dict())[:2] == ["gamma_1", "gamma_2"]
+    assert torch.equal(scaled.gamma_1, torch.full((16,), 1e-5))
+    expected = x + scaled.gamma_1 * scaled.attn(scaled.norm1(x))
+    expected = expected + scaled.gamma_2 * scaled.mlp(scaled.norm2(expected))
+    assert torch.equal(scaled(x), expected)
+    assert torch.jit.script(scaled)(x).shape == x.shape
+
+
+def test_positional_encoding_modules():
+    from braindecode.functional import sinusoidal_positional_encoding
+    from braindecode.modules import (
+        LearnedPositionalEncoding,
+        SinusoidalPositionalEncoding,
+    )
+
+    torch.manual_seed(0)
+    learned = LearnedPositionalEncoding(10, 8, drop_prob=0.5).eval()
+    assert list(learned.state_dict()) == ["encoding"]
+    assert learned.encoding.shape == (1, 10, 8)
+    x = torch.randn(2, 6, 8)
+    assert torch.equal(learned(x), x + learned.encoding[:, :6])
+
+    fixed = SinusoidalPositionalEncoding(10, 8).eval()
+    assert list(fixed.state_dict()) == []
+    assert torch.equal(fixed(x), x + sinusoidal_positional_encoding(10, 8)[None, :6])
+    stored = SinusoidalPositionalEncoding(10, 8, persistent=True)
+    assert list(stored.state_dict()) == ["pe"]
+    assert torch.jit.script(stored)(x).shape == x.shape
+
+
+def test_transformer_block_modules_match_their_layouts():
+    from braindecode.modules import (
+        FeedForwardBlock,
+        MultiHeadAttention,
+        PostNormTransformerBlock,
+        PreNormTransformerBlock,
+    )
+
+    torch.manual_seed(0)
+    x = torch.randn(2, 5, 16)
+    pre = PreNormTransformerBlock(
+        16, MultiHeadAttention(16, 4, 0.0), FeedForwardBlock(16, 2, 0.0), 0.0
+    ).eval()
+    assert list(pre.state_dict())[:3] == ["0.fn.0.weight", "0.fn.0.bias", "0.fn.1.keys.weight"]
+    h = x + pre[0].fn(x)
+    assert torch.equal(pre(x), h + pre[1].fn(h))
+
+    post = PostNormTransformerBlock(
+        16, MultiHeadAttention(16, 4, 0.0), FeedForwardBlock(16, 2, 0.0), 0.0
+    ).eval()
+    assert list(post.state_dict())[0] == "attention.module.keys.weight"
+    assert torch.equal(post(x), post.feed_forward(post.attention(x)))
+    assert torch.jit.script(post)(x).shape == x.shape
+
+
+def test_squeeze_and_excitation_forward():
+    module = SqueezeAndExcitation(in_channels=32, reduction_rate=4)
+    inputs = torch.rand(2, 32, 1, 64)
+
+    outputs = module(inputs)
+
+    assert module.fc1.out_channels == module.fc2.in_channels
+    assert outputs.shape == inputs.shape

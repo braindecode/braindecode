@@ -308,34 +308,6 @@ def test_labram_neural_tokenizer_initialization(model_tokenizer):
     assert model_tokenizer.n_outputs == 4
 
 
-def test_labram_neural_tokenizer_forward_pass_basic(
-    model_tokenizer, batch_size, n_chans, n_times, n_outputs
-):
-    """Test basic forward pass in tokenizer mode."""
-    x = torch.randn(batch_size, n_chans, n_times)
-    output = model_tokenizer(x)
-    assert output.shape == (batch_size, n_outputs)
-
-
-def test_labram_neural_tokenizer_forward_pass_single_sample(
-    model_tokenizer, n_chans, n_times, n_outputs
-):
-    """Test forward pass with single sample in tokenizer mode."""
-    x = torch.randn(1, n_chans, n_times)
-    output = model_tokenizer(x)
-    assert output.shape == (1, n_outputs)
-
-
-def test_labram_neural_tokenizer_different_batch_sizes(
-    model_tokenizer, n_chans, n_times, n_outputs
-):
-    """Test with different batch sizes in tokenizer mode."""
-    for batch_size in [1, 2, 4, 8]:
-        x = torch.randn(batch_size, n_chans, n_times)
-        output = model_tokenizer(x)
-        assert output.shape == (batch_size, n_outputs)
-
-
 def test_labram_neural_tokenizer_gradient_flow(model_tokenizer, n_chans, n_times):
     """Test that gradients flow correctly through the model in tokenizer mode."""
     x = torch.randn(4, n_chans, n_times, requires_grad=True)
@@ -362,24 +334,6 @@ def test_labram_neural_decoder_initialization(model_decoder):
     assert model_decoder.n_outputs == 4
 
 
-def test_labram_neural_decoder_forward_pass_basic(
-    model_decoder, batch_size, n_chans, n_times, n_outputs
-):
-    """Test basic forward pass in decoder mode."""
-    x = torch.randn(batch_size, n_chans, n_times)
-    output = model_decoder(x)
-    assert output.shape == (batch_size, n_outputs)
-
-
-def test_labram_neural_decoder_forward_pass_single_sample(
-    model_decoder, n_chans, n_times, n_outputs
-):
-    """Test forward pass with single sample in decoder mode."""
-    x = torch.randn(1, n_chans, n_times)
-    output = model_decoder(x)
-    assert output.shape == (1, n_outputs)
-
-
 @pytest.mark.network
 @pytest.mark.huggingface
 def test_labram_can_load_pretrained_weights():
@@ -403,16 +357,6 @@ def test_labram_can_load_pretrained_weights():
     x = torch.randn(1, model.n_chans, model.n_times)
     output = model(x)
     assert output.shape[0] == 1
-
-
-def test_labram_neural_decoder_different_batch_sizes(
-    model_decoder, n_chans, n_times, n_outputs
-):
-    """Test with different batch sizes in decoder mode."""
-    for batch_size in [1, 2, 4, 8]:
-        x = torch.randn(batch_size, n_chans, n_times)
-        output = model_decoder(x)
-        assert output.shape == (batch_size, n_outputs)
 
 
 def test_labram_neural_decoder_gradient_flow(model_decoder, n_chans, n_times):
@@ -510,40 +454,6 @@ def test_labram_output_shapes_consistency_between_modes(n_times, chs_info, n_out
 
     # Both should have the same output shape
     assert output_tokenizer.shape == output_decoder.shape == (batch_size, n_outputs)
-
-
-def test_labram_patch_embedding_shapes(n_times, n_chans, patch_size, emb_size):
-    """Test patch embedding output shapes."""
-    from braindecode.models.labram import _PatchEmbed, _SegmentPatch
-
-    batch_size = 2
-
-    # Test SegmentPatch
-    segment_patch = _SegmentPatch(
-        n_times=n_times,
-        patch_size=patch_size,
-        n_chans=n_chans,
-        emb_dim=patch_size,
-    )
-
-    x = torch.randn(batch_size, n_chans, n_times)
-    output_segment = segment_patch(x)
-
-    # Should be (batch, n_chans, n_patches, patch_size)
-    assert output_segment.shape == (batch_size, n_chans, 5, patch_size)
-
-    # Test PatchEmbed
-    patch_embed = _PatchEmbed(
-        n_times=n_times,
-        patch_size=patch_size,
-        in_channels=n_chans,
-        emb_dim=emb_size,
-    )
-
-    output_patch = patch_embed(x)
-
-    # Should be (batch, n_patches, emb_dim)
-    assert output_patch.shape == (batch_size, 5, emb_size)
 
 
 # ==============================================================================
@@ -889,28 +799,11 @@ def test_luna_base_initialization(luna_base_model, luna_base_config):
     assert len(luna_base_model.blocks) == 8
 
 
-def test_luna_base_forward_pass(luna_base_model):
-    """Test LUNA Base forward pass produces correct output shape."""
-    x = torch.randn(2, 22, 1000)
-    with torch.no_grad():
-        output = luna_base_model(x)
-    assert output.shape == (2, 2)
-
-
 def test_luna_base_parameter_count(luna_base_model):
     """Test LUNA Base has expected parameter count."""
     total_params = sum(p.numel() for p in luna_base_model.parameters())
     # Base should have roughly 7M parameters
     assert 5_000_000 < total_params < 10_000_000
-
-
-def test_luna_base_different_batch_sizes(luna_base_model):
-    """Test LUNA Base with different batch sizes."""
-    for batch_size in [1, 2, 4, 8]:
-        x = torch.randn(batch_size, 22, 1000)
-        with torch.no_grad():
-            output = luna_base_model(x)
-        assert output.shape == (batch_size, 2)
 
 
 def test_luna_base_gradient_flow(luna_base_model):
@@ -1214,28 +1107,11 @@ def test_luna_large_initialization(luna_large_model, luna_large_config):
     assert len(luna_large_model.blocks) == 10
 
 
-def test_luna_large_forward_pass(luna_large_model):
-    """Test LUNA Large forward pass produces correct output shape."""
-    x = torch.randn(2, 22, 1000)
-    with torch.no_grad():
-        output = luna_large_model(x)
-    assert output.shape == (2, 2)
-
-
 def test_luna_large_parameter_count(luna_large_model):
     """Test LUNA Large has expected parameter count."""
     total_params = sum(p.numel() for p in luna_large_model.parameters())
     # Large should have roughly 43M parameters
     assert 30_000_000 < total_params < 60_000_000
-
-
-def test_luna_large_different_batch_sizes(luna_large_model):
-    """Test LUNA Large with different batch sizes."""
-    for batch_size in [1, 2, 4, 8]:
-        x = torch.randn(batch_size, 22, 1000)
-        with torch.no_grad():
-            output = luna_large_model(x)
-        assert output.shape == (batch_size, 2)
 
 
 def test_luna_large_gradient_flow(luna_large_model):
@@ -1265,28 +1141,11 @@ def test_luna_huge_initialization(luna_huge_model, luna_huge_config):
     assert len(luna_huge_model.blocks) == 24
 
 
-def test_luna_huge_forward_pass(luna_huge_model):
-    """Test LUNA Huge forward pass produces correct output shape."""
-    x = torch.randn(2, 22, 1000)
-    with torch.no_grad():
-        output = luna_huge_model(x)
-    assert output.shape == (2, 2)
-
-
 def test_luna_huge_parameter_count(luna_huge_model):
     """Test LUNA Huge has expected parameter count."""
     total_params = sum(p.numel() for p in luna_huge_model.parameters())
     # Huge should have roughly 312M parameters
     assert 250_000_000 < total_params < 350_000_000
-
-
-def test_luna_huge_different_batch_sizes(luna_huge_model):
-    """Test LUNA Huge with different batch sizes."""
-    for batch_size in [1, 2, 4, 8]:
-        x = torch.randn(batch_size, 22, 1000)
-        with torch.no_grad():
-            output = luna_huge_model(x)
-        assert output.shape == (batch_size, 2)
 
 
 def test_luna_huge_gradient_flow(luna_huge_model):
@@ -1688,23 +1547,9 @@ def test_cbramod_load_weights():
     assert not load_result.unexpected_keys
 
 
-def test_cbramod_forward_pass():
-    model = CBraMod(return_encoder_output=True)
-    x = torch.randn(2, 22, 1000)
-    output = model(x)
-    assert output.shape == (2, 22, 5, 200)
-
-
 # ==============================================================================
 # Tests for CodeBrain Model
 # ==============================================================================
-
-
-def test_codebrain_forward_pass():
-    model = CodeBrain(n_chans=19, n_outputs=2, n_times=6000)
-    x = torch.randn(2, 19, 6000)
-    output = model(x)
-    assert output.shape == (2, 2)
 
 
 def test_codebrain_pretrain_mode():

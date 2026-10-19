@@ -296,6 +296,7 @@ perceptrons (MLPs) and inception blocks.
     :recursive:
 
     MLP
+    TimmAttention
     TimmMlp
     FeedForwardBlock
     InceptionBlock
@@ -375,6 +376,11 @@ input shapes and dimensions.
     Chomp1d
     DropPath
     PostNormResidual
+    PreNormBlock
+    PreNormTransformerBlock
+    PostNormTransformerBlock
+    LearnedPositionalEncoding
+    SinusoidalPositionalEncoding
     Residual
     Ensure4d
     FourierEmb

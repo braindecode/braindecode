@@ -119,7 +119,7 @@ jobs:
         # PRs compile one model per family; master compiles every model.
         BRAINDECODE_COMPILE_ALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
       # Redistribute individual tests: the integration module dominates runtime.
-      run: pytest -vv --durations=0 -n auto --dist worksteal --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
+      run: pytest -vv --durations=0 -n auto --dist worksteal --max-worker-restart=2 --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
 
     - name: Run Full Test Suite
       if: ${{ !matrix.run-coverage }}
@@ -127,7 +127,7 @@ jobs:
         HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
       # test_model_compiled runs only in the coverage job above, which restores
       # the TorchInductor cache; elsewhere it recompiled every model cold.
-      run: pytest -vv --durations=0 -n auto --dist worksteal test/ -k "not test_model_compiled"
+      run: pytest -vv --durations=0 -n auto --dist worksteal --max-worker-restart=2 test/ -k "not test_model_compiled"
 
     - name: Save TorchInductor Cache
       if: ${{ matrix.run-coverage && success() && steps.restore-compiler-cache.outputs.cache-hit != 'true' }}

@@ -11,6 +11,7 @@ motor imagery classification from Wei Zhao et al. (2025).
 from __future__ import annotations
 
 import math
+from collections import OrderedDict
 
 import torch
 import torch.nn.functional as F
@@ -19,7 +20,12 @@ from mne.utils import warn
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import FeedForwardBlock, MultiHeadAttention, PostNormResidual
+from braindecode.modules import (
+    FeedForwardBlock,
+    LearnedPositionalEncoding,
+    MultiHeadAttention,
+    PostNormTransformerBlock,
+)
 
 
 class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -194,23 +200,46 @@ class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # class token.
         n_tokens = math.floor((self.n_times - pooling_size) / pooling_size + 1) + 1
 
-        self.position = _PositionalEncoding(
-            emb_size=self.embed_dim,
-            drop_prob=att_positional_drop_prob,
-            n_tokens=n_tokens,
+        length = 100
+        if n_tokens > length:
+            warn(
+                "The number of tokens is larger than the default length. "
+                "The length parameter will be automatically adjusted to "
+                "avoid inference issues."
+            )
+            length = n_tokens
+        self.position = LearnedPositionalEncoding(
+            length, self.embed_dim, att_positional_drop_prob
         )
 
         attention_scale = (
             self.embed_dim**-0.5 if attention_scale is None else attention_scale
         )
-        self.trans = _TransformerEncoder(
-            num_heads=num_heads,
-            depth=num_layers,
-            emb_size=self.embed_dim,
-            drop_prob=att_drop_prob,
-            forward_expansion=forward_expansion,
-            activation=activation_ffn,
-            attention_scale=attention_scale,
+        # ``layers`` keeps the parameter names of saved checkpoints.
+        self.trans = nn.Sequential(
+            OrderedDict(
+                layers=nn.Sequential(
+                    *[
+                        PostNormTransformerBlock(
+                            self.embed_dim,
+                            MultiHeadAttention(
+                                self.embed_dim,
+                                num_heads,
+                                att_drop_prob,
+                                scale=attention_scale,
+                            ),
+                            FeedForwardBlock(
+                                self.embed_dim,
+                                expansion=forward_expansion,
+                                drop_p=att_drop_prob,
+                                activation=activation_ffn,
+                            ),
+                            att_drop_prob,
+                        )
+                        for _ in range(num_layers)
+                    ]
+                )
+            )
         )
 
         self.final_layer = nn.Sequential(
@@ -344,151 +373,3 @@ class _MultiScalePatchEmbeddingCNN(nn.Module):
         x = torch.cat(outs, dim=1)
         x = self.projection(x)
         return x
-
-
-class _TransformerEncoderBlock(nn.Module):
-    """Transformer encoder block with post-norm residual connections."""
-
-    def __init__(
-        self,
-        emb_size: int,
-        num_heads: int,
-        drop_prob: float,
-        forward_expansion: int,
-        attention_scale: float,
-        activation: type[nn.Module] = nn.GELU,
-    ):
-        super().__init__()
-        self.attention = PostNormResidual(
-            MultiHeadAttention(emb_size, num_heads, drop_prob, scale=attention_scale),
-            emb_size,
-            drop_prob,
-        )
-        self.feed_forward = PostNormResidual(
-            FeedForwardBlock(
-                emb_size,
-                expansion=forward_expansion,
-                drop_p=drop_prob,
-                activation=activation,
-            ),
-            emb_size,
-            drop_prob,
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Forward pass of the transformer encoder block.
-
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor.
-
-        Returns
-        -------
-        Tensor
-            Output tensor after transformer encoder block.
-        """
-        x = self.attention(x)
-        x = self.feed_forward(x)
-        return x
-
-
-class _TransformerEncoder(nn.Module):
-    """Stack of transformer encoder blocks."""
-
-    def __init__(
-        self,
-        num_heads: int,
-        depth: int,
-        emb_size: int,
-        drop_prob: float,
-        forward_expansion: int,
-        attention_scale: float,
-        activation: type[nn.Module] = nn.GELU,
-    ):
-        super().__init__()
-        self.layers = nn.Sequential(
-            *[
-                _TransformerEncoderBlock(
-                    emb_size=emb_size,
-                    num_heads=num_heads,
-                    drop_prob=drop_prob,
-                    forward_expansion=forward_expansion,
-                    attention_scale=attention_scale,
-                    activation=activation,
-                )
-                for _ in range(depth)
-            ]
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Forward pass of the transformer encoder.
-
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor.
-
-        Returns
-        -------
-        Tensor
-            Output tensor after the transformer encoder.
-        """
-        return self.layers(x)
-
-
-class _PositionalEncoding(nn.Module):
-    """Learnable positional encoding.
-
-    Parameters
-    ----------
-    emb_size : int
-        Embedding dimension.
-    drop_prob : float
-        Dropout probability applied after adding the encoding.
-    n_tokens : int
-        Number of tokens in the input sequence (including the class
-        token). If it exceeds ``length``, the encoding table is enlarged
-        to ``n_tokens`` with a warning.
-    length : int, default=100
-        Length of the learnable encoding table.
-    """
-
-    def __init__(
-        self,
-        emb_size: int,
-        drop_prob: float,
-        n_tokens: int,
-        length: int = 100,
-    ):
-        super().__init__()
-        if n_tokens > length:
-            warn(
-                "The number of tokens is larger than the default length. "
-                "The length parameter will be automatically adjusted to "
-                "avoid inference issues."
-            )
-            length = n_tokens
-        self.dropout = nn.Dropout(drop_prob)
-        self.encoding = nn.Parameter(torch.randn(1, length, emb_size))
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Forward pass of the positional encoding.
-
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor of shape (batch_size, sequence_length, embedding_dim).
-
-        Returns
-        -------
-        Tensor
-            Tensor with positional encoding added.
-        """
-        seq_length = x.size(1)
-        encoding = self.encoding[:, :seq_length, :]
-        x = x + encoding
-        return self.dropout(x)

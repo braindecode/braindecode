@@ -14,8 +14,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from braindecode.functional import init_weights_, sinusoidal_positional_encoding
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import SinusoidalPositionalEncoding
 
 
 class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
@@ -328,21 +329,6 @@ class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
         return output
 
 
-class _PositionalEmbedding(nn.Module):
-    def __init__(self, d_model: int, max_len: int = 5000):
-        super().__init__()
-        self.d_model = d_model  # store the original dimension
-        # Odd d_model is handled inside the shared primitive (computed on the
-        # next even width and truncated), so no manual padding is needed here.
-        pe = sinusoidal_positional_encoding(max_len, d_model).unsqueeze(0)
-        self.register_buffer("pe", pe)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x is assumed to have shape (B, L, d_model_target)
-        # We return the first self.d_model columns from the computed pe.
-        return self.pe[:, : x.size(1), : self.d_model]
-
-
 class _CrossChannelTokenEmbedding(nn.Module):
     def __init__(self, c_in: int, l_patch: int, d_model: int):
         super().__init__()
@@ -417,10 +403,15 @@ class _ListPatchEmbedding(nn.Module):
             for patch_len in patch_len_list
         ]
         self.value_embeddings = nn.ModuleList(linear_layers)
-        self.position_embedding = _PositionalEmbedding(d_model=d_model)
+        # persistent: released checkpoints carry the tables
+        self.position_embedding = SinusoidalPositionalEncoding(
+            5000, d_model, persistent=True
+        )
         # One sinusoidal code along time per channel, which tags each channel
         # (the rows past enc_in that the original max_len=5000 adds are unused)
-        self.channel_embedding = _PositionalEmbedding(d_model=seq_len, max_len=enc_in)
+        self.channel_embedding = SinusoidalPositionalEncoding(
+            enc_in, seq_len, persistent=True
+        )
         self.dropout = nn.Dropout(dropout)
 
         self.learnable_embeddings = nn.ParameterList(
@@ -439,7 +430,7 @@ class _ListPatchEmbedding(nn.Module):
 
         # add positional embedding to tag each channel (only when not single_channel)
         if not self.single_channel:
-            x = x + self.channel_embedding(x)
+            x = self.channel_embedding(x)
 
         x_list = []
         for padding, value_embedding in zip(self.paddings, self.value_embeddings):
@@ -456,7 +447,7 @@ class _ListPatchEmbedding(nn.Module):
         # Iterate over learnable_embeddings with enumerate (supported by TorchScript)
         for idx, cxt in enumerate(self.learnable_embeddings):
             xi = x_list[idx]
-            xi = xi + cxt + self.position_embedding(xi)
+            xi = self.position_embedding(xi + cxt)
             out_list.append(xi)
 
         return out_list

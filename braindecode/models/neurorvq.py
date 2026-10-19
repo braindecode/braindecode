@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import math
 import warnings
-from collections.abc import Callable
 from functools import partial
-from typing import Dict, Optional, Union
+from typing import Callable, Dict, Optional, Union
 
 import torch
 import torch.nn.functional as F
@@ -22,7 +21,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.labram import _Attention
 from braindecode.models.signal_jepa import _GroupNorm
 from braindecode.models.util import _in_model_resample
-from braindecode.modules import MLP, DropPath, PatchTokenizer
+from braindecode.modules import MLP, PatchTokenizer, PreNormBlock
 
 # Channel order used to train NeuroRVQ-EEG v1. Keep in sync with the released
 # inference module: https://github.com/KonstantinosBarmpas/NeuroRVQ
@@ -243,60 +242,6 @@ def _stack_scales(x: Tensor, dropout: bool) -> bool:
     return x.device.type != "cpu" and not dropout
 
 
-class _Block(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        num_heads: int,
-        mlp_ratio: float,
-        qkv_bias: bool,
-        # LaBraM's ``_Attention`` calls ``qk_norm(head_dim, eps=1e-6)``.
-        qk_norm: Callable[..., nn.Module] | None,
-        drop: float,
-        attn_drop: float,
-        drop_path: float,
-        init_values: float,
-    ):
-        super().__init__()
-        self.norm1 = nn.LayerNorm(dim)
-        self.attn = _Attention(
-            dim,
-            num_heads=num_heads,
-            qkv_bias=qkv_bias,
-            qk_norm=qk_norm,
-            attn_drop=attn_drop,
-            proj_drop=drop,
-        )
-        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.norm2 = nn.LayerNorm(dim)
-        # Single trailing dropout (vs. the released module's two, after the
-        # activation and after fc2): identical forward since drop_prob=0.0 by
-        # default, and both placements are no-ops whenever drop=0.
-        self.mlp = MLP(
-            in_features=dim,
-            hidden_features=(int(dim * mlp_ratio),),
-            out_features=dim,
-            drop=drop,
-        )
-        self.gamma_1 = (
-            nn.Parameter(init_values * torch.ones(dim)) if init_values > 0 else None
-        )
-        self.gamma_2 = (
-            nn.Parameter(init_values * torch.ones(dim)) if init_values > 0 else None
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
-        attn = self.attn(self.norm1(x))
-        assert isinstance(attn, Tensor)  # narrows the Union return for TorchScript
-        if self.gamma_1 is not None:
-            attn = self.gamma_1 * attn
-        x = x + self.drop_path(attn)
-        mlp = self.mlp(self.norm2(x))
-        if self.gamma_2 is not None:
-            mlp = self.gamma_2 * mlp
-        return x + self.drop_path(mlp)
-
-
 class _MultiScaleTemporalConv(nn.Module):
     """Released four-branch patch embedding; ``kernels`` = (first, second) rows."""
 
@@ -353,6 +298,39 @@ class _MultiScaleTemporalConv(nn.Module):
     def _branch4(self, x: Tensor) -> Tensor:
         x = self.pool1_4(self.gelu1(self.norm1_4(self.conv1_4(x))))
         return self.pool2_4(self.gelu2(self.norm2_4(self.conv2_4(x))))
+
+
+def _block(
+    dim: int,
+    num_heads: int,
+    mlp_ratio: float,
+    qkv_bias: bool,
+    qk_norm: Callable[..., nn.Module] | None,
+    drop: float,
+    attn_drop: float,
+    drop_path: float,
+    init_values: float,
+) -> PreNormBlock:
+    """LaBraM's transformer block: pre-norm, its attention, timm MLP, layer scale."""
+    return PreNormBlock(
+        dim,
+        _Attention(
+            dim,
+            num_heads=num_heads,
+            qkv_bias=qkv_bias,
+            qk_norm=qk_norm,
+            attn_drop=attn_drop,
+            proj_drop=drop,
+        ),
+        MLP(
+            in_features=dim,
+            hidden_features=(int(dim * mlp_ratio),),
+            out_features=dim,
+            drop=drop,
+        ),
+        drop_path=drop_path,
+        layer_scale=init_values if init_values > 0 else None,
+    )
 
 
 class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
@@ -605,7 +583,7 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         norm = nn.LayerNorm if qk_norm else None
         self.blocks = nn.ModuleList(
             [
-                _Block(
+                _block(
                     embed_dim,
                     num_heads,
                     mlp_ratio,

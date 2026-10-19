@@ -1,6 +1,7 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Anton Soloviev <anton@praviel.com>
 #
 # License: BSD (3-clause)
 
@@ -9,7 +10,8 @@
 Computes the gradient of each model output unit with respect to the
 amplitude spectrum of the input. Internally splits the input into
 amplitude and phase via ``rfft``, treats both as leaf tensors, rebuilds
-the time-domain signal, runs the model, and reads back ``amps.grad``.
+the time-domain signal, runs the model, and differentiates with respect
+to the amplitudes without accumulating model parameter gradients.
 
 This is the one attribution method braindecode implements directly:
 captum has no frequency-domain attribution. Time-domain methods live
@@ -41,7 +43,7 @@ def amplitude_gradients(model, x):
         ``n_times // 2 + 1`` (the size of an ``rfft``).
     """
     device = next(model.parameters()).device
-    ffted = np.fft.rfft(x, axis=2)
+    ffted = np.fft.rfft(to_numpy(x), axis=2)
     amps = np.abs(ffted)
     phases = np.angle(ffted)
     amps_th = to_tensor(amps.astype(np.float32), device=device).requires_grad_(True)
@@ -60,9 +62,8 @@ def amplitude_gradients(model, x):
     n_outputs = outs.shape[1]
     grads_per_output = np.full((n_outputs,) + ffted.shape, np.nan, dtype=np.float32)
     for i in range(n_outputs):
-        outs[:, i].mean().backward(retain_graph=True)
-        grads_per_output[i] = to_numpy(amps_th.grad.clone())
-        amps_th.grad.zero_()
+        grads = torch.autograd.grad(outs[:, i].mean(), amps_th, retain_graph=True)[0]
+        grads_per_output[i] = to_numpy(grads)
     assert not np.any(np.isnan(grads_per_output))
     return grads_per_output
 
@@ -81,9 +82,12 @@ def amplitude_gradients_per_trial(model, dataset, batch_size):
     -------
     numpy.ndarray of shape ``(n_outputs, n_trials, n_chans, n_freqs)``
         Per-trial amplitude gradients for each output unit, in dataset
-        order.
+        order. Unlike :func:`amplitude_gradients`, the gradients are not
+        divided by the minibatch size.
     """
     loader = torch.utils.data.DataLoader(
         dataset, batch_size=batch_size, drop_last=False, shuffle=False
     )
-    return np.concatenate([amplitude_gradients(model, x) for x, *_ in loader], axis=1)
+    return np.concatenate(
+        [len(x) * amplitude_gradients(model, x) for x, *_ in loader], axis=1
+    )
