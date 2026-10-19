@@ -499,6 +499,8 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :func:`braindecode.preprocessing.create_fixed_length_windows` giving the windows of a dataset with several ``target_name`` a :class:`pandas.Series` target when no ``mapping`` is given, which :class:`torch.utils.data.DataLoader` cannot collate: the target is now a list, as :class:`braindecode.datasets.RawDataset` returns and as with a ``mapping`` (:gh:`1484` by `Adam Mounir`_).
+
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
   by detaching and moving the input to the CPU before its NumPy FFT
