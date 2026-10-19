@@ -499,9 +499,9 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.models.BIOT` (200 Hz), :class:`braindecode.models.EMG2QwertyNet` (2000 Hz) and :class:`braindecode.models.MetaNeuromotorHand` (2000 Hz) only use their default ``sfreq`` when ``n_times`` and ``input_window_seconds`` do not determine it, instead of raising ``ValueError`` for consistent inputs such as ``BIOT(n_times=512, input_window_seconds=2.0)``. Calls that worked before build the same model (:gh:`XXXX` by `Adam Mounir`_).
+- :class:`braindecode.models.BIOT` (200 Hz), :class:`braindecode.models.EMG2QwertyNet` (2000 Hz) and :class:`braindecode.models.MetaNeuromotorHand` (2000 Hz) only use their default ``sfreq`` when ``n_times`` and ``input_window_seconds`` do not determine it, instead of raising ``ValueError`` for consistent inputs such as ``BIOT(n_times=512, input_window_seconds=2.0)``. Calls that worked before build the same model (:gh:`1485` by `Adam Mounir`_).
 
-- :class:`braindecode.models.EEGInceptionERP`, :class:`braindecode.models.ATCNet` and :class:`braindecode.models.EEGInceptionMI` only use their default ``n_times`` (1000 for EEGInceptionERP) and ``sfreq`` (128 or 250 Hz) when the given geometry does not determine them, instead of raising ``ValueError`` for consistent inputs such as ``EEGInceptionERP(input_window_seconds=1.0, sfreq=128)`` or ``ATCNet(n_times=640, input_window_seconds=5.0)``. Calls that worked before build the same model (:gh:`XXXX` by `Adam Mounir`_).
+- :class:`braindecode.models.EEGInceptionERP`, :class:`braindecode.models.ATCNet` and :class:`braindecode.models.EEGInceptionMI` only use their default ``n_times`` (1000 for EEGInceptionERP) and ``sfreq`` (128 or 250 Hz) when the given geometry does not determine them, instead of raising ``ValueError`` for consistent inputs such as ``EEGInceptionERP(input_window_seconds=1.0, sfreq=128)`` or ``ATCNet(n_times=640, input_window_seconds=5.0)``. Calls that worked before build the same model (:gh:`1485` by `Adam Mounir`_).
 
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
