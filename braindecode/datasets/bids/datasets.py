@@ -224,15 +224,20 @@ class BIDSEpochsDataset(BIDSDataset):
         )
 
     def _set_metadata(self, epochs: mne.BaseEpochs) -> None:
-        # events = mne.events_from_annotations(epochs
         n_times = epochs.times.shape[0]
-        # id_event = {v: k for k, v in epochs.event_id.items()}
-        annotations = epochs.annotations
-        if annotations is not None:
-            target = annotations.description
-        else:
-            id_events = {v: k for k, v in epochs.event_id.items()}
-            target = [id_events[event_id] for event_id in epochs.events[:, -1]]
+        id_events = {v: k for k, v in epochs.event_id.items()}
+        target = [id_events[event_id] for event_id in epochs.events[:, -1]]
+        if epochs.annotations is not None and len(epochs.annotations) > 0:
+            # epochs.annotations are those of the continuous recording (dropped
+            # epochs, BAD segments...): take the one at the time zero of each
+            # epoch, if every epoch has exactly one
+            tol = 0.5 / epochs.info["sfreq"]
+            at_zero = [
+                [desc for onset, _, desc in annotations if abs(onset) < tol]
+                for annotations in epochs.get_annotations_per_epoch()
+            ]
+            if all(len(descs) == 1 for descs in at_zero):
+                target = [descs[0] for descs in at_zero]
         metadata_dict = {
             "i_window_in_trial": np.zeros(len(epochs)),
             "i_start_in_trial": np.zeros(len(epochs)),
