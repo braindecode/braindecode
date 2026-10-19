@@ -118,7 +118,9 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     .. rubric:: Additional Mechanisms
 
     - **Register tokens**: one learned register is paired with every patch.
-      Only register outputs enter the latent projection.
+      Only register outputs enter the latent projection. With
+      ``registers=False`` the encoder runs on the patch tokens alone (half the
+      tokens) and the patch outputs enter the latent projection instead.
     - **ZUNA1.1 normalization**: query-key RMS normalization and optional
       post-attention and post-feed-forward RMS normalization match the changes
       introduced in ZUNA1.1.
@@ -180,6 +182,17 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         passed to :class:`braindecode.modules.PatchTokenizer`: ``"error"`` raises,
         ``"pad"`` right-pads the last patch with zeros, ``"crop"`` drops the
         trailing samples. The default is ``"pad"``.
+    registers : bool, optional
+        Place a learned register before each patch, as in ZUNA1.1. ``False``
+        drops the registers: the sequence holds the patch tokens only (half the
+        tokens, so about half the memory and a large share of the compute per
+        step), each keeps its rotary position, and the head reads the patch
+        outputs. This changes the model (it is not the published ZUNA1.1
+        encoder), but the parameters are the same, so pretrained weights load
+        unchanged; the register parameter is then not used and does not
+        require gradients. The default is ``True``.
+
+        .. versionadded:: 1.8.2
 
     Notes
     -----
@@ -233,6 +246,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         qk_norm: bool = True,
         activation: type[nn.Module] = nn.SiLU,
         on_non_divisible: str = "pad",
+        registers: bool = True,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
     ):
@@ -314,7 +328,10 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             rotary_frequency_table[token_position_indices],
             "token coordinate rotary_frequency -> token (coordinate rotary_frequency)",
         )
-        token_rotary_frequencies = token_rotary_frequencies.repeat_interleave(2, dim=0)
+        if registers:  # each register takes the position of the patch after it
+            token_rotary_frequencies = token_rotary_frequencies.repeat_interleave(
+                2, dim=0
+            )
 
         self.encoder = _ZUNAEncoder(
             dim=dim,
@@ -330,6 +347,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             sandwich_norm=sandwich_norm,
             qk_norm=qk_norm,
             activation=activation,
+            registers=registers,
         )
         self.final_layer = nn.Sequential(
             Rearrange("batch channel latent -> batch (channel latent)"),
@@ -627,12 +645,16 @@ class _ZUNAEncoder(nn.Module):
         sandwich_norm: bool = True,
         qk_norm: bool = True,
         activation: type[nn.Module] = nn.SiLU,
+        registers: bool = True,
     ):
         super().__init__()
+        self.use_registers = registers
 
         # Layers
         self.tok_embeddings = nn.Linear(input_dim, dim)
+        # Kept without registers too, so the pretrained state dict loads as is.
         self.registers = nn.Parameter(torch.zeros(1, input_dim))
+        self.registers.requires_grad_(registers)
         self.layers = nn.ModuleList(
             _TransformerBlock(
                 dim,
@@ -666,6 +688,13 @@ class _ZUNAEncoder(nn.Module):
         )
 
     def forward(self, patch_tokens: torch.Tensor) -> torch.Tensor:
+        if not self.use_registers:
+            hidden_states = self.tok_embeddings(patch_tokens)
+            for layer in self.layers:
+                hidden_states = layer(
+                    hidden_states, self.rotary_cosine, self.rotary_sine
+                )
+            return self.output(self.norm(hidden_states).to(self.output.weight.dtype))
         batch_size, sequence_length, patch_size = patch_tokens.shape
         register_tokens = self.registers.expand(batch_size, sequence_length, -1)
         interleaved_tokens = torch.stack(
