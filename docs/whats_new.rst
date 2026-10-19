@@ -503,6 +503,9 @@ Bug fixes
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
   by detaching and moving the input to the CPU before its NumPy FFT
   (by `Anton Soloviev`_).
+  (by `Anton Soloviev`_).
+
+- Frequency-domain amplitude attribution preserves existing model parameter gradients, so analysis between optimizer steps does not alter training updates (by `Anton Soloviev`_).
 
 - :func:`braindecode.visualization.frequency.amplitude_gradients_per_trial`
   returns each trial's own gradient independently of the minibatch size,
@@ -1939,6 +1942,7 @@ API changes
 
 Bugs
 ====
+
 
 - Fixing the issues with :class:`braindecode.models.ATCNet` (:gh:`782` by `Hamdi
   Altaheri`_)

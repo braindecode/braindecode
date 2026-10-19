@@ -10,7 +10,8 @@
 Computes the gradient of each model output unit with respect to the
 amplitude spectrum of the input. Internally splits the input into
 amplitude and phase via ``rfft``, treats both as leaf tensors, rebuilds
-the time-domain signal, runs the model, and reads back ``amps.grad``.
+the time-domain signal, runs the model, and differentiates with respect
+to the amplitudes without accumulating model parameter gradients.
 
 This is the one attribution method braindecode implements directly:
 captum has no frequency-domain attribution. Time-domain methods live
@@ -61,9 +62,8 @@ def amplitude_gradients(model, x):
     n_outputs = outs.shape[1]
     grads_per_output = np.full((n_outputs,) + ffted.shape, np.nan, dtype=np.float32)
     for i in range(n_outputs):
-        outs[:, i].mean().backward(retain_graph=True)
-        grads_per_output[i] = to_numpy(amps_th.grad.clone())
-        amps_th.grad.zero_()
+        grads = torch.autograd.grad(outs[:, i].mean(), amps_th, retain_graph=True)[0]
+        grads_per_output[i] = to_numpy(grads)
     assert not np.any(np.isnan(grads_per_output))
     return grads_per_output
 
