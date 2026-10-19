@@ -499,7 +499,7 @@ Requirements
 Bug fixes
 ==========
 
-- Fix :func:`braindecode.preprocessing.exponential_moving_standardize` and :func:`braindecode.preprocessing.exponential_moving_demean` returning NaN for every sample of a channel after a single NaN sample (since the ``lfilter`` rewrite of :gh:`950`): NaN samples are skipped again, as in the previous ``pandas`` implementation (:gh:`XXXX` by `Adam Mounir`_).
+- Fix :func:`braindecode.preprocessing.exponential_moving_standardize` and :func:`braindecode.preprocessing.exponential_moving_demean` returning NaN for every sample of a channel after a single NaN sample (since the ``lfilter`` rewrite of :gh:`950`): NaN samples are skipped again, as in the previous ``pandas`` implementation (:gh:`1481` by `Adam Mounir`_).
 
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
