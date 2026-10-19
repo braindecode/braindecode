@@ -343,6 +343,28 @@ def test_exponential_running_demean(mock_data):
     np.testing.assert_allclose(demeaned_data, expected_data, rtol=1e-4, atol=1e-4)
 
 
+@pytest.mark.parametrize("nan_positions", [[0], [0, 1], [40, 41], [99]])
+def test_exponential_running_nan_matches_pandas(nan_positions):
+    # A NaN is skipped (as pandas' ewm does) instead of turning every later
+    # value of the channel into NaN.
+    rng = np.random.RandomState(0)
+    data = rng.randn(2, 100) * 5 + 2
+    data[0, nan_positions] = np.nan
+    factor_new = 0.1
+
+    df = pd.DataFrame(data.T)
+    expected_demeaned = df - df.ewm(alpha=factor_new).mean()
+    square_ewmed = (expected_demeaned**2).ewm(alpha=factor_new).mean()
+    expected_standardized = expected_demeaned / np.maximum(1e-4, np.sqrt(square_ewmed))
+
+    standardized = exponential_moving_standardize(data, factor_new=factor_new)
+    demeaned = exponential_moving_demean(data, factor_new=factor_new)
+    np.testing.assert_allclose(standardized, expected_standardized.to_numpy().T)
+    np.testing.assert_allclose(demeaned, expected_demeaned.to_numpy().T)
+    assert np.isnan(standardized[0]).sum() == len(nan_positions)
+    assert not np.isnan(standardized[1]).any()
+
+
 def test_exponential_running_init_block_size(mock_data):
     mock_input, _, _ = mock_data
     init_block_size = 3
