@@ -499,6 +499,8 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.augmentation.AugmentedDataLoader` with ``num_workers > 0`` drawing the same augmentations at every epoch and in every worker: a worker received a copy of the transform with its numpy generator in the state of the main process (a pickled copy of the global generator for the default ``random_state=None`` with spawned workers, as on macOS and Windows), and that state never advanced. The main process now draws a seed from each generator when an epoch starts, and each worker reseeds its copy from that seed and its worker id, so runs with a fixed ``random_state`` stay reproducible (:gh:`1475` by `Adam Mounir`_).
+
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
   by detaching and moving the input to the CPU before its NumPy FFT
