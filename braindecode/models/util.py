@@ -1135,7 +1135,7 @@ def valid_location_mask(locations: torch.Tensor) -> torch.Tensor:
     )
 
 
-def _check_ch_mask(ch_mask: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+def check_ch_mask(ch_mask: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
     """Validate the channel mask of a batch padded to a common channel count.
 
     Parameters

@@ -23,7 +23,7 @@ from braindecode.functional import (
 )
 from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _check_ch_mask, warn_if_sfreq_differs
+from braindecode.models.util import check_ch_mask, warn_if_sfreq_differs
 
 
 class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
@@ -312,7 +312,7 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         # New name (not reassigning the argument) keeps TorchScript's narrowing.
         mask: torch.Tensor | None = None
         if ch_mask is not None:
-            mask = _check_ch_mask(ch_mask, x)
+            mask = check_ch_mask(ch_mask, x)
             # Zeroed so that non-finite padding cannot reach the gradients.
             x = x.masked_fill(~mask.unsqueeze(-1), 0.0)
 
