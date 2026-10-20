@@ -301,7 +301,8 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             channels and ``False`` for padding, as returned by
             :func:`~braindecode.datasets.pad_channels_collate`, so recordings
             with different numbers of channels can share a batch. Padded
-            channels are left out of the mean over channels.
+            channels are dropped before the spectrogram, so they cost no
+            compute and are left out of the mean over channels.
 
         Returns
         -------
@@ -309,12 +310,16 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             Class logits of shape ``(batch, n_outputs)``, or the feature dict
             ``{"features", "cls_token"}`` when ``return_features`` is set.
         """
+        batch, n_chans = x.shape[0], x.shape[1]
         # New name (not reassigning the argument) keeps TorchScript's narrowing.
         mask: torch.Tensor | None = None
         if ch_mask is not None:
             mask = check_ch_mask(ch_mask, x)
-            # Zeroed so that non-finite padding cannot reach the gradients.
-            x = x.masked_fill(~mask.unsqueeze(-1), 0.0)
+            # Drop padded channels: the real ones go on as (n_real, 1, n_times).
+            x = x.reshape(batch * n_chans, 1, -1)[mask.flatten()]
+            # Tell torch.export the data-dependent count is not zero.
+            if not torch.jit.is_scripting():
+                torch._check(x.shape[0] > 0)
 
         # 1. spectrogram front-end.
         spec = self.spectrogram(x)  # (batch, n_chans, n_frames, idx_freq_cutoff)
@@ -341,9 +346,11 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         if mask is None:
             pooled = self.pool(z)  # (batch, hidden_dim)
         else:
-            # Channels never attend to each other: masking the mean is enough.
-            z = z.masked_fill(~mask[:, :, None, None], 0.0)
-            pooled = z.sum(dim=(1, 2)) / (mask.sum(dim=1, keepdim=True) * z.shape[2])
+            # Mean over frames, back to (batch, chans) slots, then over real channels.
+            per_channel = z.mean(dim=(1, 2))  # (n_real, hidden_dim)
+            slots = per_channel.new_zeros(batch, n_chans, per_channel.shape[-1])
+            slots = slots.masked_scatter(mask.unsqueeze(-1), per_channel)
+            pooled = slots.sum(dim=1) / mask.sum(dim=1, keepdim=True)
         logits = self.final_layer(pooled)
         if return_features:
             if torch.jit.is_scripting():
