@@ -191,30 +191,25 @@ def _as_mixed_target(y, lam_dtype):
     return y, y, lam
 
 
-def _assert_stackable(items, name):
+def _cat_with_clear_error(tensors, name):
     # Fixed expansion concatenates the clean originals with the transformed
     # copies, so every copy must keep the original's shape except along the
-    # batch dimension. A transform that reshapes X or y (e.g. one returning
-    # class distributions instead of class indices) would otherwise fail deep
-    # inside torch.cat with a bare dimension-mismatch RuntimeError.
-    reference = items[0]
-    for item in items[1:]:
-        pairs = (
-            zip(reference, item)
-            if isinstance(reference, (tuple, list))
-            else [(reference, item)]
-        )
-        for ref_part, part in pairs:
-            if part.dim() != ref_part.dim() or part.shape[1:] != ref_part.shape[1:]:
-                raise ValueError(
-                    f"The transform returned {name} with shape "
-                    f"{tuple(part.shape)} instead of {tuple(ref_part.shape)}: "
-                    f"the fixed-expansion mode (n_augmentation > 0) keeps the "
-                    f"clean originals and concatenates the transformed "
-                    f"copies, so it cannot accommodate a transform that "
-                    f"changes the shape of {name}. Use n_augmentation = 0 "
-                    f"(in-place augmentation) instead."
-                )
+    # batch dimension. ``torch.cat`` is the single source of truth for that
+    # check; a mismatch is only translated into actionable guidance, as the
+    # bare dimension-mismatch RuntimeError (e.g. from a transform returning
+    # class distributions instead of class indices) does not point to
+    # ``n_augmentation`` as the knob to change.
+    try:
+        return torch.cat(tensors)
+    except RuntimeError as e:
+        raise ValueError(
+            f"Cannot concatenate the transformed copies of {name} with "
+            f"the clean originals: the fixed-expansion mode "
+            f"(n_augmentation > 0) keeps the clean originals and "
+            f"concatenates the transformed copies, so it cannot "
+            f"accommodate a transform that changes the shape of {name}. "
+            f"Use n_augmentation = 0 (in-place augmentation) instead."
+        ) from e
 
 
 class _AugmentationCollate:
@@ -268,17 +263,16 @@ class _AugmentationCollate:
             for aug_y in ys
             if isinstance(aug_y, (tuple, list)) and len(aug_y) == 3
         ]
-        _assert_stackable(xs, "X")
         if mixed_ys:
             # a target-mixing transform such as Mixup returns (y_a, y_b, lam),
             # so the parts are concatenated one by one and the untouched copies
             # are given a mixing coefficient of one
             lam_dtype = mixed_ys[0][2].dtype
             ys = [_as_mixed_target(aug_y, lam_dtype) for aug_y in ys]
-            _assert_stackable(ys, "y")
-            return torch.cat(xs), tuple(torch.cat(part) for part in zip(*ys))
-        _assert_stackable(ys, "y")
-        return torch.cat(xs), torch.cat(ys)
+            return _cat_with_clear_error(xs, "X"), tuple(
+                _cat_with_clear_error(part, "y") for part in zip(*ys)
+            )
+        return _cat_with_clear_error(xs, "X"), _cat_with_clear_error(ys, "y")
 
 
 class AugmentedDataLoader(DataLoader):
