@@ -23,7 +23,7 @@ from braindecode.functional import (
 )
 from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import warn_if_sfreq_differs
+from braindecode.models.util import _check_ch_mask, warn_if_sfreq_differs
 
 
 class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
@@ -68,6 +68,10 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
     braindecode generalisation. Pass ``pool_n_frames=None`` to average every
     frame. To obtain one output per electrode as upstream does, build the model
     with ``n_chans=1`` and stack the electrodes in the batch.
+
+    As channels are encoded independently, the number of channels may differ
+    between batches, and within one batch when the recordings are padded to a
+    common count and ``ch_mask`` (see :meth:`forward`) flags the real ones.
 
     .. important::
        **Pre-trained weights are available.** The checkpoint released by the
@@ -261,9 +265,6 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         self.merge_channels = Rearrange(
             "batch chans frames bins -> (batch chans) frames bins"
         )
-        self.split_channels = Rearrange(
-            "(batch chans) frames dim -> batch chans frames dim", chans=self.n_chans
-        )
         self.pool = Reduce("batch chans frames dim -> batch dim", "mean")
         # Upstream's downstream probe is a bare linear layer
         # (``models/linear_wav_baseline.py``), with no normalisation in front.
@@ -275,13 +276,19 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         head = nn.Linear(self.final_layer.in_features, n_outputs)
         self.final_layer = head.to(self.final_layer.weight)
 
-    def forward(self, x: torch.Tensor, return_features: bool = False):
+    def forward(
+        self,
+        x: torch.Tensor,
+        return_features: bool = False,
+        ch_mask: torch.Tensor | None = None,
+    ):
         """Decode a batch of signals.
 
         Parameters
         ----------
         x : torch.Tensor
-            Input of shape ``(batch, n_chans, n_times)``.
+            Input of shape ``(batch, n_chans, n_times)``; ``n_chans`` may differ
+            from the construction one.
         return_features : bool
             If ``True``, return the pooled encoder embedding instead of the
             class logits, as ``{"features": pooled, "cls_token": None}``
@@ -289,6 +296,12 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             centre frames and then the channels, and has no class token, hence
             ``cls_token`` is ``None``. A scripted model (``torch.jit.script``)
             ignores this flag and always returns the logits.
+        ch_mask : torch.Tensor, optional
+            Boolean mask of shape ``(batch, n_chans)``, ``True`` for real
+            channels and ``False`` for padding, as returned by
+            :func:`~braindecode.datasets.pad_channels_collate`, so recordings
+            with different numbers of channels can share a batch. Padded
+            channels are left out of the mean over channels.
 
         Returns
         -------
@@ -296,8 +309,12 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             Class logits of shape ``(batch, n_outputs)``, or the feature dict
             ``{"features", "cls_token"}`` when ``return_features`` is set.
         """
-        if x.shape[1] != self.n_chans:
-            raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}.")
+        # New name (not reassigning the argument) keeps TorchScript's narrowing.
+        mask: torch.Tensor | None = None
+        if ch_mask is not None:
+            mask = _check_ch_mask(ch_mask, x)
+            # Zeroed so that non-finite padding cannot reach the gradients.
+            x = x.masked_fill(~mask.unsqueeze(-1), 0.0)
 
         # 1. spectrogram front-end.
         spec = self.spectrogram(x)  # (batch, n_chans, n_frames, idx_freq_cutoff)
@@ -314,13 +331,19 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         # 2. input encoding + Transformer over the sequence of frames.
         h = self.input_embedding(spec)  # (batch * n_chans, n_frames, hidden_dim)
         z = self.transformer(h)  # (batch * n_chans, n_frames, hidden_dim)
-        z = self.split_channels(z)  # (batch, n_chans, n_frames, hidden_dim)
+        # (batch, n_chans, n_frames, hidden_dim)
+        z = z.reshape(x.shape[0], x.shape[1], n_frames, -1)
 
         # 3. pool the centre frames, then frames and channels.
         if self.pool_n_frames is not None:
             start = n_frames // 2 - self.pool_n_frames // 2
             z = z[:, :, start : start + self.pool_n_frames]
-        pooled = self.pool(z)  # (batch, hidden_dim)
+        if mask is None:
+            pooled = self.pool(z)  # (batch, hidden_dim)
+        else:
+            # Channels never attend to each other: masking the mean is enough.
+            z = z.masked_fill(~mask[:, :, None, None], 0.0)
+            pooled = z.sum(dim=(1, 2)) / (mask.sum(dim=1, keepdim=True) * z.shape[2])
         logits = self.final_layer(pooled)
         if return_features:
             if torch.jit.is_scripting():
