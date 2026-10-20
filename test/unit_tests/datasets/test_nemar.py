@@ -6,7 +6,7 @@ import functools
 import http.server
 import json
 import os
-import pickle
+import pickle  # nosec B403: the test pickles its own windows
 import threading
 import time
 
@@ -151,7 +151,7 @@ def test_nemar_dataset_windows_and_pickle(nemar_dataset, cache_size):
         preload=False,
     )
     # A pickled copy reads the data itself, as a spawned data loader worker does.
-    windows = pickle.loads(pickle.dumps(windows))
+    windows = pickle.loads(pickle.dumps(windows))  # nosec B301
     X, _, (_, start, stop) = windows[2]
     np.testing.assert_allclose(X, physical["01"][:, start:stop], rtol=1e-6)
     X, _, (_, start, stop) = windows[len(windows) - 1]

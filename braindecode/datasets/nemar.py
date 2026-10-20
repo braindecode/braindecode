@@ -188,7 +188,7 @@ def _level0_meta(url, group):
     _, arrays = _get_shard_cache()
     key = (url, group, "zarr.json")
     if key not in arrays:
-        with urllib.request.urlopen(
+        with urllib.request.urlopen(  # nosec B310: http(s) only, see _get_shard
             f"{url}/{group}/0/zarr.json", timeout=PART_DEADLINE
         ) as f:
             arrays[key] = json.load(f)
@@ -204,7 +204,7 @@ def _fetch_range(url, start, stop):
                 url, headers={"Range": f"bytes={start}-{stop - 1}"}
             )
             out = bytearray()
-            with urllib.request.urlopen(request, timeout=PART_DEADLINE) as f:
+            with urllib.request.urlopen(request, timeout=PART_DEADLINE) as f:  # nosec B310
                 while chunk := f.read(256 * 1024):
                     out += chunk
                     if time.monotonic() - t0 > PART_DEADLINE:
@@ -232,7 +232,7 @@ def _fetch_shard_http(url, group, i, shard_len):
     shard_url = f"{url}/{group}/0/c{sep}0{sep}{i}"
     try:
         head = urllib.request.Request(shard_url, method="HEAD")
-        with urllib.request.urlopen(head, timeout=PART_DEADLINE) as f:
+        with urllib.request.urlopen(head, timeout=PART_DEADLINE) as f:  # nosec B310
             size = int(f.headers["Content-Length"])
     except urllib.error.HTTPError as e:
         # A shard never written holds the fill value; NEMAR's S3 answers 403
