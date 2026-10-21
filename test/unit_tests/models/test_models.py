@@ -4177,10 +4177,9 @@ def test_brant_head_is_a_bare_linear_layer():
     assert model.get_config()["n_outputs"] == 5
 
 
-def test_brant_rejects_channel_count_mismatch():
+def test_brant_accepts_other_channel_counts():
     model = Brant(n_chans=2, n_outputs=3, n_times=1500, patch_size=1500).eval()
-    with pytest.raises(ValueError, match="channels"):
-        model(torch.randn(1, 5, 1500))
+    assert model(torch.randn(1, 5, 1500)).shape == (1, 3)
 
 
 def test_brant_rejects_invalid_construction():

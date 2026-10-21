@@ -21,6 +21,9 @@ from torch import nn
 from braindecode.functional import (
     _real_dft,
     apply_rotary,
+    check_ch_mask,
+    masked_group_norm,
+    masked_mean,
     rotary_angles,
     rotary_frequencies,
     spectral_input,
@@ -79,8 +82,13 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     For another montage, pass
     :func:`~braindecode.models.diver1.channel_metadata_from_chs_info`'s result to
-    :meth:`forward`. All samples in a batch share this metadata. The encoder is
-    channel-permutation equivariant (the flattened head is not).
+    :meth:`forward`, shared by the batch or stacked to one montage per sample.
+    The encoder is channel-permutation equivariant (the flattened head is not).
+
+    .. rubric:: Variable channel counts
+
+    Padded batches take a ``ch_mask`` and one ``chan_metadata`` per sample;
+    with ``pooling="mean"``, each sample is then encoded as if alone.
 
     .. rubric:: Published variants and weights
 
@@ -349,7 +357,10 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self._update_init_kwargs(n_outputs=n_outputs)
 
     def forward(
-        self, x: torch.Tensor, chan_metadata: torch.Tensor | None = None
+        self,
+        x: torch.Tensor,
+        chan_metadata: torch.Tensor | None = None,
+        ch_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Encode an iEEG batch into class logits.
 
@@ -361,16 +372,37 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             ``(n_chans, 5)`` electrode metadata of the recording this batch
             comes from, one row of (x, y, z, modality, sub-modality) per
             channel, as :func:`channel_metadata_from_chs_info` builds it from its
-            ``chs_info``. Every sample of the batch shares it. Defaults to the
-            montage given at construction, which only fits the
+            ``chs_info``; every sample of the batch shares it. A
+            ``(batch, n_chans, 5)`` stack gives each sample its own montage; it
+            is required with ``ch_mask``.
+            Defaults to the montage given at construction, which only fits the
             construction-time channel count.
+        ch_mask : torch.Tensor, optional
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Needs per-sample ``chan_metadata`` and
+            ``pooling="mean"``.
 
         Returns
         -------
         torch.Tensor
             Class logits of shape ``(batch, n_outputs)``.
         """
-        n_chans = x.shape[1]
+        mask = check_ch_mask(ch_mask, x)
+        if mask is not None and self.pooling != "mean":
+            raise ValueError(
+                "ch_mask needs pooling='mean': the flattened head is tied to the "
+                "channels."
+            )
+        if mask is not None and (
+            chan_metadata is None
+            or chan_metadata.dim() != 3
+            or list(chan_metadata.shape[:2]) != list(mask.shape)
+        ):
+            raise ValueError(
+                "ch_mask needs per-sample chan_metadata of shape (batch, n_chans, 5): "
+                "padded recordings may come from different montages."
+            )
+        batch, n_chans = x.shape[:2]
         if chan_metadata is None:
             if n_chans != self.n_chans_grid:
                 raise ValueError(
@@ -381,8 +413,11 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 )
             metadata = self.default_chan_metadata
         else:
-            _check_channel_metadata(chan_metadata, n_chans)
             metadata = chan_metadata.to(device=x.device, dtype=x.dtype)
+            if mask is not None:
+                # Padded rows may hold invalid slots; zero is a valid one.
+                metadata = metadata.masked_fill(~mask[..., None], 0.0)
+            _check_channel_metadata(metadata, n_chans, batch)
         # A flattened head has weights tied to the construction-time montage.
         if self.pooling == "flatten" and n_chans != self.n_chans_grid:
             raise ValueError(
@@ -398,10 +433,17 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"{self.patch_size} samples but got input with {x.shape[-1]} "
                 f"samples; rebuild the model for this window length."
             )
+        key_mask: torch.Tensor | None = None
+        if mask is not None:
+            # Padding may hold NaN, which the CNN would spread.
+            x = x.masked_fill(~mask[:, :, None], 0.0)
+            # Encoder keys of padded rows are masked; the register row stays.
+            row_mask = torch.cat([mask.new_ones(batch, 1), mask], dim=1)
+            key_mask = row_mask.repeat_interleave(self.n_patches + 1, dim=1)
 
         # Reference order: CNN, spectrum, metadata, then input-conditioned STCPE.
         tokens = self.patch_tokenizer(x)
-        tokens = self.patch_cnn(tokens)
+        tokens = self.patch_cnn(tokens, mask)
         if self.spectral_emb is not None:
             if _real_dft.needs_real_dft(tokens):
                 amplitude = self._amplitude_real_dft(tokens).to(tokens)
@@ -413,14 +455,14 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             spectral_emb = self.spectral_emb(amplitude)
             tokens = tokens + spectral_emb
         if self.chan_emb is not None:
-            chan_emb = self.chan_emb(metadata)
-            tokens = tokens + chan_emb[None, :, None, :]
+            # (n_chans, 1, d_model), or (batch, n_chans, 1, d_model) per sample.
+            chan_emb = self.chan_emb(metadata).unsqueeze(-2)
+            tokens = tokens + chan_emb
         if self.stcpe is not None:
-            tokens = tokens + self.stcpe(tokens)
+            tokens = tokens + self.stcpe(tokens, mask)
 
         # Prepend the register column (per-channel), row (per-patch) and their
         # corner (global).
-        batch = tokens.shape[0]
         patch_reg = self.patch_register[None].expand(batch, n_chans, -1, -1)
         tokens = torch.cat([patch_reg, tokens], dim=2)
         chan_reg = self.chan_register[None].expand(batch, -1, self.n_patches, -1)
@@ -437,6 +479,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             self.flatten_grid(tokens),
             var_id=var_id,
             time_id=time_id,
+            key_mask=key_mask,
         )
         tokens = self.unflatten_grid(tokens)
         # The reference discards register outputs, including during finetuning.
@@ -445,7 +488,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         if self.pooling == "flatten":
             pooled = tokens.flatten(start_dim=1)
         else:
-            pooled = tokens.mean(dim=(1, 2))
+            pooled = masked_mean(tokens, mask, [1, 2])
         return self.final_layer(pooled)
 
     @torch.jit.unused
@@ -463,7 +506,9 @@ class _PatchCNN(nn.Sequential):
     """Power-of-two padded patches encoded by Conv2d/GroupNorm/GELU.
 
     The fixed patch axis leaves the channel count free. GroupNorm uses the
-    output width as its group count (gcd fallback for narrow configurations)."""
+    output width as its group count (gcd fallback for narrow configurations).
+    Its statistics span every patch of a sample, so a channel mask restricts
+    them to the real channels."""
 
     def __init__(
         self,
@@ -549,6 +594,30 @@ class _PatchCNN(nn.Sequential):
             ),
         )
 
+    def forward(
+        self, x: torch.Tensor, ch_mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Encode ``(batch, chan, patch, time)`` patches into ``d_model`` tokens.
+
+        ``ch_mask`` is the optional ``(batch, chan)`` boolean mask of real
+        channels; padded channels then take no part in GroupNorm statistics.
+        """
+        n_patches = x.shape[2]
+        x = self.fold_grid(self.pad(x))
+        row_mask: torch.Tensor | None = None
+        if ch_mask is not None:
+            # Folded rows are (chan patch), channel outermost.
+            row_mask = ch_mask.repeat_interleave(n_patches, dim=1)
+        for layer in self.proj_in:
+            # Not isinstance: TorchScript misses renamed (mangled) module types.
+            if hasattr(layer, "num_groups"):
+                x = masked_group_norm(
+                    x, layer.num_groups, row_mask, layer.weight, layer.bias, layer.eps
+                )
+            else:
+                x = layer(x)
+        return self.unfold_grid(x)
+
 
 class _ChannelMetaEmbedding(nn.Module):
     """Concatenate PopT coordinates and modality/subtype embeddings."""
@@ -566,13 +635,14 @@ class _ChannelMetaEmbedding(nn.Module):
         self.subtype_emb = nn.Embedding(3, d_type)
 
     def forward(self, metadata: torch.Tensor) -> torch.Tensor:
-        coords = metadata[:, :3]
+        """Embed ``(..., n_chans, 5)`` metadata into ``(..., n_chans, d_model)``."""
+        coords = metadata[..., :3]
         coords_known = valid_location_mask(coords).to(coords.dtype)
-        subtype = metadata[:, 4].long()
+        subtype = metadata[..., 4].long()
         subtype_known = (subtype >= 0).to(coords.dtype).unsqueeze(-1)
         position = self.coord_emb(torch.nan_to_num(coords)) * coords_known
         modality = (
-            self.type_emb(metadata[:, 3].long())
+            self.type_emb(metadata[..., 3].long())
             + self.subtype_emb(subtype.clamp(min=0)) * subtype_known
         )
         return torch.cat([position, modality], dim=-1)
@@ -657,8 +727,14 @@ class _STCPE(nn.Module):
         )
         self.up = nn.Linear(inner_dim, d_model)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Map a token grid to a positional bias of the same shape."""
+    def forward(
+        self, x: torch.Tensor, ch_mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Map a token grid to a positional bias of the same shape.
+
+        ``ch_mask`` is the optional ``(batch, chan)`` boolean mask of real
+        channels; tokens of padded channels are then never attended to.
+        """
         batch, n_chans, n_patches, _ = x.shape
         window, n_windows = self.window, self.n_windows
 
@@ -676,7 +752,15 @@ class _STCPE(nn.Module):
 
         var_id = torch.arange(n_chans, device=x.device).repeat_interleave(self.window)
         time_id = torch.arange(self.window, device=x.device).repeat(n_chans)
-        encoded = self.encoder(windows, var_id=var_id, time_id=time_id)
+        if ch_mask is None:
+            encoded = self.encoder(windows, var_id=var_id, time_id=time_id)
+        else:
+            # Padded channels are masked; time padding stays visible, as upstream.
+            key_mask = ch_mask.repeat_interleave(window, dim=1)
+            key_mask = key_mask.repeat_interleave(n_windows, dim=0)
+            encoded = self.encoder(
+                windows, var_id=var_id, time_id=time_id, key_mask=key_mask
+            )
         encoded = (
             encoded.view(batch, n_windows, n_chans, window, dim)
             .permute(0, 2, 3, 1, 4)
@@ -732,15 +816,21 @@ class _AnyVariateEncoder(nn.Module):
         self.norm = nn.RMSNorm(d_model, eps=1e-5)
 
     def forward(
-        self, x: torch.Tensor, var_id: torch.Tensor, time_id: torch.Tensor
+        self,
+        x: torch.Tensor,
+        var_id: torch.Tensor,
+        time_id: torch.Tensor,
+        key_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Encode ``(batch, seq, d_model)`` tokens tagged by channel and patch.
 
         ``var_id`` and ``time_id`` are 1D tensors of length ``seq`` holding the
-        channel and temporal-patch index of every token.
+        channel and temporal-patch index of every token. The optional boolean
+        ``key_mask`` of shape ``(batch, seq)`` flags the tokens that may be
+        attended to (``False`` for padding).
         """
         for layer in self.layers:
-            x = layer(x, var_id=var_id, time_id=time_id)
+            x = layer(x, var_id=var_id, time_id=time_id, key_mask=key_mask)
         return self.norm(x)
 
 
@@ -780,9 +870,13 @@ class _AnyVariateEncoderLayer(nn.Module):
         )
 
     def forward(
-        self, x: torch.Tensor, var_id: torch.Tensor, time_id: torch.Tensor
+        self,
+        x: torch.Tensor,
+        var_id: torch.Tensor,
+        time_id: torch.Tensor,
+        key_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        x = x + self.dropout(self.self_attn(self.norm1(x), var_id, time_id))
+        x = x + self.dropout(self.self_attn(self.norm1(x), var_id, time_id, key_mask))
         return x + self.ffn(self.norm2(x))
 
 
@@ -820,7 +914,11 @@ class _AnyVariateAttention(nn.Module):
         self.merge_heads = Rearrange("batch heads seq dim -> batch seq (heads dim)")
 
     def forward(
-        self, x: torch.Tensor, var_id: torch.Tensor, time_id: torch.Tensor
+        self,
+        x: torch.Tensor,
+        var_id: torch.Tensor,
+        time_id: torch.Tensor,
+        key_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         query = self.rotary(self.q_norm(self.split_heads(self.q_proj(x))), time_id)
         key = self.rotary(self.k_norm(self.split_heads(self.k_proj(x))), time_id)
@@ -834,6 +932,9 @@ class _AnyVariateAttention(nn.Module):
             weight[1].view(1, -1, 1, 1),
             weight[0].view(1, -1, 1, 1),
         ).to(query.dtype)
+        if key_mask is not None:
+            # Padded keys get zero weight; padded queries' outputs are unused.
+            bias = bias.masked_fill(~key_mask[:, None, None, :], float("-inf"))
 
         out = F.scaled_dot_product_attention(
             query,
@@ -871,28 +972,33 @@ class _RotaryEmbedding(nn.Module):
 def _check_channel_metadata(
     metadata: torch.Tensor,
     n_chans: int,
+    batch_size: int,
     n_modalities: int = 2,
     n_subtypes: int = 3,
 ) -> None:
     """Reject metadata that does not describe the channels of this batch."""
-    if metadata.dim() != 2 or metadata.shape[0] != n_chans or metadata.shape[1] != 5:
+    n_dims = metadata.dim()
+    expected = [n_chans, 5] if n_dims == 2 else [batch_size, n_chans, 5]
+    if list(metadata.shape) != expected:
         raise ValueError(
-            f"chan_metadata must have shape ({n_chans}, 5), one row of "
-            f"(x, y, z, modality, sub-modality) per channel of the input, got "
-            f"{list(metadata.shape)}."
+            f"chan_metadata must have shape ({n_chans}, 5), or "
+            f"({batch_size}, {n_chans}, 5) for one montage per sample, with one "
+            f"row of (x, y, z, modality, sub-modality) per channel of the input, "
+            f"got {list(metadata.shape)}."
         )
-    modality = metadata[:, 3]
+    modality = metadata[..., 3]
+    sub_modality = metadata[..., 4]
     if bool(((modality < 0) | (modality >= n_modalities)).any()):
         raise ValueError(
             f"The modality column of chan_metadata must hold slots in "
             f"[0, {n_modalities}), got values from {float(modality.min())} to "
             f"{float(modality.max())}."
         )
-    if bool((metadata[:, 4] >= n_subtypes).any()):
+    if bool((sub_modality >= n_subtypes).any()):
         raise ValueError(
             f"The sub-modality column of chan_metadata must hold slots below "
             f"{n_subtypes}, or a negative value for unknown, got up to "
-            f"{float(metadata[:, 4].max())}."
+            f"{float(sub_modality.max())}."
         )
 
 

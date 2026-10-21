@@ -476,11 +476,15 @@ The functional module contains various functions that can be used like functiona
     :toctree: generated
     :recursive:
 
+     check_ch_mask
      drop_path
      fft_conv1d
      glorot_weight_zero_bias
      hilbert_freq
      identity
+     masked_group_norm
+     masked_mean
+     pack_channels
      pad_or_crop_to_patches
      patch_count
      plv_time
@@ -497,6 +501,7 @@ The functional module contains various functions that can be used like functiona
      sinusoidal_positional_encoding
      spectral_input
      square
+     unpack_channels
 
 **********
  Datasets
