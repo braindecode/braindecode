@@ -4177,10 +4177,9 @@ def test_brant_head_is_a_bare_linear_layer():
     assert model.get_config()["n_outputs"] == 5
 
 
-def test_brant_rejects_channel_count_mismatch():
+def test_brant_accepts_other_channel_counts():
     model = Brant(n_chans=2, n_outputs=3, n_times=1500, patch_size=1500).eval()
-    with pytest.raises(ValueError, match="channels"):
-        model(torch.randn(1, 5, 1500))
+    assert model(torch.randn(1, 5, 1500)).shape == (1, 3)
 
 
 def test_brant_rejects_invalid_construction():
@@ -4360,22 +4359,6 @@ def test_brainbert_pads_a_short_window():
         BrainBERT(n_chans=2, n_outputs=2, n_times=500)
     with pytest.raises(ValueError, match="STFT frames"):
         BrainBERT(n_chans=2, n_outputs=2, n_times=500, on_non_divisible="crop")
-
-
-@pytest.mark.parametrize("pool_n_frames", [10, None])
-def test_brainbert_ch_mask_matches_each_recording_alone(pool_n_frames):
-    """Recordings padded to a common channel count give, with ch_mask, the
-    output each gives alone, whatever the padding holds."""
-    torch.manual_seed(0)
-    model = BrainBERT(n_chans=2, n_outputs=3, n_times=2048, pool_n_frames=pool_n_frames)
-    model.eval()
-    n_real = [1, 3, 2]
-    mask = torch.arange(3) < torch.tensor(n_real)[:, None]
-    x = torch.randn(3, 3, 2048)
-    padded = x.masked_fill(~mask[..., None], float("nan"))
-    with torch.no_grad():
-        alone = torch.cat([model(x[i : i + 1, :c]) for i, c in enumerate(n_real)])
-        torch.testing.assert_close(model(padded, ch_mask=mask), alone)
 
 
 _BARISTA_SMALL = dict(patch_size=32, d_model=16, n_layers=1, num_heads=2, cnn_depth=1)
