@@ -89,11 +89,12 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
     Samples with different channel counts can share a batch once zero-padded
     along the channel axis (e.g. by
     :func:`~braindecode.datasets.pad_channels_collate`) and flagged by
-    ``ch_mask``. Padded channels are excluded from the patch-CNN GroupNorm
-    statistics, from attention (as keys, in the encoder and STCPE) and from
-    ``pooling="mean"``, so with ``pooling="mean"`` each sample is encoded as if
-    alone. ``pooling="flatten"`` ties the head to the channels and takes no
-    ``ch_mask``.
+    ``ch_mask``, with one ``chan_metadata`` per sample (zero rows for the
+    padding), as they may come from different montages. Padded channels are
+    excluded from the patch-CNN GroupNorm statistics, from attention (as keys,
+    in the encoder and STCPE) and from ``pooling="mean"``, so with
+    ``pooling="mean"`` each sample is encoded as if alone. ``pooling="flatten"``
+    ties the head to the channels and takes no ``ch_mask``.
 
     .. rubric:: Published variants and weights
 
@@ -378,7 +379,8 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             comes from, one row of (x, y, z, modality, sub-modality) per
             channel, as :func:`channel_metadata_from_chs_info` builds it from its
             ``chs_info``; every sample of the batch shares it. A
-            ``(batch, n_chans, 5)`` stack gives each sample its own montage.
+            ``(batch, n_chans, 5)`` stack gives each sample its own montage; it
+            is required with ``ch_mask``.
             Defaults to the montage given at construction, which only fits the
             construction-time channel count.
         ch_mask : torch.Tensor, optional
@@ -386,7 +388,8 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             channels and ``False`` for padding, as
             :func:`~braindecode.datasets.pad_channels_collate` returns it. Padded
             channels affect no output, and their metadata rows are not checked.
-            Needs ``pooling="mean"``: the flattened head is tied to the channels.
+            Needs per-sample ``chan_metadata``, and ``pooling="mean"``: the
+            flattened head is tied to the channels.
             Every sample needs at least one real channel. If None, all channels
             are real.
 
@@ -400,6 +403,11 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             raise ValueError(
                 "ch_mask needs pooling='mean': the flattened head is tied to the "
                 "channels."
+            )
+        if mask is not None and (chan_metadata is None or chan_metadata.dim() != 3):
+            raise ValueError(
+                "ch_mask needs per-sample chan_metadata of shape (batch, n_chans, 5): "
+                "padded recordings may come from different montages."
             )
         batch, n_chans = x.shape[:2]
         if chan_metadata is None:
@@ -433,8 +441,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         if mask is not None:
             # Padding may hold NaN and invalid metadata slots: zero both.
             x = x.masked_fill(~mask[:, :, None], 0.0)
-            real = mask if metadata.dim() == 3 else mask.any(dim=0)
-            metadata = metadata.masked_fill(~real[..., None], 0.0)
+            metadata = metadata.masked_fill(~mask[..., None], 0.0)
             # Encoder keys of padded rows are masked; the register row stays.
             row_mask = torch.cat([mask.new_ones(batch, 1), mask], dim=1)
             key_mask = row_mask.repeat_interleave(self.n_patches + 1, dim=1)
@@ -983,7 +990,7 @@ def _check_channel_metadata(
 ) -> None:
     """Reject metadata that does not describe the channels of this batch.
 
-    With ``ch_mask``, only the slots of real channels are checked.
+    With ``ch_mask`` (per-sample metadata), only real channels are checked.
     """
     n_dims = metadata.dim()
     expected = [n_chans, 5] if n_dims == 2 else [batch_size, n_chans, 5]
@@ -997,9 +1004,7 @@ def _check_channel_metadata(
     modality = metadata[..., 3]
     sub_modality = metadata[..., 4]
     if ch_mask is not None:
-        # A shared row is checked if any sample has that channel.
-        real = ch_mask if n_dims == 3 else ch_mask.any(dim=0)
-        real = real.to(metadata.device)
+        real = ch_mask.to(metadata.device)
         modality = modality[real]
         sub_modality = sub_modality[real]
     if bool(((modality < 0) | (modality >= n_modalities)).any()):

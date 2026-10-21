@@ -166,3 +166,12 @@ def test_barista_rejects_per_sample_indices_of_another_batch():
     model, n_times, _ = _CASES["BaRISTA"]()
     with pytest.raises(ValueError, match="samples but a batch of"):
         model(torch.randn(2, 3, n_times), spatial_indices=torch.zeros(3, 3).long())
+
+
+def test_diver1_ch_mask_needs_per_sample_metadata():
+    model, n_times, (_, build, _) = _CASES["DIVER1"]()
+    x = torch.randn(2, 2, n_times)
+    mask = torch.tensor([[True, False], [True, True]])
+    for metadata in (None, build(0, 2)):  # default montage, shared montage
+        with pytest.raises(ValueError, match="per-sample chan_metadata"):
+            model(x, chan_metadata=metadata, ch_mask=mask)
