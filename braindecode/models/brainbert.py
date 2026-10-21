@@ -294,12 +294,8 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             ``cls_token`` is ``None``. A scripted model (``torch.jit.script``)
             ignores this flag and always returns the logits.
         ch_mask : torch.Tensor, optional
-            Boolean mask of shape ``(batch, n_chans)``, ``True`` for real
-            channels and ``False`` for padding, as returned by
-            :func:`~braindecode.datasets.pad_channels_collate`, so recordings
-            with different numbers of channels can share a batch. Padded
-            channels are dropped before the spectrogram, so they cost no
-            compute and are left out of the mean over channels.
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Padded channels are dropped first.
 
         Returns
         -------

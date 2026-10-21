@@ -305,13 +305,8 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
             and patches and has no class token, hence ``cls_token`` is ``None``.
             A TorchScript-compiled model returns the logits instead.
         ch_mask : torch.Tensor, optional
-            Boolean mask of shape ``(batch, n_chans)``, ``True`` for real
-            channels and ``False`` for padding, as returned by
-            :func:`~braindecode.datasets.pad_channels_collate`, so recordings
-            with different numbers of channels can share a batch. Padded
-            channels are dropped before the temporal encoder, so they cost no
-            compute there, hidden from the spatial attention, and left out of
-            the mean over channels and patches.
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Padded channels affect no output.
 
         Returns
         -------

@@ -253,13 +253,9 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
             ``(batch, n_chans, embed_dim)``, and ``pooled`` is its mean over
             channels. A scripted model ignores this flag.
         ch_mask : torch.Tensor, optional
-            Boolean mask of shape ``(batch, n_chans)``, ``True`` for real
-            channels and ``False`` for padding, as returned by
-            :func:`~braindecode.datasets.pad_channels_collate`, so recordings
-            with different numbers of channels can share a batch. Padded
-            channels are dropped before ``instance_norm``, so they cost no
-            compute and are left out of the mean over channels; their rows of
-            ``cls`` are zero.
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Padded channels are dropped first; their
+            rows of ``cls`` are zero.
 
         Returns
         -------

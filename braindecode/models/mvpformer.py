@@ -169,13 +169,8 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
       ``(segment*channel)``-squared content-attention matrix before masking; the
       Triton ``FlashMVPA`` kernel that avoids that cost is not ported, so memory
       scales quadratically with the total number of tokens.
-    - **Variable channel counts.** ``forward`` accepts a boolean ``ch_mask``
-      (e.g. from :func:`~braindecode.datasets.pad_channels_collate`), so one
-      batch can mix samples with different numbers of channels: padded
-      channels skip the patch embedding, are hidden from attention and
-      pooling, and the channel-relative term only counts the real channels,
-      so each sample gives the output it would give alone, unpadded
-      (``pooling="mean"`` only).
+    - **Variable channel counts.** With ``ch_mask`` and ``pooling="mean"``,
+      one batch can mix channel counts; each sample gives its unpadded output.
     - **Generative pre-training (reference only).** Upstream, MVPFormer is
       pre-trained to predict the next-in-time embedding with a contrastive loss
       and fine-tuned with LoRA. This braindecode implementation provides the
@@ -360,17 +355,9 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
             (braindecode foundation-model convention). MVPFormer has no class
             token, hence ``cls_token`` is ``None``.
         ch_mask : torch.Tensor or None
-            Boolean mask of shape ``(batch, n_chans)``, ``True`` for real
-            channels and ``False`` for padding, as emitted by
-            :func:`~braindecode.datasets.pad_channels_collate`. Padded channels
-            skip the wavelet patch embedding (whatever they hold), are hidden
-            from attention in every segment, and the channel-relative term
-            uses the distance between the real channels only, so each sample
-            is processed as if it were unpadded (a mask with holes behaves
-            like the compacted montage). Needs ``pooling="mean"``, which
-            averages the real channels only: the ``"concat"`` head is tied to
-            the channels. Every sample needs at least one real channel.
-            ``None`` (default) treats every channel as real.
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Each sample is processed as if unpadded.
+            Needs ``pooling="mean"``.
 
         Returns
         -------

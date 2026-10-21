@@ -441,14 +441,9 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         return_features : bool
             Return the pooled embedding instead of logits.
         ch_mask : torch.Tensor, optional
-            Boolean mask of shape ``(batch, n_chans)``, ``True`` for real
-            channels and ``False`` for padding, as emitted by
-            :func:`~braindecode.datasets.pad_channels_collate`. Every sample
-            needs at least one real channel. Padded channels, whatever their
-            values, are excluded from attention and from mean pooling, so they
-            affect no output; their spatial indices only need to be valid
-            (e.g. 0). Needs ``pooling="mean"``: the learned pooling is tied to
-            the token grid.
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Padded channels affect no output; their
+            spatial indices only need to be valid (e.g. 0). Needs ``pooling="mean"``.
 
         Returns
         -------
@@ -489,11 +484,6 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             # Shared or per-sample montage, tiled over the patch-major tokens.
             if spatial.dim() == 2:
                 tokens = tokens + spatial.repeat(n_patches, 1)[None]
-            elif spatial.shape[0] != x.shape[0]:
-                raise ValueError(
-                    f"Got spatial indices for {spatial.shape[0]} samples but "
-                    f"a batch of {x.shape[0]}."
-                )
             else:
                 tokens = tokens + spatial.repeat(1, n_patches, 1)
 

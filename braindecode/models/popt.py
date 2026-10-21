@@ -282,12 +282,9 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
             If ``True``, return ``{"features": cls, "cls_token": cls}`` (the
             pooled ``CLS`` representation) instead of the class logits.
         ch_mask : torch.Tensor, optional
-            Boolean ``(batch, n_chans)`` mask, ``True`` for real electrodes and
-            ``False`` for padding, as returned by
-            :func:`~braindecode.datasets.pad_channels_collate`, so recordings with
-            different electrode sets can share a batch (the complement of
-            upstream's ``src_key_padding_mask``). The ``CLS`` token is never
-            masked.
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`; the complement of upstream's
+            ``src_key_padding_mask``.
 
         Returns
         -------
