@@ -22,6 +22,7 @@ from braindecode.functional import (
     _real_dft,
     apply_rotary,
     check_ch_mask,
+    masked_group_norm,
     masked_mean,
     rotary_angles,
     rotary_frequencies,
@@ -609,24 +610,18 @@ class _PatchCNN(nn.Sequential):
         """
         n_patches = x.shape[2]
         x = self.fold_grid(self.pad(x))
-        if ch_mask is None:
-            x = self.proj_in(x)
-        else:
+        row_mask: torch.Tensor | None = None
+        if ch_mask is not None:
             # Folded rows are (chan patch), channel outermost.
             row_mask = ch_mask.repeat_interleave(n_patches, dim=1)
-            for layer in self.proj_in:
-                # Not isinstance: TorchScript misses renamed (mangled) module types.
-                if hasattr(layer, "num_groups"):
-                    x = _masked_group_norm(
-                        x,
-                        row_mask,
-                        layer.num_groups,
-                        layer.weight,
-                        layer.bias,
-                        layer.eps,
-                    )
-                else:
-                    x = layer(x)
+        for layer in self.proj_in:
+            # Not isinstance: TorchScript misses renamed (mangled) module types.
+            if hasattr(layer, "num_groups"):
+                x = masked_group_norm(
+                    x, layer.num_groups, row_mask, layer.weight, layer.bias, layer.eps
+                )
+            else:
+                x = layer(x)
         return self.unfold_grid(x)
 
 
@@ -1019,38 +1014,6 @@ def _check_channel_metadata(
             f"{n_subtypes}, or a negative value for unknown, got up to "
             f"{float(sub_modality.max())}."
         )
-
-
-def _masked_group_norm(
-    x: torch.Tensor,
-    row_mask: torch.Tensor,
-    num_groups: int,
-    weight: torch.Tensor | None,
-    bias: torch.Tensor | None,
-    eps: float,
-) -> torch.Tensor:
-    """Group normalization with statistics over the rows a mask flags.
-
-    ``x`` is ``(batch, channels, rows, width)`` and ``row_mask`` the
-    ``(batch, rows)`` boolean mask of the rows entering each sample's
-    statistics. Matches :func:`torch.nn.functional.group_norm` when every row
-    is flagged; unflagged rows are normalized but do not shift the statistics.
-    """
-    # (batch, rows, group, channel, width): the row mask covers the leading axes.
-    grouped = x.movedim(2, 1).unflatten(2, [num_groups, -1])
-    # At least float32 statistics, as GroupNorm accumulates reduced precision.
-    grouped = grouped.to(torch.promote_types(x.dtype, torch.float32))
-    mean = masked_mean(grouped, row_mask, [1, 3, 4])
-    centred = grouped - mean[:, None, :, None, None]
-    # Biased variance, as GroupNorm.
-    var = masked_mean(centred.square(), row_mask, [1, 3, 4])
-    out = centred * torch.rsqrt(var + eps)[:, None, :, None, None]
-    out = out.flatten(2, 3).movedim(1, 2)
-    if weight is not None:
-        out = out * weight.view(1, -1, 1, 1)
-    if bias is not None:
-        out = out + bias.view(1, -1, 1, 1)
-    return out.to(x.dtype)
 
 
 def channel_metadata_from_chs_info(chs_info: list[dict]) -> torch.Tensor:

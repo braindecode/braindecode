@@ -1,5 +1,11 @@
 from .attention import scaled_dot_product_attention
-from .channel_mask import check_ch_mask, masked_mean, pack_channels, unpack_channels
+from .channel_mask import (
+    check_ch_mask,
+    masked_group_norm,
+    masked_mean,
+    pack_channels,
+    unpack_channels,
+)
 from .functions import (
     _get_gaussian_kernel1d,
     apply_rotary,
@@ -41,6 +47,7 @@ __all__ = [
     "hilbert_freq",
     "identity",
     "iou_1d",
+    "masked_group_norm",
     "masked_mean",
     "pack_channels",
     "pad_or_crop_to_patches",

@@ -482,6 +482,7 @@ The functional module contains various functions that can be used like functiona
      glorot_weight_zero_bias
      hilbert_freq
      identity
+     masked_group_norm
      masked_mean
      pack_channels
      pad_or_crop_to_patches

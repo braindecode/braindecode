@@ -10,6 +10,7 @@ from braindecode.functional import (
     check_ch_mask,
     fft_conv1d,
     hilbert_freq,
+    masked_group_norm,
     masked_mean,
     pack_channels,
     plv_time,
@@ -424,3 +425,19 @@ def test_masked_mean(scripted):
     x = x.masked_fill(~mask[..., None, None], float("nan"))  # masked entries ignored
     torch.testing.assert_close(mean(x, mask, [1, 2]), expected)
     torch.testing.assert_close(mean(x[:1, [0, 2]], None, [1, 2]), expected[:1])
+
+
+@pytest.mark.parametrize("scripted", [False, True])
+def test_masked_group_norm(scripted):
+    norm = torch.jit.script(masked_group_norm) if scripted else masked_group_norm
+    group_norm = torch.nn.functional.group_norm
+    x = torch.randn(2, 6, 5, 4)  # (batch, channels, rows, width)
+    weight, bias = torch.randn(6), torch.randn(6)
+    torch.testing.assert_close(
+        norm(x, 3, None, weight, bias, 1e-5), group_norm(x, 3, weight, bias, 1e-5)
+    )
+    mask = torch.tensor([[True, True, False, True, False], [False] + [True] * 4])
+    out = norm(x.masked_fill(~mask[:, None, :, None], float("nan")), 3, mask, weight, bias, 1e-5)
+    for b, rows in enumerate(mask):  # the flagged rows alone, through group_norm
+        expected = group_norm(x[b : b + 1, :, rows], 3, weight, bias, 1e-5)[0]
+        torch.testing.assert_close(out[b, :, rows], expected)

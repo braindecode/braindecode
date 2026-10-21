@@ -15,6 +15,7 @@ merged batch and channel axis is split back with sizes known only at runtime.
 from typing import List, Optional
 
 import torch
+import torch.nn.functional as F
 
 
 def check_ch_mask(
@@ -138,3 +139,64 @@ def masked_mean(
     mask = mask.reshape(list(mask.shape) + [1] * (x.dim() - mask.dim()))
     total = x.masked_fill(~mask, 0.0).sum(dim=dim)
     return total / mask.expand(x.shape).sum(dim=dim)
+
+
+def masked_group_norm(
+    x: torch.Tensor,
+    num_groups: int,
+    mask: Optional[torch.Tensor] = None,
+    weight: Optional[torch.Tensor] = None,
+    bias: Optional[torch.Tensor] = None,
+    eps: float = 1e-5,
+) -> torch.Tensor:
+    """Group normalization with statistics over the entries a mask flags.
+
+    For a group norm whose statistics span several channels of a sample, so
+    that padded channels do not shift those of the real ones.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Tensor of shape ``(batch, channels, ...)``, as for
+        :func:`torch.nn.functional.group_norm`.
+    num_groups : int
+        Number of groups the channels are split into.
+    mask : torch.Tensor or None
+        Boolean mask over the batch and the leading axes after the channels
+        (e.g. ``(batch, rows)`` for ``x`` of shape ``(batch, channels, rows,
+        width)``), ``True`` for the entries that enter the statistics; it is
+        broadcast over the remaining axes. ``None`` is
+        :func:`torch.nn.functional.group_norm`.
+    weight, bias : torch.Tensor or None
+        Per-channel affine parameters, of shape ``(channels,)``.
+    eps : float
+        Added to the variance for numerical stability.
+
+    Returns
+    -------
+    torch.Tensor
+        ``x`` normalized, same shape. Masked entries are normalized too, with
+        the statistics of the flagged ones.
+    """
+    if mask is None:
+        return F.group_norm(x, num_groups, weight, bias, eps)
+    # (batch, ..., group, channel): the mask covers the leading axes.
+    grouped = x.movedim(1, -1).unflatten(-1, [num_groups, -1])
+    # At least float32 statistics, as group_norm accumulates reduced precision.
+    grouped = grouped.to(torch.promote_types(x.dtype, torch.float32))
+    dims: List[int] = []
+    for dim in range(1, grouped.dim() - 2):
+        dims.append(dim)
+    dims.append(grouped.dim() - 1)
+    stats_shape = [grouped.shape[0]] + [1] * (grouped.dim() - 3) + [num_groups, 1]
+    mean = masked_mean(grouped, mask, dims).reshape(stats_shape)
+    centred = grouped - mean
+    # Biased variance, as group_norm.
+    var = masked_mean(centred.square(), mask, dims).reshape(stats_shape)
+    out = (centred * torch.rsqrt(var + eps)).flatten(-2).movedim(-1, 1)
+    affine_shape = [1, x.shape[1]] + [1] * (x.dim() - 2)
+    if weight is not None:
+        out = out * weight.reshape(affine_shape)
+    if bias is not None:
+        out = out + bias.reshape(affine_shape)
+    return out.to(x.dtype)
