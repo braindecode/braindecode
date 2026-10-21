@@ -20,7 +20,6 @@ from braindecode.models.util import (
     _chs_info_3ch,
     _draw_chs_info,
     _fixture_montage_chs,
-    check_ch_mask,
     extract_channel_locations_from_chs_info,
     has_valid_locations,
     models_dict,
@@ -206,17 +205,6 @@ def test_coordinate_helpers_tensor_contracts(dtype):
                              requires_grad=True)
         normalize(small).sum().backward()
         torch.testing.assert_close(small.grad, torch.zeros_like(small))
-
-
-def test_check_ch_mask():
-    x = torch.randn(2, 3, 8)
-    mask = check_ch_mask(torch.tensor([[1, 1, 0], [1, 0, 0]]), x)
-    assert mask.dtype == torch.bool and mask.device == x.device
-    torch.testing.assert_close(torch.jit.script(check_ch_mask)(mask, x), mask)
-    with pytest.raises(ValueError, match="ch_mask must have shape"):
-        check_ch_mask(torch.ones(2, 2, dtype=torch.bool), x)
-    with pytest.raises(ValueError, match="at least one real channel"):
-        check_ch_mask(torch.tensor([[True, False, False], [False] * 3]), x)
 
 
 def test_coordinate_helpers_preserve_dictionary_defaults():

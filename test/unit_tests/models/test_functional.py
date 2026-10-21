@@ -7,8 +7,11 @@ from scipy.signal import hilbert
 from braindecode.functional import (
     _real_dft,
     apply_rotary,
+    check_ch_mask,
     fft_conv1d,
     hilbert_freq,
+    masked_mean,
+    pack_channels,
     plv_time,
     prefer_fft_conv,
     rotary_angles,
@@ -16,6 +19,7 @@ from braindecode.functional import (
     rotate_half,
     rotate_pairs,
     sinusoidal_positional_encoding,
+    unpack_channels,
 )
 
 
@@ -383,3 +387,40 @@ def test_fft_len_matches_scipy():
     from braindecode.functional.functions import _next_fast_len
 
     assert all(_next_fast_len(n) == next_fast_len(n, real=True) for n in range(1, 5000))
+
+
+def test_check_ch_mask():
+    x = torch.randn(2, 3, 8)
+    mask = check_ch_mask(torch.tensor([[1, 1, 0], [1, 0, 0]]), x)
+    assert mask.dtype == torch.bool and mask.device == x.device
+    assert check_ch_mask(None, x) is None
+    torch.testing.assert_close(torch.jit.script(check_ch_mask)(mask, x), mask)
+    with pytest.raises(ValueError, match="ch_mask must have shape"):
+        check_ch_mask(torch.ones(2, 2, dtype=torch.bool), x)
+    with pytest.raises(ValueError, match="at least one real channel"):
+        check_ch_mask(torch.tensor([[True, False, False], [False] * 3]), x)
+
+
+@pytest.mark.parametrize("scripted", [False, True])
+def test_pack_and_unpack_channels(scripted):
+    pack = torch.jit.script(pack_channels) if scripted else pack_channels
+    unpack = torch.jit.script(unpack_channels) if scripted else unpack_channels
+    x = torch.randn(2, 3, 4, 5)
+    mask = torch.tensor([[True, False, True], [False, True, False]])
+    packed = pack(x, mask)
+    torch.testing.assert_close(packed, torch.stack([x[0, 0], x[0, 2], x[1, 1]]))
+    torch.testing.assert_close(unpack(packed, mask, 3), x * mask[..., None, None])
+    # Without a mask: every channel, batch and channels merged and split back
+    torch.testing.assert_close(pack(x, None), x.flatten(0, 1))
+    torch.testing.assert_close(unpack(pack(x, None), None, 3), x)
+
+
+@pytest.mark.parametrize("scripted", [False, True])
+def test_masked_mean(scripted):
+    mean = torch.jit.script(masked_mean) if scripted else masked_mean
+    x = torch.randn(2, 3, 4, 5)
+    mask = torch.tensor([[True, False, True], [False, True, False]])
+    expected = torch.stack([x[0, [0, 2]].mean(dim=(0, 1)), x[1, 1].mean(dim=0)])
+    x = x.masked_fill(~mask[..., None, None], float("nan"))  # masked entries ignored
+    torch.testing.assert_close(mean(x, mask, [1, 2]), expected)
+    torch.testing.assert_close(mean(x[:1, [0, 2]], None, [1, 2]), expected[:1])

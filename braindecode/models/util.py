@@ -1135,37 +1135,6 @@ def valid_location_mask(locations: torch.Tensor) -> torch.Tensor:
     )
 
 
-def check_ch_mask(ch_mask: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-    """Validate the channel mask of a batch padded to a common channel count.
-
-    Parameters
-    ----------
-    ch_mask : torch.Tensor
-        Mask of shape ``(batch, n_chans)``, ``True`` for real channels and
-        ``False`` for padding, as returned by
-        :func:`~braindecode.datasets.pad_channels_collate`.
-    x : torch.Tensor
-        Input of shape ``(batch, n_chans, ...)`` the mask describes.
-
-    Returns
-    -------
-    torch.Tensor
-        ``ch_mask`` as a boolean tensor on the device of ``x``. Every sample
-        must have a real channel, which is checked in eager mode only.
-        Supports TorchScript.
-    """
-    if list(ch_mask.shape) != list(x.shape[:2]):
-        raise ValueError(
-            f"ch_mask must have shape {list(x.shape[:2])}, got {list(ch_mask.shape)}."
-        )
-    ch_mask = ch_mask.to(device=x.device, dtype=torch.bool)
-    # Value check only in eager mode: it branches on tensor data.
-    if not torch.jit.is_scripting():
-        if not torch.compiler.is_compiling() and not bool(ch_mask.any(dim=1).all()):
-            raise ValueError("ch_mask must flag at least one real channel per sample.")
-    return ch_mask
-
-
 def warn_if_sfreq_differs(
     model_name: str, sfreq: Optional[float], pretrained_sfreq: float
 ) -> None:
