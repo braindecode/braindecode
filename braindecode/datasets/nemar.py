@@ -210,6 +210,11 @@ class NEMARDataset(BaseConcatDataset):
     ``preload=False`` and a data loader. Preprocessing that needs a whole
     recording (``raw.load_data()``) downloads that recording only.
 
+    Each read costs a round trip to the server, so streaming suits
+    exploration and fine-tuning on a few hours of data. Training that reads
+    many windows per second, such as self-supervised pre-training, is
+    orders of magnitude faster from a local copy of the stores.
+
     The serving copy is derived from the BIDS source: it is resampled to a
     rate set per modality (e.g. 250 Hz for EEG and MEG, the group name
     gives it) and stored as int16. Use :class:`~braindecode.datasets.BIDSDataset`
