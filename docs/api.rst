@@ -532,6 +532,7 @@ Common Datasets
      CHBMIT
      HGD
      MOABBDataset
+     NEMARDataset
      NMT
      SleepPhysionet
      SIENA
