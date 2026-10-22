@@ -12,9 +12,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from braindecode.functional import init_weights_
+from braindecode.functional import init_weights_, scaled_dot_product_attention
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.attention import _scaled_dot_product_attention
 
 # Weight initialization of the reference implementation.
 _init_weights = partial(
@@ -423,7 +422,7 @@ class _MHSA(nn.Module):
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
 
-        y = _scaled_dot_product_attention(
+        y = scaled_dot_product_attention(
             q, k, v, dropout_p=self.drop_prob if self.training else 0.0
         )
 

@@ -11,17 +11,6 @@ from braindecode.models.eegdino import EEGDINO_CONFIGS
 # against the original EEG-DINO implementation offline (not in CI).
 
 
-def test_forward_and_presets():
-    # Small (default) and Medium presets.
-    model = EEGDINO(n_chans=16, n_outputs=4, n_times=1000)
-    assert model(torch.randn(2, 16, 1000)).shape == (2, 4)
-
-    medium = EEGDINO(n_chans=16, n_outputs=4, n_times=1000, **EEGDINO_CONFIGS["medium"])
-    assert medium.emb_dim == 512
-    assert len(medium.encoder_layers) == 16
-    assert medium.encoder_layers[0].attn.nhead == 8  # matches the released checkpoint
-
-
 def test_from_pretrained_local_roundtrip(tmp_path):
     pytest.importorskip("huggingface_hub")
     model = EEGDINO(n_chans=19, n_outputs=2, n_times=1000).eval()
@@ -84,3 +73,14 @@ def test_attention_calls_qkv_module():
     for layer in model.encoder_layers:  # an adapter that changes the projection
         layer.attn.qkv.register_forward_hook(lambda _m, _i, out: 2 * out)
     assert not torch.allclose(model(x), reference)
+
+
+def test_forward_and_presets():
+    # Small (default) and Medium presets.
+    model = EEGDINO(n_chans=16, n_outputs=4, n_times=1000)
+    assert model(torch.randn(2, 16, 1000)).shape == (2, 4)
+
+    medium = EEGDINO(n_chans=16, n_outputs=4, n_times=1000, **EEGDINO_CONFIGS["medium"])
+    assert medium.emb_dim == 512
+    assert len(medium.encoder_layers) == 16
+    assert medium.encoder_layers[0].attn.num_heads == 8  # matches the released checkpoint

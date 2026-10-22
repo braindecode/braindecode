@@ -11,10 +11,12 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from braindecode.functional import sinusoidal_positional_encoding
+from braindecode.functional import (
+    scaled_dot_product_attention,
+    sinusoidal_positional_encoding,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
-from braindecode.modules.attention import _scaled_dot_product_attention
 from braindecode.modules.channels import _resolve
 
 
@@ -468,7 +470,7 @@ class _AxisAttention(nn.Module):
             .unbind(0)
         )
         drop = self.att_drop_prob if self.training else 0.0
-        attended = _scaled_dot_product_attention(
+        attended = scaled_dot_product_attention(
             query, key, value, attn_mask=mask, dropout_p=drop
         )
         return attended.transpose(1, 2).reshape(n_seq, length, -1)

@@ -524,8 +524,13 @@ def _dance_signal_params() -> dict[str, Any]:
     }
 
 
+# (name, required signal parameters, test parameters). The test parameters are
+# signal parameters the default test signal does not fit, plus, for the
+# largest models, architecture arguments that keep the test instance small
+# (CI runners hold four of them at once; the released configurations are
+# covered by test_pretrained_compat).
 models_mandatory_parameters: list[
-    tuple[str, list[SigArgName], dict[SigArgName, Any] | None | Any]
+    tuple[str, list[SigArgName], dict[str, Any] | None | Any]
 ] = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("AXON", ["chs_info", "n_outputs"], {"sfreq": 200.0, "n_times": 1000}),
@@ -700,7 +705,13 @@ models_mandatory_parameters: list[
         # Callable: BENDR now requires chs_info to match BENDR_CHANNEL_ORDER
         # when supplied; deferred to avoid a circular import (util.py is loaded
         # by base.py before bendr.py).
-        lambda: {"chs_info": _get_bendr_chs_info()},
+        lambda: {
+            "chs_info": _get_bendr_chs_info(),
+            # 1M parameters instead of the released 157M (5.2 GB to script).
+            "encoder_h": 64,
+            "contextualizer_hidden": 128,
+            "transformer_layers": 2,
+        },
     ),
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
     (
@@ -792,9 +803,14 @@ models_mandatory_parameters: list[
         "ZUNA",
         ["chs_info", "n_outputs", "n_times"],
         {
-            "n_times": 256,  # 1 s: 8 patches per channel for the 172M-parameter model
+            "n_times": 256,  # 1 s: 8 patches per channel
             "sfreq": 256.0,
             "input_window_seconds": 1.0,
+            # 0.4M parameters instead of the released 172M: scripting and
+            # serializing the full model took 5.6 GB per test worker.
+            "dim": 128,
+            "n_layers": 2,
+            "n_heads": 2,
         },
     ),
     (

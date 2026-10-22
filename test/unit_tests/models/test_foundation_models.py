@@ -308,34 +308,6 @@ def test_labram_neural_tokenizer_initialization(model_tokenizer):
     assert model_tokenizer.n_outputs == 4
 
 
-def test_labram_neural_tokenizer_forward_pass_basic(
-    model_tokenizer, batch_size, n_chans, n_times, n_outputs
-):
-    """Test basic forward pass in tokenizer mode."""
-    x = torch.randn(batch_size, n_chans, n_times)
-    output = model_tokenizer(x)
-    assert output.shape == (batch_size, n_outputs)
-
-
-def test_labram_neural_tokenizer_forward_pass_single_sample(
-    model_tokenizer, n_chans, n_times, n_outputs
-):
-    """Test forward pass with single sample in tokenizer mode."""
-    x = torch.randn(1, n_chans, n_times)
-    output = model_tokenizer(x)
-    assert output.shape == (1, n_outputs)
-
-
-def test_labram_neural_tokenizer_different_batch_sizes(
-    model_tokenizer, n_chans, n_times, n_outputs
-):
-    """Test with different batch sizes in tokenizer mode."""
-    for batch_size in [1, 2, 4, 8]:
-        x = torch.randn(batch_size, n_chans, n_times)
-        output = model_tokenizer(x)
-        assert output.shape == (batch_size, n_outputs)
-
-
 def test_labram_neural_tokenizer_gradient_flow(model_tokenizer, n_chans, n_times):
     """Test that gradients flow correctly through the model in tokenizer mode."""
     x = torch.randn(4, n_chans, n_times, requires_grad=True)
@@ -362,24 +334,6 @@ def test_labram_neural_decoder_initialization(model_decoder):
     assert model_decoder.n_outputs == 4
 
 
-def test_labram_neural_decoder_forward_pass_basic(
-    model_decoder, batch_size, n_chans, n_times, n_outputs
-):
-    """Test basic forward pass in decoder mode."""
-    x = torch.randn(batch_size, n_chans, n_times)
-    output = model_decoder(x)
-    assert output.shape == (batch_size, n_outputs)
-
-
-def test_labram_neural_decoder_forward_pass_single_sample(
-    model_decoder, n_chans, n_times, n_outputs
-):
-    """Test forward pass with single sample in decoder mode."""
-    x = torch.randn(1, n_chans, n_times)
-    output = model_decoder(x)
-    assert output.shape == (1, n_outputs)
-
-
 @pytest.mark.network
 @pytest.mark.huggingface
 def test_labram_can_load_pretrained_weights():
@@ -403,16 +357,6 @@ def test_labram_can_load_pretrained_weights():
     x = torch.randn(1, model.n_chans, model.n_times)
     output = model(x)
     assert output.shape[0] == 1
-
-
-def test_labram_neural_decoder_different_batch_sizes(
-    model_decoder, n_chans, n_times, n_outputs
-):
-    """Test with different batch sizes in decoder mode."""
-    for batch_size in [1, 2, 4, 8]:
-        x = torch.randn(batch_size, n_chans, n_times)
-        output = model_decoder(x)
-        assert output.shape == (batch_size, n_outputs)
 
 
 def test_labram_neural_decoder_gradient_flow(model_decoder, n_chans, n_times):
@@ -510,40 +454,6 @@ def test_labram_output_shapes_consistency_between_modes(n_times, chs_info, n_out
 
     # Both should have the same output shape
     assert output_tokenizer.shape == output_decoder.shape == (batch_size, n_outputs)
-
-
-def test_labram_patch_embedding_shapes(n_times, n_chans, patch_size, emb_size):
-    """Test patch embedding output shapes."""
-    from braindecode.models.labram import _PatchEmbed, _SegmentPatch
-
-    batch_size = 2
-
-    # Test SegmentPatch
-    segment_patch = _SegmentPatch(
-        n_times=n_times,
-        patch_size=patch_size,
-        n_chans=n_chans,
-        emb_dim=patch_size,
-    )
-
-    x = torch.randn(batch_size, n_chans, n_times)
-    output_segment = segment_patch(x)
-
-    # Should be (batch, n_chans, n_patches, patch_size)
-    assert output_segment.shape == (batch_size, n_chans, 5, patch_size)
-
-    # Test PatchEmbed
-    patch_embed = _PatchEmbed(
-        n_times=n_times,
-        patch_size=patch_size,
-        in_channels=n_chans,
-        emb_dim=emb_size,
-    )
-
-    output_patch = patch_embed(x)
-
-    # Should be (batch, n_patches, emb_dim)
-    assert output_patch.shape == (batch_size, 5, emb_size)
 
 
 # ==============================================================================
@@ -889,28 +799,11 @@ def test_luna_base_initialization(luna_base_model, luna_base_config):
     assert len(luna_base_model.blocks) == 8
 
 
-def test_luna_base_forward_pass(luna_base_model):
-    """Test LUNA Base forward pass produces correct output shape."""
-    x = torch.randn(2, 22, 1000)
-    with torch.no_grad():
-        output = luna_base_model(x)
-    assert output.shape == (2, 2)
-
-
 def test_luna_base_parameter_count(luna_base_model):
     """Test LUNA Base has expected parameter count."""
     total_params = sum(p.numel() for p in luna_base_model.parameters())
     # Base should have roughly 7M parameters
     assert 5_000_000 < total_params < 10_000_000
-
-
-def test_luna_base_different_batch_sizes(luna_base_model):
-    """Test LUNA Base with different batch sizes."""
-    for batch_size in [1, 2, 4, 8]:
-        x = torch.randn(batch_size, 22, 1000)
-        with torch.no_grad():
-            output = luna_base_model(x)
-        assert output.shape == (batch_size, 2)
 
 
 def test_luna_base_gradient_flow(luna_base_model):
@@ -963,6 +856,56 @@ def test_zuna_builds_rotary_frequency_table_natively(axis_dim):
     )
     expected = torch.outer(positions, inverse_frequencies).repeat_interleave(2, dim=1)
     torch.testing.assert_close(table, expected[:, :axis_dim])
+
+
+def _pairwise_rope_kernel(x, cos, sin, position_ids, offset, mode):
+    """Stand-in for Gaudi's ``apply_rotary_pos_emb`` in PAIRWISE mode (no autograd)."""
+    assert position_ids is None and offset == 0 and mode == "PAIRWISE"
+    with torch.no_grad():
+        real, imag = x[..., 0::2], x[..., 1::2]
+        c, s = cos[..., 0::2], sin[..., 0::2]
+        return torch.stack((real * c - imag * s, imag * c + real * s), -1).flatten(-2)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_zuna_hpu_fused_rotary_matches_the_formula(monkeypatch, dtype):
+    """The HPU eager rotary path (fused kernel forward, inverse rotation backward)
+    gives the formula's outputs and gradients; lazy mode keeps the formula."""
+    import types
+
+    kernels = types.ModuleType("habana_frameworks.torch.hpex.kernels")
+    kernels.apply_rotary_pos_emb = _pairwise_rope_kernel
+    kernels.RotaryPosEmbeddingMode = types.SimpleNamespace(PAIRWISE="PAIRWISE")
+    monkeypatch.setitem(sys.modules, kernels.__name__, kernels)
+    monkeypatch.setattr(zuna_module, "_hpu_lazy", lambda: False)
+
+    model = ZUNA(chs_info=_zuna_chs_info(), n_times=256, **_ZUNA_SMALL)
+    cos, sin = model.encoder.rotary_cosine, model.encoder.rotary_sine
+    rope = model.encoder.layers[0].attention.rotary_embedding
+    shape = (2, cos.shape[0], 2, cos.shape[1])
+    gen = torch.Generator().manual_seed(0)
+    query, key, grad_q, grad_k = (
+        torch.randn(shape, generator=gen).to(dtype) for _ in range(4)
+    )
+
+    outputs, grads = [], []
+    for rotate in (rope, lambda q, k, c, s: zuna_module._hpu_fused_rotary(q, k, c, s)):
+        q, k = query.clone().requires_grad_(), key.clone().requires_grad_()
+        out = rotate(q, k, cos, sin)
+        torch.autograd.backward(out, [grad_q, grad_k])
+        outputs.append(out)
+        grads.append((q.grad, k.grad))
+
+    # Lazy mode keeps the formula (the graph compiler fuses it).
+    monkeypatch.setattr(zuna_module, "_hpu_lazy", lambda: True)
+    assert zuna_module._hpu_fused_rotary(query, key, cos, sin) is None
+
+    for expected, actual in zip(outputs[0] + grads[0], outputs[1] + grads[1]):
+        assert actual.dtype == expected.dtype
+        if dtype == torch.float32:
+            torch.testing.assert_close(actual, expected, rtol=1e-6, atol=1e-6)
+        else:  # the formula rounds each gradient term to bfloat16, the kernel once
+            torch.testing.assert_close(actual, expected, rtol=1.6e-2, atol=1.6e-2)
 
 
 # ==============================================================================
@@ -1053,6 +996,83 @@ def test_zuna_names_without_locations_take_their_montage_position():
     with pytest.warns(UserWarning, match="in metres"):
         ZUNA(chs_info=in_mm, **kw)
 
+
+# ==============================================================================
+# Tests for ZUNA's registers option
+# ==============================================================================
+
+
+def _zuna_pair(**kwargs):
+    """A ZUNA with registers and one without, with the same weights."""
+    kw = dict(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL, **kwargs)
+    torch.manual_seed(0)
+    with pytest.warns(UserWarning, match="pretrained at 256 Hz"):
+        with_registers = ZUNA(**kw).eval()
+        without = ZUNA(registers=False, **kw).eval()
+    torch.nn.init.normal_(with_registers.encoder.registers)
+    without.load_state_dict(with_registers.state_dict())  # strict: same keys
+    return with_registers, without
+
+
+def test_zuna_default_keeps_the_registers():
+    """``registers=True`` (the default) is the published encoder: same buffers,
+    two tokens per patch, output identical to a model built without the option."""
+    kw = dict(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL)
+    torch.manual_seed(0)
+    with pytest.warns(UserWarning, match="pretrained at 256 Hz"):
+        default = ZUNA(**kw).eval()
+        explicit = ZUNA(registers=True, **kw).eval()
+    explicit.load_state_dict(default.state_dict())
+    n_tokens = 6 * 1024 // 32
+    assert default.encoder.rotary_cosine.shape[0] == 2 * n_tokens
+    assert default.encoder.registers.requires_grad
+    x = torch.randn(2, 6, 1024)
+    torch.testing.assert_close(default(x), explicit(x), rtol=0, atol=0)
+
+
+def test_zuna_without_registers_runs_on_the_patch_tokens():
+    """``registers=False``: the same parameters, the patch rows of the rotary
+    tables, and the encoder applied to the patch tokens alone."""
+    with_registers, without = _zuna_pair()
+    assert without.encoder.rotary_cosine.shape[0] == 6 * 1024 // 32
+    torch.testing.assert_close(
+        without.encoder.rotary_cosine,
+        with_registers.encoder.rotary_cosine[1::2],
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(
+        without.encoder.rotary_sine,
+        with_registers.encoder.rotary_sine[1::2],
+        rtol=0,
+        atol=0,
+    )
+
+    x = torch.randn(2, 6, 1024)
+    encoder = with_registers.encoder
+    hidden = encoder.tok_embeddings(with_registers.patch_embedding(x))
+    for layer in encoder.layers:
+        hidden = layer(
+            hidden, encoder.rotary_cosine[1::2], encoder.rotary_sine[1::2]
+        )
+    latents = encoder.output(encoder.norm(hidden)).reshape(2, 6, -1, 32).mean(dim=2)
+    expected = with_registers.final_layer(latents)
+    torch.testing.assert_close(without(x), expected)
+    assert not torch.allclose(without(x), with_registers(x))
+
+
+def test_zuna_without_registers_trains_without_the_register_parameter():
+    """The register parameter is loaded but unused: no gradient, frozen."""
+    _, without = _zuna_pair()
+    without.train()
+    assert not without.encoder.registers.requires_grad
+    without(torch.randn(2, 6, 1024)).sum().backward()
+    assert without.encoder.registers.grad is None
+    grads = [
+        p.grad for n, p in without.named_parameters() if n != "encoder.registers"
+    ]
+    assert all(g is not None and torch.isfinite(g).all() for g in grads)
+
 def test_reve_attention_matches_explicit_attention():
     attention = Attention(dim=16, heads=2, head_dim=8)
     x = torch.randn(2, 5, 16, requires_grad=True)
@@ -1087,28 +1107,11 @@ def test_luna_large_initialization(luna_large_model, luna_large_config):
     assert len(luna_large_model.blocks) == 10
 
 
-def test_luna_large_forward_pass(luna_large_model):
-    """Test LUNA Large forward pass produces correct output shape."""
-    x = torch.randn(2, 22, 1000)
-    with torch.no_grad():
-        output = luna_large_model(x)
-    assert output.shape == (2, 2)
-
-
 def test_luna_large_parameter_count(luna_large_model):
     """Test LUNA Large has expected parameter count."""
     total_params = sum(p.numel() for p in luna_large_model.parameters())
     # Large should have roughly 43M parameters
     assert 30_000_000 < total_params < 60_000_000
-
-
-def test_luna_large_different_batch_sizes(luna_large_model):
-    """Test LUNA Large with different batch sizes."""
-    for batch_size in [1, 2, 4, 8]:
-        x = torch.randn(batch_size, 22, 1000)
-        with torch.no_grad():
-            output = luna_large_model(x)
-        assert output.shape == (batch_size, 2)
 
 
 def test_luna_large_gradient_flow(luna_large_model):
@@ -1138,28 +1141,11 @@ def test_luna_huge_initialization(luna_huge_model, luna_huge_config):
     assert len(luna_huge_model.blocks) == 24
 
 
-def test_luna_huge_forward_pass(luna_huge_model):
-    """Test LUNA Huge forward pass produces correct output shape."""
-    x = torch.randn(2, 22, 1000)
-    with torch.no_grad():
-        output = luna_huge_model(x)
-    assert output.shape == (2, 2)
-
-
 def test_luna_huge_parameter_count(luna_huge_model):
     """Test LUNA Huge has expected parameter count."""
     total_params = sum(p.numel() for p in luna_huge_model.parameters())
     # Huge should have roughly 312M parameters
     assert 250_000_000 < total_params < 350_000_000
-
-
-def test_luna_huge_different_batch_sizes(luna_huge_model):
-    """Test LUNA Huge with different batch sizes."""
-    for batch_size in [1, 2, 4, 8]:
-        x = torch.randn(batch_size, 22, 1000)
-        with torch.no_grad():
-            output = luna_huge_model(x)
-        assert output.shape == (batch_size, 2)
 
 
 def test_luna_huge_gradient_flow(luna_huge_model):
@@ -1561,23 +1547,9 @@ def test_cbramod_load_weights():
     assert not load_result.unexpected_keys
 
 
-def test_cbramod_forward_pass():
-    model = CBraMod(return_encoder_output=True)
-    x = torch.randn(2, 22, 1000)
-    output = model(x)
-    assert output.shape == (2, 22, 5, 200)
-
-
 # ==============================================================================
 # Tests for CodeBrain Model
 # ==============================================================================
-
-
-def test_codebrain_forward_pass():
-    model = CodeBrain(n_chans=19, n_outputs=2, n_times=6000)
-    x = torch.randn(2, 19, 6000)
-    output = model(x)
-    assert output.shape == (2, 2)
 
 
 def test_codebrain_pretrain_mode():

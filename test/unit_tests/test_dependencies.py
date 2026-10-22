@@ -60,8 +60,9 @@ def test_module_level_imports_are_declared(project):
 def test_core_dependencies_are_imported(project):
     """Every core dependency is imported somewhere in ``braindecode``."""
     imported = set()
+    modules = _imports(lazy=True)
     for module, dists in packages_distributions().items():
-        if module in _imports(lazy=True):
+        if module in modules:
             imported |= {_name(d) for d in dists}
     unused = {_name(r) for r in project["dependencies"]} - imported
     assert not unused, f"core dependencies never imported: {unused}"

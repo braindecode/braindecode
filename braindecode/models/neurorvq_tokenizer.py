@@ -13,17 +13,17 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.functional import spectral_input
+from braindecode.functional import patch_count, spectral_input
+from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.neurorvq import (
-    _Block,
+    _block,
     _channel_slots,
     _modality,
     _MultiScaleTemporalConv,
     _stack_scales,
 )
 from braindecode.modules import PatchTokenizer
-from braindecode.modules.blocks import _check_on_non_divisible, _patch_count
 from braindecode.modules.quantization import _all_reduce_sum, _broadcast_tensors
 
 
@@ -202,7 +202,7 @@ class _BranchTransformer(nn.Module):
         drop_paths = torch.linspace(0, drop_path_rate, depth).tolist()
         self.blocks = nn.ModuleList(
             [
-                _Block(
+                _block(
                     embed_dim,
                     num_heads,
                     4.0,
@@ -432,7 +432,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         num_quantizers = num_quantizers or preset["num_quantizers"]
         _check_on_non_divisible(on_non_divisible)
         # ceil for "pad", floor for "crop", exact for "error" (raises otherwise).
-        self.num_patches = _patch_count(self.n_times, patch_size, on_non_divisible)
+        self.num_patches = patch_count(self.n_times, patch_size, on_non_divisible)
         if self.num_patches > max_patches:
             raise ValueError(
                 f"n_times supports at most {max_patches} patches "

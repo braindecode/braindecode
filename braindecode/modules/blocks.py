@@ -5,66 +5,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
-_ON_NON_DIVISIBLE = ("pad", "crop", "error")
-
-
-def _check_on_non_divisible(on_non_divisible: str) -> None:
-    """Raise a ``ValueError`` for an unknown ``on_non_divisible`` value."""
-    if on_non_divisible not in _ON_NON_DIVISIBLE:
-        raise ValueError(
-            "on_non_divisible must be 'pad', 'crop', or 'error', "
-            f"got {on_non_divisible!r}."
-        )
-
-
-def _patch_count(
-    n_times: int, patch_size: int, on_non_divisible: str = "pad", step: int = 0
-) -> int:
-    """Patches cut from ``n_times`` samples every ``step`` (``0``: ``patch_size``):
-    the last one zero-padded (``"pad"``), dropped (``"crop"``) or an error."""
-    if step <= 0:
-        step = patch_size
-    if n_times < 1:
-        raise ValueError(f"n_times must be positive, got {n_times}.")
-    if n_times < patch_size:
-        if on_non_divisible == "pad":
-            return 1
-        if on_non_divisible == "crop":
-            raise ValueError(
-                f"Need at least one full patch of {patch_size} samples, got {n_times}."
-            )
-    elif (n_times - patch_size) % step == 0:
-        return (n_times - patch_size) // step + 1
-    elif on_non_divisible != "error":
-        return (n_times - patch_size) // step + 1 + (on_non_divisible == "pad")
-    raise ValueError(
-        f"Time dimension ({n_times}) is not divisible by patch_size ({patch_size})"
-        + ("." if step == patch_size else f" with patch step {step}.")
-    )
-
-
-def _pad_or_crop_to_patches(
-    x: torch.Tensor,
-    patch_size: int,
-    on_non_divisible: str = "pad",
-    step: int = 0,
-    min_patches: int = 1,
-    center: bool = False,
-) -> torch.Tensor:
-    """Right zero-pad or crop the last axis so the patches tile it; a tiled axis
-    is returned as is. An axis short of ``min_patches`` patches is zero-padded
-    up to that many, with half the missing ones (whole steps) before it if
-    ``center``."""
-    n_patches = _patch_count(x.shape[-1], patch_size, on_non_divisible, step)
-    step = step if step > 0 else patch_size
-    left = 0
-    if n_patches < min_patches:
-        left = (min_patches - n_patches) // 2 * step if center else 0
-        n_patches = min_patches
-    target = patch_size + (n_patches - 1) * step
-    if target > x.shape[-1]:
-        return nn.functional.pad(x, (left, target - x.shape[-1] - left))
-    return x[..., :target]
+from braindecode.functional.patches import _check_on_non_divisible, patch_count
 
 
 class PatchTokenizer(nn.Module):
@@ -182,7 +123,7 @@ class PatchTokenizer(nn.Module):
 
     def n_patches(self, n_times: int) -> int:
         """Number of patches ``forward`` returns for ``n_times`` samples."""
-        return _patch_count(n_times, self.patch_size, self.on_non_divisible)
+        return patch_count(n_times, self.patch_size, self.on_non_divisible)
 
     def prepare_input(self, x):
         """Pad, crop or reject a time axis not divisible by ``patch_size``.

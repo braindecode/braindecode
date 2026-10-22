@@ -296,6 +296,7 @@ perceptrons (MLPs) and inception blocks.
     :recursive:
 
     MLP
+    TimmAttention
     TimmMlp
     FeedForwardBlock
     InceptionBlock
@@ -375,6 +376,11 @@ input shapes and dimensions.
     Chomp1d
     DropPath
     PostNormResidual
+    PreNormBlock
+    PreNormTransformerBlock
+    PostNormTransformerBlock
+    LearnedPositionalEncoding
+    SinusoidalPositionalEncoding
     Residual
     Ensure4d
     FourierEmb
@@ -475,6 +481,8 @@ The functional module contains various functions that can be used like functiona
      glorot_weight_zero_bias
      hilbert_freq
      identity
+     pad_or_crop_to_patches
+     patch_count
      plv_time
      prefer_fft_conv
      rescale_parameter

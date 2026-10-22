@@ -83,6 +83,7 @@ tests = [
     'pytest<9.1',  # pytest 9.1.0 changed IdMaker's signature, which breaks pytest_cases 3.10.1 (crash at collection time). Remove the cap once pytest_cases supports pytest >=9.1.
     'pytest-cov',
     'pytest-xdist>=3.8.0',
+    'pytest-timeout',
     'codecov',
     'pytest_cases',
     'mypy',
@@ -170,6 +171,11 @@ python_functions = ["test_*"]
 # delete each passing test's tmp_path: the save/load round-trips write GBs of
 # weights, which filled the Windows runner disk
 tmp_path_retention_policy = "failed"
+# No test takes more than a few minutes; a worker that stops answering (a
+# native crash in a kernel leaves xdist waiting for it, which held CI jobs
+# for hours) fails its test with a traceback instead.
+timeout = 600
+timeout_method = "thread"
 markers = [
     "integration: integration tests",
     "network: tests that require network access",

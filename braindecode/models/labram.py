@@ -17,9 +17,9 @@ from einops.layers.torch import Rearrange
 from torch.nn.init import trunc_normal_
 
 from braindecode.functional import init_weights_, rescale_parameter
+from braindecode.functional.attention import _hpu_eager_fused_sdpa
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import MLP, DropPath
-from braindecode.modules.attention import _hpu_eager_fused_sdpa
 from braindecode.modules.blocks import PatchTokenizer
 
 # -----------------------------------------------------------------------------

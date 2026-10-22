@@ -10,10 +10,10 @@ from typing import Dict, Optional, Sequence, Union
 import torch
 from torch import nn
 
-from braindecode.functional import scaled_dot_product_attention, spectral_input
+from braindecode.functional import spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
-from braindecode.modules import DropPath, PatchTokenizer
+from braindecode.modules import PatchTokenizer, PreNormBlock, TimmAttention
 
 
 class EEGDINO(EEGModuleMixin, nn.Module):
@@ -236,8 +236,21 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self.emb_dim = self.patch_embedding.emb_dim
 
         self.encoder_layers = nn.ModuleList(
-            _TransformerEncoderLayer(
-                self.emb_dim, nhead, dim_feedforward, activation, drop_prob
+            PreNormBlock(
+                self.emb_dim,
+                # BEiT attention with q/v biases, in the reference op order
+                TimmAttention(
+                    self.emb_dim,
+                    nhead,
+                    qv_bias=True,
+                    attn_drop=drop_prob,
+                    proj_drop=drop_prob,
+                    exact=True,
+                ),
+                _MLP(
+                    self.emb_dim, dim_feedforward, activation=activation, drop=drop_prob
+                ),
+                drop_path=drop_prob,
             )
             for _ in range(n_layer)
         )
@@ -441,76 +454,6 @@ class _PatchEmbedding(nn.Module):
         patch_emb = patch_emb + channel_emb.unsqueeze(0).unsqueeze(2)
         temporal_emb = self.time_encoding(patch_emb.permute(0, 3, 1, 2))
         return patch_emb + temporal_emb.permute(0, 2, 3, 1)
-
-
-class _TransformerEncoderLayer(nn.Module):
-    """Pre-norm transformer block (no LayerScale, matching the released config)."""
-
-    def __init__(
-        self, emb_dim, nhead, dim_feedforward, activation=nn.GELU, drop_prob=0.1
-    ):
-        super().__init__()
-        self.norm1 = nn.LayerNorm(emb_dim)
-        self.attn = _Attention(emb_dim, nhead, attn_drop=drop_prob, proj_drop=drop_prob)
-        self.drop_path = DropPath(drop_prob) if drop_prob > 0.0 else nn.Identity()
-        self.norm2 = nn.LayerNorm(emb_dim)
-        self.mlp = _MLP(emb_dim, dim_feedforward, activation=activation, drop=drop_prob)
-
-    def forward(self, x):
-        x = x + self.drop_path(self.attn(self.norm1(x)))
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
-        return x
-
-
-class _Attention(nn.Module):
-    """BEiT-style attention: fused ``qkv`` without bias plus separate q/v biases.
-
-    ``head_dim`` is decoupled from ``emb_dim`` (``all_head_dim = head_dim *
-    nhead``) so a custom ``nhead`` need not divide ``emb_dim``. For the released
-    presets ``nhead=8`` divides every ``emb_dim`` (200/512/1024), so this is a
-    no-op there and the released ``qkv``/``proj`` shapes are preserved.
-    """
-
-    def __init__(self, emb_dim, nhead=8, attn_drop=0.0, proj_drop=0.0):
-        super().__init__()
-        if not 1 <= nhead <= emb_dim:
-            raise ValueError(
-                f"nhead ({nhead}) must be in [1, emb_dim={emb_dim}] so head_dim >= 1."
-            )
-        self.nhead = nhead
-        head_dim = emb_dim // nhead
-        all_head_dim = head_dim * nhead
-        self.scale = head_dim**-0.5
-        self.qkv = nn.Linear(emb_dim, all_head_dim * 3, bias=False)
-        self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
-        self.v_bias = nn.Parameter(torch.zeros(all_head_dim))
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(all_head_dim, emb_dim)
-        self.proj_drop = nn.Dropout(proj_drop)
-
-    def forward(self, x):
-        bias = torch.cat((self.q_bias, torch.zeros_like(self.v_bias), self.v_bias))
-        # Call the ``qkv`` module rather than ``F.linear`` on its weight, so
-        # hooks and adapters attached to it (e.g. LoRA) take part in the forward.
-        qkv = self.qkv(x)
-        qkv = qkv + bias.to(qkv.dtype)  # keep autocast dtype
-        batch, tokens, _ = qkv.shape
-        query, key, value = (
-            qkv.reshape(batch, tokens, 3, self.nhead, -1)
-            .permute(2, 0, 3, 1, 4)
-            .unbind(0)
-        )
-        # exact with q pre-scaled: the reference op order (q * scale) @ k^T
-        out = scaled_dot_product_attention(
-            query * self.scale,
-            key,
-            value,
-            dropout_p=self.attn_drop.p if self.training else 0.0,
-            scale=1.0,
-            exact=True,
-        )
-        out = out.transpose(1, 2).flatten(2)
-        return self.proj_drop(self.proj(out))
 
 
 class _MLP(nn.Module):
