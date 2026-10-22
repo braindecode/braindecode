@@ -8,7 +8,6 @@ import json
 import os
 import pickle  # nosec B403: the test pickles its own windows
 import threading
-import time
 
 import numpy as np
 import pandas as pd
@@ -139,10 +138,9 @@ def test_nemar_dataset_annotations_follow_mne_bids(nemar_dataset):
     assert len(ds.datasets[1].raw.annotations) == 0
 
 
-@pytest.mark.parametrize("cache_size", [0, 10**6])
-def test_nemar_dataset_windows_and_pickle(nemar_dataset, cache_size):
+def test_nemar_dataset_windows_and_pickle(nemar_dataset):
     dataset_id, physical = nemar_dataset
-    ds = NEMARDataset(dataset_id, cache_size=cache_size)
+    ds = NEMARDataset(dataset_id)
     windows = create_fixed_length_windows(
         ds,
         window_size_samples=200,
@@ -159,37 +157,45 @@ def test_nemar_dataset_windows_and_pickle(nemar_dataset, cache_size):
 
 
 class _RangeHandler(http.server.SimpleHTTPRequestHandler):
-    """Serves files with HEAD and byte ranges; the first `stalls` ranges hang."""
+    """Serves files with byte ranges, as S3 does; counts the bytes it sends,
+    and answers 503 to the first `failures` requests."""
 
-    stalls = 0
+    failures = 0
+    sent = 0
 
     def log_message(self, *args):
         pass
 
     def do_GET(self):
+        if type(self).failures > 0:
+            type(self).failures -= 1
+            self.send_error(503)
+            return
         path = self.translate_path(self.path)
-        if "Range" not in self.headers or not os.path.isfile(path):
-            return super().do_GET()
-        start, stop = map(int, self.headers["Range"][6:].split("-"))
+        if not os.path.isfile(path):
+            # S3 answers 403 rather than 404 for a missing object.
+            self.send_error(403)
+            return
         with open(path, "rb") as f:
-            f.seek(start)
-            body = f.read(stop - start + 1)
-        if type(self).stalls > 0:
-            type(self).stalls -= 1
-            time.sleep(2 * nemar.PART_DEADLINE)
-        self.send_response(206)
+            body = f.read()
+        status = 200
+        if "Range" in self.headers:
+            first, last = self.headers["Range"][len("bytes=") :].split("-")
+            if not first:  # suffix range: the last `last` bytes
+                body = body[-int(last) :]
+            else:
+                body = body[int(first) : int(last) + 1 if last else None]
+            status = 206
+        type(self).sent += len(body)
+        self.send_response(status)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        try:
-            self.wfile.write(body)
-        except OSError:  # the client gave up on the stalled range
-            pass
+        self.wfile.write(body)
 
 
 @pytest.fixture
 def nemar_http(nemar_dataset, tmp_path, monkeypatch):
     """The fake dataset served over HTTP, as zarr.nemar.org serves it."""
-    pytest.importorskip("aiohttp")
     dataset_id, physical = nemar_dataset
     handler = functools.partial(_RangeHandler, directory=str(tmp_path))
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -200,28 +206,91 @@ def nemar_http(nemar_dataset, tmp_path, monkeypatch):
     index["data_base"] = f"{url}/{dataset_id}/zarr/"
     index_path.write_text(json.dumps(index))
     monkeypatch.setattr(nemar, "NEMAR_ZARR_URL", url)
-    monkeypatch.setattr(nemar, "PART_SIZE", 256)  # several ranges per shard
-    monkeypatch.setattr(nemar, "PART_DEADLINE", 0.5)
     yield dataset_id, physical
     server.shutdown()
 
 
 def test_nemar_dataset_reads_over_http(nemar_http):
     dataset_id, physical = nemar_http
-    ds = NEMARDataset(dataset_id, cache_size=0)
+    ds = NEMARDataset(dataset_id)
     # sub-02 has 700 samples: its last shard is partial.
     for raw, subject in zip([d.raw for d in ds.datasets], ["01", "02"]):
         np.testing.assert_allclose(raw.get_data(), physical[subject])
 
 
-def test_nemar_dataset_retries_stalled_ranges(nemar_http, monkeypatch):
+def test_nemar_dataset_reads_only_the_chunks_it_needs(nemar_http):
     dataset_id, physical = nemar_http
-    monkeypatch.setattr(_RangeHandler, "stalls", 2)
-    raw = NEMARDataset(dataset_id, subjects="01", cache_size=0).datasets[0].raw
+    raw = NEMARDataset(dataset_id, subjects="01").datasets[0].raw
+    raw.get_data(start=0, stop=1)  # opens the array: metadata, first chunk
+    _RangeHandler.sent = 0
+    # 50 samples inside one 100-sample chunk of a 300-sample shard: the
+    # shard index and that chunk, not the shard.
+    np.testing.assert_allclose(
+        raw.get_data(start=410, stop=460), physical["01"][:, 410:460]
+    )
+    chunk_bytes = 3 * 100 * 2
+    assert 0 < _RangeHandler.sent < 3 * chunk_bytes
+
+
+def test_nemar_dataset_retries_failed_reads(nemar_http, monkeypatch):
+    dataset_id, physical = nemar_http
+    raw = NEMARDataset(dataset_id, subjects="01").datasets[0].raw
+    monkeypatch.setattr(nemar.time, "sleep", lambda s: None)
+    monkeypatch.setattr(_RangeHandler, "failures", 2)
     np.testing.assert_allclose(
         raw.get_data(start=250, stop=650), physical["01"][:, 250:650]
     )
-    assert _RangeHandler.stalls == 0
+    assert _RangeHandler.failures == 0
+
+
+def test_nemar_dataset_does_not_retry_client_errors(nemar_http, tmp_path, monkeypatch):
+    aiohttp = pytest.importorskip("aiohttp")
+    dataset_id, _ = nemar_http
+    raw = NEMARDataset(dataset_id, subjects="01").datasets[0].raw
+    store = tmp_path / dataset_id / "zarr" / "sub-01/eeg/sub-01_task-rest_eeg.zarr"
+    (store / "eeg_250hz/0/c/0/1").unlink()
+
+    def sleep(s):
+        raise AssertionError("a 4xx was retried")
+
+    monkeypatch.setattr(nemar.time, "sleep", sleep)
+    with pytest.raises(aiohttp.ClientResponseError) as e:
+        raw.get_data(start=300, stop=600)
+    assert e.value.status == 403
+
+
+def test_nemar_dataset_data_loader_workers(nemar_http):
+    """Forked workers open their own array: an HTTP one opened in the parent
+    is bound to the parent's event loop."""
+    torch = pytest.importorskip("torch")
+    dataset_id, physical = nemar_http
+    ds = NEMARDataset(dataset_id, subjects="01")
+    ds.datasets[0].raw.get_data(start=0, stop=10)  # opened in the parent
+    windows = create_fixed_length_windows(
+        ds,
+        window_size_samples=200,
+        window_stride_samples=200,
+        on_last_window="drop",
+        preload=False,
+    )
+    loader = torch.utils.data.DataLoader(
+        windows, batch_size=2, num_workers=2, multiprocessing_context="fork"
+    )
+    X = torch.cat([batch[0] for batch in loader]).numpy()
+    expected = physical["01"][:, : 5 * 200].reshape(3, 5, 200).transpose(1, 0, 2)
+    np.testing.assert_allclose(X, expected, rtol=1e-6)
+
+
+def test_nemar_dataset_incomplete_conversion(nemar_dataset, tmp_path):
+    dataset_id, _ = nemar_dataset
+    data_base = tmp_path / dataset_id / "zarr"
+    (data_base / "events.parquet").unlink()
+    index = json.loads((data_base / "index.json").read_text())
+    index["pending_count"] = 1
+    (data_base / "index.json").write_text(json.dumps(index))
+    with pytest.warns(UserWarning):
+        ds = NEMARDataset(dataset_id)
+    assert len(ds.datasets[0].raw.annotations) == 0
 
 
 def test_nemar_dataset_unknown_id(nemar_dataset):

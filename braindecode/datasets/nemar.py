@@ -14,17 +14,12 @@ are actually read get downloaded.
 
 from __future__ import annotations
 
-import http.client
 import json
 import logging
 import os
-import threading
 import time
-import urllib.error
-import urllib.request
 import warnings
-from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 
 import mne
 import numpy as np
@@ -39,20 +34,16 @@ from .base import BaseConcatDataset, RawDataset
 
 zarr = _soft_import("zarr", purpose="streaming NEMAR datasets", strict=False)
 fsspec = _soft_import("fsspec", purpose="streaming NEMAR datasets", strict=False)
+aiohttp = _soft_import("aiohttp", purpose="streaming NEMAR datasets", strict=False)
 
 log = logging.getLogger(__name__)
 
 NEMAR_ZARR_URL = "https://zarr.nemar.org"
 
-# Shards are fetched as parallel byte ranges, each with a deadline: some S3
-# connections stall at a few tens of kB/s while others run at MB/s, so a
-# whole-shard request can outlast any timeout, again and again when retried.
-# A 4 MiB range takes 1-2 s on a healthy connection; one still running after
-# PART_DEADLINE s is dropped and asked anew, on a new connection.
-PART_SIZE = 4 * 1024**2
-PART_DEADLINE = 20.0
-PART_RETRIES = 10
-N_CONNECTIONS = 8
+# A read that fails on the network (a reset, a 5xx, a stalled connection
+# hitting READ_TIMEOUT) is asked anew, up to READ_RETRIES times.
+READ_TIMEOUT = 30.0
+READ_RETRIES = 5
 
 # mne_bids leaves MEG out of this mapping (it reads MEG types from the raw
 # file), so the BIDS MEG types are added here. Axial gradiometers are "mag"
@@ -81,66 +72,43 @@ _UNIT_TO_SI = {
     "fT/cm": 1e-13,
 }
 
-# Decoded int16 shards, per process: (url, group, shard index) -> array.
-_SHARDS: OrderedDict = OrderedDict()
-_ARRAYS: dict = {}
-_LOCK = threading.Lock()
-_PID = os.getpid()
 
-
-def _get_shard_cache():
-    """Per-process caches; a forked DataLoader worker starts with empty ones."""
-    global _LOCK, _PID
-    if _PID != os.getpid():
-        _LOCK = threading.Lock()
-        _SHARDS.clear()
-        _ARRAYS.clear()
-        _PID = os.getpid()
-    return _SHARDS, _ARRAYS
-
-
-def _open_level0(url, group):
-    _, arrays = _get_shard_cache()
-    key = (url, group)
-    if key not in arrays:
-        # zarr_format=3 skips the v2 metadata probes, which NEMAR's S3
-        # answers with 403 rather than 404.
-        arrays[key] = zarr.open_array(url, path=f"{group}/0", mode="r", zarr_format=3)
-    return arrays[key]
+@lru_cache(maxsize=None)
+def _open_array(url, group, pid):
+    """The level-0 array of a channel group, opened once per process (pid):
+    an array opened over HTTP before a fork cannot be read in the child."""
+    storage_options = None
+    if url.startswith(("http://", "https://")):
+        timeout = aiohttp.ClientTimeout(
+            sock_connect=READ_TIMEOUT, sock_read=READ_TIMEOUT
+        )
+        storage_options = dict(client_kwargs=dict(timeout=timeout))
+    # zarr_format=3 skips the v2 metadata probes, which NEMAR's S3 answers
+    # with 403 rather than 404.
+    return zarr.open_array(
+        url,
+        path=f"{group}/0",
+        mode="r",
+        zarr_format=3,
+        storage_options=storage_options,
+    )
 
 
 class _NEMARRaw(BaseRaw):
     """Raw backed by one channel group of a NEMAR Zarr store, read lazily.
 
-    Samples are fetched one shard (NEMAR stores 300 s per shard) at a time,
-    as parallel byte ranges over HTTP, and the decoded shards are kept in a
-    per-process LRU cache of at most ``cache_size`` bytes.
+    zarr reads a slice from the shard index and the inner chunks it covers
+    (NEMAR stores 4 s per chunk, 300 s per shard), with byte-range requests.
     """
 
-    def __init__(
-        self,
-        url,
-        group,
-        info,
-        n_times,
-        offset_over_scale,
-        shard_len,
-        cache_size,
-        annotations=None,
-    ):
+    def __init__(self, url, group, info, n_times, offset_over_scale, annotations=None):
         super().__init__(
             info,
             preload=False,
             last_samps=[n_times - 1],
             filenames=[None],
             raw_extras=[
-                dict(
-                    url=url,
-                    group=group,
-                    offset_over_scale=offset_over_scale,
-                    shard_len=shard_len,
-                    cache_size=cache_size,
-                )
+                dict(url=url, group=group, offset_over_scale=offset_over_scale)
             ],
             orig_format="short",
         )
@@ -149,113 +117,24 @@ class _NEMARRaw(BaseRaw):
 
     def _read_segment_file(self, data, idx, fi, start, stop, cals, mult):
         extra = self._raw_extras[fi]
-        shard_len = extra["shard_len"]
-        first, last = start // shard_len, (stop - 1) // shard_len
-        block = np.concatenate(
-            [_get_shard(extra, i) for i in range(first, last + 1)], axis=1
-        )
-        block = block[:, start - first * shard_len : stop - first * shard_len]
+        for attempt in range(READ_RETRIES):
+            try:
+                array = _open_array(extra["url"], extra["group"], os.getpid())
+                block = array[:, start:stop]
+                break
+            except (aiohttp.ClientError, TimeoutError, ConnectionError) as e:
+                # A 4xx (e.g. a missing object) would answer the same again.
+                client_error = (
+                    isinstance(e, aiohttp.ClientResponseError) and e.status < 500
+                )
+                if client_error or attempt == READ_RETRIES - 1:
+                    raise
+                log.warning("%s: %r, retry %d", extra["url"], e, attempt + 1)
+                time.sleep(2**attempt)
         # physical = (digital + offset / scale) * scale, the scale (and the
         # unit conversion to SI) being the channel calibration in info.
         block = block + extra["offset_over_scale"][:, np.newaxis]
         _mult_cal_one(data, block, idx, cals, mult)
-
-
-def _get_shard(extra, i):
-    shards, _ = _get_shard_cache()
-    key = (extra["url"], extra["group"], i)
-    with _LOCK:
-        if key in shards:
-            shards.move_to_end(key)
-            return shards[key]
-    shard_len = extra["shard_len"]
-    if extra["url"].startswith(("http://", "https://")):
-        shard = _fetch_shard_http(extra["url"], extra["group"], i, shard_len)
-    else:
-        # Reading a whole shard costs one read; zarr fetches the shard object
-        # at once instead of one per inner chunk.
-        arr = _open_level0(extra["url"], extra["group"])
-        shard = arr[:, i * shard_len : (i + 1) * shard_len]
-    if extra["cache_size"]:
-        with _LOCK:
-            shards[key] = shard
-            while sum(s.nbytes for s in shards.values()) > extra["cache_size"]:
-                shards.popitem(last=False)
-    return shard
-
-
-def _level0_meta(url, group):
-    _, arrays = _get_shard_cache()
-    key = (url, group, "zarr.json")
-    if key not in arrays:
-        with urllib.request.urlopen(  # nosec B310: http(s) only, see _get_shard
-            f"{url}/{group}/0/zarr.json", timeout=PART_DEADLINE
-        ) as f:
-            arrays[key] = json.load(f)
-    return arrays[key]
-
-
-def _fetch_range(url, start, stop):
-    """Bytes [start, stop) of url, asked anew when they miss PART_DEADLINE."""
-    for attempt in range(PART_RETRIES):
-        t0 = time.monotonic()
-        try:
-            request = urllib.request.Request(
-                url, headers={"Range": f"bytes={start}-{stop - 1}"}
-            )
-            out = bytearray()
-            with urllib.request.urlopen(request, timeout=PART_DEADLINE) as f:  # nosec B310
-                while chunk := f.read(256 * 1024):
-                    out += chunk
-                    if time.monotonic() - t0 > PART_DEADLINE:
-                        raise TimeoutError(f"{len(out)} B in {PART_DEADLINE} s")
-            if len(out) != stop - start:
-                raise OSError(f"{len(out)} B for a range of {stop - start}")
-            return bytes(out)
-        except (OSError, http.client.HTTPException) as e:  # stalls, resets, 5xx
-            client_error = isinstance(e, urllib.error.HTTPError) and e.code < 500
-            if client_error or attempt == PART_RETRIES - 1:
-                raise
-            log.warning(
-                "%s bytes %d-%d: %r, retry %d", url, start, stop, e, attempt + 1
-            )
-            time.sleep(min(2**attempt, 30))
-
-
-def _fetch_shard_http(url, group, i, shard_len):
-    """Shard i of the level-0 array: its bytes in parallel ranges, decoded by zarr."""
-    meta = _level0_meta(url, group)
-    n_channels, n_times = meta["shape"]
-    width = min(shard_len, n_times - i * shard_len)
-    sep = meta.get("chunk_key_encoding", {}).get("configuration", {})
-    sep = sep.get("separator", "/")
-    shard_url = f"{url}/{group}/0/c{sep}0{sep}{i}"
-    try:
-        head = urllib.request.Request(shard_url, method="HEAD")
-        with urllib.request.urlopen(head, timeout=PART_DEADLINE) as f:  # nosec B310
-            size = int(f.headers["Content-Length"])
-    except urllib.error.HTTPError as e:
-        # A shard never written holds the fill value; NEMAR's S3 answers 403
-        # rather than 404 for a missing object.
-        if e.code in (403, 404):
-            return np.full(
-                (n_channels, width), meta.get("fill_value", 0), meta["data_type"]
-            )
-        raise
-    bounds = [(a, min(a + PART_SIZE, size)) for a in range(0, size, PART_SIZE)]
-    with ThreadPoolExecutor(N_CONNECTIONS) as pool:
-        data = b"".join(pool.map(lambda b: _fetch_range(shard_url, *b), bounds))
-    # The shard as the only chunk of a one-shard array: same codecs, so zarr
-    # decodes it, and trims the last, partial shard, as it would remotely.
-    one = dict(meta, shape=[n_channels, width])
-    buffer = zarr.core.buffer.default_buffer_prototype().buffer
-    store = zarr.storage.MemoryStore(
-        {
-            "zarr.json": buffer.from_bytes(json.dumps(one).encode()),
-            f"c{sep}0{sep}0": buffer.from_bytes(data),
-        }
-    )
-    return zarr.open_array(store, mode="r", zarr_format=3)[:]
 
 
 def _make_info(group_attrs, array_attrs):
@@ -273,10 +152,6 @@ def _make_info(group_attrs, array_attrs):
     if group_attrs.get("power_line_frequency"):
         info["line_freq"] = group_attrs["power_line_frequency"]
     return info, offset / scale
-
-
-def _fetch_json(fs, urls):
-    return {u: json.loads(v) for u, v in fs.cat(urls).items()}
 
 
 def _load_events(fs, data_base, store_paths):
@@ -354,9 +229,6 @@ class NEMARDataset(BaseConcatDataset):
         ``"IEEG"``, ``"EMG"``). ``None`` keeps all.
     target_name : str | tuple | None
         Name(s) of the description field(s) used as target.
-    cache_size : int
-        Bytes of decoded shards to keep in memory per process (and per
-        data loader worker). ``0`` disables the cache.
 
     References
     ----------
@@ -373,11 +245,10 @@ class NEMARDataset(BaseConcatDataset):
         runs: str | list[str] | None = None,
         modalities: str | list[str] | None = None,
         target_name: str | tuple[str, ...] | None = None,
-        cache_size: int = 512 * 1024**2,
     ):
-        if zarr is False or fsspec is False:
+        if zarr is False or fsspec is False or aiohttp is False:
             raise ImportError(
-                "zarr and fsspec are required: pip install braindecode[nemar]"
+                "zarr, fsspec and aiohttp are required: pip install braindecode[nemar]"
             )
         index_url = f"{NEMAR_ZARR_URL}/{dataset_id}/zarr/index.json"
         try:
@@ -430,7 +301,7 @@ class NEMARDataset(BaseConcatDataset):
         for store, group, _ in selected:
             base = f"{data_base}{store['zarr']}/{group['name']}"
             urls += [f"{base}/zarr.json", f"{base}/0/zarr.json"]
-        meta = _fetch_json(fs, urls)
+        meta = {u: json.loads(v) for u, v in fs.cat(urls).items()}
         events = _load_events(
             fs, data_base, {store["zarr"] for store, _, _ in selected}
         )
@@ -451,8 +322,6 @@ class NEMARDataset(BaseConcatDataset):
                 info,
                 n_times=array_meta["shape"][1],
                 offset_over_scale=offset_over_scale,
-                shard_len=array_meta["chunk_grid"]["configuration"]["chunk_shape"][1],
-                cache_size=cache_size,
                 annotations=_annotations(events, store["zarr"]),
             )
             description = {
