@@ -506,7 +506,7 @@ Bug fixes
 - :class:`braindecode.models.EpiNT` z-scores each channel over the whole window
   before dropping the samples after the last full patch, as the reference
   implementation does; it dropped them first, which changed the output when
-  ``n_times`` is not a multiple of ``patch_size`` (by `Julien Gadonneix`_).
+  ``n_times`` is not a multiple of ``patch_size`` (:gh:`1488` by `Julien Gadonneix`_).
 
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
