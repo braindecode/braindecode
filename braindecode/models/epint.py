@@ -46,10 +46,11 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
 
     .. rubric:: Architecture Overview
 
-    1. ``instance_norm`` z-scores each channel over time (affine, one scale and
-       one offset shared by all channels).
+    1. ``instance_norm`` z-scores each channel over the whole window (affine,
+       one scale and one offset shared by all channels).
     2. ``patch_embedding`` projects non-overlapping patches of ``patch_size``
-       samples to ``embed_dim``, and a learned ``cls_token`` is prepended.
+       samples to ``embed_dim`` (the samples after the last full patch are
+       dropped), and a learned ``cls_token`` is prepended.
     3. ``encoder`` is a stack of post-norm Transformer layers with rotary
        position embeddings (RoPE) in the self-attention. As upstream, each
        ``LayerNorm`` spans the token **and** feature axes, so the number of
@@ -254,8 +255,8 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
                 f"{self.n_times}) and got ({x.shape[1]}, {x.shape[2]}); its LayerNorms "
                 "fix the number of patches."
             )
-        x = x[..., : self.n_patches * self.patch_size]
         z = self.instance_norm(self.merge_channels(x))  # (batch*chans, 1, times)
+        z = z[..., : self.n_patches * self.patch_size]
         z = self.patch_embedding(self.patchify(z))  # (batch*chans, patches, dim)
         cls = self.cls_token.expand(z.shape[0], 1, -1).to(z)
         z = torch.cat([cls, z], dim=1)  # (batch*chans, tokens, dim)
