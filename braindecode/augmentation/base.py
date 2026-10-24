@@ -9,10 +9,11 @@
 from numbers import Real
 from typing import Any, Callable, Optional, Union
 
+import numpy as np
 import torch
 from sklearn.utils import check_random_state
 from torch import Tensor, nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, get_worker_info
 from torch.utils.data._utils.collate import default_collate
 
 from .functional import identity
@@ -191,6 +192,33 @@ def _as_mixed_target(y, lam_dtype):
     return y, y, lam
 
 
+def _transform_rngs(transform):
+    """Return the ``RandomState`` objects of a transform, in a fixed order.
+
+    Walks the transform, its submodules and the ``transforms`` of a
+    :class:`Compose`, and lists each ``rng`` once (pooled transforms of
+    :class:`braindecode.augmentation.TrivialAugment` share theirs). The global
+    numpy generator, used with ``random_state=None``, is included: a spawned
+    worker receives a pickled copy of it, which torch does not reseed.
+    """
+    rngs, seen, stack = [], set(), [transform]
+    while stack:
+        tr = stack.pop(0)
+        if id(tr) in seen:
+            continue
+        seen.add(id(tr))
+        # Compose forwards to its children without using its inherited RNG.
+        rng = None if type(tr) is Compose else getattr(tr, "rng", None)
+        if isinstance(rng, np.random.RandomState) and id(rng) not in seen:
+            seen.add(id(rng))
+            rngs.append(rng)
+        children = list(getattr(tr, "transforms", None) or [])
+        if isinstance(tr, nn.Module):
+            children += list(tr.children())
+        stack.extend(children)
+    return rngs
+
+
 def _assert_stackable(items, name):
     # Fixed expansion concatenates the clean originals with the transformed
     # copies, so every copy must keep the original's shape except along the
@@ -247,8 +275,34 @@ class _AugmentationCollate:
         self.transform = transform
         self.device = device
         self.n_augmentation = n_augmentation
+        self.worker_seeds = None
+        self._worker_rngs_seeded = False
+
+    def draw_worker_seeds(self):
+        """Draw, from each generator of the transform, a seed for the workers.
+
+        Called in the main process when a multi-process iteration starts. A
+        worker receives a copy of the transform whose generators are in the
+        state of the main process; without a new seed, every worker, and every
+        epoch, would draw the same augmentations.
+        """
+        self.worker_seeds = [
+            int(rng.randint(2**31)) for rng in _transform_rngs(self.transform)
+        ]
+
+    def _seed_worker_rngs(self):
+        if self._worker_rngs_seeded or self.worker_seeds is None:
+            return
+        worker_info = get_worker_info()
+        if worker_info is None:
+            return
+        self._worker_rngs_seeded = True
+        rngs = _transform_rngs(self.transform)
+        for rng, seed in zip(rngs, self.worker_seeds):
+            rng.seed(np.random.SeedSequence([seed, worker_info.id]).generate_state(1))
 
     def __call__(self, batch):
+        self._seed_worker_rngs()
         collated = default_collate(batch)
         X, y = collated[:2]
         if self.device is not None:
@@ -336,3 +390,10 @@ class AugmentedDataLoader(DataLoader):
             transform, device=device, n_augmentation=n_augmentation
         )
         super().__init__(dataset, collate_fn=self.collated_tr, **kwargs)
+
+    def __iter__(self):
+        # the workers get a copy of the transform; give them new seeds so that
+        # seeded transforms differ across workers and epochs
+        if self.num_workers > 0:
+            self.collated_tr.draw_worker_seeds()
+        return super().__iter__()

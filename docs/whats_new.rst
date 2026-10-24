@@ -503,6 +503,7 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.augmentation.AugmentedDataLoader` with ``num_workers > 0`` drawing the same augmentations at every epoch and in every worker: a worker received a copy of the transform with its numpy generator in the state of the main process (a pickled copy of the global generator for the default ``random_state=None`` with spawned workers, as on macOS and Windows), and that state never advanced. The main process now draws a seed from each generator when an epoch starts, and each worker reseeds its copy from that seed and its worker id, so runs with a fixed ``random_state`` stay reproducible (:gh:`1475` by `Adam Mounir`_).
 - Fix :class:`braindecode.preprocessing.CombineChannels`, :class:`braindecode.preprocessing.FixStimArtifact`, :class:`braindecode.preprocessing.InterpolateBridgedElectrodes`, :class:`braindecode.preprocessing.MaxwellFilter` and :class:`braindecode.preprocessing.RegressArtifact` always failing with ``AttributeError: MNE object does not have a ... method``: these standalone MNE functions were looked up as methods of the recording. They are now called on it (:gh:`1482` by `Adam Mounir`_).
 
 - Fix cropped :class:`braindecode.EEGClassifier` accuracy callbacks with array inputs in scikit-learn grid searches and pipelines: each array example is scored as one trial, while window datasets retain their existing trial aggregation (:gh:`1490` by `Bruno Aristimunha`_).
