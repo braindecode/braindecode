@@ -10,6 +10,7 @@
 import copy
 import os
 import platform
+from datetime import datetime, timezone
 from glob import glob
 
 import mne
@@ -31,6 +32,7 @@ from braindecode.preprocessing import (
     ApplyGradientCompensation,
     ApplyHilbert,
     ApplyProj,
+    CombineChannels,
     ComputeBridgedElectrodes,
     ComputeCurrentSourceDensity,
     Crop,
@@ -45,9 +47,11 @@ from braindecode.preprocessing import (
     FixMagCoilTypes,
     FixStimArtifact,
     InterpolateBads,
+    InterpolateBridgedElectrodes,
     NotchFilter,
     OversampledTemporalProjection,
     Pick,
+    RegressArtifact,
     RenameChannels,
     ReorderChannels,
     Resample,
@@ -68,7 +72,10 @@ from braindecode.preprocessing.preprocess import (
     filterbank,
     preprocess,
 )
-from braindecode.preprocessing.windowers import create_fixed_length_windows
+from braindecode.preprocessing.windowers import (
+    create_fixed_length_windows,
+    create_windows_from_events,
+)
 
 
 @pytest.fixture(scope="module")
@@ -739,6 +746,187 @@ def test_aux_return_standalone_preprocessor_uses_callable(prep_class, init_kwarg
 
     result = preprocessor.apply(_montage_raw())
     assert isinstance(result, mne.io.BaseRaw)
+
+
+def _raw_with_eog():
+    ch_names = ["Fp1", "Fp2", "C3", "C4", "EOG"]
+    info = mne.create_info(ch_names, sfreq=200.0, ch_types=["eeg"] * 4 + ["eog"])
+    rng = np.random.RandomState(0)
+    data = rng.randn(len(ch_names), 4000) * 1e-5
+    data[:4] += data[4] * 0.5  # EOG leaking into the EEG channels
+    raw = mne.io.RawArray(data, info, verbose=False)
+    raw.set_montage("standard_1020", on_missing="ignore", verbose=False)
+    raw.set_eeg_reference(projection=True, verbose=False)
+    return raw
+
+
+@pytest.mark.parametrize(
+    "prep_class,init_kwargs,expected_ch_names,changed",
+    [
+        (CombineChannels, {"groups": {"left": [0, 2]}}, ["left"], None),
+        (
+            FixStimArtifact,
+            {"events": np.array([[1000, 0, 1]]), "tmin": 0.0, "tmax": 0.01},
+            None,
+            slice(1000, 1002),
+        ),
+        (InterpolateBridgedElectrodes, {"bridged_idx": [(0, 1)]}, None, slice(None)),
+        (RegressArtifact, {"picks_artifact": "eog"}, None, slice(None)),
+    ],
+)
+def test_standalone_preprocessor_returning_instance(
+    prep_class, init_kwargs, expected_ch_names, changed
+):
+    """Standalone MNE functions that return the recording (or ``(inst, ...)``)
+    run through ``preprocess`` instead of failing with an ``AttributeError``."""
+    raw = _raw_with_eog()
+    orig = raw.get_data()
+    concat_ds = BaseConcatDataset([RawDataset(raw)])
+    preprocess(concat_ds, [prep_class(**init_kwargs)], n_jobs=1)
+    out = concat_ds.datasets[0].raw
+    assert isinstance(out, mne.io.BaseRaw)
+    if expected_ch_names is not None:
+        assert out.ch_names == expected_ch_names
+    else:
+        assert out.ch_names == raw.ch_names
+        assert not np.allclose(out.get_data()[0, changed], orig[0, changed])
+
+
+@pytest.mark.parametrize("first_samp", [0, 1000])
+@pytest.mark.parametrize("meas_date", [None, datetime(2020, 1, 1, tzinfo=timezone.utc)])
+def test_combine_channels_preserves_annotations(first_samp, meas_date, tmp_path):
+    info = mne.create_info(["C3", "C4"], 100, "eeg")
+    raw = mne.io.RawArray(np.zeros((2, 600)), info, first_samp=first_samp)
+    raw.set_meas_date(meas_date)
+    raw.set_annotations(
+        mne.Annotations([1, 3, 3.2], [1, 1, 0.2], ["cue", "cue", "BAD_motion"])
+    )
+    annotations = raw.annotations.copy()
+    events, _ = mne.events_from_annotations(raw)
+    dataset = BaseConcatDataset([RawDataset(raw, description={"subject": 1})])
+    prep = Preprocessor.deserialize(CombineChannels({"mean": [0, 1]}).serialize())
+    preprocess(dataset, [prep])
+    out = dataset.datasets[0].raw
+    assert out.first_samp == first_samp
+    assert out.info["meas_date"] == meas_date
+    np.testing.assert_allclose(out.annotations.onset, annotations.onset)
+    np.testing.assert_array_equal(out.annotations.duration, annotations.duration)
+    np.testing.assert_array_equal(out.annotations.description, annotations.description)
+    assert out.annotations.orig_time == annotations.orig_time
+    np.testing.assert_array_equal(mne.events_from_annotations(out)[0], events)
+    windows = create_windows_from_events(
+        dataset, mapping={"cue": 0}, use_mne_epochs=True, drop_bad_windows=True
+    )
+    assert len(windows) == 1  # The second cue overlaps BAD_motion.
+    out.save(tmp_path / "combined_raw.fif", overwrite=True)
+    restored = mne.io.read_raw_fif(tmp_path / "combined_raw.fif")
+    np.testing.assert_array_equal(mne.events_from_annotations(restored)[0], events)
+    np.testing.assert_array_equal(
+        restored.annotations.description, annotations.description
+    )
+    np.testing.assert_allclose(restored.annotations.onset, annotations.onset)
+    assert restored.annotations.orig_time == annotations.orig_time
+
+
+@pytest.mark.parametrize("drop_bad", [False, True])
+@pytest.mark.parametrize("keep_stim", [False, True])
+def test_combine_channels_maps_channel_annotations(drop_bad, keep_stim):
+    info = mne.create_info(["C3", "C4", "Cz", "STI"], 100, ["eeg"] * 3 + ["stim"])
+    raw = mne.io.RawArray(np.zeros((4, 400)), info)
+    raw.info["bads"] = ["C4"]
+    raw.set_annotations(
+        mne.Annotations(
+            [1] * 5,
+            [0.1] * 5,
+            ["global", "left", "bad_right", "discarded", "stim"],
+            ch_names=[(), ("C3",), ("C4",), ("Cz",), ("STI",)],
+        )
+    )
+    original = raw.annotations.copy()
+    # Reusing Cz as a virtual name must not attach the discarded Cz annotation.
+    combined = CombineChannels(
+        {"Cz": [0, 1], "left": [0]}, drop_bad=drop_bad, keep_stim=keep_stim
+    ).apply(raw)
+    expected = {"global": (), "left": ("Cz", "left")}
+    if not drop_bad:
+        expected["bad_right"] = ("Cz",)
+    if keep_stim:
+        expected["stim"] = ("STI",)
+    assert (
+        dict(zip(combined.annotations.description, combined.annotations.ch_names))
+        == expected
+    )
+    assert raw.annotations == original
+
+
+@pytest.mark.parametrize("group_name", ["mean", "STI"])
+def test_combine_channels_maps_kept_stim_duplicate_name(group_name):
+    raw = mne.io.RawArray(
+        np.arange(1200).reshape(3, 400),
+        mne.create_info(["C3", "C4", "STI"], 100, ["eeg", "eeg", "stim"]),
+    )
+    raw.set_annotations(
+        mne.Annotations(
+            [1, 2], [0.1, 0.1], ["eeg", "stim"], ch_names=[("C3",), ("STI",)]
+        )
+    )
+    original = raw.annotations.copy()
+    groups = {group_name: [0, 1]}
+    expected = mne.channels.combine_channels(raw, groups, keep_stim=True)
+    combined = CombineChannels(groups, keep_stim=True).apply(raw)
+    assert combined.ch_names == expected.ch_names
+    np.testing.assert_array_equal(combined.get_data(), expected.get_data())
+    assert combined.annotations.ch_names.tolist() == [
+        (combined.ch_names[1],),
+        (combined.ch_names[0],),
+    ]
+    assert raw.annotations == original
+
+
+@pytest.mark.parametrize("annotation_state", ["present", "empty", "none"])
+@pytest.mark.parametrize("transform", ["decimate", "resample"])
+@pytest.mark.parametrize("first_samp", [0, 1000])
+@pytest.mark.parametrize("meas_date", [None, datetime(2020, 1, 1, tzinfo=timezone.utc)])
+def test_combine_channels_preserves_epoch_annotation_clock(
+    annotation_state, transform, first_samp, meas_date
+):
+    raw = mne.io.RawArray(
+        np.arange(1200).reshape(2, 600) * 1e-9,
+        mne.create_info(["C3", "C4"], 100, "eeg"),
+        first_samp=first_samp,
+    )
+    raw.set_meas_date(meas_date)
+    raw.set_annotations(
+        mne.Annotations([1, 3], [0.2, 0.2], ["a", "b"], ch_names=[(), ("C3",)])
+    )
+    events, event_id = mne.events_from_annotations(raw)
+    epochs = mne.Epochs(
+        raw, events, event_id, tmin=0, tmax=0.5, baseline=None, preload=True
+    )
+    if annotation_state == "none":
+        epochs.set_annotations(None)
+    elif annotation_state == "empty":
+        epochs.set_annotations(raw.annotations[:0])
+    if transform == "decimate":
+        epochs.decimate(2)
+    else:
+        epochs.resample(50)
+    original = None if epochs.annotations is None else epochs.annotations.copy()
+    expected = mne.channels.combine_channels(epochs, {"mean": [0, 1]})
+    combined = CombineChannels({"mean": [0, 1]}).apply(epochs)
+    np.testing.assert_array_equal(combined.get_data(), expected.get_data())
+    np.testing.assert_array_equal(combined.events, epochs.events)
+    assert combined._raw_sfreq == epochs._raw_sfreq == 100
+    assert combined.info["meas_date"] == meas_date
+    assert combined.get_annotations_per_epoch() == epochs.get_annotations_per_epoch()
+    if original is None:
+        assert combined.annotations is None
+    else:
+        mapped = original.copy()
+        if len(mapped):
+            mapped.ch_names[1] = ("mean",)
+        assert combined.annotations == mapped
+    assert epochs.annotations == original
 
 
 def test_annotate_amplitude_applies_annotations_and_bads():

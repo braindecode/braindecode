@@ -503,6 +503,8 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.preprocessing.CombineChannels`, :class:`braindecode.preprocessing.FixStimArtifact`, :class:`braindecode.preprocessing.InterpolateBridgedElectrodes`, :class:`braindecode.preprocessing.MaxwellFilter` and :class:`braindecode.preprocessing.RegressArtifact` always failing with ``AttributeError: MNE object does not have a ... method``: these standalone MNE functions were looked up as methods of the recording. They are now called on it (:gh:`1482` by `Adam Mounir`_).
+
 - Fix cropped :class:`braindecode.EEGClassifier` accuracy callbacks with array inputs in scikit-learn grid searches and pipelines: each array example is scored as one trial, while window datasets retain their existing trial aggregation (:gh:`1490` by `Bruno Aristimunha`_).
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
