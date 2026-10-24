@@ -85,6 +85,39 @@ class EEGPrepBasePreprocessor(Preprocessor):
             "force_dtype",
         ]
 
+    @classmethod
+    def _from_serialized(cls, **kwargs):
+        if cls not in (
+            RemoveDCOffset,
+            ReinterpolateRemovedChannels,
+            RemoveCommonAverageReference,
+        ):
+            return super()._from_serialized(**kwargs)
+        # These wrappers previously inherited the base constructor. Restore its
+        # flags only for saved payloads, without exposing them in the public API.
+        duration = kwargs.pop("can_change_duration", False)
+        record = kwargs.pop("record_orig_chanlocs", False)
+        preprocessor = cls(**kwargs)
+        preprocessor.can_change_duration = (
+            cls.__name__ if duration is True else duration
+        )
+        preprocessor.record_orig_chanlocs = record
+        return preprocessor
+
+    def serialize(self):
+        """Keep legacy internal flags when round-tripping saved pipelines."""
+        data = super().serialize()
+        if type(self) in (
+            RemoveDCOffset,
+            ReinterpolateRemovedChannels,
+            RemoveCommonAverageReference,
+        ):
+            data.update(
+                can_change_duration=self.can_change_duration,
+                record_orig_chanlocs=self.record_orig_chanlocs,
+            )
+        return data
+
     @abstractmethod
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""

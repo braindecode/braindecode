@@ -13,7 +13,7 @@ import pytest
 
 from braindecode.datasets import BaseConcatDataset
 from braindecode.datasets.base import BaseDataset
-from braindecode.preprocessing import preprocess
+from braindecode.preprocessing import Preprocessor, preprocess
 from braindecode.preprocessing.eegprep_preprocess import (
     EEGPrep,
     ReinterpolateRemovedChannels,
@@ -724,6 +724,71 @@ def test_trivial_preprocessor_public_signature(preprocessor_cls):
         expected_dtype = None if dtype is None else np.dtype(dtype)
         assert preprocessor.force_dtype == expected_dtype
         assert preprocessor == preprocessor_cls.deserialize(preprocessor.serialize())
+
+
+@pytest.mark.parametrize(
+    "preprocessor_cls",
+    [RemoveDCOffset, ReinterpolateRemovedChannels, RemoveCommonAverageReference],
+)
+@pytest.mark.parametrize("duration, record", [(False, False), (True, True), ("legacy", True)])
+def test_trivial_preprocessor_legacy_serialization(preprocessor_cls, duration, record):
+    """Load the old payload through either entry point without losing flags."""
+    payload = {
+        "__class_path__": f"{preprocessor_cls.__module__}.{preprocessor_cls.__name__}",
+        "can_change_duration": duration,
+        "record_orig_chanlocs": record,
+        "force_dtype": np.dtype("float64"),
+    }
+    original = payload.copy()
+    for loader in (Preprocessor, preprocessor_cls):
+        restored = loader.deserialize(payload)
+        expected_duration = preprocessor_cls.__name__ if duration is True else duration
+        assert restored.can_change_duration == expected_duration
+        assert restored.record_orig_chanlocs is record
+        assert restored.force_dtype == np.dtype("float64")
+        assert restored == Preprocessor.deserialize(restored.serialize())
+        assert payload == original
+        with pytest.raises(TypeError, match="unknown_option"):
+            loader.deserialize({**payload, "unknown_option": True})
+        with pytest.raises(TypeError, match="unknown_option"):
+            loader.deserialize({**payload, "kwargs": {"unknown_option": True}})
+        assert payload == original
+
+
+@pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")
+@pytest.mark.parametrize(
+    "preprocessor_cls",
+    [RemoveDCOffset, ReinterpolateRemovedChannels, RemoveCommonAverageReference],
+)
+def test_trivial_preprocessor_legacy_processing(preprocessor_cls, base_concat_ds):
+    """Legacy default payloads keep the same preprocessing result."""
+    payload = {
+        "__class_path__": f"{preprocessor_cls.__module__}.{preprocessor_cls.__name__}",
+        "can_change_duration": False,
+        "record_orig_chanlocs": False,
+        "force_dtype": None,
+    }
+    raw = base_concat_ds.datasets[0].raw
+    expected, actual = raw.copy(), raw.copy()
+    preprocessor_cls().apply(expected)
+    Preprocessor.deserialize(payload).apply(actual)
+    np.testing.assert_array_equal(actual.get_data(), expected.get_data())
+    assert actual.ch_names == expected.ch_names
+    assert actual.info["sfreq"] == expected.info["sfreq"]
+
+
+def test_legacy_flag_migration_is_scoped():
+    """Do not accept internal flags on the other EEGPrep wrappers."""
+    from braindecode.preprocessing import eegprep_preprocess as module
+
+    for name in module.__all__:
+        cls = getattr(module, name)
+        if cls in (RemoveDCOffset, ReinterpolateRemovedChannels, RemoveCommonAverageReference):
+            continue
+        preprocessor = cls(100) if cls is Resampling else cls()
+        for flag in ("can_change_duration", "record_orig_chanlocs"):
+            with pytest.raises(TypeError, match=flag):
+                Preprocessor.deserialize({**preprocessor.serialize(), flag: True})
 
 
 def test_missing_eegprep_raises_error(base_concat_ds, monkeypatch):

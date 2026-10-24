@@ -187,7 +187,12 @@ class Preprocessor(object):
             module = import_module(module_name)
             data["fn"] = getattr(module, fn_name)
 
-        return cls(**data, **kwargs)
+        return cls._from_serialized(**data, **kwargs)
+
+    @classmethod
+    def _from_serialized(cls, **kwargs):
+        """Reconstruct serialized state, allowing narrowly scoped migrations."""
+        return cls(**kwargs)
 
     def __repr__(self):
         cls_name = self.__class__.__name__
