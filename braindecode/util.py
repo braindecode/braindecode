@@ -393,6 +393,17 @@ def _looks_like_channel_mask(tensor):
     return dtype == torch.bool or getattr(dtype, "kind", None) == "b"
 
 
+def _prepare_signal(x):
+    """Apply the loader's signal cast and report whether to cast targets."""
+    if isinstance(x, dict):
+        if hasattr(x["x"], "type"):
+            x["x"] = x["x"].type(torch.float32)
+        return x, True
+    if hasattr(x, "type"):
+        return x.type(torch.float32), True
+    return x, False
+
+
 class ThrowAwayIndexLoader(object):
     def __init__(self, net, loader, is_regression):
         self.net = net
@@ -429,15 +440,7 @@ class ThrowAwayIndexLoader(object):
                 self.net._last_window_inds_ = None
 
             # TODO: should be on dataset side
-            if isinstance(x, dict):
-                if hasattr(x["x"], "type"):
-                    x["x"] = x["x"].type(torch.float32)
-                cast_target = True
-            elif hasattr(x, "type"):
-                x = x.type(torch.float32)
-                cast_target = True
-            else:
-                cast_target = False
+            x, cast_target = _prepare_signal(x)
             if cast_target:
                 target_dtype = torch.float32 if self.is_regression else torch.int64
                 if isinstance(y, (tuple, list)) and len(y) == 3:

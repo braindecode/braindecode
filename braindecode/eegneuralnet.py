@@ -27,6 +27,7 @@ from .training.scoring import (
     CroppedTrialEpochScoring,
     PostEpochTrainScoring,
 )
+from .util import _prepare_signal
 
 log = logging.getLogger(__name__)
 
@@ -150,7 +151,14 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 i_window_in_trials.append(i[0].cpu().numpy())
                 i_window_stops.append(i[2].cpu().numpy())
             with torch.no_grad():
-                preds.append(to_numpy(self.module_(X.to(self.device))))
+                if len(batch) == 3:
+                    pred = self.module_(X.to(self.device))
+                else:
+                    # Match ordinary iteration, without applying prediction
+                    # nonlinearities before the callback's temporal average.
+                    X, _ = _prepare_signal(X)
+                    pred = self.infer(X)
+                preds.append(to_numpy(pred))
             window_ys.append(y.cpu().numpy())
         preds = np.concatenate(preds)
         i_window_in_trials = (
