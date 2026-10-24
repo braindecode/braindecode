@@ -412,7 +412,8 @@ def test_custom_weights_roundtrip_and_global_isolation(tmp_path, monkeypatch, fi
     assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original_name
 
 
-def test_custom_weights_download_arguments_and_failure_isolation(tmp_path, monkeypatch):
+@pytest.mark.parametrize("download_options", [{}, {"proxies": {"https": "http://proxy.invalid"}, "resume_download": True}])
+def test_custom_weights_download_arguments_and_failure_isolation(tmp_path, monkeypatch, download_options):
     import huggingface_hub
 
     original_name = huggingface_hub.constants.SAFETENSORS_SINGLE_FILE
@@ -430,13 +431,14 @@ def test_custom_weights_download_arguments_and_failure_isolation(tmp_path, monke
         EEGNet._from_pretrained(
             model_id="test/model", filename="nested/custom.safetensors",
             revision="fixed-revision", cache_dir=tmp_path, force_download=True,
-            local_files_only=True, token=False,
+            local_files_only=True, token=False, **download_options,
         )
-    assert calls[-1] == dict(repo_id="test/model", filename="nested/custom.safetensors", revision="fixed-revision", cache_dir=tmp_path, force_download=True, local_files_only=True, token=False)
+    assert calls[-1] == dict(repo_id="test/model", filename="nested/custom.safetensors", revision="fixed-revision", cache_dir=tmp_path, force_download=True, local_files_only=True, token=False, **download_options)
     assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original_name
 
 
-def test_concurrent_custom_weights_keep_independent_filenames(tmp_path, monkeypatch):
+@pytest.mark.parametrize("second_filename", ["second.safetensors", None])
+def test_concurrent_custom_weights_keep_independent_filenames(tmp_path, monkeypatch, second_filename):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
 
@@ -462,8 +464,8 @@ def test_concurrent_custom_weights_keep_independent_filenames(tmp_path, monkeypa
         )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        paths = list(pool.map(load_one, ["first.safetensors", "second.safetensors"]))
-    assert paths == [str(tmp_path / name) for name in ("first.safetensors", "second.safetensors")]
+        paths = list(pool.map(load_one, ["first.safetensors", second_filename]))
+    assert paths == [str(tmp_path / name) for name in ("first.safetensors", second_filename or "model.safetensors")]
     assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original
 
 
@@ -482,3 +484,106 @@ def test_custom_weights_reject_filename_from_saved_config(tmp_path, monkeypatch,
     monkeypatch.setattr(EEGNet, "_load_as_safetensor", unexpected)
     with pytest.raises(ValueError, match="filename must be"):
         EEGNet.from_pretrained(tmp_path, local_files_only=True)
+
+
+@pytest.mark.parametrize("filename", [None, "nested/custom.safetensors"])
+def test_local_weights_selected_symlinks_and_native_modes(tmp_path, filename):
+    from huggingface_hub import PyTorchModelHubMixin
+
+    from .test_base import DummyModuleConfigRoundTrip
+
+    model = DummyModuleConfigRoundTrip(n_chans=2, n_times=8, n_outputs=2)
+    model.save_pretrained(tmp_path)
+    # An unused legacy artifact, even a dangling external link, is not selected.
+    legacy = tmp_path / "pytorch_model.bin"
+    legacy.unlink()
+    legacy.symlink_to(tmp_path.parent / "unused.bin")
+    target = tmp_path / "weights.safetensors"
+    (tmp_path / "model.safetensors").rename(target)
+    selected = tmp_path / (filename or "model.safetensors")
+    selected.parent.mkdir(parents=True, exist_ok=True)
+    selected.symlink_to(target)
+    restored = DummyModuleConfigRoundTrip.from_pretrained(
+        tmp_path, filename=filename, local_files_only=True, strict=True
+    )
+    expected = PyTorchModelHubMixin._load_as_safetensor(
+        DummyModuleConfigRoundTrip(n_chans=2, n_times=8, n_outputs=2),
+        str(target), "cpu", True,
+    )
+    # Do not normalize modes: older and newer Hub loaders differ intentionally.
+    assert {n: m.training for n, m in restored.named_modules()} == {
+        n: m.training for n, m in expected.named_modules()
+    }
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("filename", [None, "missing.safetensors"])
+def test_custom_weights_missing_does_not_use_default_pickle_fallback(tmp_path, monkeypatch, filename):
+    import huggingface_hub
+    from huggingface_hub import hub_mixin
+    from huggingface_hub.errors import EntryNotFoundError
+
+    from .test_base import DummyModuleConfigRoundTrip
+
+    calls = []
+    loaded = []
+
+    def download(**kwargs):
+        name = kwargs["filename"]
+        calls.append(name)
+        if name == "config.json":
+            raise FileNotFoundError
+        if name.endswith(".safetensors"):
+            raise EntryNotFoundError("missing weights")
+        assert name == "pytorch_model.bin"
+        return str(tmp_path / name)
+
+    def load(cls, model, model_file, map_location, strict):
+        loaded.append((model_file, map_location, strict))
+        return model
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    monkeypatch.setattr(hub_mixin, "hf_hub_download", download)
+    monkeypatch.setattr(DummyModuleConfigRoundTrip, "_load_as_pickle", classmethod(load))
+    kwargs = dict(
+        model_id="test/model", filename=filename, revision="fixed-revision",
+        cache_dir=tmp_path, force_download=False, local_files_only=True,
+        token=False, n_chans=2, n_times=8, n_outputs=2, strict=True,
+    )
+    if filename is not None:
+        with pytest.raises(EntryNotFoundError, match="missing weights"):
+            DummyModuleConfigRoundTrip._from_pretrained(**kwargs)
+        assert calls == ["config.json", filename]
+        assert loaded == []
+    else:
+        DummyModuleConfigRoundTrip._from_pretrained(**kwargs)
+        assert calls == ["config.json", "model.safetensors", "pytorch_model.bin"]
+        assert loaded == [(str(tmp_path / "pytorch_model.bin"), "cpu", True)]
+
+
+def test_custom_weights_legacy_options_do_not_reach_constructor(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    from .test_base import DummyModuleConfigRoundTrip
+
+    model = DummyModuleConfigRoundTrip(n_chans=2, n_times=8, n_outputs=2)
+    model.save_pretrained(tmp_path)
+    calls = []
+
+    def download(**kwargs):
+        calls.append(kwargs)
+        name = "model.safetensors" if kwargs["filename"] == "custom.safetensors" else kwargs["filename"]
+        return str(tmp_path / name)
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    restored = DummyModuleConfigRoundTrip._from_pretrained(
+        model_id="test/model", filename="custom.safetensors", revision=None,
+        cache_dir=None, force_download=False, local_files_only=True, token=None,
+        n_chans=2, n_times=8, n_outputs=2, proxies={"https": "http://proxy.invalid"},
+        resume_download=True, map_location="cpu", strict=True,
+    )
+    assert calls[-1]["proxies"] == {"https": "http://proxy.invalid"}
+    assert calls[-1]["resume_download"] is True
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)

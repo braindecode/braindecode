@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 from operator import attrgetter
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -14,6 +15,13 @@ import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+
+if TYPE_CHECKING:
+    from typing import Any as RuntimeOnlyMetadata
+
+
+class DummyTrustedIdentity(nn.Identity):
+    """Application-owned type, not in the serialized module lookup."""
 
 
 class DummyModule(EEGModuleMixin, nn.Sequential):
@@ -719,15 +727,78 @@ def test_supported_serialized_types_roundtrip(tmp_path, path):
     assert restored.activation is expected
 
 
-def test_optional_and_required_type_annotations_are_resolved():
+@pytest.mark.parametrize("annotation,optional_annotation", [(type[nn.Module], type[nn.Module] | None), ("type[nn.Module]", "type[nn.Module] | None")])
+def test_optional_and_required_type_annotations_are_resolved(annotation, optional_annotation):
     """Type args without class defaults must not miss the shared resolver."""
     from braindecode.models.util import resolve_type_kwargs
 
     class Config:
-        def __init__(self, required: type[nn.Module], optional: type[nn.Module] | None = None):
+        def __init__(
+            self, required: annotation, optional: optional_annotation = None,
+            metadata: "RuntimeOnlyMetadata | None" = None,
+        ):
             pass
 
     kwargs = dict(required="torch.nn.ELU", optional="torch.nn.Identity")
     assert resolve_type_kwargs(Config, kwargs) == dict(required=nn.ELU, optional=nn.Identity)
     with pytest.raises(ValueError, match="Unsupported serialized module type"):
         resolve_type_kwargs(Config, dict(optional="builtins.dict"))
+
+
+@pytest.mark.parametrize("route", ["from_config", "from_pretrained"])
+@pytest.mark.parametrize("activation", [nn.Identity, "torch.nn.Identity", "builtins.dict"])
+def test_unrelated_type_annotations_do_not_block_loading(tmp_path, route, activation):
+    class AnnotationModel(EEGModuleMixin, nn.Sequential):
+        def __init__(self, activation=nn.Identity, metadata: "RuntimeOnlyMetadata | None" = None):
+            super().__init__(n_chans=2, n_times=8, n_outputs=2)
+            self.activation = activation
+            self.metadata = metadata
+            self.add_module("act", activation())
+            self.add_module("linear", nn.Linear(8, 2))
+
+    if route == "from_pretrained":
+        pytest.importorskip("huggingface_hub")
+        AnnotationModel().save_pretrained(tmp_path)
+
+    def load():
+        if route == "from_config":
+            return AnnotationModel.from_config({"activation": activation})
+        return AnnotationModel.from_pretrained(
+            tmp_path, activation=activation, local_files_only=True, strict=True
+        )
+
+    if activation == "builtins.dict":
+        with pytest.raises(ValueError, match="Unsupported serialized module type"):
+            load()
+    else:
+        restored = load()
+        assert restored.activation is nn.Identity
+        assert restored.metadata is None
+
+
+@pytest.mark.parametrize("annotation", [type, type[nn.Module], type | None, "type[nn.Module] | None"])
+def test_trusted_type_override_discards_unsupported_saved_type(tmp_path, annotation):
+    pytest.importorskip("huggingface_hub")
+
+    class ExplicitTypeModel(EEGModuleMixin, nn.Sequential):
+        def __init__(self, activation: type = nn.Identity):
+            super().__init__(n_chans=2, n_times=8, n_outputs=2)
+            self.activation = activation
+            self.add_module("act", activation())
+            self.add_module("linear", nn.Linear(8, 2))
+
+        # Vary the annotation before Hub captures the constructor signature.
+        __init__.__annotations__["activation"] = annotation
+
+    model = ExplicitTypeModel(activation=DummyTrustedIdentity)
+    model.save_pretrained(tmp_path)
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert config["activation"].endswith(".DummyTrustedIdentity")
+    with pytest.raises(ValueError, match="Unsupported serialized module type"):
+        ExplicitTypeModel.from_pretrained(tmp_path, local_files_only=True)
+    restored = ExplicitTypeModel.from_pretrained(
+        tmp_path, activation=DummyTrustedIdentity, local_files_only=True, strict=True
+    )
+    assert restored.activation is DummyTrustedIdentity
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)

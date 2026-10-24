@@ -10,6 +10,7 @@ from collections.abc import Callable as CallableABC
 from copy import deepcopy
 from functools import lru_cache, wraps
 from pathlib import Path
+from types import SimpleNamespace
 from typing import (
     Any,
     Callable,
@@ -232,16 +233,24 @@ def resolve_type_kwargs(cls, kwargs):
     dict
         The same *kwargs* dict, with type strings resolved.
     """
-    annotations = get_type_hints(cls.__init__)
-    for name, param in inspect.signature(cls.__init__).parameters.items():
+    init = inspect.unwrap(cls.__init__)
+    for name, param in inspect.signature(init).parameters.items():
         val = kwargs.get(name)
-        if isinstance(val, str) and (
-            (
-                param.default is not inspect.Parameter.empty
-                and isinstance(param.default, type)
-            )
-            or _has_type_annotation(annotations.get(name))
-        ):
+        if not isinstance(val, str):
+            continue
+        is_type = param.default is not inspect.Parameter.empty and isinstance(
+            param.default, type
+        )
+        if not is_type and param.annotation is not inspect.Parameter.empty:
+            # Resolve only this effective argument, not unrelated metadata or
+            # return annotations (which may use TYPE_CHECKING-only imports).
+            annotation = get_type_hints(
+                SimpleNamespace(__annotations__={name: param.annotation}),
+                globalns=init.__globals__,
+                localns=dict(vars(cls)),
+            )[name]
+            is_type = _has_type_annotation(annotation)
+        if is_type:
             kwargs[name] = resolve_config_type(val)
     return kwargs
 

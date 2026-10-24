@@ -21,6 +21,7 @@ from torchinfo import ModelStatistics, summary
 
 from braindecode.models.util import (
     _EEG_PARAMS,
+    _has_type_annotation,
     build_model_config,
     resolve_config_type,
     resolve_type_kwargs,
@@ -981,6 +982,15 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     if HAS_HF_HUB:
 
         @classmethod
+        def _decode_arg(cls, expected_type, value):
+            # Hub decodes saved fields before merging caller overrides. Defer
+            # module types until _from_pretrained resolves the effective kwargs,
+            # so discarded strings cannot block an explicit trusted object.
+            if _has_type_annotation(expected_type):
+                return value
+            return super()._decode_arg(expected_type, value)
+
+        @classmethod
         def from_pretrained(cls, *args, **kwargs):
             if kwargs.get("filename") is not None:
                 _validate_weights_filename(kwargs["filename"])
@@ -1057,11 +1067,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 model_kwargs["n_outputs"] = saved_n_outputs
 
             if filename is None:
-                # Keep the parent's standard filename/fallback behavior. Check
-                # local symlinks before handing any weight file to the loader.
+                # The parent selects only safetensors for local directories;
+                # its legacy pickle fallback is remote-only.
                 if Path(model_id).is_dir():
-                    for name in ("model.safetensors", "pytorch_model.bin"):
-                        _local_weights_path(model_id, name)
+                    _local_weights_path(model_id, "model.safetensors")
                 model = super()._from_pretrained(  # type: ignore
                     model_id=model_id,
                     revision=revision,
