@@ -9,7 +9,41 @@ import torch
 from torch import nn
 
 from braindecode.util import set_random_seeds
-from braindecode.visualization.frequency import amplitude_gradients
+from braindecode.visualization.frequency import (
+    amplitude_gradients,
+    amplitude_gradients_per_trial,
+)
+
+
+@pytest.mark.parametrize("n_times", [16, 17])
+@pytest.mark.parametrize("batch_size", [1, 2, 3, 5, 8])
+def test_per_trial_amplitude_gradients_match_parseval(n_times, batch_size):
+    class EnergyModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = nn.Parameter(torch.tensor([[1.0, 0.5], [-0.25, 2.0]]))
+
+        def forward(self, x):
+            return x.square().mean(dim=-1) @ self.weight.T
+
+    model = EnergyModel().eval()
+    x = torch.linspace(0.1, 0.9, 5 * 2 * n_times).reshape(5, 2, n_times)
+    amplitudes = np.abs(np.fft.rfft(x.numpy(), axis=-1)).astype(np.float32)
+    # Parseval: mean(x**2) = sum(multiplicity * amplitude**2) / n_times**2.
+    multiplicity = np.full(amplitudes.shape[-1], 2.0)
+    multiplicity[0] = 1
+    if n_times % 2 == 0:
+        multiplicity[-1] = 1
+    expected = (
+        2 * model.weight.detach().numpy()[:, None, :, None]
+        * multiplicity[None, None, None, :] * amplitudes[None] / n_times**2
+    )
+
+    actual = amplitude_gradients_per_trial(
+        model, torch.utils.data.TensorDataset(x), batch_size=batch_size
+    )
+
+    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-7)
 
 
 @pytest.mark.parametrize("requires_grad", [False, True])
@@ -54,3 +88,21 @@ def test_amplitude_gradients_two_filters():
     grads = grads.squeeze()
     assert np.abs(grads[0][1]) / np.sum(np.abs(grads[0])) > 0.99
     assert np.abs(grads[1][2]) / np.sum(np.abs(grads[1])) > 0.99
+
+
+@pytest.mark.parametrize("pending_grads", [False, True])
+def test_amplitude_gradients_preserves_parameter_grads(pending_grads):
+    model = nn.Sequential(nn.Conv1d(2, 3, 3), nn.AdaptiveAvgPool1d(1), nn.Flatten(1))
+    x = np.random.RandomState(42).randn(4, 2, 16).astype(np.float32)
+    if pending_grads:
+        model(torch.from_numpy(x)).square().mean().backward()
+    parameters = list(model.parameters())
+    grad_objects = [p.grad for p in parameters]
+    expected = [None if p.grad is None else p.grad.clone() for p in parameters]
+
+    amplitude_gradients(model, x)
+
+    for parameter, grad_object, value in zip(parameters, grad_objects, expected):
+        assert parameter.grad is grad_object
+        if value is not None:
+            torch.testing.assert_close(parameter.grad, value, rtol=0, atol=0)
