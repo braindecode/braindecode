@@ -503,6 +503,13 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.preprocessing.RemoveDCOffset`,
+  :class:`~braindecode.preprocessing.ReinterpolateRemovedChannels` and
+  :class:`~braindecode.preprocessing.RemoveCommonAverageReference` no longer expose
+  internal duration and channel-location flags in their constructors. The existing
+  keyword-only ``force_dtype`` option is preserved and documented
+  (:gh:`809` by `Bruno Aristimunha`_).
+
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
   by detaching and moving the input to the CPU before its NumPy FFT

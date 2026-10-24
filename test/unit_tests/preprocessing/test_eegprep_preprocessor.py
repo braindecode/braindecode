@@ -3,6 +3,7 @@
 # License: BSD-3
 
 import copy
+from inspect import Parameter, signature
 from types import SimpleNamespace
 
 import mne
@@ -700,6 +701,29 @@ def test_remove_bad_windows_with_non_eeg_channels(caplog):
     # Also verify that some data was removed (bad windows were detected)
     assert processed_duration < original_duration, \
         "Some time windows should have been removed"
+
+
+@pytest.mark.parametrize(
+    "preprocessor_cls",
+    [RemoveDCOffset, ReinterpolateRemovedChannels, RemoveCommonAverageReference],
+)
+def test_trivial_preprocessor_public_signature(preprocessor_cls):
+    """Hide internal flags while retaining the existing dtype option."""
+    parameters = signature(preprocessor_cls).parameters
+    assert list(parameters) == ["force_dtype"]
+    assert parameters["force_dtype"].kind is Parameter.KEYWORD_ONLY
+    assert parameters["force_dtype"].default is None
+    for flag in ("can_change_duration", "record_orig_chanlocs"):
+        with pytest.raises(TypeError, match=flag):
+            preprocessor_cls(**{flag: True})
+
+    for dtype in (None, "float32", np.dtype("float64")):
+        preprocessor = preprocessor_cls(force_dtype=dtype)
+        assert preprocessor.can_change_duration is False
+        assert preprocessor.record_orig_chanlocs is False
+        expected_dtype = None if dtype is None else np.dtype(dtype)
+        assert preprocessor.force_dtype == expected_dtype
+        assert preprocessor == preprocessor_cls.deserialize(preprocessor.serialize())
 
 
 def test_missing_eegprep_raises_error(base_concat_ds, monkeypatch):
