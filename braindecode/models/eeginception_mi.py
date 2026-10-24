@@ -40,8 +40,10 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         Size of the input, in seconds. [1]_ uses 3 s (750 samples at 250 Hz).
     sfreq : float, optional
         EEG sampling frequency in Hz. Defaults to 250 Hz as in [1]_ for dataset
-        BCI IV 2a. Kernels are set in seconds, so compute grows with sfreq^2:
-        resampling 500 Hz data to 250 Hz makes the model about 4x cheaper.
+        BCI IV 2a, unless ``n_times`` and ``input_window_seconds`` are both
+        given, in which case it is inferred from them. Kernels are set in
+        seconds, so compute grows with sfreq^2: resampling 500 Hz data to
+        250 Hz makes the model about 4x cheaper.
     n_convs : int, optional
         Number of convolution per inception wide branching. Defaults to 5 as
         in [1]_ for dataset BCI IV 2a.
@@ -75,7 +77,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         n_chans=None,
         n_outputs=None,
         input_window_seconds=None,
-        sfreq=250,
+        sfreq=None,
         n_convs: int = 5,
         n_filters: int = 48,
         kernel_unit_s: float = 0.1,
@@ -84,6 +86,8 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         n_times=None,
         fft_conv: bool | None = None,
     ):
+        if sfreq is None and (n_times is None or input_window_seconds is None):
+            sfreq = 250
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
