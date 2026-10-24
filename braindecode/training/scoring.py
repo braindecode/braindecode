@@ -116,6 +116,10 @@ def _cache_net_forward_iter(net, use_caching, y_preds):
 class CroppedTrialEpochScoring(EpochScoring):
     """
     Class to compute scores for trials from a model that predicts (super)crops.
+
+    Window indices identify overlapping windows belonging to the same trial.
+    Without indices (for example, numpy input), each example is a separate
+    trial: average its temporal predictions, never combine different examples.
     """
 
     # XXX needs a docstring !!!
@@ -168,11 +172,15 @@ class CroppedTrialEpochScoring(EpochScoring):
                 torch.random.set_rng_state(rng_state)
             else:
                 pred_results = {}
-                pred_results["i_window_in_trials"] = np.concatenate(
-                    [i[0].cpu().numpy() for i in self.window_inds_]
+                pred_results["i_window_in_trials"] = (
+                    np.concatenate([i[0].cpu().numpy() for i in self.window_inds_])
+                    if self.window_inds_
+                    else None
                 )
-                pred_results["i_window_stops"] = np.concatenate(
-                    [i[2].cpu().numpy() for i in self.window_inds_]
+                pred_results["i_window_stops"] = (
+                    np.concatenate([i[2].cpu().numpy() for i in self.window_inds_])
+                    if self.window_inds_
+                    else None
                 )
                 pred_results["preds"] = np.concatenate(
                     [y_pred.cpu().numpy() for y_pred in self.y_preds_]
@@ -181,19 +189,23 @@ class CroppedTrialEpochScoring(EpochScoring):
                     [y.cpu().numpy() for y in self.y_trues_]
                 )
 
-            # A new trial starts
-            # when the index of the window in trials
-            # does not increment by 1
-            # Add dummy infinity at start
-            window_0_per_trial_mask = (
-                np.diff(pred_results["i_window_in_trials"], prepend=[np.inf]) != 1
-            )
-            trial_ys = pred_results["window_ys"][window_0_per_trial_mask]
-            trial_preds = trial_preds_from_window_preds(
-                pred_results["preds"],
-                pred_results["i_window_in_trials"],
-                pred_results["i_window_stops"],
-            )
+            if pred_results["i_window_in_trials"] is None:
+                trial_ys = pred_results["window_ys"]
+                trial_preds = pred_results["preds"]
+            else:
+                # A new trial starts
+                # when the index of the window in trials
+                # does not increment by 1
+                # Add dummy infinity at start
+                window_0_per_trial_mask = (
+                    np.diff(pred_results["i_window_in_trials"], prepend=[np.inf]) != 1
+                )
+                trial_ys = pred_results["window_ys"][window_0_per_trial_mask]
+                trial_preds = trial_preds_from_window_preds(
+                    pred_results["preds"],
+                    pred_results["i_window_in_trials"],
+                    pred_results["i_window_stops"],
+                )
 
             # Average across the timesteps of each trial so we have per-trial
             # predictions already, these will be just passed through the forward
