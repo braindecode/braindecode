@@ -13,9 +13,14 @@ import pytest
 import torch
 from scipy.special import softmax
 from sklearn.base import clone
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import GridSearchCV
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer
 from skorch.callbacks import LRScheduler
+from skorch.dataset import Dataset, ValidSplit
 from skorch.exceptions import NotInitializedError
-from skorch.helper import SliceDataset
+from skorch.helper import SliceDataset, predefined_split
 from skorch.utils import to_tensor
 from torch import optim
 from torch.nn.functional import nll_loss
@@ -29,7 +34,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.preprocessing import create_fixed_length_windows
 from braindecode.training import CroppedLoss
-from braindecode.training.scoring import predict_trials
+from braindecode.training.scoring import CroppedTrialEpochScoring, predict_trials
 
 
 class MockDataset(torch.utils.data.Dataset):
@@ -692,9 +697,6 @@ def test_EEGRegressor_predict_trials_scalar_targets():
     np.testing.assert_array_equal(targets, [0.0] * 5 + [1.0] * 5)
 
 
-from braindecode.eegneuralnet import CroppedTrialEpochScoring
-
-
 class ConcreteEEGNeuralNet(_EEGNeuralNet):
     @property
     def mode(self):
@@ -952,3 +954,103 @@ def test_signal_params_override_model_inferred_params(Xy):
 
     assert net.module_.n_chans == X.shape[1]
     assert net.module_.inferred_value == len(X)
+
+
+@pytest.mark.parametrize("pipeline", [False, True])
+@pytest.mark.parametrize("validation", [False, True])
+def test_cropped_array_grid_search_accuracy(pipeline, validation):
+    X = np.random.RandomState(438).randn(20, 3, 10).astype(np.float32)
+    y = np.tile([0, 1], 10)
+    net = EEGClassifier(
+        MockModuleCroppedPreds,
+        cropped=True,
+        criterion=CroppedLoss,
+        criterion__loss_function=torch.nn.functional.cross_entropy,
+        callbacks=["accuracy"],
+        train_split=ValidSplit(2, stratified=True) if validation else None,
+        batch_size=3,
+        iterator_train__drop_last=False,
+        max_epochs=2,
+        verbose=0,
+    )
+    estimator = (
+        Pipeline([("identity", FunctionTransformer()), ("net", net)])
+        if pipeline
+        else net
+    )
+    grid = GridSearchCV(
+        estimator,
+        {"net__lr" if pipeline else "lr": [0.01]},
+        cv=2,
+        scoring="accuracy",
+        error_score="raise",
+    ).fit(X, y)
+    fitted = grid.best_estimator_["net"] if pipeline else grid.best_estimator_
+    train, valid = fitted.get_split_datasets(X, y)
+    for name, dataset in [("train", train), ("valid", valid)]:
+        if dataset is None:
+            continue
+        targets = np.array([dataset[i][1] for i in range(len(dataset))])
+        results = fitted.predict_with_window_inds_and_ys(dataset)
+        assert results["i_window_in_trials"] is None
+        assert results["i_window_stops"] is None
+        predictions = fitted.forward(dataset).mean(-1).argmax(1).numpy()
+        assert fitted.history[-1, f"{name}_accuracy"] == accuracy_score(
+            targets, predictions
+        )
+    assert grid.predict(X).shape == y.shape
+    assert np.isfinite(grid.cv_results_["mean_test_score"]).all()
+    cloned = clone(fitted)
+    assert cloned.callbacks == ["accuracy"]
+    assert not cloned.initialized_
+    assert net.callbacks == ["accuracy"]
+    assert not net.initialized_
+
+
+@pytest.mark.parametrize("validation", ["none", "windows", "array"])
+def test_cropped_window_accuracy_preserves_trial_indices(
+    cropped_windows_dataset, validation
+):
+    dataset = cropped_windows_dataset
+    valid = dataset
+    if validation == "array":
+        valid = Dataset(
+            np.stack([dataset[i][0] for i in range(len(dataset))]),
+            np.array([dataset[i][1] for i in range(len(dataset))]),
+        )
+    callbacks = ["accuracy"] + [
+        CroppedTrialEpochScoring(
+            lambda net, X, y: len(y), name=f"{name}_n_trials", on_train=on_train
+        )
+        for name, on_train in [("train", True), ("valid", False)]
+        if on_train or validation != "none"
+    ]
+    net = EEGClassifier(
+        MockModuleCroppedPreds,
+        cropped=True,
+        classes=[0, 1],
+        module__n_times=249,
+        criterion=CroppedLoss,
+        criterion__loss_function=torch.nn.functional.cross_entropy,
+        callbacks=callbacks,
+        train_split=predefined_split(valid) if validation != "none" else None,
+        batch_size=3,
+        iterator_train__drop_last=False,
+        max_epochs=2,
+        verbose=0,
+    ).fit(dataset, y=None)
+    result = net.predict_with_window_inds_and_ys(dataset)
+    np.testing.assert_array_equal(result["i_window_in_trials"], [0, 1, 0, 1])
+    np.testing.assert_array_equal(result["i_window_stops"], [249, 251, 249, 251])
+    preds, targets = net.predict_trials(dataset)
+    expected = accuracy_score(targets, preds.mean(-1).argmax(1))
+    assert net.history[-1, "train_accuracy"] == expected
+    assert preds.shape == (2, 2, 5)  # 3 + 2 predictions, overlap removed
+    assert net.history[-1, "train_n_trials"] == 2
+    if validation != "none":
+        if validation == "array":
+            expected = accuracy_score(
+                valid.y, net.forward(valid).mean(-1).argmax(1).numpy()
+            )
+        assert net.history[-1, "valid_accuracy"] == expected
+        assert net.history[-1, "valid_n_trials"] == (4 if validation == "array" else 2)

@@ -426,6 +426,7 @@ class ThrowAwayIndexLoader(object):
                         x["pos"] = extra
             else:
                 x, y = batch
+                self.net._last_window_inds_ = None
 
             # TODO: should be on dataset side
             if isinstance(x, dict):

@@ -120,13 +120,17 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                     epoch_cbs.append(cb)
             # for trialwise decoding stuffs it might also be we don't have
             # cropped loader, so no indices there
-            if len(epoch_cbs) > 0:
-                assert self._last_window_inds_ is not None
+            if len(epoch_cbs) > 0 and self._last_window_inds_ is not None:
                 for cb in epoch_cbs:
                     cb.window_inds_.append(self._last_window_inds_)
                 self._last_window_inds_ = None
 
     def predict_with_window_inds_and_ys(self, dataset):
+        """Predict windows, retaining their targets and optional trial indices.
+
+        For datasets yielding only ``(X, y)``, each example is a standalone
+        trial and both window-index entries in the result are ``None``.
+        """
         # self.module can still be a name or a class, self.module_ is the built one
         self.module_.eval()
         preds = []
@@ -140,15 +144,19 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                     "disable return_ch_pos (set_return_ch_pos(False)) for cropped "
                     "evaluation."
                 )
-            X, y, i = batch[0], batch[1], batch[2]
-            i_window_in_trials.append(i[0].cpu().numpy())
-            i_window_stops.append(i[2].cpu().numpy())
+            X, y = batch[:2]
+            if len(batch) == 3:
+                i = batch[2]
+                i_window_in_trials.append(i[0].cpu().numpy())
+                i_window_stops.append(i[2].cpu().numpy())
             with torch.no_grad():
                 preds.append(to_numpy(self.module_(X.to(self.device))))
             window_ys.append(y.cpu().numpy())
         preds = np.concatenate(preds)
-        i_window_in_trials = np.concatenate(i_window_in_trials)
-        i_window_stops = np.concatenate(i_window_stops)
+        i_window_in_trials = (
+            np.concatenate(i_window_in_trials) if i_window_in_trials else None
+        )
+        i_window_stops = np.concatenate(i_window_stops) if i_window_stops else None
         window_ys = np.concatenate(window_ys)
         return dict(
             preds=preds,
