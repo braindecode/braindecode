@@ -43,6 +43,10 @@ Enhancements
 - Add a test that lists every private copy of a standard block (attention, transformer block, MLP, positional encoding, norm, patch embedding, residual) in :mod:`braindecode.models`, so a new copy fails CI unless it is listed with a reason; the new-model checklist asks for the shared blocks (:gh:`1455` by `Bruno Aristimunha`_).
 - Add a test that lists every private copy of a standard block (attention, transformer block, MLP, positional encoding, norm, patch embedding, residual) in :mod:`braindecode.models`, so a new copy fails CI unless it is listed with a reason; the new-model checklist asks for the shared blocks (:gh:`1455` by `Bruno Aristimunha`_).
 - Add :func:`braindecode.functional.patch_count` and :func:`~braindecode.functional.pad_or_crop_to_patches` (the patch-tiling helpers nine models and :class:`~braindecode.modules.PatchTokenizer` already used privately), now public in ``braindecode.functional.patches`` (:gh:`1459` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.ZUNA` takes ``registers`` (default ``True``, the published encoder, unchanged). ``registers=False`` drops the learned register before each patch, so the encoder runs on the patch tokens alone (half the tokens), each patch keeps its rotary position, and the head reads the patch outputs. Pretrained weights load unchanged; the register parameter is then unused and frozen (:gh:`1468` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.ZUNA` runs its rotary embedding on HPU through the Gaudi bridge's fused pairwise RoPE kernel, as a custom op whose backward is the kernel at the opposite angle: identical outputs, gradients rounded to bfloat16 once instead of once per term (within one bfloat16 ulp), and one node inside ``torch.compile``. Gaudi2 train step at 21 channels x 1280 samples, batch 64: 2.61 -> 1.96 s eager, 1.78 -> 1.25-1.42 s with the transformer block compiled; CPU and other devices unchanged (:gh:`1461` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.ZUNA` runs its rotary embedding in HPU eager mode and inside compiled regions through the Gaudi bridge's fused pairwise RoPE kernel (lazy mode keeps the formula, which its graph compiler fuses), as a custom op whose backward is the kernel at the opposite angle: identical outputs, gradients rounded to bfloat16 once instead of once per term (within one bfloat16 ulp), and one node inside ``torch.compile``. Gaudi2 train step at 21 channels x 1280 samples, batch 64: 2.61 -> 1.96 s eager, 1.78 -> 1.25-1.42 s with the transformer block compiled; CPU and other devices unchanged (:gh:`1461` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.ZUNA` takes ``registers`` (default ``True``, the published encoder, unchanged). ``registers=False`` drops the learned register before each patch, so the encoder runs on the patch tokens alone (half the tokens), each patch keeps its rotary position, and the head reads the patch outputs. Pretrained weights load unchanged; the register parameter is then unused and frozen (:gh:`1468` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.TimmMlp`, the timm-style MLP (``fc1``/``fc2`` parameter names) that EEGPT and LUNA each defined privately; their parameters and outputs are unchanged (:gh:`1454` by `Bruno Aristimunha`_).
 - Every model has :meth:`~braindecode.models.base.EEGModuleMixin.reset_parameters`, which draws new initial weights with the model's own scheme: the layers' PyTorch defaults, then the model's initialization (``_init_parameters``), which the constructor also runs. Initial weights at construction are unchanged for every model. A new test checks, for all registered models, that seeded construction is reproducible and finite, that ``reset_parameters`` matches the constructor's initialization, and that a model's own initialization is not a no-op (:gh:`1452` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.Residual` and :class:`braindecode.modules.PostNormResidual`, the residual connections that EEGConformer, MIRepNet, STEEGFormer, CTNet and MSCFormer each defined privately; their parameter names and outputs are unchanged (:gh:`1449` by `Bruno Aristimunha`_).
@@ -501,11 +505,22 @@ Bug fixes
 
 - Fix :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` crashing with ``TypeError`` when a dataset has no description, e.g. after :func:`braindecode.datasets.create_from_mne_epochs` without ``descriptions`` or windowing a ``RawDataset(raw)`` (:gh:`1483` by `Adam Mounir`_).
 
+- Fix cropped :class:`braindecode.EEGClassifier` accuracy callbacks with array inputs in scikit-learn grid searches and pipelines: each array example is scored as one trial, while window datasets retain their existing trial aggregation (:gh:`1490` by `Bruno Aristimunha`_).
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
   by detaching and moving the input to the CPU before its NumPy FFT
   (by `Anton Soloviev`_).
+  (by `Anton Soloviev`_).
 
+- Frequency-domain amplitude attribution preserves existing model parameter gradients, so analysis between optimizer steps does not alter training updates (by `Anton Soloviev`_).
+
+- :func:`braindecode.visualization.frequency.amplitude_gradients_per_trial`
+  returns each trial's own gradient independently of the minibatch size,
+  including a short final batch. The batch-mean reduction of
+  :func:`~braindecode.visualization.frequency.amplitude_gradients` is unchanged
+  (by `Anton Soloviev`_).
+
+- :class:`braindecode.augmentation.AugmentedDataLoader` with ``n_augmentation > 0`` rejects a transform that changes the shape of ``X`` or ``y`` — e.g. :class:`braindecode.augmentation.LabelSmoothing`, which replaces class-index targets with distributions — with a :class:`ValueError` explaining that ``n_augmentation = 0`` should be used instead; the combination previously failed with ``RuntimeError: Tensors must have the same number of dimensions`` from inside ``torch.cat`` (:gh:`1470` by `Li Qing`_).
 - ``reset_head`` builds the new head in the model's dtype, device and train/eval mode for every model: 18 models built it in float32 on the CPU (so a ``.double()`` or GPU model failed at the next forward) and 33 left it in training mode inside an eval model (:gh:`1451` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.IFNet` now applies its reference initialization (truncated normal, std 0.01, for the convolutions and the max-norm head; zero biases; unit/zero batch norms): it was called on the model itself instead of through ``apply``, so it initialized nothing and the layers kept PyTorch's defaults. This changes IFNet's initial weights (:gh:`1453` by `Bruno Aristimunha`_).
 
@@ -1935,6 +1950,7 @@ API changes
 
 Bugs
 ====
+
 
 - Fixing the issues with :class:`braindecode.models.ATCNet` (:gh:`782` by `Hamdi
   Altaheri`_)
