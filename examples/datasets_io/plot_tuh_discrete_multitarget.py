@@ -147,7 +147,7 @@ print(f"{batch_X=}\n{batch_y=}\n{batch_ind=}")
 numeric_description = tuh.description.assign(
     gender_code=tuh.description["gender"].map({"M": 0, "F": 1})
 )
-numeric_tuh = BaseConcatDataset(
+numeric_tuh: BaseConcatDataset[RawDataset] = BaseConcatDataset(
     [
         RawDataset(ds.raw, description, target_name=("age", "gender_code"))
         for ds, (_, description) in zip(tuh.datasets, numeric_description.iterrows())
