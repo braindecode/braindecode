@@ -6,21 +6,33 @@
 import inspect
 import math
 import warnings
+from collections.abc import Callable as CallableABC
 from copy import deepcopy
 from functools import lru_cache, wraps
 from pathlib import Path
-from typing import Any, Callable, Dict, Literal, Optional, Sequence, cast
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Literal,
+    Optional,
+    Sequence,
+    cast,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 import mne
 import numpy as np
 import pandas as pd
-import pydantic
 import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` through the BatchNorm-guard wrapper's __globals__
 from mne.io.constants import FIFF
 from sklearn.metrics import pairwise_distances_argmin
 from torch import nn
 from torchaudio.transforms import Resample
 
+from braindecode import modules as bd_modules
 from braindecode.util import resolve_montage_name
 
 # Canonical MNE channel-type name for the electrode kinds braindecode models
@@ -38,7 +50,41 @@ INTRACRANIAL_CH_TYPES = frozenset({"seeg", "dbs", "ecog"})
 
 models_dict = {}
 
-_IMPORT_ADAPTER = pydantic.TypeAdapter(pydantic.ImportString)
+# Resolve serialized classes by exact lookup, never by importing a config path.
+# Include public aliases and the defining paths emitted by get_config().
+_CONFIG_MODULE_TYPES = {}
+for _module in (nn, bd_modules):
+    for _name, _type in vars(_module).items():
+        if (
+            not _name.startswith("_")
+            and isinstance(_type, type)
+            and issubclass(_type, nn.Module)
+        ):
+            _CONFIG_MODULE_TYPES[f"{_module.__name__}.{_name}"] = _type
+            _CONFIG_MODULE_TYPES[f"{_type.__module__}.{_type.__qualname__}"] = _type
+
+
+def resolve_config_type(value):
+    """Decode a shipped module class without importing user-selected modules.
+
+    Python class/callable objects supplied by application code are left intact;
+    serialized strings must name a public torch.nn or braindecode.modules class.
+    """
+    if not isinstance(value, str):
+        return value
+    try:
+        return _CONFIG_MODULE_TYPES[value]
+    except KeyError:
+        raise ValueError(f"Unsupported serialized module type: {value!r}") from None
+
+
+def _has_type_annotation(annotation):
+    """Whether an annotation includes a class or callable argument."""
+    return (
+        annotation in (type, CallableABC)
+        or get_origin(annotation) in (type, CallableABC)
+        or any(_has_type_annotation(arg) for arg in get_args(annotation))
+    )
 
 
 _EEG_PARAMS = frozenset(
@@ -172,7 +218,7 @@ def resolve_type_kwargs(cls, kwargs):
     When a model config is saved to JSON, ``type[nn.Module]`` parameters
     (e.g. ``activation=nn.ELU``) are stored as dotted import paths like
     ``"torch.nn.modules.activation.ELU"``.  This function resolves them
-    back to actual types using :class:`pydantic.ImportString`.
+    back to known shipped module classes without importing config-selected modules.
 
     Parameters
     ----------
@@ -186,17 +232,17 @@ def resolve_type_kwargs(cls, kwargs):
     dict
         The same *kwargs* dict, with type strings resolved.
     """
+    annotations = get_type_hints(cls.__init__)
     for name, param in inspect.signature(cls.__init__).parameters.items():
         val = kwargs.get(name)
-        if isinstance(val, str) and "." in val and isinstance(param.default, type):
-            try:
-                kwargs[name] = _IMPORT_ADAPTER.validate_python(val)
-            except pydantic.ValidationError:
-                warnings.warn(
-                    f"Could not resolve type string {val!r} for parameter "
-                    f"{name!r} in {cls.__name__}",
-                    stacklevel=2,
-                )
+        if isinstance(val, str) and (
+            (
+                param.default is not inspect.Parameter.empty
+                and isinstance(param.default, type)
+            )
+            or _has_type_annotation(annotations.get(name))
+        ):
+            kwargs[name] = resolve_config_type(val)
     return kwargs
 
 

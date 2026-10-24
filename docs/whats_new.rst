@@ -503,6 +503,11 @@ Requirements
 Bug fixes
 ==========
 
+- Model loading validates relative custom weight paths and local symlink containment,
+  without changing Hugging Face's process-global filename. Serialized module classes
+  are resolved only from shipped PyTorch and Braindecode classes, including the Hub
+  and Pydantic configuration decoders (issues :gh:`1440` and :gh:`1441`).
+
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
   by detaching and moving the input to the CPU before its NumPy FFT

@@ -664,3 +664,70 @@ def test_get_output_shape_leaves_batchnorm_stats_and_modes_unchanged():
     for module in EEGNet(n_chans=4, n_outputs=2, n_times=256).modules():
         if isinstance(module, nn.BatchNorm2d):
             assert int(module.num_batches_tracked) == 0
+
+
+@pytest.mark.parametrize("route", ["from_config", "from_pretrained", "pydantic", "coder"])
+@pytest.mark.parametrize("value", ["builtins.dict", "hub_test_untrusted.Layer", "torch.nn.functional.relu"])
+def test_serialized_types_rejected_before_import(tmp_path, monkeypatch, route, value):
+    """All config decoding routes reject unknown paths before import or call."""
+    import importlib.abc
+
+    from braindecode.models.config import make_model_config
+
+    attempted = []
+
+    class ImportRecorder(importlib.abc.MetaPathFinder):
+        def find_spec(self, fullname, path=None, target=None):
+            if fullname == "hub_test_untrusted":
+                attempted.append(fullname)
+                raise AssertionError("untrusted module import attempted")
+
+    monkeypatch.setattr(sys, "meta_path", [ImportRecorder(), *sys.meta_path])
+    config = dict(n_chans=2, n_times=8, n_outputs=2, activation=value)
+    if route in ("from_pretrained", "coder"):
+        pytest.importorskip("huggingface_hub")
+    with pytest.raises(ValueError, match="Unsupported serialized module type"):
+        if route == "from_config":
+            DummyModuleConfigRoundTrip.from_config(config)
+        elif route == "from_pretrained":
+            (tmp_path / "config.json").write_text(json.dumps(config))
+            DummyModuleConfigRoundTrip.from_pretrained(tmp_path, local_files_only=True)
+        elif route == "coder":
+            DummyModuleConfigRoundTrip._hub_mixin_coders[type][1](value)
+        else:
+            make_model_config(DummyModuleConfigRoundTrip, [])(**config)
+    assert attempted == []
+
+
+@pytest.mark.parametrize("path", ["torch.nn.ELU", "torch.nn.modules.activation.ELU", "braindecode.modules.Square", "braindecode.modules.activation.Square", "braindecode.modules.activation.SafeLog", "braindecode.modules.activation.LogActivation", "braindecode.modules.activation.SmoothMaximumUnit"])
+def test_supported_serialized_types_roundtrip(tmp_path, path):
+    pytest.importorskip("huggingface_hub")
+    from braindecode import modules
+    from braindecode.models.config import make_model_config
+
+    expected = nn.ELU if path.endswith("ELU") else getattr(modules, path.rsplit(".", 1)[-1])
+    config = dict(n_chans=2, n_times=8, n_outputs=2, activation=path)
+    model = DummyModuleConfigRoundTrip.from_config(config).eval()
+    assert model.activation is expected
+    cfg_cls = make_model_config(DummyModuleConfigRoundTrip, [])
+    cfg = cfg_cls(**config)
+    assert cfg_cls.model_validate_json(cfg.model_dump_json()).activation is expected
+    model.save_pretrained(tmp_path)
+    restored = DummyModuleConfigRoundTrip.from_pretrained(tmp_path, strict=True).eval()
+    x = torch.rand(2, 2, 8) + 0.1  # LogActivation expects positive inputs.
+    torch.testing.assert_close(restored(x), model(x), rtol=0, atol=0)
+    assert restored.activation is expected
+
+
+def test_optional_and_required_type_annotations_are_resolved():
+    """Type args without class defaults must not miss the shared resolver."""
+    from braindecode.models.util import resolve_type_kwargs
+
+    class Config:
+        def __init__(self, required: type[nn.Module], optional: type[nn.Module] | None = None):
+            pass
+
+    kwargs = dict(required="torch.nn.ELU", optional="torch.nn.Identity")
+    assert resolve_type_kwargs(Config, kwargs) == dict(required=nn.ELU, optional=nn.Identity)
+    with pytest.raises(ValueError, match="Unsupported serialized module type"):
+        resolve_type_kwargs(Config, dict(optional="builtins.dict"))

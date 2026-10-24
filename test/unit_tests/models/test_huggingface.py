@@ -353,3 +353,115 @@ def test_init_subclass_without_hf_hub():
         assert TestModel is not None
     finally:
         base.HAS_HF_HUB = original_has_hf_hub
+
+
+@pytest.mark.parametrize("filename", ["", "../outside.safetensors", "/outside.safetensors", "C:/outside.safetensors", "C:outside.safetensors", "..\\outside.safetensors", "a/../outside.safetensors", "a//b", "a/./b", "a/", "bad\x00name", 42])
+def test_custom_weights_reject_invalid_paths(tmp_path, monkeypatch, filename):
+    from huggingface_hub import PyTorchModelHubMixin
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("invalid filename reached the weights loader")
+
+    monkeypatch.setattr(PyTorchModelHubMixin, "_from_pretrained", unexpected)
+    with pytest.raises(ValueError, match="filename must be"):
+        EEGNet.from_pretrained(tmp_path, filename=filename, local_files_only=True)
+
+
+@pytest.mark.parametrize("filename", [None, "custom.safetensors", "nested/custom.safetensors"])
+def test_local_weights_reject_external_symlinks(tmp_path, filename):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside = tmp_path / "outside.safetensors"
+    outside.write_bytes(b"not weights")
+    target = repo / (filename or "model.safetensors")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.symlink_to(outside)
+    with pytest.raises(ValueError, match="inside the model directory"):
+        EEGNet.from_pretrained(repo, filename=filename, local_files_only=True)
+
+
+@pytest.mark.parametrize("filename", ["custom.safetensors", "nested/custom.safetensors"])
+def test_custom_weights_roundtrip_and_global_isolation(tmp_path, monkeypatch, filename):
+    import huggingface_hub
+    from huggingface_hub import PyTorchModelHubMixin
+
+    from .test_base import DummyModuleConfigRoundTrip
+
+    model = DummyModuleConfigRoundTrip(n_chans=2, n_times=8, n_outputs=2).eval()
+    model.save_pretrained(tmp_path)
+    custom = tmp_path / filename
+    custom.parent.mkdir(parents=True, exist_ok=True)
+    custom.write_bytes((tmp_path / "model.safetensors").read_bytes())
+    original_name = huggingface_hub.constants.SAFETENSORS_SINGLE_FILE
+    original_loader = PyTorchModelHubMixin._load_as_safetensor
+    seen = []
+
+    def load(cls, instance, model_file, map_location, strict):
+        # Observe the value *during* loading, not only after it is restored.
+        assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original_name
+        seen.append(str(model_file))
+        return original_loader(instance, model_file, map_location, strict)
+
+    monkeypatch.setattr(DummyModuleConfigRoundTrip, "_load_as_safetensor", classmethod(load))
+    restored = DummyModuleConfigRoundTrip.from_pretrained(tmp_path, filename=filename, strict=True).eval()
+    default = DummyModuleConfigRoundTrip.from_pretrained(tmp_path, strict=True).eval()
+    x = torch.randn(2, 2, 8)
+    torch.testing.assert_close(restored(x), model(x), rtol=0, atol=0)
+    torch.testing.assert_close(default(x), model(x), rtol=0, atol=0)
+    assert seen == [str(custom.resolve()), str(tmp_path / "model.safetensors")]
+    assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original_name
+
+
+def test_custom_weights_download_arguments_and_failure_isolation(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    original_name = huggingface_hub.constants.SAFETENSORS_SINGLE_FILE
+    calls = []
+
+    def download(**kwargs):
+        assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original_name
+        calls.append(kwargs)
+        if kwargs["filename"] == "config.json":
+            raise FileNotFoundError
+        raise RuntimeError("local download stub")
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    with pytest.raises(RuntimeError, match="local download stub"):
+        EEGNet._from_pretrained(
+            model_id="test/model", filename="nested/custom.safetensors",
+            revision="fixed-revision", cache_dir=tmp_path, force_download=True,
+            local_files_only=True, token=False,
+        )
+    assert calls[-1] == dict(repo_id="test/model", filename="nested/custom.safetensors", revision="fixed-revision", cache_dir=tmp_path, force_download=True, local_files_only=True, token=False)
+    assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original_name
+
+
+def test_concurrent_custom_weights_keep_independent_filenames(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    import huggingface_hub
+
+    from .test_base import DummyModuleConfigRoundTrip
+
+    original = huggingface_hub.constants.SAFETENSORS_SINGLE_FILE
+    barrier = Barrier(2)
+
+    def load(cls, model, model_file, map_location, strict):
+        barrier.wait(timeout=10)
+        assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original
+        return model_file
+
+    monkeypatch.setattr(DummyModuleConfigRoundTrip, "_load_as_safetensor", classmethod(load))
+
+    def load_one(filename):
+        return DummyModuleConfigRoundTrip._from_pretrained(
+            model_id=str(tmp_path), filename=filename, revision=None,
+            cache_dir=None, force_download=False, local_files_only=True,
+            token=None, n_chans=2, n_times=8, n_outputs=2,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        paths = list(pool.map(load_one, ["first.safetensors", "second.safetensors"]))
+    assert paths == [str(tmp_path / name) for name in ("first.safetensors", "second.safetensors")]
+    assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original
