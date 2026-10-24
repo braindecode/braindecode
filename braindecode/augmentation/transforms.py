@@ -1173,7 +1173,8 @@ class LabelSmoothing(Transform):
     fixed-expansion mode (``n_augmentation > 0``) of
     :class:`braindecode.augmentation.AugmentedDataLoader` is not supported:
     it cannot concatenate the unsmoothed original targets with the reshaped
-    smoothed copies.
+    smoothed copies and rejects the combination with a :class:`ValueError`
+    pointing to ``n_augmentation = 0``.
 
     Parameters
     ----------
