@@ -3,6 +3,7 @@
 # License: BSD (3-clause)
 
 import sys
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pandas as pd
@@ -95,6 +96,114 @@ def test_bids_epochs_dataset_targets_of_the_kept_epochs(tmp_path):
     epochs.save(eeg_dir / "sub-01_task-x_epo.fif", overwrite=True, verbose="ERROR")
     dataset = BIDSEpochsDataset(tmp_path)
     assert [dataset[i][1] for i in range(len(dataset))] == ["x", "x", "y", "x"]
+
+
+@pytest.mark.parametrize(
+    "onsets,tmin,transform",
+    [
+        ([1, 3], 0.5, None),
+        ([0.295, 2.295], -0.1, None),
+        ([0.295, 2.295], -0.1, "decimate"),
+        ([0.295, 2.295], -0.1, "resample"),
+        ([1, 3], -0.1, "crop"),
+        ([1.002, 3.002], -0.1, "decimate"),
+        ([1.002, 3.002], -0.1, "resample"),
+    ],
+)
+@pytest.mark.parametrize("first_samp", [0, 1000])
+@pytest.mark.parametrize("meas_date", [None, datetime(2020, 1, 1, tzinfo=timezone.utc)])
+def test_bids_epochs_targets_match_original_event_samples(
+    tmp_path, onsets, tmin, transform, first_samp, meas_date
+):
+    import mne
+    import numpy as np
+
+    raw = mne.io.RawArray(
+        np.zeros((1, 600)), mne.create_info(["C3"], 100, "eeg"), first_samp=first_samp
+    )
+    raw.set_meas_date(meas_date)
+    raw.set_annotations(mne.Annotations(onsets, 0, ["left_hand", "right_hand"]))
+    events, _ = mne.events_from_annotations(
+        raw, event_id={"left_hand": 1, "right_hand": 2}
+    )
+    epochs = mne.Epochs(
+        raw, events, {"1": 1, "2": 2}, tmin=tmin, tmax=0.99, baseline=None, preload=True
+    )
+    if transform == "crop":
+        epochs.crop(tmin=0.5)
+    elif transform == "decimate":
+        epochs.decimate(4)
+    elif transform == "resample":
+        epochs.resample(25)
+    # The public loader always reads FIF, where onsets are stored as float32.
+    eeg_dir = tmp_path / "sub-01" / "eeg"
+    eeg_dir.mkdir(parents=True)
+    epochs.save(eeg_dir / "sub-01_task-x_epo.fif", verbose="ERROR")
+    dataset = BIDSEpochsDataset(tmp_path)
+    assert [dataset[i][1] for i in range(len(dataset))] == ["left_hand", "right_hand"]
+    restored = dataset.datasets[0].windows
+    np.testing.assert_array_equal(restored.events, events)
+    assert restored._raw_sfreq == 100
+    assert restored.info["meas_date"] == meas_date
+    assert restored.annotations.orig_time == epochs.annotations.orig_time
+
+
+@pytest.mark.parametrize("first_samp", [0, 1000])
+@pytest.mark.parametrize("meas_date", [None, datetime(2020, 1, 1, tzinfo=timezone.utc)])
+@pytest.mark.parametrize("case", ["ambiguous", "outside_bin", "shared_boundary"])
+def test_bids_epochs_targets_fif_boundary_fallback(
+    tmp_path, first_samp, meas_date, case
+):
+    import mne
+    import numpy as np
+
+    raw = mne.io.RawArray(
+        np.zeros((1, 600)), mne.create_info(["C3"], 100, "eeg"), first_samp=first_samp
+    )
+    raw.set_meas_date(meas_date)
+    if case == "ambiguous":
+        # Two annotations at the same stored onset (MNE's microsecond crop
+        # already merges these): neither may be chosen for the first event.
+        onsets = [0.295, 0.295 + 1e-9, 2.295]
+    elif case == "outside_bin":
+        # Close is not enough: this is outside the boundary's float32 bin.
+        onsets = [0.295 - 1e-5, 2.295]
+    else:
+        onsets = [0.295]
+    raw.set_annotations(mne.Annotations(onsets, 0, ["cue"] * len(onsets)))
+    samples = [29, 30] if case == "shared_boundary" else [30, 230]
+    events = np.array(
+        [[first_samp + samples[0], 0, 1], [first_samp + samples[1], 0, 2]]
+    )
+    epochs = mne.Epochs(
+        raw, events, {"x": 1, "y": 2}, tmin=0, tmax=0.5, baseline=None, preload=True
+    )
+    eeg_dir = tmp_path / "sub-01" / "eeg"
+    eeg_dir.mkdir(parents=True)
+    epochs.save(eeg_dir / "sub-01_task-x_epo.fif", verbose="ERROR")
+    dataset = BIDSEpochsDataset(tmp_path)
+    assert [dataset[i][1] for i in range(len(dataset))] == ["x", "y"]
+    np.testing.assert_array_equal(dataset.datasets[0].windows.events, events)
+
+
+@pytest.mark.parametrize("onsets", [[1, 3, 3], [1, 4], []])
+def test_bids_epochs_targets_keep_event_name_fallback(onsets):
+    import mne
+    import numpy as np
+
+    raw = mne.io.RawArray(np.zeros((1, 600)), mne.create_info(["C3"], 100, "eeg"))
+    raw.set_annotations(mne.Annotations(onsets, 0, ["cue"] * len(onsets)))
+    epochs = mne.Epochs(
+        raw,
+        np.array([[100, 0, 1], [300, 0, 2]]),
+        {"x": 1, "y": 2},
+        tmin=0,
+        tmax=0.5,
+        baseline=None,
+        preload=True,
+    )
+    BIDSEpochsDataset._set_metadata(None, epochs)
+    assert epochs.metadata["target"].tolist() == ["x", "y"]
 
 
 @pytest.fixture(scope="module")
