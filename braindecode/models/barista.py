@@ -485,6 +485,11 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             if spatial.dim() == 2:
                 tokens = tokens + spatial.repeat(n_patches, 1)[None]
             else:
+                if spatial.shape[0] != x.shape[0]:
+                    raise ValueError(
+                        f"Got spatial indices for batch size {spatial.shape[0]} "
+                        f"but input with batch size {x.shape[0]}."
+                    )
                 tokens = tokens + spatial.repeat(1, n_patches, 1)
 
         latents = self.backbone(tokens, n_chans, token_mask)

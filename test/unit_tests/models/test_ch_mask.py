@@ -169,3 +169,30 @@ def test_diver1_ch_mask_needs_per_sample_metadata():
     for metadata in (None, build(0, 2)):  # default montage, shared montage
         with pytest.raises(ValueError, match="per-sample chan_metadata"):
             model(x, chan_metadata=metadata, ch_mask=mask)
+
+
+@pytest.mark.parametrize("spatial_scale", ["coords", "parcels", "lobes"])
+@pytest.mark.parametrize("masked", [False, True])
+@pytest.mark.parametrize("scripted", [False, True])
+def test_barista_spatial_indices_batch_size(spatial_scale, masked, scripted):
+    model = BaRISTA(
+        n_chans=2, n_outputs=3, n_times=128, spatial_scale=spatial_scale,
+        patch_size=32, d_model=16, n_layers=1, num_heads=2, cnn_depth=1,
+        pooling="mean",
+    ).eval()
+    if scripted:
+        model = torch.jit.script(model)
+    x = torch.randn(1, 2, 128)
+    mask = torch.tensor([[True, False]]) if masked else None
+    indices = torch.tensor([1, 2])
+    if spatial_scale == "coords":
+        indices = indices[:, None].expand(-1, 3)
+    with torch.no_grad():
+        shared = model(x, spatial_indices=indices, ch_mask=mask)
+        batched = model(x, spatial_indices=indices[None], ch_mask=mask)
+        assert shared.shape == batched.shape == (1, 3)
+        torch.testing.assert_close(shared, batched)
+        wrong_batch = torch.stack([indices, indices])
+        error = torch.jit.Error if scripted else ValueError
+        with pytest.raises(error, match="spatial indices for batch size"):
+            model(x, spatial_indices=wrong_batch, ch_mask=mask)

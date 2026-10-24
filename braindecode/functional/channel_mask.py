@@ -137,8 +137,13 @@ def masked_mean(
     if mask is None:
         return x.mean(dim=dim)
     mask = mask.reshape(list(mask.shape) + [1] * (x.dim() - mask.dim()))
-    total = x.masked_fill(~mask, 0.0).sum(dim=dim)
-    return total / mask.expand(x.shape).sum(dim=dim)
+    # Divide before casting back: a finite half-precision mean can have an
+    # overflowing sum. Keep float64 inputs in float64.
+    values = x.masked_fill(~mask, 0.0)
+    if x.dtype in (torch.float16, torch.bfloat16):
+        values = values.float()
+    mean = values.sum(dim=dim) / mask.expand(x.shape).sum(dim=dim)
+    return mean.to(x.dtype) if x.dtype in (torch.float16, torch.bfloat16) else mean
 
 
 def masked_group_norm(
@@ -175,11 +180,18 @@ def masked_group_norm(
     Returns
     -------
     torch.Tensor
-        ``x`` normalized, same shape. Masked entries are normalized too, with
-        the statistics of the flagged ones.
+        ``x`` normalized, same shape. Masked entries are zero, including after
+        the affine transform, and receive zero input gradients. Their values
+        (even NaN) affect neither the statistics nor the affine gradients.
     """
     if mask is None:
         return F.group_norm(x, num_groups, weight, bias, eps)
+    padding = ~mask.reshape(
+        [mask.shape[0], 1] + list(mask.shape[1:]) + [1] * (x.dim() - mask.dim() - 1)
+    )
+    # Remove NaNs before subtraction, squaring and affine multiplication;
+    # masking only the resulting statistics does not protect backward.
+    x = x.masked_fill(padding, 0.0)
     # (batch, ..., group, channel): the mask covers the leading axes.
     grouped = x.movedim(1, -1).unflatten(-1, [num_groups, -1])
     # At least float32 statistics, as group_norm accumulates reduced precision.
@@ -199,4 +211,4 @@ def masked_group_norm(
         out = out * weight.reshape(affine_shape)
     if bias is not None:
         out = out + bias.reshape(affine_shape)
-    return out.to(x.dtype)
+    return out.to(x.dtype).masked_fill(padding, 0.0)
