@@ -3,7 +3,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.number }}-${{ github.event.ref }}
   cancel-in-progress: true
 env:
-  TEST_EXTRAS: tests,moabb,hub,eegprep,typing,viz
+  TEST_EXTRAS: tests,moabb,hub,nemar,eegprep,typing,viz
 on:
   push:
     branches:
