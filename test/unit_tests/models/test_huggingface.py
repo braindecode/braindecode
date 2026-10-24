@@ -465,3 +465,20 @@ def test_concurrent_custom_weights_keep_independent_filenames(tmp_path, monkeypa
         paths = list(pool.map(load_one, ["first.safetensors", "second.safetensors"]))
     assert paths == [str(tmp_path / name) for name in ("first.safetensors", "second.safetensors")]
     assert huggingface_hub.constants.SAFETENSORS_SINGLE_FILE == original
+
+
+@pytest.mark.parametrize("filename", ["../outside.safetensors", "/outside.safetensors", "C:/outside.safetensors"])
+def test_custom_weights_reject_filename_from_saved_config(tmp_path, monkeypatch, filename):
+    """Validate config-supplied filenames without requiring caller overrides."""
+    from huggingface_hub import PyTorchModelHubMixin
+
+    config = dict(n_chans=2, n_times=256, n_outputs=2, filename=filename)
+    (tmp_path / "config.json").write_text(json.dumps(config))
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("config filename reached the weights loader")
+
+    monkeypatch.setattr(PyTorchModelHubMixin, "_from_pretrained", unexpected)
+    monkeypatch.setattr(EEGNet, "_load_as_safetensor", unexpected)
+    with pytest.raises(ValueError, match="filename must be"):
+        EEGNet.from_pretrained(tmp_path, local_files_only=True)
