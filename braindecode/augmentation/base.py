@@ -207,7 +207,8 @@ def _transform_rngs(transform):
         if id(tr) in seen:
             continue
         seen.add(id(tr))
-        rng = getattr(tr, "rng", None)
+        # Compose forwards to its children without using its inherited RNG.
+        rng = None if type(tr) is Compose else getattr(tr, "rng", None)
         if isinstance(rng, np.random.RandomState) and id(rng) not in seen:
             seen.add(id(rng))
             rngs.append(rng)

@@ -274,6 +274,66 @@ def test_augmented_data_loader_workers_draw_new_augmentations(random_state):
     assert torch.equal(epoch_1, again_1) and torch.equal(epoch_2, again_2)
 
 
+@pytest.mark.parametrize("container", ["single", "list", "nested"])
+def test_explicit_worker_seeds_leave_global_numpy_rng_unchanged(container):
+    from torch.utils.data import TensorDataset
+
+    transform = GaussianNoise(1.0, std=1.0, random_state=0)
+    if container == "list":
+        transform = [transform]
+    elif container == "nested":
+        transform = Compose([Compose([transform])])
+    loader = AugmentedDataLoader(
+        TensorDataset(torch.zeros(4, 2, 8), torch.zeros(4, dtype=torch.long)),
+        transforms=transform,
+        num_workers=1,
+    )
+    before = np.random.get_state()
+    loader.collated_tr.draw_worker_seeds()
+    after = np.random.get_state()
+    assert before[0] == after[0]
+    np.testing.assert_array_equal(before[1], after[1])
+    assert before[2:] == after[2:]
+
+
+def test_compose_keeps_global_rng_used_by_child():
+    from braindecode.augmentation.base import _transform_rngs
+
+    noise = GaussianNoise(1.0, std=1.0, random_state=None)
+    rngs = _transform_rngs(Compose([Compose([noise])]))
+    assert len(rngs) == 1
+    assert rngs[0] is noise.rng
+
+
+def test_custom_compose_keeps_its_own_rng(monkeypatch):
+    from types import SimpleNamespace
+
+    import braindecode.augmentation.base as base
+
+    class RandomCompose(Compose):
+        def forward(self, X, y=None):
+            return super().forward(X + self.rng.normal(), y)
+
+    child = GaussianNoise(1.0, std=1.0, random_state=17)
+    transform = RandomCompose([child])
+    transform.rng = np.random.RandomState(11)
+    rngs = base._transform_rngs(transform)
+    assert len(rngs) == 2
+    assert rngs[0] is transform.rng and rngs[1] is child.rng
+    expected = [int(np.random.RandomState(seed).randint(2**31)) for seed in (11, 17)]
+    collate = base._AugmentationCollate(transform)
+    collate.draw_worker_seeds()
+    assert collate.worker_seeds == expected
+    monkeypatch.setattr(base, "get_worker_info", lambda: SimpleNamespace(id=2))
+    collate._seed_worker_rngs()
+    for rng, seed in zip(rngs, expected):
+        reference = np.random.RandomState(
+            np.random.SeedSequence([seed, 2]).generate_state(1)
+        )
+        np.testing.assert_array_equal(rng.get_state()[1], reference.get_state()[1])
+        assert rng.get_state()[2:] == reference.get_state()[2:]
+
+
 def test_augmentation_collate_reseeds_per_worker(monkeypatch):
     """Two workers of one epoch do not draw the same augmentations."""
     import copy
