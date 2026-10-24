@@ -110,7 +110,9 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         Number of EMG channels. Must equal
         ``num_bands * electrodes_per_band`` (default ``32`` = ``2 * 16``).
     sfreq : float
-        Sampling frequency in Hz. Defaults to ``2000``. ``n_fft`` and
+        Sampling frequency in Hz. Defaults to ``2000``, unless
+        ``n_times`` and ``input_window_seconds`` are both given, in which
+        case it is inferred from them. ``n_fft`` and
         ``hop_length`` defaults are calibrated for this rate; pass
         matching values when changing ``sfreq``.
     num_bands : int
@@ -243,7 +245,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         self,
         n_outputs: int = 99,
         n_chans: int = 32,
-        sfreq: float = 2000.0,
+        sfreq: float | None = None,
         num_bands: int = 2,
         electrodes_per_band: int = 16,
         n_fft: int = 64,
@@ -269,6 +271,8 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         input_window_seconds: float | None = None,
         chs_info: list | None = None,
     ) -> None:
+        if sfreq is None and (n_times is None or input_window_seconds is None):
+            sfreq = 2000.0
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,

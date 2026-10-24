@@ -677,3 +677,42 @@ def test_load_concat_dataset_ignores_stray_entries(setup_concat_raw_dataset, tmp
     (tmp_path / "plots").mkdir()
     loaded = load_concat_dataset(path=tmp_path, preload=False)
     assert len(loaded.datasets) == len(setup_concat_raw_dataset.datasets)
+
+
+def _string_description_raw_dataset():
+    info = mne.create_info(["C3", "C4"], 100.0, "eeg")
+    raw = mne.io.RawArray(np.zeros((2, 200)), info)
+    description = {"subject": "01", "session": "02", "age": 30, "sex": "F"}
+    return BaseConcatDataset([RawDataset(raw, description, target_name="age")])
+
+
+def test_load_concat_dataset_keeps_description_strings(tmp_path):
+    concat_ds = _string_description_raw_dataset()
+    # windows keep only part of the description: all of it numeric strings
+    concat_ds.datasets[0]._description = concat_ds.datasets[0].description[
+        ["subject", "session"]
+    ]
+    concat_ds.save(tmp_path)
+    loaded = load_concat_dataset(tmp_path, preload=False)
+    assert loaded.datasets[0].description.to_dict() == {
+        "subject": "01",
+        "session": "02",
+    }
+
+
+def test_load_concat_dataset_target_name(tmp_path):
+    concat_ds = _string_description_raw_dataset()
+    concat_ds.save(tmp_path)
+    loaded = load_concat_dataset(tmp_path, preload=False, target_name="sex")
+    assert loaded.datasets[0].target_name == "sex"
+    assert loaded[0][1] == "F"
+    loaded = load_concat_dataset(tmp_path, preload=False)
+    assert loaded.datasets[0].target_name == "age"
+
+
+def test_load_concat_dataset_target_name_windows_raises(
+    setup_concat_windows_dataset, tmp_path
+):
+    setup_concat_windows_dataset.save(tmp_path)
+    with pytest.raises(ValueError, match="set_target"):
+        load_concat_dataset(tmp_path, preload=False, target_name="subject")
