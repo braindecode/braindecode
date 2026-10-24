@@ -298,6 +298,27 @@ def test_metadata_of_datasets_without_description():
     assert md["subject"].isna().tolist() == [True, True, False, False]
 
 
+def test_metadata_without_description_allows_later_target_assignment():
+    raw = mne.io.RawArray(np.zeros((1, 200)), mne.create_info(1, 100.0, "eeg"))
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw)]),
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+    )
+    assert windows.datasets[0].description is None
+    assert windows.get_metadata()["target"].tolist() == [-1, -1]
+    assert [windows[i][1] for i in range(len(windows))] == [-1, -1]
+
+    windows.set_description({"label": [7]})
+    windows.set_target("label")
+
+    metadata = windows.get_metadata()
+    assert metadata["label"].tolist() == [7, 7]
+    assert metadata["target"].tolist() == [7, 7]
+    assert [windows[i][1] for i in range(len(windows))] == [7, 7]
+
+
 def test_on_the_fly_transforms_base_dataset(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     original_X = concat_ds[0][0]
