@@ -679,6 +679,36 @@ def test_samplers_group_one_trial_datasets_without_i_dataset(builder):
     assert len(sequences) == 2 * (20 - 3 + 1)
 
 
+@pytest.mark.parametrize("n_windows", [1, 3, 20])
+@pytest.mark.parametrize("seed", [0, 7, 42])
+def test_balanced_sampler_lookup_preserves_sequences_and_rng(n_windows, seed):
+    windows = create_from_X_y(
+        np.random.RandomState(0).randn(20, 2, 100),
+        np.arange(20) % 2,
+        False,
+        sfreq=100.0,
+        window_size_samples=50,
+        window_stride_samples=50,
+    )
+    windows.set_description({"subject": [0, 1] * 10})
+    md = windows.get_metadata().drop(columns="i_dataset")
+    # DataFrame labels are not the positional indices used by the sampler.
+    md.index = np.arange(len(md))[::-1] // 2
+    candidate = BalancedSequenceSampler(md, n_windows, n_sequences=50, random_state=seed)
+    reference = BalancedSequenceSampler(md, n_windows, n_sequences=50, random_state=seed)
+    expected = []
+    for _ in range(len(reference)):
+        start_ind, rec_ind, _ = reference._sample_seq_start_ind()
+        rec_inds = reference.info.iloc[rec_ind]["index"]
+        start = np.flatnonzero(rec_inds == start_ind)[0]
+        expected.append(tuple(rec_inds[start : start + n_windows].tolist()))
+    assert list(candidate) == expected
+    before, after = reference.rng.get_state(), candidate.rng.get_state()
+    assert before[0] == after[0]
+    np.testing.assert_array_equal(before[1], after[1])
+    assert before[2:] == after[2:]
+
+
 def test_sequence_samplers_with_interleaved_recordings_without_i_dataset():
     """Without i_dataset, the windows of a subject need not be contiguous in
     the metadata: sequences must be taken from that subject's windows, not

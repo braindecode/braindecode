@@ -453,5 +453,5 @@ class BalancedSequenceSampler(RecordingSampler):
             start_ind, rec_ind, _ = self._sample_seq_start_ind()
             # the windows of a recording need not be contiguous in the metadata
             rec_inds = self.info.iloc[rec_ind]["index"]
-            start = np.flatnonzero(rec_inds == start_ind)[0]
+            start = rec_inds.searchsorted(start_ind)
             yield tuple(rec_inds[start : start + self.n_windows].tolist())
