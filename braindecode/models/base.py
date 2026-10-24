@@ -21,7 +21,6 @@ from torchinfo import ModelStatistics, summary
 
 from braindecode.models.util import (
     _EEG_PARAMS,
-    _has_type_annotation,
     build_model_config,
     resolve_config_type,
     resolve_type_kwargs,
@@ -983,10 +982,18 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         @classmethod
         def _decode_arg(cls, expected_type, value):
-            # Hub decodes saved fields before merging caller overrides. Defer
-            # module types until _from_pretrained resolves the effective kwargs,
-            # so discarded strings cannot block an explicit trusted object.
-            if _has_type_annotation(expected_type):
+            # Hub eagerly decodes plain/optional type fields before overrides.
+            # Defer only our default decoder to the effective-kwargs resolver;
+            # explicitly registered application coders retain Hub's behavior.
+            if (
+                expected_type in (type, Optional[type])
+                and next(
+                    decoder
+                    for coder_type, (_, decoder) in cls._hub_mixin_coders.items()
+                    if issubclass(type, coder_type)
+                )
+                is resolve_config_type
+            ):
                 return value
             return super()._decode_arg(expected_type, value)
 

@@ -10,6 +10,7 @@ These tests verify that models can be pushed to and loaded from the
 Hugging Face Hub when the optional huggingface_hub dependency is installed.
 """
 
+import inspect
 import json
 
 import numpy as np
@@ -457,10 +458,9 @@ def test_concurrent_custom_weights_keep_independent_filenames(tmp_path, monkeypa
     monkeypatch.setattr(DummyModuleConfigRoundTrip, "_load_as_safetensor", classmethod(load))
 
     def load_one(filename):
-        return DummyModuleConfigRoundTrip._from_pretrained(
-            model_id=str(tmp_path), filename=filename, revision=None,
-            cache_dir=None, force_download=False, local_files_only=True,
-            token=None, n_chans=2, n_times=8, n_outputs=2,
+        return DummyModuleConfigRoundTrip.from_pretrained(
+            tmp_path, filename=filename, local_files_only=True,
+            n_chans=2, n_times=8, n_outputs=2,
         )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -551,6 +551,12 @@ def test_custom_weights_missing_does_not_use_default_pickle_fallback(tmp_path, m
         cache_dir=tmp_path, force_download=False, local_files_only=True,
         token=False, n_chans=2, n_times=8, n_outputs=2, strict=True,
     )
+    # Public Hub loading supplies these required arguments on older versions.
+    parent_parameters = inspect.signature(hub_mixin.PyTorchModelHubMixin._from_pretrained).parameters
+    kwargs.update({
+        name: None for name in ("proxies", "resume_download")
+        if name in parent_parameters
+    })
     if filename is not None:
         with pytest.raises(EntryNotFoundError, match="missing weights"):
             DummyModuleConfigRoundTrip._from_pretrained(**kwargs)

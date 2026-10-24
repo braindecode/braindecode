@@ -802,3 +802,45 @@ def test_trusted_type_override_discards_unsupported_saved_type(tmp_path, annotat
     assert restored.activation is DummyTrustedIdentity
     for key, value in model.state_dict().items():
         torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("explicit_override", [False, True])
+@pytest.mark.parametrize("annotation_kind", ["plain", "optional", "callable", "callable_type"])
+def test_application_registered_type_coder_roundtrip(tmp_path, explicit_override, annotation_kind):
+    from collections.abc import Callable
+
+    pytest.importorskip("huggingface_hub")
+    decoded = []
+
+    def encode(cls):
+        assert cls is nn.Identity
+        return "identity-v1"
+
+    def decode(value):
+        decoded.append(value)
+        return {"identity-v1": nn.Identity}[value]
+
+    annotation = {"plain": type, "optional": type | None, "callable": Callable, "callable_type": type}[annotation_kind]
+    coder_type = Callable if annotation_kind.startswith("callable") else type
+
+    class AliasCodedModel(EEGModuleMixin, nn.Sequential, coders={coder_type: (encode, decode)}):
+        def __init__(self, activation: type = nn.Identity):
+            super().__init__(n_chans=2, n_times=8, n_outputs=2)
+            self.activation = activation
+            self.add_module("act", activation())
+            self.add_module("linear", nn.Linear(8, 2))
+
+        __init__.__annotations__["activation"] = annotation
+
+    model = AliasCodedModel()
+    model.save_pretrained(tmp_path)
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert config["activation"] == "identity-v1"
+    overrides = {"activation": nn.Identity} if explicit_override else {}
+    restored = AliasCodedModel.from_pretrained(
+        tmp_path, local_files_only=True, strict=True, **overrides
+    )
+    assert restored.activation is nn.Identity
+    assert decoded == ["identity-v1"]
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)
