@@ -503,6 +503,7 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :func:`braindecode.datautil.load_concat_dataset` ignoring its ``target_name`` argument (it now sets the target of datasets of raws and raises for windowed datasets, as the outdated format did) and reading numeric-looking description strings such as subject ``"01"`` back as integers (:gh:`1480` by `Adam Mounir`_).
 - Fix :func:`braindecode.datautil.infer_signal_properties` (used by :class:`braindecode.EEGRegressor` to set ``n_outputs``) inferring one output for windows with several regression targets: the model was built with ``n_outputs=1`` and trained against all targets through broadcasting (:gh:`1479` by `Adam Mounir`_).
 - Fix :class:`braindecode.datasets.BIDSEpochsDataset` taking all the annotations of the recording as the targets of the epochs, which fails (``All arrays must be of the same length``) when an epoch was dropped or the recording has other annotations (e.g. ``BAD`` segments): each epoch now takes the annotation at its time zero, or its event name when not every epoch has one (:gh:`1478` by `Adam Mounir`_).
 - Fix :class:`braindecode.samplers.SequenceSampler` and :class:`braindecode.samplers.BalancedSequenceSampler` returning sequences that mix recordings when the windows of a recording are not contiguous in metadata without ``i_dataset`` (e.g. alternating subjects): sequences are now taken from the recording's own windows; results are unchanged when they are contiguous (:gh:`1477` by `Adam Mounir`_).
