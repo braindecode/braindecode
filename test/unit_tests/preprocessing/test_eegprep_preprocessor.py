@@ -16,6 +16,7 @@ from braindecode.datasets.base import BaseDataset
 from braindecode.preprocessing import Preprocessor, preprocess
 from braindecode.preprocessing.eegprep_preprocess import (
     EEGPrep,
+    EEGPrepBasePreprocessor,
     ReinterpolateRemovedChannels,
     RemoveBadChannels,
     RemoveBadChannelsNoLocs,
@@ -26,6 +27,44 @@ from braindecode.preprocessing.eegprep_preprocess import (
     RemoveFlatChannels,
     Resampling,
 )
+
+
+def add_label(data, *, cls):
+    return data + cls
+
+
+class KeywordEEGPrep(EEGPrepBasePreprocessor):
+    def __init__(self, *, cls):
+        super().__init__()
+        self.cls = cls
+
+    @property
+    def _all_attrs(self):
+        return super()._all_attrs + ["cls"]
+
+    def apply_eeg(self, eeg, raw):
+        return eeg
+
+
+class SiteDC(RemoveDCOffset):
+    pass
+
+
+class SiteInterpolation(ReinterpolateRemovedChannels):
+    pass
+
+
+class SiteReference(RemoveCommonAverageReference):
+    def apply_eeg(self, eeg, raw):
+        return super().apply_eeg(eeg, raw)
+
+
+class ExplicitSiteDC(SiteDC):
+    def __init__(self, *, force_dtype=None):
+        super().__init__(force_dtype=force_dtype)
+        self.can_change_duration = "site policy"
+        self.record_orig_chanlocs = True
+
 
 # Check if eegprep is available
 try:
@@ -728,7 +767,8 @@ def test_trivial_preprocessor_public_signature(preprocessor_cls):
 
 @pytest.mark.parametrize(
     "preprocessor_cls",
-    [RemoveDCOffset, ReinterpolateRemovedChannels, RemoveCommonAverageReference],
+    [RemoveDCOffset, ReinterpolateRemovedChannels, RemoveCommonAverageReference,
+     SiteDC, SiteInterpolation, SiteReference],
 )
 @pytest.mark.parametrize("duration, record", [(False, False), (True, True), ("legacy", True)])
 def test_trivial_preprocessor_legacy_serialization(preprocessor_cls, duration, record):
@@ -743,10 +783,24 @@ def test_trivial_preprocessor_legacy_serialization(preprocessor_cls, duration, r
     for loader in (Preprocessor, preprocessor_cls):
         restored = loader.deserialize(payload)
         expected_duration = preprocessor_cls.__name__ if duration is True else duration
+        assert type(restored) is preprocessor_cls
         assert restored.can_change_duration == expected_duration
         assert restored.record_orig_chanlocs is record
         assert restored.force_dtype == np.dtype("float64")
-        assert restored == Preprocessor.deserialize(restored.serialize())
+        serialized = restored.serialize()
+        assert serialized == {**payload, "can_change_duration": expected_duration}
+        assert restored == Preprocessor.deserialize(serialized)
+        nested = {
+            "__class_path__": payload["__class_path__"],
+            "kwargs": {
+                key: value for key, value in payload.items() if key != "__class_path__"
+            },
+        }
+        saved = copy.deepcopy(nested)
+        assert loader.deserialize(nested) == restored
+        assert nested == saved
+        with pytest.raises(TypeError, match="can_change_duration"):
+            loader.deserialize({**payload, "kwargs": {"can_change_duration": False}})
         assert payload == original
         with pytest.raises(TypeError, match="unknown_option"):
             loader.deserialize({**payload, "unknown_option": True})
@@ -775,6 +829,58 @@ def test_trivial_preprocessor_legacy_processing(preprocessor_cls, base_concat_ds
     np.testing.assert_array_equal(actual.get_data(), expected.get_data())
     assert actual.ch_names == expected.ch_names
     assert actual.info["sfreq"] == expected.info["sfreq"]
+
+
+def test_generic_callable_cls_keyword():
+    original = Preprocessor(add_label, cls=2)
+    raw = mne.io.RawArray(
+        np.zeros((1, 8)), mne.create_info(["Cz"], 100, ["eeg"]), verbose=False
+    )
+    actual = raw.copy()
+    original.apply(raw)
+    payload = original.serialize()
+    saved = copy.deepcopy(payload)
+    restored = Preprocessor.deserialize(payload)
+    assert restored == original
+    assert payload == saved
+    restored.apply(actual)
+    np.testing.assert_array_equal(raw.get_data(), np.full((1, 8), 2.0))
+    np.testing.assert_array_equal(actual.get_data(), raw.get_data())
+
+
+def test_custom_eegprep_cls_keyword():
+    original = KeywordEEGPrep(cls="user-defined-label")
+    payload = original.serialize()
+    saved = copy.deepcopy(payload)
+    assert Preprocessor.deserialize(payload) == original
+    assert payload == saved
+
+
+@pytest.mark.parametrize("site_cls", [SiteDC, SiteInterpolation, SiteReference])
+def test_inherited_wrapper_serializes_existing_flags(site_cls):
+    original = site_cls()
+    original.can_change_duration = "legacy"
+    original.record_orig_chanlocs = True
+    payload = original.serialize()
+    assert payload["can_change_duration"] == "legacy"
+    assert payload["record_orig_chanlocs"] is True
+    assert Preprocessor.deserialize(payload) == original
+
+
+def test_explicit_subclass_constructor_is_not_migrated():
+    original = ExplicitSiteDC(force_dtype="float32")
+    payload = original.serialize()
+    assert "can_change_duration" not in payload
+    assert "record_orig_chanlocs" not in payload
+    restored = Preprocessor.deserialize(payload)
+    assert restored == original
+    assert restored.can_change_duration == "site policy"
+    assert restored.record_orig_chanlocs is True
+    for flag in ("can_change_duration", "record_orig_chanlocs"):
+        with pytest.raises(TypeError, match=flag):
+            Preprocessor.deserialize({**payload, flag: False})
+        with pytest.raises(TypeError, match=flag):
+            Preprocessor.deserialize({**payload, "kwargs": {flag: False}})
 
 
 def test_legacy_flag_migration_is_scoped():

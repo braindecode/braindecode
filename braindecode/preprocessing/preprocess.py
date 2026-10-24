@@ -190,7 +190,7 @@ class Preprocessor(object):
         return cls._from_serialized(**data, **kwargs)
 
     @classmethod
-    def _from_serialized(cls, **kwargs):
+    def _from_serialized(cls, /, **kwargs):
         """Reconstruct serialized state, allowing narrowly scoped migrations."""
         return cls(**kwargs)
 

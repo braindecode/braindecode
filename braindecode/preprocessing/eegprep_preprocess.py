@@ -86,15 +86,20 @@ class EEGPrepBasePreprocessor(Preprocessor):
         ]
 
     @classmethod
-    def _from_serialized(cls, **kwargs):
-        if cls not in (
-            RemoveDCOffset,
-            ReinterpolateRemovedChannels,
-            RemoveCommonAverageReference,
-        ):
+    def _uses_legacy_flags(cls):
+        """Recognize narrowed constructors, including inherited ones."""
+        return cls.__init__ in (
+            RemoveDCOffset.__init__,
+            ReinterpolateRemovedChannels.__init__,
+            RemoveCommonAverageReference.__init__,
+        )
+
+    @classmethod
+    def _from_serialized(cls, /, **kwargs):
+        if not cls._uses_legacy_flags():
             return super()._from_serialized(**kwargs)
-        # These wrappers previously inherited the base constructor. Restore its
-        # flags only for saved payloads, without exposing them in the public API.
+        # These constructors previously accepted the base flags. Restore them
+        # only for saved payloads, leaving explicit subclass constructors alone.
         duration = kwargs.pop("can_change_duration", False)
         record = kwargs.pop("record_orig_chanlocs", False)
         preprocessor = cls(**kwargs)
@@ -107,11 +112,7 @@ class EEGPrepBasePreprocessor(Preprocessor):
     def serialize(self):
         """Keep legacy internal flags when round-tripping saved pipelines."""
         data = super().serialize()
-        if type(self) in (
-            RemoveDCOffset,
-            ReinterpolateRemovedChannels,
-            RemoveCommonAverageReference,
-        ):
+        if type(self)._uses_legacy_flags():
             data.update(
                 can_change_duration=self.can_change_duration,
                 record_orig_chanlocs=self.record_orig_chanlocs,
