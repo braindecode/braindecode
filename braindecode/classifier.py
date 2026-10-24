@@ -33,7 +33,12 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
 
     cropped: bool (default=False)
         Defines whether torch model passed to this class is cropped or not.
-        Currently used for callbacks definition.
+        Currently used for callbacks definition. For input without window
+        indices (such as numpy arrays), scoring callbacks treat each example
+        as a separate trial and average its temporal predictions. To aggregate
+        multiple windows of the same trial, pass a window dataset retaining
+        its window indices. Cross-validation splits must keep windows from
+        the same trial together.
 
     callbacks: None or list of strings or list of Callback instances (default=None)
         More callbacks, in addition to those returned by

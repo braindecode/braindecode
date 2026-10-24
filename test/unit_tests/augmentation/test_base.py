@@ -17,7 +17,7 @@ from braindecode.augmentation.base import (
     Transform,
     _AugmentationCollate,
 )
-from braindecode.augmentation.transforms import Mixup, SmoothTimeMask
+from braindecode.augmentation.transforms import LabelSmoothing, Mixup, SmoothTimeMask
 from braindecode.datasets import create_from_mne_epochs
 from braindecode.training.losses import mixup_criterion
 
@@ -422,3 +422,74 @@ def test_compose_without_target(batch_size):
     y = torch.arange(batch_size)
     out_X, out_y = composed(X, y)
     assert torch.equal(out_X, X) and torch.equal(out_y, y)
+
+
+def test_augmentation_collate_rejects_reshaped_y():
+    """Fixed expansion rejects a transform reshaping ``y`` with a clear error."""
+    batch_size = 4
+    X = torch.randn(batch_size, 2, 10)
+    y = torch.arange(batch_size) % 2
+
+    def to_distribution(batch_X, batch_y):
+        return batch_X, torch.eye(2)[batch_y]
+
+    with pytest.raises(ValueError, match="n_augmentation = 0"):
+        _AugmentationCollate(to_distribution, n_augmentation=1)(list(zip(X, y)))
+
+    # The same transform keeps working in the in-place mode.
+    out_X, out_y = _AugmentationCollate(to_distribution)(list(zip(X, y)))
+    assert out_y.shape == (batch_size, 2)
+
+
+def test_augmentation_collate_rejects_reshaped_mixed_y():
+    """The guard also covers a reshaped ``(y_a, y_b, lam)`` triple."""
+    batch_size = 4
+    X = torch.randn(batch_size, 2, 10)
+    y = torch.arange(batch_size) % 2
+
+    def mixup_distributions(batch_X, batch_y):
+        dist = torch.eye(2)[batch_y]
+        lam = torch.full((batch_X.shape[0],), 0.5)
+        return batch_X, (dist, dist, lam)
+
+    with pytest.raises(ValueError, match="changes the shape of y"):
+        _AugmentationCollate(mixup_distributions, n_augmentation=1)(
+            list(zip(X, y))
+        )
+
+
+def test_augmentation_collate_rejects_reshaped_X():
+    """The guard is symmetric for a transform that reshapes ``X``."""
+    batch_size = 4
+    X = torch.randn(batch_size, 2, 10)
+    y = torch.arange(batch_size) % 2
+
+    def flatten_signal(batch_X, batch_y):
+        return batch_X.reshape(batch_X.shape[0], -1), batch_y
+
+    with pytest.raises(ValueError, match="changes the shape of X"):
+        _AugmentationCollate(flatten_signal, n_augmentation=1)(list(zip(X, y)))
+
+
+def test_augmented_data_loader_rejects_label_smoothing():
+    """``LabelSmoothing`` in fixed expansion fails with the documented error.
+
+    The smoothed targets are distributions while the clean originals kept by
+    fixed expansion are class indices, so the combination is rejected up front
+    instead of failing inside ``torch.cat`` (as noted in :gh:`1401`).
+    """
+    from torch.utils.data import TensorDataset
+
+    n_samples, n_chans, n_times, batch_size = 8, 2, 20, 8
+    X = torch.randn(n_samples, n_chans, n_times)
+    y = torch.arange(n_samples) % 2
+
+    loader = AugmentedDataLoader(
+        TensorDataset(X, y),
+        transforms=LabelSmoothing(epsilon=0.1, num_classes=2),
+        batch_size=batch_size,
+        n_augmentation=2,
+        shuffle=False,
+    )
+    with pytest.raises(ValueError, match="n_augmentation = 0"):
+        next(iter(loader))
