@@ -577,6 +577,31 @@ def test_multi_target_dataset(set_up):
     assert y == [1, 0, 48]  # order matters: pathological, gender, age
 
 
+@pytest.mark.parametrize("lazy_metadata", [False, True])
+def test_multi_target_windows_without_mapping(set_up, lazy_metadata):
+    raw, _, _, _, _, _ = set_up
+    base_dataset = RawDataset(
+        raw, {"age": 48, "score": 3}, target_name=["age", "score"]
+    )
+    windows_ds = create_fixed_length_windows(
+        BaseConcatDataset([base_dataset]),
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        lazy_metadata=lazy_metadata,
+    )
+    assert windows_ds[0][1] == [48, 3]
+    from torch.utils.data import DataLoader
+
+    _, y, _ = next(iter(DataLoader(windows_ds, batch_size=2)))
+    assert [t.tolist() for t in y] == [[48, 48], [3, 3]]
+
+    windows_ds.target_transform = np.asarray
+    _, matrix_y, _ = next(iter(DataLoader(windows_ds, batch_size=2)))
+    assert matrix_y.shape == (2, 2)
+    assert matrix_y.tolist() == [[48, 3], [48, 3]]
+
+
 def test_target_name_list(set_up):
     raw, _, _, _, _, _ = set_up
     target_names = ["pathological", "gender", "age"]
