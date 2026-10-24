@@ -88,7 +88,11 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
     .. rubric:: Variable channel counts
 
     Padded batches take a ``ch_mask`` and one ``chan_metadata`` per sample;
-    with ``pooling="mean"``, each sample is then encoded as if alone.
+    with ``pooling="mean"`` and dropout disabled, each sample is then encoded
+    as if alone. Eager execution and TorchScript support this masked path.
+    ``torch.export`` does not currently support explicit ``chan_metadata``
+    because its validation depends on tensor values; this also limits export
+    of masked batches, which require that metadata.
 
     .. rubric:: Published variants and weights
 
