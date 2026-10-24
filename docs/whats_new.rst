@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :mod:`braindecode.models.pretraining` records the pretraining datasets listed in the papers of 11 foundation models, and :func:`~braindecode.models.pretraining.check_pretraining_overlap` warns when an evaluation dataset is in a model's pretraining corpus or in the same TUH collection, so results can be labelled in-corpus or held-out (:gh:`1492` by `Yiheng Li`_).
 - CI: ``test_forward_in_dtype`` no longer runs the models in float16 on the CPU; torch's CPU float16 kernels killed the test worker without a traceback in about one run in seven (the hangs of the last days), and bfloat16 covers the same dtype checks (:gh:`1474` by `Bruno Aristimunha`_).
 - CI: a test that stops answering fails after 10 minutes with a traceback (``pytest-timeout``), instead of the job waiting until its own timeout; twice an xdist worker went silent during ``test_forward_in_dtype`` and the run idled for 40 minutes to 5 hours (:gh:`1473` by `Bruno Aristimunha`_).
 - CI: the shared model tests build a 2-layer ZUNA and a narrow BENDR instead of the released 172M- and 157M-parameter configurations, which took 5.6 GB per test worker to script and serialize and killed CI runners; the registry entry of a model may now carry architecture arguments next to its signal parameters. The released configurations stay covered by ``test_pretrained_compat`` (:gh:`1472` by `Bruno Aristimunha`_).
