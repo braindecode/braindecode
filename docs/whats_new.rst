@@ -509,7 +509,7 @@ Bug fixes
   internal duration and channel-location flags in their constructors. The existing
   keyword-only ``force_dtype`` option is preserved and documented. Previously saved
   configurations still load with their original internal flags
-  (:gh:`809` by `Bruno Aristimunha`_).
+  (:gh:`1491` by `Bruno Aristimunha`_).
 
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,
