@@ -503,6 +503,7 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :func:`braindecode.preprocessing.exponential_moving_standardize` and :func:`braindecode.preprocessing.exponential_moving_demean` returning NaN for every sample of a channel after a single NaN sample (since the ``lfilter`` rewrite of :gh:`950`): NaN samples are skipped again, as in the previous ``pandas`` implementation (:gh:`1481` by `Adam Mounir`_).
 - Fix :func:`braindecode.preprocessing.create_fixed_length_windows` giving the windows of a dataset with several ``target_name`` a :class:`pandas.Series` target when no ``mapping`` is given, which :class:`torch.utils.data.DataLoader` cannot collate: the target is now a list, as :class:`braindecode.datasets.RawDataset` returns and as with a ``mapping`` (:gh:`1484` by `Adam Mounir`_).
 - :class:`braindecode.models.BIOT` (200 Hz), :class:`braindecode.models.EMG2QwertyNet` (2000 Hz) and :class:`braindecode.models.MetaNeuromotorHand` (2000 Hz) only use their default ``sfreq`` when ``n_times`` and ``input_window_seconds`` do not determine it, instead of raising ``ValueError`` for consistent inputs such as ``BIOT(n_times=512, input_window_seconds=2.0)``. Calls that worked before build the same model (:gh:`1485` by `Adam Mounir`_).
 
