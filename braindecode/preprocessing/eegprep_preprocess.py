@@ -85,6 +85,40 @@ class EEGPrepBasePreprocessor(Preprocessor):
             "force_dtype",
         ]
 
+    @classmethod
+    def _uses_legacy_flags(cls):
+        """Recognize narrowed constructors, including inherited ones."""
+        return cls.__init__ in (
+            RemoveDCOffset.__init__,
+            ReinterpolateRemovedChannels.__init__,
+            RemoveCommonAverageReference.__init__,
+        )
+
+    @classmethod
+    def _from_serialized(cls, /, **kwargs):
+        if not cls._uses_legacy_flags():
+            return super()._from_serialized(**kwargs)
+        # These constructors previously accepted the base flags. Restore them
+        # only for saved payloads, leaving explicit subclass constructors alone.
+        duration = kwargs.pop("can_change_duration", False)
+        record = kwargs.pop("record_orig_chanlocs", False)
+        preprocessor = cls(**kwargs)
+        preprocessor.can_change_duration = (
+            cls.__name__ if duration is True else duration
+        )
+        preprocessor.record_orig_chanlocs = record
+        return preprocessor
+
+    def serialize(self):
+        """Keep legacy internal flags when round-tripping saved pipelines."""
+        data = super().serialize()
+        if type(self)._uses_legacy_flags():
+            data.update(
+                can_change_duration=self.can_change_duration,
+                record_orig_chanlocs=self.record_orig_chanlocs,
+            )
+        return data
+
     @abstractmethod
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
@@ -643,6 +677,12 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
 
     where :math:`c` indexes the channel and :math:`t` indexes time.
 
+    Parameters
+    ----------
+    force_dtype : np.dtype | str | None
+        Convert the EEG data to this dtype before and after processing.
+        Defaults to None, which does not force a dtype conversion.
+
     References
     ----------
     .. [Delorme2004] Delorme, A. and Makeig, S., 2004. EEGLAB: an open source toolbox
@@ -650,6 +690,9 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
        analysis. Journal of Neuroscience Methods, 134(1), pp.9-21.
 
     """
+
+    def __init__(self, *, force_dtype: np.dtype | str | None = None):
+        super().__init__(force_dtype=force_dtype)
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
@@ -1306,6 +1349,12 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
       this should normally *NOT* be done before this step, but after it (otherwise
       your reference will depend on which channels were removed).
 
+    Parameters
+    ----------
+    force_dtype : np.dtype | str | None
+        Convert the EEG data to this dtype before and after processing.
+        Defaults to None, which does not force a dtype conversion.
+
     References
     ----------
     .. [Perrin1989] Perrin, F., Pernier, J., Bertrand, O. and Echallier, J.F., 1989.
@@ -1314,6 +1363,9 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
 
 
     """
+
+    def __init__(self, *, force_dtype: np.dtype | str | None = None):
+        super().__init__(force_dtype=force_dtype)
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
@@ -1352,6 +1404,12 @@ class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
     where :math:`C` is the number of channels, :math:`c` indexes the channel, and
     :math:`t` indexes time.
 
+    Parameters
+    ----------
+    force_dtype : np.dtype | str | None
+        Convert the EEG data to this dtype before and after processing.
+        Defaults to None, which does not force a dtype conversion.
+
     References
     ----------
     .. [Offner1950] Offner, F. F. (1950). The EEG as potential mapping: the value of the
@@ -1359,6 +1417,9 @@ class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
        2(2), 213-214.
 
     """
+
+    def __init__(self, *, force_dtype: np.dtype | str | None = None):
+        super().__init__(force_dtype=force_dtype)
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""

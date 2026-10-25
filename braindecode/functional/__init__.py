@@ -1,4 +1,11 @@
 from .attention import scaled_dot_product_attention
+from .channel_mask import (
+    check_ch_mask,
+    masked_group_norm,
+    masked_mean,
+    pack_channels,
+    unpack_channels,
+)
 from .functions import (
     _get_gaussian_kernel1d,
     apply_rotary,
@@ -32,6 +39,7 @@ from .patches import pad_or_crop_to_patches, patch_count
 __all__ = [
     "_get_gaussian_kernel1d",
     "apply_rotary",
+    "check_ch_mask",
     "daubechies_filters",
     "drop_path",
     "dwt_max_level",
@@ -39,6 +47,9 @@ __all__ = [
     "hilbert_freq",
     "identity",
     "iou_1d",
+    "masked_group_norm",
+    "masked_mean",
+    "pack_channels",
     "pad_or_crop_to_patches",
     "pairwise_iou_1d",
     "patch_count",
@@ -53,6 +64,7 @@ __all__ = [
     "sinusoidal_positional_encoding",
     "spectral_input",
     "square",
+    "unpack_channels",
     "wavelet_decomposition",
     "glorot_weight_zero_bias",
     "rescale_parameter",

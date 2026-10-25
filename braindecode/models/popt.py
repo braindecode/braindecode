@@ -19,7 +19,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from braindecode.functional import sinusoidal_positional_encoding
+from braindecode.functional import check_ch_mask, sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 
@@ -262,7 +262,7 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
         coords: torch.Tensor | None = None,
         seq_id: torch.Tensor | None = None,
         return_features: bool = False,
-        key_padding_mask: torch.Tensor | None = None,
+        ch_mask: torch.Tensor | None = None,
     ):
         """Aggregate a population of electrode features.
 
@@ -281,10 +281,10 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
         return_features : bool
             If ``True``, return ``{"features": cls, "cls_token": cls}`` (the
             pooled ``CLS`` representation) instead of the class logits.
-        key_padding_mask : torch.Tensor, optional
-            Boolean ``(batch, n_chans)`` mask, ``True`` for padded electrodes, so
-            recordings with different electrode sets can share a batch (upstream
-            ``src_key_padding_mask``). The ``CLS`` token is never masked.
+        ch_mask : torch.Tensor, optional
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`; the complement of upstream's
+            ``src_key_padding_mask``.
 
         Returns
         -------
@@ -293,6 +293,13 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
             when ``return_features`` is set.
         """
         batch_size, n_chans, _ = x.shape
+        mask = check_ch_mask(ch_mask, x)
+        padded_mask: torch.Tensor | None = None
+        if mask is not None:
+            # Zeroed so non-finite padding cannot leak through zero attention weights.
+            x = x.masked_fill(~mask[..., None], 0.0)
+            # True for padding, as src_key_padding_mask; the CLS token is never masked.
+            padded_mask = torch.cat([mask.new_zeros(batch_size, 1), ~mask], dim=1)
         if coords is None:
             n_known = self.electrode_coords.shape[0]
             if n_chans != n_known:
@@ -305,11 +312,6 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
             seq_id = torch.zeros(batch_size, n_chans, dtype=torch.long, device=x.device)
 
         h = self.input_embedding(x, coords, seq_id)
-        # New name (not reassigning the argument) keeps TorchScript's narrowing.
-        padded_mask: torch.Tensor | None = None
-        if key_padding_mask is not None:
-            cls_keep = torch.zeros(batch_size, 1, dtype=torch.bool, device=x.device)
-            padded_mask = torch.cat([cls_keep, key_padding_mask.to(torch.bool)], dim=1)
         z = self.transformer_encoder(h, src_key_padding_mask=padded_mask)
         cls_token = z[:, 0, :]
         logits = self.final_layer(cls_token)
