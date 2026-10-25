@@ -504,6 +504,11 @@ Requirements
 Bug fixes
 ==========
 
+- Model loading validates relative custom weight paths and local symlink containment,
+  without changing Hugging Face's process-global filename. Serialized module classes
+  are resolved only from shipped PyTorch and Braindecode classes, including the Hub
+  and Pydantic configuration decoders (:gh:`1494` by `Bruno Aristimunha`_).
+
 - :class:`braindecode.models.EpiNT` z-scores each channel over the whole window
   before dropping the samples after the last full patch, as the reference
   implementation does; it dropped them first, which changed the output when
