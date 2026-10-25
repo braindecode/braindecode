@@ -13,7 +13,9 @@ from torch import nn
 
 from braindecode.functional import (
     apply_rotary,
+    check_ch_mask,
     init_weights_,
+    masked_mean,
     patch_count,
     rotary_angles,
     rotary_frequencies,
@@ -112,9 +114,13 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
     batches (with ``on_non_divisible="crop"``, provided each window contains a
     full patch). Pass each recording's
     indices to :meth:`forward`; otherwise it uses the constructor's indices
-    or MNE positions. All samples in one batch
-    share a montage. The encoder uses PyTorch attention on separate batch
-    items, corresponding to the reference's block-diagonal attention mask.
+    or MNE positions. To mix montages in one batch, zero-pad the channels to
+    the largest montage (e.g. with :func:`~braindecode.datasets.pad_channels_collate`)
+    and pass per-sample indices with the ``ch_mask`` of real channels (with
+    ``pooling="mean"``); padded tokens are masked out of attention and pooling.
+    The encoder uses PyTorch
+    attention on separate batch items, corresponding to the reference's
+    block-diagonal attention mask.
 
     **Pre-trained weights**
 
@@ -417,6 +423,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         x: torch.Tensor,
         spatial_indices: Optional[torch.Tensor] = None,
         return_features: bool = False,
+        ch_mask: Optional[torch.Tensor] = None,
     ):
         """Encode an iEEG batch into class logits.
 
@@ -426,11 +433,17 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             Input of shape ``(batch, n_chans, n_times)``.
         spatial_indices : torch.Tensor, optional
             Embedding indices of this batch's montage, of shape ``(n_chans, 3)``
-            for ``spatial_scale="coords"`` and ``(n_chans,)`` otherwise. Every
-            sample of the batch shares them. Defaults to the montage resolved at
-            construction, which only fits the construction-time channel count.
+            for ``spatial_scale="coords"`` and ``(n_chans,)`` otherwise, shared
+            by every sample, or with one montage per sample, of shape
+            ``(batch, n_chans, 3)`` and ``(batch, n_chans)`` respectively.
+            Defaults to the montage resolved at construction, which only fits
+            the construction-time channel count.
         return_features : bool
             Return the pooled embedding instead of logits.
+        ch_mask : torch.Tensor, optional
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Padded channels affect no output; their
+            spatial indices only need to be valid (e.g. 0). Needs ``pooling="mean"``.
 
         Returns
         -------
@@ -440,9 +453,21 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         """
         if x.ndim != 3:
             raise ValueError("Expected input of shape (batch, n_chans, n_times).")
+        mask = check_ch_mask(ch_mask, x)
+        if mask is not None and self.token_pooling is not None:
+            raise ValueError(
+                "ch_mask needs pooling='mean': the learned pooling is tied to the "
+                "token grid."
+            )
         n_chans = x.shape[1]
 
         patches = self.patch_tokenizer(x)
+        n_patches = patches.shape[1]
+        token_mask: Optional[torch.Tensor] = None
+        if mask is not None:
+            # The CNN runs on the padding: zeros keep NaN out of the attention.
+            patches = patches.masked_fill(~mask[:, None, :, None], 0.0)
+            token_mask = mask.repeat(1, n_patches)  # Patch-major, like the tokens.
         patches = self.fold_grid(patches)
         patches = self.temporal_encoder(patches)
         patches = self.unfold_grid(patches)
@@ -450,18 +475,24 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
 
         if self.spatial_emb is not None:
             spatial = self.spatial_emb(spatial_indices)
-            if spatial.shape[0] != n_chans:
+            if spatial.shape[-2] != n_chans:
                 raise ValueError(
-                    f"Got spatial indices for {spatial.shape[0]} channels but "
+                    f"Got spatial indices for {spatial.shape[-2]} channels but "
                     f"input with {n_chans}; pass the spatial_indices of this "
                     f"recording to forward."
                 )
-            # (n_chans, d_model) tiled over patches, which matches the
-            # interleaved (patch, channel) token order.
-            spatial = spatial.repeat(tokens.shape[1] // n_chans, 1)
-            tokens = tokens + spatial[None]
+            # Shared or per-sample montage, tiled over the patch-major tokens.
+            if spatial.dim() == 2:
+                tokens = tokens + spatial.repeat(n_patches, 1)[None]
+            else:
+                if spatial.shape[0] != x.shape[0]:
+                    raise ValueError(
+                        f"Got spatial indices for batch size {spatial.shape[0]} "
+                        f"but input with batch size {x.shape[0]}."
+                    )
+                tokens = tokens + spatial.repeat(1, n_patches, 1)
 
-        latents = self.backbone(tokens, n_chans)
+        latents = self.backbone(tokens, n_chans, token_mask)
 
         if self.token_pooling is not None:
             if latents.shape[1] != self.n_tokens:
@@ -473,7 +504,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
                 )
             features = self.token_pooling(latents.transpose(1, 2)).squeeze(dim=-1)
         else:
-            features = latents.mean(dim=1)
+            features = masked_mean(latents, token_mask, [1])
         if not torch.jit.is_scripting() and return_features:
             return {"features": features, "cls_token": None}  # nosec B105
         return self.final_layer(features)
@@ -506,7 +537,10 @@ class _SpatialEmbedding(nn.Module):
         )
 
     def forward(self, indices: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """Return the ``(n_chans, d_model)`` spatial encoding of a montage."""
+        """Return the ``(n_chans, d_model)`` spatial encoding of a montage.
+
+        Per-sample indices give ``(batch, n_chans, d_model)``, one montage per sample.
+        """
         if indices is None:
             default = self.default_indices
             if default is None:
@@ -518,17 +552,13 @@ class _SpatialEmbedding(nn.Module):
             indices = default
         if indices.dtype != torch.long and indices.dtype != torch.int:
             raise ValueError("spatial_indices must be an integer tensor.")
-        # One row per spatial dimension, from the (n_chans, n_dims) layout of
-        # the public interface, whose axis is dropped for single-dimension
-        # scales.
-        if self.n_dims == 1 and indices.dim() == 1:
-            grid = indices.unsqueeze(0)
-        elif indices.dim() == 2 and indices.shape[1] == self.n_dims:
-            grid = indices.t()
-        else:
+        # One trailing column per spatial dimension; region scales omit it.
+        grid = indices.unsqueeze(-1) if self.n_dims == 1 else indices
+        if (grid.dim() != 2 and grid.dim() != 3) or grid.shape[-1] != self.n_dims:
             raise ValueError(
-                "spatial_indices must have shape (n_chans, 3) for coordinates "
-                "and (n_chans,) for region scales."
+                "spatial_indices must have shape (n_chans, 3) or "
+                "(batch, n_chans, 3) for coordinates and (n_chans,) or "
+                "(batch, n_chans) for region scales."
             )
         grid = grid.to(self.tables[0].weight.device)
         # Value check only in eager mode: it branches on tensor data, which
@@ -541,7 +571,7 @@ class _SpatialEmbedding(nn.Module):
                         f"spatial_indices must contain integers in [0, {n_slots})."
                     )
         return torch.stack(
-            [table(grid[dim]) for dim, table in enumerate(self.tables)]
+            [table(grid[..., dim]) for dim, table in enumerate(self.tables)]
         ).sum(dim=0)
 
 
@@ -632,7 +662,9 @@ class _Transformer(nn.Module):
         )
         self.norm = nn.RMSNorm(d_model, eps=1e-8)
 
-    def forward(self, x: torch.Tensor, n_chans: int) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, n_chans: int, key_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         # All channels of a patch share the patch index as their position, and
         # the grid is only known here, so the angles are built per call.
         n_patches = x.shape[1] // n_chans
@@ -643,8 +675,12 @@ class _Transformer(nn.Module):
         angles = angles.repeat_interleave(n_chans, dim=0)
         cos = angles.cos()[None, None]
         sin = angles.sin()[None, None]
+        # Padded tokens still attend, but no token attends to them.
+        attn_mask: Optional[torch.Tensor] = None
+        if key_mask is not None:
+            attn_mask = key_mask[:, None, None, :]
         for layer in self.layers:
-            x = layer(x, cos, sin)
+            x = layer(x, cos, sin, attn_mask)
         return self.norm(x)
 
 
@@ -677,9 +713,13 @@ class _TransformerEncoderLayer(nn.Module):
         )
 
     def forward(
-        self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
+        self,
+        x: torch.Tensor,
+        cos: torch.Tensor,
+        sin: torch.Tensor,
+        attn_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        x = x + self.dropout(self.self_attn(self.norm1(x), cos, sin))
+        x = x + self.dropout(self.self_attn(self.norm1(x), cos, sin, attn_mask))
         return x + self.mlp(self.norm2(x))
 
 
@@ -697,7 +737,11 @@ class _RotarySelfAttention(nn.Module):
         self.merge_heads = Rearrange("batch heads seq dim -> batch seq (heads dim)")
 
     def forward(
-        self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
+        self,
+        x: torch.Tensor,
+        cos: torch.Tensor,
+        sin: torch.Tensor,
+        attn_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         query, key, value = self.qkv_proj(x).chunk(3, dim=-1)
         query = self.split_heads(query)
@@ -710,7 +754,7 @@ class _RotarySelfAttention(nn.Module):
 
         # Dropout falls on the attention output rather than on the weights,
         # through dropout_p, because the reference disables the latter outright.
-        attention = scaled_dot_product_attention(query, key, value)
+        attention = scaled_dot_product_attention(query, key, value, attn_mask=attn_mask)
         attention = self.dropout(attention)
         attention = self.merge_heads(attention)
         return self.o_proj(attention)

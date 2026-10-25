@@ -11,13 +11,17 @@ from functools import partial
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops.layers.torch import Rearrange, Reduce
+from einops.layers.torch import Rearrange
 
 from braindecode.functional import (
     apply_rotary,
+    check_ch_mask,
     init_weights_,
+    masked_mean,
+    pack_channels,
     rotary_angles,
     rotary_frequencies,
+    unpack_channels,
 )
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import FeedForwardBlock
@@ -57,6 +61,10 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
        patches (``n_times // patch_size``) is fixed at construction.
     4. The class token of each channel is averaged over channels and
        ``final_layer`` (dropout and one linear layer) classifies it.
+
+    As channels are encoded independently, the number of channels may differ
+    between batches, and within one batch when the recordings are padded to a
+    common count and ``ch_mask`` (see :meth:`forward`) flags the real ones.
 
     The pretraining mask token and frequency-domain mapping quantizer are not
     used downstream, so they are not part of this module.
@@ -170,7 +178,7 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
             )
         n_tokens = self.n_patches + 1
 
-        self.merge_channels = Rearrange("batch chans times -> (batch chans) 1 times")
+        self.add_channel_axis = Rearrange("rows times -> rows 1 times")
         self.instance_norm = nn.InstanceNorm1d(1, affine=True)
         self.patchify = Rearrange(
             "batch 1 (patches size) -> batch patches size", size=patch_size
@@ -193,10 +201,6 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
                 for _ in range(n_layers)
             ]
         )
-        self.split_channels = Rearrange(
-            "(batch chans) dim -> batch chans dim", chans=self.n_chans
-        )
-        self.pool = Reduce("batch chans dim -> batch dim", "mean")
         self.final_layer = nn.Sequential(
             nn.Dropout(head_drop_prob), nn.Linear(embed_dim, self.n_outputs)
         )
@@ -231,40 +235,53 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
         _init_head(head)
         self.final_layer[1] = head
 
-    def forward(self, x: torch.Tensor, return_features: bool = False):
+    def forward(
+        self,
+        x: torch.Tensor,
+        return_features: bool = False,
+        ch_mask: torch.Tensor | None = None,
+    ):
         """Classify a batch of signals.
 
         Parameters
         ----------
         x : torch.Tensor
-            Input of shape ``(batch, n_chans, n_times)``.
+            Input of shape ``(batch, n_chans, n_times)``; ``n_chans`` may differ
+            from the construction one.
         return_features : bool
             If ``True``, return ``{"features": pooled, "cls_token": cls}``:
             ``cls`` holds the class token of every channel, shape
             ``(batch, n_chans, embed_dim)``, and ``pooled`` is its mean over
             channels. A scripted model ignores this flag.
+        ch_mask : torch.Tensor, optional
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Padded channels are dropped first; their
+            rows of ``cls`` are zero.
 
         Returns
         -------
         torch.Tensor or dict
             Logits of shape ``(batch, n_outputs)``, or the feature dict.
         """
-        if x.shape[1] != self.n_chans or x.shape[2] != self.n_times:
+        if x.shape[2] != self.n_times:
             raise ValueError(
-                f"EpiNT was built for (n_chans, n_times)=({self.n_chans}, "
-                f"{self.n_times}) and got ({x.shape[1]}, {x.shape[2]}); its LayerNorms "
-                "fix the number of patches."
+                f"EpiNT was built for n_times={self.n_times} and got "
+                f"{x.shape[2]}; its LayerNorms fix the number of patches."
             )
-        z = self.instance_norm(self.merge_channels(x))  # (batch*chans, 1, times)
+        mask = check_ch_mask(ch_mask, x)
+        n_chans = x.shape[1]
+        # Each real channel is its own sequence; padding is dropped here.
+        x = pack_channels(x, mask)
+        z = self.instance_norm(self.add_channel_axis(x))  # (n_real, 1, times)
         z = z[..., : self.n_patches * self.patch_size]
-        z = self.patch_embedding(self.patchify(z))  # (batch*chans, patches, dim)
+        z = self.patch_embedding(self.patchify(z))  # (n_real, patches, dim)
         cls = self.cls_token.expand(z.shape[0], 1, -1).to(z)
-        z = torch.cat([cls, z], dim=1)  # (batch*chans, tokens, dim)
+        z = torch.cat([cls, z], dim=1)  # (n_real, tokens, dim)
         cos, sin = self.rope_cos.to(z), self.rope_sin.to(z)
         for layer in self.encoder:
             z = layer(z, cos, sin)
-        cls_token = self.split_channels(z[:, 0])  # (batch, chans, dim)
-        pooled = self.pool(cls_token)
+        cls_token = unpack_channels(z[:, 0], mask, n_chans)  # (batch, chans, dim)
+        pooled = masked_mean(cls_token, mask, [1])  # (batch, dim)
         if not torch.jit.is_scripting() and return_features:
             return {"features": pooled, "cls_token": cls_token}
         return self.final_layer(pooled)
