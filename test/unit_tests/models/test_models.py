@@ -56,6 +56,7 @@ from braindecode.models import (
     EEGSimpleConv,
     EEGTCNet,
     EMG2QwertyNet,
+    EpiNT,
     FBCNet,
     FBLightConvNet,
     FBMSNet,
@@ -4381,6 +4382,27 @@ def test_brainbert_pads_a_short_window():
         BrainBERT(n_chans=2, n_outputs=2, n_times=500)
     with pytest.raises(ValueError, match="STFT frames"):
         BrainBERT(n_chans=2, n_outputs=2, n_times=500, on_non_divisible="crop")
+
+
+def test_epint_normalizes_the_whole_window():
+    """As upstream, the samples after the last full patch count in the instance
+    norm statistics before they are dropped."""
+    torch.manual_seed(0)
+    model = EpiNT(
+        n_chans=2,
+        n_outputs=2,
+        n_times=100,
+        patch_size=32,
+        embed_dim=16,
+        n_layers=1,
+        n_heads=2,
+        ffn_dim=32,
+    ).eval()
+    x = torch.randn(3, 2, 100)
+    shifted_tail = x.clone()
+    shifted_tail[..., 96:] += 10.0
+    with torch.no_grad():
+        assert not torch.allclose(model(x), model(shifted_tail))
 
 
 _BARISTA_SMALL = dict(patch_size=32, d_model=16, n_layers=1, num_heads=2, cnn_depth=1)
