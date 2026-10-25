@@ -118,10 +118,13 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
     Parameters
     ----------
     n_times : int, optional
-        Size of the input, in number of samples. Set to 128 (1s) as in
-        [santamaria2020]_.
+        Size of the input, in number of samples. Defaults to 1000, unless
+        ``input_window_seconds`` is given, in which case it is inferred
+        from ``input_window_seconds`` and ``sfreq``.
     sfreq : float, optional
-        EEG sampling frequency. Defaults to 128 as in [santamaria2020]_.
+        EEG sampling frequency. Defaults to 128 as in [santamaria2020]_,
+        unless ``n_times`` and ``input_window_seconds`` are both given, in
+        which case it is inferred from them.
     drop_prob : float, optional
         Dropout rate inside all the network. Defaults to 0.5 as in
         [santamaria2020]_.
@@ -171,8 +174,8 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         self,
         n_chans=None,
         n_outputs=None,
-        n_times=1000,
-        sfreq=128,
+        n_times=None,
+        sfreq=None,
         drop_prob=0.5,
         scales_samples_s=(0.5, 0.25, 0.125),
         n_filters=8,
@@ -183,6 +186,10 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         chs_info=None,
         input_window_seconds=None,
     ):
+        if sfreq is None and (n_times is None or input_window_seconds is None):
+            sfreq = 128
+        if n_times is None and input_window_seconds is None:
+            n_times = 1000
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,

@@ -3,6 +3,7 @@
 # License: BSD-3
 
 import copy
+from inspect import Parameter, signature
 from types import SimpleNamespace
 
 import mne
@@ -12,9 +13,10 @@ import pytest
 
 from braindecode.datasets import BaseConcatDataset
 from braindecode.datasets.base import BaseDataset
-from braindecode.preprocessing import preprocess
+from braindecode.preprocessing import Preprocessor, preprocess
 from braindecode.preprocessing.eegprep_preprocess import (
     EEGPrep,
+    EEGPrepBasePreprocessor,
     ReinterpolateRemovedChannels,
     RemoveBadChannels,
     RemoveBadChannelsNoLocs,
@@ -25,6 +27,44 @@ from braindecode.preprocessing.eegprep_preprocess import (
     RemoveFlatChannels,
     Resampling,
 )
+
+
+def add_label(data, *, cls):
+    return data + cls
+
+
+class KeywordEEGPrep(EEGPrepBasePreprocessor):
+    def __init__(self, *, cls):
+        super().__init__()
+        self.cls = cls
+
+    @property
+    def _all_attrs(self):
+        return super()._all_attrs + ["cls"]
+
+    def apply_eeg(self, eeg, raw):
+        return eeg
+
+
+class SiteDC(RemoveDCOffset):
+    pass
+
+
+class SiteInterpolation(ReinterpolateRemovedChannels):
+    pass
+
+
+class SiteReference(RemoveCommonAverageReference):
+    def apply_eeg(self, eeg, raw):
+        return super().apply_eeg(eeg, raw)
+
+
+class ExplicitSiteDC(SiteDC):
+    def __init__(self, *, force_dtype=None):
+        super().__init__(force_dtype=force_dtype)
+        self.can_change_duration = "site policy"
+        self.record_orig_chanlocs = True
+
 
 # Check if eegprep is available
 try:
@@ -700,6 +740,161 @@ def test_remove_bad_windows_with_non_eeg_channels(caplog):
     # Also verify that some data was removed (bad windows were detected)
     assert processed_duration < original_duration, \
         "Some time windows should have been removed"
+
+
+@pytest.mark.parametrize(
+    "preprocessor_cls",
+    [RemoveDCOffset, ReinterpolateRemovedChannels, RemoveCommonAverageReference],
+)
+def test_trivial_preprocessor_public_signature(preprocessor_cls):
+    """Hide internal flags while retaining the existing dtype option."""
+    parameters = signature(preprocessor_cls).parameters
+    assert list(parameters) == ["force_dtype"]
+    assert parameters["force_dtype"].kind is Parameter.KEYWORD_ONLY
+    assert parameters["force_dtype"].default is None
+    for flag in ("can_change_duration", "record_orig_chanlocs"):
+        with pytest.raises(TypeError, match=flag):
+            preprocessor_cls(**{flag: True})
+
+    for dtype in (None, "float32", np.dtype("float64")):
+        preprocessor = preprocessor_cls(force_dtype=dtype)
+        assert preprocessor.can_change_duration is False
+        assert preprocessor.record_orig_chanlocs is False
+        expected_dtype = None if dtype is None else np.dtype(dtype)
+        assert preprocessor.force_dtype == expected_dtype
+        assert preprocessor == preprocessor_cls.deserialize(preprocessor.serialize())
+
+
+@pytest.mark.parametrize(
+    "preprocessor_cls",
+    [RemoveDCOffset, ReinterpolateRemovedChannels, RemoveCommonAverageReference,
+     SiteDC, SiteInterpolation, SiteReference],
+)
+@pytest.mark.parametrize("duration, record", [(False, False), (True, True), ("legacy", True)])
+def test_trivial_preprocessor_legacy_serialization(preprocessor_cls, duration, record):
+    """Load the old payload through either entry point without losing flags."""
+    payload = {
+        "__class_path__": f"{preprocessor_cls.__module__}.{preprocessor_cls.__name__}",
+        "can_change_duration": duration,
+        "record_orig_chanlocs": record,
+        "force_dtype": np.dtype("float64"),
+    }
+    original = payload.copy()
+    for loader in (Preprocessor, preprocessor_cls):
+        restored = loader.deserialize(payload)
+        expected_duration = preprocessor_cls.__name__ if duration is True else duration
+        assert type(restored) is preprocessor_cls
+        assert restored.can_change_duration == expected_duration
+        assert restored.record_orig_chanlocs is record
+        assert restored.force_dtype == np.dtype("float64")
+        serialized = restored.serialize()
+        assert serialized == {**payload, "can_change_duration": expected_duration}
+        assert restored == Preprocessor.deserialize(serialized)
+        nested = {
+            "__class_path__": payload["__class_path__"],
+            "kwargs": {
+                key: value for key, value in payload.items() if key != "__class_path__"
+            },
+        }
+        saved = copy.deepcopy(nested)
+        assert loader.deserialize(nested) == restored
+        assert nested == saved
+        with pytest.raises(TypeError, match="can_change_duration"):
+            loader.deserialize({**payload, "kwargs": {"can_change_duration": False}})
+        assert payload == original
+        with pytest.raises(TypeError, match="unknown_option"):
+            loader.deserialize({**payload, "unknown_option": True})
+        with pytest.raises(TypeError, match="unknown_option"):
+            loader.deserialize({**payload, "kwargs": {"unknown_option": True}})
+        assert payload == original
+
+
+@pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")
+@pytest.mark.parametrize(
+    "preprocessor_cls",
+    [RemoveDCOffset, ReinterpolateRemovedChannels, RemoveCommonAverageReference],
+)
+def test_trivial_preprocessor_legacy_processing(preprocessor_cls, base_concat_ds):
+    """Legacy default payloads keep the same preprocessing result."""
+    payload = {
+        "__class_path__": f"{preprocessor_cls.__module__}.{preprocessor_cls.__name__}",
+        "can_change_duration": False,
+        "record_orig_chanlocs": False,
+        "force_dtype": None,
+    }
+    raw = base_concat_ds.datasets[0].raw
+    expected, actual = raw.copy(), raw.copy()
+    preprocessor_cls().apply(expected)
+    Preprocessor.deserialize(payload).apply(actual)
+    np.testing.assert_array_equal(actual.get_data(), expected.get_data())
+    assert actual.ch_names == expected.ch_names
+    assert actual.info["sfreq"] == expected.info["sfreq"]
+
+
+def test_generic_callable_cls_keyword():
+    original = Preprocessor(add_label, cls=2)
+    raw = mne.io.RawArray(
+        np.zeros((1, 8)), mne.create_info(["Cz"], 100, ["eeg"]), verbose=False
+    )
+    actual = raw.copy()
+    original.apply(raw)
+    payload = original.serialize()
+    saved = copy.deepcopy(payload)
+    restored = Preprocessor.deserialize(payload)
+    assert restored == original
+    assert payload == saved
+    restored.apply(actual)
+    np.testing.assert_array_equal(raw.get_data(), np.full((1, 8), 2.0))
+    np.testing.assert_array_equal(actual.get_data(), raw.get_data())
+
+
+def test_custom_eegprep_cls_keyword():
+    original = KeywordEEGPrep(cls="user-defined-label")
+    payload = original.serialize()
+    saved = copy.deepcopy(payload)
+    assert Preprocessor.deserialize(payload) == original
+    assert payload == saved
+
+
+@pytest.mark.parametrize("site_cls", [SiteDC, SiteInterpolation, SiteReference])
+def test_inherited_wrapper_serializes_existing_flags(site_cls):
+    original = site_cls()
+    original.can_change_duration = "legacy"
+    original.record_orig_chanlocs = True
+    payload = original.serialize()
+    assert payload["can_change_duration"] == "legacy"
+    assert payload["record_orig_chanlocs"] is True
+    assert Preprocessor.deserialize(payload) == original
+
+
+def test_explicit_subclass_constructor_is_not_migrated():
+    original = ExplicitSiteDC(force_dtype="float32")
+    payload = original.serialize()
+    assert "can_change_duration" not in payload
+    assert "record_orig_chanlocs" not in payload
+    restored = Preprocessor.deserialize(payload)
+    assert restored == original
+    assert restored.can_change_duration == "site policy"
+    assert restored.record_orig_chanlocs is True
+    for flag in ("can_change_duration", "record_orig_chanlocs"):
+        with pytest.raises(TypeError, match=flag):
+            Preprocessor.deserialize({**payload, flag: False})
+        with pytest.raises(TypeError, match=flag):
+            Preprocessor.deserialize({**payload, "kwargs": {flag: False}})
+
+
+def test_legacy_flag_migration_is_scoped():
+    """Do not accept internal flags on the other EEGPrep wrappers."""
+    from braindecode.preprocessing import eegprep_preprocess as module
+
+    for name in module.__all__:
+        cls = getattr(module, name)
+        if cls in (RemoveDCOffset, ReinterpolateRemovedChannels, RemoveCommonAverageReference):
+            continue
+        preprocessor = cls(100) if cls is Resampling else cls()
+        for flag in ("can_change_duration", "record_orig_chanlocs"):
+            with pytest.raises(TypeError, match=flag):
+                Preprocessor.deserialize({**preprocessor.serialize(), flag: True})
 
 
 def test_missing_eegprep_raises_error(base_concat_ds, monkeypatch):

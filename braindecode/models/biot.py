@@ -123,7 +123,9 @@ class BIOT(EEGModuleMixin, nn.Module):
         The hop length for the torch.stft transformation in the
         encoder. The default is 100.
     sfreq: int, optional
-        The sfreq parameter for the encoder. The default is 200
+        The sfreq parameter for the encoder. The default is 200, unless
+        ``n_times`` and ``input_window_seconds`` are both given, in which
+        case it is inferred from them.
 
     References
     ----------
@@ -142,7 +144,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         embed_dim=256,
         num_heads=8,
         num_layers=4,
-        sfreq=200,
+        sfreq=None,
         hop_length=100,
         return_feature=False,
         n_outputs=None,
@@ -159,6 +161,8 @@ class BIOT(EEGModuleMixin, nn.Module):
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
     ):
+        if sfreq is None and (n_times is None or input_window_seconds is None):
+            sfreq = 200
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,

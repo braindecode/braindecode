@@ -56,6 +56,7 @@ from braindecode.models import (
     EEGSimpleConv,
     EEGTCNet,
     EMG2QwertyNet,
+    EpiNT,
     FBCNet,
     FBLightConvNet,
     FBMSNet,
@@ -809,6 +810,27 @@ def test_atcnet_n_params():
     official_code_nparams = 113_732
 
     assert n_params == official_code_nparams
+
+
+@pytest.mark.parametrize(
+    "model_cls,geometry,n_times,sfreq",
+    [
+        (EEGInceptionERP, dict(input_window_seconds=2.0, sfreq=64), 128, 64),
+        (EEGInceptionERP, dict(n_times=256, input_window_seconds=1.0), 256, 256),
+        (EEGInceptionERP, dict(input_window_seconds=1.0), 128, 128),
+        (EEGInceptionERP, dict(), 1000, 128),
+        (ATCNet, dict(n_times=640, input_window_seconds=5.0), 640, 128),
+        (ATCNet, dict(n_times=1125), 1125, 250),
+        (EEGInceptionMI, dict(n_times=384, input_window_seconds=3.0), 384, 128),
+        (EEGInceptionMI, dict(n_times=750), 750, 250),
+    ],
+)
+def test_default_geometry_yields_to_given_geometry(model_cls, geometry, n_times, sfreq):
+    """A default ``n_times``/``sfreq`` is only used when the given geometry
+    does not determine it, instead of conflicting with it."""
+    model = model_cls(n_chans=3, n_outputs=2, **geometry)
+    assert model.n_times == n_times
+    assert model.sfreq == sfreq
 
 
 @pytest.mark.parametrize(
@@ -4361,6 +4383,27 @@ def test_brainbert_pads_a_short_window():
         BrainBERT(n_chans=2, n_outputs=2, n_times=500, on_non_divisible="crop")
 
 
+def test_epint_normalizes_the_whole_window():
+    """As upstream, the samples after the last full patch count in the instance
+    norm statistics before they are dropped."""
+    torch.manual_seed(0)
+    model = EpiNT(
+        n_chans=2,
+        n_outputs=2,
+        n_times=100,
+        patch_size=32,
+        embed_dim=16,
+        n_layers=1,
+        n_heads=2,
+        ffn_dim=32,
+    ).eval()
+    x = torch.randn(3, 2, 100)
+    shifted_tail = x.clone()
+    shifted_tail[..., 96:] += 10.0
+    with torch.no_grad():
+        assert not torch.allclose(model(x), model(shifted_tail))
+
+
 _BARISTA_SMALL = dict(patch_size=32, d_model=16, n_layers=1, num_heads=2, cnn_depth=1)
 
 
@@ -5813,6 +5856,41 @@ def test_biot_hop_length_larger_than_sfreq():
     assert model.hop_length == 100 and isinstance(model.hop_length, int)
     assert model.encoder.hop_length == 100
     assert model(torch.randn(2, 2, 1000)).shape == (2, 2)
+
+
+@pytest.mark.parametrize(
+    "model_cls,kwargs,geometry,sfreq",
+    [
+        (
+            BIOT,
+            dict(n_chans=2, n_outputs=2, embed_dim=8, num_heads=2, num_layers=1),
+            dict(n_times=512, input_window_seconds=2.0),
+            256,
+        ),
+        (
+            BIOT,
+            dict(n_chans=2, n_outputs=2, embed_dim=8, num_heads=2, num_layers=1),
+            dict(n_times=400),
+            200,
+        ),
+        (EMG2QwertyNet, dict(), dict(n_times=1000, input_window_seconds=1.0), 1000),
+        (EMG2QwertyNet, dict(), dict(n_times=8000), 2000),
+        (
+            MetaNeuromotorHand,
+            # the default frequency bands are set for 2000 Hz
+            dict(mpf_frequency_bins=None),
+            dict(n_times=1000, input_window_seconds=1.0),
+            1000,
+        ),
+        (MetaNeuromotorHand, dict(), dict(n_times=8000), 2000),
+    ],
+)
+def test_default_sfreq_yields_to_given_geometry(model_cls, kwargs, geometry, sfreq):
+    """The default ``sfreq`` is only used when ``n_times`` and
+    ``input_window_seconds`` do not determine it, instead of conflicting."""
+    model = model_cls(**kwargs, **geometry)
+    assert model.n_times == geometry["n_times"]
+    assert model.sfreq == sfreq
 
 
 @pytest.mark.parametrize("n_times", [256, 1024])

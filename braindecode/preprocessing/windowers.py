@@ -1017,16 +1017,17 @@ def _create_fixed_length_windows(
 
     # get targets from dataset description if they exist
     target = -1 if ds.target_name is None else ds.description[ds.target_name]
-    if mapping is not None:
-        # in case of multiple targets
-        if isinstance(target, pd.Series):
+    # in case of multiple targets: a list, as RawDataset returns, which the
+    # DataLoader can collate (a pandas Series cannot)
+    if isinstance(target, pd.Series):
+        target = target.to_list()
+        if mapping is not None:
             # Plain comprehension instead of Series.replace(mapping):
-            # replace() emits a pandas FutureWarning about silent downcasting
-            # and the result is immediately list-ified anyway.
+            # replace() emits a pandas FutureWarning about silent downcasting.
             target = [mapping.get(v, v) for v in target]
-        # in case of single value target
-        else:
-            target = mapping[target]
+    # in case of single value target
+    elif mapping is not None:
+        target = mapping[target]
 
     if lazy_metadata:
         factory = _FixedLengthWindowFunctions(

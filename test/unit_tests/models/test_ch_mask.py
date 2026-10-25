@@ -196,3 +196,26 @@ def test_barista_spatial_indices_batch_size(spatial_scale, masked, scripted):
         error = torch.jit.Error if scripted else ValueError
         with pytest.raises(error, match="spatial indices for batch size"):
             model(x, spatial_indices=wrong_batch, ch_mask=mask)
+
+
+def test_epint_masked_nondivisible_window_normalizes_before_crop():
+    torch.manual_seed(42)
+    model = EpiNT(
+        n_chans=2, n_outputs=2, n_times=100, patch_size=32,
+        embed_dim=16, n_layers=1, n_heads=2, ffn_dim=32,
+    ).eval()
+    x = torch.randn(2, 2, 100)
+    mask = torch.tensor([[True, False], [True, True]])
+    x[~mask] = float("nan")
+    shifted = x.clone()
+    shifted[..., 96:] += 10.0
+    with torch.no_grad():
+        out = model(x, ch_mask=mask)
+        expected = torch.cat([model(x[i:i + 1, mask[i]]) for i in range(2)])
+        torch.testing.assert_close(out, expected)
+        assert not torch.allclose(out, model(shifted, ch_mask=mask))
+        torch.testing.assert_close(torch.jit.script(model)(x, ch_mask=mask), out)
+    x.requires_grad_(True)
+    model(x, ch_mask=mask).sum().backward()
+    assert torch.isfinite(x.grad).all()
+    assert torch.equal(x.grad[~mask], torch.zeros_like(x.grad[~mask]))

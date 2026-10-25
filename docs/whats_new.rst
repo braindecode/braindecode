@@ -504,6 +504,29 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.EpiNT` z-scores each channel over the whole window
+  before dropping the samples after the last full patch, as the reference
+  implementation does; it dropped them first, which changed the output when
+  ``n_times`` is not a multiple of ``patch_size`` (:gh:`1488` by `Julien Gadonneix`_).
+- :class:`braindecode.preprocessing.RemoveDCOffset`,
+  :class:`~braindecode.preprocessing.ReinterpolateRemovedChannels` and
+  :class:`~braindecode.preprocessing.RemoveCommonAverageReference` no longer expose
+  internal duration and channel-location flags in their constructors. The existing
+  keyword-only ``force_dtype`` option is preserved and documented. Previously saved
+  configurations still load with their original internal flags
+  (:gh:`1491` by `Bruno Aristimunha`_).
+- Fix :func:`braindecode.preprocessing.exponential_moving_standardize` and :func:`braindecode.preprocessing.exponential_moving_demean` returning NaN for every sample of a channel after a single NaN sample (since the ``lfilter`` rewrite of :gh:`950`): NaN samples are skipped again, as in the previous ``pandas`` implementation (:gh:`1481` by `Adam Mounir`_).
+- Fix :func:`braindecode.preprocessing.create_fixed_length_windows` giving the windows of a dataset with several ``target_name`` a :class:`pandas.Series` target when no ``mapping`` is given, which :class:`torch.utils.data.DataLoader` cannot collate: the target is now a list, as :class:`braindecode.datasets.RawDataset` returns and as with a ``mapping`` (:gh:`1484` by `Adam Mounir`_).
+- :class:`braindecode.models.BIOT` (200 Hz), :class:`braindecode.models.EMG2QwertyNet` (2000 Hz) and :class:`braindecode.models.MetaNeuromotorHand` (2000 Hz) only use their default ``sfreq`` when ``n_times`` and ``input_window_seconds`` do not determine it, instead of raising ``ValueError`` for consistent inputs such as ``BIOT(n_times=512, input_window_seconds=2.0)``. Calls that worked before build the same model (:gh:`1485` by `Adam Mounir`_).
+
+- :class:`braindecode.models.EEGInceptionERP`, :class:`braindecode.models.ATCNet` and :class:`braindecode.models.EEGInceptionMI` only use their default ``n_times`` (1000 for EEGInceptionERP) and ``sfreq`` (128 or 250 Hz) when the given geometry does not determine them, instead of raising ``ValueError`` for consistent inputs such as ``EEGInceptionERP(input_window_seconds=1.0, sfreq=128)`` or ``ATCNet(n_times=640, input_window_seconds=5.0)``. Calls that worked before build the same model (:gh:`1485` by `Adam Mounir`_).
+- Fix :func:`braindecode.datautil.load_concat_dataset` ignoring its ``target_name`` argument (it now sets the target of datasets of raws and raises for windowed datasets, as the outdated format did) and reading numeric-looking description strings such as subject ``"01"`` back as integers (:gh:`1480` by `Adam Mounir`_).
+- Fix :func:`braindecode.datautil.infer_signal_properties` (used by :class:`braindecode.EEGRegressor` to set ``n_outputs``) inferring one output for windows with several regression targets: the model was built with ``n_outputs=1`` and trained against all targets through broadcasting (:gh:`1479` by `Adam Mounir`_).
+- Fix :class:`braindecode.datasets.BIDSEpochsDataset` taking all the annotations of the recording as the targets of the epochs, which fails (``All arrays must be of the same length``) when an epoch was dropped or the recording has other annotations (e.g. ``BAD`` segments): each epoch now takes the annotation at its time zero, or its event name when not every epoch has one (:gh:`1478` by `Adam Mounir`_).
+- Fix :class:`braindecode.samplers.SequenceSampler` and :class:`braindecode.samplers.BalancedSequenceSampler` returning sequences that mix recordings when the windows of a recording are not contiguous in metadata without ``i_dataset`` (e.g. alternating subjects): sequences are now taken from the recording's own windows; results are unchanged when they are contiguous (:gh:`1477` by `Adam Mounir`_).
+- Fix :class:`braindecode.augmentation.AugmentedDataLoader` with ``num_workers > 0`` drawing the same augmentations at every epoch and in every worker: a worker received a copy of the transform with its numpy generator in the state of the main process (a pickled copy of the global generator for the default ``random_state=None`` with spawned workers, as on macOS and Windows), and that state never advanced. The main process now draws a seed from each generator when an epoch starts, and each worker reseeds its copy from that seed and its worker id, so runs with a fixed ``random_state`` stay reproducible (:gh:`1475` by `Adam Mounir`_).
+- Fix :class:`braindecode.preprocessing.CombineChannels`, :class:`braindecode.preprocessing.FixStimArtifact`, :class:`braindecode.preprocessing.InterpolateBridgedElectrodes`, :class:`braindecode.preprocessing.MaxwellFilter` and :class:`braindecode.preprocessing.RegressArtifact` always failing with ``AttributeError: MNE object does not have a ... method``: these standalone MNE functions were looked up as methods of the recording. They are now called on it (:gh:`1482` by `Adam Mounir`_).
+
 - Fix cropped :class:`braindecode.EEGClassifier` accuracy callbacks with array inputs in scikit-learn grid searches and pipelines: each array example is scored as one trial, while window datasets retain their existing trial aggregation (:gh:`1490` by `Bruno Aristimunha`_).
 - :func:`braindecode.visualization.frequency.amplitude_gradients` accepts
   CUDA tensors and tensors requiring gradients, as well as NumPy arrays,

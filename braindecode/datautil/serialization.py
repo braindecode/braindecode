@@ -13,6 +13,7 @@ from glob import glob
 from pathlib import Path
 
 import mne
+import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
@@ -196,7 +197,7 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None, n_job
         Ids of specific files to load.
     target_name : str | list | None
         Load specific description column as target. If not given, take saved
-        target name.
+        target name. Only for datasets of raws.
     n_jobs : int
         Number of jobs to be used to read files in parallel.
 
@@ -245,10 +246,18 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None, n_job
             UserWarning,
         )
         n_jobs = 1
+    if target_name is not None and (has_stored_windows or not is_raw):
+        raise ValueError(
+            "target_name can only be given for datasets of raws; for windowed "
+            "datasets, use BaseConcatDataset.set_target after loading."
+        )
     datasets = Parallel(n_jobs)(
         delayed(_load_parallel)(path, i, preload, is_raw, has_stored_windows)
         for i in ids_to_load
     )
+    if target_name is not None:
+        for ds in datasets:
+            ds.target_name = ds._target_name(target_name)
     return BaseConcatDataset(datasets)
 
 
@@ -265,7 +274,11 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
     signals = _load_signals(fif_file_path, preload, is_raw)
 
     description_file_path = sub_dir / "description.json"
-    description = pd.read_json(description_file_path, typ="series", convert_dates=False)
+    # dtype=False: keep strings such as subject "01" as strings
+    description = pd.read_json(
+        description_file_path, typ="series", convert_dates=False, dtype=False
+    )
+    description[description.isna()] = np.nan  # JSON null was read as NaN
 
     # if 'timestamp' in description.index:
     #     timestamp_numeric = pd.to_numeric(description['timestamp'])
