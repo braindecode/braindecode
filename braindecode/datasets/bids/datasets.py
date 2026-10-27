@@ -224,15 +224,39 @@ class BIDSEpochsDataset(BIDSDataset):
         )
 
     def _set_metadata(self, epochs: mne.BaseEpochs) -> None:
-        # events = mne.events_from_annotations(epochs
         n_times = epochs.times.shape[0]
-        # id_event = {v: k for k, v in epochs.event_id.items()}
-        annotations = epochs.annotations
-        if annotations is not None:
-            target = annotations.description
-        else:
-            id_events = {v: k for k, v in epochs.event_id.items()}
-            target = [id_events[event_id] for event_id in epochs.events[:, -1]]
+        id_events = {v: k for k, v in epochs.event_id.items()}
+        target = [id_events[event_id] for event_id in epochs.events[:, -1]]
+        if epochs.annotations is not None and len(epochs.annotations) > 0:
+            # Match triggers on the original recording's sample clock, even if
+            # epochs have been cropped past time zero, decimated or resampled.
+            onset_samples = np.round(
+                epochs.annotations.onset * epochs._raw_sfreq
+            ).astype(int)
+            at_zero = []
+            for sample in epochs.events[:, 0]:
+                matches = np.flatnonzero(onset_samples == sample)
+                if len(matches) == 0:
+                    # FIF stores onsets as float32. Only the quantization bins
+                    # containing this sample's half-sample boundaries can move
+                    # a valid onset to an adjacent rounded sample on readback.
+                    boundaries = np.asarray(
+                        [
+                            (sample - 0.5) / epochs._raw_sfreq,
+                            (sample + 0.5) / epochs._raw_sfreq,
+                        ],
+                        dtype=np.float32,
+                    ).astype(float)
+                    matches = np.flatnonzero(
+                        np.isin(epochs.annotations.onset, boundaries)
+                        & (np.abs(onset_samples - sample) == 1)
+                    )
+                at_zero.append(matches)
+            if all(len(matches) == 1 for matches in at_zero):
+                indices = [matches[0] for matches in at_zero]
+                # A boundary annotation cannot label two neighboring events.
+                if len(set(indices)) == len(set(epochs.events[:, 0])):
+                    target = epochs.annotations.description[indices].tolist()
         metadata_dict = {
             "i_window_in_trial": np.zeros(len(epochs)),
             "i_start_in_trial": np.zeros(len(epochs)),
