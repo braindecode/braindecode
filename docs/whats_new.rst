@@ -516,7 +516,7 @@ Bug fixes
 - ``from_pretrained`` of :class:`braindecode.models.DuIN` loads a checkpoint at
   another ``n_times``: the head, the only part sized by the window, keeps its
   initialization with a warning instead of raising a size mismatch
-  (by `Julien Gadonneix`_).
+  (:gh:`1497` by `Julien Gadonneix`_).
 - :class:`braindecode.preprocessing.RemoveDCOffset`,
   :class:`~braindecode.preprocessing.ReinterpolateRemovedChannels` and
   :class:`~braindecode.preprocessing.RemoveCommonAverageReference` no longer expose
