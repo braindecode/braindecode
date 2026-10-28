@@ -32,6 +32,12 @@ _SAFE_STANDALONE_FUNCTIONS = frozenset(
         mne.set_bipolar_reference,
         # returns the Raw with the OTP-cleaned data
         mne.preprocessing.oversampled_temporal_projection,
+        # returns the Raw with the stimulation artifact removed
+        mne.preprocessing.fix_stim_artifact,
+        # returns the Raw with the bridged electrodes interpolated
+        mne.preprocessing.interpolate_bridged_electrodes,
+        # returns the Maxwell-filtered Raw
+        mne.preprocessing.maxwell_filter,
     }
 )
 
@@ -99,6 +105,24 @@ def _wrap_bad_channels_return(func):
     return wrapper
 
 
+def _wrap_instance_tuple_return(func):
+    """Wrap a function that returns ``(inst, ...)``.
+
+    The wrapper calls *func* and returns the first element, the modified
+    recording, e.g. :func:`mne.preprocessing.regress_artifact` returns
+    ``(inst, betas)``.
+    """
+
+    def wrapper(raw, **kwargs):
+        return func(raw, **kwargs)[0]
+
+    wrapper.__name__ = func.__name__
+    wrapper.__qualname__ = func.__qualname__
+    wrapper.__module__ = func.__module__
+    wrapper.__doc__ = func.__doc__
+    return wrapper
+
+
 def _wrap_bridged_electrodes(func):
     """Wrap :func:`mne.preprocessing.compute_bridged_electrodes`.
 
@@ -121,11 +145,60 @@ def _wrap_bridged_electrodes(func):
     return wrapper
 
 
-# Map each "aux-return" standalone function to its safe wrapper callable.
+def _combine_channels(inst, **kwargs):
+    """Preserve annotations when MNE creates new virtual channels.
+
+    Channel-specific annotations follow every group containing an affected
+    input channel (excluding bad channels when ``drop_bad=True``). Annotations
+    affecting only discarded channels are dropped, never made global.
+    """
+    combined = mne.channels.combine_channels(inst, **kwargs)
+    # A fresh EpochsArray has annotations=None; its instance date setter
+    # dereferences annotations. Set the new Info date before restoring them.
+    combined.info.set_meas_date(inst.info["meas_date"])
+    if isinstance(inst, mne.BaseEpochs):
+        combined._raw_sfreq = inst._raw_sfreq
+    if inst.annotations is not None:
+        annotations = inst.annotations.copy()
+        sources = [
+            {
+                inst.ch_names[pick]
+                for pick in picks
+                if not kwargs.get("drop_bad", False)
+                or inst.ch_names[pick] not in inst.info["bads"]
+            }
+            for picks in kwargs["groups"].values()
+        ]
+        # MNE prepends kept stimuli, then groups in insertion order, and may
+        # rename duplicate output names. Match contributors by that same order.
+        if kwargs.get("keep_stim", False):
+            sources = [
+                {inst.ch_names[pick]}
+                for pick in mne.pick_types(inst.info, meg=False, stim=True)
+            ] + sources
+        groups = dict(zip(combined.ch_names, sources))
+        keep = []
+        for index, names in enumerate(annotations.ch_names):
+            mapped = tuple(
+                name for name, sources in groups.items() if sources.intersection(names)
+            )
+            if not names or mapped:
+                keep.append(index)
+                annotations.ch_names[index] = mapped
+        annotations = annotations[keep]
+        if isinstance(inst, mne.io.BaseRaw) and annotations.orig_time is None:
+            # Raw.set_annotations adds first_time for relative annotations.
+            annotations.onset -= inst.first_time
+        combined.set_annotations(annotations)
+    return combined
+
+
+# Map standalone functions needing adaptation to their safe wrapper callables.
 # These wrappers apply the function's side effects to the recording and return
 # the recording itself, so they can be used with the callable path in
 # ``Preprocessor`` without corrupting the dataset.
 _AUX_RETURN_WRAPPERS = {
+    mne.channels.combine_channels: _combine_channels,
     mne.preprocessing.annotate_amplitude: _wrap_annotation_return(
         mne.preprocessing.annotate_amplitude, also_bads=True
     ),
@@ -146,6 +219,9 @@ _AUX_RETURN_WRAPPERS = {
     ),
     mne.preprocessing.find_bad_channels_lof: _wrap_bad_channels_return(
         mne.preprocessing.find_bad_channels_lof
+    ),
+    mne.preprocessing.regress_artifact: _wrap_instance_tuple_return(
+        mne.preprocessing.regress_artifact
     ),
 }
 
@@ -219,9 +295,8 @@ def _generate_init_method(func, force_copy_false=False):
         #
         # - Functions in ``_SAFE_STANDALONE_FUNCTIONS`` return the modified
         #   Raw/Epochs directly and are passed as-is.
-        # - Functions in ``_AUX_RETURN_WRAPPERS`` return auxiliary data; we
-        #   use a pre-built wrapper that applies the side effects and returns
-        #   the recording.  See :gh:`1055`.
+        # - Functions in ``_AUX_RETURN_WRAPPERS`` need adaptation of their
+        #   return value or preservation of annotations. See :gh:`1055`.
         # - Every other standalone function keeps the legacy string-name
         #   behaviour (``_apply_str``).
         if func in _SAFE_STANDALONE_FUNCTIONS:

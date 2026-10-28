@@ -142,10 +142,11 @@ def infer_signal_properties(
         if isinstance(X, BaseConcatDataset) and all(
             ds.targets_from == "metadata" for ds in X.datasets
         ):
-            y_target = X.get_metadata().target
+            # an array: several targets per window give one column each
+            y_target = np.asarray(X.get_metadata().target.to_list())
             signal_kwargs["n_outputs"] = _get_n_outputs(y_target, classes, mode)
         elif isinstance(X, WindowsDataset) and X.targets_from == "metadata":
-            y_target = X.windows.metadata.target
+            y_target = np.asarray(X.windows.metadata.target.to_list())
             signal_kwargs["n_outputs"] = _get_n_outputs(y_target, classes, mode)
     else:
         log.warning(

@@ -14,10 +14,11 @@ process step by step.
 # License: BSD (3-clause)
 
 import mne
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from braindecode.datasets import TUH
+from braindecode.datasets import TUH, BaseConcatDataset, RawDataset
 from braindecode.preprocessing import create_fixed_length_windows
 from braindecode.util import set_random_seeds
 
@@ -131,3 +132,48 @@ for batch_X, batch_y, batch_ind in dl:
     pass
 
 print(f"{batch_X=}\n{batch_y=}\n{batch_ind=}")
+
+
+###############################################################################
+# Numeric targets without a mapping
+# ---------------------------------
+#
+# A mapping is unnecessary when the description already contains numeric
+# targets. Here we encode the corpus's gender labels in a new description
+# column, and reuse the same recordings with ``age`` and ``gender_code`` as
+# targets. This leaves the original dataset and its description unchanged.
+# The target order follows ``target_name``, not the description column order.
+
+numeric_description = tuh.description.assign(
+    gender_code=tuh.description["gender"].map({"M": 0, "F": 1})
+)
+numeric_tuh: BaseConcatDataset[RawDataset] = BaseConcatDataset(
+    [
+        RawDataset(ds.raw, description, target_name=("age", "gender_code"))
+        for ds, (_, description) in zip(tuh.datasets, numeric_description.iterrows())
+    ]
+)
+numeric_windows = create_fixed_length_windows(
+    numeric_tuh,
+    window_size_samples=1000,
+    window_stride_samples=1000,
+    on_last_window="overlap",
+)
+print(f"Target without a mapping: {numeric_windows[0][1]}")
+
+###############################################################################
+# Choosing the batch target layout
+# --------------------------------
+#
+# Numeric list targets still collate into one tensor per target, as above.
+# For a model expecting a single ``(batch_size, n_targets)`` tensor, convert
+# each target list to a NumPy array before collation. This is useful, for
+# example, with multiple continuous regression targets; choose the target
+# dtype and loss to match the task. Encoding gender as a number does not make
+# it a continuous regression target.
+
+numeric_windows.target_transform = np.asarray
+_, matrix_y, _ = next(iter(DataLoader(numeric_windows, batch_size=4)))
+print(f"Matrix target shape: {tuple(matrix_y.shape)}")
+print(matrix_y)
+assert matrix_y.shape == (4, 2)

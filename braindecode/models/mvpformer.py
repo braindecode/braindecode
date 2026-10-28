@@ -21,11 +21,16 @@ from functools import partial
 from typing import Dict, Optional, Tuple, Union
 
 import torch
+from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import (
+    check_ch_mask,
     daubechies_filters,
     init_weights_,
+    masked_mean,
+    pack_channels,
+    unpack_channels,
     wavelet_decomposition,
 )
 from braindecode.models.base import EEGModuleMixin
@@ -164,6 +169,8 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
       ``(segment*channel)``-squared content-attention matrix before masking; the
       Triton ``FlashMVPA`` kernel that avoids that cost is not ported, so memory
       scales quadratically with the total number of tokens.
+    - **Variable channel counts.** With ``ch_mask`` and ``pooling="mean"``,
+      one batch can mix channel counts; each sample gives its unpadded output.
     - **Generative pre-training (reference only).** Upstream, MVPFormer is
       pre-trained to predict the next-in-time embedding with a contrastive loss
       and fine-tuned with LoRA. This braindecode implementation provides the
@@ -287,6 +294,7 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
             patch_size=self.segment_len, n_times=self.n_times, learnable=False
         )
         self.patch_embed = _WaveletPatchEmbed(self.segment_len, d_model)
+        self.to_grid = Rearrange("batch chan seg dim -> batch seg chan dim")
         self.positional_embedding = nn.Embedding(max_segments, d_model)
         self.channel_embedding = nn.Embedding(max_channels, d_model)
         self.drop = nn.Dropout(drop_prob)
@@ -328,13 +336,47 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         _init_weights(self.final_layer)
 
     def forward(
-        self, x, return_features: bool = False
+        self,
+        x,
+        return_features: bool = False,
+        ch_mask: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
+        """Decode a batch of signals.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input of shape ``(batch, n_chans, n_times)``. Samples with fewer
+            channels are padded along the channel axis and flagged by
+            ``ch_mask``.
+        return_features : bool
+            If ``True``, return the pooled last-segment embedding instead of
+            the class logits, as ``{"features": pooled, "cls_token": None}``
+            (braindecode foundation-model convention). MVPFormer has no class
+            token, hence ``cls_token`` is ``None``.
+        ch_mask : torch.Tensor or None
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Each sample is processed as if unpadded.
+            Needs ``pooling="mean"``.
+
+        Returns
+        -------
+        torch.Tensor or dict
+            Class logits of shape ``(batch, n_outputs)``, or the feature dict
+            ``{"features", "cls_token"}`` when ``return_features`` is set.
+        """
         # x: (batch, n_chans, n_times)
+        mask = check_ch_mask(ch_mask, x)
+        if mask is not None and self.pooling != "mean":
+            raise ValueError(
+                "ch_mask needs pooling='mean': the concat head is tied to the channels."
+            )
         patches = self.patch_tokenizer(x)  # (batch, channel, segment, segment_len)
-        embeds = self.patch_embed(patches)  # (batch, channel, segment, d_model)
-        embeds = embeds.permute(0, 2, 1, 3)  # (batch, segment, channel, d_model)
-        _, n_segments, n_channels, _ = embeds.shape
+        _, n_channels, n_segments, _ = patches.shape
+        # Each real channel is embedded on its own; padded ones come back as zeros.
+        embeds = self.patch_embed(pack_channels(patches, mask))  # (n_real, seg, d)
+        embeds = unpack_channels(embeds, mask, n_channels)  # (batch, chan, seg, d)
+        embeds = self.to_grid(embeds)  # (batch, segment, channel, d_model)
         position_embeds = self.positional_embedding(
             torch.arange(n_segments, device=x.device)
         ).unsqueeze(0)  # (1, segment, d_model)
@@ -342,13 +384,13 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
             torch.arange(n_channels, device=x.device)
         ).unsqueeze(0)  # (1, channel, d_model)
         hidden = self.drop(embeds)
-        masks = _mvpa_masks(n_segments, n_channels, self.local_window, x.device)
+        masks = _mvpa_masks(n_segments, n_channels, self.local_window, x.device, mask)
         for block in self.blocks:
             hidden = block(hidden, position_embeds, channel_embeds, masks)
         hidden = self.ln_f(hidden)  # (batch, segment, channel, d_model)
         pooled = hidden[:, -1]  # last segment: (batch, channel, d_model)
         if self.pooling == "mean":
-            pooled = pooled.mean(dim=1)  # (batch, d_model)
+            pooled = masked_mean(pooled, mask, [1])  # (batch, d_model)
         else:
             pooled = pooled.flatten(1)  # (batch, channel * d_model)
         if return_features:
@@ -407,7 +449,11 @@ def _repeat_segment_mask(mask: torch.Tensor, n_channels: int) -> torch.Tensor:
 
 
 def _mvpa_masks(
-    n_segments: int, n_channels: int, local_window: int, device: torch.device
+    n_segments: int,
+    n_channels: int,
+    local_window: int,
+    device: torch.device,
+    ch_mask: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """What every MVPA layer of one forward shares, built once.
 
@@ -415,6 +461,14 @@ def _mvpa_masks(
     causal mask, both ``(segment * channel, segment * channel)``, and the
     ``(segment * channel, channel)`` gather index of the channel-relative
     shift: ``n_channels - 1 - |query channel - key channel|``.
+
+    With a ``(batch, channel)`` boolean ``ch_mask`` (``True`` = real channel),
+    the causal mask also hides the keys of padded channels, and the shift is
+    computed per sample from the rank of each channel among the real ones:
+    ``n_real - 1 - |query rank - key rank|``, i.e. the shift of the unpadded
+    sample. Both then carry a batch and a (broadcast) head axis:
+    ``(batch, 1, segment * channel, segment * channel)`` and
+    ``(batch, 1, segment * channel, channel)``.
     """
     ones = torch.ones((n_segments, n_segments), device=device, dtype=torch.bool)
     window_mask = torch.logical_and(
@@ -426,9 +480,20 @@ def _mvpa_masks(
     window_mask = _repeat_segment_mask(window_mask, n_channels).clone()
     window_mask[-n_channels:] = 1
     causal_mask = _repeat_segment_mask(torch.tril(ones), n_channels)
-    channel = torch.arange(n_channels, device=device)
-    shift = n_channels - 1 - (channel[:, None] - channel).abs()
-    return window_mask, causal_mask, shift.repeat(n_segments, 1)
+    if ch_mask is None:
+        channel = torch.arange(n_channels, device=device)
+        shift = n_channels - 1 - (channel[:, None] - channel).abs()
+        return window_mask, causal_mask, shift.repeat(n_segments, 1)
+
+    # Hide the keys of padded channels in every segment.
+    key_mask = ch_mask.repeat(1, n_segments)  # (batch, segment * channel)
+    causal_mask = causal_mask & key_mask[:, None, None, :]
+    # Rank among the real channels; only padded pairs go below 0 (masked anyway).
+    rank = ch_mask.cumsum(dim=1) - 1  # (batch, channel)
+    n_real = ch_mask.sum(dim=1)[:, None, None]  # (batch, 1, 1)
+    shift = n_real - 1 - (rank[:, :, None] - rank[:, None, :]).abs()
+    shift = shift.clamp(0, n_channels - 1)  # (batch, channel, channel)
+    return window_mask, causal_mask, shift.repeat(1, n_segments, 1).unsqueeze(1)
 
 
 def _finfo_min(dtype: torch.dtype) -> float:
@@ -566,7 +631,9 @@ class _MVPAttention(nn.Module):
         # ``scatter_add``. Advanced indexing would backpropagate through
         # ``index_put_(accumulate=True)``, which Intel Gaudi (HPU) runs on the
         # host, slowly and with wrong gradients.
-        return torch.gather(x, -1, index.expand(list(x.shape[:-2]) + list(index.shape)))
+        # Index shared by the batch, or per sample with a ch_mask.
+        index = index.expand(list(x.shape[:-2]) + list(index.shape[-2:]))
+        return torch.gather(x, -1, index)
 
     def _split_heads(self, tensor: torch.Tensor, num_heads: int) -> torch.Tensor:
         # (batch, segment, channel, head * head_dim)
@@ -641,6 +708,7 @@ class _MVPAttention(nn.Module):
             min_value = _finfo_min(attn_weights.dtype)
         else:
             min_value = torch.finfo(attn_weights.dtype).min
+        # Also hides the keys of padded channels.
         attn_weights = attn_weights.masked_fill(~causal_mask, min_value)
         if attention_mask is not None:
             attn_weights = attn_weights + attention_mask

@@ -164,7 +164,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
         dataset.
     sfreq : int, optional
         Sampling frequency of the inputs, in Hz. Default to 250 Hz, as in
-        BCI-IV 2a dataset.
+        BCI-IV 2a dataset, unless ``n_times`` and ``input_window_seconds``
+        are both given, in which case it is inferred from them.
     conv_block_n_filters : int
         Number temporal filters in the first convolutional layer of the
         convolutional block, denoted F1 in figure 2 of the paper [1]_. Defaults
@@ -256,7 +257,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         n_chans=None,
         n_outputs=None,
         input_window_seconds=None,
-        sfreq=250.0,
+        sfreq=None,
         conv_block_n_filters=16,
         conv_block_kernel_length_1=64,
         conv_block_kernel_length_2=16,
@@ -278,6 +279,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
         chs_info=None,
         n_times=None,
     ):
+        if sfreq is None and (n_times is None or input_window_seconds is None):
+            sfreq = 250.0
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
