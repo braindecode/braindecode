@@ -504,6 +504,8 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` crashing with ``TypeError`` when a dataset has no description, e.g. after :func:`braindecode.datasets.create_from_mne_epochs` without ``descriptions`` or windowing a ``RawDataset(raw)`` (:gh:`1483` by `Adam Mounir`_).
+
 - Model loading validates relative custom weight paths and local symlink containment,
   without changing Hugging Face's process-global filename. Serialized module classes
   are resolved only from shipped PyTorch and Braindecode classes, including the Hub
