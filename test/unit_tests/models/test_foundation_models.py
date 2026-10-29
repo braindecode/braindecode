@@ -2861,6 +2861,21 @@ def test_duin_warns_off_the_pretraining_rate():
         DuIN(n_chans=3, n_outputs=2, n_times=60, sfreq=250, **_DUIN_SMALL)
 
 
+def test_duin_from_pretrained_at_another_n_times(tmp_path):
+    """Only the head is sized by n_times: the rest loads at any window."""
+    pytest.importorskip("huggingface_hub")
+    checkpoint = DuIN(n_chans=3, n_outputs=2, n_times=60, **_DUIN_SMALL)
+    checkpoint.save_pretrained(tmp_path)
+    with pytest.warns(UserWarning, match="head keeps its initialization"):
+        model = DuIN.from_pretrained(tmp_path, n_times=100).eval()
+    saved = checkpoint.state_dict()
+    for k, v in model.state_dict().items():
+        if not k.startswith(("head_hidden.", "final_layer.")):
+            torch.testing.assert_close(v, saved[k], msg=k)
+    with torch.no_grad():
+        assert model(torch.randn(2, 3, 100)).shape == (2, 2)
+
+
 _TEN_TWENTY = [
     "Fp1",
     "Fp2",
