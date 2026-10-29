@@ -1261,7 +1261,7 @@ plt.show()
 #        learning for EEG decoding.* Journal of Neural Engineering, 21(3),
 #        036038. DOI: 10.1088/1741-2552/ad4f18
 #
-# * `SAE Lens documentation <https://jbloomaus.github.io/SAELens/>`_ describes
+# * `SAE Lens documentation <https://decoderesearch.github.io/SAELens/>`_ describes
 #   the external dictionary and tensor-batch trainer APIs used here (tested
 #   with 6.51.3).
 # * Makhzani and Frey, `k-Sparse Autoencoders

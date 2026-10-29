@@ -90,6 +90,11 @@ Bug fixes
   ``forward`` that takes them. A model without them now raises a clear
   ``ValueError`` instead of a ``TypeError`` deep in skorch
   (:gh:`1545` by `Bruno Aristimunha`_).
+- Fix the PyTorch forum and TensorFlow references of
+  :class:`braindecode.modules.MaxNormLinear`: each URL was split across two
+  docstring lines, so the rendered links pointed to a truncated forum URL (404)
+  and to the Keras constraints index instead of ``MaxNorm``. The SAE examples
+  link the SAELens docs at their new home (by `Mark Santos`_).
 
 Code health
 ============
@@ -2943,3 +2948,4 @@ Authors
 .. _lindicaphxag-tech: https://github.com/lindicaphxag-tech
 .. _Seáic Mac Murchadha: https://github.com/seaic-mac-murchadha
 .. _Bhargav Kowshik: https://github.com/bkowshik
+.. _Mark Santos: https://www.markstudios.com
