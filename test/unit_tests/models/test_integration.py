@@ -276,9 +276,11 @@ def test_activation_default_parameters_are_nn_module_classes(model_class):
 
     sig = inspect.signature(init_method)
 
-    # Filtering parameters with 'activation' in their names
+    # Execution-policy switches are not activation layer constructors.
     activation_list = [
-        value for key, value in sig.parameters.items() if "activation" in key.lower()
+        value
+        for key, value in sig.parameters.items()
+        if "activation" in key.lower() and key != "activation_checkpointing"
     ]
     for activation in activation_list:
 
