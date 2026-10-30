@@ -167,3 +167,27 @@ compilation when configured, but also follows normal skorch reinitialization sem
 restore trained parameters/optimizer state afterwards with ``load_params`` if continuing
 a trained model. Another estimator sharing the module does not own or clear its compiled
 callable; disable it through the owning estimator before independent eager reuse.
+
+.. _distributed-window-evaluation:
+
+**********************************************************
+ Distributed evaluation recipe (not an estimator backend)
+**********************************************************
+
+The :download:`CPU/Gloo real-window recipe
+<../../benchmarks/acceleration/distributed-windows.md>` uses ``python -m
+benchmarks.acceleration.bench_distributed_windows --output /work/results``. Run it in a
+compute environment with an appropriate CPU budget. It wraps real preloaded windows with
+global row identities, uses an unpadded rank-strided sampler, gathers
+predictions/targets/crop metadata jointly, checks complete unique identities, restores
+chronology, and only then reconstructs trials and computes global metrics. Never average
+rank-local trial scores or supply its shuffled sampler to the chronological iterator.
+
+This is an opt-in benchmark recipe, not distributed prediction in the
+classifier/regressor. Qualified scope is trusted local CPU/Gloo processes, preloaded
+fixed-width windows, scalar classification targets and batch-independent eval models.
+Full predictions and dataset construction are replicated across ranks: chunk
+reconstruction does not bound full-gather memory. No lazy-disk, multi-node, accelerator,
+stochastic-transform or training/DDP support is implied. Evaluation-only throughput and
+including-launch/import/warmup/teardown wall time are distinct; scaling the former does
+not imply a faster one-shot run.

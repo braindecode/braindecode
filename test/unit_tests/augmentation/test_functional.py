@@ -358,3 +358,93 @@ def test_label_smoothing_rejects_invalid_targets():
         label_smoothing(X, torch.tensor([0.0, 1.5]), 0.1, num_classes=3)
     with pytest.raises(ValueError, match="dtype"):
         label_smoothing(X, torch.tensor([[0, 1], [1, 0]]), 0.1)
+
+
+def _scalar_mixup_reference(X, y, lam, idx_perm):
+    """Independent pre-vectorization loop, including promotion and allocation."""
+    batch_size, n_channels, n_times = X.shape
+    mixed = X.new_zeros(
+        (batch_size, n_channels, n_times),
+        dtype=X.dtype if X.is_floating_point() else torch.get_default_dtype(),
+    )
+    y_a = y.clone()
+    y_b = y[idx_perm].clone()
+    for idx in range(batch_size):
+        mixed[idx] = lam[idx] * X[idx] + (1 - lam[idx]) * X[idx_perm[idx]]
+    return mixed, (y_a, y_b, lam)
+
+
+@pytest.mark.parametrize("batch_size", [0, 1, 2, 17])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32,
+                                   torch.float64, torch.int16, torch.int64, torch.bool])
+@pytest.mark.parametrize("lam_dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("default_dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("storage", ["contiguous", "transposed", "sliced"])
+@pytest.mark.parametrize("target_shape", [(), (1,), (2,)])
+def test_mixup_vectorization_matches_scalar_reference(
+    batch_size, dtype, lam_dtype, default_dtype, storage, target_shape
+):
+    # A cast before complement, normal tensor promotion, or changed output
+    # allocation would fail this exact-value comparison to the scalar oracle.
+    generator = torch.Generator().manual_seed(143)
+    base = torch.randn(batch_size, 3, 14, generator=generator).mul(13).to(dtype)
+    X = base[:, :, :7].contiguous()
+    if storage == "transposed":
+        X = X.transpose(1, 2)
+    elif storage == "sliced":
+        X = base[:, :, ::2]
+    lam = torch.linspace(0, 1, batch_size, dtype=lam_dtype)
+    if batch_size > 2:
+        lam[2] = 0.12345678912345678
+    idx_perm = torch.zeros(batch_size, dtype=torch.long)  # duplicates intentionally
+    y = torch.arange(batch_size * (2 if target_shape == (2,) else 1),
+                     dtype=torch.float64).add(0.25).reshape(batch_size, *target_shape)
+    before = [v.clone() for v in (X, y, lam, idx_perm)]
+    original_dtype = torch.get_default_dtype()
+    try:
+        torch.set_default_dtype(default_dtype)
+        expected, expected_targets = _scalar_mixup_reference(X, y, lam, idx_perm)
+        actual, targets = mixup(X, y, lam, idx_perm)
+    finally:
+        torch.set_default_dtype(original_dtype)
+    assert torch.equal(actual, expected)
+    assert actual.dtype == expected.dtype
+    assert actual.stride() == expected.stride()
+    assert targets[2] is lam
+    for actual_target, expected_target in zip(targets, expected_targets):
+        assert torch.equal(actual_target, expected_target)
+        assert actual_target.dtype == expected_target.dtype
+    if batch_size:
+        assert targets[0].data_ptr() != y.data_ptr()
+        assert targets[1].data_ptr() != y.data_ptr()
+    for original, saved in zip((X, y, lam, idx_perm), before):
+        assert torch.equal(original.flatten().contiguous().view(torch.uint8),
+                           saved.flatten().contiguous().view(torch.uint8))
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64])
+@pytest.mark.parametrize("lam_dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("default_dtype", [torch.float32, torch.float64])
+def test_mixup_gradient_and_rng_contract(dtype, lam_dtype, default_dtype):
+    generator = torch.Generator().manual_seed(51)
+    X = torch.randn(17, 3, 7, generator=generator, dtype=dtype).requires_grad_()
+    lam = torch.linspace(0.01, 0.99, 17, dtype=lam_dtype).requires_grad_()
+    y = torch.arange(17)
+    idx_perm = torch.tensor([0, 0, 3, 2, 2, 5, 4, 3, 1, 6, 7, 8, 9, 10, 10, 11, 12])
+    reference_X = X.detach().clone().requires_grad_()
+    reference_lam = lam.detach().clone().requires_grad_()
+    state = torch.random.get_rng_state().clone()
+    original_dtype = torch.get_default_dtype()
+    try:
+        torch.set_default_dtype(default_dtype)
+        actual, _ = mixup(X, y, lam, idx_perm)
+        expected, _ = _scalar_mixup_reference(reference_X, y, reference_lam, idx_perm)
+        weight = torch.linspace(-1, 1, actual.numel(), dtype=dtype).reshape_as(actual)
+        (actual * weight).sum().backward()
+        (expected * weight).sum().backward()
+    finally:
+        torch.set_default_dtype(original_dtype)
+    assert torch.equal(actual, expected)
+    torch.testing.assert_close(X.grad, reference_X.grad)
+    torch.testing.assert_close(lam.grad, reference_lam.grad)
+    assert torch.equal(state, torch.random.get_rng_state())

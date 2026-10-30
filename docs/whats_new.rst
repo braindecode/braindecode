@@ -28,6 +28,12 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add an opt-in :ref:`CPU/Gloo distributed-window evaluation recipe
+  <distributed-window-evaluation>` using real windows, complete identity checks,
+  chronological reconstruction and global metrics. This is a benchmark recipe,
+  not an estimator distributed backend; full gathers remain materialized and
+  launch-inclusive wall time is distinct from evaluation-only throughput
+  (by `Bruno Aristimunha`_).
 - :class:`braindecode.datasets.BaseConcatDataset` takes the opt-in,
   keyword-only ``coalesce_reads=False``: a DataLoader batch of consecutive,
   heavily overlapping windows of one lazy FIF recording is read as one union

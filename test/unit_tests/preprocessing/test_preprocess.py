@@ -484,6 +484,214 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
     )
 
 
+def _synthetic_filterbank_raw(sfreq=256.0, n_times=2560, seed=0):
+    """Synthetic continuous MNE Raw owned by this test: known sinusoid plus
+    impulse signals, mixed channel types, explicit sfreq and annotations.
+    Not a downloaded/real-recording fixture, so this characterization does
+    not need network access or a long MOABB download."""
+    rng = np.random.default_rng(seed)
+    ch_names = ["C3", "Cz", "EOGL"]
+    ch_types = ["eeg", "eeg", "eog"]
+    times = np.arange(n_times, dtype=np.float64) / sfreq
+    data = np.zeros((len(ch_names), n_times), dtype=np.float64)
+    data[0] = np.sin(2 * np.pi * 6.0 * times) + 0.5 * np.sin(2 * np.pi * 22.0 * times)
+    data[1] = np.sin(2 * np.pi * 10.0 * times)
+    impulse_idx = np.linspace(100, n_times - 100, 5).astype(int)
+    data[2, impulse_idx] = 1.0
+    data += 1e-6 * rng.standard_normal(data.shape)
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=ch_types)
+    raw = mne.io.RawArray(data, info, verbose="ERROR")
+    raw.set_annotations(
+        mne.Annotations(
+            onset=[0.2, 2.0], duration=[0.1, 0.05],
+            description=["bad_segment", "marker"],
+        )
+    )
+    return raw
+
+
+def test_filterbank_waveform_metadata_reference():
+    raw = _synthetic_filterbank_raw()
+    original_ch_names = list(raw.ch_names)
+    original_ch_types = raw.get_channel_types()
+    frequency_bands = [(4.0, 8.0), (8.0, 13.0)]
+
+    # Independent reference: the exact same per-band MNE calls that
+    # filterbank issues, applied directly here (not a copy of its code path).
+    expected_data = {}
+    expected_sfreq = {}
+    for band in frequency_bands:
+        reference = raw.copy()
+        reference.filter(l_freq=band[0], h_freq=band[1], verbose="ERROR")
+        expected_data[band] = reference.get_data()
+        expected_sfreq[band] = reference.info["sfreq"]
+
+    actual = raw.copy()
+    filterbank(actual, frequency_bands, drop_original_signals=True, verbose="ERROR")
+
+    expected_ch_order = [
+        (ch + f"_{band[0]}-{band[1]}")[-15:]
+        for ch in original_ch_names
+        for band in frequency_bands
+    ]
+    np.testing.assert_array_equal(actual.ch_names, expected_ch_order)
+
+    actual_data = actual.get_data()
+    actual_types = actual.get_channel_types()
+    for ch_idx, ch in enumerate(original_ch_names):
+        for band_idx, band in enumerate(frequency_bands):
+            new_idx = ch_idx * len(frequency_bands) + band_idx
+            np.testing.assert_array_equal(
+                actual_data[new_idx], expected_data[band][ch_idx]
+            )
+            assert actual_types[new_idx] == original_ch_types[ch_idx]
+    # sfreq is raw-level, not per-band; checked once against every
+    # independently-computed per-band reference sfreq, not just band 0.
+    for band in frequency_bands:
+        assert actual.info["sfreq"] == expected_sfreq[band]
+
+    # filterbank does not touch raw.annotations: preserved exactly.
+    np.testing.assert_allclose(actual.annotations.onset, raw.annotations.onset)
+    np.testing.assert_allclose(actual.annotations.duration, raw.annotations.duration)
+    np.testing.assert_array_equal(
+        actual.annotations.description, raw.annotations.description
+    )
+
+    # Preprocessing recipe/provenance recorded exactly, same shape as the
+    # existing filterbank provenance tests above.
+    ds = BaseConcatDataset([RawDataset(raw.copy())])
+    preprocess(
+        ds,
+        [
+            Preprocessor(
+                fn=filterbank,
+                frequency_bands=frequency_bands,
+                drop_original_signals=True,
+                apply_on_array=False,
+            )
+        ],
+    )
+    assert ds.datasets[0].raw_preproc_kwargs == [
+        {
+            "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
+            "fn": "braindecode.preprocessing.preprocess.filterbank",
+            "kwargs": {
+                "frequency_bands": frequency_bands,
+                "drop_original_signals": True,
+            },
+            "apply_on_array": False,
+        }
+    ]
+    np.testing.assert_array_equal(ds.datasets[0].raw.get_data(), actual_data)
+
+
+def test_filterbank_benchmark_accounting():
+    from benchmarks.acceleration.bench_filterbank_memory import run_case
+
+    bands = [(4.0, 8.0)]
+    n_chans, n_times = 2, 2048
+    result = run_case(n_chans, n_times, bands, min_run_time=0.05)
+
+    assert result["schema_version"] == 1
+    assert result["status"] == "ok"
+    metrics = result["correctness"]["metrics"]
+    reported_bytes = metrics["final_output_bytes"]
+
+    # Independent expectation: filterbank defaults to dropping the originals,
+    # so the final Raw holds exactly n_chans * len(bands) channels, and MNE
+    # always stores Raw samples as float64 regardless of the input dtype.
+    expected_bytes = n_chans * len(bands) * n_times * np.dtype(np.float64).itemsize
+    assert reported_bytes == expected_bytes
+
+    rss = metrics["process_high_water_rss_bytes"]
+    assert rss is None or (isinstance(rss, int) and rss > 0)
+    assert isinstance(metrics["filter_time_s"], float) and metrics["filter_time_s"] >= 0
+    assert (
+        isinstance(metrics["assembly_time_s"], float)
+        and metrics["assembly_time_s"] >= 0
+    )
+
+
+def test_filterbank_instrumented_replica_preserves_info_fields():
+    """The benchmark's `_instrumented_filterbank` is a separate, non-headline
+    timing replica of `filterbank()`; it must stay a faithful mirror of the
+    production call sequence, not merely reproduce equal waveform data.
+    `filterbank` copies back `fields_to_preserve`
+    (description/line_freq/device_info/helium_info/experimenter/proj_name)
+    from the per-band filtered info into the freshly-created info; this
+    exercises every one of those fields with real, non-default values."""
+    from benchmarks.acceleration.bench_filterbank_memory import (
+        _instrumented_filterbank,
+    )
+
+    raw = _synthetic_filterbank_raw()
+    raw.info["description"] = "qa metadata parity fixture"
+    raw.info["line_freq"] = 50.0
+    raw.info["experimenter"] = "qa-harness"
+    raw.info["proj_name"] = "qa-filterbank-parity"
+    raw.info["device_info"] = {
+        "type": "test-device",
+        "model": "synthetic-rig",
+        "serial": "SN-QA-0001",
+        "site": "qa-harness",
+    }
+    raw.info["helium_info"] = {
+        "he_level_raw": 72.5,
+        "gantry_angle": 0,
+        "helium_level": 70.0,
+        "orig_file_guid": "qa-harness-guid",
+        "meas_date": None,
+    }
+    frequency_bands = [(4.0, 8.0), (8.0, 13.0)]
+
+    reference = raw.copy()
+    filterbank(reference, frequency_bands, drop_original_signals=True, verbose="ERROR")
+
+    replica_source = raw.copy()
+    replica, _, _ = _instrumented_filterbank(
+        replica_source, frequency_bands, drop_original_signals=True
+    )
+
+    np.testing.assert_array_equal(replica.get_data(), reference.get_data())
+    for field in (
+        "description",
+        "line_freq",
+        "device_info",
+        "helium_info",
+        "experimenter",
+        "proj_name",
+    ):
+        assert replica.info.get(field) == reference.info.get(field), (
+            f"replica dropped or diverged on preserved field {field!r}: "
+            f"replica={replica.info.get(field)!r} "
+            f"reference={reference.info.get(field)!r}"
+        )
+
+
+def test_filterbank_instrumented_replica_warns_on_long_channel_names():
+    """`filterbank` warns once, before any per-band work, when a channel
+    name is 8 characters or longer (the frequency-band suffix truncation
+    risk). The replica must emit the same warning for the same input, not
+    silently skip the guard filterbank always runs first."""
+    from benchmarks.acceleration.bench_filterbank_memory import (
+        _instrumented_filterbank,
+    )
+
+    raw = _synthetic_filterbank_raw()
+    raw.rename_channels({raw.ch_names[0]: "LongChannelName1"})
+    frequency_bands = [(4.0, 8.0)]
+
+    with pytest.warns(UserWarning, match="shorter channel names"):
+        filterbank(
+            raw.copy(), frequency_bands, drop_original_signals=True, verbose="ERROR"
+        )
+
+    with pytest.warns(UserWarning, match="shorter channel names"):
+        _instrumented_filterbank(
+            raw.copy(), frequency_bands, drop_original_signals=True
+        )
+
+
 def test_replace_inplace(base_concat_ds):
     base_concat_ds2 = copy.deepcopy(base_concat_ds)
     for i in range(len(base_concat_ds2.datasets)):

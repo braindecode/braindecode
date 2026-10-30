@@ -1215,3 +1215,29 @@ def test_label_smoothing_in_augmented_loader(rng_seed):
     assert torch.equal(X_aug, X)
     _, y_expected = transform(X, y)
     assert torch.equal(y_aug, y_expected)
+
+
+@pytest.mark.parametrize("beta_per_sample", [False, True])
+@pytest.mark.parametrize("alpha", [0.0, 0.5])
+@pytest.mark.parametrize("default_dtype", [torch.float32, torch.float64])
+def test_mixup_multicall_scalar_rng_contract(beta_per_sample, alpha, default_dtype):
+    from test.unit_tests.augmentation.test_functional import _scalar_mixup_reference
+
+    candidate = Mixup(alpha, beta_per_sample=beta_per_sample, random_state=73)
+    reference = Mixup(alpha, beta_per_sample=beta_per_sample, random_state=73)
+    reference.operation = _scalar_mixup_reference
+    X = torch.linspace(-3, 3, 17 * 3 * 7, dtype=torch.float32).reshape(17, 3, 7)
+    y = torch.arange(34, dtype=torch.float64).reshape(17, 2).add(0.25)
+    original_dtype = torch.get_default_dtype()
+    try:
+        torch.set_default_dtype(default_dtype)
+        for _ in range(4):
+            actual, actual_targets = candidate(X, y)
+            expected, expected_targets = reference(X, y)
+            assert torch.equal(actual, expected)
+            for a, b in zip(actual_targets, expected_targets):
+                assert torch.equal(a, b)
+                assert a.dtype == b.dtype
+        np.testing.assert_array_equal(candidate.rng.rand(20), reference.rng.rand(20))
+    finally:
+        torch.set_default_dtype(original_dtype)

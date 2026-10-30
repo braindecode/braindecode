@@ -33,6 +33,7 @@ from braindecode.preprocessing import (
 )
 from braindecode.preprocessing.preprocess import Preprocessor, preprocess
 from braindecode.preprocessing.windowers import (
+    _compute_window_inds,
     _LazyDataFrame,
     create_windows_from_target_channels,
 )
@@ -2323,4 +2324,231 @@ def test_windows_from_events_dict_stop_offset_uses_own_event_type():
             window_stride_samples={"a": 100, "b": 100},
             drop_last_window=False,
             mapping={"a": 0, "b": 1},
+        )
+
+
+def _scalar_window_inds_reference(
+    starts,
+    stops,
+    start_offset,
+    stop_offset,
+    size,
+    stride,
+    drop_last_window,
+    accepted_bads_ratio,
+):
+    """Frozen scalar oracle from 9d48acf; retain baseline quirks and mutations."""
+    starts = np.array([starts]) if isinstance(starts, int) else starts
+    stops = np.array([stops]) if isinstance(stops, int) else stops
+    starts += start_offset
+    stops += stop_offset
+    if any(size > stops - starts):
+        bads_mask = size > stops - starts
+        min_duration = (stops - starts).min()
+        if sum(bads_mask) <= accepted_bads_ratio * len(starts):
+            starts = starts[np.logical_not(bads_mask)]
+            stops = stops[np.logical_not(bads_mask)]
+            warnings.warn(
+                f"Trials {np.where(bads_mask)[0]} are being dropped as the window size ({size}) exceeds their duration {min_duration}."
+            )
+        else:
+            current_ratio = sum(bads_mask) / len(starts)
+            raise ValueError(
+                f"Window size {size} exceeds trial duration ({min_duration}) for too many trials ({current_ratio * 100}%). Set accepted_bads_ratio to at least {current_ratio}and restart training to be able to continue."
+            )
+    i_window_in_trials, i_trials, window_starts = ([], [], [])
+    for start_i, (start, stop) in enumerate(zip(starts, stops)):
+        possible_starts = np.arange(start, stop, stride)
+        for i_window, s in enumerate(possible_starts):
+            if s + size <= stop:
+                window_starts.append(s)
+                i_window_in_trials.append(i_window)
+                i_trials.append(start_i)
+        if not drop_last_window:  # noqa: SIM102 -- preserve scalar baseline
+            if window_starts[-1] + size != stop:
+                window_starts.append(stop - size)
+                i_window_in_trials.append(i_window_in_trials[-1] + 1)
+                i_trials.append(start_i)
+    window_stops = np.array(window_starts) + size
+    if not len(i_window_in_trials) == len(window_starts) == len(window_stops):
+        raise ValueError(
+            f"{len(i_window_in_trials)} == {len(window_starts)} == {len(window_stops)}"
+        )
+    return (i_trials, i_window_in_trials, window_starts, window_stops)
+
+
+def _assert_window_inds_match_reference(*args):
+    """Catch changed ordering, tail placement, input mutation and bad handling."""
+    outcomes = []
+    for function in (_scalar_window_inds_reference, _compute_window_inds):
+        inputs = copy.deepcopy(args)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            try:
+                result = function(*inputs)
+                error = None
+            except Exception as exc:  # noqa: BLE001 -- compare baseline errors
+                result = None
+                error = (type(exc), str(exc))
+        outcomes.append(
+            (result, error, [(w.category, str(w.message)) for w in caught], inputs)
+        )
+    expected, actual = outcomes
+    assert actual[1:3] == expected[1:3]
+    for got, want in zip(actual[3], expected[3]):
+        np.testing.assert_array_equal(got, want)
+    if expected[1] is None:
+        assert type(actual[0]) is tuple
+        for got, want, kind in zip(
+            actual[0], expected[0], (list, list, list, np.ndarray)
+        ):
+            assert type(got) is type(want) is kind
+            np.testing.assert_array_equal(got, want)
+            if kind is np.ndarray:
+                assert got.dtype == want.dtype
+            else:
+                assert [type(x) for x in got] == [type(x) for x in want]
+
+
+@pytest.mark.parametrize("length", [1, 7, 16, 17, 103])
+@pytest.mark.parametrize("stride", [1, 3, 16])
+@pytest.mark.parametrize("size", [1, 8, 16])
+@pytest.mark.parametrize("drop_last_window", [False, True])
+@pytest.mark.parametrize("offsets", [(0, 0), (-2, 3), (2, -1)])
+@pytest.mark.parametrize("accepted_bads_ratio", [0, 0.5, 1])
+def test_event_indices_match_scalar_reference(
+    length, stride, size, drop_last_window, offsets, accepted_bads_ratio
+):
+    starts = np.array([10, 200])
+    stops = starts + [length, 103]
+    _assert_window_inds_match_reference(
+        starts, stops, *offsets, size, stride, drop_last_window, accepted_bads_ratio
+    )
+
+
+@pytest.mark.parametrize("drop_last_window", [False, True])
+@pytest.mark.parametrize(
+    "starts,stops,size,stride,ratio",
+    [
+        (np.array([], dtype=int), np.array([], dtype=int), 8, 3, 0),
+        (np.array([0, 20]), np.array([1, 21]), 8, 3, 1),
+        (np.array([0, 20, 40]), np.array([17, 21, 57]), 8, 3, 1 / 3),
+        (np.array([0]), np.array([17]), 8, 0, 0),
+        (np.array([0]), np.array([17]), 8, -1, 0),
+        (np.array([0]), np.array([17]), 0, 3, 0),
+        (np.array([0]), np.array([17]), -1, 3, 0),
+        (np.array([0]), np.array([0]), 0, 3, 0),
+        (np.array([0]), np.array([-1]), 8, 3, 0),
+        (np.array([0]), np.array([17, 37]), 8, 3, 0),
+        (np.array([0.25, 20.5]), np.array([17.5, 40.5]), 8, 0.3, 0),
+        (np.array([0], dtype=np.int32), np.array([17], dtype=np.int32), 8, 3, 0),
+        (0, 17, 8, 3, 0),
+        ([0], [17], 8, 3, 0),
+    ],
+)
+def test_event_indices_preserve_edge_behavior(
+    starts, stops, size, stride, ratio, drop_last_window
+):
+    _assert_window_inds_match_reference(
+        starts, stops, 0, 0, size, stride, drop_last_window, ratio
+    )
+
+
+@pytest.mark.parametrize("fail_write", [False, True])
+def test_window_indices_benchmark_writes_native_records(
+    tmp_path, monkeypatch, fail_write
+):
+    """The benchmark must serialize dependency-version subclasses as native JSON."""
+    import json
+    from types import SimpleNamespace
+
+    import torch
+
+    from benchmarks.acceleration import bench_window_indices as benchmark
+
+    # Exercise the real fixture, comparisons and writer, not timing in CI.
+    monkeypatch.setattr(
+        benchmark,
+        "measure_step",
+        lambda *args, **kwargs: {
+            "timing": {
+                "first_call_s": 0.1,
+                "median_s": 0.1,
+                "iqr_s": 0.0,
+                "raw_block_s": [0.1],
+                "measurement_blocks": 1,
+                "calls_per_block": 1,
+                "warmup": 0,
+                "min_run_time_s": 0.1,
+            },
+            "memory": {"peak_cuda_allocated_bytes": None},
+        },
+    )
+
+    def no_git(*args, **kwargs):
+        raise AssertionError("Git must be unavailable in the unit test")
+
+    monkeypatch.setattr(benchmark.subprocess, "check_output", no_git)
+    monkeypatch.setattr(
+        benchmark, "_reference", lambda: (_scalar_window_inds_reference, "0" * 64)
+    )
+    metadata = {("status", "--porcelain"): "", ("rev-parse", "HEAD"): "1" * 40}
+    monkeypatch.setattr(benchmark, "_git", lambda *args: metadata[args])
+    if fail_write:
+
+        def fail_writer(*args, **kwargs):
+            raise OSError("intentional writer failure")
+
+        monkeypatch.setattr(benchmark, "write_result", fail_writer)
+    threads, level = torch.get_num_threads(), mne.utils.logger.level
+    try:
+        torch.set_num_threads(2)
+        mne.set_log_level("WARNING")
+        with (
+            pytest.raises(OSError, match="intentional writer failure")
+            if fail_write
+            else nullcontext()
+        ):
+            benchmark._worker(
+                SimpleNamespace(
+                    implementation="candidate",
+                    case="few",
+                    pair=0,
+                    device_name="synthetic test CPU",
+                    min_run_time=0.1,
+                    output=tmp_path,
+                )
+            )
+        assert torch.get_num_threads() == 2
+        assert mne.utils.logger.level == logging.WARNING
+    finally:
+        torch.set_num_threads(threads)
+        mne.set_log_level(level)
+    if fail_write:
+        return
+    for stage in ("helper", "construction"):
+        record = json.loads(
+            (tmp_path / f"few-pair0-candidate-{stage}.json").read_text()
+        )
+        assert record["correctness"]["metrics"]["windows_checked"] == 4
+        assert record["correctness"]["status"] == "passed"
+        assert record["case_id"] == f"window_indices/few/{stage}"
+
+
+@pytest.mark.parametrize("over", ["warn", "raise"])
+@pytest.mark.parametrize("count", [3, 4097])
+@pytest.mark.parametrize("drop_last_window", [True, False])
+def test_event_indices_preserve_scalar_overflow(over, count, drop_last_window):
+    """Array integer arithmetic must not suppress baseline scalar diagnostics."""
+    maximum = np.iinfo(np.int64).max
+    with np.errstate(over=over):
+        _assert_window_inds_match_reference(
+            np.array([maximum - count]),
+            np.array([maximum]),
+            0,
+            0,
+            2,
+            1,
+            drop_last_window,
+            0,
         )
