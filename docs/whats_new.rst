@@ -28,6 +28,12 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- CI: tests marked ``slow`` (compiler numerics, compiled resume and warm
+  start, the CPU/Gloo distributed recipe) are opt-in locally with
+  ``--run-slow`` or ``-m slow``, and the coverage job runs them in their own
+  step, reusing its TorchInductor cache. The ``acceleration_caller_state``
+  test fixture restores the RNG, thread and grad-mode state that a test
+  recipe changes, also when it raises (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.BrainBERT`, :class:`~braindecode.models.EpiNT`, :class:`~braindecode.models.Brant`, :class:`~braindecode.models.PopulationTransformer`, :class:`~braindecode.models.BaRISTA`, :class:`~braindecode.models.DIVER1` and :class:`~braindecode.models.MVPFormer` accept a ``ch_mask`` of real channels, as returned by :func:`braindecode.datasets.pad_channels_collate`, so one batch can mix recordings with different channel counts; PopT's ``ch_mask`` replaces ``key_padding_mask``. Add the shared helpers :func:`braindecode.functional.check_ch_mask`, :func:`~braindecode.functional.pack_channels`, :func:`~braindecode.functional.unpack_channels`, :func:`~braindecode.functional.masked_mean` and :func:`~braindecode.functional.masked_group_norm` (:gh:`1487` by `Julien Gadonneix`_).
 - CI: ``test_forward_in_dtype`` no longer runs the models in float16 on the CPU; torch's CPU float16 kernels killed the test worker without a traceback in about one run in seven (the hangs of the last days), and bfloat16 covers the same dtype checks (:gh:`1474` by `Bruno Aristimunha`_).
 - CI: a test that stops answering fails after 10 minutes with a traceback (``pytest-timeout``), instead of the job waiting until its own timeout; twice an xdist worker went silent during ``test_forward_in_dtype`` and the run idled for 40 minutes to 5 hours (:gh:`1473` by `Bruno Aristimunha`_).
