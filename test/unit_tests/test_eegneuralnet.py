@@ -1159,3 +1159,54 @@ def test_cropped_raw_means_and_cache_reset(train_indexed, valid_indexed):
             assert not callback.crops_to_trials_computed
             if not callback.on_train:
                 assert callback.window_inds_ == []
+
+
+@pytest.mark.parametrize("estimator", [EEGClassifier, EEGRegressor])
+def test_predict_trials_explicit_loader_kwargs(estimator):
+    class Windows(torch.utils.data.Dataset):
+        def __len__(self):
+            return 5
+
+        def __getitem__(self, index):
+            return (
+                torch.ones(1, 4),
+                index // 3,
+                [index % 3, 2 * (index % 3), 4 + 2 * (index % 3)],
+            )
+
+        def get_metadata(self):
+            return pd.DataFrame({"i_window_in_trial": [0, 1, 2, 0, 1]})
+
+    class RecordingModule(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.scale = torch.nn.Parameter(torch.ones(()))
+            self.sizes = []
+
+        def forward(self, X):
+            self.sizes.append(len(X))
+            return X * self.scale
+
+    net = estimator(
+        RecordingModule(),
+        cropped=True,
+        batch_size=3,
+        train_split=None,
+        iterator_valid__batch_size=4,
+        iterator_valid__drop_last=True,
+    )
+    net.initialize()
+    X = Windows()
+    net.predict_trials(X, loader_kwargs={"batch_size": 2})
+    assert net.module_.sizes == [2, 2, 1]
+    net.module_.sizes.clear()
+    list(net.iter_trial_predictions(X, loader_kwargs={"batch_size": 2}))
+    assert net.module_.sizes == [2, 2, 1]
+    net.module_.sizes.clear()
+    net.predict_trials(X)
+    assert net.module_.sizes == [3, 2]
+    net.cropped = False
+    with pytest.raises(ValueError, match="cropped"):
+        net.iter_trial_predictions(X)
+    with pytest.raises(ValueError, match="cropped"):
+        net.predict_trials(X, loader_kwargs={"batch_size": 2})
