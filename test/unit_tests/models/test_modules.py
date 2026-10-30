@@ -805,19 +805,47 @@ def test_scripted_lfilter_equals_torchaudio(kind, both_directions):
     from torchaudio.functional import filtfilt as filtfilt_torchaudio
     from torchaudio.functional import lfilter as lfilter_torchaudio
 
-    from braindecode.functional._lfilter import filtfilt, lfilter
+    from braindecode.functional._lfilter import (
+        _scripted_filtfilt,
+        _scripted_lfilter,
+        filtfilt,
+        lfilter,
+    )
 
     torch.manual_seed(0)
     x = torch.randn(2, 3, 400, dtype=torch.float64)
     b, a = _band_pass_coefficients(kind)
     if both_directions:
-        function, reference = filtfilt, filtfilt_torchaudio
+        function, scripted_ops = filtfilt, _scripted_filtfilt
+        reference = filtfilt_torchaudio
     else:
-        function, reference = lfilter, lfilter_torchaudio
+        function, scripted_ops = lfilter, _scripted_lfilter
+        reference = lfilter_torchaudio
     expected = reference(x, a_coeffs=a, b_coeffs=b, clamp=False)
 
     assert torch.equal(function(x, a, b), expected)
+    # The ops that the scripted graph runs, called directly (also in eager mode).
+    assert torch.equal(scripted_ops(x, a, b), expected)
     assert torch.equal(torch.jit.script(function)(x, a, b), expected)
+
+
+def test_generic_lfilter_core_loop_matches_torchaudio():
+    """The Python recursion used without torchaudio's private loop agrees with it."""
+    from braindecode.functional._lfilter import (
+        _generic_lfilter_core_loop,
+        _lfilter_core_loop,
+    )
+
+    torch.manual_seed(0)
+    waveform = torch.randn(2, 1, 300, dtype=torch.float64)
+    b, a = _band_pass_coefficients("iir")
+    a_flipped = (a / a[0]).flip(0).unsqueeze(0).contiguous()
+    outputs = []
+    for loop in (_lfilter_core_loop, _generic_lfilter_core_loop):
+        padded = torch.zeros(2, 1, 300 + a.shape[0] - 1, dtype=torch.float64)
+        loop(waveform.clone(), a_flipped, padded)
+        outputs.append(padded)
+    torch.testing.assert_close(outputs[1], outputs[0], rtol=1e-10, atol=1e-12)
 
 
 @pytest.mark.parametrize("phase", ["zero", "forward"])

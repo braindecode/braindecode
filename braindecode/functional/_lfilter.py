@@ -92,6 +92,12 @@ def _scripted_lfilter(waveform: Tensor, a_coeffs: Tensor, b_coeffs: Tensor) -> T
     return output.reshape(shape[:-1] + output.shape[-1:])
 
 
+def _scripted_filtfilt(waveform: Tensor, a_coeffs: Tensor, b_coeffs: Tensor) -> Tensor:
+    """Run torchaudio's scripted ``filtfilt(clamp=False)`` for 1-D coefficients."""
+    forward_filtered = _scripted_lfilter(waveform, a_coeffs, b_coeffs)
+    return _scripted_lfilter(forward_filtered.flip(-1), a_coeffs, b_coeffs).flip(-1)
+
+
 def lfilter(waveform: Tensor, a_coeffs: Tensor, b_coeffs: Tensor) -> Tensor:
     """:func:`torchaudio.functional.lfilter` with ``clamp=False``, scriptable.
 
@@ -108,6 +114,5 @@ def filtfilt(waveform: Tensor, a_coeffs: Tensor, b_coeffs: Tensor) -> Tensor:
     ``a_coeffs`` and ``b_coeffs`` are 1-D and of the same length.
     """
     if torch.jit.is_scripting():
-        forward_filtered = _scripted_lfilter(waveform, a_coeffs, b_coeffs)
-        return _scripted_lfilter(forward_filtered.flip(-1), a_coeffs, b_coeffs).flip(-1)
+        return _scripted_filtfilt(waveform, a_coeffs, b_coeffs)
     return _eager_filtfilt(waveform, a_coeffs, b_coeffs)
