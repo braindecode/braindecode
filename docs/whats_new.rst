@@ -497,6 +497,13 @@ Enhancements
 API and behavior changes
 ========================
 
+- Zarr's private converter retains the historical conversion schedule by
+  default. The experimental ``bounded_conversion=True`` is opt-in only on the
+  private converter/benchmark and is rejected by
+  :meth:`braindecode.datasets.BaseConcatDataset.pull_from_hub` (including an
+  explicitly passed ``False``). Its 64 MiB bound concerns converted arrays,
+  not decoder buffers, mapped destination pages or total RSS; it is not a
+  general speed or memory recommendation (by `Bruno Aristimunha`_).
 - With opt-in ``compile=True``, :class:`braindecode.EEGClassifier` and
   :class:`braindecode.EEGRegressor` use native in-place compilation, preserving
   supplied Parameter identities and canonical checkpoint keys. Legacy skorch
@@ -557,6 +564,11 @@ Requirements
 Bug fixes
 ==========
 
+- Zarr cache creation uses unique, exclusively reserved temporary names even
+  for concurrent calls in the same process. Newly created files follow normal
+  umask/default-ACL permissions rather than fixed owner-only temporary-file
+  permissions; existing published caches are not chmodded or overwritten
+  (by `Bruno Aristimunha`_).
 - :class:`braindecode.training.PostEpochTrainScoring` restores the saved CPU
   Torch RNG state even when its reevaluation fails. This does not restore
   Python/NumPy/CUDA RNGs or undo scorer-side random draws; successful scoring
