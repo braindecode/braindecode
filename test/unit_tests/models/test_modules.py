@@ -771,6 +771,106 @@ def test_filter_bank_layer_matches_scipy_causal_fir(phase):
     )
 
 
+def _band_pass_coefficients(kind):
+    if kind == "iir":
+        filt = create_filter(
+            data=None,
+            sfreq=128,
+            l_freq=8,
+            h_freq=30,
+            method="iir",
+            iir_params=dict(ftype="butter", order=4, output="ba"),
+            verbose=False,
+        )
+        b = torch.tensor(filt["b"], dtype=torch.float64)
+        a = torch.tensor(filt["a"], dtype=torch.float64)
+    else:
+        b = torch.tensor(
+            create_filter(data=None, sfreq=128, l_freq=8, h_freq=30, verbose=False),
+            dtype=torch.float64,
+        )
+        a = nn.functional.pad(torch.ones(1, dtype=torch.float64), (0, b.shape[0] - 1))
+    return b, a
+
+
+@pytest.mark.parametrize("both_directions", [False, True])
+@pytest.mark.parametrize("kind", ["iir", "fir"])
+def test_scripted_lfilter_equals_torchaudio(kind, both_directions):
+    """The scripted lfilter/filtfilt give torchaudio's eager output bit for bit.
+
+    Scripting torchaudio's own lfilter fails from PyTorch 2.15 on (its
+    autograd.Function classes no longer compile), so braindecode scripts a
+    copy of the ops torchaudio's scripted path runs.
+    """
+    from torchaudio.functional import filtfilt as filtfilt_torchaudio
+    from torchaudio.functional import lfilter as lfilter_torchaudio
+
+    from braindecode.functional._lfilter import (
+        _scripted_filtfilt,
+        _scripted_lfilter,
+        filtfilt,
+        lfilter,
+    )
+
+    torch.manual_seed(0)
+    x = torch.randn(2, 3, 400, dtype=torch.float64)
+    b, a = _band_pass_coefficients(kind)
+    if both_directions:
+        function, scripted_ops = filtfilt, _scripted_filtfilt
+        reference = filtfilt_torchaudio
+    else:
+        function, scripted_ops = lfilter, _scripted_lfilter
+        reference = lfilter_torchaudio
+    expected = reference(x, a_coeffs=a, b_coeffs=b, clamp=False)
+
+    assert torch.equal(function(x, a, b), expected)
+    # The ops that the scripted graph runs, called directly (also in eager mode).
+    assert torch.equal(scripted_ops(x, a, b), expected)
+    assert torch.equal(torch.jit.script(function)(x, a, b), expected)
+
+
+def test_generic_lfilter_core_loop_matches_torchaudio():
+    """The Python recursion used without torchaudio's private loop agrees with it."""
+    from braindecode.functional._lfilter import (
+        _generic_lfilter_core_loop,
+        _lfilter_core_loop,
+    )
+
+    torch.manual_seed(0)
+    waveform = torch.randn(2, 1, 300, dtype=torch.float64)
+    b, a = _band_pass_coefficients("iir")
+    a_flipped = (a / a[0]).flip(0).unsqueeze(0).contiguous()
+    outputs = []
+    for loop in (_lfilter_core_loop, _generic_lfilter_core_loop):
+        padded = torch.zeros(2, 1, 300 + a.shape[0] - 1, dtype=torch.float64)
+        loop(waveform.clone(), a_flipped, padded)
+        outputs.append(padded)
+    torch.testing.assert_close(outputs[1], outputs[0], rtol=1e-10, atol=1e-12)
+
+
+@pytest.mark.parametrize("phase", ["zero", "forward"])
+def test_filter_bank_layer_scripts(phase):
+    """FIR banks, zero-phase and causal, script and match eager.
+
+    Scripting compiles the causal ``lfilter`` path even for the zero-phase
+    bank, so both phases need the scriptable ``lfilter``.
+    """
+    torch.manual_seed(0)
+    layer = FilterBankLayer(
+        n_chans=3,
+        sfreq=128,
+        band_filters=[(4, 8), (8, 30)],
+        method="fir",
+        phase=phase,
+        verbose=False,
+    ).eval()
+    x = torch.randn(2, 3, 512)
+    with torch.no_grad():
+        expected = layer(x)
+        scripted = torch.jit.script(layer)
+        torch.testing.assert_close(scripted(x), expected)
+
+
 @pytest.mark.parametrize(
     "phase", ["linear", "zero", "zero-double", "minimum", "minimum-half"]
 )
