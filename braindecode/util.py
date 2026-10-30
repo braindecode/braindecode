@@ -12,7 +12,6 @@ import h5py
 import mne
 import numpy as np
 import torch
-from sklearn.utils import check_random_state
 from torch import Tensor
 
 
@@ -299,6 +298,8 @@ def create_mne_dummy_raw(
     save_fname : dict | None
         Dictionary containing the name the raw data was saved to.
     """
+    from sklearn.utils import check_random_state
+
     random_state = check_random_state(random_state)
     data = random_state.rand(n_channels, n_times)
     ch_names = [f"ch{i}" for i in range(n_channels)]

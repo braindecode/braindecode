@@ -20,12 +20,14 @@ import shutil
 import warnings
 from abc import abstractmethod
 from collections import Counter
-from collections.abc import Callable, Hashable, Sequence
+from collections.abc import Callable, Hashable, Iterator, Sequence
 from glob import glob
 from itertools import chain
+from math import prod
 from operator import attrgetter
 from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
+from uuid import uuid4
 
 import mne
 import mne.io
@@ -448,7 +450,54 @@ def _build_windowed_repr(
     return b
 
 
-def _zarr_to_memmap(zarr_path, group_name):
+def _iter_zarr_blocks(
+    shape: tuple[int, ...], chunks: tuple[int, ...], max_bytes: int = 67108864
+) -> Iterator[tuple[slice, ...]]:
+    """Yield chunk-contained selections with at most ``max_bytes`` of float64.
+
+    The bound covers the converted array, not the Zarr backend's compressed
+    chunk decoding buffers or resident pages of the destination memmap.
+    """
+    if max_bytes < np.dtype(np.float64).itemsize:
+        raise ValueError("max_bytes must hold at least one float64 element")
+    if len(shape) != len(chunks) or any(c <= 0 for c in chunks):
+        raise ValueError("chunks must have one positive extent per dimension")
+    if any(s < 0 for s in shape):
+        raise ValueError("shape extents must be nonnegative")
+    if any(s == 0 for s in shape):
+        return
+
+    # Preserve contiguous trailing dimensions where possible, then split the
+    # earlier dimensions. Python integers avoid overflow for large shapes.
+    block = [min(s, c) for s, c in zip(shape, chunks)]
+    capacity = max_bytes // np.dtype(np.float64).itemsize
+    for axis in range(len(block)):
+        others = prod(block[:axis] + block[axis + 1 :])
+        block[axis] = min(block[axis], max(1, capacity // others))
+        if prod(block) <= capacity:
+            break
+
+    def origins(lower, upper, steps):
+        # Unlike itertools.product, an odometer never pools entire axis ranges.
+        # Both chunk and subdivision scheduling retain only O(ndim) integers.
+        position = list(lower)
+        while True:
+            yield tuple(position)
+            for axis in range(len(position) - 1, -1, -1):
+                position[axis] += steps[axis]
+                if position[axis] < upper[axis]:
+                    break
+                position[axis] = lower[axis]
+            else:
+                return
+
+    for origin in origins((0,) * len(shape), shape, chunks):
+        stops = tuple(min(start + c, s) for start, c, s in zip(origin, chunks, shape))
+        for start in origins(origin, stops, block):
+            yield tuple(slice(a, min(a + n, b)) for a, b, n in zip(start, stops, block))
+
+
+def _zarr_to_memmap(zarr_path, group_name, *, bounded_conversion=False):
     """Materialise a zarr array as a float64 ``.npy`` memmap, race-free.
 
     Decompress the ``group_name`` array inside ``zarr_path`` into a
@@ -458,6 +507,16 @@ def _zarr_to_memmap(zarr_path, group_name):
     float64 internally.  Callers open the result with
     ``np.load(path, mmap_mode='c')`` so preprocessing writes land in
     anonymous copy-on-write pages and never mutate the on-disk file.
+
+    By default, conversion preserves the historical first-axis chunk slabs,
+    including their float64 allocation sizes. ``bounded_conversion=True`` opts
+    into the private chunk-contained experiment: converted arrays are at most
+    64 MiB, but backend decoding buffers and total process RSS are not bounded.
+    This policy can be slower and is not a default acceleration. Both policies
+    produce identical cache bytes; an existing cache is reused in either mode.
+
+    New cache files use ordinary creation permissions (0666 filtered by the
+    process umask and inherited default ACLs). Existing caches are never chmod'd.
 
     Concurrency contract
     --------------------
@@ -479,15 +538,15 @@ def _zarr_to_memmap(zarr_path, group_name):
     ``SIGBUS`` when workers page-faulted on the unlinked inode.
 
     Under ``N`` concurrent writers, every racer materialises the data
-    into its own per-pid temp file and then tries to publish it; at
+    into its own uniquely created temp file and then tries to publish it; at
     most one ``os.link`` wins, and the losers silently ``unlink``
     their temp file in a ``finally`` block.  The wasted I/O scales
     with the number of racers; for the workloads braindecode targets
     (a handful of concurrent workers per group) it is negligible.
 
     Crash recovery: if a writer dies mid-run the only debris is a
-    ``<group>.<pid>.tmp.npy`` file.  Such files are namespaced by pid
-    so they can never collide with a live writer, they are never
+    ``<group>.<random>.tmp.npy`` file. Exclusive temporary-file creation
+    isolates concurrent calls, including threads in one process. They are never
     read by the fast path, and they do not prevent subsequent
     callers from producing a correct result.  Caches written by
     earlier braindecode versions remain valid: the fast path only
@@ -504,18 +563,32 @@ def _zarr_to_memmap(zarr_path, group_name):
 
     cache_dir.mkdir(parents=True, exist_ok=True)
     arr = zarr.open(zarr_path, mode="r")[group_name]["data"]
-    tmp_path = cache_dir / f"{group_name}.{os.getpid()}.tmp.npy"
+    # Exclusive creation isolates same-PID writers without tempfile's fixed 0600
+    # mode. Normal creation also lets the filesystem inherit default ACLs; do not
+    # inspect/change the process-global umask or chmod published caches.
+    while True:
+        tmp_path = npy_path.parent / f"{npy_path.stem}.{uuid4().hex}.tmp.npy"
+        try:
+            with tmp_path.open("xb"):
+                pass
+        except FileExistsError:
+            continue
+        break
     try:
-        # Write chunk-by-chunk to avoid materialising the whole zarr
-        # array in RAM.
         mm = np.lib.format.open_memmap(
             tmp_path, mode="w+", dtype=np.float64, shape=arr.shape
         )
         try:
-            chunk0 = arr.chunks[0] if hasattr(arr, "chunks") else arr.shape[0]
-            for start in range(0, arr.shape[0], chunk0):
-                end = min(start + chunk0, arr.shape[0])
-                mm[start:end] = np.asarray(arr[start:end], dtype=np.float64)
+            if bounded_conversion:
+                # Bound converted arrays, not backend compressed-chunk buffers.
+                for selection in _iter_zarr_blocks(arr.shape, arr.chunks):
+                    mm[selection] = np.asarray(arr[selection], dtype=np.float64)
+            else:
+                # Historical conversion schedule/allocation behaviour (df66b2ed).
+                chunk0 = arr.chunks[0] if hasattr(arr, "chunks") else arr.shape[0]
+                for start in range(0, arr.shape[0], chunk0):
+                    end = min(start + chunk0, arr.shape[0])
+                    mm[start:end] = np.asarray(arr[start:end], dtype=np.float64)
             mm.flush()
         finally:
             del mm
@@ -531,9 +604,8 @@ def _zarr_to_memmap(zarr_path, group_name):
             # canonical one; ours is discarded in the finally block.
             pass
     finally:
-        # Always remove our private per-pid temp file.  It is
-        # namespaced by pid so this cannot clobber a concurrent
-        # writer's in-progress tmp file.
+        # Only this call owns this exclusive temporary name. Never clean up
+        # other writers' temporaries or touch the published inode.
         try:
             os.unlink(tmp_path)
         except FileNotFoundError:
