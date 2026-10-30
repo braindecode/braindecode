@@ -14,7 +14,7 @@ import torch
 from skorch.regressor import NeuralNetRegressor
 
 from .eegneuralnet import _EEGNeuralNet
-from .training.scoring import predict_trials
+from .training.scoring import iter_trial_predictions, predict_trials
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 
@@ -140,7 +140,40 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
         else:
             return y_pred
 
-    def predict_trials(self, X, return_targets=True):
+    def iter_trial_predictions(self, X, return_targets=True, *, loader_kwargs=None):
+        """Yield cropped predictions (or prediction/target pairs) trial by trial.
+
+        Parameters
+        ----------
+        X : torch.utils.data.Dataset
+            Chronological cropped windows.
+        return_targets : bool
+            Yield targets alongside predictions if True.
+        loader_kwargs : dict | None
+            Explicit DataLoader overrides; see the standalone
+            :func:`braindecode.training.iter_trial_predictions`.
+
+        Returns
+        -------
+        iterator
+            One float32 trial prediction or prediction/target pair at a time.
+            Requires cropped mode. Close explicitly when stopping early to
+            restore the model modes and release loader workers. Memory scales
+            with the active trial and batches, not all completed trials.
+        """
+        if not self.cropped:
+            raise ValueError("iter_trial_predictions requires cropped=True")
+        self.check_is_fitted()
+        return iter_trial_predictions(
+            module=self.module_,
+            dataset=X,
+            return_targets=return_targets,
+            batch_size=self.batch_size,
+            num_workers=self.get_iterator(X, training=False).loader.num_workers,
+            loader_kwargs=loader_kwargs,
+        )
+
+    def predict_trials(self, X, return_targets=True, *, loader_kwargs=None):
         """Create trialwise predictions from a cropped dataset.
 
         Parameters
@@ -149,6 +182,10 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             A braindecode dataset to be predicted.
         return_targets : bool
             If True, additionally returns the trial targets.
+        loader_kwargs : dict | None
+            Explicit loader overrides (see
+            :func:`braindecode.training.iter_trial_predictions`).
+            Available only in cropped mode; omitted settings retain defaults.
 
         Returns
         -------
@@ -165,6 +202,8 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             trial lengths differ, a list with one target array per trial.
         """
         if not self.cropped:
+            if loader_kwargs is not None:
+                raise ValueError("loader_kwargs requires cropped=True")
             warnings.warn(
                 "This method was designed to predict trials in cropped mode. "
                 "Calling it when cropped is False will give the same result as "
@@ -187,6 +226,7 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             return_targets=return_targets,
             batch_size=self.batch_size,
             num_workers=self.get_iterator(X, training=False).loader.num_workers,
+            loader_kwargs=loader_kwargs,
         )
 
     def fit(self, X, y=None, **kwargs):
