@@ -28,6 +28,20 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :func:`braindecode.training.iter_trial_predictions`,
+  :func:`~braindecode.training.iter_trial_prediction_chunks` and
+  :class:`~braindecode.training.TrialPredictionChunk` for chronological cropped
+  inference. Consume one trial, or a configured number of source windows per
+  chunk, without retaining all completed outputs. The classifier/regressor also
+  expose per-trial iteration in cropped mode. See :ref:`cropped-inference` for
+  target/offset semantics, loader controls, memory bounds and early close
+  (by `Bruno Aristimunha`_).
+- :func:`braindecode.training.predict_trials` now reconstructs through the
+  shared streaming implementation before materializing its return value;
+  output order, overlap removal, float32 conversion and the historical
+  leave-in-eval policy are retained. Equal-length stacking still allocates the
+  full output. Single-window warnings now occur at exhaustion, after inference,
+  rather than before the first forward (by `Bruno Aristimunha`_).
 - CI: tests marked ``slow`` (compiler numerics, compiled resume and warm
   start, the CPU/Gloo distributed recipe) are opt-in locally with
   ``--run-slow`` or ``-m slow``, and the coverage job runs them in their own
@@ -511,6 +525,10 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.training.PostEpochTrainScoring` restores the saved CPU
+  Torch RNG state even when its reevaluation fails. This does not restore
+  Python/NumPy/CUDA RNGs or undo scorer-side random draws; successful scoring
+  and shared reevaluation accounting are unchanged (by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.FilterBankLayer`, and so :class:`braindecode.models.FBCNet`, :class:`braindecode.models.FBMSNet`, :class:`braindecode.models.FBLightConvNet` and :class:`braindecode.models.IFNet`, script again with PyTorch 2.15, where ``torch.jit.script`` failed inside :func:`torchaudio.functional.lfilter` ("Expression of type dots cannot be used in a type expression"). Eager filtering still calls torchaudio; the scripted graph runs the same operations as before, so outputs are unchanged (:gh:`1501` by `Bruno Aristimunha`_).
 
 - Model loading validates relative custom weight paths and local symlink containment,
