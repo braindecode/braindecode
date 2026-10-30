@@ -1,7 +1,51 @@
 import pytest
 
 
+@pytest.fixture
+def acceleration_caller_state():
+    """Isolate destructive benchmark recipes, including exceptional exits.
+
+    Opt in only in acceleration test modules. Do not initialize CUDA merely to
+    snapshot it, or normalize the caller's state before testing the recipe.
+    """
+    import random
+    from contextlib import contextmanager
+
+    import numpy as np
+    import torch
+
+    @contextmanager
+    def preserve():
+        python_rng = random.getstate()
+        numpy_rng = np.random.get_state()
+        torch_rng = torch.get_rng_state()
+        cuda_rng = (
+            torch.cuda.get_rng_state_all() if torch.cuda.is_initialized() else None
+        )
+        threads = torch.get_num_threads()
+        grad_enabled = torch.is_grad_enabled()
+        try:
+            yield
+        finally:
+            random.setstate(python_rng)
+            np.random.set_state(numpy_rng)
+            torch.set_rng_state(torch_rng)
+            if cuda_rng is not None:
+                torch.cuda.set_rng_state_all(cuda_rng)
+            torch.set_num_threads(threads)
+            torch.set_grad_enabled(grad_enabled)
+
+    with preserve():
+        yield preserve
+
+
 def pytest_addoption(parser):
+    parser.addoption(
+        "--run-slow",
+        action="store_true",
+        default=False,
+        help="include slow compiler and study qualification tests (or use -m slow)",
+    )
     parser.addoption(
         "--run-network",
         action="store_true",
@@ -15,7 +59,8 @@ def pytest_collection_modifyitems(config, items):
         reason="need --run-network option to run network-dependent tests"
     )
     run_network = config.getoption("--run-network")
-
+    # Mark REVE-parametrized items as network before the slow deselection reads
+    # their keywords, so a slow REVE test follows the --run-network rule too.
     for item in items:
         callspec = getattr(item, "callspec", None)
         params = getattr(callspec, "params", {}).values()
@@ -23,6 +68,20 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.network)
             item.add_marker(pytest.mark.huggingface)
 
+    # Explicit marker selection remains a standard way to run just this tier.
+    run_slow = config.getoption("--run-slow") or "slow" in config.option.markexpr
+    if not run_slow:
+        # Network tests (e.g. the Hub integration module, also marked slow)
+        # stay governed by --run-network alone, as before the slow tier.
+        def is_slow_only(item):
+            return "slow" in item.keywords and "network" not in item.keywords
+
+        selected = [item for item in items if not is_slow_only(item)]
+        deselected = [item for item in items if is_slow_only(item)]
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = selected
+
+    for item in items:
         if "network" in item.keywords and not run_network:
             item.add_marker(skip_network)
 
