@@ -433,6 +433,8 @@ def test_registered_model_complex_only_after_spectral_input(
     on the CPU only, i.e. every FFT/STFT input went through ``spectral_input``."""
     if model_name in _DATA_DEPENDENT_FORWARD:
         pytest.skip("forward reads tensor values (.item()), which meta tensors lack")
+    if model_name in {"BDTCN", "BENDR", "TIDNet"} and torch.__version__ < "2.10":
+        pytest.skip("torch < 2.10 has no meta kernel for the weight_norm backward")
     model, x = _build_case(model_name, required_params, signal_params)
     _materialize(model, x)
     model.to("meta").train()

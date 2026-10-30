@@ -1098,6 +1098,8 @@ def mixup(
     y_a = y.clone()
     y_b = y[idx_perm].clone()
 
+    # Keep scalar execution: the exact broadcast candidate regressed both CPU
+    # component and full-loader timings. It remains an explicit benchmark only.
     for idx in range(batch_size):
         X_mix[idx] = lam[idx] * X[idx] + (1 - lam[idx]) * X[idx_perm[idx]]
 
