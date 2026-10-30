@@ -506,6 +506,9 @@ Bug fixes
 
 - :class:`braindecode.modules.FilterBankLayer`, and so :class:`braindecode.models.FBCNet`, :class:`braindecode.models.FBMSNet`, :class:`braindecode.models.FBLightConvNet` and :class:`braindecode.models.IFNet`, script again with PyTorch 2.15, where ``torch.jit.script`` failed inside :func:`torchaudio.functional.lfilter` ("Expression of type dots cannot be used in a type expression"). Eager filtering still calls torchaudio; the scripted graph runs the same operations as before, so outputs are unchanged (:gh:`1501` by `Bruno Aristimunha`_).
 
+- :class:`braindecode.models.BENDR` projects contextualizer outputs directly, without the extra final LayerNorm absent from the original pretrained forward pass. Existing checkpoint keys are retained (:gh:`1495` by `Anton Soloviev`_).
+
+
 - Model loading validates relative custom weight paths and local symlink containment,
   without changing Hugging Face's process-global filename. Serialized module classes
   are resolved only from shipped PyTorch and Braindecode classes, including the Hub
