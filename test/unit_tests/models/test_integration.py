@@ -411,6 +411,12 @@ def test_model_exported(model):
         not_exportable_models += [
             "LUNA",  # Has _channel_location_cache dict that breaks pytree on Windows
         ]
+    if torch.__version__ < "2.10":
+        # Export's attribute-assignment check fails with a pytree arity mismatch.
+        not_exportable_models += ["LUNA"]
+    if torch.__version__ < "2.9":
+        # Export tracing rejects the codebook's no_grad ``torch.sub(..., out=)``.
+        not_exportable_models += ["TFMTokenizer", "BrainTokenizer"]
     if model_name in not_exportable_models:
         pytest.skip(f"{model_name} export is not possible on this platform.")
 

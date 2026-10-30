@@ -496,6 +496,7 @@ API and behavior changes
 Requirements
 ============
 
+- Require PyTorch and TorchAudio >= 2.6 (was 2.4), the PyTorch of the Intel Gaudi 1.21 software stack (by `Bruno Aristimunha`_).
 - ``linear_attention_transformer`` is no longer a dependency: since :gh:`1273` braindecode ships the part BIOT and TFMTokenizer use. ``einops``, which arrived only through it, is now declared directly (:gh:`1443` by `Bruno Aristimunha`_).
 
 - Add ``sphinx-markdown-builder==0.6.11`` and ``pytest<9.1`` to the docs extra
