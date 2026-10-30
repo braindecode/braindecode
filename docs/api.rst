@@ -886,7 +886,15 @@ models and evaluate their performance.
      mixup_criterion
      trial_preds_from_window_preds
      predict_trials
+     iter_trial_predictions
+     iter_trial_prediction_chunks
+     TrialPredictionChunk
      f1_event
+
+For lifecycle, chronological loader settings, memory bounds and early-close examples,
+see :ref:`cropped-inference`. The iterators are available directly from
+``braindecode.training``; their implementation remains in
+``braindecode.training.scoring``.
 
 *******
  Utils

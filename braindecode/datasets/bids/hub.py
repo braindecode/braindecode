@@ -525,7 +525,8 @@ class HubDatasetMixin:
             Specific branch, tag, or commit to download. If None, uses the
             repository's default revision.
         **kwargs
-            Additional arguments (currently unused).
+            Additional arguments (currently unused). ``bounded_conversion`` is
+            rejected: it is only supported by the private converter/benchmark.
 
         Returns
         -------
@@ -549,6 +550,11 @@ class HubDatasetMixin:
         >>> from torch.utils.data import DataLoader
         >>> loader = DataLoader(dataset, batch_size=32, shuffle=True)
         """
+        if "bounded_conversion" in kwargs:
+            raise TypeError(
+                "bounded_conversion is only supported by the private Zarr "
+                "converter/benchmark, not pull_from_hub."
+            )
         if zarr is False or huggingface_hub is False:
             raise ImportError(
                 "huggingface hub functionality is not installed. Install with: "

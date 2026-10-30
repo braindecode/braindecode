@@ -7,12 +7,14 @@ import torch
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
+from torch.utils.checkpoint import checkpoint
 
 from braindecode.models.base import EEGModuleMixin, _too_short_input_error
 from braindecode.modules import (
     FeedForwardBlock,
     MultiHeadAttention,
     PreNormTransformerBlock,
+    Residual,
 )
 
 
@@ -181,6 +183,19 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     activation_transfor: nn.Module
         Activation function as parameter, applied at the FeedForwardBlock module
         inside the transformer. Default is nn.GeLU
+    activation_checkpointing : bool, default=False
+        Recompute pure transformer blocks during backward to reduce training
+        activation memory, at the cost of additional computation. Uses
+        non-reentrant checkpointing with RNG preservation (including dropout).
+        Outputs, gradients and an optimizer step were bit-identical to
+        checkpointing off in eager tests on PyTorch 2.14.1 CPU.
+        Only eager, gradient-enabled training is checkpointed; the BatchNorm
+        stem is never recomputed. Hooks, buffers, custom modules/activations
+        inside the transformer are unsupported during checkpointed training
+        and raise a clear error. Supported transformer activations are GELU,
+        ELU, ReLU and SiLU. Global module hooks are also unsupported during
+        checkpointed training, but work normally in eval/no-grad/inference mode.
+        Use the default ``False`` for scripting, tracing, export or compilation.
 
     References
     ----------
@@ -192,6 +207,9 @@ class EEGConformer(EEGModuleMixin, nn.Module):
        conformer: Convolutional transformer for EEG decoding and visualization.
        https://github.com/eeyhsong/EEG-Conformer
     """
+
+    # Old full-object checkpoints restore state without calling __init__.
+    activation_checkpointing = False
 
     def __init__(
         self,
@@ -213,6 +231,8 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
+        *,
+        activation_checkpointing=False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -237,6 +257,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             )
 
         self.return_features = return_features
+        self.activation_checkpointing = activation_checkpointing
 
         self.patch_embedding = _PatchEmbedding(
             n_filters_time=n_filters_time,
@@ -277,16 +298,104 @@ class EEGConformer(EEGModuleMixin, nn.Module):
 
         self.final_layer = nn.Linear(self.fc.hidden_channels, self.n_outputs)
 
+    def __setattr__(self, name, value):
+        # Covers __init__ and later flag changes; unpickling uses __setstate__.
+        if name == "activation_checkpointing" and value:
+            _forbid_checkpointing_boundary_in_graph()
+        super().__setattr__(name, value)
+
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        if self.activation_checkpointing:
+            _forbid_checkpointing_boundary_in_graph()
+
+    def compile(self, *args, **kwargs):
+        # Reject before installing a native compiled call (including estimator
+        # ownership). Explicit disable=True still selects ordinary eager math.
+        if self.activation_checkpointing and not kwargs.get("disable", False):
+            raise RuntimeError("activation_checkpointing requires eager execution")
+        return super().compile(*args, **kwargs)
+
     def forward(self, x: Tensor) -> Tensor:
+        if torch.jit.is_scripting():
+            if self.activation_checkpointing:
+                raise RuntimeError("activation_checkpointing requires eager execution")
+        elif self.activation_checkpointing:
+            self._activation_checkpointing_requires_eager_execution()
         x = torch.unsqueeze(x, dim=1)  # add one extra dimension
         x = self.patch_embedding(x)
-        feature = self.transformer(x)
+        if torch.jit.is_scripting():
+            feature = self.transformer(x)
+        elif (
+            self.activation_checkpointing and self.training and torch.is_grad_enabled()
+        ):
+            feature = self._checkpoint_transformer(x)
+        else:
+            feature = self.transformer(x)
 
         if self.return_features:
             return feature
 
         x = self.fc(feature)
         x = self.final_layer(x)
+        return x
+
+    @torch.jit.unused
+    def _activation_checkpointing_requires_eager_execution(self):
+        # Forbidden in Dynamo graphs by _forbid_checkpointing_boundary_in_graph
+        # once any model enables activation_checkpointing.
+        if torch.jit.is_tracing() or torch.compiler.is_compiling():
+            raise RuntimeError("activation_checkpointing requires eager execution")
+
+    @torch.jit.unused
+    def _checkpoint_transformer(self, x):
+        from torch.nn.modules import module as module_hooks
+
+        if any(
+            getattr(module_hooks, name)
+            for name in (
+                "_global_forward_hooks",
+                "_global_forward_pre_hooks",
+                "_global_backward_hooks",
+                "_global_backward_pre_hooks",
+            )
+        ):
+            raise RuntimeError(
+                "activation_checkpointing requires pure execution without global hooks"
+            )
+
+        # Recheck: users can attach hooks or replace children after construction.
+        pure_types = {
+            nn.Sequential,
+            PreNormTransformerBlock,
+            Residual,
+            MultiHeadAttention,
+            FeedForwardBlock,
+            nn.LayerNorm,
+            nn.Linear,
+            nn.Dropout,
+            nn.Identity,
+            nn.GELU,
+            nn.ELU,
+            nn.ReLU,
+            nn.SiLU,
+            Rearrange,
+        }
+        for module in self.transformer.modules():
+            if (
+                type(module) not in pure_types
+                or module._buffers
+                or module._forward_hooks
+                or module._forward_pre_hooks
+                or module._backward_hooks
+                or module._backward_pre_hooks
+            ):
+                raise RuntimeError(
+                    "activation_checkpointing requires pure transformer blocks "
+                    "without hooks, buffers or custom modules/activations"
+                )
+        for block in self.transformer:
+            x = checkpoint(block, x, use_reentrant=False, preserve_rng_state=True)
         return x
 
     def get_fc_size(self):
@@ -298,6 +407,28 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         size_embedding_2 = out.cpu().data.numpy().shape[2]
 
         return size_embedding_1 * size_embedding_2
+
+
+_checkpointing_boundary_forbidden = False
+
+
+def _forbid_checkpointing_boundary_in_graph():
+    """Forbid the eager-only checkpointing boundary inside Dynamo graphs.
+
+    A trace-time RuntimeError alone becomes an eager fallback with
+    ``fullgraph=False``. Forbidding the boundary makes ``torch.compile(model)``
+    fail instead of silently accepting an unqualified checkpointing graph.
+    Applied the first time a model enables ``activation_checkpointing``, so
+    that ``import braindecode`` does not import ``torch._dynamo``.
+    """
+    global _checkpointing_boundary_forbidden
+    if not _checkpointing_boundary_forbidden:
+        import torch._dynamo
+
+        torch._dynamo.forbid_in_graph(
+            EEGConformer._activation_checkpointing_requires_eager_execution
+        )
+        _checkpointing_boundary_forbidden = True
 
 
 class _PatchEmbedding(nn.Module):
