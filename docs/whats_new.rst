@@ -28,6 +28,25 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.datasets.BaseConcatDataset` takes the opt-in,
+  keyword-only ``coalesce_reads=False``: a DataLoader batch of consecutive,
+  heavily overlapping windows of one lazy FIF recording is read as one union
+  of samples instead of one read per window. Samples, targets, crop indices,
+  order and random number use equal the default's; with the default ``False``
+  the batch path is unchanged apart from one check of the flag. Other batches
+  (shuffled, adjacent, sparse, several recordings, preloaded, Zarr,
+  :class:`~braindecode.datasets.WindowsDataset`) take the default path. On a
+  synthetic 22-channel 250 Hz FIF with 4-s windows every 1 s (512 windows,
+  batches of 32, 4 CPUs, Intel Xeon Gold 6230R, five paired fresh processes),
+  the median epoch took 27.8 ms instead of 133.6 ms with ``num_workers=0`` and
+  66.7 ms instead of 132.2 ms with 2 workers; with 4 workers 63.2 ms instead
+  of 80.6 ms, where one of five pairs did not improve beyond its
+  epoch-to-epoch spread. Two cases were slower with 2 workers: adjacent
+  windows (median paired ratio 1.050) and batches spanning two recordings
+  (1.042), both above their measured baseline-versus-baseline variation.
+  These three cases failed the pre-registered acceleration gate, so the option
+  stays off by default; enable it only for overlapping-window datasets
+  (by `Bruno Aristimunha`_).
 - ``import braindecode`` and ``import braindecode.models`` no longer import
   every model, the estimators, scikit-learn and pandas up front: the model
   classes, :class:`braindecode.EEGClassifier`, :class:`~braindecode.EEGRegressor`,
