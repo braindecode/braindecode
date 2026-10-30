@@ -51,9 +51,9 @@ INTRACRANIAL_CH_TYPES = frozenset({"seeg", "dbs", "ecog"})
 
 # Read through ``models_dict`` (module ``__getattr__`` below), which fills it on
 # first access so importing braindecode does not import every model.
-_models_dict: dict[str, type] = {}
+_models_dict: dict[str, Any] = {}
 # Annotations only, for type checkers; the values come from ``__getattr__``.
-models_dict: dict[str, type]
+models_dict: dict[str, Any]
 _summary_table: "pd.DataFrame"
 
 if TYPE_CHECKING:
