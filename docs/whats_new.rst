@@ -474,6 +474,15 @@ Enhancements
 API and behavior changes
 ========================
 
+- With opt-in ``compile=True``, :class:`braindecode.EEGClassifier` and
+  :class:`braindecode.EEGRegressor` use native in-place compilation, preserving
+  supplied Parameter identities and canonical checkpoint keys. Legacy skorch
+  wrapper ``_orig_mod.`` keys are **not** automatically rewritten on load.
+  Whole-estimator pickle/joblib and deepcopy restore eager execution, without
+  automatic recompilation on warm-start or ``partial_fit``; explicit
+  initialization is needed to establish compilation again. See
+  :ref:`compile-checkpoint-migration` before migrating wrapper checkpoints or
+  reinitializing a trained estimator (by `Bruno Aristimunha`_).
 - :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` returns an ``i_dataset`` column with the position of the dataset each window comes from, and raises a :class:`ValueError` if a description or the window metadata already has that key. The samplers in :mod:`braindecode.samplers` take each dataset as one recording; pass the metadata without ``i_dataset`` to group the one-trial datasets of :func:`braindecode.datasets.create_from_X_y` or :func:`braindecode.datasets.create_from_mne_epochs` by subject, session and run as before. The samplers' ``info`` gets a ``recording`` index level after subject, session and run (:gh:`1369` by `Raghav Rathi`_).
 - :class:`braindecode.models.Labram`, :class:`braindecode.models.CBraMod` and
   :class:`braindecode.models.LUNA` tokenize the time axis with the shared

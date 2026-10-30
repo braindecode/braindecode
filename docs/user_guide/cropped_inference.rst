@@ -139,3 +139,31 @@ dropping, custom collation and every other override are rejected to preserve
 reconstruction chronology. Cropped channel-position batches are unsupported: disable
 ``return_ch_pos`` for this path. Loader settings are not automatically copied from an
 estimator's training loader.
+
+.. _compile-checkpoint-migration:
+
+*********************************************
+ Opt-in compilation and checkpoint migration
+*********************************************
+
+:class:`~braindecode.EEGClassifier` and :class:`~braindecode.EEGRegressor` accept
+``compile=True`` and skorch's ``compile__*`` options. Compilation remains opt-in; there
+is no precision change or guarantee of a speedup. Native in-place module compilation
+preserves supplied Parameter identities, shared parameters and canonical state-dict
+keys. ``save_params``/``load_params`` is the supported parameter/optimizer/history
+checkpoint workflow.
+
+An older skorch wrapper checkpoint may instead contain ``_orig_mod.``-prefixed keys.
+Loading does **not** automatically strip that prefix. Identify the artifact as a wrapper
+checkpoint, explicitly export the wrapped module's ``_orig_mod.state_dict()`` in its
+original environment (or migrate only the verified wrapper prefix offline), and strictly
+load the resulting canonical state dict into the matching model. Do not blindly strip
+arbitrary key names.
+
+Whole-estimator pickle/joblib and deepcopy do not retain the active native compiled
+callable. Reloaded/copied objects execute eagerly; compilation is not automatically
+reactivated by warm-start or ``partial_fit``. Explicit ``initialize()`` re-establishes
+compilation when configured, but also follows normal skorch reinitialization semantics:
+restore trained parameters/optimizer state afterwards with ``load_params`` if continuing
+a trained model. Another estimator sharing the module does not own or clear its compiled
+callable; disable it through the owning estimator before independent eager reuse.
