@@ -62,6 +62,43 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         self.module_ = module
         return self
 
+    def torch_compile(self, module, name):
+        """Compile in place, preserving canonical module/checkpoint names.
+
+        Unlike the wrapper returned by ``torch.compile(module)``, the native
+        ``Module.compile`` keeps state dictionaries free of ``_orig_mod.``
+        prefixes. The inherited ``compile`` and ``compile__*`` options still
+        control compilation of modules and criteria.
+        """
+        compiled_call = module._compiled_call_impl
+        ownership = getattr(self, "_compile_ownership_", {})
+        previous_module, previous_call = ownership.get(name, (None, None))
+        owned = previous_module is module and previous_call is compiled_call
+        params = self.get_params_for("compile")
+        # compile__disable is native torch.compile's explicit eager option.
+        if self.compile and not params.get("disable", False):
+            # Keep caller Parameter identities and module/criterion sharing.
+            # Never replace a callable compiled independently by the user.
+            if compiled_call is None or owned:
+                module.compile(**params)
+                ownership[name] = (module, module._compiled_call_impl)
+                self._compile_ownership_ = ownership
+            else:
+                ownership.pop(name, None)
+        else:
+            if owned:
+                module._compiled_call_impl = None
+            ownership.pop(name, None)
+        return module
+
+    def __getstate__(self):
+        state = super().__getstate__()
+        # Native Module serialization drops its compiled call slot. Do not
+        # retain closures/bound methods or stale ownership in the net either;
+        # the next initialize re-establishes ownership of freshly installed calls.
+        state.pop("_compile_ownership_", None)
+        return state
+
     def _yield_callbacks(self):
         # Here we parse the callbacks supplied as strings,
         # e.g. 'accuracy', to the callbacks skorch expects
