@@ -109,3 +109,22 @@ not recompile. ``initialize()`` compiles again but also reinitializes the module
 call ``load_params`` afterwards to continue training. An estimator only replaces or
 clears a compiled call it installed itself: turn compilation off through that estimator
 before reusing the module eagerly elsewhere.
+
+.. _distributed-window-evaluation:
+
+**********************************************************
+ Distributed evaluation recipe (not an estimator backend)
+**********************************************************
+
+``benchmarks/bench_distributed_windows.py`` in the source repository shows how to
+evaluate preloaded windows across local CPU/Gloo processes, for example with ``python -m
+benchmarks.bench_distributed_windows --ranks 4 --output 4.json``. Each rank forwards an
+unpadded rank-strided shard, keeping the global window index next to each prediction.
+Predictions, targets and crop indices are gathered together, the gather fails unless
+every window arrives exactly once, and only the chronologically ordered windows are
+reconstructed into trials and scored. Never average rank-local trial scores, and never
+pass a shuffled sampler to the chronological trial iterators.
+
+The estimators themselves still predict in one process. Every rank holds the full
+dataset and the full gathered predictions, and process launch can cost more than the
+parallel evaluation saves in a one-shot run.
