@@ -28,6 +28,13 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.LUNA` reuses differentiable rotary tables within
+  each attention forward (no persistent cache); :class:`braindecode.models.Labram`
+  splits its fused qkv projection with ``unbind`` instead of three selects.
+  Parameters, checkpoint keys and numerical computations are preserved; LUNA
+  trainable-frequency gradients can differ by floating-point accumulation
+  rounding, and rotary-module hooks run once rather than twice per forward
+  (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.EEGConformer` takes the opt-in, keyword-only
   ``activation_checkpointing=False``: non-reentrant activation checkpointing
   recomputes pure transformer blocks during backward with RNG preservation.
