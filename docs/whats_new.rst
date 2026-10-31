@@ -28,6 +28,22 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- :class:`braindecode.models.EEGConformer` takes the opt-in, keyword-only
+  ``activation_checkpointing=False``: non-reentrant activation checkpointing
+  recomputes pure transformer blocks during backward with RNG preservation.
+  Outputs, gradients and an optimizer step were bit-identical to checkpointing
+  off in eager tests on PyTorch 2.14.1 CPU; old pickled models still load.
+  Checkpointing requires eager execution; unsupported configurations are
+  explicitly rejected (see the parameter documentation). On an Intel Xeon
+  Gold 6230R CPU with four PyTorch/BLAS threads,
+  FP32, embedding dimension 64, eight heads, six layers and dropout, five paired
+  fresh processes at input shape ``[8, 22, 8192]`` measured 55.39% lower peak
+  process RSS (median paired ratio 0.446142) and 73.14% extra train-step time
+  (median paired ratio 1.731425) at equal batch. The largest passing integer
+  batch under a 4 GiB peak process RSS budget increased from 17 to 68 in a
+  fresh-process capacity search; this machine/runtime-qualified, one-run
+  boundary is a memory-capacity result, not an equal-batch speed improvement
+  (by `Bruno Aristimunha`_).
 - Add :func:`braindecode.training.iter_trial_predictions`,
   :func:`~braindecode.training.iter_trial_prediction_chunks` and
   :class:`~braindecode.training.TrialPredictionChunk` to stream cropped
