@@ -2959,3 +2959,224 @@ def test_labram_warns_when_tokenizer_overrides_embed_dim():
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message=".*instead of the given embed_dim")
         Labram(n_chans=4, n_outputs=2, n_times=1000)  # defaults agree
+
+
+# Frozen pre-reuse expression from 3991b3e6. Never call candidate rotary helpers.
+class _LunaRotaryBeforeReuse(_RotarySelfAttentionBlock):
+    def _rotate_queries_or_keys(self, tensor: torch.Tensor) -> torch.Tensor:
+        positions = torch.arange(
+            tensor.shape[-2], device=tensor.device, dtype=tensor.dtype
+        )
+        freqs = self.rotary_emb(positions)
+        tensor.reshape(list(tensor.shape[:-1]) + [-1, 2])
+        return luna_module.apply_rotary(tensor, freqs.cos(), freqs.sin()).to(
+            tensor.dtype
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, N, C = x.shape
+        qkv = (
+            self.qkv_proj(x)
+            .reshape(B, N, 3, self.num_heads, C // self.num_heads)
+            .permute(2, 0, 3, 1, 4)
+        )
+        q, k, v = qkv.unbind(0)
+        q = self._rotate_queries_or_keys(q)
+        k = self._rotate_queries_or_keys(k)
+        attn = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v,
+            dropout_p=self.attn_drop if self.training else 0.0,
+            scale=self.scale,
+        )
+        return self.proj_drop(self.proj(attn.transpose(1, 2).flatten(2)))
+
+
+@pytest.fixture(autouse=True)
+def isolate_rotary_acceleration_state(request):
+    if request.node.name.startswith("test_luna_rotary_"):
+        request.getfixturevalue("acceleration_caller_state")
+
+
+@pytest.mark.parametrize("training", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_luna_rotary_frequency_gradient_parity(training, dtype):
+    """Catch lost q or k frequency gradients, projection changes or detaching."""
+    torch.manual_seed(913)
+    old = _LunaRotaryBeforeReuse(32, num_heads=4).to(dtype).train(training)
+    block = _RotarySelfAttentionBlock(32, num_heads=4).to(dtype).train(training)
+    parameter = block.rotary_emb.freqs
+    original_state = copy.deepcopy(old.state_dict())
+    block.load_state_dict(original_state, strict=True)
+    assert set(block.state_dict()) == set(original_state)
+    assert block.rotary_emb.freqs is parameter
+    assert not parameter.requires_grad
+    old.rotary_emb.freqs.requires_grad_(True)
+    parameter.requires_grad_(True)
+    x = torch.randn(2, 9, 32, dtype=dtype, requires_grad=True)
+    reference_x = x.detach().clone().requires_grad_()
+    actual, expected = block(x), old(reference_x)
+    cotangent = torch.randn_like(actual)
+    actual.backward(cotangent)
+    expected.backward(cotangent)
+    torch.testing.assert_close(actual, expected)
+    torch.testing.assert_close(x.grad, reference_x.grad)
+    for name, value in block.named_parameters():
+        reference = dict(old.named_parameters())[name]
+        assert value.grad is not None, name
+        assert torch.isfinite(value.grad).all(), name
+        torch.testing.assert_close(value.grad, reference.grad)
+    assert parameter.grad.abs().sum() > 0
+    assert block.rotary_emb.freqs is parameter
+    assert set(block.state_dict()) == set(original_state)
+
+
+@pytest.mark.parametrize("training", [False, True])
+def test_luna_rotary_seeded_dropout_and_next_rng(training):
+    """Sharing deterministic setup must not change dropout or RNG advancement."""
+    old = _LunaRotaryBeforeReuse(
+        32, num_heads=4, attn_drop=0.2, proj_drop=0.3
+    ).train(training)
+    block = _RotarySelfAttentionBlock(
+        32, num_heads=4, attn_drop=0.2, proj_drop=0.3
+    ).train(training)
+    block.load_state_dict(old.state_dict(), strict=True)
+    x = torch.randn(2, 7, 32)
+    results = []
+    for model in (old, block):
+        model.rotary_emb.freqs.requires_grad_(True)
+        xi = x.clone().requires_grad_()
+        torch.manual_seed(714)
+        out = model(xi)
+        out.square().sum().backward()
+        results.append((
+            out, xi.grad, model.qkv_proj.weight.grad,
+            model.proj.weight.grad, model.rotary_emb.freqs.grad, torch.rand(5),
+        ))
+    for actual, expected in zip(results[1], results[0]):
+        torch.testing.assert_close(actual, expected)
+    torch.testing.assert_close(results[1][-1], results[0][-1], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("shape", [(1, 1, 32), (2, 7, 32), (2, 0, 32), (0, 7, 32)])
+def test_luna_rotary_shape_boundaries(shape):
+    """Keep empty-input reshape validation, singleton and strided behavior."""
+    old = _LunaRotaryBeforeReuse(32, num_heads=4).eval()
+    block = _RotarySelfAttentionBlock(32, num_heads=4).eval()
+    block.load_state_dict(old.state_dict(), strict=True)
+    x = torch.randn(*shape, 2)[..., 0]  # noncontiguous nonempty inputs
+    if 0 in shape:
+        with pytest.raises(RuntimeError, match="cannot reshape"):
+            old(x)
+        with pytest.raises(RuntimeError, match="cannot reshape"):
+            block(x)
+    else:
+        torch.testing.assert_close(block(x), old(x), rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("dim,heads", [(30, 4), (12, 4)])
+def test_luna_rotary_invalid_head_shapes(dim, heads):
+    """Do not silently accept non-divisible or odd rotary head widths."""
+    x = torch.randn(2, 7, dim)
+    for cls in (_LunaRotaryBeforeReuse, _RotarySelfAttentionBlock):
+        with pytest.raises(RuntimeError):
+            cls(dim, num_heads=heads)(x)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64, torch.bfloat16])
+def test_luna_rotary_dtype(dtype):
+    """Positions keep the input dtype; output equals the frozen expression."""
+    old = _LunaRotaryBeforeReuse(32, num_heads=4).to(dtype).eval()
+    block = _RotarySelfAttentionBlock(32, num_heads=4).to(dtype).eval()
+    block.load_state_dict(old.state_dict(), strict=True)
+    seen = []
+    block.rotary_emb.register_forward_hook(lambda m, args, out: seen.append(args[0]))
+    x = torch.randn(2, 17, 32, dtype=dtype)
+    actual = block(x)
+    assert actual.dtype == dtype
+    torch.testing.assert_close(actual, old(x), rtol=0, atol=0)
+    torch.testing.assert_close(seen[0], torch.arange(17, dtype=dtype))
+
+
+def test_luna_rotary_hooks_and_fresh_tables_each_forward():
+    """Module hooks remain active; changed frequencies cannot hit a stale cache."""
+    old = _LunaRotaryBeforeReuse(32, num_heads=4).eval()
+    block = _RotarySelfAttentionBlock(32, num_heads=4).eval()
+    block.load_state_dict(old.state_dict(), strict=True)
+    calls = []
+
+    def candidate_hook(module, args, output):
+        calls.append(args[0])
+        return output + 0.125
+
+    handle = block.rotary_emb.register_forward_hook(candidate_hook)
+    reference_handle = old.rotary_emb.register_forward_hook(
+        lambda module, args, output: output + 0.125
+    )
+    for length in (3, 11, 3):
+        x = torch.randn(2, length, 32)
+        torch.testing.assert_close(block(x), old(x), rtol=0, atol=0)
+        with torch.no_grad():
+            old.rotary_emb.freqs.add_(0.03)
+            block.rotary_emb.freqs.add_(0.03)
+    handle.remove()
+    reference_handle.remove()
+    assert len(calls) == 3
+
+
+def test_luna_rotary_script_output():
+    """Script the real block; compare to frozen eager and scripted expressions."""
+    old = _LunaRotaryBeforeReuse(32, num_heads=4).eval()
+    block = _RotarySelfAttentionBlock(32, num_heads=4).eval()
+    block.load_state_dict(old.state_dict(), strict=True)
+    scripted_old = torch.jit.script(old)
+    scripted = torch.jit.script(block)
+    for length in (1, 7, 13):
+        x = torch.randn(2, length, 32)
+        torch.testing.assert_close(scripted(x), old(x), rtol=0, atol=0)
+        torch.testing.assert_close(scripted(x), scripted_old(x), rtol=0, atol=0)
+
+
+
+@pytest.mark.parametrize("scripted", [False, True])
+def test_luna_rotary_whole_model_checkpoint_and_output(scripted):
+    """Load original whole-model keys strictly and exercise every encoder block."""
+    kwargs = {
+        "n_chans": 4, "n_times": 80, "n_outputs": 2, "patch_size": 20,
+        "embed_dim": 64, "num_queries": 2, "depth": 2,
+    }
+    model = LUNA(**kwargs).eval()
+    old = copy.deepcopy(model)
+    for layer in old.blocks:
+        current = layer.attn
+        replacement = _LunaRotaryBeforeReuse(
+            current.dim, current.num_heads, current.qkv_proj.bias is not None,
+            current.scale, current.attn_drop, current.proj_drop.p,
+        )
+        replacement.load_state_dict(current.state_dict(), strict=True)
+        layer.attn = replacement.eval()
+    original_state = copy.deepcopy(old.state_dict())
+    model.load_state_dict(original_state, strict=True)
+    assert set(model.state_dict()) == set(original_state)
+    x = torch.randn(2, 4, 80)
+    locations = torch.randn(2, 4, 3)
+    with torch.no_grad():
+        expected = old(x, channel_locations=locations)
+        if scripted:
+            try:
+                old_script = torch.jit.script(old)
+            except RuntimeError as error:
+                # A pre-existing whole-model limitation, not a rotary regression.
+                if "has no attribute '_channel_location_cache'" not in str(error):
+                    raise
+                with pytest.raises(RuntimeError, match="_channel_location_cache"):
+                    torch.jit.script(model)
+                pytest.xfail(
+                    "Baseline whole-LUNA scripting cannot infer the empty "
+                    "_channel_location_cache; block scripting is qualified separately."
+                )
+            model = torch.jit.script(model)
+            torch.testing.assert_close(
+                old_script(x, channel_locations=locations), expected
+            )
+        actual = model(x, channel_locations=locations)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)

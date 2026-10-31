@@ -1392,11 +1392,7 @@ class _Attention(nn.Module):
         if qkv_bias is not None:
             qkv = qkv + qkv_bias.to(qkv.dtype)  # keep autocast dtype
         qkv = qkv.reshape(B, N, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
-        q, k, v = (
-            qkv[0],
-            qkv[1],
-            qkv[2],
-        )  # make torchscript happy (cannot use tensor as tuple) (B, H, N, C)
+        q, k, v = qkv.unbind(0)  # (B, H, N, C); TorchScript cannot unpack qkv
         if self.q_norm is not None:
             q = self.q_norm(q).type_as(v)
         if self.k_norm is not None:
