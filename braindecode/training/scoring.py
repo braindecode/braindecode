@@ -8,7 +8,10 @@
 # License: BSD-3
 
 import warnings
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
+from itertools import tee
+from operator import itemgetter
+from typing import NamedTuple
 
 import numpy as np
 import torch
@@ -16,6 +19,8 @@ from skorch.callbacks.scoring import EpochScoring
 from skorch.dataset import unpack_data
 from skorch.utils import to_numpy
 from torch.utils.data import DataLoader
+
+from ._trial_aggregation import _iter_trial_pred_chunks, iter_trial_preds
 
 
 def trial_preds_from_window_preds(preds, i_window_in_trials, i_stop_in_trials):
@@ -42,47 +47,7 @@ def trial_preds_from_window_preds(preds, i_window_in_trials, i_stop_in_trials):
     assert len(preds) == len(i_window_in_trials) == len(i_stop_in_trials), (
         f"{len(preds)}, {len(i_window_in_trials)}, {len(i_stop_in_trials)}"
     )
-
-    # Algorithm for assigning window predictions to trials
-    # while removing duplicate predictions:
-    # Loop through windows:
-    # In each iteration you have predictions (assumed: #classes x #timesteps,
-    # or at least #timesteps must be in axis=1)
-    # and you have i_window_in_trial, i_stop_in_trial
-    # (i_trial removed from variable names for brevity)
-    # You first check if the i_window_in_trial is 1 larger
-    # than in last iteration, then you are still in the same trial
-    # Otherwise you are in a new trial
-    # If you are in the same trial, you check for duplicate predictions
-    # Only take predictions that are after (inclusive)
-    # the stop of the last iteration (i.e., the index of final prediction
-    # in the last iteration)
-    # Then add the duplicate-removed predictions from this window
-    # to predictions for current trial
-    preds_per_trial = []
-    cur_trial_preds = []
-    i_last_stop = None
-    i_last_window = -1
-    for window_preds, i_window, i_stop in zip(
-        preds, i_window_in_trials, i_stop_in_trials
-    ):
-        window_preds = np.array(window_preds)
-        if i_window != (i_last_window + 1):
-            assert i_window == 0, "window numbers in new trial should start from 0"
-            preds_per_trial.append(np.concatenate(cur_trial_preds, axis=1))
-            cur_trial_preds = []
-            i_last_stop = None
-
-        if i_last_stop is not None:
-            # Remove duplicates
-            n_needed_preds = i_stop - i_last_stop
-            window_preds = window_preds[:, -n_needed_preds:]
-        cur_trial_preds.append(window_preds)
-        i_last_window = i_window
-        i_last_stop = i_stop
-    # add last trial preds
-    preds_per_trial.append(np.concatenate(cur_trial_preds, axis=1))
-    return preds_per_trial
+    return list(iter_trial_preds(preds, i_window_in_trials, i_stop_in_trials))
 
 
 @contextmanager
@@ -237,8 +202,6 @@ class CroppedTrialEpochScoring(EpochScoring):
             current_score = self._scoring(cached_net, dataset, self.y_trues_)
         self._record_score(net.history, current_score)
 
-        return
-
 
 class CroppedTimeSeriesEpochScoring(CroppedTrialEpochScoring):
     """
@@ -378,17 +341,19 @@ class PostEpochTrainScoring(EpochScoring):
             # DataLoader will change the random state
             # Note line below setting rng state back
             rng_state = torch.random.get_rng_state()
-            iterator = net.get_iterator(dataset, training=False)
-            y_preds = []
-            y_test = []
-            for batch in iterator:
-                _, batch_y = unpack_data(batch)
-                yp = net.evaluation_step(batch, training=False)
-                yp = yp.to(device="cpu")
-                y_test.append(self.target_extractor(batch_y))
-                y_preds.append(yp)
-            y_test = np.concatenate(y_test)
-            torch.random.set_rng_state(rng_state)
+            try:
+                iterator = net.get_iterator(dataset, training=False)
+                y_preds = []
+                y_test = []
+                for batch in iterator:
+                    _, batch_y = unpack_data(batch)
+                    yp = net.evaluation_step(batch, training=False)
+                    yp = yp.to(device="cpu")
+                    y_test.append(self.target_extractor(batch_y))
+                    y_preds.append(yp)
+                y_test = np.concatenate(y_test)
+            finally:
+                torch.random.set_rng_state(rng_state)
 
             # Adding the recomputed preds to all other
             # instances of PostEpochTrainScoring of this
@@ -412,7 +377,15 @@ class PostEpochTrainScoring(EpochScoring):
         self._record_score(net.history, current_score)
 
 
-def predict_trials(module, dataset, return_targets=True, batch_size=1, num_workers=0):
+def predict_trials(
+    module,
+    dataset,
+    return_targets=True,
+    batch_size=1,
+    num_workers=0,
+    *,
+    loader_kwargs=None,
+):
     """Create trialwise predictions and optionally also return trialwise
     targets from a cropped dataset given a module.
 
@@ -428,6 +401,8 @@ def predict_trials(module, dataset, return_targets=True, batch_size=1, num_worke
         The batch size used to iterate the dataset.
     num_workers: int
         Number of workers used in DataLoader to iterate the dataset.
+    loader_kwargs: dict | None
+        DataLoader overrides, as in :func:`iter_trial_predictions`.
 
     Returns
     -------
@@ -442,65 +417,291 @@ def predict_trials(module, dataset, return_targets=True, batch_size=1, num_worke
             dimension: ``(n_trials,)`` for scalar targets, with further
             dimensions for multi-value or equal-length sequence targets. If
             trial lengths differ, a list with one target array per trial.
+
+    Notes
+    -----
+    Collects :func:`iter_trial_predictions` and, unlike it, leaves the module in
+    eval mode.
     """
-    # Ensure the model is in evaluation mode
     module.eval()
-    # we have a cropped dataset if there exists at least one trial with more
-    # than one compute window
-    more_than_one_window = sum(dataset.get_metadata()["i_window_in_trial"] != 0) > 0
-    if not more_than_one_window:
-        warnings.warn(
-            "This function was designed to predict trials from "
-            "cropped datasets, which typically have multiple compute "
-            "windows per trial. The given dataset has exactly one "
-            "window per trial."
-        )
-    loader = DataLoader(
-        dataset=dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
+    trials = iter_trial_predictions(
+        module,
+        dataset,
+        return_targets,
+        batch_size,
+        num_workers,
+        loader_kwargs=loader_kwargs,
     )
+    if return_targets:
+        predictions, targets = zip(*trials, strict=True)
+        return _stack_trials(list(predictions)), _stack_trials(list(targets))
+    return _stack_trials(list(trials))
+
+
+def _trial_prediction_loader(dataset, batch_size, num_workers, loader_kwargs):
+    """Construct a chronological loader; never inherit unrelated net settings."""
+    options = {"batch_size": batch_size, "num_workers": num_workers}
+    options.update(loader_kwargs or {})
+    unsupported = set(options) - {
+        "batch_size",
+        "num_workers",
+        "pin_memory",
+        "persistent_workers",
+        "prefetch_factor",
+        "worker_init_fn",
+        "generator",
+    }
+    if unsupported:
+        raise ValueError(
+            "Unsupported cropped prediction loader_kwargs: "
+            + ", ".join(sorted(unsupported))
+        )
+    # Automatic batching is required for the window/metadata shape contract.
+    if options["batch_size"] is None:
+        raise ValueError("batch_size must be a positive integer, not None")
+    return DataLoader(dataset=dataset, shuffle=False, **options)
+
+
+def _iter_prediction_windows(module, loader, return_targets):
+    """Yield rows of one predicted batch at a time; own the loader lifecycle."""
     device = next(module.parameters()).device
-    all_preds, all_ys, all_inds = [], [], []
-    with torch.no_grad():
-        for batch in loader:
+    batches = iter(loader)
+    multiple_windows = False
+    try:
+        for batch in batches:
             if len(batch) > 3:
                 raise ValueError(
                     "Cropped trial prediction does not support channel positions; "
                     "disable return_ch_pos (set_return_ch_pos(False)) for cropped "
                     "evaluation."
                 )
-            X, y, ind = batch[0], batch[1], batch[2]
-            X = X.to(device)
-            preds = module(X)
-            all_preds.extend(preds.cpu().numpy().astype(np.float32))
-            all_ys.extend(y.cpu().numpy().astype(np.float32))
-            all_inds.extend(ind)
-    preds_per_trial = trial_preds_from_window_preds(
-        preds=all_preds,
-        i_window_in_trials=torch.cat(all_inds[0::3]),
-        i_stop_in_trials=torch.cat(all_inds[2::3]),
-    )
-    preds_per_trial = _stack_trials(preds_per_trial)
-    if return_targets:
-        # Scalar or multi-value (e.g. one value per target channel with
-        # last_target_only=True) window targets: one target per trial.
-        # Only targets with a time axis, (n_targets, n_times), are sequences.
-        if all_ys[0].ndim < 2:
-            all_ys = np.array(all_ys)
-            ys_per_trial = all_ys[
-                np.diff(torch.cat(all_inds[0::3]), prepend=[np.inf]) != 1
-            ]
-        else:
-            ys_per_trial = trial_preds_from_window_preds(
-                preds=all_ys,
-                i_window_in_trials=torch.cat(all_inds[0::3]),
-                i_stop_in_trials=torch.cat(all_inds[2::3]),
+            X, y, ind = batch
+            # Keep no_grad local to forward: callers must not inherit it at yield.
+            with torch.no_grad():
+                predictions = module(X.to(device)).cpu().numpy().astype(np.float32)
+            targets = y.cpu().numpy().astype(np.float32) if return_targets else None
+            del batch, X, y
+            for row, window, stop in zip(
+                range(len(predictions)), ind[0], ind[2], strict=True
+            ):
+                multiple_windows |= bool(window != 0)
+                yield (
+                    predictions[row],
+                    (targets[row] if return_targets else None),
+                    int(window),
+                    int(stop),
+                )
+        if not multiple_windows:
+            warnings.warn(
+                "This function was designed to predict trials from "
+                "cropped datasets, which typically have multiple compute "
+                "windows per trial. The given dataset has exactly one "
+                "window per trial."
             )
-            ys_per_trial = _stack_trials(ys_per_trial)
-        return preds_per_trial, ys_per_trial
-    return preds_per_trial
+    finally:
+        # DataLoader has no public close; this also closes persistent workers.
+        # Single-process iterators do not expose the shutdown hook.
+        shutdown = getattr(batches, "_shutdown_workers", None)
+        if shutdown is not None:
+            shutdown()
+
+
+def _prepend_first(first, remaining):
+    """Prepend one row, releasing it before advancing the remaining source."""
+    yield first
+    del first
+    yield from remaining
+
+
+def iter_trial_predictions(
+    module,
+    dataset,
+    return_targets=True,
+    batch_size=1,
+    num_workers=0,
+    *,
+    loader_kwargs=None,
+):
+    """Yield cropped predictions, or ``(prediction, target)`` pairs, trial by trial.
+
+    Parameters
+    ----------
+    module : torch.nn.Module
+        Model implementing forward. It runs in eval mode without gradients; the
+        mode of every submodule is restored on exhaustion, error or ``close()``.
+    dataset : torch.utils.data.Dataset
+        Chronological cropped windows with targets and window indices.
+    return_targets : bool
+        If True, yield ``(prediction, target)`` pairs.
+    batch_size : int
+        DataLoader batch size.
+    num_workers : int
+        DataLoader workers.
+    loader_kwargs : dict | None
+        DataLoader overrides. Only ``batch_size``, ``num_workers``,
+        ``pin_memory``, ``persistent_workers``, ``prefetch_factor``,
+        ``worker_init_fn`` and ``generator`` are accepted.
+
+    Yields
+    ------
+    prediction : np.ndarray or tuple of np.ndarray
+        Float32 prediction of one trial, ``(n_outputs, n_predictions)``, or a
+        pair with its float32 target: the first window's target for scalar and
+        vector targets, the overlap-reconstructed target for time targets.
+
+    Notes
+    -----
+    Memory holds one trial, the loader batches and one window of lookahead, not
+    the completed trials; use :func:`iter_trial_prediction_chunks` to bound a
+    long trial. Close the iterator when stopping early. See
+    :ref:`cropped-inference`.
+    """
+    return _iter_trial_outputs(
+        module, dataset, None, return_targets, batch_size, num_workers, loader_kwargs
+    )
+
+
+class TrialPredictionChunk(NamedTuple):
+    """One chunk yielded by :func:`iter_trial_prediction_chunks`.
+
+    Attributes
+    ----------
+    trial_index : int
+        Zero-based trial index.
+    prediction_start : int
+        Offset of the chunk in the trial's reconstructed predictions, not an
+        EEG sample index.
+    prediction : np.ndarray
+        Float32 array of shape ``(n_outputs, n_predictions_in_chunk)``.
+    target : np.ndarray | None
+        The trial's scalar or vector target, this chunk of its time target, or
+        None when targets are not requested.
+    """
+
+    trial_index: int
+    prediction_start: int
+    prediction: np.ndarray
+    target: np.ndarray | None
+
+
+def iter_trial_prediction_chunks(
+    module,
+    dataset,
+    *,
+    windows_per_chunk,
+    return_targets=True,
+    batch_size=1,
+    num_workers=0,
+    loader_kwargs=None,
+):
+    """Yield predictions in chunks of at most ``windows_per_chunk`` windows.
+
+    Takes the arguments of :func:`iter_trial_predictions` and has the same
+    lifecycle. A chunk never spans two trials and overlap removal carries
+    across chunks, so concatenating a trial's chunks along axis 1 gives its
+    :func:`iter_trial_predictions` output exactly. Memory depends on the chunk
+    size, not on the trial length.
+
+    Parameters
+    ----------
+    windows_per_chunk : int
+        Maximum number of source windows per chunk.
+    module, dataset, return_targets, batch_size, num_workers, loader_kwargs
+        As in :func:`iter_trial_predictions`.
+
+    Yields
+    ------
+    chunk : TrialPredictionChunk
+    """
+    if windows_per_chunk is None:
+        raise ValueError("windows_per_chunk must be a positive integer")
+    return _iter_trial_outputs(
+        module,
+        dataset,
+        windows_per_chunk,
+        return_targets,
+        batch_size,
+        num_workers,
+        loader_kwargs,
+    )
+
+
+def _iter_trial_outputs(
+    module,
+    dataset,
+    windows_per_chunk,
+    return_targets,
+    batch_size,
+    num_workers,
+    loader_kwargs,
+):
+    """Yield whole trials (``windows_per_chunk=None``) or chunk records."""
+    loader = _trial_prediction_loader(dataset, batch_size, num_workers, loader_kwargs)
+    modes = [(child, child.training) for child in module.modules()]
+    # Callbacks run last-in first-out, each one even if an earlier one raises.
+    with ExitStack() as cleanup:
+
+        @cleanup.callback
+        def restore_modes():
+            for child, training in modes:
+                child.training = training
+
+        rows = _iter_prediction_windows(module, loader, return_targets)
+        cleanup.callback(rows.close)
+        module.eval()
+        pred_rows = rows
+        if return_targets:
+            pred_rows, target_rows = tee(rows)
+            targets = _iter_chunk_targets(target_rows, windows_per_chunk)
+            cleanup.callback(targets.close)
+            # An unadvanced tee cursor would keep every row read after it.
+            del target_rows
+        predictions = _iter_trial_pred_chunks(
+            ((row[0], row[2], row[3]) for row in pred_rows), windows_per_chunk
+        )
+        cleanup.callback(predictions.close)
+        del pred_rows
+        for trial, start, prediction in predictions:
+            target = next(targets) if return_targets else None
+            if windows_per_chunk is not None:
+                yield TrialPredictionChunk(trial, start, prediction, target)
+            elif return_targets:
+                yield prediction, target
+            else:
+                yield prediction
+            # Release this output before computing the next one.
+            del prediction, target
+
+
+def _iter_chunk_targets(rows, limit):
+    """Yield the target of each prediction chunk.
+
+    Time targets (``ndim >= 2``) are reconstructed like predictions. Scalar and
+    vector targets repeat the trial's first-window target in each chunk.
+    """
+    first = next(rows)
+    is_time = first[1].ndim >= 2
+    rows = _prepend_first(first, rows)
+    del first
+    if is_time:
+        chunks = _iter_trial_pred_chunks(((r[1], r[2], r[3]) for r in rows), limit)
+        yield from map(itemgetter(2), chunks)
+        return
+    # Same partition as the predictions: a chunk ends after `limit` windows or
+    # when the next trial starts.
+    first, previous_window, count = None, -1, 0
+    for _, target, window, _ in rows:
+        if first is None or window != previous_window + 1:
+            if count:
+                yield first.copy()
+            first, count = target, 0
+        previous_window = window
+        count += 1
+        if count == limit:
+            yield first.copy()
+            count = 0
+    if count:
+        yield first.copy()
 
 
 def _stack_trials(per_trial):
@@ -520,7 +721,7 @@ def f1_event(pred_events, gt_events, iou_threshold: float = 0.5) -> float:
     matched_gt = set()
     tp = 0
     preds = sorted(
-        pred_events, key=lambda ev: (ev[3] if len(ev) > 3 else 1.0), reverse=True
+        pred_events, key=lambda ev: ev[3] if len(ev) > 3 else 1.0, reverse=True
     )
     for ev in preds:
         ps, pe, pc = ev[0], ev[1], int(ev[2])

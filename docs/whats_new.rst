@@ -28,6 +28,15 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :func:`braindecode.training.iter_trial_predictions`,
+  :func:`~braindecode.training.iter_trial_prediction_chunks` and
+  :class:`~braindecode.training.TrialPredictionChunk` to stream cropped
+  predictions one trial, or one chunk of at most ``windows_per_chunk`` windows,
+  at a time. See :ref:`cropped-inference` (by `Bruno Aristimunha`_).
+- :func:`braindecode.training.predict_trials` now reconstructs through the
+  same streaming code and takes ``loader_kwargs``; its outputs are unchanged.
+  The single-window warning is now raised after inference, not before it
+  (by `Bruno Aristimunha`_).
 - CI: tests marked ``slow`` run only with ``--run-slow`` or ``-m slow``; the
   coverage job runs them in their own step, reusing its TorchInductor cache.
   The ``acceleration_caller_state`` test fixture restores the RNG, thread and
@@ -509,6 +518,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.training.PostEpochTrainScoring` restores the saved CPU
+  Torch RNG state even when its reevaluation fails (by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.FilterBankLayer`, and so :class:`braindecode.models.FBCNet`, :class:`braindecode.models.FBMSNet`, :class:`braindecode.models.FBLightConvNet` and :class:`braindecode.models.IFNet`, script again with PyTorch 2.15, where ``torch.jit.script`` failed inside :func:`torchaudio.functional.lfilter` ("Expression of type dots cannot be used in a type expression"). Eager filtering still calls torchaudio; the scripted graph runs the same operations as before, so outputs are unchanged (:gh:`1501` by `Bruno Aristimunha`_).
 
 - Model loading validates relative custom weight paths and local symlink containment,
