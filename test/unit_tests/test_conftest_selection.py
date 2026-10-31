@@ -86,13 +86,16 @@ def test_acceleration_caller_state_restores_after_pass_and_failure(pytester):
         import pytest
         import torch
 
+        # Fixed targets: toggling would undo a missing restore in the next test.
+        THREADS, GRAD = torch.get_num_threads() + 1, not torch.is_grad_enabled()
+
         @pytest.mark.parametrize("fail", [False, True])
         def test_recipe(acceleration_caller_state, fail):
             random.seed(72)
             np.random.seed(72)
             torch.manual_seed(72)
-            torch.set_num_threads(2 if torch.get_num_threads() == 1 else 1)
-            torch.set_grad_enabled(not torch.is_grad_enabled())
+            torch.set_num_threads(THREADS)
+            torch.set_grad_enabled(GRAD)
             assert not fail
         """
     )
