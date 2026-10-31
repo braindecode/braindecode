@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- The MOABB benchmark example no longer advises ``n_jobs=1`` on a GPU: with NVIDIA's Multi-Process Service running, ``n_jobs=18`` trained BNCI2014_001's 18 cross-session folds 2x faster than ``n_jobs=1`` for EEGNet, ShallowFBCSPNet and ATCNet, with the same score on every fold, and it notes that ``setup_seed`` does not reach the worker processes (:gh:`1500` by `Bhargav Kowshik`_).
 - :class:`braindecode.models.BrainBERT`, :class:`~braindecode.models.EpiNT`, :class:`~braindecode.models.Brant`, :class:`~braindecode.models.PopulationTransformer`, :class:`~braindecode.models.BaRISTA`, :class:`~braindecode.models.DIVER1` and :class:`~braindecode.models.MVPFormer` accept a ``ch_mask`` of real channels, as returned by :func:`braindecode.datasets.pad_channels_collate`, so one batch can mix recordings with different channel counts; PopT's ``ch_mask`` replaces ``key_padding_mask``. Add the shared helpers :func:`braindecode.functional.check_ch_mask`, :func:`~braindecode.functional.pack_channels`, :func:`~braindecode.functional.unpack_channels`, :func:`~braindecode.functional.masked_mean` and :func:`~braindecode.functional.masked_group_norm` (:gh:`1487` by `Julien Gadonneix`_).
 - CI: ``test_forward_in_dtype`` no longer runs the models in float16 on the CPU; torch's CPU float16 kernels killed the test worker without a traceback in about one run in seven (the hangs of the last days), and bfloat16 covers the same dtype checks (:gh:`1474` by `Bruno Aristimunha`_).
 - CI: a test that stops answering fails after 10 minutes with a traceback (``pytest-timeout``), instead of the job waiting until its own timeout; twice an xdist worker went silent during ``test_forward_in_dtype`` and the run idled for 40 minutes to 5 hours (:gh:`1473` by `Bruno Aristimunha`_).
@@ -2622,3 +2623,4 @@ Authors
 
 .. _lindicaphxag-tech: https://github.com/lindicaphxag-tech
 .. _Seáic Mac Murchadha: https://github.com/seaic-mac-murchadha
+.. _Bhargav Kowshik: https://github.com/bkowshik
