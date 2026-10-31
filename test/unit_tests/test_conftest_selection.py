@@ -1,12 +1,16 @@
-"""Selection rules of the shared ``test/conftest.py`` (slow and network tiers)."""
+"""Rules of the shared ``test/conftest.py``: slow and network tiers, caller state."""
 
+import pickle
+import random
 from pathlib import Path
 
+import numpy as np
 import pytest
+import torch
 
 pytest_plugins = ["pytester"]
 
-CONFTEST = Path(__file__).resolve().parents[1] / "conftest.py"
+CONFTEST = (Path(__file__).resolve().parents[1] / "conftest.py").read_text()
 
 MARKED_TESTS = """
 import pytest
@@ -34,13 +38,6 @@ def test_slow_param(model):
     pass
 """
 
-INI = """
-[pytest]
-markers =
-    network: tests that require network access
-    slow: slow tests
-"""
-
 NETWORK = {"test_network", "test_slow_network", "test_slow_param[REVE]"}
 ALL = {"test_plain", "test_slow"} | NETWORK
 
@@ -58,24 +55,48 @@ ALL = {"test_plain", "test_slow"} | NETWORK
     ids=["default", "run-network", "run-slow", "m-slow", "run-slow-and-network"],
 )
 def test_slow_and_network_selection(pytester, args, passed, skipped):
-    pytester.makeconftest(CONFTEST.read_text())
-    pytester.makeini(INI)
+    pytester.makeconftest(CONFTEST)
     pytester.makepyfile(test_marked=MARKED_TESTS)
     reprec = pytester.inline_run("-p", "no:cacheprovider", "-p", "no:xdist", *args)
-    outcomes = {"passed": set(), "skipped": set(), "failed": set()}
-    for report in reprec.getreports("pytest_runtest_logreport"):
-        name = report.nodeid.split("::")[-1]
-        if report.when == "call" and report.passed:
-            outcomes["passed"].add(name)
-        elif report.skipped:
-            outcomes["skipped"].add(name)
-        elif report.failed:
-            outcomes["failed"].add(name)
-    assert outcomes == {"passed": passed, "skipped": skipped, "failed": set()}
+    outcomes = [{r.nodeid.split("::")[-1] for r in rs} for rs in reprec.listoutcomes()]
+    assert outcomes == [passed, skipped, set()]
     # Whatever neither runs nor skips is deselected, never silently dropped.
-    deselected = {
-        item.name
-        for call in reprec.getcalls("pytest_deselected")
-        for item in call.items
-    }
+    calls = reprec.getcalls("pytest_deselected")
+    deselected = {item.name for call in calls for item in call.items}
     assert deselected == ALL - passed - skipped
+
+
+def _caller_state():
+    return (
+        random.getstate(),
+        pickle.dumps(np.random.get_state()),
+        torch.get_rng_state().tolist(),
+        torch.get_num_threads(),
+        torch.is_grad_enabled(),
+    )
+
+
+def test_acceleration_caller_state_restores_after_pass_and_failure(pytester):
+    pytester.makeconftest(CONFTEST)
+    pytester.makepyfile(
+        """
+        import random
+
+        import numpy as np
+        import pytest
+        import torch
+
+        @pytest.mark.parametrize("fail", [False, True])
+        def test_recipe(acceleration_caller_state, fail):
+            random.seed(72)
+            np.random.seed(72)
+            torch.manual_seed(72)
+            torch.set_num_threads(2 if torch.get_num_threads() == 1 else 1)
+            torch.set_grad_enabled(not torch.is_grad_enabled())
+            assert not fail
+        """
+    )
+    before = _caller_state()
+    reprec = pytester.inline_run("-p", "no:cacheprovider", "-p", "no:xdist")
+    reprec.assertoutcome(passed=1, failed=1)
+    assert _caller_state() == before

@@ -3,40 +3,25 @@ import pytest
 
 @pytest.fixture
 def acceleration_caller_state():
-    """Isolate destructive benchmark recipes, including exceptional exits.
-
-    Opt in only in acceleration test modules. Do not initialize CUDA merely to
-    snapshot it, or normalize the caller's state before testing the recipe.
-    """
+    """Restore the RNG, thread and grad-mode state a test changes, even if it fails."""
     import random
-    from contextlib import contextmanager
 
     import numpy as np
     import torch
 
-    @contextmanager
-    def preserve():
-        python_rng = random.getstate()
-        numpy_rng = np.random.get_state()
-        torch_rng = torch.get_rng_state()
-        cuda_rng = (
-            torch.cuda.get_rng_state_all() if torch.cuda.is_initialized() else None
-        )
-        threads = torch.get_num_threads()
-        grad_enabled = torch.is_grad_enabled()
-        try:
-            yield
-        finally:
-            random.setstate(python_rng)
-            np.random.set_state(numpy_rng)
-            torch.set_rng_state(torch_rng)
-            if cuda_rng is not None:
-                torch.cuda.set_rng_state_all(cuda_rng)
-            torch.set_num_threads(threads)
-            torch.set_grad_enabled(grad_enabled)
-
-    with preserve():
-        yield preserve
+    python_rng, numpy_rng = random.getstate(), np.random.get_state()
+    torch_rng, threads = torch.get_rng_state(), torch.get_num_threads()
+    grad_enabled = torch.is_grad_enabled()
+    # Do not initialize CUDA just to snapshot it.
+    cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_initialized() else None
+    yield
+    random.setstate(python_rng)
+    np.random.set_state(numpy_rng)
+    torch.set_rng_state(torch_rng)
+    if cuda_rng is not None:
+        torch.cuda.set_rng_state_all(cuda_rng)
+    torch.set_num_threads(threads)
+    torch.set_grad_enabled(grad_enabled)
 
 
 def pytest_addoption(parser):
