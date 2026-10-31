@@ -547,6 +547,9 @@ Requirements
 Bug fixes
 ==========
 
+- Zarr cache creation reserves a unique temporary file per call (exclusive
+  creation), so threads of one process no longer share one; permissions and
+  existing caches are unchanged (by `Bruno Aristimunha`_).
 - :class:`braindecode.training.PostEpochTrainScoring` restores the saved CPU
   Torch RNG state even when its reevaluation fails (by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.FilterBankLayer`, and so :class:`braindecode.models.FBCNet`, :class:`braindecode.models.FBMSNet`, :class:`braindecode.models.FBLightConvNet` and :class:`braindecode.models.IFNet`, script again with PyTorch 2.15, where ``torch.jit.script`` failed inside :func:`torchaudio.functional.lfilter` ("Expression of type dots cannot be used in a type expression"). Eager filtering still calls torchaudio; the scripted graph runs the same operations as before, so outputs are unchanged (:gh:`1501` by `Bruno Aristimunha`_).

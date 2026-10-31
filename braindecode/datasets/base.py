@@ -26,6 +26,7 @@ from itertools import chain
 from operator import attrgetter
 from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
+from uuid import uuid4
 
 import mne
 import mne.io
@@ -479,14 +480,14 @@ def _zarr_to_memmap(zarr_path, group_name):
     ``SIGBUS`` when workers page-faulted on the unlinked inode.
 
     Under ``N`` concurrent writers, every racer materialises the data
-    into its own per-pid temp file and then tries to publish it; at
+    into its own per-call temp file and then tries to publish it; at
     most one ``os.link`` wins, and the losers silently ``unlink``
     their temp file in a ``finally`` block.  The wasted I/O scales
     with the number of racers; for the workloads braindecode targets
     (a handful of concurrent workers per group) it is negligible.
 
     Crash recovery: if a writer dies mid-run the only debris is a
-    ``<group>.<pid>.tmp.npy`` file.  Such files are namespaced by pid
+    ``<group>.<uuid>.tmp.npy`` file.  Such files are unique per call
     so they can never collide with a live writer, they are never
     read by the fast path, and they do not prevent subsequent
     callers from producing a correct result.  Caches written by
@@ -504,7 +505,10 @@ def _zarr_to_memmap(zarr_path, group_name):
 
     cache_dir.mkdir(parents=True, exist_ok=True)
     arr = zarr.open(zarr_path, mode="r")[group_name]["data"]
-    tmp_path = cache_dir / f"{group_name}.{os.getpid()}.tmp.npy"
+    # Unique per call, not per pid: threads of one process must not share it.
+    # Exclusive creation, not tempfile.mkstemp, which would make it 0600.
+    tmp_path = cache_dir / f"{group_name}.{uuid4().hex}.tmp.npy"
+    tmp_path.open("xb").close()
     try:
         # Write chunk-by-chunk to avoid materialising the whole zarr
         # array in RAM.
@@ -531,9 +535,9 @@ def _zarr_to_memmap(zarr_path, group_name):
             # canonical one; ours is discarded in the finally block.
             pass
     finally:
-        # Always remove our private per-pid temp file.  It is
-        # namespaced by pid so this cannot clobber a concurrent
-        # writer's in-progress tmp file.
+        # Always remove our private per-call temp file.  Its name is
+        # unique per call so this cannot clobber a concurrent writer's
+        # in-progress tmp file.
         try:
             os.unlink(tmp_path)
         except FileNotFoundError:
