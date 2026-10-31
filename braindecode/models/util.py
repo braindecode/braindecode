@@ -5,6 +5,7 @@
 # License: BSD (3-clause)
 import inspect
 import math
+import sys
 import warnings
 from collections.abc import Callable as CallableABC
 from copy import deepcopy
@@ -12,6 +13,7 @@ from functools import lru_cache, wraps
 from pathlib import Path
 from types import SimpleNamespace
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -26,10 +28,8 @@ from typing import (
 
 import mne
 import numpy as np
-import pandas as pd
 import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` through the BatchNorm-guard wrapper's __globals__
 from mne.io.constants import FIFF
-from sklearn.metrics import pairwise_distances_argmin
 from torch import nn
 from torchaudio.transforms import Resample
 
@@ -49,7 +49,27 @@ _KIND_TO_CH_TYPE = {
 INTRACRANIAL_CH_TYPES = frozenset({"seeg", "dbs", "ecog"})
 
 
-models_dict = {}
+# Read through ``models_dict`` (module ``__getattr__`` below), which fills it on
+# first access so importing braindecode does not import every model.
+_models_dict: dict[str, Any] = {}
+# Annotations only, for type checkers; the values come from ``__getattr__``.
+models_dict: dict[str, Any]
+_summary_table: "pd.DataFrame"
+
+if TYPE_CHECKING:
+    import pandas as pd
+else:  # hidden from checkers so misspelled names stay errors
+
+    def __getattr__(name):
+        if name == "models_dict":
+            if not _models_dict:
+                _init_models_dict()
+            return _models_dict
+        if name == "_summary_table":  # read summary.csv once, on first access
+            table = globals()[name] = get_summary_table()
+            return table
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # Resolve serialized classes by exact lookup, never by importing a config path.
 # Include public aliases and the defining paths emitted by get_config().
@@ -261,14 +281,18 @@ def resolve_type_kwargs(cls, kwargs):
 
 
 def _init_models_dict():
-    import braindecode.models as models
+    from braindecode import models
+    from braindecode.models.base import EEGModuleMixin
 
-    for m in inspect.getmembers(models, inspect.isclass):
-        if (
-            issubclass(m[1], models.base.EEGModuleMixin)
-            and m[1] != models.base.EEGModuleMixin
-        ):
-            models_dict[m[0]] = m[1]
+    # Plain getattr over every public name: a model that fails to import raises here.
+    found = {}
+    for name in sorted(models._LAZY):
+        obj = getattr(models, name)
+        is_model = inspect.isclass(obj) and issubclass(obj, EEGModuleMixin)
+        if is_model and obj is not EEGModuleMixin:
+            found[name] = obj
+    # One update() publishes every entry at once, so no thread sees a partial dict.
+    _models_dict.update(found)
 
 
 def _get_model_class(model_name: str):
@@ -292,10 +316,9 @@ def _get_model_class(model_name: str):
     ValueError
         If ``model_name`` is not a registered model.
     """
-    if not models_dict:
-        _init_models_dict()
-    if model_name in models_dict:
-        return models_dict[model_name]
+    registry = sys.modules[__name__].models_dict  # also honours a patched models_dict
+    if model_name in registry:
+        return registry[model_name]
     raise ValueError(f"Unknown model name {model_name!r}.")
 
 
@@ -897,6 +920,8 @@ def get_summary_table(dir_name=None):
 
     path = dir_path / "summary.csv"
 
+    import pandas as pd
+
     df = pd.read_csv(
         path,
         header=0,
@@ -1095,6 +1120,8 @@ def resolve_channel_indices(
     if not np.isfinite(norms).all() or np.any(norms <= 1e-7):
         return None
     directions = radial / norms
+    from sklearn.metrics import pairwise_distances_argmin
+
     nearest = pairwise_distances_argmin(
         directions[: len(locations)], directions[len(locations) :], metric=metric
     )
@@ -1274,6 +1301,3 @@ def channel_types_from_chs_info(
         else:
             types.append("unknown")
     return types
-
-
-_summary_table = get_summary_table()

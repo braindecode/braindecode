@@ -28,6 +28,16 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- ``import braindecode`` and ``import braindecode.models`` no longer import
+  every model, the estimators, scikit-learn and pandas up front: the model
+  classes, :class:`braindecode.EEGClassifier`, :class:`~braindecode.EEGRegressor`,
+  the subpackages and ``models_dict`` load on first access (PEP 562 module
+  ``__getattr__``), with the same names, ``__all__`` and model registry. On
+  CPU with torch 2.14.1, ``import braindecode`` took 5 ms instead of 3.1 s and
+  ``from braindecode.models import EEGNet`` 1.6 s instead of 3.1 s. A new model
+  needs one import line, in the ``if TYPE_CHECKING:`` block of
+  ``braindecode/models/__init__.py``, as the new-model checklist says (by
+  `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` reuses differentiable rotary tables within
   each attention forward (no persistent cache); :class:`braindecode.models.Labram`
   splits its fused qkv projection with ``unbind`` instead of three selects.
