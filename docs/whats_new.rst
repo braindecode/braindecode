@@ -499,11 +499,12 @@ Requirements
 - Add ``sphinx-markdown-builder==0.6.11`` and ``pytest<9.1`` to the docs extra
   for version-scoped Markdown exports and their offline contract tests.
 
-- Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
+- Require PyTorch and TorchAudio >= 2.6, the PyTorch of the Intel Gaudi 1.21
+  software stack, and remove obsolete attention fallbacks.
   REVE and ZUNA now import PyTorch's RMSNorm layer directly, preserving their
   explicit epsilon values. Intel macOS is no longer supported because
   PyTorch stopped providing its binary packages after 2.2.
-  (:gh:`1174` by `Bruno Aristimunha`_)
+  (:gh:`1174` and :gh:`1504` by `Bruno Aristimunha`_)
 
 Bug fixes
 ==========
