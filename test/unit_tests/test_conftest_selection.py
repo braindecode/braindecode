@@ -1,6 +1,5 @@
 """Rules of the shared ``test/conftest.py``: slow and network tiers, caller state."""
 
-import pickle
 import random
 from pathlib import Path
 
@@ -69,7 +68,8 @@ def test_slow_and_network_selection(pytester, args, passed, skipped):
 def _caller_state():
     return (
         random.getstate(),
-        pickle.dumps(np.random.get_state()),
+        np.random.get_state()[1].tobytes(),
+        np.random.get_state()[2],
         torch.get_rng_state().tolist(),
         torch.get_num_threads(),
         torch.is_grad_enabled(),
