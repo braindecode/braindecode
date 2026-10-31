@@ -129,14 +129,12 @@ jobs:
       # the TorchInductor cache; elsewhere it recompiled every model cold.
       run: pytest -vv --durations=0 -n auto --dist worksteal --max-worker-restart=2 test/ -k "not test_model_compiled"
 
-    # Tests marked slow are deselected above (test/conftest.py): compiler
-    # numerics, compiled resume/warm start and the CPU/Gloo distributed recipe.
-    # They run here, after the default suite has warmed the TorchInductor cache,
-    # and serially, since the distributed tests start their own process groups.
+    # Tests marked slow, deselected above (test/conftest.py), run after the
+    # default suite warmed the TorchInductor cache; serially, since the
+    # distributed tests start their own process groups.
     - name: Run Slow Test Tier with Coverage
       if: ${{ matrix.run-coverage }}
       env:
-        HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
         TORCHINDUCTOR_CACHE_DIR: ${{ runner.temp }}/torchinductor
         TORCHINDUCTOR_FX_GRAPH_CACHE: "1"
       run: pytest -vv --durations=0 -m slow --cov=braindecode --cov-append test/ --cov-report term --cov-report xml:coverage.xml
