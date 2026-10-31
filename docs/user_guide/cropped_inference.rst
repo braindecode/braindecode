@@ -86,3 +86,26 @@ collation, ``batch_size=None`` and any other key are rejected, because reconstru
 relies on chronological batches. Batches with channel positions are not supported:
 disable ``return_ch_pos``. Loader settings are not copied from an estimator's training
 loader.
+
+.. _compile-checkpoint-migration:
+
+*********************************************
+ Opt-in compilation and checkpoint migration
+*********************************************
+
+:class:`~braindecode.EEGClassifier` and :class:`~braindecode.EEGRegressor` accept
+``compile=True`` and skorch's ``compile__*`` options. Compilation is opt-in and not
+guaranteed to be faster. It compiles the module in place, so supplied Parameters, shared
+parameters and state-dict keys stay the same, and ``save_params``/``load_params``
+checkpoints load into eager models.
+
+Checkpoints from skorch's ``torch.compile`` wrapper have ``_orig_mod.``-prefixed keys,
+which loading does **not** strip. Export ``_orig_mod.state_dict()`` from the wrapped
+module where it was saved, or remove only that verified prefix, then load the result
+strictly.
+
+Pickle, joblib and deepcopy give an eager estimator; warm start and ``partial_fit`` do
+not recompile. ``initialize()`` compiles again but also reinitializes the module, so
+call ``load_params`` afterwards to continue training. An estimator only replaces or
+clears a compiled call it installed itself: turn compilation off through that estimator
+before reusing the module eagerly elsewhere.
