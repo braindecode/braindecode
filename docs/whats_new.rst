@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- The MOABB benchmark example no longer advises ``n_jobs=1`` on a GPU: with NVIDIA's Multi-Process Service running, ``n_jobs=18`` trained BNCI2014_001's 18 cross-session folds 2x faster than ``n_jobs=1`` for EEGNet, ShallowFBCSPNet and ATCNet, with the same score on every fold, and it notes that ``setup_seed`` does not reach the worker processes (:gh:`1500` by `Bhargav Kowshik`_).
 - Add a :ref:`CPU/Gloo distributed-window evaluation recipe
   <distributed-window-evaluation>` with identity checks, chronological trial
   reconstruction and global metrics; it is a recipe, not an estimator backend
@@ -2708,3 +2709,4 @@ Authors
 
 .. _lindicaphxag-tech: https://github.com/lindicaphxag-tech
 .. _Seáic Mac Murchadha: https://github.com/seaic-mac-murchadha
+.. _Bhargav Kowshik: https://github.com/bkowshik
