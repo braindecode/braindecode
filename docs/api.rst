@@ -886,7 +886,12 @@ models and evaluate their performance.
      mixup_criterion
      trial_preds_from_window_preds
      predict_trials
+     iter_trial_predictions
+     iter_trial_prediction_chunks
+     TrialPredictionChunk
      f1_event
+
+See :ref:`cropped-inference` for memory bounds, lifecycle and loader settings.
 
 *******
  Utils

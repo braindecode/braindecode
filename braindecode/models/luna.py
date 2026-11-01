@@ -594,16 +594,15 @@ class _RotarySelfAttentionBlock(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def _rotate_queries_or_keys(self, tensor: torch.Tensor) -> torch.Tensor:
-        """Apply full-head RoPE without concatenating empty boundary views."""
+    def _rotary_tables(self, tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Build RoPE tables for one forward; no cache, the frequencies may train."""
         seq_len = tensor.shape[-2]
         positions = torch.arange(seq_len, device=tensor.device, dtype=tensor.dtype)
         freqs = self.rotary_emb(positions)
 
         # Keep the full-head reshape (including its empty-input boundary).
         tensor.reshape(list(tensor.shape[:-1]) + [-1, 2])
-        transformed = apply_rotary(tensor, freqs.cos(), freqs.sin())
-        return transformed.to(tensor.dtype)
+        return freqs.cos(), freqs.sin()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, N, C = x.shape
@@ -615,8 +614,9 @@ class _RotarySelfAttentionBlock(nn.Module):
         # unbind, not qkv[0..2]: the backward of three selects writes three
         # zero-filled copies of the whole qkv tensor and sums them.
         q, k, v = qkv.unbind(0)
-        q = self._rotate_queries_or_keys(q)
-        k = self._rotate_queries_or_keys(k)
+        cos, sin = self._rotary_tables(q)  # k has the shape of q
+        q = apply_rotary(q, cos, sin).to(q.dtype)
+        k = apply_rotary(k, cos, sin).to(k.dtype)
         attn = F.scaled_dot_product_attention(
             q,
             k,

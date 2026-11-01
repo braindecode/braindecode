@@ -200,7 +200,7 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
         """
         return self.predict_proba(X).argmax(1)
 
-    def predict_trials(self, X, return_targets=True):
+    def predict_trials(self, X, return_targets=True, *, loader_kwargs=None):
         """Create trialwise predictions from a cropped dataset.
 
         Parameters
@@ -209,6 +209,9 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
             A braindecode dataset to be predicted.
         return_targets : bool
             If True, additionally returns the trial targets.
+        loader_kwargs : dict | None
+            Cropped mode only: DataLoader overrides, see
+            :func:`braindecode.training.iter_trial_predictions`.
 
         Returns
         -------
@@ -225,6 +228,8 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
             trial lengths differ, a list with one target array per trial.
         """
         if not self.cropped:
+            if loader_kwargs is not None:
+                raise ValueError("loader_kwargs requires cropped=True")
             warnings.warn(
                 "This method was designed to predict trials in cropped mode. "
                 "Calling it when cropped is False will give the same result as "
@@ -242,6 +247,7 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
             return_targets=return_targets,
             batch_size=self.batch_size,
             num_workers=self.get_iterator(X, training=False).loader.num_workers,
+            loader_kwargs=loader_kwargs,
         )
 
     @property

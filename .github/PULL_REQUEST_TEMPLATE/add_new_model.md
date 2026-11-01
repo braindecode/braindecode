@@ -32,7 +32,7 @@ than marking unrun checks as passing. Suggested title: [models] Add <ModelName>.
 
 ### Registration and documentation
 
-- [ ] Exported in `braindecode/models/__init__.py` (import + `__all__`); exports are discovered automatically by `_init_models_dict()`
+- [ ] Exported in `braindecode/models/__init__.py`: one import line in its `if TYPE_CHECKING:` block, which also gives the lazy import and `__all__`; exports are discovered automatically by `_init_models_dict()`
 - [ ] Test case added to `models_mandatory_parameters` in `braindecode/models/util.py`, with suitable signal parameters; task-specific test exceptions explained if needed
 - [ ] Row added to `braindecode/models/summary.csv`, including `#Parameters` and `get_#Parameters` (`test_completeness_summary_table` checks row presence)
 - [ ] API entry in `docs/api.rst`

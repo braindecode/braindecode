@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from functools import partial
 
 import torch
@@ -119,7 +120,9 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
        model.safetensors``; the root ``model.safetensors`` is
        ``subj-001/mae``). Each was trained on that subject's 10 selected
        channels at 1000 Hz, so it only fits that subject's montage. The head
-       is not pretrained::
+       is not pretrained, and it is the only part sized by ``n_times``: at
+       another ``n_times``, ``from_pretrained`` loads the encoder and the head
+       keeps its initialization::
 
            model = DuIN.from_pretrained(
                "braindecode/duin-pretrained",
@@ -321,17 +324,45 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
         linear_init(self.final_layer)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
-        """Also accept an upstream Du-IN checkpoint (``duin_mae``/``duin_cls``).
+        """Also accept an upstream Du-IN checkpoint (``duin_mae``/``duin_cls``)
+        and a checkpoint saved at another ``n_times``.
 
         Upstream keys are renamed to this implementation. The pretraining
         parts (``mask_emb``, the VQ codebook, the MAE token head), the fixed
         temporal table and the upstream classification head are dropped, so
-        load such a checkpoint with ``strict=False``.
+        load such a checkpoint with ``strict=False``. A head that reads
+        another number of patches keeps this model's weights, with a warning.
         """
         if "subj_block.subj_layer.W.weight" in state_dict:
             state_dict = _convert_upstream_state_dict(
                 state_dict, self.spatial_projection.out_features
             )
+        first_head_key = next(
+            (
+                k
+                for k in ("head_hidden.0.weight", "final_layer.weight")
+                if k in state_dict
+            ),
+            None,
+        )
+        n_features = self.n_patches * self.embed_dim
+        if (
+            first_head_key is not None
+            and state_dict[first_head_key].shape[1] != n_features
+        ):
+            warnings.warn(
+                f"The checkpoint's head reads {state_dict[first_head_key].shape[1]} "
+                f"features and this model's {n_features} (n_patches * embed_dim): "
+                "the head keeps its initialization.",
+                UserWarning,
+                stacklevel=2,
+            )
+            own_head = {
+                k: v
+                for k, v in self.state_dict().items()
+                if k.startswith(("head_hidden.", "final_layer."))
+            }
+            state_dict = {**state_dict, **own_head}
         return super().load_state_dict(state_dict, *args, **kwargs)
 
     def reset_head(self, n_outputs: int) -> None:
