@@ -79,6 +79,7 @@ pytest test/
 
 This may take quite some time on the first run, as some datasets will be downloaded.
 Subsequent runs will be faster.
+Slow tests are deselected by default; add `--run-slow` (or `-m slow` for only those) to run them, and `--run-network` to run tests that need network access, such as the Hugging Face Hub tests.
 
 #### Build the documentation
 

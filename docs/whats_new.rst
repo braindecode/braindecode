@@ -29,6 +29,75 @@ Enhancements
 ============
 
 - The MOABB benchmark example no longer advises ``n_jobs=1`` on a GPU: with NVIDIA's Multi-Process Service running, ``n_jobs=18`` trained BNCI2014_001's 18 cross-session folds 2x faster than ``n_jobs=1`` for EEGNet, ShallowFBCSPNet and ATCNet, with the same score on every fold, and it notes that ``setup_seed`` does not reach the worker processes (:gh:`1500` by `Bhargav Kowshik`_).
+- Add a :ref:`CPU/Gloo distributed-window evaluation recipe
+  <distributed-window-evaluation>` with identity checks, chronological trial
+  reconstruction and global metrics; it is a recipe, not an estimator backend
+  (by `Bruno Aristimunha`_).
+- :class:`braindecode.datasets.BaseConcatDataset` takes the opt-in,
+  keyword-only ``coalesce_reads=False``: a DataLoader batch of consecutive,
+  heavily overlapping windows of one lazy FIF recording is read as one union
+  of samples instead of one read per window. Samples, targets, crop indices,
+  order and random number use equal the default's; with the default ``False``
+  outputs are unchanged. Other batches
+  (shuffled, adjacent, sparse, several recordings, preloaded, Zarr,
+  :class:`~braindecode.datasets.WindowsDataset`) take the default path. On a
+  synthetic 22-channel 250 Hz FIF with 4-s windows every 1 s (512 windows,
+  batches of 32, 4 CPUs, Intel Xeon Gold 6230R, five paired fresh processes),
+  the median epoch took 27.8 ms instead of 133.6 ms with ``num_workers=0`` and
+  66.7 ms instead of 132.2 ms with 2 workers; with 4 workers 63.2 ms instead
+  of 80.6 ms, where one of five pairs did not improve beyond its
+  epoch-to-epoch spread. Two cases were slower with 2 workers: adjacent
+  windows (median paired ratio 1.050) and batches spanning two recordings
+  (1.042), both above their measured baseline-versus-baseline variation.
+  These three cases failed the pre-registered acceleration gate, so the option
+  stays off by default; enable it only for overlapping-window datasets
+  (by `Bruno Aristimunha`_).
+- ``import braindecode`` and ``import braindecode.models`` no longer import
+  every model, the estimators, scikit-learn and pandas up front: the model
+  classes, :class:`braindecode.EEGClassifier`, :class:`~braindecode.EEGRegressor`,
+  the subpackages and ``models_dict`` load on first access (PEP 562 module
+  ``__getattr__``), with the same names, ``__all__`` and model registry. On
+  CPU with torch 2.14.1, ``import braindecode`` took 5 ms instead of 3.1 s and
+  ``from braindecode.models import EEGNet`` 1.6 s instead of 3.1 s. A new model
+  needs one import line, in the ``if TYPE_CHECKING:`` block of
+  ``braindecode/models/__init__.py``, as the new-model checklist says (by
+  `Bruno Aristimunha`_).
+- :class:`braindecode.models.LUNA` reuses differentiable rotary tables within
+  each attention forward (no persistent cache); :class:`braindecode.models.Labram`
+  splits its fused qkv projection with ``unbind`` instead of three selects.
+  Parameters, checkpoint keys and numerical computations are preserved; LUNA
+  trainable-frequency gradients can differ by floating-point accumulation
+  rounding, and rotary-module hooks run once rather than twice per forward
+  (by `Bruno Aristimunha`_).
+- :class:`braindecode.models.EEGConformer` takes the opt-in, keyword-only
+  ``activation_checkpointing=False``: non-reentrant activation checkpointing
+  recomputes pure transformer blocks during backward with RNG preservation.
+  Outputs, gradients and an optimizer step were bit-identical to checkpointing
+  off in eager tests on PyTorch 2.14.1 CPU; old pickled models still load.
+  Checkpointing requires eager execution; unsupported configurations are
+  explicitly rejected (see the parameter documentation). On an Intel Xeon
+  Gold 6230R CPU with four PyTorch/BLAS threads,
+  FP32, embedding dimension 64, eight heads, six layers and dropout, five paired
+  fresh processes at input shape ``[8, 22, 8192]`` measured 55.39% lower peak
+  process RSS (median paired ratio 0.446142) and 73.14% extra train-step time
+  (median paired ratio 1.731425) at equal batch. The largest passing integer
+  batch under a 4 GiB peak process RSS budget increased from 17 to 68 in a
+  fresh-process capacity search; this machine/runtime-qualified, one-run
+  boundary is a memory-capacity result, not an equal-batch speed improvement
+  (by `Bruno Aristimunha`_).
+- Add :func:`braindecode.training.iter_trial_predictions`,
+  :func:`~braindecode.training.iter_trial_prediction_chunks` and
+  :class:`~braindecode.training.TrialPredictionChunk` to stream cropped
+  predictions one trial, or one chunk of at most ``windows_per_chunk`` windows,
+  at a time. See :ref:`cropped-inference` (by `Bruno Aristimunha`_).
+- :func:`braindecode.training.predict_trials` now reconstructs through the
+  same streaming code and takes ``loader_kwargs``; its outputs are unchanged.
+  The single-window warning is now raised after inference, not before it
+  (by `Bruno Aristimunha`_).
+- CI: tests marked ``slow`` run only with ``--run-slow`` or ``-m slow``; the
+  coverage job runs them in their own step, reusing its TorchInductor cache.
+  The ``acceleration_caller_state`` test fixture restores the RNG, thread and
+  grad-mode state a test changes (:gh:`1503` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.BrainBERT`, :class:`~braindecode.models.EpiNT`, :class:`~braindecode.models.Brant`, :class:`~braindecode.models.PopulationTransformer`, :class:`~braindecode.models.BaRISTA`, :class:`~braindecode.models.DIVER1` and :class:`~braindecode.models.MVPFormer` accept a ``ch_mask`` of real channels, as returned by :func:`braindecode.datasets.pad_channels_collate`, so one batch can mix recordings with different channel counts; PopT's ``ch_mask`` replaces ``key_padding_mask``. Add the shared helpers :func:`braindecode.functional.check_ch_mask`, :func:`~braindecode.functional.pack_channels`, :func:`~braindecode.functional.unpack_channels`, :func:`~braindecode.functional.masked_mean` and :func:`~braindecode.functional.masked_group_norm` (:gh:`1487` by `Julien Gadonneix`_).
 - CI: ``test_forward_in_dtype`` no longer runs the models in float16 on the CPU; torch's CPU float16 kernels killed the test worker without a traceback in about one run in seven (the hangs of the last days), and bfloat16 covers the same dtype checks (:gh:`1474` by `Bruno Aristimunha`_).
 - CI: a test that stops answering fails after 10 minutes with a traceback (``pytest-timeout``), instead of the job waiting until its own timeout; twice an xdist worker went silent during ``test_forward_in_dtype`` and the run idled for 40 minutes to 5 hours (:gh:`1473` by `Bruno Aristimunha`_).
@@ -455,6 +524,12 @@ Enhancements
 API and behavior changes
 ========================
 
+- With opt-in ``compile=True``, :class:`braindecode.EEGClassifier` and
+  :class:`braindecode.EEGRegressor` compile the module in place, keeping supplied
+  Parameters and state-dict keys. ``_orig_mod.`` keys from skorch's wrapper are
+  **not** rewritten on load, and a pickled or copied estimator runs eagerly until
+  ``initialize()``;
+  see :ref:`compile-checkpoint-migration` (by `Bruno Aristimunha`_).
 - :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` returns an ``i_dataset`` column with the position of the dataset each window comes from, and raises a :class:`ValueError` if a description or the window metadata already has that key. The samplers in :mod:`braindecode.samplers` take each dataset as one recording; pass the metadata without ``i_dataset`` to group the one-trial datasets of :func:`braindecode.datasets.create_from_X_y` or :func:`braindecode.datasets.create_from_mne_epochs` by subject, session and run as before. The samplers' ``info`` gets a ``recording`` index level after subject, session and run (:gh:`1369` by `Raghav Rathi`_).
 - :class:`braindecode.models.Labram`, :class:`braindecode.models.CBraMod` and
   :class:`braindecode.models.LUNA` tokenize the time axis with the shared
@@ -496,14 +571,25 @@ Requirements
 - Add ``sphinx-markdown-builder==0.6.11`` and ``pytest<9.1`` to the docs extra
   for version-scoped Markdown exports and their offline contract tests.
 
-- Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
+- Require PyTorch and TorchAudio >= 2.6, the PyTorch of the Intel Gaudi 1.21
+  software stack, and remove obsolete attention fallbacks.
   REVE and ZUNA now import PyTorch's RMSNorm layer directly, preserving their
   explicit epsilon values. Intel macOS is no longer supported because
   PyTorch stopped providing its binary packages after 2.2.
-  (:gh:`1174` by `Bruno Aristimunha`_)
+  (:gh:`1174` and :gh:`1504` by `Bruno Aristimunha`_)
 
 Bug fixes
 ==========
+
+- Zarr cache creation reserves a unique temporary file per call (exclusive
+  creation), so threads of one process no longer share one; permissions and
+  existing caches are unchanged (by `Bruno Aristimunha`_).
+- :class:`braindecode.training.PostEpochTrainScoring` restores the saved CPU
+  Torch RNG state even when its reevaluation fails (by `Bruno Aristimunha`_).
+- :class:`braindecode.modules.FilterBankLayer`, and so :class:`braindecode.models.FBCNet`, :class:`braindecode.models.FBMSNet`, :class:`braindecode.models.FBLightConvNet` and :class:`braindecode.models.IFNet`, script again with PyTorch 2.15, where ``torch.jit.script`` failed inside :func:`torchaudio.functional.lfilter` ("Expression of type dots cannot be used in a type expression"). Eager filtering still calls torchaudio; the scripted graph runs the same operations as before, so outputs are unchanged (:gh:`1501` by `Bruno Aristimunha`_).
+
+- :class:`braindecode.models.BENDR` projects contextualizer outputs directly, without the extra final LayerNorm absent from the original pretrained forward pass. Existing checkpoint keys are retained (:gh:`1495` by `Anton Soloviev`_).
+
 
 - Model loading validates relative custom weight paths and local symlink containment,
   without changing Hugging Face's process-global filename. Serialized module classes
