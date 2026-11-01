@@ -580,6 +580,7 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.modules.MaxNormLinear`, used for the classification layer of :class:`braindecode.models.ATCNet` and :class:`braindecode.models.EEGTCNet`, bounds the norm of the incoming weights of each output unit (each row of the weight), as the Keras ``Dense(kernel_constraint=max_norm())`` it reproduces, instead of the norm of each input feature's weights (each column). With ATCNet's defaults (``max_norm_const=0.25``, 32 input features), a row could reach a norm of sqrt(32) x 0.25 = 1.41. The stored weights are unchanged, so ATCNet and EEGTCNet checkpoints saved with an earlier version still load, but their effective classification weights can differ (:gh:`1476` by `Adam Mounir`_).
 - Fix :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` crashing with ``TypeError`` when a dataset has no description, e.g. after :func:`braindecode.datasets.create_from_mne_epochs` without ``descriptions`` or windowing a ``RawDataset(raw)`` (:gh:`1483` by `Adam Mounir`_).
 - Zarr cache creation reserves a unique temporary file per call (exclusive
   creation), so threads of one process no longer share one; permissions and

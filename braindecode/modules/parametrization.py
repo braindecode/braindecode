@@ -32,13 +32,21 @@ def make_parametrizations_scriptable(module: nn.Module) -> nn.Module:
 
 
 class MaxNorm(nn.Module):
+    """Max-norm constraint on the weights of each output unit.
+
+    As Keras ``max_norm()`` on a ``Dense`` kernel of shape
+    ``(in_features, out_features)``, which constrains the incoming weights of
+    each output unit: the rows of a :class:`torch.nn.Linear` weight of shape
+    ``(out_features, in_features)``.
+    """
+
     def __init__(self, max_norm_val=2.0, eps=1e-5):
         super().__init__()
         self.max_norm_val = max_norm_val
         self.eps = eps
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
-        norm = X.norm(2, dim=0, keepdim=True)
+        norm = X.norm(2, dim=1, keepdim=True)
         denom = norm.clamp(min=self.max_norm_val / 2)
         number = denom.clamp(max=self.max_norm_val)
         return X * (number / (denom + self.eps))
@@ -46,7 +54,7 @@ class MaxNorm(nn.Module):
     def right_inverse(self, X: torch.Tensor) -> torch.Tensor:
         # Assuming the forward scales X by a factor s,
         # the right inverse would scale it back by 1/s.
-        norm = X.norm(2, dim=0, keepdim=True)
+        norm = X.norm(2, dim=1, keepdim=True)
         denom = norm.clamp(min=self.max_norm_val / 2)
         number = denom.clamp(max=self.max_norm_val)
         scale = number / (denom + self.eps)

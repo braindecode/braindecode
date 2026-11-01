@@ -97,7 +97,8 @@ def old_maxnorm(
 ) -> torch.Tensor:
     w = weight.clone()
     # clamp denominator ≥ max_norm_val/2, numerator ≤ max_norm_val
-    denom = w.norm(2, dim=0, keepdim=True).clamp(min=max_norm_val / 2)
+    # norm of each row (output unit), as Keras max_norm on a Dense kernel
+    denom = w.norm(2, dim=1, keepdim=True).clamp(min=max_norm_val / 2)
     number = denom.clamp(max=max_norm_val)
     return w * (number / (denom + eps))
 
@@ -1493,6 +1494,20 @@ def test_new_vs_old_maxnorm_are_identical(out_in):
     assert torch.allclose(W_ref, W_new, atol=1e-6), (
         f"MaxNorm mismatch: max|W_ref - W_new| = {(W_ref - W_new).abs().max():.3e}"
     )
+
+
+def test_max_norm_linear_constrains_each_output_unit():
+    """As Keras ``Dense(kernel_constraint=max_norm(c))``, the incoming weights
+    of each output unit (a row of the torch weight) have norm at most ``c``,
+    and rows already within the bound are unchanged."""
+    layer = MaxNormLinear(in_features=3, out_features=3, max_norm_val=2.0)
+    # Row 0 has norm ~2.6 > 2, rows 1-2 are within the bound; every column
+    # has norm <= 2 except column 0 (norm ~2.6).
+    W = torch.tensor([[1.5, 1.5, 1.5], [1.5, 0.0, 0.0], [1.5, 0.0, 0.0]])
+    layer.weight = W.clone()
+    row_norms = layer.weight.detach().norm(dim=1)
+    assert row_norms[0] == pytest.approx(2.0, abs=1e-3)
+    torch.testing.assert_close(layer.weight.detach()[1:], W[1:], rtol=0, atol=1e-4)
 
 
 @pytest.mark.parametrize(
