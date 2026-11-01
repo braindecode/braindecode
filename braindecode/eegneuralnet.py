@@ -62,6 +62,32 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         self.module_ = module
         return self
 
+    def torch_compile(self, module, name):
+        """Compile in place with ``Module.compile``, unlike ``torch.compile(module)``.
+
+        The module, its Parameters and its state-dict keys (no ``_orig_mod.``
+        prefix) stay the same. Only a compiled call this estimator installed is
+        replaced or cleared; a module the user compiled is left as is.
+        """
+        ownership = getattr(self, "_compile_ownership_", {})
+        owned, call = ownership.pop(name, None), module._compiled_call_impl
+        if call is not None and call is not owned:
+            return module  # compiled by the user or another estimator
+        params = self.get_params_for("compile")
+        if self.compile and not params.get("disable", False):
+            module.compile(**params)
+            ownership[name] = module._compiled_call_impl
+            self._compile_ownership_ = ownership
+        elif call is not None:
+            module._compiled_call_impl = None
+        return module
+
+    def __getstate__(self):
+        state = super().__getstate__()
+        # Compiled calls do not pickle; Module.__getstate__ drops them as well.
+        state.pop("_compile_ownership_", None)
+        return state
+
     def _yield_callbacks(self):
         # Here we parse the callbacks supplied as strings,
         # e.g. 'accuracy', to the callbacks skorch expects
