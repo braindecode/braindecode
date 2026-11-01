@@ -8,6 +8,7 @@ from __future__ import annotations
 import functools
 import inspect
 import json
+import logging
 import warnings
 from collections import OrderedDict
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -35,6 +36,7 @@ huggingface_hub = _soft_import(
 )
 
 HAS_HF_HUB = huggingface_hub is not False
+log = logging.getLogger(__name__)
 
 # __init__ args that from_pretrained fills from config.json when not given.
 _GEOMETRY_KWARGS = (
@@ -59,6 +61,26 @@ def _validate_weights_filename(filename):
         or any(part in ("", ".", "..") for part in filename.split("/"))
     ):
         raise ValueError("filename must be a relative weight path without traversal")
+
+
+def _load_card_data(pretrained_model_name_or_path, **kwargs):
+    """Metadata of a checkpoint's model card (``README.md``), or None.
+
+    Best effort: the card is informational, so a missing or unreadable card
+    (offline, no README, bad YAML) never blocks loading the weights.
+    """
+    keys = ("revision", "cache_dir", "force_download", "token", "local_files_only")
+    try:
+        card = Path(pretrained_model_name_or_path) / "README.md"
+        if not card.parent.is_dir():
+            card = huggingface_hub.hf_hub_download(
+                str(pretrained_model_name_or_path),
+                "README.md",
+                **{k: kwargs[k] for k in keys if k in kwargs},
+            )
+        return huggingface_hub.ModelCard.load(card, ignore_metadata_errors=True).data
+    except Exception:
+        return None
 
 
 def _local_weights_path(model_id, filename):
@@ -212,6 +234,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     there will be an attempt to infer them from the other parameters.
     """
 
+    #: Hub model card metadata (:class:`huggingface_hub.ModelCardData`) of the
+    #: checkpoint, set by :meth:`from_pretrained` when the card can be read,
+    #: e.g. ``model.card_data.datasets`` lists the data the weights saw.
+    card_data = None
+
     #: Template for model-specific Hub integration notes appended by
     #: ``__init_subclass__``.  ``{name}`` is replaced with the concrete
     #: model class name.
@@ -234,10 +261,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         model = {name}(n_chans=22, n_outputs=4, n_times=1000)
         # ... training code ...
 
-        # Push to the Hub
+        # Push to the Hub; ``datasets`` and ``base_model`` go to the card
         model.push_to_hub(
             repo_id="username/my-{name_lower}-model",
             commit_message="Initial model upload",
+            model_card_kwargs={{"datasets": ["BNCI2014_001"]}},
         )
 
     **Loading a model from the Hub:**
@@ -248,6 +276,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         # Load pretrained model
         model = {name}.from_pretrained("username/my-{name_lower}-model")
+        # Data the weights were trained on, from the Hub model card
+        print(model.card_data.datasets if model.card_data else None)
 
         # Load with a different number of outputs (head is rebuilt automatically)
         model = {name}.from_pretrained("username/my-{name_lower}-model", n_outputs=4)
@@ -1015,7 +1045,26 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 kwargs.setdefault("chs_info", None)
             if "n_times" in kwargs or "sfreq" in kwargs:
                 kwargs.setdefault("input_window_seconds", None)
-            return super().from_pretrained(*args, **kwargs)
+            model = super().from_pretrained(*args, **kwargs)
+            card_data = _load_card_data(*args, **kwargs)
+            if card_data is not None:
+                model.card_data = card_data
+                if card_data.datasets:
+                    log.info(
+                        "%s weights were trained on (model card): %s",
+                        cls.__name__,
+                        card_data.datasets,
+                    )
+            return model
+
+        def generate_model_card(self, *args, **kwargs):
+            # ``model_card_kwargs`` only fill the card's Jinja template; also
+            # write these two to its YAML header so the Hub indexes them.
+            card = super().generate_model_card(*args, **kwargs)
+            for key in ("datasets", "base_model"):
+                if key in kwargs:
+                    setattr(card.data, key, kwargs[key])
+            return card
 
         @classmethod
         def _from_pretrained(
