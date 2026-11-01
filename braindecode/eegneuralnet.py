@@ -27,6 +27,7 @@ from .training.scoring import (
     CroppedTrialEpochScoring,
     PostEpochTrainScoring,
 )
+from .util import _prepare_signal
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +61,32 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         # pylint: disable=attribute-defined-outside-init
         self.module_ = module
         return self
+
+    def torch_compile(self, module, name):
+        """Compile in place with ``Module.compile``, unlike ``torch.compile(module)``.
+
+        The module, its Parameters and its state-dict keys (no ``_orig_mod.``
+        prefix) stay the same. Only a compiled call this estimator installed is
+        replaced or cleared; a module the user compiled is left as is.
+        """
+        ownership = getattr(self, "_compile_ownership_", {})
+        owned, call = ownership.pop(name, None), module._compiled_call_impl
+        if call is not None and call is not owned:
+            return module  # compiled by the user or another estimator
+        params = self.get_params_for("compile")
+        if self.compile and not params.get("disable", False):
+            module.compile(**params)
+            ownership[name] = module._compiled_call_impl
+            self._compile_ownership_ = ownership
+        elif call is not None:
+            module._compiled_call_impl = None
+        return module
+
+    def __getstate__(self):
+        state = super().__getstate__()
+        # Compiled calls do not pickle; Module.__getstate__ drops them as well.
+        state.pop("_compile_ownership_", None)
+        return state
 
     def _yield_callbacks(self):
         # Here we parse the callbacks supplied as strings,
@@ -120,13 +147,17 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                     epoch_cbs.append(cb)
             # for trialwise decoding stuffs it might also be we don't have
             # cropped loader, so no indices there
-            if len(epoch_cbs) > 0:
-                assert self._last_window_inds_ is not None
+            if len(epoch_cbs) > 0 and self._last_window_inds_ is not None:
                 for cb in epoch_cbs:
                     cb.window_inds_.append(self._last_window_inds_)
                 self._last_window_inds_ = None
 
     def predict_with_window_inds_and_ys(self, dataset):
+        """Predict windows, retaining their targets and optional trial indices.
+
+        For datasets yielding only ``(X, y)``, each example is a standalone
+        trial and both window-index entries in the result are ``None``.
+        """
         # self.module can still be a name or a class, self.module_ is the built one
         self.module_.eval()
         preds = []
@@ -140,15 +171,26 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                     "disable return_ch_pos (set_return_ch_pos(False)) for cropped "
                     "evaluation."
                 )
-            X, y, i = batch[0], batch[1], batch[2]
-            i_window_in_trials.append(i[0].cpu().numpy())
-            i_window_stops.append(i[2].cpu().numpy())
+            X, y = batch[:2]
+            if len(batch) == 3:
+                i = batch[2]
+                i_window_in_trials.append(i[0].cpu().numpy())
+                i_window_stops.append(i[2].cpu().numpy())
             with torch.no_grad():
-                preds.append(to_numpy(self.module_(X.to(self.device))))
+                if len(batch) == 3:
+                    pred = self.module_(X.to(self.device))
+                else:
+                    # Match ordinary iteration, without applying prediction
+                    # nonlinearities before the callback's temporal average.
+                    X, _ = _prepare_signal(X)
+                    pred = self.infer(X)
+                preds.append(to_numpy(pred))
             window_ys.append(y.cpu().numpy())
         preds = np.concatenate(preds)
-        i_window_in_trials = np.concatenate(i_window_in_trials)
-        i_window_stops = np.concatenate(i_window_stops)
+        i_window_in_trials = (
+            np.concatenate(i_window_in_trials) if i_window_in_trials else None
+        )
+        i_window_stops = np.concatenate(i_window_stops) if i_window_stops else None
         window_ys = np.concatenate(window_ys)
         return dict(
             preds=preds,

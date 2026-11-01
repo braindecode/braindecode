@@ -5,22 +5,35 @@
 # License: BSD (3-clause)
 import inspect
 import math
+import sys
 import warnings
+from collections.abc import Callable as CallableABC
 from copy import deepcopy
 from functools import lru_cache, wraps
 from pathlib import Path
-from typing import Any, Callable, Dict, Literal, Optional, Sequence, cast
+from types import SimpleNamespace
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Literal,
+    Optional,
+    Sequence,
+    cast,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 import mne
 import numpy as np
-import pandas as pd
-import pydantic
 import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` through the BatchNorm-guard wrapper's __globals__
 from mne.io.constants import FIFF
-from sklearn.metrics import pairwise_distances_argmin
 from torch import nn
 from torchaudio.transforms import Resample
 
+from braindecode import modules as bd_modules
 from braindecode.util import resolve_montage_name
 
 # Canonical MNE channel-type name for the electrode kinds braindecode models
@@ -36,9 +49,63 @@ _KIND_TO_CH_TYPE = {
 INTRACRANIAL_CH_TYPES = frozenset({"seeg", "dbs", "ecog"})
 
 
-models_dict = {}
+# Read through ``models_dict`` (module ``__getattr__`` below), which fills it on
+# first access so importing braindecode does not import every model.
+_models_dict: dict[str, Any] = {}
+# Annotations only, for type checkers; the values come from ``__getattr__``.
+models_dict: dict[str, Any]
+_summary_table: "pd.DataFrame"
 
-_IMPORT_ADAPTER = pydantic.TypeAdapter(pydantic.ImportString)
+if TYPE_CHECKING:
+    import pandas as pd
+else:  # hidden from checkers so misspelled names stay errors
+
+    def __getattr__(name):
+        if name == "models_dict":
+            if not _models_dict:
+                _init_models_dict()
+            return _models_dict
+        if name == "_summary_table":  # read summary.csv once, on first access
+            table = globals()[name] = get_summary_table()
+            return table
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# Resolve serialized classes by exact lookup, never by importing a config path.
+# Include public aliases and the defining paths emitted by get_config().
+_CONFIG_MODULE_TYPES = {}
+for _module in (nn, bd_modules):
+    for _name, _type in vars(_module).items():
+        if (
+            not _name.startswith("_")
+            and isinstance(_type, type)
+            and issubclass(_type, nn.Module)
+        ):
+            _CONFIG_MODULE_TYPES[f"{_module.__name__}.{_name}"] = _type
+            _CONFIG_MODULE_TYPES[f"{_type.__module__}.{_type.__qualname__}"] = _type
+
+
+def resolve_config_type(value):
+    """Decode a shipped module class without importing user-selected modules.
+
+    Python class/callable objects supplied by application code are left intact;
+    serialized strings must name a public torch.nn or braindecode.modules class.
+    """
+    if not isinstance(value, str):
+        return value
+    try:
+        return _CONFIG_MODULE_TYPES[value]
+    except KeyError:
+        raise ValueError(f"Unsupported serialized module type: {value!r}") from None
+
+
+def _has_type_annotation(annotation):
+    """Whether an annotation includes a class or callable argument."""
+    return (
+        annotation in (type, CallableABC)
+        or get_origin(annotation) in (type, CallableABC)
+        or any(_has_type_annotation(arg) for arg in get_args(annotation))
+    )
 
 
 _EEG_PARAMS = frozenset(
@@ -172,7 +239,7 @@ def resolve_type_kwargs(cls, kwargs):
     When a model config is saved to JSON, ``type[nn.Module]`` parameters
     (e.g. ``activation=nn.ELU``) are stored as dotted import paths like
     ``"torch.nn.modules.activation.ELU"``.  This function resolves them
-    back to actual types using :class:`pydantic.ImportString`.
+    back to known shipped module classes without importing config-selected modules.
 
     Parameters
     ----------
@@ -186,17 +253,25 @@ def resolve_type_kwargs(cls, kwargs):
     dict
         The same *kwargs* dict, with type strings resolved.
     """
-    for name, param in inspect.signature(cls.__init__).parameters.items():
+    init = inspect.unwrap(cls.__init__)
+    for name, param in inspect.signature(init).parameters.items():
         val = kwargs.get(name)
-        if isinstance(val, str) and "." in val and isinstance(param.default, type):
-            try:
-                kwargs[name] = _IMPORT_ADAPTER.validate_python(val)
-            except pydantic.ValidationError:
-                warnings.warn(
-                    f"Could not resolve type string {val!r} for parameter "
-                    f"{name!r} in {cls.__name__}",
-                    stacklevel=2,
-                )
+        if not isinstance(val, str):
+            continue
+        is_type = param.default is not inspect.Parameter.empty and isinstance(
+            param.default, type
+        )
+        if not is_type and param.annotation is not inspect.Parameter.empty:
+            # Resolve only this effective argument, not unrelated metadata or
+            # return annotations (which may use TYPE_CHECKING-only imports).
+            annotation = get_type_hints(
+                SimpleNamespace(__annotations__={name: param.annotation}),
+                globalns=init.__globals__,
+                localns=dict(vars(cls)),
+            )[name]
+            is_type = _has_type_annotation(annotation)
+        if is_type:
+            kwargs[name] = resolve_config_type(val)
     return kwargs
 
 
@@ -206,14 +281,18 @@ def resolve_type_kwargs(cls, kwargs):
 
 
 def _init_models_dict():
-    import braindecode.models as models
+    from braindecode import models
+    from braindecode.models.base import EEGModuleMixin
 
-    for m in inspect.getmembers(models, inspect.isclass):
-        if (
-            issubclass(m[1], models.base.EEGModuleMixin)
-            and m[1] != models.base.EEGModuleMixin
-        ):
-            models_dict[m[0]] = m[1]
+    # Plain getattr over every public name: a model that fails to import raises here.
+    found = {}
+    for name in sorted(models._LAZY):
+        obj = getattr(models, name)
+        is_model = inspect.isclass(obj) and issubclass(obj, EEGModuleMixin)
+        if is_model and obj is not EEGModuleMixin:
+            found[name] = obj
+    # One update() publishes every entry at once, so no thread sees a partial dict.
+    _models_dict.update(found)
 
 
 def _get_model_class(model_name: str):
@@ -237,10 +316,9 @@ def _get_model_class(model_name: str):
     ValueError
         If ``model_name`` is not a registered model.
     """
-    if not models_dict:
-        _init_models_dict()
-    if model_name in models_dict:
-        return models_dict[model_name]
+    registry = sys.modules[__name__].models_dict  # also honours a patched models_dict
+    if model_name in registry:
+        return registry[model_name]
     raise ValueError(f"Unknown model name {model_name!r}.")
 
 
@@ -842,6 +920,8 @@ def get_summary_table(dir_name=None):
 
     path = dir_path / "summary.csv"
 
+    import pandas as pd
+
     df = pd.read_csv(
         path,
         header=0,
@@ -1040,6 +1120,8 @@ def resolve_channel_indices(
     if not np.isfinite(norms).all() or np.any(norms <= 1e-7):
         return None
     directions = radial / norms
+    from sklearn.metrics import pairwise_distances_argmin
+
     nearest = pairwise_distances_argmin(
         directions[: len(locations)], directions[len(locations) :], metric=metric
     )
@@ -1219,6 +1301,3 @@ def channel_types_from_chs_info(
         else:
             types.append("unknown")
     return types
-
-
-_summary_table = get_summary_table()

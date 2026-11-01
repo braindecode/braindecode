@@ -26,6 +26,7 @@ from itertools import chain
 from operator import attrgetter
 from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
+from uuid import uuid4
 
 import mne
 import mne.io
@@ -343,6 +344,9 @@ def _read_fif_window(raw, start, stop, willneed=False):
     return np.multiply(picked, raw._cals[:, np.newaxis], order="C")
 
 
+_COALESCED_MAX_BYTES = 2 * 1024 * 1024
+
+
 def _window_info(crop_inds, sfreq):
     """Extract window size from crop indices.
 
@@ -479,14 +483,14 @@ def _zarr_to_memmap(zarr_path, group_name):
     ``SIGBUS`` when workers page-faulted on the unlinked inode.
 
     Under ``N`` concurrent writers, every racer materialises the data
-    into its own per-pid temp file and then tries to publish it; at
+    into its own per-call temp file and then tries to publish it; at
     most one ``os.link`` wins, and the losers silently ``unlink``
     their temp file in a ``finally`` block.  The wasted I/O scales
     with the number of racers; for the workloads braindecode targets
     (a handful of concurrent workers per group) it is negligible.
 
     Crash recovery: if a writer dies mid-run the only debris is a
-    ``<group>.<pid>.tmp.npy`` file.  Such files are namespaced by pid
+    ``<group>.<uuid>.tmp.npy`` file.  Such files are unique per call
     so they can never collide with a live writer, they are never
     read by the fast path, and they do not prevent subsequent
     callers from producing a correct result.  Caches written by
@@ -504,7 +508,10 @@ def _zarr_to_memmap(zarr_path, group_name):
 
     cache_dir.mkdir(parents=True, exist_ok=True)
     arr = zarr.open(zarr_path, mode="r")[group_name]["data"]
-    tmp_path = cache_dir / f"{group_name}.{os.getpid()}.tmp.npy"
+    # Unique per call, not per pid: threads of one process must not share it.
+    # Exclusive creation, not tempfile.mkstemp, which would make it 0600.
+    tmp_path = cache_dir / f"{group_name}.{uuid4().hex}.tmp.npy"
+    tmp_path.open("xb").close()
     try:
         # Write chunk-by-chunk to avoid materialising the whole zarr
         # array in RAM.
@@ -531,9 +538,9 @@ def _zarr_to_memmap(zarr_path, group_name):
             # canonical one; ours is discarded in the finally block.
             pass
     finally:
-        # Always remove our private per-pid temp file.  It is
-        # namespaced by pid so this cannot clobber a concurrent
-        # writer's in-progress tmp file.
+        # Always remove our private per-call temp file.  Its name is
+        # unique per call so this cannot clobber a concurrent writer's
+        # in-progress tmp file.
         try:
             os.unlink(tmp_path)
         except FileNotFoundError:
@@ -953,6 +960,10 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
                 X = self.raw._getitem(
                     (slice(None), slice(i_start, i_stop)), return_times=False
                 )
+        return self._finish_window(index, crop_inds, X)
+
+    def _finish_window(self, index, crop_inds, X):
+        """Item ``index`` from its raw samples ``X``, copied before the transform."""
         X = np.array(X, dtype="float32")
         if self.transform is not None:
             X = self.transform(X)
@@ -1344,11 +1355,24 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         Optional function to call on targets before returning them.
     lazy : bool, default False
         If True, defer computing cumulative sizes until length or item access.
+    coalesce_reads : bool, default False
+        Opt in to reading a :class:`~torch.utils.data.DataLoader` batch of
+        consecutive, overlapping windows of one lazy (``preload=False``) FIF
+        recording as one union of samples instead of one read per window.
+        Only a batch of consecutive ascending indices into one
+        :class:`~braindecode.datasets.EEGWindowsDataset` (not a subclass)
+        whose union is at most a third of the summed window samples and at
+        most 2 MiB as float64 is read this way; every other batch takes the
+        default path. Outputs, order and random number use equal the
+        default's. It was faster only for heavily overlapping windows and
+        slower for some other layouts (numbers in :ref:`whats_new`), so it is off
+        by default. Containers returned by ``split`` default to ``False``.
     """
 
     plot = _viewer_plot  # eegdash-viewer embed; a direct member so the API docs list it
 
     datasets: list[T]
+    coalesce_reads: bool = False  # default for pickles made before this option
 
     def __init__(
         self,
@@ -1358,6 +1382,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         target_transform: Callable | None = None,
         *,
         lazy: bool = False,
+        coalesce_reads: bool = False,
     ):
         # Adapted from torch.utils.data.ConcatDataset:
         # added lazy init to defer cumulative size computation until access,
@@ -1387,6 +1412,9 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
         self.target_transform = target_transform
         self._lazy = lazy
+        if type(coalesce_reads) is not bool:
+            raise TypeError("coalesce_reads must be a bool.")
+        self.coalesce_reads = coalesce_reads
 
     @property
     def cumulative_sizes(self) -> list[int]:
@@ -1454,6 +1482,10 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         another: on a network file system a batch read from cold files then
         costs about one round trip, not one per window.
         """
+        if self.coalesce_reads:
+            coalesced = self._get_coalesced_items(indices)
+            if coalesced is not None:
+                return coalesced
         # ponytail: advises the whole batch at once; chunk it if a batch's
         # windows ever outgrow the page cache
         if hasattr(os, "posix_fadvise"):
@@ -1465,6 +1497,52 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                     _, start, stop = ds.crop_inds[i].tolist()
                     _read_fif_window(ds.raw, start, stop, willneed=True)
         return [self[idx] for idx in indices]
+
+    def _get_coalesced_items(self, indices):
+        """The items cut from one read of their union, or None if not eligible."""
+        n = len(indices)
+        if (
+            type(self) is not BaseConcatDataset  # subclasses may override items
+            or n < 2
+            or type(indices[0]) is not int
+            or indices[0] < 0
+            or indices != list(range(indices[0], indices[0] + n))
+        ):
+            return None
+        sizes = self._ensure_cumulative_sizes()
+        k = bisect.bisect_right(sizes, indices[0])
+        if k == len(sizes) or indices[-1] >= sizes[k]:
+            return None  # past the end, or across recordings
+        ds = self.datasets[k]
+        if (
+            type(ds) is not EEGWindowsDataset
+            or ds._zarr_data is not None
+            or not isinstance(ds.crop_inds, np.ndarray)  # lazy metadata
+            or ds.raw.preload
+        ):
+            return None
+        first = indices[0] - (sizes[k - 1] if k else 0)
+        crops = ds.crop_inds[first : first + n]
+        start, stop = int(crops[:, 1].min()), int(crops[:, 2].max())
+        if (
+            start < 0
+            or stop > ds.raw.n_times
+            or (crops[:, 2] <= crops[:, 1]).any()
+            or 3 * (stop - start) > (crops[:, 2] - crops[:, 1]).sum()
+            or (stop - start) * ds.raw.info["nchan"] * 8 > _COALESCED_MAX_BYTES
+        ):
+            return None
+        union = _read_fif_window(ds.raw, start, stop)
+        if union is None:
+            return None
+        items = []
+        for i, crop in enumerate(crops.tolist(), first):
+            X = union[:, crop[1] - start : crop[2] - start]
+            item = ds._finish_window(i, crop, X)
+            if self.target_transform is not None:
+                item = item[:1] + (self.target_transform(item[1]),) + item[2:]
+            items.append(item)
+        return items
 
     def __getitem__(self, idx: int | list):
         """
@@ -1583,15 +1661,17 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 df = ds._windows.metadata
             else:
                 df = ds.metadata
+            # a dataset built without description has description None
+            description = ds.description if ds.description is not None else {}
             if (
                 "i_trial_in_dataset" in df.columns
-                and "i_trial_in_dataset" in ds.description
+                and "i_trial_in_dataset" in description
             ):
                 raise ValueError(
                     "Dataset descriptions cannot contain the reserved window "
                     "metadata key 'i_trial_in_dataset'."
                 )
-            if "i_dataset" in df.columns or "i_dataset" in ds.description:
+            if "i_dataset" in df.columns or "i_dataset" in description:
                 raise ValueError(
                     "Window metadata and dataset descriptions cannot contain the "
                     "key 'i_dataset', which get_metadata() reserves for the "
@@ -1607,7 +1687,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             if isinstance(df, pd.DataFrame):
                 # copy so the description columns stay out of the dataset
                 df = df.copy()
-            for k, v in ds.description.items():
+            description = ds.description if ds.description is not None else {}
+            for k, v in description.items():
                 df[k] = v
             df["i_dataset"] = i_ds
             all_dfs.append(df)

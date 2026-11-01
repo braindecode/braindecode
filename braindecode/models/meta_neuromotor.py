@@ -220,7 +220,9 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     n_chans : int
         Number of EMG channels. Defaults to ``16`` (one armband).
     sfreq : float
-        Sampling frequency in Hz. Defaults to ``2000``.
+        Sampling frequency in Hz. Defaults to ``2000``, unless
+        ``n_times`` and ``input_window_seconds`` are both given, in which
+        case it is inferred from them.
     mpf_window_length : int
         MPF window length in samples.
     mpf_stride : int
@@ -349,7 +351,7 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         self,
         n_outputs: int = 100,
         n_chans: int = 16,
-        sfreq: float = 2000.0,
+        sfreq: float | None = None,
         # MPF featurizer
         mpf_window_length: int = 160,
         mpf_stride: int = 40,
@@ -390,6 +392,8 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         input_window_seconds=None,
         chs_info=None,
     ) -> None:
+        if sfreq is None and (n_times is None or input_window_seconds is None):
+            sfreq = 2000.0
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,

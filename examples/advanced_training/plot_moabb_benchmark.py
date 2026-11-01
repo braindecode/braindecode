@@ -48,8 +48,12 @@ print("GPU is", "AVAILABLE" if cuda else "NOT AVAILABLE")
 # EPOCH = 1000
 # PATIENCE = 300
 #
-# This code is implemented to run on the CPU. If you're using a GPU, do not use multithreading
-# (i.e. set n_jobs=1)
+# This code runs on the CPU or a GPU. With ``n_jobs > 1``, the evaluation trains its
+# folds in parallel worker processes. On a GPU, each worker opens its own CUDA context
+# (about 1.3 GiB of GPU memory on an RTX PRO 6000), and the GPU runs one process's
+# kernels at a time. Start NVIDIA's Multi-Process Service first
+# (``nvidia-cuda-mps-control -d``, Linux only) so that the workers' kernels run side by
+# side. ``setup_seed`` below seeds this process only, not the workers.
 
 
 # Set random seed to be able to reproduce results

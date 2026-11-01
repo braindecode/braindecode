@@ -11,9 +11,9 @@ from mne.filter import _check_coefficients, create_filter
 from mne.utils import warn
 from torch import Tensor, from_numpy, nn
 from torch.fft import fftfreq
-from torchaudio.functional import filtfilt, lfilter
 
 from braindecode.functional import _real_dft, spectral_input
+from braindecode.functional._lfilter import filtfilt, lfilter
 from braindecode.functional.functions import _next_fast_len
 
 
@@ -406,9 +406,7 @@ class FilterBankLayer(nn.Module):
         # spectral_input: float32 at least, on the CPU for HPU inputs (no
         # float64 there); the output goes back with .to(x).
         x64 = spectral_input(x).double()
-        filtered = lfilter(
-            x64, a_coeffs=a_coeffs.to(x64), b_coeffs=filt.to(x64), clamp=False
-        )
+        filtered = lfilter(x64, a_coeffs.to(x64), filt.to(x64))
         return filtered.to(x).unsqueeze(1)
 
     @staticmethod
@@ -440,10 +438,10 @@ class FilterBankLayer(nn.Module):
         # to NaN in float32. The coefficient buffers are already float64.
         # On the CPU for HPU inputs (spectral_input): no float64 there.
         x64 = spectral_input(x).double()
-        filter_fn = lfilter if forward_filter else filtfilt
-        filtered = filter_fn(
-            x64, a_coeffs=a_coeffs.to(x64), b_coeffs=b_coeffs.to(x64), clamp=False
-        )
+        if forward_filter:
+            filtered = lfilter(x64, a_coeffs.to(x64), b_coeffs.to(x64))
+        else:
+            filtered = filtfilt(x64, a_coeffs.to(x64), b_coeffs.to(x64))
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
         return filtered.to(x).unsqueeze(1)
 

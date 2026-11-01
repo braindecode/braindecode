@@ -284,6 +284,41 @@ def test_metadata_rejects_a_description_named_i_dataset():
         windows.get_metadata()
 
 
+def test_metadata_of_datasets_without_description():
+    raw = mne.io.RawArray(np.zeros((1, 200)), mne.create_info(1, 100.0, "eeg"))
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw), RawDataset(raw, {"subject": 1})]),
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+    )
+    assert windows.datasets[0].description is None
+    md = windows.get_metadata()
+    assert md["i_dataset"].tolist() == [0, 0, 1, 1]
+    assert md["subject"].isna().tolist() == [True, True, False, False]
+
+
+def test_metadata_without_description_allows_later_target_assignment():
+    raw = mne.io.RawArray(np.zeros((1, 200)), mne.create_info(1, 100.0, "eeg"))
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw)]),
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+    )
+    assert windows.datasets[0].description is None
+    assert windows.get_metadata()["target"].tolist() == [-1, -1]
+    assert [windows[i][1] for i in range(len(windows))] == [-1, -1]
+
+    windows.set_description({"label": [7]})
+    windows.set_target("label")
+
+    metadata = windows.get_metadata()
+    assert metadata["label"].tolist() == [7, 7]
+    assert metadata["target"].tolist() == [7, 7]
+    assert [windows[i][1] for i in range(len(windows))] == [7, 7]
+
+
 def test_on_the_fly_transforms_base_dataset(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     original_X = concat_ds[0][0]
@@ -575,6 +610,31 @@ def test_multi_target_dataset(set_up):
     x, y, ind = windows_ds[0]
     assert len(y) == 3
     assert y == [1, 0, 48]  # order matters: pathological, gender, age
+
+
+@pytest.mark.parametrize("lazy_metadata", [False, True])
+def test_multi_target_windows_without_mapping(set_up, lazy_metadata):
+    raw, _, _, _, _, _ = set_up
+    base_dataset = RawDataset(
+        raw, {"age": 48, "score": 3}, target_name=["age", "score"]
+    )
+    windows_ds = create_fixed_length_windows(
+        BaseConcatDataset([base_dataset]),
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        lazy_metadata=lazy_metadata,
+    )
+    assert windows_ds[0][1] == [48, 3]
+    from torch.utils.data import DataLoader
+
+    _, y, _ = next(iter(DataLoader(windows_ds, batch_size=2)))
+    assert [t.tolist() for t in y] == [[48, 48], [3, 3]]
+
+    windows_ds.target_transform = np.asarray
+    _, matrix_y, _ = next(iter(DataLoader(windows_ds, batch_size=2)))
+    assert matrix_y.shape == (2, 2)
+    assert matrix_y.tolist() == [[48, 3], [48, 3]]
 
 
 def test_target_name_list(set_up):

@@ -279,30 +279,37 @@ class SequenceSampler(RecordingSampler):
             Array of shape (n_sequences,) containing the unique file number of
             each sequence. Useful e.g. to do self-ensembling.
         """
-        end_offset = 1 - self.n_windows if self.n_windows > 1 else None
-        start_inds = (
-            self.info["index"]
-            .apply(lambda x: x[: end_offset : self.n_windows_stride])
-            .values
-        )
+        # the windows of a recording need not be contiguous in the metadata
+        # (no i_dataset column): sequences are read from each recording's
+        # windows, by recording and position of their first window
+        self._rec_inds = list(self.info["index"])
+        starts = [
+            np.arange(0, len(inds) - self.n_windows + 1, self.n_windows_stride)
+            for inds in self._rec_inds
+        ]
         # a typed array keeps the ids integer when a recording yields no sequence
         file_ids = [
-            np.full(len(inds), i, dtype=np.int64) for i, inds in enumerate(start_inds)
+            np.full(len(pos), i, dtype=np.int64) for i, pos in enumerate(starts)
         ]
-        return np.concatenate(start_inds), np.concatenate(file_ids)
+        self._seq_starts = np.concatenate(starts).astype(np.int64)
+        file_ids = np.concatenate(file_ids)
+        start_inds = np.array(
+            [self._rec_inds[i][p] for i, p in zip(file_ids, self._seq_starts)],
+            dtype=np.int64,
+        )
+        return start_inds, file_ids
 
     def __len__(self):
         return len(self.start_inds)
 
     def __iter__(self):
+        order = np.arange(len(self.start_inds))
         if self.randomize:
-            start_inds = self.start_inds.copy()
-            self.rng.shuffle(start_inds)
-            for start_ind in start_inds:
-                yield tuple(range(start_ind, start_ind + self.n_windows))
-        else:
-            for start_ind in self.start_inds:
-                yield tuple(range(start_ind, start_ind + self.n_windows))
+            self.rng.shuffle(order)
+        for i in order:
+            start = self._seq_starts[i]
+            inds = self._rec_inds[self.file_ids[i]]
+            yield tuple(inds[start : start + self.n_windows].tolist())
 
 
 class BalancedSequenceSampler(RecordingSampler):
@@ -443,5 +450,8 @@ class BalancedSequenceSampler(RecordingSampler):
 
     def __iter__(self):
         for _ in range(self.n_sequences):
-            start_ind, _, _ = self._sample_seq_start_ind()
-            yield tuple(range(start_ind, start_ind + self.n_windows))
+            start_ind, rec_ind, _ = self._sample_seq_start_ind()
+            # the windows of a recording need not be contiguous in the metadata
+            rec_inds = self.info.iloc[rec_ind]["index"]
+            start = rec_inds.searchsorted(start_ind)
+            yield tuple(rec_inds[start : start + self.n_windows].tolist())

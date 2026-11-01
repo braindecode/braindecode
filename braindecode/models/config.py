@@ -12,9 +12,8 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     SigArgName,
     _get_model_class,
-    _init_models_dict,
-    models_dict,
     models_mandatory_parameters,
+    resolve_config_type,
 )
 
 try:
@@ -43,7 +42,15 @@ def _replace_type_hints(type_hint: Any) -> Any:
     origin = get_origin(type_hint)
     args = get_args(type_hint)
     if origin is type or origin is Callable or type_hint is Callable:
-        return pydantic.ImportString
+        return Annotated[
+            type_hint,
+            pydantic.BeforeValidator(resolve_config_type),
+            pydantic.PlainSerializer(
+                lambda value: f"{value.__module__}.{value.__qualname__}",
+                return_type=str,
+                when_used="json",
+            ),
+        ]
     if origin is None:
         return type_hint
     replaced_args = tuple(_replace_type_hints(arg) for arg in args)
@@ -206,9 +213,6 @@ def make_model_config(
 # Automatically generate and add classes to the global namespace
 # and define __all__ based on generated classes
 __all__ = ["make_model_config"]
-
-if not models_dict:
-    _init_models_dict()
 
 models_configs: list[type[BaseBraindecodeModelConfig]] = []
 for model_name, req, _ in models_mandatory_parameters:

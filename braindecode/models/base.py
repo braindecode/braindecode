@@ -8,9 +8,10 @@ from __future__ import annotations
 import functools
 import inspect
 import json
+import logging
 import warnings
 from collections import OrderedDict
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Dict, Iterable, Optional, Type, Union
 
 import numpy as np
@@ -21,8 +22,8 @@ from torchinfo import ModelStatistics, summary
 
 from braindecode.models.util import (
     _EEG_PARAMS,
-    _IMPORT_ADAPTER,
     build_model_config,
+    resolve_config_type,
     resolve_type_kwargs,
     track_model_init_kwargs,
 )
@@ -35,6 +36,7 @@ huggingface_hub = _soft_import(
 )
 
 HAS_HF_HUB = huggingface_hub is not False
+log = logging.getLogger(__name__)
 
 # __init__ args that from_pretrained fills from config.json when not given.
 _GEOMETRY_KWARGS = (
@@ -45,6 +47,49 @@ _GEOMETRY_KWARGS = (
     "input_window_seconds",
     "sfreq",
 )
+
+
+def _validate_weights_filename(filename):
+    """Accept portable relative weight paths, including nested subfolders."""
+    if (
+        not isinstance(filename, str)
+        or not filename
+        or "\x00" in filename
+        or "\\" in filename
+        or PurePosixPath(filename).is_absolute()
+        or PureWindowsPath(filename).drive
+        or any(part in ("", ".", "..") for part in filename.split("/"))
+    ):
+        raise ValueError("filename must be a relative weight path without traversal")
+
+
+def _load_card_data(pretrained_model_name_or_path, **kwargs):
+    """Metadata of a checkpoint's model card (``README.md``), or None.
+
+    Best effort: the card is informational, so a missing or unreadable card
+    (offline, no README, bad YAML) never blocks loading the weights.
+    """
+    keys = ("revision", "cache_dir", "force_download", "token", "local_files_only")
+    try:
+        card = Path(pretrained_model_name_or_path) / "README.md"
+        if not card.parent.is_dir():
+            card = huggingface_hub.hf_hub_download(
+                str(pretrained_model_name_or_path),
+                "README.md",
+                **{k: kwargs[k] for k in keys if k in kwargs},
+            )
+        return huggingface_hub.ModelCard.load(card, ignore_metadata_errors=True).data
+    except Exception:
+        return None
+
+
+def _local_weights_path(model_id, filename):
+    """Reject local weight paths (including symlinks) outside the model folder."""
+    root = Path(model_id).resolve()
+    path = (root / filename).resolve()
+    if not path.is_relative_to(root):
+        raise ValueError("Weights file must resolve inside the model directory")
+    return path
 
 
 def _too_short_input_error(exc: RuntimeError, input_shape) -> Optional[ValueError]:
@@ -189,6 +234,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     there will be an attempt to infer them from the other parameters.
     """
 
+    #: Hub model card metadata (:class:`huggingface_hub.ModelCardData`) of the
+    #: checkpoint, set by :meth:`from_pretrained` when the card can be read,
+    #: e.g. ``model.card_data.datasets`` lists the data the weights saw.
+    card_data = None
+
     #: Template for model-specific Hub integration notes appended by
     #: ``__init_subclass__``.  ``{name}`` is replaced with the concrete
     #: model class name.
@@ -211,10 +261,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         model = {name}(n_chans=22, n_outputs=4, n_times=1000)
         # ... training code ...
 
-        # Push to the Hub
+        # Push to the Hub; ``datasets`` and ``base_model`` go to the card
         model.push_to_hub(
             repo_id="username/my-{name_lower}-model",
             commit_message="Initial model upload",
+            model_card_kwargs={{"datasets": ["BNCI2014_001"]}},
         )
 
     **Loading a model from the Hub:**
@@ -225,6 +276,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         # Load pretrained model
         model = {name}.from_pretrained("username/my-{name_lower}-model")
+        # Data the weights were trained on, from the Hub model card
+        print(model.card_data.datasets if model.card_data else None)
 
         # Load with a different number of outputs (head is rebuilt automatically)
         model = {name}.from_pretrained("username/my-{name_lower}-model", n_outputs=4)
@@ -330,7 +383,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             type,
             (
                 lambda t: f"{t.__module__}.{t.__qualname__}",
-                lambda data: _IMPORT_ADAPTER.validate_python(data),
+                resolve_config_type,
             ),
         )
 
@@ -958,7 +1011,26 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     if HAS_HF_HUB:
 
         @classmethod
+        def _decode_arg(cls, expected_type, value):
+            # Hub eagerly decodes plain/optional type fields before overrides.
+            # Defer only our default decoder to the effective-kwargs resolver;
+            # explicitly registered application coders retain Hub's behavior.
+            if (
+                expected_type in (type, Optional[type])
+                and next(
+                    decoder
+                    for coder_type, (_, decoder) in cls._hub_mixin_coders.items()
+                    if issubclass(type, coder_type)
+                )
+                is resolve_config_type
+            ):
+                return value
+            return super()._decode_arg(expected_type, value)
+
+        @classmethod
         def from_pretrained(cls, *args, **kwargs):
+            if kwargs.get("filename") is not None:
+                _validate_weights_filename(kwargs["filename"])
             # The Hub mixin fills only the __init__ args whose keys are absent,
             # so drop explicit Nones (e.g. forwarded by a wrapper) to let the
             # saved values fill them. Then pin the derived geometry arg so it
@@ -973,7 +1045,26 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 kwargs.setdefault("chs_info", None)
             if "n_times" in kwargs or "sfreq" in kwargs:
                 kwargs.setdefault("input_window_seconds", None)
-            return super().from_pretrained(*args, **kwargs)
+            model = super().from_pretrained(*args, **kwargs)
+            card_data = _load_card_data(*args, **kwargs)
+            if card_data is not None:
+                model.card_data = card_data
+                if card_data.datasets:
+                    log.info(
+                        "%s weights were trained on (model card): %s",
+                        cls.__name__,
+                        card_data.datasets,
+                    )
+            return model
+
+        def generate_model_card(self, *args, **kwargs):
+            # ``model_card_kwargs`` only fill the card's Jinja template; also
+            # write these two to its YAML header so the Hub indexes them.
+            card = super().generate_model_card(*args, **kwargs)
+            for key in ("datasets", "base_model"):
+                if key in kwargs:
+                    setattr(card.data, key, kwargs[key])
+            return card
 
         @classmethod
         def _from_pretrained(
@@ -991,6 +1082,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ):
             model_kwargs.pop("braindecode_version", None)
             filename = model_kwargs.pop("filename", None)
+            if filename is not None:
+                _validate_weights_filename(filename)
             # The Hub mixin passes only the keys of config.json (plus the
             # caller's), so a missing key means a pre-on_non_divisible save.
             cls._fill_legacy_defaults(model_kwargs)
@@ -1029,15 +1122,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             ):
                 model_kwargs["n_outputs"] = saved_n_outputs
 
-            # If a custom filename is provided, temporarily override the
-            # HuggingFace constant so the parent class downloads the
-            # correct file (e.g. "LUNA_base.safetensors" instead of
-            # "model.safetensors").
-            hf_constants = huggingface_hub.constants
-            _orig_safetensors = hf_constants.SAFETENSORS_SINGLE_FILE
-            if filename is not None:
-                hf_constants.SAFETENSORS_SINGLE_FILE = filename
-            try:
+            if filename is None:
+                # The parent selects only safetensors for local directories;
+                # its legacy pickle fallback is remote-only.
+                if Path(model_id).is_dir():
+                    _local_weights_path(model_id, "model.safetensors")
                 model = super()._from_pretrained(  # type: ignore
                     model_id=model_id,
                     revision=revision,
@@ -1049,8 +1138,31 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     strict=strict,
                     **model_kwargs,
                 )
-            finally:
-                hf_constants.SAFETENSORS_SINGLE_FILE = _orig_safetensors
+            else:
+                # Hub <1.0 forwards these download options to _from_pretrained.
+                # They are not constructor kwargs; only pass them to versions
+                # of hf_hub_download that supplied them in the first place.
+                download_kwargs = {
+                    key: model_kwargs.pop(key)
+                    for key in ("proxies", "resume_download")
+                    if key in model_kwargs
+                }
+                if Path(model_id).is_dir():
+                    model_file = str(_local_weights_path(model_id, filename))
+                else:
+                    model_file = huggingface_hub.hf_hub_download(
+                        repo_id=model_id,
+                        filename=filename,
+                        revision=revision,
+                        cache_dir=cache_dir,
+                        force_download=force_download,
+                        token=token,
+                        local_files_only=local_files_only,
+                        **download_kwargs,
+                    )
+                model = cls._load_as_safetensor(
+                    cls(**model_kwargs), model_file, map_location, strict
+                )
 
             if (
                 saved_n_outputs is not None

@@ -35,3 +35,33 @@ def test_get_n_outputs_regression():
         )
         == 5
     )
+
+
+@pytest.mark.parametrize("target_name", ["age", ["age", "score", "bmi"]])
+def test_infer_n_outputs_of_windows_with_several_targets(target_name):
+    import mne
+
+    from braindecode.datasets import BaseConcatDataset, RawDataset
+    from braindecode.datautil import infer_signal_properties
+    from braindecode.preprocessing import create_fixed_length_windows
+
+    info = mne.create_info(["C3", "C4"], 100.0, "eeg")
+    datasets = [
+        RawDataset(
+            mne.io.RawArray(np.zeros((2, 300)), info, verbose="error"),
+            {"age": 30.0 + i, "score": 1.5, "bmi": 22.0},
+            target_name=target_name,
+        )
+        for i in range(2)
+    ]
+    windows = create_fixed_length_windows(
+        BaseConcatDataset(datasets),
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=False,
+        # an empty mapping gives several targets as a list
+        mapping=None if isinstance(target_name, str) else {},
+    )
+    n_targets = 1 if isinstance(target_name, str) else len(target_name)
+    signal_kwargs = infer_signal_properties(windows, mode="regression")
+    assert signal_kwargs["n_outputs"] == n_targets
