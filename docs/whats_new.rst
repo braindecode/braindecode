@@ -580,6 +580,7 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` crashing with ``TypeError`` when a dataset has no description, e.g. after :func:`braindecode.datasets.create_from_mne_epochs` without ``descriptions`` or windowing a ``RawDataset(raw)`` (:gh:`1483` by `Adam Mounir`_).
 - Zarr cache creation reserves a unique temporary file per call (exclusive
   creation), so threads of one process no longer share one; permissions and
   existing caches are unchanged (by `Bruno Aristimunha`_).
