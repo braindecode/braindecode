@@ -28,6 +28,7 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.datasets.NEMARDataset`: streams a NEMAR dataset from its Zarr serving copy (https://docs.nemar.org/platform/zarr/) without downloading the BIDS files. Each recording is a lazy :class:`mne.io.BaseRaw`, so windowing, preprocessing and data loaders work unchanged and only the samples read are fetched: zarr reads the shard index and the 4 s chunks a slice covers, with byte-range requests, and a read that fails on the network is retried. Install with ``pip install braindecode[nemar]`` (:gh:`1439` by `Adam Mounir`_).
 - The MOABB benchmark example no longer advises ``n_jobs=1`` on a GPU: with NVIDIA's Multi-Process Service running, ``n_jobs=18`` trained BNCI2014_001's 18 cross-session folds 2x faster than ``n_jobs=1`` for EEGNet, ShallowFBCSPNet and ATCNet, with the same score on every fold, and it notes that ``setup_seed`` does not reach the worker processes (:gh:`1500` by `Bhargav Kowshik`_).
 - Add a :ref:`CPU/Gloo distributed-window evaluation recipe
   <distributed-window-evaluation>` with identity checks, chronological trial
