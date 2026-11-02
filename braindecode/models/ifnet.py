@@ -192,15 +192,19 @@ class IFNet(EEGModuleMixin, nn.Module, license="mit"):
 
     # Reference ``initParms``: truncated normal (std 0.01) linears and
     # convolutions, zero biases, unit/zero normalization layers. The max-norm
-    # head is initialized through its stored weight.
-    _initialize_weights = partial(
-        init_weights_,
-        weights={
-            nn.Linear: partial(trunc_normal_, std=0.01),
-            (nn.Conv1d, nn.Conv2d): partial(trunc_normal_, std=0.01),
-        },
-        norms=(nn.LayerNorm, nn.BatchNorm1d, nn.BatchNorm2d),
-        init_parametrized_original=True,
+    # head is initialized through its stored weight. ``staticmethod``: from
+    # Python 3.14 on a ``functools.partial`` class attribute is a method
+    # descriptor, so ``self._initialize_weights`` would bind ``self``.
+    _initialize_weights = staticmethod(
+        partial(
+            init_weights_,
+            weights={
+                nn.Linear: partial(trunc_normal_, std=0.01),
+                (nn.Conv1d, nn.Conv2d): partial(trunc_normal_, std=0.01),
+            },
+            norms=(nn.LayerNorm, nn.BatchNorm1d, nn.BatchNorm2d),
+            init_parametrized_original=True,
+        )
     )
 
     def _init_parameters(self) -> None:

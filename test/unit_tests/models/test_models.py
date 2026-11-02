@@ -5926,6 +5926,19 @@ def test_ifnet_initializes_like_the_reference():
                 assert torch.all(module.bias == 0)
 
 
+@pytest.mark.parametrize("model_name", sorted(all_models_dict))
+def test_no_bare_partial_class_attributes(model_name):
+    """A ``functools.partial`` class attribute is a method descriptor from Python
+    3.14 on: read through ``self`` it binds the model as its first argument
+    (IFNet's ``self.apply(self._initialize_weights)`` then raised a TypeError).
+    Wrap such attributes in ``staticmethod``."""
+    for klass in inspect.getmro(all_models_dict[model_name]):
+        if not klass.__module__.startswith("braindecode"):
+            continue
+        bare = [n for n, v in vars(klass).items() if isinstance(v, partial)]
+        assert not bare, f"{klass.__qualname__}: wrap {bare} in staticmethod"
+
+
 def test_eegpt_patch_embed_padding():
     """Test that _PatchEmbed automatically pads input if n_times is not divisible."""
     from braindecode.models.eegpt import _PatchEmbed
