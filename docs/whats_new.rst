@@ -1093,7 +1093,7 @@ Bug fixes
 
 - :class:`braindecode.models.REVE` resolves an unset ``on_non_divisible`` into a
   separate ``str`` variable, so the mypy pre-commit hook passes again after
-  :gh:`1517`; behaviour is unchanged (by `Bruno Aristimunha`_).
+  :gh:`1517`; behaviour is unchanged (:gh:`1519` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)
