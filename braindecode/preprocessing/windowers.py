@@ -221,7 +221,7 @@ def _resolve_on_last_window(
         )
     if drop_last_window is not None:
         warnings.warn(
-            "`drop_last_window` is deprecated and will be removed in version 3.0. "
+            "`drop_last_window` is deprecated and will be removed in version 2.1. "
             "Use `on_last_window='drop'` if True or "
             "`on_last_window='overlap'` if False. "
             "See https://github.com/braindecode/braindecode/pull/1058 for feedback.",
