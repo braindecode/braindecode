@@ -657,6 +657,14 @@ Requirements
   PyTorch stopped providing its binary packages after 2.2.
   (:gh:`1174` and :gh:`1504` by `Bruno Aristimunha`_)
 
+- Raise the dependency floors that the test suite fails below, measured with
+  every other dependency at its newest release: ``pydantic>=2.11`` (model
+  configs: ``create_model`` rejects ``__config__`` with ``__base__`` before
+  2.11), ``skorch>=1.3.1`` (cropped grid search with scikit-learn 1.9),
+  ``mne_bids>=0.19`` (sidecar lookup of the BIDS notebook viewer) and, in the ``hub``
+  extra, ``zarr>=3.1`` (``Group.create_array(data=...)``)
+  (:gh:`XXXX` by `Bruno Aristimunha`_).
+
 Bug fixes
 ==========
 
