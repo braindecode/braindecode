@@ -22,7 +22,7 @@
 .. _current:
 
 
-Current 1.8.1 (2026-08-31)
+Current 2.0.0 (GitHub)
 ===============================
 
 Breaking changes in 2.0
@@ -492,11 +492,6 @@ Enhancements
   on a frozen :class:`braindecode.models.BrainTokenizer`, with the released tiny
   and base weights converted to ``braindecode/brainomni-tiny-pretrained`` and
   ``braindecode/brainomni-base-pretrained`` (:gh:`1231` by `Bruno Aristimunha`_).
-
-- Add :class:`braindecode.models.VEMG2Pose`,
-  :class:`braindecode.models.NeuroPose`, and
-  :class:`braindecode.models.SensingDynamics` for dense hand-pose
-  regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
 
 - Add a bounded SAE intervention tutorial on a frozen pretrained REVE with
   BNCI2014_001 using optional SAE Lens, without adding an SAE implementation
@@ -1150,6 +1145,18 @@ Bug fixes
   from Python 3.14 on, the ``functools.partial`` holding its reference
   initialization bound the model as its first argument. Outputs are unchanged on
   earlier Python versions (:gh:`1525` by `Bruno Aristimunha`_).
+
+
+Current 1.8.1 (2026-08-31)
+===============================
+
+Enhancements
+============
+
+- Add :class:`braindecode.models.VEMG2Pose`,
+  :class:`braindecode.models.NeuroPose`, and
+  :class:`braindecode.models.SensingDynamics` for dense hand-pose
+  regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)
