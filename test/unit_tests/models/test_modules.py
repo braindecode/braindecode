@@ -787,8 +787,21 @@ def test_scripted_lfilter_equals_torchaudio(kind, both_directions):
 
     assert torch.equal(function(x, a, b), expected)
     # The ops that the scripted graph runs, called directly (also in eager mode).
-    assert torch.equal(scripted_ops(x, a, b), expected)
-    assert torch.equal(torch.jit.script(function)(x, a, b), expected)
+    _assert_equals_torchaudio(scripted_ops(x, a, b), expected)
+    _assert_equals_torchaudio(torch.jit.script(function)(x, a, b), expected)
+
+
+def _assert_equals_torchaudio(actual, expected):
+    """Bit for bit on current torchaudio. Older releases (seen with 2.6) round
+    their eager IIR recursion differently from the ops of their scripted path,
+    so there the two agree to float64 rounding only."""
+    if torch.equal(actual, expected):
+        return
+    import torchaudio
+
+    version = tuple(int(p) for p in torchaudio.__version__.split("+")[0].split(".")[:2])
+    assert version < (2, 11), "scripted lfilter is no longer bit-equal to torchaudio"
+    torch.testing.assert_close(actual, expected)
 
 
 def test_generic_lfilter_core_loop_matches_torchaudio():
