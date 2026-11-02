@@ -1099,7 +1099,7 @@ Bug fixes
   ``TypeError: init_weights_() got multiple values for argument 'weights'``:
   from Python 3.14 on, the ``functools.partial`` holding its reference
   initialization bound the model as its first argument. Outputs are unchanged on
-  earlier Python versions (:gh:`XXXX` by `Bruno Aristimunha`_).
+  earlier Python versions (:gh:`1525` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)
