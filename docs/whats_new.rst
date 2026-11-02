@@ -1066,6 +1066,17 @@ Bug fixes
   targets remain in the window metadata
   (:gh:`1166` by `Sarthak Tayal`_).
 
+- :func:`braindecode.datasets.create_from_X_y` and
+  :func:`braindecode.datasets.create_from_mne_raw`, whose ``drop_last_window``
+  is a required argument, no longer pass it on to the windowers, which made
+  every call emit the ``drop_last_window`` ``DeprecationWarning``; windows are
+  unchanged. The examples use ``on_last_window``; the
+  ``tutorial_create_fixed_window_length`` example, which the gallery does not
+  execute, runs to the end (it failed at its ``Pick``, its reject threshold, the
+  window unpacking and the target mapping); and the :class:`braindecode.models.EEGNet` deprecation of
+  ``final_layer_with_constraint=False`` points to
+  ``final_layer_with_constraint=True`` instead of a parameter that does not exist
+  (:gh:`1530` by `Bruno Aristimunha`_).
 - Fix :class:`braindecode.models.STEEGFormer` on high-density sensor nets whose
   electrodes are numbered rather than named for a 10-20 site (e.g. EGI
   HydroCel ``E1`` ... ``E256``). A channel name outside the montage vocabulary

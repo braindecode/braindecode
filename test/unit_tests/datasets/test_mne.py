@@ -3,11 +3,15 @@
 # License: BSD-3
 
 
+import warnings
+
 import mne
 import numpy as np
 import pytest
 
+from braindecode.datasets import BaseConcatDataset, RawDataset
 from braindecode.datasets.mne import create_from_mne_epochs, create_from_mne_raw
+from braindecode.preprocessing import create_windows_from_events
 
 
 def test_create_from_single_raw():
@@ -40,6 +44,23 @@ def test_create_from_single_raw():
         assert i_start == inds[i_t] + i_w_in_t * 2 - (i_w_in_t == 8)
         assert i_stop == inds[i_t] + i_w_in_t * 2 - (i_w_in_t == 8) + 5
         np.testing.assert_allclose(x, data[:, i_start:i_stop], atol=1e-5, rtol=1e-5)
+
+
+def test_create_from_mne_raw_does_not_warn_about_drop_last_window():
+    """``drop_last_window`` is a required argument of create_from_mne_raw: the
+    windowers' deprecation of their own ``drop_last_window`` must not reach its
+    callers."""
+    rng = np.random.RandomState(42)
+    info = mne.create_info(ch_names=["0", "1"], sfreq=50, ch_types="eeg")
+    raw = mne.io.RawArray(data=rng.randn(2, 1000), info=info, verbose="error")
+    raw.set_annotations(mne.Annotations([2, 5, 9], [1, 1, 1], ["a", "b", "c"]))
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*drop_last_window.*")
+        windows = create_from_mne_raw([raw], 0, 0, 5, 2, False)
+    expected = create_windows_from_events(
+        BaseConcatDataset([RawDataset(raw)]), 0, 0, 5, 2, on_last_window="overlap"
+    )
+    assert len(windows) == len(expected) > 3
 
 
 def test_create_from_two_raws_with_varying_trial_lengths():
