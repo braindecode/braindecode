@@ -74,7 +74,12 @@ documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
 moabb = ["moabb>=1.4.3"]
-eegprep = ["eegprep[eeglabio]>=0.2.23"]
+eegprep = [
+    "eegprep[eeglabio]>=0.2.23",
+    # eegprep for Python 3.11 (<= 0.3.0) needs sympy>=1.14, which torch 2.6 rules
+    # out (it pins sympy==1.13.1); eegprep 0.4.0 drops sympy but needs Python 3.12.
+    'torch>=2.7; python_version < "3.12"',
+]
 hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.1"]
 viz = ["captum>=0.7.0"]
 sae = ["sae-lens==6.51.3"]  # Optional gallery only; not part of core or all.

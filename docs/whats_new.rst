@@ -38,7 +38,11 @@ API and behavior changes
 Requirements
 ============
 
-- None yet
+- The ``eegprep`` extra (and ``all``) requires ``torch>=2.7`` on Python 3.11:
+  every eegprep release for Python 3.11 needs ``sympy>=1.14``, while torch 2.6
+  pins ``sympy==1.13.1``. Installing ``braindecode[eegprep]`` with torch 2.6 on
+  Python 3.11 now fails with this explicit requirement instead of an opaque
+  resolver conflict (by `Bruno Aristimunha`_).
 
 Bug fixes
 ==========
