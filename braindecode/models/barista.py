@@ -38,7 +38,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
     :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model`
     :bdg-dark-line:`Channel`
 
-    .. versionadded:: 1.8.2
+    .. versionadded:: 2.0
 
     BaRISTA encodes intracranial EEG with a shared temporal CNN and joint
     space-time attention. Its spatial embeddings use electrode coordinates,

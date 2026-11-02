@@ -349,7 +349,8 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     authors' EEG example applies a 0.5--45 Hz band-pass, resamples to 200 Hz
     and clips amplitudes to +/-500.
 
-    The upstream implementation and checkpoints are licensed CC BY-NC 4.0.
+    The upstream implementation [neurorvqcode]_ and checkpoints are licensed
+    CC BY-NC 4.0.
     This is a non-commercial research license.
 
     `License <https://github.com/KonstantinosBarmpas/NeuroRVQ/blob/main/LICENSE>`_
@@ -444,19 +445,17 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         Activation in the multi-scale temporal patch embedding. GELU reproduces
         the released model.
 
-    Input shape
-    -----------
-    ``(batch, n_chans, n_times)``.
+    Notes
+    -----
+    Input shape: ``(batch, n_chans, n_times)``.
 
-    Output shape
-    ------------
-    By default, ``(batch, n_outputs)`` logits. With ``return_features=True``,
-    returns a dictionary whose ``"features"`` entry has shape
+    Output shape: by default, ``(batch, n_outputs)`` logits. With
+    ``return_features=True``, returns a dictionary whose ``"features"`` entry has shape
     ``(batch, 4 * embed_dim * n_chans * n_patches)`` for EEG
     and ``(batch, 4 * embed_dim)`` for the other modalities, where
     ``embed_dim = out_chans * patch_size // 8``.
 
-    .. versionadded:: 1.8
+    .. versionadded:: 2.0
 
     References
     ----------

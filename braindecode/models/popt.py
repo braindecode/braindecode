@@ -85,7 +85,7 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
        not affected; the issue is only in the evaluation. When fine-tuning,
        split by blocks of time.
 
-    .. versionadded:: 1.8.2
+    .. versionadded:: 2.0
 
     Parameters
     ----------

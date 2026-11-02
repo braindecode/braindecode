@@ -134,7 +134,7 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
        upstream checkpoints (``liulab-repository/Du-IN``, ``pretrains/duin/
        <subject>/<stage>/model/checkpoint-399.pth``) with ``strict=False``.
 
-    .. versionadded:: 1.8.2
+    .. versionadded:: 2.0
 
     Parameters
     ----------

@@ -268,7 +268,8 @@ class CSBrain(EEGModuleMixin, nn.Module):
 
     Notes
     -----
-    The released checkpoints use other module names. To load one, drop the
+    The released checkpoints [csbraincode]_ use other module names. To load
+    one, drop the
     ``module.`` / ``backbone.`` prefix and rename ``encoder.layers.`` to
     ``encoder.``, ``TemEmbedEEGLayer.`` to ``temporal_embed.``,
     ``BrainEmbedEEGLayer.`` to ``region_embed.``, ``linear1`` to

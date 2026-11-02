@@ -132,7 +132,7 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
        Frontiers in Robotics and AI, 12, 1625731.
        https://doi.org/10.3389/frobt.2025.1625731
 
-    .. versionadded:: 1.9
+    .. versionadded:: 2.0
     """
 
     def __init__(

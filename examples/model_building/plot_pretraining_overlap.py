@@ -3,9 +3,9 @@
 Which data did a pretrained checkpoint see? Reading the model card
 ===================================================================
 
-Foundation models such as :class:`~braindecode.models.Labram`,
-:class:`~braindecode.models.CBraMod` or :class:`~braindecode.models.BIOT` are
-pretrained without labels on large EEG collections, then fine-tuned on a
+Foundation models such as :class:`~braindecode.models.Labram` [1]_,
+:class:`~braindecode.models.CBraMod` [2]_ or :class:`~braindecode.models.BIOT`
+[3]_ are pretrained without labels on large EEG collections, then fine-tuned on a
 downstream task. A downstream result is usually reported as
 *subject-independent* because the test subjects are excluded from fine-tuning.
 That says nothing about pretraining: if the evaluation recordings were part of

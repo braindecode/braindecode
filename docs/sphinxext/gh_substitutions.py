@@ -26,4 +26,5 @@ def gh_role(name, rawtext, text, lineno, inliner, options={}, content=[]):
 
 def setup(app):
     app.add_role("gh", gh_role)
-    return
+    # The role keeps no state, so parallel reads and writes are safe.
+    return {"parallel_read_safe": True, "parallel_write_safe": True}

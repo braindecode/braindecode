@@ -183,7 +183,7 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
            model = TFMTokenizer(sfreq=200)
            model.load_state_dict(state)
 
-    .. versionadded:: 1.9
+    .. versionadded:: 2.0
 
     Examples
     --------
