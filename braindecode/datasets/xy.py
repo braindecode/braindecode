@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 import mne
 import numpy as np
@@ -85,12 +86,17 @@ def create_from_X_y(
             )
         window_size_samples = n_samples_per_x[0]
         window_stride_samples = n_samples_per_x[0]
+    # Map the bool here: passing drop_last_window on would emit a deprecation
+    # warning that callers of this function cannot act on.
+    on_last_window: Literal["overlap", "drop"] | None = None
+    if drop_last_window is not None:
+        on_last_window = "drop" if drop_last_window else "overlap"
     windows_datasets = create_fixed_length_windows(
         base_datasets,
         start_offset_samples=0,
         stop_offset_samples=None,
         window_size_samples=window_size_samples,
         window_stride_samples=window_stride_samples,
-        drop_last_window=drop_last_window,
+        on_last_window=on_last_window,
     )
     return windows_datasets

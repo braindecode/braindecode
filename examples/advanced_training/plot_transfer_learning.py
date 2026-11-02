@@ -248,7 +248,7 @@ def window_recordings(recordings):
         recordings,
         window_size_samples=window_size_samples,
         window_stride_samples=window_size_samples,
-        drop_last_window=True,
+        on_last_window="drop",
         preload=True,
         verbose="error",
     )

@@ -38,7 +38,6 @@ Fixed-Length Windows Extraction
 #        stop_offset_samples=None,
 #        window_size_samples=None,
 #        window_stride_samples=None,
-#        drop_last_window=None,
 #        mapping=None,
 #        preload=False,
 #        picks=None,
@@ -49,7 +48,8 @@ Fixed-Length Windows Extraction
 #        lazy_metadata=False,
 #        on_missing='error',
 #        n_jobs=1,
-#        verbose='error',
+#        verbose="error",
+#        on_last_window=None,
 #    )
 #
 #
@@ -73,8 +73,8 @@ Fixed-Length Windows Extraction
 # **window_stride_samples** : int or None
 #     - Stride between windows in samples. If None, set to be equal to winddow_size_samples, so windows will not overlap.
 #
-# **drop_last_window** : bool or None
-#     - Whether or not have a last overlapping window, when windows do not equally divide the continuous signal. Must be set to a bool if window size and stride are not None.
+# **on_last_window** : 'overlap', 'drop' or None (keyword-only)
+#     - What to do with the last window when windows do not equally divide the continuous signal: 'overlap' adds a last window that overlaps the previous one, 'drop' leaves the incomplete end out. Must be set if window size and stride are not None. It replaces the deprecated ``drop_last_window`` (True is 'drop', False is 'overlap').
 #
 # **mapping** : dict(str: int) or None
 #     - Mapping from event description to target value.
@@ -132,7 +132,7 @@ dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[1])
 ######################################################################
 # Preprocessing
 preprocessors = [
-    Pick(eeg=True, meg=False, stim=False),
+    Pick(picks="eeg"),
     Preprocessor(lambda data: multiply(data, 1e6)),
     Filter(l_freq=4.0, h_freq=38.0),
 ]
@@ -152,11 +152,11 @@ windows_dataset = create_fixed_length_windows(
     stop_offset_samples=None,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    drop_last_window=True,
+    on_last_window="drop",
     mapping=None,
     preload=True,
     picks="eeg",  # Only EEG channels
-    reject=dict(eeg=150e-6),  # Reject windows where EEG p2p > 150 µV
+    reject=dict(eeg=150.0),  # data are in µV (scaled above): p2p > 150 µV
     flat=None,
     targets_from="metadata",
     last_target_only=True,
@@ -171,7 +171,7 @@ windows_dataset = create_fixed_length_windows(
 print(f"Number of windows: {len(windows_dataset)}")
 
 # Each window contains EEG data of fixed size
-X, y = windows_dataset[0]
+X, y, _ = windows_dataset[0]  # data, target, window indices
 print(f"Window data shape: {X.shape}")
 print(f"Window label: {y}")
 
@@ -191,22 +191,24 @@ print(f"Window label: {y}")
 # - **last_target_only=True** (default): If multiple targets are present within a window (as in time-varying labels),
 #   use only the final target value in that window.
 
-# Example: mapping session names ("0train" and "1test") to integers
+# Example: mapping session names ("0train" and "1test") to integers. The
+# targets come from the description column that ``set_target`` selects.
 
+dataset.set_target("session")
 mapping = {"0train": 0, "1test": 1}
 
 windows_dataset = create_fixed_length_windows(
     dataset,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    drop_last_window=True,
+    on_last_window="drop",
     mapping=mapping,
     preload=True,
 )
 
 # View first few targets
 print("Targets for first 10 windows:")
-print(windows_dataset.datasets[0].windows.get_metadata()["target"][:10])
+print(windows_dataset.get_metadata()["target"][:10])
 
 
 ######################################################################
@@ -215,14 +217,14 @@ print(windows_dataset.datasets[0].windows.get_metadata()["target"][:10])
 #
 # You can set rejection criteria to exclude windows with extreme values:
 
-reject_criteria = dict(eeg=150e-6)  # 150 µV max peak-to-peak allowed
+reject_criteria = dict(eeg=150.0)  # 150 µV max peak-to-peak (data are in µV)
 
 windows_with_rejection = create_fixed_length_windows(
     concat_ds=dataset,
     window_size_samples=200,
     window_stride_samples=100,
     reject=reject_criteria,
-    drop_last_window=True,
+    on_last_window="drop",
 )
 
 print(windows_with_rejection)
@@ -237,7 +239,7 @@ lazy_windows = create_fixed_length_windows(
     concat_ds=dataset,
     window_size_samples=200,
     window_stride_samples=100,
-    drop_last_window=True,
+    on_last_window="drop",
     lazy_metadata=True,
 )
 
@@ -258,7 +260,7 @@ shifted_windows_dataset = create_fixed_length_windows(
     start_offset_samples=start_offset_samples,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    drop_last_window=True,
+    on_last_window="drop",
     preload=True,
 )
 
