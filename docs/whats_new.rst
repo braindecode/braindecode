@@ -1014,6 +1014,10 @@ Bug fixes
   (``reg=1e-3``) and a row gain above 2 warns; fewer than four positioned channels
   raise a ``ValueError`` (:gh:`1241` by `Bruno Aristimunha`_).
 
+- :class:`braindecode.models.REVE` resolves an unset ``on_non_divisible`` into a
+  separate ``str`` variable, so the mypy pre-commit hook passes again after
+  :gh:`1517`; behaviour is unchanged (by `Bruno Aristimunha`_).
+
 
 Current 1.8.0 (2026-08-31)
 ===============================
