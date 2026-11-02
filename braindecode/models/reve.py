@@ -325,10 +325,9 @@ class REVE(EEGModuleMixin, nn.Module):
         # Unset: crop, as braindecode 1.8 and the reference did, so code written
         # for 1.8 keeps its patch count, head size and outputs.
         default_mode = on_non_divisible is None
-        if default_mode:
-            on_non_divisible = "crop"
-        _check_on_non_divisible(on_non_divisible)
-        self.on_non_divisible = on_non_divisible
+        mode = "crop" if on_non_divisible is None else on_non_divisible
+        _check_on_non_divisible(mode)
+        self.on_non_divisible = mode
         try:
             known_n_times = self.n_times
         except ValueError:  # unknown length: nothing to check at construction
@@ -336,7 +335,7 @@ class REVE(EEGModuleMixin, nn.Module):
         if known_n_times is not None:
             step = patch_size - patch_overlap
             # Raises for "crop" below one patch and for "error" on an untiled window.
-            patch_count(known_n_times, patch_size, on_non_divisible, step)
+            patch_count(known_n_times, patch_size, mode, step)
             untiled = (
                 known_n_times < patch_size or (known_n_times - patch_size) % step
             )
@@ -349,7 +348,7 @@ class REVE(EEGModuleMixin, nn.Module):
                     FutureWarning,
                     stacklevel=2,
                 )
-            if on_non_divisible == "pad" and untiled:
+            if mode == "pad" and untiled:
                 warnings.warn(
                     f"REVE's patches do not tile {known_n_times} samples: the input "
                     "will be padded.",
