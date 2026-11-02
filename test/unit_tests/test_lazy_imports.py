@@ -72,3 +72,16 @@ def test_every_public_name_resolves_from_its_submodule():
     for name, module in models._LAZY.items():
         submodule = importlib.import_module(f"braindecode.models.{module}")
         assert getattr(models, name) is getattr(submodule, name), name
+
+
+# wfdb is only needed to read PhysioNet Challenge 2018 files; with pandas >= 3.1
+# its import emits a DeprecationWarning, which ``-W error`` turned into an error.
+WFDB_CODE = """
+import sys
+import braindecode.datasets
+assert "wfdb" not in sys.modules
+"""
+
+
+def test_import_datasets_does_not_load_wfdb():
+    _run(WFDB_CODE)
