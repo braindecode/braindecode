@@ -48,16 +48,16 @@ dependencies = [
     "torch>=2.6",
     "torchaudio>=2.6",
     'mne>=1.11.0',  # we get matplotlib, numpy, scipy from here
-    'mne_bids>=0.18', # in theory we get the mne here, but we prefer to have it explicit
+    'mne_bids>=0.19', # in theory we get the mne here, but we prefer to have it explicit
     'h5py',
-    'skorch>=1.3.0',
+    'skorch>=1.3.1',
     'joblib',
     'torchinfo',
     'pandas',
     'wfdb>=4.3.1',  # requests comes transitively via mne→pooch and wfdb
     'docstring_inheritance',
     'einops',
-    'pydantic>=2.0',
+    'pydantic>=2.11.4',
 ]
 
 [tool.uv]
@@ -75,7 +75,7 @@ documentation = "https://braindecode.org/stable/index.html"
 [project.optional-dependencies]
 moabb = ["moabb>=1.4.3"]
 eegprep = ["eegprep[eeglabio]>=0.2.23"]
-hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.0"]
+hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.1"]
 viz = ["captum>=0.7.0"]
 sae = ["sae-lens==6.51.3"]  # Optional gallery only; not part of core or all.
 tests = [
