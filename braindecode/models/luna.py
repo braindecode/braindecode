@@ -14,6 +14,7 @@ the LICENSE Of this file is APACHE-2.0.
 """
 
 import math
+import warnings
 from functools import partial
 from typing import Any, Dict, Optional, Tuple, Type
 
@@ -283,6 +284,23 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         trunc_normal_(self.mask_token, std=0.02)
         self.apply(_init_weights)
         self.fix_init_weight()
+
+    def initialize_weights(self) -> None:
+        """Re-run LUNA's own weight initialization.
+
+        .. deprecated:: 2.0
+            ``initialize_weights`` was renamed to the private
+            ``_init_parameters`` and will be removed in a future release.
+            Use :meth:`reset_parameters`, which first resets every layer to
+            its PyTorch default and then applies this initialization.
+        """
+        warnings.warn(
+            "LUNA.initialize_weights() is deprecated and will be removed in a "
+            "future release; use LUNA.reset_parameters() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self._init_parameters()
 
     def fix_init_weight(self) -> None:
         def rescale(param: torch.Tensor, layer_id: int) -> None:
