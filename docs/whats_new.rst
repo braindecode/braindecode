@@ -526,6 +526,7 @@ API and behavior changes
 ========================
 
 - The development version is ``2.0.0dev0``; master reported ``1.8.1`` since the release, so downstream code could not tell it from 1.8.1 (NeuralBench gates its LaBraM LoRA workaround on ``braindecode > 1.8.1``).
+- :class:`braindecode.models.REVE` built without ``on_non_divisible`` crops a window its overlapping patches do not tile, as in braindecode 1.8 and the reference, and warns (``FutureWarning``); :gh:`1399` had made it pad, which added a zero patch, changed the encoder output and the head size of code written for 1.8 (NeuralTrain's REVE wrapper tests failed). Pass ``on_non_divisible="pad"`` for the padded window.
 
 - With opt-in ``compile=True``, :class:`braindecode.EEGClassifier` and
   :class:`braindecode.EEGRegressor` compile the module in place, keeping supplied
@@ -584,6 +585,7 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.modules.PatchTokenizer` no longer registers a parameter-free ``nn.Identity`` as ``proj`` / ``patcher`` when it does not use that projection; the attribute is ``None``. LoRA with ``target_modules=["proj"]`` (as in NeuralBench's LaBraM and LUNA configurations) matched the placeholder inside :class:`braindecode.models.Labram`, :class:`~braindecode.models.LUNA` and the other models built on the tokenizer since :gh:`1226`, and peft raised ``Target module Identity() is not supported``. State dicts and outputs are unchanged.
 - :class:`braindecode.modules.MaxNormLinear`, used for the classification layer of :class:`braindecode.models.ATCNet` and :class:`braindecode.models.EEGTCNet`, bounds the norm of the incoming weights of each output unit (each row of the weight), as the Keras ``Dense(kernel_constraint=max_norm())`` it reproduces, instead of the norm of each input feature's weights (each column). With ATCNet's defaults (``max_norm_const=0.25``, 32 input features), a row could reach a norm of sqrt(32) x 0.25 = 1.41. The stored weights are unchanged, so ATCNet and EEGTCNet checkpoints saved with an earlier version still load, but their effective classification weights can differ (:gh:`1476` by `Adam Mounir`_).
 - Fix :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` crashing with ``TypeError`` when a dataset has no description, e.g. after :func:`braindecode.datasets.create_from_mne_epochs` without ``descriptions`` or windowing a ``RawDataset(raw)`` (:gh:`1483` by `Adam Mounir`_).
 - Zarr cache creation reserves a unique temporary file per call (exclusive
