@@ -1095,6 +1095,12 @@ Bug fixes
   separate ``str`` variable, so the mypy pre-commit hook passes again after
   :gh:`1517`; behaviour is unchanged (:gh:`1519` by `Bruno Aristimunha`_).
 
+- Fix :class:`braindecode.models.IFNet` failing to build on Python 3.14 with
+  ``TypeError: init_weights_() got multiple values for argument 'weights'``:
+  from Python 3.14 on, the ``functools.partial`` holding its reference
+  initialization bound the model as its first argument. Outputs are unchanged on
+  earlier Python versions (:gh:`XXXX` by `Bruno Aristimunha`_).
+
 
 Current 1.8.0 (2026-08-31)
 ===============================
