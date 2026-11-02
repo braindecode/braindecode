@@ -158,3 +158,38 @@ def test_legacy_fill_skips_a_subclass_without_the_argument():
 
     model = Wrapped.from_config({"n_chans": 3, "n_outputs": 2, "n_times": 64})
     assert model.on_non_divisible == "pad"
+
+
+def test_reve_default_keeps_the_1_8_patch_count():
+    """REVE built without ``on_non_divisible`` crops, as braindecode 1.8 did.
+
+    NeuralTrain's REVE wrapper tests build REVE(n_times=100, patch_size=50,
+    patch_overlap=10) and expect unfold's 2 patches per channel; the ``"pad"``
+    default of #1399 gave 3 and changed the encoder output and the head size.
+    """
+    kwargs = dict(
+        chs_info=[{"ch_name": "Cz"}, {"ch_name": "Pz"}], n_outputs=2, n_times=100,
+        embed_dim=16, depth=1, heads=2, head_dim=8, patch_size=50, patch_overlap=10,
+    )
+    torch.manual_seed(0)
+    with pytest.warns(FutureWarning, match="cropped, as in braindecode 1.8"):
+        model = REVE(**kwargs).eval()
+    assert model.on_non_divisible == "crop"
+    x = torch.randn(2, 2, 100)
+    with torch.no_grad():
+        tokens = model(x, return_output=True)[-1]
+    assert tokens.shape[1] == 2 * 2  # n_chans * unfold(size=50, step=40) patches
+    torch.manual_seed(0)
+    crop = REVE(**kwargs, on_non_divisible="crop").eval()
+    crop.load_state_dict(model.state_dict(), strict=True)
+    with torch.no_grad():
+        torch.testing.assert_close(model(x), crop(x), rtol=0, atol=0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        padded = REVE(**kwargs, on_non_divisible="pad").eval()
+    with torch.no_grad():
+        assert padded(x, return_output=True)[-1].shape[1] == 2 * 3
+    # a tiled window needs no choice: no warning
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        REVE(**{**kwargs, "n_times": 90})

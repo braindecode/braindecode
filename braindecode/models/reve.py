@@ -98,11 +98,12 @@ class REVE(EEGModuleMixin, nn.Module):
 
       The EEG signal is split into overlapping patches along the time dimension, generating
       :math:`p = \left\lceil \frac{T - w}{w - o} \right\rceil + 1` patches of size :math:`w`
-      with overlap :math:`o`, where :math:`T \geq w` is the signal length: by default
-      (``on_non_divisible="pad"``) the signal is right zero-padded so the last patch ends
+      with overlap :math:`o`, where :math:`T \geq w` is the signal length: with
+      ``on_non_divisible="pad"`` the signal is right zero-padded so the last patch ends
       at its end (a signal shorter than :math:`w` gives one padded patch).
-      ``on_non_divisible="crop"`` drops the trailing samples instead, as the reference
-      does: :math:`p = \left\lfloor \frac{T - w}{w - o} \right\rfloor + 1`. Each patch is linearly projected to the embedding dimension.
+      By default (``on_non_divisible="crop"``, as the reference and braindecode 1.8)
+      the trailing samples are dropped:
+      :math:`p = \left\lfloor \frac{T - w}{w - o} \right\rfloor + 1`. Each patch is linearly projected to the embedding dimension.
 
     - ``REVE.fourier4d`` + ``REVE.mlp4d`` **4D Positional Embedding (4DPE)**
 
@@ -220,13 +221,15 @@ class REVE(EEGModuleMixin, nn.Module):
         Temporal patch size in samples (200 samples = 1 second at 200 Hz).
     patch_overlap : int, default=20
         Overlap between patches in samples.
-    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+    on_non_divisible : {"pad", "crop", "error"} or None, default=None
         How the overlapping patches (step ``patch_size - patch_overlap``)
         treat a window they do not tile, i.e. ``(n_times - patch_size) % step
         != 0`` or ``n_times < patch_size``: right zero-pad to the next tiled
-        length, crop the trailing samples, or raise. The reference
-        implementation crops (``"crop"``, as :meth:`torch.Tensor.unfold`);
-        all three give the same model and output for a tiled window. With the
+        length, crop the trailing samples, or raise. ``None`` crops, as the
+        reference implementation (:meth:`torch.Tensor.unfold`) and braindecode
+        1.8 did, and warns (``FutureWarning``) when the window is not tiled;
+        pass ``"crop"`` or ``"pad"`` explicitly to choose and silence it.
+        All three give the same model and output for a tiled window. With the
         default ``patch_size=200`` and ``patch_overlap=20``, ``n_times=1000``
         is not tiled: ``"pad"`` gives 6 patches, ``"crop"`` 5.
     attention_pooling : bool, default=False
@@ -295,7 +298,7 @@ class REVE(EEGModuleMixin, nn.Module):
         attention_pooling: bool = False,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
-        on_non_divisible: str = "pad",
+        on_non_divisible: Optional[str] = None,
         montage: Optional[str] = None,
         on_missing: str = "error",
     ):
@@ -319,6 +322,11 @@ class REVE(EEGModuleMixin, nn.Module):
                 f"patch_overlap ({patch_overlap}) must be smaller than patch_size "
                 f"({patch_size}): the patch step would not be positive."
             )
+        # Unset: crop, as braindecode 1.8 and the reference did, so code written
+        # for 1.8 keeps its patch count, head size and outputs.
+        default_mode = on_non_divisible is None
+        if default_mode:
+            on_non_divisible = "crop"
         _check_on_non_divisible(on_non_divisible)
         self.on_non_divisible = on_non_divisible
         try:
@@ -329,9 +337,19 @@ class REVE(EEGModuleMixin, nn.Module):
             step = patch_size - patch_overlap
             # Raises for "crop" below one patch and for "error" on an untiled window.
             patch_count(known_n_times, patch_size, on_non_divisible, step)
-            if on_non_divisible == "pad" and (
+            untiled = (
                 known_n_times < patch_size or (known_n_times - patch_size) % step
-            ):
+            )
+            if default_mode and untiled:
+                warnings.warn(
+                    f"REVE's patches do not tile {known_n_times} samples: the "
+                    "trailing samples are cropped, as in braindecode 1.8. Pass "
+                    "on_non_divisible='pad' to zero-pad the window instead, or "
+                    "on_non_divisible='crop' to keep cropping without this warning.",
+                    FutureWarning,
+                    stacklevel=2,
+                )
+            if on_non_divisible == "pad" and untiled:
                 warnings.warn(
                     f"REVE's patches do not tile {known_n_times} samples: the input "
                     "will be padded.",
