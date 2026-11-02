@@ -22,6 +22,29 @@
 .. _current:
 
 
+Current 1.8.2 (2026-11-02)
+===============================
+
+Bug fixes
+=========
+
+- :func:`torch.jit.script` compiles :class:`braindecode.modules.FilterBankLayer`,
+  and with it :class:`braindecode.models.FBCNet`,
+  :class:`braindecode.models.FBMSNet`,
+  :class:`braindecode.models.FBLightConvNet` and
+  :class:`braindecode.models.IFNet`, again with PyTorch 2.15. Eager outputs
+  are unchanged and scripted outputs equal them (backport of :gh:`1501` by
+  `Bruno Aristimunha`_).
+
+- Fix a ``FutureWarning`` raised by MNE >= 1.13 when importing
+  :mod:`braindecode` or using models, datasets and augmentations that build
+  on the ``standard_1005``/``standard_1020`` montages: MNE renamed these
+  montages to ``colin27_1005``/``colin27_1020`` and will remove the legacy
+  names in MNE 1.14, so their spelling is now resolved against the installed
+  MNE version via :func:`braindecode.util.resolve_montage_name`
+  (backport of :gh:`1164` by `Li Qing`_).
+
+
 Current 1.8.1 (2026-08-31)
 ===============================
 
@@ -1717,3 +1740,4 @@ Authors
 .. _Jon Huml: https://github.com/jonathanhuml
 .. _Azra Bano: https://github.com/azrabano23
 .. _Aditya Singh: https://github.com/adityasingh2400
+.. _Li Qing: https://github.com/qinxwew
