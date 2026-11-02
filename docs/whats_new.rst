@@ -663,7 +663,7 @@ Requirements
   2.11.4), ``skorch>=1.3.1`` (cropped grid search with scikit-learn 1.9),
   ``mne_bids>=0.19`` (sidecar lookup of the BIDS notebook viewer) and, in the ``hub``
   extra, ``zarr>=3.1`` (``Group.create_array(data=...)``)
-  (:gh:`XXXX` by `Bruno Aristimunha`_).
+  (:gh:`1531` by `Bruno Aristimunha`_).
 
 Bug fixes
 ==========
