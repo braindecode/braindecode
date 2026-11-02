@@ -19,6 +19,7 @@ from sklearn.neighbors import kneighbors_graph
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
+from braindecode.util import resolve_montage_name
 
 
 class _GraphConvolution(nn.Module):
@@ -146,7 +147,9 @@ def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
         # Try to infer positions from channel names via a standard montage
         try:
             ch_names = [ch["ch_name"] for ch in chs_info[:n_chans]]
-            montage = mne.channels.make_standard_montage("standard_1005")
+            montage = mne.channels.make_standard_montage(
+                resolve_montage_name("standard_1005")
+            )
             info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
             info.set_montage(montage, on_missing="raise")
             electrode_positions = extract_channel_locations_from_chs_info(

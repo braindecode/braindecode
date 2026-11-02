@@ -11,7 +11,9 @@ from mne.filter import _check_coefficients, create_filter
 from mne.utils import warn
 from torch import Tensor, from_numpy, nn
 from torch.fft import fftfreq
-from torchaudio.functional import fftconvolve, filtfilt, lfilter
+from torchaudio.functional import fftconvolve
+
+from braindecode.functional._lfilter import filtfilt, lfilter
 
 
 class FilterBankLayer(nn.Module):
@@ -346,12 +348,7 @@ class FilterBankLayer(nn.Module):
         if forward_filter:
             orig_dtype = x.dtype
             b_coeffs = filt.double().to(x.device)
-            filtered = lfilter(
-                x.double(),
-                a_coeffs=a_coeffs.double().to(x.device),
-                b_coeffs=b_coeffs,
-                clamp=False,
-            )
+            filtered = lfilter(x.double(), a_coeffs.double().to(x.device), b_coeffs)
             return filtered.to(orig_dtype).unsqueeze(1)
 
         # Expand filter coefficients to match the number of channels
@@ -403,13 +400,12 @@ class FilterBankLayer(nn.Module):
         # near the unit circle (e.g. cheby2 banks used by FBMSNet/FBCNet) diverge
         # to NaN in float32. The coefficient buffers are already float64.
         orig_dtype = x.dtype
-        filter_fn = lfilter if forward_filter else filtfilt
-        filtered = filter_fn(
-            x.double(),
-            a_coeffs=a_coeffs.double().to(x.device),
-            b_coeffs=b_coeffs.double().to(x.device),
-            clamp=False,
-        )
+        a64 = a_coeffs.double().to(x.device)
+        b64 = b_coeffs.double().to(x.device)
+        if forward_filter:
+            filtered = lfilter(x.double(), a64, b64)
+        else:
+            filtered = filtfilt(x.double(), a64, b64)
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
         return filtered.to(orig_dtype).unsqueeze(1)
 
