@@ -525,6 +525,7 @@ Enhancements
 API and behavior changes
 ========================
 
+- The development version is ``2.0.0dev0``; master reported ``1.8.1`` since the release, so downstream code could not tell it from 1.8.1 (NeuralBench gates its LaBraM LoRA workaround on ``braindecode > 1.8.1``).
 - :class:`braindecode.models.REVE` built without ``on_non_divisible`` crops a window its overlapping patches do not tile, as in braindecode 1.8 and the reference, and warns (``FutureWarning``); :gh:`1399` had made it pad, which added a zero patch, changed the encoder output and the head size of code written for 1.8 (NeuralTrain's REVE wrapper tests failed). Pass ``on_non_divisible="pad"`` for the padded window.
 
 - With opt-in ``compile=True``, :class:`braindecode.EEGClassifier` and
