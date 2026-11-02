@@ -1795,6 +1795,60 @@ def test_patch_tokenizer():
 
 
 @pytest.mark.parametrize(
+    "kwargs, children",
+    [
+        ({}, set()),
+        ({"emb_dim": 8, "learnable": True}, {"patcher"}),
+        ({"emb_dim": 8, "learnable": True, "projection": "linear"}, {"proj"}),
+    ],
+)
+def test_patch_tokenizer_registers_only_the_projection_it_uses(kwargs, children):
+    """No parameter-free placeholder submodules (an Identity named ``proj``).
+
+    Adapters select modules by name: peft LoRA with ``target_modules=["proj"]``
+    (neuralbench's LaBraM and LUNA configs) matched the placeholder and raised
+    "Target module Identity() is not supported".
+    """
+    from braindecode.modules import PatchTokenizer
+
+    tok = PatchTokenizer(patch_size=50, n_times=200, **kwargs)
+    assert set(dict(tok.named_children())) == children
+    x = torch.randn(2, 3, 200)
+    scripted = torch.jit.script(tok)
+    assert torch.allclose(scripted(x), tok(x))
+
+
+@pytest.mark.parametrize(
+    "name, kwargs, targets",
+    [
+        ("Labram", dict(n_chans=128, n_times=200, n_outputs=2), ["qkv", "proj"]),
+        (
+            "LUNA",
+            dict(n_chans=22, n_times=256, n_outputs=2, patch_size=40, num_queries=6,
+                 embed_dim=96, depth=2, num_heads=2),
+            ["qkv_proj", "proj"],
+        ),
+        ("CBraMod", dict(n_chans=4, n_times=400, n_outputs=2), ["self_attn_s", "self_attn_t"]),
+    ],
+)
+def test_lora_target_names_reach_only_real_layers(name, kwargs, targets):
+    """Every module a name-based adapter targets is a layer it can wrap."""
+    import braindecode.models
+
+    model = getattr(braindecode.models, name)(**kwargs)
+    hit = [
+        (n, type(m).__name__)
+        for n, m in model.named_modules()
+        if n.rsplit(".", 1)[-1] in targets
+    ]
+    assert hit
+    assert not [h for h in hit if h[1] == "Identity"], hit
+    peft = pytest.importorskip("peft")
+    lora = peft.get_peft_model(model, peft.LoraConfig(r=2, target_modules=targets))
+    assert any("lora_A" in n for n, _ in lora.named_parameters())
+
+
+@pytest.mark.parametrize(
     "n_times, mode, step, expected",
     [(1001, "pad", 0, 6), (1001, "crop", 0, 5), (150, "pad", 0, 1), (1000, "pad", 180, 6),
      (1000, "crop", 180, 5), (920, "error", 180, 5), (1001, "error", 0, None), (150, "crop", 0, None)],
