@@ -150,6 +150,10 @@ def _concat_metadata_summary(datasets):
         extra_cols.update(
             str(c) for c in md.columns if c not in _METADATA_INTERNAL_COLS
         )
+        if not isinstance(md, pd.DataFrame):
+            # lazy metadata (lazy_metadata=True) only supports row access, as
+            # in _metadata_summary: no window sizes or target counts from it
+            continue
 
         if "i_start_in_trial" in md.columns and "i_stop_in_trial" in md.columns:
             sizes = md["i_stop_in_trial"] - md["i_start_in_trial"]
@@ -354,7 +358,9 @@ def _window_info(crop_inds, sfreq):
     """
     if len(crop_inds) == 0:
         return None
-    first = crop_inds[0]
+    # np.asarray: with lazy_metadata=True, a row of crop_inds is a pd.Series
+    # labelled by column name, so first[2] would look up a label, not a position
+    first = np.asarray(crop_inds[0])
     win_samples = int(first[2] - first[1])
     win_secs = win_samples / sfreq
     return win_samples, win_secs

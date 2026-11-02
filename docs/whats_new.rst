@@ -969,6 +969,12 @@ Bug fixes
   :meth:`braindecode.EEGRegressor.fit` now returns ``self``
   (:gh:`1180` by `Arthur031221`_).
 
+- Fix ``repr`` and ``_repr_html_`` of a windowed
+  :class:`braindecode.datasets.BaseConcatDataset` built with
+  ``lazy_metadata=True``, and of each of its windows datasets, which raised
+  ``NotImplementedError`` and ``KeyError``: the summaries indexed the lazy
+  metadata by column name and its rows by position, which it does not support
+  (:gh:`1529` by `Bruno Aristimunha`_).
 - Preserve shared class targets when creating MNE epochs from different event
   annotations, as in sleep staging. MNE event IDs remain unique.
   (:gh:`1174` by `Bruno Aristimunha`_)

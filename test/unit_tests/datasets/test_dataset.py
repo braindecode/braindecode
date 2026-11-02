@@ -534,6 +534,22 @@ def test_set_target_rejects_lazy_metadata(concat_ds_targets):
         lazy_windows.set_target("subject")
 
 
+def test_repr_of_windows_with_lazy_metadata(concat_ds_targets):
+    """``repr`` and ``_repr_html_`` of windows built with ``lazy_metadata=True``:
+    the lazy metadata only supports row access, so the concat summary must not
+    index it by column (it raised NotImplementedError)."""
+    lazy_windows = create_fixed_length_windows(
+        concat_ds_targets[0],
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        lazy_metadata=True,
+    )
+    assert "BaseConcatDataset" in repr(lazy_windows)
+    assert lazy_windows._repr_html_()
+    assert repr(lazy_windows.datasets[0])
+
+
 def test_set_target_syncs_windows_metadata(set_up):
     """``ds.metadata`` and ``ds.windows.metadata`` start as the same object.
     ``set_target`` must keep them in sync so ``get_metadata()`` and repr
