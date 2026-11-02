@@ -57,7 +57,7 @@ dependencies = [
     'wfdb>=4.3.1',  # requests comes transitively via mne→pooch and wfdb
     'docstring_inheritance',
     'einops',
-    'pydantic>=2.11',
+    'pydantic>=2.11.4',
 ]
 
 [tool.uv]
