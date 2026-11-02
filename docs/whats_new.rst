@@ -601,7 +601,7 @@ API and behavior changes
 - The removal of ``drop_last_window`` in
   :func:`braindecode.preprocessing.create_windows_from_events` and
   :func:`braindecode.preprocessing.create_fixed_length_windows`, announced for
-  2.0, moves to 3.0; the parameter still works and warns (by `Bruno Aristimunha`_).
+  2.0, moves to 2.1; the parameter still works and warns (by `Bruno Aristimunha`_).
 
 - With opt-in ``compile=True``, :class:`braindecode.EEGClassifier` and
   :class:`braindecode.EEGRegressor` compile the module in place, keeping supplied
