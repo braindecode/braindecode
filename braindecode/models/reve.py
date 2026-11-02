@@ -336,9 +336,7 @@ class REVE(EEGModuleMixin, nn.Module):
             step = patch_size - patch_overlap
             # Raises for "crop" below one patch and for "error" on an untiled window.
             patch_count(known_n_times, patch_size, mode, step)
-            untiled = (
-                known_n_times < patch_size or (known_n_times - patch_size) % step
-            )
+            untiled = known_n_times < patch_size or (known_n_times - patch_size) % step
             if default_mode and untiled:
                 warnings.warn(
                     f"REVE's patches do not tile {known_n_times} samples: the "
