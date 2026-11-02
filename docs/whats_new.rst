@@ -525,6 +525,8 @@ Enhancements
 API and behavior changes
 ========================
 
+- The development version is ``2.0.0dev0``; master reported ``1.8.1`` since the release, so downstream code could not tell it from 1.8.1 (NeuralBench gates its LaBraM LoRA workaround on ``braindecode > 1.8.1``).
+
 - With opt-in ``compile=True``, :class:`braindecode.EEGClassifier` and
   :class:`braindecode.EEGRegressor` compile the module in place, keeping supplied
   Parameters and state-dict keys. ``_orig_mod.`` keys from skorch's wrapper are
