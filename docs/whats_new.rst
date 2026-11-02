@@ -699,6 +699,11 @@ Bug fixes
 
 - :class:`braindecode.models.EEGInceptionERP`, :class:`braindecode.models.ATCNet` and :class:`braindecode.models.EEGInceptionMI` only use their default ``n_times`` (1000 for EEGInceptionERP) and ``sfreq`` (128 or 250 Hz) when the given geometry does not determine them, instead of raising ``ValueError`` for consistent inputs such as ``EEGInceptionERP(input_window_seconds=1.0, sfreq=128)`` or ``ATCNet(n_times=640, input_window_seconds=5.0)``. Calls that worked before build the same model (:gh:`1485` by `Adam Mounir`_).
 - Fix :func:`braindecode.datautil.load_concat_dataset` ignoring its ``target_name`` argument (it now sets the target of datasets of raws and raises for windowed datasets, as the outdated format did) and reading numeric-looking description strings such as subject ``"01"`` back as integers (:gh:`1480` by `Adam Mounir`_).
+- ``import braindecode.datasets`` no longer imports ``wfdb``; only
+  :class:`braindecode.datasets.SleepPhysionetChallenge2018` needs it, when it
+  reads a recording. With pandas 3.1, ``wfdb``'s own import emits a
+  ``DeprecationWarning``, so ``python -W error::DeprecationWarning -c "import
+  braindecode.datasets"`` failed (:gh:`1524` by `Bruno Aristimunha`_).
 - Fix :func:`braindecode.datautil.infer_signal_properties` (used by :class:`braindecode.EEGRegressor` to set ``n_outputs``) inferring one output for windows with several regression targets: the model was built with ``n_outputs=1`` and trained against all targets through broadcasting (:gh:`1479` by `Adam Mounir`_).
 - Fix :class:`braindecode.datasets.BIDSEpochsDataset` taking all the annotations of the recording as the targets of the epochs, which fails (``All arrays must be of the same length``) when an epoch was dropped or the recording has other annotations (e.g. ``BAD`` segments): each epoch now takes the annotation at its time zero, or its event name when not every epoch has one (:gh:`1478` by `Adam Mounir`_).
 - Fix :class:`braindecode.samplers.SequenceSampler` and :class:`braindecode.samplers.BalancedSequenceSampler` returning sequences that mix recordings when the windows of a recording are not contiguous in metadata without ``i_dataset`` (e.g. alternating subjects): sequences are now taken from the recording's own windows; results are unchanged when they are contiguous (:gh:`1477` by `Adam Mounir`_).
