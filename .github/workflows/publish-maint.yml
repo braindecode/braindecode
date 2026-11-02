@@ -1,0 +1,50 @@
+# Publish a 1.8.x maintenance release when its tag is pushed.
+# monthly-release.yml only releases from master, so patch releases of an older
+# line need their own path. The tag must match braindecode/version.py; the
+# release is not marked Latest, so 2.x stays the current release.
+name: Publish maintenance release
+
+on:
+  push:
+    tags:
+      - "v1.8.*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Check that the tag matches the package version
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' braindecode/version.py)
+          test "v${version}" = "${GITHUB_REF_NAME}"
+
+      - name: Build and check
+        run: |
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Create GitHub Release (not Latest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --title "braindecode ${GITHUB_REF_NAME#v}" \
+            --generate-notes --latest=false
