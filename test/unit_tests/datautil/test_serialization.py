@@ -700,6 +700,22 @@ def test_load_concat_dataset_keeps_description_strings(tmp_path):
     }
 
 
+def test_load_concat_dataset_keeps_date_strings_without_pandas_deprecations(tmp_path):
+    """Date-like description strings stay strings, and neither loading nor
+    ``description`` uses the keywords pandas 3.1 deprecates (``convert_dates``,
+    ``inplace``)."""
+    info = mne.create_info(["C3", "C4"], 100.0, "eeg")
+    raw = mne.io.RawArray(np.zeros((2, 200)), info, verbose="error")
+    description = {"date": "2020-01-01", "timestamp": "2021-02-03T04:05:06"}
+    BaseConcatDataset([RawDataset(raw, description)]).save(tmp_path)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*convert_dates.*")
+        warnings.filterwarnings("error", message=".*inplace keyword.*")
+        loaded = load_concat_dataset(tmp_path, preload=False)
+        assert loaded.datasets[0].description.to_dict() == description
+        assert loaded.description.to_dict("records") == [description]
+
+
 def test_load_concat_dataset_target_name(tmp_path):
     concat_ds = _string_description_raw_dataset()
     concat_ds.save(tmp_path)

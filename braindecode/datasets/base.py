@@ -1965,8 +1965,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     @property
     def description(self) -> pd.DataFrame:
         df = pd.DataFrame([ds.description for ds in self.datasets])
-        df.reset_index(inplace=True, drop=True)
-        return df
+        return df.reset_index(drop=True)
 
     def set_description(
         self, description: dict | pd.DataFrame, overwrite: bool = False
