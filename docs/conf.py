@@ -509,6 +509,7 @@ latex_documents = [
 _docs_url = os.environ.get("BRAINDECODE_DOCS_URL", "https://braindecode.org/dev/")
 _docs_url = _docs_url.rstrip("/") + "/"
 html_baseurl = _docs_url
+html_context["docs_url"] = _docs_url  # JSON-LD in _templates/layout.html
 sitemap_filename = "sitemap.xml"
 # Flat URLs (no /en/{version}/) — same pattern as MOABB.
 sitemap_url_scheme = "{link}"

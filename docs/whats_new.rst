@@ -48,7 +48,12 @@ Bug fixes
 Code health
 ============
 
-- None yet
+- ``test/unit_tests/test_version.py`` accepts release versions, so the tests
+  shipped in a release sdist pass (by `Bruno Aristimunha`_).
+- Documentation built from a release tag uses https://braindecode.org/stable/
+  for the canonical, Open Graph and JSON-LD URLs and in ``llms.txt``, which
+  only calls ``/dev/`` builds a moving development snapshot
+  (by `Bruno Aristimunha`_).
 
 
 Current 2.0.0 (2026-11-02)
