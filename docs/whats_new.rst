@@ -49,7 +49,8 @@ Bug fixes
 
 - ``from_pretrained`` of :class:`braindecode.models.Brant` loads a checkpoint at
   a shorter ``n_times``: the learned temporal positions keep the checkpoint's
-  leading ones instead of raising a size mismatch (by `Julien Gadonneix`_).
+  leading ones instead of raising a size mismatch
+  (:gh:`1537` by `Julien Gadonneix`_).
 
 Code health
 ============
