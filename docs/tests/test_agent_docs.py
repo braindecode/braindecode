@@ -64,6 +64,23 @@ def test_every_missing_critical_page_blocks_publication(corpus, name, kind):
     assert not list(corpus["html_root"].rglob("*.md"))
 
 
+@pytest.mark.parametrize(
+    "site_url,dev",
+    [
+        ("https://braindecode.org/dev/", True),
+        ("https://braindecode.org/stable/", False),
+        ("https://braindecode.org/2.0/", False),
+    ],
+)
+def test_snapshot_wording_only_for_dev_builds(corpus, site_url, dev):
+    corpus["site_url"] = site_url
+    agent_docs.publish(**corpus)
+    index = (corpus["html_root"] / "llms.txt").read_text()
+    assert f"Documentation scope: {site_url}" in index
+    assert ("moving development snapshot" in index) is dev
+    assert ("It documents the Braindecode 1.9.0 release." in index) is not dev
+
+
 def test_empty_page_blocks_publication(corpus):
     (corpus["markdown_root"] / "cite.md").write_text(" ")
     with pytest.raises(ValueError, match="Empty critical"):
