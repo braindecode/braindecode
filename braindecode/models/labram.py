@@ -381,7 +381,6 @@ class Labram(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         patch_size=200,
         learned_patcher=False,
-        on_non_divisible="pad",
         embed_dim=200,
         conv_in_channels=1,
         conv_out_channels=8,
@@ -402,6 +401,7 @@ class Labram(EEGModuleMixin, nn.Module):
         neural_tokenizer=True,
         attn_head_dim=None,
         activation: type[nn.Module] = nn.GELU,
+        on_non_divisible="pad",
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
     ):
