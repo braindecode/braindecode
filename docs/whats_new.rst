@@ -827,6 +827,10 @@ Bug fixes
 - :class:`braindecode.models.SleepStagerBlanco2020` raised ``in_channels must be divisible by groups`` at construction when ``n_chans`` is not a multiple of ``n_groups`` (one channel, or an odd count with the default ``n_groups=2``); it now uses ``gcd(n_chans, n_groups)`` groups, unchanged for every ``n_chans`` divisible by ``n_groups`` (:gh:`1321` by `Bruno Aristimunha`_).
 - Model fixes caught by new CPU-only integration checks (complex tensors, host syncs, kernel gaps, device/dtype follow, training after ``inference_mode``, deepcopy/pickle): BrainOmni/BrainTokenizer SELU trains on Gaudi, EEGSym pools with ``avg_pool2d``, FBCNet/FBMSNet/FBLightConvNet and LUNA run in float16, EEGMiner and AttnSleep deep-copy after training, Labram and NeuroRVQ pickle, SignalJEPA heads accept ``channel_strategy``, and tensors built in ``forward`` follow the input in CodeBrain, TCFormer, LUNA, MVPFormer, BrainOmni, ZUNA, DIVER1 and EEGDINO; float32 outputs unchanged (:gh:`1253` by `Bruno Aristimunha`_)
 - :class:`braindecode.models.EEGSym` trains on Gaudi: its depthwise spatial ``Conv3d`` with a ``(1, 1, n_chans)`` kernel runs as a conv2d on a view, since the Gaudi graph compiler segfaulted on the depthwise conv3d backward; same state dict, outputs unchanged, gradients change by float rounding only (:gh:`1289` by `Bruno Aristimunha`_).
+- ``test_scripted_lfilter_equals_torchaudio`` passes on the PyTorch 2.6 floor:
+  torchaudio before 2.11 rounds its eager IIR recursion differently from the
+  ops of its scripted path, so there the scripted filter is compared to float64
+  rounding instead of bit for bit (:gh:`1527` by `Bruno Aristimunha`_).
 - :func:`braindecode.functional.hilbert_freq` returns float16 for float16 input (it
   returned float32), so :class:`braindecode.models.EEGMiner` runs after
   ``model.to(torch.float16)`` (:gh:`1259` by `Bruno Aristimunha`_)
