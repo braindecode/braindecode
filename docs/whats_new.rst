@@ -768,6 +768,14 @@ Bug fixes
 
 - EEGPrep preprocessors that remove EEG channels (:class:`braindecode.preprocessing.RemoveFlatChannels`, :class:`braindecode.preprocessing.RemoveBadChannels`, :class:`braindecode.preprocessing.RemoveBadChannelsNoLocs`) no longer raise ``ValueError`` when the recording also has non-EEG channels: the original order is restored for the channels that remain, and the input raw is no longer left without its non-EEG channels if the operation fails (:gh:`1416` by `Adam Mounir`_).
 
+- Stop using the pandas keywords that pandas 3.1 deprecates (``inplace=`` of
+  ``reset_index``, ``set_index``, ``rename`` and ``sort_values``, and
+  ``read_json(convert_dates=...)``) in
+  :attr:`braindecode.datasets.BaseConcatDataset.description`,
+  :func:`braindecode.datautil.load_concat_dataset`,
+  :class:`braindecode.datasets.TUH` and :class:`braindecode.datasets.NMT`, which
+  emitted a ``Pandas4Warning`` on every call. Results are unchanged
+  (:gh:`1526` by `Bruno Aristimunha`_).
 - :func:`braindecode.preprocessing.create_windows_from_events` checks the window bounds of every trial: it raises when a window would start before the recording (negative ``trial_start_offset_samples`` on an early trial gave empty windows; with ``use_mne_epochs=True`` such windows are still dropped by :class:`mne.Epochs`) or when any trial, not only the last one, ends past the recording with ``trial_stop_offset_samples``; with per-event-type offsets, each trial is checked with the offset of its own event type, so valid inputs are no longer rejected because another type has a larger offset (:gh:`1415` by `Adam Mounir`_).
 
 - ``set_description(..., overwrite=True)`` on a windows dataset no longer deletes the overwritten key from the description of the dataset it was windowed from (the two share one :class:`pandas.Series`), which could make indexing the source dataset raise ``KeyError`` when the key was its target (:gh:`1414` by `Adam Mounir`_).
