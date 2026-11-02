@@ -70,7 +70,7 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model`
     :bdg-dark-line:`Channel`
 
-    .. versionadded:: 1.8.2
+    .. versionadded:: 2.0
 
     .. rubric:: Architecture Overview
 

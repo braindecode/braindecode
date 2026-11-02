@@ -915,6 +915,14 @@ Bug fixes
 
 - :meth:`braindecode.datasets.BaseConcatDataset.set_description` rejects description columns with the wrong number of rows before modifying datasets, instead of silently truncating or partially applying them. An empty mapping remains a no-op (:gh:`1405` by `Bruno Aristimunha`_).
 
+- Documentation for 2.0: the ``versionadded`` notes of the models added since
+  1.8.1 say 2.0 (they said 1.8, 1.8.2 or 1.9); the References and shape notes of
+  :class:`braindecode.models.MIRepNet`, :class:`braindecode.models.NeuroRVQ` and
+  :class:`braindecode.models.NeuroRVQTokenizer` render again; the vector
+  quantizers of :mod:`braindecode.modules` and seven models without an API page
+  (Brant, DANCE, MIRepNet, MVPFormer, NeuroPose, SensingDynamics, VEMG2Pose)
+  are listed in the API reference; and ten Sphinx warnings are gone
+  (:gh:`1528` by `Bruno Aristimunha`_).
 - Fix :class:`braindecode.models.Deep4Net` short-input auto-scaling with ``split_first_layer=True`` so the scaled ``filter_time_length`` is used by the actual :class:`braindecode.modules.CombinedConv` temporal kernel instead of retaining the original constructor value (:gh:`1215` by `lindicaphxag-tech`_).
 
 

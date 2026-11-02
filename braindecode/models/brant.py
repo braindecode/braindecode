@@ -133,7 +133,7 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
                "braindecode/brant-pretrained", n_outputs=2
            )
 
-    .. versionadded:: 1.8
+    .. versionadded:: 2.0
 
     Parameters
     ----------

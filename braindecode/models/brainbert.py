@@ -96,7 +96,7 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
        flat (a dead channel) is set to ones, and a ``NaN`` sample zeroes that
        channel's whole spectrogram for the window, without a warning.
 
-    .. versionadded:: 1.9
+    .. versionadded:: 2.0
 
     Parameters
     ----------

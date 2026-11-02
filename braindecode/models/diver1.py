@@ -52,7 +52,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         DIVER-1 architecture, pretraining and downstream evaluation pipeline,
         reproduced from [Han2025]_.
 
-    .. versionadded:: 1.8.2
+    .. versionadded:: 2.0
 
     Encodes a ``(channel, time-patch)`` grid with any-variate attention:
     RMS-normalized queries and keys, temporal RoPE, a learned same/cross-channel

@@ -41,7 +41,7 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
        :align: center
        :alt: EpiNT architecture
 
-    .. versionadded:: 1.9
+    .. versionadded:: 2.0
 
     EpiNT (Epilepsy Neurophysiological Transformer) is pretrained on 2,700 hours
     of scalp EEG and intracranial EEG (ECoG, sEEG) from 1,199 patients. It is
