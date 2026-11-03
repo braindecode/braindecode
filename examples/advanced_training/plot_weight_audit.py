@@ -305,7 +305,10 @@ def read_weights(model, ch_names, sfreq, window_start_s=-1.0, n_top=5):
     kernel with its importance, the importance-weighted dominant band,
     and the one-second window where the classifier contrast is largest.
     """
-    as_np = lambda t: t.detach().cpu().numpy()
+
+    def as_np(t):
+        return t.detach().cpu().numpy()
+
     w_spatial = as_np(model.conv_spatial.weight)[:, 0, :, 0]  # (F1*D, n_chans)
     w_temporal = as_np(model.conv_temporal.weight)[:, 0, 0, :]  # (F1, n_taps)
     w_point = as_np(model.conv_separable_point.weight)[:, :, 0, 0]  # (F2, F1*D)
