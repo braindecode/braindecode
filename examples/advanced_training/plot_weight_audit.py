@@ -297,19 +297,25 @@ def _band_name(freq_hz):
     return next(name for low, high, name in BANDS if low <= freq_hz < high)
 
 
-def read_weights(model, ch_names, sfreq, window_start_s=-1.0, n_top=5):
+def read_weights(
+    model, ch_names, sfreq, window_start_s=-1.0, n_top=5, spatial_weight=None
+):
     """Estimate the channels, band and time window an EEGNet relies on.
 
     Returns a dict with the top channels (path-weighted absolute spatial
     weight, normalised), the spectral peak and band of every temporal
     kernel with its importance, the importance-weighted dominant band,
     and the one-second window where the classifier contrast is largest.
+    ``spatial_weight`` replaces the spatial filters, e.g. by the change
+    that training made to them.
     """
 
     def as_np(t):
         return t.detach().cpu().numpy()
 
-    w_spatial = as_np(model.conv_spatial.weight)[:, 0, :, 0]  # (F1*D, n_chans)
+    if spatial_weight is None:
+        spatial_weight = model.conv_spatial.weight
+    w_spatial = as_np(spatial_weight)[:, 0, :, 0]  # (F1*D, n_chans)
     w_temporal = as_np(model.conv_temporal.weight)[:, 0, 0, :]  # (F1, n_taps)
     w_point = as_np(model.conv_separable_point.weight)[:, :, 0, 0]  # (F2, F1*D)
     gain_1 = as_np(model.bnorm_1.weight)
@@ -623,14 +629,84 @@ ax.grid(axis="y", alpha=0.3)
 fig.tight_layout()
 
 ######################################################################
+# Subtract the initialisation before reading
+# ------------------------------------------
+#
+# A trained EEGNet keeps much of its random initialisation. The spatial
+# filters move a short distance from where they started, so part of
+# what the weight statistic sees is the starting noise, not what
+# training put there. Rebuilding the initial network from the same seed
+# shows how much: compare the trained spatial filters with the seed's
+# initialisation and with another seed's.
+
+
+def build_eegnet(init_seed):
+    set_random_seeds(seed=init_seed, cuda=False)
+    return EEGNet(
+        n_chans=n_chans,
+        n_outputs=2,
+        n_times=n_times,
+        sfreq=sfreq,
+        final_layer_with_constraint=True,
+    ).eval()
+
+
+def cosine(a, b):
+    a, b = a.detach().flatten(), b.detach().flatten()
+    return float(a @ b / (a.norm() * b.norm()))
+
+
+init_model = build_eegnet(seed)
+other_init = build_eegnet(seed + 1)
+for name in ["conv_spatial", "conv_temporal"]:
+    trained = model.get_submodule(name).weight
+    print(
+        f"{name:>22s}: cosine to its own initialisation "
+        f"{cosine(trained, init_model.get_submodule(name).weight):.2f}, "
+        f"to another seed's {cosine(trained, other_init.get_submodule(name).weight):.2f}"
+    )
+
+######################################################################
+# Then read the training difference. Only the spatial filters are
+# replaced by trained minus initial weights; the gains, temporal
+# kernels and classifier stay as trained, so the importance weighting
+# is unchanged. Channels that only rank high because of the starting
+# noise drop out of the list.
+#
+# On a bench of eight EEGNets with planted cues, one channel sat in the
+# top three of the plain reading for all eight models, seven of which
+# never had a cue on it; in the difference reading it stayed only in
+# the model where it was planted (see [6]_). On real decoders the difference reading agreed with
+# occlusion about as well as the plain one, so treat it as a second
+# reading to compare against, not a replacement.
+
+with torch.no_grad():
+    spatial_change = model.conv_spatial.weight - init_model.conv_spatial.weight
+reading_delta = read_weights(
+    model, ch_names, sfreq, window_start_s=window_start_s, spatial_weight=spatial_change
+)
+print("Top channels, trained weights:   ", [c for c, _ in reading["top_channels"]])
+print(
+    "Top channels, training difference:", [c for c, _ in reading_delta["top_channels"]]
+)
+for name, (share, uniform) in group_share(reading_delta, GROUPS).items():
+    print(f"Difference share on {name:>12s} group: {share:.3f} (uniform {uniform:.3f})")
+
+######################################################################
+# This only works if the initialisation can be rebuilt. Releasing the
+# seed, or the initial checkpoint, costs nothing and lets anyone audit
+# the change that training made rather than the sum of change and
+# starting noise.
+#
+######################################################################
 # What to do with the result
 # --------------------------
 #
 # Record it with the model. A model card for a released decoder should
 # carry a *relies on* field that states the channels, band and window
 # the audit found, the method (weight statistic, language-model read,
-# occlusion on which subjects), the date, and whether the data check
-# agreed with the weight reading. A decoder whose entry says "F7/F8/AF7/
+# occlusion on which subjects), the date, whether the data check
+# agreed with the weight reading, and the initialisation seed. A decoder whose entry says "F7/F8/AF7/
 # AF8, below 4 Hz, 0-1 s after the cue" is a different product from one
 # that says "C3/C4, 8-30 Hz, 1-4 s", even at the same accuracy.
 #
@@ -663,3 +739,6 @@ fig.tight_layout()
 # .. [5] Haufe, S., et al. (2014). *On the interpretation of weight
 #        vectors of linear models in multivariate neuroimaging.*
 #        NeuroImage, 87, 96-110. DOI: 10.1016/j.neuroimage.2013.10.067
+# .. [6] Li, Y. (2026). *Reading the weights: a language model audits
+#        and repairs EEG decoders without data.* Preprint.
+#        DOI: 10.5281/zenodo.23934404
