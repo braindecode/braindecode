@@ -176,8 +176,11 @@ def test_ch_mask_is_refused_under_a_channel_strategy():
     model = BIOT(chs_info=chs_info, n_outputs=3, n_times=400, sfreq=200,
                  embed_dim=32, num_heads=2, num_layers=1, channel_strategy="zero")
     mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
+    x = torch.randn(len(N_REAL), 3, 400)
     with pytest.raises(ValueError, match="ch_mask needs channel_strategy='native'"):
-        model(torch.randn(len(N_REAL), 3, 400), ch_mask=mask)
+        model(x, ch_mask=mask)
+    with pytest.raises(ValueError, match="ch_mask needs channel_strategy='native'"):
+        model(x, False, mask)  # positional ch_mask
 
 
 def test_diver1_ch_mask_needs_per_sample_metadata():

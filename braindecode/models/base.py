@@ -484,7 +484,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     def _channel_forward(self, *args, chs_info=None, ch_names=None, **kwargs):
         """``forward`` under a channel strategy: map ``x`` (recorded with
         ``chs_info``, default the model's) onto the target, then run the backbone."""
-        if kwargs.get("ch_mask") is not None:
+        bound = inspect.signature(type(self).forward).bind_partial(self, *args, **kwargs)
+        if bound.arguments.get("ch_mask") is not None:
             # The channel layer mixes every input channel into each target one,
             # so padding would leak into the real channels.
             raise ValueError(
