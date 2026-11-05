@@ -28,7 +28,7 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
-- None yet
+- :class:`braindecode.models.LUNA` accepts ``ch_mask``, so a batch can mix recordings with different channel counts: padded channels are left out of the GroupNorm statistics, the location normalisation and the channel cross-attention, and each recording gets the output it gets alone. LUNA also scripts without a first eager forward (:gh:`1543` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
