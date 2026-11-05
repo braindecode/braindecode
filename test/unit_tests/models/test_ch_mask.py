@@ -171,9 +171,8 @@ def test_ch_mask_is_refused_by_fixed_size_heads(name):
 
 def test_ch_mask_is_refused_under_a_channel_strategy():
     # The channel layer would mix padded channels into the real ones.
-    from test.unit_tests.models._fixtures import _get_signal_params
-
-    chs_info = _get_signal_params({"n_chans": 3})["chs_info"]
+    # FP1, F7, T7 form two of BIOT's bipolar pretraining channels.
+    chs_info = [{"ch_name": name} for name in ("FP1", "F7", "T7")]
     model = BIOT(chs_info=chs_info, n_outputs=3, n_times=400, sfreq=200,
                  embed_dim=32, num_heads=2, num_layers=1, channel_strategy="zero")
     mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
