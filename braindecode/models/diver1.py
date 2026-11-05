@@ -365,7 +365,8 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         x: torch.Tensor,
         chan_metadata: torch.Tensor | None = None,
         ch_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+        return_features: bool = False,
+    ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Encode an iEEG batch into class logits.
 
         Parameters
@@ -385,11 +386,17 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             ``(batch, n_chans)`` mask of real channels, see
             :func:`~braindecode.functional.check_ch_mask`. Needs per-sample ``chan_metadata`` and
             ``pooling="mean"``.
+        return_features : bool
+            If ``True``, return ``{"features": pooled, "cls_token": None,
+            "tokens": tokens}`` instead of the class logits: the pooled embedding
+            and the encoder tokens without the registers, ``(batch, n_chans,
+            n_patches, d_model)``, zero for padded channels.
 
         Returns
         -------
-        torch.Tensor
-            Class logits of shape ``(batch, n_outputs)``.
+        torch.Tensor or dict
+            Class logits of shape ``(batch, n_outputs)``, or the feature dict
+            when ``return_features`` is set.
         """
         mask = check_ch_mask(ch_mask, x)
         if mask is not None and self.pooling != "mean":
@@ -493,6 +500,15 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             pooled = tokens.flatten(start_dim=1)
         else:
             pooled = masked_mean(tokens, mask, [1, 2])
+        if return_features:
+            if mask is not None:
+                tokens = tokens.masked_fill(~mask[:, :, None, None], 0.0)
+            out: dict[str, torch.Tensor | None] = {
+                "features": pooled,
+                "cls_token": None,
+                "tokens": tokens,
+            }
+            return out
         return self.final_layer(pooled)
 
     @torch.jit.unused

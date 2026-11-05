@@ -186,6 +186,22 @@ def test_reve_labram_tokens_match_each_recording_alone(name):
     torch.testing.assert_close(scripted["tokens"], tokens)
 
 
+@pytest.mark.parametrize("name", list(_CASES))
+def test_ch_mask_tokens_match_each_recording_alone(name):
+    model, x, mask, xs, batch_kwargs, alone_kwargs = _padded_case(name)
+    with torch.no_grad():
+        tokens = model(x, ch_mask=mask, return_features=True, **batch_kwargs)["tokens"]
+        scripted = torch.jit.script(model)(
+            x, ch_mask=mask, return_features=True, **batch_kwargs
+        )
+        for i, (xi, kwargs) in enumerate(zip(xs, alone_kwargs)):
+            alone = model(xi[None], return_features=True, **kwargs)["tokens"][0]
+            torch.testing.assert_close(tokens[i, : len(xi)], alone)
+    assert torch.equal(tokens[~mask], torch.zeros_like(tokens[~mask]))
+    if isinstance(scripted, dict):  # most models ignore return_features when scripted
+        torch.testing.assert_close(scripted["tokens"], tokens)
+
+
 # Heads tied to the construction-time channels do not take a ch_mask.
 _FIXED_HEADS = {
     "BaRISTA-learned": lambda: (
