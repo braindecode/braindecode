@@ -665,14 +665,12 @@ class Labram(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             The output of the model.
         """
-        batch_size, n_input_chans = x.shape[0], x.shape[1]
+        batch_size, n_input_chans, _ = x.shape
         token_mask: Optional[torch.Tensor] = None
         key_mask: Optional[torch.Tensor] = None
         if ch_mask is not None:
             # Padding may hold NaN, which the patch embedding would spread.
-            x = x.masked_fill(
-                ~ch_mask.reshape(list(ch_mask.shape) + [1] * (x.dim() - 2)), 0.0
-            )
+            x = x.masked_fill(~ch_mask[:, :, None], 0.0)
             # Tokens are (channel, patch), channel outermost; [CLS] is real.
             token_mask = ch_mask.repeat_interleave(self.patch_embed[0].n_patchs, dim=1)
             key_mask = torch.cat(
@@ -682,12 +680,9 @@ class Labram(EEGModuleMixin, nn.Module):
         if self.neural_tokenizer:
             # For neural tokenizer: input is (batch, n_chans, n_times)
             # patch_embed returns (batch, n_chans, emb_dim)
-            for layer in self.patch_embed:
-                # Not isinstance: TorchScript misses renamed (mangled) module types.
-                if hasattr(layer, "norm1"):
-                    x = layer(x, ch_mask)
-                else:
-                    x = layer(x)
+            x = self.patch_embed.temporal_conv(
+                self.patch_embed.segment_patch(x), ch_mask
+            )
             # x shape: (batch, n_chans, emb_dim)
             n_patch = n_input_chans  # Use actual input channels, not self.n_chans
             temporal = self.embed_dim
@@ -762,18 +757,14 @@ class Labram(EEGModuleMixin, nn.Module):
 
         x = self.norm(x)
         if self.fc_norm is not None:
-            if return_all_tokens:
-                return self.fc_norm(x)
-            tokens = x[:, 1:, :]
-            if return_patch_tokens:
-                return self.fc_norm(tokens)
-            return self.fc_norm(masked_mean(tokens, token_mask, [1]))
-        else:
-            if return_all_tokens:
-                return x
-            elif return_patch_tokens:
-                return x[:, 1:]
+            if not (return_all_tokens or return_patch_tokens):
+                return self.fc_norm(masked_mean(x[:, 1:, :], token_mask, [1]))
+            x = self.fc_norm(x)
+        elif not (return_all_tokens or return_patch_tokens):
             return x[:, 0]
+        if key_mask is not None:
+            x = x.masked_fill(~key_mask[:, :, None], 0.0)
+        return x if return_all_tokens else x[:, 1:]
 
     def forward(
         self,
@@ -797,8 +788,10 @@ class Labram(EEGModuleMixin, nn.Module):
         return_all_tokens: bool
             Return all the tokens
         return_features : bool
-            If True, return a dict with ``"features"`` (patch tokens) and
-            ``"cls_token"`` instead of the classification output.
+            If True, return a dict with ``"features"`` (patch tokens),
+            ``"cls_token"`` and ``"tokens"``, the patch tokens as ``(batch,
+            n_chans, n_patches, embed_dim)`` (one row in decoder mode), instead of
+            the classification output. Token outputs are zero for padded channels.
         ch_names : list of str, optional
             Channel names matching the channel axis of ``x``.
             Matched case-insensitively against :data:`LABRAM_CHANNEL_ORDER`
@@ -857,12 +850,14 @@ class Labram(EEGModuleMixin, nn.Module):
             input_chans = torch.tensor(matched, device=x.device, dtype=torch.long)
 
         if return_features:
+            n_rows = x.shape[1] if self.neural_tokenizer else 1
             x = self.forward_features(
                 x, input_chans=input_chans, return_all_tokens=True, ch_mask=mask
             )
             out: Dict[str, torch.Tensor] = {
                 "features": x[:, 1:, :],
                 "cls_token": x[:, 0, :],
+                "tokens": x[:, 1:, :].unflatten(1, [n_rows, -1]),
             }
             return out
 
@@ -1755,15 +1750,30 @@ class _TemporalConv(nn.Module):
         x = self.channel_patch_flatten(x)
         x = self.conv1(x)
         x = masked_group_norm(
-            x, self.norm1.num_groups, row_mask, self.norm1.weight, self.norm1.bias
+            x,
+            self.norm1.num_groups,
+            row_mask,
+            self.norm1.weight,
+            self.norm1.bias,
+            self.norm1.eps,
         )
         x = self.conv2(self.act_layer_1(x))
         x = masked_group_norm(
-            x, self.norm2.num_groups, row_mask, self.norm2.weight, self.norm2.bias
+            x,
+            self.norm2.num_groups,
+            row_mask,
+            self.norm2.weight,
+            self.norm2.bias,
+            self.norm2.eps,
         )
         x = self.conv3(self.act_layer_2(x))
         x = masked_group_norm(
-            x, self.norm3.num_groups, row_mask, self.norm3.weight, self.norm3.bias
+            x,
+            self.norm3.num_groups,
+            row_mask,
+            self.norm3.weight,
+            self.norm3.bias,
+            self.norm3.eps,
         )
         x = self.act_layer_3(x)
         x = self.transpose_temporal_channel(x)

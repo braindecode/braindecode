@@ -488,11 +488,14 @@ class REVE(EEGModuleMixin, nn.Module):
             If omitted, the positions resolved from ``chs_info`` are used (and only
             the kept channels are read when ``on_missing="drop"`` removed some).
         return_output : bool, optional
-            If True, returns the output from the transformer directly.
+            If True, returns the output from the transformer directly, zero for the
+            tokens of padded channels.
             If False, applies the final layer and returns the processed output. Default is False.
         return_features : bool, optional
-            If True, returns a dict ``{"features": Tensor, "cls_token": None}``
-            with encoder features before the final layer. Default is False.
+            If True, returns a dict ``{"features": Tensor, "cls_token": None,
+            "tokens": Tensor}`` with the encoder tokens before the final layer,
+            ``(batch, n_chans, n_patches, embed_dim)`` in both, zero for padded
+            channels. Default is False.
         ch_mask : torch.Tensor, optional
             ``(batch, n_chans)`` mask of real channels, see
             :func:`~braindecode.functional.check_ch_mask`. Padded channels affect no
@@ -569,15 +572,23 @@ class REVE(EEGModuleMixin, nn.Module):
         encoded = self.transformer(x, return_output, attn_mask)
 
         if not isinstance(encoded, torch.Tensor):  # return_output: one per layer
+            if token_mask is not None:
+                encoded = [h.masked_fill(~token_mask[:, :, None], 0.0) for h in encoded]
             return encoded
 
         # Reshape back from flattened sequence to separate channel and temporal dimensions
         # (batch, channels * n_patches, embed_dim) -> (batch, channels, n_patches, embed_dim)
         # This recovers the spatio-temporal structure for downstream processing
         x = encoded.reshape(batch_size, channel, n_patches, self.embed_dim)
+        if mask is not None:
+            x = x.masked_fill(~mask[:, :, None, None], 0.0)
 
         if return_features:
-            out: Dict[str, Optional[torch.Tensor]] = {"features": x, "cls_token": None}
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": x,
+                "cls_token": None,
+                "tokens": x,
+            }
             return out
 
         if self.use_attention_pooling:

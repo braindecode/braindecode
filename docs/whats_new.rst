@@ -31,7 +31,9 @@ Enhancements
 - :class:`braindecode.models.REVE` and :class:`~braindecode.models.Labram` accept a
   ``ch_mask`` of real channels, as the iEEG foundation models of :gh:`1487`; REVE's
   classification head needs ``attention_pooling=True`` and Labram
-  ``neural_tokenizer=True`` (:gh:`1539` by `Julien Gadonneix`_).
+  ``neural_tokenizer=True``. Their token outputs are zero for padded channels, and
+  ``return_features`` also returns them as ``"tokens"``, ``(batch, n_chans,
+  n_patches, dim)`` (:gh:`1539` by `Julien Gadonneix`_).
 
 API and behavior changes
 ========================
