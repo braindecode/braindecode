@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import copy
 import functools
+import inspect
 import json
 import pickle  # nosec B403 - the test reloads a model it just pickled
 import re
@@ -599,3 +600,90 @@ def test_registered_model_reset_head_keeps_dtype_and_config(
     )
     with torch.no_grad():
         model(x.double())
+
+
+# Input a ch_mask model needs to run on fewer channels than it was built with:
+# model name -> (forward argument, f(recording index, n_chans)), which returns a
+# per-sample tensor or a value the batch shares (e.g. channel names).
+_CH_MASK_EXTRAS = {
+    "PopulationTransformer": (
+        "coords",
+        lambda i, n: torch.randint(
+            0, 200, (n, 3), generator=torch.Generator().manual_seed(i)
+        ),
+    ),
+}
+
+
+def _ch_mask_case(model_name, required_params, signal_params):
+    """Two recordings with ``C - 1`` and ``C`` real channels, padded with NaN.
+
+    Skips a model whose ``forward`` takes no ``ch_mask``. Recording ``i`` alone
+    is ``x[i, :n_i]`` of the ``_build_case`` batch, run through the same model
+    without ``ch_mask``. A ``_CH_MASK_EXTRAS`` input is built for each
+    recording's ``n_i`` channels: a tensor is given alone with a batch axis and
+    zero-padded to ``C`` in the batch, which shares any other value built for
+    ``C`` channels.
+    """
+    if "ch_mask" not in inspect.signature(all_models_dict[model_name].forward).parameters:
+        pytest.skip("forward takes no ch_mask")
+    model, x = _build_case(model_name, required_params, signal_params)
+    n_real = [x.shape[1] - 1, x.shape[1]]
+    mask = torch.arange(x.shape[1]) < torch.tensor(n_real)[:, None]
+    x[~mask] = float("nan")
+    xs = [x[i : i + 1, :n].clone() for i, n in enumerate(n_real)]
+    batch_kwargs, alone_kwargs = {}, [{}, {}]
+    if model_name in _CH_MASK_EXTRAS:
+        key, build = _CH_MASK_EXTRAS[model_name]
+        values = [build(i, n) for i, n in enumerate(n_real)]
+        batch_kwargs = {key: values[1]}
+        alone_kwargs = [{key: value} for value in values]
+        if torch.is_tensor(values[1]):
+            padded = values[1].new_zeros((2, *values[1].shape))
+            for i, value in enumerate(values):
+                padded[i, : len(value)] = value
+            batch_kwargs = {key: padded}
+            alone_kwargs = [{key: value[None]} for value in values]
+    return model, x, mask, xs, batch_kwargs, alone_kwargs
+
+
+def _forward_or_refuse(model, x, mask, kwargs):
+    """``model(x, ch_mask=mask)``, or ``None`` if it refuses ``ch_mask`` by name."""
+    try:
+        return model(x, ch_mask=mask, **kwargs)
+    except ValueError as error:
+        if "ch_mask" not in str(error):
+            raise
+        return None
+
+
+@pytest.mark.parametrize(
+    "model_name,required_params,signal_params",
+    models_mandatory_parameters,
+)
+def test_registered_model_ch_mask_contract(model_name, required_params, signal_params):
+    """A ``forward`` that takes ``ch_mask`` gives each recording of a padded
+    batch the output it gives alone (see ``_ch_mask_case``), sends no gradient
+    to the padding and zeroes the padded ``tokens`` of ``return_features``; or
+    it refuses ``ch_mask`` with a ``ValueError`` that names it."""
+    model, x, mask, xs, batch_kwargs, alone_kwargs = _ch_mask_case(
+        model_name, required_params, signal_params
+    )
+    x.requires_grad_(True)
+    out = _forward_or_refuse(model, x, mask, batch_kwargs)
+    if out is None:
+        return
+    batched = _batched_tensor_leaves(out, 2)
+    sum(t.sum() for t in batched if t.requires_grad).backward()
+    assert torch.equal(x.grad[~mask], torch.zeros_like(x.grad[~mask]))
+    with torch.no_grad():
+        for i, (xi, kwargs) in enumerate(zip(xs, alone_kwargs)):
+            alone = _batched_tensor_leaves(model(xi, **kwargs), 1)
+            assert len(alone) == len(batched)
+            for leaf, alone_leaf in zip(batched, alone):
+                torch.testing.assert_close(leaf[i : i + 1].detach(), alone_leaf)
+        if "return_features" in inspect.signature(type(model).forward).parameters:
+            features = model(x, ch_mask=mask, return_features=True, **batch_kwargs)
+            if isinstance(features, Mapping) and "tokens" in features:
+                padded = features["tokens"][~mask]
+                assert torch.equal(padded, torch.zeros_like(padded))

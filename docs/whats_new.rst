@@ -64,11 +64,14 @@ Code health
 ============
 
 - Codacy runs Bandit from a root ``bandit.yml`` that skips B105, which flagged every ``"cls_token"`` key of the foundation-model feature dicts as a hardcoded password, and B101, the test ``assert`` statements (:gh:`1546` by `Bruno Aristimunha`_).
-- ``test/unit_tests/training/test_ch_mask_training.py`` fits every model of
-  the ``ch_mask`` tests through :class:`braindecode.EEGClassifier` with
-  :func:`braindecode.datasets.pad_channels_collate`, checks that each recording
-  keeps the predictions and gradients it gets alone, and fails when a model
-  takes ``ch_mask`` without a test case (:gh:`1545` by `Bruno Aristimunha`_).
+- Every registered model whose ``forward`` takes ``ch_mask`` is checked with no
+  per-model test case, like the other cross-model contracts: each recording of a
+  NaN-padded batch keeps the output and gradients it gets alone, padded inputs
+  get no gradient and padded ``tokens`` are zero, also when the model is fit
+  through :class:`braindecode.EEGClassifier` with
+  :func:`braindecode.datasets.pad_channels_collate`; a model may instead refuse
+  ``ch_mask`` with a ``ValueError`` that names it
+  (:gh:`1545`, :gh:`1548` by `Bruno Aristimunha`_).
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (by `Bruno Aristimunha`_).
