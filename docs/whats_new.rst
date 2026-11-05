@@ -69,7 +69,7 @@ Code health
   padded batch, and fitted through :class:`braindecode.EEGClassifier` with
   :func:`braindecode.datasets.pad_channels_collate`, each recording keeps the
   outputs, predictions and gradients it gets alone, or the model refuses
-  ``ch_mask`` with a ``ValueError`` (:gh:`1545` by `Bruno Aristimunha`_).
+  ``ch_mask`` with a ``ValueError`` (:gh:`1545`, :gh:`1547` by `Bruno Aristimunha`_).
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (by `Bruno Aristimunha`_).
