@@ -28,7 +28,7 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
-- None yet
+- :class:`braindecode.models.BIOT` accepts ``ch_mask``, so a batch can mix recordings with different channel counts: padded channels are masked in the linear attention and in pooling, and each recording gets the output it gets alone (:gh:`1542` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
