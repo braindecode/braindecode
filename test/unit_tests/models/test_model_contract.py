@@ -602,8 +602,9 @@ def test_registered_model_reset_head_keeps_dtype_and_config(
         model(x.double())
 
 
-# Per-sample input a ch_mask model needs to run on fewer channels than it was
-# built with: model name -> (forward argument, f(recording index, n_chans)).
+# Input a ch_mask model needs to run on fewer channels than it was built with:
+# model name -> (forward argument, f(recording index, n_chans)), which returns a
+# per-sample tensor or a value the batch shares (e.g. channel names).
 _CH_MASK_EXTRAS = {
     "PopulationTransformer": (
         "coords",
@@ -620,8 +621,9 @@ def _ch_mask_case(model_name, required_params, signal_params):
     Skips a model whose ``forward`` takes no ``ch_mask``. Recording ``i`` alone
     is ``x[i, :n_i]`` of the ``_build_case`` batch, run through the same model
     without ``ch_mask``. A ``_CH_MASK_EXTRAS`` input is built for each
-    recording's ``n_i`` channels, given alone with a batch axis and zero-padded
-    to ``C`` in the batch.
+    recording's ``n_i`` channels: a tensor is given alone with a batch axis and
+    zero-padded to ``C`` in the batch, which shares any other value built for
+    ``C`` channels.
     """
     if "ch_mask" not in inspect.signature(all_models_dict[model_name].forward).parameters:
         pytest.skip("forward takes no ch_mask")
@@ -634,11 +636,14 @@ def _ch_mask_case(model_name, required_params, signal_params):
     if model_name in _CH_MASK_EXTRAS:
         key, build = _CH_MASK_EXTRAS[model_name]
         values = [build(i, n) for i, n in enumerate(n_real)]
-        padded = values[1].new_zeros((2, *values[1].shape))
-        for i, value in enumerate(values):
-            padded[i, : len(value)] = value
-        batch_kwargs = {key: padded}
-        alone_kwargs = [{key: value[None]} for value in values]
+        batch_kwargs = {key: values[1]}
+        alone_kwargs = [{key: value} for value in values]
+        if torch.is_tensor(values[1]):
+            padded = values[1].new_zeros((2, *values[1].shape))
+            for i, value in enumerate(values):
+                padded[i, : len(value)] = value
+            batch_kwargs = {key: padded}
+            alone_kwargs = [{key: value[None]} for value in values]
     return model, x, mask, xs, batch_kwargs, alone_kwargs
 
 
