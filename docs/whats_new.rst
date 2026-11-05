@@ -70,7 +70,7 @@ Code health
   through :class:`braindecode.EEGClassifier` with
   :func:`braindecode.datasets.pad_channels_collate`; a model may instead refuse
   ``ch_mask`` with a ``ValueError`` that names it
-  (:gh:`1545`, :gh:`PRNUM` by `Bruno Aristimunha`_).
+  (:gh:`1545`, :gh:`1548` by `Bruno Aristimunha`_).
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (by `Bruno Aristimunha`_).
