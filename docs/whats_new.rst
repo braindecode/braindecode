@@ -28,11 +28,11 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
-- New tutorial :ref:`weight-audit-tutorial`: audit what a trained decoder relies on
-  from its weights alone (path-weighted channel ranking, dominant band and time window
-  of an :class:`braindecode.models.EEGNet`), with an optional language-model reader and
-  an occlusion check on held-out data, shown on the PhysioNet lateral-cue eye-movement
-  shortcut (:gh:`1538` by `Yiheng Li`_).
+- New tutorial :ref:`weight-audit-tutorial`: audit what a released decoder relies on
+  from its weights alone (dominant band, time window and channel ranking of an
+  :class:`braindecode.models.EEGNet`, read through its path weights), then confirm the
+  reading with one occlusion check, shown on a released PhysioNet EEGNet checkpoint and
+  the lateral-cue eye-movement shortcut (:gh:`1538` by `Yiheng Li`_).
 
 API and behavior changes
 ========================
