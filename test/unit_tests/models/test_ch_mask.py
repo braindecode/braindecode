@@ -93,8 +93,8 @@ _CASES = {
 }
 
 
-@pytest.mark.parametrize("name", list(_CASES))
-def test_ch_mask_matches_each_recording_alone(name):
+def _padded_case(name):
+    """Model, NaN-padded batch, its mask, the recordings alone and their kwargs."""
     torch.manual_seed(0)
     model, n_times, per_recording = _CASES[name]()
     model.eval()
@@ -112,7 +112,12 @@ def test_ch_mask_matches_each_recording_alone(name):
             padded[i, : len(value)] = value
         batch_kwargs = {key: padded.to(alone[0].dtype)}
         alone_kwargs = [{key: value[None] if batched else value} for value in alone]
+    return model, x, mask, xs, batch_kwargs, alone_kwargs
 
+
+@pytest.mark.parametrize("name", list(_CASES))
+def test_ch_mask_matches_each_recording_alone(name):
+    model, x, mask, xs, batch_kwargs, alone_kwargs = _padded_case(name)
     x.requires_grad_(True)
     out = model(x, ch_mask=mask, **batch_kwargs)
     out.sum().backward()
@@ -128,6 +133,22 @@ def test_ch_mask_matches_each_recording_alone(name):
         scripted = torch.jit.script(model)(x.detach(), ch_mask=mask, **batch_kwargs)
     torch.testing.assert_close(scripted, expected)
 
+
+
+@pytest.mark.parametrize("name", list(_CASES))
+def test_ch_mask_tokens_match_each_recording_alone(name):
+    model, x, mask, xs, batch_kwargs, alone_kwargs = _padded_case(name)
+    with torch.no_grad():
+        tokens = model(x, ch_mask=mask, return_features=True, **batch_kwargs)["tokens"]
+        scripted = torch.jit.script(model)(
+            x, ch_mask=mask, return_features=True, **batch_kwargs
+        )
+        for i, (xi, kwargs) in enumerate(zip(xs, alone_kwargs)):
+            alone = model(xi[None], return_features=True, **kwargs)["tokens"][0]
+            torch.testing.assert_close(tokens[i, : len(xi)], alone)
+    assert torch.equal(tokens[~mask], torch.zeros_like(tokens[~mask]))
+    if isinstance(scripted, dict):  # most models ignore return_features when scripted
+        torch.testing.assert_close(scripted["tokens"], tokens)
 
 # Heads tied to the construction-time channels do not take a ch_mask.
 _FIXED_HEADS = {

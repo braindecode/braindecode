@@ -300,9 +300,11 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
             from the construction one.
         return_features : bool
             If ``True``, return the pooled encoder embedding instead of the
-            class logits, as ``{"features": pooled, "cls_token": None}``
-            (braindecode foundation-model convention). Brant pools over channels
-            and patches and has no class token, hence ``cls_token`` is ``None``.
+            class logits, as ``{"features": pooled, "cls_token": None,
+            "tokens": tokens}`` (braindecode foundation-model convention). Brant
+            pools over channels and patches and has no class token, hence
+            ``cls_token`` is ``None``. ``tokens`` is the spatial encoder output,
+            ``(batch, n_chans, seq_len, embed_dim)``, zero for padded channels.
             A TorchScript-compiled model returns the logits instead.
         ch_mask : torch.Tensor, optional
             ``(batch, n_chans)`` mask of real channels, see
@@ -312,7 +314,8 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         -------
         torch.Tensor or dict
             Class logits of shape ``(batch, n_outputs)``, or the feature
-            dict ``{"features", "cls_token"}`` when ``return_features`` is set.
+            dict ``{"features", "cls_token", "tokens"}`` when ``return_features``
+            is set.
         """
         if x.shape[-1] != self.n_times:
             raise ValueError(
@@ -345,7 +348,9 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         if return_features:
             if torch.jit.is_scripting():
                 return logits
-            return {"features": pooled, "cls_token": None}  # nosec B105
+            if mask is not None:
+                emb = emb.masked_fill(~mask[:, :, None, None], 0.0)
+            return {"features": pooled, "cls_token": None, "tokens": emb}  # nosec B105
         return logits
 
 
