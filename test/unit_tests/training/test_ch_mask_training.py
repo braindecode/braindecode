@@ -57,6 +57,8 @@ def _net(module, **kwargs):
 _FIT_XFAIL = {
     "PopulationTransformer": "the loader routes no per-recording coords, which "
     "PopulationTransformer needs on fewer channels than it was built with",
+    "Labram": "the loader routes no ch_names, which Labram needs on fewer than "
+    "its 128 channels",
 }
 
 
