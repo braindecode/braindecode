@@ -529,7 +529,10 @@ class REVE(EEGModuleMixin, nn.Module):
         if pos is None and channel_index is not None:
             eeg = eeg.index_select(1, channel_index.to(eeg.device))
             if mask is not None:
-                mask = mask.index_select(1, channel_index.to(eeg.device))
+                # A sample whose real channels were all dropped has none left.
+                mask = check_ch_mask(
+                    mask.index_select(1, channel_index.to(eeg.device)), eeg
+                )
         if mask is not None:
             # Padding may hold NaN, which the patch embedding would spread.
             eeg = eeg.masked_fill(~mask[:, :, None], 0.0)
