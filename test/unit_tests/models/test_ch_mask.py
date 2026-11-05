@@ -175,7 +175,7 @@ def test_ch_mask_is_refused_under_a_channel_strategy():
 
     chs_info = _get_signal_params({"n_chans": 3})["chs_info"]
     model = BIOT(chs_info=chs_info, n_outputs=3, n_times=400, sfreq=200,
-                 embed_dim=32, num_heads=2, num_layers=1, channel_strategy="exact")
+                 embed_dim=32, num_heads=2, num_layers=1, channel_strategy="zero")
     mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
     with pytest.raises(ValueError, match="ch_mask needs channel_strategy='native'"):
         model(torch.randn(len(N_REAL), 3, 400), ch_mask=mask)
