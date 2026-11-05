@@ -28,7 +28,7 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
-- None yet
+- :class:`braindecode.models.CBraMod` accepts ``ch_mask`` with the encoder output (``return_encoder_output=True``): padded channels are masked in the spatial attention and the GroupNorm statistics, and their tokens are zero. The flattened classification head is tied to the channels and refuses the mask (:gh:`1544` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
