@@ -629,6 +629,7 @@ def _ch_mask_case(model_name, required_params, signal_params):
     """
     if "ch_mask" not in inspect.signature(all_models_dict[model_name].forward).parameters:
         pytest.skip("forward takes no ch_mask")
+    torch.manual_seed(0)  # same weights and data on every run: no flaky tolerance
     model, x = _build_case(model_name, required_params, signal_params)
     n_real = [x.shape[1] - 1, x.shape[1]]
     mask = torch.arange(x.shape[1]) < torch.tensor(n_real)[:, None]
