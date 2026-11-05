@@ -29,6 +29,20 @@ Enhancements
 ============
 
 - :class:`braindecode.models.CBraMod` accepts ``ch_mask`` with the encoder output (``return_encoder_output=True``): padded channels are masked in the spatial attention and the GroupNorm statistics, and their tokens are zero. The flattened classification head is tied to the channels and refuses the mask (:gh:`1544` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.REVE` and :class:`~braindecode.models.Labram` accept a
+  ``ch_mask`` of real channels, as the iEEG foundation models of :gh:`1487`; REVE's
+  classification head needs ``attention_pooling=True`` and Labram
+  ``neural_tokenizer=True``. Their token outputs are zero for padded channels, and
+  ``return_features`` also returns them as ``"tokens"``, ``(batch, n_chans,
+  n_patches, dim)`` (:gh:`1539` by `Julien Gadonneix`_).
+- With ``return_features=True``, :class:`braindecode.models.BrainBERT`,
+  :class:`~braindecode.models.EpiNT`, :class:`~braindecode.models.Brant`,
+  :class:`~braindecode.models.PopulationTransformer`,
+  :class:`~braindecode.models.BaRISTA`, :class:`~braindecode.models.DIVER1` and
+  :class:`~braindecode.models.MVPFormer` also return ``"tokens"``, the per-token
+  encoder output ``(batch, n_chans, n_tokens, dim)`` with the tokens of padded
+  channels zero; DIVER1 gains
+  ``return_features`` (:gh:`1540` by `Julien Gadonneix`_).
 
 API and behavior changes
 ========================
@@ -51,9 +65,27 @@ Bug fixes
   a shorter ``n_times``: the learned temporal positions keep the checkpoint's
   leading ones instead of raising a size mismatch
   (:gh:`1537` by `Julien Gadonneix`_).
+- :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor`
+  route the batches of :func:`braindecode.datasets.pad_channels_collate` and
+  ``set_return_ch_pos`` by the model's ``forward`` signature: the signal goes to
+  its first argument (``eeg`` of :class:`braindecode.models.REVE`, ``X`` of
+  :class:`~braindecode.models.LUNA`), and ``pos`` and ``ch_mask`` only to a
+  ``forward`` that takes them. A model without them now raises a clear
+  ``ValueError`` instead of a ``TypeError`` deep in skorch
+  (:gh:`1545` by `Bruno Aristimunha`_).
 
 Code health
 ============
+
+- Codacy runs Bandit from a root ``bandit.yml`` that skips B105, which flagged every ``"cls_token"`` key of the foundation-model feature dicts as a hardcoded password, and B101, the test ``assert`` statements (:gh:`1546` by `Bruno Aristimunha`_).
+- Every registered model whose ``forward`` takes ``ch_mask`` is checked with no
+  per-model test case, like the other cross-model contracts: each recording of a
+  NaN-padded batch keeps the output and gradients it gets alone, padded inputs
+  get no gradient and padded ``tokens`` are zero, also when the model is fit
+  through :class:`braindecode.EEGClassifier` with
+  :func:`braindecode.datasets.pad_channels_collate`; a model may instead refuse
+  ``ch_mask`` with a ``ValueError`` that names it
+  (:gh:`1545`, :gh:`1548` by `Bruno Aristimunha`_).
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (by `Bruno Aristimunha`_).
