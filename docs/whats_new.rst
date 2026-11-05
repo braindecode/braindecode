@@ -58,7 +58,7 @@ Bug fixes
   :class:`~braindecode.models.LUNA`), and ``pos`` and ``ch_mask`` only to a
   ``forward`` that takes them. A model without them now raises a clear
   ``ValueError`` instead of a ``TypeError`` deep in skorch
-  (by `Bruno Aristimunha`_).
+  (:gh:`1545` by `Bruno Aristimunha`_).
 
 Code health
 ============
@@ -67,7 +67,7 @@ Code health
   the ``ch_mask`` tests through :class:`braindecode.EEGClassifier` with
   :func:`braindecode.datasets.pad_channels_collate`, checks that each recording
   keeps the predictions and gradients it gets alone, and fails when a model
-  takes ``ch_mask`` without a test case (by `Bruno Aristimunha`_).
+  takes ``ch_mask`` without a test case (:gh:`1545` by `Bruno Aristimunha`_).
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (by `Bruno Aristimunha`_).
