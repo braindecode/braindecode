@@ -13,7 +13,12 @@ from typing import Dict, Optional, Sequence, Union
 import torch
 from torch import Tensor, nn
 
-from braindecode.functional import init_weights_, spectral_input
+from braindecode.functional import (
+    check_ch_mask,
+    init_weights_,
+    masked_group_norm,
+    spectral_input,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import CrissCrossTransformerEncoderLayer
 from braindecode.modules.blocks import PatchTokenizer
@@ -224,6 +229,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
         self._emb_dim = emb_dim
         self._patch_size = patch_size
+        self._encoder_output = return_encoder_output
         self._init_parameters()
 
         if return_encoder_output:
@@ -244,6 +250,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self._update_init_kwargs(n_outputs=n_outputs)
         # A head implies a classifier, also when built with return_encoder_output.
         self._update_init_kwargs(return_encoder_output=False)
+        self._encoder_output = False
         if self._knows_geometry():
             n_patch = self._n_patch()
             flat_dim = self.n_chans * n_patch * self._emb_dim
@@ -283,13 +290,38 @@ class CBraMod(EEGModuleMixin, nn.Module):
         x: Tensor,
         mask: Optional[Tensor] = None,
         return_features: bool = False,
+        ch_mask: Optional[Tensor] = None,
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
+        """``ch_mask``: optional ``(batch, n_chans)`` mask of real channels, see
+        :func:`~braindecode.functional.check_ch_mask`. Needs
+        ``return_encoder_output=True`` or ``return_features=True``; the
+        tokens of padded channels are zero. Real channels come first, as
+        :func:`~braindecode.datasets.pad_channels_collate` pads: the
+        positional convolution reads neighbouring channels."""
+        ch_mask = check_ch_mask(ch_mask, x)
+        key_padding_mask: Optional[Tensor] = None
+        if ch_mask is not None:
+            if not return_features and not self._encoder_output:
+                raise ValueError(
+                    "ch_mask needs return_encoder_output=True: the flattened "
+                    "head is tied to the channels."
+                )
+            # Padding may hold NaN, which the patch embedding would spread.
+            x = x.masked_fill(~ch_mask[:, :, None], 0.0)
+            key_padding_mask = ~ch_mask
         x = self.rearrange(x)
-        patch_emb = self.patch_embedding(x, mask)
-        feats = self.encoder(patch_emb)
+        patch_emb = self.patch_embedding(x, mask, ch_mask)
+        feats = self.encoder(patch_emb, src_key_padding_mask=key_padding_mask)
         out = self.proj_out(feats)
+        if ch_mask is not None:
+            out = out.masked_fill(~ch_mask[:, :, None, None], 0.0)
         if return_features:
-            features: Dict[str, Optional[Tensor]] = {"features": out, "cls_token": None}
+            # "tokens": the same per-token output, under the ch_mask contract key.
+            features: Dict[str, Optional[Tensor]] = {
+                "features": out,
+                "cls_token": None,
+                "tokens": out,
+            }
             return features
         return self.final_layer(out)
 
@@ -353,7 +385,12 @@ class _PatchEmbedding(nn.Module):
             patch_size = int((patch_size + 2 * padding - kernel) / stride + 1)
         return last_channels * patch_size
 
-    def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        mask: Optional[Tensor] = None,
+        ch_mask: Optional[Tensor] = None,
+    ) -> Tensor:
         bz, ch_num, patch_num, patch_size = x.shape
         if mask is None:
             mask_x = x
@@ -362,7 +399,25 @@ class _PatchEmbedding(nn.Module):
             mask_x[mask == 1] = self.mask_encoding
 
         mask_x = mask_x.reshape(bz, 1, ch_num * patch_num, patch_size)
-        patch_emb = self.proj_in(mask_x)  # (b, d, c * n, p2)
+        if ch_mask is None:
+            patch_emb = self.proj_in(mask_x)  # (b, d, c * n, p2)
+        else:
+            # GroupNorm statistics over real rows only; rows are (c n).
+            row_mask = ch_mask.repeat_interleave(patch_num, dim=1)
+            patch_emb = mask_x
+            for layer in self.proj_in:
+                # Not isinstance: TorchScript misses renamed (mangled) module types.
+                if hasattr(layer, "num_groups"):
+                    patch_emb = masked_group_norm(
+                        patch_emb,
+                        layer.num_groups,
+                        row_mask,
+                        layer.weight,
+                        layer.bias,
+                        layer.eps,
+                    )
+                else:
+                    patch_emb = layer(patch_emb)
         d, p2 = patch_emb.shape[1], patch_emb.shape[3]
         patch_emb = (
             patch_emb.reshape(bz, d, ch_num, patch_num, p2)
@@ -376,6 +431,9 @@ class _PatchEmbedding(nn.Module):
         spectral_emb = self.spectral_proj(spectral)
 
         patch_emb = patch_emb + spectral_emb
+        if ch_mask is not None:
+            # Zero rows, as the convolution's own padding past the last channel.
+            patch_emb = patch_emb.masked_fill(~ch_mask[:, :, None, None], 0.0)
 
         positional_embedding = self.positional_encoding(patch_emb.permute(0, 3, 1, 2))
         positional_embedding = positional_embedding.permute(0, 2, 3, 1)
@@ -408,7 +466,9 @@ class _TransformerEncoder(nn.Module):
     ) -> Tensor:
         output = src
         for mod in self.layers:
-            output = mod(output, src_mask=mask)
+            output = mod(
+                output, src_mask=mask, src_key_padding_mask=src_key_padding_mask
+            )
         if self.norm is not None:
             output = self.norm(output)
         return output
