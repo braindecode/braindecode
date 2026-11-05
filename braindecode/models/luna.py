@@ -937,7 +937,12 @@ class _PatchEmbedNetwork(nn.Module):
                 # Not isinstance: TorchScript misses renamed (mangled) module types.
                 if hasattr(layer, "num_groups"):
                     x = masked_group_norm(
-                        x, layer.num_groups, row_mask, layer.weight, layer.bias, layer.eps
+                        x,
+                        layer.num_groups,
+                        row_mask,
+                        layer.weight,
+                        layer.bias,
+                        layer.eps,
                     )
                 else:
                     x = layer(x)
