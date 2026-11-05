@@ -20,9 +20,9 @@ cannot leave the hospital, a model card that describes the preprocessing
 only approximately. Takehi et al. (2026) [2]_ showed that language models can
 read raw weights well enough to say what a small network was trained to
 do, and listed "auditing without data" as an open direction. This example
-takes that route on an EEG decoder: it reads the weights with a simple
-path-weighted statistic, and then confirms the reading with one occlusion
-test on held-out data.
+takes that route on an EEG decoder with the simplest possible reader: a
+path-weighted statistic of the weights, confirmed by one occlusion test on
+held-out data.
 
 .. topic:: What the audit looks for
 
@@ -123,32 +123,30 @@ hand_runs = BaseConcatDataset(
     [ds for ds in dataset.datasets if "left_hand" in ds.raw.annotations.description]
 )
 sfreq = hand_runs.datasets[0].raw.info["sfreq"]
+window_start_s = -1.0
 windows_dataset = create_windows_from_events(
     hand_runs,
-    trial_start_offset_samples=int(-1.0 * sfreq),
+    trial_start_offset_samples=int(window_start_s * sfreq),
     trial_stop_offset_samples=int(1.0 * sfreq),
     mapping={"left_hand": 0, "right_hand": 1},
     preload=True,
 )
-window_start_s = -1.0
 ch_names = windows_dataset.datasets[0].raw.ch_names
 
 by_subject = windows_dataset.split("subject")
-train_set = BaseConcatDataset([by_subject[str(s)] for s in train_subjects])
-test_set = BaseConcatDataset([by_subject[str(s)] for s in test_subjects])
 
 
-def _to_arrays(windows):
+def _to_arrays(subjects):
+    windows = BaseConcatDataset([by_subject[str(s)] for s in subjects])
     X = np.stack([np.asarray(x) for x, _, _ in windows]).astype(np.float32)
     y = np.array([int(label) for _, label, _ in windows])
     return X, y
 
 
-X_train, y_train = _to_arrays(train_set)
-X_test, y_test = _to_arrays(test_set)
+X_train, y_train = _to_arrays(train_subjects)
+X_test, y_test = _to_arrays(test_subjects)
 n_chans, n_times = X_train.shape[1:]
 print(f"{len(X_train)} training trials, {len(X_test)} held-out trials")
-print(f"{n_chans} channels x {n_times} samples at {sfreq:g} Hz")
 
 ######################################################################
 # Training EEGNet briefly
@@ -157,22 +155,25 @@ print(f"{n_chans} channels x {n_times} samples at {sfreq:g} Hz")
 # :class:`~braindecode.models.EEGNet` [4]_ is the decoder under audit.
 # A few dozen epochs on CPU are enough for the purpose of this example;
 # the audit does not need a well-tuned model, it needs the model that
-# will be released.
+# will be released. We build the network from a seed so that its
+# initialisation can be rebuilt later.
 
 seed = 20261103
-set_random_seeds(seed=seed, cuda=False)
-device = "cpu"
 
-model = EEGNet(
-    n_chans=n_chans,
-    n_outputs=2,
-    n_times=n_times,
-    sfreq=sfreq,
-    final_layer_with_constraint=True,
-)
+
+def make_eegnet(init_seed):
+    set_random_seeds(seed=init_seed, cuda=False)
+    return EEGNet(
+        n_chans=n_chans,
+        n_outputs=2,
+        n_times=n_times,
+        sfreq=sfreq,
+        final_layer_with_constraint=True,
+    )
+
 
 clf = EEGClassifier(
-    model,
+    make_eegnet(seed),
     criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
     optimizer__lr=1e-3,
@@ -181,49 +182,43 @@ clf = EEGClassifier(
     batch_size=32,
     max_epochs=30,
     callbacks=["accuracy"],
-    device=device,
+    device="cpu",
     classes=[0, 1],
     verbose=0,
 )
 clf.fit(X_train, y_train)
-
-held_out_accuracy = clf.score(X_test, y_test)
-print(f"Held-out accuracy on subjects {test_subjects}: {held_out_accuracy:.1%}")
+print(f"Held-out accuracy: {clf.score(X_test, y_test):.1%}")
 model = clf.module_.eval()
 
 ######################################################################
 # Reading the weights
 # -------------------
 #
-# The reader below answers three questions from the weights with
-# path-weighted statistics, following the EEGNet forward path backwards:
+# The reader follows the EEGNet forward path backwards:
 #
 # * **Which features matter?** The classifier weights, reshaped to
 #   ``(n_outputs, F2, n_time_bins)``, are centred across classes; a
 #   feature's importance is the norm of that contrast times its
 #   batch-norm gain.
-# * **Which spatial filters matter?** Feature importance is pushed back
-#   through the absolute pointwise weights and the first batch-norm gain.
-# * **Which channels?** Absolute spatial weight times filter importance,
-#   summed over filters, normalised to sum to one.
-# * **Which band?** Each temporal kernel is an FIR filter; its power
-#   spectrum peak, weighted by the importance of the spatial filters it
-#   feeds, gives the band.
+# * **Which channels?** Feature importance is pushed back through the
+#   pointwise weights and the first batch-norm gain to each spatial
+#   filter, then through the absolute spatial weights to each channel.
+# * **Which band?** Each temporal kernel is an FIR filter; the peak of
+#   the kernels' power spectra, weighted by the importance of the spatial
+#   filters they feed, gives the band.
 # * **Which time window?** The classifier contrast energy per pooled time
-#   bin, mapped back to seconds, averaged in one-second windows.
+#   bin, averaged in one-second windows.
 #
-# None of this touches data. It is what a maintainer can compute from a
+# None of this touches data: it is what a maintainer can compute from a
 # released checkpoint in a second. One limit to keep in mind: a spatial
 # weight says how much a filter *mixes* an electrode, not how much
 # signal arrives there (Haufe et al. [5]_ make this point for linear
 # models). A briefly trained EEGNet keeps dense, near-initial spatial
-# filters, and its channel ranking is then close to flat even when one
-# electrode carries the decision. The band and the window do not have
-# this problem, because they come from the temporal kernels and the
-# classifier, which training shapes quickly. We therefore print the
-# ranking together with its flatness, as the share held by the top
-# channel against the uniform share ``1 / n_chans``, and the share held
-# by two electrode groups against their uniform shares.
+# filters, so its channel ranking can be close to flat even when one
+# electrode carries the decision. The band and the window come from the
+# temporal kernels and the classifier, which training shapes quickly. We
+# therefore print the top channel's share next to the uniform share, and
+# the share held by two electrode groups next to theirs.
 
 BANDS = [
     (0.0, 4.0, "slow (<4 Hz)"),
@@ -234,19 +229,9 @@ BANDS = [
 ]
 
 
-def _band_name(freq_hz):
-    return next(name for low, high, name in BANDS if low <= freq_hz < high)
-
-
-def read_weights(
-    model, ch_names, sfreq, window_start_s=-1.0, n_top=5, spatial_weight=None
-):
+def read_weights(model, ch_names, sfreq, window_start_s, spatial_weight=None):
     """Estimate the channels, band and time window an EEGNet relies on.
 
-    Returns a dict with the top channels (path-weighted absolute spatial
-    weight, normalised), the spectral peak and band of every temporal
-    kernel with its importance, the importance-weighted dominant band,
-    and the one-second window where the classifier contrast is largest.
     ``spatial_weight`` replaces the spatial filters, e.g. by the change
     that training made to them.
     """
@@ -259,70 +244,46 @@ def read_weights(
     w_spatial = as_np(spatial_weight)[:, 0, :, 0]  # (F1*D, n_chans)
     w_temporal = as_np(model.conv_temporal.weight)[:, 0, 0, :]  # (F1, n_taps)
     w_point = as_np(model.conv_separable_point.weight)[:, :, 0, 0]  # (F2, F1*D)
-    gain_1 = as_np(model.bnorm_1.weight)
-    gain_2 = as_np(model.bnorm_2.weight)
     head = next(
         m
         for m in model.final_layer.modules()
         if torch.is_tensor(getattr(m, "weight", None))
     )
     w_head = as_np(head.weight).reshape(model.n_outputs, model.F2, -1)
-    n_bins = w_head.shape[-1]
 
     # Feature -> spatial filter -> channel.
     contrast = w_head - w_head.mean(axis=0, keepdims=True)
-    feature_importance = np.abs(gain_2) * np.sqrt((contrast**2).sum(axis=(0, 2)))
-    filter_importance = np.abs(gain_1) * (
+    feature_importance = np.abs(as_np(model.bnorm_2.weight)) * np.sqrt(
+        (contrast**2).sum(axis=(0, 2))
+    )
+    filter_importance = np.abs(as_np(model.bnorm_1.weight)) * (
         np.abs(w_point) * feature_importance[:, None]
     ).sum(axis=0)
     channel_score = (np.abs(w_spatial) * filter_importance[:, None]).sum(axis=0)
     channel_score = channel_score / channel_score.sum()
-    order = np.argsort(channel_score)[::-1]
-    top_channels = [
-        (ch_names[i], round(float(channel_score[i]), 4)) for i in order[:n_top]
-    ]
 
     # Temporal kernel k feeds spatial filters k*D ... k*D+D-1.
     kernel_importance = filter_importance.reshape(model.F1, model.D).sum(axis=1)
     n_fft = 8 * w_temporal.shape[1]
-    freqs = np.fft.rfftfreq(n_fft, d=1.0 / sfreq)
     power = np.abs(np.fft.rfft(w_temporal, n=n_fft, axis=1)) ** 2
-    kernels = []
-    for k, (spectrum, importance) in enumerate(zip(power, kernel_importance)):
-        peak_hz = float(freqs[np.argmax(spectrum)])
-        kernels.append(
-            {
-                "kernel": k,
-                "peak_hz": round(peak_hz, 1),
-                "band": _band_name(peak_hz),
-                "importance": round(float(importance / kernel_importance.sum()), 3),
-            }
-        )
-    pooled = (power * kernel_importance[:, None]).sum(axis=0)
-    dominant_hz = float(freqs[np.argmax(pooled)])
+    freqs = np.fft.rfftfreq(n_fft, d=1.0 / sfreq)
+    peak_hz = float(freqs[np.argmax(kernel_importance @ power)])
 
     # Classifier time bins -> seconds -> one-second windows.
     energy = (feature_importance[None, :, None] * contrast**2).sum(axis=(0, 1))
-    bin_centres_s = (
+    n_bins = energy.size
+    centres_s = (
         window_start_s + (np.arange(n_bins) + 0.5) * model.n_times / n_bins / sfreq
     )
-    window_energy = {}
-    for start in np.arange(window_start_s, window_start_s + model.n_times / sfreq):
-        in_window = (bin_centres_s >= start) & (bin_centres_s < start + 1)
-        if in_window.any():
-            window_energy[f"{start:+.0f}..{start + 1:+.0f} s"] = float(
-                energy[in_window].mean()
-            )
-    best_window = max(window_energy, key=window_energy.get)
+    second = np.floor(centres_s).astype(int)
+    window_energy = {s: energy[second == s].mean() for s in np.unique(second)}
+    best = int(max(window_energy, key=window_energy.get))
 
     return {
-        "top_channels": top_channels,
-        "channel_score": dict(zip(ch_names, channel_score.round(4).tolist())),
-        "kernels": kernels,
-        "dominant_band": _band_name(dominant_hz),
-        "dominant_hz": round(dominant_hz, 1),
-        "window": best_window,
-        "window_energy": window_energy,
+        "channel_score": dict(zip(ch_names, channel_score.tolist())),
+        "band": next(name for low, high, name in BANDS if low <= peak_hz < high),
+        "peak_hz": peak_hz,
+        "window": f"{best:+d}..{best + 1:+d} s",
     }
 
 
@@ -331,30 +292,25 @@ MOTOR = ["C3", "C1", "Cz", "C2", "C4", "FC3", "FC4", "CP3", "CP4"]
 GROUPS = {"eye-adjacent": EYE_ADJACENT, "motor": MOTOR}
 
 
-def group_share(reading, groups):
-    """Share of the reader's channel score in each group, with the uniform share."""
-    n_chans = len(reading["channel_score"])
-    return {
-        name: (sum(reading["channel_score"][ch] for ch in names), len(names) / n_chans)
-        for name, names in groups.items()
-    }
+def top_channels(reading, n=5):
+    scores = reading["channel_score"]
+    return sorted(scores, key=scores.get, reverse=True)[:n]
 
 
-reading = read_weights(model, ch_names, sfreq, window_start_s=window_start_s)
-print(
-    "Top channels (share of path-weighted spatial weight; "
-    f"uniform share would be {1 / n_chans:.3f}):"
-)
-for name, score in reading["top_channels"]:
-    print(f"  {name:>4s}  {score:.3f}")
-print(f"Dominant band: {reading['dominant_band']} (peak {reading['dominant_hz']} Hz)")
-print(
-    "Per kernel:",
-    [(k["kernel"], k["peak_hz"], k["importance"]) for k in reading["kernels"]],
-)
-print(f"Time window with most classifier contrast: {reading['window']}")
-for name, (share, uniform) in group_share(reading, GROUPS).items():
-    print(f"Reader's share on {name:>12s} group: {share:.3f} (uniform {uniform:.3f})")
+def print_channels(reading, label):
+    top = top_channels(reading)
+    share = reading["channel_score"][top[0]]
+    print(f"{label}: top channels {top}")
+    print(f"  top share {share:.3f} (uniform {1 / n_chans:.3f})")
+    for name, names in GROUPS.items():
+        group = sum(reading["channel_score"][ch] for ch in names)
+        print(f"  {name} share {group:.3f} (uniform {len(names) / n_chans:.3f})")
+
+
+reading = read_weights(model, ch_names, sfreq, window_start_s)
+print_channels(reading, "Weights")
+print(f"Band: {reading['band']} (peak {reading['peak_hz']:.1f} Hz)")
+print(f"Window with most classifier contrast: {reading['window']}")
 
 ######################################################################
 # Confirm on data: one occlusion test
@@ -362,155 +318,105 @@ for name, (share, uniform) in group_share(reading, GROUPS).items():
 #
 # The reading is a claim. One test on the held-out subjects checks it:
 # zero a group of channels, or remove a band, and see how far the
-# accuracy drops. The two named groups from above are compared against
-# random groups of the same size, so a drop can be read against chance.
-# On PhysioNet a sizeable drop for the eye-adjacent group and for the
+# accuracy drops. The two named groups are compared against random
+# groups of the same size, so a drop can be read against chance. On
+# PhysioNet a sizeable drop for the eye-adjacent group and for the
 # 0.5-4 Hz band, with little lost when the motor group goes, is the
-# shortcut signature. The reader's band and window should agree with
-# the band check, and its channel ranking should point to the same
-# electrodes as the occlusion; when the ranking is flat, the occlusion
-# is what settles the channels, and the model card should say so.
+# shortcut signature. The band check should agree with the reader's
+# band; when the channel ranking is flat, the occlusion is what settles
+# the channels, and the model card should say so.
 
 
-def _accuracy(model, X, y, batch_size=64):
-    model.eval()
-    predictions = []
+def _accuracy(model, X, y):
     with torch.no_grad():
-        for start in range(0, len(X), batch_size):
-            batch = torch.as_tensor(X[start : start + batch_size], dtype=torch.float32)
-            predictions.append(model(batch).argmax(dim=1).cpu().numpy())
-    return float((np.concatenate(predictions) == y).mean())
+        predictions = model(torch.as_tensor(X)).argmax(dim=1).numpy()
+    return float((predictions == y).mean())
 
 
-def occlusion_check(model, X, y, groups, ch_names, n_random=20, seed=0):
-    """Accuracy drop when each channel group is zeroed, against random groups.
+def occlusion_check(model, X, y, ch_names, sfreq, n_random=20, seed=0):
+    """Accuracy drop when channel groups are zeroed or bands are removed.
 
-    ``groups`` maps a name to a list of channel names. For every group
-    size present, ``n_random`` random groups of that size are also
-    zeroed; their drops give the chance level for the named groups.
+    Each group in ``GROUPS`` is compared with ``n_random`` random groups
+    of the same size, whose drops give the chance level.
     """
     baseline = _accuracy(model, X, y)
 
-    def masked(names):
-        X_masked = X.copy()
-        X_masked[:, [ch_names.index(name) for name in names], :] = 0.0
-        return X_masked
+    def drop(X_changed):
+        return baseline - _accuracy(model, X_changed, y)
 
-    drops = {
-        name: baseline - _accuracy(model, masked(names), y)
-        for name, names in groups.items()
-    }
-    rng = np.random.default_rng(seed)
-    random_drops = {}
-    for size in sorted({len(names) for names in groups.values()}):
-        random_drops[size] = np.array(
-            [
-                baseline
-                - _accuracy(model, masked(rng.choice(ch_names, size, replace=False)), y)
-                for _ in range(n_random)
-            ]
-        )
-    return {"baseline": baseline, "drops": drops, "random": random_drops}
-
-
-def band_check(model, X, y, sfreq):
-    """Accuracy drop when the slow band is removed or only 8-30 Hz is kept."""
-    baseline = _accuracy(model, X, y)
+    def zeroed(names):
+        X_zeroed = X.copy()
+        X_zeroed[:, [ch_names.index(name) for name in names]] = 0.0
+        return X_zeroed
 
     def filtered(kind, freqs):
         sos = butter(4, freqs, kind, fs=sfreq, output="sos")
         return sosfiltfilt(sos, X, axis=-1).astype(np.float32)
 
+    rng = np.random.default_rng(seed)
+    sizes = sorted({len(names) for names in GROUPS.values()})
     return {
-        "remove 0.5-4 Hz": baseline - _accuracy(model, filtered("highpass", 4.0), y),
-        "keep 8-30 Hz only": baseline
-        - _accuracy(model, filtered("bandpass", [8.0, 30.0]), y),
+        "baseline": baseline,
+        "groups": {name: drop(zeroed(names)) for name, names in GROUPS.items()},
+        "random": {
+            size: np.array(
+                [
+                    drop(zeroed(rng.choice(ch_names, size, replace=False)))
+                    for _ in range(n_random)
+                ]
+            )
+            for size in sizes
+        },
+        "bands": {
+            "remove 0.5-4 Hz": drop(filtered("highpass", 4.0)),
+            "keep 8-30 Hz only": drop(filtered("bandpass", [8.0, 30.0])),
+        },
     }
 
 
-occlusion = occlusion_check(model, X_test, y_test, GROUPS, ch_names)
-bands = band_check(model, X_test, y_test, sfreq)
-
+occlusion = occlusion_check(model, X_test, y_test, ch_names, sfreq)
 print(f"Baseline accuracy: {occlusion['baseline']:.1%}")
-for name, drop in occlusion["drops"].items():
-    size = len(GROUPS[name])
-    random = occlusion["random"][size]
-    print(
-        f"  zero {name:>12s} ({size} ch): drop {drop:+.1%}; "
-        f"random {size}-channel groups: mean {random.mean():+.1%}, "
-        f"95th percentile {np.percentile(random, 95):+.1%}"
-    )
-for name, drop in bands.items():
-    print(f"  {name:>18s}: drop {drop:+.1%}")
+for name, drop in occlusion["groups"].items():
+    random_95 = np.percentile(occlusion["random"][len(GROUPS[name])], 95)
+    print(f"  zero {name}: drop {drop:+.1%} (random groups, 95th pct {random_95:+.1%})")
+for name, drop in occlusion["bands"].items():
+    print(f"  {name}: drop {drop:+.1%}")
 
 ######################################################################
-# Put the reader and the data check side by side
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-# First as a table: what the weights said, what the data said.
+# The chart puts the data check next to what the weights said (in the
+# title). The dashed line is the 95th percentile of the random groups of
+# the eye group's size, the level a named group has to clear before its
+# drop means anything.
 
-shares = group_share(reading, GROUPS)
-rows = [("", "weights", "data (accuracy drop)")]
-for name in GROUPS:
-    share, uniform = shares[name]
-    rows.append(
-        (
-            name,
-            f"share {share:.3f} (uniform {uniform:.3f})",
-            f"zeroed: {occlusion['drops'][name]:+.1%}",
-        )
-    )
-rows.append(
-    (
-        "band",
-        reading["dominant_band"],
-        f"0.5-4 Hz removed: {bands['remove 0.5-4 Hz']:+.1%}",
-    )
-)
-rows.append(("window", reading["window"], ""))
-for row in rows:
-    print(f"{row[0]:>14s}  {row[1]:<32s}  {row[2]}")
-
-######################################################################
-# Then as a bar chart of the accuracy drops. The dashed line is the
-# 95th percentile of the random groups of the eye group's size, the
-# level a named group has to clear before its drop means anything.
-
-eye_size, motor_size = len(EYE_ADJACENT), len(MOTOR)
-labels = [
-    f"eye-adjacent\n({eye_size} ch)",
-    f"motor\n({motor_size} ch)",
-    f"random\n({eye_size} ch, mean)",
-    "remove\n0.5-4 Hz",
-    "keep\n8-30 Hz only",
-]
-values = [
-    occlusion["drops"]["eye-adjacent"],
-    occlusion["drops"]["motor"],
-    occlusion["random"][eye_size].mean(),
-    bands["remove 0.5-4 Hz"],
-    bands["keep 8-30 Hz only"],
-]
-colors = ["#D55E00", "#0072B2", "#999999", "#D55E00", "#0072B2"]
-
+eye_random = occlusion["random"][len(EYE_ADJACENT)]
+bars = {
+    f"eye-adjacent\n({len(EYE_ADJACENT)} ch)": occlusion["groups"]["eye-adjacent"],
+    f"motor\n({len(MOTOR)} ch)": occlusion["groups"]["motor"],
+    f"random\n({len(EYE_ADJACENT)} ch, mean)": eye_random.mean(),
+    "remove\n0.5-4 Hz": occlusion["bands"]["remove 0.5-4 Hz"],
+    "keep\n8-30 Hz only": occlusion["bands"]["keep 8-30 Hz only"],
+}
 fig, ax = plt.subplots(figsize=(7, 3.6))
-ax.bar(labels, np.array(values) * 100, color=colors)
+ax.bar(
+    list(bars),
+    100 * np.array(list(bars.values())),
+    color=["#D55E00", "#0072B2", "#999999", "#D55E00", "#0072B2"],
+)
 ax.axhline(
-    np.percentile(occlusion["random"][eye_size], 95) * 100,
+    100 * np.percentile(eye_random, 95),
     ls="--",
     color="#444",
     lw=1,
-    label=f"random {eye_size}-channel groups, 95th percentile",
+    label="random groups, 95th percentile",
 )
 ax.axhline(0, color="black", lw=0.8)
 ax.set_ylabel("Accuracy drop (points)")
 ax.set_title(
     f"Held-out subjects {test_subjects}: baseline {occlusion['baseline']:.0%}; "
-    f"weights say {reading['dominant_band']}, {reading['window']}",
+    f"weights say {reading['band']}, {reading['window']}",
     fontsize=9,
 )
 ax.legend(fontsize=8, loc="upper left")
-ax.grid(axis="y", alpha=0.3)
 fig.tight_layout()
 
 ######################################################################
@@ -521,34 +427,20 @@ fig.tight_layout()
 # filters move a short distance from where they started, so part of
 # what the weight statistic sees is the starting noise, not what
 # training put there. Rebuilding the initial network from the same seed
-# shows how much: compare the trained spatial filters with the seed's
+# shows how much: compare the trained filters with the seed's
 # initialisation and with another seed's.
 
-
-def build_eegnet(init_seed):
-    set_random_seeds(seed=init_seed, cuda=False)
-    return EEGNet(
-        n_chans=n_chans,
-        n_outputs=2,
-        n_times=n_times,
-        sfreq=sfreq,
-        final_layer_with_constraint=True,
-    ).eval()
-
-
-def cosine(a, b):
-    a, b = a.detach().flatten(), b.detach().flatten()
-    return float(a @ b / (a.norm() * b.norm()))
-
-
-init_model = build_eegnet(seed)
-other_init = build_eegnet(seed + 1)
+init_model = make_eegnet(seed)
+other_init = make_eegnet(seed + 1)
 for name in ["conv_spatial", "conv_temporal"]:
-    trained = model.get_submodule(name).weight
+    trained, own, other = (
+        m.get_submodule(name).weight.detach().flatten()
+        for m in (model, init_model, other_init)
+    )
+    cos_own = torch.nn.functional.cosine_similarity(trained, own, dim=0)
+    cos_other = torch.nn.functional.cosine_similarity(trained, other, dim=0)
     print(
-        f"{name:>22s}: cosine to its own initialisation "
-        f"{cosine(trained, init_model.get_submodule(name).weight):.2f}, "
-        f"to another seed's {cosine(trained, other_init.get_submodule(name).weight):.2f}"
+        f"{name}: cosine to own init {cos_own:.2f}, to another seed's {cos_other:.2f}"
     )
 
 ######################################################################
@@ -561,28 +453,16 @@ for name in ["conv_spatial", "conv_temporal"]:
 # On a bench of eight EEGNets with planted cues, one channel sat in the
 # top three of the plain reading for all eight models, seven of which
 # never had a cue on it; in the difference reading it stayed only in
-# the model where it was planted (see [6]_). On real decoders the difference reading agreed with
-# occlusion about as well as the plain one, so treat it as a second
-# reading to compare against, not a replacement.
+# the model where it was planted [6]_. On real decoders the difference
+# reading agreed with occlusion about as well as the plain one, so
+# treat it as a second reading to compare against, not a replacement.
 
-with torch.no_grad():
-    spatial_change = model.conv_spatial.weight - init_model.conv_spatial.weight
+spatial_change = model.conv_spatial.weight - init_model.conv_spatial.weight
 reading_delta = read_weights(
-    model, ch_names, sfreq, window_start_s=window_start_s, spatial_weight=spatial_change
+    model, ch_names, sfreq, window_start_s, spatial_weight=spatial_change
 )
-print("Top channels, trained weights:   ", [c for c, _ in reading["top_channels"]])
-print(
-    "Top channels, training difference:", [c for c, _ in reading_delta["top_channels"]]
-)
-for name, (share, uniform) in group_share(reading_delta, GROUPS).items():
-    print(f"Difference share on {name:>12s} group: {share:.3f} (uniform {uniform:.3f})")
+print_channels(reading_delta, "Training difference")
 
-######################################################################
-# This only works if the initialisation can be rebuilt. Releasing the
-# seed, or the initial checkpoint, costs nothing and lets anyone audit
-# the change that training made rather than the sum of change and
-# starting noise.
-#
 ######################################################################
 # What to do with the result
 # --------------------------
@@ -591,9 +471,11 @@ for name, (share, uniform) in group_share(reading_delta, GROUPS).items():
 # carry a *relies on* field that states the channels, band and window
 # the audit found, the method (weight statistic, occlusion on which
 # subjects), the date, whether the data check agreed with the weight
-# reading, and the initialisation seed. A decoder whose entry says
-# "F7/F8/AF7/AF8, below 4 Hz, 0-1 s after the cue" is a different product from one
-# that says "C3/C4, 8-30 Hz, 1-4 s", even at the same accuracy.
+# reading, and the initialisation seed, which costs nothing to release
+# and is what makes the difference reading possible. A decoder whose
+# entry says "F7/F8/AF7/AF8, below 4 Hz, 0-1 s after the cue" is a
+# different product from one that says "C3/C4, 8-30 Hz, 1-4 s", even at
+# the same accuracy.
 #
 # The occlusion test here is a check on the reading, not a proof of
 # generalisation. The real test is cross-dataset transfer: a decoder
@@ -626,4 +508,4 @@ for name, (share, uniform) in group_share(reading_delta, GROUPS).items():
 #        NeuroImage, 87, 96-110. DOI: 10.1016/j.neuroimage.2013.10.067
 # .. [6] Li, Y. (2026). *Reading the weights: a language model audits
 #        and repairs EEG decoders without data.* Preprint.
-#        DOI: 10.5281/zenodo.23934404
+#        DOI: 10.5281/zenodo.23934403
