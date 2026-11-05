@@ -33,7 +33,8 @@ Enhancements
   :class:`~braindecode.models.PopulationTransformer`,
   :class:`~braindecode.models.BaRISTA`, :class:`~braindecode.models.DIVER1` and
   :class:`~braindecode.models.MVPFormer` also return ``"tokens"``, the per-token
-  encoder output with the tokens of padded channels zero; DIVER1 gains
+  encoder output ``(batch, n_chans, n_tokens, dim)`` with the tokens of padded
+  channels zero; DIVER1 gains
   ``return_features`` (:gh:`1540` by `Julien Gadonneix`_).
 
 API and behavior changes

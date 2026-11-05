@@ -336,7 +336,11 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         if return_features:
             if torch.jit.is_scripting():
                 return logits
-            return {"features": pooled, "cls_token": None, "tokens": tokens}  # nosec B105
+            return {
+                "features": pooled,
+                "cls_token": None,  # nosec B105
+                "tokens": tokens,
+            }
         return logits
 
 

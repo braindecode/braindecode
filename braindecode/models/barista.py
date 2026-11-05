@@ -512,7 +512,11 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             tokens = latents.unflatten(1, (n_patches, n_chans)).transpose(1, 2)
             if mask is not None:
                 tokens = tokens.masked_fill(~mask[:, :, None, None], 0.0)
-            return {"features": features, "cls_token": None, "tokens": tokens}  # nosec B105
+            return {
+                "features": features,
+                "cls_token": None,  # nosec B105
+                "tokens": tokens,
+            }
         return self.final_layer(features)
 
 
