@@ -62,6 +62,14 @@ def test_reve_exact_names_keep_the_bank_lookup(reve_bank):
     assert torch.equal(model.default_pos, bank(["Cz", "F3", "A1"]))
 
 
+def test_reve_drop_refuses_a_mask_left_without_real_channels(reve_bank):
+    with pytest.warns(UserWarning, match="X1"):
+        model = small_reve(chs("Cz", "X1"), on_missing="drop", attention_pooling=True)
+    mask = torch.tensor([[True, True], [False, True]])  # sample 2: X1 only, dropped
+    with pytest.raises(ValueError, match="at least one real channel"):
+        model(torch.randn(2, 2, 380), ch_mask=mask)
+
+
 def test_reve_drop_reads_the_kept_channels(reve_bank):
     torch.manual_seed(0)
     with pytest.warns(UserWarning, match="X1"):
