@@ -59,6 +59,8 @@ _FIT_XFAIL = {
     "PopulationTransformer needs on fewer channels than it was built with",
     "Labram": "the loader routes no ch_names, which Labram needs on fewer than "
     "its 128 channels",
+    "MAPA": "the loader routes no per-sample sensor_indices, which MAPA needs with "
+    "ch_mask",
 }
 
 

@@ -28,6 +28,7 @@ from torch.utils._pytree import tree_flatten, tree_map_only
 
 import braindecode.functional
 from braindecode.functional import _real_dft
+from braindecode.models import MAPA
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import models_dict, models_mandatory_parameters
 from test.unit_tests.models._fixtures import _get_signal_params
@@ -614,6 +615,12 @@ _CH_MASK_EXTRAS = {
         ),
     ),
     "Labram": ("ch_names", lambda i, n: LABRAM_CHANNEL_ORDER[:n]),
+    "MAPA": (
+        "sensor_indices",
+        lambda i, n: MAPA.sensor_indices(
+            [f"L{'AB'[k % 2]}{k // 2 + 1}" for k in range(n)]
+        ),
+    ),
 }
 
 
