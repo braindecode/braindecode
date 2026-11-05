@@ -235,7 +235,11 @@ _FIXED_HEADS = {
 
 
 @pytest.mark.parametrize("name", list(_FIXED_HEADS))
-def test_ch_mask_is_refused_by_fixed_size_heads(name):
+def test_ch_mask_is_refused_by_fixed_size_heads(name, tmp_path, monkeypatch):
+    # REVE reads its position bank at construction: a local one keeps
+    # "REVE-flatten" offline (conftest marks only the "REVE" key as network).
+    (tmp_path / "reve_positions.json").write_text('{"Cz": [0.0, 0.0, 0.09]}')
+    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
     model, n_times = _FIXED_HEADS[name]()
     x = torch.randn(len(N_REAL), 3, n_times)
     mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
