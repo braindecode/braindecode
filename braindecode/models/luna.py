@@ -398,10 +398,16 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         see :func:`~braindecode.functional.check_ch_mask`: padded channels take
         no part in the patch-embedding norms, the location range and the
         channel cross-attention, so each recording gets its output alone.
+        Reconstruction (``n_outputs=0``) refuses it.
         """
         x_signal = X
         B, C, _ = x_signal.shape
         ch_mask = check_ch_mask(ch_mask, X)
+        if ch_mask is not None and self.num_classes == 0:
+            raise ValueError(
+                "ch_mask needs n_outputs > 0: the reconstruction decoder attends "
+                "across all channels."
+            )
         key_padding_mask: Optional[torch.Tensor] = None
         if ch_mask is not None:
             # Padding may hold NaN, which the patch embedding would spread.
