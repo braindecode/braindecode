@@ -15,6 +15,7 @@ from braindecode.models import (
     BaRISTA,
     BrainBERT,
     Brant,
+    CBraMod,
     EpiNT,
     MVPFormer,
     PopulationTransformer,
@@ -148,6 +149,11 @@ _FIXED_HEADS = {
                   max_channels=16, pooling="concat"),
         256,
     ),
+    "CBraMod-flatten": lambda: (
+        CBraMod(n_outputs=3, n_chans=3, n_times=400, n_layer=1, nhead=2,
+                dim_feedforward=64),
+        400,
+    ),
 }
 
 
@@ -156,10 +162,34 @@ def test_ch_mask_is_refused_by_fixed_size_heads(name):
     model, n_times = _FIXED_HEADS[name]()
     x = torch.randn(len(N_REAL), 3, n_times)
     mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
-    with pytest.raises(ValueError, match="ch_mask needs pooling='mean'"):
+    with pytest.raises(ValueError, match="ch_mask needs"):
         model(x, ch_mask=mask)
-    with pytest.raises(torch.jit.Error, match="ch_mask needs pooling='mean'"):
+    with pytest.raises(torch.jit.Error, match="ch_mask needs"):
         torch.jit.script(model)(x, ch_mask=mask)
+
+
+def test_cbramod_ch_mask_tokens_match_each_recording_alone():
+    """CBraMod's heads flatten the channels; its encoder output is masked."""
+    torch.manual_seed(0)
+    model = CBraMod(n_outputs=3, n_chans=3, n_times=400, n_layer=1, nhead=2,
+                    dim_feedforward=64, return_encoder_output=True).eval()
+    xs = [torch.randn(n_real, 400) for n_real in N_REAL]
+    mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
+    x = torch.full((len(N_REAL), 3, 400), float("nan"))
+    for i, xi in enumerate(xs):
+        x[i, : len(xi)] = xi
+    x.requires_grad_(True)
+    out = model(x, ch_mask=mask)  # (batch, n_chans, n_patches, emb_dim)
+    out.sum().backward()
+    assert torch.equal(x.grad[~mask], torch.zeros_like(x.grad[~mask]))
+    assert torch.equal(out[~mask], torch.zeros_like(out[~mask]))
+    with torch.no_grad():
+        for i, xi in enumerate(xs):
+            torch.testing.assert_close(out[i, : len(xi)], model(xi[None])[0])
+        features = model(x, ch_mask=mask, return_features=True)["features"]
+        scripted = torch.jit.script(model)(x.detach(), ch_mask=mask)
+    torch.testing.assert_close(features, out.detach())
+    torch.testing.assert_close(scripted, out.detach())
 
 
 def test_diver1_ch_mask_needs_per_sample_metadata():
