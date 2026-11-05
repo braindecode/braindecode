@@ -28,6 +28,7 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- :class:`braindecode.models.BIOT` accepts ``ch_mask``, so a batch can mix recordings with different channel counts: padded channels are masked in the linear attention and in pooling, and each recording gets the output it gets alone (:gh:`1542` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.REVE` and :class:`~braindecode.models.Labram` accept a
   ``ch_mask`` of real channels, as the iEEG foundation models of :gh:`1487`; REVE's
   classification head needs ``attention_pooling=True`` and Labram
