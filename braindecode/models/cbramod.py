@@ -316,7 +316,12 @@ class CBraMod(EEGModuleMixin, nn.Module):
         if ch_mask is not None:
             out = out.masked_fill(~ch_mask[:, :, None, None], 0.0)
         if return_features:
-            features: Dict[str, Optional[Tensor]] = {"features": out, "cls_token": None}
+            # "tokens": the same per-token output, under the ch_mask contract key.
+            features: Dict[str, Optional[Tensor]] = {
+                "features": out,
+                "cls_token": None,
+                "tokens": out,
+            }
             return features
         return self.final_layer(out)
 
