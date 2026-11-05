@@ -93,31 +93,7 @@ _CASES = {
 }
 
 
-def _padded_case(name):
-    """Model, NaN-padded batch, its mask, the recordings alone and their kwargs."""
-    torch.manual_seed(0)
-    model, n_times, per_recording = _CASES[name]()
-    model.eval()
-    xs = [torch.randn(n_real, n_times) for n_real in N_REAL]
-    mask = torch.arange(max(N_REAL)) < torch.tensor(N_REAL)[:, None]
-    x = torch.full((len(N_REAL), max(N_REAL), n_times), float("nan"))
-    for i, xi in enumerate(xs):
-        x[i, : len(xi)] = xi
-    batch_kwargs, alone_kwargs = {}, [{} for _ in N_REAL]
-    if per_recording is not None:
-        key, build, batched = per_recording
-        alone = [build(i, n_real) for i, n_real in enumerate(N_REAL)]
-        padded = torch.zeros((len(N_REAL), max(N_REAL)) + alone[0].shape[1:])
-        for i, value in enumerate(alone):
-            padded[i, : len(value)] = value
-        batch_kwargs = {key: padded.to(alone[0].dtype)}
-        alone_kwargs = [{key: value[None] if batched else value} for value in alone]
-    return model, x, mask, xs, batch_kwargs, alone_kwargs
-
-
-@pytest.mark.parametrize("name", list(_CASES))
-def test_ch_mask_matches_each_recording_alone(name):
-    model, x, mask, xs, batch_kwargs, alone_kwargs = _padded_case(name)
+def _assert_matches_alone(model, x, mask, xs, batch_kwargs, alone_kwargs):
     x.requires_grad_(True)
     out = model(x, ch_mask=mask, **batch_kwargs)
     out.sum().backward()
@@ -134,6 +110,37 @@ def test_ch_mask_matches_each_recording_alone(name):
     torch.testing.assert_close(scripted, expected)
 
 
+def _padded_batch(n_times):
+    xs = [torch.randn(n_real, n_times) for n_real in N_REAL]
+    mask = torch.arange(max(N_REAL)) < torch.tensor(N_REAL)[:, None]
+    x = torch.full((len(N_REAL), max(N_REAL), n_times), float("nan"))
+    for i, xi in enumerate(xs):
+        x[i, : len(xi)] = xi
+    return x, mask, xs
+
+
+def _padded_case(name):
+    """Model, NaN-padded batch, its mask, the recordings alone and their kwargs."""
+    torch.manual_seed(0)
+    model, n_times, per_recording = _CASES[name]()
+    model.eval()
+    x, mask, xs = _padded_batch(n_times)
+    batch_kwargs, alone_kwargs = {}, [{} for _ in N_REAL]
+    if per_recording is not None:
+        key, build, batched = per_recording
+        alone = [build(i, n_real) for i, n_real in enumerate(N_REAL)]
+        padded = torch.zeros((len(N_REAL), max(N_REAL)) + alone[0].shape[1:])
+        for i, value in enumerate(alone):
+            padded[i, : len(value)] = value
+        batch_kwargs = {key: padded.to(alone[0].dtype)}
+        alone_kwargs = [{key: value[None] if batched else value} for value in alone]
+    return model, x, mask, xs, batch_kwargs, alone_kwargs
+
+
+@pytest.mark.parametrize("name", list(_CASES))
+def test_ch_mask_matches_each_recording_alone(name):
+    _assert_matches_alone(*_padded_case(name))
+
 
 @pytest.mark.parametrize("name", list(_CASES))
 def test_ch_mask_tokens_match_each_recording_alone(name):
@@ -149,6 +156,7 @@ def test_ch_mask_tokens_match_each_recording_alone(name):
     assert torch.equal(tokens[~mask], torch.zeros_like(tokens[~mask]))
     if isinstance(scripted, dict):  # most models ignore return_features when scripted
         torch.testing.assert_close(scripted["tokens"], tokens)
+
 
 # Heads tied to the construction-time channels do not take a ch_mask.
 _FIXED_HEADS = {

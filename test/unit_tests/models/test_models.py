@@ -4270,6 +4270,32 @@ def test_brant_input_length_must_match():
         model(torch.randn(1, 2, 1500))
 
 
+def test_brant_from_pretrained_at_a_shorter_n_times(tmp_path):
+    pytest.importorskip("huggingface_hub")
+    small = dict(
+        patch_size=32,
+        embed_dim=16,
+        ffn_dim=32,
+        temporal_n_layers=1,
+        spatial_n_layers=1,
+        n_heads=2,
+    )
+    checkpoint = Brant(n_chans=2, n_outputs=2, n_times=128, **small)
+    checkpoint.save_pretrained(tmp_path)
+
+    model = Brant.from_pretrained(tmp_path, n_times=64).eval()
+
+    positions = "temporal_encoder.input_embedding.positional_encoding"
+    saved = checkpoint.state_dict()
+    for k, v in model.state_dict().items():
+        expected = saved[k][:2] if k == positions else saved[k]
+        torch.testing.assert_close(v, expected, msg=k)
+    with torch.no_grad():
+        assert model(torch.randn(1, 2, 64)).shape == (1, 2)
+    with pytest.raises(ValueError, match="holds 4 temporal positions"):
+        Brant.from_pretrained(tmp_path, n_times=160)
+
+
 def test_brant_channel_tokens_keep_channel_order():
     """Pin the per-channel token layout downstream code relies on.
 

@@ -382,10 +382,31 @@ class _FakeNet:
     """Minimal stand-in for a skorch net used by ThrowAwayIndexLoader."""
 
 
-def _route(batch, is_regression=False):
+class _PosMaskModule(torch.nn.Module):
+    def forward(self, x, pos=None, ch_mask=None):
+        return x
+
+
+class _ReveLike(torch.nn.Module):
+    def forward(self, eeg, pos=None, return_features=False):
+        return eeg
+
+
+class _MaskOnly(torch.nn.Module):
+    def forward(self, X, ch_mask=None):
+        return X
+
+
+class _AnyKwargs(torch.nn.Module):
+    def forward(self, signal, **kwargs):
+        return signal
+
+
+def _route(batch, is_regression=False, module=None):
     from braindecode.util import ThrowAwayIndexLoader
 
     net = _FakeNet()
+    net.module_ = _PosMaskModule() if module is None else module
     loader = ThrowAwayIndexLoader(net, iter([batch]), is_regression=is_regression)
     (x, y), = list(loader)
     return x, y, net
@@ -486,6 +507,31 @@ def test_throwaway_index_loader_routes_pos_and_mask():
     # regression casts y to float even on the dict path
     _, yy, _ = _route((X, torch.randn(B), crop, pos, mask), is_regression=True)
     assert yy.dtype == torch.float32
+
+
+def test_throwaway_index_loader_routes_by_forward_signature():
+    """The signal goes to the first forward parameter; extras only by name."""
+    B, C, T = 4, 10, 200
+    X = torch.randn(B, C, T).double()
+    y = torch.randint(0, 2, (B,))
+    crop = [torch.zeros(B), torch.zeros(B), torch.full((B,), T)]
+    pos = torch.randn(B, C, 3)
+    mask = torch.ones(B, C, dtype=torch.bool)
+
+    x, _, _ = _route((X, y, crop, pos), module=_ReveLike())
+    assert set(x) == {"eeg", "pos"} and x["eeg"].dtype == torch.float32
+    x, _, _ = _route((X, y, crop, mask), module=_MaskOnly())
+    assert set(x) == {"X", "ch_mask"}
+    x, _, _ = _route((X, y, crop, pos, mask), module=_AnyKwargs())
+    assert set(x) == {"signal", "pos", "ch_mask"}
+
+    with pytest.raises(ValueError, match=r"_ReveLike.forward takes no ch_mask: "
+                       r"this model needs a constant channel count; do not use "
+                       r"pad_channels_collate\."):
+        _route((X, y, crop, pos, mask), module=_ReveLike())
+    with pytest.raises(ValueError, match=r"_MaskOnly.forward takes no pos: "
+                       r"disable channel positions with set_return_ch_pos\(False\)"):
+        _route((X, y, crop, pos, mask), module=_MaskOnly())
 
 
 def test_resolve_montage_name():

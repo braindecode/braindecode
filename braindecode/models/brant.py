@@ -133,6 +133,9 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
                "braindecode/brant-pretrained", n_outputs=2
            )
 
+       A shorter ``n_times`` keeps the checkpoint's leading temporal
+       positions.
+
     .. versionadded:: 2.0
 
     Parameters
@@ -285,6 +288,25 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         head = nn.Linear(self.final_layer.in_features, n_outputs)
         self.final_layer = head.to(self.final_layer.weight)
 
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Also accept a checkpoint saved at a longer ``n_times``.
+
+        Its learned temporal positions are cropped to this model's
+        ``seq_len`` leading ones.
+        """
+        key = "temporal_encoder.input_embedding.positional_encoding"
+        positions = state_dict.get(key)
+        if positions is not None and len(positions) < self.seq_len:
+            raise ValueError(
+                f"The checkpoint holds {len(positions)} temporal positions, but "
+                f"n_times={self.n_times} spans {self.seq_len} patches of "
+                f"{self.patch_size} samples; use n_times <= "
+                f"{len(positions) * self.patch_size}."
+            )
+        if positions is not None:
+            state_dict = {**state_dict, key: positions[: self.seq_len]}
+        return super().load_state_dict(state_dict, *args, **kwargs)
+
     def forward(
         self,
         x: torch.Tensor,
@@ -350,7 +372,7 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 return logits
             if mask is not None:
                 emb = emb.masked_fill(~mask[:, :, None, None], 0.0)
-            return {"features": pooled, "cls_token": None, "tokens": emb}  # nosec B105
+            return {"features": pooled, "cls_token": None, "tokens": emb}
         return logits
 
 
