@@ -51,9 +51,23 @@ Bug fixes
   a shorter ``n_times``: the learned temporal positions keep the checkpoint's
   leading ones instead of raising a size mismatch
   (:gh:`1537` by `Julien Gadonneix`_).
+- :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor`
+  route the batches of :func:`braindecode.datasets.pad_channels_collate` and
+  ``set_return_ch_pos`` by the model's ``forward`` signature: the signal goes to
+  its first argument (``eeg`` of :class:`braindecode.models.REVE`, ``X`` of
+  :class:`~braindecode.models.LUNA`), and ``pos`` and ``ch_mask`` only to a
+  ``forward`` that takes them. A model without them now raises a clear
+  ``ValueError`` instead of a ``TypeError`` deep in skorch
+  (:gh:`1545` by `Bruno Aristimunha`_).
 
 Code health
 ============
+
+- ``test/unit_tests/training/test_ch_mask_training.py`` fits every model of
+  the ``ch_mask`` tests through :class:`braindecode.EEGClassifier` with
+  :func:`braindecode.datasets.pad_channels_collate`, checks that each recording
+  keeps the predictions and gradients it gets alone, and fails when a model
+  takes ``ch_mask`` without a test case (:gh:`1545` by `Bruno Aristimunha`_).
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (by `Bruno Aristimunha`_).
