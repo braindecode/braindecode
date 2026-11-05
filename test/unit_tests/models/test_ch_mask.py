@@ -11,6 +11,7 @@ import pytest
 import torch
 
 from braindecode.models import (
+    BIOT,
     DIVER1,
     BaRISTA,
     BrainBERT,
@@ -88,6 +89,12 @@ _CASES = {
                   n_layers=1, n_heads=4, n_head_kv=2, d_inner=64, local_window=2,
                   max_channels=16),
         256,
+        None,
+    ),
+    "BIOT": lambda: (
+        BIOT(n_chans=3, n_outputs=3, n_times=400, sfreq=200, embed_dim=32,
+             num_heads=2, num_layers=1),
+        400,
         None,
     ),
 }
