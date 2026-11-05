@@ -20,9 +20,9 @@ cannot leave the hospital, a model card that describes the preprocessing
 only approximately. Takehi et al. (2026) [2]_ showed that language models can
 read raw weights well enough to say what a small network was trained to
 do, and listed "auditing without data" as an open direction. This example
-takes that route on an EEG decoder: it reads the weights first, with a
-statistic that needs no language model, and then confirms the reading with
-one occlusion test on held-out data.
+takes that route on an EEG decoder: it reads the weights with a simple
+path-weighted statistic, and then confirms the reading with one occlusion
+test on held-out data.
 
 .. topic:: What the audit looks for
 
@@ -49,8 +49,6 @@ one occlusion test on held-out data.
 # Authors: Yiheng Li <yihengl4@asu.edu>
 #
 # License: BSD (3-clause)
-
-import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -194,65 +192,8 @@ print(f"Held-out accuracy on subjects {test_subjects}: {held_out_accuracy:.1%}")
 model = clf.module_.eval()
 
 ######################################################################
-# Dump the weights as labelled text
-# ---------------------------------
-#
-# Everything that follows works from the trained weights alone. The
-# first step is to write them out in a form a reader (human, script or
-# language model) can use without the model class: one line per row,
-# with the spatial filters labelled by electrode name and the temporal
-# kernels written as FIR taps. Batch-norm statistics are included
-# because they set the sign and scale of each feature.
-
-
-def weights_to_text(model, ch_names, sfreq):
-    """Write every tensor of ``model`` as labelled text and return it.
-
-    Spatial filters (shape ``(n_filters, 1, n_chans, 1)``) get one row per
-    filter with ``electrode=weight`` pairs; temporal kernels (shape
-    ``(n_kernels, 1, 1, n_taps)``) get one row per kernel; every other
-    tensor is written row by row.
-    """
-    n_chans = len(ch_names)
-    lines = [
-        (
-            f"# {model.__class__.__name__}: input (n_channels={n_chans}, n_times) "
-            f"at {sfreq:g} Hz, output = class scores"
-        ),
-        "# channel order: " + " ".join(ch_names),
-    ]
-    for name, module in model.named_modules():
-        for attr in ("weight", "bias", "running_mean", "running_var"):
-            value = getattr(module, attr, None)
-            if not torch.is_tensor(value):
-                continue
-            array = value.detach().cpu().numpy()
-            lines.append(f"## {name}.{attr} shape={tuple(array.shape)}")
-            if array.ndim == 4 and array.shape[2] == n_chans and array.shape[3] == 1:
-                for i, row in enumerate(array[:, 0, :, 0]):
-                    pairs = " ".join(f"{ch}={w:+.3f}" for ch, w in zip(ch_names, row))
-                    lines.append(f"spatial_filter{i:02d} {pairs}")
-            elif array.ndim == 4 and array.shape[1] == 1 and array.shape[2] == 1:
-                lines.append(f"# FIR taps, {array.shape[3] / sfreq * 1000:.0f} ms long")
-                for i, row in enumerate(array[:, 0, 0, :]):
-                    lines.append(
-                        f"temporal_kernel{i:02d} " + " ".join(f"{v:+.4f}" for v in row)
-                    )
-            elif array.ndim <= 1:
-                lines.append(" ".join(f"{v:+.4f}" for v in np.atleast_1d(array)))
-            else:
-                for i, row in enumerate(array.reshape(array.shape[0], -1)):
-                    lines.append(f"row{i:02d} " + " ".join(f"{v:+.4f}" for v in row))
-    return "\n".join(lines) + "\n"
-
-
-weights_text = weights_to_text(model, ch_names, sfreq)
-print(f"{len(weights_text.splitlines())} lines, {len(weights_text)} characters")
-print("\n".join(line[:100] for line in weights_text.splitlines()[:12]))
-
-######################################################################
-# A statistics reader: no language model needed
-# ---------------------------------------------
+# Reading the weights
+# -------------------
 #
 # The reader below answers three questions from the weights with
 # path-weighted statistics, following the EEGNet forward path backwards:
@@ -414,62 +355,6 @@ print(
 print(f"Time window with most classifier contrast: {reading['window']}")
 for name, (share, uniform) in group_share(reading, GROUPS).items():
     print(f"Reader's share on {name:>12s} group: {share:.3f} (uniform {uniform:.3f})")
-
-######################################################################
-# Optional: a language-model reader
-# ---------------------------------
-#
-# A language model can read the same text and add what the statistic
-# cannot: the *family* of the signal (brain rhythm, eye movement, evoked
-# potential, drift) and the class rule, by reasoning over the sign of
-# the spatial weights and the shape of the kernels. Takehi et al. (2026)
-# report this kind of reading on small networks. On planted
-# single-channel cues the statistic above localises channel, band and
-# window as well as a language model does; the language model's value
-# is the interpretation, and on dense filters like the ones above it can
-# also use the sign pattern across lateral electrode pairs (F7 against
-# F8, AF7 against AF8), which a magnitude statistic throws away.
-#
-# The prompt and the answer format are fixed so that the answer can be
-# scored against the data check below. The call is made only when
-# ``BRAINDECODE_AUDIT_LLM_KEY`` is set, so the docs build never makes a
-# network request, and it goes through a function you fill in with your
-# provider's client; no SDK is imported here.
-
-AUDIT_PROMPT = f"""You are auditing an EEG decoder from its weights alone.
-Architecture: EEGNet (temporal conv -> depthwise spatial conv -> separable
-conv -> linear classifier). Input: {n_chans} channels at {sfreq:g} Hz,
-{n_times} samples per trial from {window_start_s:+.0f} s to
-{window_start_s + n_times / sfreq:+.0f} s around the cue, high-passed at
-0.5 Hz, in microvolts. Task: imagined left hand (class 0) versus right
-hand (class 1). The cue appeared on the left or right of the screen.
-
-Analyse the weights below with code if you like, but do not run the
-network on any input. Say which electrodes, which frequency band and which
-time window the decoder relies on, which signal family that points to, and
-what marks the right-hand class. End with exactly one line of JSON:
-{{"top_channels": [...], "band_hz": [low, high], "window_s": [start, stop],
-"signal": "brain rhythm | eye movement | evoked potential | other",
-"right_hand_rule": "...", "confidence": 0.0-1.0}}
-
-WEIGHTS
-"""
-
-
-def ask_language_model(prompt, api_key):
-    """Send ``prompt`` to a language model and return its reply as text.
-
-    Replace the body with your provider's call. Keep the model from
-    running the network: give it the text, not the checkpoint.
-    """
-    raise NotImplementedError("Fill in your provider's API call here.")
-
-
-api_key = os.environ.get("BRAINDECODE_AUDIT_LLM_KEY")
-if api_key is None:
-    print("Language-model reader skipped: BRAINDECODE_AUDIT_LLM_KEY is not set.")
-else:
-    print(ask_language_model(AUDIT_PROMPT + weights_text, api_key))
 
 ######################################################################
 # Confirm on data: one occlusion test
@@ -704,10 +589,10 @@ for name, (share, uniform) in group_share(reading_delta, GROUPS).items():
 #
 # Record it with the model. A model card for a released decoder should
 # carry a *relies on* field that states the channels, band and window
-# the audit found, the method (weight statistic, language-model read,
-# occlusion on which subjects), the date, whether the data check
-# agreed with the weight reading, and the initialisation seed. A decoder whose entry says "F7/F8/AF7/
-# AF8, below 4 Hz, 0-1 s after the cue" is a different product from one
+# the audit found, the method (weight statistic, occlusion on which
+# subjects), the date, whether the data check agreed with the weight
+# reading, and the initialisation seed. A decoder whose entry says
+# "F7/F8/AF7/AF8, below 4 Hz, 0-1 s after the cue" is a different product from one
 # that says "C3/C4, 8-30 Hz, 1-4 s", even at the same accuracy.
 #
 # The occlusion test here is a check on the reading, not a proof of
