@@ -63,6 +63,7 @@ Bug fixes
 Code health
 ============
 
+- Codacy runs Bandit from a root ``bandit.yml`` that skips B105, which flagged every ``"cls_token"`` key of the foundation-model feature dicts as a hardcoded password, and B101, the test ``assert`` statements (:gh:`1546` by `Bruno Aristimunha`_).
 - Every registered model whose ``forward`` takes ``ch_mask`` is checked with no
   per-model test case, like the other cross-model contracts: each recording of a
   NaN-padded batch keeps the output and gradients it gets alone, padded inputs
