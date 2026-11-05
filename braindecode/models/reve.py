@@ -18,6 +18,7 @@ from mne.datasets.utils import _get_path
 from torch import nn
 
 from braindecode.functional import (
+    check_ch_mask,
     pad_or_crop_to_patches,
     patch_count,
     scaled_dot_product_attention,
@@ -467,6 +468,7 @@ class REVE(EEGModuleMixin, nn.Module):
         pos: Optional[torch.Tensor] = None,
         return_output: bool = False,
         return_features: bool = False,
+        ch_mask: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, List[torch.Tensor], Dict[str, Optional[torch.Tensor]]]:
         """
         Forward pass of the model.
@@ -491,6 +493,11 @@ class REVE(EEGModuleMixin, nn.Module):
         return_features : bool, optional
             If True, returns a dict ``{"features": Tensor, "cls_token": None}``
             with encoder features before the final layer. Default is False.
+        ch_mask : torch.Tensor, optional
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Padded channels affect no
+            pooled output; their positions only need to be finite (e.g. 0). The
+            classification head needs ``attention_pooling=True``.
 
         Returns
         -------
@@ -505,9 +512,24 @@ class REVE(EEGModuleMixin, nn.Module):
                 "return_output and return_features are mutually exclusive."
             )
 
+        mask = check_ch_mask(ch_mask, eeg)
+        if (
+            mask is not None
+            and not self.use_attention_pooling
+            and not (return_output or return_features)
+        ):
+            raise ValueError(
+                "ch_mask needs attention_pooling=True: the flattened head is tied "
+                "to the channels."
+            )
         channel_index = self.channel_index
         if pos is None and channel_index is not None:
             eeg = eeg.index_select(1, channel_index.to(eeg.device))
+            if mask is not None:
+                mask = mask.index_select(1, channel_index.to(eeg.device))
+        if mask is not None:
+            # Padding may hold NaN, which the patch embedding would spread.
+            eeg = eeg.masked_fill(~mask[:, :, None], 0.0)
         step = self.patch_size - self.patch_overlap
         # Right zero-pad (or crop) so the overlapping patches tile the window;
         # a tiled window is passed through untouched.
@@ -522,6 +544,13 @@ class REVE(EEGModuleMixin, nn.Module):
                 )
             # One copy for the whole batch: the embedding below broadcasts.
             pos = self.default_pos.unsqueeze(0).to(eeg.device)
+        token_mask: Optional[torch.Tensor] = None
+        attn_mask: Optional[torch.Tensor] = None
+        if mask is not None:
+            pos = pos.masked_fill(~mask[:, :, None], 0.0)
+            # Tokens are (channel, patch), channel outermost.
+            token_mask = mask.repeat_interleave(n_patches, dim=1)
+            attn_mask = token_mask[:, None, None, :]
 
         pos = FourierEmb4D.add_time_patch(pos, n_patches)
         # Positions stay in float32 for the Fourier features; the embedding
@@ -537,7 +566,7 @@ class REVE(EEGModuleMixin, nn.Module):
         # (batch, channels, n_patches, embed_dim) -> (batch, channels * n_patches, embed_dim)
         # This creates a sequence of tokens where each token represents one patch from one channel
         x = patch_embeddings.flatten(1, 2) + pos_embed
-        encoded = self.transformer(x, return_output)
+        encoded = self.transformer(x, return_output, attn_mask)
 
         if not isinstance(encoded, torch.Tensor):  # return_output: one per layer
             return encoded
@@ -552,12 +581,14 @@ class REVE(EEGModuleMixin, nn.Module):
             return out
 
         if self.use_attention_pooling:
-            x = self._attention_pooling(x)
+            x = self._attention_pooling(x, token_mask)
 
         x = self.final_layer(x)
         return x
 
-    def _attention_pooling(self, x: torch.Tensor) -> torch.Tensor:
+    def _attention_pooling(
+        self, x: torch.Tensor, token_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """Apply attention pooling on the sequence dimension of x.
 
         Parameters
@@ -566,6 +597,9 @@ class REVE(EEGModuleMixin, nn.Module):
             Input tensor of shape (B, C, S, E), where B is the batch size,
             C is the number of channels, S is the sequence length,
             and E is the embedding dimension. Typically the output from the transformer.
+        token_mask : torch.Tensor, optional
+            ``(B, C*S)`` boolean mask of the tokens that take part, ``True`` for
+            real ones.
 
         Returns
         -------
@@ -581,6 +615,10 @@ class REVE(EEGModuleMixin, nn.Module):
         attention_scores = torch.matmul(query_output, x.transpose(-1, -2)) / (
             self.embed_dim**0.5
         )  # (B, 1, C*S)
+        if token_mask is not None:
+            attention_scores = attention_scores.masked_fill(
+                ~token_mask[:, None, :], float("-inf")
+            )
         attention_weights = torch.softmax(attention_scores, dim=-1)  # (B, 1, C*S)
         out = torch.matmul(attention_weights, x).squeeze(1)  # (B, E)
         return out
@@ -638,7 +676,7 @@ class Attention(nn.Module):
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
         self.to_out = nn.Linear(inner_dim, dim, bias=False)
 
-    def forward(self, x):
+    def forward(self, x, attn_mask: Optional[torch.Tensor] = None):
         x = self.norm(x)
         q, k, v = self.to_qkv(x).chunk(3, dim=-1)
         # (batch, seq, heads * dim) -> (batch, heads, seq, dim), and back
@@ -646,7 +684,9 @@ class Attention(nn.Module):
         k = k.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         v = v.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         # ~700-token sequences: the fused kernel also beats lazy mode's graph.
-        out = scaled_dot_product_attention(q, k, v, fused_in_lazy=True)
+        out = scaled_dot_product_attention(
+            q, k, v, attn_mask=attn_mask, fused_in_lazy=True
+        )
         return self.to_out(out.transpose(1, 2).flatten(2))
 
 
@@ -679,11 +719,14 @@ class TransformerBackbone(nn.Module):
             )
 
     def forward(
-        self, x, return_out_layers: bool = False
+        self,
+        x,
+        return_out_layers: bool = False,
+        attn_mask: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, List[torch.Tensor]]:
         out_layers = [x] if return_out_layers else []
         for layer in self.layers:  # (attention, feed-forward)
-            x = layer[0](x) + x
+            x = layer[0](x, attn_mask) + x
             x = layer[1](x) + x
             if return_out_layers:
                 out_layers.append(x)

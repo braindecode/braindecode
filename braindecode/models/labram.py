@@ -16,7 +16,13 @@ import torch.nn as nn
 from einops.layers.torch import Rearrange
 from torch.nn.init import trunc_normal_
 
-from braindecode.functional import init_weights_, rescale_parameter
+from braindecode.functional import (
+    check_ch_mask,
+    init_weights_,
+    masked_group_norm,
+    masked_mean,
+    rescale_parameter,
+)
 from braindecode.functional.attention import _hpu_eager_fused_sdpa
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import MLP, DropPath
@@ -636,6 +642,7 @@ class Labram(EEGModuleMixin, nn.Module):
         input_chans,
         return_patch_tokens: bool = False,
         return_all_tokens: bool = False,
+        ch_mask: Optional[torch.Tensor] = None,
     ):
         """
         Forward the features of the model.
@@ -650,18 +657,37 @@ class Labram(EEGModuleMixin, nn.Module):
             Whether to return the patch tokens.
         return_all_tokens : bool
             Whether to return all the tokens.
+        ch_mask : torch.Tensor, optional
+            ``(batch, n_chans)`` boolean mask of real channels, already checked.
 
         Returns
         -------
         x : torch.Tensor
             The output of the model.
         """
-        batch_size, n_input_chans, _ = x.shape
+        batch_size, n_input_chans = x.shape[0], x.shape[1]
+        token_mask: Optional[torch.Tensor] = None
+        key_mask: Optional[torch.Tensor] = None
+        if ch_mask is not None:
+            # Padding may hold NaN, which the patch embedding would spread.
+            x = x.masked_fill(
+                ~ch_mask.reshape(list(ch_mask.shape) + [1] * (x.dim() - 2)), 0.0
+            )
+            # Tokens are (channel, patch), channel outermost; [CLS] is real.
+            token_mask = ch_mask.repeat_interleave(self.patch_embed[0].n_patchs, dim=1)
+            key_mask = torch.cat(
+                [token_mask.new_ones(batch_size, 1), token_mask], dim=1
+            )
 
         if self.neural_tokenizer:
             # For neural tokenizer: input is (batch, n_chans, n_times)
             # patch_embed returns (batch, n_chans, emb_dim)
-            x = self.patch_embed(x)
+            for layer in self.patch_embed:
+                # Not isinstance: TorchScript misses renamed (mangled) module types.
+                if hasattr(layer, "norm1"):
+                    x = layer(x, ch_mask)
+                else:
+                    x = layer(x)
             # x shape: (batch, n_chans, emb_dim)
             n_patch = n_input_chans  # Use actual input channels, not self.n_chans
             temporal = self.embed_dim
@@ -730,7 +756,7 @@ class Labram(EEGModuleMixin, nn.Module):
         x = self.pos_drop(x)
 
         for blk in self.blocks:
-            out = blk(x)
+            out = blk(x, key_mask=key_mask)
             assert isinstance(out, torch.Tensor)  # narrows the Union for TorchScript
             x = out
 
@@ -741,7 +767,7 @@ class Labram(EEGModuleMixin, nn.Module):
             tokens = x[:, 1:, :]
             if return_patch_tokens:
                 return self.fc_norm(tokens)
-            return self.fc_norm(tokens.mean(1))
+            return self.fc_norm(masked_mean(tokens, token_mask, [1]))
         else:
             if return_all_tokens:
                 return x
@@ -756,6 +782,7 @@ class Labram(EEGModuleMixin, nn.Module):
         return_all_tokens: bool = False,
         return_features: bool = False,
         ch_names: Optional[List[str]] = None,
+        ch_mask: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
         """
         Forward the input EEG data through the model.
@@ -782,12 +809,22 @@ class Labram(EEGModuleMixin, nn.Module):
             a :class:`ValueError` is raised. Only honored when
             ``neural_tokenizer=True``; in decoder mode the position
             embedding is sequential and ``ch_names`` has no effect.
+        ch_mask : torch.Tensor, optional
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Padded channels affect no
+            pooled output. Needs ``neural_tokenizer=True``.
 
         Returns
         -------
         torch.Tensor or dict
             The output of the model with dimensions (batch, n_outputs)
         """
+        mask = check_ch_mask(ch_mask, x)
+        if mask is not None and not self.neural_tokenizer:
+            raise ValueError(
+                "ch_mask needs neural_tokenizer=True: the decoder averages the "
+                "channels into each token."
+            )
         n_canonical = len(self._canonical_index)  # len(LABRAM_CHANNEL_ORDER)
         if ch_names is None:
             if x.shape[1] != n_canonical:
@@ -821,7 +858,7 @@ class Labram(EEGModuleMixin, nn.Module):
 
         if return_features:
             x = self.forward_features(
-                x, input_chans=input_chans, return_all_tokens=True
+                x, input_chans=input_chans, return_all_tokens=True, ch_mask=mask
             )
             out: Dict[str, torch.Tensor] = {
                 "features": x[:, 1:, :],
@@ -834,6 +871,7 @@ class Labram(EEGModuleMixin, nn.Module):
             input_chans=input_chans,
             return_patch_tokens=return_patch_tokens,
             return_all_tokens=return_all_tokens,
+            ch_mask=mask,
         )
         x = self.final_layer(x)
         return x
@@ -1355,6 +1393,7 @@ class _Attention(nn.Module):
         x: torch.Tensor,
         return_attention: bool = False,
         return_qkv: bool = False,
+        key_mask: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Apply the attention mechanism to the input tensor.
@@ -1368,6 +1407,8 @@ class _Attention(nn.Module):
         return_qkv: bool (default=False)
             If True, return the query, key, and value tensors together with
             the output tensor.
+        key_mask: torch.Tensor, optional
+            (Batch, N) boolean mask of the keys that take part.
         Returns:
         --------
         x: torch.Tensor
@@ -1410,6 +1451,11 @@ class _Attention(nn.Module):
             attn_mask = (
                 relative_position_bias.permute(2, 0, 1).contiguous().unsqueeze(0)
             )  # 1, nH, Wh*Ww, Wh*Ww
+        if key_mask is not None:
+            key_bias = torch.zeros(
+                key_mask.shape, dtype=q.dtype, device=q.device
+            ).masked_fill(~key_mask, float("-inf"))[:, None, None, :]
+            attn_mask = key_bias if attn_mask is None else attn_mask + key_bias
 
         # Fused kernel, same math. Not with attention dropout in training (it
         # would draw other masks). On Gaudi, torch's SDPA trains ~12 % slower
@@ -1549,7 +1595,11 @@ class _WindowsAttentionBlock(nn.Module):
             self.gamma_1, self.gamma_2 = None, None
 
     def forward(
-        self, x, return_attention: bool = False, return_qkv: bool = False
+        self,
+        x,
+        return_attention: bool = False,
+        return_qkv: bool = False,
+        key_mask: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Apply the attention mechanism to the input tensor.
@@ -1562,6 +1612,8 @@ class _WindowsAttentionBlock(nn.Module):
         return_qkv: bool (default=False)
             If True, return the query, key, and value tensors together with
             the output tensor.
+        key_mask: torch.Tensor, optional
+            (Batch, N) boolean mask of the keys that take part.
 
         Returns
         -------
@@ -1570,16 +1622,16 @@ class _WindowsAttentionBlock(nn.Module):
         """
 
         if return_attention:
-            return self.attn(self.norm1(x), return_attention=True)
+            return self.attn(self.norm1(x), return_attention=True, key_mask=key_mask)
         if return_qkv:
-            out = self.attn(self.norm1(x), return_qkv=return_qkv)
+            out = self.attn(self.norm1(x), return_qkv=return_qkv, key_mask=key_mask)
             assert isinstance(out, tuple)  # narrows the Union for TorchScript
             y, qkv = out
             x = x + self.drop_path(self.gamma_1 * y)
             x = x + self.drop_path(self.gamma_2 * self.mlp(self.norm2(x)))
             return x, qkv
 
-        y = self.attn(self.norm1(x))
+        y = self.attn(self.norm1(x), key_mask=key_mask)
         assert isinstance(y, torch.Tensor)  # narrows the Union for TorchScript
         if self.gamma_1 is None:
             x = x + self.drop_path(y)
@@ -1678,7 +1730,7 @@ class _TemporalConv(nn.Module):
 
         self.transpose_temporal_channel = Rearrange("Batch C NA T -> Batch NA (T C)")
 
-    def forward(self, x):
+    def forward(self, x, ch_mask: Optional[torch.Tensor] = None):
         """
         Apply 3 steps of 2D convolution, GELU activation function,
         and GroupNorm.
@@ -1687,15 +1739,32 @@ class _TemporalConv(nn.Module):
         -----------
         x: torch.Tensor
             Input tensor of shape (Batch, Channels, n_patchs, size_patch).
+        ch_mask: torch.Tensor, optional
+            (Batch, Channels) boolean mask of real channels; padded channels
+            then take no part in the GroupNorm statistics.
 
         Returns:
         --------
         x: torch.Tensor
             Output tensor of shape (Batch, NA, Temporal Channel).
         """
+        row_mask: Optional[torch.Tensor] = None
+        if ch_mask is not None:
+            # Flattened rows are (chs npat), channel outermost.
+            row_mask = ch_mask.repeat_interleave(x.shape[2], dim=1)
         x = self.channel_patch_flatten(x)
-        x = self.act_layer_1(self.norm1(self.conv1(x)))
-        x = self.act_layer_2(self.norm2(self.conv2(x)))
-        x = self.act_layer_3(self.norm3(self.conv3(x)))
+        x = self.conv1(x)
+        x = masked_group_norm(
+            x, self.norm1.num_groups, row_mask, self.norm1.weight, self.norm1.bias
+        )
+        x = self.conv2(self.act_layer_1(x))
+        x = masked_group_norm(
+            x, self.norm2.num_groups, row_mask, self.norm2.weight, self.norm2.bias
+        )
+        x = self.conv3(self.act_layer_2(x))
+        x = masked_group_norm(
+            x, self.norm3.num_groups, row_mask, self.norm3.weight, self.norm3.bias
+        )
+        x = self.act_layer_3(x)
         x = self.transpose_temporal_channel(x)
         return x
