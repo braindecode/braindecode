@@ -63,11 +63,14 @@ Bug fixes
 Code health
 ============
 
-- ``test/unit_tests/training/test_ch_mask_training.py`` fits every model of
-  the ``ch_mask`` tests through :class:`braindecode.EEGClassifier` with
-  :func:`braindecode.datasets.pad_channels_collate`, checks that each recording
-  keeps the predictions and gradients it gets alone, and fails when a model
-  takes ``ch_mask`` without a test case (:gh:`1545` by `Bruno Aristimunha`_).
+- Every registered model whose ``forward`` takes ``ch_mask`` is checked with no
+  per-model test case, like the other cross-model contracts: each recording of a
+  NaN-padded batch keeps the output and gradients it gets alone, padded inputs
+  get no gradient and padded ``tokens`` are zero, also when the model is fit
+  through :class:`braindecode.EEGClassifier` with
+  :func:`braindecode.datasets.pad_channels_collate`; a model may instead refuse
+  ``ch_mask`` with a ``ValueError`` that names it
+  (:gh:`1545`, :gh:`PRNUM` by `Bruno Aristimunha`_).
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (by `Bruno Aristimunha`_).
