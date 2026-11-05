@@ -13,6 +13,7 @@ import pytest
 import torch
 
 from braindecode.models import (
+    BIOT,
     DIVER1,
     LUNA,
     REVE,
@@ -104,6 +105,12 @@ _CASES = {
              num_queries=2, depth=1),
         80,
         ("channel_locations", _positions, True),
+    ),
+    "BIOT": lambda: (
+        BIOT(n_chans=3, n_outputs=3, n_times=400, sfreq=200, embed_dim=32,
+             num_heads=2, num_layers=1),
+        400,
+        None,
     ),
     "REVE": lambda: (
         REVE(n_chans=2, n_outputs=3, n_times=200, embed_dim=32, depth=1, heads=2,
@@ -270,6 +277,20 @@ def test_luna_reconstruction_refuses_ch_mask():
     mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
     with pytest.raises(ValueError, match="ch_mask needs n_outputs > 0"):
         model(torch.randn(len(N_REAL), 3, 80), ch_mask=mask)
+
+
+def test_ch_mask_is_refused_under_a_channel_strategy():
+    # The channel layer would mix padded channels into the real ones.
+    # FP1, F7, T7 form two of BIOT's bipolar pretraining channels.
+    chs_info = [{"ch_name": name} for name in ("FP1", "F7", "T7")]
+    model = BIOT(chs_info=chs_info, n_outputs=3, n_times=400, sfreq=200,
+                 embed_dim=32, num_heads=2, num_layers=1, channel_strategy="zero")
+    mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
+    x = torch.randn(len(N_REAL), 3, 400)
+    with pytest.raises(ValueError, match="ch_mask needs channel_strategy='native'"):
+        model(x, ch_mask=mask)
+    with pytest.raises(ValueError, match="ch_mask needs channel_strategy='native'"):
+        model(x, False, mask)  # positional ch_mask
 
 
 def test_diver1_ch_mask_needs_per_sample_metadata():
