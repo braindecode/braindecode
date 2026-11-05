@@ -484,6 +484,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     def _channel_forward(self, *args, chs_info=None, ch_names=None, **kwargs):
         """``forward`` under a channel strategy: map ``x`` (recorded with
         ``chs_info``, default the model's) onto the target, then run the backbone."""
+        if kwargs.get("ch_mask") is not None:
+            # The channel layer mixes every input channel into each target one,
+            # so padding would leak into the real channels.
+            raise ValueError(
+                "ch_mask needs channel_strategy='native': the channel layer maps "
+                "all input channels, padded ones included, onto the target montage."
+            )
         if chs_info is None and ch_names is not None:  # LaBraM: names of x's channels
             chs_info = [{"ch_name": n} for n in ch_names]
         if args:

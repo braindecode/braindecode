@@ -169,6 +169,18 @@ def test_ch_mask_is_refused_by_fixed_size_heads(name):
         torch.jit.script(model)(x, ch_mask=mask)
 
 
+def test_ch_mask_is_refused_under_a_channel_strategy():
+    # The channel layer would mix padded channels into the real ones.
+    from test.unit_tests.models._fixtures import _get_signal_params
+
+    chs_info = _get_signal_params({"n_chans": 3})["chs_info"]
+    model = BIOT(chs_info=chs_info, n_outputs=3, n_times=400, sfreq=200,
+                 embed_dim=32, num_heads=2, num_layers=1, channel_strategy="exact")
+    mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
+    with pytest.raises(ValueError, match="ch_mask needs channel_strategy='native'"):
+        model(torch.randn(len(N_REAL), 3, 400), ch_mask=mask)
+
+
 def test_diver1_ch_mask_needs_per_sample_metadata():
     model, n_times, (_, build, _) = _CASES["DIVER1"]()
     x = torch.randn(2, 2, n_times)
