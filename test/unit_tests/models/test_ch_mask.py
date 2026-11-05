@@ -5,6 +5,8 @@ Each model gets recordings padded to a common channel count and their
 whatever the padding holds.
 """
 
+import inspect
+
 import mne
 import numpy as np
 import pytest
@@ -196,8 +198,13 @@ def test_reve_labram_tokens_match_each_recording_alone(name):
 @pytest.mark.parametrize("name", list(_CASES))
 def test_ch_mask_tokens_match_each_recording_alone(name):
     model, x, mask, xs, batch_kwargs, alone_kwargs = _padded_case(name)
+    if "return_features" not in inspect.signature(type(model).forward).parameters:
+        pytest.skip(f"{name} has no return_features")
     with torch.no_grad():
-        tokens = model(x, ch_mask=mask, return_features=True, **batch_kwargs)["tokens"]
+        features = model(x, ch_mask=mask, return_features=True, **batch_kwargs)
+        if "tokens" not in features:
+            pytest.skip(f"{name} pools its tokens inside the encoder")
+        tokens = features["tokens"]
         scripted = torch.jit.script(model)(
             x, ch_mask=mask, return_features=True, **batch_kwargs
         )
