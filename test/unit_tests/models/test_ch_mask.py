@@ -15,6 +15,7 @@ import torch
 from braindecode.models import (
     BIOT,
     DIVER1,
+    LUNA,
     REVE,
     BaRISTA,
     BrainBERT,
@@ -98,6 +99,12 @@ _CASES = {
                   max_channels=16),
         256,
         None,
+    ),
+    "LUNA": lambda: (
+        LUNA(n_chans=3, n_outputs=3, n_times=80, patch_size=20, embed_dim=32,
+             num_queries=2, depth=1),
+        80,
+        ("channel_locations", _positions, True),
     ),
     "BIOT": lambda: (
         BIOT(n_chans=3, n_outputs=3, n_times=400, sfreq=200, embed_dim=32,
@@ -261,6 +268,15 @@ def test_ch_mask_is_refused_by_fixed_size_heads(name, tmp_path, monkeypatch):
         model(x, ch_mask=mask)
     with pytest.raises(torch.jit.Error, match="ch_mask needs"):
         torch.jit.script(model)(x, ch_mask=mask)
+
+
+def test_luna_reconstruction_refuses_ch_mask():
+    # The reconstruction decoder attends across every channel query.
+    model = LUNA(n_chans=3, n_outputs=0, n_times=80, patch_size=20, embed_dim=32,
+                 num_queries=2, depth=1)
+    mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
+    with pytest.raises(ValueError, match="ch_mask needs n_outputs > 0"):
+        model(torch.randn(len(N_REAL), 3, 80), ch_mask=mask)
 
 
 def test_ch_mask_is_refused_under_a_channel_strategy():
