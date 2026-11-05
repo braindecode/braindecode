@@ -5,13 +5,17 @@ Each model gets recordings padded to a common channel count and their
 whatever the padding holds.
 """
 
+import inspect
+
 import mne
 import numpy as np
 import pytest
 import torch
 
 from braindecode.models import (
+    BIOT,
     DIVER1,
+    LUNA,
     REVE,
     BaRISTA,
     BrainBERT,
@@ -95,6 +99,18 @@ _CASES = {
                   n_layers=1, n_heads=4, n_head_kv=2, d_inner=64, local_window=2,
                   max_channels=16),
         256,
+        None,
+    ),
+    "LUNA": lambda: (
+        LUNA(n_chans=3, n_outputs=3, n_times=80, patch_size=20, embed_dim=32,
+             num_queries=2, depth=1),
+        80,
+        ("channel_locations", _positions, True),
+    ),
+    "BIOT": lambda: (
+        BIOT(n_chans=3, n_outputs=3, n_times=400, sfreq=200, embed_dim=32,
+             num_heads=2, num_layers=1),
+        400,
         None,
     ),
     "REVE": lambda: (
@@ -190,8 +206,13 @@ def test_reve_labram_tokens_match_each_recording_alone(name):
 @pytest.mark.parametrize("name", list(_CASES))
 def test_ch_mask_tokens_match_each_recording_alone(name):
     model, x, mask, xs, batch_kwargs, alone_kwargs = _padded_case(name)
+    if "return_features" not in inspect.signature(type(model).forward).parameters:
+        pytest.skip(f"{name} has no return_features")
     with torch.no_grad():
-        tokens = model(x, ch_mask=mask, return_features=True, **batch_kwargs)["tokens"]
+        features = model(x, ch_mask=mask, return_features=True, **batch_kwargs)
+        if "tokens" not in features:
+            pytest.skip(f"{name} pools its tokens inside the encoder")
+        tokens = features["tokens"]
         scripted = torch.jit.script(model)(
             x, ch_mask=mask, return_features=True, **batch_kwargs
         )
@@ -277,6 +298,29 @@ def test_cbramod_ch_mask_tokens_match_each_recording_alone():
         scripted = torch.jit.script(model)(x.detach(), ch_mask=mask)
     torch.testing.assert_close(features, out.detach())
     torch.testing.assert_close(scripted, out.detach())
+
+
+def test_luna_reconstruction_refuses_ch_mask():
+    # The reconstruction decoder attends across every channel query.
+    model = LUNA(n_chans=3, n_outputs=0, n_times=80, patch_size=20, embed_dim=32,
+                 num_queries=2, depth=1)
+    mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
+    with pytest.raises(ValueError, match="ch_mask needs n_outputs > 0"):
+        model(torch.randn(len(N_REAL), 3, 80), ch_mask=mask)
+
+
+def test_ch_mask_is_refused_under_a_channel_strategy():
+    # The channel layer would mix padded channels into the real ones.
+    # FP1, F7, T7 form two of BIOT's bipolar pretraining channels.
+    chs_info = [{"ch_name": name} for name in ("FP1", "F7", "T7")]
+    model = BIOT(chs_info=chs_info, n_outputs=3, n_times=400, sfreq=200,
+                 embed_dim=32, num_heads=2, num_layers=1, channel_strategy="zero")
+    mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
+    x = torch.randn(len(N_REAL), 3, 400)
+    with pytest.raises(ValueError, match="ch_mask needs channel_strategy='native'"):
+        model(x, ch_mask=mask)
+    with pytest.raises(ValueError, match="ch_mask needs channel_strategy='native'"):
+        model(x, False, mask)  # positional ch_mask
 
 
 def test_diver1_ch_mask_needs_per_sample_metadata():

@@ -15,6 +15,8 @@ original, so its checkpoints load unchanged, and ``forward`` takes no
 ``**kwargs``, so it compiles with :func:`torch.jit.script`.
 """
 
+from typing import Optional
+
 import torch
 from torch import nn
 
@@ -25,8 +27,10 @@ class _PreNorm(nn.Module):
         self.fn = fn  # registered before ``norm``, as in the original key order
         self.norm = nn.LayerNorm(dim)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.fn(self.norm(x))
+    def forward(
+        self, x: torch.Tensor, key_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        return self.fn(self.norm(x), key_mask)
 
 
 class _Chunk(nn.Module):
@@ -36,8 +40,10 @@ class _Chunk(nn.Module):
         super().__init__()
         self.fn = fn
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.fn(x)
+    def forward(
+        self, x: torch.Tensor, key_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        return self.fn(x)  # position-wise: the key mask does not apply
 
 
 class _FeedForward(nn.Module):
@@ -67,13 +73,18 @@ class _SelfAttention(nn.Module):
         self.to_out = nn.Linear(dim, dim)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, key_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """``key_mask``: optional ``(batch, seq)`` boolean mask of the keys that count."""
         b, t, _ = x.shape
         # (b, t, heads * d) -> (b, heads, t, d)
         q = self.to_q(x).reshape(b, t, -1, self.d_heads).transpose(1, 2)
         k = self.to_k(x).reshape(b, t, -1, self.d_heads).transpose(1, 2)
         v = self.to_v(x).reshape(b, t, -1, self.d_heads).transpose(1, 2)
         q = q.softmax(dim=-1) * self.d_heads**-0.5
+        if key_mask is not None:
+            k = k.masked_fill(~key_mask[:, None, :, None], float("-inf"))
         k = k.softmax(dim=-2)
         context = torch.einsum("bhnd,bhne->bhde", [k, v])
         attn = torch.einsum("bhnd,bhde->bhne", [q, context])
@@ -88,10 +99,12 @@ class _Layers(nn.Module):
         super().__init__()
         self.layers = layers
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, key_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         for layer in self.layers:  # (attention, feed-forward)
-            x = x + layer[0](x)
-            x = x + layer[1](x)
+            x = x + layer[0](x, key_mask)
+            x = x + layer[1](x, key_mask)
         return x
 
 
@@ -124,5 +137,9 @@ class LinearAttentionTransformer(nn.Module):
             )
         self.layers = _Layers(layers)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.layers(x)
+    def forward(
+        self, x: torch.Tensor, key_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """``key_mask``: optional ``(batch, seq)`` boolean mask of the tokens
+        attention may read; the others are still encoded but never attended to."""
+        return self.layers(x, key_mask)
