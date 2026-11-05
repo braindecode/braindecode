@@ -28,6 +28,7 @@ from torch.utils._pytree import tree_flatten, tree_map_only
 
 import braindecode.functional
 from braindecode.functional import _real_dft
+from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import models_dict, models_mandatory_parameters
 from test.unit_tests.models._fixtures import _get_signal_params
 
@@ -612,6 +613,7 @@ _CH_MASK_EXTRAS = {
             0, 200, (n, 3), generator=torch.Generator().manual_seed(i)
         ),
     ),
+    "Labram": ("ch_names", lambda i, n: LABRAM_CHANNEL_ORDER[:n]),
 }
 
 
@@ -627,6 +629,7 @@ def _ch_mask_case(model_name, required_params, signal_params):
     """
     if "ch_mask" not in inspect.signature(all_models_dict[model_name].forward).parameters:
         pytest.skip("forward takes no ch_mask")
+    torch.manual_seed(0)  # same weights and data on every run: no flaky tolerance
     model, x = _build_case(model_name, required_params, signal_params)
     n_real = [x.shape[1] - 1, x.shape[1]]
     mask = torch.arange(x.shape[1]) < torch.tensor(n_real)[:, None]

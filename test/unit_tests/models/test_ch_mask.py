@@ -12,10 +12,12 @@ import torch
 
 from braindecode.models import (
     DIVER1,
+    REVE,
     BaRISTA,
     BrainBERT,
     Brant,
     EpiNT,
+    Labram,
     MVPFormer,
     PopulationTransformer,
 )
@@ -38,6 +40,10 @@ def _coords(i, n_chans):
 
 def _parcels(i, n_chans):
     return torch.randint(0, 121, (n_chans,), generator=torch.Generator().manual_seed(i))
+
+
+def _positions(i, n_chans):
+    return 0.1 * torch.rand((n_chans, 3), generator=torch.Generator().manual_seed(i))
 
 
 def _diver1_metadata(i, n_chans):
@@ -90,6 +96,13 @@ _CASES = {
         256,
         None,
     ),
+    "REVE": lambda: (
+        REVE(n_chans=2, n_outputs=3, n_times=200, embed_dim=32, depth=1, heads=2,
+             head_dim=8, mlp_dim_ratio=2, patch_size=50, patch_overlap=0,
+             attention_pooling=True),
+        200,
+        ("pos", _positions, True),
+    ),
 }
 
 
@@ -137,9 +150,40 @@ def _padded_case(name):
     return model, x, mask, xs, batch_kwargs, alone_kwargs
 
 
+def _labram_case():
+    """As :func:`_padded_case`, for Labram, which reads channel names."""
+    torch.manual_seed(0)
+    model = Labram(n_chans=3, n_outputs=3, n_times=400, sfreq=200, patch_size=200,
+                   embed_dim=32, num_layers=1, num_heads=2).eval()
+    x, mask, xs = _padded_batch(400)
+    ch_names = ["FP1", "FP2", "C3"]
+    alone_kwargs = [{"ch_names": ch_names[:n_real]} for n_real in N_REAL]
+    return model, x, mask, xs, {"ch_names": ch_names}, alone_kwargs
+
+
 @pytest.mark.parametrize("name", list(_CASES))
 def test_ch_mask_matches_each_recording_alone(name):
     _assert_matches_alone(*_padded_case(name))
+
+
+def test_labram_ch_mask_matches_each_recording_alone():
+    _assert_matches_alone(*_labram_case())
+
+
+@pytest.mark.parametrize("name", ["REVE", "Labram"])
+def test_reve_labram_tokens_match_each_recording_alone(name):
+    case = _labram_case() if name == "Labram" else _padded_case(name)
+    model, x, mask, xs, batch_kwargs, alone_kwargs = case
+    with torch.no_grad():
+        tokens = model(x, ch_mask=mask, return_features=True, **batch_kwargs)["tokens"]
+        for i, (xi, kwargs) in enumerate(zip(xs, alone_kwargs)):
+            alone = model(xi[None], return_features=True, **kwargs)["tokens"][0]
+            torch.testing.assert_close(tokens[i, : len(xi)], alone)
+        scripted = torch.jit.script(model)(
+            x, ch_mask=mask, return_features=True, **batch_kwargs
+        )
+    assert torch.equal(tokens[~mask], torch.zeros_like(tokens[~mask]))
+    torch.testing.assert_close(scripted["tokens"], tokens)
 
 
 @pytest.mark.parametrize("name", list(_CASES))
@@ -177,17 +221,31 @@ _FIXED_HEADS = {
                   max_channels=16, pooling="concat"),
         256,
     ),
+    "REVE-flatten": lambda: (
+        REVE(n_chans=3, n_outputs=3, n_times=200, embed_dim=32, depth=1, heads=2,
+             head_dim=8, mlp_dim_ratio=2, patch_size=50, patch_overlap=0),
+        200,
+    ),
+    "Labram-decoder": lambda: (
+        Labram(n_chans=3, n_outputs=3, n_times=400, sfreq=200, patch_size=200,
+               embed_dim=32, num_layers=1, num_heads=2, neural_tokenizer=False),
+        400,
+    ),
 }
 
 
 @pytest.mark.parametrize("name", list(_FIXED_HEADS))
-def test_ch_mask_is_refused_by_fixed_size_heads(name):
+def test_ch_mask_is_refused_by_fixed_size_heads(name, tmp_path, monkeypatch):
+    # REVE reads its position bank at construction: a local one keeps
+    # "REVE-flatten" offline (conftest marks only the "REVE" key as network).
+    (tmp_path / "reve_positions.json").write_text('{"Cz": [0.0, 0.0, 0.09]}')
+    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
     model, n_times = _FIXED_HEADS[name]()
     x = torch.randn(len(N_REAL), 3, n_times)
     mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
-    with pytest.raises(ValueError, match="ch_mask needs pooling='mean'"):
+    with pytest.raises(ValueError, match="ch_mask needs"):
         model(x, ch_mask=mask)
-    with pytest.raises(torch.jit.Error, match="ch_mask needs pooling='mean'"):
+    with pytest.raises(torch.jit.Error, match="ch_mask needs"):
         torch.jit.script(model)(x, ch_mask=mask)
 
 
