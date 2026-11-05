@@ -25,7 +25,9 @@ import torch.nn.functional as F
 
 from braindecode.functional import (
     apply_rotary,
+    check_ch_mask,
     init_weights_,
+    masked_group_norm,
     rotary_angles,
     rotary_frequencies,
     spectral_input,
@@ -135,6 +137,9 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         The Thirty-Ninth Annual Conference on Neural Information Processing Systems - NeurIPS.
         Retrieved from https://openreview.net/forum?id=uazfjnFL0G
     """
+
+    # Class-level, so TorchScript types the cache while it is still empty.
+    _channel_location_cache: Dict[int, torch.Tensor]
 
     def __init__(
         self,
@@ -315,13 +320,14 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         x_signal: torch.Tensor,
         channel_locations: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
+        ch_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         num_channels = channel_locations.shape[1]
         x_signal = self.tokenizer.prepare_input(x_signal)
         if mask is not None:
             mask = self.tokenizer.prepare_input(mask)
         num_patches_per_channel = x_signal.shape[-1] // self.patch_size
-        x_patched = self.patch_embed(x_signal)
+        x_patched = self.patch_embed(x_signal, ch_mask)
         freq_embed = self.freq_embed(x_signal)
         x_patched = x_patched + freq_embed
         x_masked = x_patched.clone()  # (B, N, D), N = C * num_patches_per_channel
@@ -342,8 +348,15 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         channel_locations = channel_locations.to(
             torch.promote_types(dtype, torch.float32)
         )
-        channel_min = torch.min(channel_locations, dim=1, keepdim=True)[0]
-        channel_max = torch.max(channel_locations, dim=1, keepdim=True)[0]
+        lows, highs = channel_locations, channel_locations
+        if ch_mask is not None:
+            # Padded rows may hold anything; the range spans the real ones.
+            padded = ~ch_mask[:, :, None]
+            channel_locations = channel_locations.masked_fill(padded, 0.0)
+            lows = channel_locations.masked_fill(padded, float("inf"))
+            highs = channel_locations.masked_fill(padded, float("-inf"))
+        channel_min = torch.min(lows, dim=1, keepdim=True)[0]
+        channel_max = torch.max(highs, dim=1, keepdim=True)[0]
         channel_locations = (channel_locations - channel_min) / (
             channel_max - channel_min + 1e-8
         )
@@ -377,10 +390,22 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         mask: Optional[torch.Tensor] = None,
         channel_locations: Optional[torch.Tensor] = None,
         channel_names: Optional[torch.Tensor] = None,
+        ch_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Forward pass."""
+        """Forward pass.
+
+        ``ch_mask`` is an optional ``(batch, n_chans)`` mask of real channels,
+        see :func:`~braindecode.functional.check_ch_mask`: padded channels take
+        no part in the patch-embedding norms, the location range and the
+        channel cross-attention, so each recording gets its output alone.
+        """
         x_signal = X
         B, C, _ = x_signal.shape
+        ch_mask = check_ch_mask(ch_mask, X)
+        key_padding_mask: Optional[torch.Tensor] = None
+        if ch_mask is not None:
+            # Padding may hold NaN, which the patch embedding would spread.
+            x_signal = x_signal.masked_fill(~ch_mask[:, :, None], 0.0)
 
         if channel_locations is None:
             channel_locations = self.get_default_channel_locations(
@@ -391,9 +416,12 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             )
 
         x, channel_locations_emb = self.prepare_tokens(
-            x_signal, channel_locations, mask=mask
+            x_signal, channel_locations, mask=mask, ch_mask=ch_mask
         )
-        x, _ = self.cross_attn(x)
+        if ch_mask is not None:
+            # Cross-attention rows are (batch, patch), batch outermost.
+            key_padding_mask = ~ch_mask.repeat_interleave(x.shape[0] // B, dim=0)
+        x, _ = self.cross_attn(x, key_padding_mask)
         x = x.unflatten(0, (B, -1)).flatten(2)  # (B * t, Q, D) -> (B, t, Q * D)
         for blk in self.blocks:
             x = blk(x)
@@ -821,7 +849,9 @@ class _CrossAttentionBlock(nn.Module):
         torch.nn.init.orthogonal_(self.query_embed, gain=1.0)
         self.apply(_init_weights)
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    def forward(
+        self, x: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         # x is the input with shape (batch_size*num_patches, num_channels, embed_dim)
         batch_size, _, _ = x.size()
         queries = self.query_embed.repeat(batch_size, 1, 1)
@@ -830,7 +860,7 @@ class _CrossAttentionBlock(nn.Module):
         values = self.values_norm(x)
 
         attention_out, attention_scores = self.cross_attention(
-            query=queries, key=keys, value=values
+            query=queries, key=keys, value=values, key_padding_mask=key_padding_mask
         )  # Shape: (batch_size*num_patches, num_queries, embed_dim)
         attention_out = self.ffn(attention_out) + attention_out
 
@@ -885,14 +915,31 @@ class _PatchEmbedNetwork(nn.Module):
             nn.GELU(),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, ch_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
         x: (B, C, T)
+        ch_mask: optional (B, C) boolean mask of real channels; padded ones
+        then take no part in the GroupNorm statistics.
         output: (B, C*S, D) where D = embed_dim and S = ceil(T / patch_size)
         for ``on_non_divisible="pad"``, T // patch_size otherwise
         """
-        x = self.tokenizer(x).flatten(1, 2)  # (B, C * S, P)
-        x = x.unsqueeze(1)
-        x = self.proj_in(x)
+        x = self.tokenizer(x)  # (B, C, S, P)
+        n_patches = x.shape[2]
+        x = x.flatten(1, 2).unsqueeze(1)  # (B, 1, C * S, P)
+        if ch_mask is None:
+            x = self.proj_in(x)
+        else:
+            # Rows are (C S), channel outermost.
+            row_mask = ch_mask.repeat_interleave(n_patches, dim=1)
+            for layer in self.proj_in:
+                # Not isinstance: TorchScript misses renamed (mangled) module types.
+                if hasattr(layer, "num_groups"):
+                    x = masked_group_norm(
+                        x, layer.num_groups, row_mask, layer.weight, layer.bias, layer.eps
+                    )
+                else:
+                    x = layer(x)
         x = x.permute(0, 2, 3, 1).flatten(2)  # (B, CS, D * E)
         return x

@@ -12,6 +12,7 @@ import torch
 
 from braindecode.models import (
     DIVER1,
+    LUNA,
     BaRISTA,
     BrainBERT,
     Brant,
@@ -38,6 +39,10 @@ def _coords(i, n_chans):
 
 def _parcels(i, n_chans):
     return torch.randint(0, 121, (n_chans,), generator=torch.Generator().manual_seed(i))
+
+
+def _positions(i, n_chans):
+    return 0.1 * torch.rand((n_chans, 3), generator=torch.Generator().manual_seed(i))
 
 
 def _diver1_metadata(i, n_chans):
@@ -89,6 +94,12 @@ _CASES = {
                   max_channels=16),
         256,
         None,
+    ),
+    "LUNA": lambda: (
+        LUNA(n_chans=3, n_outputs=3, n_times=80, patch_size=20, embed_dim=32,
+             num_queries=2, depth=1),
+        80,
+        ("channel_locations", _positions, True),
     ),
 }
 
