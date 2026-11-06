@@ -6001,3 +6001,34 @@ def test_neurorvq_output_and_features(neurorvq_model_kwargs):
     assert logits.shape == (2, 4)
     assert features["features"].shape == (2, 100 * 4 * 3 * 3)
     assert features["cls_token"] is None
+
+
+def test_megxl_meg_geometry_and_codes():
+    """MEG-XL types MAG coils 1 and other channels 0, orients planar
+    gradiometers by ``loc[3:6]`` and gives one token per 12 samples."""
+    from mne.io.constants import FIFF
+
+    from braindecode.models import MEGXL
+
+    coils = [
+        FIFF.FIFFV_COIL_VV_MAG_T3,
+        FIFF.FIFFV_COIL_VV_PLANAR_T1,
+        FIFF.FIFFV_COIL_VV_PLANAR_T1,
+    ]
+    chs = []
+    for i, coil in enumerate(coils):
+        loc = np.zeros(12)
+        loc[:3] = [0.01 * i, 0.02, 0.05 + 0.01 * i]
+        loc[3:6] = [1.0, 0.0, 0.0]
+        loc[9:12] = [0.0, 0.0, 1.0]
+        chs.append(
+            {"ch_name": f"MEG{i}", "kind": FIFF.FIFFV_MEG_CH, "coil_type": coil, "loc": loc}
+        )
+    model = MEGXL(chs_info=chs, n_outputs=2, n_times=100, sfreq=50.0, num_layers=1)
+    model.eval()
+    assert model.sensor_type.tolist() == [1, 0, 0]
+    expected = torch.tensor([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+    torch.testing.assert_close(model.sensor_abc, expected)
+    x = torch.randn(2, 3, 100)
+    assert model.tokenize(x).shape == (2, 3, 9, 6)  # ceil(100 / 12) tokens, 6 codebooks
+    assert model(x).shape == (2, 2)
