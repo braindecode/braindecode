@@ -86,17 +86,27 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
 
     Source-space MEG: 52 parcels of the Glasser 52 parcellation at 250 Hz,
     each parcel z-scored over the recording (``tokenize_session(standardize=True)``
-    in the reference). The model does not normalise its input. A window that is
-    not a multiple of the segment length is padded or cropped as set by
-    ``on_non_divisible``.
+    in the reference). The model does not normalise its input. The channel
+    embedding is indexed by position, so the parcels must come in the order of
+    the released parcellation, sign-flip aligned as in the paper (Section
+    2.5.3). ``sfreq`` is not checked: 250 Hz is assumed. A window that is not a
+    multiple of the segment length is padded or cropped as set by
+    ``on_non_divisible``; with ``"pad"``, the zero-padded last segment counts
+    as much as the others in the feature mean.
 
     .. rubric:: Pre-trained weights
 
-    The released checkpoints (MEG-GPT ``models/meg-gpt/model_state.pt`` and the
-    tokenizer ``models/tokenizer/{model_state.pt,vocab.pkl}`` of the original
-    repository) map onto this class key by key, without the session embedding,
-    the next-token head and the tokenizer's signal decoder; every weight but
-    the classification head is then pre-trained.
+    The released Cam-CAN checkpoint (the MEG-GPT and EphysTokenizer weights of
+    the original repository) is converted for this class in the braindecode
+    Hub mirror ``braindecode/meggpt-pretrained``, without the session
+    embedding, the next-token head and the tokenizer's signal decoder. Every
+    weight but the classification head is pre-trained:
+
+    .. code-block:: python
+
+        from braindecode.models import MEGGPT
+
+        model = MEGGPT.from_pretrained("braindecode/meggpt-pretrained", n_outputs=2)
 
     .. versionadded:: 2.1
 
@@ -194,18 +204,18 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         _check_on_non_divisible(on_non_divisible)
         self.segment_len = n_patches[0] * patch_lens[0]
-        self.embed_dim = embed_dim
         self.on_non_divisible = on_non_divisible
         self.return_features = return_features
 
         self.tokenizer = _EphysTokenizer(n_codes, n_tokens, rnn_hidden_size)
         self.to_segments = Rearrange("b c (s t) -> (b s) t c", t=self.segment_len)
+        self.from_segments = Rearrange("b s t c d -> b (s t) c d")
         self.token_embedding = nn.Embedding(n_tokens, embed_dim)
         self.time_embedding = nn.Parameter(torch.empty(self.segment_len, embed_dim))
         self.channel_embedding = nn.Parameter(torch.empty(self.n_chans, embed_dim))
         self.drop = nn.Dropout(drop_prob)
         # Each layer outputs as many steps as the next one reads.
-        n_outs = [n * p for n, p in zip(n_patches[1:], patch_lens[1:])]
+        n_outs = [n * p for n, p in zip(n_patches[1:], patch_lens[1:], strict=True)]
         self.layers = nn.ModuleList(
             _DecoderLayer(
                 embed_dim,
@@ -219,7 +229,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
                 drop_prob,
             )
             for n, p, n_out, band in zip(
-                n_patches, patch_lens, n_outs + [n_last_steps], patch_band
+                n_patches, patch_lens, n_outs + [n_last_steps], patch_band, strict=True
             )
         )
         self.final_layer = nn.Sequential(
@@ -248,7 +258,9 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         h = self.drop(h)
         for layer in self.layers:
             h = layer(h)
-        h = h.reshape(batch_size, -1, h.shape[-2], h.shape[-1])
+        # (batch * segments, ...) -> (batch, segments, ...): the einops layer
+        # cannot take the batch size at call time.
+        h = self.from_segments(h.unflatten(0, [batch_size, -1]))
         features = h.mean(dim=1)
         if return_features is None:
             return_features = self.return_features
@@ -281,17 +293,18 @@ class _EphysTokenizer(nn.Module):
         self.rnn = nn.GRU(1, rnn_hidden_size, batch_first=True)
         self.proj = nn.Linear(rnn_hidden_size, n_codes)
         self.norm = nn.LayerNorm(n_codes)
+        self.to_series = Rearrange("b c t -> (b c) t 1")
         # Placeholder until the released vocabulary is loaded.
         self.register_buffer("vocab", torch.arange(n_codes) % n_tokens)
         self.requires_grad_(False)
 
     def forward(self, x: Tensor) -> Tensor:
-        batch_size, n_chans, n_times = x.shape
-        h, _ = self.rnn(x.reshape(batch_size * n_chans, n_times, 1))
+        batch_size, n_chans = x.shape[0], x.shape[1]
+        h, _ = self.rnn(self.to_series(x))
         # Released scaling; kept so that ties break as in the reference.
         logits = self.norm(self.proj(h)) / 0.1
         codes = logits.argmax(dim=-1)
-        return self.vocab[codes].reshape(batch_size, n_chans, n_times)
+        return self.vocab[codes].unflatten(0, [batch_size, n_chans])
 
 
 class _DecoderLayer(nn.Module):

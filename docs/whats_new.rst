@@ -28,7 +28,7 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
-- Add :class:`braindecode.models.MEGGPT` (MEG-GPT, Huang et al., Imaging Neuroscience 2026), a source-space MEG foundation model: the EphysTokenizer encoder turns each parcel into discrete tokens and a causal time-attention GPT with patched keys and values embeds them; the released Cam-CAN tokenizer and MEG-GPT weights load after a key conversion, without the session embedding the paper discards for downstream use (by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.MEGGPT` (MEG-GPT, Huang et al., Imaging Neuroscience 2026), a source-space MEG foundation model: the EphysTokenizer encoder turns each parcel into discrete tokens and a causal time-attention GPT with patched keys and values embeds them; the released Cam-CAN checkpoint is converted for this class, without the session embedding the paper discards for downstream use; see the braindecode Hub mirror ``braindecode/meggpt-pretrained`` (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MAPA` accepts ``ch_mask`` with per-sample
   ``sensor_indices``, ``(batch, n_chans, 3)``, so a batch can mix recordings with
   different montages and channel counts; ``return_features`` also returns the
