@@ -741,6 +741,7 @@
 
     API <api>
     Channel strategies <user_guide/channel_strategies>
+    Cropped inference <user_guide/cropped_inference>
     What's new <whats_new>
 
 .. toctree::

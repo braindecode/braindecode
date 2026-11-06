@@ -3,6 +3,7 @@
 #
 # License: BSD (3-clause)
 import glob
+import inspect
 import os
 import random
 import re
@@ -12,7 +13,6 @@ import h5py
 import mne
 import numpy as np
 import torch
-from sklearn.utils import check_random_state
 from torch import Tensor
 
 
@@ -299,6 +299,8 @@ def create_mne_dummy_raw(
     save_fname : dict | None
         Dictionary containing the name the raw data was saved to.
     """
+    from sklearn.utils import check_random_state
+
     random_state = check_random_state(random_state)
     data = random_state.rand(n_channels, n_times)
     ch_names = [f"ch{i}" for i in range(n_channels)]
@@ -410,12 +412,38 @@ class ThrowAwayIndexLoader(object):
         self.loader = loader
         self.last_i = None
         self.is_regression = is_regression
+        self._forward_params = None
+
+    def _forward_kwargs(self, signal, extras):
+        """Name the signal and the extras of an extended batch for the forward.
+
+        The signal goes to the first ``forward`` parameter (``x``, ``eeg``,
+        ``X``...). ``pos`` and ``ch_mask`` go under these names only, and only to
+        a ``forward`` that takes them.
+        """
+        module = self.net.module_
+        if self._forward_params is None:
+            self._forward_params = inspect.signature(module.forward).parameters
+        params = self._forward_params
+        any_kwarg = any(p.kind is p.VAR_KEYWORD for p in params.values())
+        hints = {
+            "ch_mask": "this model needs a constant channel count; do not use "
+            "pad_channels_collate",
+            "pos": "disable channel positions with set_return_ch_pos(False)",
+        }
+        for name in extras:
+            if not (any_kwarg or name in params):
+                raise ValueError(
+                    f"{type(module).__name__}.forward takes no {name}: {hints[name]}."
+                )
+        return {next(iter(params)): signal, **extras}
 
     def __iter__(
         self,
     ):
         normal_iter = self.loader.__iter__()
         for batch in normal_iter:
+            extras = {}
             if len(batch) == 3:
                 x, y, i = batch
                 # Store for scoring callbacks
@@ -424,23 +452,20 @@ class ThrowAwayIndexLoader(object):
                 # Extended batch produced by ``return_ch_pos`` /
                 # ``pad_channels_collate``:
                 #   (X, y, crop_inds, [ch_pos], [ch_mask]).
-                # Route the signal + extras to the module via a dict input;
-                # skorch then calls ``module_(**x)``. The forward must accept
-                # ``forward(self, x, pos=None, ch_mask=None, ...)``.
-                signal, y, i = batch[0], batch[1], batch[2]
+                # Routed to the module as a dict; skorch calls ``module_(**x)``.
+                x, y, i = batch[0], batch[1], batch[2]
                 self.net._last_window_inds_ = i
-                x = {"x": signal}
                 for extra in batch[3:]:
-                    if _looks_like_channel_mask(extra):
-                        x["ch_mask"] = extra
-                    else:
-                        x["pos"] = extra
+                    name = "ch_mask" if _looks_like_channel_mask(extra) else "pos"
+                    extras[name] = extra
             else:
                 x, y = batch
                 self.net._last_window_inds_ = None
 
             # TODO: should be on dataset side
             x, cast_target = _prepare_signal(x)
+            if extras:
+                x = self._forward_kwargs(x, extras)
             if cast_target:
                 target_dtype = torch.float32 if self.is_regression else torch.int64
                 if isinstance(y, (tuple, list)) and len(y) == 3:

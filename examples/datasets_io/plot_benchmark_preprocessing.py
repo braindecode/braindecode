@@ -102,7 +102,7 @@ def prepare_data(n_recs, save, preload, n_jobs):
         None,
         int(30 * sfreq),
         int(30 * sfreq),
-        True,
+        on_last_window="drop",
         preload=preload,
         n_jobs=n_jobs,
     )

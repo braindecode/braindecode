@@ -97,7 +97,8 @@ def old_maxnorm(
 ) -> torch.Tensor:
     w = weight.clone()
     # clamp denominator ≥ max_norm_val/2, numerator ≤ max_norm_val
-    denom = w.norm(2, dim=0, keepdim=True).clamp(min=max_norm_val / 2)
+    # norm of each row (output unit), as Keras max_norm on a Dense kernel
+    denom = w.norm(2, dim=1, keepdim=True).clamp(min=max_norm_val / 2)
     number = denom.clamp(max=max_norm_val)
     return w * (number / (denom + eps))
 
@@ -771,6 +772,119 @@ def test_filter_bank_layer_matches_scipy_causal_fir(phase):
     )
 
 
+def _band_pass_coefficients(kind):
+    if kind == "iir":
+        filt = create_filter(
+            data=None,
+            sfreq=128,
+            l_freq=8,
+            h_freq=30,
+            method="iir",
+            iir_params=dict(ftype="butter", order=4, output="ba"),
+            verbose=False,
+        )
+        b = torch.tensor(filt["b"], dtype=torch.float64)
+        a = torch.tensor(filt["a"], dtype=torch.float64)
+    else:
+        b = torch.tensor(
+            create_filter(data=None, sfreq=128, l_freq=8, h_freq=30, verbose=False),
+            dtype=torch.float64,
+        )
+        a = nn.functional.pad(torch.ones(1, dtype=torch.float64), (0, b.shape[0] - 1))
+    return b, a
+
+
+@pytest.mark.parametrize("both_directions", [False, True])
+@pytest.mark.parametrize("kind", ["iir", "fir"])
+def test_scripted_lfilter_equals_torchaudio(kind, both_directions):
+    """The scripted lfilter/filtfilt give torchaudio's eager output bit for bit.
+
+    Scripting torchaudio's own lfilter fails from PyTorch 2.15 on (its
+    autograd.Function classes no longer compile), so braindecode scripts a
+    copy of the ops torchaudio's scripted path runs.
+    """
+    from torchaudio.functional import filtfilt as filtfilt_torchaudio
+    from torchaudio.functional import lfilter as lfilter_torchaudio
+
+    from braindecode.functional._lfilter import (
+        _scripted_filtfilt,
+        _scripted_lfilter,
+        filtfilt,
+        lfilter,
+    )
+
+    torch.manual_seed(0)
+    x = torch.randn(2, 3, 400, dtype=torch.float64)
+    b, a = _band_pass_coefficients(kind)
+    if both_directions:
+        function, scripted_ops = filtfilt, _scripted_filtfilt
+        reference = filtfilt_torchaudio
+    else:
+        function, scripted_ops = lfilter, _scripted_lfilter
+        reference = lfilter_torchaudio
+    expected = reference(x, a_coeffs=a, b_coeffs=b, clamp=False)
+
+    assert torch.equal(function(x, a, b), expected)
+    # The ops that the scripted graph runs, called directly (also in eager mode).
+    _assert_equals_torchaudio(scripted_ops(x, a, b), expected)
+    _assert_equals_torchaudio(torch.jit.script(function)(x, a, b), expected)
+
+
+def _assert_equals_torchaudio(actual, expected):
+    """Bit for bit on current torchaudio. Older releases (seen with 2.6) round
+    their eager IIR recursion differently from the ops of their scripted path,
+    so there the two agree to float64 rounding only."""
+    if torch.equal(actual, expected):
+        return
+    import torchaudio
+
+    version = tuple(int(p) for p in torchaudio.__version__.split("+")[0].split(".")[:2])
+    assert version < (2, 11), "scripted lfilter is no longer bit-equal to torchaudio"
+    torch.testing.assert_close(actual, expected)
+
+
+def test_generic_lfilter_core_loop_matches_torchaudio():
+    """The Python recursion used without torchaudio's private loop agrees with it."""
+    from braindecode.functional._lfilter import (
+        _generic_lfilter_core_loop,
+        _lfilter_core_loop,
+    )
+
+    torch.manual_seed(0)
+    waveform = torch.randn(2, 1, 300, dtype=torch.float64)
+    b, a = _band_pass_coefficients("iir")
+    a_flipped = (a / a[0]).flip(0).unsqueeze(0).contiguous()
+    outputs = []
+    for loop in (_lfilter_core_loop, _generic_lfilter_core_loop):
+        padded = torch.zeros(2, 1, 300 + a.shape[0] - 1, dtype=torch.float64)
+        loop(waveform.clone(), a_flipped, padded)
+        outputs.append(padded)
+    torch.testing.assert_close(outputs[1], outputs[0], rtol=1e-10, atol=1e-12)
+
+
+@pytest.mark.parametrize("phase", ["zero", "forward"])
+def test_filter_bank_layer_scripts(phase):
+    """FIR banks, zero-phase and causal, script and match eager.
+
+    Scripting compiles the causal ``lfilter`` path even for the zero-phase
+    bank, so both phases need the scriptable ``lfilter``.
+    """
+    torch.manual_seed(0)
+    layer = FilterBankLayer(
+        n_chans=3,
+        sfreq=128,
+        band_filters=[(4, 8), (8, 30)],
+        method="fir",
+        phase=phase,
+        verbose=False,
+    ).eval()
+    x = torch.randn(2, 3, 512)
+    with torch.no_grad():
+        expected = layer(x)
+        scripted = torch.jit.script(layer)
+        torch.testing.assert_close(scripted(x), expected)
+
+
 @pytest.mark.parametrize(
     "phase", ["linear", "zero", "zero-double", "minimum", "minimum-half"]
 )
@@ -1395,6 +1509,20 @@ def test_new_vs_old_maxnorm_are_identical(out_in):
     )
 
 
+def test_max_norm_linear_constrains_each_output_unit():
+    """As Keras ``Dense(kernel_constraint=max_norm(c))``, the incoming weights
+    of each output unit (a row of the torch weight) have norm at most ``c``,
+    and rows already within the bound are unchanged."""
+    layer = MaxNormLinear(in_features=3, out_features=3, max_norm_val=2.0)
+    # Row 0 has norm ~2.6 > 2, rows 1-2 are within the bound; every column
+    # has norm <= 2 except column 0 (norm ~2.6).
+    W = torch.tensor([[1.5, 1.5, 1.5], [1.5, 0.0, 0.0], [1.5, 0.0, 0.0]])
+    layer.weight = W.clone()
+    row_norms = layer.weight.detach().norm(dim=1)
+    assert row_norms[0] == pytest.approx(2.0, abs=1e-3)
+    torch.testing.assert_close(layer.weight.detach()[1:], W[1:], rtol=0, atol=1e-4)
+
+
 @pytest.mark.parametrize(
     "batch,in_ch,out_ch,length,kernel,dilation",
     [
@@ -1677,6 +1805,60 @@ def test_patch_tokenizer():
     expected = tok_linear.proj(patches)
     assert torch.allclose(tok_linear(x), expected)
     assert set(tok_linear.state_dict()) == {"proj.weight", "proj.bias"}
+
+
+@pytest.mark.parametrize(
+    "kwargs, children",
+    [
+        ({}, set()),
+        ({"emb_dim": 8, "learnable": True}, {"patcher"}),
+        ({"emb_dim": 8, "learnable": True, "projection": "linear"}, {"proj"}),
+    ],
+)
+def test_patch_tokenizer_registers_only_the_projection_it_uses(kwargs, children):
+    """No parameter-free placeholder submodules (an Identity named ``proj``).
+
+    Adapters select modules by name: peft LoRA with ``target_modules=["proj"]``
+    (neuralbench's LaBraM and LUNA configs) matched the placeholder and raised
+    "Target module Identity() is not supported".
+    """
+    from braindecode.modules import PatchTokenizer
+
+    tok = PatchTokenizer(patch_size=50, n_times=200, **kwargs)
+    assert set(dict(tok.named_children())) == children
+    x = torch.randn(2, 3, 200)
+    scripted = torch.jit.script(tok)
+    assert torch.allclose(scripted(x), tok(x))
+
+
+@pytest.mark.parametrize(
+    "name, kwargs, targets",
+    [
+        ("Labram", dict(n_chans=128, n_times=200, n_outputs=2), ["qkv", "proj"]),
+        (
+            "LUNA",
+            dict(n_chans=22, n_times=256, n_outputs=2, patch_size=40, num_queries=6,
+                 embed_dim=96, depth=2, num_heads=2),
+            ["qkv_proj", "proj"],
+        ),
+        ("CBraMod", dict(n_chans=4, n_times=400, n_outputs=2), ["self_attn_s", "self_attn_t"]),
+    ],
+)
+def test_lora_target_names_reach_only_real_layers(name, kwargs, targets):
+    """Every module a name-based adapter targets is a layer it can wrap."""
+    import braindecode.models
+
+    model = getattr(braindecode.models, name)(**kwargs)
+    hit = [
+        (n, type(m).__name__)
+        for n, m in model.named_modules()
+        if n.rsplit(".", 1)[-1] in targets
+    ]
+    assert hit
+    assert not [h for h in hit if h[1] == "Identity"], hit
+    peft = pytest.importorskip("peft")
+    lora = peft.get_peft_model(model, peft.LoraConfig(r=2, target_modules=targets))
+    assert any("lora_A" in n for n, _ in lora.named_parameters())
 
 
 @pytest.mark.parametrize(

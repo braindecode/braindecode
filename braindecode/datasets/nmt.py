@@ -163,8 +163,8 @@ class NMT(BaseConcatDataset):
             },
             inplace=True,
         )
-        description.rename(columns={"label": "pathological"}, inplace=True)
-        description.reset_index(drop=True, inplace=True)
+        description = description.rename(columns={"label": "pathological"})
+        description = description.reset_index(drop=True)
         description["path"] = file_paths
         description = description[["path", "pathological", "age", "gender"]]
 
@@ -214,9 +214,7 @@ def _fake_pd_read_csv(*args, **kwargs):
     df = pd.DataFrame(data, columns=["recordname", "label", "age", "gender", "loc"])
 
     # Set recordname as index to match the real pd.read_csv behavior with index_col="recordname"
-    df.set_index("recordname", inplace=True)
-
-    return df
+    return df.set_index("recordname")
 
 
 def _fake_raw(*args, **kwargs):

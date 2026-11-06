@@ -288,8 +288,7 @@ def _sort_chronologically(descriptions):
     # last resort, we use path to sort (always available):
     sort_cols = ["year", "month", "day", "subject", "session", "segment", "path"]
     available_cols = [col for col in sort_cols if col in descriptions.index]
-    descriptions.sort_values(available_cols, axis=1, inplace=True)
-    return descriptions
+    return descriptions.sort_values(available_cols, axis=1)
 
 
 def _read_date(file_path):

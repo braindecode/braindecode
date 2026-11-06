@@ -24,6 +24,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # https://github.com/qinxwew: a past contributor's GitHub account no longer
+      # exists (404, and their pull requests are hidden). The changelog keeps the
+      # attribution and its link target unchanged, so the link is excluded here.
       - name: Check links in Markdown and RST files
         uses: lycheeverse/lychee-action@v2
         with:
@@ -51,6 +54,7 @@ jobs:
             --exclude "dx\\.doi\\.org"
             --exclude "^https://doi\\.org/10\\.1002/hbm"
             --exclude "^https://dl\\.acm\\.org/doi"
+            --exclude "^https://github\\.com/qinxwew$"
             "./**/*.md"
             "./**/*.rst"
           fail: true

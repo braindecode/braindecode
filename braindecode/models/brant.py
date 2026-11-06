@@ -133,7 +133,10 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
                "braindecode/brant-pretrained", n_outputs=2
            )
 
-    .. versionadded:: 1.8
+       A shorter ``n_times`` keeps the checkpoint's leading temporal
+       positions.
+
+    .. versionadded:: 2.0
 
     Parameters
     ----------
@@ -285,6 +288,25 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         head = nn.Linear(self.final_layer.in_features, n_outputs)
         self.final_layer = head.to(self.final_layer.weight)
 
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Also accept a checkpoint saved at a longer ``n_times``.
+
+        Its learned temporal positions are cropped to this model's
+        ``seq_len`` leading ones.
+        """
+        key = "temporal_encoder.input_embedding.positional_encoding"
+        positions = state_dict.get(key)
+        if positions is not None and len(positions) < self.seq_len:
+            raise ValueError(
+                f"The checkpoint holds {len(positions)} temporal positions, but "
+                f"n_times={self.n_times} spans {self.seq_len} patches of "
+                f"{self.patch_size} samples; use n_times <= "
+                f"{len(positions) * self.patch_size}."
+            )
+        if positions is not None:
+            state_dict = {**state_dict, key: positions[: self.seq_len]}
+        return super().load_state_dict(state_dict, *args, **kwargs)
+
     def forward(
         self,
         x: torch.Tensor,
@@ -300,9 +322,11 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
             from the construction one.
         return_features : bool
             If ``True``, return the pooled encoder embedding instead of the
-            class logits, as ``{"features": pooled, "cls_token": None}``
-            (braindecode foundation-model convention). Brant pools over channels
-            and patches and has no class token, hence ``cls_token`` is ``None``.
+            class logits, as ``{"features": pooled, "cls_token": None,
+            "tokens": tokens}`` (braindecode foundation-model convention). Brant
+            pools over channels and patches and has no class token, hence
+            ``cls_token`` is ``None``. ``tokens`` is the spatial encoder output,
+            ``(batch, n_chans, seq_len, embed_dim)``, zero for padded channels.
             A TorchScript-compiled model returns the logits instead.
         ch_mask : torch.Tensor, optional
             ``(batch, n_chans)`` mask of real channels, see
@@ -312,7 +336,8 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         -------
         torch.Tensor or dict
             Class logits of shape ``(batch, n_outputs)``, or the feature
-            dict ``{"features", "cls_token"}`` when ``return_features`` is set.
+            dict ``{"features", "cls_token", "tokens"}`` when ``return_features``
+            is set.
         """
         if x.shape[-1] != self.n_times:
             raise ValueError(
@@ -345,7 +370,9 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
         if return_features:
             if torch.jit.is_scripting():
                 return logits
-            return {"features": pooled, "cls_token": None}  # nosec B105
+            if mask is not None:
+                emb = emb.masked_fill(~mask[:, :, None, None], 0.0)
+            return {"features": pooled, "cls_token": None, "tokens": emb}
         return logits
 
 
