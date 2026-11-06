@@ -16,6 +16,7 @@ from braindecode.models import (
     BIOT,
     DIVER1,
     LUNA,
+    MAPA,
     REVE,
     BaRISTA,
     BrainBERT,
@@ -49,6 +50,12 @@ def _parcels(i, n_chans):
 
 def _positions(i, n_chans):
     return 0.1 * torch.rand((n_chans, 3), generator=torch.Generator().manual_seed(i))
+
+
+def _mapa_indices(i, n_chans):
+    labels = [f"{'LR'[i % 2]}{'AB'[k % 2]}{k // 2 + 1}" for k in range(n_chans)]
+    regions = [None, "ctx-lh-insula", "Left-Hippocampus"][:n_chans]
+    return MAPA.sensor_indices(labels, regions)
 
 
 def _diver1_metadata(i, n_chans):
@@ -119,6 +126,11 @@ _CASES = {
              attention_pooling=True),
         200,
         ("pos", _positions, True),
+    ),
+    "MAPA": lambda: (
+        MAPA(n_chans=2, n_outputs=3, n_times=512, sfreq=2048, d_model=64),
+        512,
+        ("sensor_indices", _mapa_indices, False),
     ),
 }
 

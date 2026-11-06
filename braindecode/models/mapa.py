@@ -26,10 +26,14 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import (
+    check_ch_mask,
     init_weights_,
+    masked_mean,
+    pack_channels,
     rescale_parameter,
     rotate_pairs,
     spectral_input,
+    unpack_channels,
 )
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _in_model_resample, dkt_region_slots
@@ -105,9 +109,11 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     *One model, many subjects.* The constructor's montage is only the default.
     To read another recording, pass :meth:`forward` the ``sensor_indices`` that
-    :meth:`sensor_indices` builds from its labels and regions; all samples of a
-    batch share them. Only ``pooling="flatten"`` is tied to one montage and one
-    window length.
+    :meth:`sensor_indices` builds from its labels and regions, shared by the
+    batch, or a ``(batch, n_chans, 3)`` stack of them, one montage per sample.
+    With that stack, ``ch_mask`` flags each sample's real channels, so one batch
+    mixes recordings with different channel counts. Only ``pooling="flatten"``
+    is tied to one montage and one window length.
 
     *Sampling rate and window length.* The model reads 2048 Hz; another
     integer ``sfreq`` is resampled to 2048 Hz inside the model with
@@ -592,6 +598,7 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         x: torch.Tensor,
         sensor_indices: torch.Tensor | None = None,
         return_features: bool = False,
+        ch_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Encode an iEEG batch into class logits or pooled features.
 
@@ -605,18 +612,28 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             ``(n_chans, 3)`` electrode metadata of the recording this batch
             comes from, one row of (array, contact number, region slot) per
             channel, as :meth:`sensor_indices` builds it. Every sample of the
-            batch shares it. Defaults to the montage resolved at construction,
-            which only fits the construction-time channel count.
+            batch shares it. A ``(batch, n_chans, 3)`` stack gives each sample
+            its own montage; it is required with ``ch_mask``. Defaults to the
+            montage resolved at construction, which only fits the
+            construction-time channel count.
         return_features : bool
             Whether to return the pooled token embedding instead of the logits.
+        ch_mask : torch.Tensor, optional
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Padded channels affect
+            no output; their ``sensor_indices`` rows only need to be valid (e.g.
+            0). Needs per-sample ``sensor_indices`` and ``pooling="mean"``.
 
         Returns
         -------
         torch.Tensor or dict
             Class logits of shape ``(batch, n_outputs)``, or with
             ``return_features=True`` a dict whose ``"features"`` entry is the
-            pooled embedding of shape ``(batch, final_layer.in_features)`` and whose
-            ``"cls_token"`` entry is ``None``.
+            pooled embedding of shape ``(batch, final_layer.in_features)``, whose
+            ``"cls_token"`` entry is ``None`` and whose ``"tokens"`` entry is the
+            encoder output of each channel, ``(batch, n_chans, n_tokens,
+            final_layer.in_features)`` with ``pooling="mean"``, zero for padded
+            channels.
         """
         spectrogram = self.normalization == "session"
         n_bins = self._n_bins
@@ -629,6 +646,44 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"(batch, n_chans, n_times), but got {list(x.shape)} with "
                 f"normalization='{self.normalization}'."
             )
+        mask = check_ch_mask(ch_mask, x)
+        if mask is not None and self.pooling != "mean":
+            raise ValueError(
+                "ch_mask needs pooling='mean': the flattened head is tied to the "
+                "channels."
+            )
+        if sensor_indices is not None and sensor_indices.dim() == 3:
+            encoded = self._encode_per_sample(x, sensor_indices, mask)
+        else:
+            if mask is not None:
+                raise ValueError(
+                    "ch_mask needs per-sample sensor_indices of shape (batch, "
+                    "n_chans, 3): padded recordings may come from different "
+                    "montages."
+                )
+            encoded = self._encode_shared(x, sensor_indices)
+
+        if self.pooling == "mean":
+            features = masked_mean(encoded, mask, [1, 2])
+        else:
+            features = encoded.flatten(1)
+        logits = self.final_layer(features)
+
+        if return_features:
+            out: dict[str, torch.Tensor | None] = {
+                "features": features,
+                "cls_token": None,
+                "tokens": encoded,
+            }
+            return out
+        return logits
+
+    def _encode_shared(
+        self, x: torch.Tensor, sensor_indices: torch.Tensor | None
+    ) -> torch.Tensor:
+        """``(batch, n_chans, k_full, dim)`` tokens of a batch whose samples share
+        one montage."""
+        spectrogram = self.normalization == "session"
         x = self.resample(x)
         indices = self._resolve_sensor_indices(sensor_indices, x)
         n_frames = _frame_count(x.shape[-1], spectrogram=spectrogram)
@@ -655,28 +710,72 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             if indices is self.default_sensor_indices and n_frames == self.n_frames
             else self._token_layout(indices, n_frames)
         )
+        return self._encode(
+            x, gather_idx, key_mask, token_region, scatter_idx, cos, sin, k_full
+        )
 
+    def _encode_per_sample(
+        self,
+        x: torch.Tensor,
+        sensor_indices: torch.Tensor,
+        mask: torch.Tensor | None,
+    ) -> torch.Tensor:
+        """``(batch, n_chans, k_full, dim)`` tokens of a batch with one montage
+        per sample, zero for padded channels.
+
+        Attention never crosses arrays, so the real channels of every sample are
+        encoded as one recording whose arrays are numbered apart per sample.
+        """
+        batch, n_chans = x.shape[0], x.shape[1]
+        if list(sensor_indices.shape) != [batch, n_chans, 3]:
+            raise ValueError(
+                f"per-sample sensor_indices must have shape ({batch}, {n_chans}, "
+                f"3), one row of (array, contact number, region slot) per channel "
+                f"of each sample; got {list(sensor_indices.shape)}."
+            )
+        if mask is None:
+            mask = torch.ones(batch, n_chans, dtype=torch.bool, device=x.device)
+        sample = torch.arange(batch, device=x.device)[:, None].expand(batch, n_chans)
+        sample = pack_channels(sample, mask)
+        # Packed before resampling, so the padding (even NaN) is never read.
+        packed = self.resample(pack_channels(x, mask)[None])
+        indices = self._resolve_sensor_indices(
+            pack_channels(sensor_indices.to(x.device), mask), packed
+        )
+        array_offset = sample * (int(indices[:, 0].max()) + 1)
+        indices = torch.stack(
+            [indices[:, 0] + array_offset, indices[:, 1], indices[:, 2]], dim=1
+        )
+        n_frames = _frame_count(
+            packed.shape[-1], spectrogram=self.normalization == "session"
+        )
+        gather_idx, key_mask, token_region, scatter_idx, cos, sin, k_full = (
+            self._token_layout(indices, n_frames)
+        )
+        encoded = self._encode(
+            packed, gather_idx, key_mask, token_region, scatter_idx, cos, sin, k_full
+        )
+        return unpack_channels(encoded[0], mask, n_chans)
+
+    def _encode(
+        self,
+        x: torch.Tensor,
+        gather_idx: torch.Tensor,
+        key_mask: torch.Tensor,
+        token_region: torch.Tensor,
+        scatter_idx: torch.Tensor,
+        cos: torch.Tensor,
+        sin: torch.Tensor,
+        k_full: int,
+    ) -> torch.Tensor:
+        """Encode ``x`` on a token layout into ``(batch, n_chans, k_full, dim)``."""
         tokens = self.stem(self.frontend(x))
         # (batch, n_arrays, max_contacts * k_full, d_model), array-contiguous.
         packed = tokens[:, gather_idx].flatten(2, 3)
         encoded = self.encoder(packed, token_region, cos, sin, key_mask)
         # Back to one block of tokens per channel, in the input channel order.
         encoded = encoded.unflatten(2, (-1, k_full)).flatten(1, 2)
-        encoded = encoded[:, scatter_idx]
-
-        if self.pooling == "mean":
-            features = encoded.mean(dim=(1, 2))
-        else:
-            features = encoded.flatten(1)
-        logits = self.final_layer(features)
-
-        if return_features:
-            out: dict[str, torch.Tensor | None] = {
-                "features": features,
-                "cls_token": None,  # nosec B105
-            }
-            return out
-        return logits
+        return encoded[:, scatter_idx]
 
 
 def _frame_count(

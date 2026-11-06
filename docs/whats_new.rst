@@ -28,6 +28,11 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- :class:`braindecode.models.MAPA` accepts ``ch_mask`` with per-sample
+  ``sensor_indices``, ``(batch, n_chans, 3)``, so a batch can mix recordings with
+  different montages and channel counts; ``return_features`` also returns the
+  per-channel ``"tokens"``, zero for padded channels (:gh:`1550` by
+  `Julien Gadonneix`_).
 - :class:`braindecode.models.CBraMod` accepts ``ch_mask`` with the encoder output (``return_encoder_output=True``): padded channels are masked in the spatial attention and the GroupNorm statistics, and their tokens are zero. The flattened classification head is tied to the channels and refuses the mask (:gh:`1544` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` accepts ``ch_mask``, so a batch can mix recordings with different channel counts: padded channels are left out of the GroupNorm statistics, the location normalisation and the channel cross-attention, and each recording gets the output it gets alone. LUNA also scripts without a first eager forward (:gh:`1543` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.BIOT` accepts ``ch_mask``, so a batch can mix recordings with different channel counts: padded channels are masked in the linear attention and in pooling, and each recording gets the output it gets alone (:gh:`1542` by `Bruno Aristimunha`_).
