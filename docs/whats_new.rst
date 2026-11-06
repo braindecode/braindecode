@@ -28,6 +28,13 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.CORTEG`, an ST-EEGFormer adapted to
+  intracranial ECoG: a spatial adapter places each electrode by its 3D position
+  in the frozen pretrained channel codebook, and a high-gamma token stream joins
+  the low-frequency one before the last blocks (mean or layer-wise gate).
+  ``CORTEG.from_pretrained("braindecode/STEEGFormer-small", ...)`` loads the
+  backbone and warm-starts the high-gamma embedding from it; ``ch_mask`` takes
+  padded batches (:gh:`1551` by `Julien Gadonneix`_).
 - :class:`braindecode.models.MAPA` accepts ``ch_mask`` with per-sample
   ``sensor_indices``, ``(batch, n_chans, 3)``, so a batch can mix recordings with
   different montages and channel counts; ``return_features`` also returns the
