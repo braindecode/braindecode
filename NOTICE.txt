@@ -48,6 +48,7 @@ The following components are licensed under the MIT License:
 - `braindecode/models/popt.py`
 - `braindecode/models/tfm_tokenizer.py`
 - `braindecode/models/brainomni.py`
+- `braindecode/models/bbl.py`
 - `braindecode/modules/quantization.py`
 - `braindecode/modules/seanet.py`
 - `braindecode/modules/linear_attention.py`

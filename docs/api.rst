@@ -149,6 +149,7 @@ interface for all EEG models and can derive variable names when needed.
      AttentionBaseNet
      AttnSleep
      BaRISTA
+     BBL
      BDTCN
      BENDR
      BIOT

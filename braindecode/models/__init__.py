@@ -6,6 +6,7 @@ from .attn_sleep import AttnSleep
 from .axon import AXON
 from .barista import BaRISTA
 from .base import EEGModuleMixin
+from .bbl import BBL
 from .bendr import BENDR
 from .biot import BIOT
 from .brainbert import BrainBERT
@@ -107,6 +108,7 @@ __all__ = [
     "BaRISTA",
     "EEGModuleMixin",
     "BIOT",
+    "BBL",
     "BENDR",
     "BrainBERT",
     "BrainOmni",

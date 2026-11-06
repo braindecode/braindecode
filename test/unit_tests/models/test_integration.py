@@ -21,6 +21,7 @@ from torch.export import ExportedProgram, export
 
 from braindecode import EEGClassifier
 from braindecode.models import (
+    BBL,
     EEGPT,
     MAPA,
     REVE,
@@ -297,6 +298,7 @@ def test_model_has_drop_prob_parameter(model_class):
     """
 
     if model_class in [
+        BBL,
         SyncNet,
         EEGSimpleConv,
         USleep,

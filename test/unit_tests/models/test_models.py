@@ -28,6 +28,7 @@ from scipy.signal import stft
 from torch import nn
 
 from braindecode.models import (
+    BBL,
     BDTCN,
     BENDR,
     BIOT,
@@ -6001,3 +6002,29 @@ def test_neurorvq_output_and_features(neurorvq_model_kwargs):
     assert logits.shape == (2, 4)
     assert features["features"].shape == (2, 100 * 4 * 3 * 3)
     assert features["cls_token"] is None
+
+
+def test_bbl_pads_sensors_gates_datasets_and_averages_subjects():
+    """Fewer channels are zero-padded to ``n_sensors``, ``dataset_index`` picks
+    the projector slice, and without ``subject_index`` the rows flagged in
+    ``trained_subjects`` are averaged."""
+    torch.manual_seed(0)
+    kw = dict(
+        n_outputs=2, n_times=40, n_sensors=8, n_datasets=2, n_subjects=5,
+        subject_dim=3, model_dim=16, n_filters=4,
+    )  # fmt: skip
+    model = BBL(n_chans=5, **kw).eval()
+    full = BBL(n_chans=8, **kw).eval()
+    full.load_state_dict(model.state_dict())
+    x = torch.randn(2, 5, 40)
+    subjects = torch.tensor([1, 3])
+    with torch.no_grad():
+        padded = full(torch.nn.functional.pad(x, (0, 0, 0, 3)), subjects)
+        assert torch.equal(model(x, subjects), padded)
+        assert not torch.equal(model(x, subjects, torch.tensor([1, 1])), padded)
+        model.trained_subjects.copy_(torch.tensor([0.0, 1, 0, 1, 0]))
+        feat = model(x, return_features=True)["features"]
+    mean = model.subject_embedding.weight[[1, 3]].mean(0)
+    torch.testing.assert_close(feat[:, -3:], mean.expand(2, -1))
+    with pytest.raises(ValueError, match="n_sensors"):
+        BBL(n_chans=9, n_outputs=2, n_sensors=8)
