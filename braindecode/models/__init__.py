@@ -49,6 +49,7 @@ from .labram import Labram
 from .luna import LUNA
 from .mapa import MAPA
 from .medformer import MEDFormer
+from .megxl import MEGXL
 from .meta_neuromotor import MetaNeuromotorHand
 from .mirepnet import MIRepNet
 from .mscformer import MSCFormer
@@ -156,6 +157,7 @@ __all__ = [
     "positions_from_chs_info",
     "MAPA",
     "MEDFormer",
+    "MEGXL",
     "MIRepNet",
     "NeuroRVQ",
     "MSCFormer",

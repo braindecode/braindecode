@@ -23,6 +23,7 @@ from braindecode import EEGClassifier
 from braindecode.models import (
     EEGPT,
     MAPA,
+    MEGXL,
     REVE,
     SSTDPN,
     ZUNA,
@@ -239,6 +240,7 @@ def test_model_has_activation_parameter(model_class):
     if model_class in [
         Brant,
         BrainTokenizer,  # the released SEANet codec has fixed ELU activations
+        MEGXL,  # fixed BioCodec ELUs and BrainOmni's SELU block, as released
         EEGMiner,
         REVE,
         EEGPT,
