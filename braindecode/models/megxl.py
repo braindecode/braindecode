@@ -13,6 +13,7 @@ from typing import Dict, Optional, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.brainomni import _geometry_from_chs_info, _SpatialTemporalBlock
@@ -229,6 +230,12 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
                 for _ in range(num_layers)
             ]
         )
+        self.flatten_sensor_batch = Rearrange(
+            "batch chans coords -> (batch chans) coords"
+        )
+        self.restore_sensor_batch = Rearrange(
+            "(batch chans) features -> batch chans features", chans=self.n_chans
+        )
         self.final_layer = nn.Linear(self.n_chans * latent_dim, self.n_outputs)
 
     def reset_head(self, n_outputs: int) -> None:
@@ -264,11 +271,19 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         for q, vq in enumerate(self.quantizer.layers):
             levels.append(F.embedding(codes[..., q], vq._codebook.embed))
         h = self.rvq_projector(torch.stack(levels, dim=3).flatten(3))
-        pos = _fourier_features(self.sensor_xyz, self.position_freqs)
-        ori = _fourier_features(self.sensor_abc, self.orientation_freqs)
-        h = h + self.position_projector(pos).unsqueeze(1)
-        h = h + self.orientation_projector(ori).unsqueeze(1)
-        h = h + self.sensor_type_layer(self.sensor_type).unsqueeze(1)
+        # Keep the original batched projections for bit-exact geometry gradients.
+        xyz = self.sensor_xyz.expand(x.shape[0], -1, -1)
+        xyz = self.flatten_sensor_batch(xyz)
+        abc = self.sensor_abc.expand(x.shape[0], -1, -1)
+        abc = self.flatten_sensor_batch(abc)
+        sensor_type = self.sensor_type.expand(x.shape[0], -1)
+        pos = _fourier_features(xyz, self.position_freqs)
+        pos = self.restore_sensor_batch(pos)
+        ori = _fourier_features(abc, self.orientation_freqs)
+        ori = self.restore_sensor_batch(ori)
+        h = h + self.position_projector(pos).unsqueeze(2)
+        h = h + self.orientation_projector(ori).unsqueeze(2)
+        h = h + self.sensor_type_layer(sensor_type).unsqueeze(2)
         for block in self.blocks:
             h = block(h)
         return h

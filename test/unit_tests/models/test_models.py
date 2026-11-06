@@ -6098,3 +6098,46 @@ def test_megxl_meg_geometry_and_codes():
     x = torch.randn(2, 3, 100)
     assert model.tokenize(x).shape == (2, 3, 9, 6)  # ceil(100 / 12) tokens, 6 codebooks
     assert model(x).shape == (2, 2)
+
+
+def test_megxl_batched_geometry_gradients():
+    """Geometry projections keep the original batched backward accumulation."""
+    from braindecode.models import MEGXL
+
+    torch.manual_seed(0)
+    model = MEGXL(
+        chs_info=_make_chs_info(4),
+        n_outputs=2,
+        n_times=100,
+        sfreq=50.0,
+        num_layers=0,
+    )
+    model.eval()
+    x = torch.randn(2, 4, 100)
+    codes = model.tokenize(x)
+    levels = [
+        nn.functional.embedding(codes[..., q], vq._codebook.embed)
+        for q, vq in enumerate(model.quantizer.layers)
+    ]
+    expected = model.rvq_projector(torch.stack(levels, dim=3).flatten(3))
+    # Original: flatten batched coordinates for Fourier features, restore the
+    # batch axis before Linear, then insert the time axis after projection.
+    for coords, freqs, projector in [
+        (model.sensor_xyz, model.position_freqs, model.position_projector),
+        (model.sensor_abc, model.orientation_freqs, model.orientation_projector),
+    ]:
+        coords = coords.expand(2, -1, -1).reshape(8, 3)
+        phase = 2 * np.pi * (coords @ freqs)
+        fourier = torch.cat([phase.sin(), phase.cos()], dim=-1).reshape(2, 4, -1)
+        expected = expected + projector(fourier).unsqueeze(2)
+    types = model.sensor_type.expand(2, -1)
+    expected = expected + model.sensor_type_layer(types).unsqueeze(2)
+    actual = model.encode(x)
+    assert torch.equal(actual, expected)
+    params = list(model.position_projector.parameters())
+    params += list(model.orientation_projector.parameters())
+    params += list(model.sensor_type_layer.parameters())
+    cotangent = torch.randn_like(expected)
+    reference_grads = torch.autograd.grad(expected, params, grad_outputs=cotangent)
+    actual_grads = torch.autograd.grad(actual, params, grad_outputs=cotangent)
+    assert all(torch.equal(a, b) for a, b in zip(reference_grads, actual_grads))
