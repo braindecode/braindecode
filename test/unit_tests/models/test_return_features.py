@@ -11,6 +11,7 @@ from braindecode.models import (
     EEGDINO,
     EEGPT,
     MAPA,
+    MEGGPT,
     REVE,
     BaRISTA,
     BrainBERT,
@@ -194,6 +195,7 @@ _MODELS = [
         False,
         id="MIRepNet",
     ),
+    pytest.param(MEGGPT, N_CHANS, {}, False, id="MEGGPT"),
 ]
 
 

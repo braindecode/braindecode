@@ -785,6 +785,7 @@ models_mandatory_parameters: list[
         },
     ),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
+    ("MEGGPT", ["n_chans", "n_outputs"], None),
     ("MIRepNet", ["n_chans", "n_outputs"], None),
     (
         "TFMTokenizer",
