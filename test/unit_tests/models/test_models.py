@@ -33,6 +33,7 @@ from braindecode.models import (
     BIOT,
     EEGCLIP,
     EEGPT,
+    NICE,
     SSTDPN,
     TCN,
     ATCNet,
@@ -6040,3 +6041,38 @@ def test_neurorvq_output_and_features(neurorvq_model_kwargs):
     assert logits.shape == (2, 4)
     assert features["features"].shape == (2, 100 * 4 * 3 * 3)
     assert features["cls_token"] is None
+
+
+@pytest.mark.parametrize(
+    "n_chans, n_times, n_flat",
+    [(63, 250, 1440), (271, 200, 1040)],  # THINGS-EEG2, THINGS-MEG (paper A.6)
+)
+def test_nice_released_checkpoint_keys(n_chans, n_times, n_flat):
+    """Keys and shapes of eeyhsong/NICE's pretrain_{Enc,Proj}_eeg_cls.pth load
+    through ``mapping`` with only the head missing."""
+    bn = {"weight": (40,), "bias": (40,), "running_mean": (40,), "running_var": (40,)}
+    shapes = {
+        "0.shallownet.0.weight": (40, 1, 1, 25),
+        "0.shallownet.0.bias": (40,),
+        **{f"0.shallownet.2.{k}": v for k, v in bn.items()},
+        "0.shallownet.4.weight": (40, 40, n_chans, 1),
+        "0.shallownet.4.bias": (40,),
+        **{f"0.shallownet.5.{k}": v for k, v in bn.items()},
+        "0.projection.0.weight": (40, 40, 1, 1),
+        "0.projection.0.bias": (40,),
+        "0.weight": (768, n_flat),
+        "0.bias": (768,),
+        "1.fn.1.weight": (768, 768),
+        "1.fn.1.bias": (768,),
+        "2.weight": (768,),
+        "2.bias": (768,),
+    }
+    state = {k: torch.randn(v) for k, v in shapes.items()}
+    state["0.shallownet.2.num_batches_tracked"] = torch.tensor(0)
+    state["0.shallownet.5.num_batches_tracked"] = torch.tensor(0)
+    model = NICE(n_chans=n_chans, n_times=n_times, n_outputs=200)
+    result = model.load_state_dict(state, strict=False)
+    assert result.unexpected_keys == []
+    assert sorted(result.missing_keys) == ["final_layer.bias", "final_layer.weight"]
+    out = model.eval()(torch.randn(2, n_chans, n_times), return_features=True)
+    assert out["features"].shape == (2, 768)

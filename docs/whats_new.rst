@@ -28,6 +28,10 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Adding :class:`braindecode.models.NICE`, the EEG/MEG encoder of the NICE image-decoding
+  framework (Song et al., ICLR 2024): TSConv plus the projector into the CLIP image space,
+  configured through ``n_chans``/``n_times`` for THINGS-EEG2 and THINGS-MEG; the authors'
+  checkpoint keys load through ``mapping`` (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MAPA` accepts ``ch_mask`` with per-sample
   ``sensor_indices``, ``(batch, n_chans, 3)``, so a batch can mix recordings with
   different montages and channel counts; ``return_features`` also returns the

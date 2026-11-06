@@ -68,6 +68,7 @@ if TYPE_CHECKING:
     from .neuropose import NeuroPose
     from .neurorvq import NeuroRVQ
     from .neurorvq_tokenizer import NeuroRVQTokenizer
+    from .nice import NICE
     from .patchedtransformer import PBT
     from .popt import PopulationTransformer
     from .reve import REVE
