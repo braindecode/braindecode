@@ -593,3 +593,43 @@ def test_custom_weights_legacy_options_do_not_reach_constructor(tmp_path, monkey
     assert calls[-1]["resume_download"] is True
     for key, value in model.state_dict().items():
         torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)
+
+
+def test_model_card_datasets_roundtrip(tmp_path):
+    from .test_base import DummyModuleConfigRoundTrip
+
+    model = DummyModuleConfigRoundTrip(n_chans=2, n_times=8, n_outputs=2)
+    card = {"datasets": ["TUEG", "Siena"], "base_model": "org/parent"}
+    model.save_pretrained(tmp_path / "a", model_card_kwargs=card)
+    model.save_pretrained(tmp_path / "b")  # card kwargs must not leak
+
+    restored = DummyModuleConfigRoundTrip.from_pretrained(tmp_path / "a")
+    assert restored.card_data.datasets == ["TUEG", "Siena"]
+    assert restored.card_data.base_model == "org/parent"
+    assert "braindecode" in restored.card_data.tags
+    assert DummyModuleConfigRoundTrip.from_pretrained(tmp_path / "b").card_data.datasets is None
+
+    (tmp_path / "a" / "README.md").unlink()  # no card: still loads
+    assert DummyModuleConfigRoundTrip.from_pretrained(tmp_path / "a").card_data is None
+
+
+def test_model_card_read_from_hub_cache_without_network(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    from braindecode.models.base import _load_card_data
+
+    readme = tmp_path / "README.md"
+    readme.write_text("---\ndatasets:\n- PREST\n- SHHS\n---\ncard\n")
+    calls = []
+
+    def download(*args, **kwargs):
+        calls.append((args, kwargs))
+        return str(readme)
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    data = _load_card_data("org/repo", revision="v1", local_files_only=True, n_outputs=3)
+    assert data.datasets == ["PREST", "SHHS"]
+    assert calls == [(("org/repo", "README.md"), {"revision": "v1", "local_files_only": True})]
+
+    monkeypatch.undo()  # real hub, nothing cached, no network: None, no error
+    assert _load_card_data("braindecode/no-such-repo", cache_dir=tmp_path / "c", local_files_only=True) is None

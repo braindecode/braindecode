@@ -101,7 +101,7 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
            model = SleepFM.from_pretrained(n_chans=4, n_times=3840, n_outputs=5)
 
-    .. versionadded:: 1.9
+    .. versionadded:: 2.0
 
     `License <https://creativecommons.org/licenses/by-nc/4.0/>`_
 
@@ -361,7 +361,7 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                channel_modalities=["BAS"] * 3 + ["RESP"] * 2 + ["EKG", "EMG"],
            )
 
-    .. versionadded:: 1.9
+    .. versionadded:: 2.0
 
     `License <https://creativecommons.org/licenses/by-nc/4.0/>`_
 

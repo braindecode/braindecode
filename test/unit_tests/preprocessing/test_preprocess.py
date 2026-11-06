@@ -484,6 +484,107 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
     )
 
 
+def _synthetic_filterbank_raw(sfreq=256.0, n_times=2560, seed=0):
+    """Synthetic continuous MNE Raw owned by this test: known sinusoid plus
+    impulse signals, mixed channel types, explicit sfreq and annotations.
+    Not a downloaded/real-recording fixture, so this characterization does
+    not need network access or a long MOABB download."""
+    rng = np.random.default_rng(seed)
+    ch_names = ["C3", "Cz", "EOGL"]
+    ch_types = ["eeg", "eeg", "eog"]
+    times = np.arange(n_times, dtype=np.float64) / sfreq
+    data = np.zeros((len(ch_names), n_times), dtype=np.float64)
+    data[0] = np.sin(2 * np.pi * 6.0 * times) + 0.5 * np.sin(2 * np.pi * 22.0 * times)
+    data[1] = np.sin(2 * np.pi * 10.0 * times)
+    impulse_idx = np.linspace(100, n_times - 100, 5).astype(int)
+    data[2, impulse_idx] = 1.0
+    data += 1e-6 * rng.standard_normal(data.shape)
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=ch_types)
+    raw = mne.io.RawArray(data, info, verbose="ERROR")
+    raw.set_annotations(
+        mne.Annotations(
+            onset=[0.2, 2.0], duration=[0.1, 0.05],
+            description=["bad_segment", "marker"],
+        )
+    )
+    return raw
+
+
+def test_filterbank_waveform_metadata_reference():
+    raw = _synthetic_filterbank_raw()
+    original_ch_names = list(raw.ch_names)
+    original_ch_types = raw.get_channel_types()
+    frequency_bands = [(4.0, 8.0), (8.0, 13.0)]
+
+    # Independent reference: the exact same per-band MNE calls that
+    # filterbank issues, applied directly here (not a copy of its code path).
+    expected_data = {}
+    expected_sfreq = {}
+    for band in frequency_bands:
+        reference = raw.copy()
+        reference.filter(l_freq=band[0], h_freq=band[1], verbose="ERROR")
+        expected_data[band] = reference.get_data()
+        expected_sfreq[band] = reference.info["sfreq"]
+
+    actual = raw.copy()
+    filterbank(actual, frequency_bands, drop_original_signals=True, verbose="ERROR")
+
+    expected_ch_order = [
+        (ch + f"_{band[0]}-{band[1]}")[-15:]
+        for ch in original_ch_names
+        for band in frequency_bands
+    ]
+    np.testing.assert_array_equal(actual.ch_names, expected_ch_order)
+
+    actual_data = actual.get_data()
+    actual_types = actual.get_channel_types()
+    for ch_idx, ch in enumerate(original_ch_names):
+        for band_idx, band in enumerate(frequency_bands):
+            new_idx = ch_idx * len(frequency_bands) + band_idx
+            np.testing.assert_array_equal(
+                actual_data[new_idx], expected_data[band][ch_idx]
+            )
+            assert actual_types[new_idx] == original_ch_types[ch_idx]
+    # sfreq is raw-level, not per-band; checked once against every
+    # independently-computed per-band reference sfreq, not just band 0.
+    for band in frequency_bands:
+        assert actual.info["sfreq"] == expected_sfreq[band]
+
+    # filterbank does not touch raw.annotations: preserved exactly.
+    np.testing.assert_allclose(actual.annotations.onset, raw.annotations.onset)
+    np.testing.assert_allclose(actual.annotations.duration, raw.annotations.duration)
+    np.testing.assert_array_equal(
+        actual.annotations.description, raw.annotations.description
+    )
+
+    # Preprocessing recipe/provenance recorded exactly, same shape as the
+    # existing filterbank provenance tests above.
+    ds = BaseConcatDataset([RawDataset(raw.copy())])
+    preprocess(
+        ds,
+        [
+            Preprocessor(
+                fn=filterbank,
+                frequency_bands=frequency_bands,
+                drop_original_signals=True,
+                apply_on_array=False,
+            )
+        ],
+    )
+    assert ds.datasets[0].raw_preproc_kwargs == [
+        {
+            "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
+            "fn": "braindecode.preprocessing.preprocess.filterbank",
+            "kwargs": {
+                "frequency_bands": frequency_bands,
+                "drop_original_signals": True,
+            },
+            "apply_on_array": False,
+        }
+    ]
+    np.testing.assert_array_equal(ds.datasets[0].raw.get_data(), actual_data)
+
+
 def test_replace_inplace(base_concat_ds):
     base_concat_ds2 = copy.deepcopy(base_concat_ds)
     for i in range(len(base_concat_ds2.datasets)):

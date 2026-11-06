@@ -29,6 +29,8 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import os
+import stat
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -63,9 +65,7 @@ def _make_zarr(tmp_path: Path) -> Path:
     except AttributeError:
         # zarr<3 fallback
         arr = grp.zeros("data", shape=ARRAY_SHAPE, dtype="float32", chunks=CHUNKS)
-    arr[:] = np.arange(
-        int(np.prod(ARRAY_SHAPE)), dtype="float32"
-    ).reshape(ARRAY_SHAPE)
+    arr[:] = np.arange(int(np.prod(ARRAY_SHAPE)), dtype="float32").reshape(ARRAY_SHAPE)
     return zarr_path
 
 
@@ -73,7 +73,7 @@ def _make_zarr(tmp_path: Path) -> Path:
 # initializer.  ``multiprocessing`` synchronisation primitives cannot
 # be passed as ``starmap`` args under the ``spawn`` start method, so
 # the initializer is the canonical way to share them.
-_BARRIER: "mp.synchronize.Barrier | None" = None
+_BARRIER: mp.synchronize.Barrier | None = None
 
 
 def _init_worker(barrier) -> None:
@@ -105,9 +105,7 @@ def _worker(zarr_path_str: str, group: str):
     # Force real page faults on the memmap — this mirrors the
     # production access pattern that originally raised SIGBUS.
     arr = np.load(npy_path, mmap_mode="c")
-    checksum = (
-        float(arr[0, 0]) + float(arr[-1, -1]) + float(arr.sum())
-    )
+    checksum = float(arr[0, 0]) + float(arr[-1, -1]) + float(arr.sum())
     return (
         os.getpid(),
         str(npy_path),
@@ -124,9 +122,7 @@ def _run_race(tmp_path: Path, n_workers: int):
 
     ctx = mp.get_context("spawn")
     barrier = ctx.Barrier(n_workers)
-    with ctx.Pool(
-        n_workers, initializer=_init_worker, initargs=(barrier,)
-    ) as pool:
+    with ctx.Pool(n_workers, initializer=_init_worker, initargs=(barrier,)) as pool:
         # starmap_async(...).get(timeout=...) gives us a hard wall-
         # clock cap on the whole pool: if any worker deadlocks or
         # stalls, the test fails with TimeoutError instead of hanging
@@ -175,9 +171,7 @@ def test_zarr_to_memmap_is_concurrency_safe(tmp_path, n_workers):
 
     # (4) Content agreement across readers.
     checksums = {r[3] for r in results}
-    assert len(checksums) == 1, (
-        f"workers disagreed on file content: {checksums}"
-    )
+    assert len(checksums) == 1, f"workers disagreed on file content: {checksums}"
 
     # (5) Cache dir is clean.
     leftover = sorted(p.name for p in cache_dir.iterdir())
@@ -219,3 +213,80 @@ def test_zarr_to_memmap_reuses_existing_cache(tmp_path):
     # Still no leftover debris.
     leftover = sorted(p.name for p in cache_dir.iterdir())
     assert leftover == ["recording_0.npy"]
+
+
+def _small_zarr(tmp_path, shape=(4, 103), chunks=(4, 16)):
+    path = tmp_path / "small.zarr"
+    source = np.arange(int(np.prod(shape)), dtype=np.float32).reshape(shape) / 13
+    group = zarr.open(str(path), mode="w").create_group("recording_0")
+    try:
+        array = group.create_array("data", shape=shape, chunks=chunks, dtype="f4")
+    except AttributeError:
+        array = group.zeros("data", shape=shape, chunks=chunks, dtype="f4")
+    array[:] = source
+    return path, source
+
+
+def test_zarr_to_memmap_same_pid_writers_use_own_temp(tmp_path, monkeypatch):
+    """Threads of one process must not write into one shared temp file."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from braindecode.datasets import base
+
+    path, source = _small_zarr(tmp_path)
+    barrier = threading.Barrier(2, timeout=10)
+    link, temps = os.link, []
+
+    def link_together(src, dst):
+        temps.append(src)
+        barrier.wait()  # both writers have filled their temp file
+        link(src, dst)
+
+    monkeypatch.setattr(base.os, "link", link_together)
+    with ThreadPoolExecutor(2) as pool:
+        futures = [pool.submit(_zarr_to_memmap, path, "recording_0") for _ in "ab"]
+        results = [future.result() for future in futures]
+    assert len(set(temps)) == 2
+    assert results[0] == results[1]
+    assert np.array_equal(np.load(results[0]), source.astype(np.float64))
+    assert [p.name for p in results[0].parent.iterdir()] == ["recording_0.npy"]
+
+
+def test_zarr_to_memmap_failed_writer_cleans_only_owned_temp(tmp_path, monkeypatch):
+    """A mid-conversion failure must not remove another writer's temporary."""
+    path, source = _small_zarr(tmp_path, shape=(8, 103), chunks=(4, 16))
+    cache = path.parent / f".{path.name}_memmap"
+    cache.mkdir()
+    other = cache / "recording_0.other-writer.tmp.npy"
+    other.write_bytes(b"owned by another writer")
+    original = zarr.Array.__getitem__
+    calls = 0
+
+    def failing_read(self, selection):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("injected read failure")
+        return original(self, selection)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(zarr.Array, "__getitem__", failing_read)
+        with pytest.raises(RuntimeError, match="injected read failure"):
+            _zarr_to_memmap(path, "recording_0")
+    assert list(cache.iterdir()) == [other]
+    assert other.read_bytes() == b"owned by another writer"
+    result = _zarr_to_memmap(path, "recording_0")
+    assert np.array_equal(np.load(result), source.astype(np.float64))
+    assert set(cache.iterdir()) == {other, result}
+
+
+@pytest.mark.parametrize("mask", [0o002, 0o022])
+def test_zarr_to_memmap_keeps_umask_permissions(tmp_path, mask):
+    """A per-call temp name must not bring tempfile's 0600 mode to the cache."""
+    path, _ = _small_zarr(tmp_path)
+    old_mask = os.umask(mask)
+    try:
+        result = _zarr_to_memmap(path, "recording_0")
+    finally:
+        os.umask(old_mask)
+    assert stat.S_IMODE(result.stat().st_mode) == 0o666 & ~mask

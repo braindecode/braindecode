@@ -293,7 +293,7 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
        (paper: 0.090); the authors' released code gives the same numbers on the
        same data.
 
-    .. versionadded:: 1.9
+    .. versionadded:: 2.0
 
     `License <https://github.com/KonstantinosBarmpas/NeuroRVQ/blob/main/LICENSE>`_
 
@@ -359,12 +359,13 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     statistic_code_usage : bool, default=False
         ``True`` lets eval forwards update the ``cluster_size`` code-usage EMA, as the authors' code.
 
-    Output shape
-    ------------
-    ``forward`` returns the target and reconstruction patches, each z-scored
-    per window, shaped ``(batch, n_chans * n_patches, patch_size)``; their mean
-    squared difference is the reconstruction error. ``tokenize`` returns
-    integer codes shaped ``(4, num_quantizers, batch, n_chans * n_patches)``.
+    Notes
+    -----
+    Output shape: ``forward`` returns the target and reconstruction patches,
+    each z-scored per window, shaped
+    ``(batch, n_chans * n_patches, patch_size)``; their mean squared
+    difference is the reconstruction error. ``tokenize`` returns integer codes
+    shaped ``(4, num_quantizers, batch, n_chans * n_patches)``.
     With ``on_missing="drop"``, ``n_chans`` counts the kept channels.
 
     Examples

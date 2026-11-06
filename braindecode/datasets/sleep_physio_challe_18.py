@@ -13,7 +13,6 @@ import urllib
 import mne
 import numpy as np
 import pandas as pd
-import wfdb
 from joblib import Parallel, delayed
 from mne.datasets.sleep_physionet._utils import _fetch_one
 from mne.datasets.utils import _get_path
@@ -305,6 +304,10 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
         super().__init__(all_base_ds)
 
     def _load_raw(self, subj_nb, raw_fname, arousal_fname, load_eeg_only, preproc):
+        # Imported here so that ``import braindecode.datasets`` does not import
+        # wfdb, whose own import emits a DeprecationWarning with pandas >= 3.1.
+        import wfdb
+
         channel_types = ["eeg"] * 7
         if load_eeg_only:
             channels = list(range(7))

@@ -226,7 +226,7 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
     :bdg-dark-line:`Channel`
 
-    .. versionadded:: 1.8.2
+    .. versionadded:: 2.0
 
     .. figure:: ../_static/model/guetschel2026_arch.png
         :align: center

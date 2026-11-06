@@ -7,7 +7,10 @@ from .scoring import (
     CroppedTimeSeriesEpochScoring,
     CroppedTrialEpochScoring,
     PostEpochTrainScoring,
+    TrialPredictionChunk,
     f1_event,
+    iter_trial_prediction_chunks,
+    iter_trial_predictions,
     predict_trials,
     trial_preds_from_window_preds,
 )
@@ -22,5 +25,8 @@ __all__ = [
     "CroppedTimeSeriesEpochScoring",
     "trial_preds_from_window_preds",
     "predict_trials",
+    "iter_trial_predictions",
+    "iter_trial_prediction_chunks",
+    "TrialPredictionChunk",
     "f1_event",
 ]

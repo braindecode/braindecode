@@ -98,7 +98,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     the next-token head and the tokenizer's signal decoder; every weight but
     the classification head is then pre-trained.
 
-    .. versionadded:: 1.9
+    .. versionadded:: 2.1
 
     Parameters
     ----------

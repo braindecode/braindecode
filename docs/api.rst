@@ -122,9 +122,9 @@ interface for all EEG models and can derive variable names when needed.
     For more details, see the :class:`~braindecode.models.EEGModuleMixin` documentation
     and the :ref:`hub-integration` tutorial.
 
-:note: Auto-generated Pydantic configs are available when the optional
-    ``braindecode[pydantic]`` extra (which installs ``pydantic`` and ``numpydantic``) is
-    installed; otherwise config generation is skipped.
+:note: Model configs are generated with Pydantic, a core dependency. With the optional
+    ``braindecode[typing]`` extra (``numpydantic`` and ``exca``), the channel positions
+    in ``chs_info`` are validated as typed 12-element arrays.
 
 :py:mod:`braindecode.models.base`:
 
@@ -156,11 +156,13 @@ interface for all EEG models and can derive variable names when needed.
      BrainModule
      BrainOmni
      BrainTokenizer
+     Brant
      CBraMod
      CodeBrain
      ContraWR
      CSBrain
      CTNet
+     DANCE
      DGCNN
      DIVER1
      DuIN
@@ -193,8 +195,11 @@ interface for all EEG models and can derive variable names when needed.
      MEDFormer
      MEGGPT
      MetaNeuromotorHand
+     MIRepNet
      MSCFormer
      MSVTNet
+     MVPFormer
+     NeuroPose
      NeuroRVQ
      NeuroRVQTokenizer
      PBT
@@ -202,6 +207,7 @@ interface for all EEG models and can derive variable names when needed.
      REVE
      SCCNet
      SeizureTransformer
+     SensingDynamics
      ShallowFBCSPNet
      SignalJEPA
      SignalJEPA_Contextual
@@ -223,6 +229,7 @@ interface for all EEG models and can derive variable names when needed.
      TMSANet
      TSception
      USleep
+     VEMG2Pose
      ZUNA
 
 DIVER-1 recording metadata
@@ -404,6 +411,23 @@ initializations.
 
     LinearWithConstraint
     MaxNormLinear
+
+Quantization
+============
+
+These modules implement the vector quantizers of the tokenizer models, such as
+:class:`~braindecode.models.NeuroRVQTokenizer`.
+
+:py:mod:`braindecode.modules.quantization`:
+
+.. autosummary::
+    :toctree: generated/quantization
+    :template: class_in_subdir
+    :recursive:
+
+    EMACodebook
+    VectorQuantizer
+    ResidualVectorQuantizer
 
 Stats
 =====
@@ -887,7 +911,12 @@ models and evaluate their performance.
      mixup_criterion
      trial_preds_from_window_preds
      predict_trials
+     iter_trial_predictions
+     iter_trial_prediction_chunks
+     TrialPredictionChunk
      f1_event
+
+See :ref:`cropped-inference` for memory bounds, lifecycle and loader settings.
 
 *******
  Utils

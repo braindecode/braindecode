@@ -221,7 +221,7 @@ def _resolve_on_last_window(
         )
     if drop_last_window is not None:
         warnings.warn(
-            "`drop_last_window` is deprecated and will be removed in version 2.0. "
+            "`drop_last_window` is deprecated and will be removed in version 2.1. "
             "Use `on_last_window='drop'` if True or "
             "`on_last_window='overlap'` if False. "
             "See https://github.com/braindecode/braindecode/pull/1058 for feedback.",
@@ -300,7 +300,7 @@ def create_windows_from_events(
         Deprecated; use ``on_last_window`` instead. Explicit ``False`` maps to
         ``'overlap'`` and explicit ``True`` maps to ``'drop'``. Either value
         emits a ``DeprecationWarning`` and this parameter will be removed in
-        version 2.0.
+        version 3.0.
     mapping: dict(str: int)
         Mapping from event description to numerical target value. If None, the
         event descriptions of all datasets are numbered from 0 in dataset
@@ -520,7 +520,7 @@ def create_fixed_length_windows(
         Deprecated; use ``on_last_window`` instead. Explicit ``False`` maps to
         ``'overlap'`` and explicit ``True`` maps to ``'drop'``. Either value
         emits a ``DeprecationWarning`` and this parameter will be removed in
-        version 2.0.
+        version 3.0.
     mapping: dict(str: int)
         Mapping from event description to target value.
     preload: bool

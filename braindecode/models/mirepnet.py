@@ -102,7 +102,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     It was trained with 45 channels, 1,000 samples at 250 Hz, and three output
     classes. Pass ``n_outputs`` to replace its classification head.
 
-    .. versionadded:: 1.8
+    .. versionadded:: 2.0
 
     Parameters
     ----------
@@ -140,14 +140,12 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     return_features : bool, default=False
         Whether ``forward`` returns the unified feature dictionary by default.
 
-    Input shape
-    -----------
-    ``(batch, n_chans, n_times)``.
+    Notes
+    -----
+    Input shape: ``(batch, n_chans, n_times)``.
 
-    Output shape
-    ------------
-    By default, ``(batch, n_outputs)`` logits. With ``return_features=True``,
-    ``{"features": (batch, embed_dim), "cls_token": None}``.
+    Output shape: by default, ``(batch, n_outputs)`` logits. With
+    ``return_features=True``, ``{"features": (batch, embed_dim), "cls_token": None}``.
 
     References
     ----------

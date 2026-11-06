@@ -4,7 +4,7 @@
  Installation
 ##############
 
-Braindecode requires Python >= 3.11, PyTorch >= 2.4, and TorchAudio >= 2.4. macOS
+Braindecode requires Python >= 3.11, PyTorch >= 2.6, and TorchAudio >= 2.6. macOS
 requires Apple Silicon; Intel Macs are no longer supported because `PyTorch discontinued
 macOS x86_64 binaries after 2.2
 <https://dev-discuss.pytorch.org/t/pytorch-macos-x86-builds-deprecation-starting-january-2024/1690>`_.

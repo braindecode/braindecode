@@ -193,7 +193,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         unchanged; the register parameter is then not used and does not
         require gradients. The default is ``True``.
 
-        .. versionadded:: 1.8.2
+        .. versionadded:: 2.0
 
     Notes
     -----

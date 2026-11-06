@@ -85,7 +85,7 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
        not affected; the issue is only in the evaluation. When fine-tuning,
        split by blocks of time.
 
-    .. versionadded:: 1.8.2
+    .. versionadded:: 2.0
 
     Parameters
     ----------
@@ -279,8 +279,10 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
             Integer sequence ids of shape ``(batch, n_chans)``. Defaults to zero
             (single population).
         return_features : bool
-            If ``True``, return ``{"features": cls, "cls_token": cls}`` (the
-            pooled ``CLS`` representation) instead of the class logits.
+            If ``True``, return ``{"features": cls, "cls_token": cls, "tokens":
+            tokens}`` instead of the class logits: the pooled ``CLS``
+            representation and the electrode tokens, one per channel, ``(batch,
+            n_chans, 1, hidden_dim)``, zero for padded channels.
         ch_mask : torch.Tensor, optional
             ``(batch, n_chans)`` mask of real channels, see
             :func:`~braindecode.functional.check_ch_mask`; the complement of upstream's
@@ -319,7 +321,10 @@ class PopulationTransformer(EEGModuleMixin, nn.Module, license="mit"):
             # Scripted forward stays monomorphic (same pattern as Brant).
             if torch.jit.is_scripting():
                 return logits
-            return {"features": cls_token, "cls_token": cls_token}
+            tokens = z[:, 1:].unsqueeze(2)
+            if mask is not None:
+                tokens = tokens.masked_fill(~mask[:, :, None, None], 0.0)
+            return {"features": cls_token, "cls_token": cls_token, "tokens": tokens}
         return logits
 
 

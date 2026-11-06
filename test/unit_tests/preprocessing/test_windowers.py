@@ -2075,7 +2075,7 @@ def test_drop_last_window_keyword_deprecation(
     trailing_window_policy_case, legacy, strategy
 ):
     function, kwargs = trailing_window_policy_case
-    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.0"):
+    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.1"):
         deprecated = function(**kwargs, drop_last_window=legacy)
     replacement = function(**kwargs, on_last_window=strategy)
     pd.testing.assert_frame_equal(
@@ -2101,7 +2101,7 @@ def test_drop_last_window_positional_compatibility(
         positional_args = (concat_ds, 0, 0, 40, 40, legacy)
     else:
         positional_args = (concat_ds, 0, None, 40, 40, legacy)
-    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.0"):
+    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.1"):
         deprecated = function(*positional_args, use_mne_epochs=False)
     replacement = function(**kwargs, on_last_window=strategy)
     pd.testing.assert_frame_equal(
@@ -2184,7 +2184,7 @@ def test_overlap_remains_incompatible_with_lazy_metadata(lazy_loadable_dataset):
 def test_fixed_length_no_size_policy_is_moot(
     lazy_loadable_dataset, legacy, strategy
 ):
-    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.0"):
+    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.1"):
         deprecated = create_fixed_length_windows(
             concat_ds=lazy_loadable_dataset,
             drop_last_window=legacy,

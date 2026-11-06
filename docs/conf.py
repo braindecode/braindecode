@@ -277,7 +277,7 @@ intersphinx_mapping = {
     "sklearn": ("https://scikit-learn.org/stable/", None),
     "mne": ("https://mne.tools/stable/", None),
     "skorch": ("https://skorch.readthedocs.io/en/stable/", None),
-    "torch": ("https://pytorch.org/docs/stable/", None),
+    "torch": ("https://docs.pytorch.org/docs/stable/", None),
     "huggingface_hub": (
         "https://huggingface.co/docs/huggingface_hub/main/en/",
         None,
@@ -505,15 +505,19 @@ latex_documents = [
 # .github/workflows/docs.yml `destination_dir: dev`). The baseurl,
 # OG canonical, and the sitemap location must match the actual deploy
 # path or crawlers will end up on 404s.
-html_baseurl = "https://braindecode.org/dev/"
+# Tag builds are published as /stable/ (docs.yml sets BRAINDECODE_DOCS_URL).
+_docs_url = os.environ.get("BRAINDECODE_DOCS_URL") or "https://braindecode.org/dev/"
+_docs_url = _docs_url.rstrip("/") + "/"
+html_baseurl = _docs_url
+html_context["docs_url"] = _docs_url  # JSON-LD in _templates/layout.html
 sitemap_filename = "sitemap.xml"
 # Flat URLs (no /en/{version}/) — same pattern as MOABB.
 sitemap_url_scheme = "{link}"
 
 # --- Open Graph / Twitter Card / meta description ---
-ogp_site_url = "https://braindecode.org/dev/"
+ogp_site_url = _docs_url
 ogp_site_name = "Braindecode"
-ogp_image = "https://braindecode.org/dev/_static/braindecode_long.svg"
+ogp_image = f"{_docs_url}_static/braindecode_long.svg"
 ogp_image_alt = (
     "Braindecode — open-source PyTorch toolbox for decoding raw EEG, ECoG and MEG"
 )

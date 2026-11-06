@@ -106,7 +106,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
 
         Input is expected at 256 Hz, preprocessed as in the authors' code.
 
-    .. versionadded:: 1.8
+    .. versionadded:: 2.0
 
     Parameters
     ----------
@@ -347,7 +347,7 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
 
         Input is expected at 256 Hz, preprocessed as in the authors' code.
 
-    .. versionadded:: 1.8
+    .. versionadded:: 2.0
 
     Parameters
     ----------
