@@ -16,6 +16,7 @@ import pooch
 import pytest
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchaudio.transforms import Resample
 
 import braindecode.models.luna as luna_module
@@ -31,6 +32,7 @@ except ImportError:
 
 from braindecode.models import (
     AXON,
+    CORTEG,
     DIVER1,
     LUNA,
     MAPA,
@@ -2257,6 +2259,133 @@ def test_steegformer_montage_fallback(
             assert 0 <= int(slots.min()) <= int(slots.max()) < len(steeg_vocab)
         else:
             assert model.channel_indices.tolist() == list(range(n_chans))
+
+
+# ==============================================================================
+# Tests for CORTEG
+# ==============================================================================
+
+_CORTEG_SMALL = dict(embed_dim=32, depth=2, num_heads=2, n_merge_blocks=1)
+# The released Stanford adapter, and the layers its tensors belong to.
+_CORTEG_ADAPTER_URL = (
+    "https://github.com/LiuyinYang1101/CORTEG/raw/"
+    "caafb78fbebdd9448814f96d7e61083a3eb62663/checkpoints/corteg_stanford_pooled.pt"
+)
+_CORTEG_REFERENCE_LAYERS = {
+    "norm1": ["0.fn.0"],
+    "norm2": ["1.fn.0"],
+    "attn.qkv": ["0.fn.1.queries", "0.fn.1.keys", "0.fn.1.values"],
+    "attn.proj": ["0.fn.1.projection"],
+    "mlp.fc1": ["1.fn.1.0"],
+    "mlp.fc2": ["1.fn.1.3"],
+}
+
+
+def _corteg_chs_info(positions):
+    info = mne.create_info([f"E{i}" for i in range(len(positions))], 128.0, "ecog")
+    for ch, xyz in zip(info["chs"], positions):
+        ch["loc"][:3] = xyz
+    return info["chs"]
+
+
+_CORTEG_CHS = _corteg_chs_info([[-0.04, -0.02, 0.06], [-0.03, 0.0, 0.07], [0.05, 0.01, 0.05]])
+
+
+def test_corteg_loads_a_steegformer_checkpoint_and_warm_starts_its_high_gamma_embed():
+    steegformer = STEEGFormer(
+        n_chans=3, n_outputs=2, n_times=64, chan_pos_idx=[0, 1, 2], embed_dim=32,
+        depth=2, num_heads=2,
+    )
+    model = CORTEG(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
+    missing, unexpected = model.load_state_dict(steegformer.state_dict(), strict=False)
+    assert unexpected == []
+    assert {key.split(".")[0] for key in missing} == {"channel_adapter"}
+    lo, hi = steegformer.patch_embed.proj, model.patch_embed_hi.proj
+    torch.testing.assert_close(
+        hi.weight, F.interpolate(lo.weight[None], size=25, mode="linear")[0]
+    )
+    torch.testing.assert_close(hi.bias, lo.bias)
+
+
+@pytest.mark.parametrize("merge_strategy", ["average", "layerwise_gate"])
+def test_corteg_gate_starts_closed(merge_strategy):
+    torch.manual_seed(0)
+    model = CORTEG(
+        chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, merge_strategy=merge_strategy,
+        **_CORTEG_SMALL,
+    ).eval()
+    x, x_hi = torch.randn(2, 3, 64), torch.randn(2, 3, 100)
+    with torch.no_grad():
+        same = torch.allclose(model(x, x_hi), model(x))
+    assert same == (merge_strategy == "layerwise_gate")
+
+
+def test_corteg_soft_branch_starts_at_the_nearest_scalp_slots():
+    from braindecode.models.corteg import _VOCAB_POSITIONS
+
+    model = CORTEG(
+        chs_info=_corteg_chs_info([_VOCAB_POSITIONS[0]]), n_outputs=2, n_times=64,
+        **_CORTEG_SMALL,
+    )
+    logits = model.channel_adapter.soft.net[-1].bias
+    assert int(logits.argmax()) == 0
+    assert int((logits > -10).sum()) == model.knn_k, "the k nearest slots only"
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_corteg_released_adapter_reproduces_the_reference_outputs(tmp_path):
+    """The authors' Stanford adapter on ST-EEGFormer-small gives their outputs.
+
+    The adapter holds LoRA factors on blocks 4-7, folded here into the frozen
+    weights. The expected values were computed with the authors' code
+    (LiuyinYang1101/CORTEG at caafb78) on the same inputs. Run with
+    ``pytest -k corteg_released --run-network``.
+    """
+    pytest.importorskip("huggingface_hub")
+    path = tmp_path / "corteg_stanford_pooled.pt"
+    try:
+        model = CORTEG.from_pretrained(
+            "braindecode/STEEGFormer-small", n_outputs=5, n_chans=8, n_times=128
+        ).eval()
+        torch.hub.download_url_to_file(
+            _CORTEG_ADAPTER_URL, str(path), hash_prefix="77d63a214e0e0f2c"
+        )
+    except (URLError, OSError) as err:
+        pytest.skip(f"Could not download the CORTEG weights: {err}")
+    adapter = torch.load(path, map_location="cpu")
+    state = model.state_dict()
+    for key, value in adapter.items():
+        key = key.removeprefix("backbone.").replace("head.head.", "final_layer.")
+        if not key.startswith("blocks."):
+            state[key] = value
+            continue
+        _, block, rest = key.split(".", 2)
+        layer, _, param = rest.rpartition(".")
+        if layer.endswith(".A"):
+            layer = layer.removesuffix(".A")
+            lora_b = adapter[f"backbone.blocks.{block}.{layer}.B.weight"]
+            names = _CORTEG_REFERENCE_LAYERS[layer]
+            for name, delta in zip(names, (4.0 * lora_b @ value).chunk(len(names))):
+                state[f"encoder.{block}.{name}.weight"] += delta  # alpha / r = 4
+        elif not layer.endswith(".B"):
+            state[f"encoder.{block}.{_CORTEG_REFERENCE_LAYERS[layer][0]}.{param}"] = value
+    model.load_state_dict(state)
+
+    g = torch.Generator().manual_seed(0)
+    x = torch.randn(2, 8, 128, generator=g)
+    x_hi = torch.randn(2, 8, 200, generator=g)
+    pos = torch.tensor([[-0.04 + 0.004 * i, -0.02 + 0.003 * i, 0.06 - 0.002 * i]
+                        for i in range(8)])
+    with torch.no_grad():
+        out = model(x, x_hi, pos=pos)
+    expected = torch.tensor(
+        [
+            [-0.238790, -0.272281, -0.239645, -0.154676, -0.178600],
+            [-0.206597, -0.287198, -0.219428, -0.211392, 0.090932],
+        ]
+    )
+    torch.testing.assert_close(out, expected, rtol=0, atol=1e-4)
 
 
 # ==============================================================================
