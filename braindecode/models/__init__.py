@@ -72,6 +72,7 @@ if TYPE_CHECKING:
     from .popt import PopulationTransformer
     from .reve import REVE
     from .sccnet import SCCNet
+    from .seegnificant import SEEGnificant
     from .seizure_transformer import SeizureTransformer
     from .sensingdynamics import SensingDynamics
     from .shallow_fbcsp import ShallowFBCSPNet

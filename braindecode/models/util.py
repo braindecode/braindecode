@@ -815,6 +815,12 @@ models_mandatory_parameters: list[
         {"sfreq": 200.0, "n_times": 1000},
     ),
     ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
+    # the paper's 1.5 s at 400 Hz
+    (
+        "SEEGnificant",
+        ["chs_info", "n_outputs", "n_times"],
+        {"n_times": 600, "sfreq": 400.0},
+    ),
     (
         "MVPFormer",
         ["n_chans", "n_outputs", "n_times", "sfreq"],

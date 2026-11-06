@@ -22,6 +22,7 @@ from braindecode.models import (
     Labram,
     MIRepNet,
     PopulationTransformer,
+    SEEGnificant,
     SignalJEPA,
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
@@ -145,6 +146,7 @@ _MODELS = [
         True,
         id="STEEGFormer",
     ),
+    pytest.param(SEEGnificant, N_CHANS, {"chs_info": _chs()}, False, id="SEEGnificant"),
     pytest.param(SignalJEPA, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA"),
     pytest.param(
         SignalJEPA_Contextual,

@@ -28,6 +28,10 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.SEEGnificant`, the multi-subject sEEG decoder of
+  Mentzelopoulos et al. (2024): a convolutional tokenizer per electrode, attention
+  alternating between time and electrodes, an MNI radial-basis positional
+  encoding, and one head per subject (by `Julien Gadonneix`_).
 - :class:`braindecode.models.MAPA` accepts ``ch_mask`` with per-sample
   ``sensor_indices``, ``(batch, n_chans, 3)``, so a batch can mix recordings with
   different montages and channel counts; ``return_features`` also returns the
