@@ -338,7 +338,7 @@ class CORTEG(EEGModuleMixin, nn.Module):
         dpr = torch.linspace(0, drop_path, depth).tolist()
         self.encoder = nn.Sequential(
             *[
-                _MaskedEncoderBlock(
+                _TransformerEncoderBlock(
                     embed_dim, num_heads, drop_prob, int(mlp_ratio), dpr[i], activation
                 )
                 for i in range(depth)
@@ -511,18 +511,6 @@ class CORTEG(EEGModuleMixin, nn.Module):
             ).transpose(1, 2)
             return {"features": patches, "cls_token": z[:, 0], "tokens": per_channel}
         return self.final_layer(masked_mean(z, key_mask, [1]))
-
-
-class _MaskedEncoderBlock(_TransformerEncoderBlock):
-    """ST-EEGFormer's encoder block, with an attention mask over the keys."""
-
-    def forward(
-        self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
-        attention = self[0]
-        sublayer = attention.fn
-        x = x + attention.drop_path(sublayer[2](sublayer[1](sublayer[0](x), attn_mask)))
-        return self[1](x)
 
 
 def _knn_log_prior(
