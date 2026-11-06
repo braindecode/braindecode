@@ -63,18 +63,22 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
-    - **Temporal:** a 50 Hz input gives one token per 12 samples (240 ms);
-      RoPE attention spans the whole window (150 s in pretraining).
+    - **Temporal:** ``ceil(n_times / 12)`` tokens of 240 ms at 50 Hz (the
+      SEANet pads the end, as BioCodec does); RoPE attention spans the whole
+      window (150 s in pretraining).
     - **Spatial:** attention over the channels, keyed by sensor geometry.
     - **Spectral:** learned implicitly by the tokenizer's convolutions.
 
     .. rubric:: Additional Mechanisms
 
     - Sensor geometry comes from ``chs_info`` as in the authors'
-      preprocessing: ``loc[:3]`` centred and scaled to unit RMS radius, the
-      coil x-axis of planar gradiometers or the coil normal of other coils as
-      orientation. Coils whose name contains ``MAG`` are magnetometers, every
-      other channel gets the gradiometer embedding.
+      preprocessing: ``loc[:3]`` centred and divided by
+      ``sqrt(3 * mean(|r|^2))``, the coil x-axis of planar gradiometers or the
+      coil normal of other coils as orientation. MEG coils whose name contains
+      ``MAG`` are magnetometers, the other MEG coils gradiometers. EEG
+      channels also get the gradiometer embedding, with zero orientation and
+      positions normalised apart from the MEG ones; other channel kinds raise
+      a ``ValueError``. MEG-XL is pretrained on MEG only.
     - The RoPE table holds the 625 positions of the 150 s pretraining window
       (``torch.polar`` values in the converted weights); a longer window
       rebuilds it from ``cos``/``sin``, one ulp away from ``torch.polar``.
@@ -86,13 +90,18 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
     .. important::
 
         Weights converted from the released ``meg-xl-med-v2.ckpt``
-        (``pnpl/MEG-XL``) and the BioCodec tokenizer load with
-        ``load_state_dict``; the head is not pretrained. Input is expected at
-        50 Hz, preprocessed as in the authors' code (0.1-40 Hz band-pass,
-        baseline correction and robust scaling per 3 s chunk, clipped to
-        ``[-5, 5]``).
+        (``pnpl/MEG-XL``, step 113000, with its frozen BioCodec tokenizer) are
+        on the Hugging Face Hub at ``braindecode/meg-xl-med-v2``; the head is
+        not pretrained::
 
-    .. versionadded:: 1.8
+            from braindecode.models import MEGXL
+            model = MEGXL.from_pretrained("braindecode/meg-xl-med-v2", chs_info=raw.info["chs"], n_outputs=2)
+
+        Input is expected at 50 Hz, preprocessed as in the authors' code
+        (0.1-40 Hz band-pass, baseline correction and robust scaling per 3 s
+        chunk, clipped to ``[-5, 5]``).
+
+    .. versionadded:: 2.1
 
     `License <https://github.com/neural-processing-lab/MEG-XL/blob/main/LICENSE>`_
 
@@ -174,8 +183,8 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         # Derived from chs_info, so not saved: one checkpoint serves any montage.
         pos, sensor_type = _geometry_from_chs_info(self.chs_info)
         pos = torch.from_numpy(pos)
-        self.register_buffer("sensor_xyz", pos[:, :3].contiguous(), persistent=False)
-        self.register_buffer("sensor_abc", pos[:, 3:].contiguous(), persistent=False)
+        self.register_buffer("sensor_xyz", pos[:, :3], persistent=False)
+        self.register_buffer("sensor_abc", pos[:, 3:], persistent=False)
         # BrainOmni codes MAG as 1; MEG-XL types sensors GRAD (0) or MAG (1).
         sensor_type = torch.from_numpy(sensor_type == 1).long()
         self.register_buffer("sensor_type", sensor_type, persistent=False)
@@ -236,6 +245,8 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         # Each channel is scaled to unit RMS over the window.
         scale = x.pow(2).mean(dim=2, keepdim=True).sqrt().clamp(min=1e-8)
         residual = self.encoder(x / scale).transpose(1, 2)
+        # Not the shared RVQ forward: BioCodec picks codes by cosine similarity,
+        # the shared quantizer by Euclidean distance.
         codes = []
         for vq in self.quantizer.layers:
             z = F.normalize(vq.project_in(residual), p=2.0, dim=-1)

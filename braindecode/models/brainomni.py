@@ -652,12 +652,13 @@ class _SpatialTemporalBlock(nn.Module):
 
 
 class _RotaryPositionalEmbedding(nn.Module):
-    """RoPE of the released BrainOmni.
+    """RoPE of the released BrainOmni and MEG-XL.
 
-    ``rotate`` caches ``n_positions`` (240) positions as ``(cos, sin)`` pairs;
-    the released checkpoints hold cosines only (zero sine). A longer sequence rebuilds the
-    cache from ``freqs`` and later calls keep it (not saved). The caches stay
-    float32 under a dtype cast, ``freqs`` follows it.
+    ``rotate`` caches ``n_positions`` positions as ``(cos, sin)`` pairs (240
+    for BrainOmni, whose released checkpoints hold cosines only, zero sine;
+    625 for MEG-XL). A longer sequence rebuilds the cache from ``freqs`` and
+    later calls keep it (not saved). The caches stay float32 under a dtype
+    cast, ``freqs`` follows it.
     """
 
     # TorchScript types the ``rebuilt`` buffer from this; a postponed string

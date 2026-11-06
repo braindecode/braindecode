@@ -6071,7 +6071,7 @@ def test_bbl_pads_sensors_gates_datasets_and_averages_subjects():
 
 def test_megxl_meg_geometry_and_codes():
     """MEG-XL types MAG coils 1 and other channels 0, orients planar
-    gradiometers by ``loc[3:6]`` and gives one token per 12 samples."""
+    gradiometers by ``loc[3:6]`` and gives ``ceil(n_times / 12)`` tokens."""
     from mne.io.constants import FIFF
 
     from braindecode.models import MEGXL
