@@ -404,6 +404,26 @@ initializations.
     LinearWithConstraint
     MaxNormLinear
 
+SEANet
+======
+
+The EnCodec SEANet convolutional encoder and decoder, with their blocks, shared by the
+codec models (BrainOmni, BBL).
+
+:py:mod:`braindecode.modules.seanet`:
+
+.. autosummary::
+    :toctree: generated/seanet
+    :template: class_in_subdir
+    :recursive:
+
+    SEANetConv1d
+    SEANetConvTranspose1d
+    SEANetDecoder
+    SEANetEncoder
+    SEANetLSTM
+    SEANetResBlock
+
 Stats
 =====
 
