@@ -21,7 +21,7 @@ from braindecode.modules import SEANetEncoder
 class BBL(EEGModuleMixin, nn.Module, license="mit"):
     r"""BBL, the MEG encoder of *The Brain's Bitter Lesson* from Jayalath et al. (2025) [bbl]_.
 
-    :bdg-danger:`Foundation Model` :bdg-success:`Convolution`
+    :bdg-danger:`Foundation Model` :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 
     .. rubric:: Architecture Overview
 
@@ -66,12 +66,15 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         The released checkpoint was pretrained on CamCAN (dataset slot 0) at
         250 Hz on 0.5 s windows (125 samples), sensors right-padded to 306 and
         robust-scaled, clipped to ``[-5, 5]`` and baseline-corrected as in the
-        authors' code. Only CamCAN subject rows of ``subject_embedding`` are
-        trained, and ``trained_subjects`` flags them; the head is not pretrained.
-        Set ``trained_subjects`` to the rows your own training used before
-        relying on the mean-subject fallback.
+        authors' code. Its projector expects CamCAN's 306 Elekta ``MEG*``
+        channels in FIF order. ``subject_index`` is offset per dataset slot:
+        subject ``s`` of slot ``d`` uses row ``d * 1024 + s``. Only CamCAN
+        subject rows of ``subject_embedding`` are trained, and
+        ``trained_subjects`` flags them; the head is not pretrained. Set
+        ``trained_subjects`` to the rows your own training used before relying
+        on the mean-subject fallback.
 
-    .. versionadded:: 1.8
+    .. versionadded:: 2.1
 
     Parameters
     ----------
