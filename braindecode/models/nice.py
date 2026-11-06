@@ -19,6 +19,8 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
 
     :bdg-success:`Convolution`
 
+    .. versionadded:: 2.1
+
     NICE (Natural Image Contrast EEG) learns an EEG/MEG embedding aligned with
     the image embedding of a frozen CLIP ViT-L/14 by contrastive learning, and
     decodes seen images zero-shot by nearest-neighbour search in that space.
