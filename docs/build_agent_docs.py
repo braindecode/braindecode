@@ -69,11 +69,16 @@ def publish(markdown_root, html_root, *, site_url, version, revision):
         "# Braindecode\n\n"
         "> PyTorch-based deep learning for EEG, ECoG and MEG.\n\n"
         + attribution
-        + "This index describes only this documentation build. The dev path is a "
-        "moving development snapshot, even when the package version has no dev suffix. "
-        "Match your installed version before using API examples; do not infer stable "
-        "release behavior from dev documentation.\n\n"
-        "Selected Markdown pages are rendered from canonical Sphinx documentation. "
+        + "This index describes only this documentation build. "
+        + (
+            "The dev path is a moving development snapshot, even when the package "
+            "version has no dev suffix. Match your installed version before using API "
+            "examples; do not infer stable release behavior from dev documentation.\n\n"
+            if url.path.rstrip("/").endswith("/dev")
+            else f"It documents the Braindecode {version} release. Match your installed "
+            "version before using API examples.\n\n"
+        )
+        + "Selected Markdown pages are rendered from canonical Sphinx documentation. "
         "HTML remains authoritative for interactive tables, figures and custom "
         "directives. Examples may download data or weights and run training; reading "
         "these pages does not execute them.\n\n## Documentation\n\n"

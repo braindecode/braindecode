@@ -112,14 +112,21 @@ class PatchTokenizer(nn.Module):
         # Padding/cropping for a non-divisible time axis is applied at runtime in
         # prepare_input (which works for any input length, not just the
         # construction-time n_times), so no padding submodule is stored here.
-        # Defined unconditionally (Identity when not learnable) so the attribute
-        # always exists for torch.jit.script, which type-checks both branches.
-        self.patcher = nn.Identity()
-        self.proj = nn.Identity()
-        if learnable and projection == "conv":
-            self.patcher = nn.Conv1d(1, self.emb_dim, patch_size, stride=patch_size)
-        elif learnable and projection == "linear":
-            self.proj = nn.Linear(patch_size, self.emb_dim)
+        # An unused projection is None, not an nn.Identity: a parameter-free
+        # submodule named ``proj`` would match adapters that select modules by
+        # name (peft LoRA ``target_modules=["proj"]`` then fails on Identity).
+        # torch.jit.script resolves the ``is not None`` checks in forward
+        # statically, so both attributes may be None.
+        self.patcher = (
+            nn.Conv1d(1, self.emb_dim, patch_size, stride=patch_size)
+            if learnable and projection == "conv"
+            else None
+        )
+        self.proj = (
+            nn.Linear(patch_size, self.emb_dim)
+            if learnable and projection == "linear"
+            else None
+        )
 
     def n_patches(self, n_times: int) -> int:
         """Number of patches ``forward`` returns for ``n_times`` samples."""
@@ -161,7 +168,7 @@ class PatchTokenizer(nn.Module):
     def forward(self, x):
         x = self.prepare_input(x)
         batch_size, n_chans, _ = x.shape
-        if self.learnable and self.projection == "conv":
+        if self.patcher is not None:  # learnable, projection="conv"
             x = x.flatten(0, 1).unsqueeze(1)  # (batch * chans, 1, time)
             x = self.patcher(x)  # (batch * chans, emb, patches)
             x = x.reshape(batch_size, n_chans, x.shape[-2], x.shape[-1]).permute(
@@ -169,7 +176,7 @@ class PatchTokenizer(nn.Module):
             )
         else:
             x = x.reshape(batch_size, n_chans, -1, self.patch_size)
-            if self.learnable:
+            if self.proj is not None:  # learnable, projection="linear"
                 x = self.proj(x)
         if self.output_order == "patch_channel":
             return x.transpose(1, 2)

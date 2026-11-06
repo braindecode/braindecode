@@ -4,7 +4,7 @@ from warnings import warn
 import torch
 import torch.nn as nn
 
-from braindecode.functional import spectral_input
+from braindecode.functional import check_ch_mask, masked_mean, spectral_input
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import SinusoidalPositionalEncoding
@@ -239,7 +239,10 @@ class BIOT(EEGModuleMixin, nn.Module):
         )
 
     def forward(
-        self, x: torch.Tensor, return_features: bool = False
+        self,
+        x: torch.Tensor,
+        return_features: bool = False,
+        ch_mask: Optional[torch.Tensor] = None,
     ) -> Union[
         torch.Tensor,
         Tuple[torch.Tensor, torch.Tensor],
@@ -256,6 +259,10 @@ class BIOT(EEGModuleMixin, nn.Module):
         return_features : bool
             If True, return a dict with ``"features"`` and ``"cls_token"``
             instead of the classification output.
+        ch_mask : torch.Tensor, optional
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Padded channels are
+            never attended to nor pooled; channel tokens follow the position.
 
         Returns
         -------
@@ -266,7 +273,7 @@ class BIOT(EEGModuleMixin, nn.Module):
             If legacy ``return_feature=True`` (init param):
             ``(out, emb)`` tuple (ignored when ``return_features=True``).
         """
-        emb = self.encoder(x)
+        emb = self.encoder(x, ch_mask=check_ch_mask(ch_mask, x))
 
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
@@ -462,7 +469,13 @@ class _BIOTEncoder(nn.Module):
         )
         return torch.abs(spectral).to(sample)
 
-    def forward(self, x, n_channel_offset: int = 0, perturb: bool = False):
+    def forward(
+        self,
+        x,
+        n_channel_offset: int = 0,
+        perturb: bool = False,
+        ch_mask: Optional[torch.Tensor] = None,
+    ):
         """
         Forward pass of the BIOT encoder.
 
@@ -493,6 +506,9 @@ class _BIOTEncoder(nn.Module):
         perturb: bool (default False)
             Randomly select a number of time steps and reduce the
             channel embedding to those time steps.
+        ch_mask: Tensor, optional
+            (batch_size, n_channels) boolean mask of real channels, already
+            checked.
 
         Returns
         -------
@@ -500,11 +516,15 @@ class _BIOTEncoder(nn.Module):
             (batch_size, emb_size)
         """
         batch_size, n_chans, n_times = x.shape
+        if ch_mask is not None:
+            # Padding may hold NaN, which the STFT would spread.
+            x = x.masked_fill(~ch_mask[:, :, None], 0.0)
         # One spectrogram for all channels, channel-major so that each
         # channel's (batch, freq, ts) block is contiguous
         spec = self.stft(x.transpose(0, 1).reshape(n_chans * batch_size, 1, n_times))
         spec = spec.unflatten(0, [n_chans, batch_size])
         emb_seq = []
+        token_masks = []
         for i in range(n_chans):
             # Getting the spectrogram
             channel_spec_emb = spec[i]
@@ -543,10 +563,14 @@ class _BIOTEncoder(nn.Module):
                 selected_ts = torch.randperm(ts)[:ts_new]
                 channel_emb = channel_emb[:, selected_ts]
             emb_seq.append(channel_emb)
+            if ch_mask is not None:
+                token_masks.append(ch_mask[:, i, None].expand(-1, channel_emb.shape[1]))
 
         # Concat and transformer
         # (batch_size, 16 * ts, emb)
         emb = torch.cat(emb_seq, dim=1)
+        token_mask: Optional[torch.Tensor] = None
+        if ch_mask is not None:
+            token_mask = torch.cat(token_masks, dim=1)
         # (batch_size, emb)
-        emb = self.transformer(emb).mean(dim=1)
-        return emb
+        return masked_mean(self.transformer(emb, token_mask), token_mask, [1])

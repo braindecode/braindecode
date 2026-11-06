@@ -28,6 +28,7 @@ from scipy.signal import stft
 from torch import nn
 
 from braindecode.models import (
+    BBL,
     BDTCN,
     BENDR,
     BIOT,
@@ -4270,6 +4271,32 @@ def test_brant_input_length_must_match():
         model(torch.randn(1, 2, 1500))
 
 
+def test_brant_from_pretrained_at_a_shorter_n_times(tmp_path):
+    pytest.importorskip("huggingface_hub")
+    small = dict(
+        patch_size=32,
+        embed_dim=16,
+        ffn_dim=32,
+        temporal_n_layers=1,
+        spatial_n_layers=1,
+        n_heads=2,
+    )
+    checkpoint = Brant(n_chans=2, n_outputs=2, n_times=128, **small)
+    checkpoint.save_pretrained(tmp_path)
+
+    model = Brant.from_pretrained(tmp_path, n_times=64).eval()
+
+    positions = "temporal_encoder.input_embedding.positional_encoding"
+    saved = checkpoint.state_dict()
+    for k, v in model.state_dict().items():
+        expected = saved[k][:2] if k == positions else saved[k]
+        torch.testing.assert_close(v, expected, msg=k)
+    with torch.no_grad():
+        assert model(torch.randn(1, 2, 64)).shape == (1, 2)
+    with pytest.raises(ValueError, match="holds 4 temporal positions"):
+        Brant.from_pretrained(tmp_path, n_times=160)
+
+
 def test_brant_channel_tokens_keep_channel_order():
     """Pin the per-channel token layout downstream code relies on.
 
@@ -5926,6 +5953,19 @@ def test_ifnet_initializes_like_the_reference():
                 assert torch.all(module.bias == 0)
 
 
+@pytest.mark.parametrize("model_name", sorted(all_models_dict))
+def test_no_bare_partial_class_attributes(model_name):
+    """A ``functools.partial`` class attribute is a method descriptor from Python
+    3.14 on: read through ``self`` it binds the model as its first argument
+    (IFNet's ``self.apply(self._initialize_weights)`` then raised a TypeError).
+    Wrap such attributes in ``staticmethod``."""
+    for klass in inspect.getmro(all_models_dict[model_name]):
+        if not klass.__module__.startswith("braindecode"):
+            continue
+        bare = [n for n, v in vars(klass).items() if isinstance(v, partial)]
+        assert not bare, f"{klass.__qualname__}: wrap {bare} in staticmethod"
+
+
 def test_eegpt_patch_embed_padding():
     """Test that _PatchEmbed automatically pads input if n_times is not divisible."""
     from braindecode.models.eegpt import _PatchEmbed
@@ -6001,6 +6041,32 @@ def test_neurorvq_output_and_features(neurorvq_model_kwargs):
     assert logits.shape == (2, 4)
     assert features["features"].shape == (2, 100 * 4 * 3 * 3)
     assert features["cls_token"] is None
+
+
+def test_bbl_pads_sensors_gates_datasets_and_averages_subjects():
+    """Fewer channels are zero-padded to ``n_sensors``, ``dataset_index`` picks
+    the projector slice, and without ``subject_index`` the rows flagged in
+    ``trained_subjects`` are averaged."""
+    torch.manual_seed(0)
+    kw = dict(
+        n_outputs=2, n_times=40, n_sensors=8, n_datasets=2, n_subjects=5,
+        subject_dim=3, model_dim=16, n_filters=4,
+    )  # fmt: skip
+    model = BBL(n_chans=5, **kw).eval()
+    full = BBL(n_chans=8, **kw).eval()
+    full.load_state_dict(model.state_dict())
+    x = torch.randn(2, 5, 40)
+    subjects = torch.tensor([1, 3])
+    with torch.no_grad():
+        padded = full(torch.nn.functional.pad(x, (0, 0, 0, 3)), subjects)
+        assert torch.equal(model(x, subjects), padded)
+        assert not torch.equal(model(x, subjects, torch.tensor([1, 1])), padded)
+        model.trained_subjects.copy_(torch.tensor([0.0, 1, 0, 1, 0]))
+        feat = model(x, return_features=True)["features"]
+    mean = model.subject_embedding.weight[[1, 3]].mean(0)
+    torch.testing.assert_close(feat[:, -3:], mean.expand(2, -1))
+    with pytest.raises(ValueError, match="n_sensors"):
+        BBL(n_chans=9, n_outputs=2, n_sensors=8)
 
 
 def test_megxl_meg_geometry_and_codes():

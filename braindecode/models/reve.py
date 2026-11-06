@@ -18,6 +18,7 @@ from mne.datasets.utils import _get_path
 from torch import nn
 
 from braindecode.functional import (
+    check_ch_mask,
     pad_or_crop_to_patches,
     patch_count,
     scaled_dot_product_attention,
@@ -98,11 +99,12 @@ class REVE(EEGModuleMixin, nn.Module):
 
       The EEG signal is split into overlapping patches along the time dimension, generating
       :math:`p = \left\lceil \frac{T - w}{w - o} \right\rceil + 1` patches of size :math:`w`
-      with overlap :math:`o`, where :math:`T \geq w` is the signal length: by default
-      (``on_non_divisible="pad"``) the signal is right zero-padded so the last patch ends
+      with overlap :math:`o`, where :math:`T \geq w` is the signal length: with
+      ``on_non_divisible="pad"`` the signal is right zero-padded so the last patch ends
       at its end (a signal shorter than :math:`w` gives one padded patch).
-      ``on_non_divisible="crop"`` drops the trailing samples instead, as the reference
-      does: :math:`p = \left\lfloor \frac{T - w}{w - o} \right\rfloor + 1`. Each patch is linearly projected to the embedding dimension.
+      By default (``on_non_divisible="crop"``, as the reference and braindecode 1.8)
+      the trailing samples are dropped:
+      :math:`p = \left\lfloor \frac{T - w}{w - o} \right\rfloor + 1`. Each patch is linearly projected to the embedding dimension.
 
     - ``REVE.fourier4d`` + ``REVE.mlp4d`` **4D Positional Embedding (4DPE)**
 
@@ -220,13 +222,15 @@ class REVE(EEGModuleMixin, nn.Module):
         Temporal patch size in samples (200 samples = 1 second at 200 Hz).
     patch_overlap : int, default=20
         Overlap between patches in samples.
-    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+    on_non_divisible : {"pad", "crop", "error"} or None, default=None
         How the overlapping patches (step ``patch_size - patch_overlap``)
         treat a window they do not tile, i.e. ``(n_times - patch_size) % step
         != 0`` or ``n_times < patch_size``: right zero-pad to the next tiled
-        length, crop the trailing samples, or raise. The reference
-        implementation crops (``"crop"``, as :meth:`torch.Tensor.unfold`);
-        all three give the same model and output for a tiled window. With the
+        length, crop the trailing samples, or raise. ``None`` crops, as the
+        reference implementation (:meth:`torch.Tensor.unfold`) and braindecode
+        1.8 did, and warns (``FutureWarning``) when the window is not tiled;
+        pass ``"crop"`` or ``"pad"`` explicitly to choose and silence it.
+        All three give the same model and output for a tiled window. With the
         default ``patch_size=200`` and ``patch_overlap=20``, ``n_times=1000``
         is not tiled: ``"pad"`` gives 6 patches, ``"crop"`` 5.
     attention_pooling : bool, default=False
@@ -295,7 +299,7 @@ class REVE(EEGModuleMixin, nn.Module):
         attention_pooling: bool = False,
         channel_strategy: str = "native",
         channel_strategy_kwargs: dict | None = None,
-        on_non_divisible: str = "pad",
+        on_non_divisible: Optional[str] = None,
         montage: Optional[str] = None,
         on_missing: str = "error",
     ):
@@ -319,8 +323,12 @@ class REVE(EEGModuleMixin, nn.Module):
                 f"patch_overlap ({patch_overlap}) must be smaller than patch_size "
                 f"({patch_size}): the patch step would not be positive."
             )
-        _check_on_non_divisible(on_non_divisible)
-        self.on_non_divisible = on_non_divisible
+        # Unset: crop, as braindecode 1.8 and the reference did, so code written
+        # for 1.8 keeps its patch count, head size and outputs.
+        default_mode = on_non_divisible is None
+        mode = "crop" if on_non_divisible is None else on_non_divisible
+        _check_on_non_divisible(mode)
+        self.on_non_divisible = mode
         try:
             known_n_times = self.n_times
         except ValueError:  # unknown length: nothing to check at construction
@@ -328,10 +336,18 @@ class REVE(EEGModuleMixin, nn.Module):
         if known_n_times is not None:
             step = patch_size - patch_overlap
             # Raises for "crop" below one patch and for "error" on an untiled window.
-            patch_count(known_n_times, patch_size, on_non_divisible, step)
-            if on_non_divisible == "pad" and (
-                known_n_times < patch_size or (known_n_times - patch_size) % step
-            ):
+            patch_count(known_n_times, patch_size, mode, step)
+            untiled = known_n_times < patch_size or (known_n_times - patch_size) % step
+            if default_mode and untiled:
+                warnings.warn(
+                    f"REVE's patches do not tile {known_n_times} samples: the "
+                    "trailing samples are cropped, as in braindecode 1.8. Pass "
+                    "on_non_divisible='pad' to zero-pad the window instead, or "
+                    "on_non_divisible='crop' to keep cropping without this warning.",
+                    FutureWarning,
+                    stacklevel=2,
+                )
+            if mode == "pad" and untiled:
                 warnings.warn(
                     f"REVE's patches do not tile {known_n_times} samples: the input "
                     "will be padded.",
@@ -452,6 +468,7 @@ class REVE(EEGModuleMixin, nn.Module):
         pos: Optional[torch.Tensor] = None,
         return_output: bool = False,
         return_features: bool = False,
+        ch_mask: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, List[torch.Tensor], Dict[str, Optional[torch.Tensor]]]:
         """
         Forward pass of the model.
@@ -471,11 +488,19 @@ class REVE(EEGModuleMixin, nn.Module):
             If omitted, the positions resolved from ``chs_info`` are used (and only
             the kept channels are read when ``on_missing="drop"`` removed some).
         return_output : bool, optional
-            If True, returns the output from the transformer directly.
+            If True, returns the output from the transformer directly, zero for the
+            tokens of padded channels.
             If False, applies the final layer and returns the processed output. Default is False.
         return_features : bool, optional
-            If True, returns a dict ``{"features": Tensor, "cls_token": None}``
-            with encoder features before the final layer. Default is False.
+            If True, returns a dict ``{"features": Tensor, "cls_token": None,
+            "tokens": Tensor}`` with the encoder tokens before the final layer,
+            ``(batch, n_chans, n_patches, embed_dim)`` in both, zero for padded
+            channels. Default is False.
+        ch_mask : torch.Tensor, optional
+            ``(batch, n_chans)`` mask of real channels, see
+            :func:`~braindecode.functional.check_ch_mask`. Padded channels affect no
+            pooled output; their positions only need to be finite (e.g. 0). The
+            classification head needs ``attention_pooling=True``.
 
         Returns
         -------
@@ -490,9 +515,27 @@ class REVE(EEGModuleMixin, nn.Module):
                 "return_output and return_features are mutually exclusive."
             )
 
+        mask = check_ch_mask(ch_mask, eeg)
+        if (
+            mask is not None
+            and not self.use_attention_pooling
+            and not (return_output or return_features)
+        ):
+            raise ValueError(
+                "ch_mask needs attention_pooling=True: the flattened head is tied "
+                "to the channels."
+            )
         channel_index = self.channel_index
         if pos is None and channel_index is not None:
             eeg = eeg.index_select(1, channel_index.to(eeg.device))
+            if mask is not None:
+                # A sample whose real channels were all dropped has none left.
+                mask = check_ch_mask(
+                    mask.index_select(1, channel_index.to(eeg.device)), eeg
+                )
+        if mask is not None:
+            # Padding may hold NaN, which the patch embedding would spread.
+            eeg = eeg.masked_fill(~mask[:, :, None], 0.0)
         step = self.patch_size - self.patch_overlap
         # Right zero-pad (or crop) so the overlapping patches tile the window;
         # a tiled window is passed through untouched.
@@ -507,6 +550,13 @@ class REVE(EEGModuleMixin, nn.Module):
                 )
             # One copy for the whole batch: the embedding below broadcasts.
             pos = self.default_pos.unsqueeze(0).to(eeg.device)
+        token_mask: Optional[torch.Tensor] = None
+        attn_mask: Optional[torch.Tensor] = None
+        if mask is not None:
+            pos = pos.masked_fill(~mask[:, :, None], 0.0)
+            # Tokens are (channel, patch), channel outermost.
+            token_mask = mask.repeat_interleave(n_patches, dim=1)
+            attn_mask = token_mask[:, None, None, :]
 
         pos = FourierEmb4D.add_time_patch(pos, n_patches)
         # Positions stay in float32 for the Fourier features; the embedding
@@ -522,27 +572,37 @@ class REVE(EEGModuleMixin, nn.Module):
         # (batch, channels, n_patches, embed_dim) -> (batch, channels * n_patches, embed_dim)
         # This creates a sequence of tokens where each token represents one patch from one channel
         x = patch_embeddings.flatten(1, 2) + pos_embed
-        encoded = self.transformer(x, return_output)
+        encoded = self.transformer(x, return_output, attn_mask)
 
         if not isinstance(encoded, torch.Tensor):  # return_output: one per layer
+            if token_mask is not None:
+                encoded = [h.masked_fill(~token_mask[:, :, None], 0.0) for h in encoded]
             return encoded
 
         # Reshape back from flattened sequence to separate channel and temporal dimensions
         # (batch, channels * n_patches, embed_dim) -> (batch, channels, n_patches, embed_dim)
         # This recovers the spatio-temporal structure for downstream processing
         x = encoded.reshape(batch_size, channel, n_patches, self.embed_dim)
+        if mask is not None:
+            x = x.masked_fill(~mask[:, :, None, None], 0.0)
 
         if return_features:
-            out: Dict[str, Optional[torch.Tensor]] = {"features": x, "cls_token": None}
+            out: Dict[str, Optional[torch.Tensor]] = {
+                "features": x,
+                "cls_token": None,
+                "tokens": x,
+            }
             return out
 
         if self.use_attention_pooling:
-            x = self._attention_pooling(x)
+            x = self._attention_pooling(x, token_mask)
 
         x = self.final_layer(x)
         return x
 
-    def _attention_pooling(self, x: torch.Tensor) -> torch.Tensor:
+    def _attention_pooling(
+        self, x: torch.Tensor, token_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """Apply attention pooling on the sequence dimension of x.
 
         Parameters
@@ -551,6 +611,9 @@ class REVE(EEGModuleMixin, nn.Module):
             Input tensor of shape (B, C, S, E), where B is the batch size,
             C is the number of channels, S is the sequence length,
             and E is the embedding dimension. Typically the output from the transformer.
+        token_mask : torch.Tensor, optional
+            ``(B, C*S)`` boolean mask of the tokens that take part, ``True`` for
+            real ones.
 
         Returns
         -------
@@ -566,6 +629,10 @@ class REVE(EEGModuleMixin, nn.Module):
         attention_scores = torch.matmul(query_output, x.transpose(-1, -2)) / (
             self.embed_dim**0.5
         )  # (B, 1, C*S)
+        if token_mask is not None:
+            attention_scores = attention_scores.masked_fill(
+                ~token_mask[:, None, :], float("-inf")
+            )
         attention_weights = torch.softmax(attention_scores, dim=-1)  # (B, 1, C*S)
         out = torch.matmul(attention_weights, x).squeeze(1)  # (B, E)
         return out
@@ -623,7 +690,7 @@ class Attention(nn.Module):
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
         self.to_out = nn.Linear(inner_dim, dim, bias=False)
 
-    def forward(self, x):
+    def forward(self, x, attn_mask: Optional[torch.Tensor] = None):
         x = self.norm(x)
         q, k, v = self.to_qkv(x).chunk(3, dim=-1)
         # (batch, seq, heads * dim) -> (batch, heads, seq, dim), and back
@@ -631,7 +698,9 @@ class Attention(nn.Module):
         k = k.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         v = v.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         # ~700-token sequences: the fused kernel also beats lazy mode's graph.
-        out = scaled_dot_product_attention(q, k, v, fused_in_lazy=True)
+        out = scaled_dot_product_attention(
+            q, k, v, attn_mask=attn_mask, fused_in_lazy=True
+        )
         return self.to_out(out.transpose(1, 2).flatten(2))
 
 
@@ -664,11 +733,14 @@ class TransformerBackbone(nn.Module):
             )
 
     def forward(
-        self, x, return_out_layers: bool = False
+        self,
+        x,
+        return_out_layers: bool = False,
+        attn_mask: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, List[torch.Tensor]]:
         out_layers = [x] if return_out_layers else []
         for layer in self.layers:  # (attention, feed-forward)
-            x = layer[0](x) + x
+            x = layer[0](x, attn_mask) + x
             x = layer[1](x) + x
             if return_out_layers:
                 out_layers.append(x)

@@ -81,6 +81,15 @@ jobs:
       - name: Login to Hugging Face Hub
         if: ${{ env.HF_TOKEN != '' }}
         run: python -c "import os; from huggingface_hub import login; login(token=os.environ['HF_TOKEN'])"
+      - name: Select the documentation URL
+        # Release tags are published as /stable/ (and /X.Y/); everything else is /dev/.
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "BRAINDECODE_DOCS_URL=https://braindecode.org/stable/" >> "$GITHUB_ENV"
+          else
+            echo "BRAINDECODE_DOCS_URL=https://braindecode.org/dev/" >> "$GITHUB_ENV"
+          fi
+
       - name: Create Docs
         env:
           # DANCE alone peaks near 8.5 GB; do not use auto gallery workers.
@@ -117,7 +126,7 @@ jobs:
           python docs/build_agent_docs.py \
             --markdown-root docs/_build/markdown \
             --html-root docs/_build/html \
-            --site-url https://braindecode.org/dev/ \
+            --site-url "$BRAINDECODE_DOCS_URL" \
             --version "$(python -c 'import braindecode; print(braindecode.__version__)')" \
             --revision "$(git rev-parse HEAD)"
 

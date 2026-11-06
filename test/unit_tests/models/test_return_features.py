@@ -6,6 +6,7 @@ import torch
 
 from braindecode.models import (
     AXON,
+    BBL,
     BENDR,
     BIOT,
     EEGDINO,
@@ -72,6 +73,7 @@ def _chs(names=None, n=N_CHANS):
 # (cls, n_chans, kwargs, has_cls)
 _MODELS = [
     pytest.param(EEGPT, N_CHANS, {}, False, id="EEGPT"),
+    pytest.param(BBL, N_CHANS, {}, False, id="BBL"),
     pytest.param(
         AXON,
         N_CHANS,

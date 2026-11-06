@@ -1164,6 +1164,11 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
         is_causal: bool = False,
     ) -> Tensor:
         bz, ch_num, patch_num, patch_size = x.shape
+        # key_padding_mask is (batch, channels), True for padded channels: the
+        # spatial attention of every patch skips them.
+        s_key_padding_mask: Optional[Tensor] = None
+        if key_padding_mask is not None:
+            s_key_padding_mask = key_padding_mask.repeat_interleave(patch_num, dim=0)
         xs = x[:, :, :, : patch_size // 2]
         xt = x[:, :, :, patch_size // 2 :]
         xs = xs.permute(0, 2, 1, 3).reshape(bz * patch_num, ch_num, -1)
@@ -1173,7 +1178,7 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
             xs,
             xs,
             attn_mask=attn_mask,
-            key_padding_mask=key_padding_mask,
+            key_padding_mask=s_key_padding_mask,
             need_weights=False,
         )[0]
         xs = xs.reshape(bz, patch_num, ch_num, -1).permute(0, 2, 1, 3)
@@ -1182,7 +1187,6 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
             xt,
             xt,
             attn_mask=attn_mask,
-            key_padding_mask=key_padding_mask,
             need_weights=False,
         )[0]
         xt = xt.reshape(bz, ch_num, patch_num, -1)

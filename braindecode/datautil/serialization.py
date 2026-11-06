@@ -8,6 +8,7 @@
 import json
 import os
 import pickle
+import re
 import warnings
 from glob import glob
 from pathlib import Path
@@ -24,6 +25,11 @@ from ..datasets.base import (
     WindowsDataset,
     _compact_fif_tags,
 )
+
+# pandas 3.1 deprecates ``read_json(convert_dates=...)``: there, ``dtype=False``
+# also leaves date-like strings alone, so the keyword is only needed before 3.1.
+_PANDAS_VERSION = tuple(int(part) for part in re.findall(r"\d+", pd.__version__)[:2])
+_NO_DATE_CONVERSION = {} if _PANDAS_VERSION >= (3, 1) else {"convert_dates": False}
 
 
 def save_concat_dataset(path, concat_dataset, overwrite=False):
@@ -276,7 +282,7 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
     description_file_path = sub_dir / "description.json"
     # dtype=False: keep strings such as subject "01" as strings
     description = pd.read_json(
-        description_file_path, typ="series", convert_dates=False, dtype=False
+        description_file_path, typ="series", dtype=False, **_NO_DATE_CONVERSION
     )
     description[description.isna()] = np.nan  # JSON null was read as NaN
 

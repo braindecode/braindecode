@@ -1,5 +1,6 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
+#          Anton Soloviev <anton@praviel.com>
 #
 # License: BSD (3-clause)
 
@@ -569,8 +570,9 @@ class _BENDRContextualizer(nn.Module):
             [copy.deepcopy(encoder_layer) for _ in range(layers)]
         )
 
-        # Add final LayerNorm after all transformer layers (paper specification)
-        self.norm = nn.LayerNorm(self.transformer_dim)
+        # Retained for compatibility with released state dicts. The original
+        # contextualizer defines this norm but does not apply it in forward.
+        self.norm = nn.LayerNorm(self.transformer_dim).requires_grad_(False)
 
         # --- Output Layer --- (Project back down to in_features)
         # Paper uses Conv1d with kernel=1 (equivalent to Linear but expects (B,C,T) input)
@@ -628,10 +630,6 @@ class _BENDRContextualizer(nn.Module):
         for layer in self.transformer_layers:
             if not self.training or torch.rand(1) > self.layer_drop:
                 x = layer(x)
-        # x: [seq_len + 1, batch_size, transformer_dim]
-
-        # Apply final LayerNorm (T-Fixup: norm only at the end)
-        x = self.norm(x)
         # x: [seq_len + 1, batch_size, transformer_dim]
 
         # Permute to (B, C, T) format for Conv1d output layer

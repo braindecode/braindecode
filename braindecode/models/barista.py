@@ -38,7 +38,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
     :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model`
     :bdg-dark-line:`Channel`
 
-    .. versionadded:: 1.8.2
+    .. versionadded:: 2.0
 
     BaRISTA encodes intracranial EEG with a shared temporal CNN and joint
     space-time attention. Its spatial embeddings use electrode coordinates,
@@ -449,7 +449,9 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         -------
         torch.Tensor or dict
             Logits of shape ``(batch, n_outputs)``, or a dictionary containing
-            ``features`` of shape ``(batch, d_model)`` and ``cls_token=None``.
+            ``features`` of shape ``(batch, d_model)``, ``cls_token=None`` and
+            ``tokens``, the backbone output ``(batch, n_chans, n_patches,
+            d_model)``, zero for padded channels.
         """
         if x.ndim != 3:
             raise ValueError("Expected input of shape (batch, n_chans, n_times).")
@@ -506,7 +508,11 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         else:
             features = masked_mean(latents, token_mask, [1])
         if not torch.jit.is_scripting() and return_features:
-            return {"features": features, "cls_token": None}  # nosec B105
+            # Patch-major tokens -> (batch, n_chans, n_patches, d_model).
+            tokens = latents.unflatten(1, (n_patches, n_chans)).transpose(1, 2)
+            if mask is not None:
+                tokens = tokens.masked_fill(~mask[:, :, None, None], 0.0)
+            return {"features": features, "cls_token": None, "tokens": tokens}
         return self.final_layer(features)
 
 

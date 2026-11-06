@@ -30,14 +30,14 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
 
     DANCE frames EEG decoding as event *set prediction*: a long, unaligned
     window is mapped to a set of events ``(t_start, t_end, class)`` with
-    normalized ``[0, 1]`` spans -- DETR for 1-D EEG.
+    normalized ``[0, 1]`` spans -- DETR [detr2020]_ for 1-D EEG.
 
     .. rubric:: Architecture Overview
 
-    ``ChannelMerger`` (spatial Fourier attention over electrode positions) ->
-    ``SimpleConv`` (dilated conv stack) -> ``Perceiver`` (cross-attention to a
-    fixed 256-latent grid) -> a dense head (``forward`` output) and a DETR
-    cross-attention decoder (``detect`` output).
+    ``ChannelMerger`` (spatial Fourier attention over electrode positions, from
+    [defossez2023]_) -> ``SimpleConv`` (dilated conv stack) -> ``Perceiver``
+    [perceiver2021]_ (cross-attention to a fixed 256-latent grid) -> a dense head
+    (``forward`` output) and a DETR cross-attention decoder (``detect`` output).
 
     .. rubric:: Macro Components
 
