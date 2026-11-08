@@ -108,7 +108,7 @@ def _checkpoint_source(pretrained_model_name_or_path, **kwargs):
         if "snapshots" in parts:
             info["commit"] = parts[parts.index("snapshots") + 1]
     except Exception:
-        pass
+        return info
     return info
 
 

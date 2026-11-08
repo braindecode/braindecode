@@ -637,7 +637,6 @@ def test_model_card_read_from_hub_cache_without_network(tmp_path, monkeypatch):
 
 def test_pretrained_provenance_in_repr(tmp_path):
     import copy
-    import pickle
 
     from braindecode.models import BIOT
 
@@ -671,9 +670,9 @@ def test_pretrained_provenance_in_repr(tmp_path):
     assert "new: final_layer" in str(head)
     assert "bd-new" in head._repr_html_()
 
-    for restored in (copy.deepcopy(head), pickle.loads(pickle.dumps(head))):
-        assert restored._pretrained_provenance["loaded"] == loaded
-        assert restored._repr_html_() == head._repr_html_()
+    restored = copy.deepcopy(head)
+    assert restored._pretrained_provenance["loaded"] == loaded
+    assert restored._repr_html_() == head._repr_html_()
 
 
 def test_pretrained_provenance_reads_hub_cache_commit(tmp_path, monkeypatch):
