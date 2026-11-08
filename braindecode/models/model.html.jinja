@@ -30,7 +30,7 @@
   <div class="bd-source">{% if data.source.local %}<code>{{ data.source.repo_id }}</code>{% else %}<a href="https://huggingface.co/{{ data.source.repo_id|urlencode }}" target="_blank" rel="noopener"><code>{{ data.source.repo_id }}</code></a>{% set revision=data.source.commit or data.source.revision %}{% if revision %}<a class="bd-revision" href="https://huggingface.co/{{ data.source.repo_id|urlencode }}/tree/{{ revision|urlencode }}" target="_blank" rel="noopener">@ {{ revision[:7] }}</a>{% endif %}{% endif %}</div>
   {% if model.card_data and model.card_data.license %}<p class="bd-note">License · {{ model.card_data.license }}</p>{% endif %}
   {% if model.card_data and model.card_data.base_model %}<p class="bd-note">Base model · {{ model.card_data.base_model }}</p>{% endif %}
-  {% if data.source.supplementary %}<p class="bd-note">Supplementary weights · <code>{{ data.source.supplementary.repo_id }}</code>{% if data.source.supplementary.commit %} @ {{ data.source.supplementary.commit[:7] }}{% endif %}</p>{% endif %}
+  {% if data.source.supplementary %}{% set extra=data.source.supplementary %}{% set rev=extra.commit or extra.revision %}<p class="bd-note">Supplementary weights · {% if extra.local %}<code>{{ extra.repo_id }}</code>{% else %}<a href="https://huggingface.co/{{ extra.repo_id|urlencode }}" target="_blank" rel="noopener"><code>{{ extra.repo_id }}</code></a>{% if rev %} @ <a href="https://huggingface.co/{{ extra.repo_id|urlencode }}/tree/{{ rev|urlencode }}" target="_blank" rel="noopener">{{ rev[:7] }}</a>{% endif %}{% endif %}</p>{% endif %}
 </section>
 <section>
   <h4>Training data <span style="font-weight:400;text-transform:none;letter-spacing:0">· reported by the model card</span></h4>

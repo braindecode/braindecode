@@ -98,15 +98,21 @@ def _checkpoint_source(pretrained_model_name_or_path, **kwargs):
         return {"repo_id": source, "local": True}
     info = {"repo_id": source, "revision": kwargs.get("revision")}
     try:
-        cached = huggingface_hub.try_to_load_from_cache(
-            source,
+        for filename in (
+            kwargs.get("filename") or "model.safetensors",
+            "pytorch_model.bin",
             "config.json",
-            cache_dir=kwargs.get("cache_dir"),
-            revision=kwargs.get("revision"),
-        )
-        parts = Path(cached).parts if isinstance(cached, str) else ()
-        if "snapshots" in parts:
-            info["commit"] = parts[parts.index("snapshots") + 1]
+        ):
+            cached = huggingface_hub.try_to_load_from_cache(
+                source,
+                filename,
+                cache_dir=kwargs.get("cache_dir"),
+                revision=kwargs.get("revision"),
+            )
+            parts = Path(cached).parts if isinstance(cached, str) else ()
+            if "snapshots" in parts:
+                info["commit"] = parts[parts.index("snapshots") + 1]
+                break
     except Exception:
         return info
     return info

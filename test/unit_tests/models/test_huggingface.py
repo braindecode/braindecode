@@ -927,3 +927,24 @@ def test_model_html_has_offline_logo_and_citation_notice():
     assert "10.5281/zenodo.17699192" in page
     assert "10.1002/hbm.23730" in page
     assert "Built from scratch" in page
+
+
+def test_checkpoint_source_without_config(monkeypatch, tmp_path):
+    import huggingface_hub
+
+    from braindecode.models.base import _checkpoint_source
+
+    def cached(repo, filename, **kwargs):
+        return str(tmp_path / "snapshots" / "abc12345" / filename) if filename == "model.safetensors" else None
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", cached)
+    assert _checkpoint_source("org/repo")["commit"] == "abc12345"
+
+
+def test_labram_reset_classifier_invalidates_head_origin(tmp_path):
+    from braindecode.models import Labram
+    model = Labram(n_chans=2, n_times=128, n_outputs=2, patch_size=8, embed_dim=8,
+                   conv_out_channels=8, num_layers=1, num_heads=2)
+    model.save_pretrained(tmp_path)
+    loaded = Labram.from_pretrained(tmp_path)
+    loaded.reset_classifier(3)
+    assert not {"final_layer.weight", "final_layer.bias"} & loaded._pretrained_provenance["loaded"]
