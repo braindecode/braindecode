@@ -92,11 +92,11 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
 
         Weights converted from the released ``meg-xl-med-v2.ckpt``
         (``pnpl/MEG-XL``, step 113000, with its frozen BioCodec tokenizer) are
-        prepared for ``braindecode/meg-xl-med-v2`` (Hub upload pending); the
-        head is not pretrained. After upload::
+        on the Hugging Face Hub at ``braindecode/megxl-pretrained`` (revision
+        ``5b5dcbcc``); the head is not pretrained::
 
             from braindecode.models import MEGXL
-            model = MEGXL.from_pretrained("braindecode/meg-xl-med-v2", chs_info=raw.info["chs"], n_outputs=2)
+            model = MEGXL.from_pretrained("braindecode/megxl-pretrained", chs_info=raw.info["chs"], n_outputs=2)
 
         Input is expected at 50 Hz, preprocessed as in the authors' code
         (0.1-40 Hz band-pass, baseline correction and robust scaling per 3 s
