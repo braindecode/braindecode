@@ -35,6 +35,7 @@ from braindecode.models import (
     EEGPT,
     LUNA,
     MAPA,
+    MEGGPT,
     REVE,
     ZUNA,
     BaRISTA,
@@ -392,6 +393,17 @@ COMPAT = {
         short_match="n_times",
         kwargs=dict(random_projection=64),
     ),
+    # 52 source-space parcels, the channel embedding indexed by position; any
+    # count builds. Windows are padded to 100-sample segments (250 Hz).
+    "MEGGPT": dict(
+        cls=MEGGPT,
+        sfreq=250,
+        n_times=200,
+        canon=None,
+        n_chans_fixed=52,
+        channels="fixed_order_unchecked",
+        windows=(100, 1000),
+    ),
 }
 
 # LaBraM looks names up at forward: these montages go through the channel layer.
@@ -503,7 +515,14 @@ def test_geometry_contract(name, gname, gkw):
 NATIVE_ONLY = {"SleepFM", "SleepFMStager"}
 
 # No ``channel_strategy`` argument (not part of the #1241 channel layer).
-NO_STRATEGY = {"NeuroRVQ", "MAPA", "BrainOmni", "BrainTokenizer", "TFMTokenizer"}
+NO_STRATEGY = {
+    "NeuroRVQ",
+    "MAPA",
+    "BrainOmni",
+    "BrainTokenizer",
+    "TFMTokenizer",
+    "MEGGPT",
+}
 
 
 # BIOT's canonical input is bipolar; under a strategy it takes electrodes.
