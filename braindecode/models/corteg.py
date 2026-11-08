@@ -192,6 +192,13 @@ class CORTEG(EEGModuleMixin, nn.Module):
     The paper trains with ``drop_path=0.1``; the checkpoint's configuration
     sets ``0`` unless it is passed.
 
+    The authors' Stanford model (finger flexion, nine patients pooled) is
+    re-hosted with its LoRA factors folded in::
+
+        model = CORTEG.from_pretrained(
+            "braindecode/corteg-stanford-pooled", chs_info=chs_info
+        )
+
     .. note::
         The outputs match the reference implementation for the same weights
         and inputs, for both merge strategies. ``ch_mask`` is an addition:

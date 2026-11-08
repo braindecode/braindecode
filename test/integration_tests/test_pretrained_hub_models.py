@@ -335,6 +335,7 @@ class TestSTEEGFormerPretrained:
         ("STEEGFormer", "braindecode/STEEGFormer-small", 22),
         ("BrainBERT", "braindecode/brainbert-pretrained", 1),
         ("DuIN", "braindecode/duin-pretrained", 10),
+        ("CORTEG", "braindecode/corteg-stanford-pooled", 8),
     ],
 )
 def test_all_pretrained_models_load(
