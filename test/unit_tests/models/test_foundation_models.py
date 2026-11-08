@@ -2284,14 +2284,14 @@ def test_corteg_loads_a_steegformer_checkpoint_and_warm_starts_its_high_gamma_em
         depth=2, num_heads=2,
     )
     model = CORTEG(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
-    missing, unexpected = model.load_state_dict(steegformer.state_dict(), strict=False)
-    assert unexpected == []
-    assert {key.split(".")[0] for key in missing} == {"channel_adapter"}
-    lo, hi = steegformer.patch_embed.proj, model.patch_embed_hi.proj
+    lo, hi = model.patch_embed.proj, model.patch_embed_hi.proj
     torch.testing.assert_close(
         hi.weight, F.interpolate(lo.weight[None], size=25, mode="linear")[0]
     )
     torch.testing.assert_close(hi.bias, lo.bias)
+    missing, unexpected = model.load_state_dict(steegformer.state_dict(), strict=False)
+    assert unexpected == []
+    assert {key.split(".")[0] for key in missing} == {"channel_adapter", "patch_embed_hi"}
 
 
 @pytest.mark.parametrize("merge_strategy", ["average", "layerwise_gate"])
@@ -2308,10 +2308,17 @@ def test_corteg_gate_starts_closed(merge_strategy):
 
 
 def test_corteg_soft_branch_starts_at_the_nearest_scalp_slots():
-    from braindecode.models.corteg import _VOCAB_POSITIONS
+    from braindecode.models.corteg import _vocab_positions
 
+    vocab = _vocab_positions()
+    # MNE's 10-05 montage gives the reference's table (first and last slots).
+    torch.testing.assert_close(
+        vocab[[0, -1]],
+        torch.tensor([[-0.036158, -0.009984, 0.089752], [0.013923, -0.092694, 0.066958]]),
+        rtol=0, atol=1e-6,
+    )
     model = CORTEG(
-        chs_info=_corteg_chs_info([_VOCAB_POSITIONS[0]]), n_outputs=2, n_times=64,
+        chs_info=_corteg_chs_info([vocab[0].tolist()]), n_outputs=2, n_times=64,
         **_CORTEG_SMALL,
     )
     logits = model.channel_adapter.soft.net[-1].bias
