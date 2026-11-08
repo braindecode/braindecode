@@ -633,3 +633,90 @@ def test_model_card_read_from_hub_cache_without_network(tmp_path, monkeypatch):
 
     monkeypatch.undo()  # real hub, nothing cached, no network: None, no error
     assert _load_card_data("braindecode/no-such-repo", cache_dir=tmp_path / "c", local_files_only=True) is None
+
+
+def test_pretrained_provenance_in_repr(tmp_path):
+    import copy
+    import pickle
+
+    from braindecode.models import BIOT
+
+    kwargs = dict(n_chans=4, n_times=400, sfreq=200, embed_dim=16, num_heads=2, num_layers=1)
+    model = BIOT(n_outputs=2, **kwargs)
+    datasets = ["BNCI2014_001", "ds002718", "braindecode/chbmit"]
+    model.save_pretrained(tmp_path, model_card_kwargs={"datasets": datasets})
+
+    built = BIOT(n_outputs=2, **kwargs)
+    assert str(built) == str(built.get_torchinfo_statistics())
+    assert "pretrained" not in built._repr_html_()
+
+    same = BIOT.from_pretrained(tmp_path)
+    assert same._pretrained_provenance["local"]
+    params = set(dict(same.named_parameters()))
+    assert params <= same._pretrained_provenance["loaded"]
+    text = str(same)
+    assert "Trained on (model card): BNCI2014_001, ds002718, braindecode/chbmit" in text
+    assert "(100.0%)" in text and "new:" not in text
+    page = same._repr_html_()
+    assert "https://openneuro.org/datasets/ds002718" in page
+    assert "https://huggingface.co/datasets/braindecode/chbmit" in page
+    assert "100.0% of the parameters come from the checkpoint" in page
+
+    # A new head is initialised here, not loaded.
+    head = BIOT.from_pretrained(tmp_path, n_outputs=3)
+    head_params = {f"final_layer.{n}" for n, _ in head.final_layer.named_parameters()}
+    loaded = head._pretrained_provenance["loaded"]
+    assert head_params and not head_params & loaded
+    assert set(dict(head.named_parameters())) - head_params <= loaded
+    assert "new: final_layer" in str(head)
+    assert "bd-new" in head._repr_html_()
+
+    for restored in (copy.deepcopy(head), pickle.loads(pickle.dumps(head))):
+        assert restored._pretrained_provenance["loaded"] == loaded
+        assert restored._repr_html_() == head._repr_html_()
+
+
+def test_pretrained_provenance_reads_hub_cache_commit(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    from braindecode.models.base import _checkpoint_source
+
+    commit = "0123456789abcdef0123456789abcdef01234567"
+    cached = tmp_path / "models--org--repo" / "snapshots" / commit / "config.json"
+    monkeypatch.setattr(
+        huggingface_hub, "try_to_load_from_cache", lambda *a, **k: str(cached)
+    )
+    info = _checkpoint_source("org/repo", revision="main")
+    assert info == {"repo_id": "org/repo", "revision": "main", "commit": commit}
+
+
+def test_repr_html_with_lazy_parameters():
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.extra = nn.LazyLinear(3)  # not built until the first forward
+    page = model._repr_html_()
+    assert "LazyLinear" in page and "EEGNet" in page
+
+
+def test_from_pretrained_reports_loaded_parameters(tmp_path):
+    import warnings
+
+    from safetensors.torch import load_file, save_file
+
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.save_pretrained(tmp_path / "same")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        same = EEGNet.from_pretrained(tmp_path / "same")
+    assert not [w for w in caught if "no parameter of" in str(w.message)]
+    assert set(dict(same.named_parameters())) <= same._pretrained_provenance["loaded"]
+
+    # Same weights under other key names (e.g. an upstream checkpoint mirrored
+    # as is): nothing loads, and from_pretrained says so.
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "config.json").write_text((tmp_path / "same" / "config.json").read_text())
+    weights = load_file(tmp_path / "same" / "model.safetensors")
+    save_file({f"model.{k}": v for k, v in weights.items()}, other / "model.safetensors")
+    with pytest.warns(UserWarning, match="no parameter of EEGNet was loaded from"):
+        renamed = EEGNet.from_pretrained(other)
+    assert not renamed._pretrained_provenance["loaded"]

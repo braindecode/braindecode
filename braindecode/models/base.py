@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import functools
 import inspect
 import json
@@ -20,6 +21,7 @@ from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from mne.utils import _soft_import
 from torchinfo import ModelStatistics, summary
 
+from braindecode.models._repr import model_html, pretrained_summary_lines
 from braindecode.models.util import (
     _EEG_PARAMS,
     build_model_config,
@@ -37,6 +39,10 @@ huggingface_hub = _soft_import(
 
 HAS_HF_HUB = huggingface_hub is not False
 log = logging.getLogger(__name__)
+
+# Set while from_pretrained runs: load_state_dict then records on the model
+# which parameters came from the checkpoint (``_pretrained_provenance``).
+_RECORD_LOADED_KEYS = contextvars.ContextVar("_RECORD_LOADED_KEYS", default=False)
 
 # __init__ args that from_pretrained fills from config.json when not given.
 _GEOMETRY_KWARGS = (
@@ -81,6 +87,30 @@ def _load_card_data(pretrained_model_name_or_path, **kwargs):
         return huggingface_hub.ModelCard.load(card, ignore_metadata_errors=True).data
     except Exception:
         return None
+
+
+def _checkpoint_source(pretrained_model_name_or_path, **kwargs):
+    """Repository (or folder) and revision a checkpoint was loaded from.
+
+    The commit is read from the local Hub cache, without network access.
+    """
+    source = str(pretrained_model_name_or_path)
+    if Path(source).is_dir():
+        return {"repo_id": source, "local": True}
+    info = {"repo_id": source, "revision": kwargs.get("revision")}
+    try:
+        cached = huggingface_hub.try_to_load_from_cache(
+            source,
+            "config.json",
+            cache_dir=kwargs.get("cache_dir"),
+            revision=kwargs.get("revision"),
+        )
+        parts = Path(cached).parts if isinstance(cached, str) else ()
+        if "snapshots" in parts:
+            info["commit"] = parts[parts.index("snapshots") + 1]
+    except Exception:
+        pass
+    return info
 
 
 def _local_weights_path(model_id, filename):
@@ -174,14 +204,25 @@ def _new_head_follows_model(reset_head):
     @functools.wraps(reset_head)
     def wrapper(self, *args, **kwargs):
         ref = next((p for p in self.parameters() if p.is_floating_point()), None)
-        before = {id(t) for t in self.parameters()} | {id(t) for t in self.buffers()}
+        # Hold the old tensors until the end, so that their ids cannot be
+        # reused by the new ones.
+        old = {id(t): t for t in [*self.parameters(), *self.buffers()]}
         out = reset_head(self, *args, **kwargs)
         if ref is not None:
             for module in self.modules():
                 tensors = [*module.parameters(), *module.buffers()]
-                if tensors and not any(id(t) in before for t in tensors):
+                if tensors and not any(id(t) in old for t in tensors):
                     module.to(device=ref.device, dtype=ref.dtype)
                     module.train(self.training)
+        provenance = self.__dict__.get("_pretrained_provenance")
+        if provenance and provenance.get("loaded") is not None:
+            # The new head was not loaded from the checkpoint.
+            current = dict(self.named_parameters(remove_duplicate=False))
+            provenance["loaded"] = {
+                name
+                for name in provenance["loaded"]
+                if name in current and id(current[name]) in old
+            }
         return out
 
     return wrapper
@@ -844,10 +885,19 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             else:
                 new_state_dict[k] = v
         # A backbone checkpoint has no weights for a trainable channel layer.
-        for k, v in super().state_dict().items():
+        own = super().state_dict()
+        from_checkpoint = set(new_state_dict)
+        for k, v in own.items():
             if k.startswith("channel_layer.") and k not in new_state_dict:
                 new_state_dict[k] = v
-        return super().load_state_dict(new_state_dict, *args, **kwargs)
+        result = super().load_state_dict(new_state_dict, *args, **kwargs)
+        if _RECORD_LOADED_KEYS.get():
+            provenance = self.__dict__.setdefault("_pretrained_provenance", {})
+            loaded = provenance.get("loaded") or set()
+            provenance["loaded"] = loaded | (
+                (from_checkpoint & set(own)) - set(result.unexpected_keys)
+            )
+        return result
 
     def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
         """
@@ -936,7 +986,17 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         )
 
     def __str__(self) -> str:
-        return str(self.get_torchinfo_statistics())
+        lines = pretrained_summary_lines(self)
+        table = str(self.get_torchinfo_statistics())
+        return "\n".join([table, *lines]) if lines else table
+
+    def _repr_html_(self) -> str:
+        """Notebook view: the input geometry, and for a model from
+        :meth:`from_pretrained` the Hub repository and revision, the datasets
+        of its model card, and the module tree with the parameters loaded from
+        the checkpoint marked apart from those initialised here (e.g. a new
+        head)."""
+        return model_html(self)
 
     @staticmethod
     def _serialize_chs_info(chs_info):
@@ -1055,7 +1115,23 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 kwargs.setdefault("chs_info", None)
             if "n_times" in kwargs or "sfreq" in kwargs:
                 kwargs.setdefault("input_window_seconds", None)
-            model = super().from_pretrained(*args, **kwargs)
+            token = _RECORD_LOADED_KEYS.set(True)
+            try:
+                model = super().from_pretrained(*args, **kwargs)
+            finally:
+                _RECORD_LOADED_KEYS.reset(token)
+            if isinstance(model, torch.nn.Module):
+                provenance = model.__dict__.setdefault("_pretrained_provenance", {})
+                provenance.update(_checkpoint_source(*args, **kwargs))
+                params = {name for name, _ in model.named_parameters()}
+                if params and not params & (provenance.get("loaded") or set()):
+                    warnings.warn(
+                        f"no parameter of {cls.__name__} was loaded from "
+                        f"{provenance['repo_id']}; the checkpoint keys do not "
+                        "match the model",
+                        UserWarning,
+                        stacklevel=2,
+                    )
             card_data = _load_card_data(*args, **kwargs)
             if card_data is not None:
                 model.card_data = card_data
