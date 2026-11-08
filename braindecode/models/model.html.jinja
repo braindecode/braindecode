@@ -1,73 +1,57 @@
-{# Presentation stays here; Python supplies the model and its checkpoint metadata. #}
+{# MNE-style: Python supplies metadata; this autoescaped template owns presentation. #}
 <style>
-.bd-model {font:13px/1.5 system-ui,sans-serif; max-width:880px; border:1px solid #8886; border-radius:8px; padding:12px; color:inherit}
-.bd-model table {border-collapse:collapse; width:100%; text-align:left}
-.bd-model th,.bd-model td {padding:3px 8px; border-bottom:1px solid #8883; text-align:left}
-.bd-model caption {text-align:left; font-weight:600; font-size:16px}
-.bd-model a {color:inherit; text-decoration:underline}
-.bd-model .bd-chip {display:inline-block; border:1px solid #8886; border-radius:12px; padding:0 7px; margin:2px}
-.bd-model .bd-loaded {background:#2ea04325}
-.bd-model .bd-new {background:#d4820025}
-.bd-model summary {cursor:pointer; padding-top:8px}
-.bd-model pre {max-height:350px; overflow:auto; text-align:left}
+.bd-model{--bd-blue:#0072b2;--bd-ink:#15324d;--bd-muted:#52677b;--bd-line:#dce5ed;--bd-bg:#fff;--bd-soft:#f4f8fc;--bd-new:#8a4a00;box-sizing:border-box;font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;max-width:900px;color:var(--bd-ink);background:var(--bd-bg);border:1px solid var(--bd-line);border-radius:12px;overflow:hidden;margin:8px 0;text-align:left}
+.bd-model *{box-sizing:border-box}.bd-model a{color:var(--bd-blue);text-underline-offset:3px}.bd-model a:hover{text-decoration-thickness:2px}.bd-model a:focus-visible,.bd-model summary:focus-visible{outline:3px solid #e69f00;outline-offset:3px}
+.bd-model header{padding:18px 22px 16px;background:var(--bd-soft);border-bottom:1px solid var(--bd-line)}
+.bd-model .bd-brand{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}.bd-model .bd-logo{width:166px;height:auto;display:block}.bd-model .bd-eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--bd-muted)}
+.bd-model h3{font-size:24px;letter-spacing:-.03em;margin:0;font-weight:650;line-height:1.2;color:var(--bd-ink)}.bd-model .bd-heading{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.bd-model .bd-badge{font-size:11px;letter-spacing:.03em;padding:3px 9px;border:1px solid #acd1e6;border-radius:20px;color:#005480;background:#e5f3fc}.bd-model .bd-scratch{color:var(--bd-muted);background:var(--bd-bg);border-color:var(--bd-line)}
+.bd-model .bd-metrics{display:flex;flex-wrap:wrap;gap:10px 26px;margin-top:15px}.bd-model .bd-metric{display:flex;flex-direction:column}.bd-model .bd-metric b{font-size:17px;font-variant-numeric:tabular-nums;font-weight:600}.bd-model .bd-metric span{font-size:11px;color:var(--bd-muted)}
+.bd-model section{padding:15px 22px;border-bottom:1px solid var(--bd-line)}.bd-model h4{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--bd-muted);margin:0 0 7px}.bd-model p{margin:5px 0}.bd-model .bd-source{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.bd-model code{font:12px ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}.bd-model .bd-revision{color:var(--bd-muted);font-size:11px}.bd-model .bd-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}.bd-model .bd-chip{display:inline-block;border:1px solid #bdd7e9;border-radius:6px;background:#f0f7fc;color:#005480;padding:3px 9px;font-size:12px;text-decoration:none}.bd-model .bd-note{font-size:12px;color:var(--bd-muted)}
+.bd-model .bd-coverage{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}.bd-model .bd-percent{font-size:22px;font-weight:650;color:var(--bd-blue);font-variant-numeric:tabular-nums}.bd-model progress{appearance:none;display:block;width:100%;height:9px;border:0;border-radius:8px;overflow:hidden;margin:8px 0;background:#f4d3a2}.bd-model progress::-webkit-progress-bar{background:#f4d3a2}.bd-model progress::-webkit-progress-value{background:var(--bd-blue)}.bd-model progress::-moz-progress-bar{background:var(--bd-blue)}
+.bd-model .bd-key{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--bd-muted)}.bd-model .bd-key span:before{content:"";display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:2px;background:var(--bd-blue)}.bd-model .bd-key span:last-child:before{background:#e69f00}
+.bd-model .bd-notice{background:#fff7e9;border-left:3px solid #b56a00;padding:9px 12px;margin-top:11px;font-size:12px;color:#724000}.bd-model details{padding:0 22px;border-bottom:1px solid var(--bd-line)}.bd-model summary{cursor:pointer;padding:12px 0;font-weight:600}.bd-model .bd-scroll{overflow:auto;max-height:340px;margin-bottom:12px}.bd-model table{border-collapse:collapse;width:100%;font-size:12px;text-align:left}.bd-model th,.bd-model td{padding:7px 9px;border-bottom:1px solid var(--bd-line);text-align:left;vertical-align:top}.bd-model thead th{background:var(--bd-soft);position:sticky;top:0;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--bd-muted)}.bd-model td:first-child{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.bd-model .bd-loaded{color:#005480}.bd-model .bd-new{color:var(--bd-new);font-weight:600}.bd-model pre{max-height:340px;overflow:auto;background:var(--bd-soft);border-radius:6px;padding:12px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;text-align:left;white-space:pre}
+.bd-model footer{padding:11px 22px;background:var(--bd-soft);font-size:11px;color:var(--bd-muted)}.bd-model footer strong{color:var(--bd-ink)}
+@media(prefers-color-scheme:dark){.bd-model{--bd-ink:#e0eaf4;--bd-muted:#a7b8ca;--bd-line:#35485b;--bd-bg:#172432;--bd-soft:#1e3042;--bd-blue:#76c4ef;--bd-new:#ffc879}.bd-model .bd-logo{background:#fff;border-radius:4px;padding:3px}.bd-model .bd-chip,.bd-model .bd-badge{background:#173c55;color:#a5dcfb;border-color:#416882}.bd-model .bd-loaded{color:#92d3f6}.bd-model .bd-notice{background:#3b2c18;color:#ffda9f}.bd-model .bd-scratch{background:var(--bd-bg);color:var(--bd-muted)}}
+@media(max-width:480px){.bd-model header,.bd-model section{padding:14px}.bd-model details{padding:0 14px}.bd-model .bd-metrics{gap:10px 18px}.bd-model .bd-eyebrow{display:none}}
 </style>
-<div class="bd-model">
-<table>
-  <caption>{{ name }}{% if data.source %} · checkpoint loaded{% endif %}</caption>
-  <tr><th>Parameters</th><td>{{ '{:,}'.format(data.total) }}{% if data.unbuilt %} materialised; unbuilt: {{ data.unbuilt|join(', ') }}{% endif %}</td></tr>
-  {% for label,value in data.geometry.items() %}
-  <tr><th>{{ label }}</th><td>{{ value }}{% if label == 'sfreq' %} Hz{% endif %}</td></tr>
-  {% endfor %}
-  {% if data.source %}
-  <tr><th>Weights</th><td>
-    {% if data.source.local %}{{ data.source.repo_id }}
-    {% else %}<a href="https://huggingface.co/{{ data.source.repo_id|urlencode }}" target="_blank" rel="noopener">{{ data.source.repo_id }}</a>
-    {% set revision = data.source.commit or data.source.revision %}
-    {% if revision %} @ <a href="https://huggingface.co/{{ data.source.repo_id|urlencode }}/tree/{{ revision|urlencode }}" target="_blank" rel="noopener">{{ revision[:7] }}</a>{% endif %}
-    {% endif %}
-  </td></tr>
-  {% if model.card_data and model.card_data.license %}<tr><th>License</th><td>{{ model.card_data.license }}</td></tr>{% endif %}
-  {% if model.card_data and model.card_data.base_model %}
-  <tr><th>Base model</th><td>{{ model.card_data.base_model }}</td></tr>
-  {% endif %}
-  <tr><th>Trained on (model card)</th><td>
-    {% for dataset in data.datasets %}
-      {% if dataset[:2] in ['nm','on'] and dataset[2:].isdigit() and dataset|length == 8 %}
-        {% set url = 'https://nemar.org/dataset/' ~ dataset %}
-      {% elif dataset[:2] == 'ds' and dataset[2:].isdigit() and dataset|length == 8 %}
-        {% set url = 'https://openneuro.org/datasets/' ~ dataset %}
-      {% elif '/' in dataset %}
-        {% set url = 'https://huggingface.co/datasets/' ~ dataset %}
-      {% else %}{% set url = none %}{% endif %}
-      {% if url %}<a class="bd-chip" href="{{ url }}" target="_blank" rel="noopener">{{ dataset }}</a>
-      {% else %}<span class="bd-chip">{{ dataset }}</span>{% endif %}
-    {% else %}Not listed on the model card{% endfor %}
-  </td></tr>
-  {% if data.source.supplementary %}
-  <tr><th>Supplementary weights</th><td>{{ data.source.supplementary.repo_id }}</td></tr>
-  {% endif %}
-  {% if data.source.mixed %}<tr><th>Adapted tensors</th><td>{{ data.source.mixed|sort|join(', ') }} (excluded from the fully loaded count)</td></tr>{% endif %}
-  <tr><th>Checkpoint-loaded parameters</th><td>
-    {{ '{:,}'.format(data.loaded) }} / {{ '{:,}'.format(data.total) }} materialised
-    {% if data.unbuilt %}(total unknown; lazy parameters not built)
-    {% else %}({{ '%.1f'|format(data.percent) }}%{% if data.source.mixed %}, lower bound{% endif %})
-    <progress value="{{ data.loaded }}" max="{{ data.total or 1 }}" aria-label="Parameters in fully checkpoint-loaded tensors"></progress>
-    {% endif %}
-    {% if data.source.mixed %}Parameters in fully loaded tensors only; adapted tensors excluded.{% endif %}
-  </td></tr>
-  {% endif %}
-</table>
+<article class="bd-model" aria-label="{{ name }} model summary">
+<header>
+  <div class="bd-brand"><a href="https://braindecode.org" target="_blank" rel="noopener"><img class="bd-logo" src="data:image/svg+xml;base64,{{ logo }}" alt="braindecode" /></a><span class="bd-eyebrow">Model &amp; checkpoint</span></div>
+  <div class="bd-heading"><h3>{{ name }}</h3><span class="bd-badge {{ '' if data.source else 'bd-scratch' }}">{{ 'Checkpoint loaded' if data.source else 'Built from scratch' }}</span></div>
+  <div class="bd-metrics">
+    <div class="bd-metric"><b>{{ '{:,}'.format(data.total) }}</b><span>{{ 'Materialised parameters' if data.unbuilt else 'Parameters' }}</span></div>
+    {% for label,value in data.geometry.items() %}<div class="bd-metric"><b>{{ value }}{% if label == 'sfreq' %} Hz{% endif %}</b><span>{{ {'n_chans':'Input channels','n_times':'Samples / window','sfreq':'Sampling rate','n_outputs':'Outputs'}[label] }}</span></div>{% endfor %}
+  </div>
+  {% if data.unbuilt %}<p class="bd-note">Total unknown · unbuilt: {{ data.unbuilt|join(', ') }}</p>{% endif %}
+</header>
 {% if data.source %}
-<details><summary>Parameter origin{% if data.unbuilt %} · lazy parameters unbuilt{% elif data.source.mixed %} · conservative fully-loaded count{% else %} · {{ '%.1f'|format(data.percent) }}% of materialised parameters from listed checkpoint(s){% endif %}</summary>
-<table>
-  <thead><tr><th>Module</th><th>Type</th><th>Parameters</th><th>Origin</th></tr></thead>
-  <tbody>{% for module,type,total,loaded in data.rows %}
-  <tr class="{{ 'bd-loaded' if loaded == total else 'bd-new' }}">
-    <td>{{ module }}</td><td>{{ type }}</td><td>{{ '{:,}'.format(total) }}</td>
-    <td>{{ 'pretrained' if loaded == total else ('new or adapted' if not loaded else 'partly loaded') }}</td>
-  </tr>{% endfor %}</tbody>
-</table>
-</details>
+<section>
+  <h4>Weight provenance</h4>
+  <div class="bd-source">{% if data.source.local %}<code>{{ data.source.repo_id }}</code>{% else %}<a href="https://huggingface.co/{{ data.source.repo_id|urlencode }}" target="_blank" rel="noopener"><code>{{ data.source.repo_id }}</code></a>{% set revision=data.source.commit or data.source.revision %}{% if revision %}<a class="bd-revision" href="https://huggingface.co/{{ data.source.repo_id|urlencode }}/tree/{{ revision|urlencode }}" target="_blank" rel="noopener">@ {{ revision[:7] }}</a>{% endif %}{% endif %}</div>
+  {% if model.card_data and model.card_data.license %}<p class="bd-note">License · {{ model.card_data.license }}</p>{% endif %}
+  {% if model.card_data and model.card_data.base_model %}<p class="bd-note">Base model · {{ model.card_data.base_model }}</p>{% endif %}
+  {% if data.source.supplementary %}<p class="bd-note">Supplementary weights · <code>{{ data.source.supplementary.repo_id }}</code>{% if data.source.supplementary.commit %} @ {{ data.source.supplementary.commit[:7] }}{% endif %}</p>{% endif %}
+</section>
+<section>
+  <h4>Training data <span style="font-weight:400;text-transform:none;letter-spacing:0">· reported by the model card</span></h4>
+  <div class="bd-chips">{% for dataset in data.datasets %}
+    {% if dataset[:2] in ['nm','on'] and dataset[2:].isdigit() and dataset|length == 8 %}{% set url='https://nemar.org/dataset/' ~ dataset %}
+    {% elif dataset[:2]=='ds' and dataset[2:].isdigit() and dataset|length == 8 %}{% set url='https://openneuro.org/datasets/' ~ dataset %}
+    {% elif '/' in dataset %}{% set url='https://huggingface.co/datasets/' ~ dataset %}
+    {% else %}{% set url=none %}{% endif %}
+    {% if url %}<a class="bd-chip" href="{{ url }}" target="_blank" rel="noopener">{{ dataset }}</a>{% else %}<span class="bd-chip">{{ dataset }}</span>{% endif %}
+  {% else %}<span class="bd-note">Not listed on the model card</span>{% endfor %}</div>
+  <p class="bd-note">A dataset missing from this list is not proof of held-out evaluation. Check the card’s completeness and training splits.</p>
+</section>
+<section>
+  <h4>Parameter origin</h4>
+  <div class="bd-coverage"><span>{{ '{:,}'.format(data.loaded) }} / {{ '{:,}'.format(data.total) }} materialised parameters in fully loaded tensors</span>{% if not data.unbuilt %}<span class="bd-percent">{{ '%.1f'|format(data.percent) }}%{% if data.source.mixed %} <small>lower bound</small>{% endif %}</span>{% endif %}</div>
+  {% if not data.unbuilt %}<progress value="{{ data.loaded }}" max="{{ data.total or 1 }}" aria-label="Parameters in fully checkpoint-loaded tensors"></progress><div class="bd-key"><span>Checkpoint-loaded</span><span>New or adapted · fine-tune as needed</span></div>{% else %}<p class="bd-note">total unknown; lazy parameters not built</p>{% endif %}
+  {% if data.source.mixed %}<p class="bd-note">Adapted tensors excluded from the conservative count: {{ data.source.mixed|sort|join(', ') }}.</p>{% endif %}
+  {% if data.new %}<div class="bd-notice"><strong>New or adapted parameters</strong> · {{ data.new|join(', ') }}. These are not fully loaded from the checkpoint.</div>{% endif %}
+</section>
+<details><summary>Layer-by-layer parameter origin</summary><div class="bd-scroll"><table><thead><tr><th>Module</th><th>Type</th><th>Parameters</th><th>Origin</th></tr></thead><tbody>{% for module,type,total,loaded in data.rows %}<tr><td>{{ module }}</td><td>{{ type }}</td><td>{{ '{:,}'.format(total) }}</td><td class="{{ 'bd-loaded' if loaded==total else 'bd-new' }}">{{ 'Loaded' if loaded==total else ('New / adapted' if not loaded else 'Partly loaded') }}</td></tr>{% endfor %}</tbody></table></div></details>
 {% endif %}
-<details><summary>Architecture</summary><pre>{{ architecture }}</pre></details>
-</div>
+<details><summary>PyTorch architecture</summary><pre>{{ architecture }}</pre></details>
+<footer role="note"><strong>Please cite braindecode.</strong> If you use braindecode in scientific work, cite the <a href="https://doi.org/10.5281/zenodo.17699192" target="_blank" rel="noopener">software</a> and <a href="https://doi.org/10.1002/hbm.23730" target="_blank" rel="noopener">Schirrmeister et al. (2017)</a>. Please also cite the original model and datasets. <a href="https://github.com/braindecode/braindecode#citing" target="_blank" rel="noopener">Citation details ↗</a></footer>
+</article>

@@ -659,7 +659,7 @@ def test_pretrained_provenance_in_repr(tmp_path):
     page = same._repr_html_()
     assert "https://openneuro.org/datasets/ds002718" in page
     assert "https://huggingface.co/datasets/braindecode/chbmit" in page
-    assert "100.0% of materialised parameters from listed checkpoint(s)" in page
+    assert "100.0%" in page and "fully loaded tensors" in page
 
     # A new head is initialised here, not loaded.
     head = BIOT.from_pretrained(tmp_path, n_outputs=3)
@@ -916,3 +916,14 @@ def test_provenance_failed_reload_also_invalidates_source(tmp_path):
     with pytest.raises(RuntimeError, match="Missing key"):
         loaded.load_state_dict(partial)
     assert "_pretrained_provenance" not in loaded.__dict__
+
+
+def test_model_html_has_offline_logo_and_citation_notice():
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    page = model._repr_html_()
+    assert 'src="data:image/svg+xml;base64,' in page
+    assert 'alt="braindecode"' in page
+    assert "Please cite braindecode." in page
+    assert "10.5281/zenodo.17699192" in page
+    assert "10.1002/hbm.23730" in page
+    assert "Built from scratch" in page
