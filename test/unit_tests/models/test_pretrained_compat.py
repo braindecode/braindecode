@@ -28,6 +28,7 @@ import torch
 
 from braindecode.models import (
     AXON,
+    BBL,
     BENDR,
     BIOT,
     DIVER1,
@@ -405,6 +406,18 @@ COMPAT = {
         coords_checked=True,
         skip=("G2",),
     ),
+    # MEG sensors in FIF order, zero-padded to the 306 of the release; no
+    # geometry is read, so any count up to 306 builds (0.5 s windows at 250 Hz).
+    "BBL": dict(
+        cls=BBL,
+        sfreq=250,
+        n_times=125,
+        canon=None,
+        kind="mag",
+        n_chans_fixed=306,
+        channels="fixed_order_unchecked",
+        windows=(125, 1000),
+    ),
 }
 
 # LaBraM looks names up at forward: these montages go through the channel layer.
@@ -523,6 +536,7 @@ NO_STRATEGY = {
     "BrainTokenizer",
     "TFMTokenizer",
     "MEGXL",
+    "BBL",
 }
 
 
