@@ -63,10 +63,14 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
 
     .. important::
 
-        The released checkpoint was pretrained on CamCAN (dataset slot 0) at
-        250 Hz on 0.5 s windows (125 samples), sensors right-padded to 306 and
-        robust-scaled, clipped to ``[-5, 5]`` and baseline-corrected as in the
-        authors' code. Its projector expects CamCAN's 306 Elekta ``MEG*``
+        The released checkpoint was pretrained on CamCAN (dataset slot 0),
+        band-passed 0.1-125 Hz with 50 and 100 Hz notches, then resampled to
+        250 Hz, on 0.5 s windows (125 samples). Each window is scaled per
+        channel by the median and interquartile range fitted on its recording,
+        clipped to ``[-5, 5]`` and has its first 0.5 s mean subtracted, so
+        inputs are dimensionless (authors' ``data/preprocess.py`` and
+        ``data/utils.py``; ``forward`` only does the zero-padding to 306
+        sensors). Its projector expects CamCAN's 306 Elekta ``MEG*``
         channels in FIF order. ``subject_index`` is offset per dataset slot:
         subject ``s`` of slot ``d`` uses row ``d * 1024 + s``. Only CamCAN
         subject rows of ``subject_embedding`` are trained, and
