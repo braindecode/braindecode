@@ -231,7 +231,9 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.Sequential(
             nn.Flatten(), nn.Linear(self.n_chans * embed_dim, self.n_outputs)
         )
+        self._init_parameters()
 
+    def _init_parameters(self) -> None:
         # Reference initialisation (meg_gpt/optim/initializer.py).
         for module in self.modules():
             if isinstance(module, nn.Linear):
