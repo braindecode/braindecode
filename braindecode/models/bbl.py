@@ -191,7 +191,10 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         x = self.split_datasets(x)
         if dataset_index is None:
             dataset_index = torch.zeros(batch, dtype=torch.long, device=x.device)
-        gate = F.one_hot(dataset_index, self.n_datasets).to(x.dtype)
+        # Compare with arange instead of F.one_hot, which reads the index range
+        # on the host.
+        slots = torch.arange(self.n_datasets, device=x.device)
+        gate = (dataset_index[:, None] == slots).to(x.dtype)
         x = (x * gate[:, :, None, None]).sum(dim=1)
         x = self.encoder(x)
         x = x.mean(dim=-1)
