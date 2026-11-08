@@ -908,6 +908,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         for k, v in own.items():
             if k.startswith("channel_layer.") and k not in new_state_dict:
                 new_state_dict[k] = v
+        if not _RECORD_LOADED_KEYS.get():
+            # PyTorch may copy matching tensors before a strict load raises.
+            self.__dict__.pop("_pretrained_provenance", None)
         result = super().load_state_dict(new_state_dict, *args, **kwargs)
         if _RECORD_LOADED_KEYS.get():
             provenance = self.__dict__.setdefault("_pretrained_provenance", {})
@@ -1018,6 +1021,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             for n, p in self.named_parameters(remove_duplicate=False)
             if n in loaded
         }
+        unbuilt = [
+            n
+            for n, p in self.named_parameters()
+            if isinstance(p, UninitializedParameter)
+        ]
         rows, seen = [], set()
         for name, module in self.named_modules():
             params = [
@@ -1052,6 +1060,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             source=provenance,
             datasets=datasets,
             rows=rows,
+            unbuilt=unbuilt,
             geometry=geometry,
             total=total,
             loaded=count,
@@ -1069,13 +1078,26 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         revision = source.get("commit") or source.get("revision")
         if revision and not source.get("local"):
             repo += f" @ {revision[:7]}"
+        supplement = source.get("supplementary")
+        if supplement:
+            repo += f"; supplementary: {supplement['repo_id']}"
+            revision = supplement.get("commit") or supplement.get("revision")
+            if revision and not supplement.get("local"):
+                repo += f" @ {revision[:7]}"
         label = "new or adapted" if source.get("mixed") else "new"
         new = f"; {label}: " + ", ".join(data["new"]) if data["new"] else ""
+        scope = (
+            "parameters in fully loaded tensors; adapted tensors excluded"
+            if source.get("mixed")
+            else "parameters"
+        )
+        if data["unbuilt"]:
+            new += "; unbuilt: " + ", ".join(data["unbuilt"])
         return (
             f"{table}\nPretrained weights: {repo}\n"
             f"Trained on (model card): {', '.join(data['datasets']) or 'not listed'}\n"
-            f"Loaded from the checkpoint: {data['loaded']:,} of {data['total']:,} "
-            f"parameters ({data['percent']:.1f}%){new}"
+            f"Loaded from the listed checkpoint(s): {data['loaded']:,} of {data['total']:,} "
+            f"{scope} ({data['percent']:.1f}% of materialised parameters){new}"
         )
 
     def _repr_html_(self) -> str:
@@ -1218,7 +1240,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             if isinstance(model, torch.nn.Module):
                 provenance = model.__dict__.setdefault("_pretrained_provenance", {})
                 provenance.update(_checkpoint_source(*args, **kwargs))
-                params = {name for name, _ in model.named_parameters()}
+                params = {
+                    name for name, _ in model.named_parameters(remove_duplicate=False)
+                }
                 if params and not params & (provenance.get("loaded") or set()):
                     warnings.warn(
                         f"no parameter of {cls.__name__} was loaded from "

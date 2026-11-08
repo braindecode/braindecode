@@ -525,6 +525,11 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                 ),
                 "loaded": set(missing),
             }
+            parts = Path(path).parts
+            if "snapshots" in parts:
+                model._pretrained_provenance["supplementary"]["commit"] = parts[
+                    parts.index("snapshots") + 1
+                ]
         return model
 
     @classmethod

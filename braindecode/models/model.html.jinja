@@ -14,7 +14,7 @@
 <div class="bd-model">
 <table>
   <caption>{{ name }}{% if data.source %} · checkpoint loaded{% endif %}</caption>
-  <tr><th>Parameters</th><td>{{ '{:,}'.format(data.total) }}</td></tr>
+  <tr><th>Parameters</th><td>{{ '{:,}'.format(data.total) }}{% if data.unbuilt %} materialised; unbuilt: {{ data.unbuilt|join(', ') }}{% endif %}</td></tr>
   {% for label,value in data.geometry.items() %}
   <tr><th>{{ label }}</th><td>{{ value }}{% if label == 'sfreq' %} Hz{% endif %}</td></tr>
   {% endfor %}
@@ -30,7 +30,7 @@
   {% if model.card_data and model.card_data.base_model %}
   <tr><th>Base model</th><td>{{ model.card_data.base_model }}</td></tr>
   {% endif %}
-  <tr><th>Trained on</th><td>
+  <tr><th>Trained on (model card)</th><td>
     {% for dataset in data.datasets %}
       {% if dataset[:2] in ['nm','on'] and dataset[2:].isdigit() and dataset|length == 8 %}
         {% set url = 'https://nemar.org/dataset/' ~ dataset %}
@@ -47,13 +47,18 @@
   <tr><th>Supplementary weights</th><td>{{ data.source.supplementary.repo_id }}</td></tr>
   {% endif %}
   {% if data.source.mixed %}<tr><th>Adapted tensors</th><td>{{ data.source.mixed|sort|join(', ') }} (excluded from the fully loaded count)</td></tr>{% endif %}
-  <tr><th>Loaded parameters</th><td>{{ '{:,}'.format(data.loaded) }} / {{ '{:,}'.format(data.total) }} ({{ '%.1f'|format(data.percent) }}%)
-    <progress value="{{ data.loaded }}" max="{{ data.total or 1 }}" aria-label="Parameters loaded from checkpoint"></progress>
+  <tr><th>Checkpoint-loaded parameters</th><td>
+    {{ '{:,}'.format(data.loaded) }} / {{ '{:,}'.format(data.total) }} materialised
+    {% if data.unbuilt %}(total unknown; lazy parameters not built)
+    {% else %}({{ '%.1f'|format(data.percent) }}%{% if data.source.mixed %}, lower bound{% endif %})
+    <progress value="{{ data.loaded }}" max="{{ data.total or 1 }}" aria-label="Parameters in fully checkpoint-loaded tensors"></progress>
+    {% endif %}
+    {% if data.source.mixed %}Parameters in fully loaded tensors only; adapted tensors excluded.{% endif %}
   </td></tr>
   {% endif %}
 </table>
 {% if data.source %}
-<details><summary>Parameter origin · {{ '%.1f'|format(data.percent) }}% of the parameters come from the checkpoint</summary>
+<details><summary>Parameter origin{% if data.unbuilt %} · lazy parameters unbuilt{% elif data.source.mixed %} · conservative fully-loaded count{% else %} · {{ '%.1f'|format(data.percent) }}% of materialised parameters from listed checkpoint(s){% endif %}</summary>
 <table>
   <thead><tr><th>Module</th><th>Type</th><th>Parameters</th><th>Origin</th></tr></thead>
   <tbody>{% for module,type,total,loaded in data.rows %}

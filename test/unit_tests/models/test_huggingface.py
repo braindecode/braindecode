@@ -656,11 +656,11 @@ def test_pretrained_provenance_in_repr(tmp_path):
     assert params <= same._pretrained_provenance["loaded"]
     text = str(same)
     assert "Trained on (model card): BNCI2014_001, ds002718, braindecode/chbmit" in text
-    assert "(100.0%)" in text and "new:" not in text
+    assert "(100.0% of materialised parameters)" in text and "new:" not in text
     page = same._repr_html_()
     assert "https://openneuro.org/datasets/ds002718" in page
     assert "https://huggingface.co/datasets/braindecode/chbmit" in page
-    assert "100.0% of the parameters come from the checkpoint" in page
+    assert "100.0% of materialised parameters from listed checkpoint(s)" in page
 
     # A new head is initialised here, not loaded.
     head = BIOT.from_pretrained(tmp_path, n_outputs=3)
@@ -880,3 +880,40 @@ def test_provenance_sleepfm_supplement_records_encoder_and_source(tmp_path):
     loaded.reset_parameters()
     assert not provenance["loaded"]
     assert not supplement["loaded"]
+
+
+def test_provenance_manual_reload_invalidates_source(tmp_path):
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.save_pretrained(tmp_path)
+    loaded = EEGNet.from_pretrained(tmp_path)
+    loaded.load_state_dict(model.state_dict())
+    assert "_pretrained_provenance" not in loaded.__dict__
+    assert "Pretrained weights:" not in str(loaded)
+
+
+def test_provenance_html_discloses_unbuilt_and_adapted_parameters(tmp_path):
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.save_pretrained(tmp_path)
+    loaded = EEGNet.from_pretrained(tmp_path)
+    loaded.extra = nn.LazyLinear(3)
+    page = loaded._repr_html_()
+    assert "total unknown" in page and "extra.weight" in page
+    assert "100.0%" not in page
+    del loaded.extra
+    loaded._pretrained_provenance["mixed"] = {"adapted_embedding"}
+    loaded._pretrained_provenance["supplementary"] = {"repo_id": "org/encoder", "revision": "123456789"}
+    page = loaded._repr_html_()
+    assert "lower bound" in page and "adapted tensors excluded" in page.lower()
+    assert "parameters in fully loaded tensors; adapted tensors excluded" in str(loaded)
+    assert "supplementary: org/encoder @ 1234567" in str(loaded)
+
+
+def test_provenance_failed_reload_also_invalidates_source(tmp_path):
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.save_pretrained(tmp_path)
+    loaded = EEGNet.from_pretrained(tmp_path)
+    partial = model.state_dict()
+    partial.pop(next(iter(partial)))
+    with pytest.raises(RuntimeError, match="Missing key"):
+        loaded.load_state_dict(partial)
+    assert "_pretrained_provenance" not in loaded.__dict__
