@@ -96,13 +96,15 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
 
     .. rubric:: Pre-trained weights
 
-    The released Cam-CAN MEG-GPT and EphysTokenizer weights require conversion
-    for this class; they cannot be loaded directly with their original keys.
-    A local converted export has been validated through ``from_pretrained``.
-    Publication of the proposed ``braindecode/meggpt-pretrained`` mirror is
-    pending approval; it is not available from the Hub yet. The conversion
-    omits the session embedding, next-token head and tokenizer signal decoder;
-    the classification head is randomly initialized.
+    The released Cam-CAN MEG-GPT and EphysTokenizer weights, converted to this
+    class's keys, are on the Hugging Face Hub at
+    ``braindecode/meggpt-pretrained`` (revision ``5c49e27c``)::
+
+        from braindecode.models import MEGGPT
+        model = MEGGPT.from_pretrained("braindecode/meggpt-pretrained", n_outputs=4)
+
+    The conversion omits the session embedding, next-token head and tokenizer
+    signal decoder; the classification head is randomly initialized.
 
     .. versionadded:: 2.1
 
