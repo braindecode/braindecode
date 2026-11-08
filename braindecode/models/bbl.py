@@ -182,7 +182,7 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         tensors; ``dataset_index`` defaults to slot 0.
         """
         batch = x.shape[0]
-        x = F.pad(x, (0, 0, 0, self.n_sensors - x.shape[1]))
+        x = F.pad(x, (0, 0, 0, self.n_sensors - self.n_chans))
         x = self.projector(x)
         x = self.split_datasets(x)
         if dataset_index is None:

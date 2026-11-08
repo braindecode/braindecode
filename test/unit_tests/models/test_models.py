@@ -6065,5 +6065,8 @@ def test_bbl_pads_sensors_gates_datasets_and_averages_subjects():
         feat = model(x, return_features=True)["features"]
     mean = model.subject_embedding.weight[[1, 3]].mean(0)
     torch.testing.assert_close(feat[:, -3:], mean.expand(2, -1))
+    # A wider input than n_chans is not cropped to fit n_sensors.
+    with pytest.raises(RuntimeError):
+        full(torch.randn(2, 9, 40))
     with pytest.raises(ValueError, match="n_sensors"):
         BBL(n_chans=9, n_outputs=2, n_sensors=8)
