@@ -76,7 +76,12 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         subject rows of ``subject_embedding`` are trained, and
         ``trained_subjects`` flags them; the head is not pretrained. Set
         ``trained_subjects`` to the rows your own training used before relying
-        on the mean-subject fallback.
+        on the mean-subject fallback. The converted checkpoint is on the
+        Hugging Face Hub at ``braindecode/bbl-pretrained`` (revision
+        ``5a19a369``)::
+
+            from braindecode.models import BBL
+            model = BBL.from_pretrained("braindecode/bbl-pretrained", n_outputs=2)
 
     .. versionadded:: 2.1
 
