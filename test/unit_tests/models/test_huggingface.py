@@ -720,3 +720,163 @@ def test_from_pretrained_reports_loaded_parameters(tmp_path):
     with pytest.warns(UserWarning, match="no parameter of EEGNet was loaded from"):
         renamed = EEGNet.from_pretrained(other)
     assert not renamed._pretrained_provenance["loaded"]
+
+
+def test_model_card_scalar_and_escaped_html(tmp_path):
+    from huggingface_hub import ModelCardData
+
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.save_pretrained(tmp_path)
+    model = EEGNet.from_pretrained(tmp_path)
+    model.card_data = ModelCardData(datasets="TUEG")
+    assert "Trained on (model card): TUEG" in str(model)
+    assert "T, U, E, G" not in str(model)
+    page = model._repr_html_()
+    assert page.count('class="bd-chip"') == 1
+    model.card_data = ModelCardData(datasets=["nm000253", "on004362", "<script>bad</script>"])
+    page = model._repr_html_()
+    assert 'href="https://nemar.org/dataset/on004362"' in page
+    assert "<script>bad</script>" not in page
+    assert "&lt;script&gt;" in page
+
+
+def test_model_html_uses_input_montage():
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.channel_layer = nn.Identity()
+    model.channel_layer.chs_info = [{"ch_name": "Cz"}, {"ch_name": "Pz"}]
+    assert model._pretrained_summary()["geometry"]["n_chans"] == 2
+    model.channel_layer.chs_info = None
+    assert model._pretrained_summary()["geometry"]["n_chans"] == "set at forward"
+
+
+@pytest.mark.parametrize("head_hidden_dim", [0, 8])
+def test_provenance_duin_mismatched_window_keeps_head_local(tmp_path, head_hidden_dim):
+    from braindecode.models import DuIN
+
+    kwargs = dict(
+        n_chans=2, n_outputs=2, sfreq=1000, patch_size=20,
+        n_neural=2, n_filters=(8, 4), kernel_sizes=(5, 3), strides=(5, 1),
+        n_layers=1, n_heads=2, head_dim=8, ffn_dim=16,
+        head_hidden_dim=head_hidden_dim,
+    )
+    saved = DuIN(n_times=60, **kwargs)
+    saved.save_pretrained(tmp_path)
+    with pytest.warns(UserWarning, match="head keeps its initialization"):
+        loaded = DuIN.from_pretrained(tmp_path, n_times=80, local_files_only=True)
+    heads = {
+        k for k in loaded.state_dict()
+        if k.startswith(("head_hidden.", "final_layer."))
+    }
+    provenance = loaded._pretrained_provenance
+    assert heads and not heads & provenance["loaded"]
+    assert set(dict(loaded.named_parameters())) - heads <= provenance["loaded"]
+    # Numerical behavior remains the subclass's normal state-dict adaptation.
+    torch.manual_seed(42)
+    expected = DuIN(n_times=80, **kwargs)
+    with pytest.warns(UserWarning, match="head keeps its initialization"):
+        expected.load_state_dict(saved.state_dict())
+    torch.manual_seed(42)
+    with pytest.warns(UserWarning, match="head keeps its initialization"):
+        replay = DuIN.from_pretrained(tmp_path, n_times=80, local_files_only=True)
+    for key, value in expected.state_dict().items():
+        torch.testing.assert_close(replay.state_dict()[key], value, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("source_slots,target_slots", [(16, 30), (30, 16)])
+def test_provenance_labram_resized_embedding_is_conservatively_mixed(
+    tmp_path, source_slots, target_slots,
+):
+    from braindecode.models import Labram
+
+    kwargs = dict(
+        n_chans=2, n_outputs=2, patch_size=8, embed_dim=8,
+        conv_out_channels=8, num_layers=1, num_heads=2,
+    )
+    saved = Labram(n_times=source_slots * 8, **kwargs)
+    saved.save_pretrained(tmp_path)
+    torch.manual_seed(42)
+    expected = Labram(n_times=target_slots * 8, **kwargs)
+    local = expected.temporal_embedding.detach().clone()
+    expected.load_state_dict(saved.state_dict())
+    torch.manual_seed(42)
+    loaded = Labram.from_pretrained(
+        tmp_path, n_times=target_slots * 8, local_files_only=True,
+    )
+    provenance = loaded._pretrained_provenance
+    assert "temporal_embedding" not in provenance["loaded"]
+    assert provenance["mixed"] == {"temporal_embedding"}
+    assert set(dict(loaded.named_parameters())) - {"temporal_embedding"} <= provenance["loaded"]
+    copied = min(source_slots, target_slots)
+    torch.testing.assert_close(
+        loaded.temporal_embedding[:, :copied], saved.temporal_embedding[:, :copied],
+    )
+    torch.testing.assert_close(loaded.temporal_embedding[:, copied:], local[:, copied:])
+    for key, value in expected.state_dict().items():
+        torch.testing.assert_close(loaded.state_dict()[key], value, rtol=0, atol=0)
+
+
+def test_provenance_reset_invalidates_checkpoint_history_not_freezing(tmp_path):
+    from .test_base import DummyModuleConfigRoundTrip
+
+    saved = DummyModuleConfigRoundTrip(n_chans=2, n_times=8, n_outputs=2)
+    saved.save_pretrained(tmp_path)
+    loaded = DummyModuleConfigRoundTrip.from_pretrained(tmp_path, local_files_only=True)
+    original = loaded._pretrained_provenance["loaded"].copy()
+    assert set(dict(loaded.named_parameters())) <= original
+    loaded.requires_grad_(False)
+    assert loaded._pretrained_provenance["loaded"] == original
+    loaded.requires_grad_(True)
+    assert loaded._pretrained_provenance["loaded"] == original
+    loaded.reset_parameters()
+    assert not loaded._pretrained_provenance["loaded"]
+    torch.manual_seed(42)
+    expected = DummyModuleConfigRoundTrip(n_chans=2, n_times=8, n_outputs=2)
+    expected.load_state_dict(saved.state_dict())
+    expected.reset_parameters()
+    torch.manual_seed(42)
+    replay = DummyModuleConfigRoundTrip.from_pretrained(tmp_path, local_files_only=True)
+    replay.reset_parameters()
+    for key, value in expected.state_dict().items():
+        torch.testing.assert_close(replay.state_dict()[key], value, rtol=0, atol=0)
+
+
+def test_provenance_sleepfm_supplement_records_encoder_and_source(tmp_path):
+    from safetensors.torch import save_file
+
+    from braindecode.models import SleepFM, SleepFMStager
+
+    kwargs = dict(
+        n_chans=2, n_times=128, n_outputs=2, sfreq=128, patch_size=64,
+        embed_dim=8, drop_prob=0.0,
+    )
+    stager = SleepFMStager(
+        **kwargs, channel_modalities=["A", "B"], max_seq_length=2,
+        encoder_num_heads=2, encoder_num_layers=1, encoder_pooling_heads=2,
+        encoder_chunk_patches=2, staging_num_heads=2, staging_num_layers=1,
+        staging_pooling_heads=2,
+    )
+    encoder = SleepFM(
+        **kwargs, max_seq_length=128, num_heads=2, num_layers=1, pooling_heads=2,
+    )
+    stager.save_pretrained(tmp_path / "stager")
+    encoder.save_pretrained(tmp_path / "encoder")
+    head = ("patch_embedding.", "staging_head.", "final_layer.")
+    head_only = {k: v for k, v in stager.state_dict().items() if k.startswith(head)}
+    save_file(head_only, tmp_path / "stager" / "model.safetensors")
+    loaded = SleepFMStager.from_pretrained(
+        tmp_path / "stager", encoder_model_name_or_path=tmp_path / "encoder",
+        local_files_only=True,
+    )
+    provenance = loaded._pretrained_provenance
+    assert set(dict(loaded.named_parameters())) <= provenance["loaded"]
+    assert provenance["repo_id"] == str(tmp_path / "stager")
+    supplement = provenance["supplementary"]
+    assert supplement["repo_id"] == str(tmp_path / "encoder")
+    assert supplement["local"] is True
+    assert supplement["loaded"] == set(loaded.state_dict()) - set(head_only)
+    expected = encoder.state_dict() | head_only
+    for key, value in loaded.state_dict().items():
+        torch.testing.assert_close(value, expected[key], rtol=0, atol=0)
+    loaded.reset_parameters()
+    assert not provenance["loaded"]
+    assert not supplement["loaded"]

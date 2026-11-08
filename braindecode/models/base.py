@@ -21,7 +21,6 @@ from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from mne.utils import _soft_import
 from torchinfo import ModelStatistics, summary
 
-from braindecode.models._repr import model_html, pretrained_summary_lines
 from braindecode.models.util import (
     _EEG_PARAMS,
     build_model_config,
@@ -833,6 +832,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         self.apply(reset)
         self._init_parameters()
+        provenance = self.__dict__.get("_pretrained_provenance")
+        if provenance is not None:
+            # Conservatively invalidate attribution after model-wide initialization.
+            provenance["loaded"] = set()
+            provenance.pop("mixed", None)
+            if "supplementary" in provenance:
+                provenance["supplementary"]["loaded"] = set()
 
     def _init_parameters(self) -> None:
         """Model-specific initialization, run by the constructor after the
@@ -886,7 +892,19 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 new_state_dict[k] = v
         # A backbone checkpoint has no weights for a trainable channel layer.
         own = super().state_dict()
-        from_checkpoint = set(new_state_dict)
+        # Load hooks may expand tensors with locally initialized values. Only
+        # attribute whole tensors whose checkpoint shape already matches.
+        from_checkpoint = {
+            k
+            for k, v in new_state_dict.items()
+            if k in own
+            and (
+                not isinstance(v, torch.Tensor)
+                or torch.nn.parameter.is_lazy(own[k])
+                or v.shape == own[k].shape
+            )
+        }
+        mixed = (set(new_state_dict) & set(own)) - from_checkpoint
         for k, v in own.items():
             if k.startswith("channel_layer.") and k not in new_state_dict:
                 new_state_dict[k] = v
@@ -894,9 +912,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         if _RECORD_LOADED_KEYS.get():
             provenance = self.__dict__.setdefault("_pretrained_provenance", {})
             loaded = provenance.get("loaded") or set()
-            provenance["loaded"] = loaded | (
-                (from_checkpoint & set(own)) - set(result.unexpected_keys)
+            provenance["loaded"] = (loaded - mixed) | (
+                from_checkpoint - set(result.unexpected_keys) - set(result.missing_keys)
             )
+            provenance["mixed"] = (
+                provenance.get("mixed", set()) | mixed
+            ) - from_checkpoint
         return result
 
     def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
@@ -985,18 +1006,92 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             verbose=0,
         )
 
+    def _pretrained_summary(self):
+        """Display data shared by the text and notebook representations."""
+        from torch.nn.parameter import UninitializedParameter
+
+        provenance = self.__dict__.get("_pretrained_provenance", {})
+        loaded = provenance.get("loaded", set())
+        # Tied parameters may be saved under only one of their names.
+        loaded_ids = {
+            id(p)
+            for n, p in self.named_parameters(remove_duplicate=False)
+            if n in loaded
+        }
+        rows, seen = [], set()
+        for name, module in self.named_modules():
+            params = [
+                (n, p)
+                for n, p in module.named_parameters(recurse=False)
+                if id(p) not in seen and not isinstance(p, UninitializedParameter)
+            ]
+            seen.update(id(p) for _, p in params)
+            if params:
+                total = sum(p.numel() for _, p in params)
+                count = sum(p.numel() for _, p in params if id(p) in loaded_ids)
+                rows.append(
+                    (name or type(self).__name__, type(module).__name__, total, count)
+                )
+        total = sum(row[2] for row in rows)
+        count = sum(row[3] for row in rows)
+        datasets = getattr(self.card_data, "datasets", None) or []
+        if isinstance(datasets, str):
+            datasets = [datasets]
+        geometry = {}
+        for attr in ("n_chans", "n_times", "sfreq", "n_outputs"):
+            try:
+                geometry[attr] = getattr(self, attr)
+            except ValueError:
+                pass
+        if hasattr(self, "channel_layer"):
+            channels = self.channel_layer.chs_info
+            geometry["n_chans"] = (
+                len(channels) if channels is not None else "set at forward"
+            )
+        return dict(
+            source=provenance,
+            datasets=datasets,
+            rows=rows,
+            geometry=geometry,
+            total=total,
+            loaded=count,
+            percent=100.0 if count == total else min(99.9, 100 * count / max(total, 1)),
+            new=[name for name, _, n, k in rows if k < n],
+        )
+
     def __str__(self) -> str:
-        lines = pretrained_summary_lines(self)
         table = str(self.get_torchinfo_statistics())
-        return "\n".join([table, *lines]) if lines else table
+        if not self.__dict__.get("_pretrained_provenance"):
+            return table
+        data = self._pretrained_summary()  # torchinfo may initialise a lazy head
+        source = data["source"]
+        repo = source["repo_id"]
+        revision = source.get("commit") or source.get("revision")
+        if revision and not source.get("local"):
+            repo += f" @ {revision[:7]}"
+        label = "new or adapted" if source.get("mixed") else "new"
+        new = f"; {label}: " + ", ".join(data["new"]) if data["new"] else ""
+        return (
+            f"{table}\nPretrained weights: {repo}\n"
+            f"Trained on (model card): {', '.join(data['datasets']) or 'not listed'}\n"
+            f"Loaded from the checkpoint: {data['loaded']:,} of {data['total']:,} "
+            f"parameters ({data['percent']:.1f}%){new}"
+        )
 
     def _repr_html_(self) -> str:
-        """Notebook view: the input geometry, and for a model from
-        :meth:`from_pretrained` the Hub repository and revision, the datasets
-        of its model card, and the module tree with the parameters loaded from
-        the checkpoint marked apart from those initialised here (e.g. a new
-        head)."""
-        return model_html(self)
+        """Notebook model card, rendered from an autoescaped Jinja template (as in MNE)."""
+        from jinja2 import Environment, PackageLoader
+
+        template = Environment(
+            loader=PackageLoader("braindecode.models", "."),
+            autoescape=True,
+        ).get_template("model.html.jinja")
+        return template.render(
+            model=self,
+            name=type(self).__name__,
+            data=self._pretrained_summary(),
+            architecture=torch.nn.Module.__repr__(self),
+        )
 
     @staticmethod
     def _serialize_chs_info(chs_info):
