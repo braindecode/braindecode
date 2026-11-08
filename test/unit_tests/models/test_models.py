@@ -6067,7 +6067,8 @@ def test_nice_released_checkpoint_keys(n_chans, n_times, n_flat):
         "2.weight": (768,),
         "2.bias": (768,),
     }
-    state = {k: torch.randn(v) for k, v in shapes.items()}
+    # Non-negative values, so the BatchNorm running variances are valid.
+    state = {k: torch.rand(v) for k, v in shapes.items()}
     state["0.shallownet.2.num_batches_tracked"] = torch.tensor(0)
     state["0.shallownet.5.num_batches_tracked"] = torch.tensor(0)
     model = NICE(n_chans=n_chans, n_times=n_times, n_outputs=200)
@@ -6076,3 +6077,4 @@ def test_nice_released_checkpoint_keys(n_chans, n_times, n_flat):
     assert sorted(result.missing_keys) == ["final_layer.bias", "final_layer.weight"]
     out = model.eval()(torch.randn(2, n_chans, n_times), return_features=True)
     assert out["features"].shape == (2, 768)
+    assert out["features"].isfinite().all()
