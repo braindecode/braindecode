@@ -157,8 +157,7 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head; the encoder is kept."""
-        self._n_outputs = n_outputs
-        self._update_init_kwargs(n_outputs=n_outputs)
+        self._set_n_outputs(n_outputs)
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
 
     def forward(
