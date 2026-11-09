@@ -14,6 +14,7 @@ from braindecode.models import (
     EEGPT,
     MAPA,
     MEGXL,
+    NICE,
     REVE,
     BaRISTA,
     BrainBERT,
@@ -91,6 +92,7 @@ _MODELS = [
         id="REVE",
     ),
     pytest.param(BENDR, N_CHANS, {}, False, id="BENDR"),
+    pytest.param(NICE, N_CHANS, {}, False, id="NICE"),
     pytest.param(
         BENDR,
         N_CHANS,
