@@ -6144,3 +6144,95 @@ def test_megxl_batched_geometry_gradients():
     reference_grads = torch.autograd.grad(expected, params, grad_outputs=cotangent)
     actual_grads = torch.autograd.grad(actual, params, grad_outputs=cotangent)
     assert all(torch.equal(a, b) for a, b in zip(reference_grads, actual_grads))
+
+
+def test_megxl_masked_codes_before_context():
+    """Hide clean code content before metadata/context, not the prediction."""
+    from braindecode.models import MEGXL
+
+    torch.manual_seed(12)
+    model = MEGXL(
+        chs_info=_make_chs_info(3), n_outputs=2, n_times=25, sfreq=50.0,
+        latent_dim=32, num_layers=1, num_heads=4, fourier_pos_dim=16,
+        tokenizer_dim=16, n_filters=4, n_q=2, codebook_size=8, codebook_dim=4,
+        drop_prob=0.0,
+    ).eval()
+    x = torch.randn(2, 3, 25)
+    with torch.no_grad():
+        # The fresh RVQ codebooks are zero before pretraining; use nontrivial
+        # frozen embeddings to exercise projector gradients like a checkpoint.
+        for vq in model.quantizer.layers:
+            vq._codebook.embed.normal_()
+        codes = model.tokenize(x)
+    assert not codes.requires_grad
+    clean = model.encode(x)
+    assert torch.equal(clean, model.encode_codes(codes))
+    mask = torch.zeros(codes.shape[:3], dtype=torch.bool)
+    mask[:, :, 1] = True  # native temporal span, every sensor
+    value = nn.Parameter(torch.randn(model.latent_dim))
+    captured = []
+    hook = model.blocks[0].register_forward_pre_hook(
+        lambda module, args: captured.append(args[0].detach().clone())
+    )
+    rng = torch.get_rng_state().clone()
+    unchanged = model.encode(x, mask=torch.zeros_like(mask), mask_value=value)
+    assert torch.equal(clean, unchanged)
+    assert torch.equal(rng, torch.get_rng_state())
+    masked = model.encode_codes(codes, mask, value)
+    changed = codes.clone()
+    changed[mask] = (changed[mask] + 1) % 8
+    perturbed = model.encode_codes(changed, mask, value)
+    assert torch.equal(captured[-1], captured[-2])
+    assert torch.equal(masked, perturbed)
+    assert torch.equal(captured[-2][~mask], captured[0][~mask])
+    assert not torch.equal(masked, clean)
+    # A zero code projection isolates replacement + unchanged sensor metadata.
+    with torch.no_grad():
+        weight = model.rvq_projector.weight.clone()
+        bias = model.rvq_projector.bias.clone()
+        model.rvq_projector.weight.zero_()
+        model.rvq_projector.bias.zero_()
+        model.encode_codes(codes, mask, value)
+        model.rvq_projector.weight.copy_(weight)
+        model.rvq_projector.bias.copy_(bias)
+    assert torch.equal(captured[-1][mask], captured[-3][mask])
+    hook.remove()
+    decoder = nn.Linear(model.latent_dim, 2 * 8)
+    logits = decoder(masked).unflatten(-1, (2, 8))
+    selected = logits[mask]
+    targets = codes[mask]
+    loss = torch.stack([
+        nn.functional.cross_entropy(selected[:, q], targets[:, q])
+        for q in range(2)
+    ]).mean()
+    loss.backward()
+    for parameter in [value, decoder.weight, model.rvq_projector.weight,
+                      model.blocks[0].spatial_attn.qkv.weight]:
+        assert parameter.grad is not None
+        assert torch.isfinite(parameter.grad).all()
+        assert torch.count_nonzero(parameter.grad)
+    assert all(p.grad is None for p in model.encoder.parameters())
+    assert all(p.grad is None for p in model.quantizer.parameters())
+
+
+@pytest.mark.parametrize("n_times", [11, 12, 13, 2])
+def test_megxl_mask_token_hops(n_times):
+    """Equal-length windows include the native partial final boundary token."""
+    from braindecode.models import MEGXL
+
+    model = MEGXL(
+        chs_info=_make_chs_info(2), n_outputs=2, n_times=n_times, sfreq=50.0,
+        latent_dim=32, num_layers=0, num_heads=4, fourier_pos_dim=16,
+        tokenizer_dim=16, n_filters=4, n_q=2, codebook_size=8, codebook_dim=4,
+    ).eval()
+    x = torch.randn(1, 2, n_times)
+    codes = model.tokenize(x)
+    assert codes.shape == (1, 2, (n_times + 11) // 12, 2)
+    mask = torch.ones(codes.shape[:3], dtype=torch.bool)
+    assert model.encode_codes(codes, mask, torch.zeros(32)).shape == (
+        1, 2, codes.shape[2], 32
+    )
+    with pytest.raises(ValueError, match="mask"):
+        model.encode_codes(codes, mask)
+    with pytest.raises(ValueError, match="mask"):
+        model.encode_codes(codes, torch.ones(1, dtype=torch.bool), torch.zeros(32))

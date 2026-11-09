@@ -85,8 +85,12 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
       rebuilds it from ``cos``/``sin``, one ulp away from ``torch.polar``.
     - The released attention keeps its dropout (0.1) active in eval mode; here
       dropout is off in eval mode, so the eval forward is deterministic.
-    - Pretraining (temporal block masking, the ``mask_token`` and the code
-      prediction head) is not ported.
+    - :meth:`encode` and :meth:`encode_codes` accept a temporal code-corruption
+      ``mask`` and caller-owned ``mask_value`` before metadata and context.
+      They return actual temporal hidden states for native masked RVQ-code
+      prediction. The mask sampler, learned mask vector and prediction head
+      belong to the caller, not the default encoder checkpoint. Channel padding
+      (``ch_mask``) is separate and remains unsupported.
 
     .. important::
 
@@ -274,10 +278,71 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         # -> (batch, n_chans, n_tokens, n_q)
         return torch.stack(codes, dim=-1).reshape(batch, chans, -1, len(codes))
 
-    def encode(self, x: torch.Tensor) -> torch.Tensor:
-        """Token features ``(batch, n_chans, n_tokens, latent_dim)``."""
+    def encode(
+        self,
+        x: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+        mask_value: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Encode clean signals, optionally hiding code content before context.
+
+        ``x`` has shape ``(batch, n_chans, n_times)``. Returns the actual
+        contextual tokens ``(batch, n_chans, n_tokens, latent_dim)``. See
+        :meth:`encode_codes` for the corruption mask and replacement vector.
+        All samples must have the same valid length and the full ``chs_info``
+        montage: do not right-pad shorter raw recordings. Global RMS scaling,
+        convolutions and the tokenizer LSTM would change their valid codes.
+
+        With hop ``H = prod(ratios)``, ``n_tokens = ceil(n_times / H)`` includes
+        the native boundary-extension token of a partial final hop. An encoded
+        mask is not a waveform mask: neighboring codes can contain information
+        from overlapping receptive fields and the whole-window RMS.
+        """
         with torch.no_grad():
             codes = self.tokenize(x)  # (batch, n_chans, n_tokens, n_q)
+        return self.encode_codes(codes, mask, mask_value)
+
+    def encode_codes(
+        self,
+        codes: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+        mask_value: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Contextualize clean BioCodec codes, tokenizing only once for SSL.
+
+        Parameters
+        ----------
+        codes : torch.Tensor
+            Clean integer targets from :meth:`tokenize`, shape
+            ``(batch, n_chans, n_tokens, n_q)``. Keep these targets detached.
+        mask : torch.Tensor, optional
+            Boolean ``(batch, n_chans, n_tokens)``, True to hide the entire
+            projected RVQ content at that token. Replacement is BEFORE adding
+            sensor metadata and BEFORE attention. Corrupted valid tokens still
+            participate in attention; this is not a padding mask. The native
+            sampler selects temporal spans shared across all channels.
+        mask_value : torch.Tensor, optional
+            Replacement vector of shape ``(latent_dim,)``, required with
+            ``mask``. A caller can own a learnable vector and a prediction head
+            ``Linear(latent_dim, n_q * codebook_size)``. The native objective is
+            selected-code cross-entropy per RVQ level, averaged across levels;
+            it is not causal next-token prediction or raw-signal MSE.
+
+        Returns
+        -------
+        torch.Tensor
+            Actual contextual tokens ``(batch, n_chans, n_tokens, latent_dim)``.
+            No new parameters are allocated; default checkpoint keys and the
+            ordinary forward/return_features dictionary are unchanged.
+
+        Notes
+        -----
+        All tokens must belong to equal-valid-length, full-montage windows.
+        There is no temporal key-padding mask. For complete-hop-only loss,
+        exclude token indices >= ``n_times // prod(ratios)``; this excludes the
+        partial boundary token, not its context. Do not batch padded code
+        sequences and merely hide their loss. Bucket recordings by length.
+        """
         levels = []
         for q, vq in enumerate(self.quantizer.layers):
             # (batch, n_chans, n_tokens) -> (batch, n_chans, n_tokens, codebook_dim)
@@ -286,15 +351,25 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         # -> (batch, n_chans, n_tokens, n_q * codebook_dim)
         # -> (batch, n_chans, n_tokens, latent_dim)
         h = self.rvq_projector(torch.stack(levels, dim=3).flatten(3))
+        if mask is not None:
+            if mask.dtype != torch.bool or list(mask.shape) != list(codes.shape[:3]):
+                raise ValueError("mask must be boolean (batch, n_chans, n_tokens).")
+            if mask_value is None:
+                raise ValueError("mask_value is required with mask.")
+            if list(mask_value.shape) != [self.latent_dim]:
+                raise ValueError("mask_value must have shape (latent_dim,).")
+            # (batch, n_chans, n_tokens, 1), (latent_dim,)
+            # -> (batch, n_chans, n_tokens, latent_dim)
+            h = torch.where(mask.unsqueeze(-1), mask_value, h)
         # Keep the original batched projections for bit-exact geometry gradients.
         # (n_chans, 3) -> (batch, n_chans, 3) -> (batch * n_chans, 3)
-        xyz = self.sensor_xyz.expand(x.shape[0], -1, -1)
+        xyz = self.sensor_xyz.expand(codes.shape[0], -1, -1)
         xyz = self.flatten_sensor_batch(xyz)
         # (n_chans, 3) -> (batch, n_chans, 3) -> (batch * n_chans, 3)
-        abc = self.sensor_abc.expand(x.shape[0], -1, -1)
+        abc = self.sensor_abc.expand(codes.shape[0], -1, -1)
         abc = self.flatten_sensor_batch(abc)
         # (n_chans,) -> (batch, n_chans)
-        sensor_type = self.sensor_type.expand(x.shape[0], -1)
+        sensor_type = self.sensor_type.expand(codes.shape[0], -1)
         # (batch * n_chans, 3) -> (batch * n_chans, fourier_pos_dim)
         # -> (batch, n_chans, fourier_pos_dim)
         pos = _fourier_features(xyz, self.position_freqs)
