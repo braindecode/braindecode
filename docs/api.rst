@@ -205,6 +205,7 @@ interface for all EEG models and can derive variable names when needed.
      NeuroPose
      NeuroRVQ
      NeuroRVQTokenizer
+     NICE
      PBT
     PopulationTransformer
      REVE
