@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import functools
 import inspect
 import json
@@ -37,6 +38,10 @@ huggingface_hub = _soft_import(
 
 HAS_HF_HUB = huggingface_hub is not False
 log = logging.getLogger(__name__)
+
+# Set while from_pretrained runs: load_state_dict then records on the model
+# which parameters came from the checkpoint (``_pretrained_provenance``).
+_RECORD_LOADED_KEYS = contextvars.ContextVar("_RECORD_LOADED_KEYS", default=False)
 
 # __init__ args that from_pretrained fills from config.json when not given.
 _GEOMETRY_KWARGS = (
@@ -81,6 +86,37 @@ def _load_card_data(pretrained_model_name_or_path, **kwargs):
         return huggingface_hub.ModelCard.load(card, ignore_metadata_errors=True).data
     except Exception:
         return None
+
+
+def _checkpoint_source(pretrained_model_name_or_path, **kwargs):
+    """Repository (or folder) and revision a checkpoint was loaded from.
+
+    The commit is read from the local Hub cache, without network access.
+    """
+    source = str(pretrained_model_name_or_path)
+    if Path(source).is_dir():
+        return {"repo_id": source, "local": True}
+    info = {"repo_id": source, "revision": kwargs.get("revision")}
+    try:
+        for filename in (
+            kwargs.get("filename") or "model.safetensors",
+            "pytorch_model.bin",
+            "config.json",
+        ):
+            cached = huggingface_hub.try_to_load_from_cache(
+                source,
+                filename,
+                cache_dir=kwargs.get("cache_dir"),
+                revision=kwargs.get("revision"),
+            )
+            if isinstance(cached, str):
+                snapshot = Path(cached).parent
+                if snapshot.parent.name == "snapshots":
+                    info["commit"] = snapshot.name
+                    break
+    except Exception:
+        return info
+    return info
 
 
 def _local_weights_path(model_id, filename):
@@ -174,14 +210,25 @@ def _new_head_follows_model(reset_head):
     @functools.wraps(reset_head)
     def wrapper(self, *args, **kwargs):
         ref = next((p for p in self.parameters() if p.is_floating_point()), None)
-        before = {id(t) for t in self.parameters()} | {id(t) for t in self.buffers()}
+        # Hold the old tensors until the end, so that their ids cannot be
+        # reused by the new ones.
+        old = {id(t): t for t in [*self.parameters(), *self.buffers()]}
         out = reset_head(self, *args, **kwargs)
         if ref is not None:
             for module in self.modules():
                 tensors = [*module.parameters(), *module.buffers()]
-                if tensors and not any(id(t) in before for t in tensors):
+                if tensors and not any(id(t) in old for t in tensors):
                     module.to(device=ref.device, dtype=ref.dtype)
                     module.train(self.training)
+        provenance = self.__dict__.get("_pretrained_provenance")
+        if provenance and provenance.get("loaded") is not None:
+            # The new head was not loaded from the checkpoint.
+            current = dict(self.named_parameters(remove_duplicate=False))
+            provenance["loaded"] = {
+                name
+                for name in provenance["loaded"]
+                if name in current and id(current[name]) in old
+            }
         return out
 
     return wrapper
@@ -792,6 +839,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         self.apply(reset)
         self._init_parameters()
+        provenance = self.__dict__.get("_pretrained_provenance")
+        if provenance is not None:
+            # Conservatively invalidate attribution after model-wide initialization.
+            provenance["loaded"] = set()
+            provenance.pop("mixed", None)
+            if "supplementary" in provenance:
+                provenance["supplementary"]["loaded"] = set()
 
     def _init_parameters(self) -> None:
         """Model-specific initialization, run by the constructor after the
@@ -844,10 +898,37 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             else:
                 new_state_dict[k] = v
         # A backbone checkpoint has no weights for a trainable channel layer.
-        for k, v in super().state_dict().items():
+        own = super().state_dict()
+        # Load hooks may expand tensors with locally initialized values. Only
+        # attribute whole tensors whose checkpoint shape already matches.
+        from_checkpoint = {
+            k
+            for k, v in new_state_dict.items()
+            if k in own
+            and (
+                not isinstance(v, torch.Tensor)
+                or torch.nn.parameter.is_lazy(own[k])
+                or v.shape == own[k].shape
+            )
+        }
+        mixed = (set(new_state_dict) & set(own)) - from_checkpoint
+        for k, v in own.items():
             if k.startswith("channel_layer.") and k not in new_state_dict:
                 new_state_dict[k] = v
-        return super().load_state_dict(new_state_dict, *args, **kwargs)
+        if not _RECORD_LOADED_KEYS.get():
+            # PyTorch may copy matching tensors before a strict load raises.
+            self.__dict__.pop("_pretrained_provenance", None)
+        result = super().load_state_dict(new_state_dict, *args, **kwargs)
+        if _RECORD_LOADED_KEYS.get():
+            provenance = self.__dict__.setdefault("_pretrained_provenance", {})
+            loaded = provenance.get("loaded") or set()
+            provenance["loaded"] = (loaded - mixed) | (
+                from_checkpoint - set(result.unexpected_keys) - set(result.missing_keys)
+            )
+            provenance["mixed"] = (
+                provenance.get("mixed", set()) | mixed
+            ) - from_checkpoint
+        return result
 
     def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
         """
@@ -935,8 +1016,112 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             verbose=0,
         )
 
+    def _pretrained_summary(self):
+        """Display data shared by the text and notebook representations."""
+        from torch.nn.parameter import UninitializedParameter
+
+        provenance = self.__dict__.get("_pretrained_provenance", {})
+        loaded = provenance.get("loaded", set())
+        # Tied parameters may be saved under only one of their names.
+        loaded_ids = {
+            id(p)
+            for n, p in self.named_parameters(remove_duplicate=False)
+            if n in loaded
+        }
+        unbuilt = [
+            n
+            for n, p in self.named_parameters()
+            if isinstance(p, UninitializedParameter)
+        ]
+        rows, seen = [], set()
+        for name, module in self.named_modules():
+            params = [
+                (n, p)
+                for n, p in module.named_parameters(recurse=False)
+                if id(p) not in seen and not isinstance(p, UninitializedParameter)
+            ]
+            seen.update(id(p) for _, p in params)
+            if params:
+                total = sum(p.numel() for _, p in params)
+                count = sum(p.numel() for _, p in params if id(p) in loaded_ids)
+                rows.append(
+                    (name or type(self).__name__, type(module).__name__, total, count)
+                )
+        total = sum(row[2] for row in rows)
+        count = sum(row[3] for row in rows)
+        datasets = getattr(self.card_data, "datasets", None) or []
+        if isinstance(datasets, str):
+            datasets = [datasets]
+        geometry = {}
+        for attr in ("n_chans", "n_times", "sfreq", "n_outputs"):
+            try:
+                geometry[attr] = getattr(self, attr)
+            except ValueError:
+                pass
+        if hasattr(self, "channel_layer"):
+            channels = self.channel_layer.chs_info
+            geometry["n_chans"] = (
+                len(channels) if channels is not None else "set at forward"
+            )
+        return dict(
+            source=provenance,
+            datasets=datasets,
+            rows=rows,
+            unbuilt=unbuilt,
+            geometry=geometry,
+            total=total,
+            loaded=count,
+            percent=100.0 if count == total else min(99.9, 100 * count / max(total, 1)),
+            new=[name for name, _, n, k in rows if k < n],
+        )
+
     def __str__(self) -> str:
-        return str(self.get_torchinfo_statistics())
+        table = str(self.get_torchinfo_statistics())
+        if not self.__dict__.get("_pretrained_provenance"):
+            return table
+        data = self._pretrained_summary()  # torchinfo may initialise a lazy head
+        source = data["source"]
+        repo = source["repo_id"]
+        revision = source.get("commit") or source.get("revision")
+        if revision and not source.get("local"):
+            repo += f" @ {revision[:7]}"
+        supplement = source.get("supplementary")
+        if supplement:
+            repo += f"; supplementary: {supplement['repo_id']}"
+            revision = supplement.get("commit") or supplement.get("revision")
+            if revision and not supplement.get("local"):
+                repo += f" @ {revision[:7]}"
+        label = "new or adapted" if source.get("mixed") else "new"
+        new = f"; {label}: " + ", ".join(data["new"]) if data["new"] else ""
+        scope = (
+            "parameters in fully loaded tensors; adapted tensors excluded"
+            if source.get("mixed")
+            else "parameters"
+        )
+        if data["unbuilt"]:
+            new += "; unbuilt: " + ", ".join(data["unbuilt"])
+        return (
+            f"{table}\nPretrained weights: {repo}\n"
+            f"Trained on (model card): {', '.join(data['datasets']) or 'not listed'}\n"
+            f"Loaded from the listed checkpoint(s): {data['loaded']:,} of {data['total']:,} "
+            f"{scope} ({data['percent']:.1f}% of materialised parameters){new}\n"
+            "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.17699192"
+        )
+
+    def _repr_html_(self) -> str:
+        """Notebook model card, rendered from an autoescaped Jinja template (as in MNE)."""
+        from jinja2 import Environment, PackageLoader
+
+        template = Environment(
+            loader=PackageLoader("braindecode.models", "."),
+            autoescape=True,
+        ).get_template("model.html.jinja")
+        return template.render(
+            model=self,
+            name=type(self).__name__,
+            data=self._pretrained_summary(),
+            architecture=torch.nn.Module.__repr__(self),
+        )
 
     @staticmethod
     def _serialize_chs_info(chs_info):
@@ -1055,7 +1240,25 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 kwargs.setdefault("chs_info", None)
             if "n_times" in kwargs or "sfreq" in kwargs:
                 kwargs.setdefault("input_window_seconds", None)
-            model = super().from_pretrained(*args, **kwargs)
+            token = _RECORD_LOADED_KEYS.set(True)
+            try:
+                model = super().from_pretrained(*args, **kwargs)
+            finally:
+                _RECORD_LOADED_KEYS.reset(token)
+            if isinstance(model, torch.nn.Module):
+                provenance = model.__dict__.setdefault("_pretrained_provenance", {})
+                provenance.update(_checkpoint_source(*args, **kwargs))
+                params = {
+                    name for name, _ in model.named_parameters(remove_duplicate=False)
+                }
+                if params and not params & (provenance.get("loaded") or set()):
+                    warnings.warn(
+                        f"no parameter of {cls.__name__} was loaded from "
+                        f"{provenance['repo_id']}; the checkpoint keys do not "
+                        "match the model",
+                        UserWarning,
+                        stacklevel=2,
+                    )
             card_data = _load_card_data(*args, **kwargs)
             if card_data is not None:
                 model.card_data = card_data

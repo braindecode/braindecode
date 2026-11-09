@@ -17,7 +17,12 @@ from torch import nn
 
 from braindecode.functional import patch_count, sinusoidal_positional_encoding
 from braindecode.functional.patches import _check_on_non_divisible
-from braindecode.models.base import EEGModuleMixin, huggingface_hub
+from braindecode.models.base import (
+    _RECORD_LOADED_KEYS,
+    EEGModuleMixin,
+    _checkpoint_source,
+    huggingface_hub,
+)
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import PatchTokenizer
 
@@ -509,7 +514,21 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                     token=kwargs.get("token"),
                 )
             state_dict = load_file(path)
-            model.load_state_dict({k: state_dict[k] for k in missing}, strict=False)
+            token = _RECORD_LOADED_KEYS.set(True)
+            try:
+                model.load_state_dict({k: state_dict[k] for k in missing}, strict=False)
+            finally:
+                _RECORD_LOADED_KEYS.reset(token)
+            model._pretrained_provenance["supplementary"] = {
+                **_checkpoint_source(
+                    source, revision=encoder_revision, cache_dir=kwargs.get("cache_dir")
+                ),
+                "loaded": set(missing),
+            }
+            supplementary = model._pretrained_provenance["supplementary"]
+            snapshot = Path(path).parent
+            if not supplementary.get("local") and snapshot.parent.name == "snapshots":
+                supplementary["commit"] = snapshot.name
         return model
 
     @classmethod
