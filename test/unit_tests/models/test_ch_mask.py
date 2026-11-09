@@ -17,6 +17,7 @@ from braindecode.models import (
     DIVER1,
     LUNA,
     MAPA,
+    MEGGPT,
     REVE,
     BaRISTA,
     BrainBERT,
@@ -270,6 +271,7 @@ _FIXED_HEADS = {
                embed_dim=32, num_layers=1, num_heads=2, neural_tokenizer=False),
         400,
     ),
+    "MEGGPT": lambda: (_small_meggpt(), 16),
 }
 
 
@@ -310,6 +312,36 @@ def test_cbramod_ch_mask_tokens_match_each_recording_alone():
         scripted = torch.jit.script(model)(x.detach(), ch_mask=mask)
     torch.testing.assert_close(features, out.detach())
     torch.testing.assert_close(scripted, out.detach())
+
+
+def _small_meggpt():
+    # Two layers: 8 steps per segment, then 2 patches of 4 steps -> 2 steps.
+    return MEGGPT(n_chans=3, n_outputs=3, n_times=16, n_tokens=8, n_codes=16,
+                  rnn_hidden_size=8, embed_dim=16, num_heads=2, feedforward_dim=32,
+                  n_patches=(8, 2), patch_lens=(1, 4), n_last_steps=2,
+                  patch_band=(2, None))
+
+
+def test_meggpt_ch_mask_features_match_each_recording_alone():
+    """MEGGPT's head flattens the channels; its features and tokens are masked."""
+    torch.manual_seed(0)
+    model = _small_meggpt().eval()
+    x, mask, xs = _padded_batch(16)
+    x.requires_grad_(True)
+    out = model(x, ch_mask=mask, return_features=True)
+    out["tokens"].sum().backward()
+    assert x.grad is None  # the tokenizer's argmax passes no gradient
+    assert all(p.grad.isfinite().all() for p in model.parameters() if p.grad is not None)
+    with torch.no_grad():
+        scripted = torch.jit.script(model)(x.detach(), ch_mask=mask, return_features=True)
+        for i, xi in enumerate(xs):
+            alone = model(xi[None], return_features=True)
+            for key in ("features", "tokens"):
+                torch.testing.assert_close(out[key][i, : len(xi)].detach(), alone[key][0])
+    for key in ("features", "tokens"):
+        assert out[key].shape[:2] == mask.shape
+        assert torch.equal(out[key][~mask], torch.zeros_like(out[key][~mask]))
+        torch.testing.assert_close(scripted[key], out[key].detach())
 
 
 def test_luna_reconstruction_refuses_ch_mask():

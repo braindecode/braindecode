@@ -15,7 +15,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
-from braindecode.functional import pad_or_crop_to_patches
+from braindecode.functional import check_ch_mask, pad_or_crop_to_patches
 from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import FeedForwardBlock
@@ -151,7 +151,21 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     Output shape
     ------------
     By default ``(batch, n_outputs)`` logits. With ``return_features=True``,
-    ``{"features": (batch, n_chans, embed_dim), "cls_token": None}``.
+    ``{"features": (batch, n_chans, embed_dim), "cls_token": None,
+    "tokens": (batch, n_chans, n_segments * n_last_steps, embed_dim)}``, where
+    ``"tokens"`` are the last layer's outputs before the mean over time.
+
+    .. rubric:: Channel mask
+
+    With ``return_features=True``, ``forward`` takes ``ch_mask``, the
+    ``(batch, n_chans)`` mask of real channels that
+    :func:`~braindecode.datasets.pad_channels_collate` returns (real channels
+    first). The tokenizer and the attention read each channel alone, so a
+    recording with ``n_i`` real channels gets the features of its first
+    ``n_i`` parcels run alone, and the features and tokens of padded channels
+    are zero. The flattened ``final_layer`` is tied to ``n_chans``, so
+    ``ch_mask`` without ``return_features=True`` raises a ``ValueError``. The
+    argmax of the tokenizer passes no gradient to the input.
 
     References
     ----------
@@ -208,6 +222,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         self.tokenizer = _EphysTokenizer(n_codes, n_tokens, rnn_hidden_size)
         self.to_segments = Rearrange("b c (s t) -> (b s) t c", t=self.segment_len)
         self.from_segments = Rearrange("b s t c d -> b (s t) c d")
+        self.to_tokens = Rearrange("b t c d -> b c t d")
         self.token_embedding = nn.Embedding(n_tokens, embed_dim)
         self.time_embedding = nn.Parameter(torch.empty(self.segment_len, embed_dim))
         self.channel_embedding = nn.Parameter(torch.empty(self.n_chans, embed_dim))
@@ -247,20 +262,39 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         nn.init.xavier_uniform_(self.channel_embedding)
 
     def forward(
-        self, x: Tensor, return_features: Optional[bool] = None
+        self,
+        x: Tensor,
+        return_features: Optional[bool] = None,
+        ch_mask: Optional[Tensor] = None,
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
-        batch_size = x.shape[0]
+        """``ch_mask``: optional ``(batch, n_chans)`` mask of real channels, see
+        :func:`~braindecode.functional.check_ch_mask`. Needs
+        ``return_features=True``; the features and tokens of padded channels
+        are zero."""
+        if return_features is None:
+            return_features = self.return_features
+        ch_mask = check_ch_mask(ch_mask, x)
+        if ch_mask is not None:
+            if not return_features:
+                raise ValueError(
+                    "ch_mask needs return_features=True: the flattened head is "
+                    "tied to the channels."
+                )
+            # Padding may hold NaN; each channel is tokenized alone.
+            x = x.masked_fill(~ch_mask[:, :, None], 0.0)
+        batch_size, n_chans = x.shape[0], x.shape[1]
         # (batch, n_chans, n_times) -> (batch, n_chans, n_segments * segment_len)
         x = pad_or_crop_to_patches(x, self.segment_len, self.on_non_divisible)
         # token ids (batch, n_chans, n_segments * segment_len)
         # -> (batch * n_segments, segment_len, n_chans)
-        tokens = self.to_segments(self.tokenizer(x))
+        token_ids = self.to_segments(self.tokenizer(x))
         # (batch * n_segments, segment_len, n_chans, embed_dim)
-        h = self.token_embedding(tokens)
+        h = self.token_embedding(token_ids)
         # + time_embedding (segment_len, 1, embed_dim)
         h = h + self.time_embedding[:, None]
-        # + channel_embedding (n_chans, embed_dim)
-        h = h + self.channel_embedding
+        # + channel_embedding (n_chans, embed_dim); a recording run alone may
+        # have fewer channels than the model, its first parcels.
+        h = h + self.channel_embedding[:n_chans]
         h = self.drop(h)
         # layer i: (batch * n_segments, n_patches[i] * patch_lens[i], n_chans,
         # embed_dim) -> (batch * n_segments, steps read by layer i + 1, n_chans,
@@ -273,10 +307,17 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         # -> (batch, n_segments * n_last_steps, n_chans, embed_dim)
         h = self.from_segments(h.unflatten(0, [batch_size, -1]))
         features = h.mean(dim=1)  # (batch, n_chans, embed_dim)
-        if return_features is None:
-            return_features = self.return_features
         if return_features:
-            out: Dict[str, Optional[Tensor]] = {"features": features, "cls_token": None}
+            # (batch, n_chans, n_segments * n_last_steps, embed_dim)
+            tokens = self.to_tokens(h)
+            if ch_mask is not None:
+                features = features.masked_fill(~ch_mask[:, :, None], 0.0)
+                tokens = tokens.masked_fill(~ch_mask[:, :, None, None], 0.0)
+            out: Dict[str, Optional[Tensor]] = {
+                "features": features,
+                "cls_token": None,
+                "tokens": tokens,
+            }
             return out
         # (batch, n_chans, embed_dim) -> (batch, n_chans * embed_dim)
         # -> (batch, n_outputs)
