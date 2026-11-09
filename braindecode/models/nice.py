@@ -113,33 +113,42 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.embed_dim = embed_dim
-        # Paper: k * ((T - m1 - m2 + 1) / s + 1) features enter the projector.
+        # Paper: k * ((T - m1 - m2 + 1) / s + 1) features enter the projector;
+        # n_steps is the pooled time length the shape comments below use.
         n_steps = (
             self.n_times - filter_time_length - pool_time_length + 1
         ) // pool_time_stride + 1
 
         self.add_kernel_dim = Rearrange("batch chans time -> batch 1 chans time")
         self.tsconv = nn.Sequential(
+            # (batch, 1, n_chans, n_times)
+            # -> (batch, n_filters, n_chans, n_times - filter_time_length + 1)
             nn.Conv2d(1, n_filters, (1, filter_time_length)),
+            # -> (batch, n_filters, n_chans, n_steps)
             nn.AvgPool2d((1, pool_time_length), (1, pool_time_stride)),
             nn.BatchNorm2d(n_filters),
             activation(),
+            # (batch, n_filters, n_chans, n_steps) -> (batch, n_filters, 1, n_steps)
             nn.Conv2d(n_filters, n_filters, (self.n_chans, 1)),
             nn.BatchNorm2d(n_filters),
             activation(),
             nn.Dropout(drop_prob),
         )
+        # (batch, n_filters, 1, n_steps) -> (batch, n_filters, 1, n_steps)
         self.projection = nn.Conv2d(n_filters, n_filters, 1)
         # The original flattens time-major: (h w) e, then view(batch, -1).
         self.flatten = Rearrange("batch filters 1 time -> batch (time filters)")
         self.projector = nn.Sequential(
+            # (batch, n_steps * n_filters) -> (batch, embed_dim)
             nn.Linear(n_filters * n_steps, embed_dim),
+            # (batch, embed_dim) -> (batch, embed_dim)
             PostNormResidual(
                 nn.Sequential(nn.GELU(), nn.Linear(embed_dim, embed_dim)),
                 embed_dim,
                 drop_prob_proj,
             ),
         )
+        # (batch, embed_dim) -> (batch, n_outputs)
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
 
         # Keys of the released pretrain_Enc_eeg_cls.pth / pretrain_Proj_eeg_cls.pth.
@@ -168,11 +177,17 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
         Returns the logits (batch, n_outputs), or with ``return_features=True``
         a dict whose ``"features"`` is the aligned embedding (batch, embed_dim).
         """
+        # (batch, n_chans, n_times) -> (batch, 1, n_chans, n_times)
         x = self.add_kernel_dim(x)
+        # (batch, 1, n_chans, n_times) -> (batch, n_filters, 1, n_steps)
         x = self.tsconv(x)
+        # (batch, n_filters, 1, n_steps) -> (batch, n_filters, 1, n_steps)
         x = self.projection(x)
+        # (batch, n_filters, 1, n_steps) -> (batch, n_steps * n_filters)
         x = self.flatten(x)
+        # (batch, n_steps * n_filters) -> (batch, embed_dim)
         features = self.projector(x)
+        # (batch, embed_dim) -> (batch, n_outputs)
         logits = self.final_layer(features)
         if return_features:
             if torch.jit.is_scripting():
