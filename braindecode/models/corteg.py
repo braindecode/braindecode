@@ -31,6 +31,7 @@ from braindecode.models.util import (
 from braindecode.modules import PatchTokenizer
 from braindecode.util import resolve_montage_name
 
+
 def _vocab_positions() -> torch.Tensor:
     """``(142, 3)`` positions (m) of ST-EEGFormer's positioned vocabulary slots.
 
