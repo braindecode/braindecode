@@ -106,6 +106,18 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     ``ch_mask`` without ``return_features=True`` raises a ``ValueError``. The
     argmax of the tokenizer passes no gradient to the input.
 
+    .. rubric:: Token-level self-supervised use
+
+    ``token_mask`` in ``forward`` hides selected clean token embeddings
+    (True=hide) before the causal decoder, without changing the frozen
+    tokenizer or attention masks. :meth:`encode_tokens` accepts clean cached
+    IDs and returns their tail-output/next-target alignment, channel/time
+    validity and selected-target masks for a downstream vocabulary head and
+    shifted next-token cross entropy. No vocabulary head is installed in this
+    encoder; see that method's training example. The optional zero-embedding
+    corruption is not the released pretraining method or a bidirectional
+    masked-sample reconstruction objective.
+
     .. rubric:: Pre-trained weights
 
     The released Cam-CAN MEG-GPT and EphysTokenizer weights, converted to this
@@ -218,6 +230,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         self.segment_len = n_patches[0] * patch_lens[0]
         self.on_non_divisible = on_non_divisible
         self.return_features = return_features
+        self.n_last_steps = n_last_steps
 
         self.tokenizer = _EphysTokenizer(n_codes, n_tokens, rnn_hidden_size)
         self.to_segments = Rearrange("b c (s t) -> (b s) t c", t=self.segment_len)
@@ -266,11 +279,16 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         x: Tensor,
         return_features: Optional[bool] = None,
         ch_mask: Optional[Tensor] = None,
+        token_mask: Optional[Tensor] = None,
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         """``ch_mask``: optional ``(batch, n_chans)`` mask of real channels, see
         :func:`~braindecode.functional.check_ch_mask`. Needs
         ``return_features=True``; the features and tokens of padded channels
-        are zero."""
+        are zero. ``token_mask`` is a boolean ``(batch, n_chans, n_times)``
+        mask (True=hide): selected clean token embeddings are replaced by
+        zeros before positions and causal context, not before tokenization.
+        See :meth:`encode_tokens` for next-token targets and loss selection.
+        """
         if return_features is None:
             return_features = self.return_features
         ch_mask = check_ch_mask(ch_mask, x)  # (batch, n_chans) or None
@@ -283,30 +301,13 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
             # Padding may hold NaN; each channel is tokenized alone.
             # (batch, n_chans, n_times), unchanged
             x = x.masked_fill(~ch_mask[:, :, None], 0.0)
-        batch_size, n_chans = x.shape[0], x.shape[1]
+        # (batch, n_chans, n_segments * segment_len) or None
+        token_mask = self._prepare_token_mask(token_mask, x)
         # (batch, n_chans, n_times) -> (batch, n_chans, n_segments * segment_len)
         x = pad_or_crop_to_patches(x, self.segment_len, self.on_non_divisible)
-        # token ids (batch, n_chans, n_segments * segment_len)
-        # -> (batch * n_segments, segment_len, n_chans)
-        token_ids = self.to_segments(self.tokenizer(x))
-        # (batch * n_segments, segment_len, n_chans, embed_dim)
-        h = self.token_embedding(token_ids)
-        # + time_embedding (segment_len, 1, embed_dim)
-        h = h + self.time_embedding[:, None]
-        # + channel_embedding (n_chans, embed_dim); a recording run alone may
-        # have fewer channels than the model, its first parcels.
-        h = h + self.channel_embedding[:n_chans]
-        h = self.drop(h)  # (batch * n_segments, segment_len, n_chans, embed_dim)
-        # layer i: (batch * n_segments, n_patches[i] * patch_lens[i], n_chans,
-        # embed_dim) -> (batch * n_segments, steps read by layer i + 1, n_chans,
-        # embed_dim); the last layer outputs n_last_steps steps
-        for layer in self.layers:
-            h = layer(h)
-        # Unflatten first: the einops layer cannot take the batch size at call
-        # time. (batch * n_segments, n_last_steps, n_chans, embed_dim)
-        # -> (batch, n_segments, n_last_steps, n_chans, embed_dim)
-        # -> (batch, n_segments * n_last_steps, n_chans, embed_dim)
-        h = self.from_segments(h.unflatten(0, [batch_size, -1]))
+        token_ids = self.tokenizer(x)  # (batch, n_chans, n_segments * segment_len)
+        # (batch, n_segments * n_last_steps, n_chans, embed_dim)
+        h = self._encode_prepared_tokens(token_ids, token_mask)
         features = h.mean(dim=1)  # (batch, n_chans, embed_dim)
         if return_features:
             # (batch, n_chans, n_segments * n_last_steps, embed_dim)
@@ -325,6 +326,183 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         # (batch, n_chans, embed_dim) -> (batch, n_chans * embed_dim)
         # -> (batch, n_outputs)
         return self.final_layer(features)
+
+    def _prepare_token_mask(
+        self, token_mask: Optional[Tensor], x: Tensor
+    ) -> Optional[Tensor]:
+        if token_mask is None:
+            return None
+        if token_mask.dtype != torch.bool or list(token_mask.shape) != list(x.shape):
+            raise ValueError(
+                "token_mask must be boolean with the input's (batch, n_chans, n_times) shape."
+            )
+        token_mask = token_mask.to(device=x.device)  # (batch, n_chans, n_times)
+        # (batch, n_chans, n_segments * segment_len); new positions are False
+        return pad_or_crop_to_patches(
+            token_mask, self.segment_len, self.on_non_divisible
+        )
+
+    def _encode_prepared_tokens(
+        self, token_ids: Tensor, token_mask: Optional[Tensor] = None
+    ) -> Tensor:
+        batch_size, n_chans = token_ids.shape[0], token_ids.shape[1]
+        # (batch, n_chans, n_segments * segment_len)
+        # -> (batch * n_segments, segment_len, n_chans)
+        token_ids = self.to_segments(token_ids)
+        # (batch * n_segments, segment_len, n_chans, embed_dim)
+        h = self.token_embedding(token_ids)
+        if token_mask is not None:
+            # (batch * n_segments, segment_len, n_chans, 1)
+            hidden = self.to_segments(token_mask).unsqueeze(-1)
+            # Fixed zero embedding, NOT vocabulary id0; positions stay intact.
+            h = h.masked_fill(hidden, 0.0)  # same shape as h, before context
+        # + time_embedding (segment_len, 1, embed_dim)
+        h = h + self.time_embedding[:, None]
+        # + channel_embedding (n_chans, embed_dim); a recording run alone may
+        # have fewer channels than the model, its first parcels.
+        h = h + self.channel_embedding[:n_chans]
+        h = self.drop(h)  # (batch * n_segments, segment_len, n_chans, embed_dim)
+        # layer i: (batch * n_segments, n_patches[i] * patch_lens[i], n_chans,
+        # embed_dim) -> (batch * n_segments, steps read by layer i + 1, n_chans,
+        # embed_dim); the last layer outputs n_last_steps steps
+        for layer in self.layers:
+            h = layer(h)
+        # Unflatten first: the einops layer cannot take the batch size at call
+        # time. (batch * n_segments, n_last_steps, n_chans, embed_dim)
+        # -> (batch, n_segments, n_last_steps, n_chans, embed_dim)
+        # -> (batch, n_segments * n_last_steps, n_chans, embed_dim)
+        h = self.from_segments(h.unflatten(0, [batch_size, -1]))
+        return h  # (batch, n_segments * n_last_steps, n_chans, embed_dim)
+
+    @torch.jit.export
+    def encode_tokens(
+        self,
+        token_ids: Tensor,
+        token_mask: Optional[Tensor] = None,
+        ch_mask: Optional[Tensor] = None,
+        lengths: Optional[Tensor] = None,
+    ) -> Dict[str, Tensor]:
+        """Encode clean IDs with optional corruption and shifted-target metadata.
+
+        Parameters
+        ----------
+        token_ids : Tensor
+            Clean int64 IDs, ``(batch, n_chans, n_times)``. Obtain them with
+            ``model.tokenizer(x)`` or the reference-compatible cached IDs.
+            The tokenizer is frozen: this is token-level training, not raw
+            masked-sample reconstruction.
+        token_mask : Tensor or None
+            Boolean input shape, True=hide (separate from True=real in
+            ``ch_mask``). Zero selected embeddings before positions/context.
+            This optional corruption is not part of the released method.
+        ch_mask : Tensor or None
+            Boolean ``(batch, n_chans)`` real-channel mask, real parcels first.
+        lengths : Tensor or None
+            Int64 ``(batch,)`` original valid time counts, default ``n_times``.
+            Invalid IDs (even -1) are sanitized before embedding and targets.
+
+        Returns
+        -------
+        dict of str to Tensor
+            ``features`` and ``tokens`` as in ``forward``; ``token_ids`` are
+            sanitized clean prepared IDs. ``input_indices`` indexes prepared
+            time; ``output_indices`` indexes the last ``n_last_steps`` input
+            positions per segment, corresponding to the returned tokens.
+            ``next_token_targets`` predicts clean IDs at ``output_indices+1``.
+            ``target_valid`` excludes padded channels/times and unavailable
+            next tokens. ``prediction_mask`` is ``target_valid`` if no
+            corruption mask, else additionally selects hidden TARGET positions
+            (at t+1, not t). These three tensors are ``(batch, n_chans,
+            n_segments * n_last_steps)``. Invalid targets are zero, not labels.
+
+        Notes
+        -----
+        A separate vocabulary head can train on the selected valid targets::
+
+            encoded = model.encode_tokens(ids, token_mask=hide, lengths=lengths)
+            selected = encoded["prediction_mask"]
+            if not selected.any():
+                raise ValueError("no selected valid next-token targets")
+            logits = vocabulary_head(encoded["tokens"])  # (B, C, O, n_tokens)
+            loss = torch.nn.functional.cross_entropy(
+                logits[selected], encoded["next_token_targets"][selected]
+            )
+
+        This is shifted next-token supervision, not same-position masked
+        reconstruction. Later GRU tokens may encode earlier raw samples, so
+        causal attention is retained. No vocabulary head/loss is installed in
+        the encoder, and no reference pretraining quality is claimed.
+        """
+        if token_ids.dim() != 3 or token_ids.dtype != torch.long:
+            raise ValueError("token_ids must be int64 (batch, n_chans, n_times).")
+        batch_size, n_chans, n_times = token_ids.shape
+        ch_mask = check_ch_mask(ch_mask, token_ids)  # (batch, n_chans) or None
+        if lengths is None:
+            lengths = torch.full(
+                (batch_size,), n_times, device=token_ids.device, dtype=torch.long
+            )
+        if lengths.dtype != torch.long or list(lengths.shape) != [batch_size]:
+            raise ValueError("lengths must be int64 (batch,).")
+        lengths = lengths.to(device=token_ids.device)  # (batch,)
+        if not torch.jit.is_scripting():
+            if bool(((lengths < 1) | (lengths > n_times)).any()):
+                raise ValueError("lengths must be in [1, n_times].")
+        # (n_times,), then (batch, n_chans, n_times)
+        original_indices = torch.arange(n_times, device=token_ids.device)
+        valid = (original_indices[None, None] < lengths[:, None, None]).expand_as(
+            token_ids
+        )
+        if ch_mask is not None:
+            valid = valid & ch_mask[:, :, None]  # (batch, n_chans, n_times)
+        clean_ids = token_ids.masked_fill(~valid, 0)  # (batch, n_chans, n_times)
+        # (batch, n_chans, n_segments * segment_len) or None
+        prepared_mask = self._prepare_token_mask(token_mask, token_ids)
+        prepared = pad_or_crop_to_patches(
+            clean_ids, self.segment_len, self.on_non_divisible
+        )
+        # (batch, n_segments * n_last_steps, n_chans, embed_dim)
+        h = self._encode_prepared_tokens(prepared, prepared_mask)
+        features = h.mean(dim=1)  # (batch, n_chans, embed_dim), original pooling
+        tokens = self.to_tokens(
+            h
+        )  # (batch, n_chans, n_segments * n_last_steps, embed_dim)
+        if ch_mask is not None:
+            features = features.masked_fill(~ch_mask[:, :, None], 0.0)  # same shape
+            tokens = tokens.masked_fill(~ch_mask[:, :, None, None], 0.0)  # same shape
+        input_indices = torch.arange(prepared.shape[-1], device=token_ids.device)
+        # (n_segments, segment_len) -> (n_segments, n_last_steps) -> (output_times,)
+        output_indices = input_indices.unflatten(0, [-1, self.segment_len])[
+            :, -self.n_last_steps :
+        ].flatten()
+        next_indices = output_indices + 1  # (output_times,)
+        # Clamp only for safe gather; validity below excludes unavailable next tokens.
+        safe_next = next_indices.clamp_max(n_times - 1)  # (output_times,)
+        targets = clean_ids.index_select(
+            -1, safe_next
+        )  # (batch, n_chans, output_times)
+        target_valid = (
+            valid.index_select(-1, safe_next) & (next_indices < n_times)[None, None]
+        )
+        targets = targets.masked_fill(
+            ~target_valid, 0
+        )  # (batch, n_chans, output_times)
+        prediction_mask = target_valid
+        if token_mask is not None:
+            # Shape/type checked by _prepare_token_mask; select TARGET positions.
+            selected = token_mask.to(device=token_ids.device).index_select(
+                -1, safe_next
+            )
+            prediction_mask = target_valid & selected  # (batch, n_chans, output_times)
+        return {
+            "features": features,
+            "tokens": tokens,
+            "token_ids": prepared,
+            "input_indices": input_indices,
+            "output_indices": output_indices,
+            "next_token_targets": targets,
+            "target_valid": target_valid,
+            "prediction_mask": prediction_mask,
+        }
 
     def reset_head(self, n_outputs: int) -> None:
         self._set_n_outputs(n_outputs)
