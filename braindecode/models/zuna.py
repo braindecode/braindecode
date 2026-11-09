@@ -157,7 +157,8 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Base period of the rotary positional embedding. The default is
         ``10000.0``.
     pos_bins : int, optional
-        Number of buckets per spatial coordinate. The default is ``50``.
+        Number of buckets per spatial coordinate. The default is ``100``, the
+        value ZUNA1.1 was trained with (ZUNA1 used ``50``).
     pos_half_range : float, optional
         Half-range (in metres) used to normalise channel coordinates before
         bucketing. Coordinates at or beyond this range are clipped to the first
@@ -238,7 +239,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         latent_dim: int = 32,
         max_seqlen: int = 256,
         rope_theta: float = 10000.0,
-        pos_bins: int = 50,
+        pos_bins: int = 100,
         pos_half_range: float = 0.12,
         norm_eps: float = 1e-5,
         multiple_of: int = 256,
