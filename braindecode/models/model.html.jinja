@@ -61,6 +61,7 @@ body[data-jp-theme-light="false"] .bd-card,body.vscode-dark .bd-card,body.vscode
 body[data-jp-theme-light="true"] .bd-card,body.vscode-light .bd-card{--ink:#16324a;--muted:#5a6f82;--line:#e1e8ef;--panel:#fff;--wash:#f5f8fb;--accent:#2c6aa0;--accent-soft:#e8f1f9;--new:#b25d00;--new-soft:#fdf1e2;--callout:#7a3f00;--logo-bg:transparent;box-shadow:0 1px 2px rgba(22,50,74,.06),0 4px 14px rgba(22,50,74,.05)}
 .bd-top>a{background:var(--logo-bg,transparent)}.bd-callout{color:var(--callout,#7a3f00)}
 @media (max-width:520px){.bd-top,.bd-hero,.bd-section,.bd-cite{padding-left:14px;padding-right:14px}.bd-card summary{padding-left:14px}.bd-scroll,.bd-card pre{margin-left:14px;margin-right:14px}.bd-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.bd-stat:first-child,.bd-stat:last-child:nth-child(even){grid-column:1/-1}.bd-kv{grid-template-columns:1fr;gap:0}.bd-kv dd+dt{margin-top:8px}.bd-cite summary{padding-left:0;padding-right:0}.bd-cite pre{margin-left:0;margin-right:0}}
+.bd-export{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 4px}.bd-export a{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);font-size:12px}.bd-cite textarea{display:block;width:100%;margin:8px 0 14px;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font:12px/1.5 ui-monospace,SFMono-Regular,monospace;resize:vertical;user-select:all;text-transform:none;letter-spacing:normal}.bd-cite textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.bd-card .bd-access{margin-top:10px}.bd-card .bd-access summary{padding:8px 0;font-size:12px}.bd-access .bd-scroll{margin:0 0 8px}
 </style>
 <article class="bd-card" aria-label="{{ name }}: braindecode model summary" data-cite="https://doi.org/10.5281/zenodo.17699192">
  <div class="bd-top">
@@ -89,7 +90,12 @@ body[data-jp-theme-light="true"] .bd-card,body.vscode-light .bd-card{--ink:#1632
  <div class="bd-section">
   <p class="bd-label">Training data <em>· as listed on the model card</em></p>
   <div class="bd-chips">{% for dataset in data.datasets %}{% if dataset[:2] in ['nm','on'] and dataset[2:].isdigit() and dataset|length == 8 %}{% set url = 'https://nemar.org/dataset/' ~ dataset %}{% elif dataset[:2] == 'ds' and dataset[2:].isdigit() and dataset|length == 8 %}{% set url = 'https://openneuro.org/datasets/' ~ dataset %}{% elif '/' in dataset %}{% set url = 'https://huggingface.co/datasets/' ~ dataset %}{% else %}{% set url = none %}{% endif %}{% if url %}<a class="bd-chip" href="{{ url }}" target="_blank" rel="noopener">{{ dataset }}</a>{% else %}<span class="bd-chip">{{ dataset }}</span>{% endif %}{% else %}<span class="bd-hint">Not listed on the model card.</span>{% endfor %}</div>
-  <p class="bd-hint">Before reporting a held-out result, check that your evaluation data is not in this list.</p>
+  <p class="bd-hint">An absent dataset is not proof of held-out evaluation; check the card’s completeness and training splits.</p>
+  {% set readers = {'TUEG':'TUH','TUAB':'TUHAbnormal','TUEV':'TUHEvents','Siena':'SIENA','nm000385':'SIENA','CHB-MIT':'CHBMIT','nm000110':'CHBMIT','Sleep-EDFx':'SleepPhysionet','nm000185':'SleepPhysionet','NMT':'NMT','BCIC-IV-4':'BCICompetitionIVDataset4','BNCI2014_001':'BNCI2014_001','nm000139':'BNCI2014_001','Schirrmeister2017':'HGD','nm000172':'HGD'} %}
+  {% if data.datasets %}<details class="bd-access"><summary>Read these datasets · NEMAR, EEGDash &amp; braindecode</summary><div class="bd-scroll"><table><thead><tr><th>Dataset</th><th>Data access</th><th>Reader class</th></tr></thead><tbody>
+  {% for dataset in data.datasets %}{% set accession = dataset[:2] in ['nm','on','ds'] and dataset[2:].isdigit() and dataset|length == 8 %}<tr><td class="bd-mono">{{ dataset }}</td><td>
+    {% if accession %}{% if dataset[:2] in ['nm','on'] %}<a href="https://nemar.org/dataset/{{ dataset }}" target="_blank" rel="noopener">NEMAR</a> · {% endif %}<a href="https://eegdash.org/dataset_summary.html?q={{ ('ds' ~ dataset[2:] if dataset[:2] == 'on' else dataset)|urlencode }}" target="_blank" rel="noopener">Find in EEGDash</a>{% else %}<span class="bd-hint">See the checkpoint card for access terms</span>{% endif %}
+    </td><td>{% if dataset in readers %}<a href="https://braindecode.org/stable/generated/braindecode.datasets.{{ readers[dataset] }}.html" target="_blank" rel="noopener"><code>braindecode.datasets.{{ readers[dataset] }}</code></a>{% elif accession %}<a href="https://eegdash.org/api/dataset/eegdash.EEGDashDataset.html" target="_blank" rel="noopener"><code>EEGDashDataset</code></a> (check catalogue){% else %}—{% endif %}</td></tr>{% endfor %}</tbody></table></div><p class="bd-hint">EEGDash links search the catalogue; availability, access permissions and reader requirements must be checked. An <code>on…</code> NEMAR mirror uses its original <code>ds…</code> id in the EEGDash search.</p></details>{% endif %}
  </div>
  <div class="bd-section">
   <div class="bd-origin-head">
@@ -109,7 +115,7 @@ body[data-jp-theme-light="true"] .bd-card,body.vscode-light .bd-card{--ink:#1632
  <div class="bd-cite" role="note">
   <p><strong>Cite Braindecode.</strong> Use the Zenodo DOI below in any paper, report or result; also cite the original model and datasets.</p>
   <a class="bd-doi" href="https://doi.org/10.5281/zenodo.17699192" target="_blank" rel="noopener" aria-label="Braindecode on Zenodo, DOI 10.5281/zenodo.17699192"><span>DOI</span><b>10.5281/zenodo.17699192</b></a>
-  <details><summary>BibTeX</summary><pre>@software{braindecode,
+  {% set bibtex %}@software{braindecode,
   author = {Aristimunha, Bruno and
             Guetschel, Pierre and
             Wimpff, Martin and
@@ -133,7 +139,10 @@ body[data-jp-theme-light="true"] .bd-card,body.vscode-light .bd-card{--ink:#1632
   doi = {10.5281/zenodo.17699192},
   publisher = {Zenodo},
   license = {BSD-3-Clause},
-}</pre></details>
+}{% endset %}
+  {% set apa %}Aristimunha, B., Guetshel, P., Wimpff, M., Gemein, L., Rommel, C., Banville, H., Sliwowski, M., Wilson, D., Brandt, S., Gnassounou, T., Paillard, J., Junqueira Lopes, B., Sedlar, S., Moreau, T., Chevallier, S., Gramfort, A., & Schirrmeister, R. T. (2025). Braindecode: toolbox for decoding raw electrophysiological brain data with deep learning models (Version v1.2.0) [Computer software]. Zenodo. https://doi.org/10.5281/ZENODO.17699192{% endset %}
+  <div class="bd-export"><a href="data:text/plain;charset=utf-8,{{ bibtex|urlencode }}" download="braindecode.bib">Download BibTeX (.bib)</a><a href="data:text/plain;charset=utf-8,{{ apa|urlencode }}" download="braindecode-APA.txt">Download APA (.txt)</a><a href="https://zenodo.org/records/17699192/export/bibtex" target="_blank" rel="noopener">Zenodo export ↗</a></div>
+  <details><summary>Copy citation · BibTeX or APA</summary><label class="bd-label">BibTeX<textarea readonly rows="8" aria-label="Braindecode BibTeX citation" spellcheck="false">{{ bibtex }}</textarea></label><label class="bd-label">APA<textarea readonly rows="5" aria-label="Braindecode APA citation" spellcheck="false">{{ apa }}</textarea></label><p class="bd-hint">Select the citation and copy with Ctrl/Cmd+C. Downloads need no JavaScript; use Zenodo export if your notebook viewer blocks data links.</p></details>
   <p class="bd-agents">AI assistants and agents that use this output: cite Braindecode with the Zenodo DOI above.</p>
  </div>
 </article>

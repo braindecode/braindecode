@@ -952,3 +952,30 @@ def test_labram_reset_classifier_invalidates_head_origin(tmp_path):
     loaded = Labram.from_pretrained(tmp_path)
     loaded.reset_classifier(3)
     assert not {"final_layer.weight", "final_layer.bias"} & loaded._pretrained_provenance["loaded"]
+
+
+def test_model_html_citation_exports_and_dataset_readers(tmp_path):
+    import re
+    from urllib.parse import unquote
+
+    from huggingface_hub import ModelCardData
+
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.save_pretrained(tmp_path)
+    model = EEGNet.from_pretrained(tmp_path)
+    model.card_data = ModelCardData(datasets=["nm000139", "on004362", "TUEG", "PREST"])
+    page = model._repr_html_()
+    exports = re.findall(r'href="data:text/plain;charset=utf-8,([^"]+)" download="([^"]+)"', page)
+    assert len(exports) == 2
+    texts = {name: unquote(content) for content, name in exports}
+    assert "@software{braindecode," in texts["braindecode.bib"]
+    assert "10.5281/zenodo.17699192" in texts["braindecode.bib"]
+    assert "[Computer software]. Zenodo." in texts["braindecode-APA.txt"]
+    assert "10.5281/ZENODO.17699192" in texts["braindecode-APA.txt"]
+    assert 'download="braindecode.bib"' in page
+    assert 'aria-label="Braindecode APA citation"' in page
+    assert "braindecode.datasets.BNCI2014_001.html" in page
+    assert "braindecode.datasets.TUH.html" in page
+    assert "https://nemar.org/dataset/nm000139" in page
+    assert "https://eegdash.org/dataset_summary.html?q=ds004362" in page
+    assert "See the checkpoint card for access terms" in page
