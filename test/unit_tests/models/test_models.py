@@ -34,6 +34,7 @@ from braindecode.models import (
     BIOT,
     EEGCLIP,
     EEGPT,
+    NICE,
     SSTDPN,
     TCN,
     ATCNet,
@@ -6113,3 +6114,99 @@ def test_bbl_temporal_mask_none_false_rng_and_gradients(hide_all):
         assert seq["temporal_features"].shape == (2, 8, 2)
     with pytest.raises(ValueError, match="temporal_mask"):
         model(x, temporal_mask=torch.zeros(2, 3, 39))
+
+
+@pytest.mark.parametrize(
+    "n_chans, n_times, n_flat",
+    [(63, 250, 1440), (271, 200, 1040)],  # THINGS-EEG2, THINGS-MEG (paper A.6)
+)
+def test_nice_released_checkpoint_keys(n_chans, n_times, n_flat):
+    """Keys and shapes of eeyhsong/NICE's pretrain_{Enc,Proj}_eeg_cls.pth load
+    through ``mapping`` with only the head missing."""
+    bn = {"weight": (40,), "bias": (40,), "running_mean": (40,), "running_var": (40,)}
+    shapes = {
+        "0.shallownet.0.weight": (40, 1, 1, 25),
+        "0.shallownet.0.bias": (40,),
+        **{f"0.shallownet.2.{k}": v for k, v in bn.items()},
+        "0.shallownet.4.weight": (40, 40, n_chans, 1),
+        "0.shallownet.4.bias": (40,),
+        **{f"0.shallownet.5.{k}": v for k, v in bn.items()},
+        "0.projection.0.weight": (40, 40, 1, 1),
+        "0.projection.0.bias": (40,),
+        "0.weight": (768, n_flat),
+        "0.bias": (768,),
+        "1.fn.1.weight": (768, 768),
+        "1.fn.1.bias": (768,),
+        "2.weight": (768,),
+        "2.bias": (768,),
+    }
+    # Non-negative values, so the BatchNorm running variances are valid.
+    state = {k: torch.rand(v) for k, v in shapes.items()}
+    state["0.shallownet.2.num_batches_tracked"] = torch.tensor(0)
+    state["0.shallownet.5.num_batches_tracked"] = torch.tensor(0)
+    model = NICE(n_chans=n_chans, n_times=n_times, n_outputs=200)
+    result = model.load_state_dict(state, strict=False)
+    assert result.unexpected_keys == []
+    assert sorted(result.missing_keys) == ["final_layer.bias", "final_layer.weight"]
+    out = model.eval()(torch.randn(2, n_chans, n_times), return_features=True)
+    assert out["features"].shape == (2, 768)
+    assert out["features"].isfinite().all()
+
+
+@pytest.mark.parametrize("training", [False, True])
+def test_nice_input_mask_and_temporal_tokens(training):
+    """Raw masking happens before context; tokens are the actual projected map."""
+    torch.manual_seed(42)
+    model = NICE(n_chans=4, n_times=100, n_outputs=3, n_filters=4, embed_dim=8)
+    model.train(training)
+    x = torch.randn(2, 4, 100)
+    mask = torch.zeros_like(x, dtype=torch.bool)
+    mask[:, :, 20:60] = True
+    x[mask] = float("nan")
+    x.requires_grad_(True)
+    maps = []
+    hook = model.projection.register_forward_hook(
+        lambda module, args, output: maps.append(output)
+    )
+    torch.manual_seed(1)
+    out = model(x, mask=mask, return_features=True)
+    hook.remove()
+    assert out["features"].shape == (2, 8)
+    assert out["tokens"].shape == (2, 6, 4)
+    assert out["cls_token"] is None
+    assert torch.equal(out["tokens"], maps[0].squeeze(2).transpose(1, 2))
+    assert out["features"].isfinite().all()
+    assert out["tokens"].isfinite().all()
+    (out["features"].square().sum() + out["tokens"].square().sum()).backward()
+    assert torch.equal(x.grad[mask], torch.zeros_like(x.grad[mask]))
+    assert x.grad[~mask].isfinite().all()
+    assert x.grad[~mask].abs().sum() > 0
+    # Polarity and replacement: masked NaNs behave exactly as zeroed raw input.
+    torch.manual_seed(1)
+    replaced = model(x.detach().masked_fill(mask, 0.0), return_features=True)
+    assert torch.equal(out["features"], replaced["features"])
+    assert torch.equal(out["tokens"], replaced["tokens"])
+
+
+@pytest.mark.parametrize("scripted", [False, True])
+def test_nice_mask_identity_and_all_hidden(scripted):
+    torch.manual_seed(0)
+    model = NICE(n_chans=4, n_times=100, n_outputs=3, n_filters=4, embed_dim=8).eval()
+    if scripted:
+        model = torch.jit.script(model)
+    x = torch.randn(2, 4, 100)
+    assert torch.equal(model(x), model(x, mask=torch.zeros_like(x, dtype=torch.bool)))
+    hidden = torch.full_like(x, float("nan"), requires_grad=True)
+    logits = model(hidden, mask=torch.ones_like(x, dtype=torch.bool))
+    assert torch.equal(logits, model(torch.zeros_like(x)))
+    logits.sum().backward()
+    assert torch.equal(hidden.grad, torch.zeros_like(hidden.grad))
+    with pytest.raises((ValueError, torch.jit.Error), match="ch_mask"):
+        model(x, ch_mask=torch.ones(2, 4, dtype=torch.bool))
+
+
+@pytest.mark.parametrize("shape,dtype", [((2, 100), torch.bool), ((2, 4, 100), torch.float32)])
+def test_nice_mask_validation(shape, dtype):
+    model = NICE(n_chans=4, n_times=100, n_outputs=3, n_filters=4, embed_dim=8)
+    with pytest.raises(ValueError, match="mask must be boolean with shape"):
+        model(torch.randn(2, 4, 100), mask=torch.ones(shape, dtype=dtype))

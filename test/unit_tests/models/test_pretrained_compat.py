@@ -37,6 +37,7 @@ from braindecode.models import (
     EEGPT,
     LUNA,
     MAPA,
+    NICE,
     REVE,
     ZUNA,
     BaRISTA,
@@ -416,6 +417,15 @@ COMPAT = {
         channels="fixed_order_unchecked",
         windows=(125, 1000),
     ),
+    # A spatial convolution over n_chans and a flatten sized by n_times: any
+    # montage and window builds (the released weights: 63 channels, 250 samples).
+    "NICE": dict(
+        cls=NICE,
+        sfreq=250,
+        n_times=250,
+        canon=TEN_TWENTY,
+        channels="fixed_order_unchecked",
+    ),
 }
 
 # LaBraM looks names up at forward: these montages go through the channel layer.
@@ -535,6 +545,7 @@ NO_STRATEGY = {
     "TFMTokenizer",
     "BBL",
     "CORTEG",
+    "NICE",
 }
 
 
