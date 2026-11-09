@@ -273,7 +273,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         are zero."""
         if return_features is None:
             return_features = self.return_features
-        ch_mask = check_ch_mask(ch_mask, x)
+        ch_mask = check_ch_mask(ch_mask, x)  # (batch, n_chans) or None
         if ch_mask is not None:
             if not return_features:
                 raise ValueError(
@@ -281,6 +281,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
                     "tied to the channels."
                 )
             # Padding may hold NaN; each channel is tokenized alone.
+            # (batch, n_chans, n_times), unchanged
             x = x.masked_fill(~ch_mask[:, :, None], 0.0)
         batch_size, n_chans = x.shape[0], x.shape[1]
         # (batch, n_chans, n_times) -> (batch, n_chans, n_segments * segment_len)
@@ -295,7 +296,7 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         # + channel_embedding (n_chans, embed_dim); a recording run alone may
         # have fewer channels than the model, its first parcels.
         h = h + self.channel_embedding[:n_chans]
-        h = self.drop(h)
+        h = self.drop(h)  # (batch * n_segments, segment_len, n_chans, embed_dim)
         # layer i: (batch * n_segments, n_patches[i] * patch_lens[i], n_chans,
         # embed_dim) -> (batch * n_segments, steps read by layer i + 1, n_chans,
         # embed_dim); the last layer outputs n_last_steps steps
@@ -311,7 +312,9 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
             # (batch, n_chans, n_segments * n_last_steps, embed_dim)
             tokens = self.to_tokens(h)
             if ch_mask is not None:
+                # (batch, n_chans, embed_dim), unchanged
                 features = features.masked_fill(~ch_mask[:, :, None], 0.0)
+                # (batch, n_chans, n_segments * n_last_steps, embed_dim), unchanged
                 tokens = tokens.masked_fill(~ch_mask[:, :, None, None], 0.0)
             out: Dict[str, Optional[Tensor]] = {
                 "features": features,
@@ -403,7 +406,7 @@ class _DecoderLayer(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         # x: (batch, n_patches * patch_len, n_chans, embed_dim)
         h = self.attn(self.norm1(x))  # (batch, n_out, n_chans, embed_dim)
-        h = self.drop(h)
+        h = self.drop(h)  # (batch, n_out, n_chans, embed_dim)
         x = h + x[:, -h.shape[1] :]  # (batch, n_out, n_chans, embed_dim)
         return x + self.mlp(self.norm2(x))  # (batch, n_out, n_chans, embed_dim)
 
@@ -467,9 +470,10 @@ class _PatchedTimeAttention(nn.Module):
         v = self.split_heads(v)  # (batch, num_heads, n_chans, n_patches, head_dim)
         scores = q @ k / self.scale  # (batch, num_heads, n_chans, n_out, n_patches)
         # mask (n_out, n_patches): True where a patch is not visible to a query
+        # (batch, num_heads, n_chans, n_out, n_patches), unchanged
         scores = scores.masked_fill(self.mask, float("-inf"))
         weights = scores.softmax(dim=-1)  # same shape as scores
-        weights = weights.nan_to_num(nan=0.0)
+        weights = weights.nan_to_num(nan=0.0)  # same shape as scores
         # (batch, num_heads, n_chans, n_out, head_dim)
         # -> (batch, n_out, n_chans, embed_dim)
         out = self.merge_heads(weights @ v)

@@ -329,6 +329,9 @@ def test_meggpt_ch_mask_features_match_each_recording_alone():
     x, mask, xs = _padded_batch(16)
     x.requires_grad_(True)
     out = model(x, ch_mask=mask, return_features=True)
+    assert out["features"].shape == (3, 3, 16)
+    assert out["tokens"].shape == (3, 3, 4, 16)
+    torch.testing.assert_close(out["features"], out["tokens"].mean(dim=2))
     out["tokens"].sum().backward()
     assert x.grad is None  # the tokenizer's argmax passes no gradient
     assert all(p.grad.isfinite().all() for p in model.parameters() if p.grad is not None)
