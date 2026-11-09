@@ -299,6 +299,8 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         # -> (batch, n_chans, fourier_pos_dim)
         pos = _fourier_features(xyz, self.position_freqs)
         pos = self.restore_sensor_batch(pos)
+        # (batch * n_chans, 3) -> (batch * n_chans, fourier_pos_dim)
+        # -> (batch, n_chans, fourier_pos_dim)
         ori = _fourier_features(abc, self.orientation_freqs)
         ori = self.restore_sensor_batch(ori)
         # Each sensor embedding (batch, n_chans, latent_dim) -> (batch, n_chans, 1,
