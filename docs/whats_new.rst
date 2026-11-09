@@ -36,6 +36,14 @@ Enhancements
   ``CORTEG.from_pretrained("braindecode/corteg-small-pretrained", ...)`` loads
   ST-EEGFormer small with the high-gamma embedding warm-started; ``ch_mask`` takes
   padded batches (:gh:`1551` by `Julien Gadonneix`_).
+- Adding :class:`braindecode.models.NICE`, the EEG/MEG encoder of the NICE image-decoding
+  framework (Song et al., ICLR 2024): TSConv plus the projector into the CLIP image space,
+  configured through ``n_chans``/``n_times`` for THINGS-EEG2 and THINGS-MEG; the authors'
+  checkpoint keys load through ``mapping``. An optional boolean input-time ``mask``
+  (True hides a sample) replaces raw samples before convolution, for downstream SSL
+  losses; ``return_features`` adds the temporal ``"tokens"`` before the global
+  projector. Its spatial convolution is sized to ``n_chans``, so it refuses
+  ``ch_mask`` with a ``ValueError`` (by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MAPA` accepts ``ch_mask`` with per-sample
   ``sensor_indices``, ``(batch, n_chans, 3)``, so a batch can mix recordings with
   different montages and channel counts; ``return_features`` also returns the
