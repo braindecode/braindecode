@@ -40,12 +40,17 @@ class SEANetConv1d(nn.Module):
         right = 0 if self.causal else padding_total // 2
         padding = (padding_total - right, right + extra)
         if max(padding) == 0:  # 1x1 convs: padding would only copy x
+            # (batch, in_channels, n_times) -> (batch, out_channels, n_times)
             return self.conv(x)
         # Zero-extend a signal too short to reflect, as EnCodec does.
         short = max(max(padding) - x.shape[-1] + 1, 0)
         if short > 0:  # F.pad with nothing to pad still copies x
+            # (batch, in_channels, n_times) -> (batch, in_channels, n_times + short)
             x = F.pad(x, (0, short))
+        # -> (batch, in_channels, n_times + short + padding_total + extra)
         x = F.pad(x, padding, mode="reflect")
+        # drop the last short samples: (batch, in_channels, n_times + padding_total
+        # + extra) -> (batch, out_channels, ceil(n_times / stride))
         return self.conv(x[..., : x.shape[-1] - short])
 
 
@@ -61,7 +66,10 @@ class SEANetConvTranspose1d(nn.Module):
         self.causal = causal
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # (batch, in_channels, n_times)
+        # -> (batch, out_channels, (n_times - 1) * stride + kernel_size)
         y = self.convtr(x)
+        # trim padding_total: -> (batch, out_channels, n_times * stride)
         right = self.padding_total if self.causal else self.padding_total // 2
         return y[..., self.padding_total - right : y.shape[-1] - right]
 
@@ -75,9 +83,10 @@ class SEANetLSTM(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # 4D-view permute: Gaudi lazy mode cannot compile the LSTM after a 3D one.
+        # (batch, dim, time) -> (time, batch, dim)
         x = x.unsqueeze(-1).permute(2, 0, 1, 3).squeeze(-1)
-        y, _ = self.lstm(x)
-        return (y + x).permute(1, 2, 0)
+        y, _ = self.lstm(x)  # (time, batch, dim)
+        return (y + x).permute(1, 2, 0)  # (batch, dim, time)
 
 
 class SEANetResBlock(nn.Module):
@@ -111,6 +120,7 @@ class SEANetResBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # (batch, dim, n_times) -> (batch, dim, n_times); block: dim -> dim // compress -> dim
         return self.shortcut(x) + self.block(x)
 
 

@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 
+from braindecode.functional import check_ch_mask
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import SEANetEncoder
@@ -184,39 +185,59 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         subject_index: Optional[torch.Tensor] = None,
         dataset_index: Optional[torch.Tensor] = None,
         return_features: bool = False,
+        ch_mask: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """Classify ``x`` of shape ``(batch, n_chans, n_times)``.
 
         ``subject_index`` and ``dataset_index`` are ``(batch,)`` integer
-        tensors; ``dataset_index`` defaults to slot 0.
+        tensors; ``dataset_index`` defaults to slot 0. ``ch_mask`` is an
+        optional ``(batch, n_chans)`` mask of real channels, see
+        :func:`~braindecode.functional.check_ch_mask`: padded channels are set
+        to zero, the empty sensor slots of the reference collator, so a
+        recording padded in a batch gives its output alone. The projector
+        mixes every sensor slot into each feature, so the model has no
+        per-channel ``tokens``.
         """
+        ch_mask = check_ch_mask(ch_mask, x)
         batch = x.shape[0]
-        x = F.pad(x, (0, 0, 0, self.n_sensors - self.n_chans))
+        if ch_mask is not None:
+            # (batch, n_chans, n_times), padded channels zeroed
+            x = x.masked_fill(~ch_mask[:, :, None], 0.0)
+        # (batch, n_chans, n_times) -> (batch, n_sensors, n_times); a wider
+        # input than n_sensors is not cropped, the projector rejects it.
+        x = F.pad(x, (0, 0, 0, max(self.n_sensors - x.shape[1], 0)))
+        # (batch, n_sensors, n_times) -> (batch, n_datasets * model_dim, n_steps),
+        # n_steps = ceil(n_times / 2)
         x = self.projector(x)
+        # -> (batch, n_datasets, model_dim, n_steps)
         x = self.split_datasets(x)
         if dataset_index is None:
+            # (batch,)
             dataset_index = torch.zeros(batch, dtype=torch.long, device=x.device)
         # Compare with arange instead of F.one_hot, which reads the index range
         # on the host.
-        slots = torch.arange(self.n_datasets, device=x.device)
-        gate = (dataset_index[:, None] == slots).to(x.dtype)
+        slots = torch.arange(self.n_datasets, device=x.device)  # (n_datasets,)
+        gate = (dataset_index[:, None] == slots).to(x.dtype)  # (batch, n_datasets)
+        # (batch, n_datasets, model_dim, n_steps) -> (batch, model_dim, n_steps)
         x = (x * gate[:, :, None, None]).sum(dim=1)
+        # -> (batch, model_dim, ceil(n_steps / prod(ratios)))
         x = self.encoder(x)
-        x = x.mean(dim=-1)
+        x = x.mean(dim=-1)  # (batch, model_dim)
         if subject_index is None:
+            # (n_subjects,)
             weights = self.trained_subjects / self.trained_subjects.sum()
-            subject = weights @ self.subject_embedding.weight
-            subject = subject.expand(batch, -1)
+            subject = weights @ self.subject_embedding.weight  # (subject_dim,)
+            subject = subject.expand(batch, -1)  # (batch, subject_dim)
         else:
-            subject = self.subject_embedding(subject_index)
-        feat = torch.cat([x, subject], dim=1)
+            subject = self.subject_embedding(subject_index)  # (batch, subject_dim)
+        feat = torch.cat([x, subject], dim=1)  # (batch, model_dim + subject_dim)
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": feat,
                 "cls_token": None,  # nosec B105
             }
             return out
-        return self.final_layer(feat)
+        return self.final_layer(feat)  # (batch, n_outputs)
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the linear probe for ``n_outputs`` classes."""
