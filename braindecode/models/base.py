@@ -109,10 +109,11 @@ def _checkpoint_source(pretrained_model_name_or_path, **kwargs):
                 cache_dir=kwargs.get("cache_dir"),
                 revision=kwargs.get("revision"),
             )
-            parts = Path(cached).parts if isinstance(cached, str) else ()
-            if "snapshots" in parts:
-                info["commit"] = parts[parts.index("snapshots") + 1]
-                break
+            if isinstance(cached, str):
+                snapshot = Path(cached).parent
+                if snapshot.parent.name == "snapshots":
+                    info["commit"] = snapshot.name
+                    break
     except Exception:
         return info
     return info

@@ -681,7 +681,7 @@ def test_pretrained_provenance_reads_hub_cache_commit(tmp_path, monkeypatch):
     from braindecode.models.base import _checkpoint_source
 
     commit = "0123456789abcdef0123456789abcdef01234567"
-    cached = tmp_path / "models--org--repo" / "snapshots" / commit / "config.json"
+    cached = tmp_path / "snapshots" / "hf-cache" / "models--org--repo" / "snapshots" / commit / "config.json"
     monkeypatch.setattr(
         huggingface_hub, "try_to_load_from_cache", lambda *a, **k: str(cached)
     )
@@ -888,6 +888,8 @@ def test_provenance_manual_reload_invalidates_source(tmp_path):
     loaded.load_state_dict(model.state_dict())
     assert "_pretrained_provenance" not in loaded.__dict__
     assert "Pretrained weights:" not in str(loaded)
+    assert "Origin unrecorded" in loaded._repr_html_()
+    assert "Randomly initialised" not in loaded._repr_html_()
 
 
 def test_provenance_html_discloses_unbuilt_and_adapted_parameters(tmp_path):
@@ -923,7 +925,7 @@ def test_model_html_has_logo_and_zenodo_citation(tmp_path):
     page = model._repr_html_()
     assert "braindecode.org/stable/_static/braindecode_long.svg" in page
     assert 'alt="Braindecode"' in page
-    assert "Cite Braindecode." in page and "Randomly initialised" in page
+    assert "Cite Braindecode." in page and "Origin unrecorded" in page
     assert page.count("10.5281/zenodo.17699192") >= 3  # badge, BibTeX, agent note
     assert "hbm.23730" not in page
     assert "Note for AI agents" in page
