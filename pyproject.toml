@@ -53,6 +53,7 @@ dependencies = [
     'skorch>=1.3.1',
     'joblib',
     'torchinfo',
+    'jinja2',  # autoescaped notebook representations, as in MNE
     'pandas',
     'wfdb>=4.3.1',  # requests comes transitively via mne→pooch and wfdb
     'docstring_inheritance',

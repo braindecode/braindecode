@@ -23,9 +23,12 @@
 
 
 Current 2.1.0 (GitHub)
+===============================
 
 Enhancements
+============
 
+- A model loaded with :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` shows where its weights come from: in a notebook (``model`` as the last line of a cell) a panel lists the input geometry, the Hub repository and commit, the licence, the base model and the datasets of the model card (linked to NEMAR, OpenNeuro or the Hub), and a module table with each block marked as loaded from the checkpoint or initialised here, e.g. a head rebuilt for a new ``n_outputs``; ``print(model)`` adds the same facts below the torchinfo table. Both ask users, and AI agents reading the output, to cite Braindecode with its `Zenodo DOI <https://doi.org/10.5281/zenodo.17699192>`__. The card offers BibTeX/APA downloads and selectable citation text, and links training datasets to NEMAR, EEGDash catalogue searches and documented braindecode readers. ``from_pretrained`` now warns when no parameter of the model was loaded from the checkpoint, which happened silently when the checkpoint's keys did not match the model (:gh:`1558` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MAPA` accepts ``ch_mask`` with per-sample
   ``sensor_indices``, ``(batch, n_chans, 3)``, so a batch can mix recordings with
   different montages and channel counts; ``return_features`` also returns the
@@ -50,10 +53,12 @@ Enhancements
   ``return_features`` (:gh:`1540` by `Julien Gadonneix`_).
 
 API and behavior changes
+========================
 
 - None yet
 
 Requirements
+============
 
 - The ``eegprep`` extra (and ``all``) requires ``torch>=2.7`` on Python 3.11:
   every eegprep release for Python 3.11 needs ``sympy>=1.14``, while torch 2.6
@@ -62,6 +67,7 @@ Requirements
   resolver conflict (by `Bruno Aristimunha`_).
 
 Bug fixes
+==========
 
 - The Eldele et al. (2021) sleep staging tutorial (``plot_sleep_staging_eldele2021.py``) splits train and validation by subject, as its text says; ``split`` took the ids as recording indices, so it trained on subjects 0-1 and validated on subject 2 while subjects 3-5 were loaded and unused (:gh:`1559` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ZUNA` defaults to ``pos_bins=100``, the value ZUNA1.1 was trained with (paper Table II and Zyphra's configs); the old default ``50`` was ZUNA1's and gave the released encoder outputs up to 5.2 away from the original. The ``braindecode/ZUNA`` checkpoint now holds the ZUNA1.1 encoder in braindecode's parameter names (the earlier ZUNA1 file loaded no parameter into the class) and sets ``pos_bins`` in its config (:gh:`1557` by `Bruno Aristimunha`_).
@@ -79,6 +85,7 @@ Bug fixes
   (:gh:`1545` by `Bruno Aristimunha`_).
 
 Code health
+============
 
 - Codacy runs Bandit from a root ``bandit.yml`` that skips B105, which flagged every ``"cls_token"`` key of the foundation-model feature dicts as a hardcoded password, and B101, the test ``assert`` statements (:gh:`1546` by `Bruno Aristimunha`_).
 - Every registered model whose ``forward`` takes ``ch_mask`` is checked with no
@@ -99,8 +106,10 @@ Code health
 
 
 Current 2.0.0 (2026-11-02)
+===============================
 
 Breaking changes in 2.0
+=======================
 
 Changes that alter results without an error:
 
@@ -151,6 +160,7 @@ Changes that raise an error:
   2.0.
 
 Enhancements
+============
 
 - The MOABB benchmark example no longer advises ``n_jobs=1`` on a GPU: with NVIDIA's Multi-Process Service running, ``n_jobs=18`` trained BNCI2014_001's 18 cross-session folds 2x faster than ``n_jobs=1`` for EEGNet, ShallowFBCSPNet and ATCNet, with the same score on every fold, and it notes that ``setup_seed`` does not reach the worker processes (:gh:`1500` by `Bhargav Kowshik`_).
 - Add a :ref:`CPU/Gloo distributed-window evaluation recipe
@@ -655,6 +665,7 @@ Enhancements
 - ``braindecode.modules.EMACodebook`` reuses its distance-matrix storage during nearest-code lookup, avoiding two full-sized arithmetic temporaries without changing distance evaluation order (:gh:`1404` by `Bruno Aristimunha`_).
 
 API and behavior changes
+========================
 
 - The development version is ``2.0.0dev0``; master reported ``1.8.1`` since the release, so downstream code could not tell it from 1.8.1 (NeuralBench gates its LaBraM LoRA workaround on ``braindecode > 1.8.1``) (:gh:`1518` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.REVE` built without ``on_non_divisible`` crops a window its overlapping patches do not tile, as in braindecode 1.8 and the reference, and warns (``FutureWarning``); :gh:`1399` had made it pad, which added a zero patch, changed the encoder output and the head size of code written for 1.8 (NeuralTrain's REVE wrapper tests failed). Pass ``on_non_divisible="pad"`` for the padded window (:gh:`1517` by `Bruno Aristimunha`_).
@@ -710,6 +721,7 @@ API and behavior changes
   `Bruno Aristimunha`_).
 
 Requirements
+============
 
 - ``linear_attention_transformer`` is no longer a dependency: since :gh:`1273` braindecode ships the part BIOT and TFMTokenizer use. ``einops``, which arrived only through it, is now declared directly (:gh:`1443` by `Bruno Aristimunha`_).
 
@@ -732,6 +744,7 @@ Requirements
   (:gh:`1531` by `Bruno Aristimunha`_).
 
 Bug fixes
+==========
 
 - :class:`braindecode.modules.PatchTokenizer` no longer registers a parameter-free ``nn.Identity`` as ``proj`` / ``patcher`` when it does not use that projection; the attribute is ``None``. LoRA with ``target_modules=["proj"]`` (as in NeuralBench's LaBraM and LUNA configurations) matched the placeholder inside :class:`braindecode.models.Labram`, :class:`~braindecode.models.LUNA` and the other models built on the tokenizer since :gh:`1226`, and peft raised ``Target module Identity() is not supported``. State dicts and outputs are unchanged (:gh:`1516` by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.MaxNormLinear`, used for the classification layer of :class:`braindecode.models.ATCNet` and :class:`braindecode.models.EEGTCNet`, bounds the norm of the incoming weights of each output unit (each row of the weight), as the Keras ``Dense(kernel_constraint=max_norm())`` it reproduces, instead of the norm of each input feature's weights (each column). With ATCNet's defaults (``max_norm_const=0.25``, 32 input features), a row could reach a norm of sqrt(32) x 0.25 = 1.41. The stored weights are unchanged, so ATCNet and EEGTCNet checkpoints saved with an earlier version still load, but their effective classification weights can differ (:gh:`1476` by `Adam Mounir`_).
@@ -1218,8 +1231,10 @@ Bug fixes
 
 
 Current 1.8.1 (2026-08-31)
+===============================
 
 Enhancements
+============
 
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
@@ -1228,8 +1243,10 @@ Enhancements
 
 
 Current 1.8.0 (2026-08-31)
+===============================
 
 Enhancements
+============
 
 - Add a reusable temporal-distributed separable convolution encoder to
   :mod:`braindecode.modules`, and centralize output-head replacement for models using
@@ -1268,6 +1285,7 @@ Enhancements
   (:gh:`580` by `Mohammad Javad D`_ and `Bruno Aristimunha`_).
 
 API and behavior changes
+========================
 
 - Deprecate ``drop_last_window`` in
   :func:`braindecode.preprocessing.create_windows_from_events` and
@@ -1283,6 +1301,7 @@ API and behavior changes
   (:gh:`1058` by `Michele Romani`_)
 
 Requirements
+============
 
 - Remove the ``rotary_embedding_torch`` dependency. The rotary frequency
   generation used by :class:`braindecode.models.LUNA` and
@@ -1290,6 +1309,7 @@ Requirements
   (:gh:`1136` by `Bruno Aristimunha`_)
 
 Bug fixes
+==========
 
 - Sample stochastic-depth masks with out-of-place
   :func:`torch.bernoulli` instead of in-place ``Tensor.bernoulli_``. This keeps
@@ -1393,13 +1413,16 @@ Bug fixes
   (:gh:`1125` by `Sarthak Tayal`_).
 
 Code health
+============
 
 - None yet
 
 
 Current 1.7.0 (2026-08-01)
+===============================
 
 Enhancements
+============
 
 - Add :class:`braindecode.models.ZUNA`, a position-aware EEG foundation model
   from Warner et al. (2026), ported from the public ``Zyphra/ZUNA1.1`` encoder
@@ -1412,6 +1435,7 @@ Enhancements
   from :data:`braindecode.models.util.models_dict` (:gh:`1093` by `Bruno Aristimunha`_)
 
 API and behavior changes
+========================
 
 - The ``stride_factor`` parameter of :class:`braindecode.models.FBLightConvNet`
   is deprecated and will be removed in a future release. The model never read
@@ -1426,10 +1450,12 @@ API and behavior changes
   wrappers and pydantic configs (:gh:`1093` by `Bruno Aristimunha`_)
 
 Requirements
+============
 
 - None yet
 
 Bug fixes
+==========
 
 - Fix :meth:`braindecode.EEGClassifier.predict_trials`,
   :meth:`braindecode.EEGRegressor.predict_trials` and
@@ -1473,13 +1499,16 @@ Bug fixes
   `Bruno Aristimunha`_)
 
 Code health
+============
 
 - None yet
 
 
 Current 1.6.1 (2026-07-01)
+===============================
 
 Enhancements
+============
 
 - Pin the ``%pip install braindecode`` cell in generated notebooks to the
   version used to build them (``braindecode==X.Y.Z`` for stable releases,
@@ -1575,6 +1604,7 @@ Enhancements
   speed. (:gh:`1070` by `Bruno Aristimunha`_)
 
 API and behavior changes
+========================
 
 - Removed the deprecated aliases that were scheduled for removal after their
   deprecation in v1.2/v1.3: ``EEGNetv4`` (use
@@ -1594,6 +1624,7 @@ API and behavior changes
   of the intra-class compactness prototypes. By `Bruno Aristimunha`_.
 
 Requirements
+============
 
 - Cap the test dependency to ``pytest<9.1`` in the ``tests`` extra. ``pytest``
   9.1.0 changed the ``IdMaker`` constructor signature, which breaks
@@ -1602,6 +1633,7 @@ Requirements
   By `Adam Mounir`_.
 
 Bug fixes
+==========
 
 - Fix :class:`braindecode.models.SSTDPN` renormalizing ``proto_sep`` along the
   wrong axis: the inter-class separation prototypes are now constrained per
@@ -1690,6 +1722,7 @@ Bug fixes
   (:gh:`1088` by `Bruno Aristimunha`_)
 
 Code health
+============
 
 - Silence the new "training set smaller than ``batch_size``" warning
   (:gh:`1053`) in the ``test_eegneuralnet`` signal-argument tests, which
@@ -1712,8 +1745,10 @@ Code health
 
 
 Current 1.5.1 (stable)
+===============================
 
 Enhancements
+============
 
 - Add :class:`braindecode.augmentation.BandRotation` and
   :func:`braindecode.augmentation.functional.band_rotation`: per-band
@@ -1745,6 +1780,7 @@ Enhancements
   `Bruno Aristimunha`_)
 
 API and behavior changes
+========================
 
 - Restore the per-batch ``ch_names`` keyword argument on
   :meth:`braindecode.models.Labram.forward` that was removed in 1.5.0
@@ -1761,6 +1797,7 @@ API and behavior changes
   channel set and resolve the subset per batch via ``ch_names``.
 
 Bug fixes
+==========
 
 - Fix :class:`braindecode.augmentation.AmplitudeScale` crashing on the
   default ``random_state=None`` and on the ``numpy.random.RandomState``
@@ -1774,8 +1811,10 @@ Bug fixes
 
 
 Current 1.5.0 (stable)
+===============================
 
 Enhancements
+============
 
 - Add :meth:`braindecode.datasets.BaseConcatDataset.set_target` to swap
   any per-window metadata column or per-record description field
@@ -1875,6 +1914,7 @@ Enhancements
   By `Bruno Aristimunha`_.
 
 API and behavior changes
+========================
 
 - :class:`braindecode.modules.MultiHeadAttention` now follows PyTorch's SDPA mask
   convention: boolean masks use ``True`` to **ignore** a position (previously
@@ -1899,6 +1939,7 @@ API and behavior changes
   by `Pierre Guetschel`_)
 
 Bug fixes
+==========
 
 - Fix :class:`braindecode.models.SyncNet` swapped parameter initialization where
   ``phi_ini`` (phase shift) was using ``beta_init_values`` and ``beta`` (decay) was
@@ -1945,8 +1986,10 @@ Bug fixes
 
 
 Current 1.4.0 (stable)
+===============================
 
 Enhancements
+============
 - Unlock the :bdg-dark:`SPD` model category in the documentation and link to the
   `spd_learn <https://github.com/spdlearn/spd_learn/>`__ library with intersphinx
   cross-references to its seven models (SPDNet, EEGSPDNet, TSMNet, TensorCSPNet,
@@ -2016,6 +2059,7 @@ Enhancements
   (:gh:`978` by `Bruno Aristimunha`_).
 
 API changes
+============
 - Add :meth:`braindecode.models.base.EEGModuleMixin.get_config` and
   :meth:`braindecode.models.base.EEGModuleMixin.from_config` to all models,
   enabling full JSON round-trip serialization and reconstruction of any model
@@ -2032,6 +2076,7 @@ API changes
   (by `Bruno Aristimunha`_)
 
 Requirements
+============
 - Relaxed PyTorch requirement to >=2.0 to support Intel-based Macs (by `GalAshkenazi1`_)
 
 Bugs
@@ -2108,6 +2153,7 @@ Bugs
   (:gh:`325` by `Sarthak Tayal`_)
 
 Code health
+============
 - Reorder model categories in documentation to follow the progression: Convolution,
   Filterbank, Interpretability, Recurrent, Attention/Transformer, SPD, Graph Neural
   Network, Channel, and Foundation Model (:gh:`962` by `Bruno Aristimunha`_)
@@ -2123,8 +2169,10 @@ Code health
 
 
 Current 1.3.2 (stable)
+======================
 
 Enhancements
+============
 
 - Add an optional ``lazy`` init path to :class:`braindecode.datasets.base.BaseConcatDataset`
   to defer cumulative size computation (and any downstream dataset length access) until
@@ -2266,8 +2314,10 @@ Bugs
   Aristimunha`_)
 
 Current 1.2
+====================
 
 Enhancements
+============
 
 - Improving the docstring for :class:`braindecode.models.EEGNetv4` (:gh:`768` by `Bruno
   Aristimunha`_)
@@ -2286,6 +2336,7 @@ Enhancements
   the models categorization, table and many details.
 
 API changes
+===========
 
 - Using the name from the original name and deprecation models that we create for no
   reason, models :gh:`775` by `Bruno Aristimunha`_
@@ -2297,8 +2348,10 @@ API changes
   :class:`braindecode.models.TSception`.
 
 Version 1.1.1
+====================
 
 Enhancements
+============
 
 - Massive refactor of the model webpage
 
@@ -2316,8 +2369,10 @@ Bugs
   Aristimunha`_)
 
 Version 1.0
+====================
 
 Enhancements
+============
 
 - Make sure all the models start at train model (:gh:`745` by `Bruno Aristimunha`_)
 - Enable more models to be pytorch compatible (:gh:`732` by `Bruno Aristimunha`_ and
@@ -2434,6 +2489,7 @@ Bugs
 - Fixing the MOABBDataset to work with the cache (:gh:`694` by `Bruno Aristimunha`_)
 
 API changes
+===========
 
 - Removing deprecated variable ``use_log_softmax`` from :class:`braindecode.models.base`
   (:gh:`729` by `Bruno Aristimunha`_)
@@ -2460,8 +2516,10 @@ API changes
 .. _changes_0_8_0:
 
 Version 0.8 (11-2022)
+=====================
 
 Enhancements
+============
 
 - Adding :class:`braindecode.models.EEGInceptionMI` network for motor imagery (:gh:`428`
   by `Cedric Rommel`_)
@@ -2569,6 +2627,7 @@ Bugs
   Schirrmeister`_)
 
 API changes
+===========
 
 - Renaming the :class:`braindecode.models.EEGInception` network as
   :class:`braindecode.models.EEGInceptionERP` (:gh:`428` by `Cedric Rommel`_)
@@ -2579,8 +2638,10 @@ API changes
 .. _changes_0_7_0:
 
 Version 0.7 (10-2022)
+=====================
 
 Enhancements
+============
 
 - Adding EEG-Inception Network :class:`braindecode.models.EEGInception` (:gh:`390` by
   `Bruno Aristimunha`_ and `Cedric Rommel`_)
@@ -2614,6 +2675,7 @@ Bugs
   sample independently per-channel (:gh:`409` by `Martin Wimpff`_ and `Cedric Rommel`_)
 
 API changes
+===========
 
 - Renaming the method `get_params` to `get_augmentation_params` in augmentation classes.
   This makes the Transform module compatible with scikit-learn cloning mechanism
@@ -2631,8 +2693,10 @@ API changes
 .. _changes_0_6_0:
 
 Version 0.6 (2021-12-06)
+========================
 
 Enhancements
+============
 
 - Adding :class:`braindecode.samplers.SequenceSampler` along with support for returning
   sequences of windows in :class:`braindecode.datasets.BaseConcatDataset` and an updated
@@ -2703,6 +2767,7 @@ Bugs
   Śliwowski`_)
 
 API changes
+===========
 
 - Removing the default sampling frequency sfreq value in
   :func:`braindecode.datasets.create_windows_from_events` (:gh:`256` by `Daniel
@@ -2721,8 +2786,10 @@ API changes
 .. _changes_0_5_1:
 
 Version 0.5.1 (2021-07-14)
+==========================
 
 Enhancements
+============
 
 - Adding `n_jobs` parameter to windowers
   :func:`braindecode.datautil.create_windows_from_events` and
@@ -2784,6 +2851,7 @@ Bugs
   Schirrmeister`_ and `Maciej Śliwowski`_)
 
 API changes
+===========
 
 - Preprocessor classes :class:`braindecode.datautil.MNEPreproc` and
   :class:`braindecode.datautil.NumpyPreproc` are deprecated in favor of
@@ -2794,6 +2862,7 @@ API changes
 
 
 Authors
+========
 
 .. _Arnaud Delorme: https://github.com/arnodelorme
 .. _Anton Soloviev: https://github.com/antonsoo

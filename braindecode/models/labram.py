@@ -894,6 +894,11 @@ class Labram(EEGModuleMixin, nn.Module):
         self.final_layer = (
             nn.Linear(self.embed_dim, n_outputs) if n_outputs > 0 else nn.Identity()
         )
+        provenance = self.__dict__.get("_pretrained_provenance")
+        if provenance:
+            provenance["loaded"].difference_update(
+                {"final_layer.weight", "final_layer.bias"}
+            )
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
