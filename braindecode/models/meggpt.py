@@ -250,23 +250,36 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         self, x: Tensor, return_features: Optional[bool] = None
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         batch_size = x.shape[0]
+        # (batch, n_chans, n_times) -> (batch, n_chans, n_segments * segment_len)
         x = pad_or_crop_to_patches(x, self.segment_len, self.on_non_divisible)
-        tokens = self.to_segments(self.tokenizer(x))  # (batch * segments, time, chans)
+        # token ids (batch, n_chans, n_segments * segment_len)
+        # -> (batch * n_segments, segment_len, n_chans)
+        tokens = self.to_segments(self.tokenizer(x))
+        # (batch * n_segments, segment_len, n_chans, embed_dim)
         h = self.token_embedding(tokens)
+        # + time_embedding (segment_len, 1, embed_dim)
         h = h + self.time_embedding[:, None]
+        # + channel_embedding (n_chans, embed_dim)
         h = h + self.channel_embedding
         h = self.drop(h)
+        # layer i: (batch * n_segments, n_patches[i] * patch_lens[i], n_chans,
+        # embed_dim) -> (batch * n_segments, steps read by layer i + 1, n_chans,
+        # embed_dim); the last layer outputs n_last_steps steps
         for layer in self.layers:
             h = layer(h)
-        # (batch * segments, ...) -> (batch, segments, ...): the einops layer
-        # cannot take the batch size at call time.
+        # Unflatten first: the einops layer cannot take the batch size at call
+        # time. (batch * n_segments, n_last_steps, n_chans, embed_dim)
+        # -> (batch, n_segments, n_last_steps, n_chans, embed_dim)
+        # -> (batch, n_segments * n_last_steps, n_chans, embed_dim)
         h = self.from_segments(h.unflatten(0, [batch_size, -1]))
-        features = h.mean(dim=1)
+        features = h.mean(dim=1)  # (batch, n_chans, embed_dim)
         if return_features is None:
             return_features = self.return_features
         if return_features:
             out: Dict[str, Optional[Tensor]] = {"features": features, "cls_token": None}
             return out
+        # (batch, n_chans, embed_dim) -> (batch, n_chans * embed_dim)
+        # -> (batch, n_outputs)
         return self.final_layer(features)
 
     def reset_head(self, n_outputs: int) -> None:
@@ -300,10 +313,14 @@ class _EphysTokenizer(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         batch_size, n_chans = x.shape[0], x.shape[1]
+        # (batch, n_chans, n_times) -> (batch * n_chans, n_times, 1)
+        # -> (batch * n_chans, n_times, rnn_hidden_size)
         h, _ = self.rnn(self.to_series(x))
         # Released scaling; kept so that ties break as in the reference.
+        # (batch * n_chans, n_times, n_codes)
         logits = self.norm(self.proj(h)) / 0.1
-        codes = logits.argmax(dim=-1)
+        codes = logits.argmax(dim=-1)  # (batch * n_chans, n_times)
+        # token ids (batch * n_chans, n_times) -> (batch, n_chans, n_times)
         return self.vocab[codes].unflatten(0, [batch_size, n_chans])
 
 
@@ -343,10 +360,11 @@ class _DecoderLayer(nn.Module):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        h = self.attn(self.norm1(x))
+        # x: (batch, n_patches * patch_len, n_chans, embed_dim)
+        h = self.attn(self.norm1(x))  # (batch, n_out, n_chans, embed_dim)
         h = self.drop(h)
-        x = h + x[:, -h.shape[1] :]
-        return x + self.mlp(self.norm2(x))
+        x = h + x[:, -h.shape[1] :]  # (batch, n_out, n_chans, embed_dim)
+        return x + self.mlp(self.norm2(x))  # (batch, n_out, n_chans, embed_dim)
 
 
 class _PatchedTimeAttention(nn.Module):
@@ -395,15 +413,23 @@ class _PatchedTimeAttention(nn.Module):
         self.register_buffer("mask", ~visible, persistent=False)
 
     def forward(self, x: Tensor) -> Tensor:
+        # x: (batch, n_patches * patch_len, n_chans, embed_dim), batch counting
+        # segments; head_dim = embed_dim // num_heads.
+        # to_patches: -> (batch, n_patches, n_chans, head_dim, num_heads * patch_len)
+        # patch_k/v: -> (batch, n_patches, n_chans, head_dim, num_heads)
+        # from_patches, k/v_proj: -> (batch, n_patches, n_chans, embed_dim)
         k = self.k_proj(self.from_patches(self.patch_k(self.to_patches(x))))
         v = self.v_proj(self.from_patches(self.patch_v(self.to_patches(x))))
-        q = self.q_proj(x[:, -self.n_out :])
-        q = self.split_heads(q)
-        k = self.split_heads_t(k)
-        v = self.split_heads(v)
-        scores = q @ k / self.scale
+        q = self.q_proj(x[:, -self.n_out :])  # (batch, n_out, n_chans, embed_dim)
+        q = self.split_heads(q)  # (batch, num_heads, n_chans, n_out, head_dim)
+        k = self.split_heads_t(k)  # (batch, num_heads, n_chans, head_dim, n_patches)
+        v = self.split_heads(v)  # (batch, num_heads, n_chans, n_patches, head_dim)
+        scores = q @ k / self.scale  # (batch, num_heads, n_chans, n_out, n_patches)
+        # mask (n_out, n_patches): True where a patch is not visible to a query
         scores = scores.masked_fill(self.mask, float("-inf"))
-        weights = scores.softmax(dim=-1)
+        weights = scores.softmax(dim=-1)  # same shape as scores
         weights = weights.nan_to_num(nan=0.0)
+        # (batch, num_heads, n_chans, n_out, head_dim)
+        # -> (batch, n_out, n_chans, embed_dim)
         out = self.merge_heads(weights @ v)
-        return self.out_proj(out)
+        return self.out_proj(out)  # (batch, n_out, n_chans, embed_dim)
