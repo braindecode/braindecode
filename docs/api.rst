@@ -88,6 +88,8 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`EEGPT` - Pretrained transformer for universal EEG
     - :class:`STEEGFormer` - ViT-MAE EEG foundation model with braindecode-format
       re-hosted weights
+    - :class:`CORTEG` - ST-EEGFormer adapted to intracranial ECoG by electrode position,
+      with a high-gamma token stream
     - :class:`SleepFM` and :class:`SleepFMStager` - Multimodal PSG foundation encoder
       and token-wise sleep-staging model compatible with the authors' CC BY-NC
       checkpoints
@@ -161,6 +163,7 @@ interface for all EEG models and can derive variable names when needed.
      CBraMod
      CodeBrain
      ContraWR
+     CORTEG
      CSBrain
      CTNet
      DANCE
