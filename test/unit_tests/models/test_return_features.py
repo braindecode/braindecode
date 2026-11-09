@@ -9,6 +9,7 @@ from braindecode.models import (
     BBL,
     BENDR,
     BIOT,
+    CORTEG,
     EEGDINO,
     EEGPT,
     MAPA,
@@ -147,6 +148,14 @@ _MODELS = [
         },
         True,
         id="STEEGFormer",
+    ),
+    pytest.param(
+        CORTEG,
+        N_CHANS,
+        {"chs_info": _chs(), "embed_dim": 64, "depth": 2, "num_heads": 2,
+         "n_merge_blocks": 1},
+        True,
+        id="CORTEG",
     ),
     pytest.param(SignalJEPA, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA"),
     pytest.param(

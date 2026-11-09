@@ -31,6 +31,7 @@ from braindecode.models import (
     BBL,
     BENDR,
     BIOT,
+    CORTEG,
     DIVER1,
     EEGDINO,
     EEGPT,
@@ -360,6 +361,16 @@ COMPAT = {
         windows=(256, 1024),
         skip=("G2",),
     ),
+    "CORTEG": dict(
+        cls=CORTEG,
+        sfreq=128,
+        n_times=128,
+        canon=None,
+        kind="ecog",
+        channels="coords",
+        coords_checked=True,
+        windows=(128, 1024),
+    ),
     "BrainOmni": dict(
         cls=BrainOmni,
         sfreq=256,
@@ -537,6 +548,7 @@ NO_STRATEGY = {
     "TFMTokenizer",
     "MEGXL",
     "BBL",
+    "CORTEG",
 }
 
 
