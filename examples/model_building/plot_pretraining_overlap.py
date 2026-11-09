@@ -69,7 +69,8 @@ print(restored.card_data.datasets)
 # checkpoint, the datasets of its card (linked to their pages), and which
 # parameters came from the checkpoint (a head rebuilt for another
 # ``n_outputs`` is marked as new). ``print(model)`` adds the same lines below
-# its table.
+# its table. Both end with the Braindecode citation: if you use Braindecode in
+# scientific work, cite it with its Zenodo DOI, 10.5281/zenodo.17699192.
 
 restored
 
