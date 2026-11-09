@@ -170,13 +170,26 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
 
     def forward(
-        self, x: Tensor, return_features: bool = False
+        self,
+        x: Tensor,
+        return_features: bool = False,
+        ch_mask: Optional[Tensor] = None,
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         """Encode ``x`` of shape (batch, n_chans, n_times).
 
         Returns the logits (batch, n_outputs), or with ``return_features=True``
         a dict whose ``"features"`` is the aligned embedding (batch, embed_dim).
+        A ``ch_mask`` (see :func:`~braindecode.functional.check_ch_mask`) raises
+        a ``ValueError``: the spatial convolution has one weight per channel of
+        the ``n_chans`` montage, so a recording cannot run on fewer channels.
         """
+        if ch_mask is not None:
+            # Its kernel spans all n_chans rows; a padded channel, even zeroed,
+            # still enters the sum through the temporal bias and BatchNorm shift.
+            raise ValueError(
+                "NICE does not accept ch_mask: its spatial convolution is sized to "
+                "all n_chans channels, so it cannot run on fewer channels."
+            )
         # (batch, n_chans, n_times) -> (batch, 1, n_chans, n_times)
         x = self.add_kernel_dim(x)
         # (batch, 1, n_chans, n_times) -> (batch, n_filters, 1, n_steps)
