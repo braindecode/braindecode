@@ -17,6 +17,7 @@ from torch.nn import functional as F
 from braindecode.functional import check_ch_mask, masked_mean
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.steegformer import (
+    _channel_order,
     _ChannelPositionalEmbed,
     _init_weights,
     _TemporalPositionalEncoding,
@@ -30,35 +31,15 @@ from braindecode.models.util import (
 from braindecode.modules import PatchTokenizer
 from braindecode.util import resolve_montage_name
 
-# The electrodes of the first 142 slots of ST-EEGFormer's channel vocabulary,
-# in slot order: the slots the soft branch attends over.
-# fmt: off
-_VOCAB_CHANNELS = (
-    "C1", "Pz", "C4", "F6", "FTT8h", "Oz", "Fp1", "FCC5h", "TPP8h", "CPP6h",
-    "C2", "F4", "OI2h", "AF4", "FCz", "CCP6h", "TP8", "POO10h", "FC1", "FC6",
-    "C5", "P8", "FT8", "P6", "P9", "Fz", "AFF1", "TPP10h", "AFF2", "P10",
-    "CPP2h", "M1", "FCC6h", "FTT7h", "FC2", "PPO2", "AFp3h", "AF7", "PO10", "AF8",
-    "CPP1h", "P7", "F1", "AFp4h", "PO9", "FT9", "CP2", "Iz", "FCC1h", "FC5",
-    "T5", "CP5", "CP6", "FFC5h", "F2", "M2", "POO9h", "AFF5h", "PO4", "POO3h",
-    "Fp2", "T3", "CP4", "POz", "TTP7h", "T7", "A2", "CCP4h", "T8", "PPO10h",
-    "FC3", "F3", "F5", "A1", "P3", "FC4", "FCC2h", "FFC6h", "FFT8h", "CCP2h",
-    "CPP4h", "T6", "FTT9h", "PPO6h", "CP3", "CP1", "AF3", "FT10", "OI1h", "TPP9h",
-    "P5", "I2", "CCP1h", "T4", "CCP3h", "O1", "PO5", "PPO9h", "PPO5h", "P1",
-    "AFz", "PO6", "PO3", "O2", "CPP5h", "FFC1h", "FCC4h", "FFT7h", "FFC2h", "FFC4h",
-    "Cz", "TP7", "Fpz", "FTT10h", "PO7", "CPP3h", "P4", "P2", "F8", "CPz",
-    "FCC3h", "FFC3h", "FT7", "I1", "TTP8h", "AFF6h", "CCP5h", "C6", "PPO1", "PO8",
-    "C3", "POO4h", "TPP7h", "F7", "T9", "TP9", "T10", "TP10", "POO1", "POO2",
-    "PPO1h", "PPO2h",
-)
-# fmt: on
-
-
 def _vocab_positions() -> torch.Tensor:
-    """``(142, 3)`` positions (m) of ``_VOCAB_CHANNELS`` in MNE's Colin27 10-05
-    montage, in its MNI frame (the reference's table, to its 6 decimals)."""
+    """``(142, 3)`` positions (m) of ST-EEGFormer's positioned vocabulary slots.
+
+    The slot names come from STEEGFormer's channel vocabulary, their positions
+    from MNE's Colin27 10-05 montage (the reference's table, to 6 decimals).
+    """
     montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
     ch_pos = montage.get_positions()["ch_pos"]
-    positions = np.stack([ch_pos[name] for name in _VOCAB_CHANNELS])
+    positions = np.stack([ch_pos[name] for name in _channel_order()])
     return torch.as_tensor(positions, dtype=torch.float32)
 
 
@@ -260,9 +241,11 @@ class CORTEG(EEGModuleMixin, nn.Module):
             raise ValueError(
                 f"n_merge_blocks must be in [1, depth={depth}], got {n_merge_blocks}."
             )
-        if n_chans_pos < len(_VOCAB_CHANNELS):
+        vocab_positions = _vocab_positions()  # (n_slots, 3)
+        n_slots = len(vocab_positions)
+        if n_chans_pos < n_slots:
             raise ValueError(
-                f"n_chans_pos must be at least {len(_VOCAB_CHANNELS)}, the "
+                f"n_chans_pos must be at least {n_slots}, the "
                 f"positioned slots of the vocabulary, got {n_chans_pos}."
             )
         self.embed_dim = embed_dim
@@ -288,7 +271,7 @@ class CORTEG(EEGModuleMixin, nn.Module):
                 )
         # Montage-specific, rebuilt from chs_info: not saved with the weights.
         self.register_buffer("default_pos", default_pos, persistent=False)
-        self.register_buffer("vocab_positions", _vocab_positions(), persistent=False)
+        self.register_buffer("vocab_positions", vocab_positions, persistent=False)
 
         # The ST-EEGFormer backbone, under the names of STEEGFormer's modules
         # so that its checkpoints load as they are.
@@ -329,7 +312,7 @@ class CORTEG(EEGModuleMixin, nn.Module):
             output_order="patch_channel",
         )
         self.channel_adapter = _KNNSoftFourierAdapter(
-            len(_VOCAB_CHANNELS),
+            n_slots,
             embed_dim,
             adapter_hidden,
             n_fourier_freqs,
