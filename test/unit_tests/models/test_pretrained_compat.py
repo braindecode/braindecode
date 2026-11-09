@@ -30,6 +30,7 @@ from braindecode.models import (
     AXON,
     BENDR,
     BIOT,
+    CORTEG,
     DIVER1,
     EEGDINO,
     EEGPT,
@@ -358,6 +359,16 @@ COMPAT = {
         windows=(256, 1024),
         skip=("G2",),
     ),
+    "CORTEG": dict(
+        cls=CORTEG,
+        sfreq=128,
+        n_times=128,
+        canon=None,
+        kind="ecog",
+        channels="coords",
+        coords_checked=True,
+        windows=(128, 1024),
+    ),
     "BrainOmni": dict(
         cls=BrainOmni,
         sfreq=256,
@@ -503,7 +514,9 @@ def test_geometry_contract(name, gname, gkw):
 NATIVE_ONLY = {"SleepFM", "SleepFMStager"}
 
 # No ``channel_strategy`` argument (not part of the #1241 channel layer).
-NO_STRATEGY = {"NeuroRVQ", "MAPA", "BrainOmni", "BrainTokenizer", "TFMTokenizer"}
+NO_STRATEGY = {
+    "NeuroRVQ", "MAPA", "BrainOmni", "BrainTokenizer", "TFMTokenizer", "CORTEG"
+}
 
 
 # BIOT's canonical input is bipolar; under a strategy it takes electrodes.
