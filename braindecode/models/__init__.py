@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from .cbramod import CBraMod
     from .codebrain import CodeBrain
     from .contrawr import ContraWR
+    from .corteg import CORTEG
     from .csbrain import CSBrain
     from .ctnet import CTNet
     from .dance import DANCE

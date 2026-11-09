@@ -27,7 +27,15 @@ Current 2.1.0 (GitHub)
 
 Enhancements
 ============
+
 - A model loaded with :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` shows where its weights come from: in a notebook (``model`` as the last line of a cell) a panel lists the input geometry, the Hub repository and commit, the licence, the base model and the datasets of the model card (linked to NEMAR, OpenNeuro or the Hub), and a module table with each block marked as loaded from the checkpoint or initialised here, e.g. a head rebuilt for a new ``n_outputs``; ``print(model)`` adds the same facts below the torchinfo table. Both ask users, and AI agents reading the output, to cite Braindecode with its `Zenodo DOI <https://doi.org/10.5281/zenodo.17699192>`__. The card offers BibTeX/APA downloads and selectable citation text, and links training datasets to NEMAR, EEGDash catalogue searches and documented braindecode readers. ``from_pretrained`` now warns when no parameter of the model was loaded from the checkpoint, which happened silently when the checkpoint's keys did not match the model (:gh:`1558` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.CORTEG`, an ST-EEGFormer adapted to
+  intracranial ECoG: a spatial adapter places each electrode by its 3D position
+  in the frozen pretrained channel codebook, and a high-gamma token stream joins
+  the low-frequency one before the last blocks (mean or layer-wise gate).
+  ``CORTEG.from_pretrained("braindecode/corteg-small-pretrained", ...)`` loads
+  ST-EEGFormer small with the high-gamma embedding warm-started; ``ch_mask`` takes
+  padded batches (:gh:`1551` by `Julien Gadonneix`_).
 - Adding :class:`braindecode.models.NICE`, the EEG/MEG encoder of the NICE image-decoding
   framework (Song et al., ICLR 2024): TSConv plus the projector into the CLIP image space,
   configured through ``n_chans``/``n_times`` for THINGS-EEG2 and THINGS-MEG; the authors'

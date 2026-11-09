@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import warnings
 from functools import lru_cache, partial
-from typing import Dict, Union
+from typing import Dict, Optional, Union
 
 import torch
 from einops.layers.torch import Rearrange
@@ -700,3 +700,12 @@ class _TransformerEncoderBlock(nn.Sequential):
                 drop_path,
             ),
         )
+
+    def forward(
+        self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """``attn_mask`` as in :class:`~braindecode.modules.MultiHeadAttention`."""
+        attention = self[0]
+        sublayer = attention.fn
+        x = x + attention.drop_path(sublayer[2](sublayer[1](sublayer[0](x), attn_mask)))
+        return self[1](x)
