@@ -94,6 +94,18 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     ``on_non_divisible``; with ``"pad"``, the zero-padded last segment counts
     as much as the others in the feature mean.
 
+    .. rubric:: Channel mask
+
+    With ``return_features=True``, ``forward`` takes ``ch_mask``, the
+    ``(batch, n_chans)`` mask of real channels that
+    :func:`~braindecode.datasets.pad_channels_collate` returns (real channels
+    first). The tokenizer and the attention read each channel alone, so a
+    recording with ``n_i`` real channels gets the features of its first
+    ``n_i`` parcels run alone, and the features and tokens of padded channels
+    are zero. The flattened ``final_layer`` is tied to ``n_chans``, so
+    ``ch_mask`` without ``return_features=True`` raises a ``ValueError``. The
+    argmax of the tokenizer passes no gradient to the input.
+
     .. rubric:: Pre-trained weights
 
     The released Cam-CAN MEG-GPT and EphysTokenizer weights, converted to this
@@ -154,18 +166,6 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     ``{"features": (batch, n_chans, embed_dim), "cls_token": None,
     "tokens": (batch, n_chans, n_segments * n_last_steps, embed_dim)}``, where
     ``"tokens"`` are the last layer's outputs before the mean over time.
-
-    .. rubric:: Channel mask
-
-    With ``return_features=True``, ``forward`` takes ``ch_mask``, the
-    ``(batch, n_chans)`` mask of real channels that
-    :func:`~braindecode.datasets.pad_channels_collate` returns (real channels
-    first). The tokenizer and the attention read each channel alone, so a
-    recording with ``n_i`` real channels gets the features of its first
-    ``n_i`` parcels run alone, and the features and tokens of padded channels
-    are zero. The flattened ``final_layer`` is tied to ``n_chans``, so
-    ``ch_mask`` without ``return_features=True`` raises a ``ValueError``. The
-    argmax of the tokenizer passes no gradient to the input.
 
     References
     ----------
