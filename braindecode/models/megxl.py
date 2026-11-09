@@ -248,61 +248,112 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
     def tokenize(self, x: torch.Tensor) -> torch.Tensor:
         """BioCodec codes ``(batch, n_chans, n_tokens, n_q)`` of ``x``."""
         batch, chans, _ = x.shape
+        # (batch, n_chans, n_times) -> (batch * n_chans, 1, n_times)
         x = x.reshape(batch * chans, 1, -1)
         # Each channel is scaled to unit RMS over the window.
+        # (batch * n_chans, 1, 1)
         scale = x.pow(2).mean(dim=2, keepdim=True).sqrt().clamp(min=1e-8)
+        # (batch * n_chans, 1, n_times) -> (batch * n_chans, tokenizer_dim, n_tokens)
+        # -> (batch * n_chans, n_tokens, tokenizer_dim)
         residual = self.encoder(x / scale).transpose(1, 2)
         # Not the shared RVQ forward: BioCodec picks codes by cosine similarity,
         # the shared quantizer by Euclidean distance.
         codes = []
         for vq in self.quantizer.layers:
+            # (batch * n_chans, n_tokens, tokenizer_dim)
+            # -> (batch * n_chans, n_tokens, codebook_dim)
             z = F.normalize(vq.project_in(residual), p=2.0, dim=-1)
+            # (codebook_size, codebook_dim)
             codebook = F.normalize(vq._codebook.embed, p=2.0, dim=1)
+            # (batch * n_chans, n_tokens, codebook_size) -> (batch * n_chans, n_tokens)
             index = (z @ codebook.t()).max(dim=-1).indices
+            # (batch * n_chans, n_tokens, tokenizer_dim)
             residual = residual - vq.project_out(F.embedding(index, vq._codebook.embed))
             codes.append(index)
+        # n_q x (batch * n_chans, n_tokens) -> (batch * n_chans, n_tokens, n_q)
+        # -> (batch, n_chans, n_tokens, n_q)
         return torch.stack(codes, dim=-1).reshape(batch, chans, -1, len(codes))
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         """Token features ``(batch, n_chans, n_tokens, latent_dim)``."""
         with torch.no_grad():
-            codes = self.tokenize(x)
+            codes = self.tokenize(x)  # (batch, n_chans, n_tokens, n_q)
         levels = []
         for q, vq in enumerate(self.quantizer.layers):
+            # (batch, n_chans, n_tokens) -> (batch, n_chans, n_tokens, codebook_dim)
             levels.append(F.embedding(codes[..., q], vq._codebook.embed))
+        # (batch, n_chans, n_tokens, n_q, codebook_dim)
+        # -> (batch, n_chans, n_tokens, n_q * codebook_dim)
+        # -> (batch, n_chans, n_tokens, latent_dim)
         h = self.rvq_projector(torch.stack(levels, dim=3).flatten(3))
         # Keep the original batched projections for bit-exact geometry gradients.
+        # (n_chans, 3) -> (batch, n_chans, 3) -> (batch * n_chans, 3)
         xyz = self.sensor_xyz.expand(x.shape[0], -1, -1)
         xyz = self.flatten_sensor_batch(xyz)
+        # (n_chans, 3) -> (batch, n_chans, 3) -> (batch * n_chans, 3)
         abc = self.sensor_abc.expand(x.shape[0], -1, -1)
         abc = self.flatten_sensor_batch(abc)
+        # (n_chans,) -> (batch, n_chans)
         sensor_type = self.sensor_type.expand(x.shape[0], -1)
+        # (batch * n_chans, 3) -> (batch * n_chans, fourier_pos_dim)
+        # -> (batch, n_chans, fourier_pos_dim)
         pos = _fourier_features(xyz, self.position_freqs)
         pos = self.restore_sensor_batch(pos)
         ori = _fourier_features(abc, self.orientation_freqs)
         ori = self.restore_sensor_batch(ori)
+        # Each sensor embedding (batch, n_chans, latent_dim) -> (batch, n_chans, 1,
+        # latent_dim) is added to every token; h stays (batch, n_chans, n_tokens,
+        # latent_dim).
         h = h + self.position_projector(pos).unsqueeze(2)
         h = h + self.orientation_projector(ori).unsqueeze(2)
         h = h + self.sensor_type_layer(sensor_type).unsqueeze(2)
         for block in self.blocks:
-            h = block(h)
+            h = block(h)  # (batch, n_chans, n_tokens, latent_dim)
         return h
 
     def forward(
-        self, x: torch.Tensor, return_features: bool = False
+        self,
+        x: torch.Tensor,
+        return_features: bool = False,
+        ch_mask: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
-        """Classify ``x`` or return the pooled features."""
-        feat = self.encode(x).mean(dim=2).flatten(1)  # (batch, n_chans * latent_dim)
+        """Classify ``x`` or return the pooled features.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input of shape ``(batch, n_chans, n_times)``.
+        return_features : bool
+            If True, return ``{"features": (batch, n_chans * latent_dim),
+            "cls_token": None}`` instead of the logits.
+        ch_mask : torch.Tensor, optional
+            Not supported: any value but ``None`` raises a ``ValueError``.
+            The head flattens the ``n_chans * latent_dim`` features and the
+            sensor geometry is the fixed ``chs_info`` montage, so every sample
+            needs all ``n_chans`` channels.
+        """
+        if ch_mask is not None:
+            raise ValueError(
+                "MEGXL does not accept ch_mask: its head flattens the n_chans * "
+                "latent_dim features and its sensor geometry is the chs_info "
+                "montage, so every sample needs all n_chans channels."
+            )
+        # (batch, n_chans, n_times) -> (batch, n_chans, n_tokens, latent_dim)
+        # -> mean over time (batch, n_chans, latent_dim)
+        # -> (batch, n_chans * latent_dim)
+        feat = self.encode(x).mean(dim=2).flatten(1)
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": feat,
                 "cls_token": None,  # nosec B105
             }
             return out
-        return self.final_layer(feat)
+        return self.final_layer(feat)  # (batch, n_outputs)
 
 
 def _fourier_features(x: torch.Tensor, freqs: torch.Tensor) -> torch.Tensor:
     """Gaussian random Fourier features ``[sin, cos](2 pi x @ freqs)``."""
+    # (n, 3) @ (3, fourier_pos_dim // 2) -> (n, fourier_pos_dim // 2)
     proj = 2 * math.pi * (x @ freqs)
+    # -> (n, fourier_pos_dim)
     return torch.cat([torch.sin(proj), torch.cos(proj)], dim=-1)
