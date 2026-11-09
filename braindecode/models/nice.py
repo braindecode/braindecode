@@ -126,13 +126,13 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
             nn.Conv2d(1, n_filters, (1, filter_time_length)),
             # -> (batch, n_filters, n_chans, n_steps)
             nn.AvgPool2d((1, pool_time_length), (1, pool_time_stride)),
-            nn.BatchNorm2d(n_filters),
-            activation(),
+            nn.BatchNorm2d(n_filters),  # (batch, n_filters, n_chans, n_steps)
+            activation(),  # (batch, n_filters, n_chans, n_steps)
             # (batch, n_filters, n_chans, n_steps) -> (batch, n_filters, 1, n_steps)
             nn.Conv2d(n_filters, n_filters, (self.n_chans, 1)),
-            nn.BatchNorm2d(n_filters),
-            activation(),
-            nn.Dropout(drop_prob),
+            nn.BatchNorm2d(n_filters),  # (batch, n_filters, 1, n_steps)
+            activation(),  # (batch, n_filters, 1, n_steps)
+            nn.Dropout(drop_prob),  # (batch, n_filters, 1, n_steps)
         )
         # (batch, n_filters, 1, n_steps) -> (batch, n_filters, 1, n_steps)
         self.projection = nn.Conv2d(n_filters, n_filters, 1)
@@ -143,7 +143,10 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
             nn.Linear(n_filters * n_steps, embed_dim),
             # (batch, embed_dim) -> (batch, embed_dim)
             PostNormResidual(
-                nn.Sequential(nn.GELU(), nn.Linear(embed_dim, embed_dim)),
+                nn.Sequential(
+                    nn.GELU(),  # (batch, embed_dim)
+                    nn.Linear(embed_dim, embed_dim),  # (batch, embed_dim)
+                ),
                 embed_dim,
                 drop_prob_proj,
             ),
@@ -174,11 +177,29 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
         x: Tensor,
         return_features: bool = False,
         ch_mask: Optional[Tensor] = None,
+        mask: Optional[Tensor] = None,
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         """Encode ``x`` of shape (batch, n_chans, n_times).
 
-        Returns the logits (batch, n_outputs), or with ``return_features=True``
-        a dict whose ``"features"`` is the aligned embedding (batch, embed_dim).
+        Returns logits ``(batch, n_outputs)``. In eager mode,
+        ``return_features=True`` returns ``"features"`` (the aligned embedding,
+        ``(batch, embed_dim)``), ``"cls_token"`` (None), and ``"tokens"``
+        ``(batch, n_steps, n_filters)``: the projected temporal convolution map
+        before flattening and the global projector, not per-channel tokens.
+        ``n_steps = (n_times - filter_time_length - pool_time_length + 1)
+        // pool_time_stride + 1``. TorchScript always returns logits.
+
+        ``mask`` is an optional boolean ``(batch, n_chans, n_times)`` tensor:
+        True replaces the raw sample with zero before the temporal convolution.
+        Hidden samples may contain NaN; their input gradients are zero. Mask
+        sampling and the SSL loss are downstream, with no reconstruction head.
+        Tokens are not forced to zero: each reads all montage channels and
+        ``filter_time_length + pool_time_length - 1`` input samples (75 with
+        defaults), starting at ``j * pool_time_stride`` for token ``j``.
+        Receptive fields overlap and are noncausal; BatchNorm during training
+        also shares statistics across time, channels and recordings. Account
+        for this when choosing masked spans and reconstruction targets.
+
         A ``ch_mask`` (see :func:`~braindecode.functional.check_ch_mask`) raises
         a ``ValueError``: the spatial convolution has one weight per channel of
         the ``n_chans`` montage, so a recording cannot run on fewer channels.
@@ -190,12 +211,22 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
                 "NICE does not accept ch_mask: its spatial convolution is sized to "
                 "all n_chans channels, so it cannot run on fewer channels."
             )
+        if mask is not None:
+            if mask.shape != x.shape or mask.dtype != torch.bool:
+                raise ValueError(
+                    "mask must be boolean with shape (batch, n_chans, n_times), "
+                    "matching x; True hides an input sample."
+                )
+            mask = mask.to(device=x.device)  # (batch, n_chans, n_times)
+            x = x.masked_fill(mask, 0.0)  # (batch, n_chans, n_times)
         # (batch, n_chans, n_times) -> (batch, 1, n_chans, n_times)
         x = self.add_kernel_dim(x)
         # (batch, 1, n_chans, n_times) -> (batch, n_filters, 1, n_steps)
         x = self.tsconv(x)
         # (batch, n_filters, 1, n_steps) -> (batch, n_filters, 1, n_steps)
         x = self.projection(x)
+        # Keep the actual map for the optional token output, without a copy.
+        temporal_map = x  # (batch, n_filters, 1, n_steps)
         # (batch, n_filters, 1, n_steps) -> (batch, n_steps * n_filters)
         x = self.flatten(x)
         # (batch, n_steps * n_filters) -> (batch, embed_dim)
@@ -205,5 +236,7 @@ class NICE(EEGModuleMixin, nn.Module, license="mit"):
         if return_features:
             if torch.jit.is_scripting():
                 return logits
-            return {"features": features, "cls_token": None}
+            # (batch, n_filters, 1, n_steps) -> (batch, n_steps, n_filters)
+            tokens = temporal_map.squeeze(2).transpose(1, 2)
+            return {"features": features, "cls_token": None, "tokens": tokens}
         return logits
