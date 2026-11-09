@@ -659,7 +659,7 @@ def test_pretrained_provenance_in_repr(tmp_path):
     page = same._repr_html_()
     assert "https://openneuro.org/datasets/ds002718" in page
     assert "https://huggingface.co/datasets/braindecode/chbmit" in page
-    assert "100.0%" in page and "fully loaded tensors" in page
+    assert "100.0%" in page and "fully checkpoint-loaded tensors" in page
 
     # A new head is initialised here, not loaded.
     head = BIOT.from_pretrained(tmp_path, n_outputs=3)
@@ -668,7 +668,7 @@ def test_pretrained_provenance_in_repr(tmp_path):
     assert head_params and not head_params & loaded
     assert set(dict(head.named_parameters())) - head_params <= loaded
     assert "new: final_layer" in str(head)
-    assert "bd-new" in head._repr_html_()
+    assert "bd-adapt" in head._repr_html_() and "Train before use" in head._repr_html_()
 
     restored = copy.deepcopy(head)
     assert restored._pretrained_provenance["loaded"] == loaded
@@ -918,15 +918,19 @@ def test_provenance_failed_reload_also_invalidates_source(tmp_path):
     assert "_pretrained_provenance" not in loaded.__dict__
 
 
-def test_model_html_has_offline_logo_and_citation_notice():
+def test_model_html_has_logo_and_zenodo_citation(tmp_path):
     model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
     page = model._repr_html_()
-    assert 'src="data:image/svg+xml;base64,' in page
-    assert 'alt="braindecode"' in page
-    assert "Please cite braindecode." in page
-    assert "10.5281/zenodo.17699192" in page
-    assert "10.1002/hbm.23730" in page
-    assert "Built from scratch" in page
+    assert "braindecode.org/stable/_static/braindecode_long.svg" in page
+    assert 'alt="Braindecode"' in page
+    assert "Cite Braindecode." in page and "Randomly initialised" in page
+    assert page.count("10.5281/zenodo.17699192") >= 3  # badge, BibTeX, agent note
+    assert "hbm.23730" not in page
+    assert "Note for AI agents" in page
+    model.save_pretrained(tmp_path)
+    assert "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.17699192" in str(
+        EEGNet.from_pretrained(tmp_path)
+    )
 
 
 def test_checkpoint_source_without_config(monkeypatch, tmp_path):

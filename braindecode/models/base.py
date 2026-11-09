@@ -1103,14 +1103,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             f"{table}\nPretrained weights: {repo}\n"
             f"Trained on (model card): {', '.join(data['datasets']) or 'not listed'}\n"
             f"Loaded from the listed checkpoint(s): {data['loaded']:,} of {data['total']:,} "
-            f"{scope} ({data['percent']:.1f}% of materialised parameters){new}"
+            f"{scope} ({data['percent']:.1f}% of materialised parameters){new}\n"
+            "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.17699192"
         )
 
     def _repr_html_(self) -> str:
         """Notebook model card, rendered from an autoescaped Jinja template (as in MNE)."""
-        from base64 import b64encode
-        from importlib.resources import files
-
         from jinja2 import Environment, PackageLoader
 
         template = Environment(
@@ -1122,9 +1120,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             name=type(self).__name__,
             data=self._pretrained_summary(),
             architecture=torch.nn.Module.__repr__(self),
-            logo=b64encode(
-                files("braindecode.models").joinpath("braindecode.svg").read_bytes()
-            ).decode(),
         )
 
     @staticmethod
