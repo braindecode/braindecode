@@ -27,17 +27,18 @@ to learn on sequences of EEG windows using the openly accessible Sleep Physionet
 #
 # First, we load the data using the
 # :class:`braindecode.datasets.sleep_physionet.SleepPhysionet` class. We load
-# six subjects with two recordings each. Subjects 0-3 are used for training
-# and subjects 4-5 for validation.
+# three subjects with two recordings (nights) each. Subjects 0 and 1 are used
+# for training and subject 2 for validation, as for the pretrained checkpoint
+# loaded below.
 #
 
 from numbers import Integral
 
 from braindecode.datasets import SleepPhysionet
 
-subject_ids = [0, 1, 2, 3, 4, 5]
-train_subject_ids = [0, 1, 2, 3]
-valid_subject_ids = [4, 5]
+subject_ids = [0, 1, 2]
+train_subject_ids = [0, 1]
+valid_subject_ids = [2]
 dataset = SleepPhysionet(
     subject_ids=subject_ids, recording_ids=[1, 2], crop_wake_mins=30
 )
@@ -117,10 +118,16 @@ preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We split the dataset into training and validation sets. Subjects 0-3 are
-# used for training and subjects 4-5 for held-out validation.
+# We split the dataset into training and validation sets by subject, so that
+# no night of the validation subject is seen during training. ``split`` takes
+# the indices of the recordings, which we look up in the ``"subject"`` column
+# of the description.
 
-split_ids = dict(train=train_subject_ids, valid=valid_subject_ids)
+subjects = windows_dataset.description["subject"]
+split_ids = dict(
+    train=subjects.index[subjects.isin(train_subject_ids)].tolist(),
+    valid=subjects.index[subjects.isin(valid_subject_ids)].tolist(),
+)
 splits = windows_dataset.split(split_ids)
 train_set, valid_set = splits["train"], splits["valid"]
 
