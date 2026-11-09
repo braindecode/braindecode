@@ -816,6 +816,8 @@ models_mandatory_parameters: list[
         {"sfreq": 200.0, "n_times": 1000},
     ),
     ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
+    # 1 s of the 128 Hz low-frequency stream
+    ("CORTEG", ["chs_info", "n_outputs", "n_times"], {"n_times": 128, "sfreq": 128.0}),
     (
         "MVPFormer",
         ["n_chans", "n_outputs", "n_times", "sfreq"],

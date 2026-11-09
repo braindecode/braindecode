@@ -14,6 +14,7 @@ import torch
 
 from braindecode.models import (
     BIOT,
+    CORTEG,
     DIVER1,
     LUNA,
     MAPA,
@@ -61,6 +62,15 @@ def _mapa_indices(i, n_chans):
 
 def _diver1_metadata(i, n_chans):
     return channel_metadata_from_chs_info(_seeg_chs(n_chans, ("seeg", "ecog")[i % 2], i))
+
+
+def _corteg(**kwargs):
+    model = CORTEG(n_chans=2, n_outputs=3, n_times=64, embed_dim=32, depth=2,
+                   num_heads=2, n_merge_blocks=1, **kwargs)
+    with torch.no_grad():  # off the zero init of the codebook, residual and gate
+        for parameter in model.parameters():
+            parameter.normal_(0.0, 0.1)
+    return model
 
 
 # name: (model, n_times, per-recording input (name, builder, batched alone) or None)
@@ -133,6 +143,7 @@ _CASES = {
         512,
         ("sensor_indices", _mapa_indices, False),
     ),
+    "CORTEG": lambda: (_corteg(), 64, ("pos", _positions, True)),
 }
 
 
@@ -178,6 +189,22 @@ def _padded_case(name):
         batch_kwargs = {key: padded.to(alone[0].dtype)}
         alone_kwargs = [{key: value[None] if batched else value} for value in alone]
     return model, x, mask, xs, batch_kwargs, alone_kwargs
+
+
+@pytest.mark.parametrize("merge_strategy", ["average", "layerwise_gate"])
+def test_corteg_high_gamma_ch_mask_matches_each_recording_alone(merge_strategy):
+    torch.manual_seed(0)
+    model = _corteg(merge_strategy=merge_strategy).eval()
+    x, mask, xs = _padded_batch(64)
+    x_hi, _, his = _padded_batch(100)
+    pos = [_positions(i, n_real) for i, n_real in enumerate(N_REAL)]
+    padded_pos = torch.zeros(len(N_REAL), max(N_REAL), 3)
+    for i, value in enumerate(pos):
+        padded_pos[i, : len(value)] = value
+    alone = [{"x_hi": hi[None], "pos": p[None]} for hi, p in zip(his, pos)]
+    _assert_matches_alone(
+        model, x, mask, xs, {"x_hi": x_hi, "pos": padded_pos}, alone
+    )
 
 
 def _labram_case():
