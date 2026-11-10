@@ -852,6 +852,12 @@ models_mandatory_parameters: list[
     ),
     ("BrainTokenizer", ["chs_info", "n_times", "sfreq"], None),
     (
+        "MEGXL",
+        ["chs_info", "n_outputs", "n_times"],
+        # 10 s at the released 50 Hz (42 tokens); 2 of the 8 released blocks.
+        {"sfreq": 50.0, "n_times": 500, "num_layers": 2},
+    ),
+    (
         "DIVER1",
         ["chs_info", "n_outputs", "n_times"],
         {"sfreq": 500.0},

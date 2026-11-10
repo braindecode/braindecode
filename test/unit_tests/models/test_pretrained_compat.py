@@ -37,6 +37,7 @@ from braindecode.models import (
     EEGPT,
     LUNA,
     MAPA,
+    MEGXL,
     NICE,
     REVE,
     ZUNA,
@@ -405,6 +406,18 @@ COMPAT = {
         short_match="n_times",
         kwargs=dict(random_projection=64),
     ),
+    # Positions and coil orientations from chs_info, as BrainOmni; magnetometers
+    # (kind "mag") because the checkpoint is MEG-only.
+    "MEGXL": dict(
+        cls=MEGXL,
+        sfreq=50,
+        n_times=600,
+        canon=TEN_TWENTY,
+        kind="mag",
+        channels="coords",
+        coords_checked=True,
+        skip=("G2",),
+    ),
     # MEG sensors in FIF order, zero-padded to the 306 of the release; no
     # geometry is read, so any count up to 306 builds (0.5 s windows at 250 Hz).
     "BBL": dict(
@@ -543,6 +556,7 @@ NO_STRATEGY = {
     "BrainOmni",
     "BrainTokenizer",
     "TFMTokenizer",
+    "MEGXL",
     "BBL",
     "CORTEG",
     "NICE",
