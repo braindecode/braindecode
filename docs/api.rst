@@ -198,6 +198,7 @@ interface for all EEG models and can derive variable names when needed.
      MAPA
      MEDFormer
      MEGGPT
+     MEGXL
      MetaNeuromotorHand
      MIRepNet
      MSCFormer

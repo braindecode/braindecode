@@ -63,6 +63,7 @@ if TYPE_CHECKING:
     from .mapa import MAPA
     from .medformer import MEDFormer
     from .meggpt import MEGGPT
+    from .megxl import MEGXL
     from .meta_neuromotor import MetaNeuromotorHand
     from .mirepnet import MIRepNet
     from .mscformer import MSCFormer

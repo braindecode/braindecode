@@ -60,6 +60,7 @@ The following components are licensed under the MIT License:
 - `braindecode/models/gcnsnet.py`
 - `braindecode/models/corteg.py`
 - `braindecode/models/meggpt.py`
+- `braindecode/models/megxl.py`
 - `braindecode/models/nice.py`
 
 The `brainomni.py` file is a derivative of `OpenTSLab/BrainOmni` (MIT). The
