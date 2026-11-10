@@ -559,7 +559,6 @@ NO_STRATEGY = {
     "MEGXL",
     "BBL",
     "CORTEG",
-    "CORTEG",
     "NICE",
 }
 
