@@ -28,6 +28,7 @@ import torch
 
 from braindecode.models import (
     AXON,
+    BBL,
     BENDR,
     BIOT,
     CORTEG,
@@ -404,6 +405,18 @@ COMPAT = {
         short_match="n_times",
         kwargs=dict(random_projection=64),
     ),
+    # MEG sensors in FIF order, zero-padded to the 306 of the release; no
+    # geometry is read, so any count up to 306 builds (0.5 s windows at 250 Hz).
+    "BBL": dict(
+        cls=BBL,
+        sfreq=250,
+        n_times=125,
+        canon=None,
+        kind="mag",
+        n_chans_fixed=306,
+        channels="fixed_order_unchecked",
+        windows=(125, 1000),
+    ),
     # A spatial convolution over n_chans and a flatten sized by n_times: any
     # montage and window builds (the released weights: 63 channels, 250 samples).
     "NICE": dict(
@@ -530,6 +543,7 @@ NO_STRATEGY = {
     "BrainOmni",
     "BrainTokenizer",
     "TFMTokenizer",
+    "BBL",
     "CORTEG",
     "NICE",
 }

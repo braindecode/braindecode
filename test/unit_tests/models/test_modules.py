@@ -37,6 +37,8 @@ from braindecode.modules import (
     MaxNormLinear,
     MaxNormParametrize,
     SafeLog,
+    SEANetConv1d,
+    SEANetResBlock,
     SqueezeAndExcitation,
     TDSConvEncoder,
     TimeDistributed,
@@ -2405,3 +2407,25 @@ def test_squeeze_and_excitation_forward():
 
     assert module.fc1.out_channels == module.fc2.in_channels
     assert outputs.shape == inputs.shape
+
+
+@pytest.mark.parametrize("causal", [False, True])
+def test_seanet_resblock_matches_encodec_padding(causal):
+    """Dilated block with identity skip and no compression, padded as EnCodec's
+    pad1d: split around the signal, or all on the left when causal."""
+    torch.manual_seed(0)
+    block = SEANetResBlock(4, dilation=2, compress=1, true_skip=True, causal=causal)
+    conv3, conv1 = block.block[1].conv, block.block[3].conv
+    x = torch.randn(2, 4, 9)
+    total = 4  # effective kernel (3 - 1) * 2 + 1 = 5, stride 1
+    left = total if causal else total - total // 2
+    hidden = torch.nn.functional.pad(
+        torch.nn.functional.elu(x), (left, total - left), mode="reflect"
+    )
+    expected = x + conv1(torch.nn.functional.elu(conv3(hidden)))
+    assert isinstance(block.shortcut, nn.Identity) and conv3.out_channels == 4
+    assert torch.equal(block(x), expected)
+    # Strided causal conv: padding_total 2 on the left, the extra 1 on the right.
+    conv = SEANetConv1d(4, 3, 4, 2, causal=True)
+    expected = conv.conv(torch.nn.functional.pad(x, (2, 1), mode="reflect"))
+    assert torch.equal(conv(x), expected)
