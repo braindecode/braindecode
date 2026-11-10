@@ -228,6 +228,7 @@ interface for all EEG models and can derive variable names when needed.
      SyncNet
      TFMTokenizer
      TFMTokenizerOutput
+     TCCNet
      TCFormer
      TIDNet
      TMSANet
