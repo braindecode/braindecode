@@ -129,6 +129,8 @@ _KNOWN_PRIVATE_BLOCKS = {
     ("tcformer", "_MultiKernelConvBlock"),
     ("tcformer", "_TCNResidualBlock"),
     ("tcn", "_TemporalBlock"),
+    ("tccnet", "_TCCContextAttention"),
+    ("tccnet", "_TCCResidualBlock"),
     ("tfm_tokenizer", "_GroupNorm"),
     ("tidnet", "_ConvBlock2D"),
     ("tmsanet", "_TMSAAttention"),

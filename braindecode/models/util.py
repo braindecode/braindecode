@@ -699,6 +699,11 @@ models_mandatory_parameters: list[
     ("EEGSym", ["chs_info", "n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("TSception", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "TCCNet",
+        ["n_chans", "n_outputs"],
+        {"n_chans": 10, "n_times": 300, "sfreq": 100.0},
+    ),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("NICE", ["n_chans", "n_outputs", "n_times"], None),

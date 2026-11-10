@@ -92,6 +92,7 @@ if TYPE_CHECKING:
     from .sstdpn import SSTDPN
     from .steegformer import STEEGFormer
     from .syncnet import SyncNet
+    from .tccnet import TCCNet
     from .tcformer import TCFormer
     from .tcn import BDTCN, TCN
     from .tfm_tokenizer import TFMTokenizer, TFMTokenizerOutput
