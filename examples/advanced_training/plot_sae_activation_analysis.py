@@ -829,7 +829,7 @@ for label in ("left_hand", "right_hand"):
 #        visualization.* Human Brain Mapping, 38(11), 5391–5420.
 #        DOI: 10.1002/hbm.23730
 #
-# * `SAE Lens documentation <https://jbloomaus.github.io/SAELens/>`_ describes
+# * `SAE Lens documentation <https://decoderesearch.github.io/SAELens/>`_ describes
 #   the external training and inference APIs used here (tested with 6.51.3).
 # * Makhzani and Frey, `k-Sparse Autoencoders
 #   <https://arxiv.org/abs/1312.5663>`_, motivate sparse dictionary learning.
