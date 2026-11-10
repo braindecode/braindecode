@@ -28,6 +28,7 @@ from scipy.signal import stft
 from torch import nn
 
 from braindecode.models import (
+    BBL,
     BDTCN,
     BENDR,
     BIOT,
@@ -6041,6 +6042,78 @@ def test_neurorvq_output_and_features(neurorvq_model_kwargs):
     assert logits.shape == (2, 4)
     assert features["features"].shape == (2, 100 * 4 * 3 * 3)
     assert features["cls_token"] is None
+
+
+def test_bbl_pads_sensors_gates_datasets_and_averages_subjects():
+    """Fewer channels are zero-padded to ``n_sensors``, ``dataset_index`` picks
+    the projector slice, and without ``subject_index`` the rows flagged in
+    ``trained_subjects`` are averaged."""
+    torch.manual_seed(0)
+    kw = dict(
+        n_outputs=2, n_times=40, n_sensors=8, n_datasets=2, n_subjects=5,
+        subject_dim=3, model_dim=16, n_filters=4,
+    )  # fmt: skip
+    model = BBL(n_chans=5, **kw).eval()
+    full = BBL(n_chans=8, **kw).eval()
+    full.load_state_dict(model.state_dict())
+    x = torch.randn(2, 5, 40)
+    subjects = torch.tensor([1, 3])
+    with torch.no_grad():
+        padded = full(torch.nn.functional.pad(x, (0, 0, 0, 3)), subjects)
+        assert torch.equal(model(x, subjects), padded)
+        assert not torch.equal(model(x, subjects, torch.tensor([1, 1])), padded)
+        model.trained_subjects.copy_(torch.tensor([0.0, 1, 0, 1, 0]))
+        feat = model(x, return_features=True)["features"]
+    mean = model.subject_embedding.weight[[1, 3]].mean(0)
+    torch.testing.assert_close(feat[:, -3:], mean.expand(2, -1))
+    # A wider input than n_chans is not cropped to fit n_sensors.
+    with pytest.raises(RuntimeError):
+        full(torch.randn(2, 9, 40))
+    with pytest.raises(ValueError, match="n_sensors"):
+        BBL(n_chans=9, n_outputs=2, n_sensors=8)
+
+
+@pytest.mark.parametrize("hide_all", [False, True])
+def test_bbl_temporal_mask_none_false_rng_and_gradients(hide_all):
+    """All-false masking preserves no-mask values, gradients and RNG; selected
+    NaNs are sanitized before context, including an entirely hidden window."""
+    torch.manual_seed(0)
+    model = BBL(
+        n_chans=3, n_outputs=2, n_times=39, n_sensors=5, n_datasets=2,
+        n_subjects=4, model_dim=8, subject_dim=2, n_filters=2,
+    ).eval()
+    x = torch.randn(2, 3, 39)
+    false = torch.zeros(2, 39, dtype=torch.bool)
+    state = {k: v.clone() for k, v in model.state_dict().items()}
+    rng = torch.get_rng_state().clone()
+    xi = x.clone().requires_grad_(True)
+    logits = model(xi)
+    grads = torch.autograd.grad(logits.sum(), [xi, *model.parameters()], allow_unused=True)
+    yi = x.clone().requires_grad_(True)
+    masked_logits = model(yi, temporal_mask=false)
+    masked_grads = torch.autograd.grad(masked_logits.sum(), [yi, *model.parameters()], allow_unused=True)
+    assert torch.equal(logits, masked_logits)
+    for a, b in zip(grads, masked_grads):
+        assert (a is None and b is None) or torch.equal(a, b)
+    assert torch.equal(torch.get_rng_state(), rng)
+    assert all(torch.equal(state[k], v) for k, v in model.state_dict().items())
+    mask = torch.full_like(false, hide_all)
+    mask[:, 10:20] = True
+    corrupt = x.masked_fill(mask[:, None, :], float("nan")).requires_grad_(True)
+    actual = model(corrupt, temporal_mask=mask)
+    expected = model(x.masked_fill(mask[:, None, :], 0.0))
+    assert torch.equal(actual, expected)
+    actual.sum().backward()
+    hidden = mask[:, None, :].expand_as(corrupt)
+    assert torch.equal(corrupt.grad[hidden], torch.zeros_like(corrupt.grad[hidden]))
+    assert all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters())
+    scripted = torch.jit.script(model)
+    with torch.no_grad():
+        torch.testing.assert_close(scripted(corrupt, temporal_mask=mask), actual)
+        seq = scripted(corrupt, temporal_mask=mask, return_features=True, return_temporal_features=True)
+        assert seq["temporal_features"].shape == (2, 8, 2)
+    with pytest.raises(ValueError, match="temporal_mask"):
+        model(x, temporal_mask=torch.zeros(2, 3, 39))
 
 
 @pytest.mark.parametrize(

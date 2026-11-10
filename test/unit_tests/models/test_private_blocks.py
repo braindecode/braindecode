@@ -47,7 +47,6 @@ _KNOWN_PRIVATE_BLOCKS = {
     ("brainomni", "_SpatialTemporalBlock"),
     ("brainomni", "_RotaryPositionalEmbedding"),
     ("brainomni", "_MultiHeadAttentionRoPE"),
-    ("brainomni", "_SEANetResBlock"),
     ("cbramod", "_PatchEmbedding"),
     ("cbramod", "_TransformerEncoder"),
     ("codebrain", "_RMSNorm"),

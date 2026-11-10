@@ -151,6 +151,7 @@ interface for all EEG models and can derive variable names when needed.
      AttentionBaseNet
      AttnSleep
      BaRISTA
+     BBL
      BDTCN
      BENDR
      BIOT
@@ -432,6 +433,26 @@ These modules implement the vector quantizers of the tokenizer models, such as
     EMACodebook
     VectorQuantizer
     ResidualVectorQuantizer
+
+SEANet
+======
+
+The EnCodec SEANet convolutional encoder and decoder, with their blocks, shared by the
+codec models (BrainOmni, BBL).
+
+:py:mod:`braindecode.modules.seanet`:
+
+.. autosummary::
+    :toctree: generated/seanet
+    :template: class_in_subdir
+    :recursive:
+
+    SEANetConv1d
+    SEANetConvTranspose1d
+    SEANetDecoder
+    SEANetEncoder
+    SEANetLSTM
+    SEANetResBlock
 
 Stats
 =====

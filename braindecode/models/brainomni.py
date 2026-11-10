@@ -17,7 +17,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mne.io.constants import FIFF
 from torch.nn import RMSNorm
-from torch.nn.utils.parametrizations import weight_norm
 
 from braindecode.functional import apply_rotary, init_weights_, rotary_frequencies
 from braindecode.models.base import EEGModuleMixin
@@ -25,7 +24,7 @@ from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
     warn_if_sfreq_differs,
 )
-from braindecode.modules import FeedForwardBlock
+from braindecode.modules import FeedForwardBlock, SEANetDecoder, SEANetEncoder
 from braindecode.modules.quantization import ResidualVectorQuantizer
 
 
@@ -797,7 +796,7 @@ class _TokenizerEncoder(nn.Module):
         n_neuro,
     ) -> None:
         super().__init__()
-        self.seanet_encoder = _seanet_encoder(
+        self.seanet_encoder = SEANetEncoder(
             n_dim, n_filters, ratios, kernel_size, last_kernel_size
         )
         self.neuros = nn.Parameter(torch.randn(n_neuro, n_dim))
@@ -838,7 +837,7 @@ class _TokenizerDecoder(nn.Module):
     ) -> None:
         super().__init__()
         self.forwardsolution = _ForwardSolution(n_dim, n_head, dropout)
-        self.seanet_decoder = _seanet_decoder(
+        self.seanet_decoder = SEANetDecoder(
             n_dim, n_filters, ratios, kernel_size, last_kernel_size
         )
 
@@ -858,112 +857,3 @@ class _TokenizerDecoder(nn.Module):
         x = self.seanet_decoder(x.reshape(-1, dim, tok))
         # (b c w) 1 l -> b c w l
         return x.reshape(batch, chans, nwin, x.shape[-1])
-
-
-class _SEANetConv1d(nn.Module):
-    """Weight-normed Conv1d with EnCodec's non-causal reflect padding."""
-
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1):
-        super().__init__()
-        self.conv = weight_norm(
-            nn.Conv1d(in_channels, out_channels, kernel_size, stride)
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        kernel_size, stride = self.conv.kernel_size[0], self.conv.stride[0]
-        padding_total = kernel_size - stride
-        # Round the length up so the last strided window is full.
-        extra = (kernel_size - padding_total - x.shape[-1]) % stride
-        right = padding_total // 2
-        padding = (padding_total - right, right + extra)
-        if max(padding) == 0:  # 1x1 convs: padding would only copy x
-            return self.conv(x)
-        # Zero-extend a signal too short to reflect, as EnCodec does.
-        short = max(max(padding) - x.shape[-1] + 1, 0)
-        if short > 0:  # F.pad with nothing to pad still copies x
-            x = F.pad(x, (0, short))
-        x = F.pad(x, padding, mode="reflect")
-        return self.conv(x[..., : x.shape[-1] - short])
-
-
-class _SEANetConvTranspose1d(nn.Module):
-    """Weight-normed ConvTranspose1d trimmed as EnCodec (non-causal)."""
-
-    def __init__(self, in_channels, out_channels, kernel_size, stride):
-        super().__init__()
-        self.convtr = weight_norm(
-            nn.ConvTranspose1d(in_channels, out_channels, kernel_size, stride)
-        )
-        self.padding_total = kernel_size - stride
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = self.convtr(x)
-        right = self.padding_total // 2
-        return y[..., self.padding_total - right : y.shape[-1] - right]
-
-
-class _SEANetLSTM(nn.Module):
-    """Two-layer LSTM with a skip connection over ``(batch, dim, time)``."""
-
-    def __init__(self, dimension: int):
-        super().__init__()
-        self.lstm = nn.LSTM(dimension, dimension, 2)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # 4D-view permute: Gaudi lazy mode cannot compile the LSTM after a 3D one.
-        x = x.unsqueeze(-1).permute(2, 0, 1, 3).squeeze(-1)
-        y, _ = self.lstm(x)
-        return (y + x).permute(1, 2, 0)
-
-
-class _SEANetResBlock(nn.Module):
-    """``ELU -> conv3 -> ELU -> conv1`` plus a 1x1 conv shortcut."""
-
-    def __init__(self, dim: int):
-        super().__init__()
-        self.block = nn.Sequential(
-            nn.ELU(),
-            _SEANetConv1d(dim, dim // 2, 3),
-            nn.ELU(),
-            _SEANetConv1d(dim // 2, dim, 1),
-        )
-        self.shortcut = _SEANetConv1d(dim, dim, 1)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.shortcut(x) + self.block(x)
-
-
-def _seanet_encoder(dim, n_filters, ratios, kernel_size, last_kernel_size):
-    """SEANet encoder of the release: ``(N, 1, L) -> (N, dim, L / prod(ratios))``."""
-    layers = [_SEANetConv1d(1, n_filters, kernel_size)]
-    mult = 1
-    for ratio in reversed(ratios):
-        layers += [
-            _SEANetResBlock(mult * n_filters),
-            nn.ELU(),
-            _SEANetConv1d(mult * n_filters, 2 * mult * n_filters, 2 * ratio, ratio),
-        ]
-        mult *= 2
-    layers += [
-        _SEANetLSTM(mult * n_filters),
-        nn.ELU(),
-        _SEANetConv1d(mult * n_filters, dim, last_kernel_size),
-    ]
-    return nn.Sequential(*layers)
-
-
-def _seanet_decoder(dim, n_filters, ratios, kernel_size, last_kernel_size):
-    """Mirror of :func:`_seanet_encoder` with transposed convolutions."""
-    mult = 2 ** len(ratios)
-    layers = [_SEANetConv1d(dim, mult * n_filters, kernel_size)]
-    layers += [_SEANetLSTM(mult * n_filters)]
-    for ratio in ratios:
-        out = mult * n_filters // 2
-        layers += [
-            nn.ELU(),
-            _SEANetConvTranspose1d(mult * n_filters, out, 2 * ratio, ratio),
-            _SEANetResBlock(out),
-        ]
-        mult //= 2
-    layers += [nn.ELU(), _SEANetConv1d(n_filters, 1, last_kernel_size)]
-    return nn.Sequential(*layers)
