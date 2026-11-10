@@ -93,6 +93,7 @@ _KNOWN_PRIVATE_BLOCKS = {
     ("medformer", "_AttentionLayer"),
     ("medformer", "_FullAttention"),
     ("medformer", "_EncoderLayer"),
+    ("meggpt", "_PatchedTimeAttention"),
     ("meta_neuromotor", "_RotationInvariantMPFMLP"),
     ("meta_neuromotor", "_Residual"),
     ("meta_neuromotor", "_MultiHeadAttention"),

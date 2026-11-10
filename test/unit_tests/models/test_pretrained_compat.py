@@ -37,6 +37,7 @@ from braindecode.models import (
     EEGPT,
     LUNA,
     MAPA,
+    MEGGPT,
     MEGXL,
     NICE,
     REVE,
@@ -406,6 +407,17 @@ COMPAT = {
         short_match="n_times",
         kwargs=dict(random_projection=64),
     ),
+    # 52 source-space parcels, the channel embedding indexed by position; any
+    # count builds. Windows are padded to 100-sample segments (250 Hz).
+    "MEGGPT": dict(
+        cls=MEGGPT,
+        sfreq=250,
+        n_times=200,
+        canon=None,
+        n_chans_fixed=52,
+        channels="fixed_order_unchecked",
+        windows=(100, 1000),
+    ),
     # Positions and coil orientations from chs_info, as BrainOmni; magnetometers
     # (kind "mag") because the checkpoint is MEG-only.
     "MEGXL": dict(
@@ -559,6 +571,7 @@ NO_STRATEGY = {
     "MEGXL",
     "BBL",
     "CORTEG",
+    "MEGGPT",
     "NICE",
 }
 
