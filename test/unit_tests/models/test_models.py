@@ -34,6 +34,8 @@ from braindecode.models import (
     BIOT,
     EEGCLIP,
     EEGPT,
+    FNIRS4D,
+    FNIRSGCN,
     NICE,
     SSTDPN,
     TCN,
@@ -62,6 +64,7 @@ from braindecode.models import (
     FBCNet,
     FBLightConvNet,
     FBMSNet,
+    FNIRSNet,
     GCNsNet,
     HybridNet,
     IFNet,
@@ -99,6 +102,7 @@ from braindecode.models.csbrain import (
 from braindecode.models.eegpt import (
     _EEGTransformer,
 )
+from braindecode.models.fnirs4d import _S4DLayer
 from braindecode.models.gcnsnet import _cluster_one_level, _compute_perm
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.neurorvq_tokenizer import _EMAVectorQuantizer
@@ -6376,3 +6380,63 @@ def test_nice_mask_validation(shape, dtype):
     model = NICE(n_chans=4, n_times=100, n_outputs=3, n_filters=4, embed_dim=8)
     with pytest.raises(ValueError, match="mask must be boolean with shape"):
         model(torch.randn(2, 4, 100), mask=torch.ones(shape, dtype=dtype))
+
+
+# ----------------------------------------------------------------------------
+# fNIRS models
+
+
+def _fnirs_chs_info(n_pairs=4):
+    """MNE ``chs_info`` of ``n_pairs`` interleaved HbO/HbR channels."""
+    names = [f"S{i}_D{i} {k}" for i in range(1, n_pairs + 1) for k in ("hbo", "hbr")]
+    return mne.create_info(names, 5.0, [name.split()[1] for name in names])["chs"]
+
+
+@pytest.mark.parametrize(
+    "model_cls,kwargs",
+    [
+        (FNIRSNet, {"n_chromophores": 2, "channel_order": "interleaved"}),
+        (FNIRSNet, {"n_chans": 6, "drop_prob": 0.5}),
+        (FNIRS4D, {"n_layers": 2, "state_dim": 16, "channel_order": "interleaved"}),
+        (FNIRS4D, {"n_chans": 7, "prenorm": True}),
+        (FNIRSGCN, {"node_dim": 32}),
+        (FNIRSGCN, {"n_chans": 7, "node_dim": 32}),
+    ],
+)
+def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):
+    """HbO/HbR ``chs_info`` or odd channel counts; ``final_layer(features)`` equals
+    the logits in eval and train mode, and gradients reach the input."""
+    if "n_chans" not in kwargs:
+        kwargs = dict(kwargs, chs_info=_fnirs_chs_info())
+    model = model_cls(n_outputs=3, n_times=60, sfreq=5.0, **kwargs)
+    x = torch.randn(4, model.n_chans, 60, requires_grad=True)
+    for training in (False, True):
+        model.train(training)
+        torch.manual_seed(0)
+        features = model(x, return_features=True)["features"]
+        torch.manual_seed(0)
+        logits = model(x)
+        torch.testing.assert_close(model.final_layer(features), logits)
+    logits.sum().backward()
+    assert torch.isfinite(x.grad).all()
+
+
+def test_s4d_real_arithmetic_matches_complex_fft():
+    """The real-arithmetic ``_S4DLayer`` equals the reference complex kernel + FFT."""
+    torch.manual_seed(42)
+    d_model, length = 8, 40
+    layer = _S4DLayer(d_model, 16, 0.0, nn.GELU).eval()
+    x = torch.randn(3, d_model, length)
+    k = layer.kernel
+    a_val = -torch.exp(k.log_A_real) + 1j * k.A_imag
+    dt_a = a_val * torch.exp(k.log_dt).unsqueeze(-1)
+    c_tilde = torch.view_as_complex(k.C) * torch.expm1(dt_a) / a_val
+    exponents = dt_a.unsqueeze(-1) * torch.arange(length)
+    ref_kernel = 2.0 * torch.einsum("hn,hnl->hl", c_tilde, torch.exp(exponents)).real
+    torch.testing.assert_close(k(length), ref_kernel, atol=1e-6, rtol=1e-5)
+    spectrum = torch.fft.rfft(x, n=2 * length) * torch.fft.rfft(ref_kernel, n=2 * length)
+    ref_conv = torch.fft.irfft(spectrum, n=2 * length)[..., :length]
+    skip = x * layer.skip.unsqueeze(-1)
+    ref_out = layer.output_linear(layer.activation(ref_conv + skip))
+    with torch.no_grad():
+        torch.testing.assert_close(layer(x), ref_out, atol=1e-5, rtol=1e-5)

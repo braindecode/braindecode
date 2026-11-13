@@ -937,6 +937,21 @@ models_mandatory_parameters: list[
         ["n_chans", "n_outputs", "n_times"],
         {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
     ),
+    (
+        "FNIRSNet",
+        ["n_chans", "n_outputs", "n_times"],
+        {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
+    ),
+    (
+        "FNIRS4D",
+        ["n_chans", "n_outputs", "n_times"],
+        {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
+    ),
+    (
+        "FNIRSGCN",
+        ["n_chans", "n_outputs", "n_times"],
+        {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
+    ),
 ]
 
 ################################################################

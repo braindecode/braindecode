@@ -12,7 +12,9 @@ from braindecode.models import (
     CORTEG,
     EEGDINO,
     EEGPT,
+    FNIRS4D,
     FNIRSCNN1D,
+    FNIRSGCN,
     FNIRSLSTM,
     FNIRSMLP,
     MAPA,
@@ -26,6 +28,7 @@ from braindecode.models import (
     CBraMod,
     DuIN,
     EpiNT,
+    FNIRSNet,
     FNIRSStatNet,
     Guetschel2026,
     Labram,
@@ -247,6 +250,9 @@ _MODELS = [
         id="FNIRSLSTM-gru-last",
     ),
     pytest.param(FNIRSLSTM, 7, {"pool_mode": "mean"}, False, id="FNIRSLSTM-mean"),
+    pytest.param(FNIRSNet, 4, {}, False, id="FNIRSNet"),
+    pytest.param(FNIRS4D, 4, {"n_layers": 1, "state_dim": 16}, False, id="FNIRS4D"),
+    pytest.param(FNIRSGCN, 4, {"n_gcn_layers": 1}, False, id="FNIRSGCN"),
 ]
 
 

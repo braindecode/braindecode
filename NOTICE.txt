@@ -83,6 +83,8 @@ The following components are licensed under the Apache License 2.0:
 - `braindecode/models/brant.py`
 - `braindecode/models/diver1.py`
 - `braindecode/models/mscformer.py`
+- `braindecode/models/fnirsnet.py`
+- `braindecode/models/fnirs4d.py`
 
 ### USC Academic License Files
 

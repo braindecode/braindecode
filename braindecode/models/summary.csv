@@ -93,3 +93,6 @@ FNIRSCNN1D,General,Prediction,5,"n_chans, n_outputs, n_times",59714,"FNIRSCNN1D(
 FNIRSStatNet,General,Prediction,10,"n_chans, n_outputs, n_times",33282,"FNIRSStatNet(n_chans=40, n_outputs=2, n_times=60, sfreq=10.0)","Interpretability,Channel",fNIRS
 FNIRSLSTM,General,Prediction,5,"n_chans, n_outputs, n_times",179906,"FNIRSLSTM(n_chans=40, n_outputs=2, n_times=60, sfreq=5.0)","Convolution,Recurrent",fNIRS
 FNIRSMLP,General,Prediction,5,"n_chans, n_outputs, n_times",100610,"FNIRSMLP(n_chans=40, n_outputs=2, n_times=60, sfreq=5.0)","Channel",fNIRS
+FNIRSNet,General,Prediction,5,"n_chans, n_outputs, n_times",419,"FNIRSNet(n_chans=40, n_outputs=3, n_times=40)","Convolution",fNIRS
+FNIRS4D,General,Prediction,5,"n_chans, n_outputs, n_times",40822,"FNIRS4D(n_chans=40, n_outputs=2, n_times=60)","Convolution,Recurrent",fNIRS
+FNIRSGCN,General,Prediction,5,"n_chans, n_outputs, n_times",32085,"FNIRSGCN(n_chans=40, n_outputs=2, n_times=60, sfreq=5.0)","Convolution,Graph Neural Network",fNIRS
