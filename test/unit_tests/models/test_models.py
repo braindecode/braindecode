@@ -36,6 +36,7 @@ from braindecode.models import (
     EEGPT,
     FNIRS4D,
     FNIRSGCN,
+    FNIRST,
     NICE,
     SSTDPN,
     TCN,
@@ -65,6 +66,7 @@ from braindecode.models import (
     FBLightConvNet,
     FBMSNet,
     FNIRSNet,
+    FNIRSPreT,
     GCNsNet,
     HybridNet,
     IFNet,
@@ -6386,10 +6388,16 @@ def test_nice_mask_validation(shape, dtype):
 # fNIRS models
 
 
-def _fnirs_chs_info(n_pairs=4):
-    """MNE ``chs_info`` of ``n_pairs`` interleaved HbO/HbR channels."""
-    names = [f"S{i}_D{i} {k}" for i in range(1, n_pairs + 1) for k in ("hbo", "hbr")]
-    return mne.create_info(names, 5.0, [name.split()[1] for name in names])["chs"]
+def _interleaved_fnirs_chs(n_pairs=4):
+    """MNE ``chs_info`` of interleaved HbO/HbR pairs with optode positions."""
+    names = [f"S{i + 1}_D{i + 1} {kind}" for i in range(n_pairs) for kind in ("hbo", "hbr")]
+    info = mne.create_info(names, sfreq=5.0, ch_types=["hbo", "hbr"] * n_pairs)
+    for i, angle in enumerate(np.linspace(0.0, np.pi, n_pairs, endpoint=False)):
+        src = np.array([0.07 * np.cos(angle), 0.07 * np.sin(angle), 0.02])
+        det = src + np.array([0.03, 0.0, 0.0])
+        for ch in info["chs"][2 * i : 2 * i + 2]:
+            ch["loc"][:9] = np.concatenate([(src + det) / 2, src, det])
+    return info["chs"]
 
 
 @pytest.mark.parametrize(
@@ -6407,7 +6415,7 @@ def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):
     """HbO/HbR ``chs_info`` or odd channel counts; ``final_layer(features)`` equals
     the logits in eval and train mode, and gradients reach the input."""
     if "n_chans" not in kwargs:
-        kwargs = dict(kwargs, chs_info=_fnirs_chs_info())
+        kwargs = dict(kwargs, chs_info=_interleaved_fnirs_chs())
     model = model_cls(n_outputs=3, n_times=60, sfreq=5.0, **kwargs)
     x = torch.randn(4, model.n_chans, 60, requires_grad=True)
     for training in (False, True):
@@ -6440,3 +6448,67 @@ def test_s4d_real_arithmetic_matches_complex_fft():
     ref_out = layer.output_linear(layer.activation(ref_conv + skip))
     with torch.no_grad():
         torch.testing.assert_close(layer(x), ref_out, atol=1e-5, rtol=1e-5)
+
+
+@pytest.mark.parametrize(
+    "model_cls,kwargs",
+    [
+        (FNIRST, {"depth": 2, "heads": 4}),
+        (FNIRSPreT, {"depth": 2, "heads": 4}),
+    ],
+)
+def test_fnirs_interleaved_chs_info(model_cls, kwargs):
+    chs_info = _interleaved_fnirs_chs()
+    model = model_cls(
+        chs_info=chs_info, n_outputs=3, n_times=60, sfreq=5.0,
+        channel_order="interleaved", **kwargs,
+    ).eval()
+    x = torch.randn(2, len(chs_info), 60)
+    with torch.no_grad():
+        logits = model(x)
+        features = model(x, return_features=True)["features"]
+    assert logits.shape == (2, 3)
+    assert torch.isfinite(logits).all()
+    assert features.shape[0] == 2
+
+
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+def test_fnirs_features_feed_head_and_reset(model_cls):
+    """final_layer(features) == logits (train and eval); every parameter is reset."""
+    model = model_cls(n_chans=6, n_outputs=3, n_times=60, sfreq=10.0)
+    x = torch.randn(4, 6, 60)
+    model.eval()
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+        torch.testing.assert_close(model.final_layer(features), model(x))
+    model.train()
+    torch.manual_seed(123)
+    features = model(x, return_features=True)["features"]
+    torch.manual_seed(123)
+    torch.testing.assert_close(model.final_layer(features), model(x))
+    with torch.no_grad():
+        for p in model.parameters():
+            p.fill_(999.0)
+    model.reset_parameters()
+    assert not [n for n, p in model.named_parameters() if (p == 999.0).all()]
+    model.to(dtype=torch.float64).reset_head(5)
+    assert model.final_layer.weight.dtype == torch.float64
+
+
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+def test_fnirs_masks(model_cls):
+    """ch_mask is refused by name; an all-False mask changes nothing; hidden
+    samples act as zero and get no gradient."""
+    torch.manual_seed(0)
+    model = model_cls(n_chans=6, n_outputs=3, n_times=60, sfreq=5.0).eval()
+    x = torch.randn(2, 6, 60)
+    with pytest.raises(ValueError, match="ch_mask"):
+        model(x, ch_mask=torch.ones(2, 6, dtype=torch.bool))
+    mask = torch.zeros_like(x, dtype=torch.bool)
+    assert torch.equal(model(x, mask=mask), model(x))
+    mask[:, 1, 20:40] = True
+    assert torch.equal(model(x, mask=mask), model(x.masked_fill(mask, 0.0)))
+    hidden = x.masked_fill(mask, float("nan")).requires_grad_(True)
+    model(hidden, mask=mask).sum().backward()
+    assert torch.equal(hidden.grad[mask], torch.zeros_like(hidden.grad[mask]))
+    assert hidden.grad[~mask].isfinite().all()

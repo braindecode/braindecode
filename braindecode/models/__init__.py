@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from .fnirs_lstm import FNIRSLSTM
     from .fnirs_mlp import FNIRSMLP
     from .fnirs_statnet import FNIRSStatNet
+    from .fnirs_t import FNIRST, FNIRSPreT
     from .fnirsnet import FNIRSNet
     from .gcnsnet import GCNsNet
     from .guetschel2026 import Guetschel2026

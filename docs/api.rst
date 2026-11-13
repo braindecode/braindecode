@@ -196,7 +196,9 @@ interface for all EEG models and can derive variable names when needed.
      FNIRSLSTM
      FNIRSMLP
      FNIRSNet
+     FNIRSPreT
      FNIRSStatNet
+     FNIRST
      GCNsNet
      Guetschel2026
      IFNet
