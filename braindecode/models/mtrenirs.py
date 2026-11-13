@@ -1,4 +1,4 @@
-# Authors: Microsoft Research (original MtReNIRS architecture)
+# Authors: T. Chae, K. Avramidis, D. Emmanouilidou, I. J. Tashev (original MtReNIRS)
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: MIT
@@ -29,7 +29,7 @@ from braindecode.modules import FeedForwardBlock, TimmAttention
 
 
 class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
-    r"""MtReNIRS from Microsoft Research (2026) [microsoft2026mtrenirs]_.
+    r"""MtReNIRS from Chae et al. (2026) [microsoft2026mtrenirs]_.
 
     :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
@@ -71,9 +71,10 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
     References
     ----------
-    .. [microsoft2026mtrenirs] Microsoft Research (2026). MtReNIRS:
-       Montage-Agnostic Representation Learning for Functional Near-Infrared
-       Spectroscopy. arXiv preprint arXiv:2610.36159.
+    .. [microsoft2026mtrenirs] Chae, T., Avramidis, K., Emmanouilidou, D., &
+       Tashev, I. J. (2026). MtReNIRS: A Self-Supervised Foundation Model for
+       Transferable Neurovascular Representations. arXiv preprint
+       arXiv:2610.36159.
 
     `License <https://github.com/microsoft/MtReNIRS/blob/main/LICENSE.txt>`_
     """

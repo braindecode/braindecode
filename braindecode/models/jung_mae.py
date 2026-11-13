@@ -1,4 +1,4 @@
-# Authors: Y. Jung et al. (original fNIRS MAE architecture)
+# Authors: E. Jung, H. Lee, J. An (original fNIRS MAE architecture)
 #          GeoNIRS Consortium (reference dual-chromophore MAE implementation)
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #

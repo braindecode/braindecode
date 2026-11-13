@@ -1,4 +1,4 @@
-# Authors: Z. Li, S. Wang, C. Zhang, X. Zhang, Y. Li, H. Yu, Y. Song (original GeoNIRS)
+# Authors: Z. Li, S. Zhu, Z. Zhang, H. Li, S. Wang, Q. Liu (original GeoNIRS)
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
@@ -67,9 +67,9 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [li2026geonirs] Li, Z., Wang, S., Zhang, C., Zhang, X., Li, Y., Yu, H.,
-       & Song, Y. (2026). GeoNIRS: Geometry-Aware Pretraining for Heterogeneous
-       fNIRS Representation Learning. arXiv preprint arXiv:2610.17845.
+    .. [li2026geonirs] Li, Z., Zhu, S., Zhang, Z., Li, H., Wang, S., & Liu, Q.
+       (2026). GeoNIRS: Geometry-Aware Pretraining for Heterogeneous fNIRS
+       Representation Learning. arXiv preprint arXiv:2610.17845.
     """
 
     def __init__(
