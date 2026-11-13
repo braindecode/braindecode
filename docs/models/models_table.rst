@@ -46,8 +46,8 @@ Columns definitions:
       Imagery, P300, Sleep Staging). 'General' indicates applicability across multiple
       applications or no specific application focus.
     - **Modality**: The recording modality (bio-signal type) the model is designed and
-      validated for, e.g. EEG, MEG, or sEMG. Most Braindecode models target EEG; a few
-      support more than one modality (e.g. EEG, MEG).
+      validated for, e.g. EEG, MEG, iEEG, ECoG, sEMG, or fNIRS. Most Braindecode models
+      target EEG; a few support more than one modality (e.g. EEG, MEG).
     - **Type**: The model's output interface. ``Prediction`` indicates a supervised head
       that can be used for classification or regression, depending on the wrapper, loss,
       and target. ``Embedding`` indicates a model that exposes an embedding

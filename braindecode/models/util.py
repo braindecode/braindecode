@@ -917,6 +917,26 @@ models_mandatory_parameters: list[
         },
     ),
     ("Guetschel2026", ["chs_info", "n_outputs", "n_times"], {"sfreq": 200.0}),
+    (
+        "FNIRSCNN1D",
+        ["n_chans", "n_outputs", "n_times"],
+        {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
+    ),
+    (
+        "FNIRSStatNet",
+        ["n_chans", "n_outputs", "n_times"],
+        {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
+    ),
+    (
+        "FNIRSLSTM",
+        ["n_chans", "n_outputs", "n_times"],
+        {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
+    ),
+    (
+        "FNIRSMLP",
+        ["n_chans", "n_outputs", "n_times"],
+        {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
+    ),
 ]
 
 ################################################################

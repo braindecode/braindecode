@@ -54,6 +54,10 @@ if TYPE_CHECKING:
     from .fbcnet import FBCNet
     from .fblightconvnet import FBLightConvNet
     from .fbmsnet import FBMSNet
+    from .fnirs_cnn1d import FNIRSCNN1D
+    from .fnirs_lstm import FNIRSLSTM
+    from .fnirs_mlp import FNIRSMLP
+    from .fnirs_statnet import FNIRSStatNet
     from .gcnsnet import GCNsNet
     from .guetschel2026 import Guetschel2026
     from .hybrid import HybridNet

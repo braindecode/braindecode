@@ -89,3 +89,7 @@ NeuroRVQTokenizer,General,Embedding,200,"n_chans, n_times, sfreq, chs_info",7572
 Guetschel2026,General,"Prediction, Embedding",200,"chs_info, n_outputs, n_times",12882436,"Guetschel2026(chs_info=<user>, n_outputs=4, n_times=1000, sfreq=200)","Foundation Model,Attention/Transformer,Channel",EEG
 GCNsNet,Motor Imagery,Prediction,160,"n_chans, n_outputs, n_times",359428,"GCNsNet(n_chans=64, n_outputs=4, n_times=640)","Graph Neural Network,Channel",EEG
 NICE,Visual Decoding,"Prediction, Embedding",250,"n_chans, n_outputs, n_times",1956296,"NICE(n_chans=63, n_outputs=200, n_times=250)",Convolution,"EEG, MEG"
+FNIRSCNN1D,General,Prediction,5,"n_chans, n_outputs, n_times",59714,"FNIRSCNN1D(n_chans=40, n_outputs=2, n_times=60, sfreq=5.0)","Convolution",fNIRS
+FNIRSStatNet,General,Prediction,10,"n_chans, n_outputs, n_times",33282,"FNIRSStatNet(n_chans=40, n_outputs=2, n_times=60, sfreq=10.0)","Interpretability,Channel",fNIRS
+FNIRSLSTM,General,Prediction,5,"n_chans, n_outputs, n_times",179906,"FNIRSLSTM(n_chans=40, n_outputs=2, n_times=60, sfreq=5.0)","Convolution,Recurrent",fNIRS
+FNIRSMLP,General,Prediction,5,"n_chans, n_outputs, n_times",100610,"FNIRSMLP(n_chans=40, n_outputs=2, n_times=60, sfreq=5.0)","Channel",fNIRS
