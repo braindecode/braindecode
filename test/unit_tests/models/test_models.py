@@ -68,11 +68,13 @@ from braindecode.models import (
     FNIRSNet,
     FNIRSPreT,
     GCNsNet,
+    GeoNIRS,
     HybridNet,
     IFNet,
     Labram,
     MEDFormer,
     MetaNeuromotorHand,
+    MtReNIRS,
     NeuroRVQ,
     NeuroRVQTokenizer,
     SCCNet,
@@ -109,7 +111,11 @@ from braindecode.models.gcnsnet import _cluster_one_level, _compute_perm
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.neurorvq_tokenizer import _EMAVectorQuantizer
 from braindecode.models.usleep import _DecoderBlock
-from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.models.util import (
+    _fnirs_chs_info,
+    models_dict,
+    models_mandatory_parameters,
+)
 from braindecode.util import set_random_seeds
 from test.unit_tests.models._fixtures import (
     _get_possible_signal_params,
@@ -6521,3 +6527,114 @@ def test_fnirs_masks(model_cls):
     model(hidden, mask=mask).sum().backward()
     assert torch.equal(hidden.grad[mask], torch.zeros_like(hidden.grad[mask]))
     assert hidden.grad[~mask].isfinite().all()
+
+
+@pytest.mark.parametrize(
+    "model_cls,kwargs,n_times",
+    [
+        (GeoNIRS, {"temporal_layers": 1, "num_heads": 4, "embedding_dim": 64,
+                   "pool": "mean_std", "channel_order": "interleaved"}, 60),
+        (MtReNIRS, {"depth": 2, "n_heads": 2, "d_model": 32,
+                    "pool": "channel_temporal_mean"}, 100),
+    ],
+)
+def test_fnirs_foundation_models_interleaved_chs_info(model_cls, kwargs, n_times):
+    chs_info = _interleaved_fnirs_chs(4)
+    model = model_cls(chs_info=chs_info, n_outputs=3, n_times=n_times, sfreq=5.0, **kwargs)
+    x = torch.randn(2, len(chs_info), n_times)
+    with torch.no_grad():
+        logits = model.eval()(x)
+        features = model(x, return_features=True)["features"]
+    assert logits.shape == (2, 3) and torch.isfinite(logits).all()
+    assert features.shape[0] == 2
+
+
+@pytest.mark.parametrize("model_cls", [GeoNIRS, MtReNIRS])
+def test_fnirs_foundation_models_head_and_reset(model_cls):
+    """final_layer(features) gives the logits; reset_parameters resets every
+    parameter; reset_head keeps the dtype."""
+    model = model_cls(chs_info=_fnirs_chs_info(3), n_outputs=3, n_times=60, sfreq=10.0)
+    x = torch.randn(4, 6, 60)
+    with torch.no_grad():
+        model.eval()
+        torch.testing.assert_close(
+            model.final_layer(model(x, return_features=True)["features"]), model(x)
+        )
+    model.train()
+    torch.manual_seed(123)
+    from_features = model.final_layer(model(x, return_features=True)["features"])
+    torch.manual_seed(123)
+    torch.testing.assert_close(from_features, model(x))
+    with torch.no_grad():
+        for p in model.parameters():
+            p.fill_(999.0)
+    model.reset_parameters()
+    assert not [n for n, p in model.named_parameters() if (p == 999.0).all()]
+    model = model.to(dtype=torch.float64)
+    model.reset_head(5)
+    assert model.final_layer.weight.dtype == torch.float64
+
+
+def test_fnirs_foundation_models_need_their_channel_information():
+    with pytest.raises(ValueError, match="n_chans must be even"):
+        GeoNIRS(n_chans=5, n_outputs=2, n_times=60)
+    with pytest.raises(ValueError, match="needs the channel geometry"):
+        GeoNIRS(n_chans=4, n_outputs=2, n_times=60)(torch.randn(1, 4, 60))
+    with pytest.raises(ValueError, match="needs channel positions"):
+        MtReNIRS(n_chans=4, n_outputs=2, n_times=100)(torch.randn(1, 4, 100))
+    with pytest.raises(ValueError, match="needs HbO/HbR channels"):
+        MtReNIRS(chs_info=[{"ch_name": "Cz", "loc": np.zeros(12)}], n_outputs=2, n_times=100)
+
+
+def test_geonirs_without_geometry_has_no_dead_parameters():
+    model = GeoNIRS(n_chans=6, n_outputs=2, n_times=30, sfreq=5.0, use_channel_geometry=False)
+    assert model.geometry_encoder is None
+    model(torch.randn(2, 6, 30)).sum().backward()
+    assert all(p.grad is not None and torch.isfinite(p.grad).all() for p in model.parameters())
+
+
+def test_mtrenirs_chromophores_strict_state_dict_and_valid_window_pooling():
+    """HbO/HbR come from the names, a strict load rejects unknown keys, NaN
+    windows do not dilute the pooling, and an odd head_dim is refused."""
+    chs = [{"ch_name": f"S{i}_D{i} {k}", "loc": np.array([0.03 * i, 0.0, 0.0])}
+           for i, k in enumerate(["hbo", "hbr", "hbo", "hbo"], 1)]
+    model = MtReNIRS(chs_info=chs, n_outputs=2, n_times=200, sfreq=10.0).eval()
+    assert model.default_coordinates[:, 3].tolist() == [0.0, 1.0, 0.0, 0.0]
+    bad = dict(model.state_dict(), unexpected_bogus_key=torch.zeros(1))
+    for state_dict in (bad, {"model": bad}):
+        with pytest.raises(RuntimeError):
+            model.load_state_dict(state_dict, strict=True)
+    x = torch.randn(1, 4, 200)
+    x[:, :, 100:] = float("nan")
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+        tokens, _ = model.encode_windows(x)
+    torch.testing.assert_close(features, tokens[:, 0].reshape(1, -1), atol=1e-6, rtol=1e-6)
+    with pytest.raises(ValueError, match="even head_dim"):
+        MtReNIRS(n_chans=4, n_outputs=2, n_times=100, d_model=12, n_heads=4)
+
+
+_FNIRS_WEIGHTS = os.environ.get("BRAINDECODE_FNIRS_WEIGHTS", "")
+
+
+@pytest.mark.parametrize(
+    "file,cls,kwargs",
+    [
+        ("geonirs_base.pt", GeoNIRS, {"n_times": 150, "sfreq": 5.0}),
+        ("geonirs_large.pt", GeoNIRS, {"n_times": 150, "sfreq": 5.0,
+                                       "embedding_dim": 384, "num_heads": 12,
+                                       "temporal_layers": 6, "output_feature_dim": 128}),
+        ("mtrenirs_10s.pt", MtReNIRS, {"n_times": 100, "sfreq": 10.0}),
+    ],
+)
+def test_fnirs_released_checkpoints_load_strictly(file, cls, kwargs):
+    """The official checkpoints, as released (decoders included), load with
+    ``strict=True`` from the directory in ``BRAINDECODE_FNIRS_WEIGHTS``."""
+    path = os.path.join(_FNIRS_WEIGHTS, file)
+    if not _FNIRS_WEIGHTS or not os.path.isfile(path):
+        pytest.skip(f"{file} not in BRAINDECODE_FNIRS_WEIGHTS")
+    model = cls(chs_info=_fnirs_chs_info(10), n_outputs=2, **kwargs).eval()
+    model.load_state_dict(torch.load(path, map_location="cpu", weights_only=False), strict=True)
+    with torch.no_grad():
+        out = model(torch.randn(2, model.n_chans, model.n_times))
+    assert out.shape == (2, 2) and torch.isfinite(out).all()

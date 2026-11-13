@@ -200,6 +200,7 @@ interface for all EEG models and can derive variable names when needed.
      FNIRSStatNet
      FNIRST
      GCNsNet
+     GeoNIRS
      Guetschel2026
      IFNet
      Labram
@@ -212,6 +213,7 @@ interface for all EEG models and can derive variable names when needed.
      MIRepNet
      MSCFormer
      MSVTNet
+     MtReNIRS
      MVPFormer
      NeuroPose
      NeuroRVQ

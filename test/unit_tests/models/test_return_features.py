@@ -32,9 +32,11 @@ from braindecode.models import (
     FNIRSNet,
     FNIRSPreT,
     FNIRSStatNet,
+    GeoNIRS,
     Guetschel2026,
     Labram,
     MIRepNet,
+    MtReNIRS,
     PopulationTransformer,
     SignalJEPA,
     SignalJEPA_Contextual,
@@ -45,7 +47,11 @@ from braindecode.models import (
 )
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
-from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.models.util import (
+    _fnirs_chs_info,
+    models_dict,
+    models_mandatory_parameters,
+)
 from test.unit_tests.models._fixtures import _get_signal_params
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
@@ -217,6 +223,25 @@ _MODELS = [
         },
         False,
         id="MIRepNet",
+    ),
+    pytest.param(
+        GeoNIRS,
+        4,
+        {
+            "temporal_layers": 1,
+            "num_heads": 4,
+            "embedding_dim": 64,
+            "chs_info": _fnirs_chs_info(2),
+        },
+        False,
+        id="GeoNIRS",
+    ),
+    pytest.param(
+        MtReNIRS,
+        4,
+        {"depth": 1, "n_heads": 2, "d_model": 32, "chs_info": _fnirs_chs_info(2)},
+        False,
+        id="MtReNIRS",
     ),
     pytest.param(MEGGPT, N_CHANS, {}, False, id="MEGGPT"),
     pytest.param(

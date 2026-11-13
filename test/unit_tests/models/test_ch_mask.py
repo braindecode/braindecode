@@ -25,7 +25,9 @@ from braindecode.models import (
     Brant,
     CBraMod,
     EpiNT,
+    GeoNIRS,
     Labram,
+    MtReNIRS,
     MVPFormer,
     PopulationTransformer,
 )
@@ -144,6 +146,12 @@ _CASES = {
         ("sensor_indices", _mapa_indices, False),
     ),
     "CORTEG": lambda: (_corteg(), 64, ("pos", _positions, True)),
+    "MtReNIRS": lambda: (
+        MtReNIRS(n_chans=3, n_outputs=3, n_times=100, window_samples=50, d_model=32,
+                 depth=1, n_heads=2, mlp_hidden=64, pool="channel_temporal_mean"),
+        100,
+        ("coordinates", lambda i, n: torch.rand((n, 4), generator=torch.Generator().manual_seed(i)), True),
+    ),
 }
 
 
@@ -227,6 +235,25 @@ def test_labram_ch_mask_matches_each_recording_alone():
     _assert_matches_alone(*_labram_case())
 
 
+def test_geonirs_ch_mask_pairs_match_each_recording_alone():
+    # GeoNIRS reads HbO/HbR pairs: recordings of 1, 3 and 2 interleaved pairs
+    torch.manual_seed(0)
+    model = GeoNIRS(n_chans=6, n_outputs=3, n_times=40, channel_order="interleaved",
+                    embedding_dim=32, num_heads=4, temporal_layers=1,
+                    num_latent_sources=4, output_feature_dim=8).eval()
+    xs = [torch.randn(2 * n_real, 40) for n_real in N_REAL]
+    geoms = [_positions(i, n_real).repeat(1, 2) for i, n_real in enumerate(N_REAL)]
+    mask = torch.arange(6) < 2 * torch.tensor(N_REAL)[:, None]
+    x = torch.full((len(N_REAL), 6, 40), float("nan"))
+    padded = torch.zeros(len(N_REAL), 3, 6)
+    for i, (xi, geom) in enumerate(zip(xs, geoms)):
+        x[i, : len(xi)] = xi
+        padded[i, : len(geom)] = geom
+    _assert_matches_alone(
+        model, x, mask, xs, {"geometry": padded}, [{"geometry": g[None]} for g in geoms]
+    )
+
+
 @pytest.mark.parametrize("name", ["REVE", "Labram"])
 def test_reve_labram_tokens_match_each_recording_alone(name):
     case = _labram_case() if name == "Labram" else _padded_case(name)
@@ -299,6 +326,11 @@ _FIXED_HEADS = {
         400,
     ),
     "MEGGPT": lambda: (_small_meggpt(), 16),
+    "MtReNIRS-temporal_mean": lambda: (
+        MtReNIRS(n_chans=3, n_outputs=3, n_times=100, window_samples=50, d_model=32,
+                 depth=1, n_heads=2, mlp_hidden=64),
+        100,
+    ),
 }
 
 

@@ -602,6 +602,22 @@ def _dance_signal_params() -> dict[str, Any]:
     }
 
 
+def _fnirs_chs_info(n_pairs: int) -> list[dict]:
+    """Stacked HbO then HbR channels of ``n_pairs`` source-detector pairs 3 cm
+    apart on a 8 cm ring (metres), with the source and detector in
+    ``loc[3:9]`` as MNE stores them."""
+    chs = []
+    for kind in ("hbo", "hbr"):
+        for i in range(n_pairs):
+            src = np.array([0.08 * np.cos(i), 0.08 * np.sin(i), 0.05])
+            det = src + np.array([0.03, 0.0, 0.0])
+            loc = np.concatenate([(src + det) / 2, src, det, np.zeros(3)])
+            chs.append(
+                {"ch_name": f"S{i + 1}_D{i + 1} {kind}", "kind": kind, "loc": loc}
+            )
+    return chs
+
+
 # (name, required signal parameters, test parameters). The test parameters are
 # signal parameters the default test signal does not fit, plus, for the
 # largest models, architecture arguments that keep the test instance small
@@ -961,6 +977,16 @@ models_mandatory_parameters: list[
         "FNIRSPreT",
         ["n_chans", "n_outputs", "n_times"],
         {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
+    ),
+    (
+        "GeoNIRS",
+        ["chs_info", "n_outputs", "n_times"],
+        lambda: {"chs_info": _fnirs_chs_info(2), "n_times": 150, "sfreq": 5.0},
+    ),
+    (
+        "MtReNIRS",
+        ["chs_info", "n_outputs", "n_times"],
+        lambda: {"chs_info": _fnirs_chs_info(2), "n_times": 100, "sfreq": 10.0},
     ),
 ]
 
