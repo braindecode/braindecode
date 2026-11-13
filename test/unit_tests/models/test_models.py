@@ -71,6 +71,7 @@ from braindecode.models import (
     GeoNIRS,
     HybridNet,
     IFNet,
+    JungMAE,
     Labram,
     MEDFormer,
     MetaNeuromotorHand,
@@ -6470,6 +6471,7 @@ def test_s4d_real_arithmetic_matches_complex_fft():
     [
         (FNIRST, {"depth": 2, "heads": 4}),
         (FNIRSPreT, {"depth": 2, "heads": 4}),
+        (JungMAE, {"encoder_layers": 1, "encoder_heads": 4, "encoder_dim": 64, "pool": "mean"}),
     ],
 )
 def test_fnirs_interleaved_chs_info(model_cls, kwargs):
@@ -6487,7 +6489,7 @@ def test_fnirs_interleaved_chs_info(model_cls, kwargs):
     assert features.shape[0] == 2
 
 
-@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT, JungMAE])
 def test_fnirs_features_feed_head_and_reset(model_cls):
     """final_layer(features) == logits (train and eval); every parameter is reset."""
     model = model_cls(n_chans=6, n_outputs=3, n_times=60, sfreq=10.0)
@@ -6510,10 +6512,10 @@ def test_fnirs_features_feed_head_and_reset(model_cls):
     assert model.final_layer.weight.dtype == torch.float64
 
 
-@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT, JungMAE])
 def test_fnirs_masks(model_cls):
     """ch_mask is refused by name; an all-False mask changes nothing; hidden
-    samples act as zero and get no gradient."""
+    samples act as zero (FNIRST) or missing (JungMAE) and get no gradient."""
     torch.manual_seed(0)
     model = model_cls(n_chans=6, n_outputs=3, n_times=60, sfreq=5.0).eval()
     x = torch.randn(2, 6, 60)
@@ -6522,11 +6524,35 @@ def test_fnirs_masks(model_cls):
     mask = torch.zeros_like(x, dtype=torch.bool)
     assert torch.equal(model(x, mask=mask), model(x))
     mask[:, 1, 20:40] = True
-    assert torch.equal(model(x, mask=mask), model(x.masked_fill(mask, 0.0)))
+    fill = float("nan") if model_cls is JungMAE else 0.0
+    assert torch.equal(model(x, mask=mask), model(x.masked_fill(mask, fill)))
     hidden = x.masked_fill(mask, float("nan")).requires_grad_(True)
     model(hidden, mask=mask).sum().backward()
     assert torch.equal(hidden.grad[mask], torch.zeros_like(hidden.grad[mask]))
     assert hidden.grad[~mask].isfinite().all()
+
+
+def test_jungmae_non_divisible_patch_validity():
+    """Padded tail samples of a non-divisible n_times do not count as valid."""
+    model = JungMAE(n_chans=6, n_outputs=2, n_times=17, sfreq=5.0).eval()
+    x = torch.randn(1, 6, 17)
+    assert model.encode(x)["valid"][:, :, 1].all()
+    x[:, :, 15:] = float("nan")  # 5 valid of the 7 in-bounds samples (< 80 %)
+    assert not model.encode(x)["valid"][:, :, 1].any()
+
+
+def test_jungmae_released_checkpoint_loads_strictly():
+    """The GeoNIRS release ``jung_mae.pt`` loads with strict=True (decoder dropped)."""
+    path = os.environ.get("BRAINDECODE_JUNGMAE_CKPT", "")
+    if not os.path.isfile(path):
+        pytest.skip("set BRAINDECODE_JUNGMAE_CKPT to the released jung_mae.pt")
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    model = JungMAE(n_chans=20, n_outputs=2, n_times=150, sfreq=5.0).eval()
+    model.load_state_dict(payload, strict=True)
+    with torch.no_grad():
+        out = model(torch.randn(2, 20, 150))
+    assert out.shape == (2, 2)
+    assert torch.isfinite(out).all()
 
 
 @pytest.mark.parametrize(
