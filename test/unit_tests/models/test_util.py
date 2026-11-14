@@ -445,3 +445,18 @@ def test_fnirs_model_reads_channel_order_from_chs_info(name):
     assert torch.equal(inferred.eval()(x), explicit.eval()(x))
     with pytest.raises(ValueError, match="ch_mask"):
         inferred(x, ch_mask=torch.ones(2, 4, dtype=torch.bool))
+
+
+@pytest.mark.parametrize(
+    "name, kw",
+    [
+        ("FNIRSNet", {}),
+        ("FNIRS4D", dict(compute_hbt=False)),
+        ("FNIRST", dict(n_chromophores=1, depth=1)),
+    ],
+)
+def test_fnirs_model_without_pairs_ignores_channel_layout(name, kw):
+    chs = _mne_fnirs_pairs_chs()  # balanced, in neither layout
+    getattr(models, name)(
+        chs_info=[chs[1], chs[0], chs[2], chs[3]], n_outputs=2, n_times=60, **kw
+    )

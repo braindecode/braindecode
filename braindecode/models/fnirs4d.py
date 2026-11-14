@@ -90,8 +90,9 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
             n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         )
         self.prenorm, self.compute_hbt = prenorm, compute_hbt
-        self.channel_order = fnirs_channel_order(self._chs_info, channel_order)
         c, t = self.n_chans, self.n_times
+        pairs_info = self._chs_info if compute_hbt and c % 2 == 0 else None
+        self.channel_order = fnirs_channel_order(pairs_info, channel_order)
         self.avg_size = min(avg_size, t)
         n_full = max(1, c // 2)
         n_short = max(1, c - n_full)
