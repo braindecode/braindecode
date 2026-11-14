@@ -156,10 +156,11 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         self._init_parameters()
 
     def _init_parameters(self) -> None:
-        """Apply the source Glorot initialization and zero biases."""
+        """Keras 2.2.4 initialisation of the reference: truncated Glorot normal
+        kernels and zero biases."""
         for module in self.modules():
             if isinstance(module, (CausalConv1d, nn.Linear)):
-                nn.init.xavier_normal_(module.weight)
+                _keras_glorot_normal_(module.weight)
             if isinstance(module, (_MaskedCausalConv1d, nn.Linear)):
                 nn.init.zeros_(module.bias)
 
@@ -183,6 +184,16 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
             pooled = masked_mean(features, valid_mask, [1])
         # (batch, filters) -> (batch, n_outputs)
         return self.final_layer(pooled)
+
+
+def _keras_glorot_normal_(weight: torch.Tensor) -> None:
+    """Keras 2.2.4 ``glorot_normal``: a normal truncated at 2 sigma, rescaled
+    by 1 / 0.8796 (the std of a standard normal truncated at 2)."""
+    receptive_field = weight[0][0].numel()
+    fan_in = weight.shape[1] * receptive_field
+    fan_out = weight.shape[0] * receptive_field
+    std = math.sqrt(2.0 / (fan_in + fan_out)) / 0.87962566103423978
+    nn.init.trunc_normal_(weight, std=std, a=-2 * std, b=2 * std)
 
 
 class _MaskedCausalConv1d(nn.Module):
@@ -254,9 +265,10 @@ class _TCCContextAttention(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
-        """Apply the initializers used by the pinned Keras source."""
+        """Keras 2.2.4 ``glorot_uniform``; for the 1-D context vector Keras
+        takes fan_in = fan_out = sqrt(n_features)."""
         nn.init.xavier_uniform_(self.weight)
-        bound = math.sqrt(3.0 / self.context.numel())
+        bound = math.sqrt(3.0 / math.sqrt(self.context.numel()))
         nn.init.uniform_(self.context, -bound, bound)
 
     def forward(self, x: torch.Tensor, valid_mask: torch.Tensor | None) -> torch.Tensor:
