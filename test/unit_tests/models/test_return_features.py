@@ -12,6 +12,7 @@ from braindecode.models import (
     CORTEG,
     EEGDINO,
     EEGPT,
+    LUNA,
     MAPA,
     MEGGPT,
     MEGXL,
@@ -209,6 +210,7 @@ _MODELS = [
         False,
         id="MIRepNet",
     ),
+    pytest.param(LUNA, N_CHANS, {}, False, id="LUNA"),
     pytest.param(MEGGPT, N_CHANS, {}, False, id="MEGGPT"),
     pytest.param(
         MEGXL,
@@ -288,8 +290,8 @@ def test_legacy_params(cls, init_kw, fwd_kw, check):
 
 # -- reset_head --
 
-# Exclude SignalJEPA (SSL model, Identity head)
-_RESET_MODELS = [p for p in _MODELS if p.id != "SignalJEPA"]
+# Exclude SignalJEPA (SSL model, Identity head) and LUNA (no reset_head yet)
+_RESET_MODELS = [p for p in _MODELS if p.id not in ("SignalJEPA", "LUNA")]
 
 
 @pytest.mark.parametrize("cls, nc, kw, has_cls", _RESET_MODELS)
