@@ -112,9 +112,8 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if self.n_chans % 2:
             raise ValueError("GeoNIRS needs HbO/HbR pairs: n_chans must be even.")
-        self.interleaved = {"stacked": False, "interleaved": True}[
-            fnirs_channel_order(self._chs_info, channel_order)
-        ]
+        order = fnirs_channel_order(self._chs_info, channel_order)
+        self.interleaved = order == "interleaved"
         self.patch_samples = patch_samples
         # a non-divisible tail is cropped, as the reference unfold does
         self.n_patches = patch_count(self.n_times, patch_samples, "crop")
