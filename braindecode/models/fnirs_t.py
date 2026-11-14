@@ -13,7 +13,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import fnirs_channel_order
+from braindecode.models.util import fnirs_channel_order, fnirs_split_hbo_hbr
 from braindecode.modules import (
     FeedForwardBlock,
     MultiHeadAttention,
@@ -121,14 +121,10 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
                 f"got {n_chromophores}."
             )
         pairs_info = self._chs_info if n_chromophores == 2 else None
-        order = fnirs_channel_order(pairs_info, channel_order)
+        self.channel_order = fnirs_channel_order(pairs_info, channel_order)
+        self.n_chromophores = n_chromophores
         n_phys_chans = self.n_chans // n_chromophores
         self.pool = pool
-        # (batch, n_chans, n_times) -> (batch, n_chromophores, n_phys_chans, n_times)
-        if order == "interleaved" and n_chromophores == 2:
-            self.to_planes = Rearrange("b (c g) t -> b g c t", g=2)
-        else:
-            self.to_planes = Rearrange("b (g c) t -> b g c t", g=n_chromophores)
         n_bins = (self.n_times - temporal_kernel_size) // temporal_stride + 1
         spatial_kernel = min(spatial_kernel_size, n_phys_chans)
         self.pre = (
@@ -217,7 +213,11 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         if mask is not None:
             x = x.masked_fill(mask, 0.0)
         # (batch, n_chans, n_times) -> (batch, n_chromophores, n_phys_chans, n_times)
-        x = self.to_planes(x).contiguous()
+        if self.n_chromophores == 2:
+            hbo, hbr = fnirs_split_hbo_hbr(x, self.channel_order)
+            x = torch.stack([hbo, hbr], dim=1)
+        else:
+            x = x.unsqueeze(1)
         if self.pre is not None:
             x = self.pre(x)
         batch_size = x.shape[0]

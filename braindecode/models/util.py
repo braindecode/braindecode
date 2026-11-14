@@ -20,6 +20,7 @@ from typing import (
     Literal,
     Optional,
     Sequence,
+    Tuple,
     cast,
     get_args,
     get_origin,
@@ -1416,3 +1417,22 @@ def fnirs_channel_order(chs_info, channel_order: Optional[str] = None) -> str:
             f"{found[0]}."
         )
     return channel_order or found[0]
+
+
+def fnirs_split_hbo_hbr(
+    x: torch.Tensor, channel_order: str
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Split fNIRS channels into their HbO and HbR halves.
+
+    The one HbO/HbR split of the fNIRS models: ``x`` is
+    ``(batch, n_chans, ...)`` with an even ``n_chans`` in the ``channel_order``
+    given by :func:`fnirs_channel_order`. Returns ``(hbo, hbr)``, each
+    ``(batch, n_chans // 2, ...)``, where ``hbo[:, i]`` and ``hbr[:, i]`` are
+    the two chromophores of pair ``i``.
+    """
+    if channel_order == "interleaved":  # [HbO_1, HbR_1, HbO_2, HbR_2, ...]
+        return x[:, 0::2], x[:, 1::2]
+    if channel_order == "stacked":  # [HbO_1, ..., HbO_C, HbR_1, ..., HbR_C]
+        n_pairs = x.shape[1] // 2
+        return x[:, :n_pairs], x[:, n_pairs:]
+    raise ValueError("channel_order must be 'stacked' or 'interleaved'.")

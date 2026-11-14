@@ -18,6 +18,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     _disable_batch_norm_training_if_batch_size_one,
     fnirs_channel_order,
+    fnirs_split_hbo_hbr,
 )
 
 
@@ -139,10 +140,7 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         if ch_mask is not None:
             raise ValueError("FNIRS4D does not accept ch_mask: layers span n_chans.")
         if self.compute_hbt:
-            if self.channel_order == "interleaved":
-                hbo, hbr = x[:, 0::2], x[:, 1::2]
-            else:
-                hbo, hbr = x.chunk(2, dim=1)
+            hbo, hbr = fnirs_split_hbo_hbr(x, self.channel_order)
             x = torch.cat((hbo, hbo + hbr), dim=1)  # [HbO, HbT]
         x = x.unsqueeze(1)  # (batch, 1, n_chans, n_times)
         # nn.functional, not F: the decorator scripts forward with util's globals
