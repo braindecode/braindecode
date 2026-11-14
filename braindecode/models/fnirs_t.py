@@ -1,7 +1,7 @@
 # Authors: Zenghui Wang (original fNIRS-Transformer implementation)
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
-# License: MIT (FNIRST, FNIRSPreT, _FNIRSPreFilter); BSD-3-Clause (remaining helpers)
+# License: MIT
 # Adapted from https://github.com/wzhlearning/fNIRS-Transformer (MIT).
 """fNIRS-T and fNIRS-PreT: Transformer Models for fNIRS Classification."""
 

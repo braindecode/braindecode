@@ -1,7 +1,7 @@
 # Authors: Zenghui Wang (original fNIRS4D implementation)
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
-# License: Apache-2.0 (FNIRS4D, _S4DKernel, _S4DLayer); BSD-3-Clause (remaining helpers)
+# License: Apache-2.0
 # Adapted from https://github.com/wzhlearning/fNIRS4D (Apache-2.0); S4D kernel after
 # https://github.com/state-spaces/s4 (Apache-2.0).
 """fNIRS4D: diagonal state-space network for fNIRS classification."""
