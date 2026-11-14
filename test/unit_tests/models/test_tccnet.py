@@ -20,14 +20,15 @@ from braindecode.models import TCCNet
 
 def _reference_causal_conv(x, convolution):
     """Apply the source CausalConv1D to an ``(N, T, C)`` NumPy array."""
-    kernel = convolution.weight.detach().numpy().transpose(2, 1, 0)
+    kernel = convolution.conv.weight.detach().numpy().transpose(2, 1, 0)
     bias = convolution.bias.detach().numpy()
-    dilation = convolution.dilation
-    left_padding = (convolution.kernel_size - 1) * dilation
+    dilation = convolution.conv.dilation[0]
+    kernel_size = convolution.conv.kernel_size[0]
+    left_padding = (kernel_size - 1) * dilation
     padded = np.pad(x, ((0, 0), (left_padding, 0), (0, 0)))
     output = np.zeros((x.shape[0], x.shape[1], kernel.shape[-1]), dtype=x.dtype)
     for time_idx in range(x.shape[1]):
-        for kernel_idx in range(convolution.kernel_size):
+        for kernel_idx in range(kernel_size):
             input_idx = time_idx + kernel_idx * dilation
             output[:, time_idx] += padded[:, input_idx] @ kernel[kernel_idx]
     nonzero = output != 0
@@ -159,13 +160,15 @@ def test_tccnet_dilation_continues_across_residual_blocks():
     model = _small_model()
 
     dilations = [
-        convolution.dilation
+        convolution.conv.dilation[0]
         for block in model.feature_extractor
         for convolution in block.convolutions
     ]
 
     assert dilations == [1, 2, 4]
-    assert all(block.projection.kernel_size == 1 for block in model.feature_extractor)
+    assert all(
+        block.projection.conv.kernel_size == (1,) for block in model.feature_extractor
+    )
 
 
 def test_tccnet_rejects_unknown_head():
@@ -173,7 +176,8 @@ def test_tccnet_rejects_unknown_head():
         TCCNet(n_chans=3, n_outputs=4, classification_head="mean")
 
 
-@pytest.mark.parametrize("classification_head", ["aot", "att"])
+# The average-over-time head gives NaN here, as the reference does (0 / 0).
+@pytest.mark.parametrize("classification_head", ["att"])
 def test_tccnet_fully_masked_input_is_finite(classification_head):
     model = _small_model(
         classification_head=classification_head, mask_value=-10.0

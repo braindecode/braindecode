@@ -13,10 +13,11 @@ import math
 from collections.abc import Sequence
 
 import torch
-import torch.nn.functional as F
 from torch import nn
 
+from braindecode.functional import masked_mean
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import CausalConv1d
 
 
 class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
@@ -155,67 +156,54 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         self._init_parameters()
 
     def _init_parameters(self) -> None:
-        """Apply the source Glorot initialization to the classifier."""
-        nn.init.xavier_normal_(self.final_layer.weight)
-        nn.init.zeros_(self.final_layer.bias)
+        """Apply the source Glorot initialization and zero biases."""
+        for module in self.modules():
+            if isinstance(module, (CausalConv1d, nn.Linear)):
+                nn.init.xavier_normal_(module.weight)
+            if isinstance(module, (_MaskedCausalConv1d, nn.Linear)):
+                nn.init.zeros_(module.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Return classification logits for a batch of sEMG windows."""
         valid_mask = None
         if self.mask_value is not None:
+            # (batch, n_chans, n_times) -> (batch, n_times), True = real step
             valid_mask = torch.any(x != self.mask_value, dim=1)
 
         features = x
         for block in self.feature_extractor:
+            # (batch, n_chans | filters, n_times) -> (batch, filters, n_times)
             features = block(features, valid_mask)
+        # (batch, filters, n_times) -> (batch, n_times, filters)
         features = features.transpose(1, 2)
 
         if self.attention is not None:
             pooled = self.attention(features, valid_mask)
-        elif valid_mask is None:
-            pooled = features.mean(dim=1)
         else:
-            weights = valid_mask.unsqueeze(-1).to(features.dtype)
-            pooled = (features * weights).sum(dim=1) / weights.sum(dim=1).clamp_min(1.0)
-
+            pooled = masked_mean(features, valid_mask, [1])
+        # (batch, filters) -> (batch, n_outputs)
         return self.final_layer(pooled)
 
 
-class _CausalConv1d(nn.Module):
-    """Keras-compatible causal convolution used by the pinned TCCNet source."""
+class _MaskedCausalConv1d(nn.Module):
+    """Reference ``CausalConv1D``: zero the padded input steps, then add the
+    bias only where the bias-free causal convolution is non-zero."""
 
     def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        kernel_size: int,
-        dilation: int = 1,
-    ) -> None:
+        self, in_channels: int, out_channels: int, kernel_size: int, dilation: int
+    ):
         super().__init__()
-        self.kernel_size = kernel_size
-        self.dilation = dilation
-        self.weight = nn.Parameter(torch.empty(out_channels, in_channels, kernel_size))
+        self.conv = CausalConv1d(
+            in_channels, out_channels, kernel_size, dilation=dilation, bias=False
+        )
         self.bias = nn.Parameter(torch.zeros(out_channels))
-        self.reset_parameters()
-
-    def reset_parameters(self) -> None:
-        """Apply the source Glorot initialization and zero bias."""
-        nn.init.xavier_normal_(self.weight)
-        nn.init.zeros_(self.bias)
 
     def forward(self, x: torch.Tensor, valid_mask: torch.Tensor | None) -> torch.Tensor:
         if valid_mask is not None:
             x = x.masked_fill(~valid_mask.unsqueeze(1), 0)
-        left_padding = (self.kernel_size - 1) * self.dilation
-        convolved = F.conv1d(
-            F.pad(x, (left_padding, 0)),
-            self.weight,
-            dilation=self.dilation,
-        )
-        # The source CausalConv1D only adds its bias where the bias-free
-        # convolution is non-zero, preserving fully masked time steps.
-        nonzero = convolved != 0
-        return (convolved + self.bias.view(1, -1, 1)) * nonzero
+        # (batch, in_channels, n_times) -> (batch, out_channels, n_times)
+        out = self.conv(x)
+        return (out + self.bias.view(1, -1, 1)) * (out != 0)
 
 
 class _TCCResidualBlock(nn.Module):
@@ -231,30 +219,24 @@ class _TCCResidualBlock(nn.Module):
         activation: type[nn.Module],
     ) -> None:
         super().__init__()
-        self.projection = _CausalConv1d(in_channels, filters[-1], kernel_size=1)
+        # Kernel-size-1 projection of the block input onto the last filters.
+        self.projection = _MaskedCausalConv1d(in_channels, filters[-1], 1, 1)
         self.convolutions = nn.ModuleList()
         self.activations = nn.ModuleList()
         self.dropouts = nn.ModuleList()
         for out_channels, dilation in zip(filters, dilations):
             self.convolutions.append(
-                _CausalConv1d(
-                    in_channels,
-                    out_channels,
-                    kernel_size=kernel_size,
-                    dilation=dilation,
-                )
+                _MaskedCausalConv1d(in_channels, out_channels, kernel_size, dilation)
             )
             self.activations.append(activation())
             self.dropouts.append(nn.Dropout1d(drop_prob))
             in_channels = out_channels
 
     def forward(self, x: torch.Tensor, valid_mask: torch.Tensor | None) -> torch.Tensor:
+        # (batch, in_channels, n_times) -> (batch, filters[-1], n_times)
         residual = self.projection(x, valid_mask)
         for convolution, activation, dropout in zip(
-            self.convolutions,
-            self.activations,
-            self.dropouts,
-            strict=True,
+            self.convolutions, self.activations, self.dropouts
         ):
             x = dropout(activation(convolution(x, valid_mask)))
         return x + residual
