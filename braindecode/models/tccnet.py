@@ -164,6 +164,16 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
             if isinstance(module, (_MaskedCausalConv1d, nn.Linear)):
                 nn.init.zeros_(module.bias)
 
+    def reset_head(self, n_outputs: int) -> None:
+        """Swap the classifier for a new number of outputs."""
+        self._set_n_outputs(n_outputs)
+        old = self.final_layer
+        self.final_layer = nn.Linear(old.in_features, n_outputs).to(
+            device=old.weight.device, dtype=old.weight.dtype
+        )
+        _keras_glorot_normal_(self.final_layer.weight)
+        nn.init.zeros_(self.final_layer.bias)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Return classification logits for a batch of sEMG windows."""
         valid_mask = None
