@@ -1365,10 +1365,16 @@ def channel_types_from_chs_info(
 
 
 def fnirs_chromophores_from_chs_info(chs_info: Sequence[Dict[str, Any]]) -> list[str]:
-    """``"hbo"``, ``"hbr"`` or ``"unknown"`` per channel, from its name and
+    """``"hbo"``, ``"hbr"`` or ``"unknown"`` per channel, from MNE's
+    ``coil_type`` (``FIFFV_COIL_FNIRS_HBO`` / ``_HBR``), else from its name and
     ``"kind"`` (MNE names them ``"S1_D1 hbo"``); ``"hbr"`` wins if both appear."""
-    tags = [f"{ch.get('ch_name', '')} {ch.get('kind', '')}".lower() for ch in chs_info]
-    return ["hbr" if "hbr" in t else "hbo" if "hbo" in t else "unknown" for t in tags]
+    coils = {FIFF.FIFFV_COIL_FNIRS_HBO: "hbo", FIFF.FIFFV_COIL_FNIRS_HBR: "hbr"}
+    out = []
+    for ch in chs_info:
+        tag = f"{ch.get('ch_name', '')} {ch.get('kind', '')}".lower()
+        by_name = "hbr" if "hbr" in tag else "hbo" if "hbo" in tag else "unknown"
+        out.append(coils.get(int(ch.get("coil_type") or 0), by_name))
+    return out
 
 
 def fnirs_channel_order(chs_info, channel_order: Optional[str] = None) -> str:

@@ -426,6 +426,10 @@ def test_fnirs_channel_order_reads_mne_chs_info():
         fnirs_channel_order([chs[1], chs[0], chs[2], chs[3]])
     with pytest.raises(ValueError, match="channel_order must be"):
         fnirs_channel_order(chs, "interleave")
+    # renamed channels: MNE's coil_type still says HbO/HbR
+    info = mne.create_info([ch["ch_name"] for ch in chs], 10.0, ["hbo", "hbr"] * 2)
+    info.rename_channels({n: f"ch{i}" for i, n in enumerate(info.ch_names)})
+    assert fnirs_channel_order(info["chs"]) == "interleaved"
 
 
 @pytest.mark.parametrize("name", sorted(_FNIRS_PAIRING))
