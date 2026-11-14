@@ -117,11 +117,11 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
             )
         n_chromophores = 1 if self.n_chans % 2 else n_chromophores
         pairs_info = self._chs_info if n_chromophores == 2 else None
-        channel_order = fnirs_channel_order(pairs_info, channel_order)
+        order = fnirs_channel_order(pairs_info, channel_order)
         n_phys_chans = self.n_chans // n_chromophores
         self.pool = pool
         # (batch, n_chans, n_times) -> (batch, n_chromophores, n_phys_chans, n_times)
-        if channel_order == "interleaved" and n_chromophores == 2:
+        if order == "interleaved" and n_chromophores == 2:
             self.to_planes = Rearrange("b (c g) t -> b g c t", g=2)
         else:
             self.to_planes = Rearrange("b (g c) t -> b g c t", g=n_chromophores)
