@@ -424,6 +424,8 @@ def test_fnirs_channel_order_reads_mne_chs_info():
     assert fnirs_channel_order(chs[0::2]) == "stacked"  # HbO only: no pairs
     with pytest.raises(ValueError, match="stacked or interleaved"):
         fnirs_channel_order([chs[1], chs[0], chs[2], chs[3]])
+    with pytest.raises(ValueError, match="channel_order must be"):
+        fnirs_channel_order(chs, "interleave")
 
 
 @pytest.mark.parametrize("name", sorted(_FNIRS_PAIRING))

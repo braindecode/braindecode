@@ -1376,9 +1376,15 @@ def fnirs_channel_order(chs_info, channel_order: Optional[str] = None) -> str:
     if ``chs_info`` lists MNE's ``[HbO_1, HbR_1, ...]``, else ``"stacked"``
     (``[HbO..., HbR...]``, also without ``chs_info`` or balanced pairs).
 
-    Raises ``ValueError`` for balanced HbO/HbR channels in neither layout.
+    Raises ``ValueError`` for an unknown ``channel_order`` and for balanced
+    HbO/HbR channels in neither layout.
     """
     if channel_order is not None:
+        if channel_order not in ("stacked", "interleaved"):
+            raise ValueError(
+                "channel_order must be 'stacked', 'interleaved' or None, "
+                f"got {channel_order!r}."
+            )
         return channel_order
     # ponytail: the layout comes from the chromophores; pair names are not matched.
     chromophores = fnirs_chromophores_from_chs_info(chs_info or [])
