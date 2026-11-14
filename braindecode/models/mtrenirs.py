@@ -43,8 +43,9 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
     MLP of the channel's position and chromophore. A pre-norm Transformer with
     per-head QK LayerNorm and a rotary embedding of the window index encodes
     all tokens jointly. Positions (``loc[:3]``, 0 when unknown) and HbO/HbR
-    (from the channel name or kind) come from ``chs_info`` or the
-    ``coordinates`` argument. Windows with a NaN sample are masked.
+    (from ``coil_type``, else the channel name) come from ``chs_info`` or the
+    ``coordinates`` argument; a montage without any location needs
+    ``coordinates``. Windows with a NaN sample are masked.
     :meth:`load_state_dict` takes the official ``mtrenirs_10s.pt`` checkpoint.
 
     Parameters
@@ -174,7 +175,7 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         if coord.numel() == 0:
             raise ValueError(
                 "MtReNIRS needs channel positions and chromophores: chs_info "
-                "or the coordinates argument."
+                "with channel locations (loc[:3]) or the coordinates argument."
             )
         coord = coord.to(device=x.device, dtype=tokens.dtype)
         if coord.ndim == 2:
@@ -347,7 +348,7 @@ class _Encoder(nn.Module):
 def _coordinates(chs_info, pos_center, pos_scale) -> np.ndarray:
     """``(n_chans, 4)``: ``(loc[:3] - pos_center) / pos_scale`` (0 when
     unknown) and 0 for HbO, 1 for HbR, as the official ``chromophore_map``;
-    ``(0, 4)`` without ``chs_info``."""
+    ``(0, 4)`` without ``chs_info`` or without any location."""
     if chs_info is None:
         return np.zeros((0, 4), np.float32)
     chromophores = fnirs_chromophores_from_chs_info(chs_info)
@@ -355,6 +356,8 @@ def _coordinates(chs_info, pos_center, pos_scale) -> np.ndarray:
         name = chs_info[chromophores.index("unknown")].get("ch_name")
         raise ValueError(f"MtReNIRS needs HbO/HbR channels, got {name!r}.")
     loc = extract_channel_locations_from_chs_info(chs_info, fill_missing=True)
+    if not np.isfinite(loc).any():  # forward raises unless coordinates are given
+        return np.zeros((0, 4), np.float32)
     xyz = (loc - np.asarray(pos_center, dtype=np.float32)) / float(pos_scale)
     xyz = np.where(np.isfinite(loc).all(axis=1, keepdims=True), xyz, 0.0)
     return np.c_[xyz, np.equal(chromophores, "hbr")].astype(np.float32)
