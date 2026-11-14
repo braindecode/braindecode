@@ -1,7 +1,7 @@
 # Authors: Zenghui Wang (original fNIRS-Transformer implementation)
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
-# License: MIT
+# License: MIT (FNIRST, FNIRSPreT, _FNIRSPreFilter); BSD-3-Clause (remaining helpers)
 # Adapted from https://github.com/wzhlearning/fNIRS-Transformer (MIT).
 """fNIRS-T and fNIRS-PreT: Transformer Models for fNIRS Classification."""
 
@@ -125,7 +125,6 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
             self.to_planes = Rearrange("b (c g) t -> b g c t", g=2)
         else:
             self.to_planes = Rearrange("b (g c) t -> b g c t", g=n_chromophores)
-        self.to_tokens = Rearrange("b c h w -> b h (c w)")
         n_bins = (self.n_times - temporal_kernel_size) // temporal_stride + 1
         spatial_kernel = min(spatial_kernel_size, n_phys_chans)
         self.pre = (
@@ -149,30 +148,34 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
                 ]
             )
 
-        self.spatial_conv = nn.Conv2d(
-            n_chromophores,
-            conv_channels,
-            (spatial_kernel, temporal_kernel_size),
-            (1, temporal_stride),
+        self.to_patch_embedding = nn.Sequential(
+            nn.Conv2d(
+                n_chromophores,
+                conv_channels,
+                (spatial_kernel, temporal_kernel_size),
+                (1, temporal_stride),
+            ),
+            Rearrange("b c h w -> b h (c w)"),
+            nn.Linear(n_bins * conv_channels, dim),
+            nn.LayerNorm(dim),
         )
-        self.spatial_embedding = nn.Sequential(
-            nn.Linear(n_bins * conv_channels, dim), nn.LayerNorm(dim)
-        )
-        self.cls_token_spatial = nn.Parameter(torch.randn(1, 1, dim))
-        self.pos_embedding_spatial = nn.Parameter(
+        self.cls_token_patch = nn.Parameter(torch.randn(1, 1, dim))
+        self.pos_embedding_patch = nn.Parameter(
             torch.randn(1, n_phys_chans - spatial_kernel + 2, dim)
         )
-        self.dropout_spatial = nn.Dropout(emb_drop_prob)
-        self.transformer_spatial = branch()
+        self.dropout_patch = nn.Dropout(emb_drop_prob)
+        self.transformer_patch = branch()
 
-        self.channel_conv = nn.Conv2d(
-            n_chromophores,
-            conv_channels,
-            (1, temporal_kernel_size),
-            (1, temporal_stride),
-        )
-        self.channel_embedding = nn.Sequential(
-            nn.Linear(n_bins * conv_channels, dim), nn.LayerNorm(dim)
+        self.to_channel_embedding = nn.Sequential(
+            nn.Conv2d(
+                n_chromophores,
+                conv_channels,
+                (1, temporal_kernel_size),
+                (1, temporal_stride),
+            ),
+            Rearrange("b c h w -> b h (c w)"),
+            nn.Linear(n_bins * conv_channels, dim),
+            nn.LayerNorm(dim),
         )
         self.cls_token_channel = nn.Parameter(torch.randn(1, 1, dim))
         self.pos_embedding_channel = nn.Parameter(torch.randn(1, n_phys_chans + 1, dim))
@@ -186,8 +189,8 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
     def _init_parameters(self) -> None:
         # Redrawn after the layers, so reset_parameters() resets them too.
         with torch.no_grad():
-            self.cls_token_spatial.normal_()
-            self.pos_embedding_spatial.normal_()
+            self.cls_token_patch.normal_()
+            self.pos_embedding_patch.normal_()
             self.cls_token_channel.normal_()
             self.pos_embedding_channel.normal_()
 
@@ -215,14 +218,14 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
             x = self.pre(x)
         batch_size = x.shape[0]
         # -> (batch, n_groups, dim) -> (batch, n_groups + 1, dim)
-        spatial = self.spatial_embedding(self.to_tokens(self.spatial_conv(x)))
-        spatial = torch.cat(
-            (self.cls_token_spatial.expand(batch_size, -1, -1), spatial), dim=1
+        patch = self.to_patch_embedding(x)
+        patch = torch.cat(
+            (self.cls_token_patch.expand(batch_size, -1, -1), patch), dim=1
         )
-        spatial = self.dropout_spatial(spatial + self.pos_embedding_spatial)
-        spatial = self.transformer_spatial(spatial)
+        patch = self.dropout_patch(patch + self.pos_embedding_patch)
+        patch = self.transformer_patch(patch)
         # -> (batch, n_phys_chans, dim) -> (batch, n_phys_chans + 1, dim)
-        channel = self.channel_embedding(self.to_tokens(self.channel_conv(x)))
+        channel = self.to_channel_embedding(x)
         channel = torch.cat(
             (self.cls_token_channel.expand(batch_size, -1, -1), channel), dim=1
         )
@@ -230,9 +233,9 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         channel = self.transformer_channel(channel)
         # 2 x (batch, n_tokens + 1, dim) -> (batch, 2 * dim)
         if self.pool == "mean":
-            features = torch.cat((spatial.mean(dim=1), channel.mean(dim=1)), dim=1)
+            features = torch.cat((patch.mean(dim=1), channel.mean(dim=1)), dim=1)
         else:
-            features = torch.cat((spatial[:, 0], channel[:, 0]), dim=1)
+            features = torch.cat((patch[:, 0], channel[:, 0]), dim=1)
         features = self.final_norm(features)
         if return_features:
             cls_token = features if self.pool == "cls" else None
