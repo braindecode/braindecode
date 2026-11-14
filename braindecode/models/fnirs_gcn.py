@@ -70,6 +70,7 @@ class FNIRSGCN(EEGModuleMixin, nn.Module):
         super().__init__(
             n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.temperature = temperature
         mid = max(8, node_dim // 2)
         self.channel_temporal_stem = nn.Sequential(

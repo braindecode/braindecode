@@ -88,6 +88,7 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         super().__init__(
             n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.prenorm, self.compute_hbt = prenorm, compute_hbt
         c, t = self.n_chans, self.n_times
         pairs_info = self._chs_info if compute_hbt and c % 2 == 0 else None
