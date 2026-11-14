@@ -1,9 +1,9 @@
 # Authors: Z. Li, S. Zhu, Z. Zhang, H. Li, S. Wang, Q. Liu (original GeoNIRS)
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
-# License: BSD (3-clause)
-#
-# Adapted from https://github.com/GeoNIRS/GeoNIRS (Li et al., 2026).
+# License: BSD-3-Clause
+# Adapted from https://github.com/GeoNIRS/GeoNIRS (81f8995; no licence file;
+# paper arXiv:2610.17845).
 
 from __future__ import annotations
 

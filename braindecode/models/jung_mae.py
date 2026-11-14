@@ -2,9 +2,9 @@
 #          GeoNIRS Consortium (reference dual-chromophore MAE implementation)
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
-# License: BSD (3-clause)
-#
-# Adapted from Jung et al. (2025) and https://github.com/GeoNIRS/GeoNIRS.
+# License: BSD-3-Clause
+# Adapted from https://github.com/GeoNIRS/GeoNIRS model/jung_inspired_mae.py (81f8995;
+# no licence file; paper arXiv:2610.17845), after Jung et al. (2025).
 """JungMAE: Dual-Chromophore Masked Autoencoder for fNIRS Representation Learning."""
 
 from __future__ import annotations
