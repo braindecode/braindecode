@@ -466,7 +466,10 @@ def _optode_geometry(chs_info, interleaved: bool) -> np.ndarray:
     if chs_info is None:
         return empty
     chs = chs_info[0::2] if interleaved else chs_info[: len(chs_info) // 2]
-    locs = np.array([np.asarray(ch.get("loc", np.zeros(9)))[:9] for ch in chs], float)
+    locs = np.zeros((len(chs), 9))
+    for row, ch in zip(locs, chs):  # a missing or short loc stays zero
+        loc = np.ravel(ch.get("loc") if ch.get("loc") is not None else [])[:9]
+        row[: loc.size] = loc
     if not np.isfinite(locs).all() or (locs[:, 3:9] == 0).all(axis=1).any():
         return empty
     scale = 25.460582556839242 / 1000.0

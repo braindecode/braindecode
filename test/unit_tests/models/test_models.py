@@ -6606,6 +6606,9 @@ def test_fnirs_foundation_models_need_their_channel_information():
         GeoNIRS(n_chans=5, n_outputs=2, n_times=60)
     with pytest.raises(ValueError, match="needs the channel geometry"):
         GeoNIRS(n_chans=4, n_outputs=2, n_times=60)(torch.randn(1, 4, 60))
+    loc_none = [{"ch_name": f"S1_D1 {k}", "loc": None} for k in ("hbo", "hbr")]
+    with pytest.raises(ValueError, match="needs the channel geometry"):
+        GeoNIRS(chs_info=loc_none, n_outputs=2, n_times=60)(torch.randn(1, 2, 60))
     with pytest.raises(ValueError, match="needs channel positions"):
         MtReNIRS(n_chans=4, n_outputs=2, n_times=100)(torch.randn(1, 4, 100))
     no_loc = [{"ch_name": f"S1_D1 {k}"} for k in ("hbo", "hbr")]
