@@ -17,12 +17,9 @@ Every audit used so far (probing, erasure, EOG regression, attribution
 maps) needs the data and forward passes. Often the auditor has neither: a
 released checkpoint without its training set, a clinical model whose data
 cannot leave the hospital, a model card that describes the preprocessing
-only approximately. Takehi et al. (2026) [2]_ showed that language models can
-read raw weights well enough to say what a small network was trained to
-do, and listed "auditing without data" as an open direction. This example
-takes that route on a released EEG decoder with the simplest possible
-reader: a path-weighted statistic of the weights, then one occlusion test
-on data to confirm it.
+only approximately. This example audits a released EEG decoder from its
+weights with the simplest possible reader: a path-weighted statistic of
+the weights, then one occlusion test on data to confirm it.
 
 .. topic:: What the audit looks for
 
@@ -65,8 +62,8 @@ from braindecode.preprocessing import (
 # The decoder under audit
 # -----------------------
 #
-# Guetschel and Tangermann [3]_ trained :class:`~braindecode.models.EEGNet`
-# [4]_ on twelve MOABB motor imagery datasets and released the weights on
+# Guetschel and Tangermann [2]_ trained :class:`~braindecode.models.EEGNet`
+# [3]_ on twelve MOABB motor imagery datasets and released the weights on
 # the Hugging Face Hub. We audit the one trained on PhysioNet: three
 # electrodes (C3, Cz, C4), 128 Hz, the 3 s after the cue, and five outputs,
 # one per MOABB label in alphabetical order (feet, hands, left_hand, rest,
@@ -118,7 +115,7 @@ model.eval()
 # None of this touches data: it is what anyone can compute from a released
 # checkpoint in a second. One limit to keep in mind: a spatial weight says
 # how much a filter *mixes* an electrode, not how much signal arrives
-# there (Haufe et al. [5]_ make this point for linear models), so the
+# there (Haufe et al. [4]_ make this point for linear models), so the
 # channel ranking is the weakest part of the reading. The band and the
 # window come from the temporal kernels and the classifier.
 
@@ -192,8 +189,9 @@ print(
 
 ######################################################################
 # The weights point to the slow band and the first second after the cue,
-# the shortcut signature. The channel shares put Cz first; keep that as
-# the least certain part of the reading. The next step checks it on data.
+# the shortcut signature. The printed channel shares rank the three
+# electrodes; keep that ranking as the least certain part of the reading.
+# The next step checks it on data.
 #
 # Confirm on data: one occlusion test
 # -----------------------------------
@@ -201,7 +199,7 @@ print(
 # Loading PhysioNet as the checkpoint saw it
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We load ten subjects of the PhysioNet motor imagery dataset [6]_ through
+# We load three subjects of the PhysioNet motor imagery dataset [5]_ through
 # MOABB and rebuild the input of the checkpoint from its paper: C3, Cz and
 # C4 in microvolts, 0.5-40 Hz, resampled to 128 Hz, 385 samples from the
 # cue. The checkpoint was trained on all PhysioNet subjects, so these
@@ -209,7 +207,7 @@ print(
 # here is what the decoder relies on, which its training trials answer
 # as well as any.
 
-subjects = list(range(1, 11))
+subjects = [1, 2, 3]
 dataset = MOABBDataset(dataset_name="PhysionetMI", subject_ids=subjects)
 preprocess(
     dataset,
@@ -292,16 +290,20 @@ baseline, drops = occlusion_check(model, X, y, CHANNELS, SFREQ)
 print(f"Left vs right accuracy: {baseline:.1%}")
 for name, value in drops.items():
     print(f"  {name.replace(chr(10), ' '):>18s}: drop {value:+.1%}")
+top_weights = max(reading["channel_score"], key=reading["channel_score"].get)
+top_data = max(CHANNELS, key=lambda ch: drops[f"zero\n{ch}"])
+print(f"Channel ranked first by the weights: {top_weights}")
+print(f"Channel whose removal costs the most: {top_data}")
 
 ######################################################################
 # The chart puts the data check next to what the weights said (in the
 # title). Orange bars are the tests an eye-movement decoder fails, the
 # blue bar the one a sensorimotor decoder fails, grey bars remove one
-# electrode. On this checkpoint the orange bars cost 14-17 points each
-# and zeroing 1-3 s costs nothing: the data agree with the band and the
-# window read from the weights. Zeroing C3 costs the most, while the
-# weights put Cz first, so the channel ranking is where the reading and
-# the data part.
+# electrode. If the orange bars cost accuracy and zeroing 1-3 s costs
+# little, the data agree with the band and the window read from the
+# weights. The last two printed lines compare the channel the weights
+# rank first with the one whose removal costs the most; the channel
+# ranking is where the reading and the data are most likely to part.
 
 fig, ax = plt.subplots(figsize=(7, 3.6))
 ax.bar(
@@ -329,10 +331,7 @@ fig.tight_layout()
 # reading. A decoder whose entry says "below 4 Hz, 0-1 s after the cue" is
 # a different product from one that says "8-30 Hz, 1-3 s", even at the
 # same accuracy. Two more lines make the next audit easier: the exact
-# preprocessing of the input, and the initialisation seed. With the seed,
-# the reading can be repeated on the change that training made to the
-# weights, which removes channels that rank high only because of the
-# starting noise [7]_.
+# preprocessing of the input, and the initialisation seed.
 #
 # The occlusion test here is a check on the reading, not a proof of
 # generalisation. The real test is cross-dataset transfer: a decoder
@@ -349,25 +348,18 @@ fig.tight_layout()
 #        decoders? A preregistered semi-synthetic ground-truth test and a
 #        real-data check of eye-movement use.* Preregistered (OSF);
 #        code: https://github.com/jabarrick/physio-shortcut-audit
-# .. [2] Takehi, R., Teoh, J., Zhang, A., & Khattab, O. (2026). *Sparks of
-#        Weight-Space Programming: LLMs can natively read & write neural
-#        network weights.* MIT CSAIL.
-#        https://rikiyat.github.io/blog/weight-space-programming/
-# .. [3] Guetschel, P., & Tangermann, M. (2023). *Transfer learning
+# .. [2] Guetschel, P., & Tangermann, M. (2023). *Transfer learning
 #        between motor imagery datasets using deep learning: validation
 #        of framework and comparison of datasets.* arXiv:2311.16109.
 #        Weights: https://huggingface.co/PierreGtch/EEGNetv4
-# .. [4] Lawhern, V. J., et al. (2018). *EEGNet: a compact convolutional
+# .. [3] Lawhern, V. J., et al. (2018). *EEGNet: a compact convolutional
 #        neural network for EEG-based brain-computer interfaces.* Journal
 #        of Neural Engineering, 15(5), 056013.
 #        DOI: 10.1088/1741-2552/aace8c
-# .. [5] Haufe, S., et al. (2014). *On the interpretation of weight
+# .. [4] Haufe, S., et al. (2014). *On the interpretation of weight
 #        vectors of linear models in multivariate neuroimaging.*
 #        NeuroImage, 87, 96-110. DOI: 10.1016/j.neuroimage.2013.10.067
-# .. [6] Schalk, G., McFarland, D. J., Hinterberger, T., Birbaumer, N., &
+# .. [5] Schalk, G., McFarland, D. J., Hinterberger, T., Birbaumer, N., &
 #        Wolpaw, J. R. (2004). *BCI2000: A general-purpose brain-computer
 #        interface (BCI) system.* IEEE Transactions on Biomedical
 #        Engineering, 51(6), 1034-1043. DOI: 10.1109/TBME.2004.827072
-# .. [7] Li, Y. (2026). *Reading the weights: a language model audits
-#        and repairs EEG decoders without data.* Preprint.
-#        DOI: 10.5281/zenodo.23934403
