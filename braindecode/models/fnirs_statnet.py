@@ -21,13 +21,13 @@ class FNIRSStatNet(EEGModuleMixin, nn.Module):
     .. versionadded:: 2.1
 
     Differentiable classical fNIRS features, as the GeoNIRS ``MeanSlopeLDA`` and
-    ``StatisticalRBFSVM`` baselines [Li2026]_: per channel and sub-window, mean and
-    least-squares slope [Naseer2016]_, optionally std, min, max, RMS, skewness and
-    excess kurtosis; projections of the mean-removed window on the unit-norm
-    double-gamma HRF [Glover1999]_ and its time derivative; optional depthwise
-    learned filters averaged over time. The features go through ``LayerNorm``, an
-    optional MLP and a linear head. The HRF time axis uses ``sfreq``, or 10 Hz when
-    it is unknown. NaN samples are read as zero.
+    ``StatisticalRBFSVM`` baselines :footcite:`li2026geonirs`: per channel and
+    sub-window, mean and least-squares slope [Naseer2016]_, optionally std, min,
+    max, RMS, skewness and excess kurtosis; projections of the mean-removed window
+    on the unit-norm double-gamma HRF [Glover1999]_ and its time derivative;
+    optional depthwise learned filters averaged over time. The features go through
+    ``LayerNorm``, an optional MLP and a linear head. The HRF time axis uses
+    ``sfreq``, or 10 Hz when it is unknown. NaN samples are read as zero.
 
     Parameters
     ----------
@@ -54,8 +54,7 @@ class FNIRSStatNet(EEGModuleMixin, nn.Module):
        Human Neuroscience, 10, 237.
     .. [Glover1999] Glover, G. H. (1999). Deconvolution of impulse response in
        event-related BOLD fMRI. NeuroImage, 9(4), 416-429.
-    .. [Li2026] Li, Z., et al. (2026). GeoNIRS: Geometry-aware pretraining for
-       heterogeneous fNIRS representation learning. arXiv:2610.17845.
+    .. footbibliography::
     """
 
     def __init__(

@@ -18,10 +18,10 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
     .. versionadded:: 2.1
 
     Two-stage 1D temporal CNN for fNIRS classification, as the
-    ``DirectEventCNN1DClassifier`` baseline of GeoNIRS [Li2026]_: ``Conv1d``,
-    ``GroupNorm``, activation and ``MaxPool1d(2)``; ``Conv1d``, ``GroupNorm``,
-    activation and a global time average; dropout and a linear head. NaN samples
-    are read as zero.
+    ``DirectEventCNN1DClassifier`` baseline of GeoNIRS
+    :footcite:`li2026geonirs`: ``Conv1d``, ``GroupNorm``, activation and
+    ``MaxPool1d(2)``; ``Conv1d``, ``GroupNorm``, activation and a global time
+    average; dropout and a linear head. NaN samples are read as zero.
 
     Parameters
     ----------
@@ -43,8 +43,7 @@ class FNIRSCNN1D(EEGModuleMixin, nn.Module):
     .. [Trakoolwilaiwan2017] Trakoolwilaiwan, T., et al. (2017). Convolutional
        neural network for high-accuracy functional near-infrared spectroscopy in a
        brain-computer interface. Neurophotonics, 5(1), 011008.
-    .. [Li2026] Li, Z., et al. (2026). GeoNIRS: Geometry-aware pretraining for
-       heterogeneous fNIRS representation learning. arXiv:2610.17845.
+    .. footbibliography::
     """
 
     def __init__(
