@@ -6429,6 +6429,15 @@ def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):
     assert torch.isfinite(x.grad).all()
 
 
+def test_fnirsgcn_adjacency_initializes_static_graph():
+    adjacency = torch.rand(5, 5).fill_diagonal_(0.0)
+    model = FNIRSGCN(n_chans=5, n_outputs=2, n_times=60, adjacency=adjacency)
+    model.reset_parameters()  # the prior survives a reset
+    expected = torch.log(adjacency.clamp_min(1e-6))
+    torch.testing.assert_close(model.static_adj_logits.data, expected)
+    assert model.adj_mix_logit.item() == -1.0
+
+
 def test_s4d_real_arithmetic_matches_complex_fft():
     """The real-arithmetic ``_S4DLayer`` equals the reference complex kernel + FFT."""
     torch.manual_seed(42)

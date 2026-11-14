@@ -38,6 +38,12 @@ class FNIRSGCN(EEGModuleMixin, nn.Module):
         Dropout of the graph layers and before ``final_layer``.
     activation : type[nn.Module], default=nn.GELU
         Activation of the stem and the graph layers.
+    adjacency : torch.Tensor or None, default=None
+        Non-negative ``(n_chans, n_chans)`` prior graph, e.g. from optode
+        distances: the static graph starts at its log and the blend starts at
+        ``sigmoid(-1)`` on the correlation graph. ``None`` starts the static
+        graph uniform and the blend at one half. The replicated result used an
+        optode-distance adjacency.
 
     References
     ----------
@@ -59,6 +65,7 @@ class FNIRSGCN(EEGModuleMixin, nn.Module):
         temperature: float = 0.25,
         drop_prob: float = 0.3,
         activation: type[nn.Module] = nn.GELU,
+        adjacency: torch.Tensor | None = None,
     ) -> None:
         super().__init__(
             n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
@@ -92,12 +99,18 @@ class FNIRSGCN(EEGModuleMixin, nn.Module):
         self.readout_norm = nn.LayerNorm(2 * node_dim)
         self.dropout = nn.Dropout(drop_prob)
         self.final_layer = nn.Linear(2 * node_dim, self.n_outputs)
+        self.adjacency = adjacency  # plain attribute: not in the state_dict
         self._init_parameters()
 
     def _init_parameters(self) -> None:
         nn.init.normal_(self.node_embedding, std=0.02)
         nn.init.zeros_(self.static_adj_logits)
         nn.init.zeros_(self.adj_mix_logit)
+        if self.adjacency is not None:
+            with torch.no_grad():  # 1e-6: no log(0) for unconnected channels
+                log_adj = torch.log(self.adjacency.clamp_min(1e-6))
+                self.static_adj_logits.copy_(log_adj)
+                self.adj_mix_logit.fill_(-1.0)
 
     def reset_head(self, n_outputs: int) -> None:
         self._set_n_outputs(n_outputs)
