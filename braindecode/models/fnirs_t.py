@@ -14,6 +14,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import fnirs_channel_order
 from braindecode.modules import (
     FeedForwardBlock,
     MultiHeadAttention,
@@ -60,8 +61,9 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         Temporal stride of both convolutions, in samples.
     n_chromophores : {1, 2}, default=2
         Chromophores per channel; an odd ``n_chans`` uses 1.
-    channel_order : {"stacked", "interleaved"}, default="stacked"
-        ``[HbO_1..HbO_C, HbR_1..HbR_C]`` or MNE's ``[HbO_1, HbR_1, ...]``.
+    channel_order : {"stacked", "interleaved"} or None, default=None
+        ``[HbO_1..HbO_C, HbR_1..HbR_C]`` or MNE's ``[HbO_1, HbR_1, ...]``;
+        ``None`` reads it from ``chs_info``.
     drop_prob : float, default=0.0
         Dropout in the attention and feed-forward sub-layers.
     emb_drop_prob : float, default=0.0
@@ -96,7 +98,7 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         temporal_kernel_size: int = 30,
         temporal_stride: int = 4,
         n_chromophores: int = 2,
-        channel_order: Literal["stacked", "interleaved"] = "stacked",
+        channel_order: Literal["stacked", "interleaved"] | None = None,
         drop_prob: float = 0.0,
         emb_drop_prob: float = 0.0,
         activation: type[nn.Module] = nn.GELU,
@@ -115,6 +117,7 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
                 f"n_times ({self.n_times}) must be >= temporal_kernel_size."
             )
         n_chromophores = 1 if self.n_chans % 2 else n_chromophores
+        channel_order = fnirs_channel_order(self._chs_info, channel_order)
         n_phys_chans = self.n_chans // n_chromophores
         self.pool = pool
         # (batch, n_chans, n_times) -> (batch, n_chromophores, n_phys_chans, n_times)

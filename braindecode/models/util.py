@@ -1362,3 +1362,33 @@ def channel_types_from_chs_info(
         else:
             types.append("unknown")
     return types
+
+
+def fnirs_chromophores_from_chs_info(chs_info: Sequence[Dict[str, Any]]) -> list[str]:
+    """``"hbo"``, ``"hbr"`` or ``"unknown"`` per channel, from its name and
+    ``"kind"`` (MNE names them ``"S1_D1 hbo"``); ``"hbr"`` wins if both appear."""
+    tags = [f"{ch.get('ch_name', '')} {ch.get('kind', '')}".lower() for ch in chs_info]
+    return ["hbr" if "hbr" in t else "hbo" if "hbo" in t else "unknown" for t in tags]
+
+
+def fnirs_channel_order(chs_info, channel_order: Optional[str] = None) -> str:
+    """HbO/HbR pair layout: ``channel_order`` if given, else ``"interleaved"``
+    if ``chs_info`` lists MNE's ``[HbO_1, HbR_1, ...]``, else ``"stacked"``
+    (``[HbO..., HbR...]``, also without ``chs_info`` or balanced pairs).
+
+    Raises ``ValueError`` for balanced HbO/HbR channels in neither layout.
+    """
+    if channel_order is not None:
+        return channel_order
+    # ponytail: the layout comes from the chromophores; pair names are not matched.
+    chromophores = fnirs_chromophores_from_chs_info(chs_info or [])
+    n_pairs = chromophores.count("hbo")
+    if n_pairs and chromophores == ["hbo", "hbr"] * n_pairs:
+        return "interleaved"
+    stacked = ["hbo"] * n_pairs + ["hbr"] * n_pairs
+    if sorted(chromophores) == stacked and chromophores != stacked:
+        raise ValueError(
+            "chs_info must list its HbO/HbR channels stacked or interleaved "
+            f"(see mne's reorder_channels), got {chromophores}."
+        )
+    return "stacked"

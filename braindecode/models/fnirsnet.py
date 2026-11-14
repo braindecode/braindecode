@@ -14,7 +14,10 @@ import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
+from braindecode.models.util import (
+    _disable_batch_norm_training_if_batch_size_one,
+    fnirs_channel_order,
+)
 from braindecode.modules import DepthwiseConv2d
 
 
@@ -43,9 +46,9 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
     n_chromophores : {1, 2}, default=1
         ``1`` (reference): all channels form one input plane. ``2``: the channels
         are HbO/HbR pairs and form two planes of ``n_chans // 2`` rows.
-    channel_order : {"stacked", "interleaved"}, default="stacked"
+    channel_order : {"stacked", "interleaved"} or None, default=None
         Pair order when ``n_chromophores=2``: ``[HbO..., HbR...]`` or
-        ``[HbO_1, HbR_1, ...]`` (MNE).
+        ``[HbO_1, HbR_1, ...]`` (MNE); ``None`` reads it from ``chs_info``.
     drop_prob : float, default=0.0
         Dropout probability before ``final_layer``.
     activation : type[nn.Module], default=nn.Sigmoid
@@ -72,7 +75,7 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
         n_dw_filters: int = 8,
         dhr_kernel_length: int | None = None,
         n_chromophores: int = 1,
-        channel_order: Literal["stacked", "interleaved"] = "stacked",
+        channel_order: Literal["stacked", "interleaved"] | None = None,
         drop_prob: float = 0.0,
         activation: type[nn.Module] = nn.Sigmoid,
     ) -> None:
@@ -81,7 +84,9 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         kernel = dhr_kernel_length or self.n_times
-        self.n_chromophores, self.channel_order = n_chromophores, channel_order
+        self.n_chromophores = n_chromophores
+        pairs_info = self._chs_info if n_chromophores == 2 else None
+        self.channel_order = fnirs_channel_order(pairs_info, channel_order)
         self.conv1 = nn.Conv2d(n_chromophores, n_dhr_filters, (1, kernel))
         self.bn1 = nn.BatchNorm2d(n_dhr_filters)
         self.conv2 = nn.Sequential(

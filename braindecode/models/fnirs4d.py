@@ -16,7 +16,10 @@ import torch.nn.functional as F
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
+from braindecode.models.util import (
+    _disable_batch_norm_training_if_batch_size_one,
+    fnirs_channel_order,
+)
 
 
 class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -50,8 +53,9 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         ``LayerNorm`` before each S4D layer instead of after the residual sum.
     compute_hbt : bool, default=True
         If ``n_chans`` is even, read the halves as (HbO, HbR) and use HbT.
-    channel_order : {"stacked", "interleaved"}, default="stacked"
-        Pair order: ``[HbO..., HbR...]`` or ``[HbO_1, HbR_1, ...]`` (MNE).
+    channel_order : {"stacked", "interleaved"} or None, default=None
+        Pair order: ``[HbO..., HbR...]`` or ``[HbO_1, HbR_1, ...]`` (MNE);
+        ``None`` reads it from ``chs_info``.
     activation, branch_activation : type[nn.Module], default=nn.GELU, nn.ELU
         Activations of the S4D layers and of the mean-hemoglobin branch.
 
@@ -78,7 +82,7 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         drop_prob: float = 0.5,
         prenorm: bool = False,
         compute_hbt: bool = True,
-        channel_order: Literal["stacked", "interleaved"] = "stacked",
+        channel_order: Literal["stacked", "interleaved"] | None = None,
         activation: type[nn.Module] = nn.GELU,
         branch_activation: type[nn.Module] = nn.ELU,
     ) -> None:
@@ -86,7 +90,7 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
             n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         )
         self.prenorm, self.compute_hbt = prenorm, compute_hbt
-        self.channel_order = channel_order
+        self.channel_order = fnirs_channel_order(self._chs_info, channel_order)
         c, t = self.n_chans, self.n_times
         self.short_average_size = min(short_average_size, t)
         n_full = max(1, c // 2)
