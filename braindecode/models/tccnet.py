@@ -21,65 +21,89 @@ from braindecode.modules import CausalConv1d
 
 
 class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
-    r"""Temporal convolutional network for sEMG gesture recognition.
+    r"""TCCNet from Tsinganos et al. (2019) [tccnet2019]_.
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
     :bdg-info:`Attention/Transformer`
 
-    TCCNet was introduced by Tsinganos et al. for subject-specific gesture
-    recognition on NinaPro DB1 [tccnet2019]_. It applies residual causal
-    convolutions with exponentially increasing dilation, then summarizes the
-    temporal representation with either average-over-time (``"aot"``) or
-    learned context attention (``"att"``).
+    A temporal convolutional network that classifies a whole sEMG gesture.
+    Residual blocks of causal convolutions, whose dilation doubles at every
+    layer and keeps doubling across blocks, map the gesture to a sequence of
+    features. An average over time (``"aot"``) or a context-vector attention
+    (``"att"``) pools that sequence into one vector for a linear classifier.
 
-    This implementation follows the authors' MIT-licensed Keras source pinned
-    at commit ``cd28909ccf3696b835446cbec2f15eb60610a2af`` [tccnetcode]_.
-    Braindecode inputs are transposed internally from
-    ``(batch, n_chans, n_times)`` to the source layout
-    ``(batch, n_times, n_chans)``. The source's final softmax is intentionally
-    omitted because Braindecode models return logits.
+    The paper compares four models that differ in receptive field (RF) and
+    head (poster Table 1; parameters counted for 10 channels and 53 classes):
 
-    The paper experiments use 10-channel NinaPro DB1 sEMG sampled at 100 Hz.
-    Each channel is rectified and low-pass filtered by a first-order Butterworth
-    filter at 1 Hz. A sample is then min-max normalized across its unpadded
-    values. Repetitions 1, 3, 4, 6, 8, 9 and 10 form the training set; 2, 5
-    and 7 form the validation set. Variable-length gestures are pre-padded with
-    ``-10`` in the reference pipeline, which can be reproduced by setting
-    ``mask_value=-10.0``.
+    ============  ==================================  ======  ==========
+    Model         ``filters``                         Convs   Parameters
+    ============  ==================================  ======  ==========
+    AoT, 300 ms   ``((32, 64), (64, 128))``           4       60,117
+    AoT, 2500 ms  ``((32, 32), (32, 32), (64, 64),    7       72,245
+                  (128,))``
+    Att, 300 ms   ``((32, 64), (64, 128))``           4       76,629
+    Att, 2500 ms  ``((32, 32), (32, 32), (64, 64),    7       88,757
+                  (128,))``
+    ============  ==================================  ======  ==========
+
+    The defaults build Att, 2500 ms, the best model of the paper (89.76 %
+    top-1). Pass ``classification_head="aot"`` and/or
+    ``filters=((32, 64), (64, 128))`` for the other three. With
+    ``kernel_size=3``, the RF is 31 samples (310 ms at 100 Hz) for the
+    4-convolution models and 255 samples (2550 ms) for the 7-convolution ones.
+
+    Inputs are ``(batch, n_chans, n_times)`` and may have any length. The
+    softmax of the reference is left out, because braindecode models return
+    logits.
 
     Parameters
     ----------
-    filters : sequence of sequence of int, default=((32, 32), (32, 32), (64, 64), (128, 128))
+    filters : sequence of sequence of int, default=((32, 32), (32, 32), (64, 64), (128,))
         Output filters of each causal convolution, one inner sequence per
         residual block. It sets the number of blocks and of convolutions per
         block.
     kernel_size : int, default=3
         Temporal kernel size of every causal convolution.
-    drop_prob : float, default=0.5
-        Channel-wise dropout probability after each activated convolution,
-        equivalent to Keras ``SpatialDropout1D``.
+    drop_prob : float, default=0.05
+        Channel-wise dropout after each activated convolution, as Keras
+        ``SpatialDropout1D``.
     activation : type[nn.Module], default=nn.ReLU
-        Activation class applied after each causal convolution.
-    classification_head : {"aot", "att"}, default="aot"
-        Temporal aggregation head. ``"aot"`` averages valid time steps;
-        ``"att"`` uses the context-vector attention from the reference source.
-    mask_value : float | None, default=None
-        A time step for which every channel equals this value is treated as
-        padding. Use ``-10.0`` for the paper's variable-length preprocessing.
-        ``None`` disables masking, matching the reference constructor default.
+        Activation after each causal convolution.
+    classification_head : {"att", "aot"}, default="att"
+        ``"att"``: context-vector attention; ``"aot"``: average over the
+        valid time steps.
+    mask_value : float | None, default=-10.0
+        A time step where every channel equals this value is padding: it is
+        zeroed before every convolution and left out of the pooling, as the
+        reference's Keras ``Masking`` layer does. ``None`` turns masking off.
 
     Notes
     -----
-    The Keras source applies L2 regularization to convolution and classifier
-    kernels. In PyTorch this should be configured as optimizer weight decay;
-    it is not part of the forward architecture.
+    Protocol of the reference code [tccnetcode]_, for all four models: one
+    model per subject of NinaPro DB1 (27 subjects, 10 sEMG channels at
+    100 Hz, 53 classes including rest). Each channel is rectified and
+    low-pass filtered by a 1 Hz first-order Butterworth filter applied
+    forward-backward (``filtfilt``). Each whole gesture repetition is one
+    sample: the variable-length gestures of a batch are pre-padded with
+    ``-10`` to the longest one and masked. Repetitions 1, 3, 4, 6, 8, 9
+    and 10 train; 2, 5 and 7 test. Training uses Adam (learning rate 0.01,
+    epsilon 0.001) for 30 epochs, batch size 128, L2 0.0005 on convolution
+    and classifier kernels (use optimizer weight decay in PyTorch), class-
+    balanced sample weights, and 10 augmented copies of each training
+    gesture (time and magnitude warping 0.2, noise at 25 dB SNR). The
+    generator's min-max normalisation is off in the released configurations.
 
-    The published repository's 300-sample configuration uses
-    ``filters=((32, 64), (64, 128))``. Its variable-length configuration uses
-    ``filters=((32, 32), (32, 32), (64, 64), (128,))``. Both set
-    ``drop_prob=0.05`` and train for 30 epochs with Adam (learning rate 0.01,
-    epsilon 0.001), L2 coefficient 0.0005, time and magnitude warping of 0.2,
-    and additive noise at 25 dB SNR.
+    The masked average over time equals the reference only for pre-padding,
+    the reference pipeline: the reference sums every time step, padded ones
+    included, and divides by the number of valid steps, while this port
+    always leaves padded steps out; on a fully padded input it gives NaN, as
+    the reference does. The bias of each convolution is added only where the
+    convolution output is non-zero, as in the reference ``CausalConv1D``;
+    this only matters for bit-exact agreement with it. The attention
+    subtracts the row maximum before the exponential: the same values as
+    the reference, which overflows to NaN once the context vector grows
+    large. Initialisation follows Keras 2.2.4: truncated Glorot normal
+    kernels, zero biases, Glorot uniform attention weights.
 
     References
     ----------
@@ -101,17 +125,12 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         input_window_seconds=None,
         sfreq=None,
         # Model parameters.
-        filters: Sequence[Sequence[int]] = (
-            (32, 32),
-            (32, 32),
-            (64, 64),
-            (128, 128),
-        ),
+        filters: Sequence[Sequence[int]] = ((32, 32), (32, 32), (64, 64), (128,)),
         kernel_size: int = 3,
-        drop_prob: float = 0.5,
+        drop_prob: float = 0.05,
         activation: type[nn.Module] = nn.ReLU,
-        classification_head: str = "aot",
-        mask_value: float | None = None,
+        classification_head: str = "att",
+        mask_value: float | None = -10.0,
     ) -> None:
         super().__init__(
             n_outputs=n_outputs,
@@ -156,8 +175,7 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         self._init_parameters()
 
     def _init_parameters(self) -> None:
-        """Keras 2.2.4 initialisation of the reference: truncated Glorot normal
-        kernels and zero biases."""
+        """Keras 2.2.4 initialisation of the reference (see Notes)."""
         for module in self.modules():
             if isinstance(module, (CausalConv1d, nn.Linear)):
                 _keras_glorot_normal_(module.weight)
@@ -175,7 +193,7 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         nn.init.zeros_(self.final_layer.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Return classification logits for a batch of sEMG windows."""
+        """Return logits for a batch of sEMG gestures."""
         valid_mask = None
         if self.mask_value is not None:
             # (batch, n_chans, n_times) -> (batch, n_times), True = real step
