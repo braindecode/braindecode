@@ -35,7 +35,6 @@ from braindecode.models import (
     EEGCLIP,
     EEGPT,
     FNIRS4D,
-    FNIRSGCN,
     FNIRST,
     NICE,
     SSTDPN,
@@ -6407,8 +6406,6 @@ def _interleaved_fnirs_chs(n_pairs=4):
         (FNIRSNet, {"n_chans": 6, "drop_prob": 0.5}),
         (FNIRS4D, {"n_layers": 2, "d_state": 16, "channel_order": "interleaved"}),
         (FNIRS4D, {"n_chans": 7, "prenorm": True}),
-        (FNIRSGCN, {"node_dim": 32}),
-        (FNIRSGCN, {"n_chans": 7, "node_dim": 32}),
     ],
 )
 def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):
@@ -6427,15 +6424,6 @@ def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):
         torch.testing.assert_close(model.final_layer(features), logits)
     logits.sum().backward()
     assert torch.isfinite(x.grad).all()
-
-
-def test_fnirsgcn_adjacency_initializes_static_graph():
-    adjacency = torch.rand(5, 5).fill_diagonal_(0.0)
-    model = FNIRSGCN(n_chans=5, n_outputs=2, n_times=60, adjacency=adjacency)
-    model.reset_parameters()  # the prior survives a reset
-    expected = torch.log(adjacency.clamp_min(1e-6))
-    torch.testing.assert_close(model.static_adj_logits.data, expected)
-    assert model.adj_mix_logit.item() == -1.0
 
 
 def test_s4d_real_arithmetic_matches_complex_fft():

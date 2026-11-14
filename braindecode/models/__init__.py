@@ -55,11 +55,6 @@ if TYPE_CHECKING:
     from .fblightconvnet import FBLightConvNet
     from .fbmsnet import FBMSNet
     from .fnirs4d import FNIRS4D
-    from .fnirs_cnn1d import FNIRSCNN1D
-    from .fnirs_gcn import FNIRSGCN
-    from .fnirs_lstm import FNIRSLSTM
-    from .fnirs_mlp import FNIRSMLP
-    from .fnirs_statnet import FNIRSStatNet
     from .fnirs_t import FNIRST, FNIRSPreT
     from .fnirsnet import FNIRSNet
     from .gcnsnet import GCNsNet
