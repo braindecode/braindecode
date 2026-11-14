@@ -76,6 +76,7 @@ from braindecode.models import (
     SleepStagerChambon2018,
     SPARCNet,
     SyncNet,
+    TCCNet,
     TFMTokenizer,
     TMSANet,
     TSception,
@@ -6376,3 +6377,109 @@ def test_nice_mask_validation(shape, dtype):
     model = NICE(n_chans=4, n_times=100, n_outputs=3, n_filters=4, embed_dim=8)
     with pytest.raises(ValueError, match="mask must be boolean with shape"):
         model(torch.randn(2, 4, 100), mask=torch.ones(shape, dtype=dtype))
+
+
+def _tccnet_reference(model, x, mask_value):
+    """NumPy transcription of the TCCNet Keras layers (DSIP-UPatras/ICASSP2019_TCN
+    @cd28909: ``Masking``, ``CausalConv1D``, ``MeanOverTime`` and
+    ``AttentionWithContext(bias=False)``), on the port's weights."""
+    x = x.transpose(0, 2, 1)  # (batch, n_times, n_chans), the Keras layout
+    if mask_value is None:
+        mask = np.ones(x.shape[:2])
+    else:
+        mask = np.any(x != mask_value, axis=-1).astype(x.dtype)
+
+    def causal_conv(h, layer):
+        h = h * mask[..., None]
+        kernel = layer.conv.weight.detach().numpy().transpose(2, 1, 0)
+        dilation = layer.conv.dilation[0]
+        padded = np.pad(h, ((0, 0), ((len(kernel) - 1) * dilation, 0), (0, 0)))
+        out = sum(
+            padded[:, j * dilation : j * dilation + h.shape[1]] @ kernel[j]
+            for j in range(len(kernel))
+        )
+        # The bias is added only where the convolution is non-zero.
+        return (out + layer.bias.detach().numpy()) * (out != 0)
+
+    h = x * mask[..., None]
+    for block in model.feature_extractor:
+        residual = causal_conv(h, block.projection)
+        for layer in block.convolutions:
+            h = np.maximum(causal_conv(h, layer), 0)
+        h = h + residual
+    if model.attention is None:
+        # Sum over every step, divided by the number of valid steps.
+        pooled = h.sum(axis=1) / mask.sum(axis=1, keepdims=True)
+    else:
+        weight = model.attention.weight.detach().numpy()
+        context = model.attention.context.detach().numpy()
+        attention = np.exp(np.tanh(h @ weight) @ context) * mask
+        attention = attention / (attention.sum(axis=1, keepdims=True) + 1e-7)
+        pooled = (h * attention[..., None]).sum(axis=1)
+    final = model.final_layer
+    return pooled @ final.weight.detach().numpy().T + final.bias.detach().numpy()
+
+
+@pytest.mark.parametrize("mask_value", [None, -10.0])
+@pytest.mark.parametrize("classification_head", ["aot", "att"])
+def test_tccnet_matches_reference_keras_equations(classification_head, mask_value):
+    # Two blocks, so the dilation carried across blocks (1, 2 | 4) is checked.
+    model = TCCNet(
+        n_chans=2,
+        n_outputs=2,
+        filters=((2, 3), (3,)),
+        kernel_size=2,
+        drop_prob=0.0,
+        classification_head=classification_head,
+        mask_value=mask_value,
+    ).double()
+    with torch.no_grad():  # non-symmetric values expose layout errors
+        for i, parameter in enumerate(model.parameters()):
+            values = torch.linspace(
+                -0.13 + i * 0.01, 0.17 + i * 0.01, parameter.numel()
+            )
+            parameter.copy_(values.reshape_as(parameter))
+    x_numpy = np.linspace(-0.4, 0.6, 16).reshape(1, 2, 8)
+    n_pad = 0 if mask_value is None else 3
+    if mask_value is not None:
+        x_numpy[..., :n_pad] = mask_value  # pre-padding, as in the reference
+    coefficients = np.array([[0.7, -0.3]])
+    x = torch.tensor(x_numpy, requires_grad=True)
+
+    out = model(x)
+    (out * torch.from_numpy(coefficients)).sum().backward()
+
+    expected = _tccnet_reference(model, x_numpy, mask_value)
+    np.testing.assert_allclose(out.detach().numpy(), expected, rtol=1e-11)
+    # Input gradient vs central differences of the reference, on real steps.
+    assert not x.grad[..., :n_pad].any()
+    for index in np.ndindex(x_numpy[..., n_pad:].shape):
+        index = index[:2] + (index[2] + n_pad,)
+        shifted = [x_numpy.copy(), x_numpy.copy()]
+        shifted[0][index] += 1e-6
+        shifted[1][index] -= 1e-6
+        plus, minus = (
+            np.sum(_tccnet_reference(model, s, mask_value) * coefficients)
+            for s in shifted
+        )
+        np.testing.assert_allclose(
+            x.grad[index].item(), (plus - minus) / 2e-6, rtol=2e-5, atol=1e-7
+        )
+
+
+@pytest.mark.parametrize("classification_head", ["aot", "att"])
+def test_tccnet_pre_padding_matches_unpadded_input(classification_head):
+    model = TCCNet(
+        n_chans=3,
+        n_outputs=4,
+        filters=((4, 5), (6,)),
+        classification_head=classification_head,
+    ).eval()
+    x = torch.randn(2, 3, 24)
+    padded = torch.cat((torch.full((2, 3, 8), -10.0), x), dim=-1).requires_grad_()
+
+    out = model(padded)
+    out.sum().backward()
+
+    torch.testing.assert_close(out, model(x), rtol=1e-5, atol=1e-6)
+    assert not padded.grad[..., :8].any()
