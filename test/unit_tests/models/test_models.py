@@ -6475,6 +6475,22 @@ def test_fnirs4d_loads_reference_state_dict(mean_branch):
         FNIRS4D(**dict(kw, mean_branch="kfold"))
 
 
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+def test_fnirst_seeded_reset_and_cls_tokens(model_cls):
+    """A seeded reset_parameters() repeats the seeded constructor; cls_token is
+    the two branches' CLS tokens, not the pooled features."""
+    torch.manual_seed(1)
+    model = model_cls(n_chans=4, n_outputs=2, n_times=60, depth=1, heads=2)
+    built = {k: v.clone() for k, v in model.state_dict().items()}
+    torch.manual_seed(1)
+    model.reset_parameters()
+    assert all(torch.equal(built[k], v) for k, v in model.state_dict().items())
+    with torch.no_grad():
+        out = model.eval()(torch.randn(2, 4, 60), return_features=True)
+    assert out["cls_token"].shape == out["features"].shape == (2, 128)
+    assert not torch.equal(out["cls_token"], out["features"])
+
+
 @pytest.mark.parametrize(
     "model_cls,kwargs",
     [

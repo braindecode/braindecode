@@ -81,7 +81,7 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         self,
         n_outputs: int | None = None,
         n_chans: int | None = None,
-        chs_info=None,
+        chs_info: list[dict] | None = None,
         n_times: int | None = None,
         input_window_seconds: float | None = None,
         sfreq: float | None = None,
@@ -159,9 +159,9 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
             nn.Linear(n_bins * conv_channels, dim),
             nn.LayerNorm(dim),
         )
-        self.cls_token_patch = nn.Parameter(torch.randn(1, 1, dim))
+        self.cls_token_patch = nn.Parameter(torch.empty(1, 1, dim))
         self.pos_embedding_patch = nn.Parameter(
-            torch.randn(1, n_phys_chans - spatial_kernel + 2, dim)
+            torch.empty(1, n_phys_chans - spatial_kernel + 2, dim)
         )
         self.dropout_patch = nn.Dropout(emb_drop_prob)
         self.transformer_patch = branch()
@@ -177,8 +177,8 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
             nn.Linear(n_bins * conv_channels, dim),
             nn.LayerNorm(dim),
         )
-        self.cls_token_channel = nn.Parameter(torch.randn(1, 1, dim))
-        self.pos_embedding_channel = nn.Parameter(torch.randn(1, n_phys_chans + 1, dim))
+        self.cls_token_channel = nn.Parameter(torch.empty(1, 1, dim))
+        self.pos_embedding_channel = nn.Parameter(torch.empty(1, n_phys_chans + 1, dim))
         self.dropout_channel = nn.Dropout(emb_drop_prob)
         self.transformer_channel = branch()
 
@@ -187,7 +187,7 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         self._init_parameters()
 
     def _init_parameters(self) -> None:
-        # Redrawn after the layers, so reset_parameters() resets them too.
+        # Drawn after the layers, so reset_parameters() repeats the constructor.
         with torch.no_grad():
             self.cls_token_patch.normal_()
             self.pos_embedding_patch.normal_()
@@ -207,7 +207,9 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """``x``: ``(batch, n_chans, n_times)``. ``mask`` (bool, same shape):
         True samples are zeroed first. ``ch_mask`` is refused: the spatial
-        kernel and positional tables span every channel."""
+        kernel and positional tables span every channel. ``return_features``
+        gives the normalized pooled ``"features"`` and, as ``"cls_token"``, the
+        two branches' CLS tokens ``(batch, 2 * dim)``."""
         if ch_mask is not None:
             raise ValueError("FNIRST does not accept ch_mask (fixed channel layout).")
         if mask is not None:
@@ -236,14 +238,14 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         channel = self.dropout_channel(channel + self.pos_embedding_channel)
         channel = self.transformer_channel(channel)
         # 2 x (batch, n_tokens + 1, dim) -> (batch, 2 * dim)
+        cls_tokens = torch.cat((patch[:, 0], channel[:, 0]), dim=1)
         if self.pool == "mean":
             features = torch.cat((patch.mean(dim=1), channel.mean(dim=1)), dim=1)
         else:
-            features = torch.cat((patch[:, 0], channel[:, 0]), dim=1)
+            features = cls_tokens
         features = self.final_norm(features)
         if return_features:
-            cls_token = features if self.pool == "cls" else None
-            return {"features": features, "cls_token": cls_token}
+            return {"features": features, "cls_token": cls_tokens}
         return self.final_layer(features)
 
 
