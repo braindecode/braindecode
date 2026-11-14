@@ -1,5 +1,4 @@
-# Authors: T. Chae, K. Avramidis, D. Emmanouilidou, I. J. Tashev (original MtReNIRS)
-#          Bruno Aristimunha <b.aristimunha@gmail.com>
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: MIT
 #

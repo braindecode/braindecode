@@ -1,11 +1,9 @@
-# Authors: E. Jung, H. Lee, J. An (original fNIRS MAE architecture)
-#          GeoNIRS Consortium (reference dual-chromophore MAE implementation)
-#          Bruno Aristimunha <b.aristimunha@gmail.com>
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD-3-Clause
 # Adapted from https://github.com/GeoNIRS/GeoNIRS model/jung_inspired_mae.py (81f8995;
-# no licence file; paper arXiv:2610.17845), after Jung et al. (2025).
-"""JungMAE: Dual-Chromophore Masked Autoencoder for fNIRS Representation Learning."""
+# no licence file; paper arXiv:2610.17845), the GeoNIRS authors' paper-guided
+# implementation of Jung et al. (2025).
 
 from __future__ import annotations
 
@@ -22,15 +20,18 @@ from braindecode.models.util import fnirs_channel_order
 
 
 class JungMAE(EEGModuleMixin, nn.Module):
-    r"""fNIRS masked autoencoder from Jung et al. (2025) :footcite:`jung2025mae`.
+    r"""JungMAE, the GeoNIRS authors' paper-guided implementation of Jung et al. (2025).
 
     :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model`
 
     .. versionadded:: 2.1
 
-    Each channel's paired HbO/HbR samples are cut into patches, embedded with
-    sinusoidal positions and encoded by a pre-norm transformer, one channel at
-    a time; a linear head reads the pooled tokens. NaN marks a missing sample:
+    The fNIRS masked autoencoder of Jung et al. :footcite:`jung2025mae` as
+    implemented, from the paper, by the GeoNIRS authors
+    :footcite:`li2026geonirs`, who also trained ``jung_mae.pt``. Each channel's
+    paired HbO/HbR samples are cut into patches, embedded with sinusoidal
+    positions and encoded by a pre-norm transformer, one channel at a time; a
+    linear head reads the pooled tokens. NaN marks a missing sample:
     patches with too few finite samples are left out of attention and zeroed.
     :meth:`load_state_dict` takes the GeoNIRS ``jung_mae.pt`` (decoder dropped).
 
