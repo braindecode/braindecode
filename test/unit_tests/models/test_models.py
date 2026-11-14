@@ -6404,6 +6404,7 @@ def _interleaved_fnirs_chs(n_pairs=4):
         (FNIRSNet, {"n_chans": 6}),
         (FNIRS4D, {"n_layers": 2, "d_state": 16, "channel_order": "interleaved"}),
         (FNIRS4D, {"n_chans": 7, "prenorm": True, "compute_hbt": False}),
+        (FNIRS4D, {"n_layers": 1, "d_state": 16, "mean_branch": "time_mean"}),
     ],
 )
 def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):
@@ -6443,6 +6444,35 @@ def test_s4d_real_arithmetic_matches_complex_fft():
     ref_out = layer.output_linear(layer.activation(ref_conv + skip))
     with torch.no_grad():
         torch.testing.assert_close(layer(x), ref_out, atol=1e-5, rtol=1e-5)
+
+
+@pytest.mark.parametrize("mean_branch", ["multiscale", "time_mean"])
+def test_fnirs4d_loads_reference_state_dict(mean_branch):
+    """The authors' key names (``fc.0``, ``mean_hemoglobin_branch.conv_1``, ...)
+    load through ``mapping`` with ``strict=True``; ``"time_mean"`` (the
+    reference's KFold-CV branch) is the time mean of each [HbO, HbT] channel."""
+    kw = dict(n_chans=8, n_outputs=3, n_times=60, n_layers=1, mean_branch=mean_branch)
+    model = FNIRS4D(**kw).eval()
+    reference = {
+        k.replace("final_layer.", "fc.0."): v for k, v in model.state_dict().items()
+    }
+    branch = {k for k in reference if k.startswith("mean_hemoglobin_branch.")}
+    if mean_branch == "multiscale":
+        assert {k.split(".")[1] for k in branch} == {"conv_1", "bn_1", "conv_2", "bn_2"}
+    else:
+        assert not branch
+    loaded = FNIRS4D(**kw).eval()
+    loaded.load_state_dict(reference, strict=True)
+    x = torch.randn(2, 8, 60)
+    with torch.no_grad():
+        assert torch.equal(loaded(x), model(x))
+        features = model(x, return_features=True)["features"]
+    if mean_branch == "time_mean":
+        hbo, hbr = x.chunk(2, dim=1)
+        hbt = torch.cat((hbo, hbo + hbr), dim=1)
+        torch.testing.assert_close(features[:, 8:], hbt.mean(dim=-1))
+    with pytest.raises(ValueError, match="mean_branch"):
+        FNIRS4D(**dict(kw, mean_branch="kfold"))
 
 
 @pytest.mark.parametrize(
