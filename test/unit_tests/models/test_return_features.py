@@ -12,6 +12,12 @@ from braindecode.models import (
     CORTEG,
     EEGDINO,
     EEGPT,
+    FNIRS4D,
+    FNIRSCNN1D,
+    FNIRSGCN,
+    FNIRSLSTM,
+    FNIRSMLP,
+    FNIRST,
     MAPA,
     MEGGPT,
     MEGXL,
@@ -23,9 +29,15 @@ from braindecode.models import (
     CBraMod,
     DuIN,
     EpiNT,
+    FNIRSNet,
+    FNIRSPreT,
+    FNIRSStatNet,
+    GeoNIRS,
     Guetschel2026,
+    JungMAE,
     Labram,
     MIRepNet,
+    MtReNIRS,
     PopulationTransformer,
     SignalJEPA,
     SignalJEPA_Contextual,
@@ -36,7 +48,11 @@ from braindecode.models import (
 )
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
-from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.models.util import (
+    _fnirs_chs_info,
+    models_dict,
+    models_mandatory_parameters,
+)
 from test.unit_tests.models._fixtures import _get_signal_params
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
@@ -209,6 +225,25 @@ _MODELS = [
         False,
         id="MIRepNet",
     ),
+    pytest.param(
+        GeoNIRS,
+        4,
+        {
+            "temporal_layers": 1,
+            "num_heads": 4,
+            "embedding_dim": 64,
+            "chs_info": _fnirs_chs_info(2),
+        },
+        False,
+        id="GeoNIRS",
+    ),
+    pytest.param(
+        MtReNIRS,
+        4,
+        {"depth": 1, "n_heads": 2, "d_model": 32, "chs_info": _fnirs_chs_info(2)},
+        False,
+        id="MtReNIRS",
+    ),
     pytest.param(MEGGPT, N_CHANS, {}, False, id="MEGGPT"),
     pytest.param(
         MEGXL,
@@ -216,6 +251,44 @@ _MODELS = [
         {"chs_info": _chs(), "sfreq": 50.0, "num_layers": 1},
         False,
         id="MEGXL",
+    ),
+    pytest.param(FNIRSCNN1D, 4, {}, False, id="FNIRSCNN1D"),
+    pytest.param(FNIRSStatNet, 4, {}, False, id="FNIRSStatNet"),
+    pytest.param(FNIRSLSTM, 4, {"n_layers": 1}, False, id="FNIRSLSTM"),
+    pytest.param(FNIRSMLP, 4, {"n_layers": 2}, False, id="FNIRSMLP"),
+    pytest.param(FNIRSMLP, 7, {"n_layers": 3}, False, id="FNIRSMLP-3layers"),
+    pytest.param(FNIRSStatNet, 7, {"n_windows": 3}, False, id="FNIRSStatNet-windows"),
+    pytest.param(
+        FNIRSStatNet,
+        7,
+        {
+            "include_higher_moments": False,
+            "include_hrf": False,
+            "n_learned_filters": 0,
+            "hidden_dim": None,
+        },
+        False,
+        id="FNIRSStatNet-linear",
+    ),
+    pytest.param(
+        FNIRSLSTM,
+        7,
+        {"use_conv_stem": False, "rnn_type": "gru", "pool_mode": "last"},
+        False,
+        id="FNIRSLSTM-gru-last",
+    ),
+    pytest.param(FNIRSLSTM, 7, {"pool_mode": "mean"}, False, id="FNIRSLSTM-mean"),
+    pytest.param(FNIRSNet, 4, {}, False, id="FNIRSNet"),
+    pytest.param(FNIRS4D, 4, {"n_layers": 1, "d_state": 16}, False, id="FNIRS4D"),
+    pytest.param(FNIRSGCN, 4, {"n_gcn_layers": 1}, False, id="FNIRSGCN"),
+    pytest.param(FNIRST, 4, {"depth": 1, "heads": 2}, True, id="FNIRST"),
+    pytest.param(FNIRSPreT, 4, {"depth": 1, "heads": 2}, True, id="FNIRSPreT"),
+    pytest.param(
+        JungMAE,
+        4,
+        {"encoder_layers": 1, "encoder_heads": 4, "encoder_dim": 64},
+        False,
+        id="JungMAE",
     ),
 ]
 

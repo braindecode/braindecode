@@ -1738,6 +1738,26 @@ def test_multi_head_attention_invalid_emb_size():
         MultiHeadAttention(emb_size=32, num_heads=0, head_dim=8)
 
 
+def test_multi_head_attention_qkv_bias():
+    from braindecode.modules import MultiHeadAttention
+
+    torch.manual_seed(0)
+    default = MultiHeadAttention(emb_size=8, num_heads=2)
+    torch.manual_seed(0)
+    explicit = MultiHeadAttention(emb_size=8, num_heads=2, qkv_bias=True)
+    for (name, p), (name_e, p_e) in zip(
+        default.state_dict().items(), explicit.state_dict().items()
+    ):
+        assert name == name_e and torch.equal(p, p_e)
+    no_bias = MultiHeadAttention(emb_size=8, num_heads=2, qkv_bias=False)
+    assert set(default.state_dict()) - set(no_bias.state_dict()) == {
+        "keys.bias",
+        "queries.bias",
+        "values.bias",
+    }
+    assert no_bias(torch.randn(2, 3, 8)).shape == (2, 3, 8)
+
+
 def test_hpu_fused_sdpa_gets_contiguous_inputs(monkeypatch):
     # Gaudi's FusedSDPA gives wrong results for some strided q/k/v views.
     import sys

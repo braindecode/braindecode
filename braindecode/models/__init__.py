@@ -54,10 +54,20 @@ if TYPE_CHECKING:
     from .fbcnet import FBCNet
     from .fblightconvnet import FBLightConvNet
     from .fbmsnet import FBMSNet
+    from .fnirs4d import FNIRS4D
+    from .fnirs_cnn1d import FNIRSCNN1D
+    from .fnirs_gcn import FNIRSGCN
+    from .fnirs_lstm import FNIRSLSTM
+    from .fnirs_mlp import FNIRSMLP
+    from .fnirs_statnet import FNIRSStatNet
+    from .fnirs_t import FNIRST, FNIRSPreT
+    from .fnirsnet import FNIRSNet
     from .gcnsnet import GCNsNet
+    from .geonirs import GeoNIRS
     from .guetschel2026 import Guetschel2026
     from .hybrid import HybridNet
     from .ifnet import IFNet
+    from .jung_mae import JungMAE
     from .labram import Labram
     from .luna import LUNA
     from .mapa import MAPA
@@ -68,6 +78,7 @@ if TYPE_CHECKING:
     from .mirepnet import MIRepNet
     from .mscformer import MSCFormer
     from .msvtnet import MSVTNet
+    from .mtrenirs import MtReNIRS
     from .mvpformer import MVPFormer
     from .neuropose import NeuroPose
     from .neurorvq import NeuroRVQ

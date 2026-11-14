@@ -62,6 +62,8 @@ The following components are licensed under the MIT License:
 - `braindecode/models/meggpt.py`
 - `braindecode/models/megxl.py`
 - `braindecode/models/nice.py`
+- `braindecode/models/fnirs_t.py`
+- `braindecode/models/mtrenirs.py`
 
 The `brainomni.py` file is a derivative of `OpenTSLab/BrainOmni` (MIT). The
 `seanet.py` module holds its SEANet codec, derived from Meta's
@@ -83,6 +85,8 @@ The following components are licensed under the Apache License 2.0:
 - `braindecode/models/brant.py`
 - `braindecode/models/diver1.py`
 - `braindecode/models/mscformer.py`
+- `braindecode/models/fnirsnet.py`
+- `braindecode/models/fnirs4d.py`
 
 ### USC Academic License Files
 
