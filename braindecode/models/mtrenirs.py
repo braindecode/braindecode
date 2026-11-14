@@ -308,7 +308,12 @@ class _QKNormSelfInteraction(TimmAttention):
 
 
 class _Block(nn.Module):
-    """Pre-norm block: QK-norm rotary self-attention, then feed-forward."""
+    """Pre-norm block: QK-norm rotary self-attention, then feed-forward.
+
+    Private because its attention takes per-token positions and a validity mask
+    (:class:`~braindecode.modules.PreNormBlock` calls ``attn(x)`` only) and the
+    released ``mtrenirs_10s.pt`` keys follow this layout.
+    """
 
     def __init__(
         self, d_model, n_heads, mlp_hidden, dropout, rope_base, qk_norm, activation

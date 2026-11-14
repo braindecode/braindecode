@@ -99,6 +99,7 @@ _KNOWN_PRIVATE_BLOCKS = {
     ("meta_neuromotor", "_MultiHeadAttention"),
     ("mirepnet", "_PatchEmbedding"),
     ("mscformer", "_MultiScalePatchEmbeddingCNN"),
+    ("mtrenirs", "_Block"),
     ("msvtnet", "_PositionalEncoding"),
     ("mvpformer", "_WaveletPatchEmbed"),
     ("mvpformer", "_MVPAttention"),
