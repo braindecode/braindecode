@@ -98,6 +98,6 @@ FNIRS4D,General,Prediction,5,"n_chans, n_outputs, n_times",40822,"FNIRS4D(n_chan
 FNIRSGCN,General,Prediction,5,"n_chans, n_outputs, n_times",32085,"FNIRSGCN(n_chans=40, n_outputs=2, n_times=60, sfreq=5.0)","Convolution,Graph Neural Network",fNIRS
 FNIRST,General,Prediction,5,"n_chans, n_outputs, n_times",1706194,"FNIRST(n_chans=36, n_outputs=2, n_times=120)","Convolution,Attention/Transformer",fNIRS
 FNIRSPreT,General,Prediction,5,"n_chans, n_outputs, n_times",1706674,"FNIRSPreT(n_chans=36, n_outputs=2, n_times=120)","Convolution,Attention/Transformer",fNIRS
-GeoNIRS,General,"Prediction, Embedding",5,"n_chans, n_outputs, n_times",4504904,"GeoNIRS(n_chans=40, n_outputs=2, n_times=150, sfreq=5.0)","Attention/Transformer,Channel,Foundation Model",fNIRS
-MtReNIRS,General,"Prediction, Embedding",10,"n_chans, n_outputs, n_times",1231490,"MtReNIRS(n_chans=20, n_outputs=2, n_times=100, sfreq=10.0)","Attention/Transformer,Channel,Foundation Model",fNIRS
+GeoNIRS,General,"Prediction, Embedding",5,"chs_info, n_outputs, n_times",4504904,"GeoNIRS(chs_info=<user>, n_outputs=2, n_times=150, sfreq=5.0)","Attention/Transformer,Channel,Foundation Model",fNIRS
+MtReNIRS,General,"Prediction, Embedding",10,"chs_info, n_outputs, n_times",1231490,"MtReNIRS(chs_info=<user>, n_outputs=2, n_times=100, sfreq=10.0)","Attention/Transformer,Channel,Foundation Model",fNIRS
 JungMAE,General,"Prediction, Embedding",5,"n_chans, n_outputs, n_times",1899074,"JungMAE(n_chans=40, n_outputs=2, n_times=150, sfreq=5.0)","Attention/Transformer,Foundation Model",fNIRS
