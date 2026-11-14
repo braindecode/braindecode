@@ -625,10 +625,12 @@ def _attend(q, k, v, n_head: int, dropout_p: float) -> torch.Tensor:
 class _SpatialTemporalBlock(nn.Module):
     """Temporal attention (RoPE) on one feature half, spatial on the other."""
 
-    def __init__(self, n_dim, n_head, dropout):
+    def __init__(self, n_dim, n_head, dropout, rope_positions=240):
         super().__init__()
         self.pre_attn_norm = RMSNorm(n_dim, eps=1e-6)
-        self.time_attn = _MultiHeadAttentionRoPE(n_dim // 2, n_head // 2, dropout, True)
+        self.time_attn = _MultiHeadAttentionRoPE(
+            n_dim // 2, n_head // 2, dropout, True, rope_positions
+        )
         self.spatial_attn = _MultiHeadAttentionRoPE(
             n_dim // 2, n_head // 2, dropout, False
         )
@@ -650,23 +652,24 @@ class _SpatialTemporalBlock(nn.Module):
 
 
 class _RotaryPositionalEmbedding(nn.Module):
-    """RoPE of the released BrainOmni.
+    """RoPE of the released BrainOmni and MEG-XL.
 
-    ``rotate`` caches 240 positions as ``(cos, sin)`` pairs; the released
-    checkpoints hold cosines only (zero sine). A longer sequence rebuilds the
-    cache from ``freqs`` and later calls keep it (not saved). The caches stay
-    float32 under a dtype cast, ``freqs`` follows it.
+    ``rotate`` caches ``n_positions`` positions as ``(cos, sin)`` pairs (240
+    for BrainOmni, whose released checkpoints hold cosines only, zero sine;
+    625 for MEG-XL). A longer sequence rebuilds the cache from ``freqs`` and
+    later calls keep it (not saved). The caches stay float32 under a dtype
+    cast, ``freqs`` follows it.
     """
 
     # TorchScript types the ``rebuilt`` buffer from this; a postponed string
     # annotation would not resolve.
     __annotations__ = {"rebuilt": Optional[torch.Tensor]}
 
-    def __init__(self, n_dim, base=10000):
+    def __init__(self, n_dim, base=10000, n_positions=240):
         super().__init__()
         self.n_dim = n_dim
         self.register_buffer("freqs", rotary_frequencies(n_dim, base))
-        self.register_buffer("rotate", self._polar(240))
+        self.register_buffer("rotate", self._polar(n_positions))
         self.register_buffer("rebuilt", None, persistent=False)
 
     def _polar(self, seq: int) -> torch.Tensor:
@@ -709,14 +712,18 @@ class _RotaryPositionalEmbedding(nn.Module):
 class _MultiHeadAttentionRoPE(nn.Module):
     """Self-attention with a fused ``qkv`` projection and optional RoPE."""
 
-    def __init__(self, n_dim, n_head, dropout, rope):
+    def __init__(self, n_dim, n_head, dropout, rope, rope_positions=240):
         super().__init__()
         self.dropout = dropout
         self.n_dim = n_dim
         self.n_head = n_head
         self.qkv = nn.Linear(n_dim, 3 * n_dim)
         self.proj = nn.Linear(n_dim, n_dim)
-        self.rope_embedding_layer = _RotaryPositionalEmbedding(n_dim) if rope else None
+        self.rope_embedding_layer = (
+            _RotaryPositionalEmbedding(n_dim, n_positions=rope_positions)
+            if rope
+            else None
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         q, k, v = torch.split(self.qkv(x), self.n_dim, dim=-1)

@@ -18,6 +18,7 @@ from braindecode.models import (
     DIVER1,
     LUNA,
     MAPA,
+    MEGGPT,
     REVE,
     BaRISTA,
     BrainBERT,
@@ -297,6 +298,7 @@ _FIXED_HEADS = {
                embed_dim=32, num_layers=1, num_heads=2, neural_tokenizer=False),
         400,
     ),
+    "MEGGPT": lambda: (_small_meggpt(), 16),
 }
 
 
@@ -337,6 +339,39 @@ def test_cbramod_ch_mask_tokens_match_each_recording_alone():
         scripted = torch.jit.script(model)(x.detach(), ch_mask=mask)
     torch.testing.assert_close(features, out.detach())
     torch.testing.assert_close(scripted, out.detach())
+
+
+def _small_meggpt():
+    # Two layers: 8 steps per segment, then 2 patches of 4 steps -> 2 steps.
+    return MEGGPT(n_chans=3, n_outputs=3, n_times=16, n_tokens=8, n_codes=16,
+                  rnn_hidden_size=8, embed_dim=16, num_heads=2, feedforward_dim=32,
+                  n_patches=(8, 2), patch_lens=(1, 4), n_last_steps=2,
+                  patch_band=(2, None))
+
+
+def test_meggpt_ch_mask_features_match_each_recording_alone():
+    """MEGGPT's head flattens the channels; its features and tokens are masked."""
+    torch.manual_seed(0)
+    model = _small_meggpt().eval()
+    x, mask, xs = _padded_batch(16)
+    x.requires_grad_(True)
+    out = model(x, ch_mask=mask, return_features=True)
+    assert out["features"].shape == (3, 3, 16)
+    assert out["tokens"].shape == (3, 3, 4, 16)
+    torch.testing.assert_close(out["features"], out["tokens"].mean(dim=2))
+    out["tokens"].sum().backward()
+    assert x.grad is None  # the tokenizer's argmax passes no gradient
+    assert all(p.grad.isfinite().all() for p in model.parameters() if p.grad is not None)
+    with torch.no_grad():
+        scripted = torch.jit.script(model)(x.detach(), ch_mask=mask, return_features=True)
+        for i, xi in enumerate(xs):
+            alone = model(xi[None], return_features=True)
+            for key in ("features", "tokens"):
+                torch.testing.assert_close(out[key][i, : len(xi)].detach(), alone[key][0])
+    for key in ("features", "tokens"):
+        assert out[key].shape[:2] == mask.shape
+        assert torch.equal(out[key][~mask], torch.zeros_like(out[key][~mask]))
+        torch.testing.assert_close(scripted[key], out[key].detach())
 
 
 def test_luna_reconstruction_refuses_ch_mask():
@@ -419,3 +454,124 @@ def test_epint_masked_nondivisible_window_normalizes_before_crop():
     model(x, ch_mask=mask).sum().backward()
     assert torch.isfinite(x.grad).all()
     assert torch.equal(x.grad[~mask], torch.zeros_like(x.grad[~mask]))
+
+
+@pytest.mark.parametrize("policy,expected_indices", [
+    ("pad", [6, 7, 14, 15, 22, 23]), ("crop", [6, 7, 14, 15]),
+])
+@pytest.mark.parametrize("scripted", [False, True])
+def test_meggpt_next_token_metadata_and_training(policy, expected_indices, scripted):
+    """A real vocab-head step selects hidden, valid shifted targets, not padding."""
+    torch.manual_seed(0)
+    model = _small_meggpt().eval()
+    model.on_non_divisible = policy
+    if scripted:
+        model = torch.jit.script(model)
+    ids = torch.randint(0, 8, (2, 3, 18))
+    lengths = torch.tensor([9, 18])
+    ch_mask = torch.tensor([[True, False, False], [True, True, True]])
+    time = torch.arange(18)[None, None]
+    valid = (time < lengths[:, None, None]) & ch_mask[:, :, None]
+    ids[~valid.expand_as(ids)] = -999  # must be sanitized before embedding/CE
+    hide = torch.zeros_like(ids, dtype=torch.bool)
+    hide[..., 7] = True
+    hide[..., 15] = True
+    hide[~valid.expand_as(ids)] = True  # never contributes
+    encoded = model.encode_tokens(ids, hide, ch_mask, lengths)
+    indices = encoded["output_indices"]
+    assert indices.tolist() == expected_indices
+    assert encoded["input_indices"].tolist() == list(range(24 if policy == "pad" else 16))
+    expected_valid = (indices[None, None] + 1 < lengths[:, None, None]) & ch_mask[:, :, None]
+    assert torch.equal(encoded["target_valid"], expected_valid.expand_as(encoded["target_valid"]))
+    for j, index in enumerate(expected_indices):
+        if index + 1 < 18:
+            real = encoded["target_valid"][..., j]
+            assert torch.equal(encoded["next_token_targets"][..., j][real], ids[..., index + 1][real])
+    assert not encoded["next_token_targets"][~encoded["target_valid"]].any()
+    selected = encoded["prediction_mask"]
+    assert selected.sum().item() == 7  # first recording1, second3 *2 targets
+    assert not selected[~encoded["target_valid"]].any()
+    head = torch.nn.Linear(16, 8)
+    optimizer = torch.optim.SGD([*model.parameters(), *head.parameters()], lr=0.01)
+    before = model.layers[0].attn.v_proj.weight.detach().clone()
+    logits = head(encoded["tokens"])
+    targets = encoded["next_token_targets"]
+    loss = torch.nn.functional.cross_entropy(logits[selected], targets[selected])
+    assert loss.isfinite()
+    # CE is evaluated only at selected/valid entries: invalid sentinel labels
+    # and arbitrary unselected logits cannot enter the training reduction.
+    changed_targets = targets.clone()
+    changed_targets[~selected] = -999
+    changed_logits = logits.detach().clone()
+    changed_logits[~selected] = float("nan")
+    torch.testing.assert_close(loss.detach(), torch.nn.functional.cross_entropy(
+        changed_logits[selected], changed_targets[selected]))
+    optimizer.zero_grad()
+    loss.backward()
+    for parameter in (model.token_embedding.weight, model.layers[0].attn.v_proj.weight,
+                      model.layers[1].attn.v_proj.weight, head.weight):
+        assert parameter.grad is not None
+        assert parameter.grad.isfinite().all() and parameter.grad.abs().sum() > 0
+    assert all(not p.requires_grad and p.grad is None for p in model.tokenizer.parameters())
+    optimizer.step()
+    assert not torch.equal(before, model.layers[0].attn.v_proj.weight)
+    # A defined empty selection: downstream training rejects instead of CE NaN.
+    empty = model.encode_tokens(ids, torch.zeros_like(hide), ch_mask, lengths)
+    assert not empty["prediction_mask"].any()
+
+
+def test_meggpt_corruption_is_before_context_and_clean_targets_stay_clean():
+    torch.manual_seed(0)
+    model = _small_meggpt().eval()
+    ids = torch.randint(0, 8, (2, 3, 16))
+    hide = torch.zeros_like(ids, dtype=torch.bool)
+    hide[..., 7] = True
+    seen = []
+    hook = model.layers[0].register_forward_pre_hook(lambda m, args: seen.append(args[0].detach()))
+    clean = model.encode_tokens(ids)
+    masked = model.encode_tokens(ids, hide)
+    hook.remove()
+    expected = model.token_embedding(model.to_segments(ids))
+    expected = expected.masked_fill(model.to_segments(hide).unsqueeze(-1), 0.0)
+    expected = expected + model.time_embedding[:, None]
+    expected = expected + model.channel_embedding
+    torch.testing.assert_close(seen[1], expected, rtol=0, atol=0)
+    assert not torch.equal(seen[0], seen[1])
+    assert torch.equal(clean["next_token_targets"], masked["next_token_targets"])
+    assert not torch.equal(clean["tokens"], masked["tokens"])
+    # Future corruption cannot affect the first segment's outputs.
+    future = hide.clone().zero_()
+    future[..., 15] = True
+    out = model.encode_tokens(ids, future)
+    torch.testing.assert_close(clean["tokens"][:, :, :2], out["tokens"][:, :, :2], rtol=0, atol=0)
+    # Explicit error for a mask that would otherwise broadcast silently.
+    with pytest.raises(ValueError, match="token_mask"):
+        model.encode_tokens(ids, hide[:, :1])
+    with pytest.raises(ValueError, match="token_mask"):
+        model.encode_tokens(ids, hide.float())
+
+
+@pytest.mark.parametrize("scripted", [False, True])
+def test_meggpt_no_corruption_and_false_mask_match_including_rng_and_grad(scripted):
+    torch.manual_seed(0)
+    model = _small_meggpt().train()
+    if scripted:
+        model = torch.jit.script(model)
+    x = torch.randn(2, 3, 16, requires_grad=True)
+    mask = torch.zeros_like(x, dtype=torch.bool)
+    outputs, states, grads = [], [], []
+    for hide in (None, mask):
+        torch.manual_seed(12)
+        model.zero_grad()
+        out = model(x, return_features=True, token_mask=hide)
+        out["tokens"].sum().backward()
+        outputs.append(out)
+        states.append(torch.get_rng_state())
+        grads.append({k: p.grad.clone() for k, p in model.named_parameters() if p.grad is not None})
+    assert torch.equal(states[0], states[1])
+    for key in ("features", "tokens"):
+        torch.testing.assert_close(outputs[0][key], outputs[1][key], rtol=0, atol=0)
+    assert grads[0].keys() == grads[1].keys()
+    for key in grads[0]:
+        torch.testing.assert_close(grads[0][key], grads[1][key], rtol=0, atol=0)
+    assert x.grad is None

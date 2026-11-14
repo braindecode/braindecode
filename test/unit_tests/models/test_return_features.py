@@ -13,6 +13,8 @@ from braindecode.models import (
     EEGDINO,
     EEGPT,
     MAPA,
+    MEGGPT,
+    MEGXL,
     NICE,
     REVE,
     BaRISTA,
@@ -206,6 +208,14 @@ _MODELS = [
         },
         False,
         id="MIRepNet",
+    ),
+    pytest.param(MEGGPT, N_CHANS, {}, False, id="MEGGPT"),
+    pytest.param(
+        MEGXL,
+        N_CHANS,
+        {"chs_info": _chs(), "sfreq": 50.0, "num_layers": 1},
+        False,
+        id="MEGXL",
     ),
 ]
 

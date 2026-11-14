@@ -814,6 +814,7 @@ models_mandatory_parameters: list[
         },
     ),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
+    ("MEGGPT", ["n_chans", "n_outputs"], None),
     ("MIRepNet", ["n_chans", "n_outputs"], None),
     (
         "TFMTokenizer",
@@ -856,6 +857,12 @@ models_mandatory_parameters: list[
         {"n_times": 125, "sfreq": 250.0},
     ),
     ("BrainTokenizer", ["chs_info", "n_times", "sfreq"], None),
+    (
+        "MEGXL",
+        ["chs_info", "n_outputs", "n_times"],
+        # 10 s at the released 50 Hz (42 tokens); 2 of the 8 released blocks.
+        {"sfreq": 50.0, "n_times": 500, "num_layers": 2},
+    ),
     (
         "DIVER1",
         ["chs_info", "n_outputs", "n_times"],
