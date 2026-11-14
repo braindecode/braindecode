@@ -6,11 +6,16 @@ import torch
 
 from braindecode.models import (
     AXON,
+    BBL,
     BENDR,
     BIOT,
+    CORTEG,
     EEGDINO,
     EEGPT,
     MAPA,
+    MEGGPT,
+    MEGXL,
+    NICE,
     REVE,
     BaRISTA,
     BrainBERT,
@@ -72,6 +77,7 @@ def _chs(names=None, n=N_CHANS):
 # (cls, n_chans, kwargs, has_cls)
 _MODELS = [
     pytest.param(EEGPT, N_CHANS, {}, False, id="EEGPT"),
+    pytest.param(BBL, N_CHANS, {}, False, id="BBL"),
     pytest.param(
         AXON,
         N_CHANS,
@@ -87,6 +93,7 @@ _MODELS = [
         id="REVE",
     ),
     pytest.param(BENDR, N_CHANS, {}, False, id="BENDR"),
+    pytest.param(NICE, N_CHANS, {}, False, id="NICE"),
     pytest.param(
         BENDR,
         N_CHANS,
@@ -145,6 +152,14 @@ _MODELS = [
         True,
         id="STEEGFormer",
     ),
+    pytest.param(
+        CORTEG,
+        N_CHANS,
+        {"chs_info": _chs(), "embed_dim": 64, "depth": 2, "num_heads": 2,
+         "n_merge_blocks": 1},
+        True,
+        id="CORTEG",
+    ),
     pytest.param(SignalJEPA, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA"),
     pytest.param(
         SignalJEPA_Contextual,
@@ -193,6 +208,14 @@ _MODELS = [
         },
         False,
         id="MIRepNet",
+    ),
+    pytest.param(MEGGPT, N_CHANS, {}, False, id="MEGGPT"),
+    pytest.param(
+        MEGXL,
+        N_CHANS,
+        {"chs_info": _chs(), "sfreq": 50.0, "num_layers": 1},
+        False,
+        id="MEGXL",
     ),
 ]
 
@@ -380,3 +403,41 @@ def test_labram_reset_to_zero_reloads_as_identity(tmp_path, via_pretrained):
     assert reloaded.n_outputs == 0
     assert isinstance(reloaded.final_layer, torch.nn.Identity)
     torch.testing.assert_close(reloaded.state_dict(), model.state_dict())
+
+
+@pytest.mark.parametrize("n_times", [1, 39, 125])
+@pytest.mark.parametrize("ratios", [(4, 2, 2), (3, 2)])
+def test_bbl_temporal_features_are_encoder_output_and_valid_bins(n_times, ratios):
+    """Opt-in temporal features are the genuine pre-pool sequence, not copies
+    of pooled vectors. Bins describe stride, not independent receptive fields."""
+    from math import prod
+
+    model = BBL(
+        n_chans=3, n_outputs=2, n_times=n_times, n_sensors=5, n_datasets=2,
+        n_subjects=4, model_dim=8, subject_dim=2, n_filters=2, ratios=ratios,
+    ).eval()
+    x = torch.randn(2, 3, n_times)
+    encoded = []
+    handle = model.encoder.register_forward_hook(lambda m, a, y: encoded.append(y))
+    with torch.no_grad():
+        plain = model(x, return_features=True)
+        out = model(x, return_features=True, return_temporal_features=True)
+    handle.remove()
+    stride = 2 * prod(ratios)
+    steps = (n_times + stride - 1) // stride
+    temporal = out["temporal_features"]
+    assert temporal.shape == (2, 8, steps)
+    assert temporal is encoded[-1]
+    assert torch.equal(plain["features"], out["features"])
+    assert set(plain) == {"features", "cls_token"}
+    assert torch.equal(out["features"][:, :8], temporal.mean(-1))
+    starts = torch.arange(steps) * stride
+    bounds = torch.stack([starts, (starts + stride).clamp(max=n_times)], -1)
+    assert torch.equal(out["temporal_bounds"], bounds)
+    assert out["temporal_stride"].item() == stride
+    assert out["temporal_valid"].shape == (2, steps)
+    assert out["temporal_valid"].all()
+    context = torch.tensor([0, n_times]).expand(steps, -1)
+    assert torch.equal(out["temporal_context_bounds"], context)
+    with pytest.raises(ValueError, match="return_features"):
+        model(x, return_temporal_features=True)

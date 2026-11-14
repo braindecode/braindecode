@@ -28,11 +28,13 @@ from scipy.signal import stft
 from torch import nn
 
 from braindecode.models import (
+    BBL,
     BDTCN,
     BENDR,
     BIOT,
     EEGCLIP,
     EEGPT,
+    NICE,
     SSTDPN,
     TCN,
     ATCNet,
@@ -4270,6 +4272,32 @@ def test_brant_input_length_must_match():
         model(torch.randn(1, 2, 1500))
 
 
+def test_brant_from_pretrained_at_a_shorter_n_times(tmp_path):
+    pytest.importorskip("huggingface_hub")
+    small = dict(
+        patch_size=32,
+        embed_dim=16,
+        ffn_dim=32,
+        temporal_n_layers=1,
+        spatial_n_layers=1,
+        n_heads=2,
+    )
+    checkpoint = Brant(n_chans=2, n_outputs=2, n_times=128, **small)
+    checkpoint.save_pretrained(tmp_path)
+
+    model = Brant.from_pretrained(tmp_path, n_times=64).eval()
+
+    positions = "temporal_encoder.input_embedding.positional_encoding"
+    saved = checkpoint.state_dict()
+    for k, v in model.state_dict().items():
+        expected = saved[k][:2] if k == positions else saved[k]
+        torch.testing.assert_close(v, expected, msg=k)
+    with torch.no_grad():
+        assert model(torch.randn(1, 2, 64)).shape == (1, 2)
+    with pytest.raises(ValueError, match="holds 4 temporal positions"):
+        Brant.from_pretrained(tmp_path, n_times=160)
+
+
 def test_brant_channel_tokens_keep_channel_order():
     """Pin the per-channel token layout downstream code relies on.
 
@@ -6014,3 +6042,337 @@ def test_neurorvq_output_and_features(neurorvq_model_kwargs):
     assert logits.shape == (2, 4)
     assert features["features"].shape == (2, 100 * 4 * 3 * 3)
     assert features["cls_token"] is None
+
+
+def test_bbl_pads_sensors_gates_datasets_and_averages_subjects():
+    """Fewer channels are zero-padded to ``n_sensors``, ``dataset_index`` picks
+    the projector slice, and without ``subject_index`` the rows flagged in
+    ``trained_subjects`` are averaged."""
+    torch.manual_seed(0)
+    kw = dict(
+        n_outputs=2, n_times=40, n_sensors=8, n_datasets=2, n_subjects=5,
+        subject_dim=3, model_dim=16, n_filters=4,
+    )  # fmt: skip
+    model = BBL(n_chans=5, **kw).eval()
+    full = BBL(n_chans=8, **kw).eval()
+    full.load_state_dict(model.state_dict())
+    x = torch.randn(2, 5, 40)
+    subjects = torch.tensor([1, 3])
+    with torch.no_grad():
+        padded = full(torch.nn.functional.pad(x, (0, 0, 0, 3)), subjects)
+        assert torch.equal(model(x, subjects), padded)
+        assert not torch.equal(model(x, subjects, torch.tensor([1, 1])), padded)
+        model.trained_subjects.copy_(torch.tensor([0.0, 1, 0, 1, 0]))
+        feat = model(x, return_features=True)["features"]
+    mean = model.subject_embedding.weight[[1, 3]].mean(0)
+    torch.testing.assert_close(feat[:, -3:], mean.expand(2, -1))
+    # A wider input than n_chans is not cropped to fit n_sensors.
+    with pytest.raises(RuntimeError):
+        full(torch.randn(2, 9, 40))
+    with pytest.raises(ValueError, match="n_sensors"):
+        BBL(n_chans=9, n_outputs=2, n_sensors=8)
+
+
+def test_megxl_meg_geometry_and_codes():
+    """MEG-XL types MAG coils 1 and other channels 0, orients planar
+    gradiometers by ``loc[3:6]`` and gives ``ceil(n_times / 12)`` tokens."""
+    from mne.io.constants import FIFF
+
+    from braindecode.models import MEGXL
+
+    coils = [
+        FIFF.FIFFV_COIL_VV_MAG_T3,
+        FIFF.FIFFV_COIL_VV_PLANAR_T1,
+        FIFF.FIFFV_COIL_VV_PLANAR_T1,
+    ]
+    chs = []
+    for i, coil in enumerate(coils):
+        loc = np.zeros(12)
+        loc[:3] = [0.01 * i, 0.02, 0.05 + 0.01 * i]
+        loc[3:6] = [1.0, 0.0, 0.0]
+        loc[9:12] = [0.0, 0.0, 1.0]
+        chs.append(
+            {"ch_name": f"MEG{i}", "kind": FIFF.FIFFV_MEG_CH, "coil_type": coil, "loc": loc}
+        )
+    model = MEGXL(chs_info=chs, n_outputs=2, n_times=100, sfreq=50.0, num_layers=1)
+    model.eval()
+    assert model.sensor_type.tolist() == [1, 0, 0]
+    expected = torch.tensor([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+    torch.testing.assert_close(model.sensor_abc, expected)
+    x = torch.randn(2, 3, 100)
+    assert model.tokenize(x).shape == (2, 3, 9, 6)  # ceil(100 / 12) tokens, 6 codebooks
+    assert model(x).shape == (2, 2)
+
+
+def test_megxl_batched_geometry_gradients():
+    """Geometry projections keep the original batched backward accumulation."""
+    from braindecode.models import MEGXL
+
+    torch.manual_seed(0)
+    model = MEGXL(
+        chs_info=_make_chs_info(4),
+        n_outputs=2,
+        n_times=100,
+        sfreq=50.0,
+        num_layers=0,
+    )
+    model.eval()
+    x = torch.randn(2, 4, 100)
+    codes = model.tokenize(x)
+    levels = [
+        nn.functional.embedding(codes[..., q], vq._codebook.embed)
+        for q, vq in enumerate(model.quantizer.layers)
+    ]
+    expected = model.rvq_projector(torch.stack(levels, dim=3).flatten(3))
+    # Original: flatten batched coordinates for Fourier features, restore the
+    # batch axis before Linear, then insert the time axis after projection.
+    for coords, freqs, projector in [
+        (model.sensor_xyz, model.position_freqs, model.position_projector),
+        (model.sensor_abc, model.orientation_freqs, model.orientation_projector),
+    ]:
+        coords = coords.expand(2, -1, -1).reshape(8, 3)
+        phase = 2 * np.pi * (coords @ freqs)
+        fourier = torch.cat([phase.sin(), phase.cos()], dim=-1).reshape(2, 4, -1)
+        expected = expected + projector(fourier).unsqueeze(2)
+    types = model.sensor_type.expand(2, -1)
+    expected = expected + model.sensor_type_layer(types).unsqueeze(2)
+    actual = model.encode(x)
+    assert torch.equal(actual, expected)
+    params = list(model.position_projector.parameters())
+    params += list(model.orientation_projector.parameters())
+    params += list(model.sensor_type_layer.parameters())
+    cotangent = torch.randn_like(expected)
+    reference_grads = torch.autograd.grad(expected, params, grad_outputs=cotangent)
+    actual_grads = torch.autograd.grad(actual, params, grad_outputs=cotangent)
+    assert all(torch.equal(a, b) for a, b in zip(reference_grads, actual_grads))
+
+
+def test_megxl_masked_codes_before_context():
+    """Hide clean code content before metadata/context, not the prediction."""
+    from braindecode.models import MEGXL
+
+    torch.manual_seed(12)
+    model = MEGXL(
+        chs_info=_make_chs_info(3), n_outputs=2, n_times=25, sfreq=50.0,
+        latent_dim=32, num_layers=1, num_heads=4, fourier_pos_dim=16,
+        tokenizer_dim=16, n_filters=4, n_q=2, codebook_size=8, codebook_dim=4,
+        drop_prob=0.0,
+    ).eval()
+    x = torch.randn(2, 3, 25)
+    with torch.no_grad():
+        # The fresh RVQ codebooks are zero before pretraining; use nontrivial
+        # frozen embeddings to exercise projector gradients like a checkpoint.
+        for vq in model.quantizer.layers:
+            vq._codebook.embed.normal_()
+        codes = model.tokenize(x)
+    assert not codes.requires_grad
+    clean = model.encode(x)
+    assert torch.equal(clean, model.encode_codes(codes))
+    mask = torch.zeros(codes.shape[:3], dtype=torch.bool)
+    mask[:, :, 1] = True  # native temporal span, every sensor
+    value = nn.Parameter(torch.randn(model.latent_dim))
+    captured = []
+    hook = model.blocks[0].register_forward_pre_hook(
+        lambda module, args: captured.append(args[0].detach().clone())
+    )
+    rng = torch.get_rng_state().clone()
+    unchanged = model.encode(x, mask=torch.zeros_like(mask), mask_value=value)
+    assert torch.equal(clean, unchanged)
+    assert torch.equal(rng, torch.get_rng_state())
+    masked = model.encode_codes(codes, mask, value)
+    changed = codes.clone()
+    changed[mask] = (changed[mask] + 1) % 8
+    perturbed = model.encode_codes(changed, mask, value)
+    assert torch.equal(captured[-1], captured[-2])
+    assert torch.equal(masked, perturbed)
+    assert torch.equal(captured[-2][~mask], captured[0][~mask])
+    assert not torch.equal(masked, clean)
+    # A zero code projection isolates replacement + unchanged sensor metadata.
+    with torch.no_grad():
+        weight = model.rvq_projector.weight.clone()
+        bias = model.rvq_projector.bias.clone()
+        model.rvq_projector.weight.zero_()
+        model.rvq_projector.bias.zero_()
+        model.encode_codes(codes, mask, value)
+        model.rvq_projector.weight.copy_(weight)
+        model.rvq_projector.bias.copy_(bias)
+    assert torch.equal(captured[-1][mask], captured[-3][mask])
+    hook.remove()
+    decoder = nn.Linear(model.latent_dim, 2 * 8)
+    logits = decoder(masked).unflatten(-1, (2, 8))
+    selected = logits[mask]
+    targets = codes[mask]
+    loss = torch.stack([
+        nn.functional.cross_entropy(selected[:, q], targets[:, q])
+        for q in range(2)
+    ]).mean()
+    loss.backward()
+    for parameter in [value, decoder.weight, model.rvq_projector.weight,
+                      model.blocks[0].spatial_attn.qkv.weight]:
+        assert parameter.grad is not None
+        assert torch.isfinite(parameter.grad).all()
+        assert torch.count_nonzero(parameter.grad)
+    assert all(p.grad is None for p in model.encoder.parameters())
+    assert all(p.grad is None for p in model.quantizer.parameters())
+
+
+@pytest.mark.parametrize("n_times", [11, 12, 13, 2])
+def test_megxl_mask_token_hops(n_times):
+    """Equal-length windows include the native partial final boundary token."""
+    from braindecode.models import MEGXL
+
+    model = MEGXL(
+        chs_info=_make_chs_info(2), n_outputs=2, n_times=n_times, sfreq=50.0,
+        latent_dim=32, num_layers=0, num_heads=4, fourier_pos_dim=16,
+        tokenizer_dim=16, n_filters=4, n_q=2, codebook_size=8, codebook_dim=4,
+    ).eval()
+    x = torch.randn(1, 2, n_times)
+    codes = model.tokenize(x)
+    assert codes.shape == (1, 2, (n_times + 11) // 12, 2)
+    mask = torch.ones(codes.shape[:3], dtype=torch.bool)
+    assert model.encode_codes(codes, mask, torch.zeros(32)).shape == (
+        1, 2, codes.shape[2], 32
+    )
+    with pytest.raises(ValueError, match="mask"):
+        model.encode_codes(codes, mask)
+    with pytest.raises(ValueError, match="mask"):
+        model.encode_codes(codes, torch.ones(1, dtype=torch.bool), torch.zeros(32))
+
+
+@pytest.mark.parametrize("hide_all", [False, True])
+def test_bbl_temporal_mask_none_false_rng_and_gradients(hide_all):
+    """All-false masking preserves no-mask values, gradients and RNG; selected
+    NaNs are sanitized before context, including an entirely hidden window."""
+    torch.manual_seed(0)
+    model = BBL(
+        n_chans=3, n_outputs=2, n_times=39, n_sensors=5, n_datasets=2,
+        n_subjects=4, model_dim=8, subject_dim=2, n_filters=2,
+    ).eval()
+    x = torch.randn(2, 3, 39)
+    false = torch.zeros(2, 39, dtype=torch.bool)
+    state = {k: v.clone() for k, v in model.state_dict().items()}
+    rng = torch.get_rng_state().clone()
+    xi = x.clone().requires_grad_(True)
+    logits = model(xi)
+    grads = torch.autograd.grad(logits.sum(), [xi, *model.parameters()], allow_unused=True)
+    yi = x.clone().requires_grad_(True)
+    masked_logits = model(yi, temporal_mask=false)
+    masked_grads = torch.autograd.grad(masked_logits.sum(), [yi, *model.parameters()], allow_unused=True)
+    assert torch.equal(logits, masked_logits)
+    for a, b in zip(grads, masked_grads):
+        assert (a is None and b is None) or torch.equal(a, b)
+    assert torch.equal(torch.get_rng_state(), rng)
+    assert all(torch.equal(state[k], v) for k, v in model.state_dict().items())
+    mask = torch.full_like(false, hide_all)
+    mask[:, 10:20] = True
+    corrupt = x.masked_fill(mask[:, None, :], float("nan")).requires_grad_(True)
+    actual = model(corrupt, temporal_mask=mask)
+    expected = model(x.masked_fill(mask[:, None, :], 0.0))
+    assert torch.equal(actual, expected)
+    actual.sum().backward()
+    hidden = mask[:, None, :].expand_as(corrupt)
+    assert torch.equal(corrupt.grad[hidden], torch.zeros_like(corrupt.grad[hidden]))
+    assert all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters())
+    scripted = torch.jit.script(model)
+    with torch.no_grad():
+        torch.testing.assert_close(scripted(corrupt, temporal_mask=mask), actual)
+        seq = scripted(corrupt, temporal_mask=mask, return_features=True, return_temporal_features=True)
+        assert seq["temporal_features"].shape == (2, 8, 2)
+    with pytest.raises(ValueError, match="temporal_mask"):
+        model(x, temporal_mask=torch.zeros(2, 3, 39))
+
+
+@pytest.mark.parametrize(
+    "n_chans, n_times, n_flat",
+    [(63, 250, 1440), (271, 200, 1040)],  # THINGS-EEG2, THINGS-MEG (paper A.6)
+)
+def test_nice_released_checkpoint_keys(n_chans, n_times, n_flat):
+    """Keys and shapes of eeyhsong/NICE's pretrain_{Enc,Proj}_eeg_cls.pth load
+    through ``mapping`` with only the head missing."""
+    bn = {"weight": (40,), "bias": (40,), "running_mean": (40,), "running_var": (40,)}
+    shapes = {
+        "0.shallownet.0.weight": (40, 1, 1, 25),
+        "0.shallownet.0.bias": (40,),
+        **{f"0.shallownet.2.{k}": v for k, v in bn.items()},
+        "0.shallownet.4.weight": (40, 40, n_chans, 1),
+        "0.shallownet.4.bias": (40,),
+        **{f"0.shallownet.5.{k}": v for k, v in bn.items()},
+        "0.projection.0.weight": (40, 40, 1, 1),
+        "0.projection.0.bias": (40,),
+        "0.weight": (768, n_flat),
+        "0.bias": (768,),
+        "1.fn.1.weight": (768, 768),
+        "1.fn.1.bias": (768,),
+        "2.weight": (768,),
+        "2.bias": (768,),
+    }
+    # Non-negative values, so the BatchNorm running variances are valid.
+    state = {k: torch.rand(v) for k, v in shapes.items()}
+    state["0.shallownet.2.num_batches_tracked"] = torch.tensor(0)
+    state["0.shallownet.5.num_batches_tracked"] = torch.tensor(0)
+    model = NICE(n_chans=n_chans, n_times=n_times, n_outputs=200)
+    result = model.load_state_dict(state, strict=False)
+    assert result.unexpected_keys == []
+    assert sorted(result.missing_keys) == ["final_layer.bias", "final_layer.weight"]
+    out = model.eval()(torch.randn(2, n_chans, n_times), return_features=True)
+    assert out["features"].shape == (2, 768)
+    assert out["features"].isfinite().all()
+
+
+@pytest.mark.parametrize("training", [False, True])
+def test_nice_input_mask_and_temporal_tokens(training):
+    """Raw masking happens before context; tokens are the actual projected map."""
+    torch.manual_seed(42)
+    model = NICE(n_chans=4, n_times=100, n_outputs=3, n_filters=4, embed_dim=8)
+    model.train(training)
+    x = torch.randn(2, 4, 100)
+    mask = torch.zeros_like(x, dtype=torch.bool)
+    mask[:, :, 20:60] = True
+    x[mask] = float("nan")
+    x.requires_grad_(True)
+    maps = []
+    hook = model.projection.register_forward_hook(
+        lambda module, args, output: maps.append(output)
+    )
+    torch.manual_seed(1)
+    out = model(x, mask=mask, return_features=True)
+    hook.remove()
+    assert out["features"].shape == (2, 8)
+    assert out["tokens"].shape == (2, 6, 4)
+    assert out["cls_token"] is None
+    assert torch.equal(out["tokens"], maps[0].squeeze(2).transpose(1, 2))
+    assert out["features"].isfinite().all()
+    assert out["tokens"].isfinite().all()
+    (out["features"].square().sum() + out["tokens"].square().sum()).backward()
+    assert torch.equal(x.grad[mask], torch.zeros_like(x.grad[mask]))
+    assert x.grad[~mask].isfinite().all()
+    assert x.grad[~mask].abs().sum() > 0
+    # Polarity and replacement: masked NaNs behave exactly as zeroed raw input.
+    torch.manual_seed(1)
+    replaced = model(x.detach().masked_fill(mask, 0.0), return_features=True)
+    assert torch.equal(out["features"], replaced["features"])
+    assert torch.equal(out["tokens"], replaced["tokens"])
+
+
+@pytest.mark.parametrize("scripted", [False, True])
+def test_nice_mask_identity_and_all_hidden(scripted):
+    torch.manual_seed(0)
+    model = NICE(n_chans=4, n_times=100, n_outputs=3, n_filters=4, embed_dim=8).eval()
+    if scripted:
+        model = torch.jit.script(model)
+    x = torch.randn(2, 4, 100)
+    assert torch.equal(model(x), model(x, mask=torch.zeros_like(x, dtype=torch.bool)))
+    hidden = torch.full_like(x, float("nan"), requires_grad=True)
+    logits = model(hidden, mask=torch.ones_like(x, dtype=torch.bool))
+    assert torch.equal(logits, model(torch.zeros_like(x)))
+    logits.sum().backward()
+    assert torch.equal(hidden.grad, torch.zeros_like(hidden.grad))
+    with pytest.raises((ValueError, torch.jit.Error), match="ch_mask"):
+        model(x, ch_mask=torch.ones(2, 4, dtype=torch.bool))
+
+
+@pytest.mark.parametrize("shape,dtype", [((2, 100), torch.bool), ((2, 4, 100), torch.float32)])
+def test_nice_mask_validation(shape, dtype):
+    model = NICE(n_chans=4, n_times=100, n_outputs=3, n_filters=4, embed_dim=8)
+    with pytest.raises(ValueError, match="mask must be boolean with shape"):
+        model(torch.randn(2, 4, 100), mask=torch.ones(shape, dtype=dtype))

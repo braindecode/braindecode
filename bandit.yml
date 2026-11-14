@@ -1,1 +1,7 @@
-skips: ['B101']
+# Bandit settings Codacy reads when its "configuration file" option is on.
+# With a config file Bandit runs every default check, so keep Codacy's
+# current choices explicit:
+# - B101 (assert_used): pytest asserts, about 3,700 hits in test/.
+# - B105 (hardcoded_password_string): every "cls_token": None key of the
+#   foundation-model feature dicts; "token" there is a model token, not a secret.
+skips: ['B101', 'B105']

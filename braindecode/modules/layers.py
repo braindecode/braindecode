@@ -210,6 +210,8 @@ class PostNormResidual(nn.Module):
         self.layernorm = nn.LayerNorm(dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Every operation preserves (*, dim): module(x), dropout, residual sum,
+        # then LayerNorm over dim (e.g. NICE uses (batch, embed_dim)).
         return self.layernorm(self.drop(self.module(x)) + x)
 
 

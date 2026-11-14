@@ -88,6 +88,8 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`EEGPT` - Pretrained transformer for universal EEG
     - :class:`STEEGFormer` - ViT-MAE EEG foundation model with braindecode-format
       re-hosted weights
+    - :class:`CORTEG` - ST-EEGFormer adapted to intracranial ECoG by electrode position,
+      with a high-gamma token stream
     - :class:`SleepFM` and :class:`SleepFMStager` - Multimodal PSG foundation encoder
       and token-wise sleep-staging model compatible with the authors' CC BY-NC
       checkpoints
@@ -149,6 +151,7 @@ interface for all EEG models and can derive variable names when needed.
      AttentionBaseNet
      AttnSleep
      BaRISTA
+     BBL
      BDTCN
      BENDR
      BIOT
@@ -160,6 +163,7 @@ interface for all EEG models and can derive variable names when needed.
      CBraMod
      CodeBrain
      ContraWR
+     CORTEG
      CSBrain
      CTNet
      DANCE
@@ -193,6 +197,8 @@ interface for all EEG models and can derive variable names when needed.
      LUNA
      MAPA
      MEDFormer
+     MEGGPT
+     MEGXL
      MetaNeuromotorHand
      MIRepNet
      MSCFormer
@@ -201,6 +207,7 @@ interface for all EEG models and can derive variable names when needed.
      NeuroPose
      NeuroRVQ
      NeuroRVQTokenizer
+     NICE
      PBT
     PopulationTransformer
      REVE
@@ -427,6 +434,26 @@ These modules implement the vector quantizers of the tokenizer models, such as
     EMACodebook
     VectorQuantizer
     ResidualVectorQuantizer
+
+SEANet
+======
+
+The EnCodec SEANet convolutional encoder and decoder, with their blocks, shared by the
+codec models (BrainOmni, BBL).
+
+:py:mod:`braindecode.modules.seanet`:
+
+.. autosummary::
+    :toctree: generated/seanet
+    :template: class_in_subdir
+    :recursive:
+
+    SEANetConv1d
+    SEANetConvTranspose1d
+    SEANetDecoder
+    SEANetEncoder
+    SEANetLSTM
+    SEANetResBlock
 
 Stats
 =====

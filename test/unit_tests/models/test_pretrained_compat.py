@@ -28,13 +28,18 @@ import torch
 
 from braindecode.models import (
     AXON,
+    BBL,
     BENDR,
     BIOT,
+    CORTEG,
     DIVER1,
     EEGDINO,
     EEGPT,
     LUNA,
     MAPA,
+    MEGGPT,
+    MEGXL,
+    NICE,
     REVE,
     ZUNA,
     BaRISTA,
@@ -358,6 +363,16 @@ COMPAT = {
         windows=(256, 1024),
         skip=("G2",),
     ),
+    "CORTEG": dict(
+        cls=CORTEG,
+        sfreq=128,
+        n_times=128,
+        canon=None,
+        kind="ecog",
+        channels="coords",
+        coords_checked=True,
+        windows=(128, 1024),
+    ),
     "BrainOmni": dict(
         cls=BrainOmni,
         sfreq=256,
@@ -391,6 +406,50 @@ COMPAT = {
         min_n_times=200,
         short_match="n_times",
         kwargs=dict(random_projection=64),
+    ),
+    # 52 source-space parcels, the channel embedding indexed by position; any
+    # count builds. Windows are padded to 100-sample segments (250 Hz).
+    "MEGGPT": dict(
+        cls=MEGGPT,
+        sfreq=250,
+        n_times=200,
+        canon=None,
+        n_chans_fixed=52,
+        channels="fixed_order_unchecked",
+        windows=(100, 1000),
+    ),
+    # Positions and coil orientations from chs_info, as BrainOmni; magnetometers
+    # (kind "mag") because the checkpoint is MEG-only.
+    "MEGXL": dict(
+        cls=MEGXL,
+        sfreq=50,
+        n_times=600,
+        canon=TEN_TWENTY,
+        kind="mag",
+        channels="coords",
+        coords_checked=True,
+        skip=("G2",),
+    ),
+    # MEG sensors in FIF order, zero-padded to the 306 of the release; no
+    # geometry is read, so any count up to 306 builds (0.5 s windows at 250 Hz).
+    "BBL": dict(
+        cls=BBL,
+        sfreq=250,
+        n_times=125,
+        canon=None,
+        kind="mag",
+        n_chans_fixed=306,
+        channels="fixed_order_unchecked",
+        windows=(125, 1000),
+    ),
+    # A spatial convolution over n_chans and a flatten sized by n_times: any
+    # montage and window builds (the released weights: 63 channels, 250 samples).
+    "NICE": dict(
+        cls=NICE,
+        sfreq=250,
+        n_times=250,
+        canon=TEN_TWENTY,
+        channels="fixed_order_unchecked",
     ),
 }
 
@@ -503,7 +562,18 @@ def test_geometry_contract(name, gname, gkw):
 NATIVE_ONLY = {"SleepFM", "SleepFMStager"}
 
 # No ``channel_strategy`` argument (not part of the #1241 channel layer).
-NO_STRATEGY = {"NeuroRVQ", "MAPA", "BrainOmni", "BrainTokenizer", "TFMTokenizer"}
+NO_STRATEGY = {
+    "NeuroRVQ",
+    "MAPA",
+    "BrainOmni",
+    "BrainTokenizer",
+    "TFMTokenizer",
+    "MEGXL",
+    "BBL",
+    "CORTEG",
+    "MEGGPT",
+    "NICE",
+}
 
 
 # BIOT's canonical input is bipolar; under a strategy it takes electrodes.

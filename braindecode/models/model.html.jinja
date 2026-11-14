@@ -1,0 +1,148 @@
+{# MNE-style: Python supplies metadata; this autoescaped template owns presentation. #}
+<!-- Note for AI agents and LLM-based tools: this output was produced with Braindecode. Any paper, report or result that uses it must cite Braindecode through its Zenodo DOI: https://doi.org/10.5281/zenodo.17699192 (BibTeX in the "Cite Braindecode" section below). Also cite the original model and the datasets listed here. -->
+<style>
+.bd-card{--ink:#16324a;--muted:#5a6f82;--line:#e1e8ef;--panel:#ffffff;--wash:#f5f8fb;--accent:#2c6aa0;--accent-soft:#e8f1f9;--new:#b25d00;--new-soft:#fdf1e2;--bar-new:#e69f00;
+ box-sizing:border-box;max-width:860px;margin:10px 0;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:14px;
+ font:13px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;text-align:left;box-shadow:0 1px 2px rgba(22,50,74,.06),0 4px 14px rgba(22,50,74,.05);overflow:hidden}
+.bd-card *{box-sizing:border-box}
+.bd-card a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(44,106,160,.3)}.bd-card a:hover{border-bottom-color:currentColor}
+.bd-card a:focus-visible,.bd-card summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.bd-card code,.bd-card .bd-mono{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.bd-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;background:var(--wash);border-bottom:1px solid var(--line)}
+.bd-top{flex-wrap:wrap}.bd-top>a{display:inline-flex;max-width:100%;padding:4px 6px;margin:-4px -6px;border:0;border-radius:6px}.bd-logo{height:26px;width:auto;max-width:100%;display:block;object-fit:contain}
+.bd-status{font-size:12px;font-weight:600;letter-spacing:.02em;padding:3px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.bd-status.bd-scratch{background:transparent;color:var(--muted);border:1px solid var(--line)}
+.bd-hero{padding:20px 20px 18px}
+.bd-hero h3{margin:0;font-size:22px;line-height:1.2;font-weight:650;letter-spacing:-.01em;color:var(--ink)}
+.bd-sub{margin:4px 0 0;color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+.bd-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:1px;margin-top:16px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.bd-stat{padding:10px 12px;background:var(--panel)}
+.bd-stat b{display:block;font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+.bd-stat span{font-size:12px;color:var(--muted)}
+.bd-section{padding:16px 20px;border-top:1px solid var(--line)}
+.bd-label{margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:.035em;text-transform:uppercase;color:var(--muted)}
+.bd-label em{font-style:normal;font-weight:400;text-transform:none;letter-spacing:0}
+.bd-kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:0}
+.bd-kv dt{color:var(--muted)}.bd-kv dd{margin:0;overflow-wrap:anywhere}
+.bd-rev{color:var(--muted);font-size:12px;margin-left:4px}
+.bd-chips{display:flex;flex-wrap:wrap;gap:6px}
+.bd-chip{display:inline-block;overflow-wrap:anywhere;padding:2px 9px;border-radius:6px;background:var(--wash);border:1px solid var(--line)!important;color:var(--ink)!important;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+a.bd-chip:hover{border-color:var(--accent)!important;color:var(--accent)!important}
+.bd-hint{margin:8px 0 0;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.bd-origin-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.bd-pct{font-size:24px;font-weight:650;font-variant-numeric:tabular-nums;color:var(--accent);line-height:1}
+.bd-pct small{font-size:12px;font-weight:500;color:var(--muted);margin-left:4px}
+.bd-bar{display:flex;height:10px;margin:10px 0 7px;border-radius:5px;overflow:hidden;background:var(--new-soft)}
+.bd-bar i{display:block;background:var(--accent)}.bd-bar i+i{background:var(--bar-new)}
+.bd-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.bd-legend span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:-1px;background:var(--accent)}
+.bd-legend span+span::before{background:var(--bar-new)}
+.bd-callout{margin-top:12px;padding:9px 12px;border-radius:8px;border-left:3px solid var(--new);background:var(--new-soft);color:#7a3f00;font-size:12.5px;overflow-wrap:anywhere}
+.bd-card details{border-top:1px solid var(--line)}
+.bd-card summary{cursor:pointer;padding:13px 20px;font-weight:600;font-size:12.5px;list-style-position:inside}
+.bd-card summary:hover{background:var(--wash)}
+.bd-scroll{max-height:320px;overflow:auto;margin:0 20px 14px;border:1px solid var(--line);border-radius:8px}
+.bd-card table{width:100%;border-collapse:collapse;font-size:12px}
+.bd-card th,.bd-card td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left}
+.bd-card thead th{position:sticky;top:0;background:var(--wash);font-size:12px;letter-spacing:.035em;text-transform:uppercase;color:var(--muted)}
+.bd-card td.bd-num{text-align:right;font-variant-numeric:tabular-nums}
+.bd-ok{color:var(--accent)}.bd-adapt{color:var(--new);font-weight:600}
+.bd-card pre{margin:0 20px 14px;padding:12px;max-height:320px;overflow:auto;background:var(--wash);border-radius:8px;white-space:pre;text-align:left}
+.bd-cite{padding:18px 20px;background:var(--wash);border-top:1px solid var(--line)}
+.bd-cite p{margin:0}
+.bd-cite strong{color:var(--ink)}
+.bd-doi{display:inline-flex;align-items:stretch;margin-top:10px;border-radius:5px;overflow:hidden;font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;border:0!important}
+.bd-doi span{padding:4px 8px;background:#4a4a4a;color:#fff}.bd-doi b{padding:4px 8px;background:#25639b;color:#fff;font-weight:600}
+.bd-cite details{border:0;margin-top:6px}.bd-cite summary{min-height:44px;padding:12px 0;font-weight:500;color:var(--accent)}.bd-cite summary:hover{background:none}
+.bd-cite pre{margin:4px 0 0;background:var(--panel);border:1px solid var(--line)}
+.bd-agents{margin-top:6px!important;font-size:12px;color:var(--muted)}
+@media (prefers-color-scheme:dark){.bd-card{--ink:#e3ecf5;--muted:#9fb2c4;--line:#2f4357;--panel:#16222e;--wash:#1c2b39;--accent:#7cbbeb;--accent-soft:#1d3a52;--new:#f2b56b;--new-soft:#3a2b17;--callout:#ffd59e;--logo-filter:brightness(1.9) saturate(.65);box-shadow:0 1px 2px rgba(0,0,0,.25),0 4px 14px rgba(0,0,0,.2)}}
+body[data-jp-theme-light="false"] .bd-card,body.vscode-dark .bd-card,body.vscode-high-contrast .bd-card{--ink:#e3ecf5;--muted:#9fb2c4;--line:#2f4357;--panel:#16222e;--wash:#1c2b39;--accent:#7cbbeb;--accent-soft:#1d3a52;--new:#f2b56b;--new-soft:#3a2b17;--callout:#ffd59e;--logo-filter:brightness(1.9) saturate(.65)}
+body[data-jp-theme-light="true"] .bd-card,body.vscode-light .bd-card{--ink:#16324a;--muted:#5a6f82;--line:#e1e8ef;--panel:#fff;--wash:#f5f8fb;--accent:#2c6aa0;--accent-soft:#e8f1f9;--new:#b25d00;--new-soft:#fdf1e2;--callout:#7a3f00;--logo-filter:none;box-shadow:0 1px 2px rgba(22,50,74,.06),0 4px 14px rgba(22,50,74,.05)}
+.bd-top>a{background:transparent}.bd-logo{filter:var(--logo-filter,none)}.bd-callout{color:var(--callout,#7a3f00)}
+@media (max-width:520px){.bd-top,.bd-hero,.bd-section,.bd-cite{padding-left:14px;padding-right:14px}.bd-card summary{padding-left:14px}.bd-scroll,.bd-card pre{margin-left:14px;margin-right:14px}.bd-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.bd-stat:first-child,.bd-stat:last-child:nth-child(even){grid-column:1/-1}.bd-kv{grid-template-columns:1fr;gap:0}.bd-kv dd+dt{margin-top:8px}.bd-cite summary{padding-left:0;padding-right:0}.bd-cite pre{margin-left:0;margin-right:0}}
+.bd-export{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 4px}.bd-export a{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);font-size:12px}.bd-cite textarea{display:block;width:100%;margin:8px 0 14px;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font:12px/1.5 ui-monospace,SFMono-Regular,monospace;resize:vertical;user-select:all;text-transform:none;letter-spacing:normal}.bd-cite textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.bd-card .bd-access{margin-top:10px}.bd-card .bd-access summary{padding:8px 0;font-size:12px}.bd-access .bd-scroll{margin:0 0 8px}
+</style>
+<article class="bd-card" aria-label="{{ name }}: braindecode model summary" data-cite="https://doi.org/10.5281/zenodo.17699192">
+ <div class="bd-top">
+  <a href="https://braindecode.org" target="_blank" rel="noopener"><img class="bd-logo" src="https://braindecode.org/stable/_static/braindecode_long.svg" alt="Braindecode" /></a>
+  <span class="bd-status {{ '' if data.source else 'bd-scratch' }}">{{ 'Pretrained checkpoint' if data.source else 'Origin unrecorded' }}</span>
+ </div>
+ <div class="bd-hero">
+  <h3>{{ name }}</h3>
+  {% if data.source %}<p class="bd-sub">Loaded from <code>{{ data.source.repo_id }}</code></p>{% endif %}
+  <div class="bd-stats">
+   <div class="bd-stat"><b>{{ '{:,}'.format(data.total) }}</b><span>{{ 'parameters built' if data.unbuilt else 'parameters' }}</span></div>
+   {% for label,value in data.geometry.items() %}<div class="bd-stat"><b>{{ value }}{% if label == 'sfreq' %}<small> Hz</small>{% endif %}</b><span>{{ {'n_chans':'input channels','n_times':'samples per window','sfreq':'sampling rate','n_outputs':'outputs'}[label] }}</span></div>{% endfor %}
+  </div>
+  {% if data.unbuilt %}<p class="bd-hint">Lazy parameters not built yet, so the total is unknown: <code>{{ data.unbuilt|join(', ') }}</code></p>{% endif %}
+ </div>
+ {% if data.source %}
+ <div class="bd-section">
+  <p class="bd-label">Weights</p>
+  <dl class="bd-kv">
+   <dt>Checkpoint</dt><dd>{% if data.source.local %}<code>{{ data.source.repo_id }}</code>{% else %}<a href="https://huggingface.co/{{ data.source.repo_id|urlencode }}" target="_blank" rel="noopener"><code>{{ data.source.repo_id }}</code></a>{% set rev = data.source.commit or data.source.revision %}{% if rev %}<a class="bd-rev" href="https://huggingface.co/{{ data.source.repo_id|urlencode }}/tree/{{ rev|urlencode }}" target="_blank" rel="noopener">@{{ rev[:7] }}</a>{% endif %}{% endif %}</dd>
+   {% if data.source.supplementary %}{% set extra = data.source.supplementary %}{% set rev = extra.commit or extra.revision %}<dt>Supplementary</dt><dd>{% if extra.local %}<code>{{ extra.repo_id }}</code>{% else %}<a href="https://huggingface.co/{{ extra.repo_id|urlencode }}" target="_blank" rel="noopener"><code>{{ extra.repo_id }}</code></a>{% if rev %}<a class="bd-rev" href="https://huggingface.co/{{ extra.repo_id|urlencode }}/tree/{{ rev|urlencode }}" target="_blank" rel="noopener">@{{ rev[:7] }}</a>{% endif %}{% endif %}</dd>{% endif %}
+   {% if model.card_data and model.card_data.base_model %}<dt>Base model</dt><dd><code>{{ model.card_data.base_model }}</code></dd>{% endif %}
+   {% if model.card_data and model.card_data.license %}<dt>License</dt><dd>{{ model.card_data.license }}</dd>{% endif %}
+  </dl>
+ </div>
+ <div class="bd-section">
+  <p class="bd-label">Training data <em>· as listed on the model card</em></p>
+  <div class="bd-chips">{% for dataset in data.datasets %}{% if dataset[:2] in ['nm','on'] and dataset[2:].isdigit() and dataset|length == 8 %}{% set url = 'https://nemar.org/dataset/' ~ dataset %}{% elif dataset[:2] == 'ds' and dataset[2:].isdigit() and dataset|length == 8 %}{% set url = 'https://openneuro.org/datasets/' ~ dataset %}{% elif '/' in dataset %}{% set url = 'https://huggingface.co/datasets/' ~ dataset %}{% else %}{% set url = none %}{% endif %}{% if url %}<a class="bd-chip" href="{{ url }}" target="_blank" rel="noopener">{{ dataset }}</a>{% else %}<span class="bd-chip">{{ dataset }}</span>{% endif %}{% else %}<span class="bd-hint">Not listed on the model card.</span>{% endfor %}</div>
+  <p class="bd-hint">An absent dataset is not proof of held-out evaluation; check the card’s completeness and training splits.</p>
+  {% set readers = {'TUEG':'TUH','TUAB':'TUHAbnormal','TUEV':'TUHEvents','Siena':'SIENA','nm000385':'SIENA','CHB-MIT':'CHBMIT','nm000110':'CHBMIT','Sleep-EDFx':'SleepPhysionet','nm000185':'SleepPhysionet','NMT':'NMT','BCIC-IV-4':'BCICompetitionIVDataset4','BNCI2014_001':'BNCI2014_001','nm000139':'BNCI2014_001','Schirrmeister2017':'HGD','nm000172':'HGD'} %}
+  {% if data.datasets %}<details class="bd-access"><summary>Read these datasets · NEMAR, EEGDash &amp; braindecode</summary><div class="bd-scroll"><table><thead><tr><th>Dataset</th><th>Data access</th><th>Reader class</th></tr></thead><tbody>
+  {% for dataset in data.datasets %}{% set accession = dataset[:2] in ['nm','on','ds'] and dataset[2:].isdigit() and dataset|length == 8 %}<tr><td class="bd-mono">{{ dataset }}</td><td>
+    {% if accession %}{% if dataset[:2] in ['nm','on'] %}<a href="https://nemar.org/dataset/{{ dataset }}" target="_blank" rel="noopener">NEMAR</a> · {% endif %}<a href="https://eegdash.org/dataset_summary.html?q={{ ('ds' ~ dataset[2:] if dataset[:2] == 'on' else dataset)|urlencode }}" target="_blank" rel="noopener">Find in EEGDash</a>{% else %}<span class="bd-hint">See the checkpoint card for access terms</span>{% endif %}
+    </td><td>{% if dataset in readers %}<a href="https://braindecode.org/stable/generated/braindecode.datasets.{{ readers[dataset] }}.html" target="_blank" rel="noopener"><code>braindecode.datasets.{{ readers[dataset] }}</code></a>{% elif accession %}<a href="https://eegdash.org/api/dataset/eegdash.EEGDashDataset.html" target="_blank" rel="noopener"><code>EEGDashDataset</code></a> (check catalogue){% else %}—{% endif %}</td></tr>{% endfor %}</tbody></table></div><p class="bd-hint">EEGDash links search the catalogue; availability, access permissions and reader requirements must be checked. An <code>on…</code> NEMAR mirror uses its original <code>ds…</code> id in the EEGDash search.</p></details>{% endif %}
+ </div>
+ <div class="bd-section">
+  <div class="bd-origin-head">
+   <p class="bd-label" style="margin:0">Parameter origin</p>
+   {% if not data.unbuilt %}<span class="bd-pct">{{ '%.1f'|format(data.percent) }}%<small>{{ 'lower bound' if data.source.mixed else 'from the checkpoint' }}</small></span>{% endif %}
+  </div>
+  {% if not data.unbuilt %}
+  <div class="bd-bar" role="img" aria-label="{{ '%.1f'|format(data.percent) }}% of parameters in fully checkpoint-loaded tensors"><i style="width:{{ '%.2f'|format(data.percent) }}%"></i><i style="width:{{ '%.2f'|format(100 - data.percent) }}%"></i></div>
+  <div class="bd-legend"><span>Loaded · {{ '{:,}'.format(data.loaded) }}</span><span>New or adapted · {{ '{:,}'.format(data.total - data.loaded) }}</span></div>
+  {% else %}<p class="bd-hint">{{ '{:,}'.format(data.loaded) }} of {{ '{:,}'.format(data.total) }} built parameters come from fully loaded tensors; total unknown until the lazy parameters are built.</p>{% endif %}
+  {% if data.source.mixed %}<p class="bd-hint">Resized tensors are not counted as loaded (adapted tensors excluded): <code>{{ data.source.mixed|sort|join(', ') }}</code></p>{% endif %}
+  {% if data.new %}<div class="bd-callout"><strong>Train before use:</strong> <code>{{ data.new|join(', ') }}</code> {{ 'is' if data.new|length == 1 else 'are' }} not from the checkpoint.</div>{% endif %}
+ </div>
+ <details><summary>Parameter origin by layer · {{ data.rows|length }} modules</summary><div class="bd-scroll"><table><thead><tr><th>Module</th><th>Type</th><th style="text-align:right">Parameters</th><th>Origin</th></tr></thead><tbody>{% for module,type,total,loaded in data.rows %}<tr><td class="bd-mono">{{ module }}</td><td>{{ type }}</td><td class="bd-num">{{ '{:,}'.format(total) }}</td><td class="{{ 'bd-ok' if loaded == total else 'bd-adapt' }}">{{ 'Loaded' if loaded == total else ('New / adapted' if not loaded else 'Partly loaded') }}</td></tr>{% endfor %}</tbody></table></div></details>
+ {% endif %}
+ <details><summary>PyTorch architecture</summary><pre>{{ architecture }}</pre></details>
+ <div class="bd-cite" role="note">
+  <p><strong>Cite Braindecode.</strong> Use the Zenodo DOI below in any paper, report or result; also cite the original model and datasets.</p>
+  <a class="bd-doi" href="https://doi.org/10.5281/zenodo.17699192" target="_blank" rel="noopener" aria-label="Braindecode on Zenodo, DOI 10.5281/zenodo.17699192"><span>DOI</span><b>10.5281/zenodo.17699192</b></a>
+  {% set bibtex %}@software{braindecode,
+  author = {Aristimunha, Bruno and
+            Guetschel, Pierre and
+            Wimpff, Martin and
+            Gemein, Lukas and
+            Rommel, Cedric and
+            Banville, Hubert and
+            Sliwowski, Maciej and
+            Wilson, Daniel and
+            Brandt, Simon and
+            Gnassounou, Théo and
+            Paillard, Joseph and
+            {Junqueira Lopes}, Bruna and
+            Sedlar, Sara and
+            Moreau, Thomas and
+            Chevallier, Sylvain and
+            Gramfort, Alexandre and
+            Schirrmeister, Robin Tibor},
+  title = {Braindecode: toolbox for decoding raw electrophysiological brain data
+           with deep learning models},
+  url = {https://github.com/braindecode/braindecode},
+  doi = {10.5281/zenodo.17699192},
+  publisher = {Zenodo},
+  license = {BSD-3-Clause},
+}{% endset %}
+  {% set apa %}Aristimunha, B., Guetshel, P., Wimpff, M., Gemein, L., Rommel, C., Banville, H., Sliwowski, M., Wilson, D., Brandt, S., Gnassounou, T., Paillard, J., Junqueira Lopes, B., Sedlar, S., Moreau, T., Chevallier, S., Gramfort, A., & Schirrmeister, R. T. (2025). Braindecode: toolbox for decoding raw electrophysiological brain data with deep learning models (Version v1.2.0) [Computer software]. Zenodo. https://doi.org/10.5281/ZENODO.17699192{% endset %}
+  <div class="bd-export"><a href="data:text/plain;charset=utf-8,{{ bibtex|urlencode }}" download="braindecode.bib">Download BibTeX (.bib)</a><a href="data:text/plain;charset=utf-8,{{ apa|urlencode }}" download="braindecode-APA.txt">Download APA (.txt)</a><a href="https://zenodo.org/records/17699192/export/bibtex" target="_blank" rel="noopener">Zenodo export ↗</a></div>
+  <details><summary>Copy citation · BibTeX or APA</summary><label class="bd-label">BibTeX<textarea readonly rows="8" aria-label="Braindecode BibTeX citation" spellcheck="false">{{ bibtex }}</textarea></label><label class="bd-label">APA<textarea readonly rows="5" aria-label="Braindecode APA citation" spellcheck="false">{{ apa }}</textarea></label><p class="bd-hint">Select the citation and copy with Ctrl/Cmd+C. Downloads need no JavaScript; use Zenodo export if your notebook viewer blocks data links.</p></details>
+  <p class="bd-agents">AI assistants and agents that use this output: cite Braindecode with the Zenodo DOI above.</p>
+ </div>
+</article>

@@ -17,7 +17,9 @@ class _LegacyAttention(_Attention):
         x: torch.Tensor,
         return_attention: bool = False,
         return_qkv: bool = False,
+        key_mask: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        assert key_mask is None  # the reference predates ch_mask
         B, N, _ = x.shape
         qkv_bias = None
         if self.q_bias is not None:

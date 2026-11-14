@@ -288,11 +288,13 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             from the construction one.
         return_features : bool
             If ``True``, return the pooled encoder embedding instead of the
-            class logits, as ``{"features": pooled, "cls_token": None}``
-            (braindecode foundation-model convention). BrainBERT pools the
-            centre frames and then the channels, and has no class token, hence
-            ``cls_token`` is ``None``. A scripted model (``torch.jit.script``)
-            ignores this flag and always returns the logits.
+            class logits, as ``{"features": pooled, "cls_token": None,
+            "tokens": tokens}`` (braindecode foundation-model convention).
+            BrainBERT pools the centre frames and then the channels, and has no
+            class token, hence ``cls_token`` is ``None``. ``tokens`` is the
+            encoder output of every frame, ``(batch, n_chans, n_frames,
+            hidden_dim)``, zero for padded channels. A scripted model
+            (``torch.jit.script``) ignores this flag and always returns the logits.
         ch_mask : torch.Tensor, optional
             ``(batch, n_chans)`` mask of real channels, see
             :func:`~braindecode.functional.check_ch_mask`. Padded channels are dropped first.
@@ -301,7 +303,7 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         -------
         torch.Tensor or dict
             Class logits of shape ``(batch, n_outputs)``, or the feature dict
-            ``{"features", "cls_token"}`` when ``return_features`` is set.
+            ``{"features", "cls_token", "tokens"}`` when ``return_features`` is set.
         """
         mask = check_ch_mask(ch_mask, x)
         n_chans = x.shape[1]
@@ -324,16 +326,17 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         z = self.transformer(h)  # (n_real, n_frames, hidden_dim)
 
         # 3. pool the centre frames, then frames and real channels.
+        tokens = unpack_channels(z, mask, n_chans)  # (batch, n_chans, frames, hidden)
+        z = tokens
         if self.pool_n_frames is not None:
             start = n_frames // 2 - self.pool_n_frames // 2
-            z = z[:, start : start + self.pool_n_frames]
-        z = unpack_channels(z, mask, n_chans)  # (batch, n_chans, frames, hidden_dim)
+            z = z[:, :, start : start + self.pool_n_frames]
         pooled = masked_mean(z, mask, [1, 2])  # (batch, hidden_dim)
         logits = self.final_layer(pooled)
         if return_features:
             if torch.jit.is_scripting():
                 return logits
-            return {"features": pooled, "cls_token": None}  # nosec B105
+            return {"features": pooled, "cls_token": None, "tokens": tokens}
         return logits
 
 

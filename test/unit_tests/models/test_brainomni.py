@@ -18,9 +18,9 @@ from braindecode.models import BrainOmni, BrainTokenizer
 from braindecode.models.brainomni import (
     _geometry_from_chs_info,
     _RotaryPositionalEmbedding,
-    _SEANetConv1d,
     _SpatialTemporalBlock,
 )
+from braindecode.modules import SEANetConv1d
 from braindecode.modules.quantization import EMACodebook as _Codebook
 from braindecode.modules.quantization import ResidualVectorQuantizer
 
@@ -342,7 +342,7 @@ def test_braintokenizer_crops_each_window_when_hop_does_not_divide_it():
 )
 def test_seanet_conv1d_equals_encodec_padding(kernel_size, stride, n_times):
     """Bit-identical to EnCodec's zero-extend + reflect pad + crop, padding skipped or not."""
-    conv = _SEANetConv1d(2, 3, kernel_size, stride)
+    conv = SEANetConv1d(2, 3, kernel_size, stride)
     x = torch.randn(1, 2, n_times)
     total = kernel_size - stride
     extra = (kernel_size - total - n_times) % stride

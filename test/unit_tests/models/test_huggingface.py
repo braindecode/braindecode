@@ -633,3 +633,351 @@ def test_model_card_read_from_hub_cache_without_network(tmp_path, monkeypatch):
 
     monkeypatch.undo()  # real hub, nothing cached, no network: None, no error
     assert _load_card_data("braindecode/no-such-repo", cache_dir=tmp_path / "c", local_files_only=True) is None
+
+
+def test_pretrained_provenance_in_repr(tmp_path):
+    import copy
+
+    from braindecode.models import BIOT
+
+    kwargs = dict(n_chans=4, n_times=400, sfreq=200, embed_dim=16, num_heads=2, num_layers=1)
+    model = BIOT(n_outputs=2, **kwargs)
+    datasets = ["BNCI2014_001", "ds002718", "braindecode/chbmit"]
+    model.save_pretrained(tmp_path, model_card_kwargs={"datasets": datasets})
+
+    built = BIOT(n_outputs=2, **kwargs)
+    assert str(built) == str(built.get_torchinfo_statistics())
+    assert "pretrained" not in built._repr_html_()
+
+    same = BIOT.from_pretrained(tmp_path)
+    assert same._pretrained_provenance["local"]
+    params = set(dict(same.named_parameters()))
+    assert params <= same._pretrained_provenance["loaded"]
+    text = str(same)
+    assert "Trained on (model card): BNCI2014_001, ds002718, braindecode/chbmit" in text
+    assert "(100.0% of materialised parameters)" in text and "new:" not in text
+    page = same._repr_html_()
+    assert "https://openneuro.org/datasets/ds002718" in page
+    assert "https://huggingface.co/datasets/braindecode/chbmit" in page
+    assert "100.0%" in page and "fully checkpoint-loaded tensors" in page
+
+    # A new head is initialised here, not loaded.
+    head = BIOT.from_pretrained(tmp_path, n_outputs=3)
+    head_params = {f"final_layer.{n}" for n, _ in head.final_layer.named_parameters()}
+    loaded = head._pretrained_provenance["loaded"]
+    assert head_params and not head_params & loaded
+    assert set(dict(head.named_parameters())) - head_params <= loaded
+    assert "new: final_layer" in str(head)
+    assert "bd-adapt" in head._repr_html_() and "Train before use" in head._repr_html_()
+
+    restored = copy.deepcopy(head)
+    assert restored._pretrained_provenance["loaded"] == loaded
+    assert restored._repr_html_() == head._repr_html_()
+
+
+def test_pretrained_provenance_reads_hub_cache_commit(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    from braindecode.models.base import _checkpoint_source
+
+    commit = "0123456789abcdef0123456789abcdef01234567"
+    cached = tmp_path / "snapshots" / "hf-cache" / "models--org--repo" / "snapshots" / commit / "config.json"
+    monkeypatch.setattr(
+        huggingface_hub, "try_to_load_from_cache", lambda *a, **k: str(cached)
+    )
+    info = _checkpoint_source("org/repo", revision="main")
+    assert info == {"repo_id": "org/repo", "revision": "main", "commit": commit}
+
+
+def test_repr_html_with_lazy_parameters():
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.extra = nn.LazyLinear(3)  # not built until the first forward
+    page = model._repr_html_()
+    assert "LazyLinear" in page and "EEGNet" in page
+
+
+def test_from_pretrained_reports_loaded_parameters(tmp_path):
+    import warnings
+
+    from safetensors.torch import load_file, save_file
+
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.save_pretrained(tmp_path / "same")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        same = EEGNet.from_pretrained(tmp_path / "same")
+    assert not [w for w in caught if "no parameter of" in str(w.message)]
+    assert set(dict(same.named_parameters())) <= same._pretrained_provenance["loaded"]
+
+    # Same weights under other key names (e.g. an upstream checkpoint mirrored
+    # as is): nothing loads, and from_pretrained says so.
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "config.json").write_text((tmp_path / "same" / "config.json").read_text())
+    weights = load_file(tmp_path / "same" / "model.safetensors")
+    save_file({f"model.{k}": v for k, v in weights.items()}, other / "model.safetensors")
+    with pytest.warns(UserWarning, match="no parameter of EEGNet was loaded from"):
+        renamed = EEGNet.from_pretrained(other)
+    assert not renamed._pretrained_provenance["loaded"]
+
+
+def test_model_card_scalar_and_escaped_html(tmp_path):
+    from huggingface_hub import ModelCardData
+
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.save_pretrained(tmp_path)
+    model = EEGNet.from_pretrained(tmp_path)
+    model.card_data = ModelCardData(datasets="TUEG")
+    assert "Trained on (model card): TUEG" in str(model)
+    assert "T, U, E, G" not in str(model)
+    page = model._repr_html_()
+    assert page.count('class="bd-chip"') == 1
+    model.card_data = ModelCardData(datasets=["nm000253", "on004362", "<script>bad</script>"])
+    page = model._repr_html_()
+    assert 'href="https://nemar.org/dataset/on004362"' in page
+    assert "<script>bad</script>" not in page
+    assert "&lt;script&gt;" in page
+
+
+def test_model_html_uses_input_montage():
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.channel_layer = nn.Identity()
+    model.channel_layer.chs_info = [{"ch_name": "Cz"}, {"ch_name": "Pz"}]
+    assert model._pretrained_summary()["geometry"]["n_chans"] == 2
+    model.channel_layer.chs_info = None
+    assert model._pretrained_summary()["geometry"]["n_chans"] == "set at forward"
+
+
+@pytest.mark.parametrize("head_hidden_dim", [0, 8])
+def test_provenance_duin_mismatched_window_keeps_head_local(tmp_path, head_hidden_dim):
+    from braindecode.models import DuIN
+
+    kwargs = dict(
+        n_chans=2, n_outputs=2, sfreq=1000, patch_size=20,
+        n_neural=2, n_filters=(8, 4), kernel_sizes=(5, 3), strides=(5, 1),
+        n_layers=1, n_heads=2, head_dim=8, ffn_dim=16,
+        head_hidden_dim=head_hidden_dim,
+    )
+    saved = DuIN(n_times=60, **kwargs)
+    saved.save_pretrained(tmp_path)
+    with pytest.warns(UserWarning, match="head keeps its initialization"):
+        loaded = DuIN.from_pretrained(tmp_path, n_times=80, local_files_only=True)
+    heads = {
+        k for k in loaded.state_dict()
+        if k.startswith(("head_hidden.", "final_layer."))
+    }
+    provenance = loaded._pretrained_provenance
+    assert heads and not heads & provenance["loaded"]
+    assert set(dict(loaded.named_parameters())) - heads <= provenance["loaded"]
+    # Numerical behavior remains the subclass's normal state-dict adaptation.
+    torch.manual_seed(42)
+    expected = DuIN(n_times=80, **kwargs)
+    with pytest.warns(UserWarning, match="head keeps its initialization"):
+        expected.load_state_dict(saved.state_dict())
+    torch.manual_seed(42)
+    with pytest.warns(UserWarning, match="head keeps its initialization"):
+        replay = DuIN.from_pretrained(tmp_path, n_times=80, local_files_only=True)
+    for key, value in expected.state_dict().items():
+        torch.testing.assert_close(replay.state_dict()[key], value, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("source_slots,target_slots", [(16, 30), (30, 16)])
+def test_provenance_labram_resized_embedding_is_conservatively_mixed(
+    tmp_path, source_slots, target_slots,
+):
+    from braindecode.models import Labram
+
+    kwargs = dict(
+        n_chans=2, n_outputs=2, patch_size=8, embed_dim=8,
+        conv_out_channels=8, num_layers=1, num_heads=2,
+    )
+    saved = Labram(n_times=source_slots * 8, **kwargs)
+    saved.save_pretrained(tmp_path)
+    torch.manual_seed(42)
+    expected = Labram(n_times=target_slots * 8, **kwargs)
+    local = expected.temporal_embedding.detach().clone()
+    expected.load_state_dict(saved.state_dict())
+    torch.manual_seed(42)
+    loaded = Labram.from_pretrained(
+        tmp_path, n_times=target_slots * 8, local_files_only=True,
+    )
+    provenance = loaded._pretrained_provenance
+    assert "temporal_embedding" not in provenance["loaded"]
+    assert provenance["mixed"] == {"temporal_embedding"}
+    assert set(dict(loaded.named_parameters())) - {"temporal_embedding"} <= provenance["loaded"]
+    copied = min(source_slots, target_slots)
+    torch.testing.assert_close(
+        loaded.temporal_embedding[:, :copied], saved.temporal_embedding[:, :copied],
+    )
+    torch.testing.assert_close(loaded.temporal_embedding[:, copied:], local[:, copied:])
+    for key, value in expected.state_dict().items():
+        torch.testing.assert_close(loaded.state_dict()[key], value, rtol=0, atol=0)
+
+
+def test_provenance_reset_invalidates_checkpoint_history_not_freezing(tmp_path):
+    from .test_base import DummyModuleConfigRoundTrip
+
+    saved = DummyModuleConfigRoundTrip(n_chans=2, n_times=8, n_outputs=2)
+    saved.save_pretrained(tmp_path)
+    loaded = DummyModuleConfigRoundTrip.from_pretrained(tmp_path, local_files_only=True)
+    original = loaded._pretrained_provenance["loaded"].copy()
+    assert set(dict(loaded.named_parameters())) <= original
+    loaded.requires_grad_(False)
+    assert loaded._pretrained_provenance["loaded"] == original
+    loaded.requires_grad_(True)
+    assert loaded._pretrained_provenance["loaded"] == original
+    loaded.reset_parameters()
+    assert not loaded._pretrained_provenance["loaded"]
+    torch.manual_seed(42)
+    expected = DummyModuleConfigRoundTrip(n_chans=2, n_times=8, n_outputs=2)
+    expected.load_state_dict(saved.state_dict())
+    expected.reset_parameters()
+    torch.manual_seed(42)
+    replay = DummyModuleConfigRoundTrip.from_pretrained(tmp_path, local_files_only=True)
+    replay.reset_parameters()
+    for key, value in expected.state_dict().items():
+        torch.testing.assert_close(replay.state_dict()[key], value, rtol=0, atol=0)
+
+
+def test_provenance_sleepfm_supplement_records_encoder_and_source(tmp_path):
+    from safetensors.torch import save_file
+
+    from braindecode.models import SleepFM, SleepFMStager
+
+    kwargs = dict(
+        n_chans=2, n_times=128, n_outputs=2, sfreq=128, patch_size=64,
+        embed_dim=8, drop_prob=0.0,
+    )
+    stager = SleepFMStager(
+        **kwargs, channel_modalities=["A", "B"], max_seq_length=2,
+        encoder_num_heads=2, encoder_num_layers=1, encoder_pooling_heads=2,
+        encoder_chunk_patches=2, staging_num_heads=2, staging_num_layers=1,
+        staging_pooling_heads=2,
+    )
+    encoder = SleepFM(
+        **kwargs, max_seq_length=128, num_heads=2, num_layers=1, pooling_heads=2,
+    )
+    stager.save_pretrained(tmp_path / "stager")
+    encoder.save_pretrained(tmp_path / "encoder")
+    head = ("patch_embedding.", "staging_head.", "final_layer.")
+    head_only = {k: v for k, v in stager.state_dict().items() if k.startswith(head)}
+    save_file(head_only, tmp_path / "stager" / "model.safetensors")
+    loaded = SleepFMStager.from_pretrained(
+        tmp_path / "stager", encoder_model_name_or_path=tmp_path / "encoder",
+        local_files_only=True,
+    )
+    provenance = loaded._pretrained_provenance
+    assert set(dict(loaded.named_parameters())) <= provenance["loaded"]
+    assert provenance["repo_id"] == str(tmp_path / "stager")
+    supplement = provenance["supplementary"]
+    assert supplement["repo_id"] == str(tmp_path / "encoder")
+    assert supplement["local"] is True
+    assert supplement["loaded"] == set(loaded.state_dict()) - set(head_only)
+    expected = encoder.state_dict() | head_only
+    for key, value in loaded.state_dict().items():
+        torch.testing.assert_close(value, expected[key], rtol=0, atol=0)
+    loaded.reset_parameters()
+    assert not provenance["loaded"]
+    assert not supplement["loaded"]
+
+
+def test_provenance_manual_reload_invalidates_source(tmp_path):
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.save_pretrained(tmp_path)
+    loaded = EEGNet.from_pretrained(tmp_path)
+    loaded.load_state_dict(model.state_dict())
+    assert "_pretrained_provenance" not in loaded.__dict__
+    assert "Pretrained weights:" not in str(loaded)
+    assert "Origin unrecorded" in loaded._repr_html_()
+    assert "Randomly initialised" not in loaded._repr_html_()
+
+
+def test_provenance_html_discloses_unbuilt_and_adapted_parameters(tmp_path):
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.save_pretrained(tmp_path)
+    loaded = EEGNet.from_pretrained(tmp_path)
+    loaded.extra = nn.LazyLinear(3)
+    page = loaded._repr_html_()
+    assert "total unknown" in page and "extra.weight" in page
+    assert "100.0%" not in page
+    del loaded.extra
+    loaded._pretrained_provenance["mixed"] = {"adapted_embedding"}
+    loaded._pretrained_provenance["supplementary"] = {"repo_id": "org/encoder", "revision": "123456789"}
+    page = loaded._repr_html_()
+    assert "lower bound" in page and "adapted tensors excluded" in page.lower()
+    assert "parameters in fully loaded tensors; adapted tensors excluded" in str(loaded)
+    assert "supplementary: org/encoder @ 1234567" in str(loaded)
+
+
+def test_provenance_failed_reload_also_invalidates_source(tmp_path):
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.save_pretrained(tmp_path)
+    loaded = EEGNet.from_pretrained(tmp_path)
+    partial = model.state_dict()
+    partial.pop(next(iter(partial)))
+    with pytest.raises(RuntimeError, match="Missing key"):
+        loaded.load_state_dict(partial)
+    assert "_pretrained_provenance" not in loaded.__dict__
+
+
+def test_model_html_has_logo_and_zenodo_citation(tmp_path):
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    page = model._repr_html_()
+    assert "braindecode.org/stable/_static/braindecode_long.svg" in page
+    assert 'alt="Braindecode"' in page
+    assert "Cite Braindecode." in page and "Origin unrecorded" in page
+    assert page.count("10.5281/zenodo.17699192") >= 3  # badge, BibTeX, agent note
+    assert "hbm.23730" not in page
+    assert "Note for AI agents" in page
+    model.save_pretrained(tmp_path)
+    assert "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.17699192" in str(
+        EEGNet.from_pretrained(tmp_path)
+    )
+
+
+def test_checkpoint_source_without_config(monkeypatch, tmp_path):
+    import huggingface_hub
+
+    from braindecode.models.base import _checkpoint_source
+
+    def cached(repo, filename, **kwargs):
+        return str(tmp_path / "snapshots" / "abc12345" / filename) if filename == "model.safetensors" else None
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", cached)
+    assert _checkpoint_source("org/repo")["commit"] == "abc12345"
+
+
+def test_labram_reset_classifier_invalidates_head_origin(tmp_path):
+    from braindecode.models import Labram
+    model = Labram(n_chans=2, n_times=128, n_outputs=2, patch_size=8, embed_dim=8,
+                   conv_out_channels=8, num_layers=1, num_heads=2)
+    model.save_pretrained(tmp_path)
+    loaded = Labram.from_pretrained(tmp_path)
+    loaded.reset_classifier(3)
+    assert not {"final_layer.weight", "final_layer.bias"} & loaded._pretrained_provenance["loaded"]
+
+
+def test_model_html_citation_exports_and_dataset_readers(tmp_path):
+    import re
+    from urllib.parse import unquote
+
+    from huggingface_hub import ModelCardData
+
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    model.save_pretrained(tmp_path)
+    model = EEGNet.from_pretrained(tmp_path)
+    model.card_data = ModelCardData(datasets=["nm000139", "on004362", "TUEG", "PREST"])
+    page = model._repr_html_()
+    exports = re.findall(r'href="data:text/plain;charset=utf-8,([^"]+)" download="([^"]+)"', page)
+    assert len(exports) == 2
+    texts = {name: unquote(content) for content, name in exports}
+    assert "@software{braindecode," in texts["braindecode.bib"]
+    assert "10.5281/zenodo.17699192" in texts["braindecode.bib"]
+    assert "[Computer software]. Zenodo." in texts["braindecode-APA.txt"]
+    assert "10.5281/ZENODO.17699192" in texts["braindecode-APA.txt"]
+    assert 'download="braindecode.bib"' in page
+    assert 'aria-label="Braindecode APA citation"' in page
+    assert "braindecode.datasets.BNCI2014_001.html" in page
+    assert "braindecode.datasets.TUH.html" in page
+    assert "https://nemar.org/dataset/nm000139" in page
+    assert "https://eegdash.org/dataset_summary.html?q=ds004362" in page
+    assert "See the checkpoint card for access terms" in page

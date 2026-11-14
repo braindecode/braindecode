@@ -701,6 +701,7 @@ models_mandatory_parameters: list[
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("NICE", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSCFormer", ["n_chans", "n_outputs", "n_times"], None),
@@ -808,6 +809,7 @@ models_mandatory_parameters: list[
         },
     ),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
+    ("MEGGPT", ["n_chans", "n_outputs"], None),
     ("MIRepNet", ["n_chans", "n_outputs"], None),
     (
         "TFMTokenizer",
@@ -815,6 +817,8 @@ models_mandatory_parameters: list[
         {"sfreq": 200.0, "n_times": 1000},
     ),
     ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
+    # 1 s of the 128 Hz low-frequency stream
+    ("CORTEG", ["chs_info", "n_outputs", "n_times"], {"n_times": 128, "sfreq": 128.0}),
     (
         "MVPFormer",
         ["n_chans", "n_outputs", "n_times", "sfreq"],
@@ -841,7 +845,19 @@ models_mandatory_parameters: list[
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
     ("GCNsNet", ["n_chans", "n_outputs", "n_times"], None),
     ("BrainOmni", ["chs_info", "n_outputs", "n_times", "sfreq"], None),
+    # 0.5 s at 250 Hz, the pretraining window
+    (
+        "BBL",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {"n_times": 125, "sfreq": 250.0},
+    ),
     ("BrainTokenizer", ["chs_info", "n_times", "sfreq"], None),
+    (
+        "MEGXL",
+        ["chs_info", "n_outputs", "n_times"],
+        # 10 s at the released 50 Hz (42 tokens); 2 of the 8 released blocks.
+        {"sfreq": 50.0, "n_times": 500, "num_layers": 2},
+    ),
     (
         "DIVER1",
         ["chs_info", "n_outputs", "n_times"],

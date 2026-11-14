@@ -249,14 +249,15 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
             Input of shape ``(batch, n_chans, n_times)``; ``n_chans`` may differ
             from the construction one.
         return_features : bool
-            If ``True``, return ``{"features": pooled, "cls_token": cls}``:
-            ``cls`` holds the class token of every channel, shape
-            ``(batch, n_chans, embed_dim)``, and ``pooled`` is its mean over
-            channels. A scripted model ignores this flag.
+            If ``True``, return ``{"features": pooled, "cls_token": cls,
+            "tokens": tokens}``: ``cls`` holds the class token of every channel,
+            shape ``(batch, n_chans, embed_dim)``, ``pooled`` is its mean over
+            channels and ``tokens`` the patch tokens, ``(batch, n_chans,
+            n_patches, embed_dim)``. A scripted model ignores this flag.
         ch_mask : torch.Tensor, optional
             ``(batch, n_chans)`` mask of real channels, see
             :func:`~braindecode.functional.check_ch_mask`. Padded channels are dropped first; their
-            rows of ``cls`` are zero.
+            rows of ``cls`` and ``tokens`` are zero.
 
         Returns
         -------
@@ -283,7 +284,8 @@ class EpiNT(EEGModuleMixin, nn.Module, license="mit"):
         cls_token = unpack_channels(z[:, 0], mask, n_chans)  # (batch, chans, dim)
         pooled = masked_mean(cls_token, mask, [1])  # (batch, dim)
         if not torch.jit.is_scripting() and return_features:
-            return {"features": pooled, "cls_token": cls_token}
+            tokens = unpack_channels(z[:, 1:], mask, n_chans)
+            return {"features": pooled, "cls_token": cls_token, "tokens": tokens}
         return self.final_layer(pooled)
 
 

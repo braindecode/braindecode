@@ -346,6 +346,7 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
             None,
         )
         n_features = self.n_patches * self.embed_dim
+        own_head = {}
         if (
             first_head_key is not None
             and state_dict[first_head_key].shape[1] != n_features
@@ -363,7 +364,12 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
                 if k.startswith(("head_hidden.", "final_layer."))
             }
             state_dict = {**state_dict, **own_head}
-        return super().load_state_dict(state_dict, *args, **kwargs)
+        result = super().load_state_dict(state_dict, *args, **kwargs)
+        provenance = self.__dict__.get("_pretrained_provenance")
+        if provenance is not None:
+            # These entries were supplied by this model, not the checkpoint.
+            provenance["loaded"].difference_update(own_head)
+        return result
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""

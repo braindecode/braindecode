@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from .axon import AXON
     from .barista import BaRISTA
     from .base import EEGModuleMixin
+    from .bbl import BBL
     from .bendr import BENDR
     from .biot import BIOT
     from .brainbert import BrainBERT
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     from .cbramod import CBraMod
     from .codebrain import CodeBrain
     from .contrawr import ContraWR
+    from .corteg import CORTEG
     from .csbrain import CSBrain
     from .ctnet import CTNet
     from .dance import DANCE
@@ -60,6 +62,8 @@ if TYPE_CHECKING:
     from .luna import LUNA
     from .mapa import MAPA
     from .medformer import MEDFormer
+    from .meggpt import MEGGPT
+    from .megxl import MEGXL
     from .meta_neuromotor import MetaNeuromotorHand
     from .mirepnet import MIRepNet
     from .mscformer import MSCFormer
@@ -68,6 +72,7 @@ if TYPE_CHECKING:
     from .neuropose import NeuroPose
     from .neurorvq import NeuroRVQ
     from .neurorvq_tokenizer import NeuroRVQTokenizer
+    from .nice import NICE
     from .patchedtransformer import PBT
     from .popt import PopulationTransformer
     from .reve import REVE
