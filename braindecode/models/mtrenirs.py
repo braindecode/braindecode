@@ -25,6 +25,10 @@ from braindecode.functional import (
     scaled_dot_product_attention,
 )
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import (
+    extract_channel_locations_from_chs_info,
+    fnirs_chromophores_from_chs_info,
+)
 from braindecode.modules import FeedForwardBlock, TimmAttention
 
 
@@ -342,20 +346,16 @@ class _Encoder(nn.Module):
 
 
 def _coordinates(chs_info, pos_center, pos_scale) -> np.ndarray:
-    """``(n_chans, 4)``: ``(loc[:3] - pos_center) / pos_scale`` (0 when not
-    finite) and 0 for HbO, 1 for HbR, as the official ``chromophore_map``;
+    """``(n_chans, 4)``: ``(loc[:3] - pos_center) / pos_scale`` (0 when
+    unknown) and 0 for HbO, 1 for HbR, as the official ``chromophore_map``;
     ``(0, 4)`` without ``chs_info``."""
-    coords = np.zeros((0 if chs_info is None else len(chs_info), 4), np.float32)
-    center = np.asarray(pos_center, dtype=np.float32)
-    for coord, ch in zip(coords, chs_info or []):
-        loc = np.asarray(ch.get("loc", [np.nan] * 3), dtype=np.float32).ravel()[:3]
-        if np.isfinite(loc).all():
-            coord[:3] = (loc - center) / float(pos_scale)
-        tags = f"{ch.get('ch_name', '')} {ch.get('kind', '')}".lower()
-        if "hbr" in tags:
-            coord[3] = 1.0
-        elif "hbo" not in tags:
-            raise ValueError(
-                f"MtReNIRS needs HbO/HbR channels, got {ch.get('ch_name')!r}."
-            )
-    return coords
+    if chs_info is None:
+        return np.zeros((0, 4), np.float32)
+    chromophores = fnirs_chromophores_from_chs_info(chs_info)
+    if "unknown" in chromophores:
+        name = chs_info[chromophores.index("unknown")].get("ch_name")
+        raise ValueError(f"MtReNIRS needs HbO/HbR channels, got {name!r}.")
+    loc = extract_channel_locations_from_chs_info(chs_info, fill_missing=True)
+    xyz = (loc - np.asarray(pos_center, dtype=np.float32)) / float(pos_scale)
+    xyz = np.where(np.isfinite(loc).all(axis=1, keepdims=True), xyz, 0.0)
+    return np.c_[xyz, np.equal(chromophores, "hbr")].astype(np.float32)

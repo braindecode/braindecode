@@ -17,6 +17,7 @@ from torch import nn
 
 from braindecode.functional import check_ch_mask, patch_count
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import fnirs_channel_order
 
 
 class GeoNIRS(EEGModuleMixin, nn.Module):
@@ -56,8 +57,9 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
     pool : {"flatten", "mean_std"}
         Readout of the ``(batch, 2, S, P, output_feature_dim)`` sources: all
         of them, or their mean and standard deviation over the valid patches.
-    channel_order : {"stacked", "interleaved"}
-        Input layout, ``[HbO_1..HbO_C, HbR_1..HbR_C]`` or ``[HbO_1, HbR_1, ...]``.
+    channel_order : {"stacked", "interleaved"} or None
+        Input layout, ``[HbO_1..HbO_C, HbR_1..HbR_C]`` or ``[HbO_1, HbR_1, ...]``;
+        ``None`` reads it from ``chs_info``.
     drop_prob, head_drop_prob : float
         Dropout in the network and before ``final_layer``.
     minimum_patch_valid_fraction : float
@@ -94,7 +96,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         output_feature_dim: int = 64,
         use_channel_geometry: bool = True,
         pool: Literal["flatten", "mean_std"] = "flatten",
-        channel_order: Literal["stacked", "interleaved"] = "stacked",
+        channel_order: Literal["stacked", "interleaved"] | None = None,
         drop_prob: float = 0.1,
         head_drop_prob: float = 0.1,
         minimum_patch_valid_fraction: float = 0.8,
@@ -111,7 +113,9 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if self.n_chans % 2:
             raise ValueError("GeoNIRS needs HbO/HbR pairs: n_chans must be even.")
-        self.interleaved = {"stacked": False, "interleaved": True}[channel_order]
+        self.interleaved = {"stacked": False, "interleaved": True}[
+            fnirs_channel_order(self._chs_info, channel_order)
+        ]
         self.patch_samples = patch_samples
         # a non-divisible tail is cropped, as the reference unfold does
         self.n_patches = patch_count(self.n_times, patch_samples, "crop")

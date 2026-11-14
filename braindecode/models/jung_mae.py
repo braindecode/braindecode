@@ -18,6 +18,7 @@ from torch import nn
 
 from braindecode.functional import patch_count, sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import fnirs_channel_order
 
 
 class JungMAE(EEGModuleMixin, nn.Module):
@@ -47,9 +48,10 @@ class JungMAE(EEGModuleMixin, nn.Module):
         Feed-forward width relative to ``encoder_dim``.
     pool : {"flatten", "mean"}, default="flatten"
         Keep every (channel, patch) token, or average each channel's valid ones.
-    channel_order : {"stacked", "interleaved"}, default="stacked"
-        ``[HbO_1..HbO_C, HbR_1..HbR_C]`` or MNE's ``[HbO_1, HbR_1, ...]``; an
-        odd ``n_chans`` uses each channel as both chromophores.
+    channel_order : {"stacked", "interleaved"} or None, default=None
+        ``[HbO_1..HbO_C, HbR_1..HbR_C]`` or MNE's ``[HbO_1, HbR_1, ...]``
+        (``None`` reads it from ``chs_info``); an odd ``n_chans`` uses each
+        channel as both chromophores.
     drop_prob : float, default=0.1
         Dropout in the encoder layers.
     head_drop_prob : float, default=0.1
@@ -79,7 +81,7 @@ class JungMAE(EEGModuleMixin, nn.Module):
         encoder_heads: int = 8,
         mlp_ratio: float = 4.0,
         pool: Literal["flatten", "mean"] = "flatten",
-        channel_order: Literal["stacked", "interleaved"] = "stacked",
+        channel_order: Literal["stacked", "interleaved"] | None = None,
         drop_prob: float = 0.1,
         head_drop_prob: float = 0.1,
         minimum_patch_valid_fraction: float = 0.8,
@@ -97,7 +99,7 @@ class JungMAE(EEGModuleMixin, nn.Module):
         self.patch_samples = patch_samples
         self.encoder_dim = encoder_dim
         self.pool = pool
-        self.channel_order = channel_order
+        self.channel_order = fnirs_channel_order(self._chs_info, channel_order)
         self.minimum_patch_valid_fraction = minimum_patch_valid_fraction
         n_phys_chans = self.n_chans if self.n_chans % 2 else self.n_chans // 2
         n_tokens = patch_count(self.n_times, patch_samples) if pool == "flatten" else 1
