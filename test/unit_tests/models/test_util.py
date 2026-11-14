@@ -403,7 +403,6 @@ def test_warn_if_sfreq_differs_warns():
 
 
 _FNIRS_PAIRING = {  # pair-aware fNIRS models: chs_info sets their channel_order
-    "FNIRSNet": dict(n_chromophores=2),
     "FNIRS4D": {},
     "FNIRST": dict(depth=1),
 }

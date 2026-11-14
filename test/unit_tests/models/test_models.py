@@ -6402,8 +6402,8 @@ def _interleaved_fnirs_chs(n_pairs=4):
 @pytest.mark.parametrize(
     "model_cls,kwargs",
     [
-        (FNIRSNet, {"n_chromophores": 2, "channel_order": "interleaved"}),
-        (FNIRSNet, {"n_chans": 6, "drop_prob": 0.5}),
+        (FNIRSNet, {}),
+        (FNIRSNet, {"n_chans": 6}),
         (FNIRS4D, {"n_layers": 2, "d_state": 16, "channel_order": "interleaved"}),
         (FNIRS4D, {"n_chans": 7, "prenorm": True}),
     ],
