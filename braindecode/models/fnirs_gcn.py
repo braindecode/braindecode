@@ -1,6 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
-# License: BSD (3-clause)
+# License: BSD-3-Clause
+# Implemented from Kipf & Welling (2017).
 """FNIRSGCN: functional-connectivity graph convolutional network for fNIRS."""
 
 from __future__ import annotations

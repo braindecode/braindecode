@@ -1,6 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
-# License: BSD (3-clause)
+# License: BSD-3-Clause
+# Implemented from Hennrich et al. (2015) and Chiarelli et al. (2018).
 from __future__ import annotations
 
 from torch import Tensor, nn

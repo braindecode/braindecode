@@ -1,6 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
-# License: BSD (3-clause)
+# License: BSD-3-Clause
+# Implemented from Naseer et al. (2016) and Glover (1999).
 from __future__ import annotations
 
 import math
