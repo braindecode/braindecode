@@ -22,17 +22,17 @@ from braindecode.modules import (
 
 
 class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
-    r"""fNIRS-T from Wang et al. (2022) :footcite:`wang2022fnirst`.
+    r"""fNIRS-T from Wang et al. (2022).
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
 
     .. versionadded:: 2.1
 
-    Two transformer branches on paired HbO/HbR fNIRS windows: a spatial branch
-    with one token per group of ``spatial_kernel_size`` neighbouring channels
-    and a channel branch with one token per channel, each from a strided
-    temporal convolution. The two pooled outputs are concatenated, normalized
-    and classified.
+    Two transformer branches on paired HbO/HbR fNIRS windows
+    :footcite:`wang2022fnirst`: a spatial branch with one token per group of
+    ``spatial_kernel_size`` neighbouring channels and a channel branch with one
+    token per channel, each from a strided temporal convolution. The two pooled
+    outputs are concatenated, normalized and classified.
 
     `License <https://github.com/wzhlearning/fNIRS-Transformer/blob/main/LICENSE>`_
 
@@ -244,16 +244,17 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
 
 
 class FNIRSPreT(FNIRST, license="mit"):  # the kwarg is not inherited
-    r"""fNIRS-PreT from Wang et al. (2022) :footcite:`wang2022fnirst`.
+    r"""fNIRS-PreT from Wang et al. (2022).
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
 
     .. versionadded:: 2.1
 
-    :class:`~braindecode.models.FNIRST` for raw signals: three moving averages
-    (kernels 5, 13, 7) and a LayerNorm over time per chromophore come first,
-    in place of offline band-pass filtering and baseline correction. The
-    parameters are those of :class:`~braindecode.models.FNIRST`.
+    :class:`~braindecode.models.FNIRST` for raw signals
+    :footcite:`wang2022fnirst`: three moving averages (kernels 5, 13, 7) and a
+    LayerNorm over time per chromophore come first, in place of offline
+    band-pass filtering and baseline correction. The parameters are those of
+    :class:`~braindecode.models.FNIRST`.
 
     `License <https://github.com/wzhlearning/fNIRS-Transformer/blob/main/LICENSE>`_
 
