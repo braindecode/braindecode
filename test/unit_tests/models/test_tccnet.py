@@ -90,10 +90,7 @@ def _small_model(classification_head="aot", **kwargs):
         n_chans=3,
         n_outputs=4,
         n_times=32,
-        residual_blocks=2,
-        tcn_layers=(2, 1),
         filters=((4, 5), (6,)),
-        kernel_size=((3, 2), (3,)),
         drop_prob=0.0,
         classification_head=classification_head,
         **kwargs,
@@ -123,8 +120,6 @@ def test_tccnet_matches_pinned_keras_equations(classification_head):
     model = TCCNet(
         n_chans=2,
         n_outputs=2,
-        residual_blocks=1,
-        tcn_layers=2,
         filters=((2, 3),),
         kernel_size=2,
         drop_prob=0.0,
@@ -173,37 +168,9 @@ def test_tccnet_dilation_continues_across_residual_blocks():
     assert all(block.projection.kernel_size == 1 for block in model.feature_extractor)
 
 
-@pytest.mark.parametrize(
-    "kwargs, match",
-    [
-        ({"residual_blocks": 0}, "residual_blocks must be positive"),
-        (
-            {"residual_blocks": 2, "tcn_layers": (1,)},
-            "one value per residual block",
-        ),
-        (
-            {
-                "residual_blocks": 2,
-                "tcn_layers": (1, 1),
-                "filters": ((2,),),
-            },
-            "filters must contain 2 blocks",
-        ),
-        ({"drop_prob": 1.0}, "drop_prob must be in"),
-        ({"classification_head": "mean"}, "must be 'aot' or 'att'"),
-    ],
-)
-def test_tccnet_rejects_invalid_architecture(kwargs, match):
-    base = {
-        "n_chans": 3,
-        "n_outputs": 4,
-        "filters": 2,
-        "kernel_size": 3,
-    }
-    base.update(kwargs)
-
-    with pytest.raises(ValueError, match=match):
-        TCCNet(**base)
+def test_tccnet_rejects_unknown_head():
+    with pytest.raises(ValueError, match="must be 'aot' or 'att'"):
+        TCCNet(n_chans=3, n_outputs=4, classification_head="mean")
 
 
 @pytest.mark.parametrize("classification_head", ["aot", "att"])

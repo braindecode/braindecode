@@ -19,37 +19,6 @@ from torch import nn
 from braindecode.models.base import EEGModuleMixin
 
 
-def _expand_per_block(
-    value: int | Sequence[Sequence[int]],
-    layers_per_block: tuple[int, ...],
-    name: str,
-) -> tuple[tuple[int, ...], ...]:
-    """Expand one integer or validate one value per layer and block."""
-    if isinstance(value, int):
-        if value <= 0:
-            raise ValueError(f"{name} must be positive, got {value}.")
-        return tuple(
-            tuple(value for _ in range(n_layers)) for n_layers in layers_per_block
-        )
-
-    if len(value) != len(layers_per_block):
-        raise ValueError(
-            f"{name} must contain {len(layers_per_block)} blocks, got {len(value)}."
-        )
-
-    expanded = tuple(tuple(block) for block in value)
-    for block_idx, (block, n_layers) in enumerate(
-        zip(expanded, layers_per_block, strict=True)
-    ):
-        if len(block) != n_layers:
-            raise ValueError(
-                f"{name}[{block_idx}] must contain {n_layers} values, got {len(block)}."
-            )
-        if any(item <= 0 for item in block):
-            raise ValueError(f"All {name} values must be positive, got {block}.")
-    return expanded
-
-
 class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
     r"""Temporal convolutional network for sEMG gesture recognition.
 
@@ -79,20 +48,12 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
 
     Parameters
     ----------
-    residual_blocks : int, default=4
-        Number of residual temporal-convolution blocks.
-    tcn_layers : int | sequence of int, default=2
-        Number of causal convolutions in every block, or one value per block.
-        Passing ``-1`` reproduces the source convenience option and uses
-        ``depth // residual_blocks`` layers in each block.
-    filters : int | sequence of sequence of int, default=((32, 32), (32, 32), (64, 64), (128, 128))
-        Number of output filters for every causal convolution. A single integer
-        is repeated for all layers.
-    kernel_size : int | sequence of sequence of int, default=3
-        Temporal kernel size for every causal convolution. A single integer is
-        repeated for all layers.
-    depth : int, default=40
-        Total depth used only when ``tcn_layers=-1``.
+    filters : sequence of sequence of int, default=((32, 32), (32, 32), (64, 64), (128, 128))
+        Output filters of each causal convolution, one inner sequence per
+        residual block. It sets the number of blocks and of convolutions per
+        block.
+    kernel_size : int, default=3
+        Temporal kernel size of every causal convolution.
     drop_prob : float, default=0.5
         Channel-wise dropout probability after each activated convolution,
         equivalent to Keras ``SpatialDropout1D``.
@@ -112,10 +73,8 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
     kernels. In PyTorch this should be configured as optimizer weight decay;
     it is not part of the forward architecture.
 
-    The published repository's 300-sample configuration uses two blocks with
-    ``tcn_layers=(2, 2)`` and ``filters=((32, 64), (64, 128))``. Its
-    variable-length configuration uses four blocks with
-    ``tcn_layers=(2, 2, 2, 1)`` and
+    The published repository's 300-sample configuration uses
+    ``filters=((32, 64), (64, 128))``. Its variable-length configuration uses
     ``filters=((32, 32), (32, 32), (64, 64), (128,))``. Both set
     ``drop_prob=0.05`` and train for 30 epochs with Adam (learning rate 0.01,
     epsilon 0.001), L2 coefficient 0.0005, time and magnitude warping of 0.2,
@@ -141,16 +100,13 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         input_window_seconds=None,
         sfreq=None,
         # Model parameters.
-        residual_blocks: int = 4,
-        tcn_layers: int | Sequence[int] = 2,
-        filters: int | Sequence[Sequence[int]] = (
+        filters: Sequence[Sequence[int]] = (
             (32, 32),
             (32, 32),
             (64, 64),
             (128, 128),
         ),
-        kernel_size: int | Sequence[Sequence[int]] = 3,
-        depth: int = 40,
+        kernel_size: int = 3,
         drop_prob: float = 0.5,
         activation: type[nn.Module] = nn.ReLU,
         classification_head: str = "aot",
@@ -166,73 +122,27 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        if residual_blocks <= 0:
+        if classification_head not in ("aot", "att"):
             raise ValueError(
-                f"residual_blocks must be positive, got {residual_blocks}."
+                f"classification_head must be 'aot' or 'att', got {classification_head!r}."
             )
-        if isinstance(tcn_layers, int):
-            if tcn_layers == -1:
-                if depth < residual_blocks:
-                    raise ValueError(
-                        "depth must be at least residual_blocks when tcn_layers=-1."
-                    )
-                layers_per_block = (depth // residual_blocks,) * residual_blocks
-            elif tcn_layers > 0:
-                layers_per_block = (tcn_layers,) * residual_blocks
-            else:
-                raise ValueError(
-                    f"tcn_layers must be positive or -1, got {tcn_layers}."
-                )
-        else:
-            layers_per_block = tuple(tcn_layers)
-            if len(layers_per_block) != residual_blocks:
-                raise ValueError(
-                    "tcn_layers must contain one value per residual block; "
-                    f"expected {residual_blocks}, got {len(layers_per_block)}."
-                )
-            if any(n_layers <= 0 for n_layers in layers_per_block):
-                raise ValueError(
-                    f"All tcn_layers values must be positive, got {layers_per_block}."
-                )
-        if not 0 <= drop_prob < 1:
-            raise ValueError(f"drop_prob must be in [0, 1), got {drop_prob}.")
-        if classification_head not in {"aot", "att"}:
-            raise ValueError(
-                "classification_head must be 'aot' or 'att', "
-                f"got {classification_head!r}."
-            )
-
-        filters_per_block = _expand_per_block(filters, layers_per_block, "filters")
-        kernels_per_block = _expand_per_block(
-            kernel_size, layers_per_block, "kernel_size"
-        )
-
-        self.residual_blocks = residual_blocks
-        self.tcn_layers = layers_per_block
-        self.filters = filters_per_block
-        self.kernel_size = kernels_per_block
-        self.depth = depth
-        self.drop_prob = drop_prob
-        self.activation = activation
-        self.classification_head = classification_head
         self.mask_value = mask_value
 
-        dilation = 1
+        blocks = []
         in_channels = self.n_chans
-        blocks: list[nn.Module] = []
-        for block_filters, block_kernels in zip(
-            filters_per_block, kernels_per_block, strict=True
-        ):
-            dilations = tuple(dilation * (2**idx) for idx in range(len(block_filters)))
+        dilation = 1
+        for block_filters in filters:
+            # The dilation doubles at every convolution, across blocks too.
+            dilations = [dilation * 2**i for i in range(len(block_filters))]
             dilation *= 2 ** len(block_filters)
             blocks.append(
                 _TCCResidualBlock(
-                    in_channels=in_channels,
-                    filters=block_filters,
-                    kernel_sizes=block_kernels,
-                    dilations=dilations,
-                    drop_prob=drop_prob,
-                    activation=activation,
+                    in_channels,
+                    block_filters,
+                    kernel_size,
+                    dilations,
+                    drop_prob,
+                    activation,
                 )
             )
             in_channels = block_filters[-1]
@@ -251,15 +161,6 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Return classification logits for a batch of sEMG windows."""
-        if x.ndim != 3:
-            raise ValueError(
-                "TCCNet expects input with shape (batch, n_chans, n_times)."
-            )
-        if x.shape[1] != self.n_chans:
-            raise ValueError(
-                "The input channel count must match the configured n_chans."
-            )
-
         valid_mask = None
         if self.mask_value is not None:
             valid_mask = torch.any(x != self.mask_value, dim=1)
@@ -323,9 +224,9 @@ class _TCCResidualBlock(nn.Module):
     def __init__(
         self,
         in_channels: int,
-        filters: tuple[int, ...],
-        kernel_sizes: tuple[int, ...],
-        dilations: tuple[int, ...],
+        filters: Sequence[int],
+        kernel_size: int,
+        dilations: Sequence[int],
         drop_prob: float,
         activation: type[nn.Module],
     ) -> None:
@@ -334,13 +235,10 @@ class _TCCResidualBlock(nn.Module):
         self.convolutions = nn.ModuleList()
         self.activations = nn.ModuleList()
         self.dropouts = nn.ModuleList()
-        current_channels = in_channels
-        for out_channels, kernel_size, dilation in zip(
-            filters, kernel_sizes, dilations, strict=True
-        ):
+        for out_channels, dilation in zip(filters, dilations):
             self.convolutions.append(
                 _CausalConv1d(
-                    current_channels,
+                    in_channels,
                     out_channels,
                     kernel_size=kernel_size,
                     dilation=dilation,
@@ -348,7 +246,7 @@ class _TCCResidualBlock(nn.Module):
             )
             self.activations.append(activation())
             self.dropouts.append(nn.Dropout1d(drop_prob))
-            current_channels = out_channels
+            in_channels = out_channels
 
     def forward(self, x: torch.Tensor, valid_mask: torch.Tensor | None) -> torch.Tensor:
         residual = self.projection(x, valid_mask)
