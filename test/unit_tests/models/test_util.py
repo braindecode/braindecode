@@ -24,6 +24,7 @@ from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
     fnirs_channel_order,
     fnirs_chromophores_from_chs_info,
+    fnirs_split_hbo_hbr,
     has_valid_locations,
     models_dict,
     models_mandatory_parameters,
@@ -405,6 +406,7 @@ def test_warn_if_sfreq_differs_warns():
 
 _FNIRS_PAIRING = {  # pair-aware fNIRS models: chs_info sets their channel_order
     "FNIRS4D": {},
+    "FNIRSPreT": dict(depth=1),
     "FNIRST": dict(depth=1),
 }
 
@@ -431,6 +433,43 @@ def test_fnirs_channel_order_reads_chs_info():
     info = mne.create_info(["a x", "a y", "b x", "b y"], 10.0, ["hbo", "hbr"] * 2)
     assert fnirs_channel_order(info["chs"]) == "interleaved"
     assert fnirs_chromophores_from_chs_info([{"ch_name": "hboost_1"}]) == ["unknown"]
+
+
+def test_fnirs_split_hbo_hbr_follows_chs_info():
+    for chs in (_fnirs_chs_info(3), _interleave(_fnirs_chs_info(3))):
+        names = [ch["ch_name"] for ch in chs]
+        index = torch.arange(len(chs)).view(1, -1, 1)  # (batch, n_chans, n_times)
+        hbo, hbr = fnirs_split_hbo_hbr(index, fnirs_channel_order(chs))
+        assert [names[i] for i in hbo.flatten()] == [f"S{i}_D{i} hbo" for i in (1, 2, 3)]
+        assert [names[i] for i in hbr.flatten()] == [f"S{i}_D{i} hbr" for i in (1, 2, 3)]
+    with pytest.raises(ValueError, match="channel_order"):
+        fnirs_split_hbo_hbr(index, "interleave")
+
+
+@pytest.mark.parametrize("name", sorted(_FNIRS_PAIRING))
+def test_fnirs_interleaved_input_matches_stacked(name):
+    """With the same weights, the interleaved model on MNE-ordered channels
+    gives the stacked model's output on the stacked channels."""
+    cls, kw = getattr(models, name), _FNIRS_PAIRING[name]
+    stacked = cls(n_chans=8, n_outputs=2, n_times=60, channel_order="stacked", **kw)
+    interleaved = cls(
+        n_chans=8, n_outputs=2, n_times=60, channel_order="interleaved", **kw
+    )
+    interleaved.load_state_dict(stacked.state_dict())
+    x = torch.randn(3, 8, 60)  # [HbO_1..HbO_4, HbR_1..HbR_4]
+    x_mne = x.reshape(3, 2, 4, 60).transpose(1, 2).reshape(3, 8, 60)
+    with torch.no_grad():
+        assert torch.equal(interleaved.eval()(x_mne), stacked.eval()(x))
+
+
+def test_fnirs4d_hbt_is_hbo_plus_hbr():
+    hbt = models.FNIRS4D(n_chans=8, n_outputs=2, n_times=60).eval()
+    plain = models.FNIRS4D(n_chans=8, n_outputs=2, n_times=60, compute_hbt=False)
+    plain.load_state_dict(hbt.state_dict())
+    hbo, hbr = torch.randn(3, 4, 60), torch.randn(3, 4, 60)
+    with torch.no_grad():
+        out = hbt(torch.cat((hbo, hbr), dim=1))
+        assert torch.equal(out, plain.eval()(torch.cat((hbo, hbo + hbr), dim=1)))
 
 
 @pytest.mark.parametrize(
