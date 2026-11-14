@@ -1,5 +1,4 @@
-# Authors: Zenghui Wang (original fNIRS-Transformer implementation)
-#          Bruno Aristimunha <b.aristimunha@gmail.com>
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: MIT
 # Adapted from https://github.com/wzhlearning/fNIRS-Transformer (MIT).

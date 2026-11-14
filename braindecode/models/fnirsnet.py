@@ -1,5 +1,4 @@
-# Authors: Zenghui Wang (original fNIRSNet implementation)
-#          Bruno Aristimunha <b.aristimunha@gmail.com>
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: Apache-2.0
 # Adapted from https://github.com/wzhlearning/fNIRSNet (Apache-2.0).
