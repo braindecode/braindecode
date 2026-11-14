@@ -26,6 +26,15 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
     :bdg-info:`Attention/Transformer`
 
+    .. figure:: https://braindecode.org/dev/_static/model/tccnet.png
+       :align: center
+       :alt: TCCNet architecture
+
+       "Proposed model" panel of the authors' ICASSP 2019 poster (MIT, from
+       [tccnetcode]_): dilated causal convolutions, read out by an average
+       over time (AoT) or an attention (Att) head. Braindecode returns the
+       logits, without the softmax.
+
     A temporal convolutional network that classifies a whole sEMG gesture.
     Residual blocks of causal convolutions, whose dilation doubles at every
     layer and keeps doubling across blocks, map the gesture to a sequence of
