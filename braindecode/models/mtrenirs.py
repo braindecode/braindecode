@@ -276,7 +276,8 @@ class _QKNormSelfInteraction(TimmAttention):
         self.q_norm = nn.LayerNorm(self.head_dim) if qk_norm else nn.Identity()
         self.k_norm = nn.LayerNorm(self.head_dim) if qk_norm else nn.Identity()
 
-    def forward(
+    # takes positions and valid, unlike timm's forward: mypy's override check is off
+    def forward(  # type: ignore[override]
         self, values: torch.Tensor, positions: torch.Tensor, valid: torch.Tensor
     ) -> torch.Tensor:
         # (B, N, D) -> 3 x (B, heads, N, head_dim)

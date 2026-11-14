@@ -122,7 +122,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         self.pool = pool
         self.minimum_patch_valid_fraction = float(minimum_patch_valid_fraction)
 
-        stream = (patch_samples, max(max_patches, self.n_patches), embedding_dim)
+        stream: tuple = (patch_samples, max(max_patches, self.n_patches), embedding_dim)
         stream += (num_heads, temporal_layers, mlp_ratio, drop_prob, activation)
         self.hbo_encoder = _TemporalStream(*stream)
         self.hbr_encoder = _TemporalStream(*stream)
