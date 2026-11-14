@@ -47,30 +47,33 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
     ``coordinates`` argument; a montage without any location needs
     ``coordinates``. Windows with a NaN sample are masked.
     :meth:`load_state_dict` takes the official ``mtrenirs_10s.pt`` checkpoint.
+    Adapted from the authors' code
+    (`License <https://github.com/microsoft/MtReNIRS/blob/main/LICENSE.txt>`_).
 
     Parameters
     ----------
-    window_samples : int
+    window_samples : int, default=100
         Samples per token window.
-    d_model, depth, n_heads, mlp_hidden : int
+    d_model, depth, n_heads, mlp_hidden : int, default=128, 6, 4, 512
         Width, blocks, heads (even ``d_model // n_heads``) and feed-forward
         width of the Transformer.
-    fourier_num_bands : int
+    fourier_num_bands : int, default=6
         Frequencies ``pi * 2**k``, ``k < fourier_num_bands``, per coordinate.
-    spatial_mlp_hidden : int
+    spatial_mlp_hidden : int, default=128
         Hidden width of the spatial MLP.
-    rope_base : float
+    rope_base : float, default=500.0
         Base of the rotary embedding.
-    qk_norm : bool
+    qk_norm : bool, default=True
         Per-head LayerNorm of queries and keys.
-    pool : {"temporal_mean", "channel_temporal_mean", "flatten"}
+    pool : {"temporal_mean", "channel_temporal_mean", "flatten"}, default="temporal_mean"
         Readout of the ``(batch, n_windows, n_chans, d_model)`` tokens: mean
         over valid windows, over valid windows and channels, or all of them.
     pos_center, pos_scale : tuple of float, float
-        Centre and scale (m) standardizing the positions, from the checkpoint.
-    drop_prob : float
+        Centre and scale (m) standardizing the positions; the defaults are
+        those of the released checkpoint.
+    drop_prob : float, default=0.1
         Dropout of the attention weights and blocks.
-    activation : type[nn.Module]
+    activation : type[nn.Module], default=nn.GELU
         Activation of the spatial MLP and the feed-forward blocks.
 
     References
@@ -79,8 +82,6 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
        Tashev, I. J. (2026). MtReNIRS: A Self-Supervised Foundation Model for
        Transferable Neurovascular Representations. arXiv preprint
        arXiv:2610.36159.
-
-    `License <https://github.com/microsoft/MtReNIRS/blob/main/LICENSE.txt>`_
     """
 
     def __init__(

@@ -37,33 +37,33 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    patch_samples : int
+    patch_samples : int, default=10
         Samples per temporal patch.
-    max_patches : int
+    max_patches : int, default=15
         Rows of the time embedding, raised to the patch count of ``n_times``.
-    embedding_dim, num_heads, temporal_layers, mlp_ratio : int, int, int, float
+    embedding_dim, num_heads, temporal_layers, mlp_ratio : int, int, int, float, default=192, 8, 4, 4.0
         Width, heads, layers and feed-forward ratio of the temporal
         Transformers (GeoNIRS-Large: 384, 12, 6, 4.0).
-    geometry_hidden_dim, geometry_heads, spatial_heads : int or None
+    geometry_hidden_dim, geometry_heads, spatial_heads : int or None, default=None
         Width of the geometry MLP, heads of the geometry Transformer and of
         the compressor; ``None`` is ``embedding_dim`` or ``num_heads``.
-    num_latent_sources : int
+    num_latent_sources : int, default=16
         Latent source queries.
-    output_feature_dim : int
+    output_feature_dim : int, default=64
         Width of each source after the projection (128 for Large).
-    use_channel_geometry : bool
+    use_channel_geometry : bool, default=True
         Condition the compressor keys on the geometry.
-    pool : {"flatten", "mean_std"}
+    pool : {"flatten", "mean_std"}, default="flatten"
         Readout of the ``(batch, 2, S, P, output_feature_dim)`` sources: all
         of them, or their mean and standard deviation over the valid patches.
-    channel_order : {"stacked", "interleaved"} or None
+    channel_order : {"stacked", "interleaved"} or None, default=None
         Input layout, ``[HbO_1..HbO_C, HbR_1..HbR_C]`` or ``[HbO_1, HbR_1, ...]``;
         ``None`` reads it from ``chs_info``.
-    drop_prob, head_drop_prob : float
+    drop_prob, head_drop_prob : float, default=0.1, 0.1
         Dropout in the network and before ``final_layer``.
-    minimum_patch_valid_fraction : float
+    minimum_patch_valid_fraction : float, default=0.8
         Least fraction of valid samples of a valid patch.
-    activation : type[nn.Module]
+    activation : type[nn.Module], default=nn.GELU
         Activation of the network.
 
     References
