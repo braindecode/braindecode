@@ -253,7 +253,7 @@ _MODELS = [
     ),
     pytest.param(FNIRSLSTM, 7, {"pool_mode": "mean"}, False, id="FNIRSLSTM-mean"),
     pytest.param(FNIRSNet, 4, {}, False, id="FNIRSNet"),
-    pytest.param(FNIRS4D, 4, {"n_layers": 1, "state_dim": 16}, False, id="FNIRS4D"),
+    pytest.param(FNIRS4D, 4, {"n_layers": 1, "d_state": 16}, False, id="FNIRS4D"),
     pytest.param(FNIRSGCN, 4, {"n_gcn_layers": 1}, False, id="FNIRSGCN"),
     pytest.param(FNIRST, 4, {"depth": 1, "heads": 2}, True, id="FNIRST"),
     pytest.param(FNIRSPreT, 4, {"depth": 1, "heads": 2}, True, id="FNIRSPreT"),

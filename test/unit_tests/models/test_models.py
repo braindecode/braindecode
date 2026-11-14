@@ -6405,7 +6405,7 @@ def _interleaved_fnirs_chs(n_pairs=4):
     [
         (FNIRSNet, {"n_chromophores": 2, "channel_order": "interleaved"}),
         (FNIRSNet, {"n_chans": 6, "drop_prob": 0.5}),
-        (FNIRS4D, {"n_layers": 2, "state_dim": 16, "channel_order": "interleaved"}),
+        (FNIRS4D, {"n_layers": 2, "d_state": 16, "channel_order": "interleaved"}),
         (FNIRS4D, {"n_chans": 7, "prenorm": True}),
         (FNIRSGCN, {"node_dim": 32}),
         (FNIRSGCN, {"n_chans": 7, "node_dim": 32}),
@@ -6444,7 +6444,7 @@ def test_s4d_real_arithmetic_matches_complex_fft():
     torch.testing.assert_close(k(length), ref_kernel, atol=1e-6, rtol=1e-5)
     spectrum = torch.fft.rfft(x, n=2 * length) * torch.fft.rfft(ref_kernel, n=2 * length)
     ref_conv = torch.fft.irfft(spectrum, n=2 * length)[..., :length]
-    skip = x * layer.skip.unsqueeze(-1)
+    skip = x * layer.D.unsqueeze(-1)
     ref_out = layer.output_linear(layer.activation(ref_conv + skip))
     with torch.no_grad():
         torch.testing.assert_close(layer(x), ref_out, atol=1e-5, rtol=1e-5)
