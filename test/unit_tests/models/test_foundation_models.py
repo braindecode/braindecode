@@ -1222,8 +1222,16 @@ def test_luna_variants_parameter_count_hierarchy(
 def test_luna_variants_device_compatibility(
     luna_base_model, luna_large_model, luna_huge_model
 ):
-    """Test LUNA variants work correctly on CPU."""
+    """Test LUNA variants give the CPU output on the available accelerators."""
     x = torch.randn(2, 22, 1000)
+    devices = [
+        device
+        for device, available in [
+            ("cuda", torch.cuda.is_available()),
+            ("mps", torch.backends.mps.is_available()),
+        ]
+        if available
+    ]
 
     for model_name, model in [
         ("Base", luna_base_model),
@@ -1235,14 +1243,14 @@ def test_luna_variants_device_compatibility(
             output = model(x)
         assert output.shape == (2, 2), f"LUNA {model_name} output shape incorrect"
 
-        # Test CUDA if available
-        if torch.cuda.is_available():
-            model_cuda = model.cuda()
-            x_cuda = x.cuda()
+        for device in devices:
             with torch.no_grad():
-                output_cuda = model_cuda(x_cuda)
-            assert output_cuda.shape == (2, 2)
-            assert output_cuda.device.type == "cuda"
+                output_device = model.to(device)(x.to(device))
+            assert output_device.device.type == device
+            # GPU FFT noise must not flip the DC/Nyquist phase (a flip moves
+            # outputs by ~1e-2; float32 GPU arithmetic, by ~1e-5).
+            torch.testing.assert_close(output_device.cpu(), output, rtol=0, atol=5e-4)
+            model.to("cpu")
 
 
 def test_luna_variants_different_channel_counts(luna_base_config):
