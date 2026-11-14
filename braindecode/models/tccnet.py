@@ -260,10 +260,17 @@ class _TCCContextAttention(nn.Module):
         nn.init.uniform_(self.context, -bound, bound)
 
     def forward(self, x: torch.Tensor, valid_mask: torch.Tensor | None) -> torch.Tensor:
+        # (batch, n_times, n_features) -> (batch, n_times)
         scores = torch.tanh(x @ self.weight) @ self.context
-        attention = torch.exp(scores)
         if valid_mask is not None:
-            attention = attention * valid_mask.to(attention.dtype)
-        # ``keras.backend.epsilon()`` is 1e-7 in the pinned source.
-        attention = attention / (attention.sum(dim=1, keepdim=True) + 1e-7)
+            scores = scores.masked_fill(~valid_mask, float("-inf"))
+        # exp(s - m) / (sum exp(s - m) + eps * exp(-m)) is the reference's
+        # exp(s) / (sum exp(s) + eps) without its overflow; eps = 1e-7 is
+        # keras.backend.epsilon(). m >= 0 also covers fully padded rows.
+        shift = scores.amax(dim=1, keepdim=True).clamp_min(0.0).detach()
+        attention = torch.exp(scores - shift)
+        attention = attention / (
+            attention.sum(dim=1, keepdim=True) + 1e-7 * torch.exp(-shift)
+        )
+        # (batch, n_times, n_features) -> (batch, n_features)
         return torch.sum(x * attention.unsqueeze(-1), dim=1)
