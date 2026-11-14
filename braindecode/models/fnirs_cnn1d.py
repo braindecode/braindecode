@@ -1,7 +1,8 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
-# License: BSD (3-clause)
-# Adapted from https://github.com/GeoNIRS/GeoNIRS (DirectEventCNN1DClassifier).
+# License: BSD-3-Clause
+# Adapted from https://github.com/GeoNIRS/GeoNIRS (DirectEventCNN1DClassifier;
+# 81f8995; no licence file; paper arXiv:2610.17845).
 from __future__ import annotations
 
 from torch import Tensor, nn
