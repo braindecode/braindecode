@@ -207,7 +207,8 @@ class _MaskedCausalConv1d(nn.Module):
 
 
 class _TCCResidualBlock(nn.Module):
-    """Faithful TCCNet residual block whose dilation continues across blocks."""
+    """TCN residual block of the reference; private because braindecode.modules
+    has no shared TCN residual block (ATCNet, TCFormer and TCN keep their own)."""
 
     def __init__(
         self,
@@ -243,7 +244,8 @@ class _TCCResidualBlock(nn.Module):
 
 
 class _TCCContextAttention(nn.Module):
-    """TCCNet's single-context attention with the source parameter layout."""
+    """``AttentionWithContext(bias=False)`` of the reference; private because
+    braindecode.modules has no context-vector attention pooling."""
 
     def __init__(self, n_features: int) -> None:
         super().__init__()
