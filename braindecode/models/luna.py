@@ -610,14 +610,15 @@ class _FrequencyFeatureEmbedder(nn.Module):
         freq_representation = fft.rfft(
             spectral_input(x), dim=-1
         )  # (B, C, num_patches, patch_size // 2 + 1)
-        magnitude = torch.abs(freq_representation)
         # DC and Nyquist bins are real: drop GPU rounding noise that flips
         # their phase between pi and -pi.
         imag = freq_representation.imag.clone()
         imag[..., 0] = 0.0
         if self.patch_size % 2 == 0:
             imag[..., -1] = 0.0
-        phase = torch.atan2(imag, freq_representation.real)
+        freq_representation = torch.complex(freq_representation.real, imag)
+        magnitude = torch.abs(freq_representation)
+        phase = torch.angle(freq_representation)
 
         # Concatenate magnitude and phase along the frequency axis (last dimension)
         freq_features = torch.cat((magnitude, phase), dim=-1).to(x)
