@@ -602,6 +602,22 @@ def _dance_signal_params() -> dict[str, Any]:
     }
 
 
+def _fnirs_chs_info(n_pairs: int) -> list[dict]:
+    """Stacked HbO then HbR channels of ``n_pairs`` source-detector pairs 3 cm
+    apart on a 8 cm ring (metres), with the source and detector in
+    ``loc[3:9]`` as MNE stores them."""
+    chs = []
+    for kind in ("hbo", "hbr"):
+        for i in range(n_pairs):
+            src = np.array([0.08 * np.cos(i), 0.08 * np.sin(i), 0.05])
+            det = src + np.array([0.03, 0.0, 0.0])
+            loc = np.concatenate([(src + det) / 2, src, det, np.zeros(3)])
+            chs.append(
+                {"ch_name": f"S{i + 1}_D{i + 1} {kind}", "kind": kind, "loc": loc}
+            )
+    return chs
+
+
 # (name, required signal parameters, test parameters). The test parameters are
 # signal parameters the default test signal does not fit, plus, for the
 # largest models, architecture arguments that keep the test instance small
@@ -925,17 +941,17 @@ models_mandatory_parameters: list[
     (
         "FNIRS4D",
         ["n_chans", "n_outputs", "n_times"],
-        {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
+        lambda: {"chs_info": _fnirs_chs_info(2), "n_times": 60, "sfreq": 5.0},
     ),
     (
         "FNIRST",
         ["n_chans", "n_outputs", "n_times"],
-        {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
+        lambda: {"chs_info": _fnirs_chs_info(2), "n_times": 60, "sfreq": 5.0},
     ),
     (
         "FNIRSPreT",
         ["n_chans", "n_outputs", "n_times"],
-        {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
+        lambda: {"chs_info": _fnirs_chs_info(2), "n_times": 60, "sfreq": 5.0},
     ),
 ]
 
@@ -1341,41 +1357,62 @@ def channel_types_from_chs_info(
 
 def fnirs_chromophores_from_chs_info(chs_info: Sequence[Dict[str, Any]]) -> list[str]:
     """``"hbo"``, ``"hbr"`` or ``"unknown"`` per channel, from MNE's
-    ``coil_type`` (``FIFFV_COIL_FNIRS_HBO`` / ``_HBR``), else from its name and
-    ``"kind"`` (MNE names them ``"S1_D1 hbo"``); ``"hbr"`` wins if both appear."""
+    ``coil_type`` (``FIFFV_COIL_FNIRS_HBO`` / ``_HBR``), else from the
+    ``" hbo"`` / ``" hbr"`` suffix of its name (MNE names them ``"S1_D1 hbo"``)
+    or its ``"kind"``."""
     coils = {FIFF.FIFFV_COIL_FNIRS_HBO: "hbo", FIFF.FIFFV_COIL_FNIRS_HBR: "hbr"}
     out = []
     for ch in chs_info:
-        tag = f"{ch.get('ch_name', '')} {ch.get('kind', '')}".lower()
-        by_name = "hbr" if "hbr" in tag else "hbo" if "hbo" in tag else "unknown"
+        suffix = str(ch.get("ch_name", "")).lower().rsplit(" ", 1)[-1]
+        kind = str(ch.get("kind", "")).lower()
+        by_name = next((k for k in (suffix, kind) if k in ("hbo", "hbr")), "unknown")
         out.append(coils.get(int(ch.get("coil_type") or 0), by_name))
     return out
 
 
 def fnirs_channel_order(chs_info, channel_order: Optional[str] = None) -> str:
-    """HbO/HbR pair layout: ``channel_order`` if given, else ``"interleaved"``
-    if ``chs_info`` lists MNE's ``[HbO_1, HbR_1, ...]``, else ``"stacked"``
-    (``[HbO..., HbR...]``, also without ``chs_info`` or balanced pairs).
+    """HbO/HbR pair layout of an fNIRS montage: ``"stacked"``
+    (``[HbO_1..HbO_C, HbR_1..HbR_C]``) or ``"interleaved"`` (MNE's
+    ``[HbO_1, HbR_1, ...]``).
 
-    Raises ``ValueError`` for an unknown ``channel_order`` and for balanced
-    HbO/HbR channels in neither layout.
+    Without ``chs_info`` it returns ``channel_order``, or ``"stacked"``. With
+    ``chs_info`` every channel must be HbO or HbR, in equal numbers, and the
+    ``i``-th HbO and HbR channels must share their name up to the chromophore
+    suffix (``"S1_D1 hbo"`` / ``"S1_D1 hbr"``); the layout is read from it, and
+    an explicit ``channel_order`` must agree.
+
+    Raises ``ValueError`` for an unknown ``channel_order``, a ``chs_info``
+    that is not paired HbO/HbR, or a ``channel_order`` it contradicts.
     """
-    if channel_order is not None:
-        if channel_order not in ("stacked", "interleaved"):
-            raise ValueError(
-                "channel_order must be 'stacked', 'interleaved' or None, "
-                f"got {channel_order!r}."
-            )
-        return channel_order
-    # ponytail: the layout comes from the chromophores; pair names are not matched.
-    chromophores = fnirs_chromophores_from_chs_info(chs_info or [])
-    n_pairs = chromophores.count("hbo")
-    if n_pairs and chromophores == ["hbo", "hbr"] * n_pairs:
-        return "interleaved"
-    stacked = ["hbo"] * n_pairs + ["hbr"] * n_pairs
-    if sorted(chromophores) == stacked and chromophores != stacked:
+    if channel_order not in (None, "stacked", "interleaved"):
         raise ValueError(
-            "chs_info must list its HbO/HbR channels stacked or interleaved "
-            f"(see mne's reorder_channels), got {chromophores}."
+            "channel_order must be 'stacked', 'interleaved' or None, "
+            f"got {channel_order!r}."
         )
-    return "stacked"
+    if not chs_info:
+        return channel_order or "stacked"
+    chromophores = fnirs_chromophores_from_chs_info(chs_info)
+    names = [str(ch.get("ch_name", "")).rsplit(" ", 1)[0] for ch in chs_info]
+    n = len(chs_info) // 2
+    layouts = {"stacked": (slice(0, n), slice(n, None))}
+    layouts["interleaved"] = (slice(0, None, 2), slice(1, None, 2))
+    found = [
+        order
+        for order, (hbo, hbr) in layouts.items()
+        if chromophores[hbo] == ["hbo"] * n
+        and chromophores[hbr] == ["hbr"] * n
+        and len(chs_info) == 2 * n
+        and names[hbo] == names[hbr]
+    ]
+    if not found:
+        raise ValueError(
+            "chs_info must list paired HbO/HbR channels, stacked or interleaved, "
+            "with matching names (see mne's reorder_channels); got "
+            f"{list(zip(names, chromophores))}."
+        )
+    if channel_order is not None and channel_order not in found:
+        raise ValueError(
+            f"channel_order={channel_order!r} contradicts chs_info, which is "
+            f"{found[0]}."
+        )
+    return channel_order or found[0]

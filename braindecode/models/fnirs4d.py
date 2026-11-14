@@ -51,7 +51,8 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
     prenorm : bool, default=False
         ``LayerNorm`` before each S4D layer instead of after the residual sum.
     compute_hbt : bool, default=True
-        If ``n_chans`` is even, read the halves as (HbO, HbR) and use HbT.
+        Read the channels as HbO/HbR pairs (``channel_order``) and replace HbR
+        by HbT = HbO + HbR, as the reference does; needs an even ``n_chans``.
     channel_order : {"stacked", "interleaved"} or None, default=None
         Pair order: ``[HbO..., HbR...]`` or ``[HbO_1, HbR_1, ...]`` (MNE);
         ``None`` reads it from ``chs_info``.
@@ -91,7 +92,9 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.prenorm, self.compute_hbt = prenorm, compute_hbt
         c, t = self.n_chans, self.n_times
-        pairs_info = self._chs_info if compute_hbt and c % 2 == 0 else None
+        if compute_hbt and c % 2:
+            raise ValueError(f"compute_hbt needs HbO/HbR pairs, got n_chans={c}.")
+        pairs_info = self._chs_info if compute_hbt else None
         self.channel_order = fnirs_channel_order(pairs_info, channel_order)
         self.avg_size = min(avg_size, t)
         n_full = max(1, c // 2)
@@ -135,7 +138,7 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         if ch_mask is not None:
             raise ValueError("FNIRS4D does not accept ch_mask: layers span n_chans.")
-        if self.compute_hbt and self.n_chans % 2 == 0:
+        if self.compute_hbt:
             if self.channel_order == "interleaved":
                 hbo, hbr = x[:, 0::2], x[:, 1::2]
             else:

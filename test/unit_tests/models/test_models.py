@@ -108,7 +108,11 @@ from braindecode.models.gcnsnet import _cluster_one_level, _compute_perm
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.neurorvq_tokenizer import _EMAVectorQuantizer
 from braindecode.models.usleep import _DecoderBlock
-from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.models.util import (
+    _fnirs_chs_info,
+    models_dict,
+    models_mandatory_parameters,
+)
 from braindecode.util import set_random_seeds
 from test.unit_tests.models._fixtures import (
     _get_possible_signal_params,
@@ -6388,15 +6392,9 @@ def test_nice_mask_validation(shape, dtype):
 
 
 def _interleaved_fnirs_chs(n_pairs=4):
-    """MNE ``chs_info`` of interleaved HbO/HbR pairs with optode positions."""
-    names = [f"S{i + 1}_D{i + 1} {kind}" for i in range(n_pairs) for kind in ("hbo", "hbr")]
-    info = mne.create_info(names, sfreq=5.0, ch_types=["hbo", "hbr"] * n_pairs)
-    for i, angle in enumerate(np.linspace(0.0, np.pi, n_pairs, endpoint=False)):
-        src = np.array([0.07 * np.cos(angle), 0.07 * np.sin(angle), 0.02])
-        det = src + np.array([0.03, 0.0, 0.0])
-        for ch in info["chs"][2 * i : 2 * i + 2]:
-            ch["loc"][:9] = np.concatenate([(src + det) / 2, src, det])
-    return info["chs"]
+    """``_fnirs_chs_info`` in MNE's interleaved ``[HbO_1, HbR_1, ...]`` order."""
+    chs = _fnirs_chs_info(n_pairs)
+    return [ch for pair in zip(chs[:n_pairs], chs[n_pairs:]) for ch in pair]
 
 
 @pytest.mark.parametrize(
@@ -6405,7 +6403,7 @@ def _interleaved_fnirs_chs(n_pairs=4):
         (FNIRSNet, {}),
         (FNIRSNet, {"n_chans": 6}),
         (FNIRS4D, {"n_layers": 2, "d_state": 16, "channel_order": "interleaved"}),
-        (FNIRS4D, {"n_chans": 7, "prenorm": True}),
+        (FNIRS4D, {"n_chans": 7, "prenorm": True, "compute_hbt": False}),
     ],
 )
 def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):

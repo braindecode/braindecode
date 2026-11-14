@@ -59,7 +59,7 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
     temporal_stride : int, default=4
         Temporal stride of both convolutions, in samples.
     n_chromophores : {1, 2}, default=2
-        Chromophores per channel; an odd ``n_chans`` uses 1.
+        Chromophores per channel; ``2`` (HbO/HbR pairs) needs an even ``n_chans``.
     channel_order : {"stacked", "interleaved"} or None, default=None
         ``[HbO_1..HbO_C, HbR_1..HbR_C]`` or MNE's ``[HbO_1, HbR_1, ...]``;
         ``None`` reads it from ``chs_info``.
@@ -115,7 +115,11 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError(
                 f"n_times ({self.n_times}) must be >= temporal_kernel_size."
             )
-        n_chromophores = 1 if self.n_chans % 2 else n_chromophores
+        if n_chromophores not in (1, 2) or self.n_chans % n_chromophores:
+            raise ValueError(
+                f"n_chromophores must be 1 or 2 and divide n_chans ({self.n_chans}), "
+                f"got {n_chromophores}."
+            )
         pairs_info = self._chs_info if n_chromophores == 2 else None
         order = fnirs_channel_order(pairs_info, channel_order)
         n_phys_chans = self.n_chans // n_chromophores
