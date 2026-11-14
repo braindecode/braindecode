@@ -1,10 +1,10 @@
 # Authors: Panagiotis Tsinganos et al. (original implementation)
 #          Arslan Shafique <81501094+arslan-shafique@users.noreply.github.com>
-#          OpenAI Codex (Braindecode adaptation)
 #
 # License: MIT
-# Adapted from https://github.com/DSIP-UPatras/ICASSP2019_TCN
-# at commit cd28909ccf3696b835446cbec2f15eb60610a2af.
+# Adapted from https://github.com/DSIP-UPatras/ICASSP2019_TCN (MIT).
+# Its MeanOverTime and AttentionWithContext layers come from
+# https://github.com/cbaziotis/keras-utilities (MIT).
 """TCCNet for surface electromyography gesture recognition."""
 
 from __future__ import annotations
@@ -104,6 +104,8 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
     the reference, which overflows to NaN once the context vector grows
     large. Initialisation follows Keras 2.2.4: truncated Glorot normal
     kernels, zero biases, Glorot uniform attention weights.
+
+    `License <https://github.com/DSIP-UPatras/ICASSP2019_TCN/blob/cd28909ccf3696b835446cbec2f15eb60610a2af/LICENSE>`_
 
     References
     ----------
