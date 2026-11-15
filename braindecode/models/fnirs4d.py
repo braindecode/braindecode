@@ -18,11 +18,12 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     _disable_batch_norm_training_if_batch_size_one,
     fnirs_channel_order,
+    fnirs_split_hbo_hbr,
 )
 
 
 class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
-    r"""fNIRS4D from Wang et al. (2026) [wang2026fnirs4d]_.
+    r"""fNIRS4D from Wang et al. (2026) :footcite:`wang2026fnirs4d`.
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 
@@ -31,9 +32,10 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
     With ``compute_hbt`` the HbR half of the montage becomes HbT = HbO + HbR. A
     full-window ``Conv2d`` maps the channels to a sequence processed by S4D-Lin
     layers (causal depthwise convolution, GLU, residual ``LayerNorm``); its mean
-    joins a channel-average branch (full-window and smoothed temporal
-    convolutions) before ``final_layer``. The S4D kernel is computed in real
-    arithmetic (no complex tensors, no FFT); ``mapping`` loads ``fc.*`` weights.
+    joins the mean-hemoglobin branch (``mean_branch``) before ``final_layer``.
+    The S4D kernel is computed in real arithmetic (no complex tensors, no FFT).
+    The parameter names are the authors'; ``mapping`` loads their ``fc.0.*``
+    head, so a reference ``state_dict`` loads with ``strict=True``.
     Adapted from the authors' code
     (`License <https://github.com/wzhlearning/fNIRS4D/blob/main/LICENSE>`_).
 
@@ -44,33 +46,36 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
     d_state : int, default=64
         State dimension of each S4D kernel (even: conjugate pairs).
     avg_size : int, default=10
-        Samples of the short moving average of the mean-hemoglobin branch,
-        clamped to ``n_times``.
+        Samples of the moving average of the ``"multiscale"`` branch, clamped
+        to ``n_times``.
     drop_prob : float, default=0.5
         Dropout of the S4D layers and of their residual branch.
     prenorm : bool, default=False
         ``LayerNorm`` before each S4D layer instead of after the residual sum.
     compute_hbt : bool, default=True
-        If ``n_chans`` is even, read the halves as (HbO, HbR) and use HbT.
+        Read the channels as HbO/HbR pairs (``channel_order``) and replace HbR
+        by HbT = HbO + HbR, as the reference does; needs an even ``n_chans``.
     channel_order : {"stacked", "interleaved"} or None, default=None
         Pair order: ``[HbO..., HbR...]`` or ``[HbO_1, HbR_1, ...]`` (MNE);
         ``None`` reads it from ``chs_info``.
+    mean_branch : {"multiscale", "time_mean"}, default="multiscale"
+        Mean-hemoglobin branch of the reference: ``"multiscale"`` (its
+        subject-independent ``LOSO-CV`` mode) convolves the channel mean and
+        its moving average over the window; ``"time_mean"`` (its
+        subject-specific ``KFold-CV`` mode) is the time mean of each channel.
     activation, branch_activation : type[nn.Module], default=nn.GELU, nn.ELU
         Activations of the S4D layers and of the mean-hemoglobin branch.
 
     References
     ----------
-    .. [wang2026fnirs4d] Wang, Z., Zhu, D., Zhang, J., Xiao, G., & Du, S.
-       (2026). Domain Knowledge Fused State Space Model for fNIRS-Based
-       Brain-Computer Interfaces. IEEE Transactions on Instrumentation and
-       Measurement, 75, 4008016. doi:10.1109/TIM.2026.3693454
+    .. footbibliography::
     """
 
     def __init__(
         self,
         n_outputs: int | None = None,
         n_chans: int | None = None,
-        chs_info=None,
+        chs_info: list[dict] | None = None,
         n_times: int | None = None,
         input_window_seconds: float | None = None,
         sfreq: float | None = None,
@@ -82,6 +87,7 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         prenorm: bool = False,
         compute_hbt: bool = True,
         channel_order: Literal["stacked", "interleaved"] | None = None,
+        mean_branch: Literal["multiscale", "time_mean"] = "multiscale",
         activation: type[nn.Module] = nn.GELU,
         branch_activation: type[nn.Module] = nn.ELU,
     ) -> None:
@@ -91,23 +97,22 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.prenorm, self.compute_hbt = prenorm, compute_hbt
         c, t = self.n_chans, self.n_times
-        pairs_info = self._chs_info if compute_hbt and c % 2 == 0 else None
+        if compute_hbt and c % 2:
+            raise ValueError(f"compute_hbt needs HbO/HbR pairs, got n_chans={c}.")
+        pairs_info = self._chs_info if compute_hbt else None
         self.channel_order = fnirs_channel_order(pairs_info, channel_order)
-        self.avg_size = min(avg_size, t)
-        n_full = max(1, c // 2)
-        n_short = max(1, c - n_full)
-
-        def scale(n, k):  # temporal Conv2d over the channel mean, BN, activation
-            return nn.Sequential(
-                nn.Conv2d(1, n, (1, k)), nn.BatchNorm2d(n), branch_activation()
+        self.mean_hemoglobin_branch: nn.Module
+        if mean_branch == "multiscale":
+            multiscale = _MultiscaleMeanBranch(
+                c, t, min(avg_size, t), branch_activation
             )
-
-        self.mean_hemoglobin_branch = nn.ModuleDict(
-            {
-                "full_scale": scale(n_full, t),
-                "short_scale": scale(n_short, t - self.avg_size + 1),
-            }
-        )
+            self.mean_hemoglobin_branch, n_mean = multiscale, multiscale.n_features
+        elif mean_branch == "time_mean":
+            self.mean_hemoglobin_branch, n_mean = nn.AvgPool2d((1, t), 1), c
+        else:
+            raise ValueError(
+                f"mean_branch must be 'multiscale' or 'time_mean', got {mean_branch!r}."
+            )
         self.fNIRS_knowledge_embedding = nn.Sequential(
             nn.Conv2d(1, c, (1, t)),
             # a single channel has no instance statistics to normalize
@@ -119,8 +124,8 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
             self.s4d_layers.append(_S4DLayer(c, d_state, drop_prob, activation))
             self.norms.append(nn.LayerNorm(c))
         self.dropout = nn.Dropout1d(drop_prob)
-        self.final_layer = nn.Linear(c + n_full + n_short, self.n_outputs)
-        self.mapping = {f"fc.{k}": f"final_layer.{k}" for k in ("weight", "bias")}
+        self.final_layer = nn.Linear(c + n_mean, self.n_outputs)
+        self.mapping = {f"fc.0.{k}": f"final_layer.{k}" for k in ("weight", "bias")}
 
     def reset_head(self, n_outputs: int) -> None:
         self._set_n_outputs(n_outputs)
@@ -135,19 +140,11 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         if ch_mask is not None:
             raise ValueError("FNIRS4D does not accept ch_mask: layers span n_chans.")
-        if self.compute_hbt and self.n_chans % 2 == 0:
-            if self.channel_order == "interleaved":
-                hbo, hbr = x[:, 0::2], x[:, 1::2]
-            else:
-                hbo, hbr = x.chunk(2, dim=1)
+        if self.compute_hbt:
+            hbo, hbr = fnirs_split_hbo_hbr(x, self.channel_order)
             x = torch.cat((hbo, hbo + hbr), dim=1)  # [HbO, HbT]
         x = x.unsqueeze(1)  # (batch, 1, n_chans, n_times)
-        # nn.functional, not F: the decorator scripts forward with util's globals
-        mean = nn.functional.avg_pool2d(x, (self.n_chans, 1), 1)  # (b, 1, 1, n_times)
-        short = nn.functional.avg_pool2d(mean, (1, self.avg_size), 1)
-        full = self.mean_hemoglobin_branch["full_scale"](mean).flatten(1)
-        short = self.mean_hemoglobin_branch["short_scale"](short).flatten(1)
-        mean_features = torch.cat((full, short), dim=1)  # (batch, n_full + n_short)
+        mean_features = self.mean_hemoglobin_branch(x).flatten(1)  # (batch, n_mean)
         x = self.fNIRS_knowledge_embedding(x)  # (batch, n_chans, n_chans, 1)
         # S4D runs along the input-channel axis: (batch, d_model=n_chans, L=n_chans)
         x = x.flatten(2).transpose(-1, -2)
@@ -162,6 +159,33 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         if return_features:
             return {"features": features, "cls_token": None}
         return self.final_layer(features)
+
+
+class _MultiscaleMeanBranch(nn.Module):
+    """The reference's LOSO-CV mean-hemoglobin branch: the channel mean and its
+    moving average, each through a full-window temporal ``Conv2d``, batch
+    normalization and ``activation``."""
+
+    def __init__(
+        self, n_chans: int, n_times: int, avg_size: int, activation: type
+    ) -> None:
+        super().__init__()
+        n_full = max(1, n_chans // 2)
+        n_short = max(1, n_chans - n_full)
+        self.n_features = n_full + n_short
+        self.avg_size = avg_size
+        self.conv_1 = nn.Conv2d(1, n_full, (1, n_times))
+        self.bn_1 = nn.BatchNorm2d(n_full)
+        self.conv_2 = nn.Conv2d(1, n_short, (1, n_times - avg_size + 1))
+        self.bn_2 = nn.BatchNorm2d(n_short)
+        self.activation = activation()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        mean = F.avg_pool2d(x, (x.shape[2], 1), 1)  # (batch, 1, 1, n_times)
+        short = F.avg_pool2d(mean, (1, self.avg_size), 1)
+        full = self.activation(self.bn_1(self.conv_1(mean)))  # (batch, n_full, 1, 1)
+        short = self.activation(self.bn_2(self.conv_2(short)))  # (batch, n_short, 1, 1)
+        return torch.cat((full, short), dim=1)
 
 
 class _S4DKernel(nn.Module):

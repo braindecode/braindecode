@@ -35,7 +35,6 @@ from braindecode.models import (
     EEGCLIP,
     EEGPT,
     FNIRS4D,
-    FNIRSGCN,
     FNIRST,
     NICE,
     SSTDPN,
@@ -6396,26 +6395,19 @@ def test_nice_mask_validation(shape, dtype):
 
 
 def _interleaved_fnirs_chs(n_pairs=4):
-    """MNE ``chs_info`` of interleaved HbO/HbR pairs with optode positions."""
-    names = [f"S{i + 1}_D{i + 1} {kind}" for i in range(n_pairs) for kind in ("hbo", "hbr")]
-    info = mne.create_info(names, sfreq=5.0, ch_types=["hbo", "hbr"] * n_pairs)
-    for i, angle in enumerate(np.linspace(0.0, np.pi, n_pairs, endpoint=False)):
-        src = np.array([0.07 * np.cos(angle), 0.07 * np.sin(angle), 0.02])
-        det = src + np.array([0.03, 0.0, 0.0])
-        for ch in info["chs"][2 * i : 2 * i + 2]:
-            ch["loc"][:9] = np.concatenate([(src + det) / 2, src, det])
-    return info["chs"]
+    """``_fnirs_chs_info`` in MNE's interleaved ``[HbO_1, HbR_1, ...]`` order."""
+    chs = _fnirs_chs_info(n_pairs)
+    return [ch for pair in zip(chs[:n_pairs], chs[n_pairs:]) for ch in pair]
 
 
 @pytest.mark.parametrize(
     "model_cls,kwargs",
     [
-        (FNIRSNet, {"n_chromophores": 2, "channel_order": "interleaved"}),
-        (FNIRSNet, {"n_chans": 6, "drop_prob": 0.5}),
+        (FNIRSNet, {}),
+        (FNIRSNet, {"n_chans": 6}),
         (FNIRS4D, {"n_layers": 2, "d_state": 16, "channel_order": "interleaved"}),
-        (FNIRS4D, {"n_chans": 7, "prenorm": True}),
-        (FNIRSGCN, {"node_dim": 32}),
-        (FNIRSGCN, {"n_chans": 7, "node_dim": 32}),
+        (FNIRS4D, {"n_chans": 7, "prenorm": True, "compute_hbt": False}),
+        (FNIRS4D, {"n_layers": 1, "d_state": 16, "mean_branch": "time_mean"}),
     ],
 )
 def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):
@@ -6434,15 +6426,6 @@ def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):
         torch.testing.assert_close(model.final_layer(features), logits)
     logits.sum().backward()
     assert torch.isfinite(x.grad).all()
-
-
-def test_fnirsgcn_adjacency_initializes_static_graph():
-    adjacency = torch.rand(5, 5).fill_diagonal_(0.0)
-    model = FNIRSGCN(n_chans=5, n_outputs=2, n_times=60, adjacency=adjacency)
-    model.reset_parameters()  # the prior survives a reset
-    expected = torch.log(adjacency.clamp_min(1e-6))
-    torch.testing.assert_close(model.static_adj_logits.data, expected)
-    assert model.adj_mix_logit.item() == -1.0
 
 
 def test_s4d_real_arithmetic_matches_complex_fft():
@@ -6464,6 +6447,51 @@ def test_s4d_real_arithmetic_matches_complex_fft():
     ref_out = layer.output_linear(layer.activation(ref_conv + skip))
     with torch.no_grad():
         torch.testing.assert_close(layer(x), ref_out, atol=1e-5, rtol=1e-5)
+
+
+@pytest.mark.parametrize("mean_branch", ["multiscale", "time_mean"])
+def test_fnirs4d_loads_reference_state_dict(mean_branch):
+    """The authors' key names (``fc.0``, ``mean_hemoglobin_branch.conv_1``, ...)
+    load through ``mapping`` with ``strict=True``; ``"time_mean"`` (the
+    reference's KFold-CV branch) is the time mean of each [HbO, HbT] channel."""
+    kw = dict(n_chans=8, n_outputs=3, n_times=60, n_layers=1, mean_branch=mean_branch)
+    model = FNIRS4D(**kw).eval()
+    reference = {
+        k.replace("final_layer.", "fc.0."): v for k, v in model.state_dict().items()
+    }
+    branch = {k for k in reference if k.startswith("mean_hemoglobin_branch.")}
+    if mean_branch == "multiscale":
+        assert {k.split(".")[1] for k in branch} == {"conv_1", "bn_1", "conv_2", "bn_2"}
+    else:
+        assert not branch
+    loaded = FNIRS4D(**kw).eval()
+    loaded.load_state_dict(reference, strict=True)
+    x = torch.randn(2, 8, 60)
+    with torch.no_grad():
+        assert torch.equal(loaded(x), model(x))
+        features = model(x, return_features=True)["features"]
+    if mean_branch == "time_mean":
+        hbo, hbr = x.chunk(2, dim=1)
+        hbt = torch.cat((hbo, hbo + hbr), dim=1)
+        torch.testing.assert_close(features[:, 8:], hbt.mean(dim=-1))
+    with pytest.raises(ValueError, match="mean_branch"):
+        FNIRS4D(**dict(kw, mean_branch="kfold"))
+
+
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+def test_fnirst_seeded_reset_and_cls_tokens(model_cls):
+    """A seeded reset_parameters() repeats the seeded constructor; cls_token is
+    the two branches' CLS tokens, not the pooled features."""
+    torch.manual_seed(1)
+    model = model_cls(n_chans=4, n_outputs=2, n_times=60, depth=1, heads=2)
+    built = {k: v.clone() for k, v in model.state_dict().items()}
+    torch.manual_seed(1)
+    model.reset_parameters()
+    assert all(torch.equal(built[k], v) for k, v in model.state_dict().items())
+    with torch.no_grad():
+        out = model.eval()(torch.randn(2, 4, 60), return_features=True)
+    assert out["cls_token"].shape == out["features"].shape == (2, 128)
+    assert not torch.equal(out["cls_token"], out["features"])
 
 
 @pytest.mark.parametrize(

@@ -7,21 +7,17 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import Literal
 
 import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import (
-    _disable_batch_norm_training_if_batch_size_one,
-    fnirs_channel_order,
-)
+from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules import DepthwiseConv2d
 
 
 class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
-    r"""fNIRSNet from Wang et al. (2023) [wang2023fnirsnet]_.
+    r"""fNIRSNet from Wang et al. (2023) :footcite:`wang2023fnirsnet`.
 
     :bdg-success:`Convolution`
 
@@ -42,30 +38,19 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Output channels of the spatial module (``num_DWConv``).
     dhr_kernel_length : int or None, default=None
         Width of the DHR kernel (``DHRConv_width``); ``None`` uses ``n_times``.
-    n_chromophores : {1, 2}, default=1
-        ``1`` (reference): all channels form one input plane. ``2``: the channels
-        are HbO/HbR pairs and form two planes of ``n_chans // 2`` rows.
-    channel_order : {"stacked", "interleaved"} or None, default=None
-        Pair order when ``n_chromophores=2``: ``[HbO..., HbR...]`` or
-        ``[HbO_1, HbR_1, ...]`` (MNE); ``None`` reads it from ``chs_info``.
-    drop_prob : float, default=0.0
-        Dropout probability before ``final_layer``.
     activation : type[nn.Module], default=nn.Sigmoid
         Activation after each batch normalization.
 
     References
     ----------
-    .. [wang2023fnirsnet] Wang, Z., Fang, J., & Zhang, J. (2023). Rethinking
-       Delayed Hemodynamic Responses for fNIRS Classification. IEEE
-       Transactions on Neural Systems and Rehabilitation Engineering, 31,
-       4528-4538. doi:10.1109/TNSRE.2023.3330911
+    .. footbibliography::
     """
 
     def __init__(
         self,
         n_outputs: int | None = None,
         n_chans: int | None = None,
-        chs_info=None,
+        chs_info: list[dict] | None = None,
         n_times: int | None = None,
         input_window_seconds: float | None = None,
         sfreq: float | None = None,
@@ -73,9 +58,6 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
         n_dhr_filters: int = 4,
         n_dw_filters: int = 8,
         dhr_kernel_length: int | None = None,
-        n_chromophores: int = 1,
-        channel_order: Literal["stacked", "interleaved"] | None = None,
-        drop_prob: float = 0.0,
         activation: type[nn.Module] = nn.Sigmoid,
     ) -> None:
         super().__init__(
@@ -83,22 +65,16 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         kernel = dhr_kernel_length or self.n_times
-        self.n_chromophores = n_chromophores
-        pairs_info = self._chs_info if n_chromophores == 2 else None
-        self.channel_order = fnirs_channel_order(pairs_info, channel_order)
-        self.conv1 = nn.Conv2d(n_chromophores, n_dhr_filters, (1, kernel))
+        self.conv1 = nn.Conv2d(1, n_dhr_filters, (1, kernel))
         self.bn1 = nn.BatchNorm2d(n_dhr_filters)
         self.conv2 = nn.Sequential(
             OrderedDict(
-                depth_conv=DepthwiseConv2d(
-                    n_dhr_filters, 1, (self.n_chans // n_chromophores, 1)
-                ),
+                depth_conv=DepthwiseConv2d(n_dhr_filters, 1, (self.n_chans, 1)),
                 point_conv=nn.Conv2d(n_dhr_filters, n_dw_filters, 1),
             )
         )
         self.bn2 = nn.BatchNorm2d(n_dw_filters)
         self.act = activation()
-        self.dropout = nn.Dropout(drop_prob)
         n_features = n_dw_filters * (self.n_times - kernel + 1)
         self.final_layer = nn.Linear(n_features, self.n_outputs)
         self.mapping = {f"fc.{k}": f"final_layer.{k}" for k in ("weight", "bias")}
@@ -121,17 +97,10 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
         """
         if ch_mask is not None:
             raise ValueError("FNIRSNet does not accept ch_mask: conv2 spans n_chans.")
-        # (batch, n_chans, n_times) -> (batch, n_chromophores, H, n_times)
-        b, _, t = x.shape
-        if self.n_chromophores == 1:
-            x = x.unsqueeze(1)
-        elif self.channel_order == "interleaved":
-            x = x.reshape(b, -1, 2, t).transpose(1, 2).contiguous()
-        else:
-            x = x.reshape(b, 2, -1, t)
-        x = self.act(self.bn1(self.conv1(x)))  # (batch, n_dhr_filters, H, T')
+        x = x.unsqueeze(1)  # (batch, 1, n_chans, n_times)
+        x = self.act(self.bn1(self.conv1(x)))  # (batch, n_dhr_filters, n_chans, T')
         x = self.act(self.bn2(self.conv2(x)))  # (batch, n_dw_filters, 1, T')
-        features = self.dropout(x.flatten(1))  # (batch, n_dw_filters * T')
+        features = x.flatten(1)  # (batch, n_dw_filters * T')
         if return_features:
             return {"features": features, "cls_token": None}
         return self.final_layer(features)

@@ -13,7 +13,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import fnirs_channel_order
+from braindecode.models.util import fnirs_channel_order, fnirs_split_hbo_hbr
 from braindecode.modules import (
     FeedForwardBlock,
     MultiHeadAttention,
@@ -59,7 +59,7 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
     temporal_stride : int, default=4
         Temporal stride of both convolutions, in samples.
     n_chromophores : {1, 2}, default=2
-        Chromophores per channel; an odd ``n_chans`` uses 1.
+        Chromophores per channel; ``2`` (HbO/HbR pairs) needs an even ``n_chans``.
     channel_order : {"stacked", "interleaved"} or None, default=None
         ``[HbO_1..HbO_C, HbR_1..HbR_C]`` or MNE's ``[HbO_1, HbR_1, ...]``;
         ``None`` reads it from ``chs_info``.
@@ -81,7 +81,7 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         self,
         n_outputs: int | None = None,
         n_chans: int | None = None,
-        chs_info=None,
+        chs_info: list[dict] | None = None,
         n_times: int | None = None,
         input_window_seconds: float | None = None,
         sfreq: float | None = None,
@@ -115,16 +115,16 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError(
                 f"n_times ({self.n_times}) must be >= temporal_kernel_size."
             )
-        n_chromophores = 1 if self.n_chans % 2 else n_chromophores
+        if n_chromophores not in (1, 2) or self.n_chans % n_chromophores:
+            raise ValueError(
+                f"n_chromophores must be 1 or 2 and divide n_chans ({self.n_chans}), "
+                f"got {n_chromophores}."
+            )
         pairs_info = self._chs_info if n_chromophores == 2 else None
-        order = fnirs_channel_order(pairs_info, channel_order)
+        self.channel_order = fnirs_channel_order(pairs_info, channel_order)
+        self.n_chromophores = n_chromophores
         n_phys_chans = self.n_chans // n_chromophores
         self.pool = pool
-        # (batch, n_chans, n_times) -> (batch, n_chromophores, n_phys_chans, n_times)
-        if order == "interleaved" and n_chromophores == 2:
-            self.to_planes = Rearrange("b (c g) t -> b g c t", g=2)
-        else:
-            self.to_planes = Rearrange("b (g c) t -> b g c t", g=n_chromophores)
         n_bins = (self.n_times - temporal_kernel_size) // temporal_stride + 1
         spatial_kernel = min(spatial_kernel_size, n_phys_chans)
         self.pre = (
@@ -159,9 +159,9 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
             nn.Linear(n_bins * conv_channels, dim),
             nn.LayerNorm(dim),
         )
-        self.cls_token_patch = nn.Parameter(torch.randn(1, 1, dim))
+        self.cls_token_patch = nn.Parameter(torch.empty(1, 1, dim))
         self.pos_embedding_patch = nn.Parameter(
-            torch.randn(1, n_phys_chans - spatial_kernel + 2, dim)
+            torch.empty(1, n_phys_chans - spatial_kernel + 2, dim)
         )
         self.dropout_patch = nn.Dropout(emb_drop_prob)
         self.transformer_patch = branch()
@@ -177,8 +177,8 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
             nn.Linear(n_bins * conv_channels, dim),
             nn.LayerNorm(dim),
         )
-        self.cls_token_channel = nn.Parameter(torch.randn(1, 1, dim))
-        self.pos_embedding_channel = nn.Parameter(torch.randn(1, n_phys_chans + 1, dim))
+        self.cls_token_channel = nn.Parameter(torch.empty(1, 1, dim))
+        self.pos_embedding_channel = nn.Parameter(torch.empty(1, n_phys_chans + 1, dim))
         self.dropout_channel = nn.Dropout(emb_drop_prob)
         self.transformer_channel = branch()
 
@@ -187,7 +187,7 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         self._init_parameters()
 
     def _init_parameters(self) -> None:
-        # Redrawn after the layers, so reset_parameters() resets them too.
+        # Drawn after the layers, so reset_parameters() repeats the constructor.
         with torch.no_grad():
             self.cls_token_patch.normal_()
             self.pos_embedding_patch.normal_()
@@ -207,13 +207,19 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """``x``: ``(batch, n_chans, n_times)``. ``mask`` (bool, same shape):
         True samples are zeroed first. ``ch_mask`` is refused: the spatial
-        kernel and positional tables span every channel."""
+        kernel and positional tables span every channel. ``return_features``
+        gives the normalized pooled ``"features"`` and, as ``"cls_token"``, the
+        two branches' CLS tokens ``(batch, 2 * dim)``."""
         if ch_mask is not None:
             raise ValueError("FNIRST does not accept ch_mask (fixed channel layout).")
         if mask is not None:
             x = x.masked_fill(mask, 0.0)
         # (batch, n_chans, n_times) -> (batch, n_chromophores, n_phys_chans, n_times)
-        x = self.to_planes(x).contiguous()
+        if self.n_chromophores == 2:
+            hbo, hbr = fnirs_split_hbo_hbr(x, self.channel_order)
+            x = torch.stack([hbo, hbr], dim=1)
+        else:
+            x = x.unsqueeze(1)
         if self.pre is not None:
             x = self.pre(x)
         batch_size = x.shape[0]
@@ -232,14 +238,14 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         channel = self.dropout_channel(channel + self.pos_embedding_channel)
         channel = self.transformer_channel(channel)
         # 2 x (batch, n_tokens + 1, dim) -> (batch, 2 * dim)
+        cls_tokens = torch.cat((patch[:, 0], channel[:, 0]), dim=1)
         if self.pool == "mean":
             features = torch.cat((patch.mean(dim=1), channel.mean(dim=1)), dim=1)
         else:
-            features = torch.cat((patch[:, 0], channel[:, 0]), dim=1)
+            features = cls_tokens
         features = self.final_norm(features)
         if return_features:
-            cls_token = features if self.pool == "cls" else None
-            return {"features": features, "cls_token": cls_token}
+            return {"features": features, "cls_token": cls_tokens}
         return self.final_layer(features)
 
 
