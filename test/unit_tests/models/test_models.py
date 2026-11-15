@@ -6637,6 +6637,8 @@ def test_fnirs_foundation_models_need_their_channel_information():
     loc_none = [{"ch_name": f"S1_D1 {k}", "loc": None} for k in ("hbo", "hbr")]
     with pytest.raises(ValueError, match="needs the channel geometry"):
         GeoNIRS(chs_info=loc_none, n_outputs=2, n_times=60)(torch.randn(1, 2, 60))
+    with pytest.raises(ValueError, match="different channel counts"):
+        GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60)(torch.randn(1, 2, 60))
     with pytest.raises(ValueError, match="needs channel positions"):
         MtReNIRS(n_chans=4, n_outputs=2, n_times=100)(torch.randn(1, 4, 100))
     no_loc = [{"ch_name": f"S1_D1 {k}"} for k in ("hbo", "hbr")]
@@ -6644,6 +6646,35 @@ def test_fnirs_foundation_models_need_their_channel_information():
         MtReNIRS(chs_info=no_loc, n_outputs=2, n_times=100)(torch.randn(1, 2, 100))
     with pytest.raises(ValueError, match="needs HbO/HbR channels"):
         MtReNIRS(chs_info=[{"ch_name": "Cz", "loc": np.zeros(12)}], n_outputs=2, n_times=100)
+
+
+def test_geonirs_pair_without_optodes_gets_zero_geometry():
+    """As the reference, a pair without source/detector positions is zero
+    and left out of the centre of the others."""
+    chs = _fnirs_chs_info(3)
+    chs[1] = dict(chs[1], loc=None)  # S2_D2 hbo
+    geometry = GeoNIRS(chs_info=chs, n_outputs=2, n_times=60).default_geometry
+    others = [ch for i, ch in enumerate(_fnirs_chs_info(3)) if i not in (1, 4)]
+    expected = GeoNIRS(chs_info=others, n_outputs=2, n_times=60).default_geometry
+    assert not geometry[1].any()
+    assert torch.equal(geometry[[0, 2]], expected)
+
+
+def test_geonirs_mean_std_is_the_reference_readout():
+    """``pool="mean_std"``: the valid-patch mean and the reference's
+    ``variance.clamp_min(0).sqrt()``, so zero with a single valid patch."""
+    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60,
+                    pool="mean_std", embedding_dim=32, num_heads=4,
+                    temporal_layers=1, num_latent_sources=2,
+                    output_feature_dim=4).eval()
+    x = torch.randn(1, 4, 60)
+    x[..., 10:] = float("nan")
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"].reshape(1, 2, 2, 8)
+        foundation = model.encode(x)["foundation"]  # (1, 2, S, P, 4)
+    assert not features[:, :, 1].any()
+    first = torch.cat([foundation[:, 0, :, 0], foundation[:, 1, :, 0]], dim=-1)
+    torch.testing.assert_close(features[:, :, 0], first)
 
 
 def test_geonirs_without_geometry_has_no_dead_parameters():

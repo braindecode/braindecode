@@ -14,13 +14,19 @@ import numpy as np
 import torch
 from torch import nn
 
-from braindecode.functional import check_ch_mask, patch_count
+from braindecode.functional import (
+    check_ch_mask,
+    pad_or_crop_to_patches,
+    patch_count,
+    scaled_dot_product_attention,
+)
+from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import fnirs_channel_order
+from braindecode.models.util import fnirs_channel_order, fnirs_split_hbo_hbr
 
 
 class GeoNIRS(EEGModuleMixin, nn.Module):
-    r"""GeoNIRS from Li et al. (2026) [li2026geonirs]_.
+    r"""GeoNIRS from Li et al. (2026) :footcite:`li2026geonirs`.
 
     :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
@@ -32,8 +38,16 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
     channel's 6D source-detector geometry, so the representation does not
     depend on the montage. The geometry comes from ``chs_info`` (source and
     detector in ``loc[3:9]``) or the ``geometry`` argument of :meth:`encode`
-    and ``forward``. NaN samples are masked. :meth:`load_state_dict` takes the
-    official GeoNIRS-Base/Large checkpoints as released.
+    and ``forward``; as in the reference, a pair without source/detector
+    locations gets a zero geometry and is left out of the montage centre.
+    NaN samples are masked.
+
+    :meth:`load_state_dict` takes the official GeoNIRS-Base/Large checkpoints
+    as released. They were pretrained on 5 Hz HbO/HbR (umol/L) in 150-sample
+    (30 s) windows, each recording's HbO and HbR z-scored separately with one
+    mean and standard deviation over all their channels and valid samples
+    (``recording_stream_zscore``). Their 15-row time embedding loads only for
+    ``n_times`` up to 150 (15 patches).
 
     Parameters
     ----------
@@ -41,6 +55,9 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         Samples per temporal patch.
     max_patches : int, default=15
         Rows of the time embedding, raised to the patch count of ``n_times``.
+    on_non_divisible : {"error", "pad", "crop"}, default="error"
+        A ``n_times`` that is not a multiple of ``patch_samples`` is refused,
+        as by the reference, zero-padded or cropped.
     embedding_dim, num_heads, temporal_layers, mlp_ratio : int, int, int, float, default=192, 8, 4, 4.0
         Width, heads, layers and feed-forward ratio of the temporal
         Transformers (GeoNIRS-Large: 384, 12, 6, 4.0).
@@ -55,7 +72,9 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         Condition the compressor keys on the geometry.
     pool : {"flatten", "mean_std"}, default="flatten"
         Readout of the ``(batch, 2, S, P, output_feature_dim)`` sources: all
-        of them, or their mean and standard deviation over the valid patches.
+        of them, or their mean and standard deviation over the valid patches
+        (the features of the reference ``mean_std_linear`` head, whose
+        LayerNorm is left to the caller).
     channel_order : {"stacked", "interleaved"} or None, default=None
         Input layout, ``[HbO_1..HbO_C, HbR_1..HbR_C]`` or ``[HbO_1, HbR_1, ...]``;
         ``None`` reads it from ``chs_info``.
@@ -68,9 +87,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [li2026geonirs] Li, Z., Zhu, S., Zhang, Z., Li, H., Wang, S., & Liu, Q.
-       (2026). GeoNIRS: Geometry-Aware Pretraining for Heterogeneous fNIRS
-       Representation Learning. arXiv preprint arXiv:2610.17845.
+    .. footbibliography::
     """
 
     def __init__(
@@ -84,6 +101,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         *,
         patch_samples: int = 10,
         max_patches: int = 15,
+        on_non_divisible: Literal["error", "pad", "crop"] = "error",
         embedding_dim: int = 192,
         num_heads: int = 8,
         temporal_layers: int = 4,
@@ -112,11 +130,11 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if self.n_chans % 2:
             raise ValueError("GeoNIRS needs HbO/HbR pairs: n_chans must be even.")
-        order = fnirs_channel_order(self._chs_info, channel_order)
-        self.interleaved = order == "interleaved"
+        self.channel_order = fnirs_channel_order(self._chs_info, channel_order)
+        _check_on_non_divisible(on_non_divisible)
+        self.on_non_divisible = on_non_divisible
         self.patch_samples = patch_samples
-        # a non-divisible tail is cropped, as the reference unfold does
-        self.n_patches = patch_count(self.n_times, patch_samples, "crop")
+        self.n_patches = patch_count(self.n_times, patch_samples, on_non_divisible)
         self.embedding_dim = embedding_dim
         self.num_latent_sources = num_latent_sources
         self.pool = pool
@@ -137,7 +155,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
             if use_channel_geometry
             else None
         )
-        self.channel_compressor = _LatentSourceCompressor(
+        self.channel_compressor = _LatentSourceCrossAttention(
             embedding_dim,
             num_latent_sources,
             spatial_heads or num_heads,
@@ -153,7 +171,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         )
         self.register_buffer(
             "default_geometry",
-            torch.from_numpy(_optode_geometry(self._chs_info, self.interleaved)),
+            torch.from_numpy(_optode_geometry(self._chs_info, self.channel_order)),
             persistent=False,
         )
         self.feature_dim = {
@@ -174,7 +192,9 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         ``(batch, S, P)``. ``geometry`` is ``(n_pairs, 6)`` or
         ``(batch, n_pairs, 6)``; ``ch_mask`` ``(batch, n_pairs)`` flags real pairs.
         """
-        hbo, hbr = self._pairs(x)  # (B, 2*C, T) -> 2 x (B, C, T)
+        x = pad_or_crop_to_patches(x, self.patch_samples, self.on_non_divisible)
+        # (B, 2*C, T) -> 2 x (B, C, T)
+        hbo, hbr = fnirs_split_hbo_hbr(x, self.channel_order)
         batch_size, n_pairs, _ = hbo.shape
         finite = torch.isfinite(hbo) & torch.isfinite(hbr)
         channel_valid = finite.any(dim=-1)  # (B, C)
@@ -191,11 +211,16 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         patch_valid = patch_valid & channel_valid.unsqueeze(-1)
 
         if self.geometry_encoder is not None:
-            geom = self.default_geometry[:n_pairs] if geometry is None else geometry
+            geom = self.default_geometry if geometry is None else geometry
             if geom.numel() == 0:
                 raise ValueError(
                     "GeoNIRS needs the channel geometry: chs_info with "
                     "source/detector locations (loc[3:9]) or the geometry argument."
+                )
+            if geometry is None and geom.shape[0] != n_pairs:
+                raise ValueError(
+                    "x and chs_info have different channel counts: pass the "
+                    "geometry of the HbO/HbR pairs of x."
                 )
             geom = geom.to(device=x.device, dtype=hbo.dtype)
             if geom.ndim == 2:
@@ -224,11 +249,6 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
             ),
         }
 
-    def _pairs(self, t: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        if self.interleaved:
-            return t[:, 0::2], t[:, 1::2]
-        return t[:, : t.shape[1] // 2], t[:, t.shape[1] // 2 :]
-
     def reset_head(self, n_outputs: int) -> None:
         self._set_n_outputs(n_outputs)
         self.final_layer = nn.Linear(self.feature_dim, self.n_outputs)
@@ -255,7 +275,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         must pad whole HbO/HbR pairs, which every attention then leaves out."""
         ch_mask = check_ch_mask(ch_mask, x)
         if ch_mask is not None:  # (B, 2*C) -> (B, C)
-            hbo_mask, hbr_mask = self._pairs(ch_mask)
+            hbo_mask, hbr_mask = fnirs_split_hbo_hbr(ch_mask, self.channel_order)
             if not torch.equal(hbo_mask, hbr_mask):
                 raise ValueError("ch_mask needs whole HbO/HbR pairs.")
             ch_mask = hbo_mask
@@ -269,7 +289,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
             count = mask.sum(dim=2).clamp_min(1.0)
             mean = (joint * mask).sum(dim=2) / count
             centred = (joint - mean.unsqueeze(2)) * mask
-            std = (centred.square().sum(dim=2) / count + 1e-6).sqrt()
+            std = (centred.square().sum(dim=2) / count).clamp_min(0.0).sqrt()
             features = torch.cat([mean, std], dim=-1).flatten(1)
         features = self.head_dropout(features)
         if return_features:
@@ -336,8 +356,14 @@ class _OptodeGeometryStream(nn.Module):
         return encoded * valid_f.to(encoded.dtype)
 
 
-class _LatentSourceCompressor(nn.Module):
-    """Cross-attention of ``num_latents`` learned queries over the channels."""
+class _LatentSourceCrossAttention(nn.Module):
+    """The authors' ``BrainOmniChannelCompressor``: cross-attention of
+    ``num_latents`` learned queries over the channels.
+
+    Private because one softmax over the fused HbO/HbR keys weighs both
+    chromophores' values (one dropout mask), and the released checkpoints
+    name its projections ``q_proj``/``k_proj``/``v_proj``/``out_proj``.
+    """
 
     def __init__(self, dim, num_latents, num_heads, dropout, use_geometry, activation):
         super().__init__()
@@ -388,17 +414,28 @@ class _LatentSourceCompressor(nn.Module):
         heads = [self.num_heads, self.head_dim]
         q = self.q_proj(q_input).unflatten(-1, heads).transpose(1, 2)
         k = self.k_proj(self.k_norm(k_in)).unflatten(-1, heads).transpose(1, 2)
-        scores = (q @ k.transpose(-2, -1)) * (self.head_dim**-0.5)  # (B*P, h, S, C)
         # a patch with no valid channel attends to all of them, then is zeroed
         active = valid.any(dim=1, keepdim=True)  # (B*P, 1)
-        scores = scores.masked_fill(~(valid | ~active)[:, None, None, :], float("-inf"))
-        weights = self.attn_dropout(torch.softmax(scores, dim=-1))
-        weights = weights * active[:, :, None, None].to(weights.dtype)
-        # shared attention weights, chromophore-specific values
+        # shared attention weights over [V_hbo | V_hbr]: (B*P, h, C, 2*head_dim)
+        v = torch.cat(
+            [
+                self.v_proj(self.v_norm(s)).unflatten(-1, heads).transpose(1, 2)
+                for s in [hbo, hbr]
+            ],
+            dim=-1,
+        )
+        attended = scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=(valid | ~active)[:, None, None, :],
+            dropout_p=self.attn_dropout.p if self.training else 0.0,
+            scale=self.head_dim**-0.5,
+            exact=True,
+        )  # (B*P, h, S, 2*head_dim)
         outputs: List[torch.Tensor] = []
-        for signal in [hbo, hbr]:
-            v = self.v_proj(self.v_norm(signal)).unflatten(-1, heads).transpose(1, 2)
-            x = (weights @ v).transpose(1, 2).reshape(bp, self.num_latents, dim)
+        for x in attended.chunk(2, dim=-1):
+            x = x.transpose(1, 2).reshape(bp, self.num_latents, dim)
             x = self.out_norm(q_input + self.out_proj(x))
             x = (x + self.ffn(x)) * active.unsqueeze(-1).to(x.dtype)
             # (B*P, S, D) -> (B, S, P, D)
@@ -410,8 +447,13 @@ class _LatentSourceCompressor(nn.Module):
         return outputs[0], outputs[1]
 
 
-class _SkipProjectionStage(nn.Module):
-    """``skip(x) + residual_scale * main(x)``, ``residual_scale`` starting at 0.1."""
+class _ResidualProjectionBlock(nn.Module):
+    """The authors' ``ResidualProjectionBlock``: ``skip(x) + residual_scale *
+    main(x)``, ``residual_scale`` starting at 0.1.
+
+    Private because no shared block has a learned residual scale on a
+    width-changing skip projection.
+    """
 
     def __init__(self, input_dim, output_dim, dropout, activation):
         super().__init__()
@@ -452,27 +494,34 @@ def _cascade_projection(input_dim, output_dim, dropout, activation):
     else:
         widths = [input_dim, input_dim // 2, input_dim // 4, output_dim]
     stages = [
-        _SkipProjectionStage(widths[i], widths[i + 1], dropout, activation)
+        _ResidualProjectionBlock(widths[i], widths[i + 1], dropout, activation)
         for i in range(3)
     ]
     return nn.Sequential(OrderedDict(blocks=nn.Sequential(*stages)))
 
 
-def _optode_geometry(chs_info, interleaved: bool) -> np.ndarray:
+def _optode_geometry(chs_info, channel_order: str) -> np.ndarray:
     """``(n_pairs, 6)`` ``[midpoint, detector - source]`` of the HbO channels,
     centred on the mean optode and divided by the 25.46 mm of the GeoNIRS
-    pretraining; ``(0, 6)`` without source/detector locations."""
+    pretraining. As the reference (``scripts/build_fair_input.py``), a pair
+    without source/detector locations is zero and left out of the centre;
+    ``(0, 6)`` when no pair has them."""
     empty = np.zeros((0, 6), dtype=np.float32)
     if chs_info is None:
         return empty
-    chs = chs_info[0::2] if interleaved else chs_info[: len(chs_info) // 2]
-    locs = np.zeros((len(chs), 9))
-    for row, ch in zip(locs, chs):  # a missing or short loc stays zero
-        loc = np.ravel(ch.get("loc") if ch.get("loc") is not None else [])[:9]
+    hbo_index, _ = fnirs_split_hbo_hbr(torch.arange(len(chs_info))[None], channel_order)
+    # (n_pairs, 6): source and detector, loc[3:9]; a missing or short loc stays zero
+    optodes = np.zeros((hbo_index.shape[1], 6))
+    for row, i in zip(optodes, hbo_index[0].tolist()):
+        loc = chs_info[i].get("loc")
+        loc = np.ravel(loc if loc is not None else [])[3:9]
         row[: loc.size] = loc
-    if not np.isfinite(locs).all() or (locs[:, 3:9] == 0).all(axis=1).any():
+    present = np.isfinite(optodes).all(axis=1) & (optodes != 0).any(axis=1)
+    if not present.any():
         return empty
     scale = 25.460582556839242 / 1000.0
-    center = np.concatenate([locs[:, 3:6], locs[:, 6:9]]).mean(axis=0)
-    src, det = (locs[:, 3:6] - center) / scale, (locs[:, 6:9] - center) / scale
-    return np.concatenate([0.5 * (src + det), det - src], axis=1).astype(np.float32)
+    center = np.concatenate([optodes[present, :3], optodes[present, 3:]]).mean(axis=0)
+    src, det = (optodes[:, :3] - center) / scale, (optodes[:, 3:] - center) / scale
+    geometry = np.concatenate([0.5 * (src + det), det - src], axis=1)
+    geometry[~present] = 0.0
+    return geometry.astype(np.float32)

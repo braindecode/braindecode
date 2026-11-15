@@ -268,24 +268,29 @@ def _mne_fnirs_chs(n_pairs):
 @pytest.mark.parametrize("name", ["GeoNIRS", "MtReNIRS"])
 def test_fnirs_chs_info_ch_mask_matches_each_recording_alone(name):
     # pair layout, positions and chromophores from MNE chs_info only:
-    # recordings of 1, 3 and 2 HbO/HbR pairs padded to 3 pairs
+    # recordings of 1, 3 and 2 HbO/HbR pairs padded to 3 pairs; a recording
+    # alone takes the geometry of its own pairs
     torch.manual_seed(0)
     if name == "GeoNIRS":
         model = GeoNIRS(chs_info=_mne_fnirs_chs(3), n_outputs=3, n_times=40,
                         embedding_dim=32, num_heads=4, temporal_layers=1,
                         num_latent_sources=4, output_feature_dim=8)
-        assert model.interleaved
+        assert model.channel_order == "interleaved"
+        alone = [{"geometry": model.default_geometry[:n_real]} for n_real in N_REAL]
     else:
         model = MtReNIRS(chs_info=_mne_fnirs_chs(3), n_outputs=3, n_times=100,
                          window_samples=50, d_model=32, depth=1, n_heads=2,
                          mlp_hidden=64, pool="channel_temporal_mean")
+        alone = [
+            {"coordinates": model.default_coordinates[: 2 * n_real]} for n_real in N_REAL
+        ]
     model.eval()
     xs = [torch.randn(2 * n_real, model.n_times) for n_real in N_REAL]
     mask = torch.arange(6) < 2 * torch.tensor(N_REAL)[:, None]
     x = torch.full((len(N_REAL), 6, model.n_times), float("nan"))
     for i, xi in enumerate(xs):
         x[i, : len(xi)] = xi
-    _assert_matches_alone(model, x, mask, xs, {}, [{} for _ in xs])
+    _assert_matches_alone(model, x, mask, xs, {}, alone)
 
 
 @pytest.mark.parametrize("name", ["REVE", "Labram"])
