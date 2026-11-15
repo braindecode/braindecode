@@ -6499,7 +6499,6 @@ def test_fnirst_seeded_reset_and_cls_tokens(model_cls):
     [
         (FNIRST, {"depth": 2, "heads": 4}),
         (FNIRSPreT, {"depth": 2, "heads": 4}),
-        (JungMAE, {"encoder_layers": 1, "encoder_heads": 4, "encoder_dim": 64, "pool": "mean"}),
     ],
 )
 def test_fnirs_interleaved_chs_info(model_cls, kwargs):
@@ -6560,13 +6559,24 @@ def test_fnirs_masks(model_cls):
     assert hidden.grad[~mask].isfinite().all()
 
 
-def test_jungmae_non_divisible_patch_validity():
-    """Padded tail samples of a non-divisible n_times do not count as valid."""
-    model = JungMAE(n_chans=6, n_outputs=2, n_times=17, sfreq=5.0).eval()
-    x = torch.randn(1, 6, 17)
-    assert model.encode(x)["valid"][:, :, 1].all()
-    x[:, :, 15:] = float("nan")  # 5 valid of the 7 in-bounds samples (< 80 %)
-    assert not model.encode(x)["valid"][:, :, 1].any()
+def test_jungmae_reset_head_initializes_as_the_constructor():
+    """reset_head draws the head as the constructor: Xavier, zero bias."""
+    model = JungMAE(n_chans=6, n_outputs=2, n_times=60, encoder_layers=1)
+    model.reset_head(3)
+    assert not model.final_layer.bias.any()
+
+
+def test_fnirs_foundation_models_non_divisible_windows_follow_the_reference():
+    """GeoNIRS and JungMAE refuse a partial patch and MtReNIRS drops a
+    partial window, as their references do."""
+    for model_cls in (GeoNIRS, JungMAE):
+        with pytest.raises(ValueError, match="not divisible"):
+            model_cls(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=155)
+    model = MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=150, depth=1)
+    assert model.n_windows == 1
+    x = torch.randn(1, 4, 150)
+    with torch.no_grad():
+        assert torch.equal(model.eval()(x), model(x[..., :100]))
 
 
 def test_jungmae_released_checkpoint_loads_strictly():
@@ -6630,8 +6640,9 @@ def test_fnirs_foundation_models_head_and_reset(model_cls):
 
 
 def test_fnirs_foundation_models_need_their_channel_information():
-    with pytest.raises(ValueError, match="n_chans must be even"):
-        GeoNIRS(n_chans=5, n_outputs=2, n_times=60)
+    for model_cls in (GeoNIRS, JungMAE):
+        with pytest.raises(ValueError, match="n_chans must be even"):
+            model_cls(n_chans=5, n_outputs=2, n_times=60)
     with pytest.raises(ValueError, match="needs the channel geometry"):
         GeoNIRS(n_chans=4, n_outputs=2, n_times=60)(torch.randn(1, 4, 60))
     loc_none = [{"ch_name": f"S1_D1 {k}", "loc": None} for k in ("hbo", "hbr")]
