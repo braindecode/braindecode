@@ -23,6 +23,7 @@ from braindecode.functional import (
     rotary_frequencies,
     scaled_dot_product_attention,
 )
+from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
@@ -32,7 +33,7 @@ from braindecode.modules import FeedForwardBlock, TimmAttention
 
 
 class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
-    r"""MtReNIRS from Chae et al. (2026) [microsoft2026mtrenirs]_.
+    r"""MtReNIRS from Chae et al. (2026) :footcite:`microsoft2026mtrenirs`.
 
     :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
@@ -42,11 +43,19 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
     is one token, the sum of a projection of its samples and a Fourier-feature
     MLP of the channel's position and chromophore. A pre-norm Transformer with
     per-head QK LayerNorm and a rotary embedding of the window index encodes
-    all tokens jointly. Positions (``loc[:3]``, 0 when unknown) and HbO/HbR
-    (from ``coil_type``, else the channel name) come from ``chs_info`` or the
+    all tokens jointly. Positions (``loc[:3]``) and HbO/HbR (from
+    ``coil_type``, else the channel name) come from ``chs_info`` or the
     ``coordinates`` argument; a montage without any location needs
-    ``coordinates``. Windows with a NaN sample are masked.
+    ``coordinates``. As in the reference, a channel without a location (NaN
+    or all-zero ``loc[:3]``, NaN in ``coordinates``) is left out of the
+    attention and its tokens are zero. Windows with a NaN sample are masked.
+
     :meth:`load_state_dict` takes the official ``mtrenirs_10s.pt`` checkpoint.
+    Its weights expect 10 Hz HbO/HbR in 100-sample (10 s) windows, each
+    channel z-scored over its run and clipped at 6 (the reference's
+    ``normalize_run``), and Standard 10-05 positions: the reference snaps
+    each channel to its nearest 10-05 position (``mtrenirs-alignment``)
+    before encoding, while this port reads ``loc[:3]`` as given.
     Adapted from the authors' code
     (`License <https://github.com/microsoft/MtReNIRS/blob/main/LICENSE.txt>`_).
 
@@ -67,7 +76,12 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         Per-head LayerNorm of queries and keys.
     pool : {"temporal_mean", "channel_temporal_mean", "flatten"}, default="temporal_mean"
         Readout of the ``(batch, n_windows, n_chans, d_model)`` tokens: mean
-        over valid windows, over valid windows and channels, or all of them.
+        over valid windows, over valid windows and channels (the readout
+        that takes ``ch_mask``), or all of them.
+    on_non_divisible : {"crop", "pad", "error"}, default="crop"
+        A last window shorter than ``window_samples`` is dropped (the
+        reference's ``remainder="drop"``), zero-padded (its ``"pad"``) or
+        refused.
     pos_center, pos_scale : tuple of float, float
         Centre and scale (m) standardizing the positions; the defaults are
         those of the released checkpoint.
@@ -78,10 +92,7 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
     References
     ----------
-    .. [microsoft2026mtrenirs] Chae, T., Avramidis, K., Emmanouilidou, D., &
-       Tashev, I. J. (2026). MtReNIRS: A Self-Supervised Foundation Model for
-       Transferable Neurovascular Representations. arXiv preprint
-       arXiv:2610.36159.
+    .. footbibliography::
     """
 
     def __init__(
@@ -105,6 +116,7 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         pool: Literal[
             "temporal_mean", "channel_temporal_mean", "flatten"
         ] = "temporal_mean",
+        on_non_divisible: Literal["crop", "pad", "error"] = "crop",
         pos_center: tuple[float, float, float] = (
             0.00021245056996122003,
             -0.022675372660160065,
@@ -128,9 +140,11 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
                 f"d_model ({d_model}) must be divisible by n_heads ({n_heads}) "
                 "with an even head_dim for rotary position embeddings."
             )
+        _check_on_non_divisible(on_non_divisible)
         self.window_samples = window_samples
         self.pool = pool
-        self.n_windows = patch_count(self.n_times, window_samples)
+        self.on_non_divisible = on_non_divisible
+        self.n_windows = patch_count(self.n_times, window_samples, on_non_divisible)
         self.embed = _TokenEmbedding(
             window_samples, d_model, fourier_num_bands, spatial_mlp_hidden, activation
         )
@@ -156,31 +170,39 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """``(batch, n_chans, n_times)`` -> tokens ``(batch, n_windows, n_chans,
         d_model)`` and their validity ``(batch, n_windows, n_chans)``.
-        ``coordinates`` is ``(n_chans, 4)`` or ``(batch, n_chans, 4)``."""
+        ``coordinates`` is ``(n_chans, 4)`` or ``(batch, n_chans, 4)``; NaN
+        positions mark channels without a location."""
         batch_size, n_chans, _ = x.shape
-        x = pad_or_crop_to_patches(x, self.window_samples)  # zero-pads the last window
-        n_win = x.shape[-1] // self.window_samples
-        # (B, C, T) -> (B, W, C, window_samples)
-        windows = x.unflatten(-1, [n_win, self.window_samples]).transpose(1, 2)
-        finite = torch.isfinite(windows)
-        valid = finite.all(dim=-1)  # (B, W, C): a NaN masks its window
-        if ch_mask is not None:
-            valid = ch_mask[:, None, :n_chans].to(torch.bool) & valid
-        valid_tokens = valid.reshape(batch_size, n_win * n_chans)
-        tokens = torch.where(finite, windows, torch.zeros_like(windows)).reshape(
-            batch_size, n_win * n_chans, self.window_samples
-        )
-        coord = (
-            self.default_coordinates[:n_chans] if coordinates is None else coordinates
-        )
+        coord = self.default_coordinates if coordinates is None else coordinates
         if coord.numel() == 0:
             raise ValueError(
                 "MtReNIRS needs channel positions and chromophores: chs_info "
                 "with channel locations (loc[:3]) or the coordinates argument."
             )
-        coord = coord.to(device=x.device, dtype=tokens.dtype)
+        if coordinates is None and coord.shape[0] != n_chans:
+            raise ValueError(
+                "x and chs_info have different channel counts: pass the "
+                "coordinates of the channels of x."
+            )
+        x = pad_or_crop_to_patches(x, self.window_samples, self.on_non_divisible)
+        n_win = x.shape[-1] // self.window_samples
+        # (B, C, T) -> (B, W, C, window_samples)
+        windows = x.unflatten(-1, [n_win, self.window_samples]).transpose(1, 2)
+        finite = torch.isfinite(windows)
+        valid = finite.all(dim=-1)  # (B, W, C): a NaN masks its window
+        coord = coord.to(device=x.device, dtype=windows.dtype)
         if coord.ndim == 2:
             coord = coord.unsqueeze(0).expand(batch_size, -1, -1)
+        # (B, C): a channel without a location is masked, at position 0
+        located = torch.isfinite(coord[..., :3]).all(dim=-1)
+        coord = torch.where(located.unsqueeze(-1), coord, torch.zeros_like(coord))
+        valid = valid & located.unsqueeze(1)
+        if ch_mask is not None:
+            valid = valid & ch_mask.unsqueeze(1).to(torch.bool)
+        valid_tokens = valid.reshape(batch_size, n_win * n_chans)
+        tokens = torch.where(finite, windows, torch.zeros_like(windows)).reshape(
+            batch_size, n_win * n_chans, self.window_samples
+        )
         # (B, C, 4) -> (B, W*C, 4); the rotary position of a token is its window
         coord_tokens = coord.unsqueeze(1).expand(-1, n_win, -1, -1).flatten(1, 2)
         window_indices = (
@@ -266,9 +288,13 @@ class _TokenEmbedding(nn.Module):
         )
 
 
-class _QKNormSelfInteraction(TimmAttention):
-    """timm attention with per-head QK LayerNorm, a rotary embedding of the
-    window index and a key padding mask."""
+class _MultiHeadAttention(TimmAttention):
+    """The authors' ``MultiHeadAttention``: timm attention with per-head QK
+    LayerNorm, a rotary embedding of the window index and a key padding mask.
+
+    Private because :class:`~braindecode.modules.TimmAttention`'s forward takes
+    neither per-token positions nor a mask; its ``qkv``/``proj`` are reused.
+    """
 
     def __init__(self, dim, heads, dropout, rope_base, qk_norm):
         super().__init__(dim, heads, qkv_bias=True, attn_drop=dropout)
@@ -320,9 +346,7 @@ class _Block(nn.Module):
     ):
         super().__init__()
         self.norm1 = nn.LayerNorm(d_model)
-        self.attn = _QKNormSelfInteraction(
-            d_model, n_heads, dropout, rope_base, qk_norm
-        )
+        self.attn = _MultiHeadAttention(d_model, n_heads, dropout, rope_base, qk_norm)
         self.norm2 = nn.LayerNorm(d_model)
         self.mlp = FeedForwardBlock(
             d_model, 1, dropout, activation, hidden_features=mlp_hidden
@@ -353,9 +377,9 @@ class _Encoder(nn.Module):
 
 
 def _coordinates(chs_info, pos_center, pos_scale) -> np.ndarray:
-    """``(n_chans, 4)``: ``(loc[:3] - pos_center) / pos_scale`` (0 when
-    unknown) and 0 for HbO, 1 for HbR, as the official ``chromophore_map``;
-    ``(0, 4)`` without ``chs_info`` or without any location."""
+    """``(n_chans, 4)``: ``(loc[:3] - pos_center) / pos_scale`` (NaN when
+    unknown or all zero) and 0 for HbO, 1 for HbR, as the official
+    ``chromophore_map``; ``(0, 4)`` without ``chs_info`` or any location."""
     if chs_info is None:
         return np.zeros((0, 4), np.float32)
     chromophores = fnirs_chromophores_from_chs_info(chs_info)
@@ -363,8 +387,8 @@ def _coordinates(chs_info, pos_center, pos_scale) -> np.ndarray:
         name = chs_info[chromophores.index("unknown")].get("ch_name")
         raise ValueError(f"MtReNIRS needs HbO/HbR channels, got {name!r}.")
     loc = extract_channel_locations_from_chs_info(chs_info, fill_missing=True)
+    loc[(loc == 0).all(axis=1)] = np.nan  # MNE without a montage: NaN or zeros
     if not np.isfinite(loc).any():  # forward raises unless coordinates are given
         return np.zeros((0, 4), np.float32)
     xyz = (loc - np.asarray(pos_center, dtype=np.float32)) / float(pos_scale)
-    xyz = np.where(np.isfinite(loc).all(axis=1, keepdims=True), xyz, 0.0)
     return np.c_[xyz, np.equal(chromophores, "hbr")].astype(np.float32)

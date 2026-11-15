@@ -101,8 +101,9 @@ _KNOWN_PRIVATE_BLOCKS = {
     ("meta_neuromotor", "_MultiHeadAttention"),
     ("mirepnet", "_PatchEmbedding"),
     ("mscformer", "_MultiScalePatchEmbeddingCNN"),
-    ("mtrenirs", "_Block"),
     ("msvtnet", "_PositionalEncoding"),
+    ("mtrenirs", "_Block"),
+    ("mtrenirs", "_MultiHeadAttention"),  # rotary positions, key mask
     ("mvpformer", "_WaveletPatchEmbed"),
     ("mvpformer", "_MVPAttention"),
     ("mvpformer", "_SwiGLUMLP"),

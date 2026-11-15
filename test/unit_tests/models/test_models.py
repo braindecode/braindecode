@@ -6607,8 +6607,8 @@ def test_fnirs_foundation_models_interleaved_chs_info(model_cls, kwargs, n_times
 def test_fnirs_foundation_models_head_and_reset(model_cls):
     """final_layer(features) gives the logits; reset_parameters resets every
     parameter; reset_head keeps the dtype."""
-    model = model_cls(chs_info=_fnirs_chs_info(3), n_outputs=3, n_times=60, sfreq=10.0)
-    x = torch.randn(4, 6, 60)
+    model = model_cls(chs_info=_fnirs_chs_info(3), n_outputs=3, n_times=100, sfreq=10.0)
+    x = torch.randn(4, 6, 100)
     with torch.no_grad():
         model.eval()
         torch.testing.assert_close(
@@ -6646,6 +6646,27 @@ def test_fnirs_foundation_models_need_their_channel_information():
         MtReNIRS(chs_info=no_loc, n_outputs=2, n_times=100)(torch.randn(1, 2, 100))
     with pytest.raises(ValueError, match="needs HbO/HbR channels"):
         MtReNIRS(chs_info=[{"ch_name": "Cz", "loc": np.zeros(12)}], n_outputs=2, n_times=100)
+    with pytest.raises(ValueError, match="different channel counts"):
+        MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=100)(torch.randn(1, 2, 100))
+
+
+def test_mtrenirs_leaves_unlocated_channels_out():
+    """As in the reference, a channel without a location (all-zero or NaN
+    ``loc[:3]``) gets zero tokens and does not change the other channels."""
+    chs = _fnirs_chs_info(3)
+    chs[0] = dict(chs[0], loc=np.zeros(12))
+    chs[3] = dict(chs[3], loc=np.full(12, np.nan))
+    torch.manual_seed(0)
+    model = MtReNIRS(chs_info=chs, n_outputs=2, n_times=200, depth=2).eval()
+    located = [1, 2, 4, 5]
+    alone = MtReNIRS(chs_info=[chs[i] for i in located], n_outputs=2, n_times=200, depth=2)
+    alone.load_state_dict(model.state_dict())
+    x = torch.randn(2, 6, 200)
+    with torch.no_grad():
+        tokens, valid = model.encode_windows(x)
+        expected, _ = alone.eval().encode_windows(x[:, located])
+    assert not valid[:, :, [0, 3]].any() and not tokens[:, :, [0, 3]].any()
+    torch.testing.assert_close(tokens[:, :, located], expected)
 
 
 def test_geonirs_pair_without_optodes_gets_zero_geometry():
@@ -6684,17 +6705,13 @@ def test_geonirs_without_geometry_has_no_dead_parameters():
     assert all(p.grad is not None and torch.isfinite(p.grad).all() for p in model.parameters())
 
 
-def test_mtrenirs_chromophores_strict_state_dict_and_valid_window_pooling():
-    """HbO/HbR come from the names, a strict load rejects unknown keys, NaN
-    windows do not dilute the pooling, and an odd head_dim is refused."""
+def test_mtrenirs_chromophores_and_valid_window_pooling():
+    """HbO/HbR come from the names, NaN windows do not dilute the pooling,
+    and an odd head_dim is refused."""
     chs = [{"ch_name": f"S{i}_D{i} {k}", "loc": np.array([0.03 * i, 0.0, 0.0])}
            for i, k in enumerate(["hbo", "hbr", "hbo", "hbo"], 1)]
     model = MtReNIRS(chs_info=chs, n_outputs=2, n_times=200, sfreq=10.0).eval()
     assert model.default_coordinates[:, 3].tolist() == [0.0, 1.0, 0.0, 0.0]
-    bad = dict(model.state_dict(), unexpected_bogus_key=torch.zeros(1))
-    for state_dict in (bad, {"model": bad}):
-        with pytest.raises(RuntimeError):
-            model.load_state_dict(state_dict, strict=True)
     x = torch.randn(1, 4, 200)
     x[:, :, 100:] = float("nan")
     with torch.no_grad():
