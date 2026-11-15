@@ -605,17 +605,15 @@ def _dance_signal_params() -> dict[str, Any]:
 
 def _fnirs_chs_info(n_pairs: int) -> list[dict]:
     """Stacked HbO then HbR channels of ``n_pairs`` source-detector pairs 3 cm
-    apart on a 8 cm ring (metres), with the source and detector in
-    ``loc[3:9]`` as MNE stores them."""
+    apart on a 8 cm ring (metres), named as MNE names them (``"S1_D1 hbo"``),
+    with the source and detector in ``loc[3:9]`` as MNE stores them."""
     chs = []
     for kind in ("hbo", "hbr"):
         for i in range(n_pairs):
             src = np.array([0.08 * np.cos(i), 0.08 * np.sin(i), 0.05])
             det = src + np.array([0.03, 0.0, 0.0])
             loc = np.concatenate([(src + det) / 2, src, det, np.zeros(3)])
-            chs.append(
-                {"ch_name": f"S{i + 1}_D{i + 1} {kind}", "kind": kind, "loc": loc}
-            )
+            chs.append({"ch_name": f"S{i + 1}_D{i + 1} {kind}", "loc": loc})
     return chs
 
 
