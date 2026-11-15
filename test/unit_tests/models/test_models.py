@@ -6724,6 +6724,28 @@ def test_mtrenirs_chromophores_and_valid_window_pooling():
 
 
 _FNIRS_WEIGHTS = os.environ.get("BRAINDECODE_FNIRS_WEIGHTS", "")
+# The MIT-licensed MtReNIRS checkpoint, as released, on the Hub (pinned revision)
+_FNIRS_HUB = {
+    "mtrenirs_10s.pt": (
+        "braindecode/mtrenirs-pretrained",
+        "bbc68ce5e00a4515081d900227fc06d111858e75",
+    ),
+}
+
+
+def _fnirs_checkpoint(file):
+    """``file`` from ``BRAINDECODE_FNIRS_WEIGHTS``, else from the Hub."""
+    path = os.path.join(_FNIRS_WEIGHTS, file)
+    if _FNIRS_WEIGHTS and os.path.isfile(path):
+        return path
+    if file not in _FNIRS_HUB:
+        pytest.skip(f"{file} not in BRAINDECODE_FNIRS_WEIGHTS")
+    hub = pytest.importorskip("huggingface_hub")
+    repo_id, revision = _FNIRS_HUB[file]
+    try:
+        return hub.hf_hub_download(repo_id, file, revision=revision)
+    except hub.utils.LocalEntryNotFoundError as err:  # offline
+        pytest.skip(f"Hugging Face Hub not reachable: {err}")
 
 
 # features[:, :4] of the authors' code (GeoNIRS 81f8995, MtReNIRS 16c3082) on
@@ -6739,21 +6761,23 @@ _FNIRS_WEIGHTS = os.environ.get("BRAINDECODE_FNIRS_WEIGHTS", "")
                                        "temporal_layers": 6, "output_feature_dim": 128},
          [[-3.8912150859832764, -0.606697678565979, -0.19837510585784912, -6.412940979003906],
           [-5.242615699768066, -2.4871740341186523, -0.46112173795700073, -3.506788730621338]]),
-        ("mtrenirs_10s.pt", MtReNIRS, {"n_times": 100, "sfreq": 10.0},
-         [[1.3799299001693726, 1.1365183591842651, 1.0999616384506226, 0.12654231488704681],
-          [-0.03779871016740799, -0.9599133729934692, 0.5302731394767761, 0.7867113351821899]]),
+        pytest.param(
+            "mtrenirs_10s.pt", MtReNIRS, {"n_times": 100, "sfreq": 10.0},
+            [[1.3799299001693726, 1.1365183591842651, 1.0999616384506226, 0.12654231488704681],
+             [-0.03779871016740799, -0.9599133729934692, 0.5302731394767761, 0.7867113351821899]],
+            marks=pytest.mark.huggingface,
+        ),
         ("jung_mae.pt", JungInspiredMAE, {"n_times": 150, "sfreq": 5.0},
          [[0.0012979282764717937, -0.39332136511802673, 0.23441119492053986, 0.3510328233242035],
           [-0.34959089756011963, -0.3680170476436615, 0.44219091534614563, 0.24921967089176178]]),
     ],
 )
 def test_fnirs_released_checkpoints_match_the_authors_code(file, cls, kwargs, expected):
-    """The official checkpoints in ``BRAINDECODE_FNIRS_WEIGHTS``, as released
-    (decoders included), load strictly with ``weights_only=True``, every
-    backbone tensor is the checkpoint's, and the features are the authors'."""
-    path = os.path.join(_FNIRS_WEIGHTS, file)
-    if not _FNIRS_WEIGHTS or not os.path.isfile(path):
-        pytest.skip(f"{file} not in BRAINDECODE_FNIRS_WEIGHTS")
+    """The official checkpoints (``BRAINDECODE_FNIRS_WEIGHTS``; MtReNIRS also
+    from the Hub), as released (decoders included), load strictly with
+    ``weights_only=True``, every backbone tensor is the checkpoint's, and the
+    features are the authors'."""
+    path = _fnirs_checkpoint(file)
     payload = torch.load(path, map_location="cpu", weights_only=True)
     model = cls(chs_info=_fnirs_chs_info(10), n_outputs=2, **kwargs).eval()
     model.load_state_dict(payload, strict=True)
