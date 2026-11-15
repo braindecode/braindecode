@@ -386,7 +386,9 @@ def _coordinates(chs_info, pos_center, pos_scale) -> np.ndarray:
     if "unknown" in chromophores:
         name = chs_info[chromophores.index("unknown")].get("ch_name")
         raise ValueError(f"MtReNIRS needs HbO/HbR channels, got {name!r}.")
-    loc = extract_channel_locations_from_chs_info(chs_info, fill_missing=True)
+    loc = np.asarray(
+        extract_channel_locations_from_chs_info(chs_info, fill_missing=True)
+    )
     loc[(loc == 0).all(axis=1)] = np.nan  # MNE without a montage: NaN or zeros
     if not np.isfinite(loc).any():  # forward raises unless coordinates are given
         return np.zeros((0, 4), np.float32)
