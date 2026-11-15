@@ -6660,7 +6660,8 @@ def test_mtrenirs_leaves_unlocated_channels_out():
     model = MtReNIRS(chs_info=chs, n_outputs=2, n_times=200, depth=2).eval()
     located = [1, 2, 4, 5]
     alone = MtReNIRS(chs_info=[chs[i] for i in located], n_outputs=2, n_times=200, depth=2)
-    alone.load_state_dict(model.state_dict())
+    encoder = {k: v for k, v in model.state_dict().items() if not k.startswith("final_layer.")}
+    alone.load_state_dict(encoder)  # the head width depends on n_chans
     x = torch.randn(2, 6, 200)
     with torch.no_grad():
         tokens, valid = model.encode_windows(x)
