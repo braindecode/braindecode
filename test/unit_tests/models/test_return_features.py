@@ -29,7 +29,7 @@ from braindecode.models import (
     FNIRSPreT,
     GeoNIRS,
     Guetschel2026,
-    JungMAE,
+    JungInspiredMAE,
     Labram,
     MIRepNet,
     MtReNIRS,
@@ -252,11 +252,11 @@ _MODELS = [
     pytest.param(FNIRST, 4, {"depth": 1, "heads": 2}, True, id="FNIRST"),
     pytest.param(FNIRSPreT, 4, {"depth": 1, "heads": 2}, True, id="FNIRSPreT"),
     pytest.param(
-        JungMAE,
+        JungInspiredMAE,
         4,
         {"encoder_layers": 1, "encoder_heads": 4, "encoder_dim": 64},
         False,
-        id="JungMAE",
+        id="JungInspiredMAE",
     ),
 ]
 

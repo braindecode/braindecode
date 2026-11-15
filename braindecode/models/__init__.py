@@ -62,7 +62,7 @@ if TYPE_CHECKING:
     from .guetschel2026 import Guetschel2026
     from .hybrid import HybridNet
     from .ifnet import IFNet
-    from .jung_mae import JungMAE
+    from .jung_inspired_mae import JungInspiredMAE
     from .labram import Labram
     from .luna import LUNA
     from .mapa import MAPA

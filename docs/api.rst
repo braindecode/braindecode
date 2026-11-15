@@ -198,7 +198,7 @@ interface for all EEG models and can derive variable names when needed.
      GeoNIRS
      Guetschel2026
      IFNet
-     JungMAE
+     JungInspiredMAE
      Labram
      LUNA
      MAPA

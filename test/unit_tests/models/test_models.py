@@ -70,7 +70,7 @@ from braindecode.models import (
     GeoNIRS,
     HybridNet,
     IFNet,
-    JungMAE,
+    JungInspiredMAE,
     Labram,
     MEDFormer,
     MetaNeuromotorHand,
@@ -6516,7 +6516,7 @@ def test_fnirs_interleaved_chs_info(model_cls, kwargs):
     assert features.shape[0] == 2
 
 
-@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT, JungMAE])
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT, JungInspiredMAE])
 def test_fnirs_features_feed_head_and_reset(model_cls):
     """final_layer(features) == logits (train and eval); every parameter is reset."""
     model = model_cls(n_chans=6, n_outputs=3, n_times=60, sfreq=10.0)
@@ -6539,10 +6539,10 @@ def test_fnirs_features_feed_head_and_reset(model_cls):
     assert model.final_layer.weight.dtype == torch.float64
 
 
-@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT, JungMAE])
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT, JungInspiredMAE])
 def test_fnirs_masks(model_cls):
     """ch_mask is refused by name; an all-False mask changes nothing; hidden
-    samples act as zero (FNIRST) or missing (JungMAE) and get no gradient."""
+    samples act as zero (FNIRST) or missing (JungInspiredMAE) and get no gradient."""
     torch.manual_seed(0)
     model = model_cls(n_chans=6, n_outputs=3, n_times=60, sfreq=5.0).eval()
     x = torch.randn(2, 6, 60)
@@ -6551,7 +6551,7 @@ def test_fnirs_masks(model_cls):
     mask = torch.zeros_like(x, dtype=torch.bool)
     assert torch.equal(model(x, mask=mask), model(x))
     mask[:, 1, 20:40] = True
-    fill = float("nan") if model_cls is JungMAE else 0.0
+    fill = float("nan") if model_cls is JungInspiredMAE else 0.0
     assert torch.equal(model(x, mask=mask), model(x.masked_fill(mask, fill)))
     hidden = x.masked_fill(mask, float("nan")).requires_grad_(True)
     model(hidden, mask=mask).sum().backward()
@@ -6559,17 +6559,17 @@ def test_fnirs_masks(model_cls):
     assert hidden.grad[~mask].isfinite().all()
 
 
-def test_jungmae_reset_head_initializes_as_the_constructor():
+def test_jung_inspired_mae_reset_head_initializes_as_the_constructor():
     """reset_head draws the head as the constructor: Xavier, zero bias."""
-    model = JungMAE(n_chans=6, n_outputs=2, n_times=60, encoder_layers=1)
+    model = JungInspiredMAE(n_chans=6, n_outputs=2, n_times=60, encoder_layers=1)
     model.reset_head(3)
     assert not model.final_layer.bias.any()
 
 
 def test_fnirs_foundation_models_non_divisible_windows_follow_the_reference():
-    """GeoNIRS and JungMAE refuse a partial patch and MtReNIRS drops a
+    """GeoNIRS and JungInspiredMAE refuse a partial patch and MtReNIRS drops a
     partial window, as their references do."""
-    for model_cls in (GeoNIRS, JungMAE):
+    for model_cls in (GeoNIRS, JungInspiredMAE):
         with pytest.raises(ValueError, match="not divisible"):
             model_cls(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=155)
     model = MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=150, depth=1)
@@ -6579,13 +6579,13 @@ def test_fnirs_foundation_models_non_divisible_windows_follow_the_reference():
         assert torch.equal(model.eval()(x), model(x[..., :100]))
 
 
-def test_jungmae_released_checkpoint_loads_strictly():
+def test_jung_inspired_mae_released_checkpoint_loads_strictly():
     """The GeoNIRS release ``jung_mae.pt`` loads with strict=True (decoder dropped)."""
     path = os.environ.get("BRAINDECODE_JUNGMAE_CKPT", "")
     if not os.path.isfile(path):
         pytest.skip("set BRAINDECODE_JUNGMAE_CKPT to the released jung_mae.pt")
     payload = torch.load(path, map_location="cpu", weights_only=False)
-    model = JungMAE(n_chans=20, n_outputs=2, n_times=150, sfreq=5.0).eval()
+    model = JungInspiredMAE(n_chans=20, n_outputs=2, n_times=150, sfreq=5.0).eval()
     model.load_state_dict(payload, strict=True)
     with torch.no_grad():
         out = model(torch.randn(2, 20, 150))
@@ -6640,7 +6640,7 @@ def test_fnirs_foundation_models_head_and_reset(model_cls):
 
 
 def test_fnirs_foundation_models_need_their_channel_information():
-    for model_cls in (GeoNIRS, JungMAE):
+    for model_cls in (GeoNIRS, JungInspiredMAE):
         with pytest.raises(ValueError, match="n_chans must be even"):
             model_cls(n_chans=5, n_outputs=2, n_times=60)
     with pytest.raises(ValueError, match="needs the channel geometry"):

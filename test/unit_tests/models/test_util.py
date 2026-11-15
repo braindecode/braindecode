@@ -408,7 +408,7 @@ _FNIRS_PAIRING = {  # pair-aware fNIRS models: chs_info sets their channel_order
     "FNIRS4D": {},
     "FNIRSPreT": dict(depth=1),
     "FNIRST": dict(depth=1),
-    "JungMAE": dict(encoder_layers=1),
+    "JungInspiredMAE": dict(encoder_layers=1),
 }
 
 

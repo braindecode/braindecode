@@ -23,7 +23,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import fnirs_channel_order, fnirs_split_hbo_hbr
 
 
-class JungMAE(EEGModuleMixin, nn.Module):
+class JungInspiredMAE(EEGModuleMixin, nn.Module):
     r"""The GeoNIRS authors' Jung-inspired masked autoencoder (Li et al., 2026).
 
     :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model`
@@ -110,7 +110,9 @@ class JungMAE(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.channel_order = fnirs_channel_order(self._chs_info, channel_order)
         if self.n_chans % 2:
-            raise ValueError("JungMAE needs HbO/HbR pairs: n_chans must be even.")
+            raise ValueError(
+                "JungInspiredMAE needs HbO/HbR pairs: n_chans must be even."
+            )
         _check_on_non_divisible(on_non_divisible)
         self.on_non_divisible = on_non_divisible
         self.patch_samples = patch_samples
@@ -210,7 +212,9 @@ class JungMAE(EEGModuleMixin, nn.Module):
         :meth:`encode`. ``ch_mask`` is refused: ``final_layer`` spans every
         channel (mark a missing channel with NaN)."""
         if ch_mask is not None:
-            raise ValueError("JungMAE does not accept ch_mask; use NaN channels.")
+            raise ValueError(
+                "JungInspiredMAE does not accept ch_mask; use NaN channels."
+            )
         # (batch, n_pairs, n_patches, encoder_dim) -> (batch, feature_dim)
         foundation = self.encode(x, mask)["foundation"]
         features = self.head_dropout(foundation.reshape(foundation.shape[0], -1))
