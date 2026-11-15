@@ -290,6 +290,27 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.apply(_init_weights)
         self.fix_init_weight()
 
+    def reset_head(self, n_outputs: int) -> None:
+        """Replace the classification head for ``n_outputs`` classes.
+
+        A reconstruction model (``n_outputs=0``) becomes a classifier: its
+        decoder and channel embedding are removed.
+        """
+        self._set_n_outputs(n_outputs)
+        self.num_classes = n_outputs
+        self.final_layer = _ClassificationHeadWithQueries(
+            input_dim=self.patch_size,
+            num_queries=self.num_queries,
+            embed_dim=self.embed_dim,
+            num_classes=n_outputs,
+            num_heads=self.num_heads,
+        )
+        self.final_layer.apply(_init_weights)
+        if hasattr(self, "decoder_head"):
+            del self.decoder_head
+            del self.channel_emb
+            self.mask_token.requires_grad = False
+
     def initialize_weights(self) -> None:
         """Re-run LUNA's own weight initialization.
 

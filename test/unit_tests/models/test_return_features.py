@@ -290,8 +290,8 @@ def test_legacy_params(cls, init_kw, fwd_kw, check):
 
 # -- reset_head --
 
-# Exclude SignalJEPA (SSL model, Identity head) and LUNA (no reset_head yet)
-_RESET_MODELS = [p for p in _MODELS if p.id not in ("SignalJEPA", "LUNA")]
+# Exclude SignalJEPA (SSL model, Identity head)
+_RESET_MODELS = [p for p in _MODELS if p.id != "SignalJEPA"]
 
 
 @pytest.mark.parametrize("cls, nc, kw, has_cls", _RESET_MODELS)
@@ -325,7 +325,7 @@ def _build_registered(name, **kwargs):
     Hugging Face loader cannot load weights into uninitialized parameters.
     """
     signal_params = _get_signal_params(_REGISTRY[name])
-    return _ALL_MODELS[name](**signal_params, **kwargs).eval()
+    return _ALL_MODELS[name](**{**signal_params, **kwargs}).eval()
 
 
 @pytest.mark.parametrize("name", _RESET_HEAD_CASES)
@@ -349,7 +349,7 @@ def test_reset_head_model_reloads_after_saving(name, tmp_path):
 
 
 @pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
-@pytest.mark.parametrize("name", ["EEGDINO", "EEGPT"])  # heads with dropout
+@pytest.mark.parametrize("name", ["EEGDINO", "EEGPT", "LUNA"])  # heads with dropout
 def test_from_pretrained_new_n_outputs_is_deterministic_in_eval(name, tmp_path):
     saved = _build_registered(name)
     saved.save_pretrained(tmp_path)
@@ -371,6 +371,7 @@ def test_from_pretrained_new_n_outputs_is_deterministic_in_eval(name, tmp_path):
         pytest.param("BENDR", {"final_layer": False}, id="BENDR"),
         pytest.param("CBraMod", {"return_encoder_output": True}, id="CBraMod"),
         pytest.param("EEGDINO", {"return_encoder_output": True}, id="EEGDINO"),
+        pytest.param("LUNA", {"n_outputs": 0}, id="LUNA"),
     ],
 )
 def test_reset_head_on_feature_extractor_reloads_as_classifier(name, kwargs, tmp_path):
