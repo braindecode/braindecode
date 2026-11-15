@@ -1222,8 +1222,16 @@ def test_luna_variants_parameter_count_hierarchy(
 def test_luna_variants_device_compatibility(
     luna_base_model, luna_large_model, luna_huge_model
 ):
-    """Test LUNA variants work correctly on CPU."""
+    """Test LUNA variants give the CPU output on the available accelerators."""
     x = torch.randn(2, 22, 1000)
+    devices = [
+        device
+        for device, available in [
+            ("cuda", torch.cuda.is_available()),
+            ("mps", torch.backends.mps.is_available()),
+        ]
+        if available
+    ]
 
     for model_name, model in [
         ("Base", luna_base_model),
@@ -1235,14 +1243,45 @@ def test_luna_variants_device_compatibility(
             output = model(x)
         assert output.shape == (2, 2), f"LUNA {model_name} output shape incorrect"
 
-        # Test CUDA if available
-        if torch.cuda.is_available():
-            model_cuda = model.cuda()
-            x_cuda = x.cuda()
+        for device in devices:
             with torch.no_grad():
-                output_cuda = model_cuda(x_cuda)
-            assert output_cuda.shape == (2, 2)
-            assert output_cuda.device.type == "cuda"
+                output_device = model.to(device)(x.to(device))
+            assert output_device.device.type == device
+            # GPU FFT noise must not flip the DC/Nyquist phase (a flip moves
+            # outputs by ~1e-2; float32 GPU arithmetic, by ~1e-5).
+            torch.testing.assert_close(output_device.cpu(), output, rtol=0, atol=5e-4)
+            model.to("cpu")
+
+
+@pytest.mark.parametrize("patch_size", [40, 33])
+def test_luna_phase_ignores_fft_noise_on_real_bins(patch_size, monkeypatch):
+    """Sign noise in the DC/Nyquist imaginary part must not flip the phase.
+
+    CUDA and MPS FFTs leave such noise; CPU gives an exact +0. This injects
+    the noise on CPU, so CI checks the fix without a GPU.
+    """
+    torch.manual_seed(0)
+    embedder = luna_module._FrequencyFeatureEmbedder(
+        patch_size=patch_size, embed_dim=16
+    ).eval()
+    x = torch.randn(2, 3, 4 * patch_size)
+    x[0, 0, :patch_size] = -1.0  # a negative DC bin, phase pi
+    with torch.no_grad():
+        expected = embedder(x)
+
+    real_rfft = luna_module.fft.rfft
+
+    def noisy_rfft(tensor, dim=-1):
+        freq = real_rfft(tensor, dim=dim)
+        noise = torch.zeros_like(freq.imag)
+        noise[..., 0] = -1e-7
+        if patch_size % 2 == 0:
+            noise[..., -1] = -1e-7
+        return torch.complex(freq.real, freq.imag + noise)
+
+    monkeypatch.setattr(luna_module.fft, "rfft", noisy_rfft)
+    with torch.no_grad():
+        torch.testing.assert_close(embedder(x), expected, rtol=0, atol=0)
 
 
 def test_luna_variants_different_channel_counts(luna_base_config):

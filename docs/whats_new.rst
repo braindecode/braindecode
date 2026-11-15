@@ -28,6 +28,12 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- :class:`braindecode.models.LUNA` takes ``return_features=True``, like the other
+  foundation models: it returns the normed encoder output before the head,
+  ``(batch, n_patches, num_queries * embed_dim)``, as ``"features"`` (:gh:`1565` by `Hamza Abdelhedi`_).
+- :class:`braindecode.models.LUNA` implements ``reset_head``, so
+  ``from_pretrained`` can load it with a new ``n_outputs``; a reconstruction
+  model (``n_outputs=0``) becomes a classifier (:gh:`1568` by `Hamza Abdelhedi`_).
 - Add :class:`braindecode.models.BBL`, the MEG encoder of *The Brain's Bitter Lesson* (Jayalath et al., ICML 2025): a dataset-conditional convolutional projector, a :class:`~braindecode.modules.SEANetEncoder` and a subject embedding, with optional ``subject_index``/``dataset_index`` and the paper's mean-subject-embedding fallback. It accepts ``ch_mask``: padded channels become the zero sensor slots of the reference collator, so each recording of a padded batch gives its output alone; as the projector mixes all sensors, ``return_features`` has no per-channel ``tokens``. Opt-in ``temporal_mask`` hides raw time samples before any convolution/context, while ``return_temporal_features=True`` with ``return_features=True`` exposes the actual pre-pool sequence and stride/valid-time/context metadata for downstream SSL objectives (no pretraining task heads). The released CamCAN checkpoint, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/bbl-pretrained`` and gives the authors' features, logits and gradients bit for bit on CPU in float32 (by `Bruno Aristimunha`_)
 - Add :class:`braindecode.models.MEGGPT` (MEG-GPT, Huang et al., Imaging Neuroscience 2026), a source-space MEG foundation model: the EphysTokenizer encoder turns each parcel into discrete tokens and a causal time-attention GPT with patched keys and values embeds them; the released Cam-CAN checkpoint, converted without the session embedding the paper discards for downstream use, is on the Hugging Face Hub at ``braindecode/meggpt-pretrained``; ``return_features=True`` also returns the per-channel ``"tokens"`` ``(batch, n_chans, n_segments * n_last_steps, embed_dim)`` and takes a ``ch_mask`` of padded channels, whose features and tokens are zero (the flattened head is tied to ``n_chans``, so logits refuse ``ch_mask``); optional ``token_mask`` hides clean token embeddings before the causal decoder, and ``encode_tokens`` supplies cached-ID encoding with shifted next-token targets, retained-tail indices and valid/selected loss masks for a separate vocabulary head (by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.MEGXL`, the MEG-XL brain-to-text foundation model (Jayalath and Parker Jones, ICML 2026): a frozen BioCodec tokenizer and a criss-cross transformer pretrained on 150 s MEG windows; the released ``meg-xl-med-v2.ckpt``, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/megxl-pretrained`` and matches the authors' code on CPU. Its ``forward`` refuses ``ch_mask`` with a ``ValueError`` (the head flattens ``n_chans * latent_dim`` features and the sensor geometry is the ``chs_info`` montage), and ``return_features`` gives the pooled ``"features"`` only, no ``"tokens"``. The opt-in ``encode``/``encode_codes`` mask replaces projected code content before sensor metadata and attention, returning real temporal hidden states for caller-owned masked-RVQ-code prediction; it adds no default parameters and expects equal valid-length full-montage windows (by `Bruno Aristimunha`_).
@@ -91,6 +97,12 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.LUNA` gives the phase of the DC bin, and of the
+  Nyquist bin of an even ``patch_size``, as ``0`` or ``pi`` on every device.
+  CUDA and MPS FFTs leave rounding noise of either sign in the imaginary part of
+  these real bins, so a negative bin got ``pi`` or ``-pi`` at random; on MPS
+  this moved the outputs of the released weights on random-walk input by 7 %
+  from the CPU ones. CPU outputs are unchanged (:gh:`1566` by `Hamza Abdelhedi`_).
 - The Eldele et al. (2021) sleep staging tutorial (``plot_sleep_staging_eldele2021.py``) splits train and validation by subject, as its text says; ``split`` took the ids as recording indices, so it trained on subjects 0-1 and validated on subject 2 while subjects 3-5 were loaded and unused (:gh:`1559` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ZUNA` defaults to ``pos_bins=100``, the value ZUNA1.1 was trained with (paper Table II and Zyphra's configs); the old default ``50`` was ZUNA1's and gave the released encoder outputs up to 5.2 away from the original. The ``braindecode/ZUNA`` checkpoint now holds the ZUNA1.1 encoder in braindecode's parameter names (the earlier ZUNA1 file loaded no parameter into the class) and sets ``pos_bins`` in its config (:gh:`1557` by `Bruno Aristimunha`_).
 - ``from_pretrained`` of :class:`braindecode.models.Brant` loads a checkpoint at
@@ -2965,3 +2977,4 @@ Authors
 .. _Seáic Mac Murchadha: https://github.com/seaic-mac-murchadha
 .. _Bhargav Kowshik: https://github.com/bkowshik
 .. _Mark Santos: https://www.markstudios.com
+.. _Hamza Abdelhedi: https://github.com/BabaSanfour
