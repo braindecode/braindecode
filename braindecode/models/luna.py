@@ -16,7 +16,7 @@ the LICENSE Of this file is APACHE-2.0.
 import math
 import warnings
 from functools import partial
-from typing import Any, Dict, Optional, Tuple, Type
+from typing import Any, Dict, Optional, Tuple, Type, Union
 
 import torch
 import torch.fft as fft
@@ -391,7 +391,8 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         channel_locations: Optional[torch.Tensor] = None,
         channel_names: Optional[torch.Tensor] = None,
         ch_mask: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+        return_features: bool = False,
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """Forward pass.
 
         ``ch_mask`` is an optional ``(batch, n_chans)`` mask of real channels,
@@ -399,6 +400,10 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         no part in the patch-embedding norms, the location range and the
         channel cross-attention, so each recording gets its output alone.
         Reconstruction (``n_outputs=0``) refuses it.
+
+        With ``return_features=True``, returns ``{"features": Tensor,
+        "cls_token": None}``: the normed encoder output before the head,
+        ``(batch, n_patches, num_queries * embed_dim)``.
         """
         x_signal = X
         B, C, _ = x_signal.shape
@@ -433,6 +438,12 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             x = blk(x)
         x_latent = self.norm(x)
 
+        if return_features:
+            features: Dict[str, Optional[torch.Tensor]] = {
+                "features": x_latent,
+                "cls_token": None,
+            }
+            return features
         if self.num_classes > 0:
             return self.final_layer(x_latent)
         return self._reconstruct(x_latent, channel_locations_emb, channel_names)
