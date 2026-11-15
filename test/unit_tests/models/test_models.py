@@ -6579,38 +6579,27 @@ def test_fnirs_foundation_models_non_divisible_windows_follow_the_reference():
         assert torch.equal(model.eval()(x), model(x[..., :100]))
 
 
-def test_jung_inspired_mae_released_checkpoint_loads_strictly():
-    """The GeoNIRS release ``jung_mae.pt`` loads with strict=True (decoder dropped)."""
-    path = os.environ.get("BRAINDECODE_JUNGMAE_CKPT", "")
-    if not os.path.isfile(path):
-        pytest.skip("set BRAINDECODE_JUNGMAE_CKPT to the released jung_mae.pt")
-    payload = torch.load(path, map_location="cpu", weights_only=False)
-    model = JungInspiredMAE(n_chans=20, n_outputs=2, n_times=150, sfreq=5.0).eval()
-    model.load_state_dict(payload, strict=True)
-    with torch.no_grad():
-        out = model(torch.randn(2, 20, 150))
-    assert out.shape == (2, 2)
-    assert torch.isfinite(out).all()
-
-
 @pytest.mark.parametrize(
     "model_cls,kwargs,n_times",
     [
         (GeoNIRS, {"temporal_layers": 1, "num_heads": 4, "embedding_dim": 64,
-                   "pool": "mean_std", "channel_order": "interleaved"}, 60),
+                   "pool": "mean_std"}, 60),
         (MtReNIRS, {"depth": 2, "n_heads": 2, "d_model": 32,
                     "pool": "channel_temporal_mean"}, 100),
     ],
 )
 def test_fnirs_foundation_models_interleaved_chs_info(model_cls, kwargs, n_times):
-    chs_info = _interleaved_fnirs_chs(4)
-    model = model_cls(chs_info=chs_info, n_outputs=3, n_times=n_times, sfreq=5.0, **kwargs)
-    x = torch.randn(2, len(chs_info), n_times)
+    """With the same weights, MNE-ordered chs_info and input give the
+    logits of the stacked chs_info on the stacked input."""
+    stacked = model_cls(chs_info=_fnirs_chs_info(4), n_outputs=3, n_times=n_times, **kwargs)
+    mne_order = model_cls(
+        chs_info=_interleaved_fnirs_chs(4), n_outputs=3, n_times=n_times, **kwargs
+    )
+    mne_order.load_state_dict(stacked.state_dict())
+    x = torch.randn(2, 8, n_times)  # [HbO_1..HbO_4, HbR_1..HbR_4]
+    x_mne = x.reshape(2, 2, 4, n_times).transpose(1, 2).reshape(2, 8, n_times)
     with torch.no_grad():
-        logits = model.eval()(x)
-        features = model(x, return_features=True)["features"]
-    assert logits.shape == (2, 3) and torch.isfinite(logits).all()
-    assert features.shape[0] == 2
+        torch.testing.assert_close(mne_order.eval()(x_mne), stacked.eval()(x))
 
 
 @pytest.mark.parametrize("model_cls", [GeoNIRS, MtReNIRS])
@@ -6736,24 +6725,42 @@ def test_mtrenirs_chromophores_and_valid_window_pooling():
 _FNIRS_WEIGHTS = os.environ.get("BRAINDECODE_FNIRS_WEIGHTS", "")
 
 
+# features[:, :4] of the authors' code (GeoNIRS 81f8995, MtReNIRS 16c3082) on
+# the input below, computed in Voyager Job bd-fix1564-probe-11150236
 @pytest.mark.parametrize(
-    "file,cls,kwargs",
+    "file,cls,kwargs,expected",
     [
-        ("geonirs_base.pt", GeoNIRS, {"n_times": 150, "sfreq": 5.0}),
+        ("geonirs_base.pt", GeoNIRS, {"n_times": 150, "sfreq": 5.0},
+         [[0.02500118874013424, 0.04738733917474747, 0.007597371935844421, 0.005497157108038664],
+          [-0.12108907848596573, 0.2241547405719757, -0.18274709582328796, -0.03251400962471962]]),
         ("geonirs_large.pt", GeoNIRS, {"n_times": 150, "sfreq": 5.0,
                                        "embedding_dim": 384, "num_heads": 12,
-                                       "temporal_layers": 6, "output_feature_dim": 128}),
-        ("mtrenirs_10s.pt", MtReNIRS, {"n_times": 100, "sfreq": 10.0}),
+                                       "temporal_layers": 6, "output_feature_dim": 128},
+         [[-3.8912150859832764, -0.606697678565979, -0.19837510585784912, -6.412940979003906],
+          [-5.242615699768066, -2.4871740341186523, -0.46112173795700073, -3.506788730621338]]),
+        ("mtrenirs_10s.pt", MtReNIRS, {"n_times": 100, "sfreq": 10.0},
+         [[1.3799299001693726, 1.1365183591842651, 1.0999616384506226, 0.12654231488704681],
+          [-0.03779871016740799, -0.9599133729934692, 0.5302731394767761, 0.7867113351821899]]),
+        ("jung_mae.pt", JungInspiredMAE, {"n_times": 150, "sfreq": 5.0},
+         [[0.0012979282764717937, -0.39332136511802673, 0.23441119492053986, 0.3510328233242035],
+          [-0.34959089756011963, -0.3680170476436615, 0.44219091534614563, 0.24921967089176178]]),
     ],
 )
-def test_fnirs_released_checkpoints_load_strictly(file, cls, kwargs):
-    """The official checkpoints, as released (decoders included), load with
-    ``strict=True`` from the directory in ``BRAINDECODE_FNIRS_WEIGHTS``."""
+def test_fnirs_released_checkpoints_match_the_authors_code(file, cls, kwargs, expected):
+    """The official checkpoints in ``BRAINDECODE_FNIRS_WEIGHTS``, as released
+    (decoders included), load strictly with ``weights_only=True``, every
+    backbone tensor is the checkpoint's, and the features are the authors'."""
     path = os.path.join(_FNIRS_WEIGHTS, file)
     if not _FNIRS_WEIGHTS or not os.path.isfile(path):
         pytest.skip(f"{file} not in BRAINDECODE_FNIRS_WEIGHTS")
+    payload = torch.load(path, map_location="cpu", weights_only=True)
     model = cls(chs_info=_fnirs_chs_info(10), n_outputs=2, **kwargs).eval()
-    model.load_state_dict(torch.load(path, map_location="cpu", weights_only=False), strict=True)
+    model.load_state_dict(payload, strict=True)
+    state = model.state_dict()
+    backbone = [k for k in state if not k.startswith("final_layer.")]
+    assert all(torch.equal(state[k], payload["model"][k]) for k in backbone)
+    torch.manual_seed(0)
+    x = torch.randn(2, model.n_chans, model.n_times)
     with torch.no_grad():
-        out = model(torch.randn(2, model.n_chans, model.n_times))
-    assert out.shape == (2, 2) and torch.isfinite(out).all()
+        features = model(x, return_features=True)["features"]
+    torch.testing.assert_close(features[:, :4], torch.tensor(expected), rtol=0, atol=1e-5)
