@@ -61,6 +61,38 @@ authors:
     family-names: Gadonneix
     affiliation: "Université Paris Cité, Paris, France"
     orcid: "https://orcid.org/0009-0000-7490-8415"
+  - given-names: Adam
+    family-names: Mounir
+    alias: adammounir
+  - given-names: Zhibo
+    family-names: Zhang
+    alias: lindicaphxag-tech
+  - given-names: Anton
+    family-names: Soloviev
+    alias: antonsoo
+  - given-names: Qing
+    family-names: Li
+    alias: qinxwew
+  - given-names: Raghav
+    family-names: Rathi
+    alias: raghav-rathi
+  - given-names: Vandit
+    family-names: Shah
+    alias: ShahVandit
+  - given-names: Arthur
+    alias: Arthur031221
+  - given-names: Mahir
+    family-names: Jain
+    alias: mahirjain01
+  - given-names: Bhargav
+    family-names: Kowshik
+    alias: bkowshik
+  - given-names: Yiheng
+    family-names: Li
+    alias: YihengLi-1
+  - given-names: Fashad
+    family-names: Ahmed
+    alias: Fashad-Ahmed
   - given-names: Thomas
     family-names: Moreau
     affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
@@ -95,7 +127,7 @@ keywords:
   - eeg
   - ieeg
 identifiers:
-  - description: "Code archive on Zenodo"
+  - description: "Code archive on Zenodo (concept DOI, all versions)"
     type: doi
-    value: 10.5281/zenodo.17699192
+    value: 10.5281/zenodo.8214376
 ...
