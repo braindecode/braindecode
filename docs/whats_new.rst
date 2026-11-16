@@ -126,7 +126,7 @@ Bug fixes
   pretrained model cite Braindecode with its Zenodo concept DOI,
   ``10.5281/zenodo.8214376``, which resolves to the latest release; the DOI they
   gave, ``10.5281/zenodo.17699192``, is the 1.2.0 archive. The author list adds
-  the contributors of 2.0.0 (by `Bruno Aristimunha`_).
+  the contributors of 2.0.0 (:gh:`1571` by `Bruno Aristimunha`_).
 
 Code health
 ============
