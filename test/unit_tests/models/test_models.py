@@ -1388,6 +1388,17 @@ def test_channels_without_positions_give_finite_outputs(name):
         assert torch.isfinite(model(torch.randn(2, 4, 1000))).all()
 
 
+@pytest.mark.parametrize("name", ["CORTEG", "LUNA"])
+def test_a_montage_with_unplaced_channels_is_refused(name):
+    """One channel without a position must not void the others' positions."""
+    info = mne.create_info(["Cz", "C3", "C4", "X1"], 250.0, "eeg")
+    info.set_montage("standard_1005", on_missing="ignore")
+    with pytest.raises(ValueError, match=r"none for \['X1'\]"):
+        all_models_dict[name](
+            n_outputs=2, n_chans=4, chs_info=info["chs"], n_times=1000, sfreq=250.0
+        )
+
+
 def test_gcnsnet_adjacency():
     X = torch.randn(5, 64, 100)
     adjacency = GCNsNet._adjacency(X)

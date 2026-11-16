@@ -23,11 +23,7 @@ from braindecode.models.steegformer import (
     _TemporalPositionalEncoding,
     _TransformerEncoderBlock,
 )
-from braindecode.models.util import (
-    extract_channel_locations_from_chs_info,
-    has_valid_locations,
-    valid_location_mask,
-)
+from braindecode.models.util import chs_info_positions
 from braindecode.modules import PatchTokenizer
 from braindecode.util import resolve_montage_name
 
@@ -255,21 +251,7 @@ class CORTEG(EEGModuleMixin, nn.Module):
         self.merge_at = depth - n_merge_blocks
         self.knn_k = knn_k
 
-        default_pos: Optional[torch.Tensor] = None
-        chs_info = self._chs_info
-        if has_valid_locations(chs_info):
-            locations = extract_channel_locations_from_chs_info(
-                chs_info, fill_missing=True
-            )
-            default_pos = torch.as_tensor(locations, dtype=torch.float32)
-            unplaced = (~valid_location_mask(default_pos))[:, 0].tolist()
-            if any(unplaced):
-                names = [ch["ch_name"] for ch, u in zip(chs_info, unplaced) if u]
-                raise ValueError(
-                    f"CORTEG places each electrode by its 3D position, but chs_info "
-                    f"has none for {names}; drop these channels, or pass pos at "
-                    "each call."
-                )
+        default_pos = chs_info_positions(self._chs_info, "CORTEG")
         # Montage-specific, rebuilt from chs_info: not saved with the weights.
         self.register_buffer("default_pos", default_pos, persistent=False)
         self.register_buffer("vocab_positions", vocab_positions, persistent=False)

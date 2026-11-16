@@ -97,6 +97,14 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.LUNA` raises when ``chs_info`` has positions for
+  some channels but not all (MNE stores ``NaN`` for the others). It gave every
+  channel a default position, evenly spaced along x, so one name missing from the
+  montage silently replaced the positions of all the others. A ``chs_info``
+  without any position keeps the default positions. LUNA and
+  :class:`braindecode.models.CORTEG` share this rule; CORTEG now also names a
+  channel whose position is ``NaN`` when it is built, where it took the montage
+  for one without positions (:gh:`XXXX` by `Hamza Abdelhedi`_).
 - :class:`braindecode.models.LUNA` gives the phase of the DC bin, and of the
   Nyquist bin of an even ``patch_size``, as ``0`` or ``pi`` on every device.
   CUDA and MPS FFTs leave rounding noise of either sign in the imaginary part of

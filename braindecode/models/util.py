@@ -1240,6 +1240,31 @@ def valid_location_mask(locations: torch.Tensor) -> torch.Tensor:
     )
 
 
+def chs_info_positions(chs_info, model_name: str) -> Optional[torch.Tensor]:
+    """``(n_chans, 3)`` positions of ``chs_info``, or None when it has none.
+
+    A ``chs_info`` with positions for some channels only raises, naming the
+    others: a model must neither invent their positions nor ignore the given ones.
+    """
+    if chs_info is None:
+        return None
+    locations = torch.as_tensor(
+        extract_channel_locations_from_chs_info(chs_info, fill_missing=True),
+        dtype=torch.float32,
+    )
+    placed = valid_location_mask(locations)[:, 0].tolist()
+    if not any(placed):
+        return None
+    if not all(placed):
+        names = [ch["ch_name"] for ch, ok in zip(chs_info, placed) if not ok]
+        raise ValueError(
+            f"{model_name} needs the 3D position of each channel, but chs_info has "
+            f"none for {names}; drop these channels, or pass the positions at each "
+            "call."
+        )
+    return locations
+
+
 def warn_if_sfreq_differs(
     model_name: str, sfreq: Optional[float], pretrained_sfreq: float
 ) -> None:
