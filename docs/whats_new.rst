@@ -28,6 +28,11 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- :class:`braindecode.models.BIOT` returns its transformer tokens under
+  ``"tokens"`` with ``return_features=True``, ``(batch, n_chans, n_patches,
+  emb_size)`` and zero for padded channels, like CBraMod and LaBraM; they could
+  only be read with a forward hook on ``encoder.transformer``. Outputs and
+  ``"features"`` are unchanged (:gh:`XXXX` by `Hamza Abdelhedi`_).
 - :class:`braindecode.models.LUNA` takes ``return_features=True``, like the other
   foundation models: it returns the normed encoder output before the head,
   ``(batch, n_patches, num_queries * embed_dim)``, as ``"features"`` (:gh:`1565` by `Hamza Abdelhedi`_).
