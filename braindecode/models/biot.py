@@ -257,8 +257,8 @@ class BIOT(EEGModuleMixin, nn.Module):
         x: Tensor
             (batch_size, n_channels, n_times)
         return_features : bool
-            If True, return a dict with ``"features"`` and ``"cls_token"``
-            instead of the classification output.
+            If True, return a dict with ``"features"``, ``"cls_token"`` and
+            ``"tokens"`` instead of the classification output.
         ch_mask : torch.Tensor, optional
             ``(batch, n_chans)`` mask of real channels, see
             :func:`~braindecode.functional.check_ch_mask`. Padded channels are
@@ -269,16 +269,24 @@ class BIOT(EEGModuleMixin, nn.Module):
         torch.Tensor or tuple or dict
             Default: ``torch.Tensor`` of shape ``(batch_size, n_outputs)``.
             If ``return_features=True``: ``dict`` with ``"features"``
-            ``(batch_size, emb_size)`` and ``"cls_token"`` (``None``).
+            ``(batch_size, emb_size)``, the mean of the tokens, ``"cls_token"``
+            (``None``) and ``"tokens"`` ``(batch_size, n_channels, n_patches,
+            emb_size)``, the transformer output, zero for padded channels.
             If legacy ``return_feature=True`` (init param):
             ``(out, emb)`` tuple (ignored when ``return_features=True``).
         """
-        emb = self.encoder(x, ch_mask=check_ch_mask(ch_mask, x))
+        ch_mask = check_ch_mask(ch_mask, x)
+        tokens, token_mask = self.encoder(x, ch_mask=ch_mask)
+        emb = masked_mean(tokens, token_mask, [1])
 
         if return_features:
+            tokens = tokens.unflatten(1, (x.shape[1], -1))
+            if ch_mask is not None:
+                tokens = tokens.masked_fill(~ch_mask[:, :, None, None], 0.0)
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": emb,
                 "cls_token": None,
+                "tokens": tokens,
             }
             return out
 
@@ -483,8 +491,7 @@ class _BIOTEncoder(nn.Module):
         and then embedded using a patch embedding. The channel token
         is added to the patch embedding, and then positional encoding
         is applied. The resulting embeddings are concatenated and
-        passed through a transformer layer. The mean of the resulting
-        embeddings is returned.
+        passed through a transformer layer, whose tokens are returned.
 
         For each channel in channels, the channels are transformed into a
         spectrogram with STFT; The spectrogram representation is permuted
@@ -495,7 +502,7 @@ class _BIOTEncoder(nn.Module):
         the patch embedding, and then positional encoding is applied.
 
         The resulting embeddings are concatenated and passed through a
-        transformer layer. The mean of the resulting embeddings is returned.
+        transformer layer.
 
         Parameters
         ----------
@@ -512,8 +519,12 @@ class _BIOTEncoder(nn.Module):
 
         Returns
         -------
-        emb: Tensor
-            (batch_size, emb_size)
+        tokens: Tensor
+            (batch_size, n_channels * n_patches, emb_size), channel-major
+            (with ``perturb``, channels keep different numbers of patches).
+        token_mask: Tensor or None
+            (batch_size, n_channels * n_patches) mask of the tokens of real
+            channels; None without ``ch_mask``.
         """
         batch_size, n_chans, n_times = x.shape
         if ch_mask is not None:
@@ -572,5 +583,4 @@ class _BIOTEncoder(nn.Module):
         token_mask: Optional[torch.Tensor] = None
         if ch_mask is not None:
             token_mask = torch.cat(token_masks, dim=1)
-        # (batch_size, emb)
-        return masked_mean(self.transformer(emb, token_mask), token_mask, [1])
+        return self.transformer(emb, token_mask), token_mask
