@@ -192,20 +192,28 @@ def masked_group_norm(
     # Remove NaNs before subtraction, squaring and affine multiplication;
     # masking only the resulting statistics does not protect backward.
     x = x.masked_fill(padding, 0.0)
-    # (batch, ..., group, channel): the mask covers the leading axes.
-    grouped = x.movedim(1, -1).unflatten(-1, [num_groups, -1])
+    # (batch, group, channel, ...): a view of the channel axis, no permute.
     # At least float32 statistics, as group_norm accumulates reduced precision.
-    grouped = grouped.to(torch.promote_types(x.dtype, torch.float32))
+    grouped = x.unflatten(1, [num_groups, -1]).to(
+        torch.promote_types(x.dtype, torch.float32)
+    )
     dims: List[int] = []
-    for dim in range(1, grouped.dim() - 2):
+    for dim in range(2, grouped.dim()):
         dims.append(dim)
-    dims.append(grouped.dim() - 1)
-    stats_shape = [grouped.shape[0]] + [1] * (grouped.dim() - 3) + [num_groups, 1]
-    mean = masked_mean(grouped, mask, dims).reshape(stats_shape)
-    centred = grouped - mean
+    stats_shape = [x.shape[0]] + [1] * (grouped.dim() - 1)
+    # Real entries per sample and group, from the small mask rather than a
+    # full-size masked count: channels per group times the axes past the mask.
+    per_position = x.shape[1] // num_groups
+    for size in x.shape[mask.dim() + 1 :]:
+        per_position *= size
+    count = (mask.reshape(mask.shape[0], -1).sum(1) * per_position).to(grouped.dtype)
+    count = count.reshape(stats_shape)
+    # Padded entries are zero, so plain sums are the masked sums.
+    mean = grouped.sum(dims, keepdim=True) / count
+    centred = (grouped - mean).masked_fill(padding.unsqueeze(1), 0.0)
     # Biased variance, as group_norm.
-    var = masked_mean(centred.square(), mask, dims).reshape(stats_shape)
-    out = (centred * torch.rsqrt(var + eps)).flatten(-2).movedim(-1, 1)
+    var = centred.square().sum(dims, keepdim=True) / count
+    out = (centred * torch.rsqrt(var + eps)).flatten(1, 2)
     affine_shape = [1, x.shape[1]] + [1] * (x.dim() - 2)
     if weight is not None:
         out = out * weight.reshape(affine_shape)
