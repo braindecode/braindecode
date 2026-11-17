@@ -486,3 +486,47 @@ def test_masked_group_norm_nan_padding_backward(scripted):
     torch.testing.assert_close(bias.grad, reference_bias.grad)
     assert torch.equal(x.grad[~real], torch.zeros_like(x.grad[~real]))
     assert torch.equal(out[~real], torch.zeros_like(out[~real]))
+
+
+def _masked_group_norm_reference(x, num_groups, mask, weight, bias, eps):
+    """The permuting implementation masked_group_norm replaced, for equivalence."""
+    from braindecode.functional import masked_mean
+
+    padding = ~mask.reshape(
+        [mask.shape[0], 1] + list(mask.shape[1:]) + [1] * (x.dim() - mask.dim() - 1)
+    )
+    x = x.masked_fill(padding, 0.0)
+    grouped = x.movedim(1, -1).unflatten(-1, [num_groups, -1])
+    grouped = grouped.to(torch.promote_types(x.dtype, torch.float32))
+    dims = list(range(1, grouped.dim() - 2)) + [grouped.dim() - 1]
+    stats_shape = [grouped.shape[0]] + [1] * (grouped.dim() - 3) + [num_groups, 1]
+    mean = masked_mean(grouped, mask, dims).reshape(stats_shape)
+    centred = grouped - mean
+    var = masked_mean(centred.square(), mask, dims).reshape(stats_shape)
+    out = (centred * torch.rsqrt(var + eps)).flatten(-2).movedim(-1, 1)
+    affine_shape = [1, x.shape[1]] + [1] * (x.dim() - 2)
+    out = out * weight.reshape(affine_shape) + bias.reshape(affine_shape)
+    return out.to(x.dtype).masked_fill(padding, 0.0)
+
+
+@pytest.mark.parametrize(
+    "dtype,tol", [(torch.float64, 1e-12), (torch.float32, 1e-5), (torch.bfloat16, 2e-2)]
+)
+@pytest.mark.parametrize("scripted", [False, True])
+def test_masked_group_norm_matches_permuting_reference(dtype, tol, scripted):
+    norm = torch.jit.script(masked_group_norm) if scripted else masked_group_norm
+    g = torch.Generator().manual_seed(0)
+    x = (torch.randn(5, 25, 12, 7, generator=g) * 3 + 2).to(dtype)
+    mask = torch.arange(12) < torch.tensor([12, 1, 7, 11, 4])[:, None]
+    x = x.masked_fill(~mask[:, None, :, None], float("nan"))
+    weight, bias = (torch.randn(25, generator=g).to(dtype) for _ in range(2))
+    grad = torch.randn(x.shape, generator=g).to(dtype)
+    results = []
+    for fn in (_masked_group_norm_reference, norm):
+        args = [t.clone().requires_grad_() for t in (x, weight, bias)]
+        out = fn(args[0], 5, mask, args[1], args[2], 1e-5)
+        out.backward(grad)
+        results.append([out] + [a.grad for a in args])
+    for ref, new in zip(*results):
+        assert new.dtype == ref.dtype and torch.isfinite(new).all()
+        torch.testing.assert_close(new, ref, atol=tol, rtol=tol)
