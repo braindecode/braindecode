@@ -333,17 +333,16 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
 
     def _pool_steps(self, h: Tensor, n_prepared: int, n_times: int) -> Tensor:
         # Mean over the kept steps that sit on a real sample: the last segment
-        # of a padded window may keep steps after the end of the input.
-        steps = torch.arange(n_prepared, device=h.device)
-        # (n_segments * n_last_steps,)
-        steps = steps.unflatten(0, [-1, self.segment_len])[
-            :, -self.n_last_steps :
-        ].flatten()
-        real = steps < n_times
-        # No real step at all (very short window): fall back to the plain mean.
-        real = real | ~real.any()
-        weight = real[None, :, None, None].to(h.dtype)
-        return (h * weight).sum(dim=1) / weight.sum()  # (batch, n_chans, embed_dim)
+        # of a padded window may keep steps after the end of the input. The kept
+        # steps are in time order, so the real ones are a prefix; counting them
+        # from ints keeps forward free of host syncs.
+        first = self.segment_len - self.n_last_steps
+        n_real = 0
+        for start in range(0, n_prepared, self.segment_len):
+            n_real += min(max(n_times - start - first, 0), self.n_last_steps)
+        if n_real == 0:  # window shorter than the first kept step
+            return h.mean(dim=1)  # (batch, n_chans, embed_dim)
+        return h[:, :n_real].mean(dim=1)  # (batch, n_chans, embed_dim)
 
     def _prepare_token_mask(
         self, token_mask: Optional[Tensor], x: Tensor
