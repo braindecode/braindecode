@@ -209,7 +209,9 @@ _UNUSED_IN_FORWARD = {
     "AttnSleep": r"self_attn\.convs\.0\.",  # the reference never convolves the query
     "BrainOmni": r"^blocks\.11\.",  # the reference encode() skips the last block
     "Brant": r"spatial_encoder\.proj_out\.",  # reconstruction head
+    "CBraMod": r"^proj_out\.",  # pretraining reconstruction layer
     "CORTEG": r"^patch_embed_hi\.",  # reads the optional high-gamma stream x_hi
+    "CSBrain": r"^proj_out\.",  # pretraining reconstruction layer
     "CodeBrain": r"residual_blocks\.7\.(rms_norm|res_conv)|^lm_head_",  # skip-only last block, tokenizer heads
     "DANCE": r"^decoder\.",  # event decoder of detect()
     "EEGCLIP": r"^(text_projection\.|logit_scale$)",  # text side, trained via forward_paired()

@@ -714,6 +714,13 @@ models_mandatory_parameters: list[
     ("EEGSym", ["chs_info", "n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("TSception", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "TCCNet",
+        ["n_chans", "n_outputs"],
+        # NinaPro DB1: 10 channels at 100 Hz. TCCNet takes whole gestures of
+        # any length; 300 samples is only a test length.
+        {"n_chans": 10, "n_times": 300, "sfreq": 100.0},
+    ),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("NICE", ["n_chans", "n_outputs", "n_times"], None),
@@ -1281,6 +1288,31 @@ def valid_location_mask(locations: torch.Tensor) -> torch.Tensor:
     return torch.isfinite(locations).all(dim=-1, keepdim=True) & (locations != 0).any(
         dim=-1, keepdim=True
     )
+
+
+def chs_info_positions(chs_info, model_name: str) -> Optional[torch.Tensor]:
+    """``(n_chans, 3)`` positions of ``chs_info``, or None when it has none.
+
+    A ``chs_info`` with positions for some channels only raises, naming the
+    others: a model must neither invent their positions nor ignore the given ones.
+    """
+    if chs_info is None:
+        return None
+    locations = torch.as_tensor(
+        extract_channel_locations_from_chs_info(chs_info, fill_missing=True),
+        dtype=torch.float32,
+    )
+    placed = valid_location_mask(locations)[:, 0].tolist()
+    if not any(placed):
+        return None
+    if not all(placed):
+        names = [ch["ch_name"] for ch, ok in zip(chs_info, placed) if not ok]
+        raise ValueError(
+            f"{model_name} needs the 3D position of each channel, but chs_info has "
+            f"none for {names}; drop these channels, or pass the positions at each "
+            "call."
+        )
+    return locations
 
 
 def warn_if_sfreq_differs(

@@ -143,7 +143,9 @@ class CBraMod(EEGModuleMixin, nn.Module):
     activation : type[nn.Module], default=nn.GELU
         Activation function used in Transformer feedforward layers.
     emb_dim : int, default=200
-        Output embedding dimension.
+        Output dimension of ``proj_out``, the pretraining reconstruction layer.
+        It is kept so the released weights load, but it is not applied: features
+        and head use the encoder output, of size ``d_model``.
     drop_prob : float, default=0.1
         Dropout probability.
     return_encoder_output : bool, default=False
@@ -227,7 +229,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self.encoder = _TransformerEncoder(encoder_layer, num_layers=n_layer)
         self.proj_out = nn.Sequential(nn.Linear(d_model, emb_dim))
 
-        self._emb_dim = emb_dim
+        self._d_model = d_model
         self._patch_size = patch_size
         self._encoder_output = return_encoder_output
         self._init_parameters()
@@ -236,7 +238,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Identity()
         elif self._knows_geometry():
             n_patch = self._n_patch()
-            flat_dim = self.n_chans * n_patch * emb_dim
+            flat_dim = self.n_chans * n_patch * d_model
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.Linear(flat_dim, self.n_outputs)
             )
@@ -253,7 +255,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self._encoder_output = False
         if self._knows_geometry():
             n_patch = self._n_patch()
-            flat_dim = self.n_chans * n_patch * self._emb_dim
+            flat_dim = self.n_chans * n_patch * self._d_model
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.Linear(flat_dim, n_outputs)
             )
@@ -312,7 +314,9 @@ class CBraMod(EEGModuleMixin, nn.Module):
         x = self.rearrange(x)
         patch_emb = self.patch_embedding(x, mask, ch_mask)
         feats = self.encoder(patch_emb, src_key_padding_mask=key_padding_mask)
-        out = self.proj_out(feats)
+        # proj_out is the pretraining reconstruction layer: the original
+        # fine-tuning models replace it by nn.Identity(), so it is not run.
+        out = feats
         if ch_mask is not None:
             out = out.masked_fill(~ch_mask[:, :, None, None], 0.0)
         if return_features:

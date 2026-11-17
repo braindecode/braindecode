@@ -34,7 +34,10 @@ from braindecode.functional import (
 )
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.signal_jepa import _GroupNorm
-from braindecode.models.util import extract_channel_locations_from_chs_info
+from braindecode.models.util import (
+    chs_info_positions,
+    extract_channel_locations_from_chs_info,
+)
 from braindecode.modules import PreNormBlock, TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
 
@@ -177,6 +180,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        chs_info_positions(getattr(self, "_chs_info", None), "LUNA")  # all or none
 
         # Mapping for loading pretrained weights
         self.mapping = {
