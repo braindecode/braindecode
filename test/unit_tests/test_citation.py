@@ -29,7 +29,7 @@ def test_bibtex_and_apa_authors_match_citation_cff():
     for path in COPIES:
         text = (ROOT / path).read_text(encoding="utf-8")
         block = re.search(
-            r"@software\{braindecode,\s*author = \{(.*?)\},\s*title", text, re.S
+            r"@misc\{braindecode,\s*author = \{(.*?)\},\s*title", text, re.S
         )
         found = [
             a.replace("{", "").replace("}", "")
