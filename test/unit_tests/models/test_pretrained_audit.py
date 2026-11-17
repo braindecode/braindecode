@@ -115,7 +115,9 @@ def test_expected_frozen_feature_is_still_not_pretrained():
 def test_buffers_are_optional_and_not_frozen_parameters():
     m = model()
     m.register_buffer("running_estimate", torch.ones(3))
-    r0 = audit_model(m, feature_scope=("running_estimate",))
+    r0 = audit_model(m)
+    with pytest.raises(ValueError, match="include_buffers=True"):
+        audit_model(m, feature_scope=("running_estimate",))
     r1 = audit_model(m, include_buffers=True, feature_scope=("running_estimate",))
     assert r0["feature_unloaded"] == []
     assert r1["feature_unloaded"] == ["running_estimate"]
@@ -177,3 +179,42 @@ def test_loaded_key_missing_from_provenance_is_rejected():
     m._pretrained_provenance = {"mixed": set()}
     with pytest.raises(ValueError, match="loaded-parameter provenance"):
         audit_model(m)
+
+
+def test_misspelled_feature_scope_fails_closed():
+    m = model()
+    with pytest.raises(ValueError, match="matches no model tensor"):
+        audit_model(m, feature_scope=("backbone.", "fc_nrom."))
+    # A zero-length explicit scope remains valid for callers that intentionally
+    # assess no selected features.
+    assert audit_model(m, feature_scope=())["feature_unloaded"] == []
+
+
+def test_frozen_uninitialized_feature_is_reported():
+    m = nn.Module()
+    m.register_parameter(
+        "pending_projection",
+        nn.parameter.UninitializedParameter(requires_grad=False),
+    )
+    m._pretrained_provenance = {"loaded": set(), "mixed": set()}
+    r = audit_model(m, feature_scope=("pending_projection",))
+    assert r["frozen_unexpected"] == ["pending_projection"]
+    assert r["feature_unloaded"] == ["pending_projection"]
+    assert r["feature_unloaded_frozen"] == ["pending_projection"]
+    assert r["uninitialized"] == ["pending_projection"]
+    assert r["counts"]["total_materialized"] == 0
+
+
+def test_scoped_prefix_with_parameters_and_buffers_requires_both():
+    m = nn.Module()
+    m.backbone = nn.BatchNorm1d(3)
+    m._pretrained_provenance = {
+        "loaded": {"backbone.weight", "backbone.bias"},
+        "mixed": set(),
+    }
+    with pytest.raises(ValueError, match="include_buffers=True"):
+        audit_model(m, feature_scope=("backbone.",))
+    r = audit_model(m, feature_scope=("backbone.",), include_buffers=True)
+    assert "backbone.running_mean" in r["feature_unloaded"]
+    assert "backbone.running_var" in r["feature_unloaded"]
+    assert "backbone.weight" not in r["feature_unloaded"]
