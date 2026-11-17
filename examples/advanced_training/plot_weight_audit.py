@@ -9,9 +9,11 @@ appears on the left or on the right of the screen, the eyes move toward
 it, and the slow potential of that eye movement reaches every frontal and
 temporal electrode. A left-versus-right decoder trained on accuracy alone
 takes that signal when it is easier than the sensorimotor rhythm. Gao
-(2026) [1]_ ran a preregistered audit of this shortcut on PhysioNet; the
-decoders trained there beat controls with the lateral eye signal regressed
-out, and the gap grew with the size of the cue-directed deflection.
+(2026) [1]_ ran a preregistered audit of this shortcut on PhysioNet. In an
+exploratory analysis of that audit, the decoders trained there beat
+controls with the lateral eye signal regressed out, and the gap grew with
+the size of the cue-directed deflection (panels a and b of
+``figures/fig_eye_posthoc.png`` in the Zenodo record).
 
 Every audit used so far (probing, erasure, EOG regression, attribution
 maps) needs the data and forward passes. Often the auditor has neither: a
@@ -25,7 +27,7 @@ the weights, then one occlusion test on data to confirm it.
 
     EEGNet learns a filter bank (temporal kernels), one set of spatial
     filters per kernel, and a classifier over the pooled features. Each
-    tensor is readable on its own: the spectral peak of a temporal kernel
+    tensor is readable on its own: the power spectrum of a temporal kernel
     says which band it passes, the spatial weights say which electrodes it
     mixes, and the classifier says which pooled time bins separate the
     classes. Pooling these through the network's own path weights gives a
@@ -85,6 +87,7 @@ state = torch.hub.load_state_dict_from_url(
     file_name="EEGNetv4_PhysionetMI.pkl",
 )
 # The checkpoint predates the max-norm parametrisation of the spatial filters.
+# The new key follows how EEGNet implements that max-norm today.
 state["conv_spatial.parametrizations.weight.original"] = state.pop(
     "conv_spatial.weight"
 )
@@ -106,10 +109,10 @@ model.eval()
 # * **Which channels?** Feature importance is pushed back through the
 #   pointwise weights and the first batch-norm gain to each spatial
 #   filter, then through the absolute spatial weights to each channel.
-# * **Which band?** Each temporal kernel is an FIR filter; the peak of
-#   the kernels' power spectra above the input high-pass (0.5 Hz),
-#   weighted by the importance of the spatial filters they feed, gives the
-#   band.
+# * **Which band?** Each temporal kernel is an FIR filter; the kernels'
+#   power spectra, weighted by the importance of the spatial filters they
+#   feed, are averaged over each band inside the input pass-band
+#   (0.5-40 Hz). The band with the most power is the reading.
 # * **Which time window?** The classifier contrast energy per pooled time
 #   bin, averaged in one-second windows.
 #
@@ -158,8 +161,15 @@ def read_weights(model, ch_names, sfreq, window_start_s, outputs):
     n_fft = 8 * w_temporal.shape[1]
     power = np.abs(np.fft.rfft(w_temporal, n=n_fft, axis=1)) ** 2
     freqs = np.fft.rfftfreq(n_fft, d=1.0 / sfreq)
-    passed = freqs >= L_FREQ  # below the input high-pass, the peak is the kernels' mean
-    peak_hz = float(freqs[passed][np.argmax((kernel_importance @ power)[passed])])
+    # Mean weighted power in each band, inside the pass-band of the input.
+    spectrum = kernel_importance @ power
+    passed = (freqs >= L_FREQ) & (freqs <= H_FREQ)
+    band_power = {
+        name: spectrum[passed & (freqs >= low) & (freqs < high)].mean()
+        for low, high, name in BANDS
+    }
+    total = sum(band_power.values())
+    band_share = {name: float(p / total) for name, p in band_power.items()}
 
     # Classifier time bins -> seconds -> one-second windows.
     energy = (feature_importance[None, :, None] * contrast**2).sum(axis=(0, 1))
@@ -173,14 +183,16 @@ def read_weights(model, ch_names, sfreq, window_start_s, outputs):
 
     return {
         "channel_score": dict(zip(ch_names, channel_score.tolist())),
-        "band": next(name for low, high, name in BANDS if low <= peak_hz < high),
-        "peak_hz": peak_hz,
+        "band": max(band_share, key=band_share.get),
+        "band_share": band_share,
         "window": f"{best:+d}..{best + 1:+d} s",
     }
 
 
 reading = read_weights(model, CHANNELS, SFREQ, 0.0, outputs=[LEFT, RIGHT])
-print(f"Band: {reading['band']} (peak {reading['peak_hz']:.1f} Hz)")
+print(f"Band with the most power: {reading['band']}")
+for name, share in reading["band_share"].items():
+    print(f"  {name:>18s}: {share:.3f}")
 print(f"Window with most classifier contrast: {reading['window']}")
 print(
     "Channel shares:", {ch: round(s, 3) for ch, s in reading["channel_score"].items()}
@@ -188,8 +200,10 @@ print(
 
 ######################################################################
 # Compare the printed band and window with the two signatures above. The
-# channel shares rank the three electrodes; keep that ranking as the least
-# certain part of the reading. The next step checks the reading on data.
+# five values are each band's share of the mean power; they show how far
+# ahead the first band is. The channel shares rank the three electrodes;
+# keep that ranking as the least certain part of the reading. The next
+# step checks the reading on data.
 #
 # Confirm on data: one occlusion test
 # -----------------------------------
@@ -250,18 +264,19 @@ print(f"{len(X)} trials, {X.shape[1]} channels x {X.shape[2]} samples")
 # reads the sensorimotor rhythm does the opposite.
 
 
-def _accuracy(model, X, y):
+def _accuracy(model, X, y, outputs):
+    left, right = outputs
     with torch.no_grad():
         logits = model(torch.as_tensor(X))
-    return float(((logits[:, RIGHT] > logits[:, LEFT]).numpy() == y).mean())
+    return float(((logits[:, right] > logits[:, left]).numpy() == y).mean())
 
 
-def occlusion_check(model, X, y, ch_names, sfreq):
+def occlusion_check(model, X, y, ch_names, sfreq, outputs):
     """Accuracy drop when a band, a time window or a channel is removed."""
-    baseline = _accuracy(model, X, y)
+    baseline = _accuracy(model, X, y, outputs)
 
     def drop(X_changed):
-        return baseline - _accuracy(model, X_changed, y)
+        return baseline - _accuracy(model, X_changed, y, outputs)
 
     def filtered(kind, freqs):
         sos = butter(4, freqs, kind, fs=sfreq, output="sos")
@@ -284,7 +299,7 @@ def occlusion_check(model, X, y, ch_names, sfreq):
     return baseline, drops
 
 
-baseline, drops = occlusion_check(model, X, y, CHANNELS, SFREQ)
+baseline, drops = occlusion_check(model, X, y, CHANNELS, SFREQ, outputs=[LEFT, RIGHT])
 print(f"Left vs right accuracy: {baseline:.1%}")
 for name, value in drops.items():
     print(f"  {name.replace(chr(10), ' '):>18s}: drop {value:+.1%}")
@@ -301,7 +316,9 @@ print(f"Channel whose removal costs the most: {top_data}")
 # little, the data agree with the band and the window read from the
 # weights. The last two printed lines compare the channel the weights
 # rank first with the one whose removal costs the most; the channel
-# ranking is where the reading and the data are most likely to part.
+# ranking is where the reading and the data are most likely to part. Here
+# the two channels differ, so the channel ranking is the one place where
+# the reading from the weights fails in this example.
 
 fig, ax = plt.subplots(figsize=(7, 3.6))
 ax.bar(
@@ -313,7 +330,8 @@ ax.axhline(0, color="black", lw=0.8)
 ax.set_ylabel("Accuracy drop (points)")
 ax.set_title(
     f"PhysioNet EEGNet checkpoint, left vs right {baseline:.0%}; "
-    f"weights say {reading['band']}, {reading['window']}",
+    f"weights say {reading['band']}, {reading['window']}\n"
+    f"top channel: {top_weights} by the weights, {top_data} by occlusion",
     fontsize=9,
 )
 fig.tight_layout()
@@ -322,22 +340,26 @@ fig.tight_layout()
 # What to do with the result
 # --------------------------
 #
-# Record it with the model. A model card for a released decoder should
-# carry a *relies on* field that states the band, window and channels
-# the audit found, the method (weight statistic, occlusion on which
-# subjects), the date, and whether the data check agreed with the weight
-# reading. A decoder whose entry says "below 4 Hz, 0-1 s after the cue" is
-# a different product from one that says "8-30 Hz, 1-3 s", even at the
-# same accuracy. Two more lines make the next audit easier: the exact
-# preprocessing of the input, and the initialisation seed.
+# Record it with the model, in its model card on the Hugging Face Hub. A
+# model loaded with
+# :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` carries the
+# metadata of that card as ``model.card_data`` (training datasets,
+# licence); see :ref:`pretraining-overlap`. The same card can state the
+# band, window and channels the audit found, the method (weight statistic,
+# occlusion on which subjects), the date, and whether the data check
+# agreed with the weight reading. A decoder whose card says "below 4 Hz,
+# 0-1 s after the cue" is a different product from one that says
+# "8-30 Hz, 1-3 s", even at the same accuracy. Two more lines make the
+# next audit easier: the exact preprocessing of the input, and the
+# initialisation seed.
 #
 # The occlusion test here is a check on the reading, not a proof of
-# generalisation. The real test is cross-dataset transfer: a decoder
-# that reads cue-directed eye movements falls to chance on a dataset
-# whose cue is in the centre of the screen, while a decoder that reads
-# the sensorimotor rhythm keeps some of its accuracy. If the weight
-# reading says "eye movement", run that transfer before relying on the
-# decoder.
+# generalisation. The real test is cross-dataset transfer. On a dataset
+# whose cue is in the centre of the screen, one would expect a decoder
+# that reads cue-directed eye movements to fall towards chance, and a
+# decoder that reads the sensorimotor rhythm to keep some of its
+# accuracy. If the weight reading says "eye movement", run that transfer
+# before relying on the decoder.
 #
 # References
 # ----------
