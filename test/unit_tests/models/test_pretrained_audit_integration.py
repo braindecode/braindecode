@@ -21,11 +21,12 @@ def test_eegnet_local_roundtrip_marks_all_parameters_loaded(tmp_path):
     assert report["unexpected_new_or_adapted"] == []
 
 
-def test_eegnet_changed_head_is_expected_but_new(tmp_path):
-    from braindecode.models import EEGNet
+def test_biot_changed_head_is_expected_but_new(tmp_path):
+    from braindecode.models import BIOT
 
-    EEGNet(n_chans=4, n_times=128, n_outputs=2).save_pretrained(tmp_path)
-    model = EEGNet.from_pretrained(tmp_path, n_outputs=3, local_files_only=True)
+    kwargs = dict(n_chans=4, n_times=400, sfreq=200, embed_dim=16, num_heads=2, num_layers=1)
+    BIOT(n_outputs=2, **kwargs).save_pretrained(tmp_path)
+    model = BIOT.from_pretrained(tmp_path, n_outputs=3, local_files_only=True)
     report = audit_model(model, expected_new=("final_layer.",))
     assert report["unexpected_new_or_adapted"] == []
     assert report["loaded_fraction"] < 1.0
