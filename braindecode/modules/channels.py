@@ -403,22 +403,26 @@ class ChannelLayer(nn.Module):
         near = np.where(np.isnan(std).any(1), dist, np.inf)
         W = np.zeros((len(mono), len(names)))
         for k, m in enumerate(mono):
-            for hit in (low == m.lower(), alias[k], near[k] <= 0.015):
+            # Measured names take precedence over spatial proximity. In
+            # particular, B-A at the same midpoint as A-B needs a -1 gain,
+            # not the +1 copy that the 15 mm fallback would otherwise make.
+            direct = (low == m.lower()) & keep
+            if direct.any():
+                j = np.flatnonzero(direct)
+                W[k, j[np.argmin(near[k][j])]] = 1.0
+                continue
+            if m.count("-") == 1:
+                positive, negative = m.split("-")
+                reverse = (low == f"{negative}-{positive}".lower()) & keep
+                if reverse.any():
+                    j = np.flatnonzero(reverse)
+                    W[k, j[np.argmin(near[k][j])]] = -1.0
+                    continue
+            for hit in (alias[k], near[k] <= 0.015):
                 if (hit & keep).any():
                     j = np.flatnonzero(hit & keep)
                     W[k, j[np.argmin(near[k][j])]] = 1.0
                     break
-        # A measured B-A is an exact sign-reversed A-B. Prefer an actual
-        # bipolar recording over any interpolation, with the same precedence
-        # as a direct A-B name match. Do not infer a reference from a name.
-        for k, m in enumerate(mono):
-            if m.count("-") != 1 or np.any(W[k]):
-                continue
-            positive, negative = m.split("-")
-            reverse = f"{negative}-{positive}"
-            hits = np.flatnonzero((low == reverse.lower()) & keep)
-            if len(hits):
-                W[k, hits[0]] = -1.0
         observed = np.abs(W).sum(1) > 0
         copied = observed[self._whole][:, None]  # a measured A-B target: copy it
         D = np.where(copied, np.eye(len(mono))[self._whole], self._D)
