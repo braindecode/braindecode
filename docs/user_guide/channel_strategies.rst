@@ -52,13 +52,11 @@ not know within 15 mm. The strategy fills the other targets:
 Positions come from ``loc``, else from ``standard_1005`` by name. ``spline``, ``field``
 and ``source`` need at least four positioned channels; a map whose row gain exceeds 2
 warns. A target without a position (BENDR's ``SCALE``) is zero unless the input has it;
-a target named ``A-B`` (BIOT) is ``V(A) - V(B)``. If only the
-measured reverse ``B-A`` exists, the layer uses its explicit negative rather
-than reconstructing or interpolating the target (also for ``"exact"``).
-This assumes those bipolar labels faithfully describe measured voltage
-differences; unrelated reference montages cannot be inferred from names.
-Non-EEG channels raise unless
-``channel_strategy_kwargs={"drop_non_eeg": True}``. The layer runs in eager mode;
-TorchScript works under ``native`` only.
+a target named ``A-B`` (BIOT) is ``V(A) - V(B)``. If only the measured reverse ``B-A``
+exists, the layer uses its explicit negative rather than reconstructing or interpolating
+the target (also for ``"exact"``). This assumes those bipolar labels faithfully describe
+measured voltage differences; unrelated reference montages cannot be inferred from
+names. Non-EEG channels raise unless ``channel_strategy_kwargs={"drop_non_eeg": True}``.
+The layer runs in eager mode; TorchScript works under ``native`` only.
 
 The tutorial :ref:`channel-interpolation-tutorial` compares strategies on a recording.
