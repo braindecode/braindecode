@@ -139,6 +139,11 @@ Bug fixes
 Code health
 ============
 
+- A read-only experimental pretrained-parameter origin audit separates expected
+  newly initialised task heads from new or adapted tensors in explicitly declared
+  frozen-feature scopes. It does not change ``from_pretrained`` behaviour or
+  infer which modules executed (:gh:`1574` by `Zhibo Zhang`_).
+
 - Codacy runs Bandit from a root ``bandit.yml`` that skips B105, which flagged every ``"cls_token"`` key of the foundation-model feature dicts as a hardcoded password, and B101, the test ``assert`` statements (:gh:`1546` by `Bruno Aristimunha`_).
 - Every registered model whose ``forward`` takes ``ch_mask`` is checked with no
   per-model test case, like the other cross-model contracts: each recording of a
