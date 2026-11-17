@@ -331,3 +331,35 @@ def test_signal_jepa_strategy_targets_the_pretraining_channels():
     assert torch.isfinite(model(torch.randn(1, 2, 256))).all()
     with pytest.raises(ValueError, match="not in the input"):
         SignalJEPA(chs_info=names_only, **kw, channel_strategy="exact")
+
+
+def test_reverse_bipolar_is_exact_signed_copy():
+    # A measured cathode-anode trace is an exact negative of anode-cathode.
+    # This must not need positional interpolation or invented electrodes.
+    layer = ChannelLayer(chs(["F3-C3"]), "exact", chs(["C3-F3"]))
+    x = torch.tensor([[[1.0, -2.5, 0.0, 4.0]]])
+    y, observed = layer(x)
+    assert torch.equal(y, -x)
+    assert layer.weight.tolist() == [[-1.0]]
+    assert observed.tolist() == [True]
+
+
+def test_direct_bipolar_match_precedes_reverse_when_both_are_measured():
+    layer = ChannelLayer(chs(["F3-C3"]), "exact", chs(["C3-F3", "F3-C3"]))
+    x = torch.tensor([[[2.0, 5.0], [-2.0, -5.0]]])
+    y, observed = layer(x)
+    assert torch.equal(y, x[:, 1:2])
+    assert layer.weight.tolist() == [[0.0, 1.0]]
+    assert observed.tolist() == [True]
+
+
+def test_reverse_bipolar_case_insensitive():
+    layer = ChannelLayer(chs(["Fp1-F7"]), "exact", chs(["f7-fP1"]))
+    x = torch.tensor([[[1.0, 2.0]]])
+    assert torch.equal(layer(x)[0], -x)
+
+
+def test_distinct_reference_channels_are_not_assumed_equivalent():
+    # A-R1 and B-R2 cannot construct A-B without a shared reference.
+    with pytest.raises(ValueError, match="not in the input"):
+        ChannelLayer(chs(["F3-C3"]), "exact", chs(["F3-R1", "C3-R2"]))
