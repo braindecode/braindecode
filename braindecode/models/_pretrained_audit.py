@@ -9,8 +9,6 @@ about execution graph dependency, checkpoint parity, or scientific validity.
 
 from __future__ import annotations
 
-import argparse
-import json
 from collections.abc import Iterable
 
 import torch
@@ -155,33 +153,3 @@ def audit_model(
         "uninitialized": [r["name"] for r in rows if r["status"] == "uninitialized"],
         "parameters": rows,
     }
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Offline synthetic provenance audit")
-    parser.add_argument("--output", help="Write JSON report")
-    args = parser.parse_args()
-    model = torch.nn.Sequential(torch.nn.Linear(4, 3), torch.nn.Linear(3, 2))
-    model._pretrained_provenance = {
-        "loaded": {"0.weight", "0.bias"},
-        "mixed": set(),
-        "repo_id": "synthetic/example",
-    }
-    content = (
-        json.dumps(
-            audit_model(model, expected_new=("1.",), feature_scope=("0.",)),
-            indent=2,
-            ensure_ascii=False,
-        )
-        + "\n"
-    )
-    if args.output:
-        from pathlib import Path
-
-        Path(args.output).write_text(content, encoding="utf-8")
-    else:
-        print(content)
-
-
-if __name__ == "__main__":
-    main()
