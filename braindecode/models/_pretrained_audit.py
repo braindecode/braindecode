@@ -120,7 +120,8 @@ def audit_model(
         for k in ("loaded", "adapted", "new")
     }
     total = sum(counts.values())
-    changed = ("new", "adapted", "uninitialized")
+    changed = ("new", "adapted")
+    not_loaded = (*changed, "uninitialized")
     unexpected = [
         r["name"] for r in rows if r["status"] in changed and not r["expected_new"]
     ]
@@ -128,7 +129,7 @@ def audit_model(
         r["name"]
         for r in rows
         if r["kind"] == "parameter"
-        and r["status"] in changed
+        and r["status"] in not_loaded
         and not r["trainable"]
         and not r["expected_new"]
     ]
@@ -147,7 +148,7 @@ def audit_model(
             for r in rows
             if r["kind"] == "parameter"
             and r["feature_scoped"]
-            and r["status"] in changed
+            and r["status"] in not_loaded
             and not r["trainable"]
         ]
     )
