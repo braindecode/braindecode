@@ -340,8 +340,8 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
             :, -self.n_last_steps :
         ].flatten()
         real = steps < n_times
-        if bool(real.all()) or not bool(real.any()):
-            return h.mean(dim=1)  # (batch, n_chans, embed_dim)
+        # No real step at all (very short window): fall back to the plain mean.
+        real = real | ~real.any()
         weight = real[None, :, None, None].to(h.dtype)
         return (h * weight).sum(dim=1) / weight.sum()  # (batch, n_chans, embed_dim)
 
