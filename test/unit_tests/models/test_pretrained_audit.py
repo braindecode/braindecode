@@ -91,20 +91,20 @@ def test_read_only_deterministic():
 
 
 def test_no_feature_scope_not_assessed():
-    r = audit_model(make_model(), expected_new=("head.",))
+    r = audit_model(model(), expected_new=("head.",))
     assert r["feature_scope_status"] == "not_assessed"
     assert r["feature_unloaded"] is None
 
 
 def test_feature_scope_reports_expected_random_projection():
-    m = make_model()
+    m = model()
     r = audit_model(m, expected_new=("head.", "fc_norm."), feature_scope=("backbone.", "fc_norm."))
     assert r["unexpected_new_or_adapted"] == []
     assert r["feature_unloaded"] == ["fc_norm.bias", "fc_norm.weight"]
 
 
 def test_expected_frozen_feature_is_still_not_pretrained():
-    m = make_model()
+    m = model()
     for p in m.parameters():
         p.requires_grad_(False)
     r = audit_model(m, expected_new=("head.", "fc_norm."), feature_scope=("backbone.", "fc_norm."))
@@ -113,7 +113,7 @@ def test_expected_frozen_feature_is_still_not_pretrained():
 
 
 def test_buffers_are_optional_and_not_frozen_parameters():
-    m = make_model()
+    m = model()
     m.register_buffer("running_estimate", torch.ones(3))
     r0 = audit_model(m, feature_scope=("running_estimate",))
     r1 = audit_model(m, include_buffers=True, feature_scope=("running_estimate",))
@@ -124,7 +124,7 @@ def test_buffers_are_optional_and_not_frozen_parameters():
 
 
 def test_stale_provenance_keys_not_silently_counted():
-    m = make_model()
+    m = model()
     m._pretrained_provenance["loaded"].add("removed_module.weight")
     m._pretrained_provenance["mixed"].add("removed_module.bias")
     r = audit_model(m)
@@ -133,13 +133,13 @@ def test_stale_provenance_keys_not_silently_counted():
 
 
 def test_empty_feature_scope_declared_explicitly():
-    r = audit_model(make_model(), feature_scope=())
+    r = audit_model(model(), feature_scope=())
     assert r["feature_scope_status"] == "declared"
     assert r["feature_unloaded"] == []
 
 
 def test_uninitialized_buffer_not_counted():
-    m = make_model()
+    m = model()
     m.register_buffer("lazy", nn.parameter.UninitializedBuffer())
     r = audit_model(m, include_buffers=True, feature_scope=("lazy",))
     assert "lazy" in r["uninitialized"]
