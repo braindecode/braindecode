@@ -63,6 +63,8 @@ The following components are licensed under the MIT License:
 - `braindecode/models/megxl.py`
 - `braindecode/models/nice.py`
 - `braindecode/models/fnirs_t.py`
+- `braindecode/models/tccnet.py`
+- `docs/_static/model/tccnet.png`
 
 The `brainomni.py` file is a derivative of `OpenTSLab/BrainOmni` (MIT). The
 `seanet.py` module holds its SEANet codec, derived from Meta's
@@ -71,6 +73,9 @@ residual vector quantization derived from `lucidrains/vector-quantize-pytorch`
 (MIT) and the BrainOmni port.
 The `linear_attention.py` module is the part of
 `lucidrains/linear-attention-transformer` (MIT) that BIOT and TFMTokenizer run.
+The `tccnet.py` file is a derivative of `DSIP-UPatras/ICASSP2019_TCN` (MIT),
+whose average-over-time and context-attention layers come from
+`cbaziotis/keras-utilities` (MIT).
 
 ### Apache-2.0 Licensed Files
 

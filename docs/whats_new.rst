@@ -29,6 +29,16 @@ Enhancements
 ============
 
 - Add the fNIRS task models :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023); :class:`~braindecode.models.FNIRS4D` (Wang et al., IEEE TIM 2026), a diagonal state-space backbone with the reference's LOSO-CV or KFold-CV mean-hemoglobin branch (``mean_branch``); and :class:`~braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT` (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), for ``(batch, n_chans, n_times)`` HbO/HbR windows. The ``mapping`` of FNIRSNet and FNIRS4D loads the authors' state dicts. HbO/HbR pairs are read from ``chs_info`` (stacked, or MNE's interleaved order), and a ``chs_info`` without matching HbO/HbR pairs raises a ``ValueError``. Each model mixes every channel, so all refuse ``ch_mask``; FNIRST and FNIRSPreT take an opt-in ``mask`` that hides raw samples. :class:`~braindecode.modules.MultiHeadAttention` gains ``qkv_bias`` (default ``True``, unchanged) for fNIRS-T's bias-free q/k/v, and ``fNIRS`` joins the modality vocabulary of the models table (:gh:`1563` by `Bruno Aristimunha`_).
+- :func:`braindecode.functional.masked_group_norm` groups the channels with a view and
+  counts the real entries from the mask, without a permute or a full-size masked count:
+  same outputs and gradients, 28-38% less time forward and backward at CBraMod and
+  LaBraM shapes on CPU and Apple MPS, and 17-44% shorter training steps of these models
+  on Intel Gaudi2 (:gh:`1575` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.BIOT` returns its transformer tokens under
+  ``"tokens"`` with ``return_features=True``, ``(batch, n_chans, n_patches,
+  emb_size)`` and zero for padded channels, like CBraMod and LaBraM; they could
+  only be read with a forward hook on ``encoder.transformer``. Outputs and
+  ``"features"`` are unchanged (:gh:`1570` by `Hamza Abdelhedi`_).
 - :class:`braindecode.models.LUNA` takes ``return_features=True``, like the other
   foundation models: it returns the normed encoder output before the head,
   ``(batch, n_patches, num_queries * embed_dim)``, as ``"features"`` (:gh:`1565` by `Hamza Abdelhedi`_).
@@ -39,6 +49,9 @@ Enhancements
 - Add :class:`braindecode.models.MEGGPT` (MEG-GPT, Huang et al., Imaging Neuroscience 2026), a source-space MEG foundation model: the EphysTokenizer encoder turns each parcel into discrete tokens and a causal time-attention GPT with patched keys and values embeds them; the released Cam-CAN checkpoint, converted without the session embedding the paper discards for downstream use, is on the Hugging Face Hub at ``braindecode/meggpt-pretrained``; ``return_features=True`` also returns the per-channel ``"tokens"`` ``(batch, n_chans, n_segments * n_last_steps, embed_dim)`` and takes a ``ch_mask`` of padded channels, whose features and tokens are zero (the flattened head is tied to ``n_chans``, so logits refuse ``ch_mask``); optional ``token_mask`` hides clean token embeddings before the causal decoder, and ``encode_tokens`` supplies cached-ID encoding with shifted next-token targets, retained-tail indices and valid/selected loss masks for a separate vocabulary head (by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.MEGXL`, the MEG-XL brain-to-text foundation model (Jayalath and Parker Jones, ICML 2026): a frozen BioCodec tokenizer and a criss-cross transformer pretrained on 150 s MEG windows; the released ``meg-xl-med-v2.ckpt``, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/megxl-pretrained`` and matches the authors' code on CPU. Its ``forward`` refuses ``ch_mask`` with a ``ValueError`` (the head flattens ``n_chans * latent_dim`` features and the sensor geometry is the ``chs_info`` montage), and ``return_features`` gives the pooled ``"features"`` only, no ``"tokens"``. The opt-in ``encode``/``encode_codes`` mask replaces projected code content before sensor metadata and attention, returning real temporal hidden states for caller-owned masked-RVQ-code prediction; it adds no default parameters and expects equal valid-length full-montage windows (by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.SEANetEncoder` and :class:`~braindecode.modules.SEANetDecoder` (EnCodec's SEANet, with :class:`~braindecode.modules.SEANetConv1d`, :class:`~braindecode.modules.SEANetConvTranspose1d`, :class:`~braindecode.modules.SEANetLSTM` and :class:`~braindecode.modules.SEANetResBlock`), moved from :class:`braindecode.models.BrainOmni`, whose parameters and outputs are unchanged. They take ``in_channels``/``out_channels``, ``n_residual_layers``, ``dilation_base``, ``compress``, ``true_skip`` and ``causal`` (by `Bruno Aristimunha`_)
+- Add :class:`braindecode.models.TCCNet`, a causal temporal-convolution model
+  for sEMG gesture recognition with average-over-time and context-attention
+  classification heads (:gh:`1562` by `Arslan Shafique`_).
 - A model loaded with :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` shows where its weights come from: in a notebook (``model`` as the last line of a cell) a panel lists the input geometry, the Hub repository and commit, the licence, the base model and the datasets of the model card (linked to NEMAR, OpenNeuro or the Hub), and a module table with each block marked as loaded from the checkpoint or initialised here, e.g. a head rebuilt for a new ``n_outputs``; ``print(model)`` adds the same facts below the torchinfo table. Both ask users, and AI agents reading the output, to cite Braindecode with its `Zenodo DOI <https://doi.org/10.5281/zenodo.17699192>`__. The card offers BibTeX/APA downloads and selectable citation text, and links training datasets to NEMAR, EEGDash catalogue searches and documented braindecode readers. ``from_pretrained`` now warns when no parameter of the model was loaded from the checkpoint, which happened silently when the checkpoint's keys did not match the model (:gh:`1558` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.CORTEG`, an ST-EEGFormer adapted to
   intracranial ECoG: a spatial adapter places each electrode by its 3D position
@@ -95,6 +108,35 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
+  pretraining reconstruction layer, to its features and classification head. The
+  original fine-tuning code replaces it by ``nn.Identity()``, so the head now reads
+  the encoder output, as there. ``proj_out`` stays in the model so the released
+  weights still load; the head input size is ``d_model`` instead of ``emb_dim``
+  (the same with the defaults). Outputs of existing CBraMod classifiers change
+  (:gh:`1541`).
+- :class:`braindecode.models.CSBrain` no longer applies ``proj_out``, the
+  pretraining reconstruction layer, to its features and classification head, as
+  for :class:`braindecode.models.CBraMod`. The original fine-tuning code replaces
+  it by ``nn.Identity()``, so the head now reads the encoder output. ``proj_out``
+  stays in the model so the released weights still load; the first head layer takes
+  ``d_model`` instead of ``emb_dim`` inputs per token (the same with the defaults).
+  Outputs of existing CSBrain classifiers change (:gh:`1541`, :gh:`1572`).
+- :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
+  averages kept steps that lie after the end of the input. When the last
+  segment held fewer real samples than its first kept step position, those
+  steps were outputs on zero padding and entered the ``"features"`` mean; the
+  mean now covers the real steps only. Windows that are a multiple of the
+  segment length, and ``"crop"``, are unchanged (:gh:`1561` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.LUNA` raises when ``chs_info`` has positions for
+  some channels but not all (MNE stores ``NaN`` for the others). It gave every
+  channel a default position, evenly spaced along x, so one name missing from the
+  montage silently replaced the positions of all the others. A ``chs_info``
+  without any position keeps the default positions. LUNA and
+  :class:`braindecode.models.CORTEG` share this rule; CORTEG now also names a
+  channel whose position is ``NaN`` when it is built, where it took the montage
+  for one without positions (:gh:`1569` by `Hamza Abdelhedi`_).
 - :class:`braindecode.models.LUNA` gives the phase of the DC bin, and of the
   Nyquist bin of an even ``patch_size``, as ``0`` or ``pi`` on every device.
   CUDA and MPS FFTs leave rounding noise of either sign in the imaginary part of
@@ -2902,6 +2944,7 @@ Authors
 ========
 
 .. _Arnaud Delorme: https://github.com/arnodelorme
+.. _Arslan Shafique: https://github.com/arslan-shafique
 .. _Anton Soloviev: https://github.com/antonsoo
 .. _Hubert Banville: https://github.com/hubertjb
 .. _Robin Tibor Schirrmeister: https://github.com/robintibor

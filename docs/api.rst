@@ -232,6 +232,7 @@ interface for all EEG models and can derive variable names when needed.
      SSTDPN
      STEEGFormer
      SyncNet
+     TCCNet
      TFMTokenizer
      TFMTokenizerOutput
      TCFormer

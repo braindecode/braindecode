@@ -80,6 +80,7 @@ from braindecode.models import (
     SleepStagerChambon2018,
     SPARCNet,
     SyncNet,
+    TCCNet,
     TFMTokenizer,
     TMSANet,
     TSception,
@@ -1394,6 +1395,17 @@ def test_channels_without_positions_give_finite_outputs(name):
     ).eval()
     with torch.no_grad():
         assert torch.isfinite(model(torch.randn(2, 4, 1000))).all()
+
+
+@pytest.mark.parametrize("name", ["CORTEG", "LUNA"])
+def test_a_montage_with_unplaced_channels_is_refused(name):
+    """One channel without a position must not void the others' positions."""
+    info = mne.create_info(["Cz", "C3", "C4", "X1"], 250.0, "eeg")
+    info.set_montage("standard_1005", on_missing="ignore")
+    with pytest.raises(ValueError, match=r"none for \['X1'\]"):
+        all_models_dict[name](
+            n_outputs=2, n_chans=4, chs_info=info["chs"], n_times=1000, sfreq=250.0
+        )
 
 
 def test_gcnsnet_adjacency():
@@ -5132,6 +5144,26 @@ def test_csbrain_forward_with_region_structure():
     assert feats["features"].shape == (1, 22, 4, 200)
 
 
+def test_csbrain_features_skip_pretraining_proj_out():
+    """Features and head see the encoder output, not the reconstruction layer."""
+    model = CSBrain(
+        n_outputs=2, n_chans=3, n_times=400, n_layer=1, nhead=2, emb_dim=16
+    ).eval()
+    x = torch.randn(2, 3, 400)
+    with torch.no_grad():
+        model.proj_out[0].weight.fill_(7.0)  # would dominate the features if applied
+        emb = model.patch_embedding(model.rearrange(x), None)
+        emb = model.temporal_embed(emb) + emb
+        emb = model.region_embed(emb) + emb
+        tokens = model.encoder[0](emb)
+        feats = model(x, return_features=True)["features"]
+        assert model(x).shape == (2, 2)
+    torch.testing.assert_close(feats, tokens)
+    assert feats.shape[-1] == model._d_model
+    assert model.final_layer[1].in_features == 3 * 2 * model._d_model
+    assert any(k.startswith("proj_out.") for k in model.state_dict())
+
+
 def test_csbrain_batched_regions_match_per_region_loops():
     # Regions of 1 (zero padding), 2 and 4 electrodes (circular padding).
     area_config = make_area_config([0, 1, 1, 2, 2, 2, 2])
@@ -6553,3 +6585,119 @@ def test_fnirs_masks(model_cls):
     model(hidden, mask=mask).sum().backward()
     assert torch.equal(hidden.grad[mask], torch.zeros_like(hidden.grad[mask]))
     assert hidden.grad[~mask].isfinite().all()
+def _tccnet_reference(model, x, mask_value):
+    """NumPy transcription of the TCCNet Keras layers (DSIP-UPatras/ICASSP2019_TCN
+    @cd28909: ``Masking``, ``CausalConv1D``, ``MeanOverTime`` and
+    ``AttentionWithContext(bias=False)``), on the port's weights."""
+    x = x.transpose(0, 2, 1)  # (batch, n_times, n_chans), the Keras layout
+    if mask_value is None:
+        mask = np.ones(x.shape[:2])
+    else:
+        mask = np.any(x != mask_value, axis=-1).astype(x.dtype)
+
+    def causal_conv(h, layer):
+        h = h * mask[..., None]
+        kernel = layer.conv.weight.detach().numpy().transpose(2, 1, 0)
+        dilation = layer.conv.dilation[0]
+        padded = np.pad(h, ((0, 0), ((len(kernel) - 1) * dilation, 0), (0, 0)))
+        out = sum(
+            padded[:, j * dilation : j * dilation + h.shape[1]] @ kernel[j]
+            for j in range(len(kernel))
+        )
+        # The bias is added only where the convolution is non-zero.
+        return (out + layer.bias.detach().numpy()) * (out != 0)
+
+    h = x * mask[..., None]
+    for block in model.feature_extractor:
+        residual = causal_conv(h, block.projection)
+        for layer in block.convolutions:
+            h = np.maximum(causal_conv(h, layer), 0)
+        h = h + residual
+    if model.attention is None:
+        # Sum over every step, divided by the number of valid steps.
+        pooled = h.sum(axis=1) / mask.sum(axis=1, keepdims=True)
+    else:
+        weight = model.attention.weight.detach().numpy()
+        context = model.attention.context.detach().numpy()
+        attention = np.exp(np.tanh(h @ weight) @ context) * mask
+        attention = attention / (attention.sum(axis=1, keepdims=True) + 1e-7)
+        pooled = (h * attention[..., None]).sum(axis=1)
+    final = model.final_layer
+    return pooled @ final.weight.detach().numpy().T + final.bias.detach().numpy()
+
+
+@pytest.mark.parametrize("mask_value", [None, -10.0])
+@pytest.mark.parametrize("classification_head", ["aot", "att"])
+def test_tccnet_matches_reference_keras_equations(classification_head, mask_value):
+    # Two blocks, so the dilation carried across blocks (1, 2 | 4) is checked.
+    model = TCCNet(
+        n_chans=2,
+        n_outputs=2,
+        filters=((2, 3), (3,)),
+        kernel_size=2,
+        drop_prob=0.0,
+        classification_head=classification_head,
+        mask_value=mask_value,
+    ).double()
+    with torch.no_grad():  # non-symmetric values expose layout errors
+        for i, parameter in enumerate(model.parameters()):
+            values = torch.linspace(
+                -0.13 + i * 0.01, 0.17 + i * 0.01, parameter.numel()
+            )
+            parameter.copy_(values.reshape_as(parameter))
+    x_numpy = np.linspace(-0.4, 0.6, 16).reshape(1, 2, 8)
+    n_pad = 0 if mask_value is None else 3
+    if mask_value is not None:
+        x_numpy[..., :n_pad] = mask_value  # pre-padding, as in the reference
+    coefficients = np.array([[0.7, -0.3]])
+    x = torch.tensor(x_numpy, requires_grad=True)
+
+    out = model(x)
+    (out * torch.from_numpy(coefficients)).sum().backward()
+
+    expected = _tccnet_reference(model, x_numpy, mask_value)
+    np.testing.assert_allclose(out.detach().numpy(), expected, rtol=1e-11)
+    # Input gradient vs central differences of the reference, on real steps.
+    assert not x.grad[..., :n_pad].any()
+    for index in np.ndindex(x_numpy[..., n_pad:].shape):
+        index = index[:2] + (index[2] + n_pad,)
+        shifted = [x_numpy.copy(), x_numpy.copy()]
+        shifted[0][index] += 1e-6
+        shifted[1][index] -= 1e-6
+        plus, minus = (
+            np.sum(_tccnet_reference(model, s, mask_value) * coefficients)
+            for s in shifted
+        )
+        np.testing.assert_allclose(
+            x.grad[index].item(), (plus - minus) / 2e-6, rtol=2e-5, atol=1e-7
+        )
+
+
+@pytest.mark.parametrize("classification_head", ["aot", "att"])
+def test_tccnet_pre_padding_matches_unpadded_input(classification_head):
+    model = TCCNet(
+        n_chans=3,
+        n_outputs=4,
+        filters=((4, 5), (6,)),
+        classification_head=classification_head,
+    ).eval()
+    x = torch.randn(2, 3, 24)
+    padded = torch.cat((torch.full((2, 3, 8), -10.0), x), dim=-1).requires_grad_()
+
+    out = model(padded)
+    out.sum().backward()
+
+    torch.testing.assert_close(out, model(x), rtol=1e-5, atol=1e-6)
+    assert not padded.grad[..., :8].any()
+
+
+def test_cbramod_features_skip_pretraining_proj_out():
+    """Features and head see the encoder output, not the reconstruction layer."""
+    model = CBraMod(n_outputs=2, n_chans=3, n_times=400, n_layer=1, nhead=2).eval()
+    x = torch.randn(2, 3, 400)
+    with torch.no_grad():
+        model.proj_out[0].weight.fill_(7.0)  # would dominate the features if applied
+        tokens = model.encoder(model.patch_embedding(model.rearrange(x), None, None))
+        feats = model(x, return_features=True)["features"]
+    torch.testing.assert_close(feats, tokens)
+    assert any(k.startswith("proj_out.") for k in model.state_dict())
