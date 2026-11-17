@@ -218,3 +218,17 @@ def test_scoped_prefix_with_parameters_and_buffers_requires_both():
     assert "backbone.running_mean" in r["feature_unloaded"]
     assert "backbone.running_var" in r["feature_unloaded"]
     assert "backbone.weight" not in r["feature_unloaded"]
+
+
+def test_uninitialized_tensor_prevents_false_full_fraction():
+    m = nn.Module()
+    m.register_parameter("pretrained", nn.Parameter(torch.ones(3)))
+    m.register_parameter(
+        "unbuilt", nn.parameter.UninitializedParameter(requires_grad=False)
+    )
+    m._pretrained_provenance = {"loaded": {"pretrained"}, "mixed": set()}
+    report = audit_model(m, feature_scope=("pretrained", "unbuilt"))
+    assert report["counts"]["loaded"] == 3
+    assert report["counts"]["total_materialized"] == 3
+    assert report["loaded_fraction"] is None
+    assert report["feature_unloaded_frozen"] == ["unbuilt"]
