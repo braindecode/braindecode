@@ -21,7 +21,7 @@ You can use the following BibTeX entry:
 
 .. code-block:: bibtex
 
-    @misc{braindecode,
+    @software{braindecode,
       author = {Aristimunha, Bruno and
                 Guetschel, Pierre and
                 Wimpff, Martin and
@@ -56,9 +56,9 @@ You can use the following BibTeX entry:
                 Schirrmeister, Robin Tibor},
       title = {Braindecode: toolbox for decoding raw electrophysiological brain data
                with deep learning models},
-      howpublished = {Zenodo},
       url = {https://github.com/braindecode/braindecode},
       doi = {10.5281/zenodo.8214376},
+      publisher = {Zenodo},
       license = {BSD-3-Clause},
     }
 
@@ -69,8 +69,9 @@ Or the following APA reference:
     Junqueira Lopes, B., Sedlar, S., Tayal, S., Truong, Y., Gadonneix, J., Mounir, A.,
     Zhang, Z., Soloviev, A., Li, Q., Rathi, R., Shah, V., Arthur, Jain, M., Kowshik, B.,
     Li, Y., Ahmed, F., Moreau, T., Chevallier, S., Gramfort, A., & Schirrmeister, R. T.
-    *Braindecode: toolbox for decoding raw electrophysiological brain data with deep
-    learning models* [Software]. Zenodo. https://doi.org/10.5281/zenodo.8214376
+    (2026). *Braindecode: toolbox for decoding raw electrophysiological brain data with
+    deep learning models* [Computer software]. Zenodo.
+    https://doi.org/10.5281/zenodo.8214376
 
 Additionally, we highly encourage you to cite the article that originally introduced the
 Braindecode library and has served as a foundational reference for many works on deep
