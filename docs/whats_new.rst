@@ -32,7 +32,7 @@ Enhancements
   counts the real entries from the mask, without a permute or a full-size masked count:
   same outputs and gradients, 28-38% less time forward and backward at CBraMod and
   LaBraM shapes on CPU and Apple MPS, and 17-44% shorter training steps of these models
-  on Intel Gaudi2 (by `Bruno Aristimunha`_).
+  on Intel Gaudi2 (:gh:`1575` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.BIOT` returns its transformer tokens under
   ``"tokens"`` with ``return_features=True``, ``(batch, n_chans, n_patches,
   emb_size)`` and zero for padded channels, like CBraMod and LaBraM; they could
