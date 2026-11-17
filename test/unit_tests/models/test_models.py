@@ -6494,3 +6494,15 @@ def test_tccnet_pre_padding_matches_unpadded_input(classification_head):
 
     torch.testing.assert_close(out, model(x), rtol=1e-5, atol=1e-6)
     assert not padded.grad[..., :8].any()
+
+
+def test_cbramod_features_skip_pretraining_proj_out():
+    """Features and head see the encoder output, not the reconstruction layer."""
+    model = CBraMod(n_outputs=2, n_chans=3, n_times=400, n_layer=1, nhead=2).eval()
+    x = torch.randn(2, 3, 400)
+    with torch.no_grad():
+        model.proj_out[0].weight.fill_(7.0)  # would dominate the features if applied
+        tokens = model.encoder(model.patch_embedding(model.rearrange(x), None, None))
+        feats = model(x, return_features=True)["features"]
+    torch.testing.assert_close(feats, tokens)
+    assert any(k.startswith("proj_out.") for k in model.state_dict())

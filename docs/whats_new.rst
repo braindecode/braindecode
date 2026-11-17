@@ -102,6 +102,13 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
+  pretraining reconstruction layer, to its features and classification head. The
+  original fine-tuning code replaces it by ``nn.Identity()``, so the head now reads
+  the encoder output, as there. ``proj_out`` stays in the model so the released
+  weights still load; the head input size is ``d_model`` instead of ``emb_dim``
+  (the same with the defaults). Outputs of existing CBraMod classifiers change
+  (:gh:`1541`).
 - :class:`braindecode.models.LUNA` raises when ``chs_info`` has positions for
   some channels but not all (MNE stores ``NaN`` for the others). It gave every
   channel a default position, evenly spaced along x, so one name missing from the
