@@ -970,7 +970,7 @@ def test_model_html_citation_exports_and_dataset_readers(tmp_path):
     exports = re.findall(r'href="data:text/plain;charset=utf-8,([^"]+)" download="([^"]+)"', page)
     assert len(exports) == 2
     texts = {name: unquote(content) for content, name in exports}
-    assert "@software{braindecode," in texts["braindecode.bib"]
+    assert "@misc{braindecode," in texts["braindecode.bib"]
     assert "10.5281/zenodo.8214376" in texts["braindecode.bib"]
     assert "[Computer software]. Zenodo." in texts["braindecode-APA.txt"]
     assert "10.5281/ZENODO.8214376" in texts["braindecode-APA.txt"]
