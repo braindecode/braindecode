@@ -10,7 +10,7 @@ it, and the slow potential of that eye movement reaches every frontal and
 temporal electrode. A left-versus-right decoder trained on accuracy alone
 takes that signal when it is easier than the sensorimotor rhythm. Gao
 (2026) [1]_ ran a preregistered audit of this shortcut on PhysioNet; the
-decoders they trained beat controls with the lateral eye signal regressed
+decoders trained there beat controls with the lateral eye signal regressed
 out, and the gap grew with the size of the cue-directed deflection.
 
 Every audit used so far (probing, erasure, EOG regression, attribution
@@ -41,7 +41,6 @@ the weights, then one occlusion test on data to confirm it.
 """
 
 # Authors: Yiheng Li <yihengl4@asu.edu>
-#
 # License: BSD (3-clause)
 
 import matplotlib.pyplot as plt
@@ -76,6 +75,7 @@ CHECKPOINT_URL = (
 )
 CHANNELS = ["C3", "Cz", "C4"]
 SFREQ = 128.0
+L_FREQ, H_FREQ = 0.5, 40.0  # band-pass of the checkpoint's input
 LEFT, RIGHT = 2, 4  # output indices of left_hand and right_hand
 
 state = torch.hub.load_state_dict_from_url(
@@ -107,8 +107,9 @@ model.eval()
 #   pointwise weights and the first batch-norm gain to each spatial
 #   filter, then through the absolute spatial weights to each channel.
 # * **Which band?** Each temporal kernel is an FIR filter; the peak of
-#   the kernels' power spectra, weighted by the importance of the spatial
-#   filters they feed, gives the band.
+#   the kernels' power spectra above the input high-pass (0.5 Hz),
+#   weighted by the importance of the spatial filters they feed, gives the
+#   band.
 # * **Which time window?** The classifier contrast energy per pooled time
 #   bin, averaged in one-second windows.
 #
@@ -137,12 +138,9 @@ def read_weights(model, ch_names, sfreq, window_start_s, outputs):
     w_spatial = as_np(model.conv_spatial.weight)[:, 0, :, 0]  # (F1*D, n_chans)
     w_temporal = as_np(model.conv_temporal.weight)[:, 0, 0, :]  # (F1, n_taps)
     w_point = as_np(model.conv_separable_point.weight)[:, :, 0, 0]  # (F2, F1*D)
-    head = next(
-        m
-        for m in model.final_layer.modules()
-        if torch.is_tensor(getattr(m, "weight", None))
-    )
-    w_head = as_np(head.weight).reshape(model.n_outputs, model.F2, -1)[outputs]
+    w_head = as_np(model.final_layer.conv_classifier.weight).reshape(
+        model.n_outputs, model.F2, -1
+    )[outputs]
 
     # Feature -> spatial filter -> channel.
     contrast = w_head - w_head.mean(axis=0, keepdims=True)
@@ -160,7 +158,8 @@ def read_weights(model, ch_names, sfreq, window_start_s, outputs):
     n_fft = 8 * w_temporal.shape[1]
     power = np.abs(np.fft.rfft(w_temporal, n=n_fft, axis=1)) ** 2
     freqs = np.fft.rfftfreq(n_fft, d=1.0 / sfreq)
-    peak_hz = float(freqs[np.argmax(kernel_importance @ power)])
+    passed = freqs >= L_FREQ  # below the input high-pass, the peak is the kernels' mean
+    peak_hz = float(freqs[passed][np.argmax((kernel_importance @ power)[passed])])
 
     # Classifier time bins -> seconds -> one-second windows.
     energy = (feature_importance[None, :, None] * contrast**2).sum(axis=(0, 1))
@@ -188,10 +187,9 @@ print(
 )
 
 ######################################################################
-# The weights point to the slow band and the first second after the cue,
-# the shortcut signature. The printed channel shares rank the three
-# electrodes; keep that ranking as the least certain part of the reading.
-# The next step checks it on data.
+# Compare the printed band and window with the two signatures above. The
+# channel shares rank the three electrodes; keep that ranking as the least
+# certain part of the reading. The next step checks the reading on data.
 #
 # Confirm on data: one occlusion test
 # -----------------------------------
@@ -214,7 +212,7 @@ preprocess(
     [
         Preprocessor("pick", picks=CHANNELS),
         Preprocessor(lambda data: multiply(data, 1e6)),  # V to uV
-        Preprocessor("filter", l_freq=0.5, h_freq=40.0),
+        Preprocessor("filter", l_freq=L_FREQ, h_freq=H_FREQ),
         Preprocessor("resample", sfreq=SFREQ),
     ],
     n_jobs=1,
@@ -344,22 +342,23 @@ fig.tight_layout()
 # References
 # ----------
 #
-# .. [1] Gao, Y. (2026). *Do shortcut audits measure reliance in EEG
+# .. [1] Gao, Y. (2026). Do shortcut audits measure reliance in EEG
 #        decoders? A preregistered semi-synthetic ground-truth test and a
-#        real-data check of eye-movement use.* Preregistered (OSF);
-#        code: https://github.com/jabarrick/physio-shortcut-audit
-# .. [2] Guetschel, P., & Tangermann, M. (2023). *Transfer learning
+#        real-data check of eye-movement use. Manuscript. Preregistration:
+#        https://doi.org/10.17605/OSF.IO/8Q7N6. Code:
+#        https://doi.org/10.5281/zenodo.24142936
+# .. [2] Guetschel, P., & Tangermann, M. (2023). Transfer learning
 #        between motor imagery datasets using deep learning: validation
-#        of framework and comparison of datasets.* arXiv:2311.16109.
+#        of framework and comparison of datasets. arXiv:2311.16109.
 #        Weights: https://huggingface.co/PierreGtch/EEGNetv4
-# .. [3] Lawhern, V. J., et al. (2018). *EEGNet: a compact convolutional
-#        neural network for EEG-based brain-computer interfaces.* Journal
+# .. [3] Lawhern, V. J., et al. (2018). EEGNet: a compact convolutional
+#        neural network for EEG-based brain-computer interfaces. Journal
 #        of Neural Engineering, 15(5), 056013.
 #        DOI: 10.1088/1741-2552/aace8c
-# .. [4] Haufe, S., et al. (2014). *On the interpretation of weight
-#        vectors of linear models in multivariate neuroimaging.*
+# .. [4] Haufe, S., et al. (2014). On the interpretation of weight
+#        vectors of linear models in multivariate neuroimaging.
 #        NeuroImage, 87, 96-110. DOI: 10.1016/j.neuroimage.2013.10.067
 # .. [5] Schalk, G., McFarland, D. J., Hinterberger, T., Birbaumer, N., &
-#        Wolpaw, J. R. (2004). *BCI2000: A general-purpose brain-computer
-#        interface (BCI) system.* IEEE Transactions on Biomedical
+#        Wolpaw, J. R. (2004). BCI2000: A general-purpose brain-computer
+#        interface (BCI) system. IEEE Transactions on Biomedical
 #        Engineering, 51(6), 1034-1043. DOI: 10.1109/TBME.2004.827072
