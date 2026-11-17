@@ -232,3 +232,14 @@ def test_uninitialized_tensor_prevents_false_full_fraction():
     assert report["counts"]["total_materialized"] == 3
     assert report["loaded_fraction"] is None
     assert report["feature_unloaded_frozen"] == ["unbuilt"]
+
+
+def test_cross_kind_alias_is_rejected():
+    # PyTorch permits the same Parameter to be registered again as a buffer.
+    # This ambiguity must not appear as two independently sourced tensors.
+    m = nn.Module()
+    m.register_parameter("weight", nn.Parameter(torch.ones(3)))
+    m.register_buffer("also_weight", m.weight)
+    m._pretrained_provenance = {"loaded": {"weight"}, "mixed": set()}
+    with pytest.raises(ValueError, match="parameter and buffer alias"):
+        audit_model(m, include_buffers=True)
