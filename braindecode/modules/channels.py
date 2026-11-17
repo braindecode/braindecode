@@ -408,7 +408,18 @@ class ChannelLayer(nn.Module):
                     j = np.flatnonzero(hit & keep)
                     W[k, j[np.argmin(near[k][j])]] = 1.0
                     break
-        observed = W.sum(1) > 0
+        # A measured B-A is an exact sign-reversed A-B. Prefer an actual
+        # bipolar recording over any interpolation, with the same precedence
+        # as a direct A-B name match. Do not infer a reference from a name.
+        for k, m in enumerate(mono):
+            if m.count("-") != 1 or np.any(W[k]):
+                continue
+            positive, negative = m.split("-")
+            reverse = f"{negative}-{positive}"
+            hits = np.flatnonzero((low == reverse.lower()) & keep)
+            if len(hits):
+                W[k, hits[0]] = -1.0
+        observed = np.abs(W).sum(1) > 0
         copied = observed[self._whole][:, None]  # a measured A-B target: copy it
         D = np.where(copied, np.eye(len(mono))[self._whole], self._D)
         missing = ~observed & np.abs(D).any(0)
