@@ -107,6 +107,13 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.modules.ChannelLayer` uses the explicit negative of a
+  measured reverse bipolar channel ``B-A`` for a requested ``A-B`` under
+  ``channel_strategy="exact"`` (and the other strategies), rather than
+  rejecting an exactly reconstructible derivation. Direct ``A-B`` recordings
+  still take precedence; unknown reference montages remain unverified
+  (:gh:`1577` by `lindicaphxag-tech`_).
+
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
   original fine-tuning code replaces it by ``nn.Identity()``, so the head now reads
