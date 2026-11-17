@@ -98,13 +98,29 @@ def audit_model(
             "expected_new and feature_scope entries must be nonempty strings"
         )
     rows_all = _rows(model, loaded, mixed, allowed, features or ())
+    if features is not None:
+        for pattern in features:
+            scoped = [
+                r
+                for r in rows_all
+                if any(_matches(name, (pattern,)) for name in r["aliases"])
+            ]
+            if not scoped:
+                raise ValueError(
+                    f"feature_scope name or prefix {pattern!r} matches no model tensor"
+                )
+            if not include_buffers and any(r["kind"] == "buffer" for r in scoped):
+                raise ValueError(
+                    f"feature_scope {pattern!r} includes buffers; "
+                    "set include_buffers=True for a complete feature audit"
+                )
     rows = [r for r in rows_all if include_buffers or r["kind"] == "parameter"]
     counts = {
         k: sum(r["count"] or 0 for r in rows if r["status"] == k)
         for k in ("loaded", "adapted", "new")
     }
     total = sum(counts.values())
-    changed = ("new", "adapted")
+    changed = ("new", "adapted", "uninitialized")
     unexpected = [
         r["name"] for r in rows if r["status"] in changed and not r["expected_new"]
     ]
