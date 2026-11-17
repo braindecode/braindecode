@@ -2991,6 +2991,7 @@ Authors
 .. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
 
+.. _Zhibo Zhang: https://github.com/lindicaphxag-tech
 .. _lindicaphxag-tech: https://github.com/lindicaphxag-tech
 .. _Seáic Mac Murchadha: https://github.com/seaic-mac-murchadha
 .. _Bhargav Kowshik: https://github.com/bkowshik
