@@ -120,6 +120,9 @@ def audit_model(
         for k in ("loaded", "adapted", "new")
     }
     total = sum(counts.values())
+    # A lazy/uninitialized tensor has no known size. A ratio over only the
+    # materialized subset would misleadingly report 100% checkpoint coverage.
+    coverage_indeterminate = any(r["status"] == "uninitialized" for r in rows)
     changed = ("new", "adapted")
     not_loaded = (*changed, "uninitialized")
     unexpected = [
@@ -159,7 +162,9 @@ def audit_model(
         "repo_id": provenance.get("repo_id"),
         "revision": provenance.get("commit") or provenance.get("revision"),
         "counts": {**counts, "total_materialized": total},
-        "loaded_fraction": None if total == 0 else counts["loaded"] / total,
+        "loaded_fraction": (
+            None if total == 0 or coverage_indeterminate else counts["loaded"] / total
+        ),
         "unexpected_new_or_adapted": unexpected,
         "frozen_unexpected": frozen_unexpected,
         "stale_loaded_keys": sorted(loaded - present),
