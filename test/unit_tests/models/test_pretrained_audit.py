@@ -144,3 +144,36 @@ def test_uninitialized_buffer_not_counted():
     r = audit_model(m, include_buffers=True, feature_scope=("lazy",))
     assert "lazy" in r["uninitialized"]
     assert "lazy" in r["feature_unloaded"]
+
+def test_fully_loaded_frozen_features_are_not_flagged():
+    m = nn.Linear(3, 2)
+    m.requires_grad_(False)
+    m._pretrained_provenance = {"loaded": {"weight", "bias"}, "mixed": set()}
+    r = audit_model(m, feature_scope=("weight", "bias"))
+    assert r["loaded_fraction"] == 1.0
+    assert r["feature_unloaded"] == []
+    assert r["feature_unloaded_frozen"] == []
+    assert r["unexpected_new_or_adapted"] == []
+
+
+def test_zero_materialized_parameter_coverage_is_unassessed():
+    m = nn.Module()
+    m._pretrained_provenance = {"loaded": set(), "mixed": set()}
+    r = audit_model(m, feature_scope=())
+    assert r["counts"]["total_materialized"] == 0
+    assert r["loaded_fraction"] is None
+    assert r["feature_scope_status"] == "declared"
+
+
+@pytest.mark.parametrize("scope", [("",), (1,)])
+def test_invalid_feature_scope_is_rejected(scope):
+    m = model()
+    with pytest.raises(ValueError, match="nonempty strings"):
+        audit_model(m, feature_scope=scope)
+
+
+def test_loaded_key_missing_from_provenance_is_rejected():
+    m = model()
+    m._pretrained_provenance = {"mixed": set()}
+    with pytest.raises(ValueError, match="loaded-parameter provenance"):
+        audit_model(m)
