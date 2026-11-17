@@ -114,6 +114,13 @@ Bug fixes
   weights still load; the head input size is ``d_model`` instead of ``emb_dim``
   (the same with the defaults). Outputs of existing CBraMod classifiers change
   (:gh:`1541`).
+- :class:`braindecode.models.CSBrain` no longer applies ``proj_out``, the
+  pretraining reconstruction layer, to its features and classification head, as
+  for :class:`braindecode.models.CBraMod`. The original fine-tuning code replaces
+  it by ``nn.Identity()``, so the head now reads the encoder output. ``proj_out``
+  stays in the model so the released weights still load; the first head layer takes
+  ``d_model`` instead of ``emb_dim`` inputs per token (the same with the defaults).
+  Outputs of existing CSBrain classifiers change (:gh:`1541`, :gh:`1572`).
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
   averages kept steps that lie after the end of the input. When the last
   segment held fewer real samples than its first kept step position, those

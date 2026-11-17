@@ -5135,6 +5135,26 @@ def test_csbrain_forward_with_region_structure():
     assert feats["features"].shape == (1, 22, 4, 200)
 
 
+def test_csbrain_features_skip_pretraining_proj_out():
+    """Features and head see the encoder output, not the reconstruction layer."""
+    model = CSBrain(
+        n_outputs=2, n_chans=3, n_times=400, n_layer=1, nhead=2, emb_dim=16
+    ).eval()
+    x = torch.randn(2, 3, 400)
+    with torch.no_grad():
+        model.proj_out[0].weight.fill_(7.0)  # would dominate the features if applied
+        emb = model.patch_embedding(model.rearrange(x), None)
+        emb = model.temporal_embed(emb) + emb
+        emb = model.region_embed(emb) + emb
+        tokens = model.encoder[0](emb)
+        feats = model(x, return_features=True)["features"]
+        assert model(x).shape == (2, 2)
+    torch.testing.assert_close(feats, tokens)
+    assert feats.shape[-1] == model._d_model
+    assert model.final_layer[1].in_features == 3 * 2 * model._d_model
+    assert any(k.startswith("proj_out.") for k in model.state_dict())
+
+
 def test_csbrain_batched_regions_match_per_region_loops():
     # Regions of 1 (zero padding), 2 and 4 electrodes (circular padding).
     area_config = make_area_config([0, 1, 1, 2, 2, 2, 2])
