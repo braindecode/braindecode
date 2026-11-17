@@ -363,3 +363,17 @@ def test_distinct_reference_channels_are_not_assumed_equivalent():
     # A-R1 and B-R2 cannot construct A-B without a shared reference.
     with pytest.raises(ValueError, match="not in the input"):
         ChannelLayer(chs(["F3-C3"]), "exact", chs(["F3-R1", "C3-R2"]))
+
+
+def test_reverse_bipolar_beats_midpoint_spatial_match():
+    # Reverse bipolar measurements have the SAME midpoint as the requested
+    # derivation. Copying by geometry would silently give the wrong polarity.
+    midpoint = [0.01, 0.02, 0.03]
+    target = [at("F3-C3", midpoint)]
+    input_chs = [at("C3-F3", midpoint)]
+    layer = ChannelLayer(target, "exact", input_chs)
+    x = torch.tensor([[[3.5, 0.0, -1.25]]])
+    y, observed = layer(x)
+    assert layer.weight.tolist() == [[-1.0]]
+    assert torch.equal(y, -x)
+    assert observed.tolist() == [True]
