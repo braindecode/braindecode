@@ -2,6 +2,7 @@
 import pytest
 import torch
 from torch import nn
+
 from braindecode.models._pretrained_audit import audit_model
 
 
