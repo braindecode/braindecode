@@ -109,6 +109,13 @@ Bug fixes
   weights still load; the head input size is ``d_model`` instead of ``emb_dim``
   (the same with the defaults). Outputs of existing CBraMod classifiers change
   (:gh:`1541`).
+- :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
+  averages kept steps that lie after the end of the input. When the last
+  segment held fewer real samples than its first kept step position, those
+  steps were outputs on zero padding and entered the ``"features"`` mean; the
+  mean now covers the real steps only. Windows that are a multiple of the
+  segment length, and ``"crop"``, are unchanged (:gh:`1561` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.LUNA` raises when ``chs_info`` has positions for
   some channels but not all (MNE stores ``NaN`` for the others). It gave every
   channel a default position, evenly spaced along x, so one name missing from the
