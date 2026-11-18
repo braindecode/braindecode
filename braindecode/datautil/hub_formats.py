@@ -204,7 +204,8 @@ def load_from_zarr(
     # Delegate to HubDatasetMixin static method
     BaseConcatDataset = get_dataset_class("BaseConcatDataset")
 
-    path = Path(input_path)
+    # Readers through a symlink must share the writer's lock and recording cache.
+    path = Path(input_path).resolve()
     if not path.parent.is_dir():
         raise FileNotFoundError(f"{path} does not exist.")
     with _store_access(path, reading=True):

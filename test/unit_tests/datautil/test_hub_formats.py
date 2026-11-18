@@ -310,6 +310,28 @@ def test_zarr_read_only_store_replacement(tmp_path, monkeypatch):
     assert _signal_and_target(load_from_zarr(path, preload=False)) == (2, 2)
 
 
+def test_zarr_reader_through_symlink_shares_writer_lock(tmp_path, monkeypatch):
+    pytest.importorskip("zarr")
+    path = convert_to_zarr(_recording(1), tmp_path / "recording.zarr")
+    link = tmp_path / "alias.zarr"
+    try:
+        link.symlink_to(path, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"symlinks are unavailable: {error}")
+    locks = []
+    acquire = hub_formats.FileLock.acquire
+
+    def record_lock(lock):
+        locks.append(Path(lock.lock_file).resolve())
+        return acquire(lock)
+
+    monkeypatch.setattr(hub_formats.FileLock, "acquire", record_lock)
+    old = load_from_zarr(link, preload=False)
+    convert_to_zarr(_recording(2), path, overwrite=True)
+    assert _read_zarr_generations(old, link) == ((1, 1), (2, 2))
+    assert len(locks) == 3 and len(set(locks)) == 1
+
+
 def test_no_lazy_imports_in_hub_formats():
     """Verify that hub_formats module has global imports only."""
 
