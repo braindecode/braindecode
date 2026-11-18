@@ -75,6 +75,7 @@ _KNOWN_PRIVATE_BLOCKS = {
     ("emg2qwerty", "_RotationInvariantMLP"),
     ("emg2qwerty", "_MultiBandRotationInvariantMLP"),
     ("epint", "_RoPEAttention"),
+    ("fnirs_t", "_TransformerEncoder"),  # a Sequential of the shared blocks
     ("geonirs", "_ChannelCompressorAttention"),  # one softmax, two values
     ("geonirs", "_ResidualProjectionBlock"),  # learned residual scale
     ("guetschel2026", "_LinearPatchEmbedding"),
