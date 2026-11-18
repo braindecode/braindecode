@@ -205,7 +205,7 @@ Bug fixes
   non-persistent buffer, so ``model.to(device)`` moves them. Before, they stayed
   on the CPU in a plain dict, and each forward without ``channel_locations``
   copied them to the device of the input. The state dict and the outputs do not
-  change (:gh:`0000` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+  change (:gh:`1616` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
