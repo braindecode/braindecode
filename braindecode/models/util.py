@@ -35,7 +35,7 @@ from torch import nn
 from torchaudio.transforms import Resample
 
 from braindecode import modules as bd_modules
-from braindecode.functional import check_n_chans  # noqa: F401  # scripted wrapped forwards
+from braindecode.functional import check_n_chans  # noqa: F401
 from braindecode.util import resolve_montage_name
 
 # Canonical MNE channel-type name for the electrode kinds braindecode models
