@@ -24,6 +24,7 @@ from braindecode.models import (
     CBraMod,
     DuIN,
     EpiNT,
+    FNIRSNet,
     Guetschel2026,
     Labram,
     MIRepNet,
@@ -219,6 +220,7 @@ _MODELS = [
         False,
         id="MEGXL",
     ),
+    pytest.param(FNIRSNet, 4, {}, False, id="FNIRSNet"),
 ]
 
 

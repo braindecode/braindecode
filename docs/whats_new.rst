@@ -28,6 +28,11 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023), the first
+  fNIRS model of braindecode: a delayed-hemodynamic-response convolution and a
+  depthwise-separable convolution over ``(batch, n_chans, n_times)`` HbO/HbR windows.
+  Its ``mapping`` loads the authors' state dict, and ``fNIRS`` joins the modality
+  vocabulary of the models table (:gh:`FNIRSNET_PR` by `Bruno Aristimunha`_).
 - :func:`braindecode.functional.masked_group_norm` groups the channels with a view and
   counts the real entries from the mask, without a permute or a full-size masked count:
   same outputs and gradients, 28-38% less time forward and backward at CBraMod and
