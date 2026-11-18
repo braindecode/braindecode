@@ -156,7 +156,7 @@ API and behavior changes
   deprecated: it warns, and ``ch_mask=~channel_mask`` gives the same output. A
   recording with one real channel among padded ones now gets the output it gets
   alone: the channel pooling returns that channel's token, as for a one-channel
-  input, instead of running the attention over it (:gh:`PR_SLEEPFM` by
+  input, instead of running the attention over it (:gh:`1603` by
   `Julien Gadonneix`_).
 - On Intel Gaudi, :func:`braindecode.functional.scaled_dot_product_attention` and
   :class:`braindecode.models.Labram` no longer call the Gaudi bridge's ``FusedSDPA``
