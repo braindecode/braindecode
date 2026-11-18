@@ -584,7 +584,13 @@ class JungMAE(EEGModuleMixin, nn.Module):
         }
         # The checkpoint has no classifier: the one of this model is kept, so
         # that a strict load of the encoder passes
+        head = {}
         if not any(key.startswith("final_layer.") for key in state_dict):
             head = self.final_layer.state_dict(prefix="final_layer.")
             state_dict.update(head)
-        return super().load_state_dict(state_dict, strict=strict, assign=assign)
+        result = super().load_state_dict(state_dict, strict=strict, assign=assign)
+        provenance = self.__dict__.get("_pretrained_provenance")
+        if provenance is not None:
+            # The head was supplied by this model, not by the checkpoint
+            provenance["loaded"].difference_update(head)
+        return result

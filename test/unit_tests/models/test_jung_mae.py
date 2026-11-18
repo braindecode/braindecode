@@ -103,7 +103,19 @@ def _reference_encode(reference, x, n_pairs):
 @pytest.mark.parametrize(
     "n_pairs, n_times, kw, interleaved",
     [
-        (3, 60, dict(embed_dim=32, depth=2, num_heads=4, mlp_ratio=2.0), False),
+        (
+            3,
+            60,
+            dict(
+                embed_dim=32,
+                depth=2,
+                num_heads=4,
+                mlp_ratio=2.0,
+                # 7.5 valid samples: ceil gives 8, so a patch with 7 is invalid
+                minimum_patch_valid_fraction=0.75,
+            ),
+            False,
+        ),
         (
             4,
             50,
@@ -260,6 +272,33 @@ def test_jung_mae_loads_the_released_payload_layout():
     state = model.state_dict()
     assert all(torch.equal(state[k], v) for k, v in backbone.items())
     assert all(torch.equal(state["final_layer." + k], v) for k, v in head.items())
+    # the override keeps the strict load: unknown or missing keys still raise
+    with pytest.raises(RuntimeError, match="Unexpected key"):
+        model.load_state_dict({"model": {**backbone, "encoder.extra": torch.zeros(1)}})
+    missing = {k: v for k, v in backbone.items() if k != "patch_embed.weight"}
+    with pytest.raises(RuntimeError, match="Missing key"):
+        model.load_state_dict({"model": missing})
+
+
+def test_jung_mae_head_kept_from_the_model_is_not_reported_as_loaded():
+    """Through ``from_pretrained``, the head the override supplies is new."""
+    from braindecode.models.base import _RECORD_LOADED_KEYS
+
+    model = JungMAE(n_chans=4, n_outputs=2, n_times=60, depth=1)
+    backbone = {k: v.clone() for k, v in _backbone(model).items()}
+    token = _RECORD_LOADED_KEYS.set(True)
+    try:
+        model.load_state_dict({"model": backbone}, strict=True)
+    finally:
+        _RECORD_LOADED_KEYS.reset(token)
+    loaded = model.__dict__["_pretrained_provenance"]["loaded"]
+    assert "patch_embed.weight" in loaded
+    assert not any(key.startswith("final_layer.") for key in loaded)
+
+
+def test_jung_mae_activation_reaches_the_feed_forward_layers():
+    model = JungMAE(n_chans=4, n_outputs=2, n_times=60, depth=2, activation=nn.ELU)
+    assert all(isinstance(layer.activation, nn.ELU) for layer in model.encoder.layers)
 
 
 def test_jung_mae_padded_samples_are_missing():
