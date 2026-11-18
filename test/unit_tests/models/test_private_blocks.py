@@ -75,6 +75,7 @@ _KNOWN_PRIVATE_BLOCKS = {
     ("emg2qwerty", "_RotationInvariantMLP"),
     ("emg2qwerty", "_MultiBandRotationInvariantMLP"),
     ("epint", "_RoPEAttention"),
+    ("fnirs_t", "_TransformerEncoder"),
     ("guetschel2026", "_LinearPatchEmbedding"),
     ("guetschel2026", "_MultiHeadAttention"),
     ("guetschel2026", "_TransformerEncoderLayer"),

@@ -686,7 +686,9 @@ class _TransformerEncoder(nn.Sequential):
 
     ``depth`` pre-norm blocks, each a multi-head self-attention with bias-free
     query, key and value maps and a feed-forward layer, both with a residual
-    connection.
+    connection. Built only from the shared ``PreNormTransformerBlock``,
+    ``MultiHeadAttention`` and ``FeedForwardBlock``; the class groups them
+    under the authors' name for the two levels of the model.
 
     Parameters
     ----------
