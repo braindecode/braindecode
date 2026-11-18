@@ -159,6 +159,13 @@ Requirements
 Bug fixes
 ==========
 
+- ``load_state_dict`` of every braindecode model loads checkpoints saved before
+  the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
+  other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key
+  is mapped to ``parametrizations.weight.original``. Released checkpoints such as
+  the EEGNet weights of Guetschel and Tangermann load without renaming keys
+  (:gh:`1538` by `Bruno Aristimunha`_).
+
 - :class:`braindecode.modules.ChannelLayer` computes every target that is a
   combination of the measured channels exactly, under every strategy including
   ``"exact"``: ``A-B`` from a measured ``B-A`` with weight -1 (copied before with

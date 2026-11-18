@@ -47,9 +47,11 @@ the weights, then one occlusion test on data to confirm it.
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 from numpy import multiply
-from scipy.signal import butter, sosfiltfilt
+from scipy.signal import butter, freqz, sosfiltfilt
+from sklearn.metrics import accuracy_score
 
 from braindecode.datasets import BaseConcatDataset, MOABBDataset
 from braindecode.models import EEGNet
@@ -86,11 +88,8 @@ state = torch.hub.load_state_dict_from_url(
     weights_only=True,
     file_name="EEGNetv4_PhysionetMI.pkl",
 )
-# The checkpoint predates the max-norm parametrisation of the spatial filters.
-# The new key follows how EEGNet implements that max-norm today.
-state["conv_spatial.parametrizations.weight.original"] = state.pop(
-    "conv_spatial.weight"
-)
+# The checkpoint was saved by an older braindecode; load_state_dict maps its
+# parameter names to the current ones.
 model = EEGNet(n_chans=3, n_outputs=5, n_times=385, sfreq=SFREQ, drop_prob=0.25)
 model.load_state_dict(state)
 model.eval()
@@ -122,81 +121,72 @@ model.eval()
 # there (Haufe et al. [4]_ make this point for linear models), so the
 # channel ranking is the weakest part of the reading. The band and the
 # window come from the temporal kernels and the classifier.
+#
+# First, the weights of each layer as arrays. ``numpy(force=True)`` detaches
+# a parameter and moves it to the CPU; ``conv_spatial.weight`` is the
+# spatial filter after its max-norm.
 
-BANDS = [
-    (0.0, 4.0, "slow (<4 Hz)"),
-    (4.0, 8.0, "theta (4-8 Hz)"),
-    (8.0, 13.0, "mu/alpha (8-13 Hz)"),
-    (13.0, 30.0, "beta (13-30 Hz)"),
-    (30.0, np.inf, "gamma (>30 Hz)"),
-]
+w_temporal = model.conv_temporal.weight.numpy(force=True)[:, 0, 0, :]  # (F1, n_taps)
+w_spatial = model.conv_spatial.weight.numpy(force=True)[:, 0, :, 0]  # (F1*D, n_chans)
+w_point = model.conv_separable_point.weight.numpy(force=True)[:, :, 0, 0]  # (F2, F1*D)
+gain_1 = np.abs(model.bnorm_1.weight.numpy(force=True))  # (F1*D,)
+gain_2 = np.abs(model.bnorm_2.weight.numpy(force=True))  # (F2,)
+w_head = model.final_layer.conv_classifier.weight.numpy(force=True)
+w_head = w_head.reshape(model.n_outputs, model.F2, -1)[[LEFT, RIGHT]]
 
+######################################################################
+# Feature, then spatial filter, then channel.
 
-def read_weights(model, ch_names, sfreq, window_start_s, outputs):
-    """Estimate the channels, band and time window an EEGNet relies on."""
+contrast = w_head - w_head.mean(axis=0, keepdims=True)  # (2, F2, n_time_bins)
+feature_importance = gain_2 * np.sqrt((contrast**2).sum(axis=(0, 2)))
+filter_importance = gain_1 * (feature_importance @ np.abs(w_point))
+channel_share = pd.Series(filter_importance @ np.abs(w_spatial), CHANNELS, dtype=float)
+channel_share /= channel_share.sum()
 
-    def as_np(t):
-        return t.detach().cpu().numpy()
+######################################################################
+# The band. Temporal kernel ``k`` feeds spatial filters ``k*D`` to
+# ``k*D + D - 1``, so a kernel's importance is the sum over its ``D``
+# filters. :func:`scipy.signal.freqz` gives the frequency response of each
+# kernel every 0.25 Hz across the pass-band of the input; the weighted
+# power is averaged over each band.
 
-    w_spatial = as_np(model.conv_spatial.weight)[:, 0, :, 0]  # (F1*D, n_chans)
-    w_temporal = as_np(model.conv_temporal.weight)[:, 0, 0, :]  # (F1, n_taps)
-    w_point = as_np(model.conv_separable_point.weight)[:, :, 0, 0]  # (F2, F1*D)
-    w_head = as_np(model.final_layer.conv_classifier.weight).reshape(
-        model.n_outputs, model.F2, -1
-    )[outputs]
-
-    # Feature -> spatial filter -> channel.
-    contrast = w_head - w_head.mean(axis=0, keepdims=True)
-    feature_importance = np.abs(as_np(model.bnorm_2.weight)) * np.sqrt(
-        (contrast**2).sum(axis=(0, 2))
-    )
-    filter_importance = np.abs(as_np(model.bnorm_1.weight)) * (
-        np.abs(w_point) * feature_importance[:, None]
-    ).sum(axis=0)
-    channel_score = (np.abs(w_spatial) * filter_importance[:, None]).sum(axis=0)
-    channel_score = channel_score / channel_score.sum()
-
-    # Temporal kernel k feeds spatial filters k*D ... k*D+D-1.
-    kernel_importance = filter_importance.reshape(model.F1, model.D).sum(axis=1)
-    n_fft = 8 * w_temporal.shape[1]
-    power = np.abs(np.fft.rfft(w_temporal, n=n_fft, axis=1)) ** 2
-    freqs = np.fft.rfftfreq(n_fft, d=1.0 / sfreq)
-    # Mean weighted power in each band, inside the pass-band of the input.
-    spectrum = kernel_importance @ power
-    passed = (freqs >= L_FREQ) & (freqs <= H_FREQ)
-    band_power = {
-        name: spectrum[passed & (freqs >= low) & (freqs < high)].mean()
-        for low, high, name in BANDS
-    }
-    total = sum(band_power.values())
-    band_share = {name: float(p / total) for name, p in band_power.items()}
-
-    # Classifier time bins -> seconds -> one-second windows.
-    energy = (feature_importance[None, :, None] * contrast**2).sum(axis=(0, 1))
-    n_bins = energy.size
-    centres_s = (
-        window_start_s + (np.arange(n_bins) + 0.5) * model.n_times / n_bins / sfreq
-    )
-    second = np.floor(centres_s).astype(int)
-    window_energy = {s: energy[second == s].mean() for s in np.unique(second)}
-    best = int(max(window_energy, key=window_energy.get))
-
-    return {
-        "channel_score": dict(zip(ch_names, channel_score.tolist())),
-        "band": max(band_share, key=band_share.get),
-        "band_share": band_share,
-        "window": f"{best:+d}..{best + 1:+d} s",
-    }
-
-
-reading = read_weights(model, CHANNELS, SFREQ, 0.0, outputs=[LEFT, RIGHT])
-print(f"Band with the most power: {reading['band']}")
-for name, share in reading["band_share"].items():
-    print(f"  {name:>18s}: {share:.3f}")
-print(f"Window with most classifier contrast: {reading['window']}")
-print(
-    "Channel shares:", {ch: round(s, 3) for ch, s in reading["channel_score"].items()}
+kernel_importance = filter_importance.reshape(model.F1, model.D).sum(axis=1)
+# freqz reads filter taps along the first axis: (n_taps, F1, 1) gives (F1, n_freqs).
+freqs, response = freqz(
+    w_temporal.T[:, :, None], worN=np.arange(0.0, H_FREQ + 0.25, 0.25), fs=SFREQ
 )
+spectrum = kernel_importance @ np.abs(response) ** 2
+passed = freqs >= L_FREQ
+band = pd.cut(
+    freqs[passed],
+    bins=[0.0, 4.0, 8.0, 13.0, 30.0, np.inf],
+    labels=[
+        "slow (<4 Hz)",
+        "theta (4-8 Hz)",
+        "mu/alpha (8-13 Hz)",
+        "beta (13-30 Hz)",
+        "gamma (>30 Hz)",
+    ],
+    right=False,
+)
+band_power = pd.Series(spectrum[passed]).groupby(band, observed=False).mean()
+band_share = band_power / band_power.sum()
+
+######################################################################
+# The window. Each classifier time bin covers ``n_times / n_time_bins``
+# samples from the cue; the contrast energy is averaged over the bins
+# whose centre falls in each second.
+
+energy = (feature_importance[:, None] * contrast**2).sum(axis=(0, 1))
+bin_centre_s = (np.arange(energy.size) + 0.5) * model.n_times / energy.size / SFREQ
+window_energy = pd.Series(energy).groupby(np.floor(bin_centre_s).astype(int)).mean()
+best = window_energy.idxmax()
+window = f"{best:+d}..{best + 1:+d} s"
+
+print(f"Band with the most power: {band_share.idxmax()}")
+print(band_share.round(3).to_string())
+print(f"Window with most classifier contrast: {window}")
+print("Channel shares:", channel_share.round(3).to_dict())
 
 ######################################################################
 # Compare the printed band and window with the two signatures above. The
@@ -262,49 +252,43 @@ print(f"{len(X)} trials, {X.shape[1]} channels x {X.shape[2]} samples")
 # when 0.5-4 Hz is removed, when only 8-30 Hz is kept, or when the first
 # second is zeroed, and keeps it when 1-3 s is zeroed. A decoder that
 # reads the sensorimotor rhythm does the opposite.
+#
+# Each test is a modified copy of the trials: filtered with a 4th-order
+# zero-phase Butterworth filter, or multiplied by a mask that zeroes some
+# samples or one channel.
 
+highpass_4hz = butter(4, 4.0, "highpass", fs=SFREQ, output="sos")
+bandpass_8_30hz = butter(4, [8.0, 30.0], "bandpass", fs=SFREQ, output="sos")
+first_second = np.arange(X.shape[-1]) < int(SFREQ)
+X_tests = {
+    "remove\n0.5-4 Hz": sosfiltfilt(highpass_4hz, X).astype(np.float32),
+    "keep\n8-30 Hz only": sosfiltfilt(bandpass_8_30hz, X).astype(np.float32),
+    "zero\n0-1 s": X * ~first_second,
+    "zero\n1-3 s": X * first_second,
+}
+for i, ch in enumerate(CHANNELS):
+    X_tests[f"zero\n{ch}"] = X * (np.arange(len(CHANNELS)) != i)[:, None]
 
-def _accuracy(model, X, y, outputs):
-    left, right = outputs
-    with torch.no_grad():
-        logits = model(torch.as_tensor(X))
-    return float(((logits[:, right] > logits[:, left]).numpy() == y).mean())
+######################################################################
+# The decoder predicts the hand with the larger of its two hand outputs.
+# The drop of a test is the accuracy on the unchanged trials minus the
+# accuracy on the modified ones.
 
+accuracy = {}
+with torch.no_grad():
+    for name, X_test in {"unchanged": X, **X_tests}.items():
+        logits = model(torch.as_tensor(X_test))
+        y_pred = logits[:, [LEFT, RIGHT]].argmax(dim=1).numpy()
+        accuracy[name] = accuracy_score(y, y_pred)
+accuracy = pd.Series(accuracy)
+baseline = accuracy.pop("unchanged")
+drops = baseline - accuracy
 
-def occlusion_check(model, X, y, ch_names, sfreq, outputs):
-    """Accuracy drop when a band, a time window or a channel is removed."""
-    baseline = _accuracy(model, X, y, outputs)
-
-    def drop(X_changed):
-        return baseline - _accuracy(model, X_changed, y, outputs)
-
-    def filtered(kind, freqs):
-        sos = butter(4, freqs, kind, fs=sfreq, output="sos")
-        return sosfiltfilt(sos, X, axis=-1).astype(np.float32)
-
-    def zeroed(channel=slice(None), samples=slice(None)):
-        X_zeroed = X.copy()
-        X_zeroed[:, channel, samples] = 0.0
-        return X_zeroed
-
-    one_s = int(sfreq)
-    drops = {
-        "remove\n0.5-4 Hz": drop(filtered("highpass", 4.0)),
-        "keep\n8-30 Hz only": drop(filtered("bandpass", [8.0, 30.0])),
-        "zero\n0-1 s": drop(zeroed(samples=slice(0, one_s))),
-        "zero\n1-3 s": drop(zeroed(samples=slice(one_s, None))),
-    }
-    for i, name in enumerate(ch_names):
-        drops[f"zero\n{name}"] = drop(zeroed(channel=i))
-    return baseline, drops
-
-
-baseline, drops = occlusion_check(model, X, y, CHANNELS, SFREQ, outputs=[LEFT, RIGHT])
 print(f"Left vs right accuracy: {baseline:.1%}")
 for name, value in drops.items():
     print(f"  {name.replace(chr(10), ' '):>18s}: drop {value:+.1%}")
-top_weights = max(reading["channel_score"], key=reading["channel_score"].get)
-top_data = max(CHANNELS, key=lambda ch: drops[f"zero\n{ch}"])
+top_weights = channel_share.idxmax()
+top_data = drops[[f"zero\n{ch}" for ch in CHANNELS]].idxmax().removeprefix("zero\n")
 print(f"Channel ranked first by the weights: {top_weights}")
 print(f"Channel whose removal costs the most: {top_data}")
 
@@ -322,15 +306,15 @@ print(f"Channel whose removal costs the most: {top_data}")
 
 fig, ax = plt.subplots(figsize=(7, 3.6))
 ax.bar(
-    list(drops),
-    100 * np.array(list(drops.values())),
+    drops.index,
+    100 * drops.to_numpy(),
     color=["#D55E00"] * 3 + ["#0072B2"] + ["#999999"] * 3,
 )
 ax.axhline(0, color="black", lw=0.8)
 ax.set_ylabel("Accuracy drop (points)")
 ax.set_title(
     f"PhysioNet EEGNet checkpoint, left vs right {baseline:.0%}; "
-    f"weights say {reading['band']}, {reading['window']}\n"
+    f"weights say {band_share.idxmax()}, {window}\n"
     f"top channel: {top_weights} by the weights, {top_data} by occlusion",
     fontsize=9,
 )

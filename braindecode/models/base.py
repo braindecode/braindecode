@@ -891,14 +891,19 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         mapping = self.mapping if self.mapping else {}
+        own = super().state_dict()
         new_state_dict = OrderedDict()
         for k, v in state_dict.items():
-            if k in mapping:
-                new_state_dict[mapping[k]] = v
-            else:
-                new_state_dict[k] = v
+            k = mapping.get(k, k)
+            # Checkpoints saved before a weight was parametrized (max-norm
+            # constraints) store it as ``weight``; the module now keeps it
+            # as ``parametrizations.weight.original``.
+            module, _, name = k.rpartition(".")
+            parametrized = f"{module}.parametrizations.weight.original".lstrip(".")
+            if name == "weight" and k not in own and parametrized in own:
+                k = parametrized
+            new_state_dict[k] = v
         # A backbone checkpoint has no weights for a trainable channel layer.
-        own = super().state_dict()
         # Load hooks may expand tensors with locally initialized values. Only
         # attribute whole tensors whose checkpoint shape already matches.
         from_checkpoint = {
