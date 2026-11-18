@@ -12,6 +12,7 @@ from braindecode.functional import (
     exact_derivation,
     fft_conv1d,
     hilbert_freq,
+    linear_channel_map,
     masked_group_norm,
     masked_mean,
     pack_channels,
@@ -538,6 +539,10 @@ def test_derivation_matrix_rows():
     matrix, electrodes = derivation_matrix(["F3", "F3-C3", "c3-Cz"])
     assert electrodes == ["f3", "c3", "cz"]
     assert matrix.tolist() == [[1, 0, 0], [1, -1, 0], [0, 1, -1]]
+    cz = derivation_matrix(["F3", "C3-P3"], reference="Cz")[0]  # F3 is F3-Cz
+    assert cz.tolist() == [[1, -1, 0, 0], [0, 0, 1, -1]]
+    avg = derivation_matrix(["F3", "C3", "C3-P3"], reference="average")[0]
+    assert avg.tolist() == [[0.5, -0.5, 0], [-0.5, 0.5, 0], [0, 1, -1]]
 
 
 @pytest.mark.parametrize(
@@ -559,3 +564,32 @@ def test_exact_derivation(target, inputs, weight):
     assert exact.tolist() == [weight is not None]
     assert W.shape == (len(target), len(inputs))
     assert W.tolist() == (weight or [[0.0] * len(inputs)])
+
+
+def test_linear_channel_map_is_the_gaussian_posterior():
+    # Electrodes 0-2 measured, 3-4 wanted; closed form without a flat prior.
+    g = torch.Generator().manual_seed(0)
+    L = torch.randn(5, 5, generator=g, dtype=torch.float64)
+    cov, eye = L @ L.T, torch.eye(5, dtype=torch.float64)
+    A, B = eye[:3], eye[[0, 3, 4]]
+    W, var = linear_channel_map(A, B, cov, noise=0.1)
+    ref = B @ cov @ A.T @ torch.linalg.inv(A @ cov @ A.T + 0.1 * torch.eye(3))
+    torch.testing.assert_close(W, ref, atol=1e-8, rtol=1e-7)
+    Kyy = A @ cov @ A.T + 0.1 * torch.eye(3, dtype=torch.float64)
+    post = (B @ cov @ B.T - B @ cov @ A.T @ torch.linalg.inv(Kyy) @ A @ cov @ B.T).diag()
+    torch.testing.assert_close(var, post, atol=1e-8, rtol=1e-7)
+    W, var = linear_channel_map(A, B, cov)  # no noise: a measured target is copied
+    torch.testing.assert_close(W[0], eye[0, :3], atol=1e-9, rtol=0)
+    assert var[0].abs() < 1e-9
+    prior, ones = (B @ cov * B).sum(1), torch.ones(5, 1, dtype=torch.float64)
+    Wg, _ = linear_channel_map(A, B, cov, 0.1, match_gain=True)
+    torch.testing.assert_close((Wg @ A @ cov * (Wg @ A)).sum(1), prior, atol=1e-8, rtol=1e-7)
+    # with the flat prior: rows still sum to 1, as close to the prior as that allows
+    W, _ = linear_channel_map(A, B, cov, 0.1, ones)
+    Wg, _ = linear_channel_map(A, B, cov, 0.1, ones, match_gain=True)
+    torch.testing.assert_close(Wg.sum(1), torch.ones(3, dtype=torch.float64))
+    gap = [((w @ A @ cov * (w @ A)).sum(1) - prior).abs() for w in (W, Wg)]
+    assert (gap[1] <= gap[0] + 1e-9).all()
+    # A flat prior on the common offset: the estimate does not see it.
+    W, _ = linear_channel_map(A, B, cov, flat=ones)
+    torch.testing.assert_close(W.sum(1), torch.ones(3, dtype=torch.float64))
