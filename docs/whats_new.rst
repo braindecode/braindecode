@@ -250,7 +250,7 @@ Code health
   :class:`braindecode.models.EEGMiner`, :class:`braindecode.models.SSTDPN`,
   :class:`braindecode.models.Labram` and :class:`braindecode.models.CodeBrain`,
   which it skipped; it still skips SyncNet and NeuroRVQTokenizer
-  (by `Bruno Aristimunha`_).
+  (:gh:`1598` by `Bruno Aristimunha`_).
 - The :class:`braindecode.models.JungMAE` tests compare the forward with the
   reference encoder at ``atol=1e-5``: the reference packs the valid tokens and
   the model masks the invalid ones, so float32 rounding depends on the machine
