@@ -216,6 +216,10 @@ Bug fixes
   recording reference, preventing duplicated columns and misplaced weights
   (:gh:`1597` by `lindicaphxag-tech`_).
 
+- :meth:`braindecode.models.MetaNeuromotorHand.compute_output_lengths` returns
+  zero valid CTC emissions for recordings shorter than the model's receptive
+  field, including those just one sample short (by `Bruno Aristimunha`_).
+
 - :class:`braindecode.modules.ChannelLayer` computes every target that is a
   combination of the measured channels exactly, under every strategy including
   ``"exact"``: ``A-B`` from a measured ``B-A`` with weight -1 (copied before with

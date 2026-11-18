@@ -514,9 +514,7 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         """
         lengths = self.featurizer.compute_time_downsampling(input_lengths)
         slc = self.output_slice
-        lengths = (
-            torch.div(lengths - slc.start - 1, slc.step, rounding_mode="trunc") + 1
-        )
+        lengths = (lengths - slc.start - 1) // slc.step + 1
         return lengths.clamp_min(0)
 
     def get_output_shape(self) -> tuple[int, ...]:
