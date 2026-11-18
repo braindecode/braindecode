@@ -216,15 +216,16 @@ Bug fixes
   recording reference, preventing duplicated columns and misplaced weights
   (:gh:`1597` by `lindicaphxag-tech`_).
 
-- :class:`braindecode.models.PBT` cuts its patches within each channel, as the
-  authors' code does. When ``n_times`` is not a multiple of ``d_input``, patches were
-  cut from the flattened ``n_chans x n_times`` signal, so some mixed the end of one
-  channel with the start of the next, and the model had extra tokens (343 instead of
-  330 for 22 channels, 1000 samples and ``d_input=64``). Samples that do not fill a
-  patch are now dropped per channel. Outputs of existing models with such an
-  ``n_times`` change; outputs for a multiple of ``d_input`` are unchanged. The
-  positional embedding keeps its size, so released weights still load
-  (:gh:`1605` by `lindicaphxag-tech`_).
+- :class:`braindecode.models.PBT` cuts each patch from one channel, as the
+  authors' code does. When ``n_times`` was not a multiple of ``d_input``, it cut the
+  patches from the flattened ``n_chans x n_times`` signal, so some patches held the
+  end of one channel and the start of the next, and the model had more tokens than
+  ``n_chans * (n_times // d_input)`` (343 instead of 330 for 22 channels, 1000
+  samples and ``d_input=64``). Each channel now drops the samples after its last
+  whole patch. The positional embedding keeps its size, so checkpoints saved before
+  this change still load. Outputs of existing PBT models change when ``n_times`` is
+  not a multiple of ``d_input`` and stay the same otherwise (:gh:`1605` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - :class:`braindecode.modules.ChannelLayer` computes every target that is a
   combination of the measured channels exactly, under every strategy including
