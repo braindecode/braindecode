@@ -374,6 +374,11 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         self, token_ids: Tensor, token_mask: Optional[Tensor] = None
     ) -> Tensor:
         batch_size, n_chans = token_ids.shape[0], token_ids.shape[1]
+        if n_chans > self.channel_embedding.shape[0]:
+            raise ValueError(
+                f"MEGGPT has embeddings for {self.channel_embedding.shape[0]} channels "
+                f"but got {n_chans}. Build the model for this montage."
+            )
         # (batch, n_chans, n_segments * segment_len)
         # -> (batch * n_segments, segment_len, n_chans)
         token_ids = self.to_segments(token_ids)

@@ -44,9 +44,11 @@ Enhancements
   raise a ``ValueError`` with both channel counts and how to run the model on
   this input, through :func:`braindecode.functional.check_n_chans`, when the input
   does not have the channels the model was built for; it was a shape error deep in
-  the network. Inputs that run stay accepted: REVE checks only without ``pos``;
-  CBraMod, CodeBrain and MEGGPT only for their flattened head, and CSBrain also
-  for its region order (:gh:`1605` by `Julien Gadonneix`_).
+  the network. REVE accepts a different montage when given ``pos`` with attention
+  pooling or feature extraction. CBraMod, CodeBrain, JungMAE and MEGGPT accept
+  fewer channels when returning features (JungMAE takes complete HbO/HbR pairs).
+  MEGGPT also checks its channel embedding capacity. CSBrain checks its
+  region order (:gh:`1605` by `Julien Gadonneix`_).
 - :class:`braindecode.modules.ChannelLayer` maps channels with one linear
   estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
   targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat

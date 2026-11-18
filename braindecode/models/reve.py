@@ -533,6 +533,16 @@ class REVE(EEGModuleMixin, nn.Module):
                 "REVE",
                 "pass pos for these channels, or use a channel_strategy.",
             )
+        elif pos is not None and not (
+            self.use_attention_pooling or return_output or return_features
+        ):
+            head_channels = self._n_pos_chans
+            check_n_chans(
+                eeg,
+                self.n_chans if head_channels is None else head_channels,
+                "REVE",
+                "use attention_pooling=True or return_features=True for another montage.",
+            )
         channel_index = self.channel_index
         if pos is None and channel_index is not None:
             eeg = eeg.index_select(1, channel_index.to(eeg.device))
