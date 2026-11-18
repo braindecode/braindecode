@@ -38,7 +38,7 @@ Enhancements
   mean-hemoglobin branch (``mean_branch``); its ``mapping`` loads the authors' state
   dict. The helpers ``fnirs_chromophores_from_chs_info``, ``fnirs_channel_order`` and
   ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
-  ``chs_info``, stacked or in MNE's interleaved order (:gh:`FNIRS4D_PR` by
+  ``chs_info``, stacked or in MNE's interleaved order (:gh:`1582` by
   `Bruno Aristimunha`_).
 - :func:`braindecode.functional.masked_group_norm` groups the channels with a view and
   counts the real entries from the mask, without a permute or a full-size masked count:
