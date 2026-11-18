@@ -2133,8 +2133,8 @@ def test_eegtcnet_batch_size_one_train_mode():
 
 
 def test_eegtcnet_no_activation_after_temporal_bn():
-    """The EEGTCNet temporal conv is followed by BatchNorm only, as in the authors'
-    Keras code: the depthwise conv reads the BatchNorm output unchanged."""
+    """As in the authors' Keras code, the depthwise conv reads the temporal
+    BatchNorm output with no activation in between."""
     model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125).eval()
     seen = {}
     model.eegnet_tc.bn1.register_forward_hook(lambda m, i, o: seen.update(bn=o.clone()))
