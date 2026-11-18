@@ -217,6 +217,11 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         if not return_feats:
             self.final_layer = nn.Linear(self.len_last_layer, self.n_outputs)
 
+    @classmethod
+    def _fill_legacy_defaults(cls, kwargs):
+        super()._fill_legacy_defaults(kwargs)
+        kwargs.setdefault("attn_query_norm", True)
+
     @staticmethod
     def _feature_length(mrcnn, n_times):
         training_states = [(module, module.training) for module in mrcnn.modules()]
@@ -484,6 +489,8 @@ class _MultiHeadedAttention(nn.Module):
 
 class _ResidualLayerNormAttn(nn.Module):
     r"""A residual connection followed by a layer norm."""
+
+    norm_query = True  # full models saved before the raw-query option
 
     def __init__(self, size, dropout, fn_attn, norm_query):
         super().__init__()

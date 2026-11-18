@@ -12,6 +12,7 @@
 import inspect
 import math
 import os
+import pickle
 import re
 import subprocess
 import sys
@@ -1047,6 +1048,26 @@ def test_attnsleep_attn_query_norm_restores_previous_output():
     x = torch.randn(2, 1, 3000)
     with torch.no_grad():
         torch.testing.assert_close(legacy(x), model(x))
+
+
+def test_attnsleep_saved_without_query_norm_setting_keeps_logits():
+    previous = AttnSleep(
+        sfreq=100, n_outputs=5, input_window_seconds=30, attn_query_norm=True
+    ).eval()
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        expected = previous(x)
+        config = previous.get_config()
+        del config["attn_query_norm"]
+        restored = AttnSleep.from_config(config).eval()
+        restored.load_state_dict(previous.state_dict(), strict=True)
+        torch.testing.assert_close(restored(x), expected)
+
+        # Full-model saves before the switch have no per-layer flag.
+        for layer in previous.feature_extractor[1].layers:
+            del layer.residual_self_attn.norm_query
+        restored = pickle.loads(pickle.dumps(previous))
+        torch.testing.assert_close(restored(x), expected)
 
 
 def test_attn_sleep_requires_signal_geometry():
