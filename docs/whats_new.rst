@@ -162,6 +162,8 @@ Enhancements
 API and behavior changes
 ========================
 
+- Braindecode now requires MNE-Python 1.13.0 or later. This version centres
+  both montages on the fitted head origin for spherical-spline interpolation.
 - On Intel Gaudi, :func:`braindecode.functional.scaled_dot_product_attention` and
   :class:`braindecode.models.Labram` no longer call the Gaudi bridge's ``FusedSDPA``
   themselves: they call torch's SDPA on every device, which Habana's attention setting

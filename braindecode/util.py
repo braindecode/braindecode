@@ -340,11 +340,6 @@ def create_mne_dummy_raw(
     return raw, save_fname
 
 
-# MNE 1.13 renamed these standard montages and deprecated the legacy names,
-# which will raise in MNE 1.14 (mne-python#13903). As braindecode supports
-# ``mne>=1.11``, the spelling has to be resolved against the installed MNE
-# version instead of being hard-coded. The rename does not change electrode
-# positions: the new montage files are byte-identical to the legacy ones.
 _RENAMED_STANDARD_MONTAGES = {
     "standard_1005": "colin27_1005",
     "standard_1020": "colin27_1020",
@@ -352,36 +347,21 @@ _RENAMED_STANDARD_MONTAGES = {
 
 
 def resolve_montage_name(name):
-    """Resolve an MNE standard montage name for the installed MNE version.
-
-    MNE 1.13 renamed the ``standard_1005`` and ``standard_1020`` montages to
-    ``colin27_1005`` and ``colin27_1020`` and deprecated the legacy names,
-    which will raise in MNE 1.14 [1]_. As braindecode supports ``mne>=1.11``,
-    this helper returns the spelling understood by the installed MNE version,
-    so that neither a ``FutureWarning`` (MNE >= 1.13) nor a ``ValueError``
-    (MNE < 1.13, new names unknown) can occur.
+    """Return the current MNE name for a standard montage.
 
     Parameters
     ----------
     name : str
-        Name of a standard montage, in either the legacy or the current
-        spelling.
+        A standard montage name. The legacy names ``standard_1005`` and
+        ``standard_1020`` are also accepted.
 
     Returns
     -------
     str
-        ``name`` itself, unless it is one of the renamed montages and the
-        installed MNE knows the new spelling, in which case the new spelling
-        is returned.
-
-    References
-    ----------
-    .. [1] https://github.com/mne-tools/mne-python/pull/13903
+        The corresponding MNE montage name, with ``colin27_1005`` and
+        ``colin27_1020`` used for the two renamed montages.
     """
-    new_name = _RENAMED_STANDARD_MONTAGES.get(name)
-    if new_name is not None and new_name in mne.channels.get_builtin_montages():
-        return new_name
-    return name
+    return _RENAMED_STANDARD_MONTAGES.get(name, name)
 
 
 def _looks_like_channel_mask(tensor):

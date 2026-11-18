@@ -540,9 +540,9 @@ def test_resolve_montage_name():
         "standard_1020": "colin27_1020",
     }
     for legacy, new in renamed.items():
-        resolved = resolve_montage_name(legacy)
-        assert resolved in (legacy, new)
-        assert resolved in mne.channels.get_builtin_montages()
+        assert resolve_montage_name(legacy) == new
+        assert resolve_montage_name(new) == new
+        assert new in mne.channels.get_builtin_montages()
 
     # names that were not renamed pass through untouched
     assert resolve_montage_name("biosemi64") == "biosemi64"
