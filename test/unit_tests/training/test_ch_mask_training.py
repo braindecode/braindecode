@@ -28,7 +28,7 @@ from test.unit_tests.models.test_model_contract import (
 
 def _windows(n_chans_per_recording, n_times, n_windows=3, pos=False):
     rng = np.random.default_rng(0)
-    montage = mne.channels.make_standard_montage("standard_1005")
+    montage = mne.channels.make_standard_montage("colin27_1005")
     recordings = []
     for target, n_chans in enumerate(n_chans_per_recording):
         info = mne.create_info(montage.ch_names[:n_chans], 100.0, "eeg")
