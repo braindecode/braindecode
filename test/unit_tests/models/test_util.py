@@ -404,6 +404,15 @@ def test_warn_if_sfreq_differs_warns():
         warn_if_sfreq_differs("M", 250, 200)
 
 
+# the other pair-aware fNIRS models (FNIRS4D is tested directly): chs_info sets
+# their channel_order. The layouts below have 2 or 4 pairs, fewer than FNIRST's
+# default spatial kernel of 5 pairs.
+_FNIRS_PAIRING: dict[str, dict] = {
+    "FNIRSPreT": dict(depth=1, spatial_kernel_size=2),
+    "FNIRST": dict(depth=1, spatial_kernel_size=2),
+}
+
+
 def test_fnirs_channel_order_reads_chs_info():
     stacked = _fnirs_chs_info(2)
     chs = _fnirs_chs_info(2, interleaved=True)
@@ -466,6 +475,13 @@ def test_fnirs4d_interleaved_input_matches_stacked():
     _assert_interleaved_input_matches_stacked(models.FNIRS4D, {})
 
 
+@pytest.mark.parametrize("name", sorted(_FNIRS_PAIRING))
+def test_fnirs_interleaved_input_matches_stacked(name):
+    _assert_interleaved_input_matches_stacked(
+        getattr(models, name), _FNIRS_PAIRING[name]
+    )
+
+
 def test_fnirs4d_hbt_is_hbo_plus_hbr():
     hbt = models.FNIRS4D(n_chans=8, n_outputs=2, n_times=60).eval()
     plain = models.FNIRS4D(n_chans=8, n_outputs=2, n_times=60, compute_hbt=False)
@@ -497,6 +513,9 @@ def test_fnirs_chs_info_without_hbo_hbr_pairs_raises(names, types):
         fnirs_channel_order(chs)
     with pytest.raises(ValueError, match="paired HbO/HbR"):
         models.FNIRS4D(chs_info=chs, n_outputs=2, n_times=60)
+    for name, kw in _FNIRS_PAIRING.items():
+        with pytest.raises(ValueError, match="paired HbO/HbR"):
+            getattr(models, name)(chs_info=chs, n_outputs=2, n_times=60, **kw)
 
 
 def test_fnirs_odd_n_chans_raises_for_pairs():
@@ -507,6 +526,9 @@ def test_fnirs_odd_n_chans_raises_for_pairs():
     models.FNIRS4D(
         n_chans=5, n_outputs=2, n_times=60, compute_hbt=False, mean_branch="time_mean"
     )
+    for cls in (models.FNIRST, models.FNIRSPreT):
+        with pytest.raises(ValueError, match=f"{cls.__name__} needs HbO/HbR pairs"):
+            cls(n_chans=11, n_outputs=2, n_times=60, depth=1)
 
 
 def _assert_reads_channel_order_from_chs_info(cls, kw):
@@ -525,6 +547,13 @@ def _assert_reads_channel_order_from_chs_info(cls, kw):
 
 def test_fnirs4d_reads_channel_order_from_chs_info():
     _assert_reads_channel_order_from_chs_info(models.FNIRS4D, {})
+
+
+@pytest.mark.parametrize("name", sorted(_FNIRS_PAIRING))
+def test_fnirs_model_reads_channel_order_from_chs_info(name):
+    _assert_reads_channel_order_from_chs_info(
+        getattr(models, name), _FNIRS_PAIRING[name]
+    )
 
 
 @pytest.mark.parametrize(
