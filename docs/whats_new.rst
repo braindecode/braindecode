@@ -188,6 +188,12 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
+  ``patch_size`` differs from the embedding size ``emb_dim``, for example
+  ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
+  patches but had size ``emb_dim``. It now has size ``patch_size``, as in
+  :class:`braindecode.models.CBraMod`. The two are equal for the released
+  ``patch_size=200``, so the released weights still load and outputs do not change.
 - :class:`braindecode.modules.ChannelLayer` computes every target that is a
   combination of the measured channels exactly, under every strategy including
   ``"exact"``: ``A-B`` from a measured ``B-A`` with weight -1 (copied before with
