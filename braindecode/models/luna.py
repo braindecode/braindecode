@@ -174,7 +174,6 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        positions = chs_info_positions(self._chs_info, "LUNA")
 
         # Mapping for loading pretrained weights
         self.mapping = {
@@ -258,16 +257,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         self.norm = norm_layer(int(self.embed_dim * self.num_queries))
 
-        self._has_measured_positions = positions is not None
-        self.register_buffer(
-            "_default_channel_locations",
-            positions if positions is not None else torch.empty(0, 3),
-            persistent=False,
-        )
-        if positions is None:
-            self._default_channel_locations = self.build_channel_location_template(
-                self._n_chans_for_jit or 0
-            )
+        self._register_channel_locations()
 
         if self.num_classes == 0:
             self.decoder_head = _PatchReconstructionHeadWithQueries(
@@ -490,6 +480,32 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         channel_emb = channel_emb.repeat(x_latent.shape[1], 1, 1)
         decoder_queries = channel_locations_emb + channel_emb
         return self.decoder_head(x_latent, decoder_queries)
+
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        if "_channel_location_cache" in self.__dict__:
+            # Full models saved before the coordinates became a module buffer.
+            del self.__dict__["_channel_location_cache"]
+            self._register_channel_locations()
+
+    def _register_channel_locations(self):
+        self.register_buffer(
+            "_default_channel_locations", torch.empty(0, 3), persistent=False
+        )
+        self._reset_channel_locations()
+        self.register_load_state_dict_post_hook(self._reset_channel_locations)
+
+    def _reset_channel_locations(self, _module=None, _incompatible_keys=None):
+        """Rebuild the nonpersistent coordinates after initialization or checkpoint load."""
+        # MNE metadata holds real coordinates, including while constructing on meta.
+        with torch.device("cpu"):
+            positions = chs_info_positions(self._chs_info, "LUNA")
+        anchor = next(self.parameters())
+        self._has_measured_positions = positions is not None
+        if positions is None:
+            self._default_channel_locations = anchor.new_empty(0, 3)
+            positions = self.build_channel_location_template(self._n_chans_for_jit or 0)
+        self._default_channel_locations = positions.to(anchor)
 
     def get_default_channel_locations(
         self,

@@ -211,7 +211,9 @@ Bug fixes
   on the CPU in a plain dict, and each forward without ``channel_locations``
   copied them to the device of the input. When the channel count changes, LUNA
   uses the corresponding measured positions or builds its fallback on the model
-  device. Existing state dictionaries load with the same keys (:gh:`1616` by
+  device. The positions are reconstructed during checkpoint loading, including
+  when loading weights into a model constructed on the meta device. Existing
+  state dictionaries and full-model pickles load (:gh:`1616` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - ``load_state_dict`` of every braindecode model loads checkpoints saved before
   the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the

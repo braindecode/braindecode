@@ -1315,6 +1315,45 @@ def test_luna_matches_explicit_locations_when_channel_count_changes():
             torch.testing.assert_close(model(x), model(x, channel_locations=explicit))
 
 
+@pytest.mark.parametrize("assign", [False, True], ids=["to_empty", "assign"])
+@pytest.mark.parametrize("measured", [False, True], ids=["fallback", "measured"])
+def test_luna_materializes_default_positions_from_checkpoint(assign, measured):
+    chs = None
+    if measured:
+        chs = [{"ch_name": str(i), "loc": [i + 0.1, 0.3, -0.2]} for i in range(3)]
+    kwargs = dict(
+        n_chans=3, chs_info=chs, n_outputs=2, n_times=80, patch_size=20, depth=1
+    )
+    reference = LUNA(**kwargs).eval()
+    with torch.device("meta"):
+        restored = LUNA(**kwargs).eval()
+    if not assign:
+        restored.to_empty(device="cpu")
+        # Make reads from uninitialized floating buffers deterministic.
+        for buffer in restored.buffers():
+            if buffer.is_floating_point():
+                buffer.fill_(float("nan"))
+    restored.load_state_dict(reference.state_dict(), strict=True, assign=assign)
+    x = torch.randn(2, 3, 80)
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x), reference(x))
+
+
+def test_luna_loads_full_model_with_legacy_location_cache(tmp_path):
+    model = LUNA(n_chans=3, n_outputs=2, n_times=80, patch_size=20, depth=1).eval()
+    x = torch.randn(2, 3, 80)
+    with torch.no_grad():
+        expected = model(x)
+    model._channel_location_cache = {3: model._default_channel_locations}
+    del model._default_channel_locations
+    model._load_state_dict_post_hooks.clear()
+    checkpoint = tmp_path / "luna.pt"
+    torch.save(model, checkpoint)
+    restored = torch.load(checkpoint, weights_only=False)
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x), expected)
+
+
 def test_luna_variants_output_consistency(
     luna_base_config, luna_large_config, luna_huge_config
 ):
