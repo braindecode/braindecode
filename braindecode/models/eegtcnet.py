@@ -268,7 +268,6 @@ class _EEGNetTC(nn.Module):
         # x shape: (batch_size, 1, n_times, n_chans)
         x = self.conv1(x)
         x = self.bn1(x)
-        x = self.activation(x)
 
         x = self.depthwise_conv(x)
         x = self.bn2(x)

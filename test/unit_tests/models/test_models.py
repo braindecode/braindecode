@@ -2132,6 +2132,19 @@ def test_eegtcnet_batch_size_one_train_mode():
     assert out.shape == (1, 4)
 
 
+def test_eegtcnet_no_activation_after_temporal_bn():
+    """The EEGTCNet temporal conv is followed by BatchNorm only, as in the authors'
+    Keras code: the depthwise conv reads the BatchNorm output unchanged."""
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125).eval()
+    seen = {}
+    model.eegnet_tc.bn1.register_forward_hook(lambda m, i, o: seen.update(bn=o.clone()))
+    model.eegnet_tc.depthwise_conv.register_forward_pre_hook(
+        lambda m, i: seen.update(dw=i[0].clone())
+    )
+    model(torch.randn(2, 22, 1125))
+    torch.testing.assert_close(seen["dw"], seen["bn"])
+
+
 def test_eegclip_batch_size_one_train_mode():
     """At n_times=480 the dense Deep4Net gives one time step, so the projection
     head's BatchNorm1d sees a single row in train mode (NeuralBench matrix)."""
