@@ -548,7 +548,9 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
             Not read with ``use_channel_geometry=False``.
         ch_mask : torch.Tensor, optional
             ``(batch, n_chans)`` mask of the real channels of a padded batch;
-            it must pad whole HbO/HbR pairs.
+            it must pad whole HbO/HbR pairs. Stacked windows can keep paired
+            slots across the batch or be padded at the end by
+            :func:`~braindecode.datasets.pad_channels_collate`.
 
         Returns
         -------
@@ -558,17 +560,6 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
             boolean ``(batch, n_latent_channels, n_patches)``, ``False`` for
             the patches that have no valid channel (their tokens are zero).
         """
-        # Padded channels of the batch, as pairs: both chromophores of a
-        # padded pair must be flagged
-        # (batch, n_chans) -> (batch, n_pairs)
-        pair_mask: Optional[torch.Tensor] = None
-        ch_mask = check_ch_mask(ch_mask, x)
-        if ch_mask is not None:
-            hbo_mask, hbr_mask = fnirs_split_hbo_hbr(ch_mask, self.channel_order)
-            if not torch.equal(hbo_mask, hbr_mask):
-                raise ValueError("ch_mask needs whole HbO/HbR pairs.")
-            pair_mask = hbo_mask
-
         # The window is cut into P patches of S samples (§2.2)
         # (batch, n_chans, n_times) -> (batch, n_chans, P * S)
         n_times = x.shape[-1]
@@ -576,8 +567,31 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
 
         # Paired chromophore signals X^O and X^R of the C source-detector pairs
         # (batch, n_chans, P * S) -> 2 x (batch, n_pairs, P * S)
+        if x.shape[1] % 2:
+            raise ValueError("GeoNIRS needs whole HbO/HbR pairs.")
         hbo, hbr = fnirs_split_hbo_hbr(x, self.channel_order)
         batch_size, n_pairs, _ = hbo.shape
+        pair_mask: Optional[torch.Tensor] = None
+        ch_mask = check_ch_mask(ch_mask, x)
+        if ch_mask is not None:
+            hbo_mask, hbr_mask = fnirs_split_hbo_hbr(ch_mask, self.channel_order)
+            pair_mask = hbo_mask
+            if not torch.equal(hbo_mask, hbr_mask):
+                # The collator pads after each window's HbR block. Its start
+                # is half the real channel count, which can differ per window.
+                channels = torch.arange(x.shape[1], device=x.device)
+                n_real = ch_mask.sum(dim=1, keepdim=True)
+                tail_padded = (ch_mask == (channels < n_real)).all(dim=1, keepdim=True)
+                paired_slots = (hbo_mask == hbr_mask).all(dim=1, keepdim=True)
+                if self.channel_order != "stacked" or not bool(
+                    (paired_slots | (tail_padded & (n_real % 2 == 0))).all()
+                ):
+                    raise ValueError("ch_mask needs whole HbO/HbR pairs.")
+                start = torch.where(paired_slots, n_pairs, n_real // 2)
+                pairs = channels[:n_pairs]
+                indices = (start + pairs).unsqueeze(-1).expand(-1, -1, x.shape[-1])
+                hbr = x.gather(1, indices)
+                pair_mask = torch.where(paired_slots, hbo_mask, pairs < start)
 
         # Validity masks (§2.2). A sample is measured when both chromophores
         # are finite; a pair is valid when it has a measured sample and is

@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 import torch
 
+from braindecode.datasets import pad_channels_collate
 from braindecode.models import (
     BIOT,
     CORTEG,
@@ -236,23 +237,43 @@ def test_labram_ch_mask_matches_each_recording_alone():
     _assert_matches_alone(*_labram_case())
 
 
-def test_geonirs_ch_mask_pairs_match_each_recording_alone():
-    # GeoNIRS reads HbO/HbR pairs: recordings of 1, 3 and 2 interleaved pairs
+@pytest.mark.parametrize(
+    "channel_order,paired_slots", [(None, False), (None, True), ("interleaved", False)]
+)
+def test_geonirs_ch_mask_pairs_match_each_recording_alone(channel_order, paired_slots):
     torch.manual_seed(0)
-    model = GeoNIRS(n_chans=6, n_outputs=3, n_times=40, channel_order="interleaved",
-                    embed_dim=32, num_heads=4, depth=1,
-                    n_latent_channels=4, feature_dim=8).eval()
+    model = GeoNIRS(
+        n_chans=6,
+        n_outputs=3,
+        n_times=40,
+        channel_order=channel_order,
+        embed_dim=32,
+        num_heads=4,
+        depth=1,
+        n_latent_channels=4,
+        feature_dim=8,
+    ).eval()
     xs = [torch.randn(2 * n_real, 40) for n_real in N_REAL]
     geoms = [_positions(i, n_real).repeat(1, 2) for i, n_real in enumerate(N_REAL)]
-    mask = torch.arange(6) < 2 * torch.tensor(N_REAL)[:, None]
-    x = torch.full((len(N_REAL), 6, 40), float("nan"))
+    x, _, _, mask = pad_channels_collate([(xi, 0, [0, 0, 40]) for xi in xs])
     padded = torch.zeros(len(N_REAL), 3, 6)
-    for i, (xi, geom) in enumerate(zip(xs, geoms)):
-        x[i, : len(xi)] = xi
+    for i, geom in enumerate(geoms):
         padded[i, : len(geom)] = geom
+    if paired_slots:
+        # The third recording occupies the first and last pair of a common montage.
+        slots = [0, 2, 3, 5]
+        x[2].fill_(float("nan"))
+        x[2, slots] = xs[2]
+        mask[2].zero_()
+        mask[2, slots] = True
+        padded[2].zero_()
+        padded[2, [0, 2]] = geoms[2]
     _assert_matches_alone(
         model, x, mask, xs, {"geometry": padded}, [{"geometry": g[None]} for g in geoms]
     )
+    mask[0, 0] = False  # one real channel, with no partner
+    with pytest.raises(ValueError, match="whole HbO/HbR pairs"):
+        model(x, ch_mask=mask, geometry=padded)
 
 
 def _mne_fnirs_chs(n_pairs):
