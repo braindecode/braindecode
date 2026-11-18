@@ -1018,8 +1018,8 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
 
 
 def test_attnsleep_attention_query_is_not_normalized():
-    # The authors' code feeds the raw query to the attention; the layer norm of
-    # the residual block is never applied to it.
+    # The authors' code attends with the raw query, so the norm of the residual
+    # attention block must not change the output.
     model = AttnSleep(sfreq=100, n_outputs=5, input_window_seconds=30, d_model=80)
     model.eval()
     x = torch.randn(2, 1, 3000)
