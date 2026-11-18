@@ -72,6 +72,12 @@ class _JungMAEReference(nn.Module):
         return output.reshape(b, c, p, -1), patch_valid
 
 
+# The reference packs the valid tokens of each pair and the port masks the
+# invalid ones: the same arithmetic in another order, so float32 rounding
+# (up to 1.3e-6 on CI runners) depends on the machine
+_ATOL = 1e-5
+
+
 def _backbone(model):
     state = model.state_dict()
     return {k: v for k, v in state.items() if not k.startswith("final_layer.")}
@@ -159,11 +165,11 @@ def test_jung_mae_matches_the_reference_encoder(n_pairs, n_times, kw, interleave
         out = model.encode(ours_x)
         foundation, patch_valid = _reference_encode(reference, their_x, n_pairs)
         assert torch.equal(out["valid"], patch_valid)
-        torch.testing.assert_close(out["foundation"], foundation, rtol=0, atol=1e-6)
+        torch.testing.assert_close(out["foundation"], foundation, rtol=0, atol=_ATOL)
         if step == 0:
             with torch.no_grad():
                 logits = model.final_layer(foundation.flatten(1))  # benchmark head
-                torch.testing.assert_close(model(x), logits, rtol=0, atol=1e-6)
+                torch.testing.assert_close(model(x), logits, rtol=0, atol=_ATOL)
         weight = torch.randn(foundation.shape)
         for opt in optimizers:
             opt.zero_grad()
@@ -204,7 +210,7 @@ def test_jung_mae_defaults_are_the_released_configuration():
         foundation, patch_valid = _reference_encode(reference, x, 2)
         out = model.encode(x)
     assert torch.equal(out["valid"], patch_valid)
-    torch.testing.assert_close(out["foundation"], foundation, rtol=0, atol=1e-6)
+    torch.testing.assert_close(out["foundation"], foundation, rtol=0, atol=_ATOL)
     dropouts = [m.p for m in model.encoder.modules() if isinstance(m, nn.Dropout)]
     assert len(dropouts) == 4 * 3 and set(dropouts) == {0.1}
     assert model.head_dropout.p == 0.1
