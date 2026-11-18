@@ -190,6 +190,7 @@ interface for all EEG models and can derive variable names when needed.
      FBCNet
      FBLightConvNet
      FBMSNet
+     FNIRS4D
      FNIRSNet
      GCNsNet
      Guetschel2026

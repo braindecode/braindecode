@@ -33,6 +33,13 @@ Enhancements
   depthwise-separable convolution over ``(batch, n_chans, n_times)`` HbO/HbR windows.
   Its ``mapping`` loads the authors' state dict, and ``fNIRS`` joins the modality
   vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRS4D` (Wang et al., IEEE TIM 2026), a diagonal
+  state-space (S4D) backbone with the authors' LOSO-CV or KFold-CV
+  mean-hemoglobin branch (``mean_branch``); its ``mapping`` loads the authors' state
+  dict. The helpers ``fnirs_chromophores_from_chs_info``, ``fnirs_channel_order`` and
+  ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
+  ``chs_info``, stacked or in MNE's interleaved order (:gh:`FNIRS4D_PR` by
+  `Bruno Aristimunha`_).
 - :func:`braindecode.functional.masked_group_norm` groups the channels with a view and
   counts the real entries from the mask, without a permute or a full-size masked count:
   same outputs and gradients, 28-38% less time forward and backward at CBraMod and
