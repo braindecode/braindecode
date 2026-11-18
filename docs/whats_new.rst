@@ -57,6 +57,11 @@ Enhancements
   ``load_state_dict`` takes ``geonirs_base.pt`` and ``geonirs_large.pt`` as released,
   and ``ch_mask`` handles montages of different sizes (:gh:`1591` by
   `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan
+  et al. (Neurophotonics 2018) as the GeoNIRS benchmark (Li et al., 2026)
+  implements it: two temporal convolutions with GroupNorm and GELU, a time
+  average and a linear head. Its ``mapping`` loads the
+  authors' state dict (:gh:`1592` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
   transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
