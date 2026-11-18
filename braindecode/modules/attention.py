@@ -22,7 +22,6 @@ from torch import Tensor, nn
 
 from braindecode.functional import _get_gaussian_kernel1d, scaled_dot_product_attention
 from braindecode.functional.attention import (  # noqa: F401  (re-exported)
-    _hpu_lazy,
     _sdpa_math_dropout,
 )
 
@@ -861,7 +860,7 @@ class TimmAttention(nn.Module):
         timm's op order, ``softmax((q * scale) @ k^T) @ v``, bit-identical to
         the reference implementations (see
         :func:`braindecode.functional.scaled_dot_product_attention`); otherwise
-        torch's kernels (Gaudi's fused kernel on HPU).
+        torch's kernels.
 
     Examples
     --------
@@ -930,9 +929,7 @@ class TimmAttention(nn.Module):
                 q * self.scale, k, v, dropout_p=dropout_p, scale=1.0, exact=True
             )
         else:
-            y = scaled_dot_product_attention(
-                q, k, v, dropout_p=dropout_p, fused_in_lazy=True
-            )
+            y = scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
         return self.proj_drop(self.proj(y.transpose(1, 2).flatten(2)))
 
 

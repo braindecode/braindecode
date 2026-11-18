@@ -697,10 +697,7 @@ class Attention(nn.Module):
         q = q.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         k = k.unflatten(-1, (self.heads, -1)).transpose(1, 2)
         v = v.unflatten(-1, (self.heads, -1)).transpose(1, 2)
-        # ~700-token sequences: the fused kernel also beats lazy mode's graph.
-        out = scaled_dot_product_attention(
-            q, k, v, attn_mask=attn_mask, fused_in_lazy=True
-        )
+        out = scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
         return self.to_out(out.transpose(1, 2).flatten(2))
 
 

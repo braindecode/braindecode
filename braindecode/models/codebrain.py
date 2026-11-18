@@ -15,7 +15,6 @@ from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 
 from braindecode.functional import _real_dft, spectral_input
-from braindecode.functional.attention import _hpu_lazy
 from braindecode.functional.functions import _next_fast_len
 from braindecode.models.base import EEGModuleMixin
 
@@ -904,20 +903,10 @@ class _ResidualGroup(nn.Module):
     def forward(self, input_data: torch.Tensor) -> torch.Tensor:
         noise = input_data
         h = noise
-        if not torch.jit.is_scripting() and h.device.type == "hpu" and _hpu_lazy():
-            # Gaudi's lazy-mode graph compiler fails on the backward of the
-            # sequential skip sum (one skip_conv dedw node lands in two
-            # pipeline bundles); one n-ary stack-sum reduction compiles.
-            skip_list = []
-            for block in self.residual_blocks:
-                h, skip_n = block((h, noise))
-                skip_list.append(skip_n)
-            skip = torch.stack(skip_list, dim=0).sum(dim=0)
-        else:
-            skip = torch.zeros((), dtype=h.dtype, device=h.device)
-            for block in self.residual_blocks:
-                h, skip_n = block((h, noise))
-                skip = skip_n + skip
+        skip = torch.zeros((), dtype=h.dtype, device=h.device)
+        for block in self.residual_blocks:
+            h, skip_n = block((h, noise))
+            skip = skip_n + skip
 
         return skip * math.sqrt(1.0 / self.num_res_layers)
 
