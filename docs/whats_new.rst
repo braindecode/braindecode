@@ -80,6 +80,14 @@ Enhancements
   ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
   ``chs_info``, stacked or in MNE's interleaved order (:gh:`1582` by
   `Bruno Aristimunha`_).
+- The docstrings of :class:`braindecode.models.FNIRSNet`, :class:`~braindecode.models.FNIRS4D`,
+  :class:`~braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT` describe
+  each model from the papers: the architecture as named steps with module names and
+  tensor shapes, what is inside each block with the paper's equations (and the S4D
+  equations of Gu et al. for FNIRS4D), how time, channels and chromophores are encoded,
+  and the differences from the authors' code. Every step of their forward passes is
+  commented in the paper's terms with its shape; outputs and checkpoints are unchanged
+  (:gh:`1586` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` compiles with ``torch.compile`` into one graph: its lazy
   kernel-norm initialisation no longer reads a tensor's value on every forward (19 graph breaks
   and 21 compiled graphs for two training steps before, on every device). Checkpoints and
@@ -145,6 +153,11 @@ Enhancements
   encoder output ``(batch, n_chans, n_tokens, dim)`` with the tokens of padded
   channels zero; DIVER1 gains
   ``return_features`` (:gh:`1540` by `Julien Gadonneix`_).
+- :ref:`install_gaudi` lists two attention issues of Gaudi software 1.21.4 that give no
+  error: wrong values in eager mode when two calls take transposed views with as many
+  elements in different shapes (:class:`braindecode.models.AXON`), and no gradient for a
+  learnable ``attn_mask`` (:class:`braindecode.models.DIVER1`)
+  (:gh:`1599` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
@@ -187,6 +200,11 @@ Requirements
 
 Bug fixes
 ==========
+
+- :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
+  supplied electrode names without regard to case, including with a named
+  recording reference, preventing duplicated columns and misplaced weights
+  (:gh:`1597` by `lindicaphxag-tech`_).
 
 - :class:`braindecode.modules.ChannelLayer` computes every target that is a
   combination of the measured channels exactly, under every strategy including
@@ -255,6 +273,14 @@ Bug fixes
   than one sample. Classification, ``return_features`` and a batch of one are
   unchanged; no parameter changes, so released weights load as before
   (:gh:`1602` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.SignalJEPA` and
+  :class:`braindecode.models.SignalJEPA_Contextual` no longer fail in ``backward()``
+  when the window gives one token per channel (for example 152 samples at 128 Hz)
+  and ``activation`` is ``nn.ReLU``, ``nn.Tanh`` or ``nn.Sigmoid``. ``forward``
+  added the positional encoding in place to the activation output, which autograd
+  keeps for the backward pass, and now adds it out of place. Outputs and
+  parameters are unchanged (:gh:`1600` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - The Eldele et al. (2021) sleep staging tutorial (``plot_sleep_staging_eldele2021.py``) splits train and validation by subject, as its text says; ``split`` took the ids as recording indices, so it trained on subjects 0-1 and validated on subject 2 while subjects 3-5 were loaded and unused (:gh:`1559` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ZUNA` defaults to ``pos_bins=100``, the value ZUNA1.1 was trained with (paper Table II and Zyphra's configs); the old default ``50`` was ZUNA1's and gave the released encoder outputs up to 5.2 away from the original. The ``braindecode/ZUNA`` checkpoint now holds the ZUNA1.1 encoder in braindecode's parameter names (the earlier ZUNA1 file loaded no parameter into the class) and sets ``pos_bins`` in its config (:gh:`1557` by `Bruno Aristimunha`_).
 - ``from_pretrained`` of :class:`braindecode.models.Brant` loads a checkpoint at
@@ -278,6 +304,13 @@ Bug fixes
 Code health
 ============
 
+- Every model is compiled on master: ``test_model_compiled`` no longer skips
+  :class:`braindecode.models.MetaNeuromotorHand`, whose MPF featurizer torch
+  2.15 compiles in about 90 s. ``test_model_exported`` exports
+  :class:`braindecode.models.EEGMiner`, :class:`braindecode.models.SSTDPN`,
+  :class:`braindecode.models.Labram` and :class:`braindecode.models.CodeBrain`,
+  which it skipped; it still skips SyncNet and NeuroRVQTokenizer
+  (:gh:`1598` by `Bruno Aristimunha`_).
 - The :class:`braindecode.models.JungMAE` tests compare the forward with the
   reference encoder at ``atol=1e-5``: the reference packs the valid tokens and
   the model masks the invalid ones, so float32 rounding depends on the machine

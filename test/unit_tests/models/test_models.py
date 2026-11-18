@@ -7604,7 +7604,7 @@ def test_fnirspret_forwards_every_argument_to_fnirst():
     assert list(plain_state) == list(pret_state)
     for key, value in plain_state.items():
         assert torch.equal(pret_state[key], value)
-    pret.pre = None
+    pret.pre = nn.Identity()
     x = torch.randn(2, 10, 60)
     with torch.no_grad():
         assert torch.equal(pret(x), plain(x))
