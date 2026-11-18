@@ -253,6 +253,10 @@ Bug fixes
   stays in the model so the released weights still load; the first head layer takes
   ``d_model`` instead of ``emb_dim`` inputs per token (the same with the defaults).
   Outputs of existing CSBrain classifiers change (:gh:`1541`, :gh:`1572`).
+- :class:`braindecode.modules.PatchTokenizer`,
+  :func:`braindecode.functional.patch_count` and
+  :func:`braindecode.functional.pad_or_crop_to_patches` now reject empty time
+  axes, invalid patch sizes and unknown boundary policies consistently.
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
   averages kept steps that lie after the end of the input. When the last
   segment held fewer real samples than its first kept step position, those

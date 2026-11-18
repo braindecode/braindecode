@@ -7,15 +7,12 @@
 import torch
 import torch.nn.functional as F
 
-_ON_NON_DIVISIBLE = ("pad", "crop", "error")
-
-
 def _check_on_non_divisible(on_non_divisible: str) -> None:
     """Raise a ``ValueError`` for an unknown ``on_non_divisible`` value."""
-    if on_non_divisible not in _ON_NON_DIVISIBLE:
+    if on_non_divisible not in ("pad", "crop", "error"):
         raise ValueError(
             "on_non_divisible must be 'pad', 'crop', or 'error', "
-            f"got {on_non_divisible!r}."
+            f"got '{on_non_divisible}'."
         )
 
 
@@ -42,10 +39,15 @@ def patch_count(
     int
         Number of patches.
     """
-    if step <= 0:
-        step = patch_size
+    _check_on_non_divisible(on_non_divisible)
     if n_times < 1:
         raise ValueError(f"n_times must be positive, got {n_times}.")
+    if patch_size < 1:
+        raise ValueError(f"patch_size must be positive, got {patch_size}.")
+    if step < 0:
+        raise ValueError(f"step must be non-negative, got {step}.")
+    if step == 0:
+        step = patch_size
     if n_times < patch_size:
         if on_non_divisible == "pad":
             return 1
@@ -102,4 +104,4 @@ def pad_or_crop_to_patches(
     target = patch_size + (n_patches - 1) * step
     if target > x.shape[-1]:
         return F.pad(x, (left, target - x.shape[-1] - left))
-    return x[..., :target]
+    return x if target == x.shape[-1] else x[..., :target]

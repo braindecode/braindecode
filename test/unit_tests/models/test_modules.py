@@ -1896,6 +1896,44 @@ def test_patch_count_and_pad_or_crop(n_times, mode, step, expected):
     assert torch.equal(y[..., :n], x[..., :n]) and not y[..., n:].any()
 
 
+@pytest.mark.parametrize(
+    "n_times, patch_size, mode, step, message",
+    [
+        (8, 4, "typo", 0, "on_non_divisible"),
+        (5, 4, "typo", 0, "on_non_divisible"),
+        (0, 4, "pad", 0, "n_times"),
+        (8, 0, "pad", 0, "patch_size"),
+        (8, -2, "pad", 0, "patch_size"),
+        (8, 4, "pad", -1, "step"),
+    ],
+)
+def test_invalid_patch_geometry(n_times, patch_size, mode, step, message):
+    from braindecode.functional import pad_or_crop_to_patches, patch_count
+    from braindecode.modules import PatchTokenizer
+
+    x = torch.empty(1, 2, n_times)
+    with pytest.raises(ValueError, match=message):
+        patch_count(n_times, patch_size, mode, step)
+    with pytest.raises(ValueError, match=message):
+        pad_or_crop_to_patches(x, patch_size, mode, step)
+    if step == 0:
+        with pytest.raises(ValueError, match=message):
+            PatchTokenizer(patch_size, n_times, on_non_divisible=mode)(x)
+
+
+def test_patch_tokenizer_rejects_empty_runtime_window():
+    from braindecode.modules import PatchTokenizer
+
+    tokenizer = PatchTokenizer(4, 8)
+    empty = torch.empty(1, 2, 0)
+    with pytest.raises(ValueError, match="n_times"):
+        tokenizer.n_patches(0)
+    with pytest.raises(ValueError, match="n_times"):
+        tokenizer(empty)
+    with pytest.raises(torch.jit.Error, match="n_times"):
+        torch.jit.script(tokenizer)(empty)
+
+
 def test_pad_to_min_patches():
     """min_patches zero-pads a window short of that many patches, on the right
     or (center) with half the missing patches before it."""
