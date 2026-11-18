@@ -5374,7 +5374,12 @@ def test_csbrain_rejects_brain_regions_of_wrong_length():
 @pytest.mark.parametrize("model_class", [CBraMod, CSBrain])
 def test_cbramod_patch_embedding_patch_size_not_200(model_class):
     """The shared patch embedding sizes its rFFT bins from ``patch_size``."""
+    from braindecode.modules import TemporalSpectralPatchEmbedding
+
     model = model_class(n_outputs=2, n_chans=3, n_times=800, patch_size=400, n_layer=1)
+    assert type(model.patch_embedding) is TemporalSpectralPatchEmbedding
+    # Both class paths occur in full models saved before the shared layer.
+    assert sys.modules[model_class.__module__]._PatchEmbedding is type(model.patch_embedding)
     assert model(torch.randn(2, 3, 800)).shape == (2, 2)
 
 

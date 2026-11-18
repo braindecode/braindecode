@@ -20,11 +20,13 @@ from torch import Tensor, nn
 
 from braindecode.functional import init_weights_, patch_count
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.cbramod import _PatchEmbedding
-from braindecode.modules import FeedForwardBlock
+from braindecode.modules import FeedForwardBlock, TemporalSpectralPatchEmbedding
 from braindecode.modules.blocks import PatchTokenizer
 
 log = logging.getLogger(__name__)
+
+# CSBrain pickles predating the shared CBraMod embedding use this name.
+_PatchEmbedding = TemporalSpectralPatchEmbedding
 
 
 # Anatomical region identifiers for the structured sparse attention. The
@@ -332,34 +334,16 @@ class CSBrain(EEGModuleMixin, nn.Module):
             on_non_divisible=on_non_divisible,
         )
         self._on_non_divisible = on_non_divisible
-        # CBraMod's patch encoder: conv stem + rFFT magnitude + depthwise-conv PE.
-        # CBraMod creates the positional-encoding conv before the conv stem, so
-        # build it with the RNG forked (CPU and the default device's generator
-        # are restored on exit), then redraw the initial weights stem-first:
-        # a given seed gives the same initial CSBrain weights as before this
-        # module was shared.
-        device = torch.get_default_device()
-        accelerator = [device] if device.type not in ("cpu", "meta") else []
-        with torch.random.fork_rng(
-            devices=accelerator,
-            device_type=device.type if accelerator else "cuda",
-        ):
-            self.patch_embedding = _PatchEmbedding(
-                patch_size,
-                channels_kernel_stride_padding_norm=(
-                    (25, 49, 25, 24, (5, 25)),
-                    (25, 3, 1, 1, (5, 25)),
-                    (25, 3, 1, 1, (5, 25)),
-                ),
-                drop_prob=drop_prob,
-            )
-        for layer in (
-            *self.patch_embedding.proj_in,
-            *self.patch_embedding.positional_encoding,
-            *self.patch_embedding.spectral_proj,
-        ):
-            if hasattr(layer, "reset_parameters"):
-                layer.reset_parameters()
+        self.patch_embedding = TemporalSpectralPatchEmbedding(
+            patch_size,
+            channels_kernel_stride_padding_norm=(
+                (25, 49, 25, 24, (5, 25)),
+                (25, 3, 1, 1, (5, 25)),
+                (25, 3, 1, 1, (5, 25)),
+            ),
+            drop_prob=drop_prob,
+            stem_first=True,
+        )
         d_model = self.patch_embedding.d_model
 
         # Region structure: explicit ``brain_regions`` (one region id per input

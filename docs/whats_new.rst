@@ -323,6 +323,10 @@ Code health
   the model masks the invalid ones, so float32 rounding depends on the machine
   (:gh:`1594` by `Bruno Aristimunha`_).
 - Codacy runs Bandit from a root ``bandit.yml`` that skips B105, which flagged every ``"cls_token"`` key of the foundation-model feature dicts as a hardcoded password, and B101, the test ``assert`` statements (:gh:`1546` by `Bruno Aristimunha`_).
+- :class:`~braindecode.models.CBraMod` and :class:`~braindecode.models.CSBrain`
+  share :class:`~braindecode.modules.TemporalSpectralPatchEmbedding` for their
+  temporal, spectral and positional patch features. CSBrain draws the temporal
+  convolution weights first on every device, including MPS.
 - Every registered model whose ``forward`` takes ``ch_mask`` is checked with no
   per-model test case, like the other cross-model contracts: each recording of a
   NaN-padded batch keeps the output and gradients it gets alone, padded inputs
