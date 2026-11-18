@@ -16,7 +16,6 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import scaled_dot_product_attention
-from braindecode.functional.attention import _hpu_lazy
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
@@ -471,9 +470,7 @@ class _RotaryPositionEmbedding(nn.Module):
         rotary_sine: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if not torch.jit.is_scripting() and query.device.type == "hpu":
-            fused = _hpu_fused_rotary(query, key, rotary_cosine, rotary_sine)
-            if fused is not None:
-                return fused
+            return _hpu_fused_rotary(query, key, rotary_cosine, rotary_sine)
         rotary_cosine = rotary_cosine.unsqueeze(0).unsqueeze(2)
         rotary_sine = rotary_sine.unsqueeze(0).unsqueeze(2)
 
@@ -548,21 +545,16 @@ def _hpu_fused_rotary(
     key: torch.Tensor,
     rotary_cosine: torch.Tensor,
     rotary_sine: torch.Tensor,
-) -> Optional[tuple[torch.Tensor, torch.Tensor]]:
-    """``_RotaryPositionEmbedding`` in HPU eager mode (and compiled regions).
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """``_RotaryPositionEmbedding`` on HPU, eager and compiled.
 
-    Gaudi's fused pairwise RoPE kernel. Not in lazy mode, where the graph
-    compiler fuses the formula itself and the kernel was slower (2.47 -> 2.86 s
-    per train step, 21 channels x 1280 samples, batch 64): None there.
-
-    The formula runs as about ten element-wise ops on float32 copies of the
-    queries and keys (a quarter of a ZUNA block's train-step time at 107,520
-    tokens per batch in eager mode); the kernel does it in one pass, also inside
-    a compiled region. Same float32 arithmetic, so the outputs are identical;
-    the gradient is rounded to the input dtype once instead of once per term.
+    Gaudi's fused pairwise RoPE kernel. The formula runs as about ten
+    element-wise ops on float32 copies of the queries and keys (a quarter of a
+    ZUNA block's train-step time at 107,520 tokens per batch in eager mode);
+    the kernel does it in one pass, also inside a compiled region. Same float32
+    arithmetic, so the outputs are identical; the gradient is rounded to the
+    input dtype once instead of once per term.
     """
-    if not torch.compiler.is_compiling() and _hpu_lazy():
-        return None
     work = torch.promote_types(query.dtype, torch.float32)
     cosine = rotary_cosine.unsqueeze(0).unsqueeze(2)
     # The kernel applies the pair sign itself: pass sin(angle), which is

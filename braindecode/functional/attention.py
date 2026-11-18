@@ -12,13 +12,6 @@ import torch.nn.functional as F
 from torch import Tensor
 
 
-@torch.jit.unused
-def _hpu_lazy() -> bool:
-    from habana_frameworks.torch.utils.internal import is_lazy
-
-    return is_lazy()
-
-
 def _sdpa_math_dropout(
     query: Tensor,
     key: Tensor,
@@ -81,8 +74,8 @@ def scaled_dot_product_attention(
     -----
     On Intel Gaudi, torch's SDPA runs op by op unless Habana's attention
     setting is on; then the bridge's fused kernel runs it, with or without a
-    mask (:ref:`install_gaudi`). Dropout on float32 inputs without a mask
-    keeps torch's math path on CPU and HPU.
+    mask (:ref:`install_gaudi`), dropout included. On CPU, dropout on float32
+    or float64 inputs without a mask keeps torch's math path.
     """
     if exact:
         scores = torch.matmul(query, key.transpose(-2, -1))
@@ -104,12 +97,9 @@ def scaled_dot_product_attention(
         and dropout_p > 0.0
         and attn_mask is None
         and (query.dtype == torch.float32 or query.dtype == torch.float64)
-        and (
-            query.device.type == "cpu"
-            or (query.device.type == "hpu" and not _hpu_lazy())
-        )
+        and query.device.type == "cpu"
     ):
-        # CPU and HPU eager run SDPA with dropout through the math path.
+        # The CPU runs SDPA with dropout through the math path.
         return _sdpa_math_dropout(query, key, value, dropout_p, scale)
     if scale is None:  # torch 2.0's signature has no ``scale``
         return F.scaled_dot_product_attention(
