@@ -423,9 +423,20 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
         """Load the saved binding, or resolve the caller's replacement montage."""
-        if kwargs.get("chs_info") is not None or kwargs.get("n_chans") is not None:
+        if kwargs.get("chs_info") is not None:
             kwargs.setdefault("chan_pos_idx", None)
+        elif kwargs.get("n_chans") is not None and "chan_pos_idx" not in kwargs:
+            kwargs["_match_saved_slots"] = True
         return super().from_pretrained(*args, **kwargs)
+
+    @classmethod
+    def _from_pretrained(cls, *, _match_saved_slots=False, **kwargs):
+        # The Hub has now filled chan_pos_idx from the saved config. A forwarded
+        # count still describes the saved montage when its number of slots agrees.
+        slots = kwargs.get("chan_pos_idx")
+        if _match_saved_slots and slots is not None and len(slots) != kwargs["n_chans"]:
+            kwargs["chan_pos_idx"] = None
+        return super()._from_pretrained(**kwargs)
 
     def _chan_pos_idx_from_chs_info(self) -> torch.Tensor:
         """Resolve montage-vocabulary slots from the ``chs_info`` electrode names.

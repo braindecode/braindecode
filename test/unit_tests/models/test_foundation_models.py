@@ -2302,11 +2302,17 @@ def test_steegformer_saved_channel_slots(
             raise OSError("offline with an empty vocabulary cache")
 
         cold.setattr(steegformer, "_channel_index", unavailable)
-        restored = STEEGFormer.from_pretrained(
-            tmp_path, local_files_only=True, strict=True
-        )
-        torch.testing.assert_close(restored.channel_indices, model.channel_indices)
-        torch.testing.assert_close(restored(x), model(x))
+        for kwargs in ({}, {"n_chans": 3}):
+            restored = STEEGFormer.from_pretrained(
+                tmp_path, local_files_only=True, strict=True, **kwargs
+            )
+            torch.testing.assert_close(restored.channel_indices, model.channel_indices)
+            torch.testing.assert_close(restored(x), model(x))
+    with pytest.warns(UserWarning, match="identity"):
+        resized = STEEGFormer.from_pretrained(tmp_path, n_chans=2, strict=True)
+    assert resized.channel_indices.tolist() == [0, 1]
+    with pytest.raises(ValueError, match="chan_pos_idx must have shape"):
+        STEEGFormer.from_pretrained(tmp_path, n_chans=2, chan_pos_idx=[5], strict=True)
 
     new_montage = [{"ch_name": "T7"}, {"ch_name": "Fp2"}]
     restored = STEEGFormer.from_pretrained(tmp_path, chs_info=new_montage, strict=True)
@@ -2319,6 +2325,11 @@ def test_steegformer_saved_channel_slots(
     config.pop("chan_pos_idx", None)
     config["chs_info"] = new_montage
     assert STEEGFormer.from_config(config).channel_indices.tolist() == [4, 1]
+    # Older models could instead save explicit slots without any channel metadata.
+    config.update(chs_info=None, n_chans=3, chan_pos_idx=[7, 12, 5])
+    (tmp_path / "config.json").write_text(json.dumps(config))
+    same = STEEGFormer.from_pretrained(tmp_path, n_chans=3, strict=True)
+    assert same.channel_indices.tolist() == [7, 12, 5]
 
 
 @pytest.mark.parametrize(
