@@ -6895,6 +6895,14 @@ def test_fnirs4d_mean_branch(mean_branch):
         torch.testing.assert_close(features[:, 8:], hbt.mean(dim=-1))
 
 
+def test_fnirs4d_smallest_valid_configurations_build():
+    """The guards' boundaries: one HbO/HbR pair, and ``avg_size == n_times``."""
+    x = torch.randn(3, 2, 10)
+    assert FNIRS4D(n_chans=2, n_outputs=2, n_times=10).eval()(x).shape == (3, 2)
+    model = FNIRS4D(n_chans=8, n_outputs=2, n_times=10, avg_size=10).eval()
+    assert model(torch.randn(3, 8, 10)).shape == (3, 2)
+
+
 @pytest.mark.parametrize(
     "kwargs, match",
     [
