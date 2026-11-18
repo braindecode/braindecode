@@ -270,9 +270,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
 
     Both pipelines build the same windows (1628 and 1190), on which this
     class gives the authors' encoder features (max-abs difference 0.0, Base
-    and Large, eval mode). The port's probe draws the head before the
-    backbone is built, the authors' after it: that order accounts for 0.0095
-    of the DS19 macro-F1 difference (0.5599 becomes 0.5504).
+    and Large, eval mode).
 
     References
     ----------
