@@ -299,7 +299,7 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
     if is_raw and (not has_stored_windows):
         dataset = RawDataset(signals, description, target_name)
     else:
-        window_kwargs = _load_kwargs_json("window_kwargs", sub_dir)
+        window_kwargs = _load_kwargs_json("window_kwargs", sub_dir) or []
         windows_ds_kwargs = [
             kwargs[1]
             for kwargs in window_kwargs

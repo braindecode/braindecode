@@ -752,7 +752,7 @@ def test_save_load_dataset_without_description(tmp_path, kind):
                 "i_window_in_trial": [0, 1],
                 "i_start_in_trial": [0, 10],
                 "i_stop_in_trial": [10, 20],
-                "target": [-1, -1],
+                "target": [12, 13],
             }
         )
         kwargs = {"targets_from": "channels", "last_target_only": False}
@@ -779,4 +779,14 @@ def test_save_load_dataset_without_description(tmp_path, kind):
             start, stop = i * 10, (i + 1) * 10
             np.testing.assert_array_equal(x, data[:1, start:stop])
             np.testing.assert_array_equal(y, data[1:, start:stop])
+            assert crop == [i, start, stop]
+
+        # Direct windows saved by older versions have no recorded constructor.
+        (tmp_path / "0" / "window_kwargs.json").unlink()
+        historical = load_concat_dataset(tmp_path, preload=False)
+        for i in range(2):
+            x, y, crop = historical[i]
+            start, stop = i * 10, (i + 1) * 10
+            np.testing.assert_array_equal(x, data[:, start:stop])
+            assert y == 12 + i
             assert crop == [i, start, stop]
