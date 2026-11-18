@@ -999,6 +999,24 @@ def test_zuna_names_without_locations_take_their_montage_position():
 # ==============================================================================
 
 
+def test_zuna_named_electrodes_match_the_actual_1020_sites():
+    from braindecode.util import resolve_montage_name
+
+    # M1/M2 are measured mastoid sites; Cb1 is MNE's alternate name for POO7.
+    names_only = [{"ch_name": n} for n in ("t5", "T6", "M1", "M2", "Cb1", "F3")]
+    info = mne.create_info(["P7", "P8", "M1", "M2", "POO7", "F3"], 250, "eeg")
+    info.set_montage(resolve_montage_name("standard_1005"))
+    kw = dict(n_times=256, **_ZUNA_SMALL)
+    with pytest.warns(UserWarning, match="standard 10-05 position"):
+        inferred = ZUNA(chs_info=names_only, **kw).eval()
+    reference = ZUNA(chs_info=info["chs"], **kw).eval()
+    reference.load_state_dict(inferred.state_dict())
+    torch.testing.assert_close(inferred.encoder.rotary_cosine, reference.encoder.rotary_cosine)
+    x = torch.randn(2, len(names_only), 256)
+    with torch.no_grad():
+        torch.testing.assert_close(inferred(x), reference(x))
+
+
 def _zuna_pair(**kwargs):
     """A ZUNA with registers and one without, with the same weights."""
     kw = dict(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL, **kwargs)

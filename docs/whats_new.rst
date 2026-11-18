@@ -230,6 +230,11 @@ Bug fixes
   type and location when an input montage is reused. Padded channels are
   excluded from the map even with NaN padding. Literal channel names and
   bipolar derivations follow :func:`braindecode.functional.derivation_matrix`.
+- :class:`braindecode.models.ZUNA` now places name-only T5/T6 at P7/P8, and
+  M1/M2 at the named mastoid sites, matching the standard montage used by
+  :class:`braindecode.modules.ChannelLayer`. Explicit coordinates take precedence.
+  Channel interpolation and sensor rotation share the spherical-spline series,
+  which now supports gradients through sensor positions.
 
 - :class:`braindecode.models.BIOT` looks up all its channel tokens in one embedding call with a
   1-D index, instead of one call per channel with a 0-d index. Outputs and gradients are

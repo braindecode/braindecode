@@ -624,3 +624,18 @@ def test_derivation_matrix_normalizes_explicit_reference_columns():
     )
     assert electrodes == ["f3", "cz"]
     assert matrix.tolist() == [[1.0, -1.0]]
+
+def test_spherical_spline_kernel_matches_legendre_and_position_gradients():
+    from braindecode.functional import spherical_spline_kernel
+
+    a = torch.tensor([[1., 2., 3.], [-1., 3., 2.]], dtype=torch.float64, requires_grad=True)
+    b = torch.tensor([[2., -1., 4.], [1., 5., 3.]], dtype=torch.float64, requires_grad=True)
+    n = np.arange(1, 51, dtype=float)
+    coefficients = np.r_[0., (2 * n + 1) / (4 * np.pi * (n * (n + 1)) ** 4)]
+    aa, bb = a.detach().numpy(), b.detach().numpy()
+    cosines = (aa / np.linalg.norm(aa, axis=1, keepdims=True)) @ (
+        bb / np.linalg.norm(bb, axis=1, keepdims=True)
+    ).T
+    expected = np.polynomial.legendre.legval(cosines, coefficients)
+    np.testing.assert_allclose(spherical_spline_kernel(a, b).detach(), expected, atol=1e-13, rtol=0)
+    assert torch.autograd.gradcheck(spherical_spline_kernel, (a, b))

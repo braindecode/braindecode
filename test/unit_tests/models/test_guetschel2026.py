@@ -23,10 +23,10 @@ from mne.io.constants import FIFF
 from torch import nn
 
 import braindecode.models.guetschel2026 as guetschel2026_module
+from braindecode.functional.channels import _standard_positions
 from braindecode.models import Guetschel2026
 from braindecode.models.guetschel2026 import _GaussianRandomProjection
 from braindecode.models.signal_jepa import _pos_encode_time
-from braindecode.modules.channels import _standard_positions
 
 try:
     from safetensors.torch import load_file, save_file

@@ -15,16 +15,16 @@ import torch
 
 from braindecode.datasets import pad_channels_collate
 from braindecode.functional import exact_derivation, spherical_spline_kernel
-from braindecode.models import BENDR, LUNA, Labram, SignalJEPA
-from braindecode.modules import ChannelLayer
-from braindecode.modules.channels import (
+from braindecode.functional.channels import (
     _SPHERE_R0,
-    STRATEGIES,
+    _channel_geometry,
     _interp,
     _mixing,
-    _resolve,
     _standard_positions,
 )
+from braindecode.models import BENDR, LUNA, Labram, SignalJEPA
+from braindecode.modules import ChannelLayer
+from braindecode.modules.channels import STRATEGIES
 
 TEN_TWENTY = "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
 SUBSET = ["Fp1", "F3", "Fz", "C3", "Cz", "P4", "Pz", "O2"]
@@ -53,7 +53,7 @@ def test_b_misspelt_strategy_is_declared():
 
 
 def test_c_coordinate_only_channel_matched_by_position():
-    cz = _resolve(chs(["Cz"]))[1][0]
+    cz = _channel_geometry(chs(["Cz"])).positions[0]
     layer = ChannelLayer(chs(["Cz"]), "exact", [at("E7", cz + [0.002, 0, 0])])
     assert layer.weight.tolist() == [[1.0]]
     with pytest.raises(ValueError, match="not in the input"):  # never relabelled
@@ -63,7 +63,7 @@ def test_c_coordinate_only_channel_matched_by_position():
 def test_names_resolve_in_the_head_frame_of_raw_info():
     info = mne.create_info(TEN_TWENTY, 200.0, "eeg")
     info.set_montage("standard_1020")
-    d = _resolve(chs(TEN_TWENTY))[1] - _resolve(info["chs"])[1]
+    d = _channel_geometry(chs(TEN_TWENTY)).positions - _channel_geometry(info["chs"]).positions
     assert np.abs(d).max() < 1e-3  # was 46-57 mm: the montage's own (mri) frame
 
 
@@ -208,7 +208,7 @@ def test_source_fidelity_on_another_head():
     # Truth from a head the inversion does not use: 4 shells, other centre,
     # radius and skull conductivity. Measured 0.759 (MNE's default sphere: 0.820).
     info = mne.create_info(TEN_TWENTY, 100.0, "eeg")
-    pos = dict(zip(TEN_TWENTY, _resolve(chs(TEN_TWENTY))[1]))
+    pos = dict(zip(TEN_TWENTY, _channel_geometry(chs(TEN_TWENTY)).positions))
     info.set_montage(mne.channels.make_dig_montage(pos, coord_frame="head"))
     with mne.utils.use_log_level("ERROR"):
         sph = mne.make_sphere_model((0, 0.008, 0.045), 0.095, sigmas=(0.33, 1, 0.002, 0.33))
@@ -277,7 +277,7 @@ def test_maps_follow_device_and_dtype(device):
 
 def smooth_field(n, rng):
     """``(n, 19)`` random quadratic fields sampled on the 10-20 positions."""
-    P = _resolve(chs(TEN_TWENTY))[1] / 0.1
+    P = _channel_geometry(chs(TEN_TWENTY)).positions / 0.1
     feats = np.c_[np.ones(19), P, P**2, P[:, :1] * P[:, 1:2], P[:, 1:2] * P[:, 2:]]
     return rng.standard_normal((n, feats.shape[1])) @ feats.T
 
@@ -502,7 +502,7 @@ def test_targets_from_any_combination_of_measured_channels():
 
 @pytest.mark.parametrize("reg", [1e-3, 0.0])
 def test_spline_is_mne_spherical_spline(reg):
-    src, tgt = _resolve(chs(SUBSET))[1], _resolve(chs(["T7", "P8", "F4"]))[1]
+    src, tgt = _channel_geometry(chs(SUBSET)).positions, _channel_geometry(chs(["T7", "P8", "F4"])).positions
     W, var = _mixing("spline", src, tgt, reg=reg)
     np.testing.assert_allclose(W, _interp("spline", src, tgt, reg), atol=1e-10)
     assert (var > 0).all()
@@ -604,7 +604,7 @@ def test_strategy_model_takes_pad_channels_collate_batches():
     # pos + ch_mask (no names): the montage of each sample from its positions.
     model = Labram(chs_info=chs(SUBSET), n_outputs=2, n_times=800, sfreq=200,
                    channel_strategy="spline").eval()
-    pos = torch.as_tensor(_resolve(chs(SUBSET))[1]).expand(2, -1, -1).clone()
+    pos = torch.as_tensor(_channel_geometry(chs(SUBSET)).positions).expand(2, -1, -1).clone()
     mask = torch.ones(2, len(SUBSET), dtype=torch.bool)
     mask[1, 5:] = False
     x = torch.randn(2, len(SUBSET), 800) * mask[..., None]

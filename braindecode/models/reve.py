@@ -23,9 +23,9 @@ from braindecode.functional import (
     patch_count,
     scaled_dot_product_attention,
 )
+from braindecode.functional.channels import resolve_channel_positions
 from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.channels import resolve_channel_positions
 from braindecode.modules.layers import RMSNorm
 
 logger = logging.getLogger(__name__)

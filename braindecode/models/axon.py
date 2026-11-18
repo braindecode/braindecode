@@ -15,9 +15,9 @@ from braindecode.functional import (
     scaled_dot_product_attention,
     sinusoidal_positional_encoding,
 )
+from braindecode.functional.channels import _channel_geometry
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import warn_if_sfreq_differs
-from braindecode.modules.channels import _resolve
 
 
 class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -192,8 +192,9 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.drop_prob = drop_prob
 
         # Electrode positions (C, 3): ``loc``, else standard_1005 by name.
-        names, positions, *_ = _resolve(self.chs_info)
-        unknown = [n for n, p in zip(names, positions) if np.isnan(p).any()]
+        geometry = _channel_geometry(self.chs_info)
+        positions = geometry.positions
+        unknown = [n for n, p in zip(geometry.names, positions) if np.isnan(p).any()]
         if unknown:
             raise ValueError(
                 "AXON needs a 3D position for every channel. No valid 'loc' in "

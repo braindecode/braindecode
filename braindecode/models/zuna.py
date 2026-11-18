@@ -16,6 +16,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import scaled_dot_product_attention
+from braindecode.functional.channels import _standard_positions
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
@@ -23,6 +24,7 @@ from braindecode.models.util import (
 )
 from braindecode.modules import PatchTokenizer
 from braindecode.modules.layers import RMSNorm
+from braindecode.util import resolve_montage_name
 
 
 class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -401,20 +403,23 @@ def _channel_positions(chs_info, n_chans):
     import mne
 
     names = [str(chs_info[i].get("ch_name", "")) for i in missing]
-    unknown = [n for n in names if not n]
-    if not unknown:
-        montage = (
-            "colin27_1005"  # standard_1005's name from MNE 1.13
-            if "colin27_1005" in mne.channels.get_builtin_montages()
-            else "standard_1005"
-        )
-        info = mne.create_info(names, 256.0, "eeg")
+    standard = _standard_positions()
+    aliases = list(dict.fromkeys(n for n in names if n and n.lower() not in standard))
+    if aliases:
+        # MNE also recognizes aliases outside the montage, such as Cb1 for POO7.
+        info = mne.create_info(aliases, 256.0, "eeg")
         info.set_montage(
-            montage, match_case=False, match_alias=True, on_missing="ignore"
+            resolve_montage_name("standard_1005"),
+            match_case=False,
+            match_alias=True,
+            on_missing="ignore",
         )
-        filled = np.array([ch["loc"][:3] for ch in info["chs"]], dtype=locs.dtype)
-        ok = np.isfinite(filled).all(1) & filled.any(1)
-        unknown = [n for n, k in zip(names, ok) if not k]
+        standard = {
+            **standard,
+            **{ch["ch_name"].lower(): ch["loc"][:3] for ch in info["chs"]},
+        }
+    filled = np.array([standard.get(n.lower(), np.full(3, np.nan)) for n in names])
+    unknown = [n for n, pos in zip(names, filled) if not np.isfinite(pos).all()]
     if unknown:
         raise ValueError(
             "ZUNA requires finite 3D locations for every channel; "
