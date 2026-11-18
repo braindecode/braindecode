@@ -107,6 +107,8 @@ Requirements
 Bug fixes
 ==========
 
+- :func:`braindecode.preprocessing.filterbank` preserves channel positions and
+  their coordinate frame in the filtered channels (by `sixty-66`_).
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
   original fine-tuning code replaces it by ``nn.Identity()``, so the head now reads
@@ -3017,3 +3019,4 @@ Authors
 .. _Bhargav Kowshik: https://github.com/bkowshik
 .. _Mark Santos: https://www.markstudios.com
 .. _Hamza Abdelhedi: https://github.com/BabaSanfour
+.. _sixty-66: https://github.com/sixty-66

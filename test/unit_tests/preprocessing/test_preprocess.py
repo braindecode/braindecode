@@ -1,5 +1,6 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
+#          sixty-66 <puzhexin@foxmail.com>
 #
 # License: BSD-3
 
@@ -512,6 +513,13 @@ def _synthetic_filterbank_raw(sfreq=256.0, n_times=2560, seed=0):
 
 def test_filterbank_waveform_metadata_reference():
     raw = _synthetic_filterbank_raw()
+    raw.set_montage(
+        mne.channels.make_dig_montage(
+            ch_pos={"C3": [-0.07, 0.02, 0.1], "Cz": [0.0, 0.02, 0.14]},
+            coord_frame="head",
+        )
+    )
+    original_ch_locs = [ch["loc"].copy() for ch in raw.info["chs"]]
     original_ch_names = list(raw.ch_names)
     original_ch_types = raw.get_channel_types()
     frequency_bands = [(4.0, 8.0), (8.0, 13.0)]
@@ -545,6 +553,9 @@ def test_filterbank_waveform_metadata_reference():
                 actual_data[new_idx], expected_data[band][ch_idx]
             )
             assert actual_types[new_idx] == original_ch_types[ch_idx]
+            np.testing.assert_allclose(
+                actual.info["chs"][new_idx]["loc"], original_ch_locs[ch_idx]
+            )
     # sfreq is raw-level, not per-band; checked once against every
     # independently-computed per-band reference sfreq, not just band 0.
     for band in frequency_bands:
