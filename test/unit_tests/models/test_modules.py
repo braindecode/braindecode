@@ -1738,30 +1738,23 @@ def test_multi_head_attention_invalid_emb_size():
         MultiHeadAttention(emb_size=32, num_heads=0, head_dim=8)
 
 
-def test_hpu_fused_sdpa_gets_contiguous_inputs(monkeypatch):
-    # Gaudi's FusedSDPA gives wrong results for some strided q/k/v views.
-    import sys
-    import types
+def test_sdpa_helper_fused_in_lazy_has_no_effect():
+    """``fused_in_lazy`` stays in the signature for existing calls, and changes
+    nothing: Habana's attention setting picks Gaudi's fused kernel."""
+    from braindecode.functional import scaled_dot_product_attention
 
-    from braindecode.functional.attention import _hpu_eager_fused_sdpa
-
-    seen = []
-
-    class FusedSDPA:
-        @staticmethod
-        def apply(q, k, v, *args):
-            seen.append([t.is_contiguous() for t in (q, k, v)])
-            return q
-
-    internal = types.ModuleType("habana_frameworks.torch.utils.internal")
-    internal.is_lazy = lambda: False
-    kernels = types.ModuleType("habana_frameworks.torch.hpex.kernels")
-    kernels.FusedSDPA = FusedSDPA
-    monkeypatch.setitem(sys.modules, internal.__name__, internal)
-    monkeypatch.setitem(sys.modules, kernels.__name__, kernels)
     qkv = torch.randn(2, 5, 3, 4, 8).permute(2, 0, 3, 1, 4)  # heads split off
-    _hpu_eager_fused_sdpa(*qkv.unbind(0))
-    assert seen == [[True, True, True]]
+    mask = torch.arange(5) < torch.tensor([5, 3])[:, None, None, None]
+    for kwargs in ({}, {"attn_mask": mask}, {"dropout_p": 0.3}):
+        outs = []
+        for fused_in_lazy in (False, True):
+            torch.manual_seed(0)
+            outs.append(
+                scaled_dot_product_attention(
+                    *qkv.unbind(0), fused_in_lazy=fused_in_lazy, **kwargs
+                )
+            )
+        assert torch.equal(outs[0], outs[1])
 
 
 def test_patch_tokenizer():

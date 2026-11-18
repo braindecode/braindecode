@@ -1754,6 +1754,77 @@ def test_labram_attention_fused_path_matches_its_weights():
     torch.testing.assert_close(out, expected)
 
 
+@pytest.mark.parametrize("padded", [False, True])
+def test_labram_attention_bf16_autocast_matches_fp32(padded):
+    """Under bfloat16 autocast, LaBraM's attention hands bfloat16 q, k, v (and
+    key mask) to torch's SDPA, on every device; its features stay within
+    bfloat16 rounding (2 % of their largest value) of the float32 ones."""
+    torch.manual_seed(0)
+    names = list(LABRAM_CHANNEL_ORDER[:4])
+    model = Labram(
+        n_times=400, n_chans=4, n_outputs=2, num_layers=2, num_heads=4, patch_size=200
+    ).eval()
+    x = torch.randn(3, 4, 400)
+    ch_mask = None
+    if padded:
+        ch_mask = torch.tensor(
+            [[True] * 4, [True, True, True, False], [True, False, False, False]]
+        )
+    sdpa = nn.functional.scaled_dot_product_attention
+    dtypes = []
+
+    def spy(q, k, v, attn_mask=None, **kwargs):
+        mask_dtype = None if attn_mask is None else attn_mask.dtype
+        dtypes.append((q.dtype, k.dtype, v.dtype, mask_dtype))
+        return sdpa(q, k, v, attn_mask=attn_mask, **kwargs)
+
+    with torch.no_grad():
+        ref = model(x, return_features=True, ch_names=names, ch_mask=ch_mask)
+        with (
+            mock.patch.object(nn.functional, "scaled_dot_product_attention", spy),
+            torch.autocast("cpu", dtype=torch.bfloat16),
+        ):
+            out = model(x, return_features=True, ch_names=names, ch_mask=ch_mask)
+    bf16 = torch.bfloat16
+    assert dtypes == [(bf16, bf16, bf16, bf16 if padded else None)] * 2
+    ref = ref["features"]
+    torch.testing.assert_close(
+        out["features"].float(), ref, atol=2e-2 * ref.abs().max().item(), rtol=2e-2
+    )
+
+
+def test_labram_attention_dropout_train_is_stochastic():
+    """With attention dropout in training, LaBraM keeps its explicit ops (torch's
+    fused kernels draw other masks): two seeds give different, finite outputs,
+    and torch's SDPA runs only in eval mode."""
+    names = list(LABRAM_CHANNEL_ORDER[:4])
+    torch.manual_seed(0)
+    model = Labram(
+        n_times=400,
+        n_chans=4,
+        n_outputs=2,
+        num_layers=2,
+        num_heads=4,
+        patch_size=200,
+        attn_drop_prob=0.5,
+    )
+    x = torch.randn(2, 4, 400)
+    sdpa = nn.functional.scaled_dot_product_attention
+    with mock.patch.object(
+        nn.functional, "scaled_dot_product_attention", wraps=sdpa
+    ) as spy:
+        outs = []
+        for seed in (0, 1):
+            torch.manual_seed(seed)
+            outs.append(model.train()(x, return_features=True, ch_names=names))
+        assert spy.call_count == 0
+        model.eval()(x, ch_names=names)
+        assert spy.call_count == 2
+    outs = [out["features"] for out in outs]
+    assert all(torch.isfinite(out).all() for out in outs)
+    assert not torch.allclose(outs[0], outs[1])
+
+
 @pytest.mark.parametrize("use_mean_pooling", [True, False])
 def test_labram_returns(default_labram_params, use_mean_pooling):
     """
