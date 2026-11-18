@@ -246,6 +246,12 @@ Bug fixes
   these real bins, so a negative bin got ``pi`` or ``-pi`` at random; on MPS
   this moved the outputs of the released weights on random-walk input by 7 %
   from the CPU ones. CPU outputs are unchanged (:gh:`1566` by `Hamza Abdelhedi`_).
+- :class:`braindecode.models.SignalJEPA` and
+  :class:`braindecode.models.SignalJEPA_Contextual` no longer fail in ``backward()``
+  when the window gives one token per channel (for example 152 samples at 128 Hz)
+  and ``activation`` is ``nn.ReLU``, ``nn.Tanh`` or ``nn.Sigmoid``. The positional
+  encoding was added in place to the saved activation output; it is now added out
+  of place. Outputs and parameters are unchanged (:gh:`1600` by `Bruno Aristimunha`_).
 - The Eldele et al. (2021) sleep staging tutorial (``plot_sleep_staging_eldele2021.py``) splits train and validation by subject, as its text says; ``split`` took the ids as recording indices, so it trained on subjects 0-1 and validated on subject 2 while subjects 3-5 were loaded and unused (:gh:`1559` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ZUNA` defaults to ``pos_bins=100``, the value ZUNA1.1 was trained with (paper Table II and Zyphra's configs); the old default ``50`` was ZUNA1's and gave the released encoder outputs up to 5.2 away from the original. The ``braindecode/ZUNA`` checkpoint now holds the ZUNA1.1 encoder in braindecode's parameter names (the earlier ZUNA1 file loaded no parameter into the class) and sets ``pos_bins`` in its config (:gh:`1557` by `Bruno Aristimunha`_).
 - ``from_pretrained`` of :class:`braindecode.models.Brant` loads a checkpoint at
