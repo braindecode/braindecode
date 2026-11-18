@@ -204,6 +204,8 @@ Bug fixes
 - :class:`braindecode.modules.ChannelMerger` keeps gradients finite when spatial
   dropout excludes every electrode of a recording during training in
   :class:`~braindecode.models.BrainModule` or :class:`~braindecode.models.DANCE`.
+  Nonfinite values in excluded electrodes no longer leak into the merged signal
+  (:gh:`1617`).
 
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example

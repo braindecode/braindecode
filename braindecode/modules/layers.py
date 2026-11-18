@@ -567,11 +567,12 @@ class ChannelMerger(nn.Module):
         scores = torch.einsum("bcd,bod->boc", [embedding, heads])
         scores = scores + score_offset[:, None]
         # Softmax over an entirely excluded montage has NaN gradients.
-        empty = torch.isneginf(score_offset).all(dim=1)[:, None, None]
+        excluded = torch.isneginf(score_offset)
+        empty = excluded.all(dim=1)[:, None, None]
         scores = scores.masked_fill(empty, 0.0)
         weights = torch.softmax(scores, dim=2).nan_to_num().masked_fill(empty, 0.0)
         # (B, out, n_chans) @ (B, n_chans, T) -> (B, out, T)
-        return weights @ x  # (B, out_channels, T)
+        return weights @ x.masked_fill(excluded[:, :, None], 0.0)
 
 
 @torch.jit.unused
