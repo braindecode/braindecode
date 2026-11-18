@@ -227,6 +227,10 @@ Bug fixes
   :func:`~braindecode.functional.exact_derivation`
   (:gh:`1577` by `lindicaphxag-tech`_ and `Bruno Aristimunha`_).
 
+- Document the migration from the 1.4 ``compute_amplitude_gradients`` API to
+  :func:`braindecode.visualization.amplitude_gradients_per_trial`, including
+  the old seed and minibatch scaling, and the lifetime of each model yielded
+  by :func:`~braindecode.visualization.cascading_layer_reset`.
 - :class:`braindecode.models.BIOT` looks up all its channel tokens in one embedding call with a
   1-D index, instead of one call per channel with a 0-d index. Outputs and gradients are
   bitwise the same on CPU. On Intel Gaudi, whose embedding backward sends a 0-d index's
@@ -2102,16 +2106,16 @@ Enhancements
   instantiation, so keeping them in ``state_dict`` only bloated checkpoints and
   caused spurious mismatches when ``n_chans`` (or the position-bank config)
   differed between save and load. (:gh:`993` by `Pierre Guetschel`_)
-- Add :mod:`braindecode.visualization` interpretability utilities, all built on
-  plain PyTorch autograd with no extra dependencies:
-  :func:`~braindecode.visualization.saliency`,
+- Add :mod:`braindecode.visualization` interpretability utilities.
+  Install ``braindecode[viz]`` for the Captum-based time-domain methods,
+  including :func:`~braindecode.visualization.saliency`,
   :func:`~braindecode.visualization.input_x_gradient`,
-  :func:`~braindecode.visualization.integrated_gradients`,
-  :func:`~braindecode.visualization.layer_grad_cam`,
-  :func:`~braindecode.visualization.project_to_topomap` (thin wrapper around
-  :func:`mne.viz.plot_topomap`), and :func:`~braindecode.visualization.compute_metrics`
-  for quantitative attribution comparison. A new tutorial,
-  :ref:`interpretability-tutorial`, walks through the full pipeline.
+  :func:`~braindecode.visualization.integrated_gradients` and
+  :func:`~braindecode.visualization.layer_grad_cam`.
+  :func:`~braindecode.visualization.project_to_topomap` uses SciPy
+  interpolation on electrode coordinates obtained from MNE.
+  :func:`~braindecode.visualization.compute_metrics` compares attribution
+  maps. The :ref:`interpretability-tutorial` demonstrates these utilities.
 - Add :class:`braindecode.models.MetaNeuromotorHand`, a port of the
   handwriting decoder from Meta / CTRL-labs' generic neuromotor interface
   (Kaifosh, Reardon et al., Nature 2025). The model takes raw 16-channel
