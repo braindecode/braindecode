@@ -108,7 +108,7 @@ API and behavior changes
   3 x 100 windows of 32 channels x 6000 samples per step), LaBraM steps with ``ch_mask``
   are 4 % shorter compiled and 22 % shorter in eager mode; LaBraM without ``ch_mask``
   and EEGPT in eager mode stay within 0.5 %, and EEGPT compiled steps are 1.6 % longer
-  (by `Bruno Aristimunha`_).
+  (:gh:`1581` by `Bruno Aristimunha`_).
 
 Requirements
 ============
