@@ -7875,15 +7875,27 @@ def test_geonirs_released_checkpoints_match_the_authors_code(file, kwargs, expec
     _check_released_fnirs_checkpoint(_fnirs_checkpoint(file), GeoNIRS, kwargs, expected)
 
 
+@pytest.mark.network
 @pytest.mark.huggingface
-def test_mtrenirs_released_checkpoint_matches_the_authors_code():
+@pytest.mark.parametrize(
+    "n_times, expected",
+    [
+        # one window: every token at window position 0
+        (100, [
+            [1.3799299001693726, 1.1365183591842651, 1.0999616384506226, 0.12654231488704681],
+            [-0.03779871016740799, -0.9599133729934692, 0.5302731394767761, 0.7867113351821899],
+        ]),
+        # three windows: the rotary position of each window takes part
+        (300, [
+            [1.8037338256835938, 0.23441250622272491, 0.7627871036529541, -0.022611618041992188],
+            [0.5426146388053894, -0.756412923336029, 0.2957547605037689, -1.5501772165298462],
+        ]),
+    ],
+)
+def test_mtrenirs_released_checkpoint_matches_the_authors_code(n_times, expected):
     """The MIT-licensed MtReNIRS@16c3082 checkpoint, as released, on the Hub
-    (pinned revision)."""
+    (pinned revision); expected values from the authors' ``MtReNIRS.embed``."""
     hub = ("braindecode/mtrenirs-pretrained", "bbc68ce5e00a4515081d900227fc06d111858e75")
-    expected = [
-        [1.3799299001693726, 1.1365183591842651, 1.0999616384506226, 0.12654231488704681],
-        [-0.03779871016740799, -0.9599133729934692, 0.5302731394767761, 0.7867113351821899],
-    ]
     path = os.path.join(_FNIRS_WEIGHTS, "mtrenirs_10s.pt")
     if not (_FNIRS_WEIGHTS and os.path.isfile(path)):
         hf_hub = pytest.importorskip("huggingface_hub")
@@ -7892,7 +7904,7 @@ def test_mtrenirs_released_checkpoint_matches_the_authors_code():
         except hf_hub.utils.LocalEntryNotFoundError as err:  # offline
             pytest.skip(f"Hugging Face Hub not reachable: {err}")
     _check_released_fnirs_checkpoint(
-        path, MtReNIRS, {"n_times": 100, "sfreq": 10.0}, expected
+        path, MtReNIRS, {"n_times": n_times, "sfreq": 10.0}, expected
     )
 
 
