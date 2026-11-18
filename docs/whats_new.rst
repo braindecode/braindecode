@@ -28,6 +28,10 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
+  between recording descriptions and window metadata, and recording-level subset
+  selection (by `Daria Agafonova`_).
+
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
   transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
@@ -3005,6 +3009,7 @@ API changes
 Authors
 ========
 
+.. _Daria Agafonova: https://github.com/viranovskaya
 .. _Arnaud Delorme: https://github.com/arnodelorme
 .. _Arslan Shafique: https://github.com/arslan-shafique
 .. _Anton Soloviev: https://github.com/antonsoo
