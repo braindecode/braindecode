@@ -136,7 +136,7 @@ class JungMAE(EEGModuleMixin, nn.Module):
     .. rubric:: Pretrained Weights
 
     ``checkpoint/jung_mae.pt`` of ``GeoNIRS/GeoNIRS`` at ``81f8995`` was
-    trained by the GeoNIRS authors and is not on the Hugging Face Hub. It
+    trained by the GeoNIRS authors and is not on Hugging Face. It
     holds the encoder (1,783,872 parameters), the decoder (244,436) and the
     model configuration, which equals the defaults of this class.
 
