@@ -1733,22 +1733,6 @@ def test_sleepfm_masked_input_is_ignored(cls, masked, training):
     torch.testing.assert_close(runs[0], runs[1])
 
 
-@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
-def test_sleepfm_deprecated_channel_mask_is_the_inverse_of_ch_mask(cls):
-    """``channel_mask`` (True for missing) warns and equals ``ch_mask=~channel_mask``
-    (True for real, as every model); both at once raise."""
-    model = _small(cls).eval()
-    x = torch.randn(2, 3, 1280)
-    missing = torch.tensor([[False, False, True], [False, True, False]])
-    with torch.no_grad():
-        expected = model(x, ch_mask=~missing)
-        with pytest.warns(DeprecationWarning, match="ch_mask"):
-            torch.testing.assert_close(model(x, missing), expected)
-        assert not torch.allclose(model(x, ch_mask=missing), expected)
-        with pytest.raises(ValueError, match="not both"):
-            model(x, missing, ch_mask=~missing)
-
-
 @pytest.mark.parametrize("n_valid", [16, 12], ids=["chunk_aligned", "inside_chunk"])
 def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
     """Stager = SleepFM.encode per modality and chunk, then the staging head."""

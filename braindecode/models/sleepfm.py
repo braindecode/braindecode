@@ -197,7 +197,6 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     def encode(
         self,
         x: torch.Tensor,
-        channel_mask: torch.Tensor | None = None,
         ch_mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         r"""Return the pooled and the per-patch representations.
@@ -217,9 +216,6 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         ----------
         x : torch.Tensor
             Input of shape ``(batch, n_chans, n_times)``.
-        channel_mask : torch.Tensor | None
-            Deprecated: ``(batch, n_chans)`` mask, ``True`` for missing
-            channels. Use ``ch_mask``.
         ch_mask : torch.Tensor | None
             ``(batch, n_chans)`` mask, ``True`` for real channels, see
             :func:`~braindecode.functional.check_ch_mask`.
@@ -231,7 +227,7 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         contextual_tokens : torch.Tensor
             :math:`h`, shape ``(batch, n_patches, embed_dim)``.
         """
-        mask = _missing_channels(ch_mask, channel_mask, x)
+        mask = _missing_channels(ch_mask, x)
         patch_mask: Optional[torch.Tensor] = None
         if mask is None:
             mask = torch.zeros(x.shape[:2], dtype=torch.bool, device=x.device)
@@ -250,16 +246,12 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     def forward(
         self,
         x: torch.Tensor,
-        channel_mask: torch.Tensor | None = None,
         return_features: bool = False,
         ch_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
-        """Return trial logits, or the pooled features.
-
-        ``ch_mask`` (``True`` for real channels) is as in :meth:`encode`;
-        ``channel_mask`` (``True`` for missing channels) is deprecated.
-        """
-        pooled, _ = self.encode(x, channel_mask, ch_mask)
+        """Return trial logits, or the pooled features; ``ch_mask`` (``True``
+        for real channels) is as in :meth:`encode`."""
+        pooled, _ = self.encode(x, ch_mask)
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": pooled,
@@ -565,7 +557,6 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     def forward(
         self,
         x: torch.Tensor,
-        channel_mask: torch.Tensor | None = None,
         return_features: bool = False,
         temporal_mask: torch.Tensor | None = None,
         ch_mask: torch.Tensor | None = None,
@@ -573,15 +564,14 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         """Return patch-wise logits, or the per-patch LSTM features.
 
         ``ch_mask`` (``True`` for real channels) is as in :class:`SleepFM`;
-        ``channel_mask`` (``True`` for missing channels) is deprecated.
-        ``temporal_mask`` keeps ``True`` for padded patches.
+        ``temporal_mask`` is ``True`` for padded patches.
         """
         # The count the tokenizer produces (padded patch included with "pad").
         n_patches = self.patch_embedding.patchify.n_patches(x.shape[-1])
         patch_mask = _check_mask(
             temporal_mask, [x.shape[0], n_patches], x, "temporal_mask"
         )
-        mask = _missing_channels(ch_mask, channel_mask, x)
+        mask = _missing_channels(ch_mask, x)
         mask_tokens = mask is not None or patch_mask is not None
         if mask is None:
             mask = torch.zeros(x.shape[:2], dtype=torch.bool, device=x.device)
@@ -829,29 +819,14 @@ class _SleepFMStagingHead(nn.Module):
 
 
 def _missing_channels(
-    ch_mask: Optional[torch.Tensor],
-    channel_mask: Optional[torch.Tensor],
-    x: torch.Tensor,
+    ch_mask: Optional[torch.Tensor], x: torch.Tensor
 ) -> Optional[torch.Tensor]:
     """The ``(batch, n_chans)`` mask of missing channels the encoders use, from
-    ``ch_mask`` (``True`` for real channels) or the deprecated ``channel_mask``
-    (``True`` for missing channels)."""
-    if ch_mask is not None:
-        if channel_mask is not None:
-            raise ValueError("Pass ch_mask or channel_mask, not both.")
-        real = check_ch_mask(ch_mask, x)
-        if real is None:  # never: refines the Optional for TorchScript
-            return None
-        return ~real
-    if channel_mask is not None and not torch.jit.is_scripting():
-        warnings.warn(
-            "channel_mask (True for missing channels) is deprecated and will be "
-            "removed in a future release; pass ch_mask, True for real channels "
-            "as in every model and pad_channels_collate, e.g. ch_mask=~channel_mask.",
-            DeprecationWarning,
-            stacklevel=3,
-        )
-    return _check_mask(channel_mask, x.shape[:2], x, "channel_mask")
+    ``ch_mask`` (``True`` for real channels)."""
+    real = check_ch_mask(ch_mask, x)
+    if real is None:
+        return None
+    return ~real
 
 
 def _check_mask(
