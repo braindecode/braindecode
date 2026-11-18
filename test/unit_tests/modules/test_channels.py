@@ -12,9 +12,16 @@ import numpy as np
 import pytest
 import torch
 
+from braindecode.functional import spherical_spline_kernel
 from braindecode.models import BENDR, LUNA, Labram, SignalJEPA
 from braindecode.modules import ChannelLayer
-from braindecode.modules.channels import _SPHERE_R0, STRATEGIES, _resolve
+from braindecode.modules.channels import (
+    _SPHERE_R0,
+    STRATEGIES,
+    _interp,
+    _mixing,
+    _resolve,
+)
 
 TEN_TWENTY = "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
 SUBSET = ["Fp1", "F3", "Fz", "C3", "Cz", "P4", "Pz", "O2"]
@@ -395,3 +402,42 @@ def test_targets_from_any_combination_of_measured_channels():
     expected = torch.cat([v[:, [idx[a]]] - v[:, [idx[b]]] for a, b in (n.split("-") for n in targets)], 1)
     torch.testing.assert_close(y, expected, rtol=0, atol=1e-12)
     assert observed.all()
+
+
+@pytest.mark.parametrize("reg", [1e-3, 0.0])
+def test_spline_is_mne_spherical_spline(reg):
+    src, tgt = _resolve(chs(SUBSET))[1], _resolve(chs(["T7", "P8", "F4"]))[1]
+    W, var = _mixing("spline", src, tgt, reg=reg)
+    np.testing.assert_allclose(W, _interp("spline", src, tgt, reg), atol=1e-10)
+    assert (var > 0).all()
+
+
+def test_kernel_strategy_variance_and_gain():
+    layer = ChannelLayer(chs(TEN_TWENTY), spherical_spline_kernel, chs(SUBSET), reg=1e-3)
+    measured = torch.tensor(np.isin(TEN_TWENTY, SUBSET))
+    assert (layer.variance[measured] == 0).all() and (layer.variance[~measured] > 0).all()
+    gained = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET), match_gain=True)
+    plain = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET))
+    assert torch.equal(gained.weight[measured], plain.weight[measured])
+    assert not torch.allclose(gained.weight[~measured], plain.weight[~measured])
+
+
+@pytest.mark.parametrize("reference", ["average", "Cz"])
+def test_target_reference(reference):
+    v = torch.randn(2, len(TEN_TWENTY), 40, dtype=torch.float64)
+    layer = ChannelLayer(chs(SUBSET), "exact", chs(TEN_TWENTY), reference=reference)
+    sub = v[:, [TEN_TWENTY.index(n) for n in SUBSET]]
+    ref = sub.mean(1, keepdim=True) if reference == "average" else v[:, [TEN_TWENTY.index("Cz")]]
+    torch.testing.assert_close(layer.double()(v)[0], sub - ref, atol=1e-12, rtol=0)
+
+
+def test_one_montage_per_sample():
+    layer = ChannelLayer(chs(TEN_TWENTY), "spline", chs(TEN_TWENTY))
+    x = torch.randn(2, len(TEN_TWENTY), 30)
+    montages = [chs(TEN_TWENTY), chs(SUBSET)]
+    padded = x.clone()
+    padded[1, len(SUBSET):] = 0
+    y, observed = layer(padded, montages)
+    torch.testing.assert_close(y[1], layer(padded[1:, : len(SUBSET)], montages[1])[0][0])
+    torch.testing.assert_close(y[0], x[0])
+    assert observed.shape == (2, len(TEN_TWENTY)) and observed[0].all()

@@ -28,6 +28,17 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- :class:`braindecode.modules.ChannelLayer` maps channels with one linear
+  estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
+  targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat
+  prior on the unknown reference (universal kriging). ``spline`` (now Perrin's
+  kernel, :func:`~braindecode.functional.spherical_spline_kernel`) and ``wiener``
+  use it with unchanged maps; ``channel_strategy`` also takes any covariance
+  kernel. The layer gives each target's posterior ``variance``, matches the
+  amplitude with ``match_gain=True``, re-references the targets with
+  ``reference="average"`` or an electrode name
+  (:func:`~braindecode.functional.derivation_matrix` takes ``reference`` too),
+  and takes one montage per sample (:gh:`PRNUM` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
   transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden

@@ -11,7 +11,10 @@ that is a combination of measured channels is computed exactly
 (:func:`braindecode.functional.exact_derivation`): ``F3-C3`` from ``C3-F3``,
 ``F3-P3`` from ``F3-C3`` and ``C3-P3``, ``F3-C3`` from ``F3`` and ``C3``. The
 strategy fills the other targets that have a position from the positioned
-inputs; a target without a position (BENDR's ``SCALE``) is zero.
+inputs; a target without a position (BENDR's ``SCALE``) is zero. ``spline``,
+``wiener`` and a kernel passed as the strategy are one Gaussian estimate
+(:func:`braindecode.functional.linear_channel_map`), which also gives each
+target's posterior variance.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ import re
 import warnings
 from collections import OrderedDict
 from functools import lru_cache
+from typing import cast
 from unittest import mock
 
 import mne
@@ -32,7 +36,11 @@ from scipy.linalg import solve
 from scipy.spatial.distance import cdist
 from torch import Tensor, nn
 
-from braindecode.functional import exact_derivation
+from braindecode.functional import (
+    exact_derivation,
+    linear_channel_map,
+    spherical_spline_kernel,
+)
 from braindecode.util import resolve_montage_name
 
 STRATEGIES = (
@@ -238,8 +246,32 @@ def _source(src_pos, tgt_pos, n_parcels=64, lam=0.1, grid_mm=15.0):
     return L[k:] - L[:k].mean(0), S
 
 
+def _head_origin(src_pos) -> np.ndarray:
+    """Centre of the sphere fitted to ``src_pos``, as ``interpolate_to(origin="auto")``."""
+    names = [f"S{i}" for i in range(len(src_pos))]
+    info = mne.create_info(names, 100.0, "eeg")
+    info.set_montage(
+        mne.channels.make_dig_montage(dict(zip(names, src_pos)), coord_frame="head")
+    )
+    return mne.bem.fit_sphere_to_headshape(info, units="m", verbose="ERROR")[1]
+
+
+def _kriging(cov, k, noise, match_gain=False, flat=True):
+    """Rows ``k:`` of ``cov`` from rows ``:k`` (``linear_channel_map``): ``(W, var)``."""
+    eye = torch.eye(len(cov), dtype=torch.float64)
+    W, var = linear_channel_map(
+        eye[:k],
+        eye[k:],
+        torch.as_tensor(cov),
+        noise,
+        eye.sum(1, keepdim=True) if flat else None,
+        match_gain,
+    )  # flat: the unknown recording reference
+    return W.numpy(), var.numpy()
+
+
 def _mixing(
-    name: str,
+    name,
     src_pos,
     tgt_pos,
     reg=None,
@@ -248,11 +280,22 @@ def _mixing(
     radius=None,
     cov=None,
     dense_pos=None,
+    match_gain=False,
     **source_kw,
-) -> np.ndarray:
-    """``(M, k)`` matrix filling ``M`` target positions from ``k`` input positions."""
+):
+    """``(M, k)`` matrix filling ``M`` target positions from ``k`` input positions,
+    and the targets' posterior variance (``None`` without a prior covariance)."""
+    if name == "spline" or callable(name):  # spline: Perrin's kernel, MNE's origin
+        both = np.vstack([src_pos, tgt_pos])
+        if name == "spline":
+            both, reg = both - _head_origin(src_pos), 1e-3 if reg is None else reg
+            name = spherical_spline_kernel
+        k = torch.as_tensor(both)
+        return _kriging(
+            np.asarray(name(k, k), float), len(src_pos), reg or 0.0, match_gain
+        )
     if name in ("zero", "latent"):  # latent: the attention fills these rows
-        return np.zeros((len(tgt_pos), len(src_pos)))
+        return np.zeros((len(tgt_pos), len(src_pos))), None
     if name == "wiener":  # C_to (C_oo + noise * tr / k * I)^-1
         if cov is None or not len(cov):
             raise ValueError("The 'wiener' strategy needs a covariance: call fit().")
@@ -263,26 +306,24 @@ def _mixing(
                 f"'wiener': positions {both[d.min(1) > 0.015].round(3).tolist()} have no electrode of the fitted dense montage within 15 mm."
             )
         jo, jt = np.split(d.argmin(1), [len(src_pos)])
-        Cxx = cov[np.ix_(jo, jo)]
-        Cxx = Cxx + noise * np.trace(Cxx) / len(jo) * np.eye(len(jo))
-        return solve(Cxx, cov[np.ix_(jo, jt)], assume_a="sym").T
+        sigma2 = noise * np.trace(cov[np.ix_(jo, jo)]) / len(jo)
+        j = np.r_[jo, jt]
+        return _kriging(cov[np.ix_(j, j)], len(jo), sigma2, match_gain, flat=False)
     if name == "region":  # mean within radius (default 1.5 x median input spacing)
         if radius is None:
             nn_d = cdist(src_pos, src_pos) + np.diag(np.full(len(src_pos), np.inf))
             radius = 1.5 * np.median(nn_d.min(1))
         w = (cdist(tgt_pos, src_pos) <= radius).astype(float)
-        return w / np.maximum(w.sum(1, keepdims=True), 1.0)
+        return w / np.maximum(w.sum(1, keepdims=True), 1.0), None
     if name in ("nearest", "idw"):
         w = np.maximum(cdist(tgt_pos, src_pos), 1e-6) ** -p
         w = w == w.max(1, keepdims=True) if name == "nearest" else w
-        return w / w.sum(1, keepdims=True)
-    if name == "spline":
-        return _interp("spline", src_pos, tgt_pos, 1e-3 if reg is None else reg)
+        return w / w.sum(1, keepdims=True), None
     if name == "field":  # MNE maps average-referenced data: keep the input reference
         W = _interp("MNE", src_pos, tgt_pos, 0.0 if reg is None else reg)
-        return W + (1.0 - W.sum(1, keepdims=True)) / W.shape[1]
+        return W + (1.0 - W.sum(1, keepdims=True)) / W.shape[1], None
     Lt, S = _source(src_pos, tgt_pos, **source_kw)
-    return Lt @ S + 1.0 / len(src_pos)  # rows sum to 1: the input's own reference
+    return Lt @ S + 1.0 / len(src_pos), None  # rows sum to 1: the input's reference
 
 
 class ChannelLayer(nn.Module):
@@ -294,7 +335,7 @@ class ChannelLayer(nn.Module):
     ----------
     target : list of dict
         Channels the backbone consumes (``ch_name``, optional ``loc``).
-    strategy : str
+    strategy : str or callable
         ``"exact"`` (a missing target is an error), ``"zero"``, ``"nearest"``,
         ``"idw"`` (``p``), ``"spline"`` (``reg=1e-3``), ``"field"`` (``reg=0``)
         or ``"source"`` (``n_parcels=64``, ``lam=0.1``, ``grid_mm=15``,
@@ -303,10 +344,35 @@ class ChannelLayer(nn.Module):
         (mean within ``radius``, default 1.5 x the median input spacing) or
         ``"latent"`` (``d_model=64``, ``n_freqs=8``: learned cross-attention from
         each missing target's position over the inputs' positions and statistics).
+        A callable ``kernel(pos_a, pos_b) -> (n_a, n_b)`` covariance of the
+        potentials at two sets of positions (head frame, metres), e.g.
+        :func:`~braindecode.functional.spherical_spline_kernel`, fills them with
+        :func:`~braindecode.functional.linear_channel_map` (``reg``: the noise
+        variance, default 0; the recording reference is left unknown).
+        ``spline`` and ``wiener`` are that estimate with their own covariance;
+        ``match_gain=True`` gives each reconstructed target its prior variance.
     chs_info : list of dict, optional
         Montage used when :meth:`forward` gets none.
     drop_non_eeg : bool
         Ignore input channels that are not electrodes instead of raising.
+    reference : str, optional
+        Reference of the backbone's single-electrode targets: ``None`` (the
+        input's), an electrode name (``"Cz"``: target ``A`` is ``V(A) -
+        V(Cz)``, with ``Cz`` copied or reconstructed like any target) or
+        ``"average"`` (minus their mean). Bipolar targets need none.
+
+    Attributes
+    ----------
+    variance : torch.Tensor
+        Posterior variance of each target for the current montage: 0 when
+        measured or exact, from the estimate for a single-electrode target of
+        ``spline``, ``wiener`` or a kernel, ``nan`` when not computed.
+
+    Notes
+    -----
+    ``forward`` also takes one montage per sample, ``chs_info`` a list of
+    montages and ``x`` zero-padded to the largest, for the strategies without
+    trained state (not ``latent`` or ``trainable``).
     """
 
     def __init__(
@@ -317,10 +383,11 @@ class ChannelLayer(nn.Module):
         *,
         drop_non_eeg=False,
         trainable=False,
+        reference=None,
         **kwargs,
     ):
         super().__init__()
-        if strategy not in STRATEGIES:
+        if not callable(strategy) and strategy not in STRATEGIES:
             close = difflib.get_close_matches(strategy, STRATEGIES, n=3)
             raise ValueError(
                 f"Unknown channel strategy {strategy!r}. Did you mean {close}? Available: {STRATEGIES}."
@@ -330,15 +397,17 @@ class ChannelLayer(nn.Module):
             c if g or np.isnan(p).any() else {**c, "loc": np.r_[p, np.zeros(9)]}
             for c, p, g in zip(target, pos, given)
         ]
-        self.strategy, self.chs_info = strategy, chs_info
+        self.strategy, self.chs_info, self.reference = strategy, chs_info, reference
         self.drop_non_eeg, self.kwargs = drop_non_eeg, kwargs
         # Per-montage maps: LRU of device tensors; the current one is the buffers.
         self._cache, self._key, self._chs = OrderedDict(), None, None
         self.register_buffer("weight", torch.zeros(0, 0), persistent=False)
         tnames = [str(c["ch_name"]) for c in self.target]
+        named = {n: c for n, c in zip(tnames, self.target) if "-" not in n}
+        if reference not in (None, "average"):  # target A is the derivation A-ref
+            tnames = [n if "-" in n else f"{n}-{reference}" for n in tnames]
         # A-B is copied when measured, else derived from A and B (both columns).
         mono = list(dict.fromkeys(m for n in tnames for m in (n, *n.split("-"))))
-        named = {n: c for n, c in zip(tnames, self.target) if "-" not in n}
         _, tpos, tstd, *_ = _resolve([named.get(m, {"ch_name": m}) for m in mono])
         self._whole = [mono.index(n) for n in tnames]
         D = np.array(
@@ -426,6 +495,9 @@ class ChannelLayer(nn.Module):
         observed = np.abs(W).sum(1) > 0
         copied = observed[self._whole][:, None]  # a measured A-B target: copy it
         D = np.where(copied, np.eye(len(mono))[self._whole], self._D)
+        if self.reference == "average":  # single-electrode targets minus their mean
+            single = np.array(["-" not in str(c["ch_name"]) for c in self.target])
+            D[single] -= D[single].mean(0)
         missing = ~observed & np.abs(D).any(0)
         todo = missing & np.isfinite(tpos).all(1)
         if self.strategy == "exact" and todo.any():
@@ -444,19 +516,22 @@ class ChannelLayer(nn.Module):
                 stacklevel=4,
             )
         use = keep & np.isfinite(pos).all(1)
-        if todo.any() and use.sum() < _MIN_POSITIONS[self.strategy]:
+        need = _MIN_POSITIONS.get(self.strategy, 1)  # a kernel: one
+        if todo.any() and use.sum() < need:
             raise ValueError(
-                f"Strategy {self.strategy!r} needs at least {_MIN_POSITIONS[self.strategy]} channels with a position; got {int(use.sum())} of {names}. Supply 'loc' or standard 10-05 names."
+                f"Strategy {self.strategy!r} needs at least {need} channels with a position; got {int(use.sum())} of {names}. Supply 'loc' or standard 10-05 names."
             )
         fitted = {  # wiener: device-safe float64 copies
             k: getattr(self, k).detach().cpu().double().numpy()
             for k in ("cov", "dense_pos")
             if hasattr(self, k)
         }
+        var = np.where(observed, 0.0, np.nan)
         if todo.any():
-            W[np.ix_(todo, use)] = _mixing(
+            W[np.ix_(todo, use)], v = _mixing(
                 self.strategy, pos[use], tpos[todo], **self.kwargs, **fitted
             )
+            var[todo] = np.nan if v is None else v
             gain = np.abs(W[todo]).sum(1).max()
             if gain > 2:
                 warnings.warn(
@@ -465,7 +540,9 @@ class ChannelLayer(nn.Module):
                     stacklevel=4,
                 )
         dev, dt = self.weight.device, self.weight.dtype  # built where the module is
-        maps = dict(weight=D @ W)
+        unit = (D != 0).sum(1) == 1  # a single-electrode target: its own variance
+        variance = np.where(seen, 0.0, np.where(unit, var[np.abs(D).argmax(1)], np.nan))
+        maps = dict(weight=D @ W, variance=variance)
         if self.trainable:  # nothing to reconstruct: zero correction, no inverse
             n = self.parcel_mix.shape[0]
             Lt, S = (
@@ -521,19 +598,33 @@ class ChannelLayer(nn.Module):
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def forward(
-        self, x: Tensor, chs_info: list[dict] | None = None
+        self, x: Tensor, chs_info: list[dict] | list[list[dict]] | None = None
     ) -> tuple[Tensor, Tensor]:
-        """Map ``x`` (B, C, T) recorded with ``chs_info``; return ``(x, observed)``."""
+        """Map ``x`` (B, C, T) recorded with ``chs_info`` (or one montage per
+        sample); return ``(x, observed)``."""
         chs = chs_info if chs_info is not None else self.chs_info
         if chs is None:
             raise ValueError(
                 f"No montage: pass chs_info to the model (or to forward) so channel strategy {self.strategy!r} knows the input channels."
             )
+        if chs and isinstance(chs[0], (list, tuple)):  # one montage per sample
+            big = max(map(len, chs)) > x.shape[1]
+            if self.trainable or self.strategy == "latent" or len(chs) != len(x) or big:
+                raise ValueError(
+                    f"One montage per sample needs a strategy without trained state and one montage of at most {x.shape[1]} channels for each of the {len(x)} samples; got {self.strategy!r} and {len(chs)} montages."
+                )
+            weights, observed = [], []
+            for c in cast(list[list[dict]], chs):  # x zero-padded to the largest
+                self._use(c)
+                weights.append(nn.functional.pad(self.weight, (0, x.shape[1] - len(c))))
+                observed.append(self.observed)
+            return torch.stack(weights) @ x, torch.stack(observed)
         if x.shape[1] != len(chs):
             raise ValueError(
                 f"Input has {x.shape[1]} channels but the montage has {len(chs)}; they must match."
             )
-        self._use(chs)  # steady state: no host work, every map already on device
+        # steady state: no host work, every map already on device
+        self._use(cast(list[dict], chs))
         out = self.weight @ x
         if self.trainable:
             out = out + self.lead @ (self.parcel_mix @ (self.inverse @ x))
