@@ -518,6 +518,48 @@ def test_local_weights_selected_symlinks_and_native_modes(tmp_path, filename):
         torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)
 
 
+def test_local_binary_fallback_replaces_previous_weights(tmp_path, monkeypatch):
+    from huggingface_hub import PyTorchModelHubMixin
+
+    model = EEGNet(n_chans=2, n_outputs=2, n_times=128).eval()
+    model.save_pretrained(tmp_path)
+    with torch.no_grad():
+        next(model.parameters()).add_(0.5)
+
+    def cannot_save_safetensors(self, directory):
+        raise RuntimeError("forced safetensors write failure")
+
+    monkeypatch.setattr(
+        PyTorchModelHubMixin, "_save_pretrained", cannot_save_safetensors
+    )
+    with pytest.warns(UserWarning, match="pytorch_model.bin"):
+        model.save_pretrained(tmp_path)
+    x = torch.randn(2, 2, 128)
+    for name in (None, "pytorch_model.bin"):
+        restored = EEGNet.from_pretrained(
+            tmp_path, filename=name, local_files_only=True, strict=True
+        )
+        for key, value in model.state_dict().items():
+            torch.testing.assert_close(restored.state_dict()[key], value)
+        torch.testing.assert_close(restored(x), model(x))
+
+
+@pytest.mark.parametrize(
+    "geometry, expected_samples",
+    [({}, 256), ({"input_window_seconds": 2.0}, 384), ({"sfreq": 128}, 384)],
+)
+def test_duration_override_uses_saved_time_geometry(
+    tmp_path, geometry, expected_samples
+):
+    model = EEGNet(n_chans=2, n_outputs=2, n_times=256, final_conv_length=1, **geometry)
+    model.save_pretrained(tmp_path)
+    restored = EEGNet.from_pretrained(
+        tmp_path, input_window_seconds=3.0, local_files_only=True, strict=True
+    )
+    assert restored.n_times == expected_samples
+    assert restored.sfreq == pytest.approx(expected_samples / 3)
+
+
 @pytest.mark.parametrize("filename", [None, "missing.safetensors"])
 def test_custom_weights_missing_does_not_use_default_pickle_fallback(tmp_path, monkeypatch, filename):
     import huggingface_hub

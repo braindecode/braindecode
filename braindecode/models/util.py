@@ -169,6 +169,9 @@ def track_model_init_kwargs(cls) -> None:
 
     @wraps(init)
     def wrapped(self, *args, **kwargs):
+        # A wrapped parent receives only the arguments the subclass forwards.
+        if type(self).__init__ is not wrapped:
+            return init(self, *args, **kwargs)
         bound = init_signature.bind(self, *args, **kwargs)
         bound.apply_defaults()
 

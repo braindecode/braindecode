@@ -1228,7 +1228,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         try:
             super()._save_pretrained(save_directory)
         except (ImportError, RuntimeError) as e:
-            # Fallback to pytorch_model.bin if safetensors saving fails
+            # A previous save may have left older weights under the preferred name.
+            (save_directory / "model.safetensors").unlink(missing_ok=True)
             warnings.warn(
                 f"Could not save model in safetensors format: {e}. "
                 "Model weights saved in pytorch_model.bin instead.",
@@ -1270,8 +1271,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 kwargs.setdefault("n_chans", len(kwargs["chs_info"]))
             elif "n_chans" in kwargs:
                 kwargs.setdefault("chs_info", None)
-            if "n_times" in kwargs or "sfreq" in kwargs:
-                kwargs.setdefault("input_window_seconds", None)
+            if "input_window_seconds" in kwargs:
+                if "n_times" in kwargs:
+                    kwargs.setdefault("sfreq", None)
+                else:
+                    kwargs["n_times"] = None
+            elif "n_times" in kwargs or "sfreq" in kwargs:
+                kwargs["input_window_seconds"] = None
             token = _RECORD_LOADED_KEYS.set(True)
             try:
                 model = super().from_pretrained(*args, **kwargs)
@@ -1334,12 +1340,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             cls._fill_legacy_defaults(model_kwargs)
             resolve_type_kwargs(cls, model_kwargs)
 
-            # Read saved n_outputs from config.json to detect when the
-            # user wants a different number of outputs.  Works for both
-            # local directories and Hub repo IDs.
-            saved_n_outputs = None
+            is_local = Path(model_id).is_dir()
+            saved_config = {}
             try:
-                if Path(model_id).is_dir():
+                if is_local:
                     config_file = Path(model_id) / "config.json"
                 else:
                     config_file = huggingface_hub.hf_hub_download(
@@ -1352,10 +1356,26 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                         local_files_only=local_files_only,
                     )
                 with open(config_file, "r") as f:
-                    saved_n_outputs = json.load(f).get("n_outputs")
+                    saved_config = json.load(f)
             except (OSError, json.JSONDecodeError, KeyError):
-                pass  # config unavailable; skip reset_head logic
+                pass
 
+            # When a new duration is the only time quantity, retain the rate
+            # of the saved recording or its sample count if no rate was known.
+            if (
+                model_kwargs.get("input_window_seconds") is not None
+                and model_kwargs.get("n_times") is None
+                and model_kwargs.get("sfreq") is None
+                and saved_config.get("n_times") is not None
+            ):
+                if saved_config.get("input_window_seconds"):
+                    model_kwargs["sfreq"] = (
+                        saved_config["n_times"] / saved_config["input_window_seconds"]
+                    )
+                else:
+                    model_kwargs["n_times"] = saved_config["n_times"]
+
+            saved_n_outputs = saved_config.get("n_outputs")
             requested_n_outputs = model_kwargs.get("n_outputs")
 
             # If the user requests different n_outputs, load with the
@@ -1367,11 +1387,15 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             ):
                 model_kwargs["n_outputs"] = saved_n_outputs
 
+            if filename is None and is_local:
+                preferred = _local_weights_path(model_id, "model.safetensors")
+                if (
+                    not preferred.exists()
+                    and (Path(model_id) / "pytorch_model.bin").is_file()
+                ):
+                    filename = "pytorch_model.bin"
+
             if filename is None:
-                # The parent selects only safetensors for local directories;
-                # its legacy pickle fallback is remote-only.
-                if Path(model_id).is_dir():
-                    _local_weights_path(model_id, "model.safetensors")
                 model = super()._from_pretrained(  # type: ignore
                     model_id=model_id,
                     revision=revision,
@@ -1392,7 +1416,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     for key in ("proxies", "resume_download")
                     if key in model_kwargs
                 }
-                if Path(model_id).is_dir():
+                if is_local:
                     model_file = str(_local_weights_path(model_id, filename))
                 else:
                     model_file = huggingface_hub.hf_hub_download(
@@ -1405,9 +1429,17 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                         local_files_only=local_files_only,
                         **download_kwargs,
                     )
-                model = cls._load_as_safetensor(
-                    cls(**model_kwargs), model_file, map_location, strict
-                )
+                model = cls(**model_kwargs)
+                if is_local and filename == "pytorch_model.bin":
+                    state = torch.load(
+                        model_file, map_location=map_location, weights_only=True
+                    )
+                    model.load_state_dict(state, strict=strict)
+                    model.eval()
+                else:
+                    model = cls._load_as_safetensor(
+                        model, model_file, map_location, strict
+                    )
 
             if (
                 saved_n_outputs is not None
