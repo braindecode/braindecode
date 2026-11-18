@@ -35,6 +35,7 @@ import tempfile
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
+from uuid import uuid4
 
 import mne
 import numpy as np
@@ -769,6 +770,7 @@ class HubDatasetMixin:
         # Store global metadata
         root.attrs["n_datasets"] = len(self.datasets)
         root.attrs["dataset_type"] = dataset_type
+        root.attrs["store_id"] = uuid4().hex
         root.attrs["braindecode_version"] = braindecode.__version__
 
         # Track dependency versions for reproducibility

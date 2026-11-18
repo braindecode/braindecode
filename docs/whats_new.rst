@@ -201,6 +201,10 @@ Requirements
 Bug fixes
 ==========
 
+- Replacing a local Zarr dataset keeps the previous store readable if the
+  export fails. Fresh lazy readers see the replacement recording, while open
+  readers and their workers retain the signal associated with their labels.
+
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
