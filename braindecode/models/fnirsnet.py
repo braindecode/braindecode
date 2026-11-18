@@ -206,6 +206,7 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     def __init__(
         self,
+        # Braindecode parameters
         n_outputs: int | None = None,
         n_chans: int | None = None,
         chs_info: list[dict] | None = None,
@@ -213,36 +214,87 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
         input_window_seconds: float | None = None,
         sfreq: float | None = None,
         *,
+        # Model-specific parameters
         n_dhr_filters: int = 4,
         n_pw_filters: int = 8,
         dhr_kernel_length: int | None = None,
         activation: type[nn.Module] = nn.Sigmoid,
     ) -> None:
         super().__init__(
-            n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        # The authors' head is named ``fc``: their state_dict loads as is
+        self.mapping = {f"fc.{k}": f"final_layer.{k}" for k in ("weight", "bias")}
+
+        # Parameters
+        # Guideline 1: the DHRConv kernel is as wide as the window (k = S)
         kernel_length = self.n_times if dhr_kernel_length is None else dhr_kernel_length
+        # Samples left after DHRConv, S' = S - k + 1 (1 with the paper's k = S)
+        n_times_dhr = self.n_times - kernel_length + 1
+
+        # Checkers
+        # A kernel longer than the window has no valid position, and an empty
+        # one reads nothing
         if not 1 <= kernel_length <= self.n_times:
             raise ValueError(
                 f"dhr_kernel_length must be in [1, n_times={self.n_times}], "
                 f"got {dhr_kernel_length}."
             )
+
+        # Layers
+        # Following paper nomenclature (Section II-B, Table I)
+        # The authors' input has a depth axis: (batch, 1, C, S)
         self.to_fnirs_tensor = Rearrange("batch chans time -> batch 1 chans time")
-        self.conv1 = nn.Conv2d(1, n_dhr_filters, (1, kernel_length))
+
+        # Delayed hemodynamic response module (DHR Module)
+        # DHRConv: F1 standard convolutions of 1 x k, so that one filter reads
+        # the whole slow response of one channel (Guidelines 1 and 2)
+        self.conv1 = nn.Conv2d(
+            in_channels=1,
+            out_channels=n_dhr_filters,
+            kernel_size=(1, kernel_length),
+        )
         self.bn1 = nn.BatchNorm2d(n_dhr_filters)
+
+        # Global module: a depthwise separable convolution
         self.conv2 = nn.Sequential(
             OrderedDict(
-                depth_conv=DepthwiseConv2d(n_dhr_filters, 1, (self.n_chans, 1)),
-                point_conv=nn.Conv2d(n_dhr_filters, n_pw_filters, 1),
+                # DWConv: one C x 1 filter per DHRConv map, a global receptive
+                # field over the channels without stacking layers
+                depth_conv=DepthwiseConv2d(
+                    in_channels=n_dhr_filters,
+                    depth_multiplier=1,
+                    kernel_size=(self.n_chans, 1),
+                ),
+                # PWConv: 1 x 1, projects the F1 maps into F2 new ones
+                point_conv=nn.Conv2d(
+                    in_channels=n_dhr_filters,
+                    out_channels=n_pw_filters,
+                    kernel_size=1,
+                ),
             )
         )
         self.bn2 = nn.BatchNorm2d(n_pw_filters)
+
+        # Guideline 3: an activation that saturates for negative inputs
+        # (sigmoid in the paper), used after both batch normalizations
         self.activation = activation()
+
+        # Flatten layer
         self.flatten = Rearrange("batch filters 1 time -> batch (filters time)")
-        n_features = n_pw_filters * (self.n_times - kernel_length + 1)
-        self.final_layer = nn.Linear(n_features, self.n_outputs)
-        self.mapping = {f"fc.{k}": f"final_layer.{k}" for k in ("weight", "bias")}
+
+        # Final fully connected layer, without pooling or dropout
+        self.final_layer = nn.Linear(
+            in_features=n_pw_filters * n_times_dhr,
+            out_features=self.n_outputs,
+        )
 
     def reset_head(self, n_outputs: int) -> None:
         self._set_n_outputs(n_outputs)
@@ -255,23 +307,68 @@ class FNIRSNet(EEGModuleMixin, nn.Module, license="apache-2.0"):
         return_features: bool = False,
         ch_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
-        """Logits ``(batch, n_outputs)`` of ``x`` ``(batch, n_chans, n_times)``.
+        """Forward pass of the fNIRSNet model.
 
-        ``return_features=True`` gives ``{"features", "cls_token": None}``; a
-        ``ch_mask`` raises a ``ValueError`` (DWConv spans all channels).
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor with shape ``(batch_size, n_chans, n_times)``.
+        return_features : bool, default=False
+            If True, return the flattened features that feed the FC layer.
+        ch_mask : torch.Tensor or None
+            Not supported: DWConv has one weight per channel.
+
+        Returns
+        -------
+        torch.Tensor or dict
+            Logits with shape ``(batch_size, n_outputs)``, or with
+            ``return_features=True`` the dict ``{"features", "cls_token"}``,
+            ``features`` of shape ``(batch_size, n_pw_filters * time')`` and
+            ``cls_token`` None.
         """
+        # DWConv has one weight per channel: a subset of the channels is
+        # another model
         if ch_mask is not None:
             raise ValueError("FNIRSNet does not accept ch_mask: DWConv spans n_chans.")
-        # time' = n_times - dhr_kernel_length + 1 (1 with the default kernel)
-        x = self.to_fnirs_tensor(x)  # (batch, 1, n_chans, n_times)
-        x = self.conv1(x)  # DHRConv: (batch, n_dhr_filters, n_chans, time')
-        x = self.bn1(x)  # (batch, n_dhr_filters, n_chans, time')
-        x = self.activation(x)  # (batch, n_dhr_filters, n_chans, time')
-        x = self.conv2.depth_conv(x)  # DWConv: (batch, n_dhr_filters, 1, time')
-        x = self.conv2.point_conv(x)  # PWConv: (batch, n_pw_filters, 1, time')
-        x = self.bn2(x)  # (batch, n_pw_filters, 1, time')
-        x = self.activation(x)  # (batch, n_pw_filters, 1, time')
-        features = self.flatten(x)  # (batch, n_pw_filters * time')
+
+        # Below, F1 = n_dhr_filters, F2 = n_pw_filters, C = n_chans, S = n_times
+        # and S' = S - dhr_kernel_length + 1 (1 with the paper's kernel)
+
+        # Depth axis of the authors' input
+        # (batch, C, S) -> (batch, 1, C, S)
+        x = self.to_fnirs_tensor(x)
+
+        # DHR Module. Delayed hemodynamic response convolution (DHRConv,
+        # Guideline 1): each of the F1 filters reads the whole window of one
+        # channel, the channel-level feature of its slow response
+        # (batch, 1, C, S) -> (batch, F1, C, S')
+        x = self.conv1(x)
+        # Batch normalization of the F1 maps; shape unchanged
+        x = self.bn1(x)
+        # Saturating activation (Guideline 3: no information lost in the
+        # first layer for negative inputs); shape unchanged
+        x = self.activation(x)
+
+        # Global Module. DWConv: one C x 1 filter per DHRConv map aggregates
+        # all channels at once (global receptive field in space)
+        # (batch, F1, C, S') -> (batch, F1, 1, S')
+        x = self.conv2.depth_conv(x)
+        # PWConv: 1 x 1 projection of the F1 maps into F2 new ones
+        # (batch, F1, 1, S') -> (batch, F2, 1, S')
+        x = self.conv2.point_conv(x)
+        # Batch normalization of the F2 maps; shape unchanged
+        x = self.bn2(x)
+        # Same saturating activation as after DHRConv; shape unchanged
+        x = self.activation(x)
+
+        # "The feature maps are flattened to 1D vectors"
+        # (batch, F2, 1, S') -> (batch, F2 * S')
+        features = self.flatten(x)
+
         if return_features:
             return {"features": features, "cls_token": None}
-        return self.final_layer(features)  # (batch, n_outputs)
+
+        # FC layer; the paper's softmax is left to the loss
+        # (batch, F2 * S') -> (batch, n_outputs)
+        x = self.final_layer(features)
+        return x
