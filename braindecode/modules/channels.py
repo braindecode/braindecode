@@ -365,8 +365,10 @@ class ChannelLayer(nn.Module):
     ----------
     variance : torch.Tensor
         Posterior variance of each target for the current montage: 0 when
-        measured or exact, from the estimate for a single-electrode target of
-        ``spline``, ``wiener`` or a kernel, ``nan`` when not computed.
+        measured or exact, from the estimate (before ``match_gain``) for a
+        single-electrode target of ``spline``, ``wiener`` or a kernel, ``nan``
+        when not computed (other strategies, and ``reference="average"``, whose
+        targets each mix all the others).
 
     Notes
     -----
@@ -374,7 +376,8 @@ class ChannelLayer(nn.Module):
     montages, ``x`` padded to the largest and ``ch_mask`` the real channels),
     for the strategies without trained state (not ``latent`` or ``trainable``).
     A model with a ``channel_strategy`` builds these montages from the ``pos`` and
-    ``ch_mask`` of :func:`~braindecode.datasets.pad_channels_collate`.
+    ``ch_mask`` of :func:`~braindecode.datasets.pad_channels_collate`. A function
+    strategy is not saved by ``save_pretrained``: pass it again when loading.
     """
 
     def __init__(

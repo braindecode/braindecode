@@ -425,6 +425,11 @@ class ThrowAwayIndexLoader(object):
         if self._forward_params is None:
             self._forward_params = inspect.signature(module.forward).parameters
         params = self._forward_params
+        # a channel_strategy wraps forward as (*args, **kwargs): name the signal
+        # after the class forward's first input
+        signal_name = next(
+            n for n in inspect.signature(type(module).forward).parameters if n != "self"
+        )
         any_kwarg = any(p.kind is p.VAR_KEYWORD for p in params.values())
         hints = {
             "ch_mask": "this model needs a constant channel count; do not use "
@@ -436,7 +441,7 @@ class ThrowAwayIndexLoader(object):
                 raise ValueError(
                     f"{type(module).__name__}.forward takes no {name}: {hints[name]}."
                 )
-        return {next(iter(params)): signal, **extras}
+        return {signal_name: signal, **extras}
 
     def __iter__(
         self,

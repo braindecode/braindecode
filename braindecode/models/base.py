@@ -466,7 +466,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                         "Modifying chs_info argument using the _deserialize_chs_info() method"
                     )
 
-        if n_chans is not None and chs_info is not None and len(chs_info) != n_chans:
+        if (  # under a channel_strategy the input montage changes per call
+            channel_strategy == "native"
+            and n_chans is not None
+            and chs_info is not None
+            and len(chs_info) != n_chans
+        ):
             raise ValueError(f"{n_chans=} different from {chs_info=} length")
         if (
             n_times is not None
@@ -542,7 +547,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 "Pass ch_mask by keyword under a channel_strategy: the channel layer "
                 "uses it to map each sample, the backbone never sees it."
             )
-        if chs_info is None and pos is not None:  # positions, no names
+        if chs_info is None and pos is not None and ch_mask is not None:  # no names
             mask = (
                 torch.ones(pos.shape[:2], dtype=torch.bool)
                 if ch_mask is None
@@ -1201,6 +1206,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         config = build_model_config(self)
         config["braindecode_version"] = __version__
+        if callable(getattr(getattr(self, "channel_layer", None), "strategy", None)):
+            warnings.warn(
+                "The function channel_strategy is not saved: pass it again to "
+                "from_pretrained(..., channel_strategy=...).",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # Save to config.json
         config_path = save_directory / "config.json"

@@ -16,7 +16,7 @@ import torch.nn.functional as F
 
 from braindecode import EEGClassifier
 from braindecode.datasets import BaseConcatDataset, RawDataset, pad_channels_collate
-from braindecode.models import BBL, ShallowFBCSPNet
+from braindecode.models import BBL, BIOT, ShallowFBCSPNet
 from braindecode.models.util import models_mandatory_parameters
 from braindecode.preprocessing import create_fixed_length_windows
 from test.unit_tests.models._fixtures import non_classification_models
@@ -115,6 +115,18 @@ def test_registered_model_ch_mask_training(model_name, required_params, signal_p
     mixed = net.predict_proba(windows)
     alone = [net.predict_proba(part) for part in windows.split([[0], [1]]).values()]
     np.testing.assert_allclose(mixed, np.concatenate(alone), rtol=1e-5, atol=1e-6)
+
+
+def test_channel_strategy_model_trains_on_padded_batches():
+    # The channel layer maps each recording, from its positions, onto BIOT's
+    # bipolar pretraining channels; the backbone never sees ch_mask.
+    windows = _windows([4, 6], n_times=200, pos=True)
+    net = _net(BIOT, module__n_outputs=2, module__n_times=200, module__sfreq=100,
+               module__embed_dim=32, module__num_heads=2, module__num_layers=1,
+               module__channel_strategy="spline")
+    net.fit(windows, y=None)
+    proba = net.predict_proba(windows)
+    assert proba.shape == (len(windows), 2) and np.isfinite(proba).all()
 
 
 def test_model_without_ch_mask_refuses_padded_batches():
