@@ -224,7 +224,7 @@ Bug fixes
   samples and ``d_input=64``). Each channel now drops the samples after its last
   whole patch. The positional embedding keeps its size, so checkpoints saved before
   this change still load. Outputs of existing PBT models change when ``n_times`` is
-  not a multiple of ``d_input`` and stay the same otherwise (:gh:`1605` by
+  not a multiple of ``d_input`` and stay the same otherwise (:gh:`1612` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - :class:`braindecode.modules.ChannelLayer` computes every target that is a
