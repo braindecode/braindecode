@@ -13,10 +13,12 @@ import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
+from sklearn.base import clone
 
 from braindecode import EEGClassifier
 from braindecode.datasets import BaseConcatDataset, RawDataset, pad_channels_collate
 from braindecode.models import BBL, BIOT, ShallowFBCSPNet
+from braindecode.models.biot import BIOT_CHANNEL_ORDER
 from braindecode.models.util import models_mandatory_parameters
 from braindecode.preprocessing import create_fixed_length_windows
 from test.unit_tests.models._fixtures import non_classification_models
@@ -26,13 +28,14 @@ from test.unit_tests.models.test_model_contract import (
 )
 
 
-def _windows(n_chans_per_recording, n_times, n_windows=3, pos=False):
+def _windows(channel_sets, n_times, n_windows=3, pos=False):
     rng = np.random.default_rng(0)
     montage = mne.channels.make_standard_montage("standard_1005")
     recordings = []
-    for target, n_chans in enumerate(n_chans_per_recording):
-        info = mne.create_info(montage.ch_names[:n_chans], 100.0, "eeg")
-        data = rng.standard_normal((n_chans, n_windows * n_times))
+    for target, channels in enumerate(channel_sets):
+        names = montage.ch_names[:channels] if isinstance(channels, int) else channels
+        info = mne.create_info(names, 100.0, "eeg")
+        data = rng.standard_normal((len(names), n_windows * n_times))
         raw = mne.io.RawArray(data, info, verbose="error").set_montage(montage)
         recordings.append(RawDataset(raw, description={"label": target}))
     windows = create_fixed_length_windows(
@@ -117,16 +120,36 @@ def test_registered_model_ch_mask_training(model_name, required_params, signal_p
     np.testing.assert_allclose(mixed, np.concatenate(alone), rtol=1e-5, atol=1e-6)
 
 
-def test_channel_strategy_model_trains_on_padded_batches():
+def test_channel_strategy_model_trains_on_padded_batches(tmp_path):
     # The channel layer maps each recording, from its positions, onto BIOT's
     # bipolar pretraining channels; the backbone never sees ch_mask.
-    windows = _windows([8, 12], n_times=200, pos=True)  # spline: a fitted head
+    names = [
+        ["F3", "C3", "F7", "P7", "O1", "C4", "P3", "F4"],
+        ["O1", "T7", "P7", "C3", "F3", "F7", "F8", "P3", "O2", "P4", "C4", "F4"],
+    ]
+    windows = _windows(names, n_times=200, pos=True)
     net = _net(BIOT, module__n_outputs=2, module__n_times=200, module__sfreq=100,
                module__embed_dim=32, module__num_heads=2, module__num_layers=1,
                module__channel_strategy="spline")
     net.fit(windows, y=None)
     proba = net.predict_proba(windows)
     assert proba.shape == (len(windows), 2) and np.isfinite(proba).all()
+    row = BIOT_CHANNEL_ORDER.index("F3-C3")
+    for channels, recording in zip(names, windows.datasets):
+        signal = torch.from_numpy(recording[0][0])[None]
+        observed_signal, observed = net.module_.channel_layer(signal, recording.raw.info["chs"])
+        assert observed[row]
+        torch.testing.assert_close(
+            observed_signal[:, row], signal[:, channels.index("F3")] - signal[:, channels.index("C3")]
+        )
+    alone = [net.predict_proba(part) for part in windows.split([[0], [1]]).values()]
+    np.testing.assert_allclose(proba, np.concatenate(alone), rtol=1e-5, atol=1e-6)
+
+    checkpoint = tmp_path / "biot.pt"
+    net.save_params(f_params=checkpoint)
+    restored = clone(net).initialize()
+    restored.load_params(f_params=checkpoint)
+    np.testing.assert_allclose(restored.predict_proba(windows), proba, rtol=1e-5, atol=1e-6)
 
 
 def test_model_without_ch_mask_refuses_padded_batches():

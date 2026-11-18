@@ -13,7 +13,8 @@ import numpy as np
 import pytest
 import torch
 
-from braindecode.functional import spherical_spline_kernel
+from braindecode.datasets import pad_channels_collate
+from braindecode.functional import exact_derivation, spherical_spline_kernel
 from braindecode.models import BENDR, LUNA, Labram, SignalJEPA
 from braindecode.modules import ChannelLayer
 from braindecode.modules.channels import (
@@ -105,6 +106,59 @@ def test_permutation_is_an_exact_copy(strategy):
     x = torch.randn(2, 20, 10)
     layer = ChannelLayer(chs(names), strategy, chs(names[::-1]))
     assert torch.equal(layer(x)[0], x.flip(1))
+
+
+def test_reusing_a_mutated_input_montage():
+    inputs = chs(["F3", "C3"])
+    layer = ChannelLayer(chs(["F3", "C3"]), "exact", inputs)
+    signal = torch.tensor([[[1.0, 2.0], [3.0, 4.0]]])
+    inputs.reverse()
+    torch.testing.assert_close(layer(signal.flip(1))[0], signal)
+    inputs[0]["kind"] = "eog"
+    with pytest.raises(ValueError, match="not EEG"):
+        layer(signal)
+
+
+def test_input_channel_type_alias_is_part_of_the_montage():
+    inputs = [{"ch_name": "F3", "ch_type": "eeg"}]
+    layer = ChannelLayer(chs(["F3"]), "exact", inputs)
+    inputs[0]["ch_type"] = "mag"
+    with pytest.raises(ValueError, match="not EEG"):
+        layer(torch.ones(1, 1, 2))
+
+
+def test_adjusting_coordinates_in_place():
+    left, right = [0.03, 0.05, 0.08], [-0.03, 0.05, 0.08]
+    inputs = [at("E1", left), at("E2", right)]
+    layer = ChannelLayer([at("unknown", left)], "nearest", inputs)
+    signal = torch.tensor([[[1.0], [2.0]]])
+    torch.testing.assert_close(layer(signal)[0], signal[:, :1])
+    inputs[0]["loc"][:3], inputs[1]["loc"][:3] = right, left
+    torch.testing.assert_close(layer(signal)[0], signal[:, 1:])
+
+
+@pytest.mark.parametrize("literal", ["F3-C3-P3", "F3-", "-C3"])
+def test_only_two_electrode_names_form_a_bipolar_derivation(literal):
+    names = ["F3", "C3", "P3"]
+    targets = ["F3", literal]
+    _, exact = exact_derivation(targets, names)
+    with pytest.warns(UserWarning, match="zero-filled"):
+        layer = ChannelLayer(chs(targets), "zero", chs(names))
+    signal = torch.tensor([[[5.0], [20.0], [2.0]]])
+    values, observed = layer(signal)
+    torch.testing.assert_close(observed, exact)
+    torch.testing.assert_close(values, torch.tensor([[[5.0], [0.0]]]))
+    measured = ChannelLayer(chs(targets), "exact", chs(targets))
+    torch.testing.assert_close(measured(signal[:, :2])[0], signal[:, :2])
+
+
+def test_named_reference_for_a_positioned_literal_channel():
+    literal = at("F3-C3-P3", [0.01, 0.04, 0.07])
+    layer = ChannelLayer([literal], "exact", [literal, *chs(["Cz"])], reference="Cz")
+    signal = torch.tensor([[[5.0], [2.0]]])
+    values, observed = layer(signal)
+    torch.testing.assert_close(values, torch.tensor([[[3.0]]]))
+    assert observed.tolist() == [True]
 
 
 def test_bipolar_target_is_a_derivation():
@@ -232,6 +286,19 @@ def test_latent_is_permutation_invariant_and_trains():
     torch.testing.assert_close(layer(x.flip(1), chs(SUBSET[::-1]))[0], out)
     out.sum().backward()
     assert all(p.grad.abs().sum() > 0 for p in layer.parameters())
+
+
+def test_latent_single_time_sample_has_finite_statistics():
+    inputs = chs(["F3", "C3"])
+    layer = ChannelLayer(chs(["F3", "C3", "P3"]), "latent", inputs)
+    signal = torch.tensor([[[1.0], [2.0]]], requires_grad=True)
+    values, observed = layer(signal)
+    torch.testing.assert_close(values[:, :2], signal)
+    assert observed.tolist() == [True, True, False]
+    assert torch.isfinite(values).all()
+    values.sum().backward()
+    assert torch.isfinite(signal.grad).all()
+    assert all(torch.isfinite(param.grad).all() for param in layer.parameters())
 
 
 def test_a_map_built_under_inference_mode_trains():
@@ -476,6 +543,36 @@ def test_one_montage_per_sample():
         layer(x, chs(TEN_TWENTY), mask)
 
 
+@pytest.mark.parametrize("explicit_mask", [False, True])
+def test_padded_montages_ignore_nan_in_signal_and_gradient(explicit_mask):
+    montages = [chs(["F3", "C3"]), chs(["F3"])]
+    windows = [
+        (np.array([[1.0, 2.0], [3.0, 4.0]]), 0, [0, 0, 2]),
+        (np.array([[5.0, 6.0]]), 1, [0, 0, 2]),
+    ]
+    signal, _, _, mask = pad_channels_collate(windows, pad_value=float("nan"))
+    if explicit_mask:
+        signal[1] = signal[1].flip(0)
+        mask[1] = mask[1].flip(0)
+    signal.requires_grad_()
+    layer = ChannelLayer(chs(["F3"]), "exact")
+    values, observed = layer(signal, montages, mask if explicit_mask else None)
+    torch.testing.assert_close(values, torch.tensor([[[1.0, 2.0]], [[5.0, 6.0]]]))
+    assert observed.all()
+    values.sum().backward()
+    assert (signal.grad[~mask] == 0).all()
+
+
+def test_padded_montages_require_a_real_channel_and_preserve_measured_nan():
+    montage = chs(["F3"])
+    layer = ChannelLayer(montage, "exact")
+    x = torch.tensor([[[float("nan")]]])
+    values, _ = layer(x, [montage], torch.ones(1, 1, dtype=torch.bool))
+    assert torch.isnan(values).all()
+    with pytest.raises(ValueError, match="at least one real channel"):
+        layer(x, [montage], torch.zeros(1, 1, dtype=torch.bool))
+
+
 def test_strategy_model_takes_pad_channels_collate_batches():
     # pos + ch_mask (no names): the montage of each sample from its positions.
     model = Labram(chs_info=chs(SUBSET), n_outputs=2, n_times=800, sfreq=200,
@@ -488,6 +585,9 @@ def test_strategy_model_takes_pad_channels_collate_batches():
     with torch.no_grad():
         torch.testing.assert_close(
             model(x, pos=pos, ch_mask=mask), model(x, chs_info=named, ch_mask=mask)
+        )
+        torch.testing.assert_close(
+            model(x, pos=pos, ch_mask=mask.int()), model(x, pos=pos, ch_mask=mask)
         )
         # pos without ch_mask (set_return_ch_pos, no padding): the construction
         # montage maps x, the backbone never gets the input's positions

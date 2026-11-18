@@ -37,10 +37,12 @@ from scipy.spatial.distance import cdist
 from torch import Tensor, nn
 
 from braindecode.functional import (
+    check_ch_mask,
     exact_derivation,
     linear_channel_map,
     spherical_spline_kernel,
 )
+from braindecode.functional.channels import _channel_electrodes, _derivation_rows
 from braindecode.util import resolve_montage_name
 
 STRATEGIES = (
@@ -73,10 +75,12 @@ def _standard_positions() -> dict[str, np.ndarray]:
 def _resolve(chs_info: list[dict]):
     """Names, positions ``(C, 3)`` (given ``loc``, else ``standard_1005``, else NaN),
     standard positions of the names, channel types and which ``loc`` were given."""
+    if not chs_info:
+        raise ValueError("A montage must contain at least one channel.")
     names = [str(ch["ch_name"]) for ch in chs_info]
     types = [  # missing kind = EEG; FIFF kind ints as in raw.info
         k.lower() if isinstance(k, str) else _FIFF_KINDS.get(int(k), str(k))
-        for k in (ch.get("kind") or "eeg" for ch in chs_info)
+        for k in (ch.get("kind") or ch.get("ch_type") or "eeg" for ch in chs_info)
     ]
     table, nan = _standard_positions(), np.full(3, np.nan)
     std = np.array(
@@ -404,30 +408,43 @@ class ChannelLayer(nn.Module):
         self.strategy, self.chs_info, self.reference = strategy, chs_info, reference
         self.drop_non_eeg, self.kwargs = drop_non_eeg, kwargs
         # Per-montage maps: LRU of device tensors; the current one is the buffers.
-        self._cache, self._key, self._chs = OrderedDict(), None, None
+        self._cache, self._key = OrderedDict(), None
         self.register_buffer("weight", torch.zeros(0, 0), persistent=False)
-        tnames = [str(c["ch_name"]) for c in self.target]
-        named = {n: c for n, c in zip(tnames, self.target) if "-" not in n}
-        # referenced: single-electrode targets with a position (not BENDR's SCALE)
+        parts = [_channel_electrodes(str(ch["ch_name"])) for ch in self.target]
+        named = {
+            ends[0].lower(): ch
+            for ends, ch in zip(parts, self.target)
+            if len(ends) == 1
+        }
         self._referenced = np.array(
-            ["-" not in n and np.isfinite(p).all() for n, p in zip(tnames, pos)]
+            [len(ends) == 1 and np.isfinite(p).all() for ends, p in zip(parts, pos)]
         )
-        if reference not in (None, "average"):  # target A is the derivation A-ref
-            tnames = [
-                f"{n}-{reference}" if r else n for n, r in zip(tnames, self._referenced)
+        if reference not in (None, "average"):
+            parts = [
+                [ends[0], reference] if use_reference else ends
+                for ends, use_reference in zip(parts, self._referenced)
             ]
-        # A-B is copied when measured, else derived from A and B (both columns).
-        mono = list(dict.fromkeys(m for n in tnames for m in (n, *n.split("-"))))
-        _, tpos, tstd, *_ = _resolve([named.get(m, {"ch_name": m}) for m in mono])
-        self._whole = [mono.index(n) for n in tnames]
-        D = np.array(
-            [
-                [(m == n.split("-")[0]) - (m == n.split("-")[-1] != n) for m in mono]
-                for n in tnames
-            ],
-            float,
+        # A measured A-B takes precedence over reconstructing A and B separately.
+        bipolar = {
+            row: "-".join(ends)
+            for row, ends in enumerate(parts)
+            if len(ends) == 2 and all("-" not in end for end in ends)
+        }
+        derivations, mono = _derivation_rows(parts, bipolar.values())
+        columns = {name.lower(): i for i, name in enumerate(mono)}
+        self._whole = [
+            columns[bipolar[row].lower()] if row in bipolar else -1
+            for row in range(len(parts))
+        ]
+        _, tpos, tstd, *_ = _resolve(
+            [named.get(m.lower(), {"ch_name": m}) for m in mono]
         )
-        self._mono, self._tpos, self._tstd, self._D = mono, tpos, tstd, D
+        self._mono, self._tpos, self._tstd, self._D = (
+            mono,
+            tpos,
+            tstd,
+            derivations.numpy(),
+        )
         self.trainable = trainable and strategy == "source"
         if self.trainable:
             n = kwargs.get("n_parcels", 64)
@@ -447,12 +464,13 @@ class ChannelLayer(nn.Module):
             self._use(chs_info)  # surface montage errors at construction
 
     def _use(self, chs: list[dict]) -> None:
-        """Make the maps of ``chs`` the buffers (identity, then LRU, then build)."""
-        # ponytail: identity fast path; a montage list mutated in place is not seen.
-        if chs is self._chs:
-            return
+        """Select the cached map for the current channel metadata, or build one."""
         key = tuple(
-            (str(c["ch_name"]), c.get("kind"), np.float64(c.get("loc")).tobytes())
+            (
+                str(c["ch_name"]),
+                c.get("kind") or c.get("ch_type") or "eeg",
+                np.asarray(c.get("loc"), dtype=np.float64).tobytes(),
+            )
             for c in chs
         )
         if key != self._key:
@@ -463,7 +481,6 @@ class ChannelLayer(nn.Module):
             for name, t in maps.items():
                 self.register_buffer(name, t, persistent=False)
             self._key = key
-        self._chs = chs
 
     @torch.inference_mode(False)  # maps built in an eval pass serve training
     def _build(self, chs_info: list[dict]) -> dict[str, Tensor]:
@@ -503,8 +520,11 @@ class ChannelLayer(nn.Module):
                     W[k, j[np.argmin(near[k][j])]] = 1.0
                     break
         observed = np.abs(W).sum(1) > 0
-        copied = observed[self._whole][:, None]  # a measured A-B target: copy it
-        D = np.where(copied, np.eye(len(mono))[self._whole], self._D)
+        D = self._D.copy()
+        for row, column in enumerate(self._whole):
+            if column >= 0 and observed[column]:
+                D[row] = 0
+                D[row, column] = 1
         measured = (np.abs(D) @ ~observed == 0).any()  # before re-referencing
         ref = self._referenced
         if self.reference == "average" and ref.any():  # minus their mean
@@ -600,12 +620,12 @@ class ChannelLayer(nn.Module):
         self.cov = torch.tensor(np.cov(X.T), dtype=torch.float32, device=dev)
         self.dense_pos = torch.tensor(pos, dtype=torch.float32, device=dev)
         self._cache.clear()
-        self._key = self._chs = None
+        self._key = None
         return self
 
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
         self._cache.clear()  # maps are rebuilt after a load
-        self._key = self._chs = None
+        self._key = None
         for k in ("cov", "dense_pos"):  # fitted buffers change size
             if hasattr(self, k) and prefix + k in state_dict:
                 setattr(self, k, torch.empty_like(state_dict[prefix + k]))
@@ -632,40 +652,38 @@ class ChannelLayer(nn.Module):
                 raise ValueError(
                     f"One montage per sample needs a strategy without trained state and one montage of at most {x.shape[1]} channels for each of the {len(x)} samples; got {self.strategy!r} and {len(chs)} montages."
                 )
-            weights, observed = [], []
-            # ponytail: one map per distinct montage, LRU of 16; a batch of many
-            # recordings rebuilds maps on the host, cache by montage if it shows.
-            for b, c in enumerate(cast(list[list[dict]], chs)):
-                self._use(c)
-                cols = (
-                    ch_mask[b].nonzero().squeeze(1)
-                    if ch_mask is not None
-                    else torch.arange(len(c), device=x.device)
-                )
-                if len(cols) != len(c):
+            ch_mask = check_ch_mask(ch_mask, x)
+            signals, observed = [], []
+            for b, montage in enumerate(cast(list[list[dict]], chs)):
+                signal = x[b, : len(montage)] if ch_mask is None else x[b, ch_mask[b]]
+                if signal.shape[0] != len(montage):
                     raise ValueError(
-                        f"Sample {b}: ch_mask has {len(cols)} channels, its montage {len(c)}."
+                        f"Sample {b}: ch_mask has {signal.shape[0]} channels, "
+                        f"its montage {len(montage)}."
                     )
-                w = self.weight.new_zeros(len(self.weight), x.shape[1])
-                w[:, cols] = self.weight
-                weights.append(w)
+                self._use(montage)
+                signals.append(self.weight @ signal)
                 observed.append(self.observed)
-            return torch.stack(weights) @ x, torch.stack(observed)
+            return torch.stack(signals), torch.stack(observed)
         if ch_mask is not None:
             raise ValueError("ch_mask needs one montage per sample in chs_info.")
         if x.shape[1] != len(chs):
             raise ValueError(
                 f"Input has {x.shape[1]} channels but the montage has {len(chs)}; they must match."
             )
-        # steady state: no host work, every map already on device
         self._use(cast(list[dict], chs))
         out = self.weight @ x
         if self.trainable:
             out = out + self.lead @ (self.parcel_mix @ (self.inverse @ x))
         if self.strategy == "latent" and self.lat_D.shape[1]:
             xf = x.to(torch.promote_types(x.dtype, torch.float32))  # fp16: 1e-12 = 0
-            var = (xf - xf.mean(-1, keepdim=True)).square().sum(-1) / (x.shape[-1] - 1)
-            stats = torch.stack([var, xf.diff(dim=-1).abs().mean(-1)], -1)
+            if x.shape[-1] == 1:
+                stats = xf.new_zeros((*xf.shape[:2], 2))
+            else:
+                var = (xf - xf.mean(-1, keepdim=True)).square().sum(-1) / (
+                    x.shape[-1] - 1
+                )
+                stats = torch.stack([var, xf.diff(dim=-1).abs().mean(-1)], -1)
             stats = (stats + 1e-12).log()
             stats = stats - (self.lat_w.to(stats.dtype) @ stats)[:, None]  # (B, C, 2)
             keys = self.key_pos(self.src_feat) + self.key_stats(stats.to(x.dtype))
