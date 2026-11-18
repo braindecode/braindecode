@@ -160,7 +160,7 @@ class BENDR(EEGModuleMixin, nn.Module):
                repo_id="username/my-bendr-model", commit_message="Upload trained BENDR model"
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     Notes
     -----

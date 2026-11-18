@@ -144,7 +144,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
                repo_id="username/my-eegpt-model", commit_message="Upload trained EEGPT model"
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     .. rubric:: Usage
 

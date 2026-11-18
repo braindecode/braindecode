@@ -69,8 +69,30 @@ v``, targets ``t = B v``, a prior covariance of the potentials ``v`` and a flat 
 the unknown recording reference. It also gives each target's posterior variance
 (``model.channel_layer.variance``); ``match_gain=True`` restores the amplitude the
 estimate shrinks. ``channel_strategy_kwargs={"reference": "average"}`` (or an electrode
-name) gives the backbone its pretraining reference. Bad channels are left out of ``x``
-and ``chs_info`` (``raw.pick(exclude="bads")``) and reconstructed like any missing one.
+name) gives the backbone its pretraining reference.
+
+To reconstruct a bad EEG channel, keep the full montage as the target. Select
+the good EEG channels before extracting the signal and its input montage:
+
+.. doctest::
+
+    >>> import mne
+    >>> import numpy as np
+    >>> import torch
+    >>> from braindecode.modules import ChannelLayer
+    >>> info = mne.create_info(["C3", "Cz", "C4"], sfreq=100, ch_types="eeg")
+    >>> signals = np.array([[1., 2.], [9., 9.], [3., 4.]]) * 1e-6
+    >>> raw = mne.io.RawArray(signals, info, verbose=False)
+    >>> raw.info["bads"] = ["Cz"]
+    >>> good = raw.copy().pick("eeg", exclude="bads")
+    >>> layer = ChannelLayer(raw.info["chs"], "nearest", good.info["chs"])
+    >>> x = torch.tensor(good.get_data(), dtype=torch.float32).unsqueeze(0)
+    >>> mapped, observed = layer(x)
+    >>> observed.tolist()
+    [True, False, True]
+    >>> torch.equal(mapped[:, observed], x)
+    True
+
 The layer also takes one montage per sample: ``chs_info`` a list of montages, ``x``
 padded to the largest and ``ch_mask`` the real channels. Batches of
 :func:`~braindecode.datasets.pad_channels_collate` (``pos`` and ``ch_mask``) work as

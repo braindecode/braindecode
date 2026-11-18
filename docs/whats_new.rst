@@ -334,6 +334,10 @@ Code health
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (by `Bruno Aristimunha`_).
+- The :ref:`channel-strategies` guide shows how to exclude and reconstruct a
+  bad EEG channel. The API reference lists
+  :func:`~braindecode.datasets.pad_channels_collate` and gives the correct
+  installation extra for Hub models (by `Bruno Aristimunha`_).
 - Documentation built from a release tag uses https://braindecode.org/stable/
   for the canonical, Open Graph and JSON-LD URLs and in ``llms.txt``, which
   only calls ``/dev/`` builds a moving development snapshot
