@@ -7459,7 +7459,7 @@ def test_fnirspret_forwards_every_argument_to_fnirst():
     assert list(plain_state) == list(pret_state)
     for key, value in plain_state.items():
         assert torch.equal(pret_state[key], value)
-    pret.pre = None
+    pret.pre = nn.Identity()
     x = torch.randn(2, 10, 60)
     with torch.no_grad():
         assert torch.equal(pret(x), plain(x))
@@ -7470,13 +7470,13 @@ def test_fnirspret_forwards_every_argument_to_fnirst():
     [(FNIRST, 0.0), (FNIRSPreT, 0.0)],
 )
 def test_fnirs_masks(model_cls, fill):
-    """ch_mask is refused by name; an all-False mask changes nothing; hidden
+    """ch_mask is refused; an all-False mask changes nothing; hidden
     samples act as ``fill`` and get no gradient."""
     torch.manual_seed(0)
     n_chans = _FNIRS_TEST_N_CHANS[model_cls]
     model = model_cls(n_chans=n_chans, n_outputs=3, n_times=60, sfreq=5.0).eval()
     x = torch.randn(2, n_chans, 60)
-    with pytest.raises(ValueError, match=f"{model_cls.__name__} does not accept ch_mask"):
+    with pytest.raises(ValueError, match="ch_mask is not supported"):
         model(x, ch_mask=torch.ones(2, n_chans, dtype=torch.bool))
     mask = torch.zeros_like(x, dtype=torch.bool)
     assert torch.equal(model(x, mask=mask), model(x))
