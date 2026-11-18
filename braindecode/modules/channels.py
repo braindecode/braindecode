@@ -370,9 +370,11 @@ class ChannelLayer(nn.Module):
 
     Notes
     -----
-    ``forward`` also takes one montage per sample, ``chs_info`` a list of
-    montages and ``x`` zero-padded to the largest, for the strategies without
-    trained state (not ``latent`` or ``trainable``).
+    ``forward`` also takes one montage per sample (``chs_info`` a list of
+    montages, ``x`` padded to the largest and ``ch_mask`` the real channels),
+    for the strategies without trained state (not ``latent`` or ``trainable``).
+    A model with a ``channel_strategy`` builds these montages from the ``pos`` and
+    ``ch_mask`` of :func:`~braindecode.datasets.pad_channels_collate`.
     """
 
     def __init__(
@@ -598,10 +600,15 @@ class ChannelLayer(nn.Module):
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def forward(
-        self, x: Tensor, chs_info: list[dict] | list[list[dict]] | None = None
+        self,
+        x: Tensor,
+        chs_info: list[dict] | list[list[dict]] | None = None,
+        ch_mask: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
-        """Map ``x`` (B, C, T) recorded with ``chs_info`` (or one montage per
-        sample); return ``(x, observed)``."""
+        """Map ``x`` (B, C, T) recorded with ``chs_info``, or with one montage per
+        sample whose channels are the ``True`` entries of ``ch_mask`` (B, C)
+        (default: the first ones, as :func:`~braindecode.datasets.pad_channels_collate`
+        pads); return ``(x, observed)``."""
         chs = chs_info if chs_info is not None else self.chs_info
         if chs is None:
             raise ValueError(
@@ -614,9 +621,22 @@ class ChannelLayer(nn.Module):
                     f"One montage per sample needs a strategy without trained state and one montage of at most {x.shape[1]} channels for each of the {len(x)} samples; got {self.strategy!r} and {len(chs)} montages."
                 )
             weights, observed = [], []
-            for c in cast(list[list[dict]], chs):  # x zero-padded to the largest
+            # ponytail: one map per distinct montage, LRU of 16; a batch of many
+            # recordings rebuilds maps on the host, cache by montage if it shows.
+            for b, c in enumerate(cast(list[list[dict]], chs)):
                 self._use(c)
-                weights.append(nn.functional.pad(self.weight, (0, x.shape[1] - len(c))))
+                cols = (
+                    ch_mask[b].nonzero().squeeze(1)
+                    if ch_mask is not None
+                    else torch.arange(len(c), device=x.device)
+                )
+                if len(cols) != len(c):
+                    raise ValueError(
+                        f"Sample {b}: ch_mask has {len(cols)} channels, its montage {len(c)}."
+                    )
+                w = self.weight.new_zeros(len(self.weight), x.shape[1])
+                w[:, cols] = self.weight
+                weights.append(w)
                 observed.append(self.observed)
             return torch.stack(weights) @ x, torch.stack(observed)
         if x.shape[1] != len(chs):

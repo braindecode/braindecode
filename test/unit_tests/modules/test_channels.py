@@ -441,3 +441,23 @@ def test_one_montage_per_sample():
     torch.testing.assert_close(y[1], layer(padded[1:, : len(SUBSET)], montages[1])[0][0])
     torch.testing.assert_close(y[0], x[0])
     assert observed.shape == (2, len(TEN_TWENTY)) and observed[0].all()
+    mask = torch.zeros(2, len(TEN_TWENTY), dtype=torch.bool)  # channels anywhere
+    mask[0], mask[1, -len(SUBSET):] = True, True
+    shifted = padded.clone()
+    shifted[1] = padded[1].roll(len(TEN_TWENTY) - len(SUBSET), 0)
+    torch.testing.assert_close(layer(shifted, montages, mask)[0], y)
+
+
+def test_strategy_model_takes_pad_channels_collate_batches():
+    # pos + ch_mask (no names): the montage of each sample from its positions.
+    model = Labram(chs_info=chs(SUBSET), n_outputs=2, n_times=800, sfreq=200,
+                   channel_strategy="spline").eval()
+    pos = torch.as_tensor(_resolve(chs(SUBSET))[1]).expand(2, -1, -1).clone()
+    mask = torch.ones(2, len(SUBSET), dtype=torch.bool)
+    mask[1, 5:] = False
+    x = torch.randn(2, len(SUBSET), 800) * mask[..., None]
+    named = [chs(SUBSET), chs(SUBSET[:5])]
+    with torch.no_grad():
+        torch.testing.assert_close(
+            model(x, pos=pos, ch_mask=mask), model(x, chs_info=named, ch_mask=mask)
+        )

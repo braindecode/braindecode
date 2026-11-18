@@ -71,7 +71,9 @@ the unknown recording reference. It also gives each target's posterior variance
 estimate shrinks. ``channel_strategy_kwargs={"reference": "average"}`` (or an electrode
 name) gives the backbone its pretraining reference. Bad channels are left out of ``x``
 and ``chs_info`` (``raw.pick(exclude="bads")``) and reconstructed like any missing one.
-The layer also takes one montage per sample: ``chs_info`` a list of montages and ``x``
-zero-padded to the largest.
+The layer also takes one montage per sample: ``chs_info`` a list of montages, ``x``
+padded to the largest and ``ch_mask`` the real channels. Batches of
+:func:`~braindecode.datasets.pad_channels_collate` (``pos`` and ``ch_mask``) work as
+they are: each sample's montage is read from its positions.
 
 The tutorial :ref:`channel-interpolation-tutorial` compares strategies on a recording.

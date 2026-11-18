@@ -531,23 +531,42 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     def _channel_forward(self, *args, chs_info=None, ch_names=None, **kwargs):
         """``forward`` under a channel strategy: map ``x`` (recorded with
         ``chs_info``, default the model's) onto the target, then run the backbone."""
+        # pad_channels_collate / set_return_ch_pos: pos and ch_mask describe the
+        # input montage of each sample; the backbone gets the full target one.
+        ch_mask, pos = kwargs.pop("ch_mask", None), kwargs.pop("pos", None)
         bound = inspect.signature(type(self).forward).bind_partial(
             self, *args, **kwargs
         )
         if bound.arguments.get("ch_mask") is not None:
-            # The channel layer mixes every input channel into each target one,
-            # so padding would leak into the real channels.
             raise ValueError(
-                "ch_mask needs channel_strategy='native': the channel layer maps "
-                "all input channels, padded ones included, onto the target montage."
+                "Pass ch_mask by keyword under a channel_strategy: the channel layer "
+                "uses it to map each sample, the backbone never sees it."
+            )
+        if chs_info is None and pos is not None:  # positions, no names
+            mask = (
+                torch.ones(pos.shape[:2], dtype=torch.bool)
+                if ch_mask is None
+                else ch_mask
+            )
+            chs_info = [
+                [
+                    {"ch_name": f"E{i}", "kind": "eeg", "loc": np.r_[p, np.zeros(9)]}
+                    for i, p in enumerate(pb[mb.cpu().numpy()])
+                ]
+                for pb, mb in zip(pos.detach().cpu().double().numpy(), mask)
+            ]
+        elif ch_mask is not None and not (chs_info and isinstance(chs_info[0], list)):
+            raise ValueError(
+                "ch_mask under a channel_strategy needs the montage of each sample: "
+                "pos (set_return_ch_pos(True)) or chs_info as a list of montages."
             )
         if chs_info is None and ch_names is not None:  # LaBraM: names of x's channels
             chs_info = [{"ch_name": n} for n in ch_names]
         if args:
-            args = (self.channel_layer(args[0], chs_info)[0], *args[1:])
+            args = (self.channel_layer(args[0], chs_info, ch_mask)[0], *args[1:])
         else:  # x by keyword: the backbone's first input (x, X, eeg...)
             x = list(inspect.signature(type(self).forward).parameters)[1]
-            kwargs[x] = self.channel_layer(kwargs[x], chs_info)[0]
+            kwargs[x] = self.channel_layer(kwargs[x], chs_info, ch_mask)[0]
         return type(self).forward(self, *args, **kwargs)
 
     @property
