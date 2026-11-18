@@ -15,7 +15,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets import BaseConcatDataset, MOABBDataset, RawDataset
+from braindecode.datasets import (
+    BaseConcatDataset,
+    EEGWindowsDataset,
+    MOABBDataset,
+    RawDataset,
+    WindowsDataset,
+)
 from braindecode.datautil.serialization import (
     _check_save_dir_empty,
     load_concat_dataset,
@@ -734,20 +740,43 @@ def test_load_concat_dataset_target_name_windows_raises(
         load_concat_dataset(tmp_path, preload=False, target_name="subject")
 
 
-@pytest.mark.parametrize("windowed", [False, True])
-def test_save_load_dataset_without_description(tmp_path, windowed):
-    info = mne.create_info(["C3", "C4"], 100.0, "eeg")
-    raw = mne.io.RawArray(np.random.RandomState(0).randn(2, 400), info)
-    concat_ds = BaseConcatDataset([RawDataset(raw)])
-    if windowed:
-        concat_ds = create_fixed_length_windows(
-            concat_ds,
-            window_size_samples=100,
-            window_stride_samples=100,
-            on_last_window="overlap",
+@pytest.mark.parametrize("kind", ["raw", "raw_windows", "epochs"])
+def test_save_load_dataset_without_description(tmp_path, kind):
+    info = mne.create_info(["C3", "target"], 100.0, ["eeg", "misc"])
+    data = np.arange(40, dtype=float).reshape(2, 20)
+    raw = mne.io.RawArray(data, info, verbose=False)
+    dataset = RawDataset(raw)
+    if kind != "raw":
+        metadata = pd.DataFrame(
+            {
+                "i_window_in_trial": [0, 1],
+                "i_start_in_trial": [0, 10],
+                "i_stop_in_trial": [10, 20],
+                "target": [-1, -1],
+            }
         )
-    concat_ds.save(tmp_path)
-    loaded = load_concat_dataset(tmp_path, preload=True)
-    assert len(loaded) == len(concat_ds)
-    assert loaded.description.empty
-    np.testing.assert_allclose(loaded[0][0], concat_ds[0][0])
+        kwargs = {"targets_from": "channels", "last_target_only": False}
+        if kind == "raw_windows":
+            dataset = EEGWindowsDataset(raw, metadata, **kwargs)
+        else:
+            epochs = mne.EpochsArray(
+                data.reshape(2, 2, 10).transpose(1, 0, 2),
+                info,
+                metadata=metadata,
+                verbose=False,
+            )
+            dataset = WindowsDataset(epochs, **kwargs)
+    concat = BaseConcatDataset([dataset])
+    concat.save(tmp_path)
+    loaded = load_concat_dataset(tmp_path, preload=False)
+    assert len(loaded) == len(concat)
+    assert loaded.datasets[0].description.empty
+    if kind == "raw":
+        np.testing.assert_array_equal(loaded.datasets[0].raw.get_data(), data)
+    else:
+        for i in range(2):
+            x, y, crop = loaded[i]
+            start, stop = i * 10, (i + 1) * 10
+            np.testing.assert_array_equal(x, data[:1, start:stop])
+            np.testing.assert_array_equal(y, data[1:, start:stop])
+            assert crop == [i, start, stop]

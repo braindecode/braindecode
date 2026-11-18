@@ -216,8 +216,9 @@ Bug fixes
   created with the default ``description=None`` and writes an empty description
   for it. Before, it raised an ``AttributeError`` after it had written the signal
   file, which left a subdirectory that
-  :func:`braindecode.datautil.load_concat_dataset` could not read. Saving a
-  recording that has a description is unchanged (:gh:`1610` by
+  :func:`braindecode.datautil.load_concat_dataset` could not read. Directly
+  constructed windows also retain their target source and time axis after
+  saving and loading (:gh:`1610` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
