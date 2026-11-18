@@ -14,6 +14,29 @@ SMALL = dict(chs_info=_fnirs_chs_info(3), n_outputs=2, embed_dim=32, num_heads=4
 NAN = float("nan")
 
 
+@pytest.mark.parametrize("include_head", [False, True])
+def test_geonirs_local_checkpoint_records_only_supplied_parameters(
+    tmp_path, include_head
+):
+    pytest.importorskip("huggingface_hub")
+    safetensors = pytest.importorskip("safetensors.torch")
+    model = GeoNIRS(n_times=20, **SMALL)
+    model.save_pretrained(tmp_path)
+    path = tmp_path / "model.safetensors"
+    weights = safetensors.load_file(path)
+    if not include_head:
+        weights = {
+            key: value
+            for key, value in weights.items()
+            if not key.startswith("final_layer.")
+        }
+        safetensors.save_file(weights, path)
+
+    restored = GeoNIRS.from_pretrained(tmp_path, strict=True, local_files_only=True)
+    params = set(dict(restored.named_parameters()))
+    assert restored._pretrained_provenance["loaded"] & params == params & weights.keys()
+
+
 def test_geonirs_missing_patch_is_a_shorter_window():
     """A patch with no measured sample is left out of the attention: the
     other patches equal those of the window without it, and its tokens are 0."""

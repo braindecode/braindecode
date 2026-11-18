@@ -720,10 +720,15 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         decoders = ("hbo_to_hbr_decoder.", "hbr_to_hbo_decoder.")
         cleaned = {k: v for k, v in state_dict.items() if not k.startswith(decoders)}
         # A backbone checkpoint has no head: the head keeps its initialisation
+        head = {}
         if not any(k.startswith("final_layer.") for k in cleaned):
             head = self.final_layer.state_dict(prefix="final_layer.")
             cleaned.update(head)
-        return super().load_state_dict(cleaned, strict=strict, assign=assign)
+        result = super().load_state_dict(cleaned, strict=strict, assign=assign)
+        provenance = self.__dict__.get("_pretrained_provenance")
+        if provenance is not None:
+            provenance["loaded"].difference_update(head)
+        return result
 
 
 class _TemporalEncoder(nn.Module):
