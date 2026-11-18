@@ -557,14 +557,14 @@ class _MultiscaleMeanHemoglobinBranch(nn.Module):
         # First scale: H / 2 filters read the whole mean signal
         # (batch, 1, 1, T) -> (batch, H / 2, 1, 1)
         full = self.conv_1(mean)
-        # Batch normalization and activation (ELU); shape unchanged
+        # Batch normalization and activation (ELU by default); shape unchanged
         full = self.bn_1(full)
         full = self.activation(full)
 
         # Second scale: H / 2 filters read the whole smoothed signal
         # (batch, 1, 1, T') -> (batch, H / 2, 1, 1)
         short = self.conv_2(short)
-        # Batch normalization and activation (ELU); shape unchanged
+        # Batch normalization and activation (ELU by default); shape unchanged
         short = self.bn_2(short)
         short = self.activation(short)
 
@@ -577,20 +577,40 @@ class _MultiscaleMeanHemoglobinBranch(nn.Module):
 
 
 class _S4DKernel(nn.Module):
-    """S4D-Lin kernel ``K = 2 Re(C (exp(dt A) - 1) / A exp(dt A l))``, in real
-    arithmetic: ``A = -exp(log_A_real) + i A_imag``, ``dt = exp(log_dt)``."""
+    """Convolution kernel of a diagonal state space model (S4D-Lin).
+
+    ``K_l = 2 Re(C (exp(dt A) - 1) / A exp(dt A l))`` for ``l = 0..length-1``,
+    the Vandermonde kernel of Gu et al. (2022), Eqs. (6)-(7), with ``B = 1``
+    and the zero-order hold. It is computed in real arithmetic, with
+    ``A = -exp(log_A_real) + i A_imag`` and ``dt = exp(log_dt)``.
+
+    Parameters
+    ----------
+    d_model : int
+        Number of independent state space models (one per S4D channel).
+    d_state : int
+        State size; ``d_state // 2`` complex entries are kept, the kernel
+        being twice the real part (conjugate pairs).
+    """
 
     def __init__(self, d_model: int, d_state: int) -> None:
         super().__init__()
+        # Output matrix C, complex: real and imaginary parts on the last axis
         self.C = nn.Parameter(torch.empty(d_model, d_state // 2, 2))
+        # Step of the discretization, one per channel, learned in log scale
         self.log_dt = nn.Parameter(torch.empty(d_model))
+        # Diagonal state matrix A: the real part is kept negative (stable)
+        # through -exp(log_A_real)
         self.log_A_real = nn.Parameter(torch.empty(d_model, d_state // 2))
         self.A_imag = nn.Parameter(torch.empty(d_model, d_state // 2))
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
+        # C ~ complex N(0, 1): each part has variance 1 / 2
         nn.init.normal_(self.C, 0.0, math.sqrt(0.5))
-        nn.init.uniform_(self.log_dt, math.log(0.001), math.log(0.1))  # reference dt
+        # dt log-uniform in [0.001, 0.1], as in the reference S4D
+        nn.init.uniform_(self.log_dt, math.log(0.001), math.log(0.1))
+        # S4D-Lin (Gu et al., Eq. (9)): A_n = -1 / 2 + i pi n
         nn.init.constant_(self.log_A_real, math.log(0.5))
         with torch.no_grad():
             self.A_imag.copy_(
@@ -598,41 +618,77 @@ class _S4DKernel(nn.Module):
             )
 
     def forward(self, length: int) -> torch.Tensor:
-        # (d_model, d_state // 2) unless noted; A = a + i b, one call per line
-        dt = torch.exp(self.log_dt)  # (d_model,)
-        dt = dt.unsqueeze(-1)  # (d_model, 1), broadcasts over the state
+        """Kernel ``(d_model, length)`` for a sequence of ``length`` steps."""
+        # Every tensor below is (d_model, d_state // 2) unless noted. The
+        # complex numbers are carried as real and imaginary parts, A = a + i b
+
+        # Step of the discretization (Delta in Gu et al.)
+        # (d_model,) -> (d_model, 1), broadcasts over the state
+        dt = torch.exp(self.log_dt)
+        dt = dt.unsqueeze(-1)
+        # Diagonal of A, with a negative real part
         a = -torch.exp(self.log_A_real)
         b = self.A_imag
+        # dt A, the exponent of the zero-order hold
         dt_a = a * dt
         dt_b = b * dt
-        # exp(dt A) - 1 = e_real + i e_imag, with expm1 and 1 - cos = 2 sin^2
+
+        # Zero-order hold, numerator of B_bar: exp(dt A) - 1 = e_real + i e_imag.
+        # expm1 and 1 - cos = 2 sin^2 keep the precision for small dt
         exp_dt_a = torch.exp(dt_a)
         cos_dt_b = torch.cos(dt_b)
         sin_dt_b = torch.sin(dt_b)
         half_sin = torch.sin(0.5 * dt_b)
         e_real = torch.expm1(dt_a) * cos_dt_b - 2.0 * half_sin * half_sin
         e_imag = exp_dt_a * sin_dt_b
-        # w = (exp(dt A) - 1) / A, then C~ = C w
-        modulus = a * a + b * b  # > 0: a = -exp(log_A_real)
+
+        # B_bar = (exp(dt A) - 1) / A with B = 1: a complex division, written
+        # as a product with the conjugate of A over |A|^2 (> 0, since a < 0)
+        modulus = a * a + b * b
         w_real = (e_real * a + e_imag * b) / modulus
         w_imag = (e_imag * a - e_real * b) / modulus
+        # C B_bar, the coefficient of each state in the kernel (complex product)
         c_real, c_imag = self.C.unbind(-1)
         ct_real = c_real * w_real - c_imag * w_imag
         ct_imag = c_real * w_imag + c_imag * w_real
-        # Vandermonde basis exp(dt A l), (d_model, d_state // 2, length)
+
+        # Vandermonde basis A_bar^l = exp(dt A l), l = 0..length - 1
+        # (d_model, d_state // 2, length)
         steps = torch.arange(length, device=dt.device, dtype=dt.dtype)
         dt_a_steps = dt_a.unsqueeze(-1) * steps
         decay = torch.exp(dt_a_steps)
         angles = dt_b.unsqueeze(-1) * steps
         basis_real = decay * torch.cos(angles)
         basis_imag = decay * torch.sin(angles)
+
+        # K_l = sum_n C_n B_bar_n A_bar_n^l: real part of the complex product,
+        # summed over the states
+        # (d_model, d_state // 2, length) -> (d_model, length)
         kernel = torch.einsum("hn,hnl->hl", ct_real, basis_real)
         kernel = kernel - torch.einsum("hn,hnl->hl", ct_imag, basis_imag)
-        return 2.0 * kernel  # (d_model, length)
+        # Twice the real part: "same as adding conjugate pairs"
+        kernel = 2.0 * kernel
+        return kernel
 
 
 class _S4DLayer(nn.Module):
-    """S4D layer: causal depthwise convolution with the S4D kernel, D skip, GLU."""
+    """S4D layer of Gu et al. (2022), as in the authors' ``S4D``.
+
+    One diagonal state space model per channel, applied as a causal depthwise
+    convolution with the :class:`_S4DKernel`, plus the skip term ``D u``,
+    then ``activation``, dropout and a 1 x 1 convolution with a GLU.
+
+    Parameters
+    ----------
+    d_model : int
+        Number of S4D channels.
+    d_state : int
+        State size of each state space model.
+    drop_prob : float
+        Dropout probability, over whole channels.
+    activation : type[nn.Module]
+        Activation after the state space model.
+    """
 
     def __init__(
         self,
@@ -642,15 +698,21 @@ class _S4DLayer(nn.Module):
         activation: type[nn.Module],
     ) -> None:
         super().__init__()
+        # Skip term D of the state space model, y = C x + D u, one per channel
         self.D = nn.Parameter(torch.empty(d_model))
-        self.kernel = _S4DKernel(d_model, d_state)
+        # Impulse response of the state space model, as a convolution kernel
+        self.kernel = _S4DKernel(d_model=d_model, d_state=d_state)
         self.activation = activation()
         self.dropout = nn.Dropout1d(drop_prob)
+        # Output linear layer: a position-wise map to 2 d_model channels,
+        # halved again by the gate of the GLU
         self.output_linear = nn.Sequential(
-            nn.Conv1d(d_model, 2 * d_model, 1), nn.GLU(dim=-2)
+            nn.Conv1d(in_channels=d_model, out_channels=2 * d_model, kernel_size=1),
+            nn.GLU(dim=-2),
         )
+        # Weight layout of a depthwise conv1d: (out_channels, 1, length)
         self.to_conv_weight = Rearrange("d_model length -> d_model 1 length")
-        # draws D, then the kernel a second time (its __init__ drew it once):
+        # Draws D, then the kernel a second time (its __init__ drew it once):
         # the seeded weights of the replications in FNIRS4D's docstring follow
         # this order
         self.reset_parameters()
@@ -660,15 +722,40 @@ class _S4DLayer(nn.Module):
         self.kernel.reset_parameters()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        length = x.shape[-1]  # x: (batch, d_model, length)
-        kernel = self.kernel(length)  # (d_model, length)
-        kernel = kernel.flip(-1)  # conv1d correlates: reverse for a convolution
-        kernel = self.to_conv_weight(kernel)  # (d_model, 1, length)
-        padded = F.pad(x, (length - 1, 0))  # causal: (batch, d_model, 2 length - 1)
-        y = F.conv1d(padded, kernel, groups=x.shape[1])  # (batch, d_model, length)
-        skip = self.D.unsqueeze(-1)  # (d_model, 1), broadcasts over time
-        skip = x * skip  # (batch, d_model, length)
-        y = y + skip  # (batch, d_model, length)
-        y = self.activation(y)  # (batch, d_model, length)
-        y = self.dropout(y)  # (batch, d_model, length)
-        return self.output_linear(y)  # (batch, d_model, length)
+        """Output ``(batch, d_model, length)`` of ``x`` of the same shape."""
+        # x is the input u of the state space models: (batch, d_model, length)
+        length = x.shape[-1]
+
+        # Kernel K of each channel's state space model, as long as the sequence
+        # (d_model, length)
+        kernel = self.kernel(length)
+        # conv1d computes a correlation: the kernel is reversed so that the
+        # result is the convolution y = u * K
+        kernel = kernel.flip(-1)
+        # (d_model, length) -> (d_model, 1, length)
+        kernel = self.to_conv_weight(kernel)
+
+        # Causal: step l sees only the inputs up to l, so the sequence is
+        # padded on the left
+        # (batch, d_model, length) -> (batch, d_model, 2 * length - 1)
+        padded = F.pad(x, (length - 1, 0))
+        # y = u * K, one kernel per channel (depthwise)
+        # (batch, d_model, 2 * length - 1) -> (batch, d_model, length)
+        y = F.conv1d(padded, kernel, groups=x.shape[1])
+
+        # Skip term D u of the state space model
+        # (d_model,) -> (d_model, 1), broadcasts over the sequence
+        skip = self.D.unsqueeze(-1)
+        # (batch, d_model, length)
+        skip = x * skip
+        y = y + skip
+
+        # Activation (GELU by default) and dropout of whole channels; shape
+        # unchanged
+        y = self.activation(y)
+        y = self.dropout(y)
+
+        # Output linear layer with its GLU gate
+        # (batch, d_model, length) -> (batch, d_model, length)
+        y = self.output_linear(y)
+        return y
