@@ -33,6 +33,13 @@ Enhancements
   depthwise-separable convolution over ``(batch, n_chans, n_times)`` HbO/HbR windows.
   Its ``mapping`` loads the authors' state dict, and ``fNIRS`` joins the modality
   vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRS4D` (Wang et al., IEEE TIM 2026), a diagonal
+  state-space (S4D) backbone with the authors' LOSO-CV or KFold-CV
+  mean-hemoglobin branch (``mean_branch``); its ``mapping`` loads the authors' state
+  dict. The helpers ``fnirs_chromophores_from_chs_info``, ``fnirs_channel_order`` and
+  ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
+  ``chs_info``, stacked or in MNE's interleaved order (:gh:`1582` by
+  `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` compiles with ``torch.compile`` into one graph: its lazy
   kernel-norm initialisation no longer reads a tensor's value on every forward (19 graph breaks
   and 21 compiled graphs for two training steps before, on every device). Checkpoints and
@@ -102,7 +109,17 @@ Enhancements
 API and behavior changes
 ========================
 
-- None yet
+- On Intel Gaudi, :func:`braindecode.functional.scaled_dot_product_attention` and
+  :class:`braindecode.models.Labram` no longer call the Gaudi bridge's ``FusedSDPA``
+  themselves: they call torch's SDPA on every device, which Habana's attention setting
+  runs on the fused kernel, with or without a mask. The new page :ref:`install_gaudi`
+  gives the plugins to install, the setting of each Gaudi software version and the known
+  issues. Without the setting, attention on Gaudi runs op by op; the ``fused_in_lazy``
+  parameter now has no effect. With the setting, on one Gaudi2 card (bfloat16 autocast,
+  3 x 100 windows of 32 channels x 6000 samples per step), LaBraM steps with ``ch_mask``
+  are 4 % shorter compiled and 22 % shorter in eager mode; LaBraM without ``ch_mask``
+  and EEGPT in eager mode stay within 0.5 %, and EEGPT compiled steps are 1.6 % longer
+  (:gh:`1581` by `Bruno Aristimunha`_).
 
 Requirements
 ============
