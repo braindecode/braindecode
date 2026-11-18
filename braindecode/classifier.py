@@ -12,7 +12,8 @@ import warnings
 from skorch import NeuralNet
 from skorch.callbacks import EpochScoring
 from skorch.classifier import NeuralNetClassifier
-from torch.nn import CrossEntropyLoss
+from torch import Tensor
+from torch.nn import CrossEntropyLoss, NLLLoss
 
 from .eegneuralnet import _EEGNeuralNet
 from .training.scoring import predict_trials
@@ -173,6 +174,15 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
         loss : float
             The loss value.
         """
+        # A floating (batch, time) target holds class indices for dense logits.
+        if (
+            isinstance(self.criterion_, (CrossEntropyLoss, NLLLoss))
+            and isinstance(y_true, Tensor)
+            and y_true.is_floating_point()
+            and y_true.ndim == 2
+            and y_pred.ndim == 3
+        ):
+            y_true = y_true.long()
         return NeuralNet.get_loss(self, y_pred, y_true, *args, **kwargs)
 
     def predict(self, X):

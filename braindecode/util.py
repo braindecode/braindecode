@@ -445,6 +445,13 @@ class ThrowAwayIndexLoader(object):
                 )
         return {signal_name: signal, **extras}
 
+    def _cast_target(self, target):
+        if self.is_regression or (
+            target.is_floating_point() and target.ndim == 2 and target.shape[1] > 1
+        ):
+            return target.float()
+        return target.long()
+
     def __iter__(
         self,
     ):
@@ -474,16 +481,11 @@ class ThrowAwayIndexLoader(object):
             if extras:
                 x = self._forward_kwargs(x, extras)
             if cast_target:
-                target_dtype = torch.float32 if self.is_regression else torch.int64
                 if isinstance(y, (tuple, list)) and len(y) == 3:
                     y_a, y_b, lam = y
-                    y = (
-                        y_a.type(target_dtype),
-                        y_b.type(target_dtype),
-                        lam.type(torch.float32),
-                    )
-                elif hasattr(y, "type"):
-                    y = y.type(target_dtype)
+                    y = self._cast_target(y_a), self._cast_target(y_b), lam.float()
+                elif torch.is_tensor(y):
+                    y = self._cast_target(y)
             yield x, y
 
 

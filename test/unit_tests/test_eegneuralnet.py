@@ -1205,3 +1205,18 @@ def test_predict_trials_explicit_loader_kwargs(estimator):
     net.cropped = False
     with pytest.raises(ValueError, match="cropped"):
         net.predict_trials(X, loader_kwargs={"batch_size": 2})
+
+
+def test_classifier_keeps_float_class_indices_for_dense_logits():
+    X = torch.randn(4, 2, 8)
+    y = torch.tensor([[0.0, 1.0] * 4] * 4)
+    model = torch.nn.Conv1d(2, 2, kernel_size=1)
+    expected = torch.nn.functional.cross_entropy(model(X), y.long()).item()
+    net = EEGClassifier(
+        model,
+        train_split=None,
+        max_epochs=1,
+        batch_size=len(X),
+        verbose=0,
+    ).fit(X, y)
+    assert net.history[-1, "train_loss"] == pytest.approx(expected)

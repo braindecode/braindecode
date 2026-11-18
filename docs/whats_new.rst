@@ -294,6 +294,9 @@ Bug fixes
   a shorter ``n_times``: the learned temporal positions keep the checkpoint's
   leading ones instead of raising a size mismatch
   (:gh:`1537` by `Julien Gadonneix`_).
+- :class:`~braindecode.EEGClassifier` keeps the class probabilities produced by
+  :class:`~braindecode.augmentation.LabelSmoothing`, including when it precedes Mixup.
+
 - :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor`
   route the batches of :func:`braindecode.datasets.pad_channels_collate` and
   ``set_return_ch_pos`` by the model's ``forward`` signature: the signal goes to

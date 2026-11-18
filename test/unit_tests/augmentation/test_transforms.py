@@ -5,6 +5,7 @@
 #          Anton Soloviev <anton@praviel.com>
 #
 # License: BSD (3-clause)
+import copy
 import pickle  # nosec B403 - only round-trips objects built in the tests
 
 import numpy as np
@@ -1215,3 +1216,53 @@ def test_label_smoothing_in_augmented_loader(rng_seed):
     assert torch.equal(X_aug, X)
     _, y_expected = transform(X, y)
     assert torch.equal(y_aug, y_expected)
+
+
+@pytest.mark.parametrize("loss", ["cross_entropy", "soft_cross_entropy", "mixup"])
+def test_classifier_step_with_label_smoothing(loss):
+    from braindecode.training import mixup_criterion
+
+    torch.manual_seed(0)
+    X = torch.randn(6, 2, 8)
+    y = torch.arange(len(X)) % 3
+    model = nn.Sequential(nn.Flatten(), nn.Linear(16, 3))
+    reference = copy.deepcopy(model)
+    soft = torch.nn.functional.one_hot(y, 3).float() * 0.9 + 0.1 / 3
+    transforms = [LabelSmoothing(0.1, 3)]
+    criterion = nn.CrossEntropyLoss
+    batch_X = X
+    if loss == "mixup":
+        transforms.append(Mixup(0.5, random_state=17))
+        batch_X, (first, second, weight) = Mixup(0.5, random_state=17)(X, soft)
+        soft = weight[:, None] * first + (1 - weight[:, None]) * second
+
+        def criterion():
+            return mixup_criterion
+
+    elif loss == "soft_cross_entropy":
+
+        class SoftCrossEntropy(nn.Module):
+            def forward(self, logits, target):
+                return -(target * logits.log_softmax(dim=-1)).sum(-1).mean()
+
+        criterion = SoftCrossEntropy
+
+    expected_loss = -(soft * reference(batch_X).log_softmax(dim=1)).sum(dim=1).mean()
+    expected_loss.backward()
+    expected_weight = reference[1].weight.detach() - 0.1 * reference[1].weight.grad
+    net = EEGClassifier(
+        model,
+        criterion=criterion,
+        optimizer=torch.optim.SGD,
+        lr=0.1,
+        iterator_train=AugmentedDataLoader,
+        iterator_train__transforms=transforms,
+        iterator_train__shuffle=False,
+        train_split=None,
+        max_epochs=1,
+        batch_size=len(X),
+        verbose=0,
+    ).fit(X, y)
+    assert net.history[-1, "train_loss"] == pytest.approx(expected_loss.item())
+    torch.testing.assert_close(net.module_[1].weight, expected_weight)
+    assert not torch.equal(net.module_[1].weight, reference[1].weight)
