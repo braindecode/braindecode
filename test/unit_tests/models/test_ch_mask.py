@@ -476,17 +476,24 @@ def test_luna_reconstruction_refuses_ch_mask():
         model(torch.randn(len(N_REAL), 3, 80), ch_mask=mask)
 
 
-def test_ch_mask_is_refused_under_a_channel_strategy():
-    # The channel layer would mix padded channels into the real ones.
+def test_ch_mask_maps_each_sample_under_a_channel_strategy():
+    # Each recording is mapped with its own montage, its real channels in ch_mask.
     # FP1, F7, T7 form two of BIOT's bipolar pretraining channels.
-    chs_info = [{"ch_name": name} for name in ("FP1", "F7", "T7")]
-    model = BIOT(chs_info=chs_info, n_outputs=3, n_times=400, sfreq=200,
-                 embed_dim=32, num_heads=2, num_layers=1, channel_strategy="zero")
-    mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
-    x = torch.randn(len(N_REAL), 3, 400)
-    with pytest.raises(ValueError, match="ch_mask needs channel_strategy='native'"):
+    names, n_real = ("FP1", "F7", "T7"), [2, 3, 2]
+    model = BIOT(chs_info=[{"ch_name": n} for n in names], n_outputs=3, n_times=400,
+                 sfreq=200, embed_dim=32, num_heads=2, num_layers=1,
+                 channel_strategy="zero").eval()
+    mask = torch.arange(3) < torch.tensor(n_real)[:, None]
+    x = torch.randn(len(n_real), 3, 400) * mask[..., None]
+    montages = [[{"ch_name": n} for n in names[:k]] for k in n_real]
+    with torch.no_grad():
+        y = model(x, chs_info=montages, ch_mask=mask)
+        for b, k in enumerate(n_real):
+            alone = model(x[b : b + 1, :k], chs_info=montages[b])
+            torch.testing.assert_close(y[b : b + 1], alone)
+    with pytest.raises(ValueError, match="montage of each sample"):
         model(x, ch_mask=mask)
-    with pytest.raises(ValueError, match="ch_mask needs channel_strategy='native'"):
+    with pytest.raises(ValueError, match="by keyword"):
         model(x, False, mask)  # positional ch_mask
 
 

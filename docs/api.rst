@@ -543,6 +543,7 @@ The functional module contains various functions that can be used like functiona
      glorot_weight_zero_bias
      hilbert_freq
      identity
+     linear_channel_map
      masked_group_norm
      masked_mean
      pack_channels
@@ -561,6 +562,7 @@ The functional module contains various functions that can be used like functiona
      scaled_dot_product_attention
      sinusoidal_positional_encoding
      spectral_input
+     spherical_spline_kernel
      square
      unpack_channels
 
