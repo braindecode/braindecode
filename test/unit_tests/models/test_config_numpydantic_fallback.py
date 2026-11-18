@@ -21,6 +21,15 @@ def test_mne_channel_metadata_roundtrip():
         assert result["kind"] == original["kind"]
         assert result["coord_frame"] == original["coord_frame"]
         np.testing.assert_allclose(result["loc"], original["loc"], equal_nan=True)
+    # Native model descriptors can also give the modality under ch_type.
+    descriptors = [dict(ch, ch_type="eeg") for ch in info["chs"]]
+    for ch in descriptors:
+        del ch["kind"]
+    alias = EEGNetConfig(chs_info=descriptors, n_times=256, n_outputs=2)
+    assert (
+        EEGNetConfig.model_validate_json(alias.model_dump_json()).chs_info[0]["ch_type"]
+        == "eeg"
+    )
 
 
 def test_config_without_numpydantic():

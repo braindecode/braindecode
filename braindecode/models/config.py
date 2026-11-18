@@ -37,6 +37,7 @@ def _loc_from_json(loc):
 class ChsInfoType(TypedDict, total=False, closed=True):  # type: ignore[call-arg]
     cal: float
     ch_name: str
+    ch_type: str
     coil_type: int
     coord_frame: int
     kind: str | int
