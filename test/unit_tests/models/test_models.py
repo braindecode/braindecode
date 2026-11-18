@@ -1687,6 +1687,17 @@ def test_biot_encoder_index_is_buffer(default_biot_params):
     assert biot.encoder.index.dtype == torch.long
 
 
+@pytest.mark.parametrize("offset", [0, 1])
+def test_biot_channel_tokens_get_their_own_gradients(offset):
+    """The token of each channel ``offset..offset + n`` gets a gradient; the others none."""
+    torch.manual_seed(0)
+    biot = BIOT(n_chans=4, n_outputs=2, n_times=1000, sfreq=200).eval()
+    tokens = biot.encoder(torch.randn(2, 4 - offset, 1000), n_channel_offset=offset)[0]
+    tokens.square().mean().backward()
+    rows = biot.encoder.channel_tokens.weight.grad.abs().sum(1)
+    assert (rows[:offset] == 0).all() and (rows[offset:] > 0).all()
+
+
 @pytest.fixture
 def default_labram_params():
     return {
