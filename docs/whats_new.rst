@@ -153,6 +153,11 @@ Enhancements
   encoder output ``(batch, n_chans, n_tokens, dim)`` with the tokens of padded
   channels zero; DIVER1 gains
   ``return_features`` (:gh:`1540` by `Julien Gadonneix`_).
+- New tutorial :ref:`weight-audit-tutorial`: audit what a released decoder relies on
+  from its weights alone (dominant band, time window and channel ranking of an
+  :class:`braindecode.models.EEGNet`, read through its path weights), then confirm the
+  reading with one occlusion check, shown on a released PhysioNet EEGNet checkpoint and
+  the lateral-cue eye-movement shortcut (:gh:`1538` by `Yiheng Li`_).
 - :ref:`install_gaudi` lists two attention issues of Gaudi software 1.21.4 that give no
   error: wrong values in eager mode when two calls take transposed views with as many
   elements in different shapes (:class:`braindecode.models.AXON`), and no gradient for a
@@ -203,6 +208,12 @@ Bug fixes
 
 - :func:`braindecode.preprocessing.filterbank` preserves channel positions and
   their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
+- ``load_state_dict`` of every braindecode model loads checkpoints saved before
+  the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
+  other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key
+  is mapped to ``parametrizations.weight.original``. Released checkpoints such as
+  the EEGNet weights of Guetschel and Tangermann load without renaming keys
+  (:gh:`1538` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
