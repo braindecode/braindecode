@@ -201,8 +201,8 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     def encode(
         self,
         x: torch.Tensor,
-        ch_mask: torch.Tensor | None = None,
         channel_mask: torch.Tensor | None = None,
+        ch_mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         r"""Return the pooled and the per-patch representations.
 
@@ -221,12 +221,12 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         ----------
         x : torch.Tensor
             Input of shape ``(batch, n_chans, n_times)``.
-        ch_mask : torch.Tensor | None
-            ``(batch, n_chans)`` mask, ``True`` for real channels, see
-            :func:`~braindecode.functional.check_ch_mask`.
         channel_mask : torch.Tensor | None
             Deprecated, removed in 2.2: the inverse of ``ch_mask``, ``True`` for
             missing channels. Pass ``ch_mask=~channel_mask``.
+        ch_mask : torch.Tensor | None
+            Pass by keyword. ``(batch, n_chans)`` mask with ``True`` for real
+            channels, see :func:`~braindecode.functional.check_ch_mask`.
 
         Returns
         -------
@@ -254,14 +254,16 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     def forward(
         self,
         x: torch.Tensor,
-        return_features: bool = False,
+        return_features: bool | torch.Tensor = False,
         ch_mask: torch.Tensor | None = None,
         channel_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Return trial logits, or the pooled features; ``ch_mask`` (``True``
         for real channels) and the deprecated ``channel_mask`` are as in
         :meth:`encode`."""
-        pooled, _ = self.encode(x, _deprecated_channel_mask(ch_mask, channel_mask))
+        if isinstance(return_features, torch.Tensor):
+            raise TypeError("Pass ch_mask by keyword. True marks real channels.")
+        pooled, _ = self.encode(x, channel_mask=channel_mask, ch_mask=ch_mask)
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": pooled,
@@ -567,7 +569,7 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     def forward(
         self,
         x: torch.Tensor,
-        return_features: bool = False,
+        return_features: bool | torch.Tensor = False,
         temporal_mask: torch.Tensor | None = None,
         ch_mask: torch.Tensor | None = None,
         channel_mask: torch.Tensor | None = None,
@@ -578,6 +580,8 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         ``channel_mask`` are as in :meth:`SleepFM.encode`; ``temporal_mask`` is
         ``True`` for padded patches.
         """
+        if isinstance(return_features, torch.Tensor):
+            raise TypeError("Pass ch_mask by keyword. True marks real channels.")
         # The count the tokenizer produces (padded patch included with "pad").
         n_patches = self.patch_embedding.patchify.n_patches(x.shape[-1])
         patch_mask = _check_mask(
@@ -735,11 +739,12 @@ class _SleepFMTokenizer(nn.Module):
             padded = padding_mask.reshape(-1, 1)  # (batch * chans * patch, 1)
             if self.training:
                 valid = ~padded[:, 0]
-                tokens = x.new_zeros((x.shape[0], self.embed_dim))
                 if bool(valid.any()):  # BatchNorm of an empty batch is NaN
-                    tokens = tokens.masked_scatter(
-                        padded.logical_not(), self.tokenizer(x[valid])
-                    )
+                    encoded = self.tokenizer(x[valid])
+                    tokens = encoded.new_zeros((x.shape[0], self.embed_dim))
+                    tokens = tokens.masked_scatter(~padded, encoded)
+                else:
+                    tokens = x.new_zeros((x.shape[0], self.embed_dim))
             else:
                 # Zero the input too, so a non-finite masked value cannot
                 # reach the gradients.

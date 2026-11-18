@@ -1754,6 +1754,65 @@ def test_sleepfm_masked_input_is_ignored(cls, masked, training):
 
 
 @pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
+def test_sleepfm_masked_training_with_autocast(cls):
+    model = _small(cls).train()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    before = model.final_layer.weight.detach().clone()
+    x = torch.randn(2, 3, 1280, requires_grad=True)
+    # Every sample lacks modality B; no row of that tokenizer call is valid.
+    real = torch.tensor([[True, False, False], [True, True, False]])
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        logits = model(x, ch_mask=real)
+        loss = logits.float().square().mean()
+    loss.backward()
+    assert torch.isfinite(logits).all()
+    assert x.grad[~real].count_nonzero() == 0
+    assert x.grad[real].abs().sum() > 0
+    optimizer.step()
+    assert all(torch.isfinite(p).all() for p in model.parameters())
+    assert not torch.equal(before, model.final_layer.weight)
+
+
+@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
+def test_sleepfm_rejects_ambiguous_positional_forward_masks(cls):
+    kwargs = {"channel_modalities": ["A"]} if cls is SleepFMStager else {}
+    model = _small(cls, n_chans=1, **kwargs).eval()
+    x = torch.randn(1, 1, 1280)
+    old_mask = torch.ones(1, 1, dtype=torch.bool)
+    for net in (model, torch.jit.script(model)):
+        with pytest.raises((TypeError, RuntimeError, torch.jit.Error), match="ch_mask"):
+            net(x, old_mask)
+
+
+def test_sleepfm_encode_preserves_legacy_positional_mask_polarity():
+    model = _small(SleepFM).eval()
+    x = torch.randn(2, 3, 1280)
+    missing = torch.tensor([[False, True, False], [False, True, True]])
+    with torch.no_grad(), pytest.warns(FutureWarning, match="ch_mask=~channel_mask"):
+        pooled, tokens = model.encode(x, missing)
+    for net in (model, torch.jit.script(model)):
+        expected = net.encode(x, ch_mask=~missing)
+        torch.testing.assert_close(pooled, expected[0])
+        torch.testing.assert_close(tokens, expected[1])
+
+
+def test_sleepfm_stager_applies_attention_to_one_of_four_modality_slots():
+    model = _small(SleepFMStager, channel_modalities=None).eval()
+    pooling = model.staging_head.spatial_pooling
+    captured = []
+
+    def capture_pool(module, args, result):
+        tokens, missing = args[:2]
+        encoded = module.transformer_layer(tokens, src_key_padding_mask=missing)
+        captured.append((result, encoded[:, 0]))
+
+    with pooling.register_forward_hook(capture_pool), torch.no_grad():
+        model(torch.randn(2, 3, 1280))
+    actual, expected = captured[0]
+    torch.testing.assert_close(actual, expected)
+
+
+@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
 def test_sleepfm_channel_mask_is_the_deprecated_inverse_of_ch_mask(cls):
     model = _small(cls).eval()
     x = torch.randn(2, 3, 1280)
