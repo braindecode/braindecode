@@ -238,6 +238,7 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     def __init__(
         self,
+        # Braindecode parameters
         n_outputs: int | None = None,
         n_chans: int | None = None,
         chs_info: list[dict] | None = None,
@@ -245,6 +246,7 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         input_window_seconds: float | None = None,
         sfreq: float | None = None,
         *,
+        # Model-specific parameters
         n_layers: int = 4,
         d_state: int = 64,
         avg_size: int = 10,
@@ -257,61 +259,127 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         branch_activation: type[nn.Module] = nn.ELU,
     ) -> None:
         super().__init__(
-            n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        n_chans = self.n_chans
-        n_times = self.n_times
-        if compute_hbt and n_chans % 2:
-            raise ValueError(f"compute_hbt needs HbO/HbR pairs, got n_chans={n_chans}.")
-        if n_chans < 2:  # the instance norm needs more than one row
-            raise ValueError(f"FNIRS4D needs n_chans >= 2, got n_chans={n_chans}.")
+
+        # The authors' head is ``fc = Sequential(Linear)``: their state_dict
+        # loads as is
+        self.mapping = {f"fc.0.{k}": f"final_layer.{k}" for k in ("weight", "bias")}
+
+        # Parameters
         self.prenorm = prenorm
         self.compute_hbt = compute_hbt
-        pairs_info = self._chs_info if compute_hbt else None
-        self.channel_order = fnirs_channel_order(pairs_info, channel_order)
-        self.to_fnirs_tensor = Rearrange("batch chans time -> batch 1 chans time")
-        self.mean_hemoglobin_branch: nn.Module
-        if mean_branch == "multiscale":
-            if n_chans % 2:  # n_chans // 2 filters per scale
-                raise ValueError(
-                    f"mean_branch='multiscale' needs an even n_chans, got {n_chans}."
-                )
-            if avg_size > n_times:
-                raise ValueError(
-                    f"avg_size must be at most n_times={n_times}, got {avg_size}."
-                )
-            self.mean_hemoglobin_branch = _MultiscaleMeanHemoglobinBranch(
-                n_chans, n_times, avg_size, branch_activation
+
+        # Checkers
+        # HbT = HbO + HbR is a sum over pairs: an odd number of rows has an
+        # unpaired chromophore
+        if compute_hbt and self.n_chans % 2:
+            raise ValueError(
+                f"compute_hbt needs HbO/HbR pairs, got n_chans={self.n_chans}."
             )
-        elif mean_branch == "time_mean":
-            self.mean_hemoglobin_branch = nn.Sequential(
-                nn.AvgPool2d((1, n_times), 1),
-                Rearrange("batch 1 chans 1 -> batch chans"),
-            )
-        else:
+        # Knowledge Embedding gives a (H, 1) map per filter, and the instance
+        # normalization cannot normalize a single value
+        if self.n_chans < 2:
+            raise ValueError(f"FNIRS4D needs n_chans >= 2, got n_chans={self.n_chans}.")
+        if mean_branch not in ("multiscale", "time_mean"):
             raise ValueError(
                 f"mean_branch must be 'multiscale' or 'time_mean', got {mean_branch!r}."
             )
+        if mean_branch == "multiscale":
+            # MAMHB has H / 2 filters per scale, so that its two scales give
+            # the H features the FC layer expects
+            if self.n_chans % 2:
+                raise ValueError(
+                    "mean_branch='multiscale' needs an even n_chans, "
+                    f"got {self.n_chans}."
+                )
+            # The moving average (AP_3) needs at least one full window
+            if avg_size > self.n_times:
+                raise ValueError(
+                    f"avg_size must be at most n_times={self.n_times}, got {avg_size}."
+                )
+        # HbO/HbR layout of the rows, read from chs_info when HbT is formed
+        # here (the helper refuses a montage that is not paired HbO/HbR)
+        pairs_info = self._chs_info if compute_hbt else None
+        self.channel_order = fnirs_channel_order(pairs_info, channel_order)
+
+        # Layers
+        # Following the nomenclature of the authors' figure (fig/fig2.png)
+        # The authors' input has a singleton axis: (batch, 1, H, T)
+        self.to_fnirs_tensor = Rearrange("batch chans time -> batch 1 chans time")
+
+        # Selectable branch (feature engineering as expert prior)
+        self.mean_hemoglobin_branch: nn.Module
+        if mean_branch == "multiscale":
+            # Multi-scale Aggregated Mean Hemoglobin Branch (MAMHB), the
+            # inter-subject (LOSO-CV) branch
+            self.mean_hemoglobin_branch = _MultiscaleMeanHemoglobinBranch(
+                n_chans=self.n_chans,
+                n_times=self.n_times,
+                avg_size=avg_size,
+                activation=branch_activation,
+            )
+        else:
+            # Mean Hemoglobin Branch (MHB), the intra-subject (KFold-CV)
+            # branch: AP_1, the mean of each row over the window
+            self.mean_hemoglobin_branch = nn.Sequential(
+                nn.AvgPool2d(kernel_size=(1, self.n_times), stride=1),
+                Rearrange("batch 1 chans 1 -> batch chans"),
+            )
+        # Knowledge Embedding (KE): hemodynamic responses as domain knowledge
         self.fNIRS_knowledge_embedding = nn.Sequential(
-            nn.Conv2d(1, n_chans, (1, n_times)),
-            nn.InstanceNorm2d(n_chans),
-            nn.Conv2d(n_chans, n_chans, 1),
-            # one S4D sequence per channel, along the filters
+            # Conv_1: H filters of 1 x T, each reads the whole response of
+            # one row (the kernel shape of fNIRSNet's DHRConv)
+            nn.Conv2d(
+                in_channels=1,
+                out_channels=self.n_chans,
+                kernel_size=(1, self.n_times),
+            ),
+            # IN: each filter map is normalized over the rows
+            nn.InstanceNorm2d(self.n_chans),
+            # Conv_1x1: mixes the H filters
+            nn.Conv2d(
+                in_channels=self.n_chans,
+                out_channels=self.n_chans,
+                kernel_size=1,
+            ),
+            # Each row becomes one S4D channel (d_model = H) and the H filter
+            # responses its sequence
             Rearrange("batch filters chans 1 -> batch chans filters"),
         )
+
+        # Knowledge Aggregation (KA): N blocks of S4D and LayerNorm
         self.s4d_layers = nn.ModuleList()
         self.norms = nn.ModuleList()
         for _ in range(n_layers):
-            self.s4d_layers.append(_S4DLayer(n_chans, d_state, drop_prob, activation))
-            self.norms.append(nn.LayerNorm(n_chans))
+            self.s4d_layers.append(
+                _S4DLayer(
+                    d_model=self.n_chans,
+                    d_state=d_state,
+                    drop_prob=drop_prob,
+                    activation=activation,
+                )
+            )
+            # LN over the rows (the S4D channels)
+            self.norms.append(nn.LayerNorm(self.n_chans))
+        # Dropout of whole S4D channels before the residual sum
         self.dropout = nn.Dropout1d(drop_prob)
-        # LayerNorm and the mean read the channel axis last
+        # LayerNorm and the sequence mean (AP_4) read the row axis last
         self.channels_last = Rearrange("batch chans filters -> batch filters chans")
         self.channels_first = Rearrange("batch filters chans -> batch chans filters")
-        # n_chans S4D features and n_chans mean-hemoglobin features
-        self.final_layer = nn.Linear(2 * n_chans, self.n_outputs)
-        self.mapping = {f"fc.0.{k}": f"final_layer.{k}" for k in ("weight", "bias")}
+
+        # Final fully connected layer, on the H features of KA and the H
+        # features of the mean hemoglobin branch
+        self.final_layer = nn.Linear(
+            in_features=2 * self.n_chans,
+            out_features=self.n_outputs,
+        )
 
     def reset_head(self, n_outputs: int) -> None:
         self._set_n_outputs(n_outputs)
@@ -324,48 +392,122 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         return_features: bool = False,
         ch_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
-        """Logits ``(batch, n_outputs)`` of ``x`` ``(batch, n_chans, n_times)``.
+        """Forward pass of the fNIRS4D model.
 
-        ``return_features=True`` gives ``{"features", "cls_token": None}``; a
-        ``ch_mask`` raises a ``ValueError`` (the layers span all channels).
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor with shape ``(batch_size, n_chans, n_times)``: HbO
+            and HbR rows, or the rows as given with ``compute_hbt=False``.
+        return_features : bool, default=False
+            If True, return the features that feed the FC layer.
+        ch_mask : torch.Tensor or None
+            Not supported: every layer is sized by ``n_chans``.
+
+        Returns
+        -------
+        torch.Tensor or dict
+            Logits with shape ``(batch_size, n_outputs)``, or with
+            ``return_features=True`` the dict ``{"features", "cls_token"}``,
+            ``features`` of shape ``(batch_size, 2 * n_chans)`` and
+            ``cls_token`` None.
         """
+        # The rows are the S4D channels and the LayerNorm axis: a subset of
+        # them is another model
         if ch_mask is not None:
             raise ValueError("FNIRS4D does not accept ch_mask: layers span n_chans.")
+
+        # Below, H = n_chans and T = n_times
+
+        # Mixed Hemoglobin (activation patterns as domain knowledge): the
+        # rows become HbO and total hemoglobin, HbT = HbO + HbR
         if self.compute_hbt:
-            # 2 x (batch, n_chans // 2, n_times)
+            # (batch, H, T) -> 2 x (batch, H / 2, T)
             hbo, hbr = fnirs_split_hbo_hbr(x, self.channel_order)
-            hbt = hbo + hbr  # (batch, n_chans // 2, n_times)
-            x = torch.cat((hbo, hbt), dim=1)  # [HbO, HbT]: (batch, n_chans, n_times)
-        x = self.to_fnirs_tensor(x)  # (batch, 1, n_chans, n_times)
-        mean_features = self.mean_hemoglobin_branch(x)  # (batch, n_mean)
-        x = self.fNIRS_knowledge_embedding(x)  # (batch, n_chans, filters = n_chans)
+            # (batch, H / 2, T)
+            hbt = hbo + hbr
+            # [HbO, HbT]: (batch, H, T)
+            x = torch.cat((hbo, hbt), dim=1)
+
+        # Singleton axis of the authors' input
+        # (batch, H, T) -> (batch, 1, H, T)
+        x = self.to_fnirs_tensor(x)
+
+        # Selectable branch, on the input: mean hemoglobin features (MHB:
+        # time mean of each row; MAMHB: two scales of the row average)
+        # (batch, 1, H, T) -> (batch, H)
+        mean_features = self.mean_hemoglobin_branch(x)
+
+        # Knowledge Embedding (KE): Conv_1 over the whole window of each
+        # row, IN, Conv_1x1; each row is then a sequence of H filter responses
+        # (batch, 1, H, T) -> (batch, H, H) = (batch, rows, filters)
+        x = self.fNIRS_knowledge_embedding(x)
+
+        # Knowledge Aggregation (KA): N x (S4D, dropout, residual, LN)
         for layer, norm in zip(self.s4d_layers, self.norms):
-            layer_input = x  # (batch, n_chans, filters)
+            # (batch, H, H)
+            layer_input = x
+            # Pre-norm variant: LN over the rows before the S4D layer
             if self.prenorm:
+                # (batch, rows, filters) -> (batch, filters, rows)
                 layer_input = self.channels_last(layer_input)
-                layer_input = norm(layer_input)  # (batch, filters, n_chans)
+                layer_input = norm(layer_input)
+                # (batch, filters, rows) -> (batch, rows, filters)
                 layer_input = self.channels_first(layer_input)
-            layer_output = layer(layer_input)  # (batch, n_chans, filters)
+            # S4D: one diagonal state space model per row, run along its
+            # sequence of filter responses; shape unchanged
+            layer_output = layer(layer_input)
+            # Whole S4D channels are dropped; shape unchanged
             layer_output = self.dropout(layer_output)
-            x = x + layer_output  # (batch, n_chans, filters)
+            # Residual sum; shape unchanged
+            x = x + layer_output
+            # Post-norm (the authors' default): LN over the rows after the sum
             if not self.prenorm:
+                # (batch, rows, filters) -> (batch, filters, rows)
                 x = self.channels_last(x)
-                x = norm(x)  # (batch, filters, n_chans)
+                x = norm(x)
+                # (batch, filters, rows) -> (batch, rows, filters)
                 x = self.channels_first(x)
-        x = self.channels_last(x)  # (batch, filters, n_chans)
-        # Tensor.mean: a Reduce layer would permute first and change the
-        # float32 rounding of the gradients
-        x = x.mean(dim=1)  # (batch, n_chans)
-        features = torch.cat((x, mean_features), 1)  # (batch, 2 n_chans)
+
+        # (batch, rows, filters) -> (batch, filters, rows)
+        x = self.channels_last(x)
+        # AP_4: mean over the sequence. Tensor.mean and not a Reduce layer,
+        # which permutes first and changes the float32 rounding of the
+        # gradients
+        # (batch, H, H) -> (batch, H)
+        x = x.mean(dim=1)
+
+        # KA features and mean hemoglobin features side by side
+        # 2 x (batch, H) -> (batch, 2 H)
+        features = torch.cat((x, mean_features), 1)
+
         if return_features:
             return {"features": features, "cls_token": None}
-        return self.final_layer(features)  # (batch, n_outputs)
+
+        # FC layer
+        # (batch, 2 H) -> (batch, n_outputs)
+        x = self.final_layer(features)
+        return x
 
 
 class _MultiscaleMeanHemoglobinBranch(nn.Module):
-    """The authors' subject-independent (LOSO-CV) mean hemoglobin branch: the
-    channel mean and its moving average, each through a full-window temporal
-    ``Conv2d``, batch normalization and ``activation``."""
+    """Multi-scale Aggregated Mean Hemoglobin Branch (MAMHB).
+
+    The authors' inter-subject (LOSO-CV) branch: the average of all rows
+    (AP_2) and its moving average (AP_3), each read by a full-window temporal
+    convolution, batch normalization and ``activation``.
+
+    Parameters
+    ----------
+    n_chans : int
+        Number of rows of the input; each scale has ``n_chans // 2`` filters.
+    n_times : int
+        Number of samples of the window.
+    avg_size : int
+        Length of the moving average, in samples.
+    activation : type[nn.Module]
+        Activation after each batch normalization.
+    """
 
     def __init__(
         self,
@@ -375,28 +517,63 @@ class _MultiscaleMeanHemoglobinBranch(nn.Module):
         activation: type[nn.Module],
     ) -> None:
         super().__init__()
-        n_filters = n_chans // 2  # per scale, as the authors'
-        self.avg_1 = nn.AvgPool2d((n_chans, 1), 1)
-        self.avg_2 = nn.AvgPool2d((1, avg_size), 1)
-        self.conv_1 = nn.Conv2d(1, n_filters, (1, n_times))
+        # Parameters
+        # H / 2 filters per scale, as the authors': the two scales together
+        # give as many features as KA
+        n_filters = n_chans // 2
+        # Samples left after the moving average, T' = T - avg_size + 1
+        n_times_avg = n_times - avg_size + 1
+
+        # Layers
+        # AP_2: average over all rows, one mean hemoglobin signal
+        self.avg_1 = nn.AvgPool2d(kernel_size=(n_chans, 1), stride=1)
+        # AP_3: moving average over time, the second (smoother) scale
+        self.avg_2 = nn.AvgPool2d(kernel_size=(1, avg_size), stride=1)
+        # First scale: full-window convolution of the mean signal
+        self.conv_1 = nn.Conv2d(
+            in_channels=1, out_channels=n_filters, kernel_size=(1, n_times)
+        )
         self.bn_1 = nn.BatchNorm2d(n_filters)
-        self.conv_2 = nn.Conv2d(1, n_filters, (1, n_times - avg_size + 1))
+        # Second scale: full-window convolution of the smoothed signal
+        self.conv_2 = nn.Conv2d(
+            in_channels=1, out_channels=n_filters, kernel_size=(1, n_times_avg)
+        )
         self.bn_2 = nn.BatchNorm2d(n_filters)
         self.activation = activation()
         self.flatten = Rearrange("batch filters 1 1 -> batch filters")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # time' = n_times - avg_size + 1
-        mean = self.avg_1(x)  # channel mean: (batch, 1, 1, n_times)
-        short = self.avg_2(mean)  # moving average: (batch, 1, 1, time')
-        full = self.conv_1(mean)  # (batch, n_chans // 2, 1, 1)
-        full = self.bn_1(full)  # (batch, n_chans // 2, 1, 1)
-        full = self.activation(full)  # (batch, n_chans // 2, 1, 1)
-        short = self.conv_2(short)  # (batch, n_chans // 2, 1, 1)
-        short = self.bn_2(short)  # (batch, n_chans // 2, 1, 1)
-        short = self.activation(short)  # (batch, n_chans // 2, 1, 1)
-        features = torch.cat((full, short), dim=1)  # (batch, n_chans, 1, 1)
-        return self.flatten(features)  # (batch, n_chans)
+        """Mean hemoglobin features ``(batch, n_chans)`` of ``x``
+        ``(batch, 1, n_chans, n_times)``."""
+        # Below, H = n_chans, T = n_times and T' = T - avg_size + 1
+
+        # AP_2: the rows are averaged into one mean hemoglobin signal
+        # (batch, 1, H, T) -> (batch, 1, 1, T)
+        mean = self.avg_1(x)
+        # AP_3: its moving average, the second scale
+        # (batch, 1, 1, T) -> (batch, 1, 1, T')
+        short = self.avg_2(mean)
+
+        # First scale: H / 2 filters read the whole mean signal
+        # (batch, 1, 1, T) -> (batch, H / 2, 1, 1)
+        full = self.conv_1(mean)
+        # Batch normalization and activation (ELU); shape unchanged
+        full = self.bn_1(full)
+        full = self.activation(full)
+
+        # Second scale: H / 2 filters read the whole smoothed signal
+        # (batch, 1, 1, T') -> (batch, H / 2, 1, 1)
+        short = self.conv_2(short)
+        # Batch normalization and activation (ELU); shape unchanged
+        short = self.bn_2(short)
+        short = self.activation(short)
+
+        # Multi-scale aggregation: the two scales are concatenated
+        # 2 x (batch, H / 2, 1, 1) -> (batch, H, 1, 1)
+        features = torch.cat((full, short), dim=1)
+        # (batch, H, 1, 1) -> (batch, H)
+        features = self.flatten(features)
+        return features
 
 
 class _S4DKernel(nn.Module):
