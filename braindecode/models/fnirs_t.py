@@ -324,9 +324,7 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         # Learned class token and positional embedding, one row per token
         # (class token and H_S groups); the row is the token's only identity
         self.cls_token_patch = nn.Parameter(torch.empty(1, 1, embed_dim))
-        self.pos_embedding_patch = nn.Parameter(
-            torch.empty(1, n_groups + 1, embed_dim)
-        )
+        self.pos_embedding_patch = nn.Parameter(torch.empty(1, n_groups + 1, embed_dim))
         self.dropout_patch = nn.Dropout(embed_drop_prob)
         # Transformer Encoder: ``depth`` pre-norm blocks of bias-free
         # multi-head self-attention and a feed-forward layer of width mlp_dim
