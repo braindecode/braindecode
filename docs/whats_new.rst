@@ -269,7 +269,7 @@ Bug fixes
   channel whose position is ``NaN`` when it is built, where it took the montage
   for one without positions (:gh:`1569` by `Hamza Abdelhedi`_).
 - When loading a backbone-only checkpoint, :class:`braindecode.models.GeoNIRS`
-  reports that its classifier was initialized locally.
+  reports that its classifier was initialized locally (:gh:`1626`).
 - :class:`braindecode.models.LUNA` gives the phase of the DC bin, and of the
   Nyquist bin of an even ``patch_size``, as ``0`` or ``pi`` on every device.
   CUDA and MPS FFTs leave rounding noise of either sign in the imaginary part of
