@@ -995,10 +995,11 @@ which methods are trustworthy on your data. See the :ref:`interpretability tutor
 Time-domain attribution
 =======================
 
-Per-trial attribution maps in the input domain. Each function takes ``(model, x,
-target)`` and returns a tensor with the same spatial shape as ``x``; all are thin
-wrappers around `captum <https://captum.ai/>`_ (a soft dependency installed via ``pip
-install braindecode[viz]``) and raise :class:`ImportError` without it.
+These `Captum <https://captum.ai/>`_ wrappers compute one attribution map per trial.
+Install the optional dependency with ``pip install braindecode[viz]``. Input-space
+methods return a tensor with the spatial shape of ``x``. :func:`layer_grad_cam` follows
+the spatial axes of its selected layer and returns a temporal map for a one-dimensional
+convolution.
 
 .. autosummary::
     :toctree: generated/

@@ -70,18 +70,30 @@ def integrated_gradients(model, x, target, baseline=None, steps=50):
 
 
 def layer_grad_cam(model, x, target, layer):
-    """Layer GradCAM via captum: class-discriminative localization at ``layer``.
+    """Compute a class activation map at a convolutional layer with Captum.
 
-    Captum's :class:`captum.attr.LayerGradCam` returns the cam at the
-    layer's spatial dims; we then bilinear-resample to the input's last
-    two dimensions via :meth:`captum.attr.LayerAttribution.interpolate`.
+    A temporal layer returns one map per trial with shape
+    ``(batch, n_times)``. A two-dimensional layer returns
+    ``(batch, n_chans, n_times)``, interpreting its two spatial axes in
+    channel, time order. The map is linearly or bilinearly interpolated to
+    the input resolution. Its localization is limited by the spatial
+    resolution of the selected layer.
     """
     _require_captum()
     from captum.attr import LayerAttribution, LayerGradCam
 
     x_leaf = x.detach().clone().requires_grad_(True)
     cam = LayerGradCam(model, layer).attribute(x_leaf, target=target)
-    cam = LayerAttribution.interpolate(cam, x.shape[-2:], interpolate_mode="bilinear")
+    if cam.ndim == 3:
+        size, mode = x.shape[-1:], "linear"
+    elif cam.ndim == 4:
+        size, mode = x.shape[-2:], "bilinear"
+    else:
+        raise ValueError(
+            f"Grad-CAM needs a layer with one or two spatial dimensions, "
+            f"got an activation map of shape {tuple(cam.shape)}."
+        )
+    cam = LayerAttribution.interpolate(cam, size, interpolate_mode=mode)
     return cam.squeeze(1).detach()
 
 
