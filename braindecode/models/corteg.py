@@ -316,18 +316,38 @@ class CORTEG(EEGModuleMixin, nn.Module):
         for module in (self.patch_embed, self.encoder, self.norm, self.final_layer):
             module.apply(_init_weights)
         nn.init.normal_(self.cls_token, std=0.02)
-        with torch.no_grad():
-            lo, hi = self.patch_embed.proj, self.patch_embed_hi.proj
-            assert lo is not None and hi is not None
-            size = self.patch_embed_hi.patch_size
-            hi.weight.copy_(F.interpolate(lo.weight[None], size=size, mode="linear")[0])
-            hi.bias.copy_(lo.bias)
+        self._init_high_gamma_from_low()
         prior = None
         if self.default_pos is not None:
             prior = _knn_log_prior(self.default_pos, self.vocab_positions, self.knn_k)
         self.channel_adapter.init_parameters(prior)
         if self.layerwise_gate is not None:
             self.layerwise_gate.init_parameters()
+
+    @torch.no_grad()
+    def _init_high_gamma_from_low(self):
+        lo, hi = self.patch_embed.proj, self.patch_embed_hi.proj
+        assert lo is not None and hi is not None
+        hi.weight.copy_(
+            F.interpolate(
+                lo.weight[None], size=self.patch_embed_hi.patch_size, mode="linear"
+            )[0]
+        )
+        hi.bias.copy_(lo.bias)
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Warm-start the high-gamma stream when loading a bare ST-EEGFormer."""
+        result = super().load_state_dict(state_dict, *args, **kwargs)
+        if (
+            "patch_embed.proj.weight" in state_dict
+            and "patch_embed.proj.bias" in state_dict
+            and not any(
+                k.startswith(("patch_embed_hi.", "channel_adapter."))
+                for k in state_dict
+            )
+        ):
+            self._init_high_gamma_from_low()
+        return result
 
     def reset_head(self, n_outputs):
         """Replace the linear head for a new ``n_outputs``."""
