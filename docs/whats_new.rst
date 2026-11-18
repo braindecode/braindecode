@@ -157,7 +157,7 @@ Bug fixes
 - :class:`braindecode.models.BIOT` looks up all its channel tokens in one embedding call with a
   1-D index, instead of one call per channel with a 0-d index. Outputs and gradients are
   bitwise the same on CPU. On Intel Gaudi, whose embedding backward sends a 0-d index's
-  gradient to row 0, only the first channel token trained before (:gh:`NNNN` by
+  gradient to row 0, only the first channel token trained before (:gh:`1585` by
   `Bruno Aristimunha`_).
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
