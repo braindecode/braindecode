@@ -36,7 +36,7 @@ Enhancements
   foundation model with a Fourier embedding of the 10-05 position and chromophore and
   a QK-norm rotary transformer; ``load_state_dict`` takes ``mtrenirs_10s.pt`` as
   released, and the docstring gives the 0.01-0.5 Hz band-pass its weights expect
-  (:gh:`MTRENIRS_PR` by `Bruno Aristimunha`_).
+  (:gh:`1590` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
   transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
