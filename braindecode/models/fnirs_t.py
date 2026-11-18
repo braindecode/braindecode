@@ -221,10 +221,9 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
     .. footbibliography::
     """
 
-    _with_preprocessing = False  # FNIRSPreT prepends the preprocessing module
-
     def __init__(
         self,
+        # Braindecode parameters
         n_outputs: int | None = None,
         n_chans: int | None = None,
         chs_info: list[dict] | None = None,
@@ -232,6 +231,7 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         input_window_seconds: float | None = None,
         sfreq: float | None = None,
         *,
+        # Model-specific parameters
         embed_dim: int = 64,
         depth: int = 6,
         num_heads: int = 8,
@@ -256,95 +256,134 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        # Parameters
+        self.pool = pool
+        # H in the authors' figure: fNIRS channels, each an HbO/HbR pair of rows
+        n_pairs = self.n_chans // 2
+        # W_S = W_C: positions of the temporal kernel along the window; they
+        # become features of a token, not tokens
+        n_bins = (self.n_times - temporal_kernel_size) // temporal_stride + 1
+        # H_S: groups of ``spatial_kernel_size`` consecutive channels
+        n_groups = n_pairs - spatial_kernel_size + 1
+
+        # Checkers
+        # The temporal kernel needs at least one position in the window
         if self.n_times < temporal_kernel_size:
             raise ValueError(
-                f"n_times ({self.n_times}) must be >= temporal_kernel_size."
+                f"n_times ({self.n_times}) must be >= temporal_kernel_size "
+                f"({temporal_kernel_size})."
             )
-        if self.n_chans % 2:  # the authors' input is [B, 2, pairs, samples]
+        # The authors' input is [B, 2, channels, samples]: an odd number of
+        # rows cannot be split into the HbO and the HbR plane
+        if self.n_chans % 2:
             raise ValueError(
                 f"{type(self).__name__} needs HbO/HbR pairs: n_chans must be even, "
                 f"got {self.n_chans}."
             )
         if pool not in ("cls", "mean"):
             raise ValueError(f"pool must be 'cls' or 'mean', got {pool!r}.")
+        # HbO/HbR layout of the rows (the helper refuses a montage that is
+        # not paired HbO/HbR)
         order = fnirs_channel_order(self._chs_info, channel_order)
-        channel_axes = "(chans chrom)" if order == "interleaved" else "(chrom chans)"
-        self.to_chromophore_planes = Rearrange(
-            f"batch {channel_axes} time -> batch chrom chans time", chrom=2
-        )
-        n_pairs = self.n_chans // 2
-        if spatial_kernel_size > n_pairs:  # the authors' Conv_S fails too
+        # Conv_S needs at least one group of channels (the authors' fails too)
+        if spatial_kernel_size > n_pairs:
             raise ValueError(
                 f"spatial_kernel_size ({spatial_kernel_size}) must be at most the "
                 f"number of HbO/HbR pairs ({n_pairs})."
             )
-        self.pool = pool
-        self._class_name = type(self).__name__  # named errors in a scripted forward
-        n_bins = (self.n_times - temporal_kernel_size) // temporal_stride + 1
-        self.pre = (
-            _PreprocessingModule(self.n_times) if self._with_preprocessing else None
+
+        # Layers
+        # Following the nomenclature of the authors' figure (fig/model.png)
+        # Input: the rows are split into the HbO and the HbR plane, the
+        # H x W x C input of the figure with the chromophores first
+        channel_axes = "(chans chrom)" if order == "interleaved" else "(chrom chans)"
+        self.to_chromophore_planes = Rearrange(
+            f"batch {channel_axes} time -> batch chrom chans time", chrom=2
         )
 
-        def branch() -> nn.Sequential:
-            return nn.Sequential(
-                *[
-                    PreNormTransformerBlock(
-                        embed_dim,
-                        MultiHeadAttention(
-                            embed_dim, num_heads, head_dim=head_dim, qkv_bias=False
-                        ),
-                        FeedForwardBlock(
-                            embed_dim, 1, drop_prob, activation, hidden_features=mlp_dim
-                        ),
-                        drop_prob,
-                    )
-                    for _ in range(depth)
-                ]
-            )
+        # fNIRS-T takes filtered, baseline-corrected segments as they are;
+        # FNIRSPreT puts its Preprocessing Module here
+        self.pre = nn.Identity()
 
+        # Spatial level
+        # fNIRS Spatial Embedding: Conv_S over k_s consecutive channels and
+        # k_t samples; the responses of a group are flattened, projected to
+        # the embedding size and layer-normalized: one token per group
         self.to_patch_embedding = nn.Sequential(
             nn.Conv2d(
-                2,
-                n_conv_filters,
-                (spatial_kernel_size, temporal_kernel_size),
-                (1, temporal_stride),
+                in_channels=2,
+                out_channels=n_conv_filters,
+                kernel_size=(spatial_kernel_size, temporal_kernel_size),
+                stride=(1, temporal_stride),
             ),
             Rearrange("batch maps tokens bins -> batch tokens (maps bins)"),
             nn.Linear(n_bins * n_conv_filters, embed_dim),
             nn.LayerNorm(embed_dim),
         )
+        # Learned class token and positional embedding, one row per token
+        # (class token and H_S groups); the row is the token's only identity
         self.cls_token_patch = nn.Parameter(torch.empty(1, 1, embed_dim))
         self.pos_embedding_patch = nn.Parameter(
-            torch.empty(1, n_pairs - spatial_kernel_size + 2, embed_dim)
+            torch.empty(1, n_groups + 1, embed_dim)
         )
         self.dropout_patch = nn.Dropout(embed_drop_prob)
-        self.transformer_patch = branch()
+        # Transformer Encoder: ``depth`` pre-norm blocks of bias-free
+        # multi-head self-attention and a feed-forward layer of width mlp_dim
+        self.transformer_patch = _TransformerEncoder(
+            embed_dim=embed_dim,
+            depth=depth,
+            num_heads=num_heads,
+            head_dim=head_dim,
+            mlp_dim=mlp_dim,
+            drop_prob=drop_prob,
+            activation=activation,
+        )
 
+        # Channel level
+        # fNIRS Channel Embedding: Conv_C, the same with a 1 x k_t kernel:
+        # one token per fNIRS channel
         self.to_channel_embedding = nn.Sequential(
             nn.Conv2d(
-                2,
-                n_conv_filters,
-                (1, temporal_kernel_size),
-                (1, temporal_stride),
+                in_channels=2,
+                out_channels=n_conv_filters,
+                kernel_size=(1, temporal_kernel_size),
+                stride=(1, temporal_stride),
             ),
             Rearrange("batch maps tokens bins -> batch tokens (maps bins)"),
             nn.Linear(n_bins * n_conv_filters, embed_dim),
             nn.LayerNorm(embed_dim),
         )
+        # Class token and positional embedding (class token and H channels)
         self.cls_token_channel = nn.Parameter(torch.empty(1, 1, embed_dim))
         self.pos_embedding_channel = nn.Parameter(
             torch.empty(1, n_pairs + 1, embed_dim)
         )
         self.dropout_channel = nn.Dropout(embed_drop_prob)
-        self.transformer_channel = branch()
+        # Transformer Encoder of the channel level, same layout as above
+        self.transformer_channel = _TransformerEncoder(
+            embed_dim=embed_dim,
+            depth=depth,
+            num_heads=num_heads,
+            head_dim=head_dim,
+            mlp_dim=mlp_dim,
+            drop_prob=drop_prob,
+            activation=activation,
+        )
 
+        # Head (the authors' mlp_head): the two levels are concatenated
+        # ("Concat"), layer-normalized and classified
+        # Mean over the tokens of a level, the pool="mean" alternative to its
+        # class token
         self.token_mean = Reduce("batch tokens embed_dim -> batch embed_dim", "mean")
         self.final_norm = nn.LayerNorm(embed_dim * 2)
         self.final_layer = nn.Linear(embed_dim * 2, self.n_outputs)
+
         self._init_parameters()
 
     def _init_parameters(self) -> None:
-        # Drawn after the layers, so reset_parameters() repeats the constructor.
+        # Class tokens and positional tables are drawn from N(0, 1), after the
+        # layers, so that reset_parameters() repeats the constructor.
         with torch.no_grad():
             self.cls_token_patch.normal_()
             self.pos_embedding_patch.normal_()
@@ -362,53 +401,118 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         ch_mask: torch.Tensor | None = None,
         mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
-        """``x``: ``(batch, n_chans, n_times)``. ``mask`` (bool, same shape):
-        True samples are zeroed first. ``ch_mask`` is refused: the spatial
-        kernel and positional tables span every channel. ``return_features``
-        gives the normalized pooled ``"features"`` and, as ``"cls_token"``, the
-        two branches' class tokens ``(batch, 2 * embed_dim)``."""
+        """Forward pass of the fNIRS-T (and fNIRS-PreT) model.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor with shape ``(batch_size, n_chans, n_times)``.
+        return_features : bool, default=False
+            If True, return the normalized pooled features and the class
+            tokens of the two levels.
+        ch_mask : torch.Tensor or None
+            Not supported: the spatial kernel and the positional tables span
+            every channel.
+        mask : torch.Tensor or None
+            Boolean tensor with the shape of ``x``; True samples are set to
+            zero before the model reads them.
+
+        Returns
+        -------
+        torch.Tensor or dict
+            Logits with shape ``(batch_size, n_outputs)``, or with
+            ``return_features=True`` the dict ``{"features", "cls_token"}``,
+            both of shape ``(batch_size, 2 * embed_dim)``.
+        """
+        # A token is identified only by its row of the positional table, and
+        # Conv_S groups neighbouring channels: a subset of them is another
+        # layout
         if ch_mask is not None:
             raise ValueError(
-                self._class_name + " does not accept ch_mask (fixed channel layout)."
+                "ch_mask is not supported: the spatial kernel and the positional "
+                "tables span every channel."
             )
+
+        # Below, H = n_chans // 2 fNIRS channels, W = n_times, D = embed_dim,
+        # H_S = H - spatial_kernel_size + 1 groups of channels
+
+        # Hidden samples are set to zero (an addition of the port)
+        # (batch, 2 H, W)
         if mask is not None:
-            x = x.masked_fill(mask, 0.0)  # (batch, n_chans, n_times)
-        # (batch, n_chans, n_times) -> (batch, 2, n_pairs, n_times)
+            x = x.masked_fill(mask, 0.0)
+
+        # Input: the rows are split into the HbO and the HbR plane
+        # (batch, 2 H, W) -> (batch, 2, H, W)
         x = self.to_chromophore_planes(x)
-        if self.pre is not None:
-            x = self.pre(x)  # (batch, 2, n_pairs, n_times)
+        # Preprocessing Module of fNIRS-PreT (identity in fNIRS-T, whose
+        # segments are already filtered and baseline-corrected)
+        # (batch, 2, H, W)
+        x = self.pre(x)
         batch_size = x.shape[0]
-        # spatial level, n_groups = n_pairs - spatial_kernel_size + 1 tokens
-        patch = self.to_patch_embedding(x)  # (batch, n_groups, embed_dim)
-        # (1, 1, embed_dim) -> (batch, 1, embed_dim)
+
+        # Spatial level. fNIRS Spatial Embedding: Conv_S, flatten, linear
+        # projection, LayerNorm; one token per group of consecutive channels
+        # (batch, 2, H, W) -> (batch, H_S, D)
+        patch = self.to_patch_embedding(x)
+        # Class token of the level, one copy per sample
+        # (1, 1, D) -> (batch, 1, D)
         cls_patch = self.cls_token_patch.expand(batch_size, -1, -1)
-        # -> (batch, n_groups + 1, embed_dim)
+        # (batch, H_S, D) -> (batch, H_S + 1, D)
         patch = torch.cat((cls_patch, patch), dim=1)
-        patch = patch + self.pos_embedding_patch  # (batch, n_groups + 1, embed_dim)
-        patch = self.dropout_patch(patch)  # (batch, n_groups + 1, embed_dim)
-        patch = self.transformer_patch(patch)  # (batch, n_groups + 1, embed_dim)
-        # channel level, n_tokens = n_pairs + 1
-        channel = self.to_channel_embedding(x)  # (batch, n_pairs, embed_dim)
+        # Learned positional embedding, which tells the groups apart; shape
+        # unchanged
+        patch = patch + self.pos_embedding_patch
+        patch = self.dropout_patch(patch)
+        # Transformer Encoder: the groups attend to each other
+        # (batch, H_S + 1, D)
+        patch = self.transformer_patch(patch)
+
+        # Channel level. fNIRS Channel Embedding: Conv_C, flatten, linear
+        # projection, LayerNorm; one token per fNIRS channel
+        # (batch, 2, H, W) -> (batch, H, D)
+        channel = self.to_channel_embedding(x)
+        # Class token of the level, one copy per sample
+        # (1, 1, D) -> (batch, 1, D)
         cls_channel = self.cls_token_channel.expand(batch_size, -1, -1)
-        # -> (batch, n_tokens, embed_dim)
+        # (batch, H, D) -> (batch, H + 1, D)
         channel = torch.cat((cls_channel, channel), dim=1)
-        channel = channel + self.pos_embedding_channel  # (batch, n_tokens, embed_dim)
-        channel = self.dropout_channel(channel)  # (batch, n_tokens, embed_dim)
-        channel = self.transformer_channel(channel)  # (batch, n_tokens, embed_dim)
-        patch_token = patch[:, 0]  # (batch, embed_dim)
-        channel_token = channel[:, 0]  # (batch, embed_dim)
-        # -> (batch, 2 * embed_dim)
+        # Learned positional embedding, which tells the channels apart; shape
+        # unchanged
+        channel = channel + self.pos_embedding_channel
+        channel = self.dropout_channel(channel)
+        # Transformer Encoder: the channels attend to each other
+        # (batch, H + 1, D)
+        channel = self.transformer_channel(channel)
+
+        # Class token of each level, the summary of its tokens
+        # (batch, D)
+        patch_token = patch[:, 0]
+        channel_token = channel[:, 0]
+        # "Concat" of the two levels
+        # 2 x (batch, D) -> (batch, 2 D)
         cls_tokens = torch.cat((patch_token, channel_token), dim=1)
+
         if self.pool == "mean":
-            patch = self.token_mean(patch)  # (batch, embed_dim)
-            channel = self.token_mean(channel)  # (batch, embed_dim)
-            features = torch.cat((patch, channel), dim=1)  # (batch, 2 * embed_dim)
+            # Alternative pooling: the mean of the tokens of each level
+            # (batch, tokens, D) -> (batch, D)
+            patch = self.token_mean(patch)
+            channel = self.token_mean(channel)
+            # 2 x (batch, D) -> (batch, 2 D)
+            features = torch.cat((patch, channel), dim=1)
         else:
             features = cls_tokens
-        features = self.final_norm(features)  # (batch, 2 * embed_dim)
+
+        # Head (the authors' mlp_head): LayerNorm of the concatenation
+        # (batch, 2 D)
+        features = self.final_norm(features)
+
         if return_features:
             return {"features": features, "cls_token": cls_tokens}
-        return self.final_layer(features)  # (batch, n_outputs)
+
+        # Linear classifier; the output is logits
+        # (batch, 2 D) -> (batch, n_outputs)
+        x = self.final_layer(features)
+        return x
 
 
 class FNIRSPreT(FNIRST, license="mit"):  # the kwarg is not inherited
@@ -520,12 +624,12 @@ class FNIRSPreT(FNIRST, license="mit"):  # the kwarg is not inherited
     .. footbibliography::
     """
 
-    _with_preprocessing = True
-
-    # Its own __init__: with docstring inheritance on (docs/conf.py), a subclass
-    # sharing FNIRST.__init__ is given FNIRST's docstring.
+    # The signature repeats FNIRST's, so that both models list the same
+    # parameters; with docstring inheritance on (docs/conf.py), a subclass
+    # sharing FNIRST.__init__ would also be given FNIRST's docstring.
     def __init__(
         self,
+        # Braindecode parameters
         n_outputs: int | None = None,
         n_chans: int | None = None,
         chs_info: list[dict] | None = None,
@@ -533,6 +637,7 @@ class FNIRSPreT(FNIRST, license="mit"):  # the kwarg is not inherited
         input_window_seconds: float | None = None,
         sfreq: float | None = None,
         *,
+        # Model-specific parameters
         embed_dim: int = 64,
         depth: int = 6,
         num_heads: int = 8,
@@ -571,26 +676,107 @@ class FNIRSPreT(FNIRST, license="mit"):  # the kwarg is not inherited
             activation=activation,
         )
 
+        # Layers
+        # Preprocessing Module: learned in place of the band-pass filter and
+        # baseline correction that fNIRS-T expects; it takes the place of the
+        # identity between the chromophore planes and the two embeddings
+        self.pre = _PreprocessingModule(n_times=self.n_times)
+
+
+class _TransformerEncoder(nn.Sequential):
+    """Transformer Encoder of one level (the authors' ``Transformer``).
+
+    ``depth`` pre-norm blocks, each a multi-head self-attention with bias-free
+    query, key and value maps and a feed-forward layer, both with a residual
+    connection.
+
+    Parameters
+    ----------
+    embed_dim : int
+        Size of the tokens.
+    depth : int
+        Number of blocks.
+    num_heads : int
+        Number of attention heads.
+    head_dim : int
+        Width of each attention head.
+    mlp_dim : int
+        Hidden width of the feed-forward layer.
+    drop_prob : float
+        Dropout probability inside the blocks.
+    activation : type[nn.Module]
+        Activation of the feed-forward layer.
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        depth: int,
+        num_heads: int,
+        head_dim: int,
+        mlp_dim: int,
+        drop_prob: float,
+        activation: type[nn.Module],
+    ) -> None:
+        super().__init__(
+            *[
+                PreNormTransformerBlock(
+                    embed_dim,
+                    # Self-attention: the tokens (channels or groups of
+                    # channels) attend to each other
+                    MultiHeadAttention(
+                        embed_dim, num_heads, head_dim=head_dim, qkv_bias=False
+                    ),
+                    # Feed-forward layer of hidden width mlp_dim
+                    FeedForwardBlock(
+                        embed_dim, 1, drop_prob, activation, hidden_features=mlp_dim
+                    ),
+                    drop_prob,
+                )
+                for _ in range(depth)
+            ]
+        )
+
 
 class _PreprocessingModule(nn.Module):
-    """The authors' preprocessing module: moving averages, then a LayerNorm
-    over time for HbO (``norms.0``) and one for HbR (``norms.1``)."""
+    """Preprocessing Module of fNIRS-PreT (the authors' ``PreBlock``).
+
+    Three moving averages in cascade, then a LayerNorm over time for HbO
+    (``norms.0``) and one for HbR (``norms.1``).
+
+    Parameters
+    ----------
+    n_times : int
+        Number of samples of the window, the size of the LayerNorms.
+    """
 
     def __init__(self, n_times: int) -> None:
         super().__init__()
-        self.average_pooling = nn.Sequential(  # "same" padding
-            nn.AvgPool1d(5, stride=1, padding=2),
-            nn.AvgPool1d(13, stride=1, padding=6),
-            nn.AvgPool1d(7, stride=1, padding=3),
+        # Moving averages of 5, 13 and 7 samples (the authors' values), a
+        # low-pass smoothing; the padding keeps the number of samples
+        self.average_pooling = nn.Sequential(
+            nn.AvgPool1d(kernel_size=5, stride=1, padding=2),
+            nn.AvgPool1d(kernel_size=13, stride=1, padding=6),
+            nn.AvgPool1d(kernel_size=7, stride=1, padding=3),
         )
+        # One normalization over time per chromophore, with its own scale
+        # and offset per sample
         self.norms = nn.ModuleList([nn.LayerNorm(n_times) for _ in range(2)])
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Smoothed and normalized planes, ``(batch, 2, n_pairs, n_times)``
+        like ``x``."""
         planes = []
+        # HbO (plane 0) and HbR (plane 1) are processed separately
         for chromophore, norm in enumerate(self.norms):
-            plane = x[:, chromophore]  # (batch, n_pairs, n_times)
-            plane = self.average_pooling(plane)  # (batch, n_pairs, n_times)
-            plane = norm(plane)  # (batch, n_pairs, n_times)
+            # (batch, 2, n_pairs, n_times) -> (batch, n_pairs, n_times)
+            plane = x[:, chromophore]
+            # Cascade of moving averages along time; shape unchanged
+            plane = self.average_pooling(plane)
+            # LayerNorm over the samples of each channel; shape unchanged
+            plane = norm(plane)
             planes.append(plane)
-        # (batch, 2, n_pairs, n_times)
-        return torch.stack(planes, dim=1)
+        # The two planes are stacked back
+        # 2 x (batch, n_pairs, n_times) -> (batch, 2, n_pairs, n_times)
+        x = torch.stack(planes, dim=1)
+        return x
