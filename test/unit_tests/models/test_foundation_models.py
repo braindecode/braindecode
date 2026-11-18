@@ -1717,9 +1717,9 @@ def test_sleepfm_masked_input_is_ignored(cls, masked, training):
     x = torch.randn(2, 3, 1280)
     corrupted = x.clone()
     if masked == "channel":
-        mask = torch.tensor([[False, False, True], [False, True, False]])
-        corrupted[mask] = 1e3
-        kwargs = {"channel_mask": mask}
+        missing = torch.tensor([[False, False, True], [False, True, False]])
+        corrupted[missing] = 1e3
+        kwargs = {"ch_mask": ~missing}
     else:
         mask = torch.zeros(2, 20, dtype=torch.bool)
         mask[1, 12:] = True  # ends inside a chunk
@@ -1731,6 +1731,22 @@ def test_sleepfm_masked_input_is_ignored(cls, masked, training):
         stats = [v for k, v in net.state_dict().items() if "running" in k]
         runs.append((net(signal, **kwargs), stats))
     torch.testing.assert_close(runs[0], runs[1])
+
+
+@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
+def test_sleepfm_deprecated_channel_mask_is_the_inverse_of_ch_mask(cls):
+    """``channel_mask`` (True for missing) warns and equals ``ch_mask=~channel_mask``
+    (True for real, as every model); both at once raise."""
+    model = _small(cls).eval()
+    x = torch.randn(2, 3, 1280)
+    missing = torch.tensor([[False, False, True], [False, True, False]])
+    with torch.no_grad():
+        expected = model(x, ch_mask=~missing)
+        with pytest.warns(DeprecationWarning, match="ch_mask"):
+            torch.testing.assert_close(model(x, missing), expected)
+        assert not torch.allclose(model(x, ch_mask=missing), expected)
+        with pytest.raises(ValueError, match="not both"):
+            model(x, missing, ch_mask=~missing)
 
 
 @pytest.mark.parametrize("n_valid", [16, 12], ids=["chunk_aligned", "inside_chunk"])
@@ -1745,7 +1761,7 @@ def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
     }
     stager.load_state_dict(shared, strict=False)
     x = torch.randn(2, 3, 1280)
-    channel_mask = torch.tensor([[False, True, False], [False, False, False]])
+    missing = torch.tensor([[False, True, False], [False, False, False]])
     temporal_mask = torch.zeros(2, 20, dtype=torch.bool)
     temporal_mask[1, n_valid:] = True
 
@@ -1756,7 +1772,7 @@ def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
                 end = min(start + 8, stop)
                 signal = x[i : i + 1, chans, start * 64 : end * 64]
                 out[i, start:end] = encoder.encode(
-                    signal, channel_mask[i : i + 1, chans]
+                    signal, ch_mask=~missing[i : i + 1, chans]
                 )[1][0]
         return out
 
@@ -1767,7 +1783,7 @@ def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
         modality_mask = torch.tensor([[False, False, True, True]] * 2)
         features = stager.staging_head(embeddings, modality_mask, temporal_mask)
         expected = stager.final_layer(features).transpose(1, 2)
-        output = stager(x, channel_mask, temporal_mask=temporal_mask)
+        output = stager(x, ch_mask=~missing, temporal_mask=temporal_mask)
         permuted = _small(SleepFMStager, channel_modalities=["B", "A", "A"]).eval()
         permuted.load_state_dict(stager.state_dict())
         torch.testing.assert_close(permuted(x[:, [2, 0, 1]]), stager(x))

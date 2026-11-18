@@ -15,7 +15,11 @@ from typing import Dict, List, Optional
 import torch
 from torch import nn
 
-from braindecode.functional import patch_count, sinusoidal_positional_encoding
+from braindecode.functional import (
+    check_ch_mask,
+    patch_count,
+    sinusoidal_positional_encoding,
+)
 from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import (
     _RECORD_LOADED_KEYS,
@@ -86,8 +90,9 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     The encoder was checked through :class:`SleepFMStager` only (SHHS sleep
     staging, see there); its pretraining was not reproduced.
 
-    ``channel_mask`` (``(batch, n_chans)``, ``True`` for missing channels)
-    keeps masked channels out of every output, and out of the tokenizer's
+    ``ch_mask`` (``(batch, n_chans)``, ``True`` for real channels, as in
+    every model and :func:`~braindecode.datasets.pad_channels_collate`)
+    keeps the other channels out of every output, and out of the tokenizer's
     batch normalization in training. The official pretraining code normalizes
     zero-padded channels with the real ones; both agree when no channel is
     masked, and always in eval mode.
@@ -193,6 +198,7 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         self,
         x: torch.Tensor,
         channel_mask: torch.Tensor | None = None,
+        ch_mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         r"""Return the pooled and the per-patch representations.
 
@@ -212,7 +218,11 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         x : torch.Tensor
             Input of shape ``(batch, n_chans, n_times)``.
         channel_mask : torch.Tensor | None
-            ``(batch, n_chans)`` mask, ``True`` for missing channels.
+            Deprecated: ``(batch, n_chans)`` mask, ``True`` for missing
+            channels. Use ``ch_mask``.
+        ch_mask : torch.Tensor | None
+            ``(batch, n_chans)`` mask, ``True`` for real channels, see
+            :func:`~braindecode.functional.check_ch_mask`.
 
         Returns
         -------
@@ -221,7 +231,7 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         contextual_tokens : torch.Tensor
             :math:`h`, shape ``(batch, n_patches, embed_dim)``.
         """
-        mask = _check_mask(channel_mask, x.shape[:2], x, "channel_mask")
+        mask = _missing_channels(ch_mask, channel_mask, x)
         patch_mask: Optional[torch.Tensor] = None
         if mask is None:
             mask = torch.zeros(x.shape[:2], dtype=torch.bool, device=x.device)
@@ -242,9 +252,14 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         x: torch.Tensor,
         channel_mask: torch.Tensor | None = None,
         return_features: bool = False,
+        ch_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
-        """Return trial logits, or the pooled features."""
-        pooled, _ = self.encode(x, channel_mask)
+        """Return trial logits, or the pooled features.
+
+        ``ch_mask`` (``True`` for real channels) is as in :meth:`encode`;
+        ``channel_mask`` (``True`` for missing channels) is deprecated.
+        """
+        pooled, _ = self.encode(x, channel_mask, ch_mask)
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": pooled,
@@ -345,8 +360,8 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     padded patches at the end of shorter recordings. As in the release they
     enter the head as zero embeddings masked out of its Transformer, but the
     LSTM still runs over them, so valid predictions depend on the amount of
-    padding (never on its content). ``channel_mask`` works as in
-    :class:`SleepFM`; a modality without a valid channel is masked.
+    padding (never on its content). ``ch_mask`` (``True`` for real channels)
+    works as in :class:`SleepFM`; a modality without a real channel is masked.
 
     .. important::
        **Pre-trained Weights Available**
@@ -553,14 +568,20 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         channel_mask: torch.Tensor | None = None,
         return_features: bool = False,
         temporal_mask: torch.Tensor | None = None,
+        ch_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
-        """Return patch-wise logits, or the per-patch LSTM features."""
+        """Return patch-wise logits, or the per-patch LSTM features.
+
+        ``ch_mask`` (``True`` for real channels) is as in :class:`SleepFM`;
+        ``channel_mask`` (``True`` for missing channels) is deprecated.
+        ``temporal_mask`` keeps ``True`` for padded patches.
+        """
         # The count the tokenizer produces (padded patch included with "pad").
         n_patches = self.patch_embedding.patchify.n_patches(x.shape[-1])
         patch_mask = _check_mask(
             temporal_mask, [x.shape[0], n_patches], x, "temporal_mask"
         )
-        mask = _check_mask(channel_mask, x.shape[:2], x, "channel_mask")
+        mask = _missing_channels(ch_mask, channel_mask, x)
         mask_tokens = mask is not None or patch_mask is not None
         if mask is None:
             mask = torch.zeros(x.shape[:2], dtype=torch.bool, device=x.device)
@@ -755,7 +776,11 @@ class _SleepFMAttentionPooling(nn.Module):
         else:
             output = self.transformer_layer(x, src_key_padding_mask=key_padding_mask)
             valid = (~key_padding_mask).unsqueeze(-1).to(output.dtype)
-            output = (output * valid).sum(dim=1) / valid.sum(dim=1)
+            n_valid = valid.sum(dim=1)
+            output = (output * valid).sum(dim=1) / n_valid
+            # A set padded to one real item is that item, as the singleton
+            # above: the padding does not change a sample's output.
+            output = torch.where(n_valid == 1, (x * valid).sum(dim=1), output)
         return output.masked_fill(all_masked, 0)
 
 
@@ -801,6 +826,32 @@ class _SleepFMStagingHead(nn.Module):
         )
         features, _ = self.lstm(features)
         return features
+
+
+def _missing_channels(
+    ch_mask: Optional[torch.Tensor],
+    channel_mask: Optional[torch.Tensor],
+    x: torch.Tensor,
+) -> Optional[torch.Tensor]:
+    """The ``(batch, n_chans)`` mask of missing channels the encoders use, from
+    ``ch_mask`` (``True`` for real channels) or the deprecated ``channel_mask``
+    (``True`` for missing channels)."""
+    if ch_mask is not None:
+        if channel_mask is not None:
+            raise ValueError("Pass ch_mask or channel_mask, not both.")
+        real = check_ch_mask(ch_mask, x)
+        if real is None:  # never: refines the Optional for TorchScript
+            return None
+        return ~real
+    if channel_mask is not None and not torch.jit.is_scripting():
+        warnings.warn(
+            "channel_mask (True for missing channels) is deprecated and will be "
+            "removed in a future release; pass ch_mask, True for real channels "
+            "as in every model and pad_channels_collate, e.g. ch_mask=~channel_mask.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+    return _check_mask(channel_mask, x.shape[:2], x, "channel_mask")
 
 
 def _check_mask(
