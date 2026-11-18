@@ -261,7 +261,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         Montage-vocabulary slot of each input channel, shape ``(n_chans,)``.
         If omitted, it is resolved from ``chs_info`` electrode names, then
         from electrode positions for names outside the vocabulary (falling
-        back to ``range(n_chans)``).
+        back to ``range(n_chans)``). Saved models include these resolved slots.
+        Passing a new montage to ``from_pretrained`` resolves its slots afresh.
 
     References
     ----------
@@ -343,8 +344,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         # Priority: explicit ``chan_pos_idx`` wins; otherwise resolve from the
         # electrode names, then positions in ``chs_info``; if neither is usable,
         # fall back to the identity mapping (channel i -> slot i).
-        explicit_chan_pos = chan_pos_idx is not None
-        if explicit_chan_pos:
+        if chan_pos_idx is not None:
             chan_pos_idx = torch.as_tensor(chan_pos_idx, dtype=torch.long)
         else:
             chan_pos_idx = self._chan_pos_idx_from_chs_info()
@@ -360,20 +360,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 f"chan_pos_idx values must be in [0, {n_chans_pos}), got range "
                 f"[{int(chan_pos_idx.min())}, {int(chan_pos_idx.max())}]."
             )
-        # Non-persistent: the channel->vocab-slot selection is montage-specific
-        # and is recomputed from chan_pos_idx at construction, so it must NOT be
-        # baked into a pushed checkpoint (it would clobber or shape-mismatch a
-        # different montage on from_pretrained).
+        # The binding belongs to the saved montage, independently of Hub cache access.
         self.register_buffer("channel_indices", chan_pos_idx, persistent=False)
-        # An EXPLICIT chan_pos_idx must survive the (JSON) config round-trip: the
-        # Hub config layer drops numpy/tensor values, silently reverting to the
-        # identity mapping. Store the resolved slots as a JSON-able list. An
-        # auto-resolved mapping is left untouched (None) so chs_info re-resolves
-        # per montage on reload.
-        if explicit_chan_pos:
-            cfg = getattr(self, "_hub_mixin_config", None)
-            if isinstance(cfg, dict):
-                cfg["chan_pos_idx"] = chan_pos_idx.tolist()
+        self._update_init_kwargs(chan_pos_idx=chan_pos_idx.tolist())
 
         # Patch embedding + positional embeddings + CLS token.
         self.patch_embed = PatchTokenizer(
@@ -430,6 +419,13 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self._update_init_kwargs(n_outputs=n_outputs)
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
         _init_weights(self.final_layer)  # match the constructor's head init
+
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        """Load the saved binding, or resolve the caller's replacement montage."""
+        if kwargs.get("chs_info") is not None or kwargs.get("n_chans") is not None:
+            kwargs.setdefault("chan_pos_idx", None)
+        return super().from_pretrained(*args, **kwargs)
 
     def _chan_pos_idx_from_chs_info(self) -> torch.Tensor:
         """Resolve montage-vocabulary slots from the ``chs_info`` electrode names.

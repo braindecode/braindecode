@@ -2259,6 +2259,68 @@ def test_steegformer_channel_mapping(steeg_vocab, names, explicit, expected, war
     assert model.channel_indices.tolist() == expected
 
 
+@pytest.mark.parametrize("use_mri_frame", [False, True])
+def test_steegformer_saved_channel_slots(
+    steeg_vocab, tmp_path, monkeypatch, use_mri_frame
+):
+    pytest.importorskip("huggingface_hub")
+    from mne.io.constants import FIFF
+
+    info = mne.create_info(["Oz", "Fp1", "Cz"], 128, "eeg")
+    info.set_montage("standard_1020")
+    channels = info["chs"]
+    if use_mri_frame:
+        channels = [
+            dict(ch, ch_name=f"unknown{i}", coord_frame=FIFF.FIFFV_COORD_MRI)
+            for i, ch in enumerate(channels)
+        ]
+    with (
+        pytest.warns(UserWarning, match="identity") if use_mri_frame else nullcontext()
+    ):
+        model = STEEGFormer(
+            chs_info=channels,
+            n_outputs=2,
+            n_times=64,
+            embed_dim=16,
+            num_heads=2,
+            depth=1,
+        )
+    assert model.channel_indices.tolist() == ([0, 1, 2] if use_mri_frame else [3, 0, 2])
+    # The positional table starts at zero. A trained table distinguishes the slots.
+    x = torch.randn(2, 3, 64)
+    loss = F.cross_entropy(model(x), torch.tensor([0, 1]))
+    loss.backward()
+    torch.optim.SGD(model.parameters(), lr=0.1).step()
+    model.eval().save_pretrained(tmp_path)
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert [ch["coord_frame"] for ch in config["chs_info"]] == [
+        ch["coord_frame"] for ch in channels
+    ]
+    with monkeypatch.context() as cold:
+
+        def unavailable():
+            raise OSError("offline with an empty vocabulary cache")
+
+        cold.setattr(steegformer, "_channel_index", unavailable)
+        restored = STEEGFormer.from_pretrained(
+            tmp_path, local_files_only=True, strict=True
+        )
+        torch.testing.assert_close(restored.channel_indices, model.channel_indices)
+        torch.testing.assert_close(restored(x), model(x))
+
+    new_montage = [{"ch_name": "T7"}, {"ch_name": "Fp2"}]
+    restored = STEEGFormer.from_pretrained(tmp_path, chs_info=new_montage, strict=True)
+    assert restored.channel_indices.tolist() == [4, 1]
+    explicit = STEEGFormer.from_pretrained(
+        tmp_path, chs_info=new_montage, chan_pos_idx=[7, 6], strict=True
+    )
+    assert explicit.channel_indices.tolist() == [7, 6]
+    # Older configs resolve the montage on loading.
+    config.pop("chan_pos_idx", None)
+    config["chs_info"] = new_montage
+    assert STEEGFormer.from_config(config).channel_indices.tolist() == [4, 1]
+
+
 @pytest.mark.parametrize(
     "n_chans, fallback, n_chans_pos",
     [
