@@ -259,6 +259,9 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
 
         # Parameters
         self.pool = pool
+        # Name in the errors of forward, as the other fNIRS models do (a scripted
+        # forward cannot read type(self).__name__)
+        self._class_name = type(self).__name__
         # H in the authors' figure: fNIRS channels, each an HbO/HbR pair of rows
         n_pairs = self.n_chans // 2
         # W_S = W_C: positions of the temporal kernel along the window; they
@@ -427,8 +430,8 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         # layout
         if ch_mask is not None:
             raise ValueError(
-                "ch_mask is not supported: the spatial kernel and the positional "
-                "tables span every channel."
+                self._class_name + " does not accept ch_mask: the spatial kernel "
+                "and the positional tables span every channel."
             )
 
         # Below, H = n_chans // 2 fNIRS channels, W = n_times, D = embed_dim,
