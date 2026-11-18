@@ -10,6 +10,7 @@
 
 import copy
 import inspect
+import json
 import logging
 import platform
 import warnings
@@ -27,6 +28,7 @@ from braindecode.datasets.base import (
     WindowsDataset,
 )
 from braindecode.datasets.moabb import fetch_data_with_moabb
+from braindecode.datautil import load_concat_dataset
 from braindecode.preprocessing import (
     create_fixed_length_windows,
     create_windows_from_events,
@@ -2326,32 +2328,67 @@ def test_windows_from_events_dict_stop_offset_uses_own_event_type():
         )
 
 
-def test_fixed_length_windows_mne_epochs_targets_from_channels():
-    """Both paths take the targets from the misc channels and drop them from X."""
-    rng = np.random.RandomState(0)
-    data = rng.randn(3, 1000)
-    data[2] = 7.0
-    info = mne.create_info(["ch0", "ch1", "target"], 100, ["eeg", "eeg", "misc"])
-    concat_ds = BaseConcatDataset([RawDataset(mne.io.RawArray(data, info))])
-    kwargs = dict(
-        concat_ds=concat_ds,
-        window_size_samples=100,
-        window_stride_samples=100,
-        drop_last_window=True,
-        targets_from="channels",
-        last_target_only=False,
+@pytest.mark.parametrize("backend", ["raw", "epochs", "picks"])
+@pytest.mark.parametrize(
+    "targets_from,last_target_only",
+    [("channels", False), ("channels", True), ("metadata", True)],
+)
+def test_fixed_length_windows_channel_targets_round_trip(
+    tmp_path, backend, targets_from, last_target_only
+):
+    data = np.arange(36, dtype=float).reshape(3, 12)
+    info = mne.create_info(["C3", "Cz", "target"], 100, ["eeg", "eeg", "misc"])
+    raw = mne.io.RawArray(data, info, verbose=False)
+    ds = BaseConcatDataset([RawDataset(raw, {"label": 101}, target_name="label")])
+    # Selecting and reordering channels also selects the Epochs backend.
+    options = (
+        {"picks": ["target", "Cz"]}
+        if backend == "picks"
+        else {"use_mne_epochs": backend == "epochs"}
     )
-    windows_eeg = create_fixed_length_windows(**kwargs, use_mne_epochs=False)
-    windows_mne = create_fixed_length_windows(**kwargs, use_mne_epochs=True)
+    windows = create_fixed_length_windows(
+        ds,
+        window_size_samples=4,
+        window_stride_samples=4,
+        on_last_window="drop",
+        targets_from=targets_from,
+        last_target_only=last_target_only,
+        **options,
+    )
+    windows.save(tmp_path)
+    datasets = [windows, load_concat_dataset(tmp_path, preload=False)]
+    if backend == "epochs":
+        # Older Epochs stores recorded the requested mode only in the windower entry.
+        path = tmp_path / "0" / "window_kwargs.json"
+        history = json.loads(path.read_text())
+        path.write_text(
+            json.dumps([entry for entry in history if entry[0] != "WindowsDataset"])
+        )
+        datasets.append(load_concat_dataset(tmp_path, preload=False))
+    for dataset in datasets:
+        for i in range(3):
+            x, y, indices = dataset[i]
+            start, stop = 4 * i, 4 * (i + 1)
+            if targets_from == "channels":
+                expected_x = data[1:2] if backend == "picks" else data[:2]
+                expected_y = (
+                    data[2:, stop - 1] if last_target_only else data[2:, start:stop]
+                )
+            else:
+                expected_x = data[[2, 1]] if backend == "picks" else data
+                expected_y = 101
+            np.testing.assert_array_equal(x, expected_x[:, start:stop])
+            np.testing.assert_array_equal(y, expected_y)
+            assert indices == [i, start, stop]
 
-    assert isinstance(windows_mne.datasets[0], WindowsDataset)
-    assert windows_mne.datasets[0].window_kwargs[-1] == (
-        "WindowsDataset",
-        {"targets_from": "channels", "last_target_only": False},
-    )
-    X_eeg, y_eeg, _ = windows_eeg[0]
-    X_mne, y_mne, _ = windows_mne[0]
-    assert X_mne.shape == X_eeg.shape == (2, 100)
-    assert y_mne.shape == y_eeg.shape == (1, 100)
-    np.testing.assert_allclose(X_mne, X_eeg)
-    np.testing.assert_allclose(y_mne, y_eeg)
+
+def test_fixed_length_window_picks_must_keep_a_target_channel():
+    info = mne.create_info(["Cz", "target"], 100, ["eeg", "misc"])
+    raw = mne.io.RawArray(np.zeros((2, 20)), info, verbose=False)
+    with pytest.raises(ValueError, match="misc"):
+        create_fixed_length_windows(
+            BaseConcatDataset([RawDataset(raw)]),
+            window_size_samples=10,
+            picks="eeg",
+            targets_from="channels",
+        )

@@ -218,8 +218,9 @@ Bug fixes
   :class:`~braindecode.datasets.WindowsDataset` again and records them in
   ``window_kwargs``, so they survive saving and loading. :gh:`515` dropped them:
   with ``targets_from="channels"`` the target channels stayed in ``X`` and ``y``
-  was the dummy metadata target ``-1``. Outputs of ``targets_from="channels"``
-  datasets built on this path change (:gh:`1609` by
+  came from the recording metadata. Loading older fixed-length Epochs stores
+  now restores their recorded target settings. With channel targets,
+  ``picks`` must include at least one ``misc`` channel (:gh:`1609` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - :func:`braindecode.functional.derivation_matrix` now normalizes explicitly

@@ -540,6 +540,12 @@ def create_fixed_length_windows(
     flat: dict | None
         Epoch rejection parameters based on flatness of signals. If None, no
         rejection based on flatness is done. See mne.Epochs.
+    targets_from : {"metadata", "channels"}
+        Read targets from the recording description or from the selected
+        channels of type ``misc``. The latter are removed from the inputs.
+    last_target_only : bool
+        When reading targets from channels, return the last sample of each
+        target channel. If False, return the full target time series.
     lazy_metadata: bool
         If True, metadata is not computed immediately, but only when accessed
         by using the _LazyDataFrame (experimental). Cannot be used together
@@ -1112,6 +1118,12 @@ def _create_fixed_length_windows(
             description=ds.description,
             targets_from=targets_from,
             last_target_only=last_target_only,
+        )
+    if targets_from == "channels" and "misc" not in (
+        mne_epochs if use_mne_epochs else ds.raw
+    ):
+        raise ValueError(
+            "targets_from='channels' requires a misc channel in the selected channels."
         )
     window_kwargs.append(
         (
