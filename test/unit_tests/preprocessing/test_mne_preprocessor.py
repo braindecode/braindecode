@@ -947,19 +947,26 @@ def test_annotate_amplitude_applies_annotations_and_bads():
     assert len(result.annotations) > 0
 
 
-def test_annotate_nan_applies_annotations():
-    """AnnotateNan wrapper adds NaN annotations to the recording."""
-    ch_names = ["Fp1", "Fp2"]
-    info = mne.create_info(ch_names, sfreq=200.0, ch_types="eeg")
-    data = np.zeros((len(ch_names), 400))
-    data[0, 50:60] = np.nan
-    raw = mne.io.RawArray(data, info, verbose=False)
+@pytest.mark.parametrize("first_samp", [0, 20])
+@pytest.mark.parametrize("meas_date", [None, datetime(2020, 1, 1, tzinfo=timezone.utc)])
+def test_annotate_nan_preserves_event_samples(first_samp, meas_date):
+    info = mne.create_info(["C3"], 10.0, "eeg")
+    data = np.arange(100, dtype=float)[None, :]
+    data[0, 40:43] = np.nan
+    raw = mne.io.RawArray(data, info, first_samp=first_samp, verbose=False)
+    raw.set_meas_date(meas_date)
+    raw.set_annotations(mne.Annotations([0.5], [0.5], ["cue"]))
+    dataset = BaseConcatDataset([RawDataset(raw, description={"subject": 1})])
 
-    prep = AnnotateNan()
-    result = prep.apply(raw)
-
-    assert isinstance(result, mne.io.BaseRaw)
-    assert len(result.annotations) > 0
+    preprocess(dataset, [AnnotateNan()])
+    out = dataset.datasets[0].raw
+    events, _ = mne.events_from_annotations(out, event_id={"cue": 1, "BAD_NAN": 2}, regexp=None)
+    np.testing.assert_array_equal(events, [[first_samp + 5, 0, 1], [first_samp + 40, 0, 2]])
+    assert out.annotations.ch_names.tolist() == [(), ("C3",)]
+    windows = create_windows_from_events(dataset, mapping={"cue": 0}, use_mne_epochs=True)
+    signal, target, _ = windows[0]
+    np.testing.assert_array_equal(signal, data[:, 5:10])
+    assert target == 0
 
 
 def test_find_bad_channels_lof_extends_bads():

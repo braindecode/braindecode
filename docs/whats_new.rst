@@ -201,6 +201,8 @@ Requirements
 Bug fixes
 ==========
 
+- Annotation preprocessors preserve existing event sample numbers in undated
+  recordings with a nonzero first sample, including after cropping a recording.
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
