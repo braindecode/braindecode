@@ -871,15 +871,14 @@ def _pairwise_rope_kernel(x, cos, sin, position_ids, offset, mode):
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 def test_zuna_hpu_fused_rotary_matches_the_formula(monkeypatch, dtype):
-    """The HPU eager rotary path (fused kernel forward, inverse rotation backward)
-    gives the formula's outputs and gradients; lazy mode keeps the formula."""
+    """The HPU rotary path (fused kernel forward, inverse rotation backward)
+    gives the formula's outputs and gradients."""
     import types
 
     kernels = types.ModuleType("habana_frameworks.torch.hpex.kernels")
     kernels.apply_rotary_pos_emb = _pairwise_rope_kernel
     kernels.RotaryPosEmbeddingMode = types.SimpleNamespace(PAIRWISE="PAIRWISE")
     monkeypatch.setitem(sys.modules, kernels.__name__, kernels)
-    monkeypatch.setattr(zuna_module, "_hpu_lazy", lambda: False)
 
     model = ZUNA(chs_info=_zuna_chs_info(), n_times=256, **_ZUNA_SMALL)
     cos, sin = model.encoder.rotary_cosine, model.encoder.rotary_sine
@@ -897,10 +896,6 @@ def test_zuna_hpu_fused_rotary_matches_the_formula(monkeypatch, dtype):
         torch.autograd.backward(out, [grad_q, grad_k])
         outputs.append(out)
         grads.append((q.grad, k.grad))
-
-    # Lazy mode keeps the formula (the graph compiler fuses it).
-    monkeypatch.setattr(zuna_module, "_hpu_lazy", lambda: True)
-    assert zuna_module._hpu_fused_rotary(query, key, cos, sin) is None
 
     for expected, actual in zip(outputs[0] + grads[0], outputs[1] + grads[1]):
         assert actual.dtype == expected.dtype
@@ -1600,6 +1595,25 @@ def test_codebrain_pretrain_mode():
     # seq_len = 6000 // 200 = 30, output shape: (batch, n_chans, seq_len, codebook_size)
     assert x_t.shape == (2, 19, 30, 4096)
     assert x_f.shape == (2, 19, 30, 4096)
+
+
+def test_codebrain_mask_with_non_default_patch_size():
+    # patch_size=128 gives emb_dim=150, so mask_encoding must follow patch_size.
+    model = CodeBrain(
+        n_chans=4,
+        n_outputs=2,
+        n_times=512,
+        patch_size=128,
+        num_res_layers=1,
+        s4_lmax=16,
+        pretrain_mode=True,
+    )
+    x = torch.randn(2, 4, 512)
+    mask = torch.zeros(2, 4, 4, dtype=torch.long)
+    mask[0, 1, 2] = 1
+    x_t, x_f = model(x, mask=mask)
+    assert x_t.shape == (1, 4096)
+    assert x_f.shape == (1, 4096)
 
 
 def test_codebrain_return_features():

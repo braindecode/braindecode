@@ -36,6 +36,7 @@ from braindecode.models import (
     FBCNet,
     FBLightConvNet,
     FBMSNet,
+    FNIRSNet,
     ShallowFBCSPNet,
     SyncNet,
     USleep,
@@ -311,6 +312,7 @@ def test_model_has_drop_prob_parameter(model_class):
         FBCNet,
         FBMSNet,
         FBLightConvNet,
+        FNIRSNet,
         SSTDPN,
         REVE,
         ZUNA,
@@ -366,16 +368,6 @@ def test_model_compiled(model):
         and model.__class__.__name__ not in _COMPILE_ON_PR
     ):
         pytest.skip("compiled on master only (set BRAINDECODE_COMPILE_ALL=1)")
-    not_compilable_models = [
-        # torch.compile currently stalls on the STFT/eigendecomposition-based
-        # MPF featurizer at the default handwriting input size.
-        "MetaNeuromotorHand",
-    ]
-    if model.__class__.__name__ in not_compilable_models:
-        pytest.skip(
-            f"Skipping {model.__class__.__name__} as not working with torch.compile"
-        )
-
     # This assumes the model has attributes n_chans and n_times
     try:
         n_chans = model.n_chans
@@ -407,10 +399,6 @@ def test_model_exported(model):
 
     not_exportable_models = [
         "SyncNet",  # We found a fake tensor in the exported program constant's list.
-        "EEGMiner",  # We found a fake tensor in the exported program constant's list.
-        "SSTDPN",  # We found a fake tensor in the exported program constant's list.
-        "Labram",  # Uses data-dependent channel/patch paths that are not export-stable yet.
-        "CodeBrain",  # Data-dependent n_times // patch_size division in forward is not export-stable.
         "NeuroRVQTokenizer",  # EMA codebooks use data-dependent k-means initialization.
     ]
     if sys.platform.startswith("win"):

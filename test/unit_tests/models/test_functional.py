@@ -8,8 +8,11 @@ from braindecode.functional import (
     _real_dft,
     apply_rotary,
     check_ch_mask,
+    derivation_matrix,
+    exact_derivation,
     fft_conv1d,
     hilbert_freq,
+    linear_channel_map,
     masked_group_norm,
     masked_mean,
     pack_channels,
@@ -486,3 +489,138 @@ def test_masked_group_norm_nan_padding_backward(scripted):
     torch.testing.assert_close(bias.grad, reference_bias.grad)
     assert torch.equal(x.grad[~real], torch.zeros_like(x.grad[~real]))
     assert torch.equal(out[~real], torch.zeros_like(out[~real]))
+
+
+def _masked_group_norm_reference(x, num_groups, mask, weight, bias, eps):
+    """The permuting implementation masked_group_norm replaced, for equivalence."""
+    from braindecode.functional import masked_mean
+
+    padding = ~mask.reshape(
+        [mask.shape[0], 1] + list(mask.shape[1:]) + [1] * (x.dim() - mask.dim() - 1)
+    )
+    x = x.masked_fill(padding, 0.0)
+    grouped = x.movedim(1, -1).unflatten(-1, [num_groups, -1])
+    grouped = grouped.to(torch.promote_types(x.dtype, torch.float32))
+    dims = list(range(1, grouped.dim() - 2)) + [grouped.dim() - 1]
+    stats_shape = [grouped.shape[0]] + [1] * (grouped.dim() - 3) + [num_groups, 1]
+    mean = masked_mean(grouped, mask, dims).reshape(stats_shape)
+    centred = grouped - mean
+    var = masked_mean(centred.square(), mask, dims).reshape(stats_shape)
+    out = (centred * torch.rsqrt(var + eps)).flatten(-2).movedim(-1, 1)
+    affine_shape = [1, x.shape[1]] + [1] * (x.dim() - 2)
+    out = out * weight.reshape(affine_shape) + bias.reshape(affine_shape)
+    return out.to(x.dtype).masked_fill(padding, 0.0)
+
+
+@pytest.mark.parametrize(
+    "dtype,tol", [(torch.float64, 1e-12), (torch.float32, 1e-5), (torch.bfloat16, 2e-2)]
+)
+@pytest.mark.parametrize("scripted", [False, True])
+def test_masked_group_norm_matches_permuting_reference(dtype, tol, scripted):
+    norm = torch.jit.script(masked_group_norm) if scripted else masked_group_norm
+    g = torch.Generator().manual_seed(0)
+    x = (torch.randn(5, 25, 12, 7, generator=g) * 3 + 2).to(dtype)
+    mask = torch.arange(12) < torch.tensor([12, 1, 7, 11, 4])[:, None]
+    x = x.masked_fill(~mask[:, None, :, None], float("nan"))
+    weight, bias = (torch.randn(25, generator=g).to(dtype) for _ in range(2))
+    grad = torch.randn(x.shape, generator=g).to(dtype)
+    results = []
+    for fn in (_masked_group_norm_reference, norm):
+        args = [t.clone().requires_grad_() for t in (x, weight, bias)]
+        out = fn(args[0], 5, mask, args[1], args[2], 1e-5)
+        out.backward(grad)
+        results.append([out] + [a.grad for a in args])
+    for ref, new in zip(*results):
+        assert new.dtype == ref.dtype and torch.isfinite(new).all()
+        torch.testing.assert_close(new, ref, atol=tol, rtol=tol)
+
+
+def test_derivation_matrix_rows():
+    matrix, electrodes = derivation_matrix(["F3", "F3-C3", "c3-Cz"])
+    assert electrodes == ["f3", "c3", "cz"]
+    assert matrix.tolist() == [[1, 0, 0], [1, -1, 0], [0, 1, -1]]
+    cz = derivation_matrix(["F3", "C3-P3"], reference="Cz")[0]  # F3 is F3-Cz
+    assert cz.tolist() == [[1, -1, 0, 0], [0, 0, 1, -1]]
+    avg = derivation_matrix(["F3", "C3", "C3-P3"], reference="average")[0]
+    assert avg.tolist() == [[0.5, -0.5, 0], [-0.5, 0.5, 0], [0, 1, -1]]
+
+
+@pytest.mark.parametrize(
+    "target, inputs, weight",
+    [
+        (["F3-C3"], ["C3-F3"], [[-1.0]]),  # reverse polarity
+        (["F3-P3"], ["F3-C3", "C3-P3"], [[1.0, 1.0]]),  # chain
+        (["F3-C3"], ["F3", "C3"], [[1.0, -1.0]]),  # referential
+        (["F3-C3"], ["F3-REF", "C3-REF"], [[1.0, -1.0]]),  # reference cancels
+        (["P3"], ["C3", "C3-P3"], [[1.0, -1.0]]),  # V(P3) = V(C3) - (V(C3) - V(P3))
+        (["F3-C3"], ["F3-C3", "F3-C3"], [[0.5, 0.5]]),  # duplicates averaged
+        (["F3-C3"], ["F3-R1", "C3-R2"], None),  # two references: not exact
+        (["F3"], ["F3-C3"], None),  # no monopolar from bipolar only
+        (["F3-C3"], [], None),
+    ],
+)
+def test_exact_derivation(target, inputs, weight):
+    W, exact = exact_derivation(target, inputs)
+    assert exact.tolist() == [weight is not None]
+    assert W.shape == (len(target), len(inputs))
+    assert W.tolist() == (weight or [[0.0] * len(inputs)])
+
+
+def test_linear_channel_map_is_the_gaussian_posterior():
+    # Electrodes 0-2 measured, 3-4 wanted; closed form without a flat prior.
+    g = torch.Generator().manual_seed(0)
+    L = torch.randn(5, 5, generator=g, dtype=torch.float64)
+    cov, eye = L @ L.T, torch.eye(5, dtype=torch.float64)
+    A, B = eye[:3], eye[[0, 3, 4]]
+    W, var = linear_channel_map(A, B, cov, noise=0.1)
+    ref = B @ cov @ A.T @ torch.linalg.inv(A @ cov @ A.T + 0.1 * torch.eye(3))
+    torch.testing.assert_close(W, ref, atol=1e-8, rtol=1e-7)
+    Kyy = A @ cov @ A.T + 0.1 * torch.eye(3, dtype=torch.float64)
+    post = (B @ cov @ B.T - B @ cov @ A.T @ torch.linalg.inv(Kyy) @ A @ cov @ B.T).diag()
+    torch.testing.assert_close(var, post, atol=1e-8, rtol=1e-7)
+    W, var = linear_channel_map(A, B, cov)  # no noise: a measured target is copied
+    torch.testing.assert_close(W[0], eye[0, :3], atol=1e-9, rtol=0)
+    assert var[0].abs() < 1e-9
+    prior, ones = (B @ cov * B).sum(1), torch.ones(5, 1, dtype=torch.float64)
+    Wg, _ = linear_channel_map(A, B, cov, 0.1, match_gain=True)
+    torch.testing.assert_close((Wg @ A @ cov * (Wg @ A)).sum(1), prior, atol=1e-8, rtol=1e-7)
+    # with the flat prior: rows still sum to 1, as close to the prior as that allows
+    W, _ = linear_channel_map(A, B, cov, 0.1, ones)
+    Wg, _ = linear_channel_map(A, B, cov, 0.1, ones, match_gain=True)
+    torch.testing.assert_close(Wg.sum(1), torch.ones(3, dtype=torch.float64))
+    gap = [((w @ A @ cov * (w @ A)).sum(1) - prior).abs() for w in (W, Wg)]
+    assert (gap[1] <= gap[0] + 1e-9).all()
+    # A flat prior on the common offset: the estimate does not see it.
+    W, _ = linear_channel_map(A, B, cov, flat=ones)
+    torch.testing.assert_close(W.sum(1), torch.ones(3, dtype=torch.float64))
+
+
+@pytest.mark.parametrize("inputs", [[], ["F3-C3"]])
+def test_exact_derivation_empty_targets(inputs):
+    weight, exact = exact_derivation([], inputs)
+    assert weight.shape == (0, len(inputs))
+    assert weight.dtype == torch.float64
+    assert exact.shape == (0,)
+    assert exact.dtype == torch.bool
+
+
+def test_derivation_matrix_normalizes_explicit_electrode_case():
+    matrix, electrodes = derivation_matrix(["F3-C3"], electrodes=["F3", "C3"])
+    assert electrodes == ["f3", "c3"]
+    assert matrix.tolist() == [[1.0, -1.0]]
+
+
+def test_derivation_matrix_deduplicates_mixed_case_columns():
+    matrix, electrodes = derivation_matrix(
+        ["f3-C3"], electrodes=["F3", "f3", "c3", "C3"]
+    )
+    assert electrodes == ["f3", "c3"]
+    assert matrix.tolist() == [[1.0, -1.0]]
+
+
+def test_derivation_matrix_normalizes_explicit_reference_columns():
+    matrix, electrodes = derivation_matrix(
+        ["F3"], electrodes=["F3", "CZ"], reference="Cz"
+    )
+    assert electrodes == ["f3", "cz"]
+    assert matrix.tolist() == [[1.0, -1.0]]

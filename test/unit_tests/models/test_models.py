@@ -10,8 +10,11 @@
 # License: BSD-3
 
 import inspect
+import math
 import os
 import re
+import subprocess
+import sys
 import warnings
 from collections import OrderedDict
 from functools import partial
@@ -24,6 +27,8 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torchaudio
+from einops import rearrange, repeat
+from einops.layers.torch import Rearrange
 from scipy.signal import stft
 from torch import nn
 
@@ -34,6 +39,9 @@ from braindecode.models import (
     BIOT,
     EEGCLIP,
     EEGPT,
+    FNIRS4D,
+    FNIRSCNN1D,
+    FNIRST,
     NICE,
     SSTDPN,
     TCN,
@@ -62,12 +70,17 @@ from braindecode.models import (
     FBCNet,
     FBLightConvNet,
     FBMSNet,
+    FNIRSNet,
+    FNIRSPreT,
     GCNsNet,
+    GeoNIRS,
     HybridNet,
     IFNet,
+    JungMAE,
     Labram,
     MEDFormer,
     MetaNeuromotorHand,
+    MtReNIRS,
     NeuroRVQ,
     NeuroRVQTokenizer,
     SCCNet,
@@ -100,11 +113,16 @@ from braindecode.models.csbrain import (
 from braindecode.models.eegpt import (
     _EEGTransformer,
 )
+from braindecode.models.fnirs4d import _S4DLayer
 from braindecode.models.gcnsnet import _cluster_one_level, _compute_perm
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.neurorvq_tokenizer import _EMAVectorQuantizer
 from braindecode.models.usleep import _DecoderBlock
-from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.models.util import (
+    _fnirs_chs_info,
+    models_dict,
+    models_mandatory_parameters,
+)
 from braindecode.util import set_random_seeds
 from test.unit_tests.models._fixtures import (
     _get_possible_signal_params,
@@ -1388,6 +1406,17 @@ def test_channels_without_positions_give_finite_outputs(name):
         assert torch.isfinite(model(torch.randn(2, 4, 1000))).all()
 
 
+@pytest.mark.parametrize("name", ["CORTEG", "LUNA"])
+def test_a_montage_with_unplaced_channels_is_refused(name):
+    """One channel without a position must not void the others' positions."""
+    info = mne.create_info(["Cz", "C3", "C4", "X1"], 250.0, "eeg")
+    info.set_montage("standard_1005", on_missing="ignore")
+    with pytest.raises(ValueError, match=r"none for \['X1'\]"):
+        all_models_dict[name](
+            n_outputs=2, n_chans=4, chs_info=info["chs"], n_times=1000, sfreq=250.0
+        )
+
+
 def test_gcnsnet_adjacency():
     X = torch.randn(5, 64, 100)
     adjacency = GCNsNet._adjacency(X)
@@ -1662,6 +1691,17 @@ def test_biot_encoder_index_is_buffer(default_biot_params):
     assert biot.encoder.index.dtype == torch.long
 
 
+@pytest.mark.parametrize("offset", [0, 1])
+def test_biot_channel_tokens_get_their_own_gradients(offset):
+    """The token of each channel ``offset..offset + n`` gets a gradient; the others none."""
+    torch.manual_seed(0)
+    biot = BIOT(n_chans=4, n_outputs=2, n_times=1000, sfreq=200).eval()
+    tokens = biot.encoder(torch.randn(2, 4 - offset, 1000), n_channel_offset=offset)[0]
+    tokens.square().mean().backward()
+    rows = biot.encoder.channel_tokens.weight.grad.abs().sum(1)
+    assert (rows[:offset] == 0).all() and (rows[offset:] > 0).all()
+
+
 @pytest.fixture
 def default_labram_params():
     return {
@@ -1740,6 +1780,77 @@ def test_labram_attention_fused_path_matches_its_weights():
     out, qkv = attn(x, return_qkv=True)
     expected = attn.proj((weights @ qkv[2]).transpose(1, 2).reshape(2, 6, 16))
     torch.testing.assert_close(out, expected)
+
+
+@pytest.mark.parametrize("padded", [False, True])
+def test_labram_attention_bf16_autocast_matches_fp32(padded):
+    """Under bfloat16 autocast, LaBraM's attention hands bfloat16 q, k, v (and
+    key mask) to torch's SDPA, on every device; its features stay within
+    bfloat16 rounding (2 % of their largest value) of the float32 ones."""
+    torch.manual_seed(0)
+    names = list(LABRAM_CHANNEL_ORDER[:4])
+    model = Labram(
+        n_times=400, n_chans=4, n_outputs=2, num_layers=2, num_heads=4, patch_size=200
+    ).eval()
+    x = torch.randn(3, 4, 400)
+    ch_mask = None
+    if padded:
+        ch_mask = torch.tensor(
+            [[True] * 4, [True, True, True, False], [True, False, False, False]]
+        )
+    sdpa = nn.functional.scaled_dot_product_attention
+    dtypes = []
+
+    def spy(q, k, v, attn_mask=None, **kwargs):
+        mask_dtype = None if attn_mask is None else attn_mask.dtype
+        dtypes.append((q.dtype, k.dtype, v.dtype, mask_dtype))
+        return sdpa(q, k, v, attn_mask=attn_mask, **kwargs)
+
+    with torch.no_grad():
+        ref = model(x, return_features=True, ch_names=names, ch_mask=ch_mask)
+        with (
+            mock.patch.object(nn.functional, "scaled_dot_product_attention", spy),
+            torch.autocast("cpu", dtype=torch.bfloat16),
+        ):
+            out = model(x, return_features=True, ch_names=names, ch_mask=ch_mask)
+    bf16 = torch.bfloat16
+    assert dtypes == [(bf16, bf16, bf16, bf16 if padded else None)] * 2
+    ref = ref["features"]
+    torch.testing.assert_close(
+        out["features"].float(), ref, atol=2e-2 * ref.abs().max().item(), rtol=2e-2
+    )
+
+
+def test_labram_attention_dropout_train_is_stochastic():
+    """With attention dropout in training, LaBraM keeps its explicit ops (torch's
+    fused kernels draw other masks): two seeds give different, finite outputs,
+    and torch's SDPA runs only in eval mode."""
+    names = list(LABRAM_CHANNEL_ORDER[:4])
+    torch.manual_seed(0)
+    model = Labram(
+        n_times=400,
+        n_chans=4,
+        n_outputs=2,
+        num_layers=2,
+        num_heads=4,
+        patch_size=200,
+        attn_drop_prob=0.5,
+    )
+    x = torch.randn(2, 4, 400)
+    sdpa = nn.functional.scaled_dot_product_attention
+    with mock.patch.object(
+        nn.functional, "scaled_dot_product_attention", wraps=sdpa
+    ) as spy:
+        outs = []
+        for seed in (0, 1):
+            torch.manual_seed(seed)
+            outs.append(model.train()(x, return_features=True, ch_names=names))
+        assert spy.call_count == 0
+        model.eval()(x, ch_names=names)
+        assert spy.call_count == 2
+    outs = [out["features"] for out in outs]
+    assert all(torch.isfinite(out).all() for out in outs)
+    assert not torch.allclose(outs[0], outs[1])
 
 
 @pytest.mark.parametrize("use_mean_pooling", [True, False])
@@ -5124,6 +5235,26 @@ def test_csbrain_forward_with_region_structure():
     assert feats["features"].shape == (1, 22, 4, 200)
 
 
+def test_csbrain_features_skip_pretraining_proj_out():
+    """Features and head see the encoder output, not the reconstruction layer."""
+    model = CSBrain(
+        n_outputs=2, n_chans=3, n_times=400, n_layer=1, nhead=2, emb_dim=16
+    ).eval()
+    x = torch.randn(2, 3, 400)
+    with torch.no_grad():
+        model.proj_out[0].weight.fill_(7.0)  # would dominate the features if applied
+        emb = model.patch_embedding(model.rearrange(x), None)
+        emb = model.temporal_embed(emb) + emb
+        emb = model.region_embed(emb) + emb
+        tokens = model.encoder[0](emb)
+        feats = model(x, return_features=True)["features"]
+        assert model(x).shape == (2, 2)
+    torch.testing.assert_close(feats, tokens)
+    assert feats.shape[-1] == model._d_model
+    assert model.final_layer[1].in_features == 3 * 2 * model._d_model
+    assert any(k.startswith("proj_out.") for k in model.state_dict())
+
+
 def test_csbrain_batched_regions_match_per_region_loops():
     # Regions of 1 (zero padding), 2 and 4 electrodes (circular padding).
     area_config = make_area_config([0, 1, 1, 2, 2, 2, 2])
@@ -6379,6 +6510,1452 @@ def test_nice_mask_validation(shape, dtype):
         model(torch.randn(2, 4, 100), mask=torch.ones(shape, dtype=dtype))
 
 
+# ----------------------------------------------------------------------------
+# fNIRS models
+
+
+def _interleaved_fnirs_chs(n_pairs=4):
+    """``_fnirs_chs_info`` in MNE's interleaved ``[HbO_1, HbR_1, ...]`` order."""
+    return _fnirs_chs_info(n_pairs, interleaved=True)
+
+
+@pytest.mark.parametrize(
+    "model_cls,kwargs",
+    [
+        (FNIRSNet, {}),
+        (FNIRSNet, {"n_chans": 6}),
+        (FNIRSCNN1D, {}),
+        (FNIRSCNN1D, {"n_chans": 6}),
+        (FNIRS4D, {"n_layers": 2, "d_state": 16, "channel_order": "interleaved"}),
+        (
+            FNIRS4D,
+            {"n_chans": 7, "prenorm": True, "compute_hbt": False,
+             "mean_branch": "time_mean"},
+        ),
+        (FNIRS4D, {"n_layers": 1, "d_state": 16, "mean_branch": "time_mean"}),
+    ],
+)
+def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):
+    """HbO/HbR ``chs_info`` or an explicit ``n_chans``; ``final_layer(features)``
+    equals the logits in eval and train mode, and gradients reach the input."""
+    if "n_chans" not in kwargs:
+        kwargs = dict(kwargs, chs_info=_interleaved_fnirs_chs())
+    model = model_cls(n_outputs=3, n_times=60, sfreq=5.0, **kwargs)
+    x = torch.randn(4, model.n_chans, 60, requires_grad=True)
+    for training in (False, True):
+        model.train(training)
+        torch.manual_seed(0)
+        features = model(x, return_features=True)["features"]
+        torch.manual_seed(0)
+        logits = model(x)
+        torch.testing.assert_close(model.final_layer(features), logits)
+    logits.sum().backward()
+    assert torch.isfinite(x.grad).all()
+
+
+class _AuthorsFNIRSNet(torch.nn.Module):
+    """The reference: fNIRSNet.py of wzhlearning/fNIRSNet@11d9dad (Apache-2.0),
+    transcribed with the same layers, state-dict keys and forward. The authors'
+    FC takes ``num_DWConv`` inputs (full-width DHRConv); ``n_features`` widens it
+    for a shorter kernel, as the port does."""
+
+    def __init__(self, num_class, DHRConv_width=40, DWConv_height=40,
+                 num_DHRConv=4, num_DWConv=8, n_features=None):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(1, num_DHRConv, kernel_size=(1, DHRConv_width))
+        self.bn1 = torch.nn.BatchNorm2d(num_DHRConv)
+        self.conv2 = torch.nn.Module()
+        self.conv2.depth_conv = torch.nn.Conv2d(
+            num_DHRConv, num_DHRConv, kernel_size=(DWConv_height, 1),
+            groups=num_DHRConv,
+        )
+        self.conv2.point_conv = torch.nn.Conv2d(num_DHRConv, num_DWConv, kernel_size=1)
+        self.bn2 = torch.nn.BatchNorm2d(num_DWConv)
+        self.fc = torch.nn.Linear(n_features or num_DWConv, num_class)
+        self.act = torch.nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.act(self.bn1(self.conv1(x)))
+        x = self.act(self.bn2(self.conv2.point_conv(self.conv2.depth_conv(x))))
+        x = x.view(x.size()[0], -1)
+        return self.fc(x)
+
+
+@pytest.mark.parametrize(
+    "n_chans, n_times, f1, f2, kernel",
+    [(40, 40, 4, 8, None), (72, 30, 16, 32, None), (40, 40, 4, 8, 10)],
+)
+def test_fnirsnet_matches_the_authors_module(n_chans, n_times, f1, f2, kernel):
+    """The authors' state dict loads strictly through ``mapping``; the logits and
+    ``final_layer(features)`` equal the authors' module in eval and train mode,
+    and the parameters and BatchNorm statistics stay equal over AdamW steps."""
+    width = kernel or n_times
+    torch.manual_seed(0)
+    reference = _AuthorsFNIRSNet(
+        3, width, n_chans, f1, f2, n_features=f2 * (n_times - width + 1)
+    )
+    with torch.no_grad():  # non-trivial BatchNorm statistics and affine terms
+        for bn in (reference.bn1, reference.bn2):
+            bn.running_mean.uniform_(-1, 1)
+            bn.running_var.uniform_(0.5, 2)
+            bn.weight.uniform_(0.5, 2)
+            bn.bias.uniform_(-1, 1)
+    model = FNIRSNet(
+        n_chans=n_chans, n_outputs=3, n_times=n_times, n_dhr_filters=f1,
+        n_pw_filters=f2, dhr_kernel_length=kernel,
+    )
+    model.load_state_dict(reference.state_dict(), strict=True)
+    x = torch.randn(6, n_chans, n_times)
+    for training in (False, True):
+        reference.train(training)
+        model.train(training)
+        expected = reference(x.unsqueeze(1))
+        torch.testing.assert_close(model(x), expected, rtol=0, atol=0)
+        # a second forward on both sides, so their BatchNorm statistics stay in step
+        expected = reference(x.unsqueeze(1))
+        features = model(x, return_features=True)["features"]
+        torch.testing.assert_close(model.final_layer(features), expected, rtol=0, atol=0)
+    optimizers = [torch.optim.AdamW(m.parameters(), lr=1e-2) for m in (reference, model)]
+    y = torch.tensor([0, 1, 2, 0, 1, 2])
+    for _ in range(3):
+        for net, optimizer, inputs in zip(
+            (reference, model), optimizers, (x.unsqueeze(1), x)
+        ):
+            optimizer.zero_grad()
+            torch.nn.functional.cross_entropy(net(inputs), y).backward()
+            optimizer.step()
+    port_state = model.state_dict()
+    for key, value in reference.state_dict().items():
+        torch.testing.assert_close(
+            port_state[key.replace("fc.", "final_layer.")], value, rtol=0, atol=0
+        )
+
+
+@pytest.mark.parametrize("kernel, n_params", [(None, 419), (30, 619), (20, 819), (10, 1019)])
+def test_fnirsnet_parameter_counts_of_table_iv(kernel, n_params):
+    """UFFT (C = S = 40) parameter counts of the paper's Tables III and IV."""
+    model = FNIRSNet(n_chans=40, n_outputs=3, n_times=40, dhr_kernel_length=kernel)
+    assert sum(p.numel() for p in model.parameters()) == n_params
+
+
+def test_fnirsnet_refuses_ch_mask():
+    """DWConv spans every row, so padded channels cannot be left out."""
+    model = FNIRSNet(n_chans=4, n_outputs=2, n_times=20)
+    with pytest.raises(ValueError, match="ch_mask"):
+        model(torch.randn(2, 4, 20), ch_mask=torch.ones(2, 4, dtype=torch.bool))
+
+
+def test_fnirsnet_kernel_length_out_of_range_raises():
+    for bad in (0, 41):
+        with pytest.raises(ValueError, match="dhr_kernel_length"):
+            FNIRSNet(n_chans=40, n_outputs=3, n_times=40, dhr_kernel_length=bad)
+
+
+class _AuthorsDirectEventCNN1D(torch.nn.Module):
+    """The reference: ``DirectEventCNN1DClassifier`` of ``model/cnn1d.py``
+    (GeoNIRS@81f8995) as the benchmark builds it (``event_pair_mode=False``),
+    transcribed with the same layers, state-dict keys and forward."""
+
+    def __init__(self, physical_channels, num_classes, conv_dim=64,
+                 embedding_dim=128, dropout=0.5):
+        super().__init__()
+        self.encoder = torch.nn.Sequential(
+            torch.nn.Conv1d(2 * physical_channels, conv_dim, kernel_size=7, padding=3),
+            torch.nn.GroupNorm(8, conv_dim),
+            torch.nn.GELU(),
+            torch.nn.MaxPool1d(kernel_size=2),
+            torch.nn.Conv1d(conv_dim, embedding_dim, kernel_size=5, padding=2),
+            torch.nn.GroupNorm(8, embedding_dim),
+            torch.nn.GELU(),
+            torch.nn.AdaptiveAvgPool1d(1),
+            torch.nn.Flatten(),
+            torch.nn.Dropout(dropout),
+        )
+        self.linear = torch.nn.Linear(embedding_dim, num_classes)
+
+    def forward(self, hbo, hbr, valid):
+        hbo = hbo.masked_fill(~valid, 0.0)
+        hbr = hbr.masked_fill(~valid, 0.0)
+        signal = torch.stack((hbo, hbr), dim=1).flatten(start_dim=1, end_dim=2)
+        return self.linear(self.encoder(signal))
+
+
+@pytest.mark.parametrize("n_pairs, n_times", [(23, 60), (41, 60), (23, 61)])
+def test_fnirs_cnn1d_matches_the_authors_module(n_pairs, n_times):
+    """With the same seed the two modules draw the same weights; the authors'
+    state dict loads strictly through ``mapping``; the logits and
+    ``final_layer(features)`` equal the authors' module in eval and train
+    mode, invalid samples given as NaN, and so do the parameter gradients of
+    a training loss. 23 x 60 and 41 x 60 are the benchmark's DS19 and DS42
+    windows; 61 samples leave one out of the max pooling."""
+    torch.manual_seed(810)
+    reference = _AuthorsDirectEventCNN1D(n_pairs, num_classes=2)
+    torch.manual_seed(810)
+    model = FNIRSCNN1D(n_chans=2 * n_pairs, n_outputs=2, n_times=n_times)
+    mapping = model.mapping
+    port_state = model.state_dict()
+    assert sorted(mapping[key] for key in reference.state_dict()) == sorted(port_state)
+    for key, value in reference.state_dict().items():
+        torch.testing.assert_close(port_state[mapping[key]], value, rtol=0, atol=0)
+    with torch.no_grad():  # other weights than the seeded draw
+        for param in reference.parameters():
+            param.add_(0.1 * torch.randn_like(param))
+    model.load_state_dict(reference.state_dict(), strict=True)
+    hbo = torch.randn(6, n_pairs, n_times)
+    hbr = torch.randn(6, n_pairs, n_times)
+    valid = torch.rand(6, n_pairs, n_times) > 0.1
+    x = torch.cat((hbo, hbr), dim=1)
+    x = x.masked_fill(~torch.cat((valid, valid), dim=1), float("nan"))
+    for training in (False, True):
+        reference.train(training)
+        model.train(training)
+        torch.manual_seed(5)  # the same dropout draw on both sides
+        expected = reference(hbo, hbr, valid)
+        torch.manual_seed(5)
+        torch.testing.assert_close(model(x), expected, rtol=0, atol=0)
+        torch.manual_seed(5)
+        features = model(x, return_features=True)["features"]
+        torch.testing.assert_close(model.final_layer(features), expected, rtol=0, atol=0)
+    y = torch.tensor([0, 1, 0, 1, 0, 1])
+    for net, inputs in ((reference, (hbo, hbr, valid)), (model, (x,))):
+        torch.manual_seed(5)
+        torch.nn.functional.cross_entropy(net(*inputs), y).backward()
+    port_params = dict(model.named_parameters())
+    for key, param in reference.named_parameters():
+        torch.testing.assert_close(
+            port_params[mapping[key]].grad, param.grad, rtol=0, atol=0
+        )
+
+
+def test_fnirs_cnn1d_parameter_count_of_table_10():
+    """GeoNIRS Table 10: 88.4 K parameters at 52 fNIRS channels (104 rows)."""
+    model = FNIRSCNN1D(n_chans=104, n_outputs=2, n_times=50)
+    assert sum(p.numel() for p in model.parameters()) == 88_386
+
+
+def test_fnirs_cnn1d_reads_inf_as_missing():
+    """An inf sample is missing data, as a NaN one: read as zero."""
+    torch.manual_seed(0)
+    model = FNIRSCNN1D(n_chans=4, n_outputs=2, n_times=20).eval()
+    x = torch.randn(2, 4, 20)
+    with torch.no_grad():
+        for value in (float("inf"), float("-inf")):
+            x_bad = x.clone()
+            x_bad[0, 1, 5] = value
+            x_nan = x.clone()
+            x_nan[0, 1, 5] = float("nan")
+            out = model(x_bad)
+            assert torch.isfinite(out).all()
+            torch.testing.assert_close(out, model(x_nan), rtol=0, atol=0)
+
+
+def test_fnirs_cnn1d_wires_every_argument():
+    """Non-default values reach the layers they name, and reset_head keeps
+    the width of the second convolution."""
+    model = FNIRSCNN1D(
+        n_chans=6, n_outputs=2, n_times=30, n_filters_conv1=16,
+        n_filters_conv2=24, kernel_size_conv1=9, kernel_size_conv2=3,
+        pool_size=3, n_norm_groups=4, drop_prob=0.2, activation=nn.ELU,
+    )
+    conv1, norm1, act1, pool = model.temporal_conv1
+    conv2, norm2, act2 = model.temporal_conv2
+    assert conv1.out_channels == 16 and conv1.kernel_size == (9,)
+    assert conv2.out_channels == 24 and conv2.kernel_size == (3,)
+    assert pool.kernel_size == 3
+    assert norm1.num_groups == 4 and norm2.num_groups == 4
+    assert type(act1) is nn.ELU and type(act2) is nn.ELU
+    assert model.head_dropout.p == 0.2
+    assert model(torch.randn(2, 6, 30)).shape == (2, 2)
+    model.reset_head(3)
+    assert model.final_layer.in_features == 24
+    assert model.final_layer.out_features == 3
+
+
+def test_fnirs_cnn1d_refuses_ch_mask():
+    """The first convolution spans every row, so padded channels cannot be
+    left out."""
+    model = FNIRSCNN1D(n_chans=4, n_outputs=2, n_times=20)
+    with pytest.raises(ValueError, match="FNIRSCNN1D does not accept ch_mask"):
+        model(torch.randn(2, 4, 20), ch_mask=torch.ones(2, 4, dtype=torch.bool))
+
+
+def test_s4d_real_arithmetic_matches_complex_fft():
+    """The real-arithmetic ``_S4DLayer`` equals the reference complex kernel + FFT."""
+    torch.manual_seed(42)
+    d_model, length = 8, 40
+    layer = _S4DLayer(d_model, 16, 0.0, nn.GELU).eval()
+    x = torch.randn(3, d_model, length)
+    k = layer.kernel
+    a_val = -torch.exp(k.log_A_real) + 1j * k.A_imag
+    dt_a = a_val * torch.exp(k.log_dt).unsqueeze(-1)
+    c_tilde = torch.view_as_complex(k.C) * torch.expm1(dt_a) / a_val
+    exponents = dt_a.unsqueeze(-1) * torch.arange(length)
+    ref_kernel = 2.0 * torch.einsum("hn,hnl->hl", c_tilde, torch.exp(exponents)).real
+    torch.testing.assert_close(k(length), ref_kernel, atol=1e-6, rtol=1e-5)
+    spectrum = torch.fft.rfft(x, n=2 * length) * torch.fft.rfft(ref_kernel, n=2 * length)
+    ref_conv = torch.fft.irfft(spectrum, n=2 * length)[..., :length]
+    skip = x * layer.D.unsqueeze(-1)
+    ref_out = layer.output_linear(layer.activation(ref_conv + skip))
+    with torch.no_grad():
+        torch.testing.assert_close(layer(x), ref_out, atol=1e-5, rtol=1e-5)
+
+
+class _AuthorsS4DKernel(torch.nn.Module):
+    """S4DKernel of fNIRS4D.py@eb13e5e (``lr=None``: every tensor a parameter)."""
+
+    def __init__(self, d_model, N=64, dt_min=0.001, dt_max=0.1):
+        super().__init__()
+        H = d_model
+        log_dt = torch.rand(H) * (math.log(dt_max) - math.log(dt_min)) + math.log(dt_min)
+        C = torch.randn(H, N // 2, dtype=torch.cfloat)
+        self.C = torch.nn.Parameter(torch.view_as_real(C))
+        self.log_dt = torch.nn.Parameter(log_dt)
+        self.log_A_real = torch.nn.Parameter(torch.log(0.5 * torch.ones(H, N // 2)))
+        self.A_imag = torch.nn.Parameter(math.pi * torch.arange(N // 2).repeat(H, 1))
+
+    def forward(self, L):
+        dt = torch.exp(self.log_dt)
+        C = torch.view_as_complex(self.C)
+        A = -torch.exp(self.log_A_real) + 1j * self.A_imag
+        dtA = A * dt.unsqueeze(-1)
+        K = dtA.unsqueeze(-1) * torch.arange(L, device=A.device)
+        C = C * (torch.exp(dtA) - 1.0) / A
+        return 2 * torch.einsum("hn, hnl -> hl", C, torch.exp(K)).real
+
+
+class _AuthorsS4D(torch.nn.Module):
+    """S4D of fNIRS4D.py@eb13e5e (``transposed=True``), FFT convolution."""
+
+    def __init__(self, d_model, d_state=64, dropout=0.0):
+        super().__init__()
+        self.D = torch.nn.Parameter(torch.randn(d_model))
+        self.kernel = _AuthorsS4DKernel(d_model, N=d_state)
+        self.activation = torch.nn.GELU()
+        # DropoutNd(tie=True) in the authors' code: the same law, one mask per
+        # (batch, channel) tied over the sequence
+        self.dropout = torch.nn.Dropout1d(dropout) if dropout > 0.0 else nn.Identity()
+        self.output_linear = torch.nn.Sequential(
+            torch.nn.Conv1d(d_model, 2 * d_model, kernel_size=1), torch.nn.GLU(dim=-2)
+        )
+
+    def forward(self, u):
+        L = u.size(-1)
+        k = self.kernel(L=L)
+        k_f = torch.fft.rfft(k, n=2 * L)
+        u_f = torch.fft.rfft(u, n=2 * L)
+        y = torch.fft.irfft(u_f * k_f, n=2 * L)[..., :L]
+        y = y + u * self.D.unsqueeze(-1)
+        y = self.dropout(self.activation(y))
+        return self.output_linear(y), None
+
+
+class _AuthorsMultiscaleBranch(torch.nn.Module):
+    """Multiscale_Mean_Hemoglobin_Branch of fNIRS4D.py@eb13e5e."""
+
+    def __init__(self, signal_channel=72, signal_length=30, avg_size_1=1, avg_size_2=10):
+        super().__init__()
+        self.avg_1 = nn.AvgPool2d(kernel_size=(signal_channel, avg_size_1), stride=1)
+        self.avg_2 = nn.AvgPool2d(kernel_size=(1, avg_size_2), stride=1)
+        self.conv_1 = nn.Conv2d(1, signal_channel // 2, kernel_size=(1, signal_length))
+        self.conv_2 = nn.Conv2d(
+            1, signal_channel // 2, kernel_size=(1, signal_length - avg_size_2 + 1)
+        )
+        self.bn_1 = nn.BatchNorm2d(signal_channel // 2)
+        self.bn_2 = nn.BatchNorm2d(signal_channel // 2)
+        self.elu_1 = nn.ELU()
+        self.elu_2 = nn.ELU()
+
+    def forward(self, x):
+        x_avg_1 = self.avg_1(x)
+        x_avg_2 = self.avg_2(x_avg_1)
+        x_conv_1 = self.conv_1(x_avg_1)
+        x_conv_2 = self.conv_2(x_avg_2)
+        x_1 = self.elu_1(self.bn_1(x_conv_1))
+        x_2 = self.elu_2(self.bn_2(x_conv_2))
+        return torch.squeeze(torch.cat((x_1, x_2), dim=1))
+
+
+class _AuthorsFNIRS4D(torch.nn.Module):
+    """The reference: fNIRS4D.py of wzhlearning/fNIRS4D@eb13e5e (Apache-2.0),
+    transcribed with the same layers, state-dict keys, forward and draw order;
+    only ``DropoutNd(tie=True)`` is ``nn.Dropout1d`` (see ``_AuthorsS4D``).
+    Input ``(batch, 1, signal_channel, signal_length)``."""
+
+    def __init__(self, mode, n_classes=2, signal_channel=72, signal_length=30,
+                 n_layers=4, dropout=0.5, prenorm=False):
+        super().__init__()
+        self.mode = mode
+        self.prenorm = prenorm
+        if mode == "KFold-CV":
+            self.mean_hemoglobin_branch = nn.AvgPool2d((1, signal_length), stride=(1, 1))
+        elif mode == "LOSO-CV":
+            self.mean_hemoglobin_branch = _AuthorsMultiscaleBranch(
+                signal_channel, signal_length
+            )
+        self.fNIRS_knowledge_embedding = nn.Sequential(
+            nn.Conv2d(1, signal_channel, (1, signal_length)),
+            nn.InstanceNorm2d(signal_channel),
+            nn.Conv2d(signal_channel, signal_channel, (1, 1), stride=(1, 1)),
+            Rearrange("b c h w -> b (h w) c"),
+        )
+        self.s4d_layers = nn.ModuleList()
+        self.norms = nn.ModuleList()
+        self.dropouts = nn.ModuleList()
+        for _ in range(n_layers):
+            self.s4d_layers.append(_AuthorsS4D(signal_channel, dropout=dropout))
+            self.norms.append(nn.LayerNorm(signal_channel))
+            self.dropouts.append(nn.Dropout1d(dropout))
+        self.fc = nn.Sequential(nn.Linear(signal_channel * 2, n_classes))
+
+    def forward(self, x):
+        x_MHB = self.mean_hemoglobin_branch(x)
+        if self.mode == "KFold-CV":
+            x_MHB = x_MHB.view(x_MHB.shape[0], -1)
+        x = self.fNIRS_knowledge_embedding(x)
+        for layer, norm, dropout in zip(self.s4d_layers, self.norms, self.dropouts):
+            z = x
+            if self.prenorm:
+                z = norm(z.transpose(-1, -2)).transpose(-1, -2)
+            z, _ = layer(z)
+            z = dropout(z)
+            x = z + x
+            if not self.prenorm:
+                x = norm(x.transpose(-1, -2)).transpose(-1, -2)
+        x = x.transpose(-1, -2)
+        x = x.mean(dim=1)
+        x = torch.cat((x, x_MHB), dim=1)
+        return self.fc(x)
+
+
+# conv biases in front of a norm: their true gradient is zero, and Adam would
+# scale the float32 noise of the two kernels (real vs complex FFT) to lr-sized steps
+_FNIRS4D_ZERO_GRADIENT = {
+    "fNIRS_knowledge_embedding.0.bias",
+    "mean_hemoglobin_branch.conv_1.bias",
+    "mean_hemoglobin_branch.conv_2.bias",
+}
+
+
+@pytest.mark.parametrize("prenorm", [False, True])
+@pytest.mark.parametrize("mode", ["KFold-CV", "LOSO-CV"])
+def test_fnirs4d_matches_the_authors_module(mode, prenorm):
+    """The authors' state dict loads strictly through ``mapping`` into FNIRS4D
+    with its defaults; the logits, ``final_layer(features)`` and input gradients
+    equal the authors' module in eval and in train mode (dropout 0.5, same
+    seed: same dropout sites); the gradients, parameters and BatchNorm
+    statistics stay equal over AdamW steps. The S4D kernels differ in float32
+    rounding only (real arithmetic vs complex FFT), hence ``atol``."""
+    torch.manual_seed(0)
+    reference = _AuthorsFNIRS4D(
+        mode, n_classes=3, signal_channel=8, signal_length=30, n_layers=2,
+        prenorm=prenorm,
+    )
+    kw = {"prenorm": True} if prenorm else {}
+    if mode == "KFold-CV":
+        kw["mean_branch"] = "time_mean"
+    model = FNIRS4D(n_chans=8, n_outputs=3, n_times=30, n_layers=2, compute_hbt=False, **kw)
+    model.load_state_dict(reference.state_dict(), strict=True)
+    close = partial(torch.testing.assert_close, rtol=0, atol=1e-5)
+    x = torch.randn(6, 8, 30)
+    for training in (False, True):
+        reference.train(training)
+        model.train(training)
+        x_ref = x.clone().requires_grad_(True)
+        x_port = x.clone().requires_grad_(True)
+        torch.manual_seed(1)
+        expected = reference(x_ref.unsqueeze(1))
+        torch.manual_seed(1)
+        logits = model(x_port)
+        close(logits, expected)
+        expected.square().sum().backward()
+        logits.square().sum().backward()
+        close(x_port.grad, x_ref.grad)
+        # a second forward on both sides keeps the BatchNorm statistics in step
+        torch.manual_seed(2)
+        expected = reference(x.unsqueeze(1))
+        torch.manual_seed(2)
+        features = model(x, return_features=True)["features"]
+        close(model.final_layer(features), expected)
+    names = [n for n, _ in reference.named_parameters()]
+    optimizers = [
+        torch.optim.AdamW(
+            [p for n, p in net.named_parameters() if n not in _FNIRS4D_ZERO_GRADIENT],
+            lr=1e-3,
+        )
+        for net in (reference, model)
+    ]
+    y = torch.tensor([0, 1, 2, 0, 1, 2])
+    for step in range(3):
+        for net, optimizer, inputs in zip(
+            (reference, model), optimizers, (x.unsqueeze(1), x)
+        ):
+            net.zero_grad()  # also the biases the optimizers leave out
+            torch.manual_seed(10 + step)
+            torch.nn.functional.cross_entropy(net(inputs), y).backward()
+        port_parameters = dict(model.named_parameters())
+        for name, parameter in zip(names, reference.parameters()):
+            port_grad = port_parameters[name.replace("fc.0.", "final_layer.")].grad
+            if name in _FNIRS4D_ZERO_GRADIENT:
+                assert parameter.grad.abs().max() < 1e-5
+                assert port_grad.abs().max() < 1e-5
+            else:
+                close(port_grad, parameter.grad)
+        for optimizer in optimizers:
+            optimizer.step()
+    # Adam divides each gradient by its running magnitude, so the float32 noise
+    # of small gradients reaches ~1e-5 in the parameters (measured <= 9e-6)
+    port_state = model.state_dict()
+    for key, value in reference.state_dict().items():
+        torch.testing.assert_close(
+            port_state[key.replace("fc.0.", "final_layer.")], value, rtol=0, atol=1e-4
+        )
+    reference.eval()
+    model.eval()
+    with torch.no_grad():
+        close(model(x), reference(x.unsqueeze(1)))
+
+
+def test_fnirs4d_hbt_matches_the_authors_module_on_hbo_hbt():
+    """FNIRS4D's defaults (``compute_hbt=True``, ``"multiscale"``) on
+    [HbO, HbR] rows equal the authors' LOSO-CV module on [HbO, HbO + HbR]."""
+    torch.manual_seed(0)
+    reference = _AuthorsFNIRS4D("LOSO-CV", signal_channel=8, signal_length=30)
+    model = FNIRS4D(n_chans=8, n_outputs=2, n_times=30)
+    model.load_state_dict(reference.state_dict(), strict=True)
+    x = torch.randn(6, 8, 30)
+    for training in (False, True):
+        reference.train(training)
+        model.train(training)
+        x_ref = x.clone().requires_grad_(True)
+        x_port = x.clone().requires_grad_(True)
+        hbo, hbr = x_ref[:, :4], x_ref[:, 4:]
+        torch.manual_seed(1)
+        expected = reference(torch.cat((hbo, hbo + hbr), dim=1).unsqueeze(1))
+        torch.manual_seed(1)
+        logits = model(x_port)
+        torch.testing.assert_close(logits, expected, rtol=0, atol=1e-5)
+        expected.square().sum().backward()
+        logits.square().sum().backward()
+        torch.testing.assert_close(x_port.grad, x_ref.grad, rtol=0, atol=1e-5)
+
+
+@pytest.mark.parametrize(
+    "n_chans, n_times, n_layers, mode, n_classes, n_params",
+    [
+        (40, 40, 4, "KFold-CV", 3, 37763),  # UFFT subject-specific
+        (72, 30, 4, "KFold-CV", 2, 87842),  # MA, WG subject-specific
+        (40, 40, 4, "LOSO-CV", 3, 39303),  # UFFT subject-independent
+        (72, 30, 4, "LOSO-CV", 2, 89894),  # MA subject-independent
+        (72, 30, 1, "LOSO-CV", 2, 29846),  # WG subject-independent
+    ],
+)
+def test_fnirs4d_authors_configurations(
+    n_chans, n_times, n_layers, mode, n_classes, n_params
+):
+    """The configurations of ``KFold_Train.py`` and ``LOSO_Train.py``: same
+    parameter count, strict load and eval logits as the authors' module."""
+    torch.manual_seed(0)
+    reference = _AuthorsFNIRS4D(mode, n_classes, n_chans, n_times, n_layers).eval()
+    branch = "time_mean" if mode == "KFold-CV" else "multiscale"
+    model = FNIRS4D(
+        n_chans=n_chans, n_outputs=n_classes, n_times=n_times, n_layers=n_layers,
+        compute_hbt=False, mean_branch=branch,
+    ).eval()
+    assert sum(p.numel() for p in model.parameters()) == n_params
+    assert sum(p.numel() for p in reference.parameters()) == n_params
+    model.load_state_dict(reference.state_dict(), strict=True)
+    x = torch.randn(4, n_chans, n_times)
+    with torch.no_grad():
+        torch.testing.assert_close(
+            model(x), reference(x.unsqueeze(1)), rtol=0, atol=1e-5
+        )
+
+
+def test_fnirs4d_s4d_initialisation_follows_the_authors():
+    """S4D-Lin initialisation of the authors' S4DKernel/S4D: C complex N(0, 1)
+    (each part std sqrt(0.5)), log_dt ~ U[log 1e-3, log 1e-1],
+    log_A_real = log 0.5, A_imag = pi n, D ~ N(0, 1)."""
+    torch.manual_seed(0)
+    layer = _S4DLayer(2048, 64, 0.0, nn.GELU)
+    kernel = layer.kernel
+    torch.testing.assert_close(
+        kernel.log_A_real, torch.full((2048, 32), math.log(0.5))
+    )
+    torch.testing.assert_close(
+        kernel.A_imag, math.pi * torch.arange(32.0).expand(2048, 32)
+    )
+    assert abs(kernel.C.std().item() - math.sqrt(0.5)) < 0.01
+    assert abs(layer.D.std().item() - 1.0) < 0.05
+    low, high = math.log(1e-3), math.log(1e-1)  # float32 bounds: 1e-6 slack
+    assert low - 1e-6 <= kernel.log_dt.min().item() < low + 0.05
+    assert high - 0.05 < kernel.log_dt.max().item() <= high + 1e-6
+
+
+@pytest.mark.parametrize("mean_branch", ["multiscale", "time_mean"])
+def test_fnirs4d_mean_branch(mean_branch):
+    """The authors' branch modules (``conv_1``, ``bn_1``, ...; none for
+    ``"time_mean"``, their KFold-CV branch, the time mean of each [HbO, HbT]
+    row); ``mapping`` renames only their ``fc.0``."""
+    model = FNIRS4D(n_chans=8, n_outputs=3, n_times=60, n_layers=1,
+                    mean_branch=mean_branch).eval()
+    branch = {
+        k.split(".")[1] for k in model.state_dict()
+        if k.startswith("mean_hemoglobin_branch.")
+    }
+    expected = {"conv_1", "bn_1", "conv_2", "bn_2"}
+    assert branch == (expected if mean_branch == "multiscale" else set())
+    assert model.mapping == {
+        "fc.0.weight": "final_layer.weight", "fc.0.bias": "final_layer.bias"
+    }
+    if mean_branch == "time_mean":
+        x = torch.randn(2, 8, 60)
+        with torch.no_grad():
+            features = model(x, return_features=True)["features"]
+        hbo, hbr = x.chunk(2, dim=1)
+        hbt = torch.cat((hbo, hbo + hbr), dim=1)
+        torch.testing.assert_close(features[:, 8:], hbt.mean(dim=-1))
+
+
+def test_fnirs4d_smallest_valid_configurations_build():
+    """The guards' boundaries: one HbO/HbR pair, and ``avg_size == n_times``."""
+    x = torch.randn(3, 2, 10)
+    assert FNIRS4D(n_chans=2, n_outputs=2, n_times=10).eval()(x).shape == (3, 2)
+    model = FNIRS4D(n_chans=8, n_outputs=2, n_times=10, avg_size=10).eval()
+    assert model(torch.randn(3, 8, 10)).shape == (3, 2)
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"mean_branch": "kfold"}, "mean_branch"),
+        ({"n_chans": 7, "compute_hbt": False}, "even n_chans"),
+        ({"n_chans": 1, "compute_hbt": False, "mean_branch": "time_mean"}, "n_chans >= 2"),
+        ({"n_times": 9}, "avg_size"),
+        ({"avg_size": 31}, "avg_size"),
+    ],
+)
+def test_fnirs4d_configurations_the_authors_code_cannot_build_raise(kwargs, match):
+    """An odd ``n_chans`` with ``"multiscale"`` (the authors' ``fc`` expects
+    ``2 n_chans`` features), a single row (instance norm) and an ``avg_size``
+    longer than the window fail in the authors' code; here a named ValueError."""
+    with pytest.raises(ValueError, match=match):
+        FNIRS4D(**{"n_chans": 8, "n_outputs": 2, "n_times": 30, **kwargs})
+    if "avg_size" in match:  # the time mean has no moving average
+        FNIRS4D(**{"n_chans": 8, "n_outputs": 2, "n_times": 30, **kwargs,
+                   "mean_branch": "time_mean"})
+
+
+class _AuthorsFNIRSTResidual(nn.Module):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, x):
+        return self.fn(x) + x
+
+
+class _AuthorsFNIRSTPreNorm(nn.Module):
+    def __init__(self, dim, fn):
+        super().__init__()
+        self.norm = nn.LayerNorm(dim)
+        self.fn = fn
+
+    def forward(self, x):
+        return self.fn(self.norm(x))
+
+
+class _AuthorsFNIRSTFeedForward(nn.Module):
+    def __init__(self, dim, hidden_dim, dropout=0.0):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim, hidden_dim), nn.GELU(), nn.Dropout(dropout),
+            nn.Linear(hidden_dim, dim), nn.Dropout(dropout),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class _AuthorsFNIRSTAttention(nn.Module):
+    def __init__(self, dim, heads=8, dim_head=64, dropout=0.0):
+        super().__init__()
+        inner_dim = dim_head * heads
+        project_out = not (heads == 1 and dim_head == dim)
+        self.heads = heads
+        self.scale = dim_head**-0.5
+        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
+        self.to_out = nn.Sequential(
+            nn.Linear(inner_dim, dim), nn.Dropout(dropout)
+        ) if project_out else nn.Identity()
+
+    def forward(self, x):
+        qkv = self.to_qkv(x).chunk(3, dim=-1)
+        q, k, v = (rearrange(t, "b n (h d) -> b h n d", h=self.heads) for t in qkv)
+        dots = torch.einsum("b h i d, b h j d -> b h i j", q, k) * self.scale
+        attn = dots.softmax(dim=-1)
+        out = torch.einsum("b h i j, b h j d -> b h i d", attn, v)
+        out = rearrange(out, "b h n d -> b n (h d)")
+        return self.to_out(out)
+
+
+class _AuthorsFNIRSTTransformer(nn.Module):
+    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout=0.0):
+        super().__init__()
+        self.layers = nn.ModuleList([])
+        for _ in range(depth):
+            self.layers.append(nn.ModuleList([
+                _AuthorsFNIRSTResidual(_AuthorsFNIRSTPreNorm(
+                    dim, _AuthorsFNIRSTAttention(dim, heads, dim_head, dropout)
+                )),
+                _AuthorsFNIRSTResidual(_AuthorsFNIRSTPreNorm(
+                    dim, _AuthorsFNIRSTFeedForward(dim, mlp_dim, dropout)
+                )),
+            ]))
+
+    def forward(self, x):
+        for attn, ff in self.layers:
+            x = attn(x)
+            x = ff(x)
+        return x
+
+
+class _AuthorsFNIRSPreTBlock(nn.Module):
+    def __init__(self, sampling_point):
+        super().__init__()
+        self.pool1 = nn.AvgPool1d(kernel_size=5, stride=1, padding=2)
+        self.pool2 = nn.AvgPool1d(kernel_size=13, stride=1, padding=6)
+        self.pool3 = nn.AvgPool1d(kernel_size=7, stride=1, padding=3)
+        self.ln_0 = nn.LayerNorm(sampling_point)
+        self.ln_1 = nn.LayerNorm(sampling_point)
+
+    def forward(self, x):
+        x0 = self.ln_0(self.pool3(self.pool2(self.pool1(x[:, 0, :, :].squeeze()))))
+        x1 = self.ln_1(self.pool3(self.pool2(self.pool1(x[:, 1, :, :].squeeze()))))
+        return torch.cat((x0.unsqueeze(dim=1), x1.unsqueeze(dim=1)), 1)
+
+
+class _AuthorsFNIRST(nn.Module):
+    """The reference: ``fNIRS_T`` of model.py of
+    wzhlearning/fNIRS-Transformer@6ebe987f (MIT), with its ``Residual``,
+    ``PreNorm``, ``FeedForward``, ``Attention``, ``Transformer`` and
+    ``PreBlock`` above, transcribed with the same layers, state-dict keys,
+    forward and draw order. Only the ``mask`` argument of ``Attention`` and
+    ``Transformer`` is left out: ``fNIRS_PreT`` never passes it, and
+    ``fNIRS_T`` passes ``None`` by default. Input ``[B, 2, channels,
+    samples]`` (HbO, HbR planes)."""
+
+    def __init__(self, n_class, sampling_point, dim, depth, heads, mlp_dim,
+                 pool="cls", dim_head=64, dropout=0.0, emb_dropout=0.0):
+        super().__init__()
+        num_patches = 100
+        num_channels = 100
+        n_features = (math.floor((sampling_point - 30) / 4) + 1) * 8
+        self.to_patch_embedding = nn.Sequential(
+            nn.Conv2d(in_channels=2, out_channels=8, kernel_size=(5, 30), stride=(1, 4)),
+            Rearrange("b c h w  -> b h (c w)"),
+            nn.Linear(n_features, dim),
+            nn.LayerNorm(dim),
+        )
+        self.to_channel_embedding = nn.Sequential(
+            nn.Conv2d(in_channels=2, out_channels=8, kernel_size=(1, 30), stride=(1, 4)),
+            Rearrange("b c h w  -> b h (c w)"),
+            nn.Linear(n_features, dim),
+            nn.LayerNorm(dim),
+        )
+        self.pos_embedding_patch = nn.Parameter(torch.randn(1, num_patches + 1, dim))
+        self.cls_token_patch = nn.Parameter(torch.randn(1, 1, dim))
+        self.dropout_patch = nn.Dropout(emb_dropout)
+        self.transformer_patch = _AuthorsFNIRSTTransformer(
+            dim, depth, heads, dim_head, mlp_dim, dropout
+        )
+        self.pos_embedding_channel = nn.Parameter(
+            torch.randn(1, num_channels + 1, dim)
+        )
+        self.cls_token_channel = nn.Parameter(torch.randn(1, 1, dim))
+        self.dropout_channel = nn.Dropout(emb_dropout)
+        self.transformer_channel = _AuthorsFNIRSTTransformer(
+            dim, depth, heads, dim_head, mlp_dim, dropout
+        )
+        self.pool = pool
+        self.to_latent = nn.Identity()
+        self.mlp_head = nn.Sequential(nn.LayerNorm(dim * 2), nn.Linear(dim * 2, n_class))
+
+    def forward(self, img):
+        x = self.to_patch_embedding(img)
+        x2 = self.to_channel_embedding(img.squeeze())
+        b, n, _ = x.shape
+        cls_tokens = repeat(self.cls_token_patch, "() n d -> b n d", b=b)
+        x = torch.cat((cls_tokens, x), dim=1)
+        x += self.pos_embedding_patch[:, :(n + 1)]
+        x = self.dropout_patch(x)
+        x = self.transformer_patch(x)
+        b, n, _ = x2.shape
+        cls_tokens = repeat(self.cls_token_channel, "() n d -> b n d", b=b)
+        x2 = torch.cat((cls_tokens, x2), dim=1)
+        x2 += self.pos_embedding_channel[:, :(n + 1)]
+        x2 = self.dropout_channel(x2)
+        x2 = self.transformer_channel(x2)
+        x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
+        x2 = x2.mean(dim=1) if self.pool == "mean" else x2[:, 0]
+        x3 = torch.cat((self.to_latent(x), self.to_latent(x2)), 1)
+        return self.mlp_head(x3)
+
+
+class _AuthorsFNIRSPreT(nn.Module):
+    """The reference ``fNIRS_PreT`` (see ``_AuthorsFNIRST``)."""
+
+    def __init__(self, n_class, sampling_point, dim, depth, heads, mlp_dim,
+                 pool="cls", dim_head=64, dropout=0.0, emb_dropout=0.0):
+        super().__init__()
+        self.pre = _AuthorsFNIRSPreTBlock(sampling_point)
+        self.fNIRS_T = _AuthorsFNIRST(n_class, sampling_point, dim, depth, heads,
+                                      mlp_dim, pool, dim_head, dropout, emb_dropout)
+
+    def forward(self, img):
+        return self.fNIRS_T(self.pre(img))
+
+
+def _fnirst_port_state_dict(state_dict, model):
+    """The conversion of FNIRST's docstring: an authors' ``fNIRS_T`` or
+    ``fNIRS_PreT`` state dict (or its gradients) with FNIRST's keys:
+    ``fNIRS_T.`` prefix removed, ``pre.ln_i`` to ``pre.norms.i``, ``to_qkv``
+    split into ``queries``/``keys``/``values``, positional tables cut to the
+    port's rows, ``mlp_head.{0,1}`` to ``final_norm``/``final_layer``."""
+    rows = {k: v.shape[1] for k, v in model.state_dict().items() if "pos_" in k}
+    block = r"\.layers\.(\d+)\.(\d)\.fn\."
+    renames = [
+        (r"^fNIRS_T\.", ""),
+        (r"^pre\.ln_(\d)\.", r"pre.norms.\1."),
+        (r"^mlp_head\.0\.", "final_norm."),
+        (r"^mlp_head\.1\.", "final_layer."),
+        (block + r"norm\.", r".\1.\2.fn.0."),
+        (block + r"fn\.to_qkv\.", r".\1.\2.fn.1.to_qkv."),
+        (block + r"fn\.to_out\.0\.", r".\1.\2.fn.1.projection."),
+        (block + r"fn\.net\.", r".\1.\2.fn.1."),
+    ]
+    out = {}
+    for key, value in state_dict.items():
+        for pattern, replacement in renames:
+            key = re.sub(pattern, replacement, key)
+        if key.endswith(".to_qkv.weight"):
+            prefix = key.removesuffix("to_qkv.weight")
+            for name, part in zip(("queries", "keys", "values"), value.chunk(3)):
+                out[f"{prefix}{name}.weight"] = part
+            continue
+        if key in rows:  # the authors allocate 101 rows and use the first ones
+            value = value[:, : rows[key]]
+        out[key] = value
+    return out
+
+
+@pytest.mark.parametrize("drop_prob, embed_drop_prob", [(0.0, 0.0), (0.2, 0.1)])
+@pytest.mark.parametrize("pool", ["cls", "mean"])
+@pytest.mark.parametrize(
+    "model_cls, authors_cls",
+    [(FNIRST, _AuthorsFNIRST), (FNIRSPreT, _AuthorsFNIRSPreT)],
+)
+def test_fnirst_matches_the_authors_module(
+    model_cls, authors_cls, pool, drop_prob, embed_drop_prob
+):
+    """The authors' state dict loads strictly after the documented conversion
+    into the port built with its defaults (only the varied arguments passed);
+    logits, ``final_layer(features)``, input and parameter gradients equal the
+    authors' module in eval and train mode (same seed: same dropout sites),
+    and stay equal over AdamW steps. 6 pairs, 60 samples, 3 classes."""
+    torch.manual_seed(0)
+    reference = authors_cls(3, 60, 64, 6, 8, 64, pool, 64, drop_prob, embed_drop_prob)
+    kw = {"pool": pool} if pool != "cls" else {}
+    if drop_prob:
+        kw.update(drop_prob=drop_prob, embed_drop_prob=embed_drop_prob)
+    model = model_cls(n_chans=12, n_outputs=3, n_times=60, **kw)
+    # the authors' unused positional rows: 101 - 3 (patch) and 101 - 7 (channel)
+    unused = 64 * ((101 - 3) + (101 - 7))
+    assert sum(p.numel() for p in model.parameters()) == sum(
+        p.numel() for p in reference.parameters()
+    ) - unused
+    model.load_state_dict(_fnirst_port_state_dict(reference.state_dict(), model))
+    close = partial(torch.testing.assert_close, rtol=0, atol=1e-5)
+    x = torch.randn(4, 2, 6, 60)  # the authors' [B, 2, pairs, samples]
+    x_port = x.reshape(4, 12, 60)  # stacked [HbO_1..HbO_6, HbR_1..HbR_6]
+    reference.eval()
+    model.eval()
+    with torch.no_grad():
+        expected = reference(x)
+        close(model(x_port), expected)
+        features = model(x_port, return_features=True)["features"]
+        close(model.final_layer(features), expected)
+    reference.train()
+    model.train()
+    x_ref = x.clone().requires_grad_(True)
+    x_model = x_port.clone().requires_grad_(True)
+    torch.manual_seed(1)
+    expected = reference(x_ref)
+    torch.manual_seed(1)
+    logits = model(x_model)
+    close(logits, expected)
+    y = torch.tensor([0, 1, 2, 0])
+    nn.functional.cross_entropy(expected, y).backward()
+    nn.functional.cross_entropy(logits, y).backward()
+    close(x_model.grad, x_ref.grad.reshape(4, 12, 60))
+    reference_grads = {n: p.grad for n, p in reference.named_parameters()}
+    expected_grads = _fnirst_port_state_dict(reference_grads, model)
+    for name, parameter in model.named_parameters():
+        close(parameter.grad, expected_grads[name])
+    for name, grad in reference_grads.items():
+        if "pos_embedding" in name:  # rows past the tokens are never read
+            n_rows = model.state_dict()[name.removeprefix("fNIRS_T.")].shape[1]
+            assert not grad[:, n_rows:].any()
+    optimizers = [torch.optim.AdamW(net.parameters()) for net in (reference, model)]
+    for step in range(2):
+        for net, optimizer, inputs in zip((reference, model), optimizers, (x, x_port)):
+            optimizer.zero_grad()
+            torch.manual_seed(10 + step)
+            nn.functional.cross_entropy(net(inputs), y).backward()
+            optimizer.step()
+    # Adam divides each gradient by its running magnitude, so the float32 noise
+    # of near-zero gradients becomes lr-sized steps (measured: parameters
+    # <= 1.7e-4, logits afterwards <= 5e-6)
+    expected_state = _fnirst_port_state_dict(reference.state_dict(), model)
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(value, expected_state[key], rtol=0, atol=1e-3)
+    reference.eval()
+    model.eval()
+    with torch.no_grad():
+        torch.testing.assert_close(model(x_port), reference(x), rtol=0, atol=1e-4)
+
+
+@pytest.mark.parametrize("pool", ["cls", "mean"])
+@pytest.mark.parametrize(
+    "model_cls, authors_cls",
+    [(FNIRST, _AuthorsFNIRST), (FNIRSPreT, _AuthorsFNIRSPreT)],
+)
+@pytest.mark.parametrize(
+    "n_pairs, n_times, n_classes, embed_dim, n_params",
+    [
+        (52, 140, 2, 64, {FNIRST: 1715666, FNIRSPreT: 1716226}),  # dataset A
+        (36, 200, 2, 64, {FNIRST: 1728978, FNIRSPreT: 1729778}),  # dataset B
+        (20, 256, 3, 128, {FNIRST: 3479123, FNIRSPreT: 3480147}),  # dataset C
+    ],
+    ids=["A", "B", "C"],
+)
+def test_fnirst_authors_configurations(
+    model_cls, authors_cls, pool, n_pairs, n_times, n_classes, embed_dim, n_params
+):
+    """The configurations of the authors' ``KFold_Train.py``: the authors'
+    parameter count minus their unused positional rows, strict load and eval
+    logits (measured max-abs <= 3.6e-7)."""
+    torch.manual_seed(0)
+    reference = authors_cls(n_classes, n_times, embed_dim, 6, 8, 64, pool).eval()
+    kw = {"pool": pool} if pool != "cls" else {}
+    if embed_dim != 64:
+        kw["embed_dim"] = embed_dim
+    model = model_cls(
+        n_chans=2 * n_pairs, n_outputs=n_classes, n_times=n_times, **kw
+    ).eval()
+    unused = embed_dim * ((101 - (n_pairs - 3)) + (101 - (n_pairs + 1)))
+    assert sum(p.numel() for p in model.parameters()) == n_params[model_cls]
+    assert sum(p.numel() for p in reference.parameters()) == n_params[model_cls] + unused
+    model.load_state_dict(_fnirst_port_state_dict(reference.state_dict(), model))
+    x = torch.randn(4, 2, n_pairs, n_times)
+    with torch.no_grad():
+        torch.testing.assert_close(
+            model(x.reshape(4, 2 * n_pairs, n_times)), reference(x), rtol=0, atol=1e-5
+        )
+
+
+@pytest.mark.parametrize(
+    "model_cls, authors_cls",
+    [(FNIRST, _AuthorsFNIRST), (FNIRSPreT, _AuthorsFNIRSPreT)],
+)
+def test_fnirst_initialisation_follows_the_authors(model_cls, authors_cls):
+    """Dataset B sizes: the class tokens and positional tables are N(0, 1)
+    (``torch.randn``), LayerNorms ones and zeros, and every other tensor of at
+    least 256 values has the authors' std (within 15 %) and mean."""
+    torch.manual_seed(0)
+    reference = authors_cls(2, 200, 64, 6, 8, 64)
+    torch.manual_seed(1)
+    model = model_cls(n_chans=72, n_outputs=2, n_times=200)
+    expected = _fnirst_port_state_dict(reference.state_dict(), model)
+    for key in ("cls_token_patch", "pos_embedding_patch", "cls_token_channel",
+                "pos_embedding_channel"):
+        value = model.state_dict()[key]  # 64 values for a class token
+        assert abs(value.mean()) < 0.3 and abs(value.std() - 1) < 0.3, key
+    for key, value in model.state_dict().items():
+        authors = expected[key]
+        if authors.std() == 0:  # LayerNorm
+            assert torch.equal(value, authors), key
+        elif value.numel() >= 256:
+            assert abs(value.std() / authors.std() - 1) < 0.15, key
+            assert abs(value.mean() - authors.mean()) < 0.15 * authors.std(), key
+
+
+def test_fnirspret_docstring_with_docstring_inheritance():
+    """docs/conf.py sets DOCSTRING_INHERITANCE_ENABLE: FNIRSPreT then keeps
+    its own docstring and inherits FNIRST's parameters."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(inspect.getfile(FNIRST))))
+    code = (
+        "from braindecode.models import FNIRSPreT, FNIRST\n"
+        "doc = FNIRSPreT.__doc__.lstrip()\n"
+        "assert doc.startswith('fNIRS-PreT from Wang'), doc[:80]\n"
+        "assert 'embed_dim : int' in doc and 'PreBlock' in doc\n"
+        "assert FNIRST.__doc__.lstrip().startswith('fNIRS-T from Wang')\n"
+    )
+    path = os.pathsep.join([root, os.environ.get("PYTHONPATH", "")])
+    env = dict(os.environ, DOCSTRING_INHERITANCE_ENABLE="1", PYTHONPATH=path)
+    result = subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+
+
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"n_chans": 8}, r"spatial_kernel_size \(5\) must be at most .* pairs \(4\)"),
+        ({"n_chans": 10, "spatial_kernel_size": 6}, r"spatial_kernel_size \(6\)"),
+        ({"n_chans": 11}, "needs HbO/HbR pairs: n_chans must be even"),
+        ({"pool": "max"}, "pool must be 'cls' or 'mean'"),
+        ({"n_times": 29}, "temporal_kernel_size"),
+    ],
+)
+def test_fnirst_invalid_configurations_raise(model_cls, kwargs, match):
+    """Fewer pairs than the spatial kernel fails in the authors' code too; an
+    odd ``n_chans`` has no HbO/HbR pairing; ``pool`` is ``"cls"`` or
+    ``"mean"``. The message names the class."""
+    with pytest.raises(ValueError, match=match):
+        model_cls(**{"n_chans": 12, "n_outputs": 2, "n_times": 60, **kwargs})
+    if "n_chans must be even" in match:
+        with pytest.raises(ValueError, match=model_cls.__name__):
+            model_cls(n_chans=11, n_outputs=2, n_times=60)
+
+
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+def test_fnirst_smallest_valid_configurations_build(model_cls):
+    """The guards' boundaries: as many pairs as the spatial kernel (one patch
+    token) and ``n_times == temporal_kernel_size`` (one bin)."""
+    model = model_cls(n_chans=10, n_outputs=2, n_times=30, depth=1).eval()
+    assert model.pos_embedding_patch.shape == (1, 2, 64)
+    assert model(torch.randn(3, 10, 30)).shape == (3, 2)
+    model = model_cls(n_chans=4, n_outputs=2, n_times=30, depth=1, spatial_kernel_size=2)
+    assert model.eval()(torch.randn(3, 4, 30)).shape == (3, 2)
+
+
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+def test_fnirst_seeded_reset_and_cls_tokens(model_cls):
+    """A seeded reset_parameters() repeats the seeded constructor; cls_token is
+    the two branches' CLS tokens, not the pooled features."""
+    torch.manual_seed(1)
+    model = model_cls(n_chans=10, n_outputs=2, n_times=60, depth=1, num_heads=2)
+    built = {k: v.clone() for k, v in model.state_dict().items()}
+    torch.manual_seed(1)
+    model.reset_parameters()
+    assert all(torch.equal(built[k], v) for k, v in model.state_dict().items())
+    with torch.no_grad():
+        out = model.eval()(torch.randn(2, 10, 60), return_features=True)
+    assert out["cls_token"].shape == out["features"].shape == (2, 128)
+    assert not torch.equal(out["cls_token"], out["features"])
+
+
+# FNIRST/FNIRSPreT need 5 HbO/HbR pairs for their default spatial kernel
+_FNIRS_TEST_N_CHANS = {FNIRST: 10, FNIRSPreT: 10, JungMAE: 6}
+
+
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT, JungMAE])
+def test_fnirs_features_feed_head_and_reset(model_cls):
+    """final_layer(features) == logits (train and eval); every parameter is reset."""
+    n_chans = _FNIRS_TEST_N_CHANS[model_cls]
+    model = model_cls(n_chans=n_chans, n_outputs=3, n_times=60, sfreq=10.0)
+    x = torch.randn(4, n_chans, 60)
+    model.eval()
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+        torch.testing.assert_close(model.final_layer(features), model(x))
+    model.train()
+    torch.manual_seed(123)
+    features = model(x, return_features=True)["features"]
+    torch.manual_seed(123)
+    torch.testing.assert_close(model.final_layer(features), model(x))
+    with torch.no_grad():
+        for p in model.parameters():
+            p.fill_(999.0)
+    model.reset_parameters()
+    assert not [n for n, p in model.named_parameters() if (p == 999.0).all()]
+    model.to(dtype=torch.float64).reset_head(5)
+    assert model.final_layer.weight.dtype == torch.float64
+
+
+def test_fnirspret_forwards_every_argument_to_fnirst():
+    """FNIRSPreT is FNIRST plus the preprocessing module: same signature, and the
+    same weights and outputs without that module."""
+    assert inspect.signature(FNIRSPreT.__init__) == inspect.signature(FNIRST.__init__)
+    kwargs = dict(
+        n_chans=10, n_outputs=3, n_times=60, embed_dim=32, depth=2, num_heads=2,
+        mlp_dim=32, pool="mean", head_dim=16, n_conv_filters=4, spatial_kernel_size=3,
+        temporal_kernel_size=20, temporal_stride=3, channel_order="interleaved",
+        drop_prob=0.1, embed_drop_prob=0.1, activation=nn.ReLU,
+    )
+    torch.manual_seed(0)
+    plain = FNIRST(**kwargs).eval()
+    torch.manual_seed(0)
+    pret = FNIRSPreT(**kwargs).eval()
+    plain_state = plain.state_dict()
+    pret_state = {k: v for k, v in pret.state_dict().items() if not k.startswith("pre.")}
+    assert list(plain_state) == list(pret_state)
+    for key, value in plain_state.items():
+        assert torch.equal(pret_state[key], value)
+    pret.pre = nn.Identity()
+    x = torch.randn(2, 10, 60)
+    with torch.no_grad():
+        assert torch.equal(pret(x), plain(x))
+
+
+@pytest.mark.parametrize(
+    "model_cls, fill",
+    [(FNIRST, 0.0), (FNIRSPreT, 0.0), (JungMAE, float("nan"))],
+)
+def test_fnirs_masks(model_cls, fill):
+    """ch_mask is refused by name; an all-False mask changes nothing; hidden
+    samples act as ``fill`` and get no gradient."""
+    torch.manual_seed(0)
+    n_chans = _FNIRS_TEST_N_CHANS[model_cls]
+    model = model_cls(n_chans=n_chans, n_outputs=3, n_times=60, sfreq=5.0).eval()
+    x = torch.randn(2, n_chans, 60)
+    with pytest.raises(ValueError, match=f"{model_cls.__name__} does not accept ch_mask"):
+        model(x, ch_mask=torch.ones(2, n_chans, dtype=torch.bool))
+    mask = torch.zeros_like(x, dtype=torch.bool)
+    assert torch.equal(model(x, mask=mask), model(x))
+    mask[:, 1, 20:40] = True
+    assert torch.equal(model(x, mask=mask), model(x.masked_fill(mask, fill)))
+    hidden = x.masked_fill(mask, float("nan")).requires_grad_(True)
+    model(hidden, mask=mask).sum().backward()
+    assert torch.equal(hidden.grad[mask], torch.zeros_like(hidden.grad[mask]))
+    assert hidden.grad[~mask].isfinite().all()
+
+
+@pytest.mark.parametrize("model_cls", [GeoNIRS, JungMAE])
+def test_fnirs_patch_models_refuse_a_partial_patch(model_cls):
+    """A window that is not a whole number of patches raises, as in the reference."""
+    with pytest.raises(ValueError, match="not divisible"):
+        model_cls(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=155)
+
+
+def test_mtrenirs_drops_a_partial_window():
+    """MtReNIRS drops a partial window, as its reference does."""
+    model = MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=150, depth=1)
+    assert model.n_windows == 1
+    x = torch.randn(1, 4, 150)
+    with torch.no_grad():
+        assert torch.equal(model.eval()(x), model(x[..., :100]))
+
+
+@pytest.mark.parametrize(
+    "model_cls,kwargs,n_times",
+    [
+        (GeoNIRS, {"depth": 1, "num_heads": 4, "embed_dim": 64,
+                   "pool": "mean_std"}, 60),
+        (MtReNIRS, {"depth": 2, "num_heads": 2, "embed_dim": 32,
+                    "pool": "channel_temporal_mean"}, 100),
+    ],
+)
+def test_fnirs_foundation_models_interleaved_chs_info(model_cls, kwargs, n_times):
+    """With the same weights, MNE-ordered chs_info and input give the
+    logits of the stacked chs_info on the stacked input."""
+    stacked = model_cls(chs_info=_fnirs_chs_info(4), n_outputs=3, n_times=n_times, **kwargs)
+    mne_order = model_cls(
+        chs_info=_interleaved_fnirs_chs(4), n_outputs=3, n_times=n_times, **kwargs
+    )
+    mne_order.load_state_dict(stacked.state_dict())
+    x = torch.randn(2, 8, n_times)  # [HbO_1..HbO_4, HbR_1..HbR_4]
+    x_mne = x.reshape(2, 2, 4, n_times).transpose(1, 2).reshape(2, 8, n_times)
+    with torch.no_grad():
+        torch.testing.assert_close(mne_order.eval()(x_mne), stacked.eval()(x))
+
+
+@pytest.mark.parametrize("model_cls", [GeoNIRS, MtReNIRS])
+def test_fnirs_foundation_models_head_and_reset(model_cls):
+    """final_layer(features) gives the logits; reset_parameters resets every
+    parameter; reset_head keeps the dtype."""
+    model = model_cls(chs_info=_fnirs_chs_info(3), n_outputs=3, n_times=100, sfreq=10.0)
+    x = torch.randn(4, 6, 100)
+    with torch.no_grad():
+        model.eval()
+        torch.testing.assert_close(
+            model.final_layer(model(x, return_features=True)["features"]), model(x)
+        )
+    model.train()
+    torch.manual_seed(123)
+    from_features = model.final_layer(model(x, return_features=True)["features"])
+    torch.manual_seed(123)
+    torch.testing.assert_close(from_features, model(x))
+    with torch.no_grad():
+        for p in model.parameters():
+            p.fill_(999.0)
+    model.reset_parameters()
+    assert not [n for n, p in model.named_parameters() if (p == 999.0).all()]
+    model = model.to(dtype=torch.float64)
+    model.reset_head(5)
+    assert model.final_layer.weight.dtype == torch.float64
+
+
+@pytest.mark.parametrize("model_cls", [GeoNIRS, JungMAE])
+def test_fnirs_pair_models_need_an_even_n_chans(model_cls):
+    with pytest.raises(ValueError, match="n_chans must be even"):
+        model_cls(n_chans=5, n_outputs=2, n_times=60)
+
+
+def test_geonirs_needs_its_channel_geometry():
+    with pytest.raises(ValueError, match="needs the channel geometry"):
+        GeoNIRS(n_chans=4, n_outputs=2, n_times=60)(torch.randn(1, 4, 60))
+    loc_none = [{"ch_name": f"S1_D1 {k}", "loc": None} for k in ("hbo", "hbr")]
+    with pytest.raises(ValueError, match="needs the channel geometry"):
+        GeoNIRS(chs_info=loc_none, n_outputs=2, n_times=60)(torch.randn(1, 2, 60))
+    with pytest.raises(ValueError, match="different channel counts"):
+        GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60)(torch.randn(1, 2, 60))
+
+
+def test_mtrenirs_needs_its_channel_positions():
+    with pytest.raises(ValueError, match="needs channel positions"):
+        MtReNIRS(n_chans=4, n_outputs=2, n_times=100)(torch.randn(1, 4, 100))
+    no_loc = [{"ch_name": f"S1_D1 {k}"} for k in ("hbo", "hbr")]
+    with pytest.raises(ValueError, match="needs channel positions"):
+        MtReNIRS(chs_info=no_loc, n_outputs=2, n_times=100)(torch.randn(1, 2, 100))
+    with pytest.raises(ValueError, match="needs HbO/HbR channels"):
+        MtReNIRS(chs_info=[{"ch_name": "Cz", "loc": np.zeros(12)}], n_outputs=2, n_times=100)
+    with pytest.raises(ValueError, match="different channel counts"):
+        MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=100)(torch.randn(1, 2, 100))
+
+
+def test_mtrenirs_leaves_unlocated_channels_out():
+    """As in the reference, a channel without a location (all-zero or NaN
+    ``loc[:3]``) gets zero tokens and does not change the other channels."""
+    chs = _fnirs_chs_info(3)
+    chs[0] = dict(chs[0], loc=np.zeros(12))
+    chs[3] = dict(chs[3], loc=np.full(12, np.nan))
+    torch.manual_seed(0)
+    model = MtReNIRS(chs_info=chs, n_outputs=2, n_times=200, depth=2).eval()
+    located = [1, 2, 4, 5]
+    alone = MtReNIRS(chs_info=[chs[i] for i in located], n_outputs=2, n_times=200, depth=2)
+    encoder = {k: v for k, v in model.state_dict().items() if not k.startswith("final_layer.")}
+    alone.load_state_dict(encoder)  # the head width depends on n_chans
+    x = torch.randn(2, 6, 200)
+    with torch.no_grad():
+        tokens, valid = model.encode_windows(x)
+        expected, _ = alone.eval().encode_windows(x[:, located])
+    assert not valid[:, :, [0, 3]].any() and not tokens[:, :, [0, 3]].any()
+    torch.testing.assert_close(tokens[:, :, located], expected)
+
+
+def test_geonirs_pair_without_optodes_gets_zero_geometry():
+    """As the reference, a pair without source/detector positions is zero
+    and left out of the centre of the others."""
+    chs = _fnirs_chs_info(3)
+    chs[1] = dict(chs[1], loc=None)  # S2_D2 hbo
+    geometry = GeoNIRS(chs_info=chs, n_outputs=2, n_times=60).default_geometry
+    others = [ch for i, ch in enumerate(_fnirs_chs_info(3)) if i not in (1, 4)]
+    expected = GeoNIRS(chs_info=others, n_outputs=2, n_times=60).default_geometry
+    assert not geometry[1].any()
+    assert torch.equal(geometry[[0, 2]], expected)
+
+
+def test_geonirs_mean_std_is_the_reference_readout():
+    """``pool="mean_std"``: the valid-patch mean and the reference's
+    ``variance.clamp_min(0).sqrt()``, so zero with a single valid patch."""
+    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60,
+                    pool="mean_std", embed_dim=32, num_heads=4,
+                    depth=1, n_latent_channels=2,
+                    feature_dim=4).eval()
+    x = torch.randn(1, 4, 60)
+    x[..., 10:] = float("nan")
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"].reshape(1, 2, 2, 8)
+        foundation = model.encode(x)["foundation"]  # (1, 2, S, P, 4)
+    assert not features[:, :, 1].any()
+    first = torch.cat([foundation[:, 0, :, 0], foundation[:, 1, :, 0]], dim=-1)
+    torch.testing.assert_close(features[:, :, 0], first)
+
+
+def test_geonirs_without_geometry_has_no_dead_parameters():
+    model = GeoNIRS(n_chans=6, n_outputs=2, n_times=30, sfreq=5.0, use_channel_geometry=False)
+    assert model.geometry_encoder is None
+    model(torch.randn(2, 6, 30)).sum().backward()
+    assert all(p.grad is not None and torch.isfinite(p.grad).all() for p in model.parameters())
+
+
+def test_geonirs_refuses_a_bad_pool_or_geometry_count():
+    with pytest.raises(ValueError, match="pool must be"):
+        GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60, pool="mean")
+    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60)
+    with pytest.raises(ValueError, match="geometry and x have different channel counts"):
+        model(torch.randn(1, 4, 60), geometry=torch.zeros(3, 6))
+    with pytest.raises(ValueError, match="geometry is not 6-D"):
+        model(torch.randn(1, 4, 60), geometry=torch.zeros(2, 5))
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"embed_dim": 30, "num_heads": 4}, r"divisible by num_heads \(4\)"),
+        ({"embed_dim": 32, "num_heads": 4, "geometry_heads": 3},
+         r"divisible by geometry_heads \(3\)"),
+        ({"embed_dim": 32, "num_heads": 4, "compressor_heads": 3},
+         r"divisible by compressor_heads \(3\)"),
+        ({"minimum_patch_valid_fraction": 1.5}, r"must be in \[0, 1\], got 1.5"),
+    ],
+)
+def test_geonirs_names_the_refused_argument(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60, **kwargs)
+
+
+def test_geonirs_encode_takes_the_ch_mask_of_forward():
+    """``encode`` reduces the ``(batch, n_chans)`` mask to HbO/HbR pairs: a
+    padded pair changes nothing for the real one."""
+    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60,
+                    embed_dim=32, num_heads=4, depth=1, n_latent_channels=2,
+                    feature_dim=4).eval()
+    x = torch.randn(1, 4, 60)  # [HbO_1, HbO_2, HbR_1, HbR_2]
+    mask = torch.tensor([[True, False, True, False]])
+    with torch.no_grad():
+        tokens = model.encode(x, ch_mask=mask)["foundation"]
+        alone = model.encode(x[:, [0, 2]], geometry=model.default_geometry[:1])
+    torch.testing.assert_close(tokens, alone["foundation"])
+
+
+def test_geonirs_padded_samples_are_missing():
+    """``on_non_divisible="pad"`` equals the NaN-padded window: the last patch
+    holds 5 of 10 samples, under the 80 % threshold."""
+    torch.manual_seed(0)
+    kwargs = dict(chs_info=_fnirs_chs_info(2), n_outputs=2, embed_dim=32,
+                  num_heads=4, depth=1, n_latent_channels=2, feature_dim=4)
+    padded = GeoNIRS(n_times=55, on_non_divisible="pad", **kwargs).eval()
+    plain = GeoNIRS(n_times=60, **kwargs).eval()
+    plain.load_state_dict(padded.state_dict(), strict=True)
+    x = torch.randn(2, 4, 55)
+    x_nan = torch.cat([x, torch.full((2, 4, 5), float("nan"))], dim=-1)
+    with torch.no_grad():
+        assert not padded.encode(x)["valid"][..., -1].any()
+        torch.testing.assert_close(padded(x), plain(x_nan), rtol=0, atol=0)
+
+
+def test_mtrenirs_refuses_a_bad_pool_or_coordinate_count():
+    with pytest.raises(ValueError, match="pool must be one of"):
+        MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=100, pool="mean")
+    model = MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=100, depth=1)
+    with pytest.raises(ValueError, match="coordinates and x have different channel counts"):
+        model(torch.randn(1, 4, 100), coordinates=torch.zeros(3, 4))
+
+
+def test_mtrenirs_chromophores_and_valid_window_pooling():
+    """HbO/HbR come from the names, NaN windows do not dilute the pooling,
+    and an odd head_dim is refused."""
+    chs = [{"ch_name": f"S{i}_D{i} {k}", "loc": np.array([0.03 * i, 0.0, 0.0])}
+           for i, k in enumerate(["hbo", "hbr", "hbo", "hbo"], 1)]
+    model = MtReNIRS(chs_info=chs, n_outputs=2, n_times=200, sfreq=10.0).eval()
+    assert model.default_coordinates[:, 3].tolist() == [0.0, 1.0, 0.0, 0.0]
+    x = torch.randn(1, 4, 200)
+    x[:, :, 100:] = float("nan")
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+        tokens, _ = model.encode_windows(x)
+    torch.testing.assert_close(features, tokens[:, 0].reshape(1, -1), atol=1e-6, rtol=1e-6)
+    with pytest.raises(ValueError, match="even head_dim"):
+        MtReNIRS(n_chans=4, n_outputs=2, n_times=100, embed_dim=12, num_heads=4)
+
+
+_FNIRS_WEIGHTS = os.environ.get("BRAINDECODE_FNIRS_WEIGHTS", "")
+
+
+def _fnirs_checkpoint(file):
+    """``file`` from ``BRAINDECODE_FNIRS_WEIGHTS``; the test is skipped without it."""
+    path = os.path.join(_FNIRS_WEIGHTS, file)
+    if not (_FNIRS_WEIGHTS and os.path.isfile(path)):
+        pytest.skip(f"{file} not in BRAINDECODE_FNIRS_WEIGHTS")
+    return path
+
+
+def _check_released_fnirs_checkpoint(path, cls, kwargs, expected):
+    """The checkpoint, as released (decoders included), loads strictly with
+    ``weights_only=True``, every backbone tensor is the checkpoint's, and the
+    first features equal ``expected``, the authors' code on the same input."""
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    model = cls(chs_info=_fnirs_chs_info(10), n_outputs=2, **kwargs).eval()
+    model.load_state_dict(payload, strict=True)
+    state = model.state_dict()
+    backbone = [k for k in state if not k.startswith("final_layer.")]
+    assert all(torch.equal(state[k], payload["model"][k]) for k in backbone)
+    torch.manual_seed(0)
+    x = torch.randn(2, model.n_chans, model.n_times)
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+    torch.testing.assert_close(features[:, :4], torch.tensor(expected), rtol=0, atol=1e-5)
+
+
+# features[:, :4] of the authors' code on the input of
+# _check_released_fnirs_checkpoint, computed with the authors' code at the
+# commit each test names
+
+
+@pytest.mark.parametrize(
+    "file, kwargs, expected",
+    [
+        ("geonirs_base.pt", {"n_times": 150, "sfreq": 5.0},
+         [[0.02500118874013424, 0.04738733917474747, 0.007597371935844421, 0.005497157108038664],
+          [-0.12108907848596573, 0.2241547405719757, -0.18274709582328796, -0.03251400962471962]]),
+        ("geonirs_large.pt", {"n_times": 150, "sfreq": 5.0, "embed_dim": 384,
+                              "num_heads": 12, "depth": 6, "feature_dim": 128},
+         [[-3.8912150859832764, -0.606697678565979, -0.19837510585784912, -6.412940979003906],
+          [-5.242615699768066, -2.4871740341186523, -0.46112173795700073, -3.506788730621338]]),
+    ],
+)
+def test_geonirs_released_checkpoints_match_the_authors_code(file, kwargs, expected):
+    """GeoNIRS@81f8995 checkpoints, from ``BRAINDECODE_FNIRS_WEIGHTS``."""
+    _check_released_fnirs_checkpoint(_fnirs_checkpoint(file), GeoNIRS, kwargs, expected)
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+@pytest.mark.parametrize(
+    "n_times, expected",
+    [
+        # one window: every token at window position 0
+        (100, [
+            [1.3799299001693726, 1.1365183591842651, 1.0999616384506226, 0.12654231488704681],
+            [-0.03779871016740799, -0.9599133729934692, 0.5302731394767761, 0.7867113351821899],
+        ]),
+        # three windows: the rotary position of each window takes part
+        (300, [
+            [1.8037338256835938, 0.23441250622272491, 0.7627871036529541, -0.022611618041992188],
+            [0.5426146388053894, -0.756412923336029, 0.2957547605037689, -1.5501772165298462],
+        ]),
+    ],
+)
+def test_mtrenirs_released_checkpoint_matches_the_authors_code(n_times, expected):
+    """The MIT-licensed MtReNIRS@16c3082 checkpoint, as released, on the Hub
+    (pinned revision); expected values from the authors' ``MtReNIRS.embed``."""
+    hub = ("braindecode/mtrenirs-pretrained", "bbc68ce5e00a4515081d900227fc06d111858e75")
+    path = os.path.join(_FNIRS_WEIGHTS, "mtrenirs_10s.pt")
+    if not (_FNIRS_WEIGHTS and os.path.isfile(path)):
+        hf_hub = pytest.importorskip("huggingface_hub")
+        try:
+            path = hf_hub.hf_hub_download(hub[0], "mtrenirs_10s.pt", revision=hub[1])
+        except hf_hub.utils.LocalEntryNotFoundError as err:  # offline
+            pytest.skip(f"Hugging Face Hub not reachable: {err}")
+    _check_released_fnirs_checkpoint(
+        path, MtReNIRS, {"n_times": n_times, "sfreq": 10.0}, expected
+    )
+
+
+def test_jung_mae_released_checkpoint_matches_the_authors_code():
+    """The released ``jung_mae.pt`` (81f8995), from ``BRAINDECODE_FNIRS_WEIGHTS``."""
+    expected = [
+        [0.0012979282764717937, -0.39332136511802673, 0.23441119492053986, 0.3510328233242035],
+        [-0.34959089756011963, -0.3680170476436615, 0.44219091534614563, 0.24921967089176178],
+    ]
+    path = _fnirs_checkpoint("jung_mae.pt")
+    _check_released_fnirs_checkpoint(path, JungMAE, {"n_times": 150, "sfreq": 5.0}, expected)
+
+
 def _tccnet_reference(model, x, mask_value):
     """NumPy transcription of the TCCNet Keras layers (DSIP-UPatras/ICASSP2019_TCN
     @cd28909: ``Masking``, ``CausalConv1D``, ``MeanOverTime`` and
@@ -6483,3 +8060,15 @@ def test_tccnet_pre_padding_matches_unpadded_input(classification_head):
 
     torch.testing.assert_close(out, model(x), rtol=1e-5, atol=1e-6)
     assert not padded.grad[..., :8].any()
+
+
+def test_cbramod_features_skip_pretraining_proj_out():
+    """Features and head see the encoder output, not the reconstruction layer."""
+    model = CBraMod(n_outputs=2, n_chans=3, n_times=400, n_layer=1, nhead=2).eval()
+    x = torch.randn(2, 3, 400)
+    with torch.no_grad():
+        model.proj_out[0].weight.fill_(7.0)  # would dominate the features if applied
+        tokens = model.encoder(model.patch_embedding(model.rearrange(x), None, None))
+        feats = model(x, return_features=True)["features"]
+    torch.testing.assert_close(feats, tokens)
+    assert any(k.startswith("proj_out.") for k in model.state_dict())

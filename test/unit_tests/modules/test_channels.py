@@ -6,15 +6,24 @@
 import copy
 import inspect
 import pickle  # nosec B403
+import warnings
 
 import mne
 import numpy as np
 import pytest
 import torch
 
+from braindecode.functional import spherical_spline_kernel
 from braindecode.models import BENDR, LUNA, Labram, SignalJEPA
 from braindecode.modules import ChannelLayer
-from braindecode.modules.channels import _SPHERE_R0, STRATEGIES, _resolve
+from braindecode.modules.channels import (
+    _SPHERE_R0,
+    STRATEGIES,
+    _interp,
+    _mixing,
+    _resolve,
+    _standard_positions,
+)
 
 TEN_TWENTY = "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
 SUBSET = ["Fp1", "F3", "Fz", "C3", "Cz", "P4", "Pz", "O2"]
@@ -331,3 +340,155 @@ def test_signal_jepa_strategy_targets_the_pretraining_channels():
     assert torch.isfinite(model(torch.randn(1, 2, 256))).all()
     with pytest.raises(ValueError, match="not in the input"):
         SignalJEPA(chs_info=names_only, **kw, channel_strategy="exact")
+
+
+def test_reverse_bipolar_is_exact_signed_copy():
+    # A measured cathode-anode trace is an exact negative of anode-cathode.
+    # This must not need positional interpolation or invented electrodes.
+    layer = ChannelLayer(chs(["F3-C3"]), "exact", chs(["C3-F3"]))
+    x = torch.tensor([[[1.0, -2.5, 0.0, 4.0]]])
+    y, observed = layer(x)
+    assert torch.equal(y, -x)
+    assert layer.weight.tolist() == [[-1.0]]
+    assert observed.tolist() == [True]
+
+
+def test_direct_bipolar_match_precedes_reverse_when_both_are_measured():
+    layer = ChannelLayer(chs(["F3-C3"]), "exact", chs(["C3-F3", "F3-C3"]))
+    x = torch.tensor([[[2.0, 5.0], [-2.0, -5.0]]])
+    y, observed = layer(x)
+    assert torch.equal(y, x[:, 1:2])
+    assert layer.weight.tolist() == [[0.0, 1.0]]
+    assert observed.tolist() == [True]
+
+
+def test_reverse_bipolar_case_insensitive():
+    layer = ChannelLayer(chs(["Fp1-F7"]), "exact", chs(["f7-fP1"]))
+    x = torch.tensor([[[1.0, 2.0]]])
+    assert torch.equal(layer(x)[0], -x)
+
+
+def test_distinct_reference_channels_are_not_assumed_equivalent():
+    # A-R1 and B-R2 cannot construct A-B without a shared reference.
+    with pytest.raises(ValueError, match="not in the input"):
+        ChannelLayer(chs(["F3-C3"]), "exact", chs(["F3-R1", "C3-R2"]))
+
+
+def test_reverse_bipolar_beats_midpoint_spatial_match():
+    # Reverse bipolar measurements have the SAME midpoint as the requested
+    # derivation. Copying by geometry would silently give the wrong polarity.
+    midpoint = [0.01, 0.02, 0.03]
+    target = [at("F3-C3", midpoint)]
+    input_chs = [at("C3-F3", midpoint)]
+    layer = ChannelLayer(target, "exact", input_chs)
+    x = torch.tensor([[[3.5, 0.0, -1.25]]])
+    y, observed = layer(x)
+    assert layer.weight.tolist() == [[-1.0]]
+    assert torch.equal(y, -x)
+    assert observed.tolist() == [True]
+
+
+def test_targets_from_any_combination_of_measured_channels():
+    # Potentials of 6 electrodes; the input is a TCP-style chain and a pair
+    # against the recording reference; every target is exact without positions.
+    v = torch.randn(1, 6, 50, dtype=torch.float64)
+    idx = dict(zip("Fp1 F7 T7 P7 O1 C3".split(), range(6)))
+    inputs = ["Fp1-F7", "F7-T7", "T7-P7", "P7-O1", "C3-REF", "P7-REF"]
+    x = torch.cat(
+        [v[:, [idx[a]]] - (v[:, [idx[b]]] if b in idx else 0)
+         for a, b in (n.split("-") for n in inputs)], 1
+    )
+    targets = ["Fp1-T7", "O1-T7", "C3-P7", "C3-O1"]
+    layer = ChannelLayer(chs(targets), "exact", chs(inputs)).double()
+    y, observed = layer(x)
+    expected = torch.cat([v[:, [idx[a]]] - v[:, [idx[b]]] for a, b in (n.split("-") for n in targets)], 1)
+    torch.testing.assert_close(y, expected, rtol=0, atol=1e-12)
+    assert observed.all()
+
+
+@pytest.mark.parametrize("reg", [1e-3, 0.0])
+def test_spline_is_mne_spherical_spline(reg):
+    src, tgt = _resolve(chs(SUBSET))[1], _resolve(chs(["T7", "P8", "F4"]))[1]
+    W, var = _mixing("spline", src, tgt, reg=reg)
+    np.testing.assert_allclose(W, _interp("spline", src, tgt, reg), atol=1e-10)
+    assert (var > 0).all()
+
+
+def test_kernel_strategy_variance_and_gain():
+    layer = ChannelLayer(chs(TEN_TWENTY), spherical_spline_kernel, chs(SUBSET), reg=1e-3)
+    measured = torch.tensor(np.isin(TEN_TWENTY, SUBSET))
+    assert (layer.variance[measured] == 0).all() and (layer.variance[~measured] > 0).all()
+    plain = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET))
+    torch.testing.assert_close(layer.weight, plain.weight)  # the same centred kernel
+    cz = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET), reference="Cz")
+    assert (cz.variance[~measured] > 0).all()  # A - Cz: one reconstructed entry
+    gained = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET), match_gain=True)
+    assert torch.equal(gained.weight[measured], plain.weight[measured])
+    assert not torch.allclose(gained.weight[~measured], plain.weight[~measured])
+    torch.testing.assert_close(gained.weight.sum(1), torch.ones(len(TEN_TWENTY)))
+
+
+def test_dense_spline_without_regularisation_keeps_every_row():
+    # The estimability of a row depends on the flat prior only: an ill-conditioned
+    # kernel solve must not zero a target.
+    names = list(_standard_positions())
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # the row-gain warning
+        layer = ChannelLayer(chs(names[150:200]), "spline", chs(names[:150]), reg=0.0)
+    assert (layer.weight.abs().sum(1) > 0).all()
+    torch.testing.assert_close(layer.weight.sum(1), torch.ones(50), atol=1e-4, rtol=0)
+
+
+@pytest.mark.parametrize("reference", ["average", "Cz"])
+def test_target_reference_with_a_missing_target(reference):
+    # Fp1 is zero-filled (and part of the average); BENDR's SCALE (no position)
+    # stays out of the reference
+    layer = ChannelLayer(chs([*SUBSET, "SCALE"]), "zero", chs(SUBSET[1:]), reference=reference)
+    y = layer(torch.randn(1, len(SUBSET) - 1, 10))[0]
+    assert (y[0, -1] == 0).all() and y[0, 1:-1].abs().sum() > 0
+
+
+@pytest.mark.parametrize("reference", ["average", "Cz"])
+def test_target_reference(reference):
+    v = torch.randn(2, len(TEN_TWENTY), 40, dtype=torch.float64)
+    layer = ChannelLayer(chs(SUBSET), "exact", chs(TEN_TWENTY), reference=reference)
+    sub = v[:, [TEN_TWENTY.index(n) for n in SUBSET]]
+    ref = sub.mean(1, keepdim=True) if reference == "average" else v[:, [TEN_TWENTY.index("Cz")]]
+    torch.testing.assert_close(layer.double()(v)[0], sub - ref, atol=1e-12, rtol=0)
+
+
+def test_one_montage_per_sample():
+    layer = ChannelLayer(chs(TEN_TWENTY), "spline", chs(TEN_TWENTY))
+    x = torch.randn(2, len(TEN_TWENTY), 30)
+    montages = [chs(TEN_TWENTY), chs(SUBSET)]
+    padded = x.clone()
+    padded[1, len(SUBSET):] = 0
+    y, observed = layer(padded, montages)
+    torch.testing.assert_close(y[1], layer(padded[1:, : len(SUBSET)], montages[1])[0][0])
+    torch.testing.assert_close(y[0], x[0])
+    assert observed.shape == (2, len(TEN_TWENTY)) and observed[0].all()
+    mask = torch.zeros(2, len(TEN_TWENTY), dtype=torch.bool)  # channels anywhere
+    mask[0], mask[1, -len(SUBSET):] = True, True
+    shifted = padded.clone()
+    shifted[1] = padded[1].roll(len(TEN_TWENTY) - len(SUBSET), 0)
+    torch.testing.assert_close(layer(shifted, montages, mask)[0], y)
+    with pytest.raises(ValueError, match="one montage per sample"):
+        layer(x, chs(TEN_TWENTY), mask)
+
+
+def test_strategy_model_takes_pad_channels_collate_batches():
+    # pos + ch_mask (no names): the montage of each sample from its positions.
+    model = Labram(chs_info=chs(SUBSET), n_outputs=2, n_times=800, sfreq=200,
+                   channel_strategy="spline").eval()
+    pos = torch.as_tensor(_resolve(chs(SUBSET))[1]).expand(2, -1, -1).clone()
+    mask = torch.ones(2, len(SUBSET), dtype=torch.bool)
+    mask[1, 5:] = False
+    x = torch.randn(2, len(SUBSET), 800) * mask[..., None]
+    named = [chs(SUBSET), chs(SUBSET[:5])]
+    with torch.no_grad():
+        torch.testing.assert_close(
+            model(x, pos=pos, ch_mask=mask), model(x, chs_info=named, ch_mask=mask)
+        )
+        # pos without ch_mask (set_return_ch_pos, no padding): the construction
+        # montage maps x, the backbone never gets the input's positions
+        torch.testing.assert_close(model(x[:1], pos=pos[:1]), model(x[:1]))

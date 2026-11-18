@@ -17,7 +17,6 @@ import torchaudio as ta
 from torch import nn
 from torch.nn import functional as F
 
-from braindecode.functional.attention import _hpu_lazy
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import has_valid_locations, positions_from_chs_info
 from braindecode.modules import ChannelMerger
@@ -713,7 +712,7 @@ class _ConvSequence(nn.Module):
                         nn.Conv1d(
                             chout, 2 * chout, 1 + 2 * glu_context, padding=glu_context
                         ),
-                        _GLU(dim=1),
+                        nn.GLU(dim=1),
                     )
                 )
             else:
@@ -726,17 +725,6 @@ class _ConvSequence(nn.Module):
             x = skip_proj(x) + module(x)
             x = glu(x)
         return x
-
-
-class _GLU(nn.GLU):
-    """``nn.GLU`` that Intel Gaudi's lazy mode can compile."""
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if not torch.jit.is_scripting() and x.device.type == "hpu" and _hpu_lazy():
-            # Its graph compiler fails on ``aten.glu`` after a convolution.
-            a, b = x.chunk(2, dim=self.dim)
-            return a * torch.sigmoid(b)
-        return F.glu(x, self.dim)
 
 
 def _pad_multiple(x: torch.Tensor, base: int) -> torch.Tensor:
