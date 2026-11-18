@@ -83,6 +83,7 @@ from braindecode.models import (
     MtReNIRS,
     NeuroRVQ,
     NeuroRVQTokenizer,
+    PBT,
     SCCNet,
     ShallowFBCSPNet,
     SleepStagerBlanco2020,
@@ -8072,3 +8073,15 @@ def test_cbramod_features_skip_pretraining_proj_out():
         feats = model(x, return_features=True)["features"]
     torch.testing.assert_close(feats, tokens)
     assert any(k.startswith("proj_out.") for k in model.state_dict())
+
+
+def test_pbt_patches_are_channel_specific():
+    n_chans, n_times, d_input = 22, 1000, 64  # 1000 is not a multiple of 64
+    model = PBT(n_chans=n_chans, n_times=n_times, n_outputs=2, d_input=d_input)
+    x = torch.arange(n_chans, dtype=torch.float32).view(1, -1, 1).repeat(1, 1, n_times)
+
+    patches, _ = model.patch_signal(x)
+
+    assert patches.shape == (1, n_chans * (n_times // d_input), d_input)
+    assert all(patch.unique().numel() == 1 for patch in patches[0])
+    assert model(x).shape == (1, 2)

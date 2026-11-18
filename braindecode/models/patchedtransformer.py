@@ -622,7 +622,8 @@ class _Patcher(nn.Module):
     def __init__(self, n_chans=2, n_times=1000, d_input=64) -> None:
         super().__init__()
         self.d_input = d_input
-        self.num_tokens = (n_chans * n_times) // d_input
+        self.n_chans = n_chans
+        self.tokens_per_channel = n_times // d_input
 
     def forward(self, X: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Returns patched input together with positional indices
@@ -636,15 +637,17 @@ class _Patcher(nn.Module):
         Returns
         -------
         x_patched: torch.LongTensor
-            Tensor of shape (B, (C*T)//d_input, d_input) containing positional token indices.
+            Tensor of shape (B, C*(T//d_input), d_input) containing the patches. Each
+            patch lies within one channel; trailing samples that do not fill a patch
+            are dropped.
 
         position: torch.LongTensor
-            Tensor of shape ((C*T)//d_input + 1) containing positional token indices.
+            Tensor of shape (C*(T//d_input) + 1) containing positional token indices.
         """
 
-        X_flat = X.view(X.size(0), -1)
-        x_patched = X_flat[:, : self.num_tokens * self.d_input].view(
-            X.size(0), self.num_tokens, self.d_input
+        used = self.tokens_per_channel * self.d_input
+        x_patched = X[..., :used].reshape(
+            X.size(0), self.n_chans * self.tokens_per_channel, self.d_input
         )
 
         position = torch.arange(x_patched.size(1) + 1, device=X.device)
