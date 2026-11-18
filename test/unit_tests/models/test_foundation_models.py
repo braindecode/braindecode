@@ -1597,6 +1597,25 @@ def test_codebrain_pretrain_mode():
     assert x_f.shape == (2, 19, 30, 4096)
 
 
+def test_codebrain_mask_with_non_default_patch_size():
+    # patch_size=128 gives emb_dim=150, so mask_encoding must follow patch_size.
+    model = CodeBrain(
+        n_chans=4,
+        n_outputs=2,
+        n_times=512,
+        patch_size=128,
+        num_res_layers=1,
+        s4_lmax=16,
+        pretrain_mode=True,
+    )
+    x = torch.randn(2, 4, 512)
+    mask = torch.zeros(2, 4, 4, dtype=torch.long)
+    mask[0, 1, 2] = 1
+    x_t, x_f = model(x, mask=mask)
+    assert x_t.shape == (1, 4096)
+    assert x_f.shape == (1, 4096)
+
+
 def test_codebrain_return_features():
     model = CodeBrain(n_chans=19, n_outputs=2, n_times=6000)
     x = torch.randn(2, 19, 6000)

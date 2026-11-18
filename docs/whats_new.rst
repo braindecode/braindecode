@@ -30,8 +30,22 @@ Enhancements
 
 - Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
   between recording descriptions and window metadata, and recording-level subset
-  selection (by `Daria Agafonova`_).
+  selection (:gh:`1596` by `Daria Agafonova`_).
 
+- :class:`braindecode.modules.ChannelLayer` maps channels with one linear
+  estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
+  targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat
+  prior on the unknown reference (universal kriging). ``spline`` (now Perrin's
+  kernel, :func:`~braindecode.functional.spherical_spline_kernel`) and ``wiener``
+  use it with unchanged maps; ``channel_strategy`` also takes any covariance
+  kernel, fed positions from the fitted head centre, with ``reg=1e-3`` and at
+  least four positioned channels, as ``spline``. The layer gives each target's posterior ``variance``, matches the
+  amplitude with ``match_gain=True``, re-references the targets with
+  ``reference="average"`` or an electrode name
+  (:func:`~braindecode.functional.derivation_matrix` takes ``reference`` too),
+  and takes one montage per sample: a model with a ``channel_strategy`` now takes
+  the ``pos``/``ch_mask`` batches of :func:`~braindecode.datasets.pad_channels_collate`
+  instead of refusing ``ch_mask`` (:gh:`1593` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.JungMAE`, the GeoNIRS authors' implementation of the
   masked autoencoder of Jung et al. (IEEE BCI 2025), with a linear head;
   ``load_state_dict`` takes the GeoNIRS benchmark's ``jung_mae.pt`` as released
@@ -41,6 +55,17 @@ Enhancements
   a QK-norm rotary transformer; ``load_state_dict`` takes ``mtrenirs_10s.pt`` as
   released, and the docstring gives the 0.01-0.5 Hz band-pass its weights expect
   (:gh:`1590` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.GeoNIRS` (Li et al., 2026), an fNIRS foundation model
+  that compresses paired HbO/HbR channels onto latent channels with a cross-attention
+  conditioned on the source-detector geometry read from ``chs_info``;
+  ``load_state_dict`` takes ``geonirs_base.pt`` and ``geonirs_large.pt`` as released,
+  and ``ch_mask`` handles montages of different sizes (:gh:`1591` by
+  `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan
+  et al. (Neurophotonics 2018) as the GeoNIRS benchmark (Li et al., 2026)
+  implements it: two temporal convolutions with GroupNorm and GELU, a time
+  average and a linear head. Its ``mapping`` loads the
+  authors' state dict (:gh:`1592` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
   transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
@@ -59,6 +84,14 @@ Enhancements
   ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
   ``chs_info``, stacked or in MNE's interleaved order (:gh:`1582` by
   `Bruno Aristimunha`_).
+- The docstrings of :class:`braindecode.models.FNIRSNet`, :class:`~braindecode.models.FNIRS4D`,
+  :class:`~braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT` describe
+  each model from the papers: the architecture as named steps with module names and
+  tensor shapes, what is inside each block with the paper's equations (and the S4D
+  equations of Gu et al. for FNIRS4D), how time, channels and chromophores are encoded,
+  and the differences from the authors' code. Every step of their forward passes is
+  commented in the paper's terms with its shape; outputs and checkpoints are unchanged
+  (:gh:`1586` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` compiles with ``torch.compile`` into one graph: its lazy
   kernel-norm initialisation no longer reads a tensor's value on every forward (19 graph breaks
   and 21 compiled graphs for two training steps before, on every device). Checkpoints and
@@ -124,6 +157,11 @@ Enhancements
   encoder output ``(batch, n_chans, n_tokens, dim)`` with the tokens of padded
   channels zero; DIVER1 gains
   ``return_features`` (:gh:`1540` by `Julien Gadonneix`_).
+- :ref:`install_gaudi` lists two attention issues of Gaudi software 1.21.4 that give no
+  error: wrong values in eager mode when two calls take transposed views with as many
+  elements in different shapes (:class:`braindecode.models.AXON`), and no gradient for a
+  learnable ``attn_mask`` (:class:`braindecode.models.DIVER1`)
+  (:gh:`1599` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
@@ -167,6 +205,21 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
+  ``patch_size`` differs from the embedding size ``emb_dim``, for example
+  ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
+  patches but had size ``emb_dim``. It now has size ``patch_size``, as in
+  :class:`braindecode.models.CBraMod`. The two are equal for the released
+  ``patch_size=200``, so the released weights still load and outputs do not change.
+  A checkpoint saved with a ``patch_size`` that is not a multiple of 25 has the old
+  size and no longer loads; ``mask_encoding`` is a frozen zero vector, so drop that
+  key from the state dict and load with ``strict=False`` (:gh:`1601` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
+  supplied electrode names without regard to case, including with a named
+  recording reference, preventing duplicated columns and misplaced weights
+  (:gh:`1597` by `lindicaphxag-tech`_).
+
 - :class:`braindecode.modules.ChannelLayer` computes every target that is a
   combination of the measured channels exactly, under every strategy including
   ``"exact"``: ``A-B`` from a measured ``B-A`` with weight -1 (copied before with
@@ -182,6 +235,13 @@ Bug fixes
   1-D index, instead of one call per channel with a 0-d index. Outputs and gradients are
   bitwise the same on CPU. On Intel Gaudi, whose embedding backward sends a 0-d index's
   gradient to row 0, only the first channel token trained before (:gh:`1585` by
+  `Bruno Aristimunha`_).
+- :class:`braindecode.models.MAPA` attends with 4-D inputs on every device; on Intel
+  Gaudi it used 5-D ones, which the fused attention kernel gets wrong (outputs 55% and
+  gradients 60-70% off). :class:`braindecode.models.EMG2QwertyNet` takes offset 0 of
+  its rotation-invariant MLP as the input itself instead of a roll by 0, which saves a
+  copy; on Gaudi, the roll by 0 of a slice of the stacked gradient gave a wrong input
+  gradient. Outputs and gradients are unchanged on CPU (:gh:`1595` by
   `Bruno Aristimunha`_).
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
@@ -218,6 +278,20 @@ Bug fixes
   these real bins, so a negative bin got ``pi`` or ``-pi`` at random; on MPS
   this moved the outputs of the released weights on random-walk input by 7 %
   from the CPU ones. CPU outputs are unchanged (:gh:`1566` by `Hamza Abdelhedi`_).
+- :class:`braindecode.models.SignalJEPA` and
+  :class:`braindecode.models.SignalJEPA_Contextual` no longer fail in ``backward()``
+  when the window gives one token per channel (for example 152 samples at 128 Hz)
+  and ``activation`` is ``nn.ReLU``, ``nn.Tanh`` or ``nn.Sigmoid``. ``forward``
+  added the positional encoding in place to the activation output, which autograd
+  keeps for the backward pass, and now adds it out of place. Outputs and
+  parameters are unchanged (:gh:`1600` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.MSVTNet` no longer fails in ``forward`` when
+  ``n_filters_list`` has unequal widths, for example ``(8, 8, 12, 12)``. The
+  constructor and the authors' code concatenate the branch outputs, but
+  ``forward`` stacked them, which needs equal widths. ``forward`` now
+  concatenates them. Outputs and parameters are unchanged for equal widths
+  (:gh:`1604` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - The Eldele et al. (2021) sleep staging tutorial (``plot_sleep_staging_eldele2021.py``) splits train and validation by subject, as its text says; ``split`` took the ids as recording indices, so it trained on subjects 0-1 and validated on subject 2 while subjects 3-5 were loaded and unused (:gh:`1559` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ZUNA` defaults to ``pos_bins=100``, the value ZUNA1.1 was trained with (paper Table II and Zyphra's configs); the old default ``50`` was ZUNA1's and gave the released encoder outputs up to 5.2 away from the original. The ``braindecode/ZUNA`` checkpoint now holds the ZUNA1.1 encoder in braindecode's parameter names (the earlier ZUNA1 file loaded no parameter into the class) and sets ``pos_bins`` in its config (:gh:`1557` by `Bruno Aristimunha`_).
 - ``from_pretrained`` of :class:`braindecode.models.Brant` loads a checkpoint at
@@ -241,6 +315,13 @@ Bug fixes
 Code health
 ============
 
+- Every model is compiled on master: ``test_model_compiled`` no longer skips
+  :class:`braindecode.models.MetaNeuromotorHand`, whose MPF featurizer torch
+  2.15 compiles in about 90 s. ``test_model_exported`` exports
+  :class:`braindecode.models.EEGMiner`, :class:`braindecode.models.SSTDPN`,
+  :class:`braindecode.models.Labram` and :class:`braindecode.models.CodeBrain`,
+  which it skipped; it still skips SyncNet and NeuroRVQTokenizer
+  (:gh:`1598` by `Bruno Aristimunha`_).
 - The :class:`braindecode.models.JungMAE` tests compare the forward with the
   reference encoder at ``atol=1e-5``: the reference packs the valid tokens and
   the model masks the invalid ones, so float32 rounding depends on the machine
