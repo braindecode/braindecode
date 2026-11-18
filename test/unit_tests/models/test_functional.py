@@ -559,3 +559,26 @@ def test_exact_derivation(target, inputs, weight):
     assert exact.tolist() == [weight is not None]
     assert W.shape == (len(target), len(inputs))
     assert W.tolist() == (weight or [[0.0] * len(inputs)])
+
+
+@pytest.mark.parametrize("inputs", [[], ["F3-C3"]])
+def test_exact_derivation_empty_targets(inputs):
+    weight, exact = exact_derivation([], inputs)
+    assert weight.shape == (0, len(inputs))
+    assert weight.dtype == torch.float64
+    assert exact.shape == (0,)
+    assert exact.dtype == torch.bool
+
+
+def test_derivation_matrix_normalizes_explicit_electrode_case():
+    matrix, electrodes = derivation_matrix(["F3-C3"], electrodes=["F3", "C3"])
+    assert electrodes == ["f3", "c3"]
+    assert matrix.tolist() == [[1.0, -1.0]]
+
+
+def test_derivation_matrix_deduplicates_mixed_case_columns():
+    matrix, electrodes = derivation_matrix(
+        ["f3-C3"], electrodes=["F3", "f3", "c3", "C3"]
+    )
+    assert electrodes == ["f3", "c3"]
+    assert matrix.tolist() == [[1.0, -1.0]]
