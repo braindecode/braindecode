@@ -31,6 +31,7 @@ from braindecode.models import (
     PopulationTransformer,
 )
 from braindecode.models.diver1 import channel_metadata_from_chs_info
+from braindecode.models.util import _fnirs_chs_info
 
 N_REAL = [1, 3, 2]  # real channels of the three recordings, padded to 3
 
@@ -263,6 +264,27 @@ def test_fnirs_chs_info_ch_mask_matches_each_recording_alone():
     for i, xi in enumerate(xs):
         x[i, : len(xi)] = xi
     _assert_matches_alone(model, x, mask, xs, {}, alone)
+
+
+def test_mtrenirs_ch_mask_matches_each_recording_alone_with_zero_padding():
+    # pad_channels_collate pads with zeros by default: then ch_mask alone keeps
+    # the padded channels out (NaN padding is masked by the NaN rule as well)
+    torch.manual_seed(0)
+    model = MtReNIRS(chs_info=_fnirs_chs_info(3), n_outputs=3, n_times=200,
+                     depth=1, pool="channel_temporal_mean").eval()
+    n_real = [2, 6, 4]
+    xs = [torch.randn(n, 200) for n in n_real]
+    x = torch.zeros(3, 6, 200)
+    for i, xi in enumerate(xs):
+        x[i, : len(xi)] = xi
+    mask = torch.arange(6) < torch.tensor(n_real)[:, None]
+    coordinates = model.default_coordinates
+    with torch.no_grad():
+        out = model(x, ch_mask=mask)
+        alone = torch.cat(
+            [model(xi[None], coordinates=coordinates[: len(xi)]) for xi in xs]
+        )
+    torch.testing.assert_close(out, alone, rtol=0, atol=1e-5)
 
 
 @pytest.mark.parametrize("name", ["REVE", "Labram"])
