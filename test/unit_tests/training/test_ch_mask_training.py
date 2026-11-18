@@ -120,7 +120,7 @@ def test_registered_model_ch_mask_training(model_name, required_params, signal_p
 def test_channel_strategy_model_trains_on_padded_batches():
     # The channel layer maps each recording, from its positions, onto BIOT's
     # bipolar pretraining channels; the backbone never sees ch_mask.
-    windows = _windows([4, 6], n_times=200, pos=True)
+    windows = _windows([8, 12], n_times=200, pos=True)  # spline: a fitted head
     net = _net(BIOT, module__n_outputs=2, module__n_times=200, module__sfreq=100,
                module__embed_dim=32, module__num_heads=2, module__num_layers=1,
                module__channel_strategy="spline")
