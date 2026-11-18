@@ -68,6 +68,7 @@ def test_geonirs_mean_std_step_with_zero_one_or_several_valid_patches():
     x[1, :, 10:] = NAN
     x.requires_grad_()
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    weight_before = model.final_layer.weight.detach().clone()
 
     loss = torch.nn.functional.cross_entropy(model(x), torch.tensor([0, 1, 0]))
     assert loss.isfinite()
@@ -78,6 +79,7 @@ def test_geonirs_mean_std_step_with_zero_one_or_several_valid_patches():
     )
     optimizer.step()
     assert all(p.isfinite().all() for p in model.parameters())
+    assert not torch.equal(model.final_layer.weight, weight_before)
 
 
 # The authors' Ours writes its projection widths, 192 -> 128 -> 96 -> 64, by
