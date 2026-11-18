@@ -1,27 +1,38 @@
 # Authors: Sarthak Tayal <sarthaktayal2@gmail.com>
-import importlib
+import subprocess
 import sys
-import unittest.mock
 
-import pytest
-from mne.utils import _soft_import
-
-pydantic = _soft_import(name="pydantic", purpose="model config testing", strict=False)
-
-if pydantic is False:
-    pytest.skip("pydantic not installed, skipping", allow_module_level=True)
+import mne
+import numpy as np
 
 
-def test_config_import_without_numpydantic():
-    # config module should load fine when numpydantic is missing
-    saved = sys.modules.pop("numpydantic", None)
-    try:
-        with unittest.mock.patch.dict(sys.modules, {"numpydantic": None}):
-            import braindecode.models.config as cfg_mod
+def test_mne_channel_metadata_roundtrip():
+    from braindecode.models.config import EEGNetConfig
 
-            importlib.reload(cfg_mod)
-            assert hasattr(cfg_mod, "ChsInfoType")
-            assert "loc" in cfg_mod.ChsInfoType.__annotations__
-    finally:
-        if saved is not None:
-            sys.modules["numpydantic"] = saved
+    info = mne.create_info(["F3", "C3"], sfreq=128, ch_types="eeg")
+    info.set_montage("standard_1020")
+    config = EEGNetConfig(chs_info=info["chs"], n_times=256, n_outputs=2)
+    restored = EEGNetConfig.model_validate_json(
+        config.model_dump_json()
+    ).create_instance()
+    assert restored.n_chans == 2
+    for result, original in zip(restored.chs_info, info["chs"], strict=True):
+        assert result["ch_name"] == original["ch_name"]
+        assert result["kind"] == original["kind"]
+        assert result["coord_frame"] == original["coord_frame"]
+        np.testing.assert_allclose(result["loc"], original["loc"], equal_nan=True)
+
+
+def test_config_without_numpydantic():
+    # Exercise the core install in isolation from the typed configs already imported.
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.modules['numpydantic'] = None\n"
+            "from test.unit_tests.models.test_config_numpydantic_fallback import "
+            "test_mne_channel_metadata_roundtrip\n"
+            "test_mne_channel_metadata_roundtrip()",
+        ],
+        check=True,
+    )

@@ -302,6 +302,8 @@ Bug fixes
   ``forward`` that takes them. A model without them now raises a clear
   ``ValueError`` instead of a ``TypeError`` deep in skorch
   (:gh:`1545` by `Bruno Aristimunha`_).
+- Pydantic model configs accept MNE's integer FIFF channel kinds and preserve
+  channel locations through JSON in a core installation without ``numpydantic``.
 - Fix the PyTorch forum and TensorFlow references of
   :class:`braindecode.modules.MaxNormLinear`: each URL was split across two
   docstring lines, so the rendered links pointed to a truncated forum URL (404)
