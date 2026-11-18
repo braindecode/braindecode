@@ -26,6 +26,7 @@ from braindecode.models import (
     CBraMod,
     EpiNT,
     Labram,
+    MtReNIRS,
     MVPFormer,
     PopulationTransformer,
 )
@@ -144,6 +145,12 @@ _CASES = {
         ("sensor_indices", _mapa_indices, False),
     ),
     "CORTEG": lambda: (_corteg(), 64, ("pos", _positions, True)),
+    "MtReNIRS": lambda: (
+        MtReNIRS(n_chans=3, n_outputs=3, n_times=100, window_samples=50, embed_dim=32,
+                 depth=1, num_heads=2, mlp_dim=64, pool="channel_temporal_mean"),
+        100,
+        ("coordinates", lambda i, n: torch.rand((n, 4), generator=torch.Generator().manual_seed(i)), True),
+    ),
 }
 
 
@@ -227,6 +234,37 @@ def test_labram_ch_mask_matches_each_recording_alone():
     _assert_matches_alone(*_labram_case())
 
 
+def _mne_fnirs_chs(n_pairs):
+    """MNE fNIRS chs_info: interleaved HbO/HbR pairs with optode positions."""
+    names = [f"S{i}_D{i} {c}" for i in range(1, n_pairs + 1) for c in ("hbo", "hbr")]
+    info = mne.create_info(names, 10.0, ["hbo", "hbr"] * n_pairs)
+    for i, ch in enumerate(info["chs"]):
+        src = 0.08 * np.array([np.cos(i // 2), np.sin(i // 2), 0.5])
+        det = src + np.array([0.03, 0.0, 0.0])
+        ch["loc"][:9] = np.concatenate([(src + det) / 2, src, det])
+    return info["chs"]
+
+
+def test_fnirs_chs_info_ch_mask_matches_each_recording_alone():
+    # pair layout, positions and chromophores from MNE chs_info only:
+    # recordings of 1, 3 and 2 HbO/HbR pairs padded to 3 pairs; a recording
+    # alone takes the coordinates of its own pairs
+    torch.manual_seed(0)
+    model = MtReNIRS(chs_info=_mne_fnirs_chs(3), n_outputs=3, n_times=100,
+                     window_samples=50, embed_dim=32, depth=1, num_heads=2,
+                     mlp_dim=64, pool="channel_temporal_mean")
+    alone = [
+        {"coordinates": model.default_coordinates[: 2 * n_real]} for n_real in N_REAL
+    ]
+    model.eval()
+    xs = [torch.randn(2 * n_real, model.n_times) for n_real in N_REAL]
+    mask = torch.arange(6) < 2 * torch.tensor(N_REAL)[:, None]
+    x = torch.full((len(N_REAL), 6, model.n_times), float("nan"))
+    for i, xi in enumerate(xs):
+        x[i, : len(xi)] = xi
+    _assert_matches_alone(model, x, mask, xs, {}, alone)
+
+
 @pytest.mark.parametrize("name", ["REVE", "Labram"])
 def test_reve_labram_tokens_match_each_recording_alone(name):
     case = _labram_case() if name == "Labram" else _padded_case(name)
@@ -299,6 +337,11 @@ _FIXED_HEADS = {
         400,
     ),
     "MEGGPT": lambda: (_small_meggpt(), 16),
+    "MtReNIRS-temporal_mean": lambda: (
+        MtReNIRS(n_chans=3, n_outputs=3, n_times=100, window_samples=50, embed_dim=32,
+                 depth=1, num_heads=2, mlp_dim=64),
+        100,
+    ),
 }
 
 

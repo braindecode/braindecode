@@ -32,6 +32,11 @@ Enhancements
   masked autoencoder of Jung et al. (IEEE BCI 2025), with a linear head;
   ``load_state_dict`` takes the GeoNIRS benchmark's ``jung_mae.pt`` as released
   (:gh:`1589` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.MtReNIRS` (Chae et al., 2026), a montage-aware fNIRS
+  foundation model with a Fourier embedding of the 10-05 position and chromophore and
+  a QK-norm rotary transformer; ``load_state_dict`` takes ``mtrenirs_10s.pt`` as
+  released, and the docstring gives the 0.01-0.5 Hz band-pass its weights expect
+  (:gh:`MTRENIRS_PR` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
   transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden

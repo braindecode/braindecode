@@ -72,6 +72,7 @@ if TYPE_CHECKING:
     from .mirepnet import MIRepNet
     from .mscformer import MSCFormer
     from .msvtnet import MSVTNet
+    from .mtrenirs import MtReNIRS
     from .mvpformer import MVPFormer
     from .neuropose import NeuroPose
     from .neurorvq import NeuroRVQ

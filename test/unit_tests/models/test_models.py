@@ -78,6 +78,7 @@ from braindecode.models import (
     Labram,
     MEDFormer,
     MetaNeuromotorHand,
+    MtReNIRS,
     NeuroRVQ,
     NeuroRVQTokenizer,
     SCCNet,
@@ -7507,10 +7508,123 @@ def test_fnirs_patch_models_refuse_a_partial_patch(model_cls):
         model_cls(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=155)
 
 
+def test_mtrenirs_drops_a_partial_window():
+    """MtReNIRS drops a partial window, as its reference does."""
+    model = MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=150, depth=1)
+    assert model.n_windows == 1
+    x = torch.randn(1, 4, 150)
+    with torch.no_grad():
+        assert torch.equal(model.eval()(x), model(x[..., :100]))
+
+
+@pytest.mark.parametrize(
+    "model_cls,kwargs,n_times",
+    [
+        (MtReNIRS, {"depth": 2, "num_heads": 2, "embed_dim": 32,
+                    "pool": "channel_temporal_mean"}, 100),
+    ],
+)
+def test_fnirs_foundation_models_interleaved_chs_info(model_cls, kwargs, n_times):
+    """With the same weights, MNE-ordered chs_info and input give the
+    logits of the stacked chs_info on the stacked input."""
+    stacked = model_cls(chs_info=_fnirs_chs_info(4), n_outputs=3, n_times=n_times, **kwargs)
+    mne_order = model_cls(
+        chs_info=_interleaved_fnirs_chs(4), n_outputs=3, n_times=n_times, **kwargs
+    )
+    mne_order.load_state_dict(stacked.state_dict())
+    x = torch.randn(2, 8, n_times)  # [HbO_1..HbO_4, HbR_1..HbR_4]
+    x_mne = x.reshape(2, 2, 4, n_times).transpose(1, 2).reshape(2, 8, n_times)
+    with torch.no_grad():
+        torch.testing.assert_close(mne_order.eval()(x_mne), stacked.eval()(x))
+
+
+@pytest.mark.parametrize("model_cls", [MtReNIRS])
+def test_fnirs_foundation_models_head_and_reset(model_cls):
+    """final_layer(features) gives the logits; reset_parameters resets every
+    parameter; reset_head keeps the dtype."""
+    model = model_cls(chs_info=_fnirs_chs_info(3), n_outputs=3, n_times=100, sfreq=10.0)
+    x = torch.randn(4, 6, 100)
+    with torch.no_grad():
+        model.eval()
+        torch.testing.assert_close(
+            model.final_layer(model(x, return_features=True)["features"]), model(x)
+        )
+    model.train()
+    torch.manual_seed(123)
+    from_features = model.final_layer(model(x, return_features=True)["features"])
+    torch.manual_seed(123)
+    torch.testing.assert_close(from_features, model(x))
+    with torch.no_grad():
+        for p in model.parameters():
+            p.fill_(999.0)
+    model.reset_parameters()
+    assert not [n for n, p in model.named_parameters() if (p == 999.0).all()]
+    model = model.to(dtype=torch.float64)
+    model.reset_head(5)
+    assert model.final_layer.weight.dtype == torch.float64
+
+
 @pytest.mark.parametrize("model_cls", [JungMAE])
 def test_fnirs_pair_models_need_an_even_n_chans(model_cls):
     with pytest.raises(ValueError, match="n_chans must be even"):
         model_cls(n_chans=5, n_outputs=2, n_times=60)
+
+
+def test_mtrenirs_needs_its_channel_positions():
+    with pytest.raises(ValueError, match="needs channel positions"):
+        MtReNIRS(n_chans=4, n_outputs=2, n_times=100)(torch.randn(1, 4, 100))
+    no_loc = [{"ch_name": f"S1_D1 {k}"} for k in ("hbo", "hbr")]
+    with pytest.raises(ValueError, match="needs channel positions"):
+        MtReNIRS(chs_info=no_loc, n_outputs=2, n_times=100)(torch.randn(1, 2, 100))
+    with pytest.raises(ValueError, match="needs HbO/HbR channels"):
+        MtReNIRS(chs_info=[{"ch_name": "Cz", "loc": np.zeros(12)}], n_outputs=2, n_times=100)
+    with pytest.raises(ValueError, match="different channel counts"):
+        MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=100)(torch.randn(1, 2, 100))
+
+
+def test_mtrenirs_leaves_unlocated_channels_out():
+    """As in the reference, a channel without a location (all-zero or NaN
+    ``loc[:3]``) gets zero tokens and does not change the other channels."""
+    chs = _fnirs_chs_info(3)
+    chs[0] = dict(chs[0], loc=np.zeros(12))
+    chs[3] = dict(chs[3], loc=np.full(12, np.nan))
+    torch.manual_seed(0)
+    model = MtReNIRS(chs_info=chs, n_outputs=2, n_times=200, depth=2).eval()
+    located = [1, 2, 4, 5]
+    alone = MtReNIRS(chs_info=[chs[i] for i in located], n_outputs=2, n_times=200, depth=2)
+    encoder = {k: v for k, v in model.state_dict().items() if not k.startswith("final_layer.")}
+    alone.load_state_dict(encoder)  # the head width depends on n_chans
+    x = torch.randn(2, 6, 200)
+    with torch.no_grad():
+        tokens, valid = model.encode_windows(x)
+        expected, _ = alone.eval().encode_windows(x[:, located])
+    assert not valid[:, :, [0, 3]].any() and not tokens[:, :, [0, 3]].any()
+    torch.testing.assert_close(tokens[:, :, located], expected)
+
+
+def test_mtrenirs_refuses_a_bad_pool_or_coordinate_count():
+    with pytest.raises(ValueError, match="pool must be one of"):
+        MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=100, pool="mean")
+    model = MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=100, depth=1)
+    with pytest.raises(ValueError, match="coordinates and x have different channel counts"):
+        model(torch.randn(1, 4, 100), coordinates=torch.zeros(3, 4))
+
+
+def test_mtrenirs_chromophores_and_valid_window_pooling():
+    """HbO/HbR come from the names, NaN windows do not dilute the pooling,
+    and an odd head_dim is refused."""
+    chs = [{"ch_name": f"S{i}_D{i} {k}", "loc": np.array([0.03 * i, 0.0, 0.0])}
+           for i, k in enumerate(["hbo", "hbr", "hbo", "hbo"], 1)]
+    model = MtReNIRS(chs_info=chs, n_outputs=2, n_times=200, sfreq=10.0).eval()
+    assert model.default_coordinates[:, 3].tolist() == [0.0, 1.0, 0.0, 0.0]
+    x = torch.randn(1, 4, 200)
+    x[:, :, 100:] = float("nan")
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+        tokens, _ = model.encode_windows(x)
+    torch.testing.assert_close(features, tokens[:, 0].reshape(1, -1), atol=1e-6, rtol=1e-6)
+    with pytest.raises(ValueError, match="even head_dim"):
+        MtReNIRS(n_chans=4, n_outputs=2, n_times=100, embed_dim=12, num_heads=4)
 
 
 _FNIRS_WEIGHTS = os.environ.get("BRAINDECODE_FNIRS_WEIGHTS", "")
@@ -7544,6 +7658,27 @@ def _check_released_fnirs_checkpoint(path, cls, kwargs, expected):
 # features[:, :4] of the authors' code on the input of
 # _check_released_fnirs_checkpoint, computed with the authors' code at the
 # commit each test names
+
+
+@pytest.mark.huggingface
+def test_mtrenirs_released_checkpoint_matches_the_authors_code():
+    """The MIT-licensed MtReNIRS@16c3082 checkpoint, as released, on the Hub
+    (pinned revision)."""
+    hub = ("braindecode/mtrenirs-pretrained", "bbc68ce5e00a4515081d900227fc06d111858e75")
+    expected = [
+        [1.3799299001693726, 1.1365183591842651, 1.0999616384506226, 0.12654231488704681],
+        [-0.03779871016740799, -0.9599133729934692, 0.5302731394767761, 0.7867113351821899],
+    ]
+    path = os.path.join(_FNIRS_WEIGHTS, "mtrenirs_10s.pt")
+    if not (_FNIRS_WEIGHTS and os.path.isfile(path)):
+        hf_hub = pytest.importorskip("huggingface_hub")
+        try:
+            path = hf_hub.hf_hub_download(hub[0], "mtrenirs_10s.pt", revision=hub[1])
+        except hf_hub.utils.LocalEntryNotFoundError as err:  # offline
+            pytest.skip(f"Hugging Face Hub not reachable: {err}")
+    _check_released_fnirs_checkpoint(
+        path, MtReNIRS, {"n_times": 100, "sfreq": 10.0}, expected
+    )
 
 
 def test_jung_mae_released_checkpoint_matches_the_authors_code():
