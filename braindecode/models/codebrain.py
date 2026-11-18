@@ -442,6 +442,9 @@ class _GConv(nn.Module):
         self.register_buffer(
             "kernel_norm_initialized", torch.tensor(0, dtype=torch.bool)
         )
+        # The buffer as a Python bool: torch.compile guards on it once instead
+        # of breaking the graph to read a tensor on every forward.
+        self._kernel_norm_ready = False
 
         # ========== Learnable parameters ==========
         self.skip_weight = nn.Parameter(torch.randn(channels, self.d_model))
@@ -475,6 +478,10 @@ class _GConv(nn.Module):
             )
             self.output_linear = nn.Linear(self.d_model * self.channels, self.d_model)
 
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+        self._kernel_norm_ready = bool(self.kernel_norm_initialized)
+
     def forward(
         self, x: torch.Tensor, return_kernel: bool = False
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
@@ -505,11 +512,12 @@ class _GConv(nn.Module):
         # Lazy-init kernel normalisation on first forward pass
         # In place, so a first forward under torch.inference_mode() does not
         # leave inference tensors in the buffers for a later training step.
-        if not self.kernel_norm_initialized:
+        if not self._kernel_norm_ready:
             self.kernel_norm.copy_(
                 torch.linalg.vector_norm(kernel, 2, dim=-1, keepdim=True).detach()
             )
             self.kernel_norm_initialized.fill_(True)
+            self._kernel_norm_ready = True
 
         # Pad or truncate kernel to match seq_len
         if kernel.size(-1) > seq_len:

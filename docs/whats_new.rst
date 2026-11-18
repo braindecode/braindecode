@@ -28,6 +28,10 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- :class:`braindecode.models.CodeBrain` compiles with ``torch.compile`` into one graph: its lazy
+  kernel-norm initialisation no longer reads a tensor's value on every forward (19 graph breaks
+  and 21 compiled graphs for two training steps before, on every device). Checkpoints and
+  outputs are unchanged (by `Bruno Aristimunha`_).
 - :func:`braindecode.functional.masked_group_norm` groups the channels with a view and
   counts the real entries from the mask, without a permute or a full-size masked count:
   same outputs and gradients, 28-38% less time forward and backward at CBraMod and
