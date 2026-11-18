@@ -37,6 +37,12 @@ Enhancements
   a QK-norm rotary transformer; ``load_state_dict`` takes ``mtrenirs_10s.pt`` as
   released, and the docstring gives the 0.01-0.5 Hz band-pass its weights expect
   (:gh:`1590` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.GeoNIRS` (Li et al., 2026), an fNIRS foundation model
+  that compresses paired HbO/HbR channels onto latent channels with a cross-attention
+  conditioned on the source-detector geometry read from ``chs_info``;
+  ``load_state_dict`` takes ``geonirs_base.pt`` and ``geonirs_large.pt`` as released,
+  and ``ch_mask`` handles montages of different sizes (:gh:`1591` by
+  `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
   transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
@@ -186,6 +192,13 @@ Bug fixes
   1-D index, instead of one call per channel with a 0-d index. Outputs and gradients are
   bitwise the same on CPU. On Intel Gaudi, whose embedding backward sends a 0-d index's
   gradient to row 0, only the first channel token trained before (:gh:`1585` by
+  `Bruno Aristimunha`_).
+- :class:`braindecode.models.MAPA` attends with 4-D inputs on every device; on Intel
+  Gaudi it used 5-D ones, which the fused attention kernel gets wrong (outputs 55% and
+  gradients 60-70% off). :class:`braindecode.models.EMG2QwertyNet` takes offset 0 of
+  its rotation-invariant MLP as the input itself instead of a roll by 0, which saves a
+  copy; on Gaudi, the roll by 0 of a slice of the stacked gradient gave a wrong input
+  gradient. Outputs and gradients are unchanged on CPU (:gh:`1595` by
   `Bruno Aristimunha`_).
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
