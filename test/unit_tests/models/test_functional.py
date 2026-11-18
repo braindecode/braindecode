@@ -616,3 +616,11 @@ def test_derivation_matrix_deduplicates_mixed_case_columns():
     )
     assert electrodes == ["f3", "c3"]
     assert matrix.tolist() == [[1.0, -1.0]]
+
+
+def test_derivation_matrix_normalizes_explicit_reference_columns():
+    matrix, electrodes = derivation_matrix(
+        ["F3"], electrodes=["F3", "CZ"], reference="Cz"
+    )
+    assert electrodes == ["f3", "cz"]
+    assert matrix.tolist() == [[1.0, -1.0]]

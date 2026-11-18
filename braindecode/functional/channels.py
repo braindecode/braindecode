@@ -274,11 +274,6 @@ def exact_derivation(
     exact : torch.Tensor
         ``(len(target),)`` bool.
     """
-    if not target:
-        return torch.zeros((0, len(inputs)), dtype=torch.float64), torch.zeros(
-            0, dtype=torch.bool
-        )
-
     R, electrodes = derivation_matrix(inputs)
     T, electrodes = derivation_matrix(target, electrodes)
     R = torch.nn.functional.pad(R, (0, T.shape[1] - R.shape[1]))

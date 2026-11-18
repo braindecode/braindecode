@@ -57,6 +57,11 @@ Enhancements
   ``load_state_dict`` takes ``geonirs_base.pt`` and ``geonirs_large.pt`` as released,
   and ``ch_mask`` handles montages of different sizes (:gh:`1591` by
   `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan
+  et al. (Neurophotonics 2018) as the GeoNIRS benchmark (Li et al., 2026)
+  implements it: two temporal convolutions with GroupNorm and GELU, a time
+  average and a linear head. Its ``mapping`` loads the
+  authors' state dict (:gh:`1592` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
   transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
@@ -183,10 +188,10 @@ Requirements
 Bug fixes
 ==========
 
-- :func:`braindecode.functional.exact_derivation` returns an empty weight matrix
-  and mask for empty targets; :func:`~braindecode.functional.derivation_matrix`
-  normalises explicitly supplied electrode names case-insensitively, avoiding
-  duplicate columns (:gh:`1597` by `lindicaphxag-tech`_).
+- :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
+  supplied electrode names without regard to case, including with a named
+  recording reference, preventing duplicated columns and misplaced weights
+  (:gh:`1597` by `lindicaphxag-tech`_).
 
 - :class:`braindecode.modules.ChannelLayer` computes every target that is a
   combination of the measured channels exactly, under every strategy including

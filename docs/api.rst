@@ -191,6 +191,7 @@ interface for all EEG models and can derive variable names when needed.
      FBLightConvNet
      FBMSNet
      FNIRS4D
+     FNIRSCNN1D
      FNIRSNet
      FNIRSPreT
      FNIRST

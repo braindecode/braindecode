@@ -40,6 +40,7 @@ from braindecode.models import (
     EEGCLIP,
     EEGPT,
     FNIRS4D,
+    FNIRSCNN1D,
     FNIRST,
     NICE,
     SSTDPN,
@@ -6523,6 +6524,8 @@ def _interleaved_fnirs_chs(n_pairs=4):
     [
         (FNIRSNet, {}),
         (FNIRSNet, {"n_chans": 6}),
+        (FNIRSCNN1D, {}),
+        (FNIRSCNN1D, {"n_chans": 6}),
         (FNIRS4D, {"n_layers": 2, "d_state": 16, "channel_order": "interleaved"}),
         (
             FNIRS4D,
@@ -6646,6 +6649,134 @@ def test_fnirsnet_kernel_length_out_of_range_raises():
     for bad in (0, 41):
         with pytest.raises(ValueError, match="dhr_kernel_length"):
             FNIRSNet(n_chans=40, n_outputs=3, n_times=40, dhr_kernel_length=bad)
+
+
+class _AuthorsDirectEventCNN1D(torch.nn.Module):
+    """The reference: ``DirectEventCNN1DClassifier`` of ``model/cnn1d.py``
+    (GeoNIRS@81f8995) as the benchmark builds it (``event_pair_mode=False``),
+    transcribed with the same layers, state-dict keys and forward."""
+
+    def __init__(self, physical_channels, num_classes, conv_dim=64,
+                 embedding_dim=128, dropout=0.5):
+        super().__init__()
+        self.encoder = torch.nn.Sequential(
+            torch.nn.Conv1d(2 * physical_channels, conv_dim, kernel_size=7, padding=3),
+            torch.nn.GroupNorm(8, conv_dim),
+            torch.nn.GELU(),
+            torch.nn.MaxPool1d(kernel_size=2),
+            torch.nn.Conv1d(conv_dim, embedding_dim, kernel_size=5, padding=2),
+            torch.nn.GroupNorm(8, embedding_dim),
+            torch.nn.GELU(),
+            torch.nn.AdaptiveAvgPool1d(1),
+            torch.nn.Flatten(),
+            torch.nn.Dropout(dropout),
+        )
+        self.linear = torch.nn.Linear(embedding_dim, num_classes)
+
+    def forward(self, hbo, hbr, valid):
+        hbo = hbo.masked_fill(~valid, 0.0)
+        hbr = hbr.masked_fill(~valid, 0.0)
+        signal = torch.stack((hbo, hbr), dim=1).flatten(start_dim=1, end_dim=2)
+        return self.linear(self.encoder(signal))
+
+
+@pytest.mark.parametrize("n_pairs, n_times", [(23, 60), (41, 60), (23, 61)])
+def test_fnirs_cnn1d_matches_the_authors_module(n_pairs, n_times):
+    """With the same seed the two modules draw the same weights; the authors'
+    state dict loads strictly through ``mapping``; the logits and
+    ``final_layer(features)`` equal the authors' module in eval and train
+    mode, invalid samples given as NaN, and so do the parameter gradients of
+    a training loss. 23 x 60 and 41 x 60 are the benchmark's DS19 and DS42
+    windows; 61 samples leave one out of the max pooling."""
+    torch.manual_seed(810)
+    reference = _AuthorsDirectEventCNN1D(n_pairs, num_classes=2)
+    torch.manual_seed(810)
+    model = FNIRSCNN1D(n_chans=2 * n_pairs, n_outputs=2, n_times=n_times)
+    mapping = model.mapping
+    port_state = model.state_dict()
+    assert sorted(mapping[key] for key in reference.state_dict()) == sorted(port_state)
+    for key, value in reference.state_dict().items():
+        torch.testing.assert_close(port_state[mapping[key]], value, rtol=0, atol=0)
+    with torch.no_grad():  # other weights than the seeded draw
+        for param in reference.parameters():
+            param.add_(0.1 * torch.randn_like(param))
+    model.load_state_dict(reference.state_dict(), strict=True)
+    hbo = torch.randn(6, n_pairs, n_times)
+    hbr = torch.randn(6, n_pairs, n_times)
+    valid = torch.rand(6, n_pairs, n_times) > 0.1
+    x = torch.cat((hbo, hbr), dim=1)
+    x = x.masked_fill(~torch.cat((valid, valid), dim=1), float("nan"))
+    for training in (False, True):
+        reference.train(training)
+        model.train(training)
+        torch.manual_seed(5)  # the same dropout draw on both sides
+        expected = reference(hbo, hbr, valid)
+        torch.manual_seed(5)
+        torch.testing.assert_close(model(x), expected, rtol=0, atol=0)
+        torch.manual_seed(5)
+        features = model(x, return_features=True)["features"]
+        torch.testing.assert_close(model.final_layer(features), expected, rtol=0, atol=0)
+    y = torch.tensor([0, 1, 0, 1, 0, 1])
+    for net, inputs in ((reference, (hbo, hbr, valid)), (model, (x,))):
+        torch.manual_seed(5)
+        torch.nn.functional.cross_entropy(net(*inputs), y).backward()
+    port_params = dict(model.named_parameters())
+    for key, param in reference.named_parameters():
+        torch.testing.assert_close(
+            port_params[mapping[key]].grad, param.grad, rtol=0, atol=0
+        )
+
+
+def test_fnirs_cnn1d_parameter_count_of_table_10():
+    """GeoNIRS Table 10: 88.4 K parameters at 52 fNIRS channels (104 rows)."""
+    model = FNIRSCNN1D(n_chans=104, n_outputs=2, n_times=50)
+    assert sum(p.numel() for p in model.parameters()) == 88_386
+
+
+def test_fnirs_cnn1d_reads_inf_as_missing():
+    """An inf sample is missing data, as a NaN one: read as zero."""
+    torch.manual_seed(0)
+    model = FNIRSCNN1D(n_chans=4, n_outputs=2, n_times=20).eval()
+    x = torch.randn(2, 4, 20)
+    with torch.no_grad():
+        for value in (float("inf"), float("-inf")):
+            x_bad = x.clone()
+            x_bad[0, 1, 5] = value
+            x_nan = x.clone()
+            x_nan[0, 1, 5] = float("nan")
+            out = model(x_bad)
+            assert torch.isfinite(out).all()
+            torch.testing.assert_close(out, model(x_nan), rtol=0, atol=0)
+
+
+def test_fnirs_cnn1d_wires_every_argument():
+    """Non-default values reach the layers they name, and reset_head keeps
+    the width of the second convolution."""
+    model = FNIRSCNN1D(
+        n_chans=6, n_outputs=2, n_times=30, n_filters_conv1=16,
+        n_filters_conv2=24, kernel_size_conv1=9, kernel_size_conv2=3,
+        pool_size=3, n_norm_groups=4, drop_prob=0.2, activation=nn.ELU,
+    )
+    conv1, norm1, act1, pool = model.temporal_conv1
+    conv2, norm2, act2 = model.temporal_conv2
+    assert conv1.out_channels == 16 and conv1.kernel_size == (9,)
+    assert conv2.out_channels == 24 and conv2.kernel_size == (3,)
+    assert pool.kernel_size == 3
+    assert norm1.num_groups == 4 and norm2.num_groups == 4
+    assert type(act1) is nn.ELU and type(act2) is nn.ELU
+    assert model.head_dropout.p == 0.2
+    assert model(torch.randn(2, 6, 30)).shape == (2, 2)
+    model.reset_head(3)
+    assert model.final_layer.in_features == 24
+    assert model.final_layer.out_features == 3
+
+
+def test_fnirs_cnn1d_refuses_ch_mask():
+    """The first convolution spans every row, so padded channels cannot be
+    left out."""
+    model = FNIRSCNN1D(n_chans=4, n_outputs=2, n_times=20)
+    with pytest.raises(ValueError, match="FNIRSCNN1D does not accept ch_mask"):
+        model(torch.randn(2, 4, 20), ch_mask=torch.ones(2, 4, dtype=torch.bool))
 
 
 def test_s4d_real_arithmetic_matches_complex_fft():
