@@ -1302,6 +1302,19 @@ def test_luna_default_locations_without_n_chans():
         assert model(torch.randn(2, 5, 80)).shape == (2, 2)
 
 
+def test_luna_matches_explicit_locations_when_channel_count_changes():
+    positions = torch.tensor([[0.1, 0.2, 0.3], [-0.1, 0.3, 0.4], [0.0, -0.2, 0.2]])
+    chs = [{"ch_name": str(i), "loc": row.numpy()} for i, row in enumerate(positions)]
+    model = LUNA(chs_info=chs, n_outputs=2, n_times=80, patch_size=20, depth=1).eval()
+    fallback = torch.zeros(4, 3)
+    fallback[:, 0] = torch.linspace(-1, 1, 4)
+    for expected in (positions[:2], fallback):
+        x = torch.randn(2, len(expected), 80)
+        explicit = expected.expand(len(x), -1, -1)
+        with torch.no_grad():
+            torch.testing.assert_close(model(x), model(x, channel_locations=explicit))
+
+
 def test_luna_variants_output_consistency(
     luna_base_config, luna_large_config, luna_huge_config
 ):

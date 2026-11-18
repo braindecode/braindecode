@@ -34,10 +34,7 @@ from braindecode.functional import (
 )
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.signal_jepa import _GroupNorm
-from braindecode.models.util import (
-    chs_info_positions,
-    extract_channel_locations_from_chs_info,
-)
+from braindecode.models.util import chs_info_positions
 from braindecode.modules import PreNormBlock, TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
 
@@ -177,7 +174,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        chs_info_positions(getattr(self, "_chs_info", None), "LUNA")  # all or none
+        positions = chs_info_positions(self._chs_info, "LUNA")
 
         # Mapping for loading pretrained weights
         self.mapping = {
@@ -261,12 +258,16 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         self.norm = norm_layer(int(self.embed_dim * self.num_queries))
 
-        # Non-persistent, so .to() moves it and the state dict keeps its keys.
+        self._has_measured_positions = positions is not None
         self.register_buffer(
             "_default_channel_locations",
-            self.build_channel_location_template(self._n_chans_for_jit or 0),
+            positions if positions is not None else torch.empty(0, 3),
             persistent=False,
         )
+        if positions is None:
+            self._default_channel_locations = self.build_channel_location_template(
+                self._n_chans_for_jit or 0
+            )
 
         if self.num_classes == 0:
             self.decoder_head = _PatchReconstructionHeadWithQueries(
@@ -497,9 +498,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         device: torch.device,
         dtype: torch.dtype,
     ) -> torch.Tensor:
-        template = self._default_channel_locations
-        if template.shape[0] != num_channels:
-            template = self.build_channel_location_template(num_channels)
+        template = self.build_channel_location_template(num_channels)
         template = template.to(device=device, dtype=dtype)
         return template.unsqueeze(0).repeat(batch_size, 1, 1)
 
@@ -519,23 +518,17 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         torch.Tensor
             Tensor of shape (num_channels, 3) with channel locations in 3D space.
         """
-        # Try to extract channel locations from chs_info using the unified utility
-        channel_info = getattr(self, "_chs_info", None)
-        if channel_info is not None:
-            locs = extract_channel_locations_from_chs_info(
-                channel_info, num_channels=num_channels
-            )
-            if locs is not None and len(locs) == num_channels:
-                locs = torch.from_numpy(locs).float()
-                # MNE stores NaN for a channel without a position.
-                if locs.isfinite().all():
-                    return locs
+        template = self._default_channel_locations
+        if num_channels == template.shape[0]:
+            return template
+        if self._has_measured_positions and num_channels < template.shape[0]:
+            return template[:num_channels]
 
-        # Fallback: generate default linear spacing along x-axis
-        positions = torch.linspace(-1.0, 1.0, steps=num_channels, dtype=torch.float32)
+        positions = torch.linspace(
+            -1.0, 1.0, steps=num_channels, dtype=torch.float32, device=template.device
+        )
         zeros = torch.zeros_like(positions)
-        locs_tensor = torch.stack([positions, zeros, zeros], dim=-1)
-        return locs_tensor
+        return torch.stack([positions, zeros, zeros], dim=-1)
 
     def _get_default_channel_locations(
         self,

@@ -28,7 +28,7 @@ from torch.utils._pytree import tree_flatten, tree_map_only
 
 import braindecode.functional
 from braindecode.functional import _real_dft
-from braindecode.models import MAPA
+from braindecode.models import LUNA, MAPA
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import models_dict, models_mandatory_parameters
 from test.unit_tests.models._fixtures import _get_signal_params
@@ -283,6 +283,7 @@ _DATA_DEPENDENT_FORWARD = {
 @pytest.mark.parametrize(
     "model_name,required_params,signal_params",
     models_mandatory_parameters,
+    ids=[case[0] for case in models_mandatory_parameters],
 )
 def test_registered_model_follows_device(model_name, required_params, signal_params):
     """``model.to(device)`` moves every tensor forward reads or creates, checked
@@ -300,7 +301,17 @@ def test_registered_model_follows_device(model_name, required_params, signal_par
     assert not stray, f"tensor attributes that .to() does not move: {stray}"
     if model_name in _DATA_DEPENDENT_FORWARD:
         pytest.skip("forward reads tensor values (.item()), which meta tensors lack")
-    x = x.to("meta")
+    _check_meta_forward(model, x.to("meta"))
+
+
+@pytest.mark.parametrize("n_chans", [None, 5])
+def test_luna_dynamic_montage_follows_device(n_chans):
+    model = LUNA(n_chans=n_chans, n_outputs=2, n_times=80, patch_size=20).eval()
+    model.to("meta")
+    _check_meta_forward(model, torch.empty(2, 3, 80, device="meta"))
+
+
+def _check_meta_forward(model, x):
     with torch.no_grad(), _record() as log:
         output = model(x)
     assert all(t.is_meta for t in _tensor_leaves(output))
