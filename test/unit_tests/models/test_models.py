@@ -40,6 +40,7 @@ from braindecode.models import (
     EEGCLIP,
     EEGPT,
     FNIRS4D,
+    FNIRSCNN1D,
     FNIRST,
     NICE,
     SSTDPN,
@@ -72,11 +73,14 @@ from braindecode.models import (
     FNIRSNet,
     FNIRSPreT,
     GCNsNet,
+    GeoNIRS,
     HybridNet,
     IFNet,
+    JungMAE,
     Labram,
     MEDFormer,
     MetaNeuromotorHand,
+    MtReNIRS,
     NeuroRVQ,
     NeuroRVQTokenizer,
     SCCNet,
@@ -1685,6 +1689,17 @@ def test_biot_encoder_index_is_buffer(default_biot_params):
     assert "index" in dict(biot.encoder.named_buffers())
     assert "index" not in dict(biot.encoder.named_parameters())
     assert biot.encoder.index.dtype == torch.long
+
+
+@pytest.mark.parametrize("offset", [0, 1])
+def test_biot_channel_tokens_get_their_own_gradients(offset):
+    """The token of each channel ``offset..offset + n`` gets a gradient; the others none."""
+    torch.manual_seed(0)
+    biot = BIOT(n_chans=4, n_outputs=2, n_times=1000, sfreq=200).eval()
+    tokens = biot.encoder(torch.randn(2, 4 - offset, 1000), n_channel_offset=offset)[0]
+    tokens.square().mean().backward()
+    rows = biot.encoder.channel_tokens.weight.grad.abs().sum(1)
+    assert (rows[:offset] == 0).all() and (rows[offset:] > 0).all()
 
 
 @pytest.fixture
@@ -6509,6 +6524,8 @@ def _interleaved_fnirs_chs(n_pairs=4):
     [
         (FNIRSNet, {}),
         (FNIRSNet, {"n_chans": 6}),
+        (FNIRSCNN1D, {}),
+        (FNIRSCNN1D, {"n_chans": 6}),
         (FNIRS4D, {"n_layers": 2, "d_state": 16, "channel_order": "interleaved"}),
         (
             FNIRS4D,
@@ -6632,6 +6649,134 @@ def test_fnirsnet_kernel_length_out_of_range_raises():
     for bad in (0, 41):
         with pytest.raises(ValueError, match="dhr_kernel_length"):
             FNIRSNet(n_chans=40, n_outputs=3, n_times=40, dhr_kernel_length=bad)
+
+
+class _AuthorsDirectEventCNN1D(torch.nn.Module):
+    """The reference: ``DirectEventCNN1DClassifier`` of ``model/cnn1d.py``
+    (GeoNIRS@81f8995) as the benchmark builds it (``event_pair_mode=False``),
+    transcribed with the same layers, state-dict keys and forward."""
+
+    def __init__(self, physical_channels, num_classes, conv_dim=64,
+                 embedding_dim=128, dropout=0.5):
+        super().__init__()
+        self.encoder = torch.nn.Sequential(
+            torch.nn.Conv1d(2 * physical_channels, conv_dim, kernel_size=7, padding=3),
+            torch.nn.GroupNorm(8, conv_dim),
+            torch.nn.GELU(),
+            torch.nn.MaxPool1d(kernel_size=2),
+            torch.nn.Conv1d(conv_dim, embedding_dim, kernel_size=5, padding=2),
+            torch.nn.GroupNorm(8, embedding_dim),
+            torch.nn.GELU(),
+            torch.nn.AdaptiveAvgPool1d(1),
+            torch.nn.Flatten(),
+            torch.nn.Dropout(dropout),
+        )
+        self.linear = torch.nn.Linear(embedding_dim, num_classes)
+
+    def forward(self, hbo, hbr, valid):
+        hbo = hbo.masked_fill(~valid, 0.0)
+        hbr = hbr.masked_fill(~valid, 0.0)
+        signal = torch.stack((hbo, hbr), dim=1).flatten(start_dim=1, end_dim=2)
+        return self.linear(self.encoder(signal))
+
+
+@pytest.mark.parametrize("n_pairs, n_times", [(23, 60), (41, 60), (23, 61)])
+def test_fnirs_cnn1d_matches_the_authors_module(n_pairs, n_times):
+    """With the same seed the two modules draw the same weights; the authors'
+    state dict loads strictly through ``mapping``; the logits and
+    ``final_layer(features)`` equal the authors' module in eval and train
+    mode, invalid samples given as NaN, and so do the parameter gradients of
+    a training loss. 23 x 60 and 41 x 60 are the benchmark's DS19 and DS42
+    windows; 61 samples leave one out of the max pooling."""
+    torch.manual_seed(810)
+    reference = _AuthorsDirectEventCNN1D(n_pairs, num_classes=2)
+    torch.manual_seed(810)
+    model = FNIRSCNN1D(n_chans=2 * n_pairs, n_outputs=2, n_times=n_times)
+    mapping = model.mapping
+    port_state = model.state_dict()
+    assert sorted(mapping[key] for key in reference.state_dict()) == sorted(port_state)
+    for key, value in reference.state_dict().items():
+        torch.testing.assert_close(port_state[mapping[key]], value, rtol=0, atol=0)
+    with torch.no_grad():  # other weights than the seeded draw
+        for param in reference.parameters():
+            param.add_(0.1 * torch.randn_like(param))
+    model.load_state_dict(reference.state_dict(), strict=True)
+    hbo = torch.randn(6, n_pairs, n_times)
+    hbr = torch.randn(6, n_pairs, n_times)
+    valid = torch.rand(6, n_pairs, n_times) > 0.1
+    x = torch.cat((hbo, hbr), dim=1)
+    x = x.masked_fill(~torch.cat((valid, valid), dim=1), float("nan"))
+    for training in (False, True):
+        reference.train(training)
+        model.train(training)
+        torch.manual_seed(5)  # the same dropout draw on both sides
+        expected = reference(hbo, hbr, valid)
+        torch.manual_seed(5)
+        torch.testing.assert_close(model(x), expected, rtol=0, atol=0)
+        torch.manual_seed(5)
+        features = model(x, return_features=True)["features"]
+        torch.testing.assert_close(model.final_layer(features), expected, rtol=0, atol=0)
+    y = torch.tensor([0, 1, 0, 1, 0, 1])
+    for net, inputs in ((reference, (hbo, hbr, valid)), (model, (x,))):
+        torch.manual_seed(5)
+        torch.nn.functional.cross_entropy(net(*inputs), y).backward()
+    port_params = dict(model.named_parameters())
+    for key, param in reference.named_parameters():
+        torch.testing.assert_close(
+            port_params[mapping[key]].grad, param.grad, rtol=0, atol=0
+        )
+
+
+def test_fnirs_cnn1d_parameter_count_of_table_10():
+    """GeoNIRS Table 10: 88.4 K parameters at 52 fNIRS channels (104 rows)."""
+    model = FNIRSCNN1D(n_chans=104, n_outputs=2, n_times=50)
+    assert sum(p.numel() for p in model.parameters()) == 88_386
+
+
+def test_fnirs_cnn1d_reads_inf_as_missing():
+    """An inf sample is missing data, as a NaN one: read as zero."""
+    torch.manual_seed(0)
+    model = FNIRSCNN1D(n_chans=4, n_outputs=2, n_times=20).eval()
+    x = torch.randn(2, 4, 20)
+    with torch.no_grad():
+        for value in (float("inf"), float("-inf")):
+            x_bad = x.clone()
+            x_bad[0, 1, 5] = value
+            x_nan = x.clone()
+            x_nan[0, 1, 5] = float("nan")
+            out = model(x_bad)
+            assert torch.isfinite(out).all()
+            torch.testing.assert_close(out, model(x_nan), rtol=0, atol=0)
+
+
+def test_fnirs_cnn1d_wires_every_argument():
+    """Non-default values reach the layers they name, and reset_head keeps
+    the width of the second convolution."""
+    model = FNIRSCNN1D(
+        n_chans=6, n_outputs=2, n_times=30, n_filters_conv1=16,
+        n_filters_conv2=24, kernel_size_conv1=9, kernel_size_conv2=3,
+        pool_size=3, n_norm_groups=4, drop_prob=0.2, activation=nn.ELU,
+    )
+    conv1, norm1, act1, pool = model.temporal_conv1
+    conv2, norm2, act2 = model.temporal_conv2
+    assert conv1.out_channels == 16 and conv1.kernel_size == (9,)
+    assert conv2.out_channels == 24 and conv2.kernel_size == (3,)
+    assert pool.kernel_size == 3
+    assert norm1.num_groups == 4 and norm2.num_groups == 4
+    assert type(act1) is nn.ELU and type(act2) is nn.ELU
+    assert model.head_dropout.p == 0.2
+    assert model(torch.randn(2, 6, 30)).shape == (2, 2)
+    model.reset_head(3)
+    assert model.final_layer.in_features == 24
+    assert model.final_layer.out_features == 3
+
+
+def test_fnirs_cnn1d_refuses_ch_mask():
+    """The first convolution spans every row, so padded channels cannot be
+    left out."""
+    model = FNIRSCNN1D(n_chans=4, n_outputs=2, n_times=20)
+    with pytest.raises(ValueError, match="FNIRSCNN1D does not accept ch_mask"):
+        model(torch.randn(2, 4, 20), ch_mask=torch.ones(2, 4, dtype=torch.bool))
 
 
 def test_s4d_real_arithmetic_matches_complex_fft():
@@ -7413,10 +7558,10 @@ def test_fnirst_seeded_reset_and_cls_tokens(model_cls):
 
 
 # FNIRST/FNIRSPreT need 5 HbO/HbR pairs for their default spatial kernel
-_FNIRS_TEST_N_CHANS = {FNIRST: 10, FNIRSPreT: 10}
+_FNIRS_TEST_N_CHANS = {FNIRST: 10, FNIRSPreT: 10, JungMAE: 6}
 
 
-@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT, JungMAE])
 def test_fnirs_features_feed_head_and_reset(model_cls):
     """final_layer(features) == logits (train and eval); every parameter is reset."""
     n_chans = _FNIRS_TEST_N_CHANS[model_cls]
@@ -7459,7 +7604,7 @@ def test_fnirspret_forwards_every_argument_to_fnirst():
     assert list(plain_state) == list(pret_state)
     for key, value in plain_state.items():
         assert torch.equal(pret_state[key], value)
-    pret.pre = None
+    pret.pre = nn.Identity()
     x = torch.randn(2, 10, 60)
     with torch.no_grad():
         assert torch.equal(pret(x), plain(x))
@@ -7467,7 +7612,7 @@ def test_fnirspret_forwards_every_argument_to_fnirst():
 
 @pytest.mark.parametrize(
     "model_cls, fill",
-    [(FNIRST, 0.0), (FNIRSPreT, 0.0)],
+    [(FNIRST, 0.0), (FNIRSPreT, 0.0), (JungMAE, float("nan"))],
 )
 def test_fnirs_masks(model_cls, fill):
     """ch_mask is refused by name; an all-False mask changes nothing; hidden
@@ -7486,6 +7631,329 @@ def test_fnirs_masks(model_cls, fill):
     model(hidden, mask=mask).sum().backward()
     assert torch.equal(hidden.grad[mask], torch.zeros_like(hidden.grad[mask]))
     assert hidden.grad[~mask].isfinite().all()
+
+
+@pytest.mark.parametrize("model_cls", [GeoNIRS, JungMAE])
+def test_fnirs_patch_models_refuse_a_partial_patch(model_cls):
+    """A window that is not a whole number of patches raises, as in the reference."""
+    with pytest.raises(ValueError, match="not divisible"):
+        model_cls(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=155)
+
+
+def test_mtrenirs_drops_a_partial_window():
+    """MtReNIRS drops a partial window, as its reference does."""
+    model = MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=150, depth=1)
+    assert model.n_windows == 1
+    x = torch.randn(1, 4, 150)
+    with torch.no_grad():
+        assert torch.equal(model.eval()(x), model(x[..., :100]))
+
+
+@pytest.mark.parametrize(
+    "model_cls,kwargs,n_times",
+    [
+        (GeoNIRS, {"depth": 1, "num_heads": 4, "embed_dim": 64,
+                   "pool": "mean_std"}, 60),
+        (MtReNIRS, {"depth": 2, "num_heads": 2, "embed_dim": 32,
+                    "pool": "channel_temporal_mean"}, 100),
+    ],
+)
+def test_fnirs_foundation_models_interleaved_chs_info(model_cls, kwargs, n_times):
+    """With the same weights, MNE-ordered chs_info and input give the
+    logits of the stacked chs_info on the stacked input."""
+    stacked = model_cls(chs_info=_fnirs_chs_info(4), n_outputs=3, n_times=n_times, **kwargs)
+    mne_order = model_cls(
+        chs_info=_interleaved_fnirs_chs(4), n_outputs=3, n_times=n_times, **kwargs
+    )
+    mne_order.load_state_dict(stacked.state_dict())
+    x = torch.randn(2, 8, n_times)  # [HbO_1..HbO_4, HbR_1..HbR_4]
+    x_mne = x.reshape(2, 2, 4, n_times).transpose(1, 2).reshape(2, 8, n_times)
+    with torch.no_grad():
+        torch.testing.assert_close(mne_order.eval()(x_mne), stacked.eval()(x))
+
+
+@pytest.mark.parametrize("model_cls", [GeoNIRS, MtReNIRS])
+def test_fnirs_foundation_models_head_and_reset(model_cls):
+    """final_layer(features) gives the logits; reset_parameters resets every
+    parameter; reset_head keeps the dtype."""
+    model = model_cls(chs_info=_fnirs_chs_info(3), n_outputs=3, n_times=100, sfreq=10.0)
+    x = torch.randn(4, 6, 100)
+    with torch.no_grad():
+        model.eval()
+        torch.testing.assert_close(
+            model.final_layer(model(x, return_features=True)["features"]), model(x)
+        )
+    model.train()
+    torch.manual_seed(123)
+    from_features = model.final_layer(model(x, return_features=True)["features"])
+    torch.manual_seed(123)
+    torch.testing.assert_close(from_features, model(x))
+    with torch.no_grad():
+        for p in model.parameters():
+            p.fill_(999.0)
+    model.reset_parameters()
+    assert not [n for n, p in model.named_parameters() if (p == 999.0).all()]
+    model = model.to(dtype=torch.float64)
+    model.reset_head(5)
+    assert model.final_layer.weight.dtype == torch.float64
+
+
+@pytest.mark.parametrize("model_cls", [GeoNIRS, JungMAE])
+def test_fnirs_pair_models_need_an_even_n_chans(model_cls):
+    with pytest.raises(ValueError, match="n_chans must be even"):
+        model_cls(n_chans=5, n_outputs=2, n_times=60)
+
+
+def test_geonirs_needs_its_channel_geometry():
+    with pytest.raises(ValueError, match="needs the channel geometry"):
+        GeoNIRS(n_chans=4, n_outputs=2, n_times=60)(torch.randn(1, 4, 60))
+    loc_none = [{"ch_name": f"S1_D1 {k}", "loc": None} for k in ("hbo", "hbr")]
+    with pytest.raises(ValueError, match="needs the channel geometry"):
+        GeoNIRS(chs_info=loc_none, n_outputs=2, n_times=60)(torch.randn(1, 2, 60))
+    with pytest.raises(ValueError, match="different channel counts"):
+        GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60)(torch.randn(1, 2, 60))
+
+
+def test_mtrenirs_needs_its_channel_positions():
+    with pytest.raises(ValueError, match="needs channel positions"):
+        MtReNIRS(n_chans=4, n_outputs=2, n_times=100)(torch.randn(1, 4, 100))
+    no_loc = [{"ch_name": f"S1_D1 {k}"} for k in ("hbo", "hbr")]
+    with pytest.raises(ValueError, match="needs channel positions"):
+        MtReNIRS(chs_info=no_loc, n_outputs=2, n_times=100)(torch.randn(1, 2, 100))
+    with pytest.raises(ValueError, match="needs HbO/HbR channels"):
+        MtReNIRS(chs_info=[{"ch_name": "Cz", "loc": np.zeros(12)}], n_outputs=2, n_times=100)
+    with pytest.raises(ValueError, match="different channel counts"):
+        MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=100)(torch.randn(1, 2, 100))
+
+
+def test_mtrenirs_leaves_unlocated_channels_out():
+    """As in the reference, a channel without a location (all-zero or NaN
+    ``loc[:3]``) gets zero tokens and does not change the other channels."""
+    chs = _fnirs_chs_info(3)
+    chs[0] = dict(chs[0], loc=np.zeros(12))
+    chs[3] = dict(chs[3], loc=np.full(12, np.nan))
+    torch.manual_seed(0)
+    model = MtReNIRS(chs_info=chs, n_outputs=2, n_times=200, depth=2).eval()
+    located = [1, 2, 4, 5]
+    alone = MtReNIRS(chs_info=[chs[i] for i in located], n_outputs=2, n_times=200, depth=2)
+    encoder = {k: v for k, v in model.state_dict().items() if not k.startswith("final_layer.")}
+    alone.load_state_dict(encoder)  # the head width depends on n_chans
+    x = torch.randn(2, 6, 200)
+    with torch.no_grad():
+        tokens, valid = model.encode_windows(x)
+        expected, _ = alone.eval().encode_windows(x[:, located])
+    assert not valid[:, :, [0, 3]].any() and not tokens[:, :, [0, 3]].any()
+    torch.testing.assert_close(tokens[:, :, located], expected)
+
+
+def test_geonirs_pair_without_optodes_gets_zero_geometry():
+    """As the reference, a pair without source/detector positions is zero
+    and left out of the centre of the others."""
+    chs = _fnirs_chs_info(3)
+    chs[1] = dict(chs[1], loc=None)  # S2_D2 hbo
+    geometry = GeoNIRS(chs_info=chs, n_outputs=2, n_times=60).default_geometry
+    others = [ch for i, ch in enumerate(_fnirs_chs_info(3)) if i not in (1, 4)]
+    expected = GeoNIRS(chs_info=others, n_outputs=2, n_times=60).default_geometry
+    assert not geometry[1].any()
+    assert torch.equal(geometry[[0, 2]], expected)
+
+
+def test_geonirs_mean_std_is_the_reference_readout():
+    """``pool="mean_std"``: the valid-patch mean and the reference's
+    ``variance.clamp_min(0).sqrt()``, so zero with a single valid patch."""
+    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60,
+                    pool="mean_std", embed_dim=32, num_heads=4,
+                    depth=1, n_latent_channels=2,
+                    feature_dim=4).eval()
+    x = torch.randn(1, 4, 60)
+    x[..., 10:] = float("nan")
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"].reshape(1, 2, 2, 8)
+        foundation = model.encode(x)["foundation"]  # (1, 2, S, P, 4)
+    assert not features[:, :, 1].any()
+    first = torch.cat([foundation[:, 0, :, 0], foundation[:, 1, :, 0]], dim=-1)
+    torch.testing.assert_close(features[:, :, 0], first)
+
+
+def test_geonirs_without_geometry_has_no_dead_parameters():
+    model = GeoNIRS(n_chans=6, n_outputs=2, n_times=30, sfreq=5.0, use_channel_geometry=False)
+    assert model.geometry_encoder is None
+    model(torch.randn(2, 6, 30)).sum().backward()
+    assert all(p.grad is not None and torch.isfinite(p.grad).all() for p in model.parameters())
+
+
+def test_geonirs_refuses_a_bad_pool_or_geometry_count():
+    with pytest.raises(ValueError, match="pool must be"):
+        GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60, pool="mean")
+    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60)
+    with pytest.raises(ValueError, match="geometry and x have different channel counts"):
+        model(torch.randn(1, 4, 60), geometry=torch.zeros(3, 6))
+    with pytest.raises(ValueError, match="geometry is not 6-D"):
+        model(torch.randn(1, 4, 60), geometry=torch.zeros(2, 5))
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"embed_dim": 30, "num_heads": 4}, r"divisible by num_heads \(4\)"),
+        ({"embed_dim": 32, "num_heads": 4, "geometry_heads": 3},
+         r"divisible by geometry_heads \(3\)"),
+        ({"embed_dim": 32, "num_heads": 4, "compressor_heads": 3},
+         r"divisible by compressor_heads \(3\)"),
+        ({"minimum_patch_valid_fraction": 1.5}, r"must be in \[0, 1\], got 1.5"),
+    ],
+)
+def test_geonirs_names_the_refused_argument(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60, **kwargs)
+
+
+def test_geonirs_encode_takes_the_ch_mask_of_forward():
+    """``encode`` reduces the ``(batch, n_chans)`` mask to HbO/HbR pairs: a
+    padded pair changes nothing for the real one."""
+    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60,
+                    embed_dim=32, num_heads=4, depth=1, n_latent_channels=2,
+                    feature_dim=4).eval()
+    x = torch.randn(1, 4, 60)  # [HbO_1, HbO_2, HbR_1, HbR_2]
+    mask = torch.tensor([[True, False, True, False]])
+    with torch.no_grad():
+        tokens = model.encode(x, ch_mask=mask)["foundation"]
+        alone = model.encode(x[:, [0, 2]], geometry=model.default_geometry[:1])
+    torch.testing.assert_close(tokens, alone["foundation"])
+
+
+def test_geonirs_padded_samples_are_missing():
+    """``on_non_divisible="pad"`` equals the NaN-padded window: the last patch
+    holds 5 of 10 samples, under the 80 % threshold."""
+    torch.manual_seed(0)
+    kwargs = dict(chs_info=_fnirs_chs_info(2), n_outputs=2, embed_dim=32,
+                  num_heads=4, depth=1, n_latent_channels=2, feature_dim=4)
+    padded = GeoNIRS(n_times=55, on_non_divisible="pad", **kwargs).eval()
+    plain = GeoNIRS(n_times=60, **kwargs).eval()
+    plain.load_state_dict(padded.state_dict(), strict=True)
+    x = torch.randn(2, 4, 55)
+    x_nan = torch.cat([x, torch.full((2, 4, 5), float("nan"))], dim=-1)
+    with torch.no_grad():
+        assert not padded.encode(x)["valid"][..., -1].any()
+        torch.testing.assert_close(padded(x), plain(x_nan), rtol=0, atol=0)
+
+
+def test_mtrenirs_refuses_a_bad_pool_or_coordinate_count():
+    with pytest.raises(ValueError, match="pool must be one of"):
+        MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=100, pool="mean")
+    model = MtReNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=100, depth=1)
+    with pytest.raises(ValueError, match="coordinates and x have different channel counts"):
+        model(torch.randn(1, 4, 100), coordinates=torch.zeros(3, 4))
+
+
+def test_mtrenirs_chromophores_and_valid_window_pooling():
+    """HbO/HbR come from the names, NaN windows do not dilute the pooling,
+    and an odd head_dim is refused."""
+    chs = [{"ch_name": f"S{i}_D{i} {k}", "loc": np.array([0.03 * i, 0.0, 0.0])}
+           for i, k in enumerate(["hbo", "hbr", "hbo", "hbo"], 1)]
+    model = MtReNIRS(chs_info=chs, n_outputs=2, n_times=200, sfreq=10.0).eval()
+    assert model.default_coordinates[:, 3].tolist() == [0.0, 1.0, 0.0, 0.0]
+    x = torch.randn(1, 4, 200)
+    x[:, :, 100:] = float("nan")
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+        tokens, _ = model.encode_windows(x)
+    torch.testing.assert_close(features, tokens[:, 0].reshape(1, -1), atol=1e-6, rtol=1e-6)
+    with pytest.raises(ValueError, match="even head_dim"):
+        MtReNIRS(n_chans=4, n_outputs=2, n_times=100, embed_dim=12, num_heads=4)
+
+
+_FNIRS_WEIGHTS = os.environ.get("BRAINDECODE_FNIRS_WEIGHTS", "")
+
+
+def _fnirs_checkpoint(file):
+    """``file`` from ``BRAINDECODE_FNIRS_WEIGHTS``; the test is skipped without it."""
+    path = os.path.join(_FNIRS_WEIGHTS, file)
+    if not (_FNIRS_WEIGHTS and os.path.isfile(path)):
+        pytest.skip(f"{file} not in BRAINDECODE_FNIRS_WEIGHTS")
+    return path
+
+
+def _check_released_fnirs_checkpoint(path, cls, kwargs, expected):
+    """The checkpoint, as released (decoders included), loads strictly with
+    ``weights_only=True``, every backbone tensor is the checkpoint's, and the
+    first features equal ``expected``, the authors' code on the same input."""
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    model = cls(chs_info=_fnirs_chs_info(10), n_outputs=2, **kwargs).eval()
+    model.load_state_dict(payload, strict=True)
+    state = model.state_dict()
+    backbone = [k for k in state if not k.startswith("final_layer.")]
+    assert all(torch.equal(state[k], payload["model"][k]) for k in backbone)
+    torch.manual_seed(0)
+    x = torch.randn(2, model.n_chans, model.n_times)
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+    torch.testing.assert_close(features[:, :4], torch.tensor(expected), rtol=0, atol=1e-5)
+
+
+# features[:, :4] of the authors' code on the input of
+# _check_released_fnirs_checkpoint, computed with the authors' code at the
+# commit each test names
+
+
+@pytest.mark.parametrize(
+    "file, kwargs, expected",
+    [
+        ("geonirs_base.pt", {"n_times": 150, "sfreq": 5.0},
+         [[0.02500118874013424, 0.04738733917474747, 0.007597371935844421, 0.005497157108038664],
+          [-0.12108907848596573, 0.2241547405719757, -0.18274709582328796, -0.03251400962471962]]),
+        ("geonirs_large.pt", {"n_times": 150, "sfreq": 5.0, "embed_dim": 384,
+                              "num_heads": 12, "depth": 6, "feature_dim": 128},
+         [[-3.8912150859832764, -0.606697678565979, -0.19837510585784912, -6.412940979003906],
+          [-5.242615699768066, -2.4871740341186523, -0.46112173795700073, -3.506788730621338]]),
+    ],
+)
+def test_geonirs_released_checkpoints_match_the_authors_code(file, kwargs, expected):
+    """GeoNIRS@81f8995 checkpoints, from ``BRAINDECODE_FNIRS_WEIGHTS``."""
+    _check_released_fnirs_checkpoint(_fnirs_checkpoint(file), GeoNIRS, kwargs, expected)
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+@pytest.mark.parametrize(
+    "n_times, expected",
+    [
+        # one window: every token at window position 0
+        (100, [
+            [1.3799299001693726, 1.1365183591842651, 1.0999616384506226, 0.12654231488704681],
+            [-0.03779871016740799, -0.9599133729934692, 0.5302731394767761, 0.7867113351821899],
+        ]),
+        # three windows: the rotary position of each window takes part
+        (300, [
+            [1.8037338256835938, 0.23441250622272491, 0.7627871036529541, -0.022611618041992188],
+            [0.5426146388053894, -0.756412923336029, 0.2957547605037689, -1.5501772165298462],
+        ]),
+    ],
+)
+def test_mtrenirs_released_checkpoint_matches_the_authors_code(n_times, expected):
+    """The MIT-licensed MtReNIRS@16c3082 checkpoint, as released, on the Hub
+    (pinned revision); expected values from the authors' ``MtReNIRS.embed``."""
+    hub = ("braindecode/mtrenirs-pretrained", "bbc68ce5e00a4515081d900227fc06d111858e75")
+    path = os.path.join(_FNIRS_WEIGHTS, "mtrenirs_10s.pt")
+    if not (_FNIRS_WEIGHTS and os.path.isfile(path)):
+        hf_hub = pytest.importorskip("huggingface_hub")
+        try:
+            path = hf_hub.hf_hub_download(hub[0], "mtrenirs_10s.pt", revision=hub[1])
+        except hf_hub.utils.LocalEntryNotFoundError as err:  # offline
+            pytest.skip(f"Hugging Face Hub not reachable: {err}")
+    _check_released_fnirs_checkpoint(
+        path, MtReNIRS, {"n_times": n_times, "sfreq": 10.0}, expected
+    )
+
+
+def test_jung_mae_released_checkpoint_matches_the_authors_code():
+    """The released ``jung_mae.pt`` (81f8995), from ``BRAINDECODE_FNIRS_WEIGHTS``."""
+    expected = [
+        [0.0012979282764717937, -0.39332136511802673, 0.23441119492053986, 0.3510328233242035],
+        [-0.34959089756011963, -0.3680170476436615, 0.44219091534614563, 0.24921967089176178],
+    ]
+    path = _fnirs_checkpoint("jung_mae.pt")
+    _check_released_fnirs_checkpoint(path, JungMAE, {"n_times": 150, "sfreq": 5.0}, expected)
 
 
 def _tccnet_reference(model, x, mask_value):

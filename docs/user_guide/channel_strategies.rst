@@ -52,8 +52,28 @@ not know within 15 mm. The strategy fills the other targets:
 Positions come from ``loc``, else from ``standard_1005`` by name. ``spline``, ``field``
 and ``source`` need at least four positioned channels; a map whose row gain exceeds 2
 warns. A target without a position (BENDR's ``SCALE``) is zero unless the input has it;
-a target named ``A-B`` (BIOT) is ``V(A) - V(B)``. Non-EEG channels raise unless
-``channel_strategy_kwargs={"drop_non_eeg": True}``. The layer runs in eager mode;
-TorchScript works under ``native`` only.
+a channel named ``A-B`` is ``V(A) - V(B)``. A target that is a combination of the
+measured channels is computed exactly, under every strategy including ``"exact"``:
+``F3-C3`` from ``C3-F3`` (weight -1), ``F3-P3`` from ``F3-C3`` and ``C3-P3``, ``F3-C3``
+from ``F3`` and ``C3`` or from ``F3-REF`` and ``C3-REF``. The same algebra is in
+:func:`braindecode.functional.derivation_matrix` and
+:func:`~braindecode.functional.exact_derivation`. No reference is guessed: ``F3-C3`` is
+not exact from ``F3-R1`` and ``C3-R2``, nor ``F3`` from bipolar channels only. Non-EEG
+channels raise unless ``channel_strategy_kwargs={"drop_non_eeg": True}``. The layer runs
+in eager mode; TorchScript works under ``native`` only.
+
+``spline``, ``wiener`` and a kernel passed as ``channel_strategy`` (any ``kernel(pos_a,
+pos_b)`` covariance, such as :func:`~braindecode.functional.spherical_spline_kernel`)
+are one estimate, :func:`~braindecode.functional.linear_channel_map`: inputs ``y = A
+v``, targets ``t = B v``, a prior covariance of the potentials ``v`` and a flat prior on
+the unknown recording reference. It also gives each target's posterior variance
+(``model.channel_layer.variance``); ``match_gain=True`` restores the amplitude the
+estimate shrinks. ``channel_strategy_kwargs={"reference": "average"}`` (or an electrode
+name) gives the backbone its pretraining reference. Bad channels are left out of ``x``
+and ``chs_info`` (``raw.pick(exclude="bads")``) and reconstructed like any missing one.
+The layer also takes one montage per sample: ``chs_info`` a list of montages, ``x``
+padded to the largest and ``ch_mask`` the real channels. Batches of
+:func:`~braindecode.datasets.pad_channels_collate` (``pos`` and ``ch_mask``) work as
+they are: each sample's montage is read from its positions.
 
 The tutorial :ref:`channel-interpolation-tutorial` compares strategies on a recording.

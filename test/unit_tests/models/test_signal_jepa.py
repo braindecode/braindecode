@@ -4,6 +4,7 @@
 
 import pytest
 import torch
+from torch import nn
 
 from braindecode.models.signal_jepa import (
     _PRETRAIN_CHS_INFO,
@@ -659,3 +660,22 @@ def test_training_encoder_matches_torch_encoder():
     torch.manual_seed(1)
     out = model._encode_train(x)
     torch.testing.assert_close(out, ref, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("model_class", [SignalJEPA, SignalJEPA_Contextual])
+def test_backward_single_token_relu(model_class):
+    # 152 samples at 128 Hz give one token per channel; the positional
+    # encoding must not be added in place to the saved ReLU output.
+    kwargs = {"n_outputs": 2} if model_class is SignalJEPA_Contextual else {}
+    chs_info = [
+        {"ch_name": name, "loc": [0.1 * i, 0.2 * i, 0.3 * i]}
+        for i, name in enumerate(["A", "B", "C"])
+    ]
+    model = model_class(
+        chs_info=chs_info,
+        n_times=152,
+        sfreq=128,
+        activation=nn.ReLU,
+        **kwargs,
+    )
+    model(torch.randn(2, 3, 152)).sum().backward()

@@ -992,9 +992,7 @@ class _PatchEmbedding(nn.Module):
         self.d_model = self.emb_dim
 
         # ========== Learnable parameters ==========
-        self.mask_encoding = nn.Parameter(
-            torch.zeros(self.emb_dim), requires_grad=False
-        )
+        self.mask_encoding = nn.Parameter(torch.zeros(patch_size), requires_grad=False)
 
         # ========== Layers ==========
         # Temporal projection: 3-layer Conv2d stack

@@ -91,6 +91,21 @@ Attention on part of a larger tensor in eager mode
     :func:`braindecode.functional.scaled_dot_product_attention`, take q, k and v from a
     projection of the current batch, so their views span the whole projection.
 
+Same-size attention calls in eager mode
+    In eager mode, attention can return wrong values, without an error, when its query,
+    key and value are transposed views (``x.view(n, L, H, D).transpose(1, 2)``) and an
+    earlier call took views with as many elements in another shape: axial attention over
+    the time and then the channel axis of one tensor (:class:`braindecode.models.AXON`).
+    Compiled models are not affected; in eager mode, the environment variable
+    ``PT_HPU_ENABLE_EAGER_JIT_CACHE=0`` avoids it.
+
+Learnable attention masks
+    The fused kernel computes no gradient for ``attn_mask``. A floating-point mask that
+    requires one, like the learnable channel bias of :class:`braindecode.models.DIVER1`,
+    gets none with 1.21; according to the bridge's source, 1.22 returns the mask itself
+    as its gradient and 1.24 none. Train such models with the attention setting off:
+    attention then runs op by op and computes it.
+
 Fully masked query rows
     When a query has no key to attend to, the fused kernel returns NaN with an additive
     ``-inf`` mask, and finite, non-zero values with a boolean mask; torch returns zeros.

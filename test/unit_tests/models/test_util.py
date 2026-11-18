@@ -410,6 +410,7 @@ def test_warn_if_sfreq_differs_warns():
 _FNIRS_PAIRING: dict[str, dict] = {
     "FNIRSPreT": dict(depth=1, spatial_kernel_size=2),
     "FNIRST": dict(depth=1, spatial_kernel_size=2),
+    "JungMAE": dict(depth=1),
 }
 
 

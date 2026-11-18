@@ -191,12 +191,15 @@ interface for all EEG models and can derive variable names when needed.
      FBLightConvNet
      FBMSNet
      FNIRS4D
+     FNIRSCNN1D
      FNIRSNet
      FNIRSPreT
      FNIRST
      GCNsNet
+     GeoNIRS
      Guetschel2026
      IFNet
+     JungMAE
      Labram
      LUNA
      MAPA
@@ -207,6 +210,7 @@ interface for all EEG models and can derive variable names when needed.
      MIRepNet
      MSCFormer
      MSVTNet
+     MtReNIRS
      MVPFormer
      NeuroPose
      NeuroRVQ
@@ -533,11 +537,14 @@ The functional module contains various functions that can be used like functiona
     :recursive:
 
      check_ch_mask
+     derivation_matrix
      drop_path
+     exact_derivation
      fft_conv1d
      glorot_weight_zero_bias
      hilbert_freq
      identity
+     linear_channel_map
      masked_group_norm
      masked_mean
      pack_channels
@@ -556,6 +563,7 @@ The functional module contains various functions that can be used like functiona
      scaled_dot_product_attention
      sinusoidal_positional_encoding
      spectral_input
+     spherical_spline_kernel
      square
      unpack_channels
 
