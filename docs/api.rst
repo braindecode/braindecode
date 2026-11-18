@@ -197,6 +197,7 @@ interface for all EEG models and can derive variable names when needed.
      GCNsNet
      Guetschel2026
      IFNet
+     JungMAE
      Labram
      LUNA
      MAPA
