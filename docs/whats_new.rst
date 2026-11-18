@@ -32,6 +32,15 @@ Enhancements
   between recording descriptions and window metadata, and recording-level subset
   selection (by `Daria Agafonova`_).
 
+- Add :class:`braindecode.models.JungMAE`, the GeoNIRS authors' implementation of the
+  masked autoencoder of Jung et al. (IEEE BCI 2025), with a linear head;
+  ``load_state_dict`` takes the GeoNIRS benchmark's ``jung_mae.pt`` as released
+  (:gh:`1589` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.MtReNIRS` (Chae et al., 2026), a montage-aware fNIRS
+  foundation model with a Fourier embedding of the 10-05 position and chromophore and
+  a QK-norm rotary transformer; ``load_state_dict`` takes ``mtrenirs_10s.pt`` as
+  released, and the docstring gives the 0.01-0.5 Hz band-pass its weights expect
+  (:gh:`1590` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
   transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
@@ -232,6 +241,10 @@ Bug fixes
 Code health
 ============
 
+- The :class:`braindecode.models.JungMAE` tests compare the forward with the
+  reference encoder at ``atol=1e-5``: the reference packs the valid tokens and
+  the model masks the invalid ones, so float32 rounding depends on the machine
+  (:gh:`1594` by `Bruno Aristimunha`_).
 - Codacy runs Bandit from a root ``bandit.yml`` that skips B105, which flagged every ``"cls_token"`` key of the foundation-model feature dicts as a hardcoded password, and B101, the test ``assert`` statements (:gh:`1546` by `Bruno Aristimunha`_).
 - Every registered model whose ``forward`` takes ``ch_mask`` is checked with no
   per-model test case, like the other cross-model contracts: each recording of a
