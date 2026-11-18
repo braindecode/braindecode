@@ -2345,8 +2345,6 @@ def test_fixed_length_windows_mne_epochs_targets_from_channels():
     windows_mne = create_fixed_length_windows(**kwargs, use_mne_epochs=True)
 
     assert isinstance(windows_mne.datasets[0], WindowsDataset)
-    assert windows_mne.datasets[0].targets_from == "channels"
-    assert windows_mne.datasets[0].last_target_only is False
     assert windows_mne.datasets[0].window_kwargs[-1] == (
         "WindowsDataset",
         {"targets_from": "channels", "last_target_only": False},
@@ -2354,5 +2352,6 @@ def test_fixed_length_windows_mne_epochs_targets_from_channels():
     X_eeg, y_eeg, _ = windows_eeg[0]
     X_mne, y_mne, _ = windows_mne[0]
     assert X_mne.shape == X_eeg.shape == (2, 100)
+    assert y_mne.shape == y_eeg.shape == (1, 100)
     np.testing.assert_allclose(X_mne, X_eeg)
     np.testing.assert_allclose(y_mne, y_eeg)

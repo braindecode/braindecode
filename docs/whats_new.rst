@@ -214,12 +214,13 @@ Bug fixes
 
 - :func:`braindecode.preprocessing.create_fixed_length_windows` with
   ``use_mne_epochs=True`` (also set by ``picks``, ``reject`` or ``flat``) passes
-  ``targets_from`` and ``last_target_only`` to the
-  :class:`~braindecode.datasets.WindowsDataset` again, and records them in
-  ``window_kwargs`` so they survive saving. They were dropped since :gh:`515`:
+  ``targets_from`` and ``last_target_only`` to
+  :class:`~braindecode.datasets.WindowsDataset` again and records them in
+  ``window_kwargs``, so they survive saving and loading. :gh:`515` dropped them:
   with ``targets_from="channels"`` the target channels stayed in ``X`` and ``y``
-  was the metadata dummy. Outputs of existing ``targets_from="channels"`` datasets
-  built on this path change.
+  was the dummy metadata target ``-1``. Outputs of ``targets_from="channels"``
+  datasets built on this path change (by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
   supplied electrode names without regard to case, including with a named
