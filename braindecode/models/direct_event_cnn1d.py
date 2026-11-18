@@ -13,20 +13,25 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class DirectEventCNN1D(EEGModuleMixin, nn.Module):
-    r"""DirectEventCNN1D, the 1D-CNN baseline of GeoNIRS, from Li et al. (2026).
+    r"""DirectEventCNN1D, the 1D-CNN of Trakoolwilaiwan et al. (2018), as in GeoNIRS.
 
     :bdg-success:`Convolution`
 
     .. versionadded:: 2.1
 
-    GeoNIRS is evaluated against four groups of baselines, and the supervised
-    neural baselines open with a "1D-CNN" (:footcite:`li2026geonirs`, Section
-    3.1; the "1D-CNN" rows of Tables 1, 14 and 15, and 88.4 K parameters in
-    Table 10). This class ports that baseline: the
+    Trakoolwilaiwan et al. :footcite:`trakoolwilaiwan2018cnn` proposed
+    convolutional neural networks for fNIRS brain-computer interfaces, to
+    classify rest, right- and left-hand motor execution from HbO/HbR signals.
+    The GeoNIRS benchmark :footcite:`li2026geonirs` uses a "1D-CNN
+    (Trakoolwilaiwan et al., 2018)" as its first supervised neural baseline
+    (Section 3.1; the "1D-CNN" rows of Tables 1, 14 and 15, and 88.4 K
+    parameters in Table 10). This class ports that baseline: the
     ``DirectEventCNN1DClassifier`` of the GeoNIRS repository (commit
     ``81f8995``) as its benchmark builds it, one classifier per event window.
-    The two GroupNorm and GELU stages are the GeoNIRS authors', and the
-    architecture is documented from their code.
+    The two GroupNorm and GELU stages are the GeoNIRS authors' (the networks
+    of Trakoolwilaiwan et al. use one or three convolutions of kernel 3 with
+    max pooling and dropout), and the architecture is documented from their
+    code.
 
     The model is small and direct. Two temporal convolutions read the window,
     the second of them at half the sampling rate; the result is averaged over
