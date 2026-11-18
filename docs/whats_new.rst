@@ -258,8 +258,9 @@ Bug fixes
   output. The old size, ``ceil(n_times / pool_size) * num_filters``, is wrong for
   many settings with ``filter_width != pool_size``. The forward pass then raised a
   ``RuntimeError`` or returned a different number of rows than the batch held.
-  Settings where the two sizes agree, such as the defaults, keep their
-  parameter shapes and outputs (:gh:`1611` by
+  Window settings that yield zero pooled samples raise a ``ValueError`` at
+  construction. Settings where the two sizes agree, such as the defaults,
+  keep their parameter shapes and outputs (:gh:`1611` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
   averages kept steps that lie after the end of the input. When the last

@@ -118,6 +118,20 @@ class SyncNet(EEGModuleMixin, nn.Module):
         self.beta_init_values = beta_init_values
         self.phase_init_values = phase_init_values
 
+        if self.filter_width < 1 or self.pool_size < 1:
+            raise ValueError("filter_width and pool_size must be positive.")
+        self.padding = self._compute_padding(filter_width=self.filter_width)
+        # Both the input and the convolution output are zero padded.
+        pooled_length = (
+            self.n_times + 2 * sum(self.padding) - self.filter_width + 1
+        ) // self.pool_size
+        if pooled_length < 1:
+            raise ValueError(
+                f"pool_size={self.pool_size} leaves no pooled samples for "
+                f"n_times={self.n_times} and filter_width={self.filter_width}."
+            )
+        self.classifier_input_size = pooled_length * self.num_filters
+
         # Initialize parameters
         self.amplitude = nn.Parameter(
             torch.FloatTensor(1, 1, self.n_chans, self.num_filters).uniform_(
@@ -131,13 +145,6 @@ class SyncNet(EEGModuleMixin, nn.Module):
         )
 
         self.bias = nn.Parameter(torch.zeros(self.num_filters))
-
-        self.padding = self._compute_padding(filter_width=self.filter_width)
-        # Both the input and the convolution output are zero padded.
-        pooled_length = (
-            self.n_times + 2 * sum(self.padding) - self.filter_width + 1
-        ) // self.pool_size
-        self.classifier_input_size = pooled_length * self.num_filters
 
         # Create time vector t
         if self.filter_width % 2 == 0:
