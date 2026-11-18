@@ -120,6 +120,21 @@ API and behavior changes
   are 4 % shorter compiled and 22 % shorter in eager mode; LaBraM without ``ch_mask``
   and EEGPT in eager mode stay within 0.5 %, and EEGPT compiled steps are 1.6 % longer
   (:gh:`1581` by `Bruno Aristimunha`_).
+- Gaudi lazy mode (``PT_HPU_LAZY_MODE=1``) is not supported (:ref:`install_gaudi`), and
+  the code that ran only there is gone: :class:`braindecode.models.BrainModule` gates
+  with :class:`torch.nn.GLU` again (hpu-ops runs ``glu`` on Gaudi, eager and compiled),
+  :class:`braindecode.models.CodeBrain` sums its skip connections one by one, and the
+  group norm of :class:`braindecode.models.SignalJEPA` and the rotary embedding of
+  :class:`braindecode.models.ZUNA` no longer check for lazy mode. CPU, CUDA, and Gaudi
+  eager and compiled runs execute the same operations as before. Two Gaudi branches that
+  also ran in eager and compiled mode go as well, measured on one Gaudi2 card with
+  Habana's attention setting and hpu-ops: :class:`braindecode.modules.ChannelMerger`
+  computes ``weights @ x`` on every device, at 0.99x to 1.00x the step time of its
+  transposed Gaudi form (DANCE and ``BrainModule(use_merger=True)``, 21 channels x 6000
+  samples, batch 64), and :func:`braindecode.functional.scaled_dot_product_attention`
+  hands float32 attention with dropout to torch's SDPA on Gaudi, whose fused kernel takes
+  0.39x (EEGPT shapes) and 0.54x (REVE) the time of the math path in eager mode, 0.75x
+  and 0.88x compiled; the CPU keeps the math path (:gh:`NNNN` by `Bruno Aristimunha`_).
 
 Requirements
 ============
