@@ -145,6 +145,11 @@ Enhancements
   encoder output ``(batch, n_chans, n_tokens, dim)`` with the tokens of padded
   channels zero; DIVER1 gains
   ``return_features`` (:gh:`1540` by `Julien Gadonneix`_).
+- :ref:`install_gaudi` lists two attention issues of Gaudi software 1.21.4 that give no
+  error: wrong values in eager mode when two calls take transposed views with as many
+  elements in different shapes (:class:`braindecode.models.AXON`), and no gradient for a
+  learnable ``attn_mask`` (:class:`braindecode.models.DIVER1`)
+  (:gh:`1599` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
