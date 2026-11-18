@@ -1349,7 +1349,7 @@ def test_luna_loads_full_model_with_legacy_location_cache(tmp_path):
     model._load_state_dict_post_hooks.clear()
     checkpoint = tmp_path / "luna.pt"
     torch.save(model, checkpoint)
-    restored = torch.load(checkpoint, weights_only=False)
+    restored = torch.load(checkpoint, weights_only=False)  # nosec B614 - own file
     with torch.no_grad():
         torch.testing.assert_close(restored(x), expected)
 
