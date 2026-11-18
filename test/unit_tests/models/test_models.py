@@ -1032,6 +1032,23 @@ def test_attnsleep_attention_query_is_not_normalized():
     torch.testing.assert_close(actual, expected)
 
 
+def test_attnsleep_attn_query_norm_restores_previous_output():
+    # Before 2.1 the attention got the normalized query, attn(norm(x), key,
+    # value). A hook on the default model rebuilds that call.
+    kwargs = dict(sfreq=100, n_outputs=5, input_window_seconds=30, d_model=80)
+    model = AttnSleep(**kwargs).eval()
+    legacy = AttnSleep(**kwargs, attn_query_norm=True).eval()
+    legacy.load_state_dict(model.state_dict())
+    for layer in model.feature_extractor[1].layers:
+        norm = layer.residual_self_attn.norm
+        layer.residual_self_attn.fn_attn.register_forward_pre_hook(
+            lambda _, args, norm=norm: (norm(args[0]), *args[1:])
+        )
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        torch.testing.assert_close(legacy(x), model(x))
+
+
 def test_attn_sleep_requires_signal_geometry():
     with pytest.raises(ValueError, match="at least two of"):
         AttnSleep(sfreq=100, n_outputs=5)

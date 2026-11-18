@@ -95,6 +95,12 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         Activation function class to apply in the multi-resolution CNN layer.
         Should be a PyTorch activation module class like ``nn.ReLU`` or
         ``nn.GELU``. Default is ``nn.GELU``.
+    attn_query_norm : bool
+        If ``True``, apply the layer norm of the attention block to the query
+        before the attention, as braindecode 1.0 to 2.0 did. If ``False``
+        (default), attend with the raw query, as the authors' code does.
+
+        .. versionadded:: 2.1
 
     References
     ----------
@@ -124,6 +130,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         chs_info=None,
         n_chans=None,
         n_times=None,
+        attn_query_norm=False,
     ):
         if (
             sum(value is not None for value in (n_times, sfreq, input_window_seconds))
@@ -190,7 +197,12 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         ff = _PositionwiseFeedForward(d_model, d_ff, drop_prob, activation=activation)
         tce = _TCE(
             _EncoderLayer(
-                d_model, deepcopy(attn), deepcopy(ff), after_reduced_cnn_size, drop_prob
+                d_model,
+                deepcopy(attn),
+                deepcopy(ff),
+                after_reduced_cnn_size,
+                drop_prob,
+                attn_query_norm,
             ),
             n_tce,
         )
@@ -473,11 +485,12 @@ class _MultiHeadedAttention(nn.Module):
 class _ResidualLayerNormAttn(nn.Module):
     r"""A residual connection followed by a layer norm."""
 
-    def __init__(self, size, dropout, fn_attn):
+    def __init__(self, size, dropout, fn_attn, norm_query):
         super().__init__()
         self.norm = nn.LayerNorm(size, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
         self.fn_attn = fn_attn
+        self.norm_query = norm_query
 
     def forward(
         self,
@@ -486,9 +499,10 @@ class _ResidualLayerNormAttn(nn.Module):
         value: torch.Tensor,
     ) -> torch.Tensor:
         """Apply residual connection to any sublayer with the same size."""
-        # The reference attends with the raw query. ``self.norm`` stays, unused,
-        # so saved state dicts keep their keys.
-        out = self.fn_attn(x, key, value)
+        # The reference attends with the raw query. ``norm_query`` keeps the
+        # braindecode 1.0 to 2.0 behaviour.
+        query = self.norm(x) if self.norm_query else x
+        out = self.fn_attn(query, key, value)
 
         return x + self.dropout(out)
 
@@ -537,7 +551,15 @@ class _EncoderLayer(nn.Module):
     Each of these sublayers have residual and layer norm, implemented by _ResidualLayerNorm.
     """
 
-    def __init__(self, size, self_attn, feed_forward, after_reduced_cnn_size, dropout):
+    def __init__(
+        self,
+        size,
+        self_attn,
+        feed_forward,
+        after_reduced_cnn_size,
+        dropout,
+        attn_query_norm,
+    ):
         super().__init__()
         self.size = size
         self.self_attn = self_attn
@@ -547,6 +569,7 @@ class _EncoderLayer(nn.Module):
             size=size,
             dropout=dropout,
             fn_attn=self_attn,
+            norm_query=attn_query_norm,
         )
         self.residual_ff = _ResidualLayerNormFF(
             size=size,
