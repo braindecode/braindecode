@@ -201,6 +201,9 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.GeoNIRS` keeps gradients finite with
+  ``pool="mean_std"`` when a recording has one valid patch or zero variance.
+
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw

@@ -61,6 +61,25 @@ def test_geonirs_mean_std_is_the_population_std_over_valid_patches():
         torch.testing.assert_close(features[b, :, 1], z.std(dim=1, unbiased=False))
 
 
+def test_geonirs_mean_std_step_with_zero_one_or_several_valid_patches():
+    model = GeoNIRS(n_times=20, pool="mean_std", **SMALL).train()
+    x = torch.randn(3, 6, 20)
+    x[0] = NAN
+    x[1, :, 10:] = NAN
+    x.requires_grad_()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+
+    loss = torch.nn.functional.cross_entropy(model(x), torch.tensor([0, 1, 0]))
+    assert loss.isfinite()
+    loss.backward()
+    assert x.grad.isfinite().all()
+    assert all(
+        p.grad.isfinite().all() for p in model.parameters() if p.grad is not None
+    )
+    optimizer.step()
+    assert all(p.isfinite().all() for p in model.parameters())
+
+
 # The authors' Ours writes its projection widths, 192 -> 128 -> 96 -> 64, by
 # hand, so the small model keeps D = 192 and F = 64 and is small elsewhere
 REFERENCE_SIZE = dict(

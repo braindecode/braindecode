@@ -1468,14 +1468,8 @@ class _ValidMeanStd(nn.Module):
         # the reference): sqrt(sum((z - mean)^2) / count)
         # (batch, M, 2 * F) -> (batch, M, 1, 2 * F)
         centre = self.mean_over_patches(mean)
-        std = x - centre
-        std = std * weight
-        std = std.square()
-        # (batch, M, P, 2 * F) -> (batch, M, 2 * F)
-        std = std.sum(dim=2)
-        std = std / count
-        std = std.clamp_min(0.0)
-        std = std.sqrt()
+        # The vector norm has a zero gradient when all valid patches agree.
+        std = torch.linalg.vector_norm((x - centre) * weight, dim=2) / count.sqrt()
 
         # [mean | std] of each latent channel, flattened
         # 2 x (batch, M, 2 * F) -> (2, batch, M, 2 * F) -> (batch, 4 * M * F)
