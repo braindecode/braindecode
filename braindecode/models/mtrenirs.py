@@ -275,7 +275,6 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
     (macro-F1, %), under the paper's protocol: leave-one-subject-out with a
     linear probe (LP), MLP probe, LoRA, full fine-tuning (Full-FT) and random
     initialization (Scratch-FT), and within-subject few-shot linear probes.
-    The relative difference is in % of the paper value.
 
     =========  =====  ====  ====  =======  ==========  ======  ======  ======  ======
     \          LP     MLP   LoRA  Full-FT  Scratch-FT  2-shot  4-shot  6-shot  8-shot
@@ -283,7 +282,6 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
     Paper      67.9   67.2  70.3  70.2     66.7        40.4    46.2    50.0    53.0
     Paper SD   17.7   18.6  18.6  19.1     16.2        8.1     11.9    14.2    15.1
     Port       68.3   67.4  69.3  69.6     67.8        40.3    46.6    50.4    53.0
-    Rel. diff  +0.6   +0.2  -1.5  -0.8     +1.6        -0.2    +0.9    +0.9    -0.0
     =========  =====  ====  ====  =======  ==========  ======  ======  ======  ======
 
     References
