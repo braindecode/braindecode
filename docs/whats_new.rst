@@ -318,6 +318,9 @@ Code health
   :class:`braindecode.models.Labram` and :class:`braindecode.models.CodeBrain`,
   which it skipped; it still skips SyncNet and NeuroRVQTokenizer
   (:gh:`1598` by `Bruno Aristimunha`_).
+- :class:`~braindecode.models.DGCNN` and :class:`~braindecode.models.GCNsNet`
+  share :class:`~braindecode.modules.ChebyshevGraphConv` for their spectral
+  graph convolutions.
 - The :class:`braindecode.models.JungMAE` tests compare the forward with the
   reference encoder at ``atol=1e-5``: the reference packs the valid tokens and
   the model masks the invalid ones, so float32 rounding depends on the machine

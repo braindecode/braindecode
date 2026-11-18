@@ -17,7 +17,7 @@ from torch import nn
 from torch.nn.modules.lazy import LazyModuleMixin
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.dgcnn import _GraphConvolution
+from braindecode.modules import ChebyshevGraphConv
 
 
 class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
@@ -112,7 +112,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
 
         in_features = [1, *n_features[:-1]]  # one scalar per node at the input
         self.graph_convs = nn.ModuleList(
-            _GraphConvolution(f_in, f_out, k)
+            ChebyshevGraphConv(f_in, f_out, k)
             for f_in, f_out, k in zip(in_features, n_features, cheb_orders)
         )
         self.biases = nn.ModuleList([_NodeBias() for _ in n_features])

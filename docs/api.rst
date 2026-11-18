@@ -362,6 +362,7 @@ constraints and pooling layers.
 
     AvgPool2dWithConv
     CausalConv1d
+    ChebyshevGraphConv
     CombinedConv
     Conv2dWithConstraint
     DepthwiseConv2d
