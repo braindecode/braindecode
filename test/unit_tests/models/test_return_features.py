@@ -29,6 +29,7 @@ from braindecode.models import (
     FNIRSNet,
     FNIRSPreT,
     Guetschel2026,
+    JungMAE,
     Labram,
     MIRepNet,
     PopulationTransformer,
@@ -227,6 +228,13 @@ _MODELS = [
     pytest.param(FNIRS4D, 4, {"n_layers": 1, "d_state": 16}, False, id="FNIRS4D"),
     pytest.param(FNIRST, 10, {"depth": 1, "num_heads": 2}, True, id="FNIRST"),
     pytest.param(FNIRSPreT, 10, {"depth": 1, "num_heads": 2}, True, id="FNIRSPreT"),
+    pytest.param(
+        JungMAE,
+        4,
+        {"depth": 1, "num_heads": 4, "embed_dim": 64},
+        False,
+        id="JungMAE",
+    ),
 ]
 
 

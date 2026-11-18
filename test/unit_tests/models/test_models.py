@@ -74,6 +74,7 @@ from braindecode.models import (
     GCNsNet,
     HybridNet,
     IFNet,
+    JungMAE,
     Labram,
     MEDFormer,
     MetaNeuromotorHand,
@@ -7424,10 +7425,10 @@ def test_fnirst_seeded_reset_and_cls_tokens(model_cls):
 
 
 # FNIRST/FNIRSPreT need 5 HbO/HbR pairs for their default spatial kernel
-_FNIRS_TEST_N_CHANS = {FNIRST: 10, FNIRSPreT: 10}
+_FNIRS_TEST_N_CHANS = {FNIRST: 10, FNIRSPreT: 10, JungMAE: 6}
 
 
-@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT, JungMAE])
 def test_fnirs_features_feed_head_and_reset(model_cls):
     """final_layer(features) == logits (train and eval); every parameter is reset."""
     n_chans = _FNIRS_TEST_N_CHANS[model_cls]
@@ -7478,7 +7479,7 @@ def test_fnirspret_forwards_every_argument_to_fnirst():
 
 @pytest.mark.parametrize(
     "model_cls, fill",
-    [(FNIRST, 0.0), (FNIRSPreT, 0.0)],
+    [(FNIRST, 0.0), (FNIRSPreT, 0.0), (JungMAE, float("nan"))],
 )
 def test_fnirs_masks(model_cls, fill):
     """ch_mask is refused by name; an all-False mask changes nothing; hidden
@@ -7497,6 +7498,62 @@ def test_fnirs_masks(model_cls, fill):
     model(hidden, mask=mask).sum().backward()
     assert torch.equal(hidden.grad[mask], torch.zeros_like(hidden.grad[mask]))
     assert hidden.grad[~mask].isfinite().all()
+
+
+@pytest.mark.parametrize("model_cls", [JungMAE])
+def test_fnirs_patch_models_refuse_a_partial_patch(model_cls):
+    """A window that is not a whole number of patches raises, as in the reference."""
+    with pytest.raises(ValueError, match="not divisible"):
+        model_cls(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=155)
+
+
+@pytest.mark.parametrize("model_cls", [JungMAE])
+def test_fnirs_pair_models_need_an_even_n_chans(model_cls):
+    with pytest.raises(ValueError, match="n_chans must be even"):
+        model_cls(n_chans=5, n_outputs=2, n_times=60)
+
+
+_FNIRS_WEIGHTS = os.environ.get("BRAINDECODE_FNIRS_WEIGHTS", "")
+
+
+def _fnirs_checkpoint(file):
+    """``file`` from ``BRAINDECODE_FNIRS_WEIGHTS``; the test is skipped without it."""
+    path = os.path.join(_FNIRS_WEIGHTS, file)
+    if not (_FNIRS_WEIGHTS and os.path.isfile(path)):
+        pytest.skip(f"{file} not in BRAINDECODE_FNIRS_WEIGHTS")
+    return path
+
+
+def _check_released_fnirs_checkpoint(path, cls, kwargs, expected):
+    """The checkpoint, as released (decoders included), loads strictly with
+    ``weights_only=True``, every backbone tensor is the checkpoint's, and the
+    first features equal ``expected``, the authors' code on the same input."""
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    model = cls(chs_info=_fnirs_chs_info(10), n_outputs=2, **kwargs).eval()
+    model.load_state_dict(payload, strict=True)
+    state = model.state_dict()
+    backbone = [k for k in state if not k.startswith("final_layer.")]
+    assert all(torch.equal(state[k], payload["model"][k]) for k in backbone)
+    torch.manual_seed(0)
+    x = torch.randn(2, model.n_chans, model.n_times)
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+    torch.testing.assert_close(features[:, :4], torch.tensor(expected), rtol=0, atol=1e-5)
+
+
+# features[:, :4] of the authors' code on the input of
+# _check_released_fnirs_checkpoint, computed with the authors' code at the
+# commit each test names
+
+
+def test_jung_mae_released_checkpoint_matches_the_authors_code():
+    """The released ``jung_mae.pt`` (81f8995), from ``BRAINDECODE_FNIRS_WEIGHTS``."""
+    expected = [
+        [0.0012979282764717937, -0.39332136511802673, 0.23441119492053986, 0.3510328233242035],
+        [-0.34959089756011963, -0.3680170476436615, 0.44219091534614563, 0.24921967089176178],
+    ]
+    path = _fnirs_checkpoint("jung_mae.pt")
+    _check_released_fnirs_checkpoint(path, JungMAE, {"n_times": 150, "sfreq": 5.0}, expected)
 
 
 def _tccnet_reference(model, x, mask_value):
