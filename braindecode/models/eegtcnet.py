@@ -163,6 +163,11 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
             max_norm_val=self.max_norm_const,
         )
 
+    @classmethod
+    def _fill_legacy_defaults(cls, kwargs):
+        super()._fill_legacy_defaults(kwargs)
+        kwargs.setdefault("temporal_activation", True)
+
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

@@ -2158,6 +2158,12 @@ def test_eegtcnet_temporal_activation_restores_previous_output():
     eegnet.bn1.register_forward_hook(lambda m, i, o: eegnet.activation(o))
     torch.testing.assert_close(previous(x), model(x))
 
+    config = previous.get_config()
+    del config["temporal_activation"]
+    restored = EEGTCNet.from_config(config).eval()
+    restored.load_state_dict(previous.state_dict(), strict=True)
+    torch.testing.assert_close(restored(x), previous(x))
+
 
 def test_eegclip_batch_size_one_train_mode():
     """At n_times=480 the dense Deep4Net gives one time step, so the projection
