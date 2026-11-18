@@ -201,9 +201,6 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`~braindecode.models.AttnSleep` reloads its safetensors checkpoints
-  with ``strict=True``, including checkpoints that saved the adaptive feature
-  recalibration layers under duplicate names.
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
@@ -242,6 +239,9 @@ Bug fixes
   copy; on Gaudi, the roll by 0 of a slice of the stacked gradient gave a wrong input
   gradient. Outputs and gradients are unchanged on CPU (:gh:`1595` by
   `Bruno Aristimunha`_).
+- :class:`~braindecode.models.AttnSleep` reloads its safetensors checkpoints
+  with ``strict=True``, including checkpoints that saved the adaptive feature
+  recalibration layers under duplicate names.
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
   original fine-tuning code replaces it by ``nn.Identity()``, so the head now reads
