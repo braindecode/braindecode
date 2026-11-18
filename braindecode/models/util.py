@@ -35,7 +35,7 @@ from torch import nn
 from torchaudio.transforms import Resample
 
 from braindecode import modules as bd_modules
-from braindecode.functional import check_n_chans  # noqa: F401  # as ``torch`` above
+from braindecode.functional import check_n_chans  # noqa: F401  # scripted wrapped forwards
 from braindecode.util import resolve_montage_name
 
 # Canonical MNE channel-type name for the electrode kinds braindecode models
@@ -124,7 +124,11 @@ _BATCH_NORM_MODULES = (
 
 
 def _disable_batch_norm_training_if_batch_size_one(forward):
-    """Temporarily set BatchNorm layers to train(False) for batch size one."""
+    """Temporarily set BatchNorm layers to train(False) for batch size one.
+
+    TorchScript resolves the names of a wrapped forward in this module, hence
+    the imports of ``torch`` and ``check_n_chans`` at the top.
+    """
     forward_signature = inspect.signature(forward)
 
     @wraps(forward)
