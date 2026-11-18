@@ -34,7 +34,6 @@ if TYPE_CHECKING:
     from .deep4 import Deep4Net
     from .deepsleepnet import DeepSleepNet
     from .dgcnn import DGCNN
-    from .direct_event_cnn1d import DirectEventCNN1D
     from .diver1 import DIVER1
     from .duin import DuIN
     from .eeg_clip import EEGCLIP
@@ -56,6 +55,7 @@ if TYPE_CHECKING:
     from .fblightconvnet import FBLightConvNet
     from .fbmsnet import FBMSNet
     from .fnirs4d import FNIRS4D
+    from .fnirs_cnn1d import FNIRSCNN1D
     from .fnirs_t import FNIRST, FNIRSPreT
     from .fnirsnet import FNIRSNet
     from .gcnsnet import GCNsNet

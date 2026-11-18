@@ -948,7 +948,7 @@ models_mandatory_parameters: list[
         {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
     ),
     (
-        "DirectEventCNN1D",
+        "FNIRSCNN1D",
         ["n_chans", "n_outputs"],
         {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
     ),

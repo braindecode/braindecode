@@ -12,8 +12,8 @@ from torch import nn
 from braindecode.models.base import EEGModuleMixin
 
 
-class DirectEventCNN1D(EEGModuleMixin, nn.Module):
-    r"""DirectEventCNN1D, the 1D-CNN of Trakoolwilaiwan et al. (2018), as in GeoNIRS.
+class FNIRSCNN1D(EEGModuleMixin, nn.Module):
+    r"""FNIRSCNN1D, the 1D-CNN of Trakoolwilaiwan et al. (2018), as in GeoNIRS.
 
     :bdg-success:`Convolution`
 
@@ -48,20 +48,20 @@ class DirectEventCNN1D(EEGModuleMixin, nn.Module):
 
     .. rubric:: Macro Components
 
-    - ``DirectEventCNN1D.temporal_conv1`` **First temporal convolution**
+    - ``FNIRSCNN1D.temporal_conv1`` **First temporal convolution**
 
       :class:`~torch.nn.Conv1d` (64 filters, kernel 7, ``padding="same"``),
       :class:`~torch.nn.GroupNorm` (8 groups), GELU and
       :class:`~torch.nn.MaxPool1d` (kernel 2), which halves the time axis.
       The kernel spans 7 samples, 1.4 s at the 5 Hz of the GeoNIRS inputs.
 
-    - ``DirectEventCNN1D.temporal_conv2`` **Second temporal convolution**
+    - ``FNIRSCNN1D.temporal_conv2`` **Second temporal convolution**
 
       :class:`~torch.nn.Conv1d` (128 filters, kernel 5, ``padding="same"``),
       :class:`~torch.nn.GroupNorm` (8 groups) and GELU, at half rate, so its
       5 samples span 2 s of the input.
 
-    - ``DirectEventCNN1D.final_layer`` **Classification head**
+    - ``FNIRSCNN1D.final_layer`` **Classification head**
 
       The feature maps are averaged over time
       (:class:`~torch.nn.AdaptiveAvgPool1d`), then
@@ -266,7 +266,7 @@ class DirectEventCNN1D(EEGModuleMixin, nn.Module):
         return_features: bool = False,
         ch_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
-        """Forward pass of the DirectEventCNN1D model.
+        """Forward pass of the FNIRSCNN1D model.
 
         Parameters
         ----------
@@ -294,7 +294,7 @@ class DirectEventCNN1D(EEGModuleMixin, nn.Module):
         # cannot be left out of it
         if ch_mask is not None:
             raise ValueError(
-                "DirectEventCNN1D does not accept ch_mask: "
+                "FNIRSCNN1D does not accept ch_mask: "
                 "its first convolution spans every row."
             )
 

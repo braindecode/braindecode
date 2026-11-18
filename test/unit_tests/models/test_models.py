@@ -55,7 +55,7 @@ from braindecode.models import (
     ContraWR,
     Deep4Net,
     DeepSleepNet,
-    DirectEventCNN1D,
+    FNIRSCNN1D,
     EEGConformer,
     EEGInceptionERP,
     EEGInceptionMI,
@@ -6524,8 +6524,8 @@ def _interleaved_fnirs_chs(n_pairs=4):
     [
         (FNIRSNet, {}),
         (FNIRSNet, {"n_chans": 6}),
-        (DirectEventCNN1D, {}),
-        (DirectEventCNN1D, {"n_chans": 6}),
+        (FNIRSCNN1D, {}),
+        (FNIRSCNN1D, {"n_chans": 6}),
         (FNIRS4D, {"n_layers": 2, "d_state": 16, "channel_order": "interleaved"}),
         (
             FNIRS4D,
@@ -6681,7 +6681,7 @@ class _AuthorsDirectEventCNN1D(torch.nn.Module):
 
 
 @pytest.mark.parametrize("n_pairs, n_times", [(23, 60), (41, 60), (23, 61)])
-def test_direct_event_cnn1d_matches_the_authors_module(n_pairs, n_times):
+def test_fnirs_cnn1d_matches_the_authors_module(n_pairs, n_times):
     """With the same seed the two modules draw the same weights; the authors'
     state dict loads strictly through ``mapping``; the logits and
     ``final_layer(features)`` equal the authors' module in eval and train
@@ -6691,7 +6691,7 @@ def test_direct_event_cnn1d_matches_the_authors_module(n_pairs, n_times):
     torch.manual_seed(810)
     reference = _AuthorsDirectEventCNN1D(n_pairs, num_classes=2)
     torch.manual_seed(810)
-    model = DirectEventCNN1D(n_chans=2 * n_pairs, n_outputs=2, n_times=n_times)
+    model = FNIRSCNN1D(n_chans=2 * n_pairs, n_outputs=2, n_times=n_times)
     mapping = model.mapping
     port_state = model.state_dict()
     assert sorted(mapping[key] for key in reference.state_dict()) == sorted(port_state)
@@ -6727,16 +6727,16 @@ def test_direct_event_cnn1d_matches_the_authors_module(n_pairs, n_times):
         )
 
 
-def test_direct_event_cnn1d_parameter_count_of_table_10():
+def test_fnirs_cnn1d_parameter_count_of_table_10():
     """GeoNIRS Table 10: 88.4 K parameters at 52 fNIRS channels (104 rows)."""
-    model = DirectEventCNN1D(n_chans=104, n_outputs=2, n_times=50)
+    model = FNIRSCNN1D(n_chans=104, n_outputs=2, n_times=50)
     assert sum(p.numel() for p in model.parameters()) == 88_386
 
 
-def test_direct_event_cnn1d_reads_inf_as_missing():
+def test_fnirs_cnn1d_reads_inf_as_missing():
     """An inf sample is missing data, as a NaN one: read as zero."""
     torch.manual_seed(0)
-    model = DirectEventCNN1D(n_chans=4, n_outputs=2, n_times=20).eval()
+    model = FNIRSCNN1D(n_chans=4, n_outputs=2, n_times=20).eval()
     x = torch.randn(2, 4, 20)
     with torch.no_grad():
         for value in (float("inf"), float("-inf")):
@@ -6749,10 +6749,10 @@ def test_direct_event_cnn1d_reads_inf_as_missing():
             torch.testing.assert_close(out, model(x_nan), rtol=0, atol=0)
 
 
-def test_direct_event_cnn1d_wires_every_argument():
+def test_fnirs_cnn1d_wires_every_argument():
     """Non-default values reach the layers they name, and reset_head keeps
     the width of the second convolution."""
-    model = DirectEventCNN1D(
+    model = FNIRSCNN1D(
         n_chans=6, n_outputs=2, n_times=30, n_filters_conv1=16,
         n_filters_conv2=24, kernel_size_conv1=9, kernel_size_conv2=3,
         pool_size=3, n_norm_groups=4, drop_prob=0.2, activation=nn.ELU,
@@ -6771,11 +6771,11 @@ def test_direct_event_cnn1d_wires_every_argument():
     assert model.final_layer.out_features == 3
 
 
-def test_direct_event_cnn1d_refuses_ch_mask():
+def test_fnirs_cnn1d_refuses_ch_mask():
     """The first convolution spans every row, so padded channels cannot be
     left out."""
-    model = DirectEventCNN1D(n_chans=4, n_outputs=2, n_times=20)
-    with pytest.raises(ValueError, match="DirectEventCNN1D does not accept ch_mask"):
+    model = FNIRSCNN1D(n_chans=4, n_outputs=2, n_times=20)
+    with pytest.raises(ValueError, match="FNIRSCNN1D does not accept ch_mask"):
         model(torch.randn(2, 4, 20), ch_mask=torch.ones(2, 4, dtype=torch.bool))
 
 

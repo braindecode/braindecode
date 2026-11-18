@@ -43,7 +43,7 @@ Enhancements
   ``load_state_dict`` takes ``geonirs_base.pt`` and ``geonirs_large.pt`` as released,
   and ``ch_mask`` handles montages of different sizes (:gh:`1591` by
   `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.DirectEventCNN1D`, the 1D-CNN of Trakoolwilaiwan
+- Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan
   et al. (Neurophotonics 2018) as the GeoNIRS benchmark (Li et al., 2026)
   implements it: two temporal convolutions with GroupNorm and GELU, a time
   average and a linear head. Its ``mapping`` loads the
