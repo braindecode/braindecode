@@ -180,6 +180,14 @@ class CORTEG(EEGModuleMixin, nn.Module):
     on_non_divisible : {"pad", "crop", "error"}
         How a stream whose length is not a multiple of its patch size is
         handled (right zero-pad, crop, or raise); the reference crops.
+    channel_strategy : str, default="native"
+        Only ``"native"``: ``forward`` takes a second per-channel stream,
+        ``x_hi``, that the channel layer would not map. CORTEG places any
+        montage by its electrode positions (``chs_info`` or ``pos``), and
+        ``ch_mask`` pads recordings of different sizes in one batch. Any other
+        value raises a ``ValueError``.
+    channel_strategy_kwargs : dict or None, default=None
+        Must be ``None``.
 
     References
     ----------
@@ -218,7 +226,17 @@ class CORTEG(EEGModuleMixin, nn.Module):
         fourier_max_freq: float = 50.0,
         gate_bottleneck: int = 16,
         on_non_divisible: str = "pad",
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
+        if channel_strategy != "native" or channel_strategy_kwargs:
+            raise ValueError(
+                f"{type(self).__name__}.forward takes a second per-channel stream, "
+                "x_hi, that the channel layer would not map: only "
+                "channel_strategy='native' is supported. CORTEG places any montage by "
+                "its electrode positions (chs_info or pos), and ch_mask pads "
+                "recordings of different sizes in one batch."
+            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,

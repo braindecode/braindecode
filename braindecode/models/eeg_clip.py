@@ -95,6 +95,11 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
     initial_temperature : float
         The logit scale starts at ``log(1 / initial_temperature)`` and, as in
         the authors' code, multiplies the similarities without ``exp``.
+    channel_strategy : str
+        How another montage reaches the encoder; see
+        :class:`~braindecode.models.base.EEGModuleMixin`.
+    channel_strategy_kwargs : dict or None
+        Options of ``channel_strategy``.
 
     Notes
     -----
@@ -152,6 +157,8 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -160,6 +167,8 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         if text_pooling not in ("cls", "mean"):
             raise ValueError("text_pooling must be 'cls' or 'mean'.")

@@ -163,6 +163,11 @@ class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
         If ``True``, returns attention weights for interpretability. The default is ``True``.
     activation_class : nn.Module, optional
         Activation used in the final classification layer. The default is :class:`nn.GELU`.
+    channel_strategy : str
+        How another montage reaches the encoder; see
+        :class:`~braindecode.models.base.EEGModuleMixin`.
+    channel_strategy_kwargs : dict or None
+        Options of ``channel_strategy``.
 
     Notes
     -----
@@ -203,6 +208,8 @@ class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
         single_channel: bool = False,
         output_attention: bool = True,
         activation_class: type[nn.Module] | None = nn.GELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -211,6 +218,8 @@ class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 

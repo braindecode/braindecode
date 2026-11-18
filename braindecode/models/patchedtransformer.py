@@ -178,6 +178,11 @@ class PBT(EEGModuleMixin, nn.Module):
         Whether to use bias in Transformer linear layers.
     activation : nn.Module, optional
         Activation function class to use in Transformer feed-forward layers.
+    channel_strategy : str
+        How another montage reaches the encoder; see
+        :class:`~braindecode.models.base.EEGModuleMixin`.
+    channel_strategy_kwargs : dict or None
+        Options of ``channel_strategy``.
 
     References
     ----------
@@ -215,6 +220,8 @@ class PBT(EEGModuleMixin, nn.Module):
         learnable_cls=True,
         bias_transformer=False,
         activation: type[nn.Module] = nn.GELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ) -> None:
         super().__init__(
             n_outputs=n_outputs,
@@ -223,6 +230,8 @@ class PBT(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         # Store hyperparameters

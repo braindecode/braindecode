@@ -186,6 +186,16 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         recording upstream; ``"none"`` passes the raw STFT magnitude.
     activation : type[nn.Module]
         Activation layer class of the feed-forward blocks.
+    channel_strategy : str
+        How another montage reaches the encoder; see
+        :class:`~braindecode.models.base.EEGModuleMixin`. MAPA reads other
+        montages natively through ``sensor_indices``, so the default
+        ``"native"`` is usually what you want. Under a strategy the encoder
+        keeps the ``chs_info`` montage: leave ``sensor_indices`` at its default.
+        The layer maps raw signals, so ``normalization="session"`` takes only
+        ``"native"``.
+    channel_strategy_kwargs : dict or None
+        Options of ``channel_strategy``.
 
     Examples
     --------
@@ -241,7 +251,17 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         pooling: str = "mean",
         normalization: str = "window",
         activation: type[nn.Module] = nn.GELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
+        if normalization == "session" and (
+            channel_strategy != "native" or channel_strategy_kwargs
+        ):
+            raise ValueError(
+                "MAPA with normalization='session' takes spectrograms, and the "
+                "channel layer maps raw (batch, n_chans, n_times) signals: only "
+                "channel_strategy='native' is supported."
+            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -249,6 +269,8 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 

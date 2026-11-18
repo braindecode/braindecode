@@ -138,6 +138,13 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         Entries per codebook.
     codebook_dim : int
         Codebook dimension.
+    channel_strategy : str, default="native"
+        Only ``"native"``: MEG-XL is pretrained on MEG sensors, which the
+        channel layer (electrodes only) cannot map. It builds on any MEG
+        montage from the sensor geometry of ``chs_info``. Any other value
+        raises a ``ValueError``.
+    channel_strategy_kwargs : dict or None, default=None
+        Must be ``None``.
 
     References
     ----------
@@ -168,7 +175,16 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         n_q: int = 6,
         codebook_size: int = 256,
         codebook_dim: int = 16,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
+        if channel_strategy != "native" or channel_strategy_kwargs:
+            raise ValueError(
+                f"{type(self).__name__} is pretrained on MEG sensors, which the "
+                "channel layer (electrodes only) cannot map: only "
+                "channel_strategy='native' is supported. It builds on any MEG montage "
+                "from the sensor geometry of chs_info."
+            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
