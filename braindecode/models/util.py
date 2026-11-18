@@ -952,6 +952,18 @@ models_mandatory_parameters: list[
         ["n_chans", "n_outputs", "n_times"],
         lambda: {"chs_info": _fnirs_chs_info(2), "n_times": 60, "sfreq": 5.0},
     ),
+    (
+        "FNIRST",
+        ["n_chans", "n_outputs", "n_times"],
+        # 5 pairs: the authors' spatial kernel spans 5 HbO/HbR pairs
+        lambda: {"chs_info": _fnirs_chs_info(5), "n_times": 60, "sfreq": 5.0},
+    ),
+    (
+        "FNIRSPreT",
+        ["n_chans", "n_outputs", "n_times"],
+        # 5 pairs: the authors' spatial kernel spans 5 HbO/HbR pairs
+        lambda: {"chs_info": _fnirs_chs_info(5), "n_times": 60, "sfreq": 5.0},
+    ),
 ]
 
 ################################################################

@@ -13,6 +13,8 @@ import inspect
 import math
 import os
 import re
+import subprocess
+import sys
 import warnings
 from collections import OrderedDict
 from functools import partial
@@ -25,6 +27,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torchaudio
+from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 from scipy.signal import stft
 from torch import nn
@@ -37,6 +40,7 @@ from braindecode.models import (
     EEGCLIP,
     EEGPT,
     FNIRS4D,
+    FNIRST,
     NICE,
     SSTDPN,
     TCN,
@@ -66,6 +70,7 @@ from braindecode.models import (
     FBLightConvNet,
     FBMSNet,
     FNIRSNet,
+    FNIRSPreT,
     GCNsNet,
     HybridNet,
     IFNet,
@@ -6993,6 +6998,494 @@ def test_fnirs4d_configurations_the_authors_code_cannot_build_raise(kwargs, matc
     if "avg_size" in match:  # the time mean has no moving average
         FNIRS4D(**{"n_chans": 8, "n_outputs": 2, "n_times": 30, **kwargs,
                    "mean_branch": "time_mean"})
+
+
+class _AuthorsFNIRSTResidual(nn.Module):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, x):
+        return self.fn(x) + x
+
+
+class _AuthorsFNIRSTPreNorm(nn.Module):
+    def __init__(self, dim, fn):
+        super().__init__()
+        self.norm = nn.LayerNorm(dim)
+        self.fn = fn
+
+    def forward(self, x):
+        return self.fn(self.norm(x))
+
+
+class _AuthorsFNIRSTFeedForward(nn.Module):
+    def __init__(self, dim, hidden_dim, dropout=0.0):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim, hidden_dim), nn.GELU(), nn.Dropout(dropout),
+            nn.Linear(hidden_dim, dim), nn.Dropout(dropout),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class _AuthorsFNIRSTAttention(nn.Module):
+    def __init__(self, dim, heads=8, dim_head=64, dropout=0.0):
+        super().__init__()
+        inner_dim = dim_head * heads
+        project_out = not (heads == 1 and dim_head == dim)
+        self.heads = heads
+        self.scale = dim_head**-0.5
+        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
+        self.to_out = nn.Sequential(
+            nn.Linear(inner_dim, dim), nn.Dropout(dropout)
+        ) if project_out else nn.Identity()
+
+    def forward(self, x):
+        qkv = self.to_qkv(x).chunk(3, dim=-1)
+        q, k, v = (rearrange(t, "b n (h d) -> b h n d", h=self.heads) for t in qkv)
+        dots = torch.einsum("b h i d, b h j d -> b h i j", q, k) * self.scale
+        attn = dots.softmax(dim=-1)
+        out = torch.einsum("b h i j, b h j d -> b h i d", attn, v)
+        out = rearrange(out, "b h n d -> b n (h d)")
+        return self.to_out(out)
+
+
+class _AuthorsFNIRSTTransformer(nn.Module):
+    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout=0.0):
+        super().__init__()
+        self.layers = nn.ModuleList([])
+        for _ in range(depth):
+            self.layers.append(nn.ModuleList([
+                _AuthorsFNIRSTResidual(_AuthorsFNIRSTPreNorm(
+                    dim, _AuthorsFNIRSTAttention(dim, heads, dim_head, dropout)
+                )),
+                _AuthorsFNIRSTResidual(_AuthorsFNIRSTPreNorm(
+                    dim, _AuthorsFNIRSTFeedForward(dim, mlp_dim, dropout)
+                )),
+            ]))
+
+    def forward(self, x):
+        for attn, ff in self.layers:
+            x = attn(x)
+            x = ff(x)
+        return x
+
+
+class _AuthorsFNIRSPreTBlock(nn.Module):
+    def __init__(self, sampling_point):
+        super().__init__()
+        self.pool1 = nn.AvgPool1d(kernel_size=5, stride=1, padding=2)
+        self.pool2 = nn.AvgPool1d(kernel_size=13, stride=1, padding=6)
+        self.pool3 = nn.AvgPool1d(kernel_size=7, stride=1, padding=3)
+        self.ln_0 = nn.LayerNorm(sampling_point)
+        self.ln_1 = nn.LayerNorm(sampling_point)
+
+    def forward(self, x):
+        x0 = self.ln_0(self.pool3(self.pool2(self.pool1(x[:, 0, :, :].squeeze()))))
+        x1 = self.ln_1(self.pool3(self.pool2(self.pool1(x[:, 1, :, :].squeeze()))))
+        return torch.cat((x0.unsqueeze(dim=1), x1.unsqueeze(dim=1)), 1)
+
+
+class _AuthorsFNIRST(nn.Module):
+    """The reference: ``fNIRS_T`` of model.py of
+    wzhlearning/fNIRS-Transformer@6ebe987f (MIT), with its ``Residual``,
+    ``PreNorm``, ``FeedForward``, ``Attention``, ``Transformer`` and
+    ``PreBlock`` above, transcribed with the same layers, state-dict keys,
+    forward and draw order. Only the ``mask`` argument of ``Attention`` and
+    ``Transformer`` is left out: ``fNIRS_PreT`` never passes it, and
+    ``fNIRS_T`` passes ``None`` by default. Input ``[B, 2, channels,
+    samples]`` (HbO, HbR planes)."""
+
+    def __init__(self, n_class, sampling_point, dim, depth, heads, mlp_dim,
+                 pool="cls", dim_head=64, dropout=0.0, emb_dropout=0.0):
+        super().__init__()
+        num_patches = 100
+        num_channels = 100
+        n_features = (math.floor((sampling_point - 30) / 4) + 1) * 8
+        self.to_patch_embedding = nn.Sequential(
+            nn.Conv2d(in_channels=2, out_channels=8, kernel_size=(5, 30), stride=(1, 4)),
+            Rearrange("b c h w  -> b h (c w)"),
+            nn.Linear(n_features, dim),
+            nn.LayerNorm(dim),
+        )
+        self.to_channel_embedding = nn.Sequential(
+            nn.Conv2d(in_channels=2, out_channels=8, kernel_size=(1, 30), stride=(1, 4)),
+            Rearrange("b c h w  -> b h (c w)"),
+            nn.Linear(n_features, dim),
+            nn.LayerNorm(dim),
+        )
+        self.pos_embedding_patch = nn.Parameter(torch.randn(1, num_patches + 1, dim))
+        self.cls_token_patch = nn.Parameter(torch.randn(1, 1, dim))
+        self.dropout_patch = nn.Dropout(emb_dropout)
+        self.transformer_patch = _AuthorsFNIRSTTransformer(
+            dim, depth, heads, dim_head, mlp_dim, dropout
+        )
+        self.pos_embedding_channel = nn.Parameter(
+            torch.randn(1, num_channels + 1, dim)
+        )
+        self.cls_token_channel = nn.Parameter(torch.randn(1, 1, dim))
+        self.dropout_channel = nn.Dropout(emb_dropout)
+        self.transformer_channel = _AuthorsFNIRSTTransformer(
+            dim, depth, heads, dim_head, mlp_dim, dropout
+        )
+        self.pool = pool
+        self.to_latent = nn.Identity()
+        self.mlp_head = nn.Sequential(nn.LayerNorm(dim * 2), nn.Linear(dim * 2, n_class))
+
+    def forward(self, img):
+        x = self.to_patch_embedding(img)
+        x2 = self.to_channel_embedding(img.squeeze())
+        b, n, _ = x.shape
+        cls_tokens = repeat(self.cls_token_patch, "() n d -> b n d", b=b)
+        x = torch.cat((cls_tokens, x), dim=1)
+        x += self.pos_embedding_patch[:, :(n + 1)]
+        x = self.dropout_patch(x)
+        x = self.transformer_patch(x)
+        b, n, _ = x2.shape
+        cls_tokens = repeat(self.cls_token_channel, "() n d -> b n d", b=b)
+        x2 = torch.cat((cls_tokens, x2), dim=1)
+        x2 += self.pos_embedding_channel[:, :(n + 1)]
+        x2 = self.dropout_channel(x2)
+        x2 = self.transformer_channel(x2)
+        x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
+        x2 = x2.mean(dim=1) if self.pool == "mean" else x2[:, 0]
+        x3 = torch.cat((self.to_latent(x), self.to_latent(x2)), 1)
+        return self.mlp_head(x3)
+
+
+class _AuthorsFNIRSPreT(nn.Module):
+    """The reference ``fNIRS_PreT`` (see ``_AuthorsFNIRST``)."""
+
+    def __init__(self, n_class, sampling_point, dim, depth, heads, mlp_dim,
+                 pool="cls", dim_head=64, dropout=0.0, emb_dropout=0.0):
+        super().__init__()
+        self.pre = _AuthorsFNIRSPreTBlock(sampling_point)
+        self.fNIRS_T = _AuthorsFNIRST(n_class, sampling_point, dim, depth, heads,
+                                      mlp_dim, pool, dim_head, dropout, emb_dropout)
+
+    def forward(self, img):
+        return self.fNIRS_T(self.pre(img))
+
+
+def _fnirst_port_state_dict(state_dict, model):
+    """The conversion of FNIRST's docstring: an authors' ``fNIRS_T`` or
+    ``fNIRS_PreT`` state dict (or its gradients) with FNIRST's keys:
+    ``fNIRS_T.`` prefix removed, ``pre.ln_i`` to ``pre.norms.i``, ``to_qkv``
+    split into ``queries``/``keys``/``values``, positional tables cut to the
+    port's rows, ``mlp_head.{0,1}`` to ``final_norm``/``final_layer``."""
+    rows = {k: v.shape[1] for k, v in model.state_dict().items() if "pos_" in k}
+    block = r"\.layers\.(\d+)\.(\d)\.fn\."
+    renames = [
+        (r"^fNIRS_T\.", ""),
+        (r"^pre\.ln_(\d)\.", r"pre.norms.\1."),
+        (r"^mlp_head\.0\.", "final_norm."),
+        (r"^mlp_head\.1\.", "final_layer."),
+        (block + r"norm\.", r".\1.\2.fn.0."),
+        (block + r"fn\.to_qkv\.", r".\1.\2.fn.1.to_qkv."),
+        (block + r"fn\.to_out\.0\.", r".\1.\2.fn.1.projection."),
+        (block + r"fn\.net\.", r".\1.\2.fn.1."),
+    ]
+    out = {}
+    for key, value in state_dict.items():
+        for pattern, replacement in renames:
+            key = re.sub(pattern, replacement, key)
+        if key.endswith(".to_qkv.weight"):
+            prefix = key.removesuffix("to_qkv.weight")
+            for name, part in zip(("queries", "keys", "values"), value.chunk(3)):
+                out[f"{prefix}{name}.weight"] = part
+            continue
+        if key in rows:  # the authors allocate 101 rows and use the first ones
+            value = value[:, : rows[key]]
+        out[key] = value
+    return out
+
+
+@pytest.mark.parametrize("drop_prob, embed_drop_prob", [(0.0, 0.0), (0.2, 0.1)])
+@pytest.mark.parametrize("pool", ["cls", "mean"])
+@pytest.mark.parametrize(
+    "model_cls, authors_cls",
+    [(FNIRST, _AuthorsFNIRST), (FNIRSPreT, _AuthorsFNIRSPreT)],
+)
+def test_fnirst_matches_the_authors_module(
+    model_cls, authors_cls, pool, drop_prob, embed_drop_prob
+):
+    """The authors' state dict loads strictly after the documented conversion
+    into the port built with its defaults (only the varied arguments passed);
+    logits, ``final_layer(features)``, input and parameter gradients equal the
+    authors' module in eval and train mode (same seed: same dropout sites),
+    and stay equal over AdamW steps. 6 pairs, 60 samples, 3 classes."""
+    torch.manual_seed(0)
+    reference = authors_cls(3, 60, 64, 6, 8, 64, pool, 64, drop_prob, embed_drop_prob)
+    kw = {"pool": pool} if pool != "cls" else {}
+    if drop_prob:
+        kw.update(drop_prob=drop_prob, embed_drop_prob=embed_drop_prob)
+    model = model_cls(n_chans=12, n_outputs=3, n_times=60, **kw)
+    # the authors' unused positional rows: 101 - 3 (patch) and 101 - 7 (channel)
+    unused = 64 * ((101 - 3) + (101 - 7))
+    assert sum(p.numel() for p in model.parameters()) == sum(
+        p.numel() for p in reference.parameters()
+    ) - unused
+    model.load_state_dict(_fnirst_port_state_dict(reference.state_dict(), model))
+    close = partial(torch.testing.assert_close, rtol=0, atol=1e-5)
+    x = torch.randn(4, 2, 6, 60)  # the authors' [B, 2, pairs, samples]
+    x_port = x.reshape(4, 12, 60)  # stacked [HbO_1..HbO_6, HbR_1..HbR_6]
+    reference.eval()
+    model.eval()
+    with torch.no_grad():
+        expected = reference(x)
+        close(model(x_port), expected)
+        features = model(x_port, return_features=True)["features"]
+        close(model.final_layer(features), expected)
+    reference.train()
+    model.train()
+    x_ref = x.clone().requires_grad_(True)
+    x_model = x_port.clone().requires_grad_(True)
+    torch.manual_seed(1)
+    expected = reference(x_ref)
+    torch.manual_seed(1)
+    logits = model(x_model)
+    close(logits, expected)
+    y = torch.tensor([0, 1, 2, 0])
+    nn.functional.cross_entropy(expected, y).backward()
+    nn.functional.cross_entropy(logits, y).backward()
+    close(x_model.grad, x_ref.grad.reshape(4, 12, 60))
+    reference_grads = {n: p.grad for n, p in reference.named_parameters()}
+    expected_grads = _fnirst_port_state_dict(reference_grads, model)
+    for name, parameter in model.named_parameters():
+        close(parameter.grad, expected_grads[name])
+    for name, grad in reference_grads.items():
+        if "pos_embedding" in name:  # rows past the tokens are never read
+            n_rows = model.state_dict()[name.removeprefix("fNIRS_T.")].shape[1]
+            assert not grad[:, n_rows:].any()
+    optimizers = [torch.optim.AdamW(net.parameters()) for net in (reference, model)]
+    for step in range(2):
+        for net, optimizer, inputs in zip((reference, model), optimizers, (x, x_port)):
+            optimizer.zero_grad()
+            torch.manual_seed(10 + step)
+            nn.functional.cross_entropy(net(inputs), y).backward()
+            optimizer.step()
+    # Adam divides each gradient by its running magnitude, so the float32 noise
+    # of near-zero gradients becomes lr-sized steps (measured: parameters
+    # <= 1.7e-4, logits afterwards <= 5e-6)
+    expected_state = _fnirst_port_state_dict(reference.state_dict(), model)
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(value, expected_state[key], rtol=0, atol=1e-3)
+    reference.eval()
+    model.eval()
+    with torch.no_grad():
+        torch.testing.assert_close(model(x_port), reference(x), rtol=0, atol=1e-4)
+
+
+@pytest.mark.parametrize("pool", ["cls", "mean"])
+@pytest.mark.parametrize(
+    "model_cls, authors_cls",
+    [(FNIRST, _AuthorsFNIRST), (FNIRSPreT, _AuthorsFNIRSPreT)],
+)
+@pytest.mark.parametrize(
+    "n_pairs, n_times, n_classes, embed_dim, n_params",
+    [
+        (52, 140, 2, 64, {FNIRST: 1715666, FNIRSPreT: 1716226}),  # dataset A
+        (36, 200, 2, 64, {FNIRST: 1728978, FNIRSPreT: 1729778}),  # dataset B
+        (20, 256, 3, 128, {FNIRST: 3479123, FNIRSPreT: 3480147}),  # dataset C
+    ],
+    ids=["A", "B", "C"],
+)
+def test_fnirst_authors_configurations(
+    model_cls, authors_cls, pool, n_pairs, n_times, n_classes, embed_dim, n_params
+):
+    """The configurations of the authors' ``KFold_Train.py``: the authors'
+    parameter count minus their unused positional rows, strict load and eval
+    logits (measured max-abs <= 3.6e-7)."""
+    torch.manual_seed(0)
+    reference = authors_cls(n_classes, n_times, embed_dim, 6, 8, 64, pool).eval()
+    kw = {"pool": pool} if pool != "cls" else {}
+    if embed_dim != 64:
+        kw["embed_dim"] = embed_dim
+    model = model_cls(
+        n_chans=2 * n_pairs, n_outputs=n_classes, n_times=n_times, **kw
+    ).eval()
+    unused = embed_dim * ((101 - (n_pairs - 3)) + (101 - (n_pairs + 1)))
+    assert sum(p.numel() for p in model.parameters()) == n_params[model_cls]
+    assert sum(p.numel() for p in reference.parameters()) == n_params[model_cls] + unused
+    model.load_state_dict(_fnirst_port_state_dict(reference.state_dict(), model))
+    x = torch.randn(4, 2, n_pairs, n_times)
+    with torch.no_grad():
+        torch.testing.assert_close(
+            model(x.reshape(4, 2 * n_pairs, n_times)), reference(x), rtol=0, atol=1e-5
+        )
+
+
+@pytest.mark.parametrize(
+    "model_cls, authors_cls",
+    [(FNIRST, _AuthorsFNIRST), (FNIRSPreT, _AuthorsFNIRSPreT)],
+)
+def test_fnirst_initialisation_follows_the_authors(model_cls, authors_cls):
+    """Dataset B sizes: the class tokens and positional tables are N(0, 1)
+    (``torch.randn``), LayerNorms ones and zeros, and every other tensor of at
+    least 256 values has the authors' std (within 15 %) and mean."""
+    torch.manual_seed(0)
+    reference = authors_cls(2, 200, 64, 6, 8, 64)
+    torch.manual_seed(1)
+    model = model_cls(n_chans=72, n_outputs=2, n_times=200)
+    expected = _fnirst_port_state_dict(reference.state_dict(), model)
+    for key in ("cls_token_patch", "pos_embedding_patch", "cls_token_channel",
+                "pos_embedding_channel"):
+        value = model.state_dict()[key]  # 64 values for a class token
+        assert abs(value.mean()) < 0.3 and abs(value.std() - 1) < 0.3, key
+    for key, value in model.state_dict().items():
+        authors = expected[key]
+        if authors.std() == 0:  # LayerNorm
+            assert torch.equal(value, authors), key
+        elif value.numel() >= 256:
+            assert abs(value.std() / authors.std() - 1) < 0.15, key
+            assert abs(value.mean() - authors.mean()) < 0.15 * authors.std(), key
+
+
+def test_fnirspret_docstring_with_docstring_inheritance():
+    """docs/conf.py sets DOCSTRING_INHERITANCE_ENABLE: FNIRSPreT then keeps
+    its own docstring and inherits FNIRST's parameters."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(inspect.getfile(FNIRST))))
+    code = (
+        "from braindecode.models import FNIRSPreT, FNIRST\n"
+        "doc = FNIRSPreT.__doc__.lstrip()\n"
+        "assert doc.startswith('fNIRS-PreT from Wang'), doc[:80]\n"
+        "assert 'embed_dim : int' in doc and 'PreBlock' in doc\n"
+        "assert FNIRST.__doc__.lstrip().startswith('fNIRS-T from Wang')\n"
+    )
+    path = os.pathsep.join([root, os.environ.get("PYTHONPATH", "")])
+    env = dict(os.environ, DOCSTRING_INHERITANCE_ENABLE="1", PYTHONPATH=path)
+    result = subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+
+
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"n_chans": 8}, r"spatial_kernel_size \(5\) must be at most .* pairs \(4\)"),
+        ({"n_chans": 10, "spatial_kernel_size": 6}, r"spatial_kernel_size \(6\)"),
+        ({"n_chans": 11}, "needs HbO/HbR pairs: n_chans must be even"),
+        ({"pool": "max"}, "pool must be 'cls' or 'mean'"),
+        ({"n_times": 29}, "temporal_kernel_size"),
+    ],
+)
+def test_fnirst_invalid_configurations_raise(model_cls, kwargs, match):
+    """Fewer pairs than the spatial kernel fails in the authors' code too; an
+    odd ``n_chans`` has no HbO/HbR pairing; ``pool`` is ``"cls"`` or
+    ``"mean"``. The message names the class."""
+    with pytest.raises(ValueError, match=match):
+        model_cls(**{"n_chans": 12, "n_outputs": 2, "n_times": 60, **kwargs})
+    if "n_chans must be even" in match:
+        with pytest.raises(ValueError, match=model_cls.__name__):
+            model_cls(n_chans=11, n_outputs=2, n_times=60)
+
+
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+def test_fnirst_smallest_valid_configurations_build(model_cls):
+    """The guards' boundaries: as many pairs as the spatial kernel (one patch
+    token) and ``n_times == temporal_kernel_size`` (one bin)."""
+    model = model_cls(n_chans=10, n_outputs=2, n_times=30, depth=1).eval()
+    assert model.pos_embedding_patch.shape == (1, 2, 64)
+    assert model(torch.randn(3, 10, 30)).shape == (3, 2)
+    model = model_cls(n_chans=4, n_outputs=2, n_times=30, depth=1, spatial_kernel_size=2)
+    assert model.eval()(torch.randn(3, 4, 30)).shape == (3, 2)
+
+
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+def test_fnirst_seeded_reset_and_cls_tokens(model_cls):
+    """A seeded reset_parameters() repeats the seeded constructor; cls_token is
+    the two branches' CLS tokens, not the pooled features."""
+    torch.manual_seed(1)
+    model = model_cls(n_chans=10, n_outputs=2, n_times=60, depth=1, num_heads=2)
+    built = {k: v.clone() for k, v in model.state_dict().items()}
+    torch.manual_seed(1)
+    model.reset_parameters()
+    assert all(torch.equal(built[k], v) for k, v in model.state_dict().items())
+    with torch.no_grad():
+        out = model.eval()(torch.randn(2, 10, 60), return_features=True)
+    assert out["cls_token"].shape == out["features"].shape == (2, 128)
+    assert not torch.equal(out["cls_token"], out["features"])
+
+
+# FNIRST/FNIRSPreT need 5 HbO/HbR pairs for their default spatial kernel
+_FNIRS_TEST_N_CHANS = {FNIRST: 10, FNIRSPreT: 10}
+
+
+@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
+def test_fnirs_features_feed_head_and_reset(model_cls):
+    """final_layer(features) == logits (train and eval); every parameter is reset."""
+    n_chans = _FNIRS_TEST_N_CHANS[model_cls]
+    model = model_cls(n_chans=n_chans, n_outputs=3, n_times=60, sfreq=10.0)
+    x = torch.randn(4, n_chans, 60)
+    model.eval()
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+        torch.testing.assert_close(model.final_layer(features), model(x))
+    model.train()
+    torch.manual_seed(123)
+    features = model(x, return_features=True)["features"]
+    torch.manual_seed(123)
+    torch.testing.assert_close(model.final_layer(features), model(x))
+    with torch.no_grad():
+        for p in model.parameters():
+            p.fill_(999.0)
+    model.reset_parameters()
+    assert not [n for n, p in model.named_parameters() if (p == 999.0).all()]
+    model.to(dtype=torch.float64).reset_head(5)
+    assert model.final_layer.weight.dtype == torch.float64
+
+
+def test_fnirspret_forwards_every_argument_to_fnirst():
+    """FNIRSPreT is FNIRST plus the preprocessing module: same signature, and the
+    same weights and outputs without that module."""
+    assert inspect.signature(FNIRSPreT.__init__) == inspect.signature(FNIRST.__init__)
+    kwargs = dict(
+        n_chans=10, n_outputs=3, n_times=60, embed_dim=32, depth=2, num_heads=2,
+        mlp_dim=32, pool="mean", head_dim=16, n_conv_filters=4, spatial_kernel_size=3,
+        temporal_kernel_size=20, temporal_stride=3, channel_order="interleaved",
+        drop_prob=0.1, embed_drop_prob=0.1, activation=nn.ReLU,
+    )
+    torch.manual_seed(0)
+    plain = FNIRST(**kwargs).eval()
+    torch.manual_seed(0)
+    pret = FNIRSPreT(**kwargs).eval()
+    plain_state = plain.state_dict()
+    pret_state = {k: v for k, v in pret.state_dict().items() if not k.startswith("pre.")}
+    assert list(plain_state) == list(pret_state)
+    for key, value in plain_state.items():
+        assert torch.equal(pret_state[key], value)
+    pret.pre = None
+    x = torch.randn(2, 10, 60)
+    with torch.no_grad():
+        assert torch.equal(pret(x), plain(x))
+
+
+@pytest.mark.parametrize(
+    "model_cls, fill",
+    [(FNIRST, 0.0), (FNIRSPreT, 0.0)],
+)
+def test_fnirs_masks(model_cls, fill):
+    """ch_mask is refused by name; an all-False mask changes nothing; hidden
+    samples act as ``fill`` and get no gradient."""
+    torch.manual_seed(0)
+    n_chans = _FNIRS_TEST_N_CHANS[model_cls]
+    model = model_cls(n_chans=n_chans, n_outputs=3, n_times=60, sfreq=5.0).eval()
+    x = torch.randn(2, n_chans, 60)
+    with pytest.raises(ValueError, match=f"{model_cls.__name__} does not accept ch_mask"):
+        model(x, ch_mask=torch.ones(2, n_chans, dtype=torch.bool))
+    mask = torch.zeros_like(x, dtype=torch.bool)
+    assert torch.equal(model(x, mask=mask), model(x))
+    mask[:, 1, 20:40] = True
+    assert torch.equal(model(x, mask=mask), model(x.masked_fill(mask, fill)))
+    hidden = x.masked_fill(mask, float("nan")).requires_grad_(True)
+    model(hidden, mask=mask).sum().backward()
+    assert torch.equal(hidden.grad[mask], torch.zeros_like(hidden.grad[mask]))
+    assert hidden.grad[~mask].isfinite().all()
 
 
 def _tccnet_reference(model, x, mask_value):
