@@ -76,6 +76,33 @@ def test_d_non_eeg_rejected_or_dropped():
     assert torch.equal(layer(x)[0], x[:, :-1])
 
 
+@pytest.mark.parametrize("per_sample", [False, True])
+def test_dropped_non_eeg_channels_do_not_propagate_nans(per_sample):
+    inputs = chs(["F3"]) + chs(["EOG"], kind="eog")
+    x = torch.tensor([[[7.0, 3.0], [float("nan"), float("nan")]]], requires_grad=True)
+    layer = ChannelLayer(chs(["F3"]), "exact", inputs, drop_non_eeg=True)
+    values, observed = layer(x, [inputs] if per_sample else inputs)
+    torch.testing.assert_close(values, x[:, :1])
+    assert observed.all()
+    values.sum().backward()
+    torch.testing.assert_close(x.grad, torch.tensor([[[1.0, 1.0], [0.0, 0.0]]]))
+
+
+@pytest.mark.parametrize("kind", ["seeg", "eeg"])
+@pytest.mark.parametrize("reference", ["X2", "average"])
+def test_measured_electrodes_can_be_referenced_without_positions(kind, reference):
+    inputs = chs(["X1", "X2"], kind=kind)
+    # The unmeasured, unpositioned third contact stays zero-filled.
+    with pytest.warns(UserWarning, match="zero-filled"):
+        layer = ChannelLayer([*inputs, *chs(["X3"], kind=kind)], "zero", inputs, reference=reference)
+    x = torch.tensor([[[7.0, 3.0], [2.0, 1.0]]])
+    values, observed = layer(x)
+    ref = x[:, 1:2] if reference == "X2" else x.mean(1, keepdim=True)
+    torch.testing.assert_close(values[:, :2], x - ref)
+    assert torch.count_nonzero(values[:, 2:]) == 0
+    assert observed.tolist() == [True, True, False]
+
+
 def test_e_legacy_names_are_copies():
     layer = ChannelLayer(
         chs(["T7", "T8", "P7", "P8"]), "spline", chs(["T3", "T4", "T5", "T6"])

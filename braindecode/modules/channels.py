@@ -400,7 +400,9 @@ class ChannelLayer(nn.Module):
             raise ValueError(
                 f"Unknown channel strategy {strategy!r}. Did you mean {close}? Available: {STRATEGIES}."
             )
-        _, pos, _, _, given = _resolve(target)  # the backbone gets the positions
+        _, pos, _, target_kinds, given = _resolve(
+            target
+        )  # the backbone gets the positions
         self.target = [
             c if g or np.isnan(p).any() else {**c, "loc": np.r_[p, np.zeros(9)]}
             for c, p, g in zip(target, pos, given)
@@ -417,8 +419,16 @@ class ChannelLayer(nn.Module):
             if len(ends) == 1
         }
         self._referenced = np.array(
-            [len(ends) == 1 and np.isfinite(p).all() for ends, p in zip(parts, pos)]
+            [
+                len(ends) == 1 and kind in _ELECTRODES
+                for ends, kind in zip(parts, target_kinds)
+            ]
         )
+        unpositioned = {
+            row: ends[0]
+            for row, ends in enumerate(parts)
+            if self._referenced[row] and not np.isfinite(pos[row]).all()
+        }
         if reference not in (None, "average"):
             parts = [
                 [ends[0], reference] if use_reference else ends
@@ -432,6 +442,9 @@ class ChannelLayer(nn.Module):
         }
         derivations, mono = _derivation_rows(parts, bipolar.values())
         columns = {name.lower(): i for i, name in enumerate(mono)}
+        self._unpositioned = {
+            row: columns[name.lower()] for row, name in unpositioned.items()
+        }
         self._whole = [
             columns[bipolar[row].lower()] if row in bipolar else -1
             for row in range(len(parts))
@@ -465,7 +478,7 @@ class ChannelLayer(nn.Module):
 
     def _use(self, chs: list[dict]) -> None:
         """Select the cached map for the current channel metadata, or build one."""
-        key = tuple(
+        metadata = tuple(
             (
                 str(c["ch_name"]),
                 c.get("kind") or c.get("ch_type") or "eeg",
@@ -473,6 +486,7 @@ class ChannelLayer(nn.Module):
             )
             for c in chs
         )
+        key = (self.drop_non_eeg, metadata)
         if key != self._key:
             maps = self._cache.pop(key, None) or self._build(chs)
             self._cache[key] = maps  # most recent last
@@ -525,8 +539,15 @@ class ChannelLayer(nn.Module):
             if column >= 0 and observed[column]:
                 D[row] = 0
                 D[row, column] = 1
-        measured = (np.abs(D) @ ~observed == 0).any()  # before re-referencing
-        ref = self._referenced
+        ref = self._referenced.copy()
+        for row, electrode in getattr(self, "_unpositioned", {}).items():
+            whole = self._whole[row]
+            if not observed[electrode] and not (whole >= 0 and observed[whole]):
+                # An unmeasured target without a position cannot be re-referenced.
+                ref[row] = False
+                D[row] = 0
+                D[row, electrode] = 1
+        measured = (np.abs(D) @ ~observed == 0).any()
         if self.reference == "average" and ref.any():  # minus their mean
             D[ref] -= D[ref].mean(0)
         missing = ~observed & np.abs(D).any(0)
@@ -597,6 +618,8 @@ class ChannelLayer(nn.Module):
             k: v if torch.is_tensor(v) else torch.tensor(v, device=dev, dtype=dt)
             for k, v in maps.items()
         }
+        if self.drop_non_eeg:
+            maps["electrode_mask"] = torch.as_tensor(keep, device=dev)
         maps["observed"] = torch.as_tensor(seen, device=dev)
         return maps
 
@@ -662,6 +685,8 @@ class ChannelLayer(nn.Module):
                         f"its montage {len(montage)}."
                     )
                 self._use(montage)
+                if self.drop_non_eeg:
+                    signal = signal.masked_fill(~self.electrode_mask[:, None], 0)
                 signals.append(self.weight @ signal)
                 observed.append(self.observed)
             return torch.stack(signals), torch.stack(observed)
@@ -672,6 +697,8 @@ class ChannelLayer(nn.Module):
                 f"Input has {x.shape[1]} channels but the montage has {len(chs)}; they must match."
             )
         self._use(cast(list[dict], chs))
+        if self.drop_non_eeg:
+            x = x.masked_fill(~self.electrode_mask[:, None], 0)
         out = self.weight @ x
         if self.trainable:
             out = out + self.lead @ (self.parcel_mix @ (self.inverse @ x))
