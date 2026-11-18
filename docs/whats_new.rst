@@ -163,6 +163,11 @@ Requirements
 Bug fixes
 ==========
 
+- :func:`braindecode.functional.exact_derivation` returns an empty weight matrix
+  and mask for empty targets; :func:`~braindecode.functional.derivation_matrix`
+  normalises explicitly supplied electrode names case-insensitively, avoiding
+  duplicate columns (:gh:`1597` by `lindicaphxag-tech`_).
+
 - :class:`braindecode.modules.ChannelLayer` computes every target that is a
   combination of the measured channels exactly, under every strategy including
   ``"exact"``: ``A-B`` from a measured ``B-A`` with weight -1 (copied before with
