@@ -35,7 +35,7 @@ class DirectEventCNN1D(EEGModuleMixin, nn.Module):
     the batch size, :math:`C` = ``n_chans``, :math:`T` = ``n_times`` and
     :math:`F_1`, :math:`F_2` the two filter counts, the steps are::
 
-        x (B, C, T): HbO rows then HbR rows; NaN = missing sample
+        x (B, C, T): HbO rows then HbR rows; NaN or inf = missing sample
         1. temporal_conv1: Conv1d, GroupNorm, GELU, MaxPool1d  -> (B, F_1, T // 2)
         2. temporal_conv2: Conv1d, GroupNorm, GELU             -> (B, F_2, T // 2)
         3. time_pool, flatten_layer, head_dropout              -> (B, F_2)
@@ -84,7 +84,10 @@ class DirectEventCNN1D(EEGModuleMixin, nn.Module):
     - **Input.** One tensor ``(batch, n_chans, n_times)``. The reference
       takes a batch dictionary with ``hbo``, ``hbr`` and a validity mask,
       replaces the invalid samples by zero and stacks the HbO rows before
-      the HbR rows. Here NaN marks a missing sample and is read as zero.
+      the HbR rows. Here a non-finite value (NaN or inf) marks a missing
+      sample and is read as zero. The reference's mask covers both
+      chromophores of a pair, so a sample missing in one of them should be
+      NaN in both.
     - **Parity.** With the same seed, this class and the authors' module
       draw the same weights and give the same logits (max-abs 0.0), in eval
       mode and in train mode. ``mapping`` renames their ``encoder.`` and
@@ -106,9 +109,11 @@ class DirectEventCNN1D(EEGModuleMixin, nn.Module):
         Filters of the second temporal convolution, and the feature size
         (``embedding_dim`` in the reference).
     kernel_size_conv1 : int, default=7
-        Kernel length of the first temporal convolution, in samples.
+        Kernel length of the first temporal convolution, in samples; an odd
+        length keeps the reference's symmetric padding.
     kernel_size_conv2 : int, default=5
-        Kernel length of the second temporal convolution, in samples.
+        Kernel length of the second temporal convolution, in samples; an odd
+        length keeps the reference's symmetric padding.
     pool_size : int, default=2
         Length and stride of the max pooling after the first convolution.
     n_norm_groups : int, default=8
@@ -122,18 +127,20 @@ class DirectEventCNN1D(EEGModuleMixin, nn.Module):
 
     Notes
     -----
-    In the GeoNIRS benchmark (Section 3.1 and Appendices B.5-B.6 of
+    In the GeoNIRS benchmark (Section 3.1 and Appendices B.1 and B.5-B.6 of
     :footcite:`li2026geonirs`), "baseline models receive the same frozen
     downstream inputs as GeoNIRS" and "follow the unified protocol in Table
     8": HbO and HbR in µmol/L resampled to 5 Hz and z-scored per recording;
     eight held-out binary tasks with subject-level five-fold cross-validation
-    and the seeds 810 and 811; 30 epochs, batch 16, AdamW (learning rate
-    1e-4, weight decay 0.05), class-weighted cross-entropy, and model
-    selection by validation balanced accuracy.
+    and the seeds 810 and 811; 30 epochs, batch 16, AdamW (weight decay
+    0.05; learning rate 1e-4, from the repository's ``downstream.yaml``),
+    class-weighted cross-entropy, and model selection by validation balanced
+    accuracy.
 
     Replication through the authors' training loop with this class in place
     of theirs (mean over the five test folds and the two seeds; the authors'
-    module gives the same value in each of the 20 cells, max-abs 0.0):
+    module gives the same value in each of the 20 cells, max-abs 0.0; half
+    the range across the two seeds is at most 0.29 points):
 
     =====================  ========  =================  ==============
     Task                   Metric    GeoNIRS paper (%)  This class (%)
@@ -259,8 +266,9 @@ class DirectEventCNN1D(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Input tensor with shape (batch_size, n_chans, n_times). NaN marks
-            a missing sample and is read as zero.
+            Input tensor with shape (batch_size, n_chans, n_times). A
+            non-finite value (NaN or inf) marks a missing sample and is read
+            as zero.
         return_features : bool, default=False
             If True, return the input of ``final_layer`` instead of the
             logits.
@@ -285,10 +293,10 @@ class DirectEventCNN1D(EEGModuleMixin, nn.Module):
                 "its first convolution spans every row."
             )
 
-        # Missing samples (NaN) are read as zero, as the reference does with
-        # its validity mask
+        # Missing samples (NaN or inf) are read as zero, as the reference does
+        # with its validity mask
         # (batch, C, T), unchanged
-        x = x.nan_to_num()
+        x = x.nan_to_num(nan=0.0, posinf=0.0, neginf=0.0)
 
         # First temporal convolution: F1 filters over all the rows, GroupNorm
         # and GELU, then max pooling
