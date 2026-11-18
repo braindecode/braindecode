@@ -1649,7 +1649,10 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             BaseConcatDataset, with the metadata and description information
             for each window, and an ``i_dataset`` column giving the position
             in ``datasets`` of the dataset (recording) each window comes from.
-            Samplers use it to keep recordings apart.
+            Samplers use it to keep recordings apart. If a recording description
+            and a window have a column with the same name, the window value is
+            retained. The recording value remains accessible on the dataset's
+            description.
         """
         if not all(
             [
@@ -1695,7 +1698,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 df = df.copy()
             description = ds.description if ds.description is not None else {}
             for k, v in description.items():
-                df[k] = v
+                if k not in df.columns:
+                    df[k] = v
             df["i_dataset"] = i_ds
             all_dfs.append(df)
 
@@ -1761,6 +1765,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             no-op since ``__getitem__`` reads y from misc channels, not
             from ``metadata['target']``).
         """
+        windows_to_update = []
+        raw_to_update = []
         for i, ds in enumerate(self.datasets):
             if isinstance(ds, (WindowsDataset, EEGWindowsDataset)):
                 if not isinstance(ds.metadata, pd.DataFrame):
@@ -1803,19 +1809,15 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                         f"metadata cols={list(md.columns)}, "
                         f"description keys={desc_keys}."
                     )
-                # In-place write so the WindowsDataset's metadata and the
-                # underlying mne.Epochs.metadata (which start as the same
-                # object reference) both reflect the new target. Defensive
-                # second write covers the case where they got de-aliased
-                # earlier by a caller-side reassignment.
-                md["target"] = values
-                windows_obj = getattr(ds, "_windows", None)
-                if windows_obj is not None and windows_obj.metadata is not md:
-                    windows_obj.metadata["target"] = values
-                # values is already a fresh list (Series.to_list() / [x] * n);
-                # no defensive copy needed — pandas keeps its own representation
-                # for md["target"] so mutating ds.y won't reach back into it.
-                ds.y = values
+                frames = [md]
+                epochs = getattr(ds, "_windows", None)
+                if epochs is not None and epochs.metadata is not md:
+                    frames.append(epochs.metadata)
+                if any(frame is None or len(frame) != len(values) for frame in frames):
+                    raise ValueError(
+                        f"Window metadata must have one row per window in datasets[{i}]."
+                    )
+                windows_to_update.append((ds, frames, values))
             elif isinstance(ds, RawDataset):
                 if (
                     not isinstance(ds.description, pd.Series)
@@ -1830,12 +1832,19 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                         f"Column {column!r} not found on datasets[{i}] "
                         f"description (keys={desc_keys})."
                     )
-                ds.target_name = column
+                raw_to_update.append(ds)
             else:
                 raise TypeError(
                     "set_target requires WindowsDataset, EEGWindowsDataset, "
                     f"or RawDataset; datasets[{i}] is {type(ds).__name__}."
                 )
+        # Preserve shared DataFrame objects while changing all recordings together.
+        for ds, frames, values in windows_to_update:
+            for frame in frames:
+                frame["target"] = values
+            ds.y = values
+        for ds in raw_to_update:
+            ds.target_name = column
         return self
 
     def set_return_ch_pos(self, value: bool = True) -> "BaseConcatDataset":

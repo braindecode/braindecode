@@ -271,6 +271,11 @@ Bug fixes
   mean now covers the real steps only. Windows that are a multiple of the
   segment length, and ``"crop"``, are unchanged (:gh:`1561` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` keeps the
+  per-window value if a recording description uses the same column name.
+  Classifier and regressor output inference reads the window targets.
+  :meth:`~braindecode.datasets.BaseConcatDataset.set_target` validates every
+  recording before switching the collection's target.
 - :class:`braindecode.models.LUNA` raises when ``chs_info`` has positions for
   some channels but not all (MNE stores ``NaN`` for the others). It gave every
   channel a default position, evenly spaced along x, so one name missing from the

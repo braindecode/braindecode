@@ -37,8 +37,9 @@ def test_get_n_outputs_regression():
     )
 
 
+@pytest.mark.parametrize("lazy_metadata", [False, True])
 @pytest.mark.parametrize("target_name", ["age", ["age", "score", "bmi"]])
-def test_infer_n_outputs_of_windows_with_several_targets(target_name):
+def test_infer_n_outputs_of_windows_with_several_targets(target_name, lazy_metadata):
     import mne
 
     from braindecode.datasets import BaseConcatDataset, RawDataset
@@ -58,9 +59,10 @@ def test_infer_n_outputs_of_windows_with_several_targets(target_name):
         BaseConcatDataset(datasets),
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="drop",
         # an empty mapping gives several targets as a list
         mapping=None if isinstance(target_name, str) else {},
+        lazy_metadata=lazy_metadata,
     )
     n_targets = 1 if isinstance(target_name, str) else len(target_name)
     signal_kwargs = infer_signal_properties(windows, mode="regression")

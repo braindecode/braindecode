@@ -10,7 +10,11 @@ import numpy as np
 from skorch.helper import SliceDataset
 from skorch.utils import is_dataset
 
-from braindecode.datasets.base import BaseConcatDataset, WindowsDataset
+from braindecode.datasets.base import (
+    BaseConcatDataset,
+    EEGWindowsDataset,
+    WindowsDataset,
+)
 from braindecode.models.util import SigArgName
 
 log = logging.getLogger(__name__)
@@ -139,14 +143,14 @@ def infer_signal_properties(
         Xshape = X0.shape
         signal_kwargs["n_times"] = Xshape[-1]
         signal_kwargs["n_chans"] = Xshape[-2]
-        if isinstance(X, BaseConcatDataset) and all(
-            ds.targets_from == "metadata" for ds in X.datasets
+        datasets = X.datasets if isinstance(X, BaseConcatDataset) else [X]
+        if all(
+            isinstance(ds, (EEGWindowsDataset, WindowsDataset))
+            and ds.targets_from == "metadata"
+            for ds in datasets
         ):
-            # an array: several targets per window give one column each
-            y_target = np.asarray(X.get_metadata().target.to_list())
-            signal_kwargs["n_outputs"] = _get_n_outputs(y_target, classes, mode)
-        elif isinstance(X, WindowsDataset) and X.targets_from == "metadata":
-            y_target = np.asarray(X.windows.metadata.target.to_list())
+            # Both window backends return ds.y[i], including with lazy metadata.
+            y_target = np.asarray([ds.y[i] for ds in datasets for i in range(len(ds))])
             signal_kwargs["n_outputs"] = _get_n_outputs(y_target, classes, mode)
     else:
         log.warning(

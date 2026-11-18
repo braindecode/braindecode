@@ -1113,6 +1113,48 @@ def test_windows_dataset_fast_vs_preload_consistency(basic_raw_and_metadata, tmp
         assert crop_fast == crop_preloaded
 
 
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_window_targets_take_precedence_in_metadata_and_training(use_mne_epochs):
+    from braindecode import EEGClassifier
+    from braindecode.datautil import infer_signal_properties
+    from braindecode.models import EEGNet
+
+    info = mne.create_info(["F3", "C3"], 128.0, "eeg")
+    raw = mne.io.RawArray(np.random.RandomState(0).normal(size=(2, 512)), info, verbose=False)
+    raw.set_annotations(mne.Annotations([0.0, 2.0], [2.0, 2.0], ["left", "right"]))
+    recordings = BaseConcatDataset([RawDataset(raw, {"target": "recording label", "subject": 1})])
+    windows = create_windows_from_events(
+        recordings, mapping={"left": 0, "right": 1}, use_mne_epochs=use_mne_epochs
+    )
+    labels = [windows[i][1] for i in range(len(windows))]
+    assert labels == [0, 1]
+    assert windows.get_metadata()["target"].tolist() == labels
+    assert windows.datasets[0].description["target"] == "recording label"
+    assert infer_signal_properties(windows)["n_outputs"] == 2
+    net = EEGClassifier(EEGNet, train_split=None, max_epochs=1, batch_size=2, verbose=0)
+    assert net.fit(windows, y=None).predict_proba(windows).shape == (2, 2)
+
+
+@pytest.mark.parametrize("window_first", [False, True])
+def test_set_target_leaves_earlier_recordings_untouched_on_error(window_first):
+    raw = mne.io.RawArray(np.zeros((1, 100)), mne.create_info(["C3"], 100.0, "eeg"))
+    first = RawDataset(raw, {"label": 0, "task": 1}, target_name="label")
+    if window_first:
+        first = create_fixed_length_windows(
+            BaseConcatDataset([first]), window_size_samples=100, window_stride_samples=100,
+            on_last_window="drop", use_mne_epochs=True,
+        ).datasets[0]
+    second = RawDataset(raw, {"label": 2}, target_name="label")
+    mixed = BaseConcatDataset([first, second])
+    with pytest.raises(ValueError, match="task"):
+        mixed.set_target("task")
+    assert first[0][1] == 0
+    assert second[0][1] == 2
+    if window_first:
+        assert first.metadata["target"].tolist() == [0]
+        assert first.windows.metadata["target"].tolist() == [0]
+
+
 def test_get_metadata_leaves_dataset_metadata_untouched(concat_ds_targets):
     concat_ds, _ = concat_ds_targets
     windows_ds = create_windows_from_events(
