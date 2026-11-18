@@ -1119,12 +1119,6 @@ def _create_fixed_length_windows(
             targets_from=targets_from,
             last_target_only=last_target_only,
         )
-    if targets_from == "channels" and "misc" not in (
-        mne_epochs if use_mne_epochs else ds.raw
-    ):
-        raise ValueError(
-            "targets_from='channels' requires a misc channel in the selected channels."
-        )
     window_kwargs.append(
         (
             type(windows_ds).__name__,

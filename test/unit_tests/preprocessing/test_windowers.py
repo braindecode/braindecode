@@ -2392,3 +2392,25 @@ def test_fixed_length_window_picks_must_keep_a_target_channel():
             picks="eeg",
             targets_from="channels",
         )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [True, False])
+def test_historical_channel_targets_require_a_saved_misc_channel(
+    tmp_path, use_mne_epochs
+):
+    info = mne.create_info(["Cz"], 100, "eeg")
+    raw = mne.io.RawArray(np.zeros((1, 20)), info, verbose=False)
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw, {"label": 1}, target_name="label")]),
+        window_size_samples=10,
+        use_mne_epochs=use_mne_epochs,
+    )
+    windows.save(tmp_path)
+    # The saved data contains only EEG after the original picks.
+    history_file = tmp_path / "0" / "window_kwargs.json"
+    history = json.loads(history_file.read_text())
+    name, settings = history[0]
+    settings.update(targets_from="channels", picks="eeg")
+    history_file.write_text(json.dumps([[name, settings]]))
+    with pytest.raises(ValueError, match="misc channel"):
+        load_concat_dataset(tmp_path, preload=False)
