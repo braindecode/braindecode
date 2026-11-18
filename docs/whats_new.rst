@@ -338,6 +338,9 @@ Code health
   for the canonical, Open Graph and JSON-LD URLs and in ``llms.txt``, which
   only calls ``/dev/`` builds a moving development snapshot
   (by `Bruno Aristimunha`_).
+- The Colab launcher opens the same notebook as the gallery download.
+  Published development notebooks install the build's commit, and the
+  Exca tutorial installs the optional packages it imports (by `Bruno Aristimunha`_).
 
 
 Current 2.0.0 (2026-11-02)
