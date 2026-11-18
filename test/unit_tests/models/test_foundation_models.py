@@ -1293,6 +1293,15 @@ def test_luna_variants_different_channel_counts(luna_base_config):
         assert output.shape == (2, 2)
 
 
+def test_luna_default_locations_without_n_chans():
+    """The channel count may first be known at forward, and the default
+    locations add no key to the state dict, so checkpoints still load."""
+    model = LUNA(n_outputs=2, n_times=80, patch_size=20).eval()
+    assert not any("channel_locations" in key for key in model.state_dict())
+    with torch.no_grad():
+        assert model(torch.randn(2, 5, 80)).shape == (2, 2)
+
+
 def test_luna_variants_output_consistency(
     luna_base_config, luna_large_config, luna_huge_config
 ):
@@ -3316,18 +3325,7 @@ def test_luna_rotary_whole_model_checkpoint_and_output(scripted):
     with torch.no_grad():
         expected = old(x, channel_locations=locations)
         if scripted:
-            try:
-                old_script = torch.jit.script(old)
-            except RuntimeError as error:
-                # A pre-existing whole-model limitation, not a rotary regression.
-                if "has no attribute '_channel_location_cache'" not in str(error):
-                    raise
-                with pytest.raises(RuntimeError, match="_channel_location_cache"):
-                    torch.jit.script(model)
-                pytest.xfail(
-                    "Baseline whole-LUNA scripting cannot infer the empty "
-                    "_channel_location_cache; block scripting is qualified separately."
-                )
+            old_script = torch.jit.script(old)
             model = torch.jit.script(model)
             torch.testing.assert_close(
                 old_script(x, channel_locations=locations), expected

@@ -278,25 +278,11 @@ _DATA_DEPENDENT_FORWARD = {
     "CodeBrain",
     "NeuroRVQTokenizer",
 }
-# Known misses, not fixed here.
-_DEVICE_XFAIL = {
-    "LUNA": "default channel locations are cached on the CPU and copied to the "
-    "device at every forward",
-}
 
 
 @pytest.mark.parametrize(
     "model_name,required_params,signal_params",
-    [
-        pytest.param(
-            *case,
-            marks=[pytest.mark.xfail(reason=_DEVICE_XFAIL[case[0]], strict=True)]
-            if case[0] in _DEVICE_XFAIL
-            else [],
-            id=case[0],
-        )
-        for case in models_mandatory_parameters
-    ],
+    models_mandatory_parameters,
 )
 def test_registered_model_follows_device(model_name, required_params, signal_params):
     """``model.to(device)`` moves every tensor forward reads or creates, checked

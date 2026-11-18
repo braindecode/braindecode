@@ -141,9 +141,6 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Retrieved from https://openreview.net/forum?id=uazfjnFL0G
     """
 
-    # Class-level, so TorchScript types the cache while it is still empty.
-    _channel_location_cache: Dict[int, torch.Tensor]
-
     def __init__(
         self,
         # Braindecode EEGModuleMixin parameters
@@ -264,7 +261,12 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         self.norm = norm_layer(int(self.embed_dim * self.num_queries))
 
-        self._channel_location_cache: Dict[int, torch.Tensor] = {}
+        # Non-persistent, so .to() moves it and the state dict keeps its keys.
+        self.register_buffer(
+            "_default_channel_locations",
+            self.build_channel_location_template(self._n_chans_for_jit or 0),
+            persistent=False,
+        )
 
         if self.num_classes == 0:
             self.decoder_head = _PatchReconstructionHeadWithQueries(
@@ -495,12 +497,10 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         device: torch.device,
         dtype: torch.dtype,
     ) -> torch.Tensor:
-        if num_channels not in self._channel_location_cache:
+        template = self._default_channel_locations
+        if template.shape[0] != num_channels:
             template = self.build_channel_location_template(num_channels)
-            self._channel_location_cache[num_channels] = template
-        template = self._channel_location_cache[num_channels].to(
-            device=device, dtype=dtype
-        )
+        template = template.to(device=device, dtype=dtype)
         return template.unsqueeze(0).repeat(batch_size, 1, 1)
 
     def build_channel_location_template(self, num_channels: int) -> torch.Tensor:
