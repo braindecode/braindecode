@@ -54,3 +54,27 @@ def test_msvtnet_spatial_first_is_layers_0_to_2(n_times, kernel, momentum):
             torch.testing.assert_close(ba, bb)
         a.zero_grad()
         b.zero_grad()
+
+
+def test_msvtnet_unequal_n_filters_list_forward():
+    model = MSVTNet(
+        n_chans=5, n_outputs=2, n_times=300, n_filters_list=(8, 8, 12, 12)
+    ).eval()
+    x = torch.randn(3, 5, 300)
+    assert model(x).shape == (3, 2)
+    model.return_features = True
+    out, branch_out = model(x)
+    assert out.shape == (3, 2)
+    assert branch_out.shape == (4, 3, 2)
+
+
+def test_msvtnet_equal_n_filters_list_matches_stack_view():
+    torch.manual_seed(0)
+    model = MSVTNet(n_chans=5, n_outputs=2, n_times=300).eval()
+    x = torch.randn(3, 5, 300)
+    with torch.no_grad():
+        feats = [tsconv(model.ensure_dim(x)) for tsconv in model.mstsconv]
+        stacked = torch.stack(feats, dim=2)
+        stacked = stacked.view(stacked.size(0), stacked.size(1), -1)
+        expected = model.final_layer(model.transformer(stacked))
+        torch.testing.assert_close(model(x), expected, rtol=0, atol=0)
