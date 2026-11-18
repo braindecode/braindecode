@@ -2324,3 +2324,35 @@ def test_windows_from_events_dict_stop_offset_uses_own_event_type():
             drop_last_window=False,
             mapping={"a": 0, "b": 1},
         )
+
+
+def test_fixed_length_windows_mne_epochs_targets_from_channels():
+    """Both paths take the targets from the misc channels and drop them from X."""
+    rng = np.random.RandomState(0)
+    data = rng.randn(3, 1000)
+    data[2] = 7.0
+    info = mne.create_info(["ch0", "ch1", "target"], 100, ["eeg", "eeg", "misc"])
+    concat_ds = BaseConcatDataset([RawDataset(mne.io.RawArray(data, info))])
+    kwargs = dict(
+        concat_ds=concat_ds,
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=True,
+        targets_from="channels",
+        last_target_only=False,
+    )
+    windows_eeg = create_fixed_length_windows(**kwargs, use_mne_epochs=False)
+    windows_mne = create_fixed_length_windows(**kwargs, use_mne_epochs=True)
+
+    assert isinstance(windows_mne.datasets[0], WindowsDataset)
+    assert windows_mne.datasets[0].targets_from == "channels"
+    assert windows_mne.datasets[0].last_target_only is False
+    assert windows_mne.datasets[0].window_kwargs[-1] == (
+        "WindowsDataset",
+        {"targets_from": "channels", "last_target_only": False},
+    )
+    X_eeg, y_eeg, _ = windows_eeg[0]
+    X_mne, y_mne, _ = windows_mne[0]
+    assert X_mne.shape == X_eeg.shape == (2, 100)
+    np.testing.assert_allclose(X_mne, X_eeg)
+    np.testing.assert_allclose(y_mne, y_eeg)

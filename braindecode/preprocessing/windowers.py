@@ -1102,14 +1102,10 @@ def _create_fixed_length_windows(
         windows_ds = WindowsDataset(
             mne_epochs,
             ds.description,
+            targets_from=targets_from,
+            last_target_only=last_target_only,
         )
     else:
-        window_kwargs.append(
-            (
-                EEGWindowsDataset.__name__,
-                {"targets_from": targets_from, "last_target_only": last_target_only},
-            )
-        )
         windows_ds = EEGWindowsDataset(
             ds.raw,
             metadata=metadata,
@@ -1117,6 +1113,12 @@ def _create_fixed_length_windows(
             targets_from=targets_from,
             last_target_only=last_target_only,
         )
+    window_kwargs.append(
+        (
+            type(windows_ds).__name__,
+            {"targets_from": targets_from, "last_target_only": last_target_only},
+        )
+    )
     # add window_kwargs and raw_preproc_kwargs to windows dataset
     setattr(windows_ds, "window_kwargs", window_kwargs)
     kwargs_name = "raw_preproc_kwargs"
