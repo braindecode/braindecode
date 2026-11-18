@@ -57,7 +57,7 @@ Enhancements
   ``load_state_dict`` takes ``geonirs_base.pt`` and ``geonirs_large.pt`` as released,
   and ``ch_mask`` handles montages of different sizes, including stacked
   HbO/HbR windows batched by :func:`~braindecode.datasets.pad_channels_collate`
-  (:gh:`1591` by
+  (:gh:`1591`, :gh:`1623` by
   `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan
   et al. (Neurophotonics 2018) as the GeoNIRS benchmark (Li et al., 2026)
