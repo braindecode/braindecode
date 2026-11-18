@@ -50,7 +50,9 @@ def derivation_matrix(
     ]
     if reference is not None and reference != "average":
         parts = [p if len(p) == 2 else [p[0], reference.lower()] for p in parts]
-    electrodes = list(dict.fromkeys([*(electrodes or []), *sum(parts, [])]))
+    electrodes = list(
+        dict.fromkeys([*(e.lower() for e in (electrodes or [])), *sum(parts, [])])
+    )
     matrix = torch.zeros(len(ch_names), len(electrodes), dtype=torch.float64)
     for row, ends in enumerate(parts):
         matrix[row, electrodes.index(ends[0])] += 1.0
