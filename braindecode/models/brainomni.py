@@ -25,7 +25,6 @@ from braindecode.models.util import (
     warn_if_sfreq_differs,
 )
 from braindecode.modules import FeedForwardBlock, SEANetDecoder, SEANetEncoder
-from braindecode.modules.channels import _ELECTRODES, _resolve
 from braindecode.modules.quantization import ResidualVectorQuantizer
 
 
@@ -604,12 +603,15 @@ def _check_channel_strategy(model, chs_info, channel_strategy):
     """The channel layer maps electrodes only: a montage with MEG stays native."""
     if channel_strategy == "native" or not chs_info:
         return
-    names, _, _, types, _ = _resolve(chs_info)
-    meg = [name for name, kind in zip(names, types) if kind not in _ELECTRODES]
-    if meg:
+    other = [
+        ch["ch_name"]
+        for index, ch in enumerate(chs_info)
+        if _sensor_type_of(chs_info, index) != "eeg"
+    ]
+    if other:
         raise ValueError(
             f"{type(model).__name__} reads EEG and MEG, but the channel layer maps "
-            f"electrodes only and chs_info has other sensors ({meg}): only "
+            f"electrodes only and chs_info has other sensors ({other}): only "
             f"channel_strategy='native' is supported for them. "
             f"{type(model).__name__} builds on any EEG/MEG montage from the sensor "
             f"geometry of chs_info."
