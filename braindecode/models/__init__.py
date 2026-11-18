@@ -61,6 +61,7 @@ if TYPE_CHECKING:
     from .guetschel2026 import Guetschel2026
     from .hybrid import HybridNet
     from .ifnet import IFNet
+    from .jung_mae import JungMAE
     from .labram import Labram
     from .luna import LUNA
     from .mapa import MAPA
@@ -71,6 +72,7 @@ if TYPE_CHECKING:
     from .mirepnet import MIRepNet
     from .mscformer import MSCFormer
     from .msvtnet import MSVTNet
+    from .mtrenirs import MtReNIRS
     from .mvpformer import MVPFormer
     from .neuropose import NeuroPose
     from .neurorvq import NeuroRVQ

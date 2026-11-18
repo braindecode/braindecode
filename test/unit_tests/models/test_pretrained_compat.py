@@ -659,6 +659,7 @@ EXCLUDED = {
     "NeuroPose": "sEMG hand-pose regression, no EEG geometry",
     "VEMG2Pose": "sEMG hand-pose regression, no EEG geometry",
     "NeuroRVQTokenizer": "returns (target, reconstruction); NeuroRVQ's channel contract",
+    "MtReNIRS": "fNIRS HbO/HbR pairs with optode positions, no EEG geometry",
 }
 _SHIPS_WEIGHTS = re.compile(
     r"hf_hub_download|from_pretrained\(|huggingface\.co/|Hugging Face Hub"
