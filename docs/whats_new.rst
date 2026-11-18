@@ -201,6 +201,16 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
+  ``patch_size`` differs from the embedding size ``emb_dim``, for example
+  ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
+  patches but had size ``emb_dim``. It now has size ``patch_size``, as in
+  :class:`braindecode.models.CBraMod`. The two are equal for the released
+  ``patch_size=200``, so the released weights still load and outputs do not change.
+  A checkpoint saved with a ``patch_size`` that is not a multiple of 25 has the old
+  size and no longer loads; ``mask_encoding`` is a frozen zero vector, so drop that
+  key from the state dict and load with ``strict=False`` (:gh:`1601` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
   supplied electrode names without regard to case, including with a named
   recording reference, preventing duplicated columns and misplaced weights
