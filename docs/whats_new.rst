@@ -201,6 +201,10 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.modules.ChannelMerger` keeps gradients finite when spatial
+  dropout excludes every electrode of a recording during training in
+  :class:`~braindecode.models.BrainModule` or :class:`~braindecode.models.DANCE`.
+
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw

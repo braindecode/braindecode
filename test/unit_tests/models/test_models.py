@@ -3274,6 +3274,33 @@ def test_brainmodule_forward_runs(kwargs, n_chans, n_outputs, with_subject, chec
     _run_forward(m, n_chans, n_outputs, with_subject=with_subject)
 
 
+def test_brainmodule_trains_when_spatial_dropout_excludes_every_channel():
+    model = BrainModule(
+        chs_info=_rng_chs_info(1),
+        n_times=64,
+        sfreq=128,
+        n_outputs=2,
+        use_merger=True,
+        n_virtual_channels=2,
+        hidden_dim=8,
+        depth=2,
+    ).train()
+    x = torch.randn(2, 1, 64)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    # Put the dropout centre on the only electrode, regardless of the RNG version.
+    with mock.patch("torch.rand", return_value=model.channel_positions[0]):
+        positions = model.channel_positions.expand(len(x), -1, -1)
+        assert torch.count_nonzero(model.merger(x, positions)) == 0
+        logits = model(x)
+    assert torch.isfinite(logits).all()
+    logits.square().mean().backward()
+    torch.testing.assert_close(
+        model.merger.heads.grad, torch.zeros_like(model.merger.heads)
+    )
+    optimizer.step()
+    assert all(torch.isfinite(p).all() for p in model.parameters())
+
+
 @pytest.mark.parametrize(
     "chs_info",
     [
