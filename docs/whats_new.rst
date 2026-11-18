@@ -46,7 +46,7 @@ Enhancements
 - Add :class:`braindecode.models.DirectEventCNN1D`, the supervised 1D-CNN baseline
   of the GeoNIRS benchmark (Li et al., 2026): two temporal convolutions with
   GroupNorm and GELU, a time average and a linear head. Its ``mapping`` loads the
-  authors' state dict (:gh:`DIRECTEVENTCNN1D_PR` by `Bruno Aristimunha`_).
+  authors' state dict (:gh:`1592` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
   transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
