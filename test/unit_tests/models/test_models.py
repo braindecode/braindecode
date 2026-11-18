@@ -7413,7 +7413,7 @@ def test_fnirst_seeded_reset_and_cls_tokens(model_cls):
 
 
 # FNIRST/FNIRSPreT need 5 HbO/HbR pairs for their default spatial kernel
-_FNIRS_TEST_N_CHANS = {FNIRST: 10, FNIRSPreT: 10, }
+_FNIRS_TEST_N_CHANS = {FNIRST: 10, FNIRSPreT: 10}
 
 
 @pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
@@ -7440,13 +7440,38 @@ def test_fnirs_features_feed_head_and_reset(model_cls):
     assert model.final_layer.weight.dtype == torch.float64
 
 
+def test_fnirspret_forwards_every_argument_to_fnirst():
+    """FNIRSPreT is FNIRST plus the preprocessing module: same signature, and the
+    same weights and outputs without that module."""
+    assert inspect.signature(FNIRSPreT.__init__) == inspect.signature(FNIRST.__init__)
+    kwargs = dict(
+        n_chans=10, n_outputs=3, n_times=60, embed_dim=32, depth=2, num_heads=2,
+        mlp_dim=32, pool="mean", head_dim=16, n_conv_filters=4, spatial_kernel_size=3,
+        temporal_kernel_size=20, temporal_stride=3, channel_order="interleaved",
+        drop_prob=0.1, embed_drop_prob=0.1, activation=nn.ReLU,
+    )
+    torch.manual_seed(0)
+    plain = FNIRST(**kwargs).eval()
+    torch.manual_seed(0)
+    pret = FNIRSPreT(**kwargs).eval()
+    plain_state = plain.state_dict()
+    pret_state = {k: v for k, v in pret.state_dict().items() if not k.startswith("pre.")}
+    assert list(plain_state) == list(pret_state)
+    for key, value in plain_state.items():
+        assert torch.equal(pret_state[key], value)
+    pret.pre = None
+    x = torch.randn(2, 10, 60)
+    with torch.no_grad():
+        assert torch.equal(pret(x), plain(x))
+
+
 @pytest.mark.parametrize(
     "model_cls, fill",
     [(FNIRST, 0.0), (FNIRSPreT, 0.0)],
 )
 def test_fnirs_masks(model_cls, fill):
     """ch_mask is refused by name; an all-False mask changes nothing; hidden
-    samples act as ``fill`` (zero, or missing) and get no gradient."""
+    samples act as ``fill`` and get no gradient."""
     torch.manual_seed(0)
     n_chans = _FNIRS_TEST_N_CHANS[model_cls]
     model = model_cls(n_chans=n_chans, n_outputs=3, n_times=60, sfreq=5.0).eval()
