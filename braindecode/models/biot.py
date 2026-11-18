@@ -534,6 +534,12 @@ class _BIOTEncoder(nn.Module):
         # channel's (batch, freq, ts) block is contiguous
         spec = self.stft(x.transpose(0, 1).reshape(n_chans * batch_size, 1, n_times))
         spec = spec.unflatten(0, [n_chans, batch_size])
+        # Every channel token in one lookup of a 1-D index, then one row per
+        # channel. A 0-d index per channel would also trip Intel Gaudi, whose
+        # embedding backward sends a 0-d index's gradient to row 0.
+        channel_tokens = self.channel_tokens(
+            self.index[n_channel_offset : n_channel_offset + n_chans]
+        )
         emb_seq = []
         token_masks = []
         for i in range(n_chans):
@@ -545,10 +551,9 @@ class _BIOTEncoder(nn.Module):
             batch_size, ts, _ = channel_spec_emb.shape
             # (batch_size, ts, emb)
             # Step by step the following lines do the following operations:
-            #    - self.channel_tokens(self.index[i + n_channel_offset]):
-            #    Fetches the embedding for a channel specified by i + n_channel_offset,
-            #    where i is the current index and n_channel_offset adjusts
-            #    which channel's embedding is retrieved.
+            #    - channel_tokens[i]:
+            #    The token of channel i + n_channel_offset, where
+            #    n_channel_offset adjusts which channel's embedding is used.
             #    - .unsqueeze(0).unsqueeze(0):
             #    Adds two singleton dimensions to the embedding tensor.
             #    [emb_size] to [1, 1, emb_size] .
@@ -556,10 +561,7 @@ class _BIOTEncoder(nn.Module):
             #    Replicates the embedding tensor to match the batch size and
             #    time steps (ts),
             channel_token_emb = (
-                self.channel_tokens(self.index[i + n_channel_offset])
-                .unsqueeze(0)
-                .unsqueeze(0)
-                .repeat(batch_size, ts, 1)
+                channel_tokens[i].unsqueeze(0).unsqueeze(0).repeat(batch_size, ts, 1)
             )
             # (batch_size, ts, emb)
             # The positional embedding is explaining with more

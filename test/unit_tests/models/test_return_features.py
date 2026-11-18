@@ -29,8 +29,10 @@ from braindecode.models import (
     FNIRSNet,
     FNIRSPreT,
     Guetschel2026,
+    JungMAE,
     Labram,
     MIRepNet,
+    MtReNIRS,
     PopulationTransformer,
     SignalJEPA,
     SignalJEPA_Contextual,
@@ -41,7 +43,11 @@ from braindecode.models import (
 )
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
-from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.models.util import (
+    _fnirs_chs_info,
+    models_dict,
+    models_mandatory_parameters,
+)
 from test.unit_tests.models._fixtures import _get_signal_params
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
@@ -214,6 +220,13 @@ _MODELS = [
         False,
         id="MIRepNet",
     ),
+    pytest.param(
+        MtReNIRS,
+        4,
+        {"depth": 1, "num_heads": 2, "embed_dim": 32, "chs_info": _fnirs_chs_info(2)},
+        False,
+        id="MtReNIRS",
+    ),
     pytest.param(LUNA, N_CHANS, {}, False, id="LUNA"),
     pytest.param(MEGGPT, N_CHANS, {}, False, id="MEGGPT"),
     pytest.param(
@@ -227,6 +240,13 @@ _MODELS = [
     pytest.param(FNIRS4D, 4, {"n_layers": 1, "d_state": 16}, False, id="FNIRS4D"),
     pytest.param(FNIRST, 10, {"depth": 1, "num_heads": 2}, True, id="FNIRST"),
     pytest.param(FNIRSPreT, 10, {"depth": 1, "num_heads": 2}, True, id="FNIRSPreT"),
+    pytest.param(
+        JungMAE,
+        4,
+        {"depth": 1, "num_heads": 4, "embed_dim": 64},
+        False,
+        id="JungMAE",
+    ),
 ]
 
 

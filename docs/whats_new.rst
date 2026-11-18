@@ -28,6 +28,15 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.JungMAE`, the GeoNIRS authors' implementation of the
+  masked autoencoder of Jung et al. (IEEE BCI 2025), with a linear head;
+  ``load_state_dict`` takes the GeoNIRS benchmark's ``jung_mae.pt`` as released
+  (:gh:`1589` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.MtReNIRS` (Chae et al., 2026), a montage-aware fNIRS
+  foundation model with a Fourier embedding of the 10-05 position and chromophore and
+  a QK-norm rotary transformer; ``load_state_dict`` takes ``mtrenirs_10s.pt`` as
+  released, and the docstring gives the 0.01-0.5 Hz band-pass its weights expect
+  (:gh:`1590` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
   transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
@@ -160,6 +169,22 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.modules.ChannelLayer` computes every target that is a
+  combination of the measured channels exactly, under every strategy including
+  ``"exact"``: ``A-B`` from a measured ``B-A`` with weight -1 (copied before with
+  +1 when both sat at the same midpoint, and rejected by ``"exact"`` without
+  positions), ``F3-P3`` from ``F3-C3`` and ``C3-P3``, and BIOT's pairs from
+  ``F3-REF``-style channels. A directly measured channel still takes precedence;
+  no reference is guessed. The algebra is public as
+  :func:`braindecode.functional.derivation_matrix` and
+  :func:`~braindecode.functional.exact_derivation`
+  (:gh:`1577` by `lindicaphxag-tech`_ and `Bruno Aristimunha`_).
+
+- :class:`braindecode.models.BIOT` looks up all its channel tokens in one embedding call with a
+  1-D index, instead of one call per channel with a 0-d index. Outputs and gradients are
+  bitwise the same on CPU. On Intel Gaudi, whose embedding backward sends a 0-d index's
+  gradient to row 0, only the first channel token trained before (:gh:`1585` by
+  `Bruno Aristimunha`_).
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
   original fine-tuning code replaces it by ``nn.Identity()``, so the head now reads
@@ -218,6 +243,10 @@ Bug fixes
 Code health
 ============
 
+- The :class:`braindecode.models.JungMAE` tests compare the forward with the
+  reference encoder at ``atol=1e-5``: the reference packs the valid tokens and
+  the model masks the invalid ones, so float32 rounding depends on the machine
+  (:gh:`1594` by `Bruno Aristimunha`_).
 - Codacy runs Bandit from a root ``bandit.yml`` that skips B105, which flagged every ``"cls_token"`` key of the foundation-model feature dicts as a hardcoded password, and B101, the test ``assert`` statements (:gh:`1546` by `Bruno Aristimunha`_).
 - Every registered model whose ``forward`` takes ``ch_mask`` is checked with no
   per-model test case, like the other cross-model contracts: each recording of a
