@@ -56,11 +56,18 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
     tcn_batch_norm : bool, optional
         If ``True`` (default), insert a :class:`~torch.nn.BatchNorm1d` after each
         TCN convolution and use a bias in the residual ``1x1`` downsample, matching
-        the original Keras source. Set to ``False`` to recover the previous
-        braindecode architecture (e.g. to load checkpoints trained before this
-        change). Default is ``True``.
+        the original Keras source. Set to ``False`` to get the TCN block of
+        braindecode before 1.6.1, for example to load checkpoints trained with it.
+        To also get the outputs of that version, set ``temporal_activation=True``.
+        Default is ``True``.
 
         .. versionadded:: 1.6.1
+    temporal_activation : bool, optional
+        If ``True``, apply ``activation`` between the temporal batch norm and the
+        depthwise convolution, as braindecode did before 2.1. The authors' code
+        has no activation there. Default is ``False``.
+
+        .. versionadded:: 2.1
 
     References
     ----------
@@ -92,6 +99,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         drop_prob_eeg: float | None = None,
         drop_prob_tcn: float | None = None,
         tcn_batch_norm: bool = True,
+        temporal_activation: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -110,6 +118,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         self.drop_prob_eeg = drop_prob if drop_prob_eeg is None else drop_prob_eeg
         self.drop_prob_tcn = drop_prob if drop_prob_tcn is None else drop_prob_tcn
         self.tcn_batch_norm = tcn_batch_norm
+        self.temporal_activation = temporal_activation
         self.depth_multiplier = depth_multiplier
         self.filter_1 = filter_1
         self.kern_length = kern_length
@@ -130,6 +139,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
             depth_multiplier=self.depth_multiplier,
             drop_prob=self.drop_prob_eeg,
             activation=self.activation,
+            temporal_activation=self.temporal_activation,
         )
         self.arrange_dim_eegnet = Rearrange(
             "batch filter2 rtimes 1 -> batch rtimes filter2"
@@ -205,6 +215,8 @@ class _EEGNetTC(nn.Module):
         Dropout rate.
     activation : nn.Module
         Activation function.
+    temporal_activation : bool
+        If ``True``, apply ``activation`` after the temporal batch norm.
     """
 
     def __init__(
@@ -215,10 +227,12 @@ class _EEGNetTC(nn.Module):
         depth_multiplier: int = 2,
         drop_prob: float = 0.5,
         activation: type[nn.Module] = nn.ELU,
+        temporal_activation: bool = False,
     ):
         super().__init__()
         self.activation = activation()
         self.drop_prob = drop_prob
+        self.temporal_activation = temporal_activation
         self.n_chans = n_chans
         self.filter_1 = filter_1
         self.filter_2 = self.filter_1 * depth_multiplier
@@ -268,6 +282,8 @@ class _EEGNetTC(nn.Module):
         # x shape: (batch_size, 1, n_times, n_chans)
         x = self.conv1(x)
         x = self.bn1(x)
+        if self.temporal_activation:
+            x = self.activation(x)
 
         x = self.depthwise_conv(x)
         x = self.bn2(x)

@@ -2145,6 +2145,20 @@ def test_eegtcnet_no_activation_after_temporal_bn():
     torch.testing.assert_close(seen["dw"], seen["bn"])
 
 
+def test_eegtcnet_temporal_activation_restores_previous_output():
+    """``temporal_activation=True`` gives the outputs of the previous forward,
+    which applied ``activation`` to the temporal BatchNorm output."""
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125).eval()
+    previous = EEGTCNet(
+        n_outputs=4, n_chans=22, n_times=1125, temporal_activation=True
+    ).eval()
+    previous.load_state_dict(model.state_dict())
+    x = torch.randn(2, 22, 1125)
+    eegnet = model.eegnet_tc
+    eegnet.bn1.register_forward_hook(lambda m, i, o: eegnet.activation(o))
+    torch.testing.assert_close(previous(x), model(x))
+
+
 def test_eegclip_batch_size_one_train_mode():
     """At n_times=480 the dense Deep4Net gives one time step, so the projection
     head's BatchNorm1d sees a single row in train mode (NeuralBench matrix)."""
