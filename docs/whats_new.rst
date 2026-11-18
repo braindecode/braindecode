@@ -28,6 +28,10 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
+  between recording descriptions and window metadata, and recording-level subset
+  selection (:gh:`1596` by `Daria Agafonova`_).
+
 - :class:`braindecode.modules.ChannelLayer` maps channels with one linear
   estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
   targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat
@@ -3110,6 +3114,7 @@ API changes
 Authors
 ========
 
+.. _Daria Agafonova: https://github.com/viranovskaya
 .. _Arnaud Delorme: https://github.com/arnodelorme
 .. _Arslan Shafique: https://github.com/arslan-shafique
 .. _Anton Soloviev: https://github.com/antonsoo
