@@ -126,6 +126,9 @@ def test_channel_strategy_uses_the_native_sensor_type(make_model):
     assert _geometry_from_chs_info(chs)[1].tolist() == [1]
     with pytest.raises(ValueError, match="native"):
         make_model(chs_info=chs, channel_strategy="exact")
+    model = make_model(chs_info=chs)
+    restored = type(model).from_config(model.get_config())
+    assert _geometry_from_chs_info(restored.chs_info)[1].tolist() == [1]
 
 
 @pytest.mark.parametrize(
