@@ -49,7 +49,7 @@ You can use the following BibTeX entry:
                 Jain, Mahir and
                 Kowshik, Bhargav and
                 Li, Yiheng and
-                Ahmed, Fashad and
+                Siddique, Fashad Ahmed and
                 Moreau, Thomas and
                 Chevallier, Sylvain and
                 Gramfort, Alexandre and
@@ -68,7 +68,7 @@ Or the following APA reference:
     Sliwowski, M., Wilson, D., Brandt, S., Gnassounou, T., Paillard, J., Srivastava, A.,
     Junqueira Lopes, B., Sedlar, S., Tayal, S., Truong, Y., Gadonneix, J., Mounir, A.,
     Zhang, Z., Soloviev, A., Li, Q., Rathi, R., Shah, V., Arthur, Jain, M., Kowshik, B.,
-    Li, Y., Ahmed, F., Moreau, T., Chevallier, S., Gramfort, A., & Schirrmeister, R. T.
+    Li, Y., Siddique, F. A., Moreau, T., Chevallier, S., Gramfort, A., & Schirrmeister, R. T.
     *Braindecode: toolbox for decoding raw electrophysiological brain data with deep
     learning models* [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.8214376
 

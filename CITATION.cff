@@ -56,6 +56,8 @@ authors:
     orcid: "https://orcid.org/0000-0002-1492-0014"
   - given-names: Sarthak
     family-names: Tayal
+    affiliation: "Independent Researcher"
+    orcid: "https://orcid.org/0009-0004-9683-3302"
   - given-names: Young
     family-names: Truong
   - given-names: Julien
@@ -65,9 +67,13 @@ authors:
   - given-names: Adam
     family-names: Mounir
     alias: adammounir
+    affiliation: "Inria TAU – LISN, Université Paris-Saclay, France"
+    orcid: "https://orcid.org/0009-0009-2928-7854"
   - given-names: Zhibo
     family-names: Zhang
     alias: lindicaphxag-tech
+    affiliation: "Hangzhou Dianzi University, Hangzhou, China"
+    orcid: "https://orcid.org/0009-0007-3533-1941"
   - given-names: Anton
     family-names: Soloviev
     alias: antonsoo
@@ -77,23 +83,30 @@ authors:
   - given-names: Raghav
     family-names: Rathi
     alias: raghav-rathi
+    affiliation: "University of Florida"
+    orcid: "https://orcid.org/0009-0001-6352-7358"
   - given-names: Vandit
     family-names: Shah
     alias: ShahVandit
+    affiliation: "University of Florida"
+    orcid: "https://orcid.org/0000-0001-7432-0056"
   - given-names: Arthur
     alias: Arthur031221
   - given-names: Mahir
     family-names: Jain
     alias: mahirjain01
+    affiliation: "Mannas AI, Bengaluru"
   - given-names: Bhargav
     family-names: Kowshik
     alias: bkowshik
   - given-names: Yiheng
     family-names: Li
     alias: YihengLi-1
-  - given-names: Fashad
-    family-names: Ahmed
+  - given-names: Fashad Ahmed
+    family-names: Siddique
     alias: Fashad-Ahmed
+    affiliation: "Alma Mater Studiorum - Università di Bologna, Bologna, Italy"
+    orcid: "https://orcid.org/0009-0008-1262-3586"
   - given-names: Thomas
     family-names: Moreau
     affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"

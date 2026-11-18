@@ -126,7 +126,7 @@ You can use the following BibTeX entry:
                 Jain, Mahir and
                 Kowshik, Bhargav and
                 Li, Yiheng and
-                Ahmed, Fashad and
+                Siddique, Fashad Ahmed and
                 Moreau, Thomas and
                 Chevallier, Sylvain and
                 Gramfort, Alexandre and
