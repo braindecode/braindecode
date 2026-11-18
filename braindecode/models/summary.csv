@@ -50,6 +50,7 @@ FBCNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",11812,"
 FBMSNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",16231,"FBMSNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank",EEG
 MetaNeuromotorHand,Handwriting (sEMG),CTC Sequence,2000,"n_chans, n_outputs, n_times, sfreq",1021284,"MetaNeuromotorHand(n_chans=16, n_outputs=100, n_times=32000, sfreq=2000)","Convolution,Attention/Transformer",sEMG
 EMG2QwertyNet,Touch typing (sEMG),CTC Sequence,2000,"n_chans, n_outputs, n_times, sfreq",5293315,"EMG2QwertyNet(n_chans=32, n_outputs=99, n_times=8000, sfreq=2000)","Convolution",sEMG
+TCCNet,Gesture recognition (sEMG),Prediction,100,"n_chans, n_outputs",88757,"TCCNet(n_chans=10, n_outputs=53)","Convolution,Recurrent,Attention/Transformer",sEMG
 VEMG2Pose,Hand pose (sEMG),Sequence Regression,2000,"n_chans, n_outputs, n_times, sfreq",5980328,"VEMG2Pose(n_chans=16, n_outputs=20, n_times=11790, sfreq=2000)","Convolution,Recurrent",sEMG
 NeuroPose,Hand pose (sEMG),Sequence Regression,2000,"n_chans, n_outputs, n_times, sfreq",6354903,"NeuroPose(n_chans=16, n_outputs=20, n_times=10000, sfreq=2000)","Convolution",sEMG
 SensingDynamics,Hand pose (sEMG),Sequence Regression,2000,"n_chans, n_outputs, n_times, sfreq",1738297,"SensingDynamics(n_chans=16, n_outputs=20, n_times=480, sfreq=2000)","Convolution,Channel",sEMG
@@ -89,3 +90,7 @@ NeuroRVQTokenizer,General,Embedding,200,"n_chans, n_times, sfreq, chs_info",7572
 Guetschel2026,General,"Prediction, Embedding",200,"chs_info, n_outputs, n_times",12882436,"Guetschel2026(chs_info=<user>, n_outputs=4, n_times=1000, sfreq=200)","Foundation Model,Attention/Transformer,Channel",EEG
 GCNsNet,Motor Imagery,Prediction,160,"n_chans, n_outputs, n_times",359428,"GCNsNet(n_chans=64, n_outputs=4, n_times=640)","Graph Neural Network,Channel",EEG
 NICE,Visual Decoding,"Prediction, Embedding",250,"n_chans, n_outputs, n_times",1956296,"NICE(n_chans=63, n_outputs=200, n_times=250)",Convolution,"EEG, MEG"
+FNIRSNet,General,Prediction,10,"n_chans, n_outputs, n_times",498,"FNIRSNet(n_chans=72, n_outputs=2, n_times=30)","Convolution",fNIRS
+FNIRS4D,General,Prediction,10,"n_chans, n_outputs, n_times",89894,"FNIRS4D(n_chans=72, n_outputs=2, n_times=30)","Convolution,Recurrent",fNIRS
+FNIRST,General,Prediction,10,"n_chans, n_outputs, n_times",1728978,"FNIRST(n_chans=72, n_outputs=2, n_times=200)","Convolution,Attention/Transformer",fNIRS
+FNIRSPreT,General,Prediction,10,"n_chans, n_outputs, n_times",1729778,"FNIRSPreT(n_chans=72, n_outputs=2, n_times=200)","Convolution,Attention/Transformer",fNIRS

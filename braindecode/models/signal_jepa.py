@@ -18,7 +18,6 @@ from braindecode.functional import (
     scaled_dot_product_attention,
     sinusoidal_positional_encoding,
 )
-from braindecode.functional.attention import _hpu_lazy
 from braindecode.models.base import EEGModuleMixin
 
 _DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.1875s, stride 1s
@@ -1430,16 +1429,16 @@ class _ConvFeatureEncoder(nn.Sequential):
 
 
 class _GroupNorm(nn.GroupNorm):
-    """``nn.GroupNorm``; in HPU eager mode written out with mean and variance.
+    """``nn.GroupNorm``; on HPU written out with mean and variance.
 
     In HPU eager mode the backward of torch's group norm compiles new graphs at
     every call (about 0.2 s per call on the feature encoder's first block);
     the same normalisation from mean/var ops runs from cached kernels.
-    Elsewhere (CPU, CUDA, HPU lazy) this is ``F.group_norm``.
+    Elsewhere (CPU, CUDA) this is ``F.group_norm``.
     """
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if not torch.jit.is_scripting() and x.device.type == "hpu" and not _hpu_lazy():
+        if not torch.jit.is_scripting() and x.device.type == "hpu":
             xg = x.reshape(x.shape[0], self.num_groups, -1)
             mean = xg.mean(-1, keepdim=True)
             var = xg.var(-1, unbiased=False, keepdim=True)

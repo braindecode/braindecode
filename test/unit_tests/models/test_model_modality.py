@@ -16,7 +16,7 @@ all_models_dict = dict(models_dict)
 # Controlled vocabulary for the "Modality" column of summary.csv. Keep this in
 # sync with the column definition in docs/models/models_table.rst. Add a new
 # token here (and document it) before using it in the CSV.
-ALLOWED_MODALITIES = {"EEG", "MEG", "iEEG", "ECoG", "sEMG"}
+ALLOWED_MODALITIES = {"EEG", "MEG", "iEEG", "ECoG", "sEMG", "fNIRS"}
 
 
 def load_model_modalities():

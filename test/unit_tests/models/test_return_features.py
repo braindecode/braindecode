@@ -12,6 +12,9 @@ from braindecode.models import (
     CORTEG,
     EEGDINO,
     EEGPT,
+    FNIRS4D,
+    FNIRST,
+    LUNA,
     MAPA,
     MEGGPT,
     MEGXL,
@@ -23,6 +26,8 @@ from braindecode.models import (
     CBraMod,
     DuIN,
     EpiNT,
+    FNIRSNet,
+    FNIRSPreT,
     Guetschel2026,
     Labram,
     MIRepNet,
@@ -209,6 +214,7 @@ _MODELS = [
         False,
         id="MIRepNet",
     ),
+    pytest.param(LUNA, N_CHANS, {}, False, id="LUNA"),
     pytest.param(MEGGPT, N_CHANS, {}, False, id="MEGGPT"),
     pytest.param(
         MEGXL,
@@ -217,6 +223,10 @@ _MODELS = [
         False,
         id="MEGXL",
     ),
+    pytest.param(FNIRSNet, 4, {}, False, id="FNIRSNet"),
+    pytest.param(FNIRS4D, 4, {"n_layers": 1, "d_state": 16}, False, id="FNIRS4D"),
+    pytest.param(FNIRST, 10, {"depth": 1, "num_heads": 2}, True, id="FNIRST"),
+    pytest.param(FNIRSPreT, 10, {"depth": 1, "num_heads": 2}, True, id="FNIRSPreT"),
 ]
 
 
@@ -323,7 +333,7 @@ def _build_registered(name, **kwargs):
     Hugging Face loader cannot load weights into uninitialized parameters.
     """
     signal_params = _get_signal_params(_REGISTRY[name])
-    return _ALL_MODELS[name](**signal_params, **kwargs).eval()
+    return _ALL_MODELS[name](**{**signal_params, **kwargs}).eval()
 
 
 @pytest.mark.parametrize("name", _RESET_HEAD_CASES)
@@ -347,7 +357,7 @@ def test_reset_head_model_reloads_after_saving(name, tmp_path):
 
 
 @pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
-@pytest.mark.parametrize("name", ["EEGDINO", "EEGPT"])  # heads with dropout
+@pytest.mark.parametrize("name", ["EEGDINO", "EEGPT", "LUNA"])  # heads with dropout
 def test_from_pretrained_new_n_outputs_is_deterministic_in_eval(name, tmp_path):
     saved = _build_registered(name)
     saved.save_pretrained(tmp_path)
@@ -369,6 +379,7 @@ def test_from_pretrained_new_n_outputs_is_deterministic_in_eval(name, tmp_path):
         pytest.param("BENDR", {"final_layer": False}, id="BENDR"),
         pytest.param("CBraMod", {"return_encoder_output": True}, id="CBraMod"),
         pytest.param("EEGDINO", {"return_encoder_output": True}, id="EEGDINO"),
+        pytest.param("LUNA", {"n_outputs": 0}, id="LUNA"),
     ],
 )
 def test_reset_head_on_feature_extractor_reloads_as_classifier(name, kwargs, tmp_path):

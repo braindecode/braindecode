@@ -20,6 +20,7 @@ from typing import (
     Literal,
     Optional,
     Sequence,
+    Tuple,
     cast,
     get_args,
     get_origin,
@@ -602,6 +603,23 @@ def _dance_signal_params() -> dict[str, Any]:
     }
 
 
+def _fnirs_chs_info(n_pairs: int, interleaved: bool = False) -> list[dict]:
+    """Stacked HbO then HbR channels of ``n_pairs`` source-detector pairs 3 cm
+    apart on an 8 cm ring (metres), named as MNE names them (``"S1_D1 hbo"``),
+    with the source and detector in ``loc[3:9]`` as MNE stores them;
+    ``interleaved=True`` gives MNE's ``[HbO_1, HbR_1, ...]`` order."""
+    chs = []
+    for kind in ("hbo", "hbr"):
+        for i in range(n_pairs):
+            src = np.array([0.08 * np.cos(i), 0.08 * np.sin(i), 0.05])
+            det = src + np.array([0.03, 0.0, 0.0])
+            loc = np.concatenate([(src + det) / 2, src, det, np.zeros(3)])
+            chs.append({"ch_name": f"S{i + 1}_D{i + 1} {kind}", "loc": loc})
+    if interleaved:
+        chs = [ch for pair in zip(chs[:n_pairs], chs[n_pairs:]) for ch in pair]
+    return chs
+
+
 # (name, required signal parameters, test parameters). The test parameters are
 # signal parameters the default test signal does not fit, plus, for the
 # largest models, architecture arguments that keep the test instance small
@@ -699,6 +717,13 @@ models_mandatory_parameters: list[
     ("EEGSym", ["chs_info", "n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("TSception", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "TCCNet",
+        ["n_chans", "n_outputs"],
+        # NinaPro DB1: 10 channels at 100 Hz. TCCNet takes whole gestures of
+        # any length; 300 samples is only a test length.
+        {"n_chans": 10, "n_times": 300, "sfreq": 100.0},
+    ),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("NICE", ["n_chans", "n_outputs", "n_times"], None),
@@ -917,6 +942,28 @@ models_mandatory_parameters: list[
         },
     ),
     ("Guetschel2026", ["chs_info", "n_outputs", "n_times"], {"sfreq": 200.0}),
+    (
+        "FNIRSNet",
+        ["n_chans", "n_outputs", "n_times"],
+        {"n_chans": 4, "n_times": 60, "sfreq": 5.0},
+    ),
+    (
+        "FNIRS4D",
+        ["n_chans", "n_outputs", "n_times"],
+        lambda: {"chs_info": _fnirs_chs_info(2), "n_times": 60, "sfreq": 5.0},
+    ),
+    (
+        "FNIRST",
+        ["n_chans", "n_outputs", "n_times"],
+        # 5 pairs: the authors' spatial kernel spans 5 HbO/HbR pairs
+        lambda: {"chs_info": _fnirs_chs_info(5), "n_times": 60, "sfreq": 5.0},
+    ),
+    (
+        "FNIRSPreT",
+        ["n_chans", "n_outputs", "n_times"],
+        # 5 pairs: the authors' spatial kernel spans 5 HbO/HbR pairs
+        lambda: {"chs_info": _fnirs_chs_info(5), "n_times": 60, "sfreq": 5.0},
+    ),
 ]
 
 ################################################################
@@ -1233,6 +1280,31 @@ def valid_location_mask(locations: torch.Tensor) -> torch.Tensor:
     )
 
 
+def chs_info_positions(chs_info, model_name: str) -> Optional[torch.Tensor]:
+    """``(n_chans, 3)`` positions of ``chs_info``, or None when it has none.
+
+    A ``chs_info`` with positions for some channels only raises, naming the
+    others: a model must neither invent their positions nor ignore the given ones.
+    """
+    if chs_info is None:
+        return None
+    locations = torch.as_tensor(
+        extract_channel_locations_from_chs_info(chs_info, fill_missing=True),
+        dtype=torch.float32,
+    )
+    placed = valid_location_mask(locations)[:, 0].tolist()
+    if not any(placed):
+        return None
+    if not all(placed):
+        names = [ch["ch_name"] for ch, ok in zip(chs_info, placed) if not ok]
+        raise ValueError(
+            f"{model_name} needs the 3D position of each channel, but chs_info has "
+            f"none for {names}; drop these channels, or pass the positions at each "
+            "call."
+        )
+    return locations
+
+
 def warn_if_sfreq_differs(
     model_name: str, sfreq: Optional[float], pretrained_sfreq: float
 ) -> None:
@@ -1317,3 +1389,86 @@ def channel_types_from_chs_info(
         else:
             types.append("unknown")
     return types
+
+
+def fnirs_chromophores_from_chs_info(chs_info: Sequence[Dict[str, Any]]) -> list[str]:
+    """``"hbo"``, ``"hbr"`` or ``"unknown"`` per channel, from MNE's
+    ``coil_type`` (``FIFFV_COIL_FNIRS_HBO`` / ``_HBR``), else from the
+    ``" hbo"`` / ``" hbr"`` suffix of its name (MNE names them ``"S1_D1 hbo"``)
+    or its ``"kind"``."""
+    coils = {FIFF.FIFFV_COIL_FNIRS_HBO: "hbo", FIFF.FIFFV_COIL_FNIRS_HBR: "hbr"}
+    out = []
+    for ch in chs_info:
+        suffix = str(ch.get("ch_name", "")).lower().rsplit(" ", 1)[-1]
+        kind = str(ch.get("kind", "")).lower()
+        by_name = next((k for k in (suffix, kind) if k in ("hbo", "hbr")), "unknown")
+        out.append(coils.get(int(ch.get("coil_type") or 0), by_name))
+    return out
+
+
+def fnirs_channel_order(
+    chs_info: Optional[Sequence[Dict[str, Any]]], channel_order: Optional[str] = None
+) -> str:
+    """HbO/HbR pair layout of an fNIRS montage: ``"stacked"``
+    (``[HbO_1..HbO_C, HbR_1..HbR_C]``) or ``"interleaved"`` (MNE's
+    ``[HbO_1, HbR_1, ...]``).
+
+    Without ``chs_info`` it returns ``channel_order``, or ``"stacked"``. With
+    ``chs_info`` every channel must be HbO or HbR, in equal numbers, and the
+    ``i``-th HbO and HbR channels must share their name up to the chromophore
+    suffix (``"S1_D1 hbo"`` / ``"S1_D1 hbr"``); the layout is read from it, and
+    an explicit ``channel_order`` must agree.
+
+    Raises ``ValueError`` for an unknown ``channel_order``, a ``chs_info``
+    that is not paired HbO/HbR, or a ``channel_order`` it contradicts.
+    """
+    if channel_order not in (None, "stacked", "interleaved"):
+        raise ValueError(
+            "channel_order must be 'stacked', 'interleaved' or None, "
+            f"got {channel_order!r}."
+        )
+    if not chs_info:
+        return channel_order or "stacked"
+    chromophores = fnirs_chromophores_from_chs_info(chs_info)
+    names = [str(ch.get("ch_name", "")).rsplit(" ", 1)[0] for ch in chs_info]
+    n = len(chs_info) // 2
+    layouts = {"stacked": (slice(0, n), slice(n, None))}
+    layouts["interleaved"] = (slice(0, None, 2), slice(1, None, 2))
+    found = [
+        order
+        for order, (hbo, hbr) in layouts.items()
+        if chromophores[hbo] == ["hbo"] * n
+        and chromophores[hbr] == ["hbr"] * n
+        and names[hbo] == names[hbr]
+    ]
+    if not found:
+        raise ValueError(
+            "chs_info must list paired HbO/HbR channels, stacked or interleaved, "
+            "with matching names (see mne's reorder_channels); got "
+            f"{list(zip(names, chromophores))}."
+        )
+    if channel_order is not None and channel_order not in found:
+        raise ValueError(
+            f"channel_order={channel_order!r} contradicts chs_info, which is "
+            f"{found[0]}."
+        )
+    return channel_order or found[0]
+
+
+def fnirs_split_hbo_hbr(
+    x: torch.Tensor, channel_order: str
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Split fNIRS channels into their HbO and HbR halves.
+
+    The one HbO/HbR split of the fNIRS models: ``x`` is
+    ``(batch, n_chans, ...)`` with an even ``n_chans`` in the ``channel_order``
+    given by :func:`fnirs_channel_order`. Returns ``(hbo, hbr)``, each
+    ``(batch, n_chans // 2, ...)``, where ``hbo[:, i]`` and ``hbr[:, i]`` are
+    the two chromophores of pair ``i``.
+    """
+    if channel_order == "interleaved":  # [HbO_1, HbR_1, HbO_2, HbR_2, ...]
+        return x[:, 0::2], x[:, 1::2]
+    if channel_order == "stacked":  # [HbO_1, ..., HbO_C, HbR_1, ..., HbR_C]
+        n_pairs = x.shape[1] // 2
+        return x[:, :n_pairs], x[:, n_pairs:]
+    raise ValueError("channel_order must be 'stacked' or 'interleaved'.")

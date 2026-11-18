@@ -91,8 +91,9 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     the released parcellation, sign-flip aligned as in the paper (Section
     2.5.3). ``sfreq`` is not checked: 250 Hz is assumed. A window that is not a
     multiple of the segment length is padded or cropped as set by
-    ``on_non_divisible``; with ``"pad"``, the zero-padded last segment counts
-    as much as the others in the feature mean.
+    ``on_non_divisible``; with ``"pad"``, the feature mean skips the kept steps
+    that fall after the end of the input, so the last segment counts for fewer
+    steps than the others.
 
     .. rubric:: Channel mask
 
@@ -303,12 +304,15 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
             x = x.masked_fill(~ch_mask[:, :, None], 0.0)
         # (batch, n_chans, n_segments * segment_len) or None
         token_mask = self._prepare_token_mask(token_mask, x)
+        n_times = x.shape[-1]
         # (batch, n_chans, n_times) -> (batch, n_chans, n_segments * segment_len)
         x = pad_or_crop_to_patches(x, self.segment_len, self.on_non_divisible)
         token_ids = self.tokenizer(x)  # (batch, n_chans, n_segments * segment_len)
         # (batch, n_segments * n_last_steps, n_chans, embed_dim)
         h = self._encode_prepared_tokens(token_ids, token_mask)
-        features = h.mean(dim=1)  # (batch, n_chans, embed_dim)
+        features = self._pool_steps(
+            h, x.shape[-1], n_times
+        )  # (batch, n_chans, embed_dim)
         if return_features:
             # (batch, n_chans, n_segments * n_last_steps, embed_dim)
             tokens = self.to_tokens(h)
@@ -326,6 +330,19 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         # (batch, n_chans, embed_dim) -> (batch, n_chans * embed_dim)
         # -> (batch, n_outputs)
         return self.final_layer(features)
+
+    def _pool_steps(self, h: Tensor, n_prepared: int, n_times: int) -> Tensor:
+        # Mean over the kept steps that sit on a real sample: the last segment
+        # of a padded window may keep steps after the end of the input. The kept
+        # steps are in time order, so the real ones are a prefix; counting them
+        # from ints keeps forward free of host syncs.
+        first = self.segment_len - self.n_last_steps
+        n_real = 0
+        for start in range(0, n_prepared, self.segment_len):
+            n_real += min(max(n_times - start - first, 0), self.n_last_steps)
+        if n_real == 0:  # window shorter than the first kept step
+            return h.mean(dim=1)  # (batch, n_chans, embed_dim)
+        return h[:, :n_real].mean(dim=1)  # (batch, n_chans, embed_dim)
 
     def _prepare_token_mask(
         self, token_mask: Optional[Tensor], x: Tensor
@@ -462,7 +479,8 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         )
         # (batch, n_segments * n_last_steps, n_chans, embed_dim)
         h = self._encode_prepared_tokens(prepared, prepared_mask)
-        features = h.mean(dim=1)  # (batch, n_chans, embed_dim), original pooling
+        # (batch, n_chans, embed_dim), as in forward
+        features = self._pool_steps(h, prepared.shape[-1], n_times)
         tokens = self.to_tokens(
             h
         )  # (batch, n_chans, n_segments * n_last_steps, embed_dim)

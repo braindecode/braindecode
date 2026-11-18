@@ -224,8 +224,10 @@ class CSBrain(EEGModuleMixin, nn.Module):
     activation : type[nn.Module], default=nn.GELU
         Activation function used in the encoder feedforward blocks.
     emb_dim : int, default=200
-        Output dimension of the final projection applied to the encoder
-        output.
+        Output dimension of ``proj_out``, the pretraining reconstruction layer.
+        It is kept so the released weights load, but it is not applied:
+        features use the encoder output, of size ``d_model`` (the patch size).
+        It still sets the hidden widths of the task head.
     temporal_kernel_sizes : tuple[int, ...], default=(1, 3, 5)
         Kernel sizes of the cross-scale temporal embedding convolutions.
     drop_prob : float, default=0.1
@@ -235,9 +237,8 @@ class CSBrain(EEGModuleMixin, nn.Module):
         Dropout probability of the task head. ``None`` uses ``drop_prob``.
         The reference fine-tuning models keep the backbone at 0.1 and set
         only the head dropout (``--dropout 0.3`` for BCIC IV-2a), and they
-        replace ``proj_out`` by ``nn.Identity()`` after loading the
-        pretrained weights: ``drop_prob=0.1, head_drop_prob=0.3``, then
-        ``model.proj_out = nn.Identity()``.
+        skip ``proj_out`` (it is replaced by ``nn.Identity()`` there, and not
+        applied here): ``drop_prob=0.1, head_drop_prob=0.3``.
     brain_regions : sequence of int | None, default=None
         Explicit region id per input channel (0 frontal, 1 parietal, 2
         temporal, 3 occipital, 4 central), taking precedence over the
@@ -258,7 +259,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         (e.g. 800 for 4 s and 2000 for 10 s windows at 200 Hz). Some
         reference heads differ, e.g. SEED-V (1 s windows) uses 800; pass it
         here to load those checkpoints. The first head layer has
-        ``n_chans * n_patch * emb_dim * head_hidden_dim`` weights, which grows
+        ``n_chans * n_patch * d_model * head_hidden_dim`` weights, which grows
         quadratically with the window length by default (about 2.3e9 for 64
         channels and 30 s), so set a smaller width for long windows.
     return_encoder_output : bool, default=False
@@ -446,7 +447,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
 
     def _make_task_head(self) -> nn.Sequential:
         # Three-layer MLP head of the reference fine-tuning models: flatten
-        # (chans, patches, emb_dim) -> n_patch * emb_dim -> emb_dim -> n_outputs.
+        # (chans, patches, d_model) -> n_patch * emb_dim -> emb_dim -> n_outputs.
         # n_chans / n_times may come from chs_info / input_window_seconds.
         # Without them the layers are lazy and the hidden width falls back to
         # 4 * emb_dim, the reference value for 4 s windows.
@@ -466,7 +467,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         hidden = self._head_hidden_dim or n_patch * self._emb_dim
         return nn.Sequential(
             nn.Flatten(),
-            nn.Linear(n_chans * n_patch * self._emb_dim, hidden),
+            nn.Linear(n_chans * n_patch * self._d_model, hidden),
             nn.ELU(),
             nn.Dropout(self._head_drop_prob),
             nn.Linear(hidden, self._emb_dim),
@@ -508,7 +509,9 @@ class CSBrain(EEGModuleMixin, nn.Module):
             emb = self.temporal_embed(emb) + emb
             emb = self.region_embed(emb) + emb
             emb = layer(emb)
-        out = self.proj_out(emb)
+        # proj_out is the pretraining reconstruction layer: the reference
+        # fine-tuning models replace it by nn.Identity(), so it is not run.
+        out = emb
         if return_features:
             features: Dict[str, Optional[Tensor]] = {"features": out, "cls_token": None}
             return features

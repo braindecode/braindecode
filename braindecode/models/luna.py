@@ -16,7 +16,7 @@ the LICENSE Of this file is APACHE-2.0.
 import math
 import warnings
 from functools import partial
-from typing import Any, Dict, Optional, Tuple, Type
+from typing import Any, Dict, Optional, Tuple, Type, Union
 
 import torch
 import torch.fft as fft
@@ -34,7 +34,10 @@ from braindecode.functional import (
 )
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.signal_jepa import _GroupNorm
-from braindecode.models.util import extract_channel_locations_from_chs_info
+from braindecode.models.util import (
+    chs_info_positions,
+    extract_channel_locations_from_chs_info,
+)
 from braindecode.modules import PreNormBlock, TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
 
@@ -177,6 +180,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        chs_info_positions(getattr(self, "_chs_info", None), "LUNA")  # all or none
 
         # Mapping for loading pretrained weights
         self.mapping = {
@@ -290,6 +294,27 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.apply(_init_weights)
         self.fix_init_weight()
 
+    def reset_head(self, n_outputs: int) -> None:
+        """Replace the classification head for ``n_outputs`` classes.
+
+        A reconstruction model (``n_outputs=0``) becomes a classifier: its
+        decoder and channel embedding are removed.
+        """
+        self._set_n_outputs(n_outputs)
+        self.num_classes = n_outputs
+        self.final_layer = _ClassificationHeadWithQueries(
+            input_dim=self.patch_size,
+            num_queries=self.num_queries,
+            embed_dim=self.embed_dim,
+            num_classes=n_outputs,
+            num_heads=self.num_heads,
+        )
+        self.final_layer.apply(_init_weights)
+        if hasattr(self, "decoder_head"):
+            del self.decoder_head
+            del self.channel_emb
+            self.mask_token.requires_grad = False
+
     def initialize_weights(self) -> None:
         """Re-run LUNA's own weight initialization.
 
@@ -391,7 +416,8 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         channel_locations: Optional[torch.Tensor] = None,
         channel_names: Optional[torch.Tensor] = None,
         ch_mask: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+        return_features: bool = False,
+    ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """Forward pass.
 
         ``ch_mask`` is an optional ``(batch, n_chans)`` mask of real channels,
@@ -399,6 +425,10 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         no part in the patch-embedding norms, the location range and the
         channel cross-attention, so each recording gets its output alone.
         Reconstruction (``n_outputs=0``) refuses it.
+
+        With ``return_features=True``, returns ``{"features": Tensor,
+        "cls_token": None}``: the normed encoder output before the head,
+        ``(batch, n_patches, num_queries * embed_dim)``.
         """
         x_signal = X
         B, C, _ = x_signal.shape
@@ -433,6 +463,12 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             x = blk(x)
         x_latent = self.norm(x)
 
+        if return_features:
+            features: Dict[str, Optional[torch.Tensor]] = {
+                "features": x_latent,
+                "cls_token": None,
+            }
+            return features
         if self.num_classes > 0:
             return self.final_layer(x_latent)
         return self._reconstruct(x_latent, channel_locations_emb, channel_names)
@@ -610,6 +646,13 @@ class _FrequencyFeatureEmbedder(nn.Module):
         freq_representation = fft.rfft(
             spectral_input(x), dim=-1
         )  # (B, C, num_patches, patch_size // 2 + 1)
+        # DC and Nyquist bins are real: drop GPU rounding noise that flips
+        # their phase between pi and -pi.
+        imag = freq_representation.imag.clone()
+        imag[..., 0] = 0.0
+        if self.patch_size % 2 == 0:
+            imag[..., -1] = 0.0
+        freq_representation = torch.complex(freq_representation.real, imag)
         magnitude = torch.abs(freq_representation)
         phase = torch.angle(freq_representation)
 

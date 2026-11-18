@@ -54,6 +54,9 @@ if TYPE_CHECKING:
     from .fbcnet import FBCNet
     from .fblightconvnet import FBLightConvNet
     from .fbmsnet import FBMSNet
+    from .fnirs4d import FNIRS4D
+    from .fnirs_t import FNIRST, FNIRSPreT
+    from .fnirsnet import FNIRSNet
     from .gcnsnet import GCNsNet
     from .guetschel2026 import Guetschel2026
     from .hybrid import HybridNet
@@ -94,6 +97,7 @@ if TYPE_CHECKING:
     from .sstdpn import SSTDPN
     from .steegformer import STEEGFormer
     from .syncnet import SyncNet
+    from .tccnet import TCCNet
     from .tcformer import TCFormer
     from .tcn import BDTCN, TCN
     from .tfm_tokenizer import TFMTokenizer, TFMTokenizerOutput

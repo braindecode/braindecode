@@ -1,6 +1,7 @@
 """Labram split contract against fa859551 frozen select attention (BSD-3-Clause)."""
 # ruff: noqa: UP035, UP006, UP007, UP045
-# Keep the frozen forward below as it was at fa859551.
+# Keep the frozen forward below as it was at fa859551, minus its Gaudi-only branch
+# (the helper it called is gone; the branch never ran on the CPU).
 import copy
 from typing import Optional, Tuple, Union
 
@@ -8,7 +9,7 @@ import pytest
 import torch
 from torch import nn
 
-from braindecode.models.labram import _Attention, _hpu_eager_fused_sdpa
+from braindecode.models.labram import _Attention
 
 
 class _LegacyAttention(_Attention):
@@ -69,13 +70,6 @@ class _LegacyAttention(_Attention):
             out = nn.functional.scaled_dot_product_attention(
                 q, k, v, attn_mask=attn_mask, scale=self.scale
             )
-        elif (
-            fused
-            and attn_mask is None
-            and not torch.jit.is_scripting()
-            and (q.dtype == torch.float32 or q.dtype == torch.bfloat16)
-        ):
-            out = _hpu_eager_fused_sdpa(q, k, v, self.scale)
         if out is None:
             attn = (q * self.scale) @ k.transpose(-2, -1)
             if attn_mask is not None:
