@@ -22,8 +22,6 @@ from torch import Tensor, nn
 
 from braindecode.functional import _get_gaussian_kernel1d, scaled_dot_product_attention
 from braindecode.functional.attention import (  # noqa: F401  (re-exported)
-    _hpu_eager_fused_sdpa,
-    _hpu_lazy,
     _sdpa_math_dropout,
 )
 
@@ -862,7 +860,7 @@ class TimmAttention(nn.Module):
         timm's op order, ``softmax((q * scale) @ k^T) @ v``, bit-identical to
         the reference implementations (see
         :func:`braindecode.functional.scaled_dot_product_attention`); otherwise
-        torch's kernels (Gaudi's fused kernel on HPU).
+        torch's kernels.
 
     Examples
     --------
@@ -931,9 +929,7 @@ class TimmAttention(nn.Module):
                 q * self.scale, k, v, dropout_p=dropout_p, scale=1.0, exact=True
             )
         else:
-            y = scaled_dot_product_attention(
-                q, k, v, dropout_p=dropout_p, fused_in_lazy=True
-            )
+            y = scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
         return self.proj_drop(self.proj(y.transpose(1, 2).flatten(2)))
 
 
@@ -961,6 +957,9 @@ class MultiHeadAttention(nn.Module):
     qk_norm : bool, optional
         Apply a :class:`~torch.nn.LayerNorm` over ``head_dim`` to the queries
         and keys of each head (as in LaBraM and Du-IN). Default ``False``.
+    qkv_bias : bool, optional
+        Give the query, key and value projections a bias (fNIRS-T has none).
+        Default ``True``.
 
     Examples
     --------
@@ -981,6 +980,7 @@ class MultiHeadAttention(nn.Module):
         scale: float | None = None,
         head_dim: int | None = None,
         qk_norm: bool = False,
+        qkv_bias: bool = True,
     ):
         super().__init__()
         if num_heads < 1 or (head_dim is not None and head_dim < 1):
@@ -998,9 +998,9 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = head_dim
         self.scale = scale
-        self.keys = nn.Linear(emb_size, inner_dim)
-        self.queries = nn.Linear(emb_size, inner_dim)
-        self.values = nn.Linear(emb_size, inner_dim)
+        self.keys = nn.Linear(emb_size, inner_dim, bias=qkv_bias)
+        self.queries = nn.Linear(emb_size, inner_dim, bias=qkv_bias)
+        self.values = nn.Linear(emb_size, inner_dim, bias=qkv_bias)
         self.q_norm = nn.LayerNorm(head_dim) if qk_norm else None
         self.k_norm = nn.LayerNorm(head_dim) if qk_norm else None
         self.att_drop = dropout

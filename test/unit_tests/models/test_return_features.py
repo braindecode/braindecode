@@ -12,6 +12,8 @@ from braindecode.models import (
     CORTEG,
     EEGDINO,
     EEGPT,
+    FNIRS4D,
+    FNIRST,
     LUNA,
     MAPA,
     MEGGPT,
@@ -24,6 +26,8 @@ from braindecode.models import (
     CBraMod,
     DuIN,
     EpiNT,
+    FNIRSNet,
+    FNIRSPreT,
     Guetschel2026,
     Labram,
     MIRepNet,
@@ -219,6 +223,10 @@ _MODELS = [
         False,
         id="MEGXL",
     ),
+    pytest.param(FNIRSNet, 4, {}, False, id="FNIRSNet"),
+    pytest.param(FNIRS4D, 4, {"n_layers": 1, "d_state": 16}, False, id="FNIRS4D"),
+    pytest.param(FNIRST, 10, {"depth": 1, "num_heads": 2}, True, id="FNIRST"),
+    pytest.param(FNIRSPreT, 10, {"depth": 1, "num_heads": 2}, True, id="FNIRSPreT"),
 ]
 
 

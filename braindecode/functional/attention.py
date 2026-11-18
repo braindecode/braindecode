@@ -12,35 +12,6 @@ import torch.nn.functional as F
 from torch import Tensor
 
 
-@torch.jit.unused
-def _hpu_eager_fused_sdpa(
-    query: Tensor,
-    key: Tensor,
-    value: Tensor,
-    scale: Optional[float] = None,
-    fused_in_lazy: bool = False,
-) -> Optional[Tensor]:
-    # Lazy mode: None, the graph compiler already fuses torch's SDPA there
-    # (unless the caller measured the fused kernel faster for its shapes).
-    from habana_frameworks.torch.utils.internal import is_lazy
-
-    if is_lazy() and not fused_in_lazy:
-        return None
-    from habana_frameworks.torch.hpex.kernels import FusedSDPA
-
-    # Strided q/k/v views (heads split off a projection) give wrong outputs and
-    # gradients at some shapes; contiguous copies give the right result.
-    query, key, value = query.contiguous(), key.contiguous(), value.contiguous()
-    return FusedSDPA.apply(query, key, value, None, 0.0, False, scale, "None", False)
-
-
-@torch.jit.unused
-def _hpu_lazy() -> bool:
-    from habana_frameworks.torch.utils.internal import is_lazy
-
-    return is_lazy()
-
-
 def _sdpa_math_dropout(
     query: Tensor,
     key: Tensor,
@@ -69,7 +40,7 @@ def scaled_dot_product_attention(
     fused_in_lazy: bool = False,
     exact: bool = False,
 ) -> Tensor:
-    """``F.scaled_dot_product_attention``; Gaudi's fused kernel on HPU.
+    """``F.scaled_dot_product_attention``, or the textbook op order (``exact``).
 
     Parameters
     ----------
@@ -83,7 +54,9 @@ def scaled_dot_product_attention(
     scale : float, optional
         Score scale; ``None`` is ``1 / sqrt(head_dim)``.
     fused_in_lazy : bool, default=False
-        Use Gaudi's fused kernel in HPU lazy mode too.
+        No effect; kept so that existing calls still work. On Intel Gaudi,
+        Habana's attention setting decides whether this call runs on the
+        bridge's fused kernel (:ref:`install_gaudi`).
     exact : bool, default=False
         Run the textbook op order instead of torch's kernels:
         ``softmax((q @ k^T) / sqrt(d)) @ v``, or ``softmax((q @ k^T) * scale) @ v``
@@ -97,12 +70,12 @@ def scaled_dot_product_attention(
     torch.Tensor
         Shape ``(..., seq, head_dim)``.
 
-    In HPU eager mode, torch's SDPA runs op by op (the full
-    ``(batch, heads, seq, seq)`` scores in device memory), 2-3.5x slower than
-    the bridge's fused kernel on long sequences. The fused kernel is used
-    without a mask or dropout (its dropout would draw other masks). In lazy
-    mode only with ``fused_in_lazy=True``: the graph compiler fuses torch's
-    SDPA too, faster on long sequences, slower on short ones.
+    Notes
+    -----
+    On Intel Gaudi, torch's SDPA runs op by op unless Habana's attention
+    setting is on; then the bridge's fused kernel runs it, with or without a
+    mask (:ref:`install_gaudi`), dropout included. On CPU, dropout on float32
+    or float64 inputs without a mask keeps torch's math path.
     """
     if exact:
         scores = torch.matmul(query, key.transpose(-2, -1))
@@ -121,27 +94,12 @@ def scaled_dot_product_attention(
         return torch.matmul(weights, value)
     if (
         not torch.jit.is_scripting()
-        and query.device.type == "hpu"
-        and attn_mask is None
-        and dropout_p == 0.0
-        and (query.dtype == torch.float32 or query.dtype == torch.bfloat16)
-    ):
-        out = _hpu_eager_fused_sdpa(
-            query, key, value, scale=scale, fused_in_lazy=fused_in_lazy
-        )
-        if out is not None:
-            return out
-    if (
-        not torch.jit.is_scripting()
         and dropout_p > 0.0
         and attn_mask is None
         and (query.dtype == torch.float32 or query.dtype == torch.float64)
-        and (
-            query.device.type == "cpu"
-            or (query.device.type == "hpu" and not _hpu_lazy())
-        )
+        and query.device.type == "cpu"
     ):
-        # CPU and HPU eager run SDPA with dropout through the math path.
+        # The CPU runs SDPA with dropout through the math path.
         return _sdpa_math_dropout(query, key, value, dropout_p, scale)
     if scale is None:  # torch 2.0's signature has no ``scale``
         return F.scaled_dot_product_attention(
