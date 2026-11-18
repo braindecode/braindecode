@@ -178,6 +178,14 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             activation=activation_mrcnn,
             activation_se=activation,
         )
+        # Older checkpoints also registered the AFR layers under features.<index>.
+        for i, block in enumerate(mrcnn.AFR):
+            prefix = f"feature_extractor.0.AFR.{i}."
+            for j, name in enumerate(("conv1", "bn1", "relu", "conv2", "bn2", "se")):
+                for key in getattr(block, name).state_dict():
+                    self.mapping[f"{prefix}features.{j}.{key}"] = (
+                        f"{prefix}{name}.{key}"
+                    )
         feature_length = self._feature_length(mrcnn, self.n_times)
         if feature_length != d_model:
             raise ValueError(
@@ -291,9 +299,6 @@ class _SEBasicBlock(nn.Module):
         self.se = _SELayer(planes, reduction, activation=activation)
         self.downsample = downsample
         self.stride = stride
-        self.features = nn.Sequential(
-            self.conv1, self.bn1, self.relu, self.conv2, self.bn2, self.se
-        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -310,7 +315,8 @@ class _SEBasicBlock(nn.Module):
             Output tensor after applying the SE recalibration.
         """
         residual = x
-        out = self.features(x)
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.se(self.bn2(self.conv2(out)))
 
         if self.downsample is not None:
             residual = self.downsample(x)

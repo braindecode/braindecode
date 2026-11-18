@@ -201,6 +201,9 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`~braindecode.models.AttnSleep` reloads its safetensors checkpoints
+  with ``strict=True``, including checkpoints that saved the adaptive feature
+  recalibration layers under duplicate names.
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw

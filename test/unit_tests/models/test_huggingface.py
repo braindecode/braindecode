@@ -146,6 +146,39 @@ def test_json_serialization(tmp_path, sample_chs_info):
     assert len(loaded['chs_info']) == len(sample_chs_info)
 
 
+def test_attnsleep_strict_checkpoint_roundtrip(tmp_path):
+    from braindecode.models import AttnSleep
+
+    model = AttnSleep(sfreq=100, n_outputs=5, input_window_seconds=30)
+    x = torch.randn(2, 1, 3000)
+    loss = model(x).square().mean()
+    loss.backward()
+    torch.optim.SGD(model.parameters(), lr=0.01).step()
+    model.eval()
+    expected = model(x).detach()
+    block = model.feature_extractor[0].AFR[0]
+    assert block.bn1.num_batches_tracked > 0
+    state = model.state_dict()
+
+    # Earlier releases also registered these same modules under features. A
+    # raw state dictionary contains both names, whereas safetensors stores one.
+    for legacy in (False, True):
+        if legacy:
+            block.features = nn.Sequential(
+                block.conv1, block.bn1, block.relu, block.conv2, block.bn2, block.se
+            )
+        model.save_pretrained(tmp_path)
+        restored = AttnSleep.from_pretrained(
+            tmp_path, strict=True, local_files_only=True
+        ).eval()
+        torch.testing.assert_close(restored(x), expected)
+        torch.testing.assert_close(restored.state_dict(), state)
+    restored.load_state_dict(
+        torch.load(tmp_path / "pytorch_model.bin", weights_only=True)
+    )
+    torch.testing.assert_close(restored.state_dict(), state)
+
+
 def test_save_pretrained_creates_config(tmp_path, sample_model):
     sample_model, name, _ = sample_model
     # TODO: fix for AttnSleep
