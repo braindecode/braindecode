@@ -10,50 +10,13 @@ import torch.nn.functional as F
 from torch import nn
 
 from braindecode.functional import spectral_input
+from braindecode.functional.functions import (
+    _group_norm_mean_var as _group_norm_mean_var,
+)
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.layers import GroupNorm as _GroupNorm
 from braindecode.modules.linear_attention import LinearAttentionTransformer
 from braindecode.modules.quantization import EMACodebook
-
-
-def _group_norm_mean_var(x, num_groups, weight, bias, eps):
-    """Group normalisation from mean and variance (no ``aten::group_norm``).
-
-    Same maths as :func:`torch.nn.functional.group_norm`, written with
-    reshape/mean/var/rsqrt ops so Intel Gaudi's graph compiler never sees
-    the native group-norm backward (it fails to compile it at large batch
-    sizes with "SRAM capping too big").
-    """
-    xg = x.reshape(x.shape[0], num_groups, -1)
-    mean = xg.mean(-1, keepdim=True)
-    var = xg.var(-1, unbiased=False, keepdim=True)
-    x = ((xg - mean) * torch.rsqrt(var + eps)).reshape(x.shape)
-    if weight is not None:
-        shape = (1, -1) + (1,) * (x.dim() - 2)
-        x = x * weight.reshape(shape)
-    if bias is not None:
-        shape = (1, -1) + (1,) * (x.dim() - 2)
-        x = x + bias.reshape(shape)
-    return x
-
-
-class _GroupNorm(nn.GroupNorm):
-    """``nn.GroupNorm``; on HPU written out with mean and variance.
-
-    Gaudi's graph compiler fails on the native group-norm backward at large
-    batch sizes ("SRAM capping too big"), in both eager and lazy mode, so on
-    HPU the normalisation runs from mean/var ops, as
-    :class:`braindecode.models.signal_jepa._GroupNorm` does in HPU eager
-    mode. Elsewhere (CPU, CUDA; TorchScript) this is ``F.group_norm``.
-    """
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if not torch.jit.is_scripting() and x.device.type == "hpu":
-            return _group_norm_mean_var(
-                x, self.num_groups, self.weight, self.bias, self.eps
-            )
-        return nn.functional.group_norm(
-            x, self.num_groups, self.weight, self.bias, self.eps
-        )
 
 
 class TFMTokenizerOutput(NamedTuple):

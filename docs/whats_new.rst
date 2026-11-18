@@ -28,6 +28,12 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- :class:`~braindecode.models.SignalJEPA`, :class:`~braindecode.models.LUNA`,
+  :class:`~braindecode.models.NeuroRVQTokenizer` and
+  :class:`~braindecode.models.TFMTokenizer` share their Intel Gaudi group
+  normalization implementation. Existing state dictionaries retain their
+  parameter names and pickles still load through the original model modules.
+
 - :class:`braindecode.modules.ChannelLayer` maps channels with one linear
   estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
   targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat

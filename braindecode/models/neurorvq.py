@@ -19,9 +19,9 @@ from braindecode.functional import init_weights_, patch_count
 from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.labram import _Attention
-from braindecode.models.signal_jepa import _GroupNorm
 from braindecode.models.util import _in_model_resample
 from braindecode.modules import MLP, PatchTokenizer, PreNormBlock
+from braindecode.modules.layers import GroupNorm as _GroupNorm
 
 # Channel order used to train NeuroRVQ-EEG v1. Keep in sync with the released
 # inference module: https://github.com/KonstantinosBarmpas/NeuroRVQ

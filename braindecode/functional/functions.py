@@ -29,6 +29,26 @@ def identity(x):
     return x
 
 
+def _group_norm_mean_var(
+    x: torch.Tensor,
+    num_groups: int,
+    weight: Optional[torch.Tensor],
+    bias: Optional[torch.Tensor],
+    eps: float,
+) -> torch.Tensor:
+    """Normalize each group using its mean and biased variance."""
+    grouped = x.reshape(x.shape[0], num_groups, -1)
+    mean = grouped.mean(-1, keepdim=True)
+    variance = grouped.var(-1, unbiased=False, keepdim=True)
+    x = ((grouped - mean) * torch.rsqrt(variance + eps)).reshape(x.shape)
+    channel_shape = (1, -1) + (1,) * (x.dim() - 2)
+    if weight is not None:
+        x = x * weight.reshape(channel_shape)
+    if bias is not None:
+        x = x + bias.reshape(channel_shape)
+    return x
+
+
 def spectral_input(x: torch.Tensor) -> torch.Tensor:
     """Prepare ``x`` for an FFT, STFT or eigendecomposition.
 

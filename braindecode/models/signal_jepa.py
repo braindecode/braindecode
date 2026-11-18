@@ -19,6 +19,7 @@ from braindecode.functional import (
     sinusoidal_positional_encoding,
 )
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.layers import GroupNorm as _GroupNorm
 
 _DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.1875s, stride 1s
     (8, 32, 8),
@@ -1426,30 +1427,6 @@ class _ConvFeatureEncoder(nn.Sequential):
 
     def n_times_out(self, n_times):
         return _n_times_out(self.conv_layers_spec, n_times)
-
-
-class _GroupNorm(nn.GroupNorm):
-    """``nn.GroupNorm``; on HPU written out with mean and variance.
-
-    In HPU eager mode the backward of torch's group norm compiles new graphs at
-    every call (about 0.2 s per call on the feature encoder's first block);
-    the same normalisation from mean/var ops runs from cached kernels.
-    Elsewhere (CPU, CUDA) this is ``F.group_norm``.
-    """
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if not torch.jit.is_scripting() and x.device.type == "hpu":
-            xg = x.reshape(x.shape[0], self.num_groups, -1)
-            mean = xg.mean(-1, keepdim=True)
-            var = xg.var(-1, unbiased=False, keepdim=True)
-            x = ((xg - mean) * torch.rsqrt(var + self.eps)).reshape(x.shape)
-            if self.affine:
-                shape = (1, -1) + (1,) * (x.dim() - 2)
-                x = x * self.weight.reshape(shape) + self.bias.reshape(shape)
-            return x
-        return nn.functional.group_norm(
-            x, self.num_groups, self.weight, self.bias, self.eps
-        )
 
 
 class _ChannelEmbedding(nn.Embedding):

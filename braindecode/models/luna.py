@@ -33,13 +33,13 @@ from braindecode.functional import (
     spectral_input,
 )
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.signal_jepa import _GroupNorm
 from braindecode.models.util import (
     chs_info_positions,
     extract_channel_locations_from_chs_info,
 )
 from braindecode.modules import PreNormBlock, TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
+from braindecode.modules.layers import GroupNorm as _GroupNorm
 
 # Weight initialization of the reference implementation.
 _init_weights = partial(init_weights_, weights={nn.Linear: nn.init.xavier_normal_})
