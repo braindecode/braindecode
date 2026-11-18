@@ -71,8 +71,8 @@ the unknown recording reference. It also gives each target's posterior variance
 estimate shrinks. ``channel_strategy_kwargs={"reference": "average"}`` (or an electrode
 name) gives the backbone its pretraining reference.
 
-To reconstruct a bad EEG channel, keep the full montage as the target. Select
-the good EEG channels before extracting the signal and its input montage:
+To reconstruct a bad EEG channel, keep the full montage as the target. Select the good
+EEG channels before extracting the signal and its input montage:
 
 .. doctest::
 
@@ -81,7 +81,7 @@ the good EEG channels before extracting the signal and its input montage:
     >>> import torch
     >>> from braindecode.modules import ChannelLayer
     >>> info = mne.create_info(["C3", "Cz", "C4"], sfreq=100, ch_types="eeg")
-    >>> signals = np.array([[1., 2.], [9., 9.], [3., 4.]]) * 1e-6
+    >>> signals = np.array([[1.0, 2.0], [9.0, 9.0], [3.0, 4.0]]) * 1e-6
     >>> raw = mne.io.RawArray(signals, info, verbose=False)
     >>> raw.info["bads"] = ["Cz"]
     >>> good = raw.copy().pick("eeg", exclude="bads")
