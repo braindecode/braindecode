@@ -163,15 +163,18 @@ API and behavior changes
 ========================
 
 - :class:`braindecode.models.SleepFM` and :class:`braindecode.models.SleepFMStager`
-  replace ``channel_mask`` (``True`` for missing channels) with ``ch_mask``, ``True``
-  for real channels as in every other model and
+  take ``ch_mask``, ``True`` for real channels as in every other model and
   :func:`braindecode.datasets.pad_channels_collate`, so they train on padded batches
-  of different montages. ``channel_mask`` is removed: pass ``ch_mask=~channel_mask``.
-  ``ch_mask`` comes after ``return_features`` in ``forward``, so a mask passed by
-  position fails instead of being read the other way round. A recording with one
-  real channel among padded ones now gets the output it gets alone: the channel
-  pooling returns that channel's token, as for a one-channel input, instead of
-  running the attention over it (:gh:`1603` by `Julien Gadonneix`_).
+  of different montages. ``channel_mask`` (``True`` for missing channels) is
+  deprecated and will be removed in 2.2: it warns and is read as
+  ``ch_mask=~channel_mask``. ``ch_mask`` comes after ``return_features`` in
+  ``forward``, so a mask passed by position fails instead of being read the other
+  way round. In :class:`~braindecode.models.SleepFM`, a recording with one real
+  channel among padded ones now gets the output it gets alone: the channel pooling
+  returns that channel's token, as for a one-channel input, instead of running the
+  attention over it. :class:`~braindecode.models.SleepFMStager`, whose channels sit
+  in fixed modality slots, keeps the release's pooling, and its outputs do not
+  change (:gh:`1603` by `Julien Gadonneix`_).
 - On Intel Gaudi, :func:`braindecode.functional.scaled_dot_product_attention` and
   :class:`braindecode.models.Labram` no longer call the Gaudi bridge's ``FusedSDPA``
   themselves: they call torch's SDPA on every device, which Habana's attention setting

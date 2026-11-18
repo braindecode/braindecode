@@ -1752,10 +1752,36 @@ def test_sleepfm_masked_input_is_ignored(cls, masked, training):
     torch.testing.assert_close(runs[0], runs[1])
 
 
+
+@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
+def test_sleepfm_channel_mask_is_the_deprecated_inverse_of_ch_mask(cls):
+    model = _small(cls).eval()
+    x = torch.randn(2, 3, 1280)
+    missing = torch.tensor([[False, True, False], [False, False, False]])
+    with torch.no_grad():
+        with pytest.warns(FutureWarning, match="ch_mask=~channel_mask"):
+            old = model(x, channel_mask=missing)
+        torch.testing.assert_close(old, model(x, ch_mask=~missing))
+        with pytest.raises(ValueError, match="ch_mask only"):
+            model(x, ch_mask=~missing, channel_mask=missing)
+
+
+def test_sleepfm_stager_keeps_the_release_pooling():
+    """Only SleepFM's channel pooling is padding-invariant; the stager's modality
+    slots and SleepFM's temporal pooling keep the release's attention."""
+    encoder, stager = _small(SleepFM), _small(SleepFMStager)
+    assert encoder.spatial_pooling.pad_invariant
+    assert not encoder.temporal_pooling.pad_invariant
+    assert not stager.spatial_pooling.pad_invariant
+    assert not stager.staging_head.spatial_pooling.pad_invariant
+
 @pytest.mark.parametrize("n_valid", [16, 12], ids=["chunk_aligned", "inside_chunk"])
 def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
     """Stager = SleepFM.encode per modality and chunk, then the staging head."""
     encoder = _small(SleepFM, max_seq_length=128).eval()
+    # The release's pooling: a modality left with one real channel runs the
+    # attention (SleepFM alone is padding-invariant, the stager's slots are not).
+    encoder.spatial_pooling.pad_invariant = False
     stager = _small(SleepFMStager).eval()
     shared = {
         k: v
