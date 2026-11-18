@@ -40,6 +40,10 @@ Enhancements
   ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
   ``chs_info``, stacked or in MNE's interleaved order (:gh:`1582` by
   `Bruno Aristimunha`_).
+- :class:`braindecode.models.CodeBrain` compiles with ``torch.compile`` into one graph: its lazy
+  kernel-norm initialisation no longer reads a tensor's value on every forward (19 graph breaks
+  and 21 compiled graphs for two training steps before, on every device). Checkpoints and
+  outputs are unchanged (:gh:`1578` by `Bruno Aristimunha`_).
 - :func:`braindecode.functional.masked_group_norm` groups the channels with a view and
   counts the real entries from the mask, without a permute or a full-size masked count:
   same outputs and gradients, 28-38% less time forward and backward at CBraMod and
