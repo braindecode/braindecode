@@ -1206,6 +1206,10 @@ def test_luna_reconstruction_batch_independent():
         for i in range(2):
             alone = model(x[i : i + 1], channel_names=channel_names[i : i + 1])
             torch.testing.assert_close(batched[i], alone[0], atol=1e-5, rtol=0)
+        # One (C,) id vector is shared by every sample.
+        shared = model(x, channel_names=channel_names[0])
+        expanded = model(x, channel_names=channel_names[0].expand(2, -1))
+    torch.testing.assert_close(shared, expanded)
 
 
 def test_luna_mapping_includes_temperature_typo():

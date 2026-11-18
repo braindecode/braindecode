@@ -483,7 +483,8 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # Reconstruction head (num_classes == 0): eager only, so the classifier scripts.
         if channel_names is None:
             raise ValueError("channel_names must be provided for reconstruction tasks.")
-        channel_emb = self.channel_emb(channel_names)
+        # (C,) ids are shared by the batch; query rows are (B t), batch outermost.
+        channel_emb = self.channel_emb(channel_names).expand(x_latent.shape[0], -1, -1)
         channel_emb = channel_emb.repeat_interleave(x_latent.shape[1], dim=0)
         decoder_queries = channel_locations_emb + channel_emb
         return self.decoder_head(x_latent, decoder_queries)

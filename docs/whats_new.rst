@@ -251,8 +251,9 @@ Bug fixes
   ordered by sample, but the embedding was repeated in time-major order, so with a
   batch of more than one sample and different ``channel_names`` per sample, a
   sample got the embedding of another one and its output depended on the rest of
-  the batch. Classification, ``return_features`` and a batch of one are unchanged;
-  no parameter changes, so released weights load as before
+  the batch. One ``(n_chans,)`` id vector now also works with a batch of more
+  than one sample. Classification, ``return_features`` and a batch of one are
+  unchanged; no parameter changes, so released weights load as before
   (:gh:`1600` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - The Eldele et al. (2021) sleep staging tutorial (``plot_sleep_staging_eldele2021.py``) splits train and validation by subject, as its text says; ``split`` took the ids as recording indices, so it trained on subjects 0-1 and validated on subject 2 while subjects 3-5 were loaded and unused (:gh:`1559` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ZUNA` defaults to ``pos_bins=100``, the value ZUNA1.1 was trained with (paper Table II and Zyphra's configs); the old default ``50`` was ZUNA1's and gave the released encoder outputs up to 5.2 away from the original. The ``braindecode/ZUNA`` checkpoint now holds the ZUNA1.1 encoder in braindecode's parameter names (the earlier ZUNA1 file loaded no parameter into the class) and sets ``pos_bins`` in its config (:gh:`1557` by `Bruno Aristimunha`_).
