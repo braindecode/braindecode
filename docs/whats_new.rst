@@ -28,6 +28,28 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
+  (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
+  transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
+  samples. :class:`~braindecode.modules.MultiHeadAttention` gains ``qkv_bias``
+  (default ``True``, unchanged) for fNIRS-T's bias-free q/k/v (:gh:`1584` by
+  `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023), the first
+  fNIRS model of braindecode: a delayed-hemodynamic-response convolution and a
+  depthwise-separable convolution over ``(batch, n_chans, n_times)`` HbO/HbR windows.
+  Its ``mapping`` loads the authors' state dict, and ``fNIRS`` joins the modality
+  vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRS4D` (Wang et al., IEEE TIM 2026), a diagonal
+  state-space (S4D) backbone with the authors' LOSO-CV or KFold-CV
+  mean-hemoglobin branch (``mean_branch``); its ``mapping`` loads the authors' state
+  dict. The helpers ``fnirs_chromophores_from_chs_info``, ``fnirs_channel_order`` and
+  ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
+  ``chs_info``, stacked or in MNE's interleaved order (:gh:`1582` by
+  `Bruno Aristimunha`_).
+- :class:`braindecode.models.CodeBrain` compiles with ``torch.compile`` into one graph: its lazy
+  kernel-norm initialisation no longer reads a tensor's value on every forward (19 graph breaks
+  and 21 compiled graphs for two training steps before, on every device). Checkpoints and
+  outputs are unchanged (:gh:`1578` by `Bruno Aristimunha`_).
 - :func:`braindecode.functional.masked_group_norm` groups the channels with a view and
   counts the real entries from the mask, without a permute or a full-size masked count:
   same outputs and gradients, 28-38% less time forward and backward at CBraMod and
@@ -93,7 +115,32 @@ Enhancements
 API and behavior changes
 ========================
 
-- None yet
+- On Intel Gaudi, :func:`braindecode.functional.scaled_dot_product_attention` and
+  :class:`braindecode.models.Labram` no longer call the Gaudi bridge's ``FusedSDPA``
+  themselves: they call torch's SDPA on every device, which Habana's attention setting
+  runs on the fused kernel, with or without a mask. The new page :ref:`install_gaudi`
+  gives the plugins to install, the setting of each Gaudi software version and the known
+  issues. Without the setting, attention on Gaudi runs op by op; the ``fused_in_lazy``
+  parameter now has no effect. With the setting, on one Gaudi2 card (bfloat16 autocast,
+  3 x 100 windows of 32 channels x 6000 samples per step), LaBraM steps with ``ch_mask``
+  are 4 % shorter compiled and 22 % shorter in eager mode; LaBraM without ``ch_mask``
+  and EEGPT in eager mode stay within 0.5 %, and EEGPT compiled steps are 1.6 % longer
+  (:gh:`1581` by `Bruno Aristimunha`_).
+- Gaudi lazy mode (``PT_HPU_LAZY_MODE=1``) is not supported (:ref:`install_gaudi`), and
+  the code that ran only there is gone: :class:`braindecode.models.BrainModule` gates
+  with :class:`torch.nn.GLU` again (hpu-ops runs ``glu`` on Gaudi, eager and compiled),
+  :class:`braindecode.models.CodeBrain` sums its skip connections one by one, and the
+  group norm of :class:`braindecode.models.SignalJEPA` and the rotary embedding of
+  :class:`braindecode.models.ZUNA` no longer check for lazy mode. CPU, CUDA, and Gaudi
+  eager and compiled runs execute the same operations as before. Two Gaudi branches that
+  also ran in eager and compiled mode go as well, measured on one Gaudi2 card with
+  Habana's attention setting and hpu-ops: :class:`braindecode.modules.ChannelMerger`
+  computes ``weights @ x`` on every device, at 0.99x to 1.00x the step time of its
+  transposed Gaudi form (DANCE and ``BrainModule(use_merger=True)``, 21 channels x 6000
+  samples, batch 64), and :func:`braindecode.functional.scaled_dot_product_attention`
+  hands float32 attention with dropout to torch's SDPA on Gaudi, whose fused kernel takes
+  0.39x (EEGPT shapes) and 0.54x (REVE) the time of the math path in eager mode, 0.75x
+  and 0.88x compiled; the CPU keeps the math path (:gh:`1583` by `Bruno Aristimunha`_).
 
 Requirements
 ============
@@ -118,6 +165,11 @@ Bug fixes
   :func:`~braindecode.functional.exact_derivation`
   (:gh:`1577` by `lindicaphxag-tech`_ and `Bruno Aristimunha`_).
 
+- :class:`braindecode.models.BIOT` looks up all its channel tokens in one embedding call with a
+  1-D index, instead of one call per channel with a 0-d index. Outputs and gradients are
+  bitwise the same on CPU. On Intel Gaudi, whose embedding backward sends a 0-d index's
+  gradient to row 0, only the first channel token trained before (:gh:`1585` by
+  `Bruno Aristimunha`_).
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
   original fine-tuning code replaces it by ``nn.Identity()``, so the head now reads
