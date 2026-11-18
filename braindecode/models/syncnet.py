@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
-from numpy import arange, ceil
+from numpy import arange
 
 from braindecode.models.base import EEGModuleMixin
 
@@ -132,10 +132,13 @@ class SyncNet(EEGModuleMixin, nn.Module):
 
         self.bias = nn.Parameter(torch.zeros(self.num_filters))
 
-        # Calculate the output size after pooling
-        self.classifier_input_size = int(
-            ceil(float(self.n_times) / float(self.pool_size)) * self.num_filters
-        )
+        self.padding = self._compute_padding(filter_width=self.filter_width)
+        # Input and conv output are both zero padded, so the pooled length is
+        # (n_times + 2 * sum(padding) - filter_width + 1) // pool_size.
+        pooled_length = (
+            self.n_times + 2 * sum(self.padding) - self.filter_width + 1
+        ) // self.pool_size
+        self.classifier_input_size = pooled_length * self.num_filters
 
         # Create time vector t
         if self.filter_width % 2 == 0:
@@ -159,7 +162,6 @@ class SyncNet(EEGModuleMixin, nn.Module):
             )
         )
 
-        self.padding = self._compute_padding(filter_width=self.filter_width)
         self.pad_input = nn.ConstantPad1d(self.padding, 0.0)
         self.pad_res = nn.ConstantPad1d(self.padding, 0.0)
 
@@ -215,7 +217,7 @@ class SyncNet(EEGModuleMixin, nn.Module):
         res_pooled = self.pool(res_padded)
 
         # Flatten the result
-        res_flat = res_pooled.view(-1, self.classifier_input_size)
+        res_flat = res_pooled.flatten(1)
 
         # Ensure beta remains non-negative
         self.beta.data.clamp_(min=0)

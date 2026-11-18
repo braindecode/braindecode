@@ -253,6 +253,13 @@ Bug fixes
   stays in the model so the released weights still load; the first head layer takes
   ``d_model`` instead of ``emb_dim`` inputs per token (the same with the defaults).
   Outputs of existing CSBrain classifiers change (:gh:`1541`, :gh:`1572`).
+- :class:`braindecode.models.SyncNet` sizes its linear head from the real pooled
+  length, which counts the zero padding of both the input and the convolution
+  output. With ``filter_width != pool_size`` the old size from ``ceil(n_times /
+  pool_size)`` made the forward pass raise a ``RuntimeError``, or return more rows
+  than the batch held. Configurations that already ran keep their parameter
+  shapes and outputs (:gh:`1600` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
   averages kept steps that lie after the end of the input. When the last
   segment held fewer real samples than its first kept step position, those

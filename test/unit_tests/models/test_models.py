@@ -3749,6 +3749,27 @@ def test_syncnet_filter_weight_shape():
     assert out.shape == (2, 2)
 
 
+@pytest.mark.parametrize(
+    "n_times, filter_width, pool_size",
+    [(1000, 64, 40), (1001, 41, 40), (1001, 20, 40)],
+)
+def test_syncnet_output_batch_matches_input(n_times, filter_width, pool_size):
+    """The classifier size follows the pooled length, so batch rows stay separate."""
+    model = SyncNet(
+        n_chans=3,
+        n_times=n_times,
+        n_outputs=2,
+        filter_width=filter_width,
+        pool_size=pool_size,
+    ).eval()
+    x = torch.randn(25, 3, n_times)
+    with torch.no_grad():
+        out = model(x)
+        out_first = model(x[:1])
+    assert out.shape == (25, 2)
+    torch.testing.assert_close(out[:1], out_first)
+
+
 # ---------------------------------------------------------------------------
 # MetaNeuromotorHand
 # ---------------------------------------------------------------------------
