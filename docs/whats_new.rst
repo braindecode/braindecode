@@ -269,6 +269,13 @@ Bug fixes
 Code health
 ============
 
+- Every model is compiled on master: ``test_model_compiled`` no longer skips
+  :class:`braindecode.models.MetaNeuromotorHand`, whose MPF featurizer torch
+  2.15 compiles in about 90 s. ``test_model_exported`` exports
+  :class:`braindecode.models.EEGMiner`, :class:`braindecode.models.SSTDPN`,
+  :class:`braindecode.models.Labram` and :class:`braindecode.models.CodeBrain`,
+  which it skipped; it still skips SyncNet and NeuroRVQTokenizer
+  (:gh:`1598` by `Bruno Aristimunha`_).
 - The :class:`braindecode.models.JungMAE` tests compare the forward with the
   reference encoder at ``atol=1e-5``: the reference packs the valid tokens and
   the model masks the invalid ones, so float32 rounding depends on the machine
