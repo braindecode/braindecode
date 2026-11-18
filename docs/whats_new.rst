@@ -210,7 +210,11 @@ Bug fixes
   the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
   other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key
   is mapped to ``parametrizations.weight.original``. Released checkpoints such as
-  the EEGNet weights of Guetschel and Tangermann load without renaming keys
+  the EEGNet weights of Guetschel and Tangermann load without renaming keys.
+  If a checkpoint supplies both names, the current weight takes precedence
+  and a strict load reports the obsolete key. The module versions stored by
+  PyTorch are also preserved, so missing BatchNorm buffers are checked against
+  the checkpoint's version
   (:gh:`1538` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example

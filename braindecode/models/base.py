@@ -29,7 +29,11 @@ from braindecode.models.util import (
     track_model_init_kwargs,
 )
 from braindecode.modules.channels import ChannelLayer
-from braindecode.modules.parametrization import make_parametrizations_scriptable
+from braindecode.modules.parametrization import (
+    MaxNorm,
+    MaxNormParametrize,
+    make_parametrizations_scriptable,
+)
 from braindecode.version import __version__
 
 huggingface_hub = _soft_import(
@@ -915,19 +919,27 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     _channel_target: Optional[list] = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):
-        mapping = self.mapping if self.mapping else {}
         own = super().state_dict()
-        new_state_dict = OrderedDict()
-        for k, v in state_dict.items():
-            k = mapping.get(k, k)
-            # Checkpoints saved before a weight was parametrized (max-norm
-            # constraints) store it as ``weight``; the module now keeps it
-            # as ``parametrizations.weight.original``.
-            module, _, name = k.rpartition(".")
-            parametrized = f"{module}.parametrizations.weight.original".lstrip(".")
-            if name == "weight" and k not in own and parametrized in own:
-                k = parametrized
-            new_state_dict[k] = v
+        new_state_dict = OrderedDict(state_dict)
+        if hasattr(state_dict, "_metadata"):
+            new_state_dict._metadata = state_dict._metadata
+        for old, current in (self.mapping or {}).items():
+            if old in state_dict and current not in new_state_dict:
+                new_state_dict[current] = new_state_dict.pop(old)
+        # Older max-norm layers saved their weight directly. Leave conflicting
+        # aliases in the dictionary so PyTorch reports them as unexpected.
+        for key in new_state_dict.keys() - own.keys():
+            module, _, name = key.rpartition(".")
+            if name != "weight":
+                continue
+            original = key.removesuffix("weight") + "parametrizations.weight.original"
+            if original not in own or original in new_state_dict:
+                continue
+            transforms = self.get_submodule(module).parametrizations.weight
+            if len(transforms) == 1 and isinstance(
+                transforms[0], (MaxNorm, MaxNormParametrize)
+            ):
+                new_state_dict[original] = new_state_dict.pop(key)
         # A backbone checkpoint has no weights for a trainable channel layer.
         # Load hooks may expand tensors with locally initialized values. Only
         # attribute whole tensors whose checkpoint shape already matches.
