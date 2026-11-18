@@ -257,7 +257,7 @@ Bug fixes
   temporal batch norm and the depthwise convolution. The authors' EEG-TCNet code and
   :class:`braindecode.models.EEGNet` have no activation there. The parameters do not
   change, so saved weights still load. Outputs of existing EEGTCNet models change
-  (:gh:`1605` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+  (:gh:`1607` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
   averages kept steps that lie after the end of the input. When the last
   segment held fewer real samples than its first kept step position, those
