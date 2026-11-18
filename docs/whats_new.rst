@@ -293,7 +293,7 @@ Bug fixes
 - :class:`~braindecode.models.STEEGFormer` keeps the saved montage's channel slots
   on a local checkpoint reload, including when the channel vocabulary is offline.
   Passing new ``chs_info`` to ``from_pretrained`` resolves the new montage.
-  Model configs also retain MNE's channel coordinate frame.
+  Model configs also retain MNE's channel coordinate frame (:gh:`1631`).
 - ``from_pretrained`` of :class:`braindecode.models.Brant` loads a checkpoint at
   a shorter ``n_times``: the learned temporal positions keep the checkpoint's
   leading ones instead of raising a size mismatch
