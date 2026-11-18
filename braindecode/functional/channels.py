@@ -40,7 +40,7 @@ def derivation_matrix(
         ends if len(ends := n.lower().split("-")) == 2 and all(ends) else [n.lower()]
         for n in ch_names
     ]
-    electrodes = list(dict.fromkeys([*(electrodes or []), *sum(parts, [])]))
+    electrodes = list(dict.fromkeys([*(e.lower() for e in (electrodes or [])), *sum(parts, [])]))
     matrix = torch.zeros(len(ch_names), len(electrodes), dtype=torch.float64)
     for row, ends in enumerate(parts):
         matrix[row, electrodes.index(ends[0])] += 1.0
@@ -75,6 +75,9 @@ def exact_derivation(
     exact : torch.Tensor
         ``(len(target),)`` bool.
     """
+    if not target:
+        return torch.zeros((0, len(inputs)), dtype=torch.float64), torch.zeros(0, dtype=torch.bool)
+
     R, electrodes = derivation_matrix(inputs)
     T, electrodes = derivation_matrix(target, electrodes)
     R = torch.nn.functional.pad(R, (0, T.shape[1] - R.shape[1]))
