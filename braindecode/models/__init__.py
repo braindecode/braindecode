@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from .fbcnet import FBCNet
     from .fblightconvnet import FBLightConvNet
     from .fbmsnet import FBMSNet
+    from .fnirs4d import FNIRS4D
     from .fnirsnet import FNIRSNet
     from .gcnsnet import GCNsNet
     from .guetschel2026 import Guetschel2026
