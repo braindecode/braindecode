@@ -23,6 +23,7 @@ from braindecode.functional import (
     rotate_half,
     rotate_pairs,
     sinusoidal_positional_encoding,
+    spherical_spline_kernel,
     unpack_channels,
 )
 
@@ -575,12 +576,25 @@ def test_linear_channel_map_is_the_gaussian_posterior():
     W, var = linear_channel_map(A, B, cov, noise=0.1)
     ref = B @ cov @ A.T @ torch.linalg.inv(A @ cov @ A.T + 0.1 * torch.eye(3))
     torch.testing.assert_close(W, ref, atol=1e-8, rtol=1e-7)
-    assert (var > 0).all() and var[0] < var[1:].min()  # measured: least uncertain
+    Kyy = A @ cov @ A.T + 0.1 * torch.eye(3, dtype=torch.float64)
+    post = (B @ cov @ B.T - B @ cov @ A.T @ torch.linalg.inv(Kyy) @ A @ cov @ B.T).diag()
+    torch.testing.assert_close(var, post, atol=1e-8, rtol=1e-7)
     W, var = linear_channel_map(A, B, cov)  # no noise: a measured target is copied
-    assert W[0].tolist() == [1.0, 0.0, 0.0] and var[0].abs() < 1e-9
-    Wg, _ = linear_channel_map(A, B, cov, match_gain=True)
-    gain = (Wg @ A @ cov * (Wg @ A)).sum(1)
-    torch.testing.assert_close(gain, (B @ cov * B).sum(1), atol=1e-9, rtol=0)
+    torch.testing.assert_close(W[0], eye[0, :3], atol=1e-9, rtol=0)
+    assert var[0].abs() < 1e-9
+    ones = torch.ones(5, 1, dtype=torch.float64)
+    for flat in (None, ones):  # match_gain keeps the flat constraint (rows sum to 1)
+        Wg, _ = linear_channel_map(A, B, cov, 0.1, flat, match_gain=True)
+        gain = (Wg @ A @ cov * (Wg @ A)).sum(1)
+        torch.testing.assert_close(gain, (B @ cov * B).sum(1), atol=1e-8, rtol=1e-7)
+    torch.testing.assert_close(Wg.sum(1), torch.ones(3, dtype=torch.float64))
     # A flat prior on the common offset: the estimate does not see it.
-    W, _ = linear_channel_map(A, B, cov, flat=torch.ones(5, 1, dtype=torch.float64))
+    W, _ = linear_channel_map(A, B, cov, flat=ones)
     torch.testing.assert_close(W.sum(1), torch.ones(3, dtype=torch.float64))
+
+
+@pytest.mark.parametrize("stiffness", [4, 6])
+def test_spherical_spline_kernel_is_a_covariance(stiffness):
+    pos = torch.nn.functional.normalize(torch.randn(20, 3, dtype=torch.float64), dim=1)
+    g = spherical_spline_kernel(pos, pos, stiffness=stiffness)
+    assert torch.linalg.eigvalsh(g).min() > -1e-12  # int64 overflowed at stiffness 6

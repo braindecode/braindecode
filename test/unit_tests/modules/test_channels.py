@@ -6,6 +6,7 @@
 import copy
 import inspect
 import pickle  # nosec B403
+import warnings
 
 import mne
 import numpy as np
@@ -21,6 +22,7 @@ from braindecode.modules.channels import (
     _interp,
     _mixing,
     _resolve,
+    _standard_positions,
 )
 
 TEN_TWENTY = "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
@@ -416,10 +418,31 @@ def test_kernel_strategy_variance_and_gain():
     layer = ChannelLayer(chs(TEN_TWENTY), spherical_spline_kernel, chs(SUBSET), reg=1e-3)
     measured = torch.tensor(np.isin(TEN_TWENTY, SUBSET))
     assert (layer.variance[measured] == 0).all() and (layer.variance[~measured] > 0).all()
-    gained = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET), match_gain=True)
     plain = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET))
+    torch.testing.assert_close(layer.weight, plain.weight)  # the same centred kernel
+    gained = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET), match_gain=True)
     assert torch.equal(gained.weight[measured], plain.weight[measured])
     assert not torch.allclose(gained.weight[~measured], plain.weight[~measured])
+    torch.testing.assert_close(gained.weight.sum(1), torch.ones(len(TEN_TWENTY)))
+
+
+def test_dense_spline_without_regularisation_keeps_every_row():
+    # The estimability of a row depends on the flat prior only: an ill-conditioned
+    # kernel solve must not zero a target.
+    names = list(_standard_positions())
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # the row-gain warning
+        layer = ChannelLayer(chs(names[150:200]), "spline", chs(names[:150]), reg=0.0)
+    assert (layer.weight.abs().sum(1) > 0).all()
+    torch.testing.assert_close(layer.weight.sum(1), torch.ones(50), atol=1e-4, rtol=0)
+
+
+@pytest.mark.parametrize("reference", ["average", "Cz"])
+def test_target_reference_with_a_missing_target(reference):
+    # zero-filled Fp1 and BENDR's SCALE (no position) stay out of the reference
+    layer = ChannelLayer(chs([*SUBSET, "SCALE"]), "zero", chs(SUBSET[1:]), reference=reference)
+    y = layer(torch.randn(1, len(SUBSET) - 1, 10))[0]
+    assert (y[0, -1] == 0).all() and y[0, 1:-1].abs().sum() > 0
 
 
 @pytest.mark.parametrize("reference", ["average", "Cz"])
@@ -446,6 +469,8 @@ def test_one_montage_per_sample():
     shifted = padded.clone()
     shifted[1] = padded[1].roll(len(TEN_TWENTY) - len(SUBSET), 0)
     torch.testing.assert_close(layer(shifted, montages, mask)[0], y)
+    with pytest.raises(ValueError, match="one montage per sample"):
+        layer(x, chs(TEN_TWENTY), mask)
 
 
 def test_strategy_model_takes_pad_channels_collate_batches():

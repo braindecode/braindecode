@@ -285,15 +285,11 @@ def _mixing(
 ):
     """``(M, k)`` matrix filling ``M`` target positions from ``k`` input positions,
     and the targets' posterior variance (``None`` without a prior covariance)."""
-    if name == "spline" or callable(name):  # spline: Perrin's kernel, MNE's origin
-        both = np.vstack([src_pos, tgt_pos])
-        if name == "spline":
-            both, reg = both - _head_origin(src_pos), 1e-3 if reg is None else reg
-            name = spherical_spline_kernel
-        k = torch.as_tensor(both)
-        return _kriging(
-            np.asarray(name(k, k), float), len(src_pos), reg or 0.0, match_gain
-        )
+    if name == "spline" or callable(name):  # positions from MNE's fitted head centre
+        k = torch.as_tensor(np.vstack([src_pos, tgt_pos]) - _head_origin(src_pos))
+        kernel = spherical_spline_kernel if name == "spline" else name
+        cov = np.asarray(kernel(k, k), float)
+        return _kriging(cov, len(src_pos), 1e-3 if reg is None else reg, match_gain)
     if name in ("zero", "latent"):  # latent: the attention fills these rows
         return np.zeros((len(tgt_pos), len(src_pos))), None
     if name == "wiener":  # C_to (C_oo + noise * tr / k * I)^-1
@@ -345,10 +341,11 @@ class ChannelLayer(nn.Module):
         ``"latent"`` (``d_model=64``, ``n_freqs=8``: learned cross-attention from
         each missing target's position over the inputs' positions and statistics).
         A callable ``kernel(pos_a, pos_b) -> (n_a, n_b)`` covariance of the
-        potentials at two sets of positions (head frame, metres), e.g.
+        potentials at two sets of positions (metres, from the centre of the
+        sphere fitted to the inputs, as ``"spline"``), e.g.
         :func:`~braindecode.functional.spherical_spline_kernel`, fills them with
         :func:`~braindecode.functional.linear_channel_map` (``reg``: the noise
-        variance, default 0; the recording reference is left unknown).
+        variance, default 1e-3; the recording reference is left unknown).
         ``spline`` and ``wiener`` are that estimate with their own covariance;
         ``match_gain=True`` gives each reconstructed target its prior variance.
     chs_info : list of dict, optional
@@ -367,14 +364,16 @@ class ChannelLayer(nn.Module):
         Posterior variance of each target for the current montage: 0 when
         measured or exact, from the estimate (before ``match_gain``) for a
         single-electrode target of ``spline``, ``wiener`` or a kernel, ``nan``
-        when not computed (other strategies, and ``reference="average"``, whose
-        targets each mix all the others).
+        when not computed (other strategies, or a target mixing several
+        reconstructed channels, as with ``reference="average"``).
 
     Notes
     -----
     ``forward`` also takes one montage per sample (``chs_info`` a list of
     montages, ``x`` padded to the largest and ``ch_mask`` the real channels),
-    for the strategies without trained state (not ``latent`` or ``trainable``).
+    for the strategies without trained state (not ``latent`` or ``trainable``);
+    ``observed`` is then ``(batch, n_targets)`` and the buffers (``weight``,
+    ``variance``) are those of the last sample.
     A model with a ``channel_strategy`` builds these montages from the ``pos`` and
     ``ch_mask`` of :func:`~braindecode.datasets.pad_channels_collate`. A function
     strategy is not saved by ``save_pretrained``: pass it again when loading.
@@ -409,8 +408,12 @@ class ChannelLayer(nn.Module):
         self.register_buffer("weight", torch.zeros(0, 0), persistent=False)
         tnames = [str(c["ch_name"]) for c in self.target]
         named = {n: c for n, c in zip(tnames, self.target) if "-" not in n}
+        # referenced: single-electrode targets with a position (not BENDR's SCALE)
+        self._referenced = np.array(
+            ["-" not in n and np.isfinite(p).all() for n, p in zip(tnames, pos)]
+        )
         if reference not in (None, "average"):  # target A is the derivation A-ref
-            tnames = [n if "-" in n else f"{n}-{reference}" for n in tnames]
+            tnames = [f"{n}-{reference}" if r else n for n, r in zip(tnames, self._referenced)]
         # A-B is copied when measured, else derived from A and B (both columns).
         mono = list(dict.fromkeys(m for n in tnames for m in (n, *n.split("-"))))
         _, tpos, tstd, *_ = _resolve([named.get(m, {"ch_name": m}) for m in mono])
@@ -500,9 +503,10 @@ class ChannelLayer(nn.Module):
         observed = np.abs(W).sum(1) > 0
         copied = observed[self._whole][:, None]  # a measured A-B target: copy it
         D = np.where(copied, np.eye(len(mono))[self._whole], self._D)
-        if self.reference == "average":  # single-electrode targets minus their mean
-            single = np.array(["-" not in str(c["ch_name"]) for c in self.target])
-            D[single] -= D[single].mean(0)
+        measured = (np.abs(D) @ ~observed == 0).any()  # before re-referencing
+        ref = self._referenced
+        if self.reference == "average" and ref.any():  # minus their mean
+            D[ref] -= D[ref].mean(0)
         missing = ~observed & np.abs(D).any(0)
         todo = missing & np.isfinite(tpos).all(1)
         if self.strategy == "exact" and todo.any():
@@ -510,7 +514,7 @@ class ChannelLayer(nn.Module):
                 f"Strategy 'exact': target channels {[m for m, t in zip(mono, todo) if t]} are not in the input montage {names}; use a reconstructing strategy (e.g. 'spline') or supply them."
             )
         seen = np.abs(D) @ missing == 0
-        if not seen.any() and (self.strategy == "zero" or not todo.any()):
+        if not measured and (self.strategy == "zero" or not todo.any()):
             raise ValueError(
                 f"No target channel of {[c['ch_name'] for c in self.target]} is in the input montage {names}, and strategy {self.strategy!r} reconstructs none: the model would see only zeros. Supply matching names or positions, or a reconstructing strategy (e.g. 'spline')."
             )
@@ -521,7 +525,7 @@ class ChannelLayer(nn.Module):
                 stacklevel=4,
             )
         use = keep & np.isfinite(pos).all(1)
-        need = _MIN_POSITIONS.get(self.strategy, 1)  # a kernel: one
+        need = _MIN_POSITIONS.get(self.strategy, 4)  # a kernel: as spline
         if todo.any() and use.sum() < need:
             raise ValueError(
                 f"Strategy {self.strategy!r} needs at least {need} channels with a position; got {int(use.sum())} of {names}. Supply 'loc' or standard 10-05 names."
@@ -545,8 +549,11 @@ class ChannelLayer(nn.Module):
                     stacklevel=4,
                 )
         dev, dt = self.weight.device, self.weight.dtype  # built where the module is
-        unit = (D != 0).sum(1) == 1  # a single-electrode target: its own variance
-        variance = np.where(seen, 0.0, np.where(unit, var[np.abs(D).argmax(1)], np.nan))
+        # one reconstructed entry in a row: its variance times its weight squared
+        hit = (D != 0) & missing
+        j, rows = hit.argmax(1), np.arange(len(D))
+        own = D[rows, j] ** 2 * var[j]
+        variance = np.where(seen, 0.0, np.where(hit.sum(1) == 1, own, np.nan))
         maps = dict(weight=D @ W, variance=variance)
         if self.trainable:  # nothing to reconstruct: zero correction, no inverse
             n = self.parcel_mix.shape[0]
@@ -642,6 +649,8 @@ class ChannelLayer(nn.Module):
                 weights.append(w)
                 observed.append(self.observed)
             return torch.stack(weights) @ x, torch.stack(observed)
+        if ch_mask is not None:
+            raise ValueError("ch_mask needs one montage per sample in chs_info.")
         if x.shape[1] != len(chs):
             raise ValueError(
                 f"Input has {x.shape[1]} channels but the montage has {len(chs)}; they must match."

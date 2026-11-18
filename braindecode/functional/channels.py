@@ -90,22 +90,24 @@ def linear_channel_map(
         \operatorname{var}(t_k - \hat t_k) = \big[B \Sigma B^\top
         - W A \Sigma B^\top - (B F) M\big]_{kk},
 
-    which is (universal) kriging [Matheron1963]_ and the posterior mean and
-    variance of a Gaussian process [Rasmussen2006]_. Without ``flat`` it is
+    which is kriging [Matheron1963]_, universal kriging when :math:`F` is
+    given [Matheron1969]_, and the posterior mean and variance of a Gaussian
+    process [Rasmussen2006]_. Without ``flat`` it is
     :math:`W = B \Sigma A^\top (A \Sigma A^\top + \sigma^2 I)^{-1}`. The choice
     of :math:`\Sigma` gives the known methods:
 
     - :math:`\Sigma = 0` and :math:`F = I` (every potential unknown): the
-      exact derivations of :func:`exact_derivation`, ``W = B A^+``; a target is
-      exact when :math:`B F` lies in the span of :math:`A F` [Hjorth1975]_.
+      exact derivations of :func:`exact_derivation`, ``W = B A^+``, such as
+      bipolar or Laplacian (source) derivations [Hjorth1975]_; a target is
+      exact when :math:`B F` lies in the span of :math:`A F`.
     - the spherical-spline kernel (:func:`spherical_spline_kernel`), ``noise``
       the regularisation and :math:`F = \mathbf 1` (the unknown reference):
       spherical-spline interpolation [Perrin1989]_, which is spline smoothing on
       the sphere [Wahba1981]_ and the Gaussian-process estimate with that kernel
       [Kimeldorf1970]_.
     - :math:`\Sigma = L L^\top` for a lead field :math:`L`: the minimum-norm
-      estimate [Hamalainen1994]_; with :math:`B = L` taken against a point at
-      infinity it is REST re-referencing [Yao2001]_.
+      estimate [Hamalainen1994]_; with the targets taken against a point at
+      infinity (zero potential) it is REST re-referencing [Yao2001]_.
     - a covariance fitted on dense recordings: the Wiener (linear MMSE) filter.
 
     Parameters
@@ -121,11 +123,13 @@ def linear_channel_map(
     flat : torch.Tensor, optional
         ``(n_electrodes, n_flat)`` directions :math:`F` with a flat prior.
     match_gain : bool
-        Rescale each row so that the estimate has the prior variance of its
+        Rescale the part of each row free of the flat constraint (so
+        :math:`W A F = B F` still holds) until the estimate has the prior variance of its
         target, :math:`[W A \Sigma A^\top W^\top]_{kk} = [B \Sigma B^\top]_{kk}`:
         the minimum-variance estimate shrinks the amplitude.
     atol : float
-        Largest residual of :math:`W A F = B F` for a target to be estimable.
+        Largest residual of :math:`B F` from the span of :math:`A F` for a
+        target to be estimable (the flat part alone, whatever :math:`\Sigma`).
 
     Returns
     -------
@@ -139,6 +143,9 @@ def linear_channel_map(
     ----------
     .. [Matheron1963] Matheron, G. (1963). Principles of geostatistics.
        Economic Geology, 58(8), 1246-1266. https://doi.org/10.2113/gsecongeo.58.8.1246
+    .. [Matheron1969] Matheron, G. (1969). Le krigeage universel. Cahiers du
+       Centre de Morphologie Mathématique, 1. École des Mines de Paris.
+       https://www.cg.minesparis.psl.eu/bibliotheque/public/MATHERON_Ouvrage_00131.pdf
     .. [Kimeldorf1970] Kimeldorf, G. S., & Wahba, G. (1970). A correspondence
        between Bayesian estimation on stochastic processes and smoothing by
        splines. The Annals of Mathematical Statistics, 41(2), 495-502.
@@ -166,25 +173,27 @@ def linear_channel_map(
        https://doi.org/10.7551/mitpress/3206.001.0001
     """
     A, B, cov = (torch.as_tensor(t, dtype=torch.float64) for t in (A, B, cov))
-    F = torch.zeros(len(cov), 0, dtype=torch.float64) if flat is None else flat.double()
+    F = A.new_zeros(len(cov), 0) if flat is None else torch.as_tensor(flat).to(A)
     n, f = len(A), F.shape[1]
-    AF, BF, KyT = A @ F, B @ F, A @ cov @ B.T
-    M = torch.zeros(n + f, n + f, dtype=torch.float64)
-    M[:n, :n] = A @ cov @ A.T + noise * torch.eye(n, dtype=torch.float64)
+    AF, BF, K, KyT = A @ F, B @ F, A @ cov @ A.T, A @ cov @ B.T
+    M = A.new_zeros(n + f, n + f)
+    M[:n, :n] = K + noise * torch.eye(n, dtype=A.dtype, device=A.device)
     M[:n, n:], M[n:, :n] = AF, AF.T
     sol = torch.linalg.pinv(M) @ torch.cat([KyT, BF.T])  # SVD cutoff, as scipy/MNE
-    W, mu = sol[:n].T.round(decimals=12) + 0.0, sol[n:]  # copies stay exactly +-1
+    W, mu = sol[:n].T, sol[n:]
     prior = (B @ cov * B).sum(1)
     var = prior - (W * KyT.T).sum(1) - (mu.T * BF).sum(1)
-    ok = (W @ AF - BF).abs().amax(1) <= atol if f else torch.ones(len(B), dtype=bool)
-    if match_gain:
-        signal = (W @ A @ cov * (W @ A)).sum(1)
-        W = (
-            W
-            * torch.where(signal > 0, (prior / signal).clamp_min(0).sqrt(), 1.0)[
-                :, None
-            ]
-        )
+    W0 = BF @ torch.linalg.pinv(AF)  # the flat part: W0 A F = B F when estimable
+    ok = (
+        (W0 @ AF - BF).abs().amax(1) <= atol
+        if f
+        else torch.ones(len(B), dtype=torch.bool, device=A.device)
+    )
+    if match_gain:  # (W0 + s D) K (W0 + s D)^T = prior, D = W - W0, per row
+        D = W - W0
+        a, b, c = ((D @ K) * D).sum(1), ((D @ K) * W0).sum(1), ((W0 @ K) * W0).sum(1)
+        root = (b**2 - a * (c - prior)).clamp_min(0).sqrt()
+        W = W0 + torch.where(a > 0, (root - b) / a, 1.0)[:, None] * D
     return W * ok[:, None], torch.where(ok, var.clamp_min(0), torch.inf)
 
 
@@ -227,7 +236,7 @@ def spherical_spline_kernel(
         torch.nn.functional.normalize(torch.as_tensor(p, dtype=torch.float64), dim=1)
         for p in (pos_a, pos_b)
     )
-    n = np.arange(1, n_terms + 1)
+    n = np.arange(1, n_terms + 1, dtype=float)  # int64 overflows at stiffness >= 6
     coef = np.r_[0.0, (2 * n + 1) / ((n * (n + 1)) ** stiffness * 4 * np.pi)]
     return torch.as_tensor(
         np.polynomial.legendre.legval((a @ b.T).clamp(-1, 1).numpy(), coef)
@@ -266,4 +275,4 @@ def exact_derivation(
     R = torch.nn.functional.pad(R, (0, T.shape[1] - R.shape[1]))
     eye = torch.eye(T.shape[1], dtype=torch.float64)
     weight, var = linear_channel_map(R, T, 0 * eye, flat=eye, atol=atol)
-    return weight, torch.isfinite(var)
+    return weight.round(decimals=12) + 0.0, torch.isfinite(var)  # -1.0, not -0.99..
