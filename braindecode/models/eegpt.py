@@ -10,7 +10,7 @@ import mne
 import torch
 from torch import nn
 
-from braindecode.functional import init_weights_
+from braindecode.functional import check_n_chans, init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
 from braindecode.modules.convolution import Conv1dWithConstraint
@@ -425,6 +425,13 @@ class EEGPT(EEGModuleMixin, nn.Module):
         torch.Tensor or dict
             Model output. Shape depends on `n_outputs` and `return_encoder_output`.
         """
+        check_n_chans(
+            x,
+            self.n_chans,
+            "EEGPT",
+            "build the model with the chs_info of this montage, or use a "
+            "channel_strategy.",
+        )
         # Channel projection (if configured)
         x = self.chan_proj(x)
 

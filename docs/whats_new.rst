@@ -28,6 +28,25 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- :class:`braindecode.models.AXON`, :class:`~braindecode.models.BENDR`,
+  :class:`~braindecode.models.BrainOmni`, :class:`~braindecode.models.BrainTokenizer`,
+  :class:`~braindecode.models.CBraMod`, :class:`~braindecode.models.CodeBrain`,
+  :class:`~braindecode.models.CSBrain`, :class:`~braindecode.models.DuIN`,
+  :class:`~braindecode.models.EEGCLIP`, :class:`~braindecode.models.EEGPT`,
+  :class:`~braindecode.models.JungMAE`, :class:`~braindecode.models.MEDFormer`,
+  :class:`~braindecode.models.MEGGPT`, :class:`~braindecode.models.MEGXL`,
+  :class:`~braindecode.models.MIRepNet`, :class:`~braindecode.models.PBT`,
+  :class:`~braindecode.models.REVE`, :class:`~braindecode.models.SignalJEPA`,
+  :class:`~braindecode.models.SignalJEPA_Contextual`,
+  :class:`~braindecode.models.SignalJEPA_PostLocal`,
+  :class:`~braindecode.models.SignalJEPA_PreLocal`,
+  :class:`~braindecode.models.SleepFMStager` and :class:`~braindecode.models.ZUNA`
+  raise a ``ValueError`` with both channel counts and how to run the model on
+  this input, through :func:`braindecode.functional.check_n_chans`, when the input
+  does not have the channels the model was built for; it was a shape error deep in
+  the network. Inputs that run stay accepted: REVE checks only without ``pos``;
+  CBraMod, CodeBrain and MEGGPT only for their flattened head, and CSBrain also
+  for its region order (:gh:`PR_NCHANS` by `Julien Gadonneix`_).
 - :class:`braindecode.modules.ChannelLayer` maps channels with one linear
   estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
   targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat

@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 
+from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.brainomni import _geometry_from_chs_info, _SpatialTemporalBlock
 from braindecode.models.util import warn_if_sfreq_differs
@@ -298,6 +299,12 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         mask is not a waveform mask: neighboring codes can contain information
         from overlapping receptive fields and the whole-window RMS.
         """
+        check_n_chans(
+            x,
+            self.n_chans,
+            "MEGXL",
+            "build the model with the chs_info of this montage.",
+        )
         with torch.no_grad():
             codes = self.tokenize(x)  # (batch, n_chans, n_tokens, n_q)
         return self.encode_codes(codes, mask, mask_value)

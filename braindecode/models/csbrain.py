@@ -18,7 +18,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from braindecode.functional import init_weights_, patch_count
+from braindecode.functional import check_n_chans, init_weights_, patch_count
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.cbramod import _PatchEmbedding
 from braindecode.modules import FeedForwardBlock
@@ -418,6 +418,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         self._d_model = d_model
         self._head_drop_prob = drop_prob if head_drop_prob is None else head_drop_prob
         self._head_hidden_dim = head_hidden_dim
+        self._encoder_output = return_encoder_output
         self._init_parameters()
 
         if return_encoder_output:
@@ -479,6 +480,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
     def reset_head(self, n_outputs):
         self._set_n_outputs(n_outputs)
         self._update_init_kwargs(return_encoder_output=False)
+        self._encoder_output = False
         self.final_layer = self._make_task_head()
 
     def _init_parameters(self):
@@ -501,6 +503,18 @@ class CSBrain(EEGModuleMixin, nn.Module):
         mask: Optional[Tensor] = None,
         return_features: bool = False,
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
+        # The region order and the flattened head are tied to the channels, the
+        # encoder alone is not.
+        if self._n_chans_for_jit is not None and (
+            self.sorted_indices is not None
+            or not (return_features or self._encoder_output)
+        ):
+            check_n_chans(
+                x,
+                self._n_chans_for_jit,
+                "CSBrain",
+                "build the model with the chs_info of this montage.",
+            )
         x = self.rearrange(x)
         if self.sorted_indices is not None:
             x = x[:, self.sorted_indices, :, :]

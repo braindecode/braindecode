@@ -13,6 +13,7 @@ from einops.layers.torch import Rearrange, Reduce
 from torch import nn
 
 from braindecode.functional import (
+    check_n_chans,
     pad_or_crop_to_patches,
     patch_count,
     sinusoidal_positional_encoding,
@@ -466,6 +467,15 @@ class JungMAE(EEGModuleMixin, nn.Module):
         """
         # Shapes use the symbols of the class docstring: C pairs, P patches of
         # Q samples, tokens of width D.
+
+        # The HbO/HbR pairs are read from the channels of the montage the
+        # model was built for
+        check_n_chans(
+            x,
+            self.n_chans,
+            "JungMAE",
+            "build the model with the chs_info of this montage.",
+        )
 
         # Samples hidden by ``mask`` are missing data, like NaN
         # (batch, 2C, n_times), unchanged

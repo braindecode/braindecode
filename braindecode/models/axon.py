@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from braindecode.functional import (
+    check_n_chans,
     scaled_dot_product_attention,
     sinusoidal_positional_encoding,
 )
@@ -277,6 +278,13 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
             Logits of shape (batch, n_outputs), or the feature dict when
             ``return_features`` is True.
         """
+        check_n_chans(
+            x,
+            self.n_chans,
+            "AXON",
+            "build the model with the chs_info of this montage, or use a "
+            "channel_strategy.",
+        )
         tokens = self.encoder(x)
         features = tokens.mean(dim=(1, 2))
         logits = self.final_layer(features)

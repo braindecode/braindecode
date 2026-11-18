@@ -15,7 +15,11 @@ from typing import Dict, List, Optional
 import torch
 from torch import nn
 
-from braindecode.functional import patch_count, sinusoidal_positional_encoding
+from braindecode.functional import (
+    check_n_chans,
+    patch_count,
+    sinusoidal_positional_encoding,
+)
 from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import (
     _RECORD_LOADED_KEYS,
@@ -555,6 +559,12 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         temporal_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Return patch-wise logits, or the per-patch LSTM features."""
+        check_n_chans(
+            x,
+            self.n_chans,
+            "SleepFMStager",
+            "build the model with the chs_info of this montage.",
+        )
         # The count the tokenizer produces (padded patch included with "pad").
         n_patches = self.patch_embedding.patchify.n_patches(x.shape[-1])
         patch_mask = _check_mask(

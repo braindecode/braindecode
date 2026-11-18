@@ -30,7 +30,11 @@ import braindecode.functional
 from braindecode.functional import _real_dft
 from braindecode.models import MAPA
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
-from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.models.util import (
+    _summary_table,
+    models_dict,
+    models_mandatory_parameters,
+)
 from test.unit_tests.models._fixtures import _get_signal_params
 
 all_models_dict = dict(models_dict)
@@ -704,3 +708,45 @@ def test_registered_model_ch_mask_contract(model_name, required_params, signal_p
             if isinstance(features, Mapping) and "tokens" in features:
                 padded = features["tokens"][~mask]
                 assert torch.equal(padded, torch.zeros_like(padded))
+
+# One checkpoint of a foundation model serves many recordings, so a recording
+# whose channels do not match the model must be told so.
+_FOUNDATION_MODELS = set(
+    _summary_table.index[
+        _summary_table["Categorization"].str.contains("Foundation", na=False)
+    ]
+)
+# Clear errors that predate check_n_chans and word the mismatch otherwise.
+_N_CHANS_ERRORS = {
+    "GeoNIRS": r"channel counts",
+    "NeuroRVQ": r"Expected input shape",
+    "NeuroRVQTokenizer": r"Expected input shape",
+}
+
+
+@pytest.mark.parametrize(
+    "model_name,required_params,signal_params",
+    [case for case in models_mandatory_parameters if case[0] in _FOUNDATION_MODELS],
+)
+def test_foundation_model_fewer_channels_contract(
+    model_name, required_params, signal_params
+):
+    """A foundation model given one channel fewer than it was built with, and
+    no ``ch_mask`` or positions, returns a finite output or raises a
+    ``ValueError`` about the channels, not a shape error deep in the network."""
+    if model_name in _CH_MASK_EXTRAS:
+        pytest.skip("fewer channels need the positions or names of the channels")
+    model, x = _build_case(model_name, required_params, signal_params)
+    try:
+        with torch.no_grad():
+            output = model(x[:, :-1])
+    except ValueError as error:
+        assert re.search(_N_CHANS_ERRORS.get(model_name, r"channels"), str(error)), (
+            f"{model_name} raised an unclear error: {error}"
+        )
+        return
+    for leaf in _tensor_leaves(output):
+        if leaf.is_floating_point() or leaf.is_complex():
+            assert torch.isfinite(leaf).all(), (
+                f"{model_name} emitted non-finite values on fewer channels"
+            )

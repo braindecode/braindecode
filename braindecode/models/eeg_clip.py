@@ -42,6 +42,7 @@ import torch.distributed as dist
 from torch import nn
 from torch.nn import functional as F
 
+from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
@@ -170,6 +171,8 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         self.activation = activation
         self.drop_prob = drop_prob
         self._custom_encoders = eeg_encoder is not None or text_encoder is not None
+        # Only the default EEG encoder is known to be built for n_chans channels.
+        self._default_eeg_encoder = eeg_encoder is None
 
         if eeg_encoder is None:
             eeg_encoder = Deep4Net(
@@ -200,6 +203,13 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, X):
         """Return projected EEG embeddings, shape ``(batch, n_outputs)``."""
+        if self._default_eeg_encoder:
+            check_n_chans(
+                X,
+                self.n_chans,
+                "EEGCLIP",
+                "build the model with the chs_info of this montage.",
+            )
         features = self.eeg_encoder(X)
         if features.ndim == 2:
             features = features.unsqueeze(-1)

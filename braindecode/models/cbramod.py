@@ -15,6 +15,7 @@ from torch import Tensor, nn
 
 from braindecode.functional import (
     check_ch_mask,
+    check_n_chans,
     init_weights_,
     masked_group_norm,
     spectral_input,
@@ -301,6 +302,17 @@ class CBraMod(EEGModuleMixin, nn.Module):
         :func:`~braindecode.datasets.pad_channels_collate` pads: the
         positional convolution reads neighbouring channels."""
         ch_mask = check_ch_mask(ch_mask, x)
+        # The encoder takes any number of channels, the flattened head does not.
+        if self._n_chans_for_jit is not None and not (
+            return_features or self._encoder_output
+        ):
+            check_n_chans(
+                x,
+                self._n_chans_for_jit,
+                "CBraMod",
+                "build the model with the chs_info of this montage, or use a "
+                "channel_strategy.",
+            )
         key_padding_mask: Optional[Tensor] = None
         if ch_mask is not None:
             if not return_features and not self._encoder_output:
