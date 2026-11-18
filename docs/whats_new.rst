@@ -303,7 +303,8 @@ Bug fixes
   ``ValueError`` instead of a ``TypeError`` deep in skorch
   (:gh:`1545` by `Bruno Aristimunha`_).
 - Pydantic model configs accept MNE's integer FIFF channel kinds and preserve
-  channel locations through JSON in a core installation without ``numpydantic``.
+  channel locations through JSON in a core installation without ``numpydantic``
+  (:gh:`1632`).
 - Fix the PyTorch forum and TensorFlow references of
   :class:`braindecode.modules.MaxNormLinear`: each URL was split across two
   docstring lines, so the rendered links pointed to a truncated forum URL (404)
