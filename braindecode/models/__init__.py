@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from .deep4 import Deep4Net
     from .deepsleepnet import DeepSleepNet
     from .dgcnn import DGCNN
+    from .direct_event_cnn1d import DirectEventCNN1D
     from .diver1 import DIVER1
     from .duin import DuIN
     from .eeg_clip import EEGCLIP

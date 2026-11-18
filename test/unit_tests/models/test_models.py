@@ -55,6 +55,7 @@ from braindecode.models import (
     ContraWR,
     Deep4Net,
     DeepSleepNet,
+    DirectEventCNN1D,
     EEGConformer,
     EEGInceptionERP,
     EEGInceptionMI,
@@ -6523,8 +6524,8 @@ def _interleaved_fnirs_chs(n_pairs=4):
     [
         (FNIRSNet, {}),
         (FNIRSNet, {"n_chans": 6}),
-
-
+        (DirectEventCNN1D, {}),
+        (DirectEventCNN1D, {"n_chans": 6}),
         (FNIRS4D, {"n_layers": 2, "d_state": 16, "channel_order": "interleaved"}),
         (
             FNIRS4D,
@@ -6677,6 +6678,67 @@ class _AuthorsDirectEventCNN1D(torch.nn.Module):
         hbr = hbr.masked_fill(~valid, 0.0)
         signal = torch.stack((hbo, hbr), dim=1).flatten(start_dim=1, end_dim=2)
         return self.linear(self.encoder(signal))
+
+
+@pytest.mark.parametrize("n_pairs, n_times", [(23, 60), (41, 60), (23, 61)])
+def test_direct_event_cnn1d_matches_the_authors_module(n_pairs, n_times):
+    """With the same seed the two modules draw the same weights; the authors'
+    state dict loads strictly through ``mapping``; the logits and
+    ``final_layer(features)`` equal the authors' module in eval and train
+    mode, invalid samples given as NaN, and so do the parameter gradients of
+    a training loss. 23 x 60 and 41 x 60 are the benchmark's DS19 and DS42
+    windows; 61 samples leave one out of the max pooling."""
+    torch.manual_seed(810)
+    reference = _AuthorsDirectEventCNN1D(n_pairs, num_classes=2)
+    torch.manual_seed(810)
+    model = DirectEventCNN1D(n_chans=2 * n_pairs, n_outputs=2, n_times=n_times)
+    mapping = model.mapping
+    port_state = model.state_dict()
+    assert sorted(mapping[key] for key in reference.state_dict()) == sorted(port_state)
+    for key, value in reference.state_dict().items():
+        torch.testing.assert_close(port_state[mapping[key]], value, rtol=0, atol=0)
+    with torch.no_grad():  # other weights than the seeded draw
+        for param in reference.parameters():
+            param.add_(0.1 * torch.randn_like(param))
+    model.load_state_dict(reference.state_dict(), strict=True)
+    hbo = torch.randn(6, n_pairs, n_times)
+    hbr = torch.randn(6, n_pairs, n_times)
+    valid = torch.rand(6, n_pairs, n_times) > 0.1
+    x = torch.cat((hbo, hbr), dim=1)
+    x = x.masked_fill(~torch.cat((valid, valid), dim=1), float("nan"))
+    for training in (False, True):
+        reference.train(training)
+        model.train(training)
+        torch.manual_seed(5)  # the same dropout draw on both sides
+        expected = reference(hbo, hbr, valid)
+        torch.manual_seed(5)
+        torch.testing.assert_close(model(x), expected, rtol=0, atol=0)
+        torch.manual_seed(5)
+        features = model(x, return_features=True)["features"]
+        torch.testing.assert_close(model.final_layer(features), expected, rtol=0, atol=0)
+    y = torch.tensor([0, 1, 0, 1, 0, 1])
+    for net, inputs in ((reference, (hbo, hbr, valid)), (model, (x,))):
+        torch.manual_seed(5)
+        torch.nn.functional.cross_entropy(net(*inputs), y).backward()
+    port_params = dict(model.named_parameters())
+    for key, param in reference.named_parameters():
+        torch.testing.assert_close(
+            port_params[mapping[key]].grad, param.grad, rtol=0, atol=0
+        )
+
+
+def test_direct_event_cnn1d_parameter_count_of_table_10():
+    """GeoNIRS Table 10: 88.4 K parameters at 52 fNIRS channels (104 rows)."""
+    model = DirectEventCNN1D(n_chans=104, n_outputs=2, n_times=50)
+    assert sum(p.numel() for p in model.parameters()) == 88_386
+
+
+def test_direct_event_cnn1d_refuses_ch_mask():
+    """The first convolution spans every row, so padded channels cannot be
+    left out."""
+    model = DirectEventCNN1D(n_chans=4, n_outputs=2, n_times=20)
+    with pytest.raises(ValueError, match="DirectEventCNN1D does not accept ch_mask"):
+        model(torch.randn(2, 4, 20), ch_mask=torch.ones(2, 4, dtype=torch.bool))
 
 
 def test_s4d_real_arithmetic_matches_complex_fft():

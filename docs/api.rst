@@ -168,6 +168,7 @@ interface for all EEG models and can derive variable names when needed.
      CTNet
      DANCE
      DGCNN
+     DirectEventCNN1D
      DIVER1
      DuIN
      Deep4Net
