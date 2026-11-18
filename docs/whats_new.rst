@@ -212,11 +212,12 @@ Bug fixes
   key from the state dict and load with ``strict=False`` (:gh:`1601` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
-- :meth:`braindecode.datasets.BaseConcatDataset.save` no longer raises an
-  ``AttributeError`` for a dataset created with the default ``description=None``,
-  which left a half-written subdirectory behind. Such a dataset is saved with an
-  empty description and loads back with one. Saving a dataset that has a
-  description is unchanged (:gh:`1605` by
+- :meth:`braindecode.datasets.BaseConcatDataset.save` now saves a recording
+  created with the default ``description=None`` and writes an empty description
+  for it. Before, it raised an ``AttributeError`` after it had written the signal
+  file, which left a subdirectory that
+  :func:`braindecode.datautil.load_concat_dataset` could not read. Saving a
+  recording that has a description is unchanged (:gh:`1605` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
