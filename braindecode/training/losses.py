@@ -49,7 +49,37 @@ class TimeSeriesLoss(nn.Module):
     Assumes targets are in shape:
     n_batch size x n_classes x window_len (in time)
     If the targets contain NaNs, the NaNs will be masked out and the loss will be only computed for
-    predictions valid corresponding to valid target values."""
+    predictions valid corresponding to valid target values.
+
+    Notes
+    -----
+    :class:`~braindecode.models.NeuroPose`, :class:`~braindecode.models.VEMG2Pose`
+    and :class:`~braindecode.models.SensingDynamics` return one joint-angle
+    vector per time sample, shaped ``(batch, time, joints)``. For cropped
+    regression, put the joint axis before time when passing the model to
+    :class:`~braindecode.EEGRegressor`. This lets the loss, window averaging
+    and trial prediction use the same time axis::
+
+        from einops.layers.torch import Rearrange
+        from torch import nn
+        from torch.nn.functional import mse_loss
+        from braindecode import EEGRegressor
+        from braindecode.models import NeuroPose
+        from braindecode.training import TimeSeriesLoss
+
+        pose_model = NeuroPose(n_chans=16, n_outputs=20, n_times=960, sfreq=2000)
+        module = nn.Sequential(pose_model, Rearrange("b t j -> b j t"))
+        net = EEGRegressor(module, cropped=True, criterion=TimeSeriesLoss,
+                           criterion__loss_function=mse_loss)
+
+    Pass a windowed dataset with ``targets_from="channels"`` and
+    ``last_target_only=False`` to ``net.fit(windows, y=None)``. Then
+    ``net.predict(windows)`` gives one mean per joint and window, and
+    ``net.predict_trials(windows)`` returns joint-by-time predictions for
+    each trial. For VEMG2Pose the loss selects the target suffix after
+    the model's left context. When scoring a trial, align its targets to
+    the final ``prediction.shape[-1]`` samples for that trial.
+    """
 
     def __init__(self, loss_function):
         super().__init__()
