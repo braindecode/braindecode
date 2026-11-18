@@ -131,6 +131,12 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         ]
         return train_valid_callbacks
 
+    def on_epoch_begin(self, net, dataset_train=None, dataset_valid=None, **kwargs):
+        super().on_epoch_begin(net, dataset_train, dataset_valid, **kwargs)
+        fit_training_data = getattr(self.module_, "_fit_training_data", None)
+        if fit_training_data is not None:
+            fit_training_data(dataset_train)
+
     def on_batch_end(self, net, *batch, training=False, **kwargs):
         # If training is false, assume that our loader has indices for this
         # batch
@@ -244,11 +250,6 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             classes = getattr(self, "classes", None)
         signal_kwargs = infer_signal_properties(X, y, mode=self.mode, classes=classes)
         module = _get_model(self.module)
-        # Model-specific values computed from the data (e.g. GCNsNet's graph);
-        # the signal properties take precedence.
-        infer_model_kwargs = getattr(module, "_infer_model_kwargs", None)
-        if infer_model_kwargs is not None:
-            signal_kwargs = {**infer_model_kwargs(X, y), **signal_kwargs}
         if not signal_kwargs:
             return
 

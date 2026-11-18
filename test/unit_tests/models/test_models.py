@@ -1424,9 +1424,81 @@ def test_gcnsnet_adjacency():
     torch.testing.assert_close(adjacency, adjacency.T)
     torch.testing.assert_close(adjacency.diag(), torch.zeros(64))
     assert torch.all(adjacency >= 0)
-    inferred = GCNsNet._infer_model_kwargs(X)
-    assert inferred.keys() == {"adjacency"}
-    torch.testing.assert_close(inferred["adjacency"], adjacency)
+
+
+@pytest.mark.parametrize("epochs", [False, True], ids=["array", "mne-epochs"])
+def test_gcnsnet_graph_uses_training_arrays_only(epochs):
+    from sklearn.base import clone
+    from torch.utils.data import Subset
+
+    from braindecode import EEGClassifier
+
+    def split(dataset, y):
+        return Subset(dataset, range(6)), Subset(dataset, range(6, 8))
+
+    X = np.random.default_rng(0).standard_normal((8, 3, 16)).astype(np.float32)
+    y = np.arange(len(X)) % 2
+    net = EEGClassifier(
+        GCNsNet,
+        module__n_features=(4,),
+        module__cheb_orders=(2,),
+        module__pool_sizes=(1,),
+        train_split=split,
+        max_epochs=1,
+        batch_size=2,
+        verbose=0,
+    )
+
+    def expected_laplacian(data):
+        from scipy.sparse.csgraph import laplacian
+
+        corr = np.abs(np.corrcoef(data.transpose(1, 0, 2).reshape(3, -1)))
+        np.fill_diagonal(corr, 0)
+        return laplacian(corr, normed=True) - np.eye(3)
+
+    def inputs():
+        if epochs:
+            info = mne.create_info(["C3", "Cz", "C4"], sfreq=100, ch_types="eeg")
+            return mne.EpochsArray(X * 1e-6, info, verbose=False)
+        return X
+
+    net.fit(inputs(), y)
+    expected = expected_laplacian(X[:6])
+    np.testing.assert_allclose(net.module_.laplacians[0].matrix, expected, atol=1e-6)
+    assert "module__adjacency" not in net.get_params()
+
+    X[6:, 1] = X[6:, 0] * 30
+    net.fit(inputs(), y)
+    np.testing.assert_allclose(net.module_.laplacians[0].matrix, expected, atol=1e-6)
+    X[:6, 1] = X[:6, 0]
+    fresh = clone(net)
+    net.partial_fit(inputs(), y)
+    np.testing.assert_allclose(net.module_.laplacians[0].matrix, expected, atol=1e-6)
+    net.set_params(warm_start=True).fit(inputs(), y)
+    np.testing.assert_allclose(net.module_.laplacians[0].matrix, expected, atol=1e-6)
+
+    net.set_params(warm_start=False)
+    for estimator in (net, fresh):
+        estimator.fit(inputs(), y)
+        np.testing.assert_allclose(
+            estimator.module_.laplacians[0].matrix, expected_laplacian(X[:6]), atol=1e-6
+        )
+
+    adjacency = torch.ones(3, 3)
+    fresh.set_params(module__adjacency=adjacency).fit(inputs(), y)
+    np.testing.assert_allclose(
+        fresh.module_.laplacians[0].matrix, (np.eye(3) - 1) / 2, atol=1e-6
+    )
+    torch.testing.assert_close(adjacency, torch.ones(3, 3))
+
+
+def test_gcnsnet_flat_channel_has_no_edges():
+    x = torch.arange(12, dtype=torch.float32).reshape(1, 1, -1)
+    signal = torch.cat((x, -x, torch.full_like(x, 0.1), torch.full_like(x, 0.3)), dim=1)
+    expected = torch.zeros(4, 4)
+    expected[0, 1] = expected[1, 0] = 1
+    torch.testing.assert_close(GCNsNet._adjacency(signal), expected)
+    torch.testing.assert_close(GCNsNet._adjacency(x), torch.zeros(1, 1))
 
 
 def test_gcnsnet_fit_on_windows_dataset():

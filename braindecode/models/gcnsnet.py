@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from math import log2
 
-import mne
 import numpy as np
 import torch
 import torch.nn.functional as F
 from scipy.sparse.csgraph import laplacian
+from skorch.utils import data_from_dataset, is_skorch_dataset, noop
 from torch import nn
 from torch.nn.modules.lazy import LazyModuleMixin
 
@@ -45,9 +45,10 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
     ----------
     adjacency : Tensor, optional
         Adjacency matrix of shape (n_chans, n_chans). If not provided, it is
-        computed from the array passed to ``EEGClassifier.fit`` /
-        ``EEGRegressor.fit``, otherwise from the first input passed to
-        ``forward``.
+        computed from the training partition of an array or MNE Epochs passed
+        to ``EEGClassifier.fit`` or ``EEGRegressor.fit``. For window datasets
+        and direct module use, the first forward batch supplies the graph.
+        Constant channels have no edges.
     n_features : tuple of int, default=(16, 32, 64, 128, 256, 512)
         Number of filters of each graph convolution.
     cheb_orders : tuple of int, default=(2, 2, 2, 2, 2, 2)
@@ -108,7 +109,9 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         self.register_buffer("permutation", None)
         self.laplacians = nn.ModuleList([_LaplacianModule() for _ in n_features])
         if adjacency is not None:
-            self._initialize_graph(torch.as_tensor(adjacency, dtype=torch.float32))
+            self._initialize_graph(
+                torch.as_tensor(adjacency, dtype=torch.float32).clone()
+            )
 
         in_features = [1, *n_features[:-1]]  # one scalar per node at the input
         self.graph_convs = nn.ModuleList(
@@ -123,22 +126,33 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
 
         self.register_load_state_dict_pre_hook(self._prepare_graph_state)
 
-    @classmethod
-    def _infer_model_kwargs(cls, X, y=None):
-        """Adjacency of the whole training array (hook of ``EEGClassifier``)."""
-        if isinstance(X, mne.BaseEpochs):
-            X = X.get_data(units="uV")
-        if not isinstance(X, (np.ndarray, torch.Tensor)):
-            # Datasets: the first training batch gives the graph in forward.
-            return {}
-        return {"adjacency": cls._adjacency(torch.as_tensor(X, dtype=torch.float32))}
+    @torch.no_grad()
+    def _fit_training_data(self, dataset):
+        """Initialize the graph from the estimator's training partition."""
+        if self.graph_initialized or not is_skorch_dataset(dataset):
+            return
+
+        def select_array(X, indices):
+            if isinstance(X, (np.ndarray, torch.Tensor)):
+                return X[indices]
+            return None
+
+        X, _ = data_from_dataset(dataset, X_indexing=select_array, y_indexing=noop)
+        if isinstance(X, (np.ndarray, torch.Tensor)) and len(X):
+            adjacency = self._adjacency(torch.as_tensor(X, dtype=torch.float32))
+            self._initialize_graph(adjacency.to(next(self.parameters())))
 
     @staticmethod
     def _adjacency(x):
         """Absolute Pearson correlation between channels, zero diagonal."""
-        adjacency = torch.corrcoef(x.transpose(0, 1).flatten(1)).abs()
-        adjacency.fill_diagonal_(0)
-        return adjacency
+        channels = x.transpose(0, 1).flatten(1)
+        # Center relative to one observation so constant channels stay exactly zero.
+        centered = channels - channels[:, :1]
+        centered = centered - centered.mean(dim=1, keepdim=True)
+        norm = torch.linalg.vector_norm(centered, dim=1, keepdim=True)
+        unit = centered / norm.masked_fill(norm == 0, 1)
+        adjacency = (unit @ unit.T).abs().clamp_max_(1)
+        return adjacency.fill_diagonal_(0)
 
     @staticmethod
     def _compute_pooling_levels(pool_sizes):
