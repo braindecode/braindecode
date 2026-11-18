@@ -8,6 +8,8 @@ from braindecode.functional import (
     _real_dft,
     apply_rotary,
     check_ch_mask,
+    derivation_matrix,
+    exact_derivation,
     fft_conv1d,
     hilbert_freq,
     masked_group_norm,
@@ -530,3 +532,30 @@ def test_masked_group_norm_matches_permuting_reference(dtype, tol, scripted):
     for ref, new in zip(*results):
         assert new.dtype == ref.dtype and torch.isfinite(new).all()
         torch.testing.assert_close(new, ref, atol=tol, rtol=tol)
+
+
+def test_derivation_matrix_rows():
+    matrix, electrodes = derivation_matrix(["F3", "F3-C3", "c3-Cz"])
+    assert electrodes == ["f3", "c3", "cz"]
+    assert matrix.tolist() == [[1, 0, 0], [1, -1, 0], [0, 1, -1]]
+
+
+@pytest.mark.parametrize(
+    "target, inputs, weight",
+    [
+        (["F3-C3"], ["C3-F3"], [[-1.0]]),  # reverse polarity
+        (["F3-P3"], ["F3-C3", "C3-P3"], [[1.0, 1.0]]),  # chain
+        (["F3-C3"], ["F3", "C3"], [[1.0, -1.0]]),  # referential
+        (["F3-C3"], ["F3-REF", "C3-REF"], [[1.0, -1.0]]),  # reference cancels
+        (["P3"], ["C3", "C3-P3"], [[1.0, -1.0]]),  # V(P3) = V(C3) - (V(C3) - V(P3))
+        (["F3-C3"], ["F3-C3", "F3-C3"], [[0.5, 0.5]]),  # duplicates averaged
+        (["F3-C3"], ["F3-R1", "C3-R2"], None),  # two references: not exact
+        (["F3"], ["F3-C3"], None),  # no monopolar from bipolar only
+        (["F3-C3"], [], None),
+    ],
+)
+def test_exact_derivation(target, inputs, weight):
+    W, exact = exact_derivation(target, inputs)
+    assert exact.tolist() == [weight is not None]
+    assert W.shape == (len(target), len(inputs))
+    assert W.tolist() == (weight or [[0.0] * len(inputs)])

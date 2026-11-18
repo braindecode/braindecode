@@ -154,6 +154,17 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.modules.ChannelLayer` computes every target that is a
+  combination of the measured channels exactly, under every strategy including
+  ``"exact"``: ``A-B`` from a measured ``B-A`` with weight -1 (copied before with
+  +1 when both sat at the same midpoint, and rejected by ``"exact"`` without
+  positions), ``F3-P3`` from ``F3-C3`` and ``C3-P3``, and BIOT's pairs from
+  ``F3-REF``-style channels. A directly measured channel still takes precedence;
+  no reference is guessed. The algebra is public as
+  :func:`braindecode.functional.derivation_matrix` and
+  :func:`~braindecode.functional.exact_derivation`
+  (:gh:`1577` by `lindicaphxag-tech`_ and `Bruno Aristimunha`_).
+
 - :class:`braindecode.models.BIOT` looks up all its channel tokens in one embedding call with a
   1-D index, instead of one call per channel with a 0-d index. Outputs and gradients are
   bitwise the same on CPU. On Intel Gaudi, whose embedding backward sends a 0-d index's

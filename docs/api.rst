@@ -533,7 +533,9 @@ The functional module contains various functions that can be used like functiona
     :recursive:
 
      check_ch_mask
+     derivation_matrix
      drop_path
+     exact_derivation
      fft_conv1d
      glorot_weight_zero_bias
      hilbert_freq
