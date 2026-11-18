@@ -81,7 +81,9 @@ class PatchTokenizer(nn.Module):
         output_order="channel_patch",
     ):
         super().__init__()
-        patch_count(n_times, patch_size, on_non_divisible)
+        # A crop tokenizer may receive a longer signal than its nominal length.
+        nominal_policy = "pad" if on_non_divisible == "crop" else on_non_divisible
+        patch_count(n_times, patch_size, nominal_policy)
         if projection not in ("conv", "linear"):
             raise ValueError(
                 f"projection must be 'conv' or 'linear', got {projection!r}."

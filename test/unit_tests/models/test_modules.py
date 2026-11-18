@@ -1934,6 +1934,16 @@ def test_patch_tokenizer_rejects_empty_runtime_window():
         torch.jit.script(tokenizer)(empty)
 
 
+def test_crop_tokenizer_uses_actual_window_length():
+    from braindecode.modules import PatchTokenizer
+
+    tokenizer = PatchTokenizer(4, 2, on_non_divisible="crop")
+    x = torch.arange(9).reshape(1, 1, 9)
+    torch.testing.assert_close(tokenizer(x), x[..., :8].reshape(1, 1, 2, 4))
+    with pytest.raises(ValueError, match="one full patch"):
+        tokenizer(x[..., :2])
+
+
 def test_pad_to_min_patches():
     """min_patches zero-pads a window short of that many patches, on the right
     or (center) with half the missing patches before it."""
