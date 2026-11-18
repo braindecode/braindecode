@@ -1017,6 +1017,21 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     assert y_pred1.shape == (n_examples, n_classes)
 
 
+def test_attnsleep_attention_query_is_not_normalized():
+    # The authors' code feeds the raw query to the attention; the layer norm of
+    # the residual block is never applied to it.
+    model = AttnSleep(sfreq=100, n_outputs=5, input_window_seconds=30, d_model=80)
+    model.eval()
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        expected = model(x)
+        for layer in model.feature_extractor[1].layers:
+            layer.residual_self_attn.norm.weight.fill_(2.0)
+            layer.residual_self_attn.norm.bias.fill_(1.0)
+        actual = model(x)
+    torch.testing.assert_close(actual, expected)
+
+
 def test_attn_sleep_requires_signal_geometry():
     with pytest.raises(ValueError, match="at least two of"):
         AttnSleep(sfreq=100, n_outputs=5)

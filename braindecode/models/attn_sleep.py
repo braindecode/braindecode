@@ -486,9 +486,9 @@ class _ResidualLayerNormAttn(nn.Module):
         value: torch.Tensor,
     ) -> torch.Tensor:
         """Apply residual connection to any sublayer with the same size."""
-        x_norm = self.norm(x)
-
-        out = self.fn_attn(x_norm, key, value)
+        # The reference code attends with the raw query; ``self.norm`` stays
+        # unused so released state dicts keep their keys.
+        out = self.fn_attn(x, key, value)
 
         return x + self.dropout(out)
 
