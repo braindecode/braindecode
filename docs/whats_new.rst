@@ -134,7 +134,7 @@ API and behavior changes
   samples, batch 64), and :func:`braindecode.functional.scaled_dot_product_attention`
   hands float32 attention with dropout to torch's SDPA on Gaudi, whose fused kernel takes
   0.39x (EEGPT shapes) and 0.54x (REVE) the time of the math path in eager mode, 0.75x
-  and 0.88x compiled; the CPU keeps the math path (:gh:`NNNN` by `Bruno Aristimunha`_).
+  and 0.88x compiled; the CPU keeps the math path (:gh:`1583` by `Bruno Aristimunha`_).
 
 Requirements
 ============
