@@ -51,7 +51,7 @@ Enhancements
   each model from the papers: the architecture as named steps with module names and
   tensor shapes, what is inside each block with the paper's equations (and the S4D
   equations of Gu et al. for FNIRS4D), how time, channels and chromophores are encoded,
-  and the differences from the authors' code (by `Bruno Aristimunha`_).
+  and the differences from the authors' code (:gh:`1586` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` compiles with ``torch.compile`` into one graph: its lazy
   kernel-norm initialisation no longer reads a tensor's value on every forward (19 graph breaks
   and 21 compiled graphs for two training steps before, on every device). Checkpoints and
