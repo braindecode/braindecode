@@ -6648,35 +6648,6 @@ def test_fnirsnet_kernel_length_out_of_range_raises():
             FNIRSNet(n_chans=40, n_outputs=3, n_times=40, dhr_kernel_length=bad)
 
 
-class _AuthorsDirectEventCNN1D(torch.nn.Module):
-    """The reference: ``DirectEventCNN1DClassifier`` of ``model/cnn1d.py``
-    (GeoNIRS@81f8995) as the benchmark builds it (``event_pair_mode=False``),
-    transcribed with the same layers, state-dict keys and forward."""
-
-    def __init__(self, physical_channels, num_classes, conv_dim=64,
-                 embedding_dim=128, dropout=0.5):
-        super().__init__()
-        self.encoder = torch.nn.Sequential(
-            torch.nn.Conv1d(2 * physical_channels, conv_dim, kernel_size=7, padding=3),
-            torch.nn.GroupNorm(8, conv_dim),
-            torch.nn.GELU(),
-            torch.nn.MaxPool1d(kernel_size=2),
-            torch.nn.Conv1d(conv_dim, embedding_dim, kernel_size=5, padding=2),
-            torch.nn.GroupNorm(8, embedding_dim),
-            torch.nn.GELU(),
-            torch.nn.AdaptiveAvgPool1d(1),
-            torch.nn.Flatten(),
-            torch.nn.Dropout(dropout),
-        )
-        self.linear = torch.nn.Linear(embedding_dim, num_classes)
-
-    def forward(self, hbo, hbr, valid):
-        hbo = hbo.masked_fill(~valid, 0.0)
-        hbr = hbr.masked_fill(~valid, 0.0)
-        signal = torch.stack((hbo, hbr), dim=1).flatten(start_dim=1, end_dim=2)
-        return self.linear(self.encoder(signal))
-
-
 def test_s4d_real_arithmetic_matches_complex_fft():
     """The real-arithmetic ``_S4DLayer`` equals the reference complex kernel + FFT."""
     torch.manual_seed(42)
