@@ -76,9 +76,12 @@ class TimeSeriesLoss(nn.Module):
     ``last_target_only=False`` to ``net.fit(windows, y=None)``. Then
     ``net.predict(windows)`` gives one mean per joint and window, and
     ``net.predict_trials(windows)`` returns joint-by-time predictions for
-    each trial. For VEMG2Pose the loss selects the target suffix after
-    the model's left context. When scoring a trial, align its targets to
-    the final ``prediction.shape[-1]`` samples for that trial.
+    each trial, along with its targets. VEMG2Pose predicts only the samples
+    after its left context. Use a window stride of at most
+    ``pose_model.n_times - pose_model.left_context`` so that consecutive
+    predictions cover the trial without gaps. The loss selects the corresponding
+    suffix of each window's targets. For trial scoring, compare predictions to
+    the final ``prediction.shape[-1]`` target samples for that trial.
     """
 
     def __init__(self, loss_function):
