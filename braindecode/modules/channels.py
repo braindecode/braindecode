@@ -490,6 +490,7 @@ class ChannelLayer(nn.Module):
         if key != self._key:
             maps = self._cache.pop(key, None) or self._build(chs)
             self._cache[key] = maps  # most recent last
+            # shortcut: keep 16 maps; revisit if mixed batches repeatedly rebuild evicted maps.
             if len(self._cache) > 16:
                 self._cache.popitem(last=False)
             for name, t in maps.items():
