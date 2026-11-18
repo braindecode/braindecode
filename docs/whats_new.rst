@@ -37,6 +37,12 @@ Enhancements
   a QK-norm rotary transformer; ``load_state_dict`` takes ``mtrenirs_10s.pt`` as
   released, and the docstring gives the 0.01-0.5 Hz band-pass its weights expect
   (:gh:`1590` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.GeoNIRS` (Li et al., 2026), an fNIRS foundation model
+  that compresses paired HbO/HbR channels onto latent channels with a cross-attention
+  conditioned on the source-detector geometry read from ``chs_info``;
+  ``load_state_dict`` takes ``geonirs_base.pt`` and ``geonirs_large.pt`` as released,
+  and ``ch_mask`` handles montages of different sizes (:gh:`GEONIRS_PR` by
+  `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
   transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden

@@ -28,6 +28,7 @@ from braindecode.models import (
     EpiNT,
     FNIRSNet,
     FNIRSPreT,
+    GeoNIRS,
     Guetschel2026,
     JungMAE,
     Labram,
@@ -219,6 +220,18 @@ _MODELS = [
         },
         False,
         id="MIRepNet",
+    ),
+    pytest.param(
+        GeoNIRS,
+        4,
+        {
+            "depth": 1,
+            "num_heads": 4,
+            "embed_dim": 64,
+            "chs_info": _fnirs_chs_info(2),
+        },
+        False,
+        id="GeoNIRS",
     ),
     pytest.param(
         MtReNIRS,
