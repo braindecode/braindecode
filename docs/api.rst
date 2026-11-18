@@ -208,6 +208,7 @@ interface for all EEG models and can derive variable names when needed.
      MIRepNet
      MSCFormer
      MSVTNet
+     MtReNIRS
      MVPFormer
      NeuroPose
      NeuroRVQ

@@ -64,6 +64,7 @@ The following components are licensed under the MIT License:
 - `braindecode/models/nice.py`
 - `braindecode/models/fnirs_t.py`
 - `docs/_static/model/fnirst.png` (wzhlearning/fNIRS-Transformer `fig/model.png`)
+- `braindecode/models/mtrenirs.py`
 - `braindecode/models/tccnet.py`
 - `docs/_static/model/tccnet.png`
 
@@ -101,6 +102,7 @@ Creative Commons Attribution 4.0 International License (each docstring
 cites the paper):
 
 - `docs/_static/model/fnirsnet.png` (Wang et al., IEEE TNSRE 2023, Fig. 2, cropped)
+- `docs/_static/model/mtrenirs.png` (Chae et al., arXiv:2610.36159, Fig. 2, cropped)
 
 ### USC Academic License Files
 
