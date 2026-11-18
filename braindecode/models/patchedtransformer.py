@@ -164,6 +164,7 @@ class PBT(EEGModuleMixin, nn.Module):
     ----------
     d_input : int, optional
         Size (in samples) of each patch (token) extracted along the time axis.
+        Each channel must contain at least one complete patch.
     embed_dim : int, optional
         Transformer embedding dimensionality.
     num_layers : int, optional
@@ -225,6 +226,11 @@ class PBT(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        if not 0 < d_input <= self.n_times:
+            raise ValueError(
+                f"PBT requires 0 < d_input <= n_times to form a patch per channel, "
+                f"got d_input={d_input} and n_times={self.n_times}."
+            )
         # Store hyperparameters
         self.d_input = d_input
         self.embed_dim = embed_dim
@@ -232,7 +238,7 @@ class PBT(EEGModuleMixin, nn.Module):
         self.num_heads = num_heads
         self.drop_prob = drop_prob
 
-        # number of distinct positional indices (per-channel tokens + cls)
+        # Retain the size of the positional table in released checkpoints.
         self.num_embeddings = (self.n_chans * self.n_times) // self.d_input
 
         # Classification token (learnable or fixed zero)
@@ -285,23 +291,21 @@ class PBT(EEGModuleMixin, nn.Module):
         self.apply(_init_weights)
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
-        """The implementation follows the original code logic
-
-        - split input into windows of size `(num_embeddings - 1) * d_input`
-        - for each window: reshape into tokens, map positional indices to embeddings,
-          add cls token, run Transformer encoder and collect CLS outputs
-        - aggregate CLS outputs across windows (if >1) and pass through `final_layer`
+        """Classify a window from the transformer output of its class token.
 
         Parameters
         ----------
         X : torch.Tensor
-            Input tensor with shape (batch_size, n_chans, n_times)
+            Input tensor with shape (batch_size, n_chans, n_times). Each
+            channel contributes its complete patches within the configured window.
 
         Returns
         -------
         torch.Tensor
             Output logits with shape (batch_size, n_outputs).
         """
+        if X.size(1) != self.n_chans:
+            raise ValueError(f"PBT expects {self.n_chans} channels, got {X.size(1)}.")
         X, int_pos = self.patch_signal(X)
 
         tokens = self.patching_projection(X)
@@ -623,7 +627,6 @@ class _Patcher(nn.Module):
         super().__init__()
         self.d_input = d_input
         self.num_tokens = n_chans * (n_times // d_input)
-        self.n_times_used = (n_times // d_input) * d_input
 
     def forward(self, X: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Returns patched input together with positional indices
@@ -636,7 +639,7 @@ class _Patcher(nn.Module):
 
         Returns
         -------
-        x_patched: torch.LongTensor
+        x_patched: torch.Tensor
             Tensor of shape (B, C*(T//d_input), d_input) containing the patches. Each
             patch lies within one channel; trailing samples that do not fill a patch
             are dropped.
@@ -645,8 +648,14 @@ class _Patcher(nn.Module):
             Tensor of shape (C*(T//d_input) + 1) containing positional token indices.
         """
 
-        x_patched = X[..., : self.n_times_used].reshape(
-            X.size(0), self.num_tokens, self.d_input
+        # Old pickles store floor(C*T/D) in num_tokens. Integer division by C
+        # gives floor(T/D) for both that count and the current C*floor(T/D).
+        n_chans = X.size(1)
+        n_patches = self.num_tokens // n_chans
+        if n_patches == 0:
+            raise ValueError("PBT requires at least one complete patch per channel.")
+        x_patched = X[..., : n_patches * self.d_input].reshape(
+            X.size(0), n_chans * n_patches, self.d_input
         )
 
         position = torch.arange(x_patched.size(1) + 1, device=X.device)

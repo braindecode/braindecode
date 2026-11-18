@@ -12,6 +12,7 @@
 import inspect
 import math
 import os
+import pickle
 import re
 import subprocess
 import sys
@@ -8085,3 +8086,53 @@ def test_pbt_patches_are_channel_specific():
     assert patches.shape == (1, n_chans * (n_times // d_input), d_input)
     assert all(patch.unique().numel() == 1 for patch in patches[0])
     assert model(x).shape == (1, 2)
+
+
+@pytest.mark.parametrize("n_times", [8, 11])
+def test_pbt_saved_patcher_respects_channel_and_window_boundaries(n_times):
+    n_chans, d_input = 3, 4
+    model = PBT(
+        n_chans=n_chans,
+        n_times=n_times,
+        n_outputs=2,
+        d_input=d_input,
+        embed_dim=8,
+        num_heads=2,
+        num_layers=1,
+    ).eval()
+    x = torch.arange(n_chans * (n_times + 5), dtype=torch.float32).reshape(
+        1, n_chans, n_times + 5
+    )
+    expected = torch.stack(
+        [
+            x[:, c, i : i + d_input]
+            for c in range(n_chans)
+            for i in range(0, n_times - d_input + 1, d_input)
+        ],
+        dim=1,
+    )
+    with torch.no_grad():
+        logits = model(x[..., :n_times])
+        torch.testing.assert_close(model(x), logits)
+        with pytest.raises(ValueError, match="expects 3 channels"):
+            model(x[:, :2])
+        # PBT saves before 2.1 counted patches after flattening the channels.
+        model.patch_signal.num_tokens = n_chans * n_times // d_input
+        restored = pickle.loads(pickle.dumps(model))
+        patches, positions = restored.patch_signal(x)
+        torch.testing.assert_close(patches, expected)
+        torch.testing.assert_close(positions, torch.arange(expected.shape[1] + 1))
+        torch.testing.assert_close(restored(x), logits)
+
+
+@pytest.mark.parametrize("d_input", [-1, 0, 4])
+def test_pbt_requires_a_complete_patch_per_channel(d_input):
+    with pytest.raises(ValueError, match="0 < d_input <= n_times"):
+        PBT(n_chans=3, n_times=3, n_outputs=2, d_input=d_input)
+
+
+def test_pbt_saved_without_a_complete_patch_rejects_the_window():
+    model = PBT(n_chans=3, n_times=4, n_outputs=2, d_input=4)
+    model.patch_signal.num_tokens = 3 * 3 // 4  # old model with n_times=3
+    with pytest.raises(ValueError, match="one complete patch per channel"):
+        model(torch.randn(2, 3, 3))

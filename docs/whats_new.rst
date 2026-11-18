@@ -222,7 +222,8 @@ Bug fixes
   end of one channel and the start of the next, and the model had more tokens than
   ``n_chans * (n_times // d_input)`` (343 instead of 330 for 22 channels, 1000
   samples and ``d_input=64``). Each channel now drops the samples after its last
-  whole patch. The positional embedding keeps its size, so checkpoints saved before
+  whole patch. The constructor requires at least one complete patch per channel.
+  The positional embedding keeps its size, so checkpoints saved before
   this change still load. Outputs of existing PBT models change when ``n_times`` is
   not a multiple of ``d_input`` and stay the same otherwise (:gh:`1612` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
