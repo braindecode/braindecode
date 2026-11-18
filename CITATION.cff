@@ -105,7 +105,7 @@ authors:
   - given-names: Fashad Ahmed
     family-names: Siddique
     alias: Fashad-Ahmed
-    affiliation: "Alma Mater Studiorum - Università di Bologna, Bologna, Italy"
+    affiliation: "Alma Mater Studiorum - Università di Bologna, Bologna, Italy"  # codespell:ignore mater
     orcid: "https://orcid.org/0009-0008-1262-3586"
   - given-names: Thomas
     family-names: Moreau

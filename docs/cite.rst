@@ -68,9 +68,10 @@ Or the following APA reference:
     Sliwowski, M., Wilson, D., Brandt, S., Gnassounou, T., Paillard, J., Srivastava, A.,
     Junqueira Lopes, B., Sedlar, S., Tayal, S., Truong, Y., Gadonneix, J., Mounir, A.,
     Zhang, Z., Soloviev, A., Li, Q., Rathi, R., Shah, V., Arthur, Jain, M., Kowshik, B.,
-    Li, Y., Siddique, F. A., Moreau, T., Chevallier, S., Gramfort, A., & Schirrmeister, R. T.
-    *Braindecode: toolbox for decoding raw electrophysiological brain data with deep
-    learning models* [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.8214376
+    Li, Y., Siddique, F. A., Moreau, T., Chevallier, S., Gramfort, A., & Schirrmeister,
+    R. T. *Braindecode: toolbox for decoding raw electrophysiological brain data with
+    deep learning models* [Computer software]. Zenodo.
+    https://doi.org/10.5281/zenodo.8214376
 
 Additionally, we highly encourage you to cite the article that originally introduced the
 Braindecode library and has served as a foundational reference for many works on deep
