@@ -46,7 +46,7 @@ Enhancements
   :class:`~braindecode.models.JungMAE` and :class:`~braindecode.models.MtReNIRS`
   take fNIRS HbO/HbR, and :class:`~braindecode.models.CORTEG` takes a second
   per-channel stream, ``x_hi``, that the layer would not map
-  (:gh:`PR_STRATEGY` by `Julien Gadonneix`_).
+  (:gh:`1608` by `Julien Gadonneix`_).
 - :class:`braindecode.modules.ChannelLayer` maps channels with one linear
   estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
   targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat
