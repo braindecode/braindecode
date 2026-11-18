@@ -124,7 +124,7 @@ Enhancements
   error: wrong values in eager mode when two calls take transposed views with as many
   elements in different shapes (:class:`braindecode.models.AXON`), and no gradient for a
   learnable ``attn_mask`` (:class:`braindecode.models.DIVER1`)
-  (by `Bruno Aristimunha`_).
+  (:gh:`1599` by `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
