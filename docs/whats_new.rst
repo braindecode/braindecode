@@ -179,6 +179,13 @@ Bug fixes
   bitwise the same on CPU. On Intel Gaudi, whose embedding backward sends a 0-d index's
   gradient to row 0, only the first channel token trained before (:gh:`1585` by
   `Bruno Aristimunha`_).
+- :class:`braindecode.models.MAPA` attends with 4-D inputs on every device; on Intel
+  Gaudi it used 5-D ones, which the fused attention kernel gets wrong (outputs 55% and
+  gradients 60-70% off). :class:`braindecode.models.EMG2QwertyNet` takes offset 0 of
+  its rotation-invariant MLP as the input itself instead of a roll by 0, which saves a
+  copy; on Gaudi, the roll by 0 of a slice of the stacked gradient gave a wrong input
+  gradient. Outputs and gradients are unchanged on CPU (:gh:`PRNUM` by
+  `Bruno Aristimunha`_).
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
   original fine-tuning code replaces it by ``nn.Identity()``, so the head now reads

@@ -750,10 +750,13 @@ class _RotationInvariantMLP(nn.Module):
         self.offsets = tuple(offsets) if len(offsets) > 0 else (0,)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        # Gaudi eager mode rolls a non-contiguous tensor wrongly.
+        # Gaudi eager mode rolls a non-contiguous tensor wrongly. Offset 0 is the
+        # input itself: no copy, and no roll by 0 in the backward (of a slice of
+        # the stack's gradient, which Gaudi also rolls wrongly).
         inputs = inputs.contiguous()
         rolled = torch.stack(
-            [inputs.roll(offset, dims=2) for offset in self.offsets], dim=2
+            [inputs.roll(offset, dims=2) if offset else inputs for offset in self.offsets],
+            dim=2,
         )
         per_roll_features = self.mlp(rolled.flatten(start_dim=3))
         if self.pooling == "max":
