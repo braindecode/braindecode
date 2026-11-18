@@ -62,6 +62,7 @@ from braindecode.models import (
     FBCNet,
     FBLightConvNet,
     FBMSNet,
+    FNIRSNet,
     GCNsNet,
     HybridNet,
     IFNet,
@@ -6408,6 +6409,108 @@ def test_nice_mask_validation(shape, dtype):
     model = NICE(n_chans=4, n_times=100, n_outputs=3, n_filters=4, embed_dim=8)
     with pytest.raises(ValueError, match="mask must be boolean with shape"):
         model(torch.randn(2, 4, 100), mask=torch.ones(shape, dtype=dtype))
+
+
+# ----------------------------------------------------------------------------
+# fNIRS models
+
+
+class _AuthorsFNIRSNet(torch.nn.Module):
+    """The reference: fNIRSNet.py of wzhlearning/fNIRSNet@11d9dad (Apache-2.0),
+    transcribed with the same layers, state-dict keys and forward. The authors'
+    FC takes ``num_DWConv`` inputs (full-width DHRConv); ``n_features`` widens it
+    for a shorter kernel, as the port does."""
+
+    def __init__(self, num_class, DHRConv_width=40, DWConv_height=40,
+                 num_DHRConv=4, num_DWConv=8, n_features=None):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(1, num_DHRConv, kernel_size=(1, DHRConv_width))
+        self.bn1 = torch.nn.BatchNorm2d(num_DHRConv)
+        self.conv2 = torch.nn.Module()
+        self.conv2.depth_conv = torch.nn.Conv2d(
+            num_DHRConv, num_DHRConv, kernel_size=(DWConv_height, 1),
+            groups=num_DHRConv,
+        )
+        self.conv2.point_conv = torch.nn.Conv2d(num_DHRConv, num_DWConv, kernel_size=1)
+        self.bn2 = torch.nn.BatchNorm2d(num_DWConv)
+        self.fc = torch.nn.Linear(n_features or num_DWConv, num_class)
+        self.act = torch.nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.act(self.bn1(self.conv1(x)))
+        x = self.act(self.bn2(self.conv2.point_conv(self.conv2.depth_conv(x))))
+        x = x.view(x.size()[0], -1)
+        return self.fc(x)
+
+
+@pytest.mark.parametrize(
+    "n_chans, n_times, f1, f2, kernel",
+    [(40, 40, 4, 8, None), (72, 30, 16, 32, None), (40, 40, 4, 8, 10)],
+)
+def test_fnirsnet_matches_the_authors_module(n_chans, n_times, f1, f2, kernel):
+    """The authors' state dict loads strictly through ``mapping``; the logits and
+    ``final_layer(features)`` equal the authors' module in eval and train mode,
+    and the parameters and BatchNorm statistics stay equal over AdamW steps."""
+    width = kernel or n_times
+    torch.manual_seed(0)
+    reference = _AuthorsFNIRSNet(
+        3, width, n_chans, f1, f2, n_features=f2 * (n_times - width + 1)
+    )
+    with torch.no_grad():  # non-trivial BatchNorm statistics and affine terms
+        for bn in (reference.bn1, reference.bn2):
+            bn.running_mean.uniform_(-1, 1)
+            bn.running_var.uniform_(0.5, 2)
+            bn.weight.uniform_(0.5, 2)
+            bn.bias.uniform_(-1, 1)
+    model = FNIRSNet(
+        n_chans=n_chans, n_outputs=3, n_times=n_times, n_dhr_filters=f1,
+        n_pw_filters=f2, dhr_kernel_length=kernel,
+    )
+    model.load_state_dict(reference.state_dict(), strict=True)
+    x = torch.randn(6, n_chans, n_times)
+    for training in (False, True):
+        reference.train(training)
+        model.train(training)
+        expected = reference(x.unsqueeze(1))
+        torch.testing.assert_close(model(x), expected, rtol=0, atol=0)
+        # a second forward on both sides, so their BatchNorm statistics stay in step
+        expected = reference(x.unsqueeze(1))
+        features = model(x, return_features=True)["features"]
+        torch.testing.assert_close(model.final_layer(features), expected, rtol=0, atol=0)
+    optimizers = [torch.optim.AdamW(m.parameters(), lr=1e-2) for m in (reference, model)]
+    y = torch.tensor([0, 1, 2, 0, 1, 2])
+    for _ in range(3):
+        for net, optimizer, inputs in zip(
+            (reference, model), optimizers, (x.unsqueeze(1), x)
+        ):
+            optimizer.zero_grad()
+            torch.nn.functional.cross_entropy(net(inputs), y).backward()
+            optimizer.step()
+    port_state = model.state_dict()
+    for key, value in reference.state_dict().items():
+        torch.testing.assert_close(
+            port_state[key.replace("fc.", "final_layer.")], value, rtol=0, atol=0
+        )
+
+
+@pytest.mark.parametrize("kernel, n_params", [(None, 419), (30, 619), (20, 819), (10, 1019)])
+def test_fnirsnet_parameter_counts_of_table_iv(kernel, n_params):
+    """UFFT (C = S = 40) parameter counts of the paper's Tables III and IV."""
+    model = FNIRSNet(n_chans=40, n_outputs=3, n_times=40, dhr_kernel_length=kernel)
+    assert sum(p.numel() for p in model.parameters()) == n_params
+
+
+def test_fnirsnet_refuses_ch_mask():
+    """DWConv spans every row, so padded channels cannot be left out."""
+    model = FNIRSNet(n_chans=4, n_outputs=2, n_times=20)
+    with pytest.raises(ValueError, match="ch_mask"):
+        model(torch.randn(2, 4, 20), ch_mask=torch.ones(2, 4, dtype=torch.bool))
+
+
+def test_fnirsnet_kernel_length_out_of_range_raises():
+    for bad in (0, 41):
+        with pytest.raises(ValueError, match="dhr_kernel_length"):
+            FNIRSNet(n_chans=40, n_outputs=3, n_times=40, dhr_kernel_length=bad)
 
 
 def _tccnet_reference(model, x, mask_value):

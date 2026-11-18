@@ -28,6 +28,11 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023), the first
+  fNIRS model of braindecode: a delayed-hemodynamic-response convolution and a
+  depthwise-separable convolution over ``(batch, n_chans, n_times)`` HbO/HbR windows.
+  Its ``mapping`` loads the authors' state dict, and ``fNIRS`` joins the modality
+  vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` compiles with ``torch.compile`` into one graph: its lazy
   kernel-norm initialisation no longer reads a tensor's value on every forward (19 graph breaks
   and 21 compiled graphs for two training steps before, on every device). Checkpoints and
