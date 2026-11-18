@@ -377,3 +377,21 @@ def test_reverse_bipolar_beats_midpoint_spatial_match():
     assert layer.weight.tolist() == [[-1.0]]
     assert torch.equal(y, -x)
     assert observed.tolist() == [True]
+
+
+def test_targets_from_any_combination_of_measured_channels():
+    # Potentials of 6 electrodes; the input is a TCP-style chain and a pair
+    # against the recording reference; every target is exact without positions.
+    v = torch.randn(1, 6, 50, dtype=torch.float64)
+    idx = dict(zip("Fp1 F7 T7 P7 O1 C3".split(), range(6)))
+    inputs = ["Fp1-F7", "F7-T7", "T7-P7", "P7-O1", "C3-REF", "P7-REF"]
+    x = torch.cat(
+        [v[:, [idx[a]]] - (v[:, [idx[b]]] if b in idx else 0)
+         for a, b in (n.split("-") for n in inputs)], 1
+    )
+    targets = ["Fp1-T7", "O1-T7", "C3-P7", "C3-O1"]
+    layer = ChannelLayer(chs(targets), "exact", chs(inputs)).double()
+    y, observed = layer(x)
+    expected = torch.cat([v[:, [idx[a]]] - v[:, [idx[b]]] for a, b in (n.split("-") for n in targets)], 1)
+    torch.testing.assert_close(y, expected, rtol=0, atol=1e-12)
+    assert observed.all()

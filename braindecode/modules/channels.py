@@ -6,9 +6,12 @@
 Every strategy is a matrix ``W`` (K x C) from the C input channels to the K
 target channels. Names are copied first (case-insensitive, then legacy names
 such as T3 = T7); an input whose name MNE does not know is copied to a target
-within 15 mm. The strategy fills the other targets that have a position from
-the positioned inputs; a target without a position (BENDR's ``SCALE``) is zero.
-A target named ``A-B`` is the derivation ``V(A) - V(B)`` (BIOT).
+within 15 mm. A channel named ``A-B`` is ``V(A) - V(B)`` (BIOT), so a target
+that is a combination of measured channels is computed exactly
+(:func:`braindecode.functional.exact_derivation`): ``F3-C3`` from ``C3-F3``,
+``F3-P3`` from ``F3-C3`` and ``C3-P3``, ``F3-C3`` from ``F3`` and ``C3``. The
+strategy fills the other targets that have a position from the positioned
+inputs; a target without a position (BENDR's ``SCALE``) is zero.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from scipy.linalg import solve
 from scipy.spatial.distance import cdist
 from torch import Tensor, nn
 
+from braindecode.functional import exact_derivation
 from braindecode.util import resolve_montage_name
 
 STRATEGIES = (
@@ -401,23 +405,19 @@ class ChannelLayer(nn.Module):
         alias = np.nan_to_num(cdist(tstd, std), nan=np.inf) < 1e-6
         dist = np.nan_to_num(cdist(tpos, pos), nan=np.inf)
         near = np.where(np.isnan(std).any(1), dist, np.inf)
+        # Names before positions: B-A shares the midpoint of A-B but needs -1.
+        kept = np.flatnonzero(keep)
+        derived, exact = exact_derivation(mono, [names[j] for j in kept])
         W = np.zeros((len(mono), len(names)))
         for k, m in enumerate(mono):
-            # Measured names take precedence over spatial proximity. In
-            # particular, B-A at the same midpoint as A-B needs a -1 gain,
-            # not the +1 copy that the 15 mm fallback would otherwise make.
             direct = (low == m.lower()) & keep
             if direct.any():
                 j = np.flatnonzero(direct)
                 W[k, j[np.argmin(near[k][j])]] = 1.0
                 continue
-            if m.count("-") == 1:
-                positive, negative = m.split("-")
-                reverse = (low == f"{negative}-{positive}".lower()) & keep
-                if reverse.any():
-                    j = np.flatnonzero(reverse)
-                    W[k, j[np.argmin(near[k][j])]] = -1.0
-                    continue
+            if exact[k]:  # a combination of measured channels
+                W[k, kept] = derived[k].numpy()
+                continue
             for hit in (alias[k], near[k] <= 0.015):
                 if (hit & keep).any():
                     j = np.flatnonzero(hit & keep)

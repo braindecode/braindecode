@@ -107,12 +107,16 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.modules.ChannelLayer` uses the explicit negative of a
-  measured reverse bipolar channel ``B-A`` for a requested ``A-B`` under
-  ``channel_strategy="exact"`` (and the other strategies), rather than
-  rejecting an exactly reconstructible derivation. Direct ``A-B`` recordings
-  still take precedence; unknown reference montages remain unverified
-  (:gh:`1577` by `lindicaphxag-tech`_).
+- :class:`braindecode.modules.ChannelLayer` computes every target that is a
+  combination of the measured channels exactly, under every strategy including
+  ``"exact"``: ``A-B`` from a measured ``B-A`` with weight -1 (copied before with
+  +1 when both sat at the same midpoint, and rejected by ``"exact"`` without
+  positions), ``F3-P3`` from ``F3-C3`` and ``C3-P3``, and BIOT's pairs from
+  ``F3-REF``-style channels. A directly measured channel still takes precedence;
+  no reference is guessed. The algebra is public as
+  :func:`braindecode.functional.derivation_matrix` and
+  :func:`~braindecode.functional.exact_derivation`
+  (:gh:`1577` by `lindicaphxag-tech`_ and `Bruno Aristimunha`_).
 
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
