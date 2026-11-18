@@ -133,8 +133,7 @@ class SyncNet(EEGModuleMixin, nn.Module):
         self.bias = nn.Parameter(torch.zeros(self.num_filters))
 
         self.padding = self._compute_padding(filter_width=self.filter_width)
-        # Input and conv output are both zero padded, so the pooled length is
-        # (n_times + 2 * sum(padding) - filter_width + 1) // pool_size.
+        # Both the input and the convolution output are zero padded.
         pooled_length = (
             self.n_times + 2 * sum(self.padding) - self.filter_width + 1
         ) // self.pool_size

@@ -255,10 +255,11 @@ Bug fixes
   Outputs of existing CSBrain classifiers change (:gh:`1541`, :gh:`1572`).
 - :class:`braindecode.models.SyncNet` sizes its linear head from the real pooled
   length, which counts the zero padding of both the input and the convolution
-  output. With ``filter_width != pool_size`` the old size from ``ceil(n_times /
-  pool_size)`` made the forward pass raise a ``RuntimeError``, or return more rows
-  than the batch held. Configurations that already ran keep their parameter
-  shapes and outputs (:gh:`1600` by
+  output. The old size, ``ceil(n_times / pool_size) * num_filters``, is wrong for
+  many settings with ``filter_width != pool_size``. The forward pass then raised a
+  ``RuntimeError`` or returned a different number of rows than the batch held.
+  Settings where the two sizes agree, such as the defaults, keep their
+  parameter shapes and outputs (:gh:`1605` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
   averages kept steps that lie after the end of the input. When the last
