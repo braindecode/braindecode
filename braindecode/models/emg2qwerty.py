@@ -755,7 +755,10 @@ class _RotationInvariantMLP(nn.Module):
         # the stack's gradient, which Gaudi also rolls wrongly).
         inputs = inputs.contiguous()
         rolled = torch.stack(
-            [inputs.roll(offset, dims=2) if offset else inputs for offset in self.offsets],
+            [
+                inputs.roll(offset, dims=2) if offset else inputs
+                for offset in self.offsets
+            ],
             dim=2,
         )
         per_roll_features = self.mlp(rolled.flatten(start_dim=3))
