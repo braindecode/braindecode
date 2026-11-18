@@ -46,7 +46,7 @@ Enhancements
   does not have the channels the model was built for; it was a shape error deep in
   the network. Inputs that run stay accepted: REVE checks only without ``pos``;
   CBraMod, CodeBrain and MEGGPT only for their flattened head, and CSBrain also
-  for its region order (:gh:`PR_NCHANS` by `Julien Gadonneix`_).
+  for its region order (:gh:`1605` by `Julien Gadonneix`_).
 - :class:`braindecode.modules.ChannelLayer` maps channels with one linear
   estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
   targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat
