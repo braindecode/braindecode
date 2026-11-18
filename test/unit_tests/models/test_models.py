@@ -702,6 +702,30 @@ def test_eegpt_checkpoint_keeps_the_model_channel_ids(target_names):
     )
 
 
+@pytest.mark.parametrize("projection", ["linear", "conv1d_constraint"])
+@pytest.mark.parametrize("n_chans_target", [1, 3, 19])
+def test_eegpt_projection_matches_its_channel_embeddings(projection, n_chans_target):
+    kwargs = dict(
+        n_chans=5,
+        n_outputs=2,
+        n_times=128,
+        embed_dim=32,
+        depth=1,
+        num_heads=2,
+        chan_proj_type=projection,
+        n_chans_target=n_chans_target,
+    )
+    if n_chans_target != 19:
+        with pytest.raises(ValueError, match="n_chans_target=19"):
+            EEGPT(**kwargs)
+        return
+    model = EEGPT(**kwargs).eval()
+    x = torch.randn(2, 5, 128)
+    with torch.no_grad():
+        assert model.chan_proj(x).shape[1] == model.chans_id.numel() == n_chans_target
+        assert model(x).shape == (2, 2)
+
+
 def test_eegpt_checkpoint_loads_with_channel_projection():
     # The default channel projection gives 19 channel IDs; the released
     # checkpoint was saved without a projection and stores 62.
