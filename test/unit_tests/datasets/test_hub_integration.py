@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import scipy
+from torch.utils.data import DataLoader
 
 # Optional imports for Hub functionality
 try:
@@ -32,6 +33,7 @@ from braindecode.datasets import (
     EEGWindowsDataset,
     RawDataset,
     WindowsDataset,
+    pad_channels_collate,
 )
 from braindecode.datasets.bids import hub_io
 from braindecode.datasets.bids.hub import (
@@ -40,7 +42,13 @@ from braindecode.datasets.bids.hub import (
 )
 from braindecode.datasets.bids.hub_io import _create_compressor
 from braindecode.datasets.registry import get_dataset_class, get_dataset_type
-from braindecode.preprocessing import create_windows_from_events
+from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
+from braindecode.preprocessing import (
+    Preprocessor,
+    create_fixed_length_windows,
+    create_windows_from_events,
+    preprocess,
+)
 
 
 @pytest.fixture()
@@ -1572,6 +1580,99 @@ def test_lazy_zarr_serialization(tmp_path, ds_type):
     restored = copy.deepcopy(ds)
     assert restored._zarr_data is not None
     np.testing.assert_allclose(ds[0][0], restored[0][0], rtol=1e-6, atol=1e-7)
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_preprocessing_in_spawned_worker(tmp_path, ds_type):
+    source, path = _make_zarr(tmp_path, ds_type)
+    loaded = load_from_zarr(path, preload=False)
+    original = source.datasets[0]
+    if ds_type == "WindowsDataset":
+        expected = original.windows.get_data(item=0, picks=[1])[0, :, 10:]
+    else:
+        stop = 11 if ds_type == "RawDataset" else 110
+        expected = original.raw.get_data(picks=[1], start=10, stop=stop)
+
+    preprocess(
+        loaded,
+        [
+            Preprocessor(np.negative),
+            Preprocessor("pick", picks=["ch1"]),
+            Preprocessor("crop", tmin=0.1),
+        ],
+    )
+    sample, label, *_ = loaded[0]
+    assert sample.dtype == np.float32
+    np.testing.assert_allclose(sample, -expected, rtol=1e-6)
+    loader = DataLoader(
+        loaded, sampler=[0], num_workers=1, multiprocessing_context="spawn", collate_fn=list
+    )
+    (batch,) = list(loader)
+    np.testing.assert_array_equal(batch[0][0], sample)
+    assert batch[0][1] == label
+    np.testing.assert_allclose(load_from_zarr(path)[0][0], source[0][0], rtol=1e-6)
+
+
+def _padded_worker_arrays(batch):
+    # Exercise the collator in the worker; NumPy arrays can travel through
+    # the loader's queue without a platform-specific shared-memory daemon.
+    x, y, crops, positions, mask = pad_channels_collate(batch)
+    return x.numpy(), y.numpy(), [c.numpy() for c in crops], positions.numpy(), mask.numpy()
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_lazy_zarr_positions_in_spawned_worker(tmp_path, use_mne_epochs):
+    pytest.importorskip("zarr")
+    info = mne.create_info(["C3", "C4"], 10, "eeg").set_montage("standard_1020")
+    raw = mne.io.RawArray(np.arange(60).reshape(2, 30), info)
+    source = BaseConcatDataset([RawDataset(raw, {"label": 2}, target_name="label")])
+    windows = create_fixed_length_windows(
+        source,
+        window_size_samples=5,
+        window_stride_samples=5,
+        drop_last_window=True,
+        use_mne_epochs=use_mne_epochs,
+    )
+    path = convert_to_zarr(windows, tmp_path / "windows.zarr")
+    loaded = load_from_zarr(path, preload=False).set_return_ch_pos()
+    # Inspecting the dataset before spawning must keep lazy workers on the memmap.
+    assert "C4" in repr(loaded)
+    assert loaded.datasets[0]._zarr_data is not None
+    loader = DataLoader(
+        loaded,
+        sampler=[0, 1],
+        batch_size=2,
+        num_workers=1,
+        multiprocessing_context="spawn",
+        collate_fn=_padded_worker_arrays,
+    )
+    ((samples, labels, crops, positions, mask),) = list(loader)
+    np.testing.assert_array_equal(samples, np.stack([windows[i][0] for i in (0, 1)]))
+    np.testing.assert_array_equal(labels, [2, 2])
+    np.testing.assert_array_equal(crops[1], [0, 5])
+    np.testing.assert_allclose(positions[0], [ch["loc"][:3] for ch in info["chs"]])
+    np.testing.assert_array_equal(positions[0], positions[1])
+    assert mask.all()
+
+
+@pytest.mark.parametrize("last_target_only", [False, True])
+def test_lazy_zarr_channel_targets_keep_memmap(tmp_path, last_target_only):
+    pytest.importorskip("zarr")
+    info = mne.create_info(["C3", "target"], 10, ["eeg", "misc"])
+    raw = mne.io.RawArray(np.arange(40).reshape(2, 20), info)
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw, {"subject": "01"})]),
+        window_size_samples=5,
+        targets_from="channels",
+        last_target_only=last_target_only,
+    )
+    path = convert_to_zarr(windows, tmp_path / "windows.zarr")
+    loaded = load_from_zarr(path, preload=False)
+    x, y, _ = loaded[0]
+    np.testing.assert_array_equal(x, [[0, 1, 2, 3, 4]])
+    expected_y = [24] if last_target_only else [[20, 21, 22, 23, 24]]
+    np.testing.assert_array_equal(y, expected_y)
+    assert loaded.datasets[0]._zarr_data is not None
 
 
 @pytest.mark.parametrize("ds_type", _DS_TYPES)

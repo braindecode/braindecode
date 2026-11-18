@@ -138,7 +138,9 @@ def _concat_metadata_summary(datasets):
     extra_cols = set()
 
     for ds in datasets:
-        if hasattr(ds, "windows"):
+        if getattr(ds, "_zarr_data", None) is not None:
+            md = getattr(ds, "metadata", None)
+        elif hasattr(ds, "windows"):
             md = ds.windows.metadata
         elif hasattr(ds, "metadata"):
             md = ds.metadata
@@ -561,7 +563,8 @@ class _ZarrMixin:
     Decompresses zarr to float64 ``.npy`` memmaps on first access.
     MNE objects (``raw``/``windows``) are reconstructed lazily on first
     property access, backed by copy-on-write memmaps so preprocessing
-    writes go to RAM while the file stays untouched.
+    writes go to RAM while the file stays untouched. Once exposed, the MNE
+    object owns the signal and is transferred with its edits to spawned workers.
     """
 
     _zarr_data = None
@@ -573,7 +576,11 @@ class _ZarrMixin:
 
     def _make_mne_info(self):
         """Reconstruct ``mne.Info`` from stored dict (no data I/O)."""
-        return mne.Info.from_json_dict(_restore_nan_from_json(self._info_dict))
+        if not hasattr(self, "_zarr_info"):
+            self._zarr_info = mne.Info.from_json_dict(
+                _restore_nan_from_json(self._info_dict)
+            )
+        return self._zarr_info
 
     @classmethod
     def _init_zarr_base(cls, zarr_path, group_name, description, info_dict, transform):
@@ -590,18 +597,17 @@ class _ZarrMixin:
     def __getstate__(self):
         state = self.__dict__.copy()
         state.pop("_zarr_data", None)
-        # Drop lazily-constructed mne objects; they'll be rebuilt from memmap
-        if hasattr(self, "_zarr_path"):
-            state.pop("_raw", None)
-            state.pop("_windows", None)
+        state.pop("_zarr_info", None)
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        if hasattr(self, "_zarr_path"):
+        if (
+            "_zarr_path" in state
+            and state.get("_raw") is None
+            and state.get("_windows") is None
+        ):
             self._open_zarr()
-        else:
-            self._zarr_data = None
 
 
 class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]]):
@@ -697,6 +703,8 @@ class RawDataset(_ZarrMixin, RecordDataset):
         On-the-fly transform applied to the example before it is returned.
     """
 
+    _raw = None  # Older lazy pickles omit the unmaterialized MNE object.
+
     def __init__(
         self,
         raw: mne.io.BaseRaw,
@@ -725,7 +733,6 @@ class RawDataset(_ZarrMixin, RecordDataset):
         obj = cls._init_zarr_base(
             zarr_path, group_name, description, info_dict, transform
         )
-        obj._raw = None
         obj.target_name = cls._target_name(obj, target_name)
         obj.raw_preproc_kwargs = []
         obj._open_zarr()
@@ -734,20 +741,23 @@ class RawDataset(_ZarrMixin, RecordDataset):
     @property
     def raw(self):
         if self._raw is None and self._zarr_data is not None:
-            self._raw = mne.io.RawArray(self._zarr_data, self._make_mne_info())
+            self.raw = mne.io.RawArray(self._zarr_data, self._make_mne_info())
         return self._raw
 
     @raw.setter
     def raw(self, value):
         self._raw = value
+        self._zarr_data = None
 
     def __getitem__(self, index):
         if self._zarr_data is not None:
-            X = np.array(self._zarr_data[:, index], dtype="float32")
+            X = self._zarr_data[:, index]
             if X.ndim == 1:
                 X = X[:, np.newaxis]
         else:
             X = self._raw[:, index][0]
+        if hasattr(self, "_zarr_path"):
+            X = np.asarray(X, dtype="float32")
         y = None
         if self.target_name is not None:
             y = self.description[self.target_name]
@@ -856,6 +866,8 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         as well as `targets`.
     """
 
+    _raw = None
+
     def __init__(
         self,
         raw: mne.io.BaseRaw,
@@ -896,7 +908,6 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         obj = cls._init_zarr_base(
             zarr_path, group_name, description, info_dict, transform
         )
-        obj._raw = None
         obj.metadata = metadata
         obj.last_target_only = last_target_only
         if targets_from not in ("metadata", "channels"):
@@ -914,12 +925,13 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
     @property
     def raw(self):
         if self._raw is None and self._zarr_data is not None:
-            self._raw = mne.io.RawArray(self._zarr_data, self._make_mne_info())
+            self.raw = mne.io.RawArray(self._zarr_data, self._make_mne_info())
         return self._raw
 
     @raw.setter
     def raw(self, value):
         self._raw = value
+        self._zarr_data = None
         self._ch_pos = None  # invalidate cached positions
 
     @property
@@ -976,7 +988,8 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            misc_mask = np.array(self.raw.get_channel_types()) == "misc"
+            info = self._raw.info if self._raw is not None else self._make_mne_info()
+            misc_mask = np.asarray(info.get_channel_types()) == "misc"
             if self.last_target_only:
                 y = X[misc_mask, -1]
             else:
@@ -1113,6 +1126,8 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         channels (time series targets). It can be `metadata` (default) or `channels`.
     """
 
+    _windows = None
+
     def __init__(
         self,
         windows: mne.BaseEpochs,
@@ -1165,7 +1180,6 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         obj = cls._init_zarr_base(
             zarr_path, group_name, description, info_dict, transform
         )
-        obj._windows = None
         obj.target_name = target_name
         obj._fast_disk = False
         obj.last_target_only = last_target_only
@@ -1200,7 +1214,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
                     event_ids,
                 ]
             )
-            self._windows = mne.EpochsArray(
+            self.windows = mne.EpochsArray(
                 self._zarr_data, info, events=events, metadata=self.metadata
             )
         return self._windows
@@ -1208,6 +1222,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
     @windows.setter
     def windows(self, value):
         self._windows = value
+        self._zarr_data = None
         self._ch_pos = None  # invalidate cached positions
 
     @property
@@ -1269,7 +1284,12 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            misc_mask = np.array(self.windows.get_channel_types()) == "misc"
+            info = (
+                self._windows.info
+                if self._windows is not None
+                else self._make_mne_info()
+            )
+            misc_mask = np.asarray(info.get_channel_types()) == "misc"
             if self.last_target_only:
                 y = X[misc_mask, -1]
             else:
@@ -2155,15 +2175,16 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
     @staticmethod
     def _signal_summary(ds):
-        """Return (mne_obj, is_windowed) from a dataset."""
-        if hasattr(ds, "windows"):
-            mne_obj = ds.windows
+        """Return channel info and whether the dataset contains windows."""
+        if getattr(ds, "_zarr_data", None) is not None:
+            info = ds._make_mne_info()
+        elif hasattr(ds, "windows"):
+            info = ds.windows.info
         elif hasattr(ds, "raw"):
-            mne_obj = ds.raw
+            info = ds.raw.info
         else:
             return None, False
-        is_windowed = hasattr(ds, "crop_inds")
-        return mne_obj, is_windowed
+        return info, hasattr(ds, "crop_inds")
 
     def _build_repr(self):
         n_ds = len(self.datasets)
@@ -2175,18 +2196,18 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         n_total = len(self)
         ds_type = type(self.datasets[0]).__name__
         first_ds = self.datasets[0]
-        mne_obj, is_windowed = self._signal_summary(first_ds)
+        info, is_windowed = self._signal_summary(first_ds)
 
         b._type_display = f"BaseConcatDataset of {ds_type}"
         b.add_header(f"{n_ds} {ds_type}(s)", "Recordings", n_ds)
         b.add_header(f"{n_total} total samples", "Total samples", n_total)
 
-        if mne_obj is not None:
-            n_ch, type_str, sfreq = _channel_info(mne_obj)
+        if info is not None:
+            n_ch, type_str, sfreq = _channel_info(info)
             b.add_row("Sfreq*", f"{sfreq:.1f} Hz")
             b.add_row("Channels*", f"{n_ch} ({type_str})")
 
-            ch_names = mne_obj.info["ch_names"]
+            ch_names = info["ch_names"]
             if len(ch_names) <= 10:
                 ch_str = ", ".join(ch_names)
             else:
@@ -2195,12 +2216,12 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 )
             b.add_row("Ch. names*", ch_str)
 
-            montage = mne_obj.get_montage()
+            montage = info.get_montage()
             if montage is not None:
                 b.add_row("Montage*", montage.get_positions()["coord_frame"])
 
             if not is_windowed:
-                n_times = len(mne_obj.times)
+                n_times = len(first_ds)
                 duration = n_times / sfreq
                 b.add_row("Duration*", f"{duration:.1f} s")
 
@@ -2217,7 +2238,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         if is_windowed:
             try:
                 summary = _concat_metadata_summary(self.datasets)
-                if summary["window_info"] is not None and mne_obj is not None:
+                if summary["window_info"] is not None and info is not None:
                     wi = summary["window_info"]
                     if wi["uniform"]:
                         win_secs = wi["min"] / sfreq

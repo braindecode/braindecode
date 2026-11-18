@@ -25,7 +25,11 @@ from braindecode.datasets import (
     pad_channels_collate,
 )
 from braindecode.datasets.bids.hub_io import _restore_nan_from_json
-from braindecode.preprocessing import create_fixed_length_windows
+from braindecode.preprocessing import (
+    Preprocessor,
+    create_fixed_length_windows,
+    preprocess,
+)
 
 # NB: do not call ``mne.set_log_level`` at module level here -- under pytest it
 # perturbs warning capture for the rest of the session, making later
@@ -44,7 +48,7 @@ def _raw_ds(ch_names, label=0, sfreq=100.0, n_times=1000, montage=True):
     return RawDataset(raw, description={"label": label})
 
 
-def _windows(datasets):
+def _windows(datasets, use_mne_epochs=False):
     concat = BaseConcatDataset(datasets)
     return create_fixed_length_windows(
         concat,
@@ -52,6 +56,7 @@ def _windows(datasets):
         window_stride_samples=200,
         drop_last_window=True,
         preload=True,
+        use_mne_epochs=use_mne_epochs,
     )
 
 
@@ -108,6 +113,19 @@ def test_ch_pos_cache_invalidated_on_raw_setter():
     assert ds.ch_pos.shape == (len(CHS_B), 3)
 
 
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+@pytest.mark.parametrize("picks", [["C4", "C3"], ["Cz", "C4", "C3"]])
+def test_window_positions_follow_preprocessing(picks, use_mne_epochs):
+    names = ["C3", "C4", "Cz"]
+    win = _windows([_raw_ds(names)], use_mne_epochs).set_return_ch_pos()
+    before, _, _, coordinates = win[0]
+    original_rows = [names.index(name) for name in picks]
+    preprocess(win, [Preprocessor("pick", picks=picks)])
+    signal, _, _, positions = win[0]
+    np.testing.assert_array_equal(signal, before[original_rows])
+    np.testing.assert_array_equal(positions, coordinates[original_rows])
+
+
 def test_concat_ch_pos_raises_clear_error_on_rawdataset():
     concat = BaseConcatDataset([_raw_ds(CHS_A)])  # RawDataset, not windowed
     with pytest.raises(AttributeError, match="does not expose channel positions"):
@@ -149,34 +167,30 @@ def test_uniform_default_collate_stacks_positions():
     assert pos.shape == (4, len(CHS_A), 3)
 
 
-def test_pad_channels_collate_heterogeneous():
+@pytest.mark.parametrize("return_positions", [False, True])
+def test_pad_channels_collate_heterogeneous(return_positions):
     win = _windows([_raw_ds(CHS_A, 0), _raw_ds(CHS_B, 1)])
-    win.set_return_ch_pos(True)
+    win.set_return_ch_pos(return_positions)
+    indices = [0, len(win.datasets[0])]
     loader = DataLoader(
-        win, batch_size=4, shuffle=True, collate_fn=pad_channels_collate
+        win, batch_sampler=[indices], collate_fn=pad_channels_collate
     )
-    X, y, crop_inds, pos, ch_mask = next(iter(loader))
-    max_ch = len(CHS_B)
-    assert X.shape == (4, max_ch, 200)
-    assert pos.shape == (4, max_ch, 3)
-    assert ch_mask.shape == (4, max_ch)
-    assert ch_mask.dtype == torch.bool
-    # mask counts equal each sample's true channel count
-    assert set(ch_mask.sum(1).tolist()) <= {len(CHS_A), len(CHS_B)}
-    # padded rows are zero in both signal and positions
-    for i in range(X.shape[0]):
-        c = int(ch_mask[i].sum())
-        assert X[i, c:].abs().sum() == 0
-        assert pos[i, c:].abs().sum() == 0
-
-
-def test_pad_channels_collate_without_positions():
-    win = _windows([_raw_ds(CHS_A, 0), _raw_ds(CHS_B, 1)])  # no return_ch_pos
-    loader = DataLoader(win, batch_size=4, collate_fn=pad_channels_collate)
     batch = next(iter(loader))
-    assert len(batch) == 4  # (X, y, crop_inds, ch_mask) -- no positions
-    X, y, crop_inds, ch_mask = batch
-    assert ch_mask.shape == (X.shape[0], X.shape[1])
+    assert len(batch) == (5 if return_positions else 4)
+    X, y, crops, *extra, mask = batch
+    assert X.shape == (2, len(CHS_B), 200)
+    assert mask.dtype == torch.bool
+    assert mask.sum(1).tolist() == [len(CHS_A), len(CHS_B)]
+    for i, idx in enumerate(indices):
+        signal, label, crop, *pos = win[idx]
+        n_ch = signal.shape[0]
+        np.testing.assert_array_equal(X[i, :n_ch], signal)
+        assert mask[i, :n_ch].all() and not mask[i, n_ch:].any()
+        assert torch.count_nonzero(X[i, n_ch:]) == 0
+        assert y[i].item() == label and [c[i].item() for c in crops] == crop
+        if return_positions:
+            np.testing.assert_array_equal(extra[0][i, :n_ch], pos[0])
+            assert torch.count_nonzero(extra[0][i, n_ch:]) == 0
 
 
 def test_pad_channels_collate_nonuniform_time_raises():
