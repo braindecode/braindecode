@@ -8,7 +8,68 @@ import numpy as np
 import pytest
 import torch
 
-from braindecode.training.losses import CroppedLoss, TimeSeriesLoss, mixup_criterion
+from braindecode.models import DANCE
+from braindecode.training.losses import (
+    CroppedLoss,
+    DanceLoss,
+    TimeSeriesLoss,
+    mixup_criterion,
+)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_dance_loss_backward_with_empty_tokens(dtype):
+    torch.manual_seed(0)
+    model = DANCE(
+        n_outputs=3,
+        n_chans=2,
+        n_times=32,
+        sfreq=128,
+        use_channel_merger=False,
+        n_queries=2,
+        embed_dim=8,
+        conv_hidden=8,
+        conv_depth=1,
+        conv_kernel_size=3,
+        conv_initial_linear=4,
+        num_latents=8,
+        perceiver_depth=1,
+        cross_attn_heads=1,
+        latent_attn_heads=1,
+        cross_dim_head=4,
+        latent_dim_head=4,
+        decoder_dim=8,
+        decoder_depth=1,
+        decoder_heads=1,
+        n_virtual_channels=2,
+        drop_prob=0.0,
+        conv_drop_prob=0.0,
+    ).to(dtype)
+    x = torch.randn(2, 2, 32).to(dtype)
+    preds = model.detect(x)
+    assert all(torch.isfinite(value).all() for value in preds.values())
+    targets = {
+        "class": torch.tensor([[1, 0], [0, 0]]),
+        "start": torch.tensor([[0.2, 0.0], [0.0, 0.0]], dtype=dtype),
+        "end": torch.tensor([[0.4, 0.0], [0.0, 0.0]], dtype=dtype),
+    }
+    criterion = DanceLoss(num_latents=8)
+    loss, details = criterion(preds, targets)
+    with torch.no_grad():
+        _, expected = criterion(
+            {name: value.float() for name, value in preds.items()}, targets
+        )
+    assert details["consistency_loss"] == pytest.approx(expected["consistency_loss"])
+    assert torch.isfinite(loss)
+    loss.backward()
+    for head in (
+        model.final_layer,
+        model.decoder.class_head,
+        model.decoder.start_head,
+        model.decoder.end_head,
+    ):
+        assert torch.isfinite(head.weight.grad).all()
+    assert torch.count_nonzero(model.final_layer.weight.grad)
 
 
 def test_mixup_criterion():

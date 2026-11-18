@@ -239,6 +239,9 @@ Bug fixes
   copy; on Gaudi, the roll by 0 of a slice of the stacked gradient gave a wrong input
   gradient. Outputs and gradients are unchanged on CPU (:gh:`1595` by
   `Bruno Aristimunha`_).
+- :class:`braindecode.training.DanceLoss` computes consistency probabilities in
+  at least float32. Training :class:`braindecode.models.DANCE` in float16 now
+  gives a finite loss when an event query leaves time bins uncovered.
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
   original fine-tuning code replaces it by ``nn.Identity()``, so the head now reads

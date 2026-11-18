@@ -156,12 +156,11 @@ class HungarianMatcher(nn.Module):
             iou = pairwise_iou_1d(outputs["start"][bi], outputs["end"][bi], ts, te)
             loc_cost = 1.0 - iou  # (Q, n_targets)
             total = cls_cost + loc_cost  # IoU NOT weighted here
-            # detach() is defensive: the assignment is non-differentiable and
-            # the method is already under @torch.no_grad(), but detach keeps
-            # .numpy() safe if a caller ever drops the no_grad context.
-            cost_np = np.nan_to_num(
-                total.detach().cpu().numpy(), nan=1e6, posinf=1e6, neginf=1e6
+            # NumPy has no bfloat16 dtype for SciPy's assignment solver.
+            cost = total.detach().to(
+                device="cpu", dtype=torch.promote_types(total.dtype, torch.float32)
             )
+            cost_np = np.nan_to_num(cost.numpy(), nan=1e6, posinf=1e6, neginf=1e6)
             q_idx, t_idx = linear_sum_assignment(cost_np)
             for qi, ti in zip(q_idx, t_idx):
                 ms[bi, qi] = ts[ti]
@@ -226,17 +225,20 @@ class DanceLoss(nn.Module):
         cls = preds["class"]
         b, q, _ = cls.shape
         t = int(num_latents)
+        # The probability floor for uncovered tokens is smaller than float16 can hold.
+        probs = torch.softmax(
+            cls, dim=-1, dtype=torch.promote_types(cls.dtype, torch.float32)
+        )
         out = []
         for bi in range(b):
-            mask = torch.zeros(t, n_classes, device=cls.device, dtype=cls.dtype)
+            mask = probs.new_zeros((t, n_classes))
             for qi in range(q):
-                probs = torch.softmax(cls[bi, qi], dim=-1)
                 s = float(preds["start"][bi, qi])
                 e = float(preds["end"][bi, qi])
                 start = int(max(0, s * t))
                 end = int(min(t, e * t))
                 if start < end:
-                    mask[start:end] += probs
+                    mask[start:end] += probs[bi, qi]
             out.append(mask / (mask.sum(-1, keepdim=True) + 1e-8))
         return torch.stack(out)
 
@@ -276,7 +278,10 @@ class DanceLoss(nn.Module):
             dense_t = self._dense_target(targets, n_classes, device).reshape(-1)
         dense_term = self.weight_dense * self.ce(dense_logits, dense_t)
 
-        dense_probs = torch.softmax(detect_output["dense"], -1).clamp(min=1e-8)
+        dense = detect_output["dense"]
+        dense_probs = torch.softmax(
+            dense, dim=-1, dtype=torch.promote_types(dense.dtype, torch.float32)
+        ).clamp(min=1e-8)
         detr_probs = self._detr_to_dense_probs(
             detect_output, self.num_latents, n_classes
         ).clamp(min=1e-8)  # (B, num_latents, n_classes) == dense_probs
