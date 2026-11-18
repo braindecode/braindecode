@@ -22,7 +22,6 @@ from torch import Tensor, nn
 
 from braindecode.functional import _get_gaussian_kernel1d, scaled_dot_product_attention
 from braindecode.functional.attention import (  # noqa: F401  (re-exported)
-    _hpu_eager_fused_sdpa,
     _hpu_lazy,
     _sdpa_math_dropout,
 )
