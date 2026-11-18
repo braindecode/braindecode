@@ -70,10 +70,13 @@ There are different ways to install Braindecode, depending on your needs and:
 
             From Source Code
 
+To run on Intel Gaudi accelerators, see :ref:`install_gaudi`.
+
 .. toctree::
     :hidden:
 
     install_pip
     install_source
+    gaudi
 
 .. include:: /links.inc
