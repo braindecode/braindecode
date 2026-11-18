@@ -413,7 +413,9 @@ class ChannelLayer(nn.Module):
             ["-" not in n and np.isfinite(p).all() for n, p in zip(tnames, pos)]
         )
         if reference not in (None, "average"):  # target A is the derivation A-ref
-            tnames = [f"{n}-{reference}" if r else n for n, r in zip(tnames, self._referenced)]
+            tnames = [
+                f"{n}-{reference}" if r else n for n, r in zip(tnames, self._referenced)
+            ]
         # A-B is copied when measured, else derived from A and B (both columns).
         mono = list(dict.fromkeys(m for n in tnames for m in (n, *n.split("-"))))
         _, tpos, tstd, *_ = _resolve([named.get(m, {"ch_name": m}) for m in mono])

@@ -582,12 +582,15 @@ def test_linear_channel_map_is_the_gaussian_posterior():
     W, var = linear_channel_map(A, B, cov)  # no noise: a measured target is copied
     torch.testing.assert_close(W[0], eye[0, :3], atol=1e-9, rtol=0)
     assert var[0].abs() < 1e-9
-    ones = torch.ones(5, 1, dtype=torch.float64)
-    for flat in (None, ones):  # match_gain keeps the flat constraint (rows sum to 1)
-        Wg, _ = linear_channel_map(A, B, cov, 0.1, flat, match_gain=True)
-        gain = (Wg @ A @ cov * (Wg @ A)).sum(1)
-        torch.testing.assert_close(gain, (B @ cov * B).sum(1), atol=1e-8, rtol=1e-7)
+    prior, ones = (B @ cov * B).sum(1), torch.ones(5, 1, dtype=torch.float64)
+    Wg, _ = linear_channel_map(A, B, cov, 0.1, match_gain=True)
+    torch.testing.assert_close((Wg @ A @ cov * (Wg @ A)).sum(1), prior, atol=1e-8, rtol=1e-7)
+    # with the flat prior: rows still sum to 1, as close to the prior as that allows
+    W, _ = linear_channel_map(A, B, cov, 0.1, ones)
+    Wg, _ = linear_channel_map(A, B, cov, 0.1, ones, match_gain=True)
     torch.testing.assert_close(Wg.sum(1), torch.ones(3, dtype=torch.float64))
+    gap = [((w @ A @ cov * (w @ A)).sum(1) - prior).abs() for w in (W, Wg)]
+    assert (gap[1] <= gap[0] + 1e-9).all()
     # A flat prior on the common offset: the estimate does not see it.
     W, _ = linear_channel_map(A, B, cov, flat=ones)
     torch.testing.assert_close(W.sum(1), torch.ones(3, dtype=torch.float64))

@@ -124,7 +124,8 @@ def linear_channel_map(
         ``(n_electrodes, n_flat)`` directions :math:`F` with a flat prior.
     match_gain : bool
         Rescale the part of each row free of the flat constraint (so
-        :math:`W A F = B F` still holds) until the estimate has the prior variance of its
+        :math:`W A F = B F` still holds) so that the estimate has, as closely as
+        that constraint allows, the prior variance of its
         target, :math:`[W A \Sigma A^\top W^\top]_{kk} = [B \Sigma B^\top]_{kk}`:
         the minimum-variance estimate shrinks the amplitude.
     atol : float
