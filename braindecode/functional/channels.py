@@ -138,7 +138,8 @@ def linear_channel_map(
         ``(n_targets, n_inputs)``, float64; rows of targets that cannot be
         estimated (``W A F != B F``) are 0.
     variance : torch.Tensor
-        ``(n_targets,)`` posterior variance; ``inf`` where not estimable.
+        ``(n_targets,)`` posterior variance (of the estimate before
+        ``match_gain``); ``inf`` where not estimable.
 
     References
     ----------

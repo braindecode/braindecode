@@ -538,8 +538,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ``chs_info``, default the model's) onto the target, then run the backbone."""
         # pad_channels_collate / set_return_ch_pos: pos and ch_mask describe the
         # input montage of each sample; the backbone gets the full target one.
-        ch_mask = kwargs.pop("ch_mask", None)
-        pos = kwargs.pop("pos", None) if ch_mask is not None else None
+        # pos describes the input channels, never the backbone's mapped ones
+        ch_mask, pos = kwargs.pop("ch_mask", None), kwargs.pop("pos", None)
         bound = inspect.signature(type(self).forward).bind_partial(
             self, *args, **kwargs
         )
@@ -548,7 +548,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 "Pass ch_mask by keyword under a channel_strategy: the channel layer "
                 "uses it to map each sample, the backbone never sees it."
             )
-        if chs_info is None and pos is not None:  # names unknown: from positions
+        if chs_info is None and pos is not None and ch_mask is not None:  # no names
             mask = (
                 torch.ones(pos.shape[:2], dtype=torch.bool)
                 if ch_mask is None

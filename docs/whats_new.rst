@@ -34,7 +34,8 @@ Enhancements
   prior on the unknown reference (universal kriging). ``spline`` (now Perrin's
   kernel, :func:`~braindecode.functional.spherical_spline_kernel`) and ``wiener``
   use it with unchanged maps; ``channel_strategy`` also takes any covariance
-  kernel. The layer gives each target's posterior ``variance``, matches the
+  kernel, fed positions from the fitted head centre, with ``reg=1e-3`` and at
+  least four positioned channels, as ``spline``. The layer gives each target's posterior ``variance``, matches the
   amplitude with ``match_gain=True``, re-references the targets with
   ``reference="average"`` or an electrode name
   (:func:`~braindecode.functional.derivation_matrix` takes ``reference`` too),

@@ -420,6 +420,8 @@ def test_kernel_strategy_variance_and_gain():
     assert (layer.variance[measured] == 0).all() and (layer.variance[~measured] > 0).all()
     plain = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET))
     torch.testing.assert_close(layer.weight, plain.weight)  # the same centred kernel
+    cz = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET), reference="Cz")
+    assert (cz.variance[~measured] > 0).all()  # A - Cz: one reconstructed entry
     gained = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET), match_gain=True)
     assert torch.equal(gained.weight[measured], plain.weight[measured])
     assert not torch.allclose(gained.weight[~measured], plain.weight[~measured])
@@ -439,7 +441,8 @@ def test_dense_spline_without_regularisation_keeps_every_row():
 
 @pytest.mark.parametrize("reference", ["average", "Cz"])
 def test_target_reference_with_a_missing_target(reference):
-    # zero-filled Fp1 and BENDR's SCALE (no position) stay out of the reference
+    # Fp1 is zero-filled (and part of the average); BENDR's SCALE (no position)
+    # stays out of the reference
     layer = ChannelLayer(chs([*SUBSET, "SCALE"]), "zero", chs(SUBSET[1:]), reference=reference)
     y = layer(torch.randn(1, len(SUBSET) - 1, 10))[0]
     assert (y[0, -1] == 0).all() and y[0, 1:-1].abs().sum() > 0
@@ -486,3 +489,6 @@ def test_strategy_model_takes_pad_channels_collate_batches():
         torch.testing.assert_close(
             model(x, pos=pos, ch_mask=mask), model(x, chs_info=named, ch_mask=mask)
         )
+        # pos without ch_mask (set_return_ch_pos, no padding): the construction
+        # montage maps x, the backbone never gets the input's positions
+        torch.testing.assert_close(model(x[:1], pos=pos[:1]), model(x[:1]))

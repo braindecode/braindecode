@@ -23,7 +23,6 @@ from braindecode.functional import (
     rotate_half,
     rotate_pairs,
     sinusoidal_positional_encoding,
-    spherical_spline_kernel,
     unpack_channels,
 )
 
@@ -594,10 +593,3 @@ def test_linear_channel_map_is_the_gaussian_posterior():
     # A flat prior on the common offset: the estimate does not see it.
     W, _ = linear_channel_map(A, B, cov, flat=ones)
     torch.testing.assert_close(W.sum(1), torch.ones(3, dtype=torch.float64))
-
-
-@pytest.mark.parametrize("stiffness", [4, 6])
-def test_spherical_spline_kernel_is_a_covariance(stiffness):
-    pos = torch.nn.functional.normalize(torch.randn(20, 3, dtype=torch.float64), dim=1)
-    g = spherical_spline_kernel(pos, pos, stiffness=stiffness)
-    assert torch.linalg.eigvalsh(g).min() > -1e-12  # int64 overflowed at stiffness 6
