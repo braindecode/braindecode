@@ -732,3 +732,22 @@ def test_load_concat_dataset_target_name_windows_raises(
     setup_concat_windows_dataset.save(tmp_path)
     with pytest.raises(ValueError, match="set_target"):
         load_concat_dataset(tmp_path, preload=False, target_name="subject")
+
+
+@pytest.mark.parametrize("windowed", [False, True])
+def test_save_load_dataset_without_description(tmp_path, windowed):
+    info = mne.create_info(["C3", "C4"], 100.0, "eeg")
+    raw = mne.io.RawArray(np.random.RandomState(0).randn(2, 400), info)
+    concat_ds = BaseConcatDataset([RawDataset(raw)])
+    if windowed:
+        concat_ds = create_fixed_length_windows(
+            concat_ds,
+            window_size_samples=100,
+            window_stride_samples=100,
+            on_last_window="overlap",
+        )
+    concat_ds.save(tmp_path)
+    loaded = load_concat_dataset(tmp_path, preload=True)
+    assert len(loaded) == len(concat_ds)
+    assert loaded.description.empty
+    np.testing.assert_allclose(loaded[0][0], concat_ds[0][0])

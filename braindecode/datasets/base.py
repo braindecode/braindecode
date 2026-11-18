@@ -2129,6 +2129,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     @staticmethod
     def _save_description(sub_dir, description):
         description_file_path = os.path.join(sub_dir, "description.json")
+        if description is None:
+            description = pd.Series(dtype=object)
         description.to_json(description_file_path, default_handler=str)
 
     @staticmethod

@@ -211,6 +211,14 @@ Bug fixes
   size and no longer loads; ``mask_encoding`` is a frozen zero vector, so drop that
   key from the state dict and load with ``strict=False`` (:gh:`1601` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+
+- :meth:`braindecode.datasets.BaseConcatDataset.save` no longer raises an
+  ``AttributeError`` for a dataset created with the default ``description=None``,
+  which left a half-written subdirectory behind. Such a dataset is saved with an
+  empty description and loads back with one. Saving a dataset that has a
+  description is unchanged (:gh:`1605` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+
 - :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
   supplied electrode names without regard to case, including with a named
   recording reference, preventing duplicated columns and misplaced weights
