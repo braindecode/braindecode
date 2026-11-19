@@ -230,7 +230,9 @@ Bug fixes
 - Document the migration from the 1.4 ``compute_amplitude_gradients`` API to
   :func:`braindecode.visualization.amplitude_gradients_per_trial`, including
   the old seed and minibatch scaling, and the lifetime of each model yielded
-  by :func:`~braindecode.visualization.cascading_layer_reset`.
+  by :func:`~braindecode.visualization.cascading_layer_reset`
+  (:gh:`1636` by `Bruno Aristimunha`_).
+
 - :class:`braindecode.models.BIOT` looks up all its channel tokens in one embedding call with a
   1-D index, instead of one call per channel with a 0-d index. Outputs and gradients are
   bitwise the same on CPU. On Intel Gaudi, whose embedding backward sends a 0-d index's
