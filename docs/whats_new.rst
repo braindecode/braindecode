@@ -356,6 +356,9 @@ Bug fixes
 Code health
 ============
 
+- The :class:`braindecode.datasets.TUHEvents` test uses the public reader on local
+  EDF headers and event sidecars. Its synthetic corpus now lives in the TUH test
+  module (by `Bruno Aristimunha`_).
 - Every model is compiled on master: ``test_model_compiled`` no longer skips
   :class:`braindecode.models.MetaNeuromotorHand`, whose MPF featurizer torch
   2.15 compiles in about 90 s. ``test_model_exported`` exports

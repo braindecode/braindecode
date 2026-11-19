@@ -11,22 +11,22 @@ import pytest
 
 from braindecode.datasets.tuh import (
     _TUH_EEG_ABNORMAL_PATHS,
-    _TUH_EEG_EVENTS_PATHS,
     _TUH_EEG_PATHS,
     TUHAbnormal,
+    TUHEvents,
     _create_description,
+    _fake_raw,
     _get_header,
     _parse_description_from_file_path,
     _sort_chronologically,
     _TUHAbnormalMock,
-    _TUHEventsMock,
     _TUHMock,
 )
 
 
 def test_mock_header_accepts_posix_and_windows_paths():
     """All shared mock headers accept either separator on every host OS."""
-    for corpus in (_TUH_EEG_PATHS, _TUH_EEG_ABNORMAL_PATHS, _TUH_EEG_EVENTS_PATHS):
+    for corpus in (_TUH_EEG_PATHS, _TUH_EEG_ABNORMAL_PATHS):
         for headers in corpus.values():
             for path, expected_header in headers.items():
                 assert _get_header(path) == expected_header
@@ -257,12 +257,26 @@ def test_tuh_abnormal(version):
     platform.system() == "Windows", reason="Not supported on Windows"
 )  # TODO: Fix this
 @pytest.mark.parametrize("version", ["v2.0.1"])
-def test_tuh_events(version):
-    tuh_ev = _TUHEventsMock(path="", n_jobs=1, version=version)
-    files_count = tuh_ev._expected_files_count
+def test_tuh_events(tmp_path, monkeypatch, version):
+    recordings = [
+        ("eval/000/bckg_000_a_.edf", 36, 6),
+        ("eval/001/pled_001_a_2.edf", 68, 3),
+        ("train/aaaaaaar/aaaaaaar_00000001.edf", 19, 1),
+    ]
+    for filename, age, event_code in recordings:
+        path = tmp_path / version / "edf" / filename
+        path.parent.mkdir(parents=True)
+        # TUH reads age and gender from the first 88 bytes of the EDF header.
+        header = f"0       synthetic F 01-JAN-0000 sample Age:{age}".encode("ascii")
+        path.write_bytes(header.ljust(88))
+        path.with_suffix(".rec").write_text(
+            f"0,1.0,2.0,{event_code}\n", encoding="ascii"
+        )
+    monkeypatch.setattr("mne.io.read_raw_edf", _fake_raw)
+    with pytest.warns(UserWarning, match="Expected 518 files but found 3"):
+        tuh_ev = TUHEvents(path=str(tmp_path), version=version, on_missing_files="warn")
     description = tuh_ev.description
-    assert files_count is not None
-    assert len(tuh_ev.datasets) == files_count
+    assert len(tuh_ev.datasets) == len(recordings)
     assert set(description.columns) == {
         "path",
         "subject",
@@ -277,15 +291,18 @@ def test_tuh_events(version):
         "month",
         "day",
     }
-    assert len(tuh_ev) == 3600 * files_count
+    assert len(tuh_ev) == 3600 * len(recordings)
     assert description.subject.to_list() == ["000", "001", "aaaaaaar"]
-    assert description.version.to_list() == [version] * files_count
+    assert description.version.to_list() == [version] * len(recordings)
     assert description.session.to_list() == [1, 1, 1]
     assert description.split.to_list() == ["eval", "eval", "train"]
     event_prefixes = description.event_prefix.to_list()
     assert event_prefixes[:2] == ["bckg", "pled"]
     assert pd.isna(event_prefixes[2])
     assert description.run.to_list() == [0, 2, 0]
+    assert [ds.raw.annotations.description.tolist() for ds in tuh_ev.datasets] == [
+        ["bckg"], ["pled"], ["spsw"]
+    ]
     assert description.age.to_list() == [36, 68, 19]
     assert description.gender.to_list() == ["F", "F", "F"]
 
