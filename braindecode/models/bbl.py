@@ -110,6 +110,13 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         Kernel size of the last SEANet convolution.
     activation : type[nn.Module]
         Activation of the projector (the SEANet keeps EnCodec's ELU).
+    channel_strategy : str, default="native"
+        Only ``"native"``: the input is MEG sensors (the 306 Elekta slots of
+        the projector), not electrodes the channel layer can map. Fewer sensors
+        are zero-padded, and ``ch_mask`` marks the real ones of a padded batch.
+        Any other value raises a ``ValueError``.
+    channel_strategy_kwargs : dict or None, default=None
+        Must be ``None``.
 
     References
     ----------
@@ -140,7 +147,16 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         kernel_size: int = 7,
         last_kernel_size: int = 7,
         activation: type[nn.Module] = nn.GELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
+        if channel_strategy != "native" or channel_strategy_kwargs:
+            raise ValueError(
+                f"{type(self).__name__} takes MEG sensors (the 306 Elekta slots of its "
+                "projector), not electrodes the channel layer can map: only "
+                "channel_strategy='native' is supported. Fewer sensors are "
+                "zero-padded and ch_mask marks the real ones of a padded batch."
+            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,

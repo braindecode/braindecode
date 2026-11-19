@@ -49,7 +49,41 @@ class TimeSeriesLoss(nn.Module):
     Assumes targets are in shape:
     n_batch size x n_classes x window_len (in time)
     If the targets contain NaNs, the NaNs will be masked out and the loss will be only computed for
-    predictions valid corresponding to valid target values."""
+    predictions valid corresponding to valid target values.
+
+    Notes
+    -----
+    :class:`~braindecode.models.NeuroPose`, :class:`~braindecode.models.VEMG2Pose`
+    and :class:`~braindecode.models.SensingDynamics` return one joint-angle
+    vector per time sample, shaped ``(batch, time, joints)``. For cropped
+    regression, put the joint axis before time when passing the model to
+    :class:`~braindecode.EEGRegressor`. This lets the loss, window averaging
+    and trial prediction use the same time axis::
+
+        from einops.layers.torch import Rearrange
+        from torch import nn
+        from torch.nn.functional import mse_loss
+        from braindecode import EEGRegressor
+        from braindecode.models import NeuroPose
+        from braindecode.training import TimeSeriesLoss
+
+        pose_model = NeuroPose(n_chans=16, n_outputs=20, n_times=960, sfreq=2000)
+        module = nn.Sequential(pose_model, Rearrange("b t j -> b j t"))
+        net = EEGRegressor(module, cropped=True, criterion=TimeSeriesLoss,
+                           criterion__loss_function=mse_loss)
+
+    Pass a windowed dataset with ``targets_from="channels"`` and
+    ``last_target_only=False`` to ``net.fit(windows, y=None)``. Then
+    ``net.predict(windows)`` gives one mean per joint and window, and
+    ``net.predict_trials(windows)`` returns joint-by-time predictions for
+    each trial, along with its targets. VEMG2Pose predicts only the samples
+    after its left context. For a VEMG2Pose model, use a window stride of at
+    most ``model.n_times - model.left_context`` so that consecutive
+    predictions cover the trial without gaps (NeuroPose and SensingDynamics
+    predict every sample, so their stride can be up to ``n_times``). The loss selects the corresponding
+    suffix of each window's targets. For trial scoring, compare predictions to
+    the final ``prediction.shape[-1]`` target samples for that trial.
+    """
 
     def __init__(self, loss_function):
         super().__init__()
@@ -76,6 +110,24 @@ class TimeSeriesLoss(nn.Module):
         return self.loss_function(masked_preds, masked_targets)
 
 
+def _class_target(logits, target):
+    """Keep class probabilities and cast class indices stored as floats to long.
+
+    A floating target is a distribution when it has the layout of the logits,
+    class axis included, or when its values are not all integers (e.g. smoothed
+    per-trial labels for dense logits). Any other floating target holds class
+    indices, e.g. dense labels ``(batch, time)`` or ``(batch, seq)``, a column
+    ``(batch, 1)``, or dense labels that a criterion slices to the predictions.
+    """
+    if not target.is_floating_point():
+        return target
+    if target.ndim == logits.ndim and target.shape[1:2] == logits.shape[1:2]:
+        return target
+    if torch.equal(target, target.round()):
+        return target.long()
+    return target
+
+
 def mixup_criterion(preds, target):
     """Implements loss for Mixup for EEG data. See [1]_.
 
@@ -90,7 +142,10 @@ def mixup_criterion(preds, target):
         For predictions without mixup, the targets as a tensor. If mixup has
         been applied, a tuple or list containing the targets of the two mixed
         samples and the mixing coefficients as tensors. A plain tensor is
-        always read as targets, whatever the batch size is.
+        always read as targets, whatever the batch size is. Targets can be
+        class indices or class probabilities, per trial or dense (one per
+        prediction in time); for dense targets, each trial's loss is averaged
+        over its predictions before the mixing coefficient weights it.
 
     Returns
     -------
@@ -109,13 +164,18 @@ def mixup_criterion(preds, target):
         # unpack target
         y_a, y_b, lam = target
         # compute loss per sample
-        loss_a = torch.nn.functional.cross_entropy(preds, y_a, reduction="none")
-        loss_b = torch.nn.functional.cross_entropy(preds, y_b, reduction="none")
-        # compute weighted mean
-        ret = torch.mul(lam, loss_a) + torch.mul(1 - lam, loss_b)
-        return ret.mean()
-    else:
-        return torch.nn.functional.cross_entropy(preds, target)
+        loss_a = torch.nn.functional.cross_entropy(
+            preds, _class_target(preds, y_a), reduction="none"
+        )
+        loss_b = torch.nn.functional.cross_entropy(
+            preds, _class_target(preds, y_b), reduction="none"
+        )
+        # Each coefficient weights its trial, including all dense predictions.
+        if loss_a.ndim > 1:
+            loss_a = loss_a.flatten(start_dim=1).mean(dim=1)
+            loss_b = loss_b.flatten(start_dim=1).mean(dim=1)
+        return (lam * loss_a + (1 - lam) * loss_b).mean()
+    return torch.nn.functional.cross_entropy(preds, _class_target(preds, target))
 
 
 class HungarianMatcher(nn.Module):
@@ -156,12 +216,11 @@ class HungarianMatcher(nn.Module):
             iou = pairwise_iou_1d(outputs["start"][bi], outputs["end"][bi], ts, te)
             loc_cost = 1.0 - iou  # (Q, n_targets)
             total = cls_cost + loc_cost  # IoU NOT weighted here
-            # detach() is defensive: the assignment is non-differentiable and
-            # the method is already under @torch.no_grad(), but detach keeps
-            # .numpy() safe if a caller ever drops the no_grad context.
-            cost_np = np.nan_to_num(
-                total.detach().cpu().numpy(), nan=1e6, posinf=1e6, neginf=1e6
+            # NumPy has no bfloat16 dtype for SciPy's assignment solver.
+            cost = total.detach().to(
+                device="cpu", dtype=torch.promote_types(total.dtype, torch.float32)
             )
+            cost_np = np.nan_to_num(cost.numpy(), nan=1e6, posinf=1e6, neginf=1e6)
             q_idx, t_idx = linear_sum_assignment(cost_np)
             for qi, ti in zip(q_idx, t_idx):
                 ms[bi, qi] = ts[ti]
@@ -226,17 +285,20 @@ class DanceLoss(nn.Module):
         cls = preds["class"]
         b, q, _ = cls.shape
         t = int(num_latents)
+        # The probability floor for uncovered tokens is smaller than float16 can hold.
+        probs = torch.softmax(
+            cls, dim=-1, dtype=torch.promote_types(cls.dtype, torch.float32)
+        )
         out = []
         for bi in range(b):
-            mask = torch.zeros(t, n_classes, device=cls.device, dtype=cls.dtype)
+            mask = probs.new_zeros((t, n_classes))
             for qi in range(q):
-                probs = torch.softmax(cls[bi, qi], dim=-1)
                 s = float(preds["start"][bi, qi])
                 e = float(preds["end"][bi, qi])
                 start = int(max(0, s * t))
                 end = int(min(t, e * t))
                 if start < end:
-                    mask[start:end] += probs
+                    mask[start:end] += probs[bi, qi]
             out.append(mask / (mask.sum(-1, keepdim=True) + 1e-8))
         return torch.stack(out)
 
@@ -276,7 +338,10 @@ class DanceLoss(nn.Module):
             dense_t = self._dense_target(targets, n_classes, device).reshape(-1)
         dense_term = self.weight_dense * self.ce(dense_logits, dense_t)
 
-        dense_probs = torch.softmax(detect_output["dense"], -1).clamp(min=1e-8)
+        dense = detect_output["dense"]
+        dense_probs = torch.softmax(
+            dense, dim=-1, dtype=torch.promote_types(dense.dtype, torch.float32)
+        ).clamp(min=1e-8)
         detr_probs = self._detr_to_dense_probs(
             detect_output, self.num_latents, n_classes
         ).clamp(min=1e-8)  # (B, num_latents, n_classes) == dense_probs
