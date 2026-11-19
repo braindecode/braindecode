@@ -49,7 +49,41 @@ class TimeSeriesLoss(nn.Module):
     Assumes targets are in shape:
     n_batch size x n_classes x window_len (in time)
     If the targets contain NaNs, the NaNs will be masked out and the loss will be only computed for
-    predictions valid corresponding to valid target values."""
+    predictions valid corresponding to valid target values.
+
+    Notes
+    -----
+    :class:`~braindecode.models.NeuroPose`, :class:`~braindecode.models.VEMG2Pose`
+    and :class:`~braindecode.models.SensingDynamics` return one joint-angle
+    vector per time sample, shaped ``(batch, time, joints)``. For cropped
+    regression, put the joint axis before time when passing the model to
+    :class:`~braindecode.EEGRegressor`. This lets the loss, window averaging
+    and trial prediction use the same time axis::
+
+        from einops.layers.torch import Rearrange
+        from torch import nn
+        from torch.nn.functional import mse_loss
+        from braindecode import EEGRegressor
+        from braindecode.models import NeuroPose
+        from braindecode.training import TimeSeriesLoss
+
+        pose_model = NeuroPose(n_chans=16, n_outputs=20, n_times=960, sfreq=2000)
+        module = nn.Sequential(pose_model, Rearrange("b t j -> b j t"))
+        net = EEGRegressor(module, cropped=True, criterion=TimeSeriesLoss,
+                           criterion__loss_function=mse_loss)
+
+    Pass a windowed dataset with ``targets_from="channels"`` and
+    ``last_target_only=False`` to ``net.fit(windows, y=None)``. Then
+    ``net.predict(windows)`` gives one mean per joint and window, and
+    ``net.predict_trials(windows)`` returns joint-by-time predictions for
+    each trial, along with its targets. VEMG2Pose predicts only the samples
+    after its left context. For a VEMG2Pose model, use a window stride of at
+    most ``model.n_times - model.left_context`` so that consecutive
+    predictions cover the trial without gaps (NeuroPose and SensingDynamics
+    predict every sample, so their stride can be up to ``n_times``). The loss selects the corresponding
+    suffix of each window's targets. For trial scoring, compare predictions to
+    the final ``prediction.shape[-1]`` target samples for that trial.
+    """
 
     def __init__(self, loss_function):
         super().__init__()

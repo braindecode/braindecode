@@ -417,8 +417,9 @@ class VEMG2Pose(
         valid_seconds = (n_times - self.left_context) / self.input_sfreq
         # int(): TorchScript's round() returns a float, which interpolate rejects.
         n_steps = max(1, int(round(valid_seconds * self.rollout_rate)))
+        # align_corners=True as in emg2pose's pose_modules.py.
         features = F.interpolate(
-            features, size=n_steps, mode="linear", align_corners=False
+            features, size=n_steps, mode="linear", align_corners=True
         )
 
         # Steps taken as position before switching to velocity integration.
