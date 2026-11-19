@@ -17,6 +17,16 @@ Braindecode implements a Pydantic configuration for each of its models in
 In this example, we will use these configurations to define an experiment that
 trains and evaluates different models on a motor-imagery dataset using Exca.
 
+The experiment uses the ``typing`` and ``moabb`` extras. In a notebook,
+install them for the same version of Braindecode as the first cell:
+
+.. code-block:: ipython
+
+    %%capture --no-stderr
+    from importlib.metadata import version
+    braindecode_version = version("braindecode")
+    %pip install "braindecode[typing,moabb]=={braindecode_version}"
+
 .. contents:: This example covers:
    :local:
    :depth: 2

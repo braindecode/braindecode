@@ -5,6 +5,7 @@
 import copy
 import json
 import os
+import re
 import sys
 import warnings
 from contextlib import nullcontext
@@ -43,6 +44,7 @@ from braindecode.models import (
     DuIN,
     Labram,
     PopulationTransformer,
+    Pratibha2,
     SleepFM,
     SleepFMStager,
     STEEGFormer,
@@ -914,7 +916,7 @@ _ZUNA_SMALL = dict(n_outputs=2, sfreq=250.0, dim=64, n_layers=1, n_heads=2, head
 
 def _zuna_chs_info():
     info = mne.create_info(["Fz", "Cz", "Pz", "C3", "C4", "O1"], 250.0, "eeg")
-    info.set_montage("standard_1020")
+    info.set_montage("colin27_1020")
     return info["chs"]
 
 
@@ -979,7 +981,7 @@ def test_zuna_names_without_locations_take_their_montage_position():
     with pytest.warns(UserWarning, match="standard 10-05 position"):
         filled = ZUNA(chs_info=names_only, **kw)
     info = mne.create_info([ch["ch_name"] for ch in chs], 250.0, "eeg")
-    info.set_montage("standard_1005")
+    info.set_montage("colin27_1005")
     reference = ZUNA(chs_info=info["chs"], **kw)
     torch.testing.assert_close(
         filled.encoder.rotary_cosine, reference.encoder.rotary_cosine
@@ -1309,6 +1311,67 @@ def test_luna_variants_different_channel_counts(luna_base_config):
         with torch.no_grad():
             output = model(x)
         assert output.shape == (2, 2)
+
+
+def test_luna_default_locations_without_n_chans():
+    """The channel count may first be known at forward, and the default
+    locations add no key to the state dict, so checkpoints still load."""
+    model = LUNA(n_outputs=2, n_times=80, patch_size=20).eval()
+    assert not any("channel_locations" in key for key in model.state_dict())
+    with torch.no_grad():
+        assert model(torch.randn(2, 5, 80)).shape == (2, 2)
+
+
+def test_luna_matches_explicit_locations_when_channel_count_changes():
+    positions = torch.tensor([[0.1, 0.2, 0.3], [-0.1, 0.3, 0.4], [0.0, -0.2, 0.2]])
+    chs = [{"ch_name": str(i), "loc": row.numpy()} for i, row in enumerate(positions)]
+    model = LUNA(chs_info=chs, n_outputs=2, n_times=80, patch_size=20, depth=1).eval()
+    fallback = torch.zeros(4, 3)
+    fallback[:, 0] = torch.linspace(-1, 1, 4)
+    for expected in (positions[:2], fallback):
+        x = torch.randn(2, len(expected), 80)
+        explicit = expected.expand(len(x), -1, -1)
+        with torch.no_grad():
+            torch.testing.assert_close(model(x), model(x, channel_locations=explicit))
+
+
+@pytest.mark.parametrize("assign", [False, True], ids=["to_empty", "assign"])
+@pytest.mark.parametrize("measured", [False, True], ids=["fallback", "measured"])
+def test_luna_materializes_default_positions_from_checkpoint(assign, measured):
+    chs = None
+    if measured:
+        chs = [{"ch_name": str(i), "loc": [i + 0.1, 0.3, -0.2]} for i in range(3)]
+    kwargs = dict(
+        n_chans=3, chs_info=chs, n_outputs=2, n_times=80, patch_size=20, depth=1
+    )
+    reference = LUNA(**kwargs).eval()
+    with torch.device("meta"):
+        restored = LUNA(**kwargs).eval()
+    if not assign:
+        restored.to_empty(device="cpu")
+        # Make reads from uninitialized floating buffers deterministic.
+        for buffer in restored.buffers():
+            if buffer.is_floating_point():
+                buffer.fill_(float("nan"))
+    restored.load_state_dict(reference.state_dict(), strict=True, assign=assign)
+    x = torch.randn(2, 3, 80)
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x), reference(x))
+
+
+def test_luna_loads_full_model_with_legacy_location_cache(tmp_path):
+    model = LUNA(n_chans=3, n_outputs=2, n_times=80, patch_size=20, depth=1).eval()
+    x = torch.randn(2, 3, 80)
+    with torch.no_grad():
+        expected = model(x)
+    model._channel_location_cache = {3: model._default_channel_locations}
+    del model._default_channel_locations
+    model._load_state_dict_post_hooks.clear()
+    checkpoint = tmp_path / "luna.pt"
+    torch.save(model, checkpoint)
+    restored = torch.load(checkpoint, weights_only=False)  # nosec B614 - own file
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x), expected)
 
 
 def test_luna_variants_output_consistency(
@@ -2054,6 +2117,297 @@ def test_axon_warns_on_non_200_hz():
         AXON(chs_info=_axon_chs(), n_outputs=2, sfreq=250.0, **_AXON_SMALL)
 
 
+# ==============================================================================
+# Tests for Pratibha2 Model
+# ==============================================================================
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_pratibha2_pretrained_loads():
+    chs_info = [{"ch_name": n, "kind": "eeg"} for n in ["Fz", "C3", "Cz", "C4", "Pz"]]
+    model = Pratibha2.from_pretrained(
+        "MannasAI/pratibha-2", chs_info=chs_info, n_outputs=2, n_times=1000
+    )
+    out = model(torch.randn(2, 5, 1000))
+    assert out.shape == (2, 2)
+
+
+_PRATIBHA2_SMALL = dict(embed_dim=32, n_freqs=2, depth=2, num_heads=4)
+_PRATIBHA2_NAMES = ["Fp1", "Fp2", "F3", "F4", "C3", "Cz", "C4", "P3", "P4", "O1", "O2"]
+
+
+@pytest.fixture
+def pratibha2_bank(tmp_path, monkeypatch):
+    """Local stand-in for the Hub position table."""
+    pos = (
+        mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
+        .get_positions()["ch_pos"]
+    )
+    bank = {n: [float(v) for v in pos[n]] for n in _PRATIBHA2_NAMES + ["AFz", "Iz"]}
+    bank["AFZ"] = [0.001, 0.0773, 0.0216]
+    bank["IZ"] = [0.0, -0.1144, -0.0292]
+    bank["E1"] = [0.05, 0.05, 0.05]
+    (tmp_path / "pratibha2_positions.json").write_text(json.dumps(bank))
+    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
+    return bank
+
+
+def _pratibha2_model(names=_PRATIBHA2_NAMES, **kw):
+    torch.manual_seed(0)
+    chs = [{"ch_name": n, "kind": "eeg"} for n in names]
+    return Pratibha2(
+        chs_info=chs, n_outputs=3, sfreq=200.0, **{**_PRATIBHA2_SMALL, **kw}
+    ).eval()
+
+
+def test_pratibha2_channel_order_does_not_matter(pratibha2_bank):
+    model = _pratibha2_model()
+    perm = torch.randperm(len(_PRATIBHA2_NAMES))
+    permuted = _pratibha2_model([_PRATIBHA2_NAMES[i] for i in perm])
+    permuted.load_state_dict(model.state_dict())
+    x = torch.randn(2, len(_PRATIBHA2_NAMES), 1000)
+    with torch.no_grad():
+        a = model(x, return_features=True)["features"]
+        b = permuted(x[:, perm], return_features=True)["features"]
+    torch.testing.assert_close(a, b, atol=1e-5, rtol=1e-5)
+
+
+def test_pratibha2_exact_name_wins_over_case(pratibha2_bank):
+    """The table has distinct AFz/AFZ and Iz/IZ entries."""
+    model = _pratibha2_model(["AFz", "AFZ", "Iz", "IZ", "E1"])
+    expected = torch.tensor(
+        [pratibha2_bank[n] for n in ["AFz", "AFZ", "Iz", "IZ", "E1"]]
+    )
+    torch.testing.assert_close(model.encoder.channel_positions, 100.0 * expected)
+
+
+def test_pratibha2_exact_name_wins_with_prefix_suffix_and_bipolar(pratibha2_bank):
+    """EEG prefixes, -REF suffixes and bipolar ends keep the exact-case entry."""
+    model = _pratibha2_model(["EEG AFz", "AFz-REF", "EEG IZ-REF", "AFz-Iz"])
+    bank = {k: torch.tensor(v) for k, v in pratibha2_bank.items()}
+    expected = torch.stack(
+        [bank["AFz"], bank["AFz"], bank["IZ"], (bank["AFz"] + bank["Iz"]) / 2]
+    )
+    torch.testing.assert_close(model.encoder.channel_positions, 100.0 * expected)
+
+
+def test_pratibha2_short_window_from_seconds_raises(pratibha2_bank):
+    chs = [{"ch_name": "Cz", "kind": "eeg"}]
+    with pytest.raises(ValueError, match="patch_size"):
+        Pratibha2(
+            chs_info=chs,
+            n_outputs=2,
+            input_window_seconds=0.5,
+            sfreq=200.0,
+            **_PRATIBHA2_SMALL,
+        )
+
+
+def test_pratibha2_names_outside_table_take_standard_1005_montage_frame(pratibha2_bank):
+    pos = (
+        mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
+        .get_positions()["ch_pos"]
+    )
+    model = _pratibha2_model(["FT9", "EEG fc3", "T3"])
+    expected = torch.stack(
+        [torch.as_tensor(pos[n], dtype=torch.float32) for n in ("FT9", "FC3", "T7")]
+    )
+    torch.testing.assert_close(model.encoder.channel_positions, 100.0 * expected)
+
+
+def test_pratibha2_unknown_channel_raises_or_drops(pratibha2_bank):
+    names = ["Fp1", "NOT_A_CHANNEL", "Cz"]
+    with pytest.raises(ValueError, match="NOT_A_CHANNEL"):
+        _pratibha2_model(names)
+    with pytest.warns(UserWarning, match="NOT_A_CHANNEL"):
+        model = _pratibha2_model(names, on_missing="drop")
+    x = torch.randn(2, 3, 600)
+    with torch.no_grad():
+        assert model.encode(x).shape[1] == 2
+        torch.testing.assert_close(
+            model.encode(x), _pratibha2_model(["Fp1", "Cz"]).encode(x[:, [0, 2]])
+        )
+        with pytest.raises(ValueError, match="3 channels"):
+            model.encode(torch.cat([x, x[:, :1]], dim=1))
+
+
+@pytest.mark.parametrize("loader", ["state_dict", "nested", "pretrained"])
+def test_pratibha2_loads_original_parameter_names(pratibha2_bank, tmp_path, loader):
+    source = _pratibha2_model()
+    with torch.no_grad():
+        for param in source.parameters():
+            param.add_(0.1)
+    to_original = (
+        (r"encoder\.patch_embed\.", "patch_embed.linear."),
+        (r"encoder\.pos_enc\.learned_linear\.", "pos_enc.learned_linear.0."),
+        (r"encoder\.pos_enc\.learned_norm\.", "pos_enc.learned_linear.2."),
+        (r"encoder\.pos_enc\.", "pos_enc."),
+        (r"encoder\.blocks\.(\d+)\.norm1\.", r"encoder.layers.\1.pre_attn_norm."),
+        (r"encoder\.blocks\.(\d+)\.attn\.qkv\.", r"encoder.layers.\1.attn.qkv_proj."),
+        (r"encoder\.blocks\.(\d+)\.attn\.proj\.", r"encoder.layers.\1.attn.out_proj."),
+        (r"encoder\.blocks\.(\d+)\.norm2\.", r"encoder.layers.\1.pre_ffn_norm."),
+        (r"encoder\.blocks\.(\d+)\.mlp\.", r"encoder.layers.\1.ffn."),
+    )
+    original = {}
+    for key, value in source.state_dict().items():
+        for pattern, new in to_original:
+            if re.match(pattern, key):
+                key = re.sub(pattern, new, key, count=1)
+                break
+        original[key] = value
+    original["pos_enc.freq_matrix"] = source.encoder.pos_enc.freq_matrix
+    assert "encoder.layers.0.attn.qkv_proj.weight" in original
+
+    target = _pratibha2_model()
+    with torch.no_grad():
+        for param in target.parameters():
+            param.add_(1.0)
+    if loader == "pretrained":
+        safetensors = pytest.importorskip("safetensors.torch")
+        pytest.importorskip("huggingface_hub")
+        target.save_pretrained(tmp_path)
+        backbone = {
+            k: v for k, v in original.items() if not k.startswith("final_layer.")
+        }
+        safetensors.save_file(backbone, str(tmp_path / "model.safetensors"))
+        target = Pratibha2.from_pretrained(tmp_path, local_files_only=True).eval()
+        expected = {k for k in source.state_dict() if k.startswith("encoder.")}
+        assert target._pretrained_provenance["loaded"] == expected
+    elif loader == "nested":
+        nn.Sequential(target).load_state_dict(
+            {"0." + k: v for k, v in original.items()}
+        )
+    else:
+        target.load_state_dict(original, strict=True)
+    for key, value in source.state_dict().items():
+        if loader == "pretrained" and key.startswith("final_layer."):
+            continue
+        torch.testing.assert_close(target.state_dict()[key], value, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("assign", [True, False])
+def test_pratibha2_materializes_montage_and_frequencies(pratibha2_bank, assign):
+    names = ["Fp1", "NOT_A_CHANNEL", "Cz"]
+    with pytest.warns(UserWarning, match="NOT_A_CHANNEL"):
+        source = _pratibha2_model(names, on_missing="drop")
+    with torch.device("meta"), pytest.warns(UserWarning, match="NOT_A_CHANNEL"):
+        restored = _pratibha2_model(names, on_missing="drop")
+    assert restored.channel_index.is_meta
+    if not assign:
+        restored.to_empty(device="cpu")
+        for buf in restored.buffers():
+            buf.fill_(float("nan") if buf.is_floating_point() else -1)
+    restored.load_state_dict(source.state_dict(), strict=True, assign=assign)
+    x = torch.randn(2, 3, 380)
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x), source(x))
+
+
+def test_pratibha2_autocast_preserves_fourier_features(pratibha2_bank):
+    model = _pratibha2_model(["Cz"])
+    pos_enc = model.encoder.pos_enc
+    xyz = model.encoder.channel_positions.expand(3, -1)
+    coords = torch.cat((xyz, torch.tensor([[0.0], [4.0], [80.0]])), dim=1)
+    features = []
+    handle = pos_enc.fourier_linear.register_forward_pre_hook(
+        lambda _module, args: features.append(args[0].detach().clone())
+    )
+    try:
+        with torch.no_grad():
+            pos_enc(coords)
+            with torch.autocast("cpu", dtype=torch.bfloat16):
+                pos_enc(coords)
+    finally:
+        handle.remove()
+    torch.testing.assert_close(features[1], features[0], rtol=0, atol=0)
+
+
+def test_pratibha2_invalid_head_keeps_classifier(pratibha2_bank):
+    model = _pratibha2_model(["Cz"])
+    head = model.final_layer
+    with pytest.raises(ValueError, match="n_outputs must be positive"):
+        model.reset_head(-1)
+    assert model.final_layer is head
+    assert model.n_outputs == model.get_config()["n_outputs"] == 3
+
+
+def test_pratibha2_single_sample_zscore(pratibha2_bank):
+    model = _pratibha2_model(["Cz"], n_times=1, patch_size=1, patch_stride=1)
+    x = torch.ones(2, 1, 1, requires_grad=True)
+    logits = model(x)
+    assert logits.isfinite().all()
+    logits.sum().backward()
+    assert x.grad.isfinite().all()
+
+
+def test_pratibha2_fits_and_restores_on_another_montage(pratibha2_bank, tmp_path):
+    pytest.importorskip("huggingface_hub")
+    pytest.importorskip("safetensors")
+    from braindecode import EEGClassifier
+
+    chs = [{"ch_name": n, "kind": "eeg"} for n in ["C3", "Cz", "C4"]]
+    x = torch.randn(4, 3, 380)
+    y = torch.tensor([0, 1, 2, 1])
+    net = EEGClassifier(
+        "Pratibha2",
+        module__chs_info=chs,
+        module__sfreq=200.0,
+        module__embed_dim=16,
+        module__n_freqs=2,
+        module__depth=1,
+        module__num_heads=2,
+        max_epochs=1,
+        batch_size=2,
+        train_split=None,
+        verbose=0,
+    ).fit(x, y)
+    trained = net.module_.eval()
+    assert torch.isfinite(torch.tensor(net.history[-1, "train_loss"]))
+    with torch.no_grad():
+        expected = trained(x)
+        torch.testing.assert_close(
+            torch.from_numpy(net.predict_proba(x)), expected.softmax(1)
+        )
+    trained.save_pretrained(tmp_path)
+    restored = Pratibha2.from_pretrained(
+        tmp_path, chs_info=chs[::-1], strict=True, local_files_only=True
+    ).eval()
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x.flip(1)), expected, atol=1e-5, rtol=1e-5)
+
+
+def test_pratibha2_weights_load_onto_another_montage(pratibha2_bank):
+    """Channel positions are not stored in the weights."""
+    source = _pratibha2_model()
+    target = _pratibha2_model(["C3", "Cz", "C4", "FC3", "CP4"])
+    target.load_state_dict(source.state_dict(), strict=True)
+    state = source.state_dict()
+    assert "encoder.channel_positions" not in state
+    assert "encoder.pos_enc.freq_matrix" not in state
+
+
+def test_pratibha2_input_unit_does_not_matter(pratibha2_bank):
+    """Microvolts and volts (MNE's default) give the same output."""
+    model = _pratibha2_model()
+    x_uv = 20.0 * torch.randn(2, len(_PRATIBHA2_NAMES), 600) + 5.0
+    with torch.no_grad():
+        torch.testing.assert_close(
+            model(x_uv), model(x_uv * 1e-6), atol=1e-4, rtol=1e-4
+        )
+
+
+def test_pratibha2_too_short_window_raises(pratibha2_bank):
+    with pytest.raises(ValueError, match="patch_size"):
+        _pratibha2_model(n_times=100)
+
+
+def test_pratibha2_warns_on_non_200_hz(pratibha2_bank):
+    chs = [{"ch_name": n, "kind": "eeg"} for n in _PRATIBHA2_NAMES]
+    with pytest.warns(UserWarning, match="200 Hz"):
+        Pratibha2(chs_info=chs, n_outputs=2, sfreq=250.0, **_PRATIBHA2_SMALL)
+
+
 @pytest.fixture
 def diver1_model():
     info = mne.create_info([f"A{i}" for i in range(6)], 500.0, "seeg")
@@ -2305,7 +2659,7 @@ def test_diver1_cnn_out_size_validation(options, match):
 def test_diver1_mup_attention_scale():
     """The released DIVER-1 checkpoints need attention scaled by 1 / head_dim."""
     info = mne.create_info(["C3", "Cz", "C4"], 500.0, "eeg")
-    info.set_montage("standard_1020")
+    info.set_montage("colin27_1020")
     for mup in (True, False):
         model = DIVER1(
             chs_info=info["chs"], n_outputs=2, n_times=1000, mup_attention=mup
@@ -3419,18 +3773,7 @@ def test_luna_rotary_whole_model_checkpoint_and_output(scripted):
     with torch.no_grad():
         expected = old(x, channel_locations=locations)
         if scripted:
-            try:
-                old_script = torch.jit.script(old)
-            except RuntimeError as error:
-                # A pre-existing whole-model limitation, not a rotary regression.
-                if "has no attribute '_channel_location_cache'" not in str(error):
-                    raise
-                with pytest.raises(RuntimeError, match="_channel_location_cache"):
-                    torch.jit.script(model)
-                pytest.xfail(
-                    "Baseline whole-LUNA scripting cannot infer the empty "
-                    "_channel_location_cache; block scripting is qualified separately."
-                )
+            old_script = torch.jit.script(old)
             model = torch.jit.script(model)
             torch.testing.assert_close(
                 old_script(x, channel_locations=locations), expected

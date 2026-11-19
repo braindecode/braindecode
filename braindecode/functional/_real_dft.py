@@ -115,7 +115,9 @@ def real_analytic_ifft(real, imag, *, n):
 
 
 @torch.jit.unused
-def hilbert_freq_real(x: torch.Tensor, forward_fourier: bool) -> torch.Tensor:
+def hilbert_freq_real(
+    x: torch.Tensor, forward_fourier: bool, seq_len: int, keep_nyquist: bool
+) -> torch.Tensor:
     """Real-valued equivalent of :func:`braindecode.functional.hilbert_freq`.
 
     Lives here rather than in ``functions.py`` because ``torch.jit.unused`` needs
@@ -125,14 +127,12 @@ def hilbert_freq_real(x: torch.Tensor, forward_fourier: bool) -> torch.Tensor:
     @fp32_island
     def compute(x):
         if forward_fourier:
-            seq_len = x.shape[-1]
             real, imag = real_rfft(x)
         else:
-            seq_len = 2 * (x.shape[-2] - 1)
             real, imag = x[..., 0], x[..., 1]
         scale = torch.full((real.shape[-1],), 2.0, dtype=real.dtype, device=real.device)
         scale[0] = 1.0  # Don't multiply the DC-term by 2
-        if forward_fourier and seq_len % 2 == 0:
+        if keep_nyquist:
             scale[-1] = 1.0  # Nor the Nyquist term, which only exists for even lengths
         out_real, out_imag = real_analytic_ifft(real * scale, imag * scale, n=seq_len)
         return torch.stack((out_real, out_imag), dim=-1)
