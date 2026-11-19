@@ -639,8 +639,10 @@ class TUHEvents(TUH):
     set_montage : bool
         If True, set the montage to the standard 10-05 system.
     channel_events : bool
-        If True, add channel-specific event annotations to the Raw objects.
-        If False, only global events will be added.
+        If True, each ``.rec`` channel index selects a name in ``raw.ch_names``.
+        This requires the EDF channels to match the annotation montage, including
+        its bipolar derivations and their order. If False, events are global and
+        the channel index is ignored.
     merge_events : bool
         If True, merge consecutive identical events into a single event with
         duration covering the entire span.
@@ -730,8 +732,7 @@ class TUHEvents(TUH):
                     f"Unknown event code '{event_code}' in '{rec_path}'. No event annotations will be added."
                 )
                 return
-            channel = raw.ch_names[int(channel_idx)]
-            channels = (channel,) if channel_events else ()
+            channels = (raw.ch_names[int(channel_idx)],) if channel_events else ()
             events.append(
                 (float(start_text), float(stop_text), EVENTS_MAP[event_code], channels)
             )

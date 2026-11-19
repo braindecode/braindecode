@@ -326,7 +326,7 @@ def test_tuh_shared_montage_matches_a_fresh_one():
             id="nested-touching-and-separate-events",
         ),
         pytest.param(
-            "1,6,7,1\n0,1,2,3\n1,1,2,3\n0,2,3,3\n",
+            "1,6,7,1\n0,1,2,3\n21,1,2,3\n0,2,3,3\n",
             False,
             False,
             [(1, 1, "pled", ()), (2, 1, "pled", ()), (6, 1, "spsw", ())],
