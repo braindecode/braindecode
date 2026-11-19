@@ -73,6 +73,7 @@ from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.mirepnet import MIREPNET_CHANNEL_ORDER
 from braindecode.models.neurorvq import NEURORVQ_CHANNELS
 from braindecode.models.util import models_dict
+from braindecode.util import resolve_montage_name
 
 TEN_TWENTY = "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
 
@@ -90,10 +91,7 @@ pytestmark = [
 
 
 def _montage(name):
-    try:
-        return mne.channels.make_standard_montage(name)
-    except ValueError:  # MNE >= 1.13 renamed the standard montages
-        return mne.channels.make_standard_montage(name.replace("standard", "colin27"))
+    return mne.channels.make_standard_montage(resolve_montage_name(name))
 
 
 def chs_from_montage(names, montage="standard_1005", kind="eeg"):

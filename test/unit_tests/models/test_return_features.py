@@ -81,7 +81,7 @@ _REVE_CHS = [
 
 
 def _chs(names=None, n=N_CHANS):
-    montage = mne.channels.make_standard_montage("standard_1020")
+    montage = mne.channels.make_standard_montage("colin27_1020")
     ch = names or montage.ch_names[:n]
     info = mne.create_info(ch_names=ch, sfreq=256, ch_types="eeg")
     info.set_montage(montage)

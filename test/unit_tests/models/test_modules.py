@@ -27,6 +27,7 @@ from braindecode.modules import (
     MLP,
     AvgPool2dWithConv,
     CausalConv1d,
+    ChannelMerger,
     Chomp1d,
     CombinedConv,
     DropPath,
@@ -44,6 +45,27 @@ from braindecode.modules import (
     TimeDistributed,
 )
 from braindecode.modules.quantization import EMACodebook
+
+
+def test_channel_merger_excludes_nonfinite_padded_channels():
+    merger = ChannelMerger(out_channels=2, pos_dim=8, dropout=0)
+    positions = torch.full((2, 2, 2), merger.invalid_value)
+    positions[1, 0] = 0.5
+    x = torch.full((2, 2, 3), float("nan"))
+    x[1, 0] = torch.tensor([1.0, 2.0, 3.0])
+    x.requires_grad_()
+    merged = merger(x, positions)
+    expected = torch.zeros_like(merged)
+    expected[1] = x[1, 0].detach()
+    torch.testing.assert_close(merged, expected)
+    merged.sum().backward()
+    grad = torch.zeros_like(x)
+    grad[1, 0] = merger.heads.shape[0]
+    torch.testing.assert_close(x.grad, grad)
+    assert torch.isfinite(merger.heads.grad).all()
+    measured_nan = x.detach().clone()
+    measured_nan[1, 0, 0] = float("nan")
+    assert torch.isnan(merger(measured_nan, positions)[1, :, 0]).all()
 
 
 @pytest.mark.parametrize(

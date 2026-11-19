@@ -56,7 +56,7 @@ interface for all EEG models and can derive variable names when needed.
 
     ::
 
-        pip install braindecode[hug]
+        pip install "braindecode[hub]"
 
     **Available pre-trained models:**
 
@@ -254,7 +254,9 @@ DIVER-1 recording metadata
 
 .. autofunction:: braindecode.models.diver1.channel_metadata_from_chs_info
 
-Modules
+*********
+ Modules
+*********
 
 :py:mod:`braindecode.modules`:
 
@@ -610,6 +612,14 @@ Common Datasets
      TUH
      TUHAbnormal
      TUHEvents
+
+Batch collation
+===============
+
+.. autosummary::
+    :toctree: generated/
+
+     pad_channels_collate
 
 Dataset Builders Functions
 ==========================
@@ -997,10 +1007,12 @@ which methods are trustworthy on your data. See the :ref:`interpretability tutor
 Time-domain attribution
 =======================
 
-Per-trial attribution maps in the input domain. Each function takes ``(model, x,
-target)`` and returns a tensor with the same spatial shape as ``x``; all are thin
-wrappers around `captum <https://captum.ai/>`_ (a soft dependency installed via ``pip
-install braindecode[viz]``) and raise :class:`ImportError` without it.
+These `Captum <https://captum.ai/>`_ wrappers compute one attribution map per trial.
+Install the optional dependency with ``pip install braindecode[viz]``. Input-space
+methods return a tensor with the spatial shape of ``x``. :func:`layer_grad_cam` returns
+``(batch, n_times)`` for a layer with one spatial axis, such as a one-dimensional
+convolution, and ``(batch, n_chans, n_times)`` for a layer with two; see its docstring
+for the axis order this assumes.
 
 .. autosummary::
     :toctree: generated/

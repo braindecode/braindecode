@@ -126,7 +126,7 @@ def windows_concat_ds(_windows_dataset):
 @pytest.fixture
 def base_concat_ds_with_montage(base_concat_ds):
     """Dataset with montage set for functions that require it."""
-    montage = mne.channels.make_standard_montage('standard_1020')
+    montage = mne.channels.make_standard_montage('colin27_1020')
     for d in base_concat_ds.datasets:
         d.raw.set_montage(montage, match_case=False, on_missing='ignore')
     return base_concat_ds
@@ -203,7 +203,7 @@ def test_preprocess_windows_kwargs(windows_concat_ds):
     (ApplyHilbert, {"envelope": False}, []),
     (ApplyProj, {}, []),
     (InterpolateBads, {"reset_bads": True}, []),
-    (SetMontage, {"montage": mne.channels.make_standard_montage('standard_1020'), "match_case": False, "on_missing": "ignore"}, []),
+    (SetMontage, {"montage": mne.channels.make_standard_montage('colin27_1020'), "match_case": False, "on_missing": "ignore"}, []),
     (ComputeCurrentSourceDensity, {}, [pytest.mark.skip(reason="requires montage setup")]),
     (Anonymize, {}, []),
     (SetChannelTypes, {"mapping": {"C4": "eog"}}, []),
@@ -507,7 +507,7 @@ def test_interpolate_bads(base_concat_ds_with_bad_channels):
 
 def test_set_montage(base_concat_ds):
     """Test SetMontage preprocessor."""
-    montage = mne.channels.make_standard_montage('standard_1020')
+    montage = mne.channels.make_standard_montage('colin27_1020')
     preprocessors = [SetMontage(montage=montage, match_case=False, on_missing='ignore')]
     preprocess(base_concat_ds, preprocessors)
     # Check that montage was set
@@ -662,7 +662,7 @@ def _montage_raw():
     info = mne.create_info(ch_names, sfreq=200.0, ch_types="eeg")
     rng = np.random.RandomState(0)
     raw = mne.io.RawArray(rng.randn(len(ch_names), 4000) * 1e-5, info, verbose=False)
-    raw.set_montage("standard_1020", verbose=False)
+    raw.set_montage("colin27_1020", verbose=False)
     return raw
 
 
@@ -755,7 +755,7 @@ def _raw_with_eog():
     data = rng.randn(len(ch_names), 4000) * 1e-5
     data[:4] += data[4] * 0.5  # EOG leaking into the EEG channels
     raw = mne.io.RawArray(data, info, verbose=False)
-    raw.set_montage("standard_1020", on_missing="ignore", verbose=False)
+    raw.set_montage("colin27_1020", on_missing="ignore", verbose=False)
     raw.set_eeg_reference(projection=True, verbose=False)
     return raw
 
@@ -947,19 +947,26 @@ def test_annotate_amplitude_applies_annotations_and_bads():
     assert len(result.annotations) > 0
 
 
-def test_annotate_nan_applies_annotations():
-    """AnnotateNan wrapper adds NaN annotations to the recording."""
-    ch_names = ["Fp1", "Fp2"]
-    info = mne.create_info(ch_names, sfreq=200.0, ch_types="eeg")
-    data = np.zeros((len(ch_names), 400))
-    data[0, 50:60] = np.nan
-    raw = mne.io.RawArray(data, info, verbose=False)
+@pytest.mark.parametrize("first_samp", [0, 20])
+@pytest.mark.parametrize("meas_date", [None, datetime(2020, 1, 1, tzinfo=timezone.utc)])
+def test_annotate_nan_preserves_event_samples(first_samp, meas_date):
+    info = mne.create_info(["C3"], 10.0, "eeg")
+    data = np.arange(100, dtype=float)[None, :]
+    data[0, 40:43] = np.nan
+    raw = mne.io.RawArray(data, info, first_samp=first_samp, verbose=False)
+    raw.set_meas_date(meas_date)
+    raw.set_annotations(mne.Annotations([0.5], [0.5], ["cue"]))
+    dataset = BaseConcatDataset([RawDataset(raw, description={"subject": 1})])
 
-    prep = AnnotateNan()
-    result = prep.apply(raw)
-
-    assert isinstance(result, mne.io.BaseRaw)
-    assert len(result.annotations) > 0
+    preprocess(dataset, [AnnotateNan()])
+    out = dataset.datasets[0].raw
+    events, _ = mne.events_from_annotations(out, event_id={"cue": 1, "BAD_NAN": 2}, regexp=None)
+    np.testing.assert_array_equal(events, [[first_samp + 5, 0, 1], [first_samp + 40, 0, 2]])
+    assert out.annotations.ch_names.tolist() == [(), ("C3",)]
+    windows = create_windows_from_events(dataset, mapping={"cue": 0}, use_mne_epochs=True)
+    signal, target, _ = windows[0]
+    np.testing.assert_array_equal(signal, data[:, 5:10])
+    assert target == 0
 
 
 def test_find_bad_channels_lof_extends_bads():

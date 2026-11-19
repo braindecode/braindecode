@@ -51,7 +51,7 @@ subject_id = 3  # Just one subject for speed
 dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 
 # Set the standard 10-20 montage for EEG channel locations
-montage = mne.channels.make_standard_montage("standard_1020")
+montage = mne.channels.make_standard_montage("colin27_1020")
 for ds in dataset.datasets:
     ds.raw.set_montage(montage)
 
