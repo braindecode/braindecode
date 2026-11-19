@@ -623,6 +623,10 @@ Code health
   ``ch_mask`` with a ``ValueError`` that names it
   (:gh:`1545`, :gh:`1548` by `Bruno Aristimunha`_).
 
+- BENDR and MSCFormer regression tests now live with their respective
+  model suites. Frequency-shift device and gradient cases run alongside
+  the transform's numerical tests (:gh:`1656` by `Bruno Aristimunha`_).
+
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).
 - The :ref:`channel-strategies` guide shows how to exclude and reconstruct a
