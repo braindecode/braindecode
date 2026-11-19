@@ -122,9 +122,13 @@ class SyncNet(EEGModuleMixin, nn.Module):
             raise ValueError("filter_width and pool_size must be positive.")
         self.padding = self._compute_padding(filter_width=self.filter_width)
         # Both the input and the convolution output are zero padded.
-        pooled_length = (
-            self.n_times + 2 * sum(self.padding) - self.filter_width + 1
-        ) // self.pool_size
+        conv_length = self.n_times + sum(self.padding) - self.filter_width + 1
+        if conv_length < 1:
+            raise ValueError(
+                f"filter_width={self.filter_width} leaves no convolution output "
+                f"for n_times={self.n_times}."
+            )
+        pooled_length = (conv_length + sum(self.padding)) // self.pool_size
         if pooled_length < 1:
             raise ValueError(
                 f"pool_size={self.pool_size} leaves no pooled samples for "

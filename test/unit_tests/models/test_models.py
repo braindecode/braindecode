@@ -3770,11 +3770,16 @@ def test_syncnet_output_batch_matches_input(n_times, filter_width, pool_size):
     torch.testing.assert_close(out[:1], out_first)
 
 
-@pytest.mark.parametrize("filter_width,pool_size", [(4, 16), (4, 0), (0, 1)])
-def test_syncnet_rejects_empty_pooling_geometry(filter_width, pool_size):
+@pytest.mark.parametrize(
+    "n_times,filter_width,pool_size", [(5, 4, 16), (5, 4, 0), (5, 0, 1), (1, 5, 1)]
+)
+def test_syncnet_rejects_empty_convolution_or_pool(n_times, filter_width, pool_size):
     with pytest.raises(ValueError, match="pool_size|filter_width"):
         SyncNet(
-            n_chans=3, n_outputs=2, n_times=5, filter_width=filter_width,
+            n_chans=3,
+            n_outputs=2,
+            n_times=n_times,
+            filter_width=filter_width,
             pool_size=pool_size,
         )
 
