@@ -285,8 +285,9 @@ def hilbert_freq(
     Returns
     -------
     torch.Tensor
-        Output tensor with shape (..., seq_len, 2), where the last dimension represents
-        the real and imaginary parts of the Hilbert transform.
+        Analytic signal of shape ``(..., n_times, 2)``, where the last dimension
+        holds its real and imaginary parts. For a spectrum given without
+        ``n_times``, the length is ``2 * (n_freqs - 1)``.
 
     Examples
     --------
