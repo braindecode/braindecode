@@ -26,7 +26,7 @@ from itertools import chain
 from operator import attrgetter
 from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import mne
 import mne.io
@@ -513,20 +513,23 @@ def _zarr_to_memmap(zarr_path, group_name):
     so they can never collide with a live writer, they are never
     read by the fast path, and they do not prevent subsequent
     callers from producing a correct result.  Caches written by
-    earlier braindecode versions remain valid: the fast path only
-    requires ``<group>.npy`` to exist.
+    earlier braindecode versions remain valid for stores without a store ID.
+    New stores have a separate cache for each export, including overwrites.
     """
-    zarr_p = Path(zarr_path)
+    zarr_p = Path(zarr_path).absolute()
     cache_dir = zarr_p.parent / f".{zarr_p.name}_memmap"
+    store_stat = zarr_p.stat()
+    root = zarr.open(str(zarr_p), mode="r")
+    store_id = root.attrs.get("store_id")
+    if store_id is not None:
+        cache_dir /= UUID(store_id).hex
     npy_path = cache_dir / f"{group_name}.npy"
 
-    # Fast path: the file is already fully materialised.  A single
-    # stat() is all the steady-state workload pays.
     if npy_path.exists():
         return npy_path
 
     cache_dir.mkdir(parents=True, exist_ok=True)
-    arr = zarr.open(zarr_path, mode="r")[group_name]["data"]
+    arr = root[group_name]["data"]
     # Unique per call, not per pid: threads of one process must not share it.
     # Exclusive creation, not tempfile.mkstemp, which would make it 0600.
     tmp_path = cache_dir / f"{group_name}.{uuid4().hex}.tmp.npy"
@@ -545,6 +548,11 @@ def _zarr_to_memmap(zarr_path, group_name):
             mm.flush()
         finally:
             del mm
+
+        # A reader on read-only media may be unable to acquire the store lock.
+        # Never publish a mixture of chunks under the previous store's ID.
+        if not os.path.samestat(store_stat, zarr_p.stat()):
+            raise OSError(f"Zarr store {zarr_p} changed while populating its cache.")
 
         # Atomic publication.  ``os.link`` never replaces an existing
         # destination, so the published inode is immutable for the
@@ -580,7 +588,14 @@ class _ZarrMixin:
     _zarr_data = None
 
     def _open_zarr(self):
-        npy_path = _zarr_to_memmap(self._zarr_path, self._group_name)
+        npy_path = getattr(self, "_zarr_cache_path", None)
+        if npy_path is None or not npy_path.exists():
+            current = _zarr_to_memmap(self._zarr_path, self._group_name)
+            if npy_path is not None and current != npy_path:
+                raise FileNotFoundError(
+                    f"The cache for the original Zarr store was removed: {npy_path}"
+                )
+            self._zarr_cache_path = npy_path = current
         # 'c' = copy-on-write: reads from file, writes to RAM
         self._zarr_data = np.load(npy_path, mmap_mode="c")
 

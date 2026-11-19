@@ -110,6 +110,24 @@ class TimeSeriesLoss(nn.Module):
         return self.loss_function(masked_preds, masked_targets)
 
 
+def _class_target(logits, target):
+    """Keep class probabilities and cast class indices stored as floats to long.
+
+    A floating target is a distribution when it has the layout of the logits,
+    class axis included, or when its values are not all integers (e.g. smoothed
+    per-trial labels for dense logits). Any other floating target holds class
+    indices, e.g. dense labels ``(batch, time)`` or ``(batch, seq)``, a column
+    ``(batch, 1)``, or dense labels that a criterion slices to the predictions.
+    """
+    if not target.is_floating_point():
+        return target
+    if target.ndim == logits.ndim and target.shape[1:2] == logits.shape[1:2]:
+        return target
+    if torch.equal(target, target.round()):
+        return target.long()
+    return target
+
+
 def mixup_criterion(preds, target):
     """Implements loss for Mixup for EEG data. See [1]_.
 
@@ -124,7 +142,10 @@ def mixup_criterion(preds, target):
         For predictions without mixup, the targets as a tensor. If mixup has
         been applied, a tuple or list containing the targets of the two mixed
         samples and the mixing coefficients as tensors. A plain tensor is
-        always read as targets, whatever the batch size is.
+        always read as targets, whatever the batch size is. Targets can be
+        class indices or class probabilities, per trial or dense (one per
+        prediction in time); for dense targets, each trial's loss is averaged
+        over its predictions before the mixing coefficient weights it.
 
     Returns
     -------
@@ -143,13 +164,18 @@ def mixup_criterion(preds, target):
         # unpack target
         y_a, y_b, lam = target
         # compute loss per sample
-        loss_a = torch.nn.functional.cross_entropy(preds, y_a, reduction="none")
-        loss_b = torch.nn.functional.cross_entropy(preds, y_b, reduction="none")
-        # compute weighted mean
-        ret = torch.mul(lam, loss_a) + torch.mul(1 - lam, loss_b)
-        return ret.mean()
-    else:
-        return torch.nn.functional.cross_entropy(preds, target)
+        loss_a = torch.nn.functional.cross_entropy(
+            preds, _class_target(preds, y_a), reduction="none"
+        )
+        loss_b = torch.nn.functional.cross_entropy(
+            preds, _class_target(preds, y_b), reduction="none"
+        )
+        # Each coefficient weights its trial, including all dense predictions.
+        if loss_a.ndim > 1:
+            loss_a = loss_a.flatten(start_dim=1).mean(dim=1)
+            loss_b = loss_b.flatten(start_dim=1).mean(dim=1)
+        return (lam * loss_a + (1 - lam) * loss_b).mean()
+    return torch.nn.functional.cross_entropy(preds, _class_target(preds, target))
 
 
 class HungarianMatcher(nn.Module):
