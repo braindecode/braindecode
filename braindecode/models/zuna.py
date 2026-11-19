@@ -403,14 +403,9 @@ def _channel_positions(chs_info, n_chans):
     names = [str(chs_info[i].get("ch_name", "")) for i in missing]
     unknown = [n for n in names if not n]
     if not unknown:
-        montage = (
-            "colin27_1005"  # standard_1005's name from MNE 1.13
-            if "colin27_1005" in mne.channels.get_builtin_montages()
-            else "standard_1005"
-        )
         info = mne.create_info(names, 256.0, "eeg")
         info.set_montage(
-            montage, match_case=False, match_alias=True, on_missing="ignore"
+            "colin27_1005", match_case=False, match_alias=True, on_missing="ignore"
         )
         filled = np.array([ch["loc"][:3] for ch in info["chs"]], dtype=locs.dtype)
         ok = np.isfinite(filled).all(1) & filled.any(1)

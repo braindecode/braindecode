@@ -365,7 +365,7 @@ _rng = np.random.default_rng(12)
 def _fixture_montage_chs() -> tuple[tuple[str, tuple[float, ...]], ...]:
     """Channels of the montage that supplies the test fixtures' real positions.
 
-    The montage is ``standard_1005``, spelled ``colin27_1005`` on MNE >= 1.13
+    The montage is ``colin27_1005``, named ``standard_1005`` before MNE 1.13
     (see :func:`braindecode.util.resolve_montage_name`; the positions are
     identical). The positions are read back from ``info["chs"][i]["loc"]``
     after :meth:`mne.Info.set_montage`, i.e. in the head frame and in metres,

@@ -171,6 +171,10 @@ Enhancements
 API and behavior changes
 ========================
 
+- Braindecode now requires MNE-Python 1.13.0 or later. This version centres
+  both montages on the fitted head origin for spherical-spline interpolation
+  (:gh:`1615` by `Bruno Aristimunha`_).
+
 - :class:`braindecode.models.SleepFM` and :class:`braindecode.models.SleepFMStager`
   take ``ch_mask``, ``True`` for real channels as in every other model and
   :func:`braindecode.datasets.pad_channels_collate`, so they train on padded batches

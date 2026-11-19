@@ -1443,7 +1443,7 @@ def test_contrawr_dummy(n_times, n_chans, sfreq, n_outputs):
 def _make_chs_info(n_chans):
     """Create synthetic chs_info with 3-D positions for testing."""
     # Use a standard montage and pick the first n_chans channels
-    montage = mne.channels.make_standard_montage("standard_1005")
+    montage = mne.channels.make_standard_montage("colin27_1005")
     ch_names = montage.ch_names[:n_chans]
     info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
     info.set_montage(montage)
@@ -1465,7 +1465,7 @@ def test_channels_without_positions_give_finite_outputs(name):
 def test_a_montage_with_unplaced_channels_is_refused(name):
     """One channel without a position must not void the others' positions."""
     info = mne.create_info(["Cz", "C3", "C4", "X1"], 250.0, "eeg")
-    info.set_montage("standard_1005", on_missing="ignore")
+    info.set_montage("colin27_1005", on_missing="ignore")
     with pytest.raises(ValueError, match=r"none for \['X1'\]"):
         all_models_dict[name](
             n_outputs=2, n_chans=4, chs_info=info["chs"], n_times=1000, sfreq=250.0
@@ -6052,7 +6052,7 @@ def test_eegclip_one_empty_rank_nonempty_global_matches_ddp_oracle(tmp_path):
 
 def _cz():
     info = mne.create_info(["Cz"], 256.0, "eeg")
-    return info.set_montage("standard_1005")["chs"]
+    return info.set_montage("colin27_1005")["chs"]
 
 
 @pytest.mark.parametrize(
