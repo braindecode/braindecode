@@ -305,6 +305,8 @@ Bug fixes
   these real bins, so a negative bin got ``pi`` or ``-pi`` at random; on MPS
   this moved the outputs of the released weights on random-walk input by 7 %
   from the CPU ones. CPU outputs are unchanged (:gh:`1566` by `Hamza Abdelhedi`_).
+- :class:`braindecode.models.LUNA` computes spectral phase on Apple MPS with
+  PyTorch 2.6, including the input gradients of silent channels.
 - :class:`braindecode.models.LUNA` reconstruction (``n_outputs=0``) adds each
   sample's own channel-name embedding to the decoder queries. The queries are
   ordered by sample, but the embedding was repeated in time-major order, so with a

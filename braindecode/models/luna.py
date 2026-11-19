@@ -655,7 +655,18 @@ class _FrequencyFeatureEmbedder(nn.Module):
             imag[..., -1] = 0.0
         freq_representation = torch.complex(freq_representation.real, imag)
         magnitude = torch.abs(freq_representation)
-        phase = torch.angle(freq_representation)
+        if freq_representation.device.type == "mps":
+            # PyTorch 2.6 lacks complex angle on MPS. At zero, retain the
+            # signed phase and its zero gradient without differentiating atan2(0, 0).
+            real = freq_representation.real
+            silent = magnitude == 0
+            signed_one = torch.copysign(torch.ones_like(real), real)
+            phase = torch.atan2(
+                torch.where(silent, imag.detach(), imag),
+                torch.where(silent, signed_one, real),
+            )
+        else:
+            phase = torch.angle(freq_representation)
 
         # Concatenate magnitude and phase along the frequency axis (last dimension)
         freq_features = torch.cat((magnitude, phase), dim=-1).to(x)

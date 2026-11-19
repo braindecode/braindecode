@@ -1297,6 +1297,28 @@ def test_luna_phase_ignores_fft_noise_on_real_bins(patch_size, monkeypatch):
         torch.testing.assert_close(embedder(x), expected, rtol=0, atol=0)
 
 
+@pytest.mark.skipif(not torch.backends.mps.is_available(), reason="requires Apple MPS")
+@pytest.mark.parametrize("patch_size, dtype", [(12, torch.float32), (11, torch.float16)])
+def test_luna_mps_phase_and_input_gradient(patch_size, dtype):
+    generator = torch.Generator().manual_seed(12)
+    signal = torch.randn(1, 2, patch_size, generator=generator).to(dtype)
+    signal[:, 0] = 0  # A silent channel must also have a finite gradient.
+    cpu_x = signal.requires_grad_()
+    mps_x = signal.detach().to("mps").requires_grad_()
+
+    spectrum = torch.fft.rfft(cpu_x.float())
+    expected = torch.angle(spectrum).to(dtype)
+    embedder = luna_module._FrequencyFeatureEmbedder(patch_size, 1)
+    embedder.frequency_to_embed = torch.nn.Identity()
+    features = embedder.to("mps")(mps_x)
+    phase = features[..., expected.shape[-1] :]
+
+    torch.testing.assert_close(phase.cpu(), expected)
+    (expected_grad,) = torch.autograd.grad(expected.sum(), cpu_x)
+    (actual_grad,) = torch.autograd.grad(phase.sum(), mps_x)
+    torch.testing.assert_close(actual_grad.cpu(), expected_grad)
+
+
 def test_luna_variants_different_channel_counts(luna_base_config):
     """Test LUNA handles different channel counts (the variants differ only in
     width and depth; test_luna_variants_output_consistency forwards each)."""
