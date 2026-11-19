@@ -358,7 +358,7 @@ Bug fixes
   output was advanced by ``(filter_length - 1) // 2`` samples (0.82 s for the
   8-13 Hz band at 250 Hz) and depended on future samples only. These phases are
   now applied causally, as in :func:`mne.filter.filter_data`; the other phases
-  are unchanged (:gh:`XXXX` by `Axel Coiffard-Donaty`_).
+  are unchanged (:gh:`1686` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============
