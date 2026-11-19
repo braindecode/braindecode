@@ -249,7 +249,7 @@ Bug fixes
 - :class:`braindecode.modules.FilterBankLayer` preserves its float64 IIR
   coefficients when casting a model. Narrow-band filters in
   :class:`braindecode.models.FBCNet` could produce NaN predictions after
-  ``model.float()`` rounded the coefficients of a stable filter.
+  ``model.float()`` rounded the coefficients of a stable filter (:gh:`1657`).
 - :class:`braindecode.models.CSBrain` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head, as
   for :class:`braindecode.models.CBraMod`. The original fine-tuning code replaces
