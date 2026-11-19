@@ -923,9 +923,32 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         new_state_dict = OrderedDict(state_dict)
         if hasattr(state_dict, "_metadata"):
             new_state_dict._metadata = state_dict._metadata
-        for old, current in (self.mapping or {}).items():
-            if old in state_dict and current not in new_state_dict:
+
+        def rename(old, current):
+            if current not in new_state_dict:
                 new_state_dict[current] = new_state_dict.pop(old)
+                return
+            # Old modules registered under two names can save two views of
+            # exactly the same tensor in a raw PyTorch checkpoint.
+            previous, canonical = new_state_dict[old], new_state_dict[current]
+            if previous is canonical or (
+                isinstance(previous, torch.Tensor)
+                and isinstance(canonical, torch.Tensor)
+                and previous.layout == canonical.layout == torch.strided
+                and previous.device == canonical.device
+                and not previous.is_meta
+                and previous.dtype == canonical.dtype
+                and not torch.nn.parameter.is_lazy(previous)
+                and not torch.nn.parameter.is_lazy(canonical)
+                and previous.is_conj() == canonical.is_conj()
+                and previous.is_neg() == canonical.is_neg()
+                and previous.is_set_to(canonical)
+            ):
+                del new_state_dict[old]
+
+        for old, current in (self.mapping or {}).items():
+            if old in state_dict and old != current:
+                rename(old, current)
         # Older max-norm layers saved their weight directly. Leave conflicting
         # aliases in the dictionary so PyTorch reports them as unexpected.
         for key in new_state_dict.keys() - own.keys():
@@ -933,13 +956,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             if name != "weight":
                 continue
             original = key.removesuffix("weight") + "parametrizations.weight.original"
-            if original not in own or original in new_state_dict:
+            if original not in own:
                 continue
             transforms = self.get_submodule(module).parametrizations.weight
             if len(transforms) == 1 and isinstance(
                 transforms[0], (MaxNorm, MaxNormParametrize)
             ):
-                new_state_dict[original] = new_state_dict.pop(key)
+                rename(key, original)
         # A backbone checkpoint has no weights for a trainable channel layer.
         # Load hooks may expand tensors with locally initialized values. Only
         # attribute whole tensors whose checkpoint shape already matches.

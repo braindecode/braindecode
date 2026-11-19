@@ -897,6 +897,35 @@ def test_legacy_weight_does_not_bypass_a_custom_parametrization():
     assert result.missing_keys == ["dummy.parametrizations.weight.original"]
 
 
+@pytest.mark.parametrize("legacy, current", [
+    ("conv_spatial.weight", "conv_spatial.parametrizations.weight.original"),
+    ("conv_classifier.weight", "final_layer.conv_classifier.weight"),
+])
+def test_load_state_dict_accepts_tied_historical_names(tmp_path, legacy, current):
+    model = EEGNet(n_chans=3, n_outputs=2, n_times=128).eval()
+    state = model.state_dict()
+    state[legacy] = state[current].detach()
+    # Saving a module registered twice produces two tensor objects backed by
+    # the same storage in raw PyTorch checkpoints.
+    path = tmp_path / "tied.pt"
+    torch.save(state, path)
+    restored = torch.load(path, weights_only=True)
+    model.load_state_dict(restored)
+    assert restored[current].is_set_to(restored[legacy])
+
+    # Equal values in an independent tensor, or a different interpretation of
+    # the same bytes, are competing entries rather than tied weights.
+    for competing in (
+        restored[current].clone(),
+        restored[current].view(torch.int32),
+        restored[current].transpose(0, 1),
+        restored[current][1:],
+    ):
+        restored[legacy] = competing
+        with pytest.raises(RuntimeError, match="Unexpected key"):
+            model.load_state_dict(restored)
+
+
 def test_load_state_dict_preserves_batch_norm_version():
     model = EEGNet(n_chans=3, n_outputs=2, n_times=128)
     state = model.state_dict()
