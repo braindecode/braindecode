@@ -1944,6 +1944,19 @@ def test_crop_tokenizer_uses_actual_window_length():
         tokenizer(x[..., :2])
 
 
+@pytest.mark.parametrize(
+    "n_times, expected",
+    [(4, [[1, 2]]), (5, [[1, 2]]), (6, [[1, 2], [6, 0]]), (7, [[1, 2], [6, 7]])],
+)
+def test_gapped_patches_only_pad_a_measured_start(n_times, expected):
+    from braindecode.functional import pad_or_crop_to_patches, patch_count
+
+    x = torch.arange(1, n_times + 1)
+    patches = pad_or_crop_to_patches(x, 2, "pad", step=5).unfold(0, 2, 5)
+    torch.testing.assert_close(patches, torch.tensor(expected))
+    assert patch_count(n_times, 2, "pad", step=5) == len(expected)
+
+
 def test_pad_to_min_patches():
     """min_patches zero-pads a window short of that many patches, on the right
     or (center) with half the missing patches before it."""

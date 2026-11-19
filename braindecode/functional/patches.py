@@ -32,7 +32,9 @@ def patch_count(
         (``"crop"``) or raises a ``ValueError``.
     step : int, default=0
         Distance between patch starts; ``0`` means ``patch_size``
-        (non-overlapping).
+        (non-overlapping). A step larger than the patch size skips samples
+        between patches. Padding includes a final patch only when its start
+        is within the signal.
 
     Returns
     -------
@@ -58,7 +60,10 @@ def patch_count(
     elif (n_times - patch_size) % step == 0:
         return (n_times - patch_size) // step + 1
     elif on_non_divisible != "error":
-        return (n_times - patch_size) // step + 1 + (on_non_divisible == "pad")
+        full_patches = (n_times - patch_size) // step + 1
+        if on_non_divisible == "pad" and full_patches * step < n_times:
+            return full_patches + 1
+        return full_patches
     raise ValueError(
         f"Time dimension ({n_times}) is not divisible by patch_size ({patch_size})"
         + ("." if step == patch_size else f" with patch step {step}.")
