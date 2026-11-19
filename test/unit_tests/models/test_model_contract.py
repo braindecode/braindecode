@@ -349,6 +349,15 @@ class _OpLog(TorchDispatchMode):
         ):
             dtype = kwargs.get("dtype") or args[0].dtype
             out = torch.randn(args[0].shape).to(dtype)
+        elif (
+            self.meta_to_cpu
+            and func is torch.ops.aten._weight_norm_interface_backward.default
+            and args[0].is_meta
+            and not func.has_kernel_for_dispatch_key("Meta")
+        ):
+            # Older PyTorch lacks this Meta kernel. Its gradients match v and g.
+            _, saved_v, saved_g, _, _ = args
+            out = torch.empty_like(saved_v), torch.empty_like(saved_g)
         else:
             out = func(*args, **kwargs)
         flat = tree_flatten((args, kwargs))[0]
@@ -439,8 +448,6 @@ def test_registered_model_complex_only_after_spectral_input(
     on the CPU only, i.e. every FFT/STFT input went through ``spectral_input``."""
     if model_name in _DATA_DEPENDENT_FORWARD:
         pytest.skip("forward reads tensor values (.item()), which meta tensors lack")
-    if model_name in {"BDTCN", "BENDR", "TIDNet"} and torch.__version__ < "2.10":
-        pytest.skip("torch < 2.10 has no meta kernel for the weight_norm backward")
     model, x = _build_case(model_name, required_params, signal_params)
     _materialize(model, x)
     model.to("meta").train()
