@@ -19,6 +19,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.neurorvq import (
     _block,
     _channel_slots,
+    _check_channel_strategy,
     _modality,
     _MultiScaleTemporalConv,
     _stack_scales,
@@ -358,6 +359,14 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         Activation in the temporal patch embedding.
     statistic_code_usage : bool, default=False
         ``True`` lets eval forwards update the ``cluster_size`` code-usage EMA, as the authors' code.
+    channel_strategy : str, default="native"
+        How another montage reaches the tokenizer; see
+        :class:`~braindecode.models.base.EEGModuleMixin`. EEG only: the channel
+        layer maps electrodes, so with another ``modality`` any value but
+        ``"native"`` raises a ``ValueError``. :meth:`tokenize` takes the
+        tokenizer's own (``chs_info``) channels.
+    channel_strategy_kwargs : dict or None, default=None
+        Options of ``channel_strategy``.
 
     Notes
     -----
@@ -417,7 +426,12 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         init_values: float = 0.0,
         activation: type[nn.Module] = nn.GELU,
         statistic_code_usage: bool = False,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
+        _check_channel_strategy(
+            self, modality, channel_strategy, channel_strategy_kwargs
+        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -425,6 +439,8 @@ class NeuroRVQTokenizer(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, input_window_seconds
         preset = _modality(self, modality)
