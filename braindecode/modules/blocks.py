@@ -42,8 +42,9 @@ class PatchTokenizer(nn.Module):
     patch_size : int
         Number of time samples per patch.
     n_times : int
-        Number of time samples of the input, used to set up the right-padding
-        when ``n_times`` is not a multiple of ``patch_size``.
+        Nominal number of time samples of the input. It is only used to
+        validate the patch geometry and warn about padding at construction;
+        padding or cropping follows the actual input length at ``forward``.
     emb_dim : int, optional
         Output features per patch in learnable mode. Defaults to ``patch_size``.
         Ignored when ``learnable=False``.
