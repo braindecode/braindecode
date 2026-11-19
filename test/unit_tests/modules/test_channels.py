@@ -412,8 +412,11 @@ def test_labram_ch_names_describe_the_input():
 
 
 def test_config_saves_the_input_montage_not_the_target(tmp_path):
-    model = BENDR(chs_info=chs(SUBSET), n_outputs=2, n_times=1280, sfreq=256,
-                  channel_strategy="spline").eval()
+    model = BENDR(
+        chs_info=chs(SUBSET), n_outputs=2, n_times=1280, sfreq=256,
+        channel_strategy="spline", encoder_h=16, contextualizer_hidden=32,
+        transformer_layers=1, transformer_heads=4,
+    ).eval()
     x = torch.randn(1, 8, 1280)
     config = model.get_config()
     assert [c["ch_name"] for c in config["chs_info"]] == SUBSET
