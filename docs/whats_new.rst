@@ -241,7 +241,9 @@ Bug fixes
   `Bruno Aristimunha`_).
 - :class:`braindecode.training.DanceLoss` computes consistency probabilities in
   at least float32. Training :class:`braindecode.models.DANCE` in float16 now
-  gives a finite loss when an event query leaves time bins uncovered.
+  gives a finite loss when an event query leaves time bins uncovered, and
+  its Hungarian matcher accepts bfloat16 predictions
+  (:gh:`1647` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
   original fine-tuning code replaces it by ``nn.Identity()``, so the head now reads
