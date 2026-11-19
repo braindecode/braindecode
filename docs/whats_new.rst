@@ -561,6 +561,13 @@ Bug fixes
   report, and with several recordings an ``AssertionError`` without message was
   raised. In shared directories, reports are matched to the EDF or its session.
   A missing or ambiguous report raises :class:`RuntimeError` (:gh:`1655` by `Axel Coiffard-Donaty`_).
+- :class:`braindecode.modules.FilterBankLayer` with ``method="fir"`` and
+  ``phase="minimum"`` or ``"minimum-half"`` applied the minimum-phase filter with
+  the delay compensation of a zero-phase filter, which made it anti-causal: the
+  output was advanced by ``(filter_length - 1) // 2`` samples (0.82 s for the
+  8-13 Hz band at 250 Hz) and depended on future samples only. These phases are
+  now applied causally, as in :func:`mne.filter.filter_data`; the other phases
+  are unchanged (:gh:`1686` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============
