@@ -2,6 +2,7 @@
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
+from copy import deepcopy
 from unittest.mock import patch
 from warnings import catch_warnings, simplefilter
 
@@ -1301,6 +1302,29 @@ def test_filter_construction_clamping_keeps_parameter_storage_and_gradients():
 
     assert tuple(parameter.data_ptr() for parameter in parameters) == data_ptrs
     assert all(parameter.grad is not None for parameter in parameters)
+
+
+def test_exported_filter_clamps_runtime_parameters():
+    """A saved graph projects new parameter values before filtering."""
+    eager = GeneralizedGaussianFilter(1, 1, 32, 100.0).double()
+    x = torch.linspace(-1.0, 1.0, 32, dtype=torch.float64)[None, None]
+    exported = torch.export.export(deepcopy(eager), (x,), strict=False).module()
+
+    for module in (eager, exported):
+        # Set all three parameters out of bounds after graph capture.
+        with torch.no_grad():
+            module.f_mean.fill_(1.2)
+            module.bandwidth.fill_(0.001)
+            module.shape.fill_(1.5)
+    expected = eager(x)
+    actual = exported(x)
+    torch.testing.assert_close(actual, expected)
+    expected.square().sum().backward()
+    actual.square().sum().backward()
+    for name, value in (("f_mean", 0.9), ("bandwidth", 0.02), ("shape", 2.0)):
+        parameter = getattr(exported, name)
+        torch.testing.assert_close(parameter, torch.full_like(parameter, value))
+        torch.testing.assert_close(parameter.grad, getattr(eager, name).grad)
 
 
 def test_traced_filter_runs_without_parameter_mutation():

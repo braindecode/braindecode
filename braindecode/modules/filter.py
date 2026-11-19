@@ -678,9 +678,10 @@ class GeneralizedGaussianFilter(nn.Module):
 
         if not torch.jit.is_scripting() and not torch.jit.is_tracing():
             with torch.no_grad():
-                self.f_mean.copy_(f_mean)
-                self.bandwidth.copy_(bandwidth)
-                self.shape.copy_(shape)
+                # Export also sees these state updates as outside autograd.
+                self.f_mean.detach().copy_(f_mean)
+                self.bandwidth.detach().copy_(bandwidth)
+                self.shape.detach().copy_(shape)
 
         # Create magnitude response with gain=1 -> (channels, freqs)
         mag_response = self.exponential_power(
