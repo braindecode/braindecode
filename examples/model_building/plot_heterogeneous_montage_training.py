@@ -54,7 +54,7 @@ mne.set_log_level("ERROR")
 # ------------------------------------------------
 #
 # We synthesise two short recordings: one with 8 channels and one with 10, both
-# using ``standard_1020`` electrode positions. In practice these would be real
+# using ``colin27_1020`` electrode positions. In practice these would be real
 # datasets loaded with different montages.
 
 
@@ -62,7 +62,7 @@ def make_recording(ch_names, label, seed):
     info = mne.create_info(ch_names, sfreq=100.0, ch_types="eeg")
     data = np.random.RandomState(seed).randn(len(ch_names), 4000) * 1e-6
     raw = mne.io.RawArray(data, info)
-    raw.set_montage("standard_1020")
+    raw.set_montage("colin27_1020")
     return RawDataset(raw, description={"label": label})
 
 

@@ -11,7 +11,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets import BaseConcatDataset, RawDataset, WindowsDataset
+from braindecode.datasets import (
+    BaseConcatDataset,
+    EEGWindowsDataset,
+    RawDataset,
+    WindowsDataset,
+)
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
     create_fixed_length_windows,
@@ -580,7 +585,8 @@ def test_set_target_rejects_targets_from_channels(set_up):
     must refuse to silently no-op."""
     _, _, mne_epochs, _, _, _ = set_up
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
-    ch_ds = WindowsDataset(mne_epochs, desc, targets_from="channels")
+    epochs = mne_epochs.copy().set_channel_types({mne_epochs.ch_names[-1]: "misc"})
+    ch_ds = WindowsDataset(epochs, desc, targets_from="channels")
     concat = BaseConcatDataset([ch_ds])
     with pytest.raises(ValueError, match="targets_from"):
         concat.set_target("pathological")
@@ -1262,3 +1268,63 @@ def test_set_description_overwrite_on_windows_keeps_source_description(key):
     assert windows.description.loc[0, key] == 5
     assert raw_ds.description.to_dict() == {"subject": 1, "target": 0}
     assert raw_ds[0][1] == 0
+
+
+@pytest.mark.parametrize("last_target_only", [True, False])
+@pytest.mark.parametrize("targets_from", ["metadata", "channels"])
+@pytest.mark.parametrize("preload", [True, False])
+def test_eeg_windows_equal_mne_getitem(
+    tmp_path, preload, targets_from, last_target_only
+):
+    """Windows equal ``raw._getitem``, for a preloaded raw and a lazy FIF raw."""
+    rng = np.random.default_rng(0)
+    info = mne.create_info(
+        ["C3", "C4", "Cz", "target"], 100.0, ["eeg", "eeg", "eeg", "misc"]
+    )
+    info["bads"] = ["C4"]  # windows keep bad channels, as raw._getitem does
+    path = tmp_path / "raw.fif"
+    mne.io.RawArray(rng.standard_normal((4, 1000)), info).save(path)
+    raw = mne.io.read_raw_fif(path, preload=preload)
+    starts = np.arange(0, 900, 70)
+    metadata = pd.DataFrame(
+        {
+            "i_window_in_trial": np.arange(len(starts)),
+            "i_start_in_trial": starts,
+            "i_stop_in_trial": starts + 100,
+            "target": rng.integers(0, 2, len(starts)),
+        }
+    )
+    ds = EEGWindowsDataset(
+        raw, metadata, targets_from=targets_from, last_target_only=last_target_only
+    )
+    crop_cols = ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+    for i in range(len(ds)):
+        X, y, crop_inds = ds[i]
+        assert crop_inds == metadata.loc[i, crop_cols].tolist()
+        _, start, stop = crop_inds
+        expected = raw._getitem((slice(None), slice(start, stop)), return_times=False)
+        expected = expected.astype("float32")
+        if targets_from == "channels":
+            y_expected = expected[3, -1:] if last_target_only else expected[3:]
+            np.testing.assert_array_equal(y, y_expected)
+            expected = expected[:3]
+        else:
+            assert y == metadata.loc[i, "target"]
+        np.testing.assert_array_equal(X, expected)
+
+
+def test_eeg_windows_preloaded_epochs_not_sliced_as_raw():
+    """A preloaded ``mne.Epochs`` is not cut as a 2-D raw array."""
+    info = mne.create_info(3, 100.0, "eeg")
+    epochs = mne.EpochsArray(np.zeros((5, 3, 100)), info, verbose=False)
+    metadata = pd.DataFrame(
+        {
+            "i_window_in_trial": range(5),
+            "i_start_in_trial": [0] * 5,
+            "i_stop_in_trial": [100] * 5,
+            "target": [0] * 5,
+        }
+    )
+    ds = EEGWindowsDataset(epochs, metadata)
+    with pytest.raises(TypeError):
+        ds[0]

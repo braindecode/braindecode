@@ -807,6 +807,8 @@ class HubDatasetMixin:
                     compressor,
                     target_name,
                 )
+                grp.attrs["targets_from"] = ds.targets_from
+                grp.attrs["last_target_only"] = ds.last_target_only
 
             elif dataset_type == "EEGWindowsDataset":
                 # Get continuous raw data and metadata from EEGWindowsDataset
@@ -915,6 +917,9 @@ class HubDatasetMixin:
                 data, metadata, description, info_dict, target_name = (
                     _load_windows_from_zarr(grp, preload)
                 )
+                # Stores written before these attributes existed used metadata.
+                targets_from = grp.attrs.get("targets_from", "metadata")
+                last_target_only = grp.attrs.get("last_target_only", True)
 
                 if preload:
                     # Convert to MNE objects and create dataset
@@ -934,7 +939,12 @@ class HubDatasetMixin:
                     epochs = mne.EpochsArray(
                         data, info, events=events, metadata=metadata
                     )
-                    ds = WindowsDataset(epochs, description)
+                    ds = WindowsDataset(
+                        epochs,
+                        description,
+                        targets_from=targets_from,
+                        last_target_only=last_target_only,
+                    )
                     if target_name is not None:
                         ds.target_name = target_name
                 else:
@@ -945,6 +955,8 @@ class HubDatasetMixin:
                         description=description,
                         info_dict=info_dict,
                         target_name=target_name,
+                        targets_from=targets_from,
+                        last_target_only=last_target_only,
                     )
 
             elif dataset_type == "EEGWindowsDataset":

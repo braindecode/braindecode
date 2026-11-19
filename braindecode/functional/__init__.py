@@ -1,6 +1,7 @@
 from .attention import scaled_dot_product_attention
 from .channel_mask import (
     check_ch_mask,
+    check_n_chans,
     masked_group_norm,
     masked_mean,
     pack_channels,
@@ -46,6 +47,7 @@ __all__ = [
     "_get_gaussian_kernel1d",
     "apply_rotary",
     "check_ch_mask",
+    "check_n_chans",
     "daubechies_filters",
     "derivation_matrix",
     "drop_path",
