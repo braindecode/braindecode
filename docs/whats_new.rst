@@ -180,6 +180,12 @@ Enhancements
 API and behavior changes
 ========================
 
+- :class:`braindecode.datasets.CHBMIT` and :class:`braindecode.datasets.SIENA` now name
+  each annotation after the ``eventType`` column of its ``events.tsv`` (``"sz"``,
+  ``"bckg"``, ...). Rows with a missing ``eventType`` keep their BIDS ``trial_type``.
+  Before, a seizure could have the same name as background (:gh:`1650` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+
 - Braindecode now requires MNE-Python 1.13.0 or later. This version centres
   both montages on the fitted head origin for spherical-spline interpolation
   (:gh:`1615` by `Bruno Aristimunha`_).
