@@ -9,7 +9,6 @@ import abc
 import inspect
 import logging
 import warnings
-from copy import deepcopy
 from typing import Any, Literal
 
 import mne
@@ -59,9 +58,6 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         kwargs = self.get_params_for("module")
         module = _get_model(self.module)
         module = self.initialized_instance(module, kwargs)
-        if module is self.module and hasattr(module, "_fit_training_data"):
-            # Keep the constructor argument reusable by fresh fits and sklearn.clone.
-            module = deepcopy(module)
         # pylint: disable=attribute-defined-outside-init
         self.module_ = module
         return self

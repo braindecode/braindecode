@@ -1472,8 +1472,10 @@ def test_gcnsnet_graph_uses_training_arrays_only(epochs, initialized):
             return mne.EpochsArray(X * 1e-6, info, verbose=False)
         return X
 
+    module = net.module
     net.fit(inputs(), y)
     expected = expected_laplacian(X[:6])
+    assert (net.module_ is module) == initialized
     np.testing.assert_allclose(net.module_.laplacians[0].matrix, expected, atol=1e-6)
     assert "module__adjacency" not in net.get_params()
 
@@ -1490,9 +1492,10 @@ def test_gcnsnet_graph_uses_training_arrays_only(epochs, initialized):
     net.set_params(warm_start=False)
     for refit in (net, fresh):
         refit.fit(inputs(), y)
-        np.testing.assert_allclose(
-            refit.module_.laplacians[0].matrix, expected_laplacian(X[:6]), atol=1e-6
-        )
+        # A class is rebuilt by each fit. A passed instance is trained in place,
+        # as every model, and its graph persists with the weights it orders.
+        graph = expected if initialized else expected_laplacian(X[:6])
+        np.testing.assert_allclose(refit.module_.laplacians[0].matrix, graph, atol=1e-6)
 
     adjacency = torch.ones(3, 3)
     explicit = estimator(adjacency=adjacency).fit(inputs(), y)
