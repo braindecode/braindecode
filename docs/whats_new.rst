@@ -372,7 +372,8 @@ Code health
   channel counts. They check PopulationTransformer coordinate bins, MAPA
   contact indices and LaBraM's canonical channel order through training
   and prediction. Preprocessing and Hub format tests use local annotated
-  recordings, and offline REVE tests use a local position bank. REVE now
+  recordings. Offline tests use local REVE positions and the pinned
+  ST-EEGFormer channel order shared with CORTEG. REVE now
   moves its default positions and selected-channel indices with the model,
   preserves the sensor coordinates during half-precision conversion and
   retains float64 precision for its Fourier positional features (:gh:`1662`).
