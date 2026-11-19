@@ -26,6 +26,7 @@ _BLOCK_NAME = re.compile(
 
 # (module, class): private copies of standard blocks present on 2026-10-17.
 _KNOWN_PRIVATE_BLOCKS = {
+    ("samba", "_ResidualMixer"),
     ("atcnet", "_ConvBlock"),
     ("atcnet", "_AttentionBlock"),
     ("atcnet", "_TCNResidualBlock"),

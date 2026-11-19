@@ -222,6 +222,7 @@ interface for all EEG models and can derive variable names when needed.
     PopulationTransformer
      Pratibha2
      REVE
+     SAMBA
      SCCNet
      SeizureTransformer
      SensingDynamics
@@ -1110,3 +1111,8 @@ Plotting
     :toctree: generated/
 
      plot_confusion_matrix
+
+.. toctree::
+   :hidden:
+
+   samba_pretrained

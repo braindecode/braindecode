@@ -28,6 +28,8 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.SAMBA` with a pure PyTorch Mamba-2 encoder.
+
 - :class:`braindecode.models.AXON`, :class:`~braindecode.models.BENDR`,
   :class:`~braindecode.models.BrainOmni`, :class:`~braindecode.models.BrainTokenizer`,
   :class:`~braindecode.models.CBraMod`, :class:`~braindecode.models.CodeBrain`,

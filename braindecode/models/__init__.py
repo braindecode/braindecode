@@ -85,6 +85,7 @@ if TYPE_CHECKING:
     from .popt import PopulationTransformer
     from .pratibha2 import Pratibha2
     from .reve import REVE
+    from .samba import SAMBA
     from .sccnet import SCCNet
     from .seizure_transformer import SeizureTransformer
     from .sensingdynamics import SensingDynamics
