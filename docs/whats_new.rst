@@ -242,6 +242,24 @@ Bug fixes
   size and no longer loads; ``mask_encoding`` is a frozen zero vector, so drop that
   key from the state dict and load with ``strict=False`` (:gh:`1601` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+
+- :func:`braindecode.preprocessing.create_fixed_length_windows` with
+  ``use_mne_epochs=True`` (also set by ``picks``, ``reject`` or ``flat``) passes
+  ``targets_from`` and ``last_target_only`` to
+  :class:`~braindecode.datasets.WindowsDataset` again and records them in
+  ``window_kwargs``, so they survive saving and loading. :gh:`515` dropped them:
+  with ``targets_from="channels"`` the target channels stayed in ``X`` and ``y``
+  came from the recording metadata. Loading older fixed-length Epochs stores
+  now restores their recorded target settings. The Hugging Face Hub (Zarr)
+  format now also stores both settings for
+  :class:`~braindecode.datasets.WindowsDataset`.
+  :class:`~braindecode.datasets.WindowsDataset` and
+  :class:`~braindecode.datasets.EEGWindowsDataset` with
+  ``targets_from="channels"`` now raise a ``ValueError`` when the selected
+  channels hold no ``misc`` channel, also when a saved dataset is loaded.
+  Before, they returned an empty ``y`` (:gh:`1609` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+
 - :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
   supplied electrode names without regard to case, including with a named
   recording reference, preventing duplicated columns and misplaced weights
