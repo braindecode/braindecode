@@ -104,7 +104,7 @@ Enhancements
   ``"features"`` are unchanged (:gh:`1570` by `Hamza Abdelhedi`_).
 - The :class:`braindecode.training.TimeSeriesLoss` documentation shows how to
   train hand-pose models with :class:`braindecode.EEGRegressor` and align
-  per-joint predictions to continuous targets (by `Bruno Aristimunha`_).
+  per-joint predictions to continuous targets (:gh:`1619` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` takes ``return_features=True``, like the other
   foundation models: it returns the normed encoder output before the head,
   ``(batch, n_patches, num_queries * embed_dim)``, as ``"features"`` (:gh:`1565` by `Hamza Abdelhedi`_).

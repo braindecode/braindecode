@@ -77,9 +77,10 @@ class TimeSeriesLoss(nn.Module):
     ``net.predict(windows)`` gives one mean per joint and window, and
     ``net.predict_trials(windows)`` returns joint-by-time predictions for
     each trial, along with its targets. VEMG2Pose predicts only the samples
-    after its left context. Use a window stride of at most
-    ``pose_model.n_times - pose_model.left_context`` so that consecutive
-    predictions cover the trial without gaps. The loss selects the corresponding
+    after its left context. For a VEMG2Pose model, use a window stride of at
+    most ``model.n_times - model.left_context`` so that consecutive
+    predictions cover the trial without gaps (NeuroPose and SensingDynamics
+    predict every sample, so their stride can be up to ``n_times``). The loss selects the corresponding
     suffix of each window's targets. For trial scoring, compare predictions to
     the final ``prediction.shape[-1]`` target samples for that trial.
     """
