@@ -104,24 +104,11 @@ jobs:
           python scripts/monthly_release.py compute --bump "$BUMP" \
             | tee -a "$GITHUB_OUTPUT"
 
-      - name: Skip if no commits since last tag
+      - name: Check for changes since the last stable release
         id: changes
         shell: bash
         run: |
-          set -euo pipefail
-          LAST_TAG="$(python scripts/monthly_release.py latest-tag)"
-          if [[ -z "$LAST_TAG" ]]; then
-            echo "no previous v* tag found; proceeding with first release"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          COMMITS_AHEAD="$(git rev-list "${LAST_TAG}..HEAD" --count)"
-          echo "${COMMITS_AHEAD} commits since ${LAST_TAG}"
-          if [[ "${COMMITS_AHEAD}" -eq 0 ]]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+          python scripts/monthly_release.py check-changes | tee -a "$GITHUB_OUTPUT"
 
       - name: Verify source tests on the checked-out master commit
         if: steps.changes.outputs.skip != 'true'
@@ -212,8 +199,7 @@ jobs:
           files: dist/*
 
       # master is PR-protected, so the version bump cannot be pushed directly.
-      # Open it as a PR branched fresh from master: date the just-released
-      # changelog heading (finalize) and seed the next dev cycle (next-dev).
+      # Carry the published changelog date onto master even if the job crosses midnight.
       - name: Open version-bump pull request
         if: steps.changes.outputs.skip != 'true' && env.DRY_RUN != 'true'
         shell: bash
@@ -221,7 +207,7 @@ jobs:
           set -euo pipefail
           BRANCH="chore/bump-after-${{ steps.ver.outputs.release_tag }}"
           git checkout -B "$BRANCH" origin/master
-          python scripts/monthly_release.py finalize
+          git restore --source "${{ steps.ver.outputs.release_tag }}" -- braindecode/version.py docs/whats_new.rst
           python scripts/monthly_release.py next-dev --bump "$BUMP"
           git add braindecode/version.py docs/whats_new.rst
           git commit -m "chore: bump version to ${{ steps.ver.outputs.next_dev_version }} after ${{ steps.ver.outputs.release_tag }}"

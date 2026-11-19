@@ -19,8 +19,8 @@ Commands used by the publishing workflows:
     ``1.7.0dev0`` for a minor bump after ``1.6.0``) and insert a fresh
     ``Current X.Y.Z (GitHub)`` section at the top of ``docs/whats_new.rst``.
 
-``latest-tag``
-    Print the highest vX.Y.Z stable release tag, or an empty line for the first release.
+``check-changes``
+    Report whether the current source has changes to release since the last stable tag.
 
 ``dev-build``
     Set the development version from the first-parent history of the checked-out commit.
@@ -35,7 +35,8 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
+import shutil
+import subprocess  # nosec B404 - invokes Git with a fixed argument list
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -115,14 +116,16 @@ def read_version(path: Path) -> str:
 def write_version(path: Path, new_version: str) -> None:
     """Replace the ``__version__`` literal in ``path`` with ``new_version``."""
     text = path.read_text(encoding="utf-8")
-    new_text, n = VERSION_RE.subn(
-        lambda m: f"{m.group('prefix')}{m.group('q')}{new_version}{m.group('q')}",
-        text,
-        count=1,
-    )
-    if n != 1:
-        raise SystemExit(f"could not rewrite __version__ in {path}")
+    new_text = replace_version(text, new_version)
     path.write_text(new_text, encoding="utf-8")
+
+
+def replace_version(text: str, new_version: str) -> str:
+    """Replace only the version literal, preserving its quotes and surrounding code."""
+    match = VERSION_RE.search(text)
+    if match is None:
+        raise SystemExit("__version__ assignment not found")
+    return text[: match.start("ver")] + new_version + text[match.end("ver") :]
 
 
 def release_from_current(current: str) -> str:
@@ -197,7 +200,13 @@ def finalize_changelog(changelog: Path, release_version: str) -> None:
 def insert_next_dev_section(changelog: Path, next_dev_base: str) -> None:
     """Insert a fresh ``Current X.Y.Z (GitHub)`` section after ``.. _current:``."""
     text = changelog.read_text(encoding="utf-8")
+    updated = next_dev_changelog(text, next_dev_base)
+    if updated != text:
+        changelog.write_text(updated, encoding="utf-8")
 
+
+def next_dev_changelog(text: str, next_dev_base: str) -> str:
+    """Return the changelog with an empty section for the next cycle."""
     # Idempotent: any pre-existing ``Current <next> ...`` heading (regardless
     # of suffix — ``(GitHub)``, ``(in development)``, dated stable, etc.) is
     # treated as "already there" so a re-run does not append a duplicate
@@ -207,7 +216,7 @@ def insert_next_dev_section(changelog: Path, next_dev_base: str) -> None:
         re.M,
     )
     if any_existing.search(text):
-        return
+        return text
 
     anchor_re = re.compile(r"^\.\. _current:[ \t]*\n", re.M)
     m = anchor_re.search(text)
@@ -223,46 +232,78 @@ def insert_next_dev_section(changelog: Path, next_dev_base: str) -> None:
         m2 = re.search(r"^Current \d", text, re.M)
         if not m2:
             raise SystemExit(
-                f"Could not find an insertion point in {changelog}: "
+                "Could not find an insertion point in the changelog: "
                 "no '.. _current:' anchor and no 'Current X.Y.Z' heading."
             )
         insert_at = m2.start()
 
     section = EMPTY_SECTION_TEMPLATE.format(base=next_dev_base)
-    changelog.write_text(
-        text[:insert_at] + section + text[insert_at:], encoding="utf-8"
-    )
+    return text[:insert_at] + section + text[insert_at:]
+
+
+def git_output(*args: str) -> str:
+    """Run Git on the checked-out release history and preserve its output verbatim."""
+    git = shutil.which("git")
+    if git is None:
+        raise SystemExit("Git is required to inspect the release history.")
+    # Callers supply fixed options and tag names matched against vX.Y.Z.
+    return subprocess.check_output([git, *args], text=True)  # nosec B603
 
 
 def latest_stable_tag() -> str:
     """Return the highest version-sorted tag whose entire name is vX.Y.Z."""
-    tags = subprocess.check_output(
-        ["git", "tag", "--list", "--sort=-version:refname"], text=True
-    ).splitlines()
+    tags = git_output("tag", "--list", "--sort=-version:refname").splitlines()
     return next(
         (tag for tag in tags if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag)), ""
     )
 
 
+def has_release_changes() -> bool:
+    """Check master against the stable tag, including its off-master release commit."""
+    tag = latest_stable_tag()
+    if not tag:
+        return True
+    count = int(git_output("rev-list", "--first-parent", "--count", f"{tag}..HEAD"))
+    if count != 1:
+        return count > 0
+
+    # A version-bump PR mirrors the release commit's changelog on master,
+    # changes the version to the next dev seed and opens an empty section.
+    version_path = Path("braindecode/version.py")
+    changelog = Path("docs/whats_new.rst")
+    changes = git_output("diff", "--name-status", tag, "HEAD")
+    if set(changes.splitlines()) != {
+        f"M\t{version_path.as_posix()}",
+        f"M\t{changelog.as_posix()}",
+    }:
+        return True
+    current = read_version(version_path)
+    seeds = {
+        compute_versions(tag[1:], bump)["next_dev_version"]
+        for bump in ("major", "minor", "patch")
+    }
+    if current not in seeds:
+        return True
+    old_version = git_output("show", f"{tag}:{version_path.as_posix()}")
+    old_notes = git_output("show", f"{tag}:{changelog.as_posix()}")
+    expected_version = replace_version(old_version, current)
+    expected_notes = next_dev_changelog(old_notes, release_from_current(current))
+    return (expected_version, expected_notes) != (
+        version_path.read_text(encoding="utf-8"),
+        changelog.read_text(encoding="utf-8"),
+    )
+
+
 def dev_build(init_file: Path) -> str:
     """Number master commits in order, above the former 32-bit hash suffixes."""
-    if (
-        subprocess.check_output(
-            ["git", "rev-parse", "--is-shallow-repository"], text=True
-        ).strip()
-        == "true"
-    ):
+    if git_output("rev-parse", "--is-shallow-repository").strip() == "true":
         raise SystemExit("Development versions require a full Git history.")
     version = Version(read_version(init_file))
     if not version.is_devrelease:
         raise SystemExit(
             f"Expected a development version in {init_file}, got {version}."
         )
-    count = int(
-        subprocess.check_output(
-            ["git", "rev-list", "--first-parent", "--count", "HEAD"]
-        )
-    )
+    count = int(git_output("rev-list", "--first-parent", "--count", "HEAD"))
     build = f"{version.base_version}.dev{2**32 + count}"
     write_version(init_file, build)
     return build
@@ -350,7 +391,9 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[paths, bump],
         help="Write the next .dev0 version and add a blank changelog section.",
     )
-    sub.add_parser("latest-tag", help="Print the highest stable release tag.")
+    sub.add_parser(
+        "check-changes", help="Check for changes since the last stable release."
+    )
     dev = sub.add_parser("dev-build", help="Write this commit's development version.")
     dev.add_argument("--init-file", type=Path, default=Path("braindecode/version.py"))
     return ap
@@ -359,8 +402,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     ap = build_parser()
     args = ap.parse_args(argv)
-    if args.cmd == "latest-tag":
-        print(latest_stable_tag())
+    if args.cmd == "check-changes":
+        print(f"skip={str(not has_release_changes()).lower()}")
         return 0
     if args.cmd == "dev-build":
         print(dev_build(args.init_file))
