@@ -30,7 +30,7 @@ from test.unit_tests.models.test_model_contract import (
 
 def _windows(channel_sets, n_times, n_windows=3, pos=False):
     rng = np.random.default_rng(0)
-    montage = mne.channels.make_standard_montage("standard_1005")
+    montage = mne.channels.make_standard_montage("colin27_1005")
     recordings = []
     for target, channels in enumerate(channel_sets):
         names = montage.ch_names[:channels] if isinstance(channels, int) else channels

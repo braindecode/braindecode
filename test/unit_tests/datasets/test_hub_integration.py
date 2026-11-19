@@ -40,7 +40,10 @@ from braindecode.datasets.bids.hub import (
 )
 from braindecode.datasets.bids.hub_io import _create_compressor
 from braindecode.datasets.registry import get_dataset_class, get_dataset_type
-from braindecode.preprocessing import create_windows_from_events
+from braindecode.preprocessing import (
+    create_fixed_length_windows,
+    create_windows_from_events,
+)
 
 
 @pytest.fixture()
@@ -1620,3 +1623,33 @@ def test_lazy_zarr_preload_true_unchanged(tmp_path):
     _, path = _make_zarr(tmp_path, "WindowsDataset")
     eager = BaseConcatDataset._load_from_zarr_inline(path, preload=True)
     assert eager.datasets[0].windows is not None and eager.datasets[0]._zarr_data is None
+
+
+@pytest.mark.parametrize("preload", [True, False])
+def test_epochs_windows_channel_targets_zarr_round_trip(tmp_path, preload):
+    """Epochs-backed windows keep channel targets through a Zarr round trip."""
+    pytest.importorskip("zarr")
+
+    data = np.arange(36, dtype=float).reshape(3, 12)
+    info = mne.create_info(["C3", "Cz", "target"], 100, ["eeg", "eeg", "misc"])
+    raw = mne.io.RawArray(data, info, verbose=False)
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw, {"label": 101}, target_name="label")]),
+        window_size_samples=4,
+        window_stride_samples=4,
+        on_last_window="drop",
+        targets_from="channels",
+        last_target_only=False,
+        use_mne_epochs=True,
+    )
+    zarr_path = tmp_path / "dataset.zarr"
+    windows._convert_to_zarr_inline(zarr_path, "blosc", 5)
+    loaded = windows._load_from_zarr_inline(zarr_path, preload=preload)
+
+    assert loaded.datasets[0].targets_from == "channels"
+    assert loaded.datasets[0].last_target_only is False
+    for i in range(3):
+        x, y, _ = loaded[i]
+        start, stop = 4 * i, 4 * (i + 1)
+        np.testing.assert_allclose(x, data[:2, start:stop])
+        np.testing.assert_allclose(y, data[2:, start:stop])

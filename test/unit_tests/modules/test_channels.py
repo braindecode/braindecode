@@ -62,7 +62,7 @@ def test_c_coordinate_only_channel_matched_by_position():
 
 def test_names_resolve_in_the_head_frame_of_raw_info():
     info = mne.create_info(TEN_TWENTY, 200.0, "eeg")
-    info.set_montage("standard_1020")
+    info.set_montage("colin27_1020")
     d = _resolve(chs(TEN_TWENTY))[1] - _resolve(info["chs"])[1]
     assert np.abs(d).max() < 1e-3  # was 46-57 mm: the montage's own (mri) frame
 

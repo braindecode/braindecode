@@ -28,7 +28,7 @@ from torch.utils._pytree import tree_flatten, tree_map_only
 
 import braindecode.functional
 from braindecode.functional import _real_dft
-from braindecode.models import MAPA
+from braindecode.models import LUNA, MAPA
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import models_dict, models_mandatory_parameters
 from test.unit_tests.models._fixtures import _get_signal_params
@@ -206,7 +206,7 @@ def test_registered_model_serialization_contract(
 # Trainable parameters the default forward does not reach (pretraining heads,
 # other read-outs, reference quirks); kept so released checkpoints load.
 _UNUSED_IN_FORWARD = {
-    "AttnSleep": r"self_attn\.convs\.0\.",  # the reference never convolves the query
+    "AttnSleep": r"self_attn\.(convs\.0|norm)\.",  # the reference attends with the raw query
     "BrainOmni": r"^blocks\.11\.",  # the reference encode() skips the last block
     "Brant": r"spatial_encoder\.proj_out\.",  # reconstruction head
     "CBraMod": r"^proj_out\.",  # pretraining reconstruction layer
@@ -278,25 +278,12 @@ _DATA_DEPENDENT_FORWARD = {
     "CodeBrain",
     "NeuroRVQTokenizer",
 }
-# Known misses, not fixed here.
-_DEVICE_XFAIL = {
-    "LUNA": "default channel locations are cached on the CPU and copied to the "
-    "device at every forward",
-}
 
 
 @pytest.mark.parametrize(
     "model_name,required_params,signal_params",
-    [
-        pytest.param(
-            *case,
-            marks=[pytest.mark.xfail(reason=_DEVICE_XFAIL[case[0]], strict=True)]
-            if case[0] in _DEVICE_XFAIL
-            else [],
-            id=case[0],
-        )
-        for case in models_mandatory_parameters
-    ],
+    models_mandatory_parameters,
+    ids=[case[0] for case in models_mandatory_parameters],
 )
 def test_registered_model_follows_device(model_name, required_params, signal_params):
     """``model.to(device)`` moves every tensor forward reads or creates, checked
@@ -314,7 +301,17 @@ def test_registered_model_follows_device(model_name, required_params, signal_par
     assert not stray, f"tensor attributes that .to() does not move: {stray}"
     if model_name in _DATA_DEPENDENT_FORWARD:
         pytest.skip("forward reads tensor values (.item()), which meta tensors lack")
-    x = x.to("meta")
+    _check_meta_forward(model, x.to("meta"))
+
+
+@pytest.mark.parametrize("n_chans", [None, 5])
+def test_luna_dynamic_montage_follows_device(n_chans):
+    model = LUNA(n_chans=n_chans, n_outputs=2, n_times=80, patch_size=20).eval()
+    model.to("meta")
+    _check_meta_forward(model, torch.empty(2, 3, 80, device="meta"))
+
+
+def _check_meta_forward(model, x):
     with torch.no_grad(), _record() as log:
         output = model(x)
     assert all(t.is_meta for t in _tensor_leaves(output))
