@@ -294,7 +294,8 @@ Bug fixes
 - :class:`braindecode.models.LUNA` checks its temporal encoder geometry at
   construction. Patch sizes must be positive multiples of 4 and embedding
   widths positive multiples of 16. Incompatible settings previously failed
-  in a grouped normalization or when adding the time and frequency features.
+  in a grouped normalization or when adding the time and frequency features
+  (:gh:`1685` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` raises when ``chs_info`` has positions for
   some channels but not all (MNE stores ``NaN`` for the others). It gave every
   channel a default position, evenly spaced along x, so one name missing from the
