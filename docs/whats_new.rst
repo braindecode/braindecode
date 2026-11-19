@@ -306,6 +306,14 @@ Bug fixes
   :func:`braindecode.functional.derivation_matrix` and
   :func:`~braindecode.functional.exact_derivation`
   (:gh:`1577` by `lindicaphxag-tech`_ and `Bruno Aristimunha`_).
+- :class:`braindecode.modules.ChannelLayer` honours changes to electrode order,
+  type and location when an input montage is reused. Padded channels are
+  excluded from the map even with NaN padding. Literal channel names and
+  bipolar derivations follow :func:`braindecode.functional.derivation_matrix`.
+  With a ``reference``, every single-electrode EEG target is re-referenced,
+  including measured electrodes without a known position, and non-electrode
+  targets such as BENDR's ``SCALE`` are left out
+  (:gh:`1620` by `Bruno Aristimunha`_).
 
 - :class:`braindecode.models.BIOT` looks up all its channel tokens in one embedding call with a
   1-D index, instead of one call per channel with a 0-d index. Outputs and gradients are
