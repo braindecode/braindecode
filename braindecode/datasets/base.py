@@ -1652,7 +1652,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             Samplers use it to keep recordings apart. If a recording description
             and a window have a column with the same name, the window value is
             retained. The recording value remains accessible on the dataset's
-            description.
+            description. For lazy fixed windows this accessor materializes the
+            table. It reports the stored labels before any ``target_transform``.
         """
         if not all(
             [
@@ -1665,7 +1666,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 "datasets are WindowsDataset."
             )
 
-        for ds in self.datasets:
+        all_dfs = []
+        for i_ds, ds in enumerate(self.datasets):
             if hasattr(ds, "_windows") and ds._windows is not None:
                 df = ds._windows.metadata
             else:
@@ -1687,16 +1689,16 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                     "position of the dataset each window comes from. Rename it."
                 )
 
-        all_dfs = list()
-        for i_ds, ds in enumerate(self.datasets):
-            if hasattr(ds, "_windows") and ds._windows is not None:
-                df = ds._windows.metadata
-            else:
-                df = ds.metadata
             if isinstance(df, pd.DataFrame):
-                # copy so the description columns stay out of the dataset
                 df = df.copy()
-            description = ds.description if ds.description is not None else {}
+            else:
+                # Only this public accessor materializes fixed-window lazy metadata.
+                df = pd.DataFrame(
+                    {
+                        col: [df.loc[i, col] for i in range(len(df))]
+                        for col in df.columns
+                    }
+                )
             for k, v in description.items():
                 if k not in df.columns:
                     df[k] = v

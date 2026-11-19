@@ -1120,9 +1120,13 @@ def test_window_targets_take_precedence_in_metadata_and_training(use_mne_epochs)
     from braindecode.models import EEGNet
 
     info = mne.create_info(["F3", "C3"], 128.0, "eeg")
-    raw = mne.io.RawArray(np.random.RandomState(0).normal(size=(2, 512)), info, verbose=False)
+    raw = mne.io.RawArray(
+        np.random.RandomState(0).normal(size=(2, 512)), info, verbose=False
+    )
     raw.set_annotations(mne.Annotations([0.0, 2.0], [2.0, 2.0], ["left", "right"]))
-    recordings = BaseConcatDataset([RawDataset(raw, {"target": "recording label", "subject": 1})])
+    recordings = BaseConcatDataset(
+        [RawDataset(raw, {"target": "recording label", "subject": 1})]
+    )
     windows = create_windows_from_events(
         recordings, mapping={"left": 0, "right": 1}, use_mne_epochs=use_mne_epochs
     )
@@ -1141,8 +1145,11 @@ def test_set_target_leaves_earlier_recordings_untouched_on_error(window_first):
     first = RawDataset(raw, {"label": 0, "task": 1}, target_name="label")
     if window_first:
         first = create_fixed_length_windows(
-            BaseConcatDataset([first]), window_size_samples=100, window_stride_samples=100,
-            on_last_window="drop", use_mne_epochs=True,
+            BaseConcatDataset([first]),
+            window_size_samples=100,
+            window_stride_samples=100,
+            on_last_window="drop",
+            use_mne_epochs=True,
         ).datasets[0]
     second = RawDataset(raw, {"label": 2}, target_name="label")
     mixed = BaseConcatDataset([first, second])

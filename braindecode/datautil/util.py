@@ -59,6 +59,17 @@ def samples_to_ms(n_samples, fs):
 
 def _get_n_outputs(y, classes, mode):
     if mode == "classification":
+        y = np.asarray(y)
+        if y.ndim >= 2 and y.shape[1] > 1 and np.issubdtype(y.dtype, np.floating):
+            # Probability targets carry the class axis, including unobserved classes.
+            if np.all(y >= 0) and np.allclose(
+                y.sum(axis=1), 1, atol=np.finfo(y.dtype).eps
+            ):
+                if classes is not None and len(classes) != y.shape[1]:
+                    raise ValueError(
+                        "The number of classes must match the probability target width."
+                    )
+                return y.shape[1]
         classes_y = np.unique(y)
         if classes is not None:
             assert set(classes_y) <= set(classes)
@@ -101,7 +112,9 @@ def infer_signal_properties(
     X : array-like or mne.BaseEpochs or Dataset
         Input data
     y : array-like or None
-        Targets
+        Targets. For floating-point class probabilities, axis 1 is the
+        class axis. For window datasets with metadata labels, the dataset's
+        target transform is applied before inferring the output size.
     mode : "classification" or "regression"
         Mode of the task
     classes : list or None
@@ -138,7 +151,7 @@ def infer_signal_properties(
             signal_kwargs["n_times"] = X.shape[-1]
             signal_kwargs["n_chans"] = X.shape[-2]
     elif is_dataset(X):
-        log.info(f"Using Dataset {X!r} to find signal-related parameters.")
+        log.info("Using %s to find signal-related parameters.", type(X).__name__)
         X0 = X[0][0]
         Xshape = X0.shape
         signal_kwargs["n_times"] = Xshape[-1]
@@ -150,8 +163,12 @@ def infer_signal_properties(
             for ds in datasets
         ):
             # Both window backends return ds.y[i], including with lazy metadata.
-            y_target = np.asarray([ds.y[i] for ds in datasets for i in range(len(ds))])
-            signal_kwargs["n_outputs"] = _get_n_outputs(y_target, classes, mode)
+            targets = (ds.y[i] for ds in datasets for i in range(len(ds)))
+            if isinstance(X, BaseConcatDataset) and X.target_transform is not None:
+                targets = map(X.target_transform, targets)
+            signal_kwargs["n_outputs"] = _get_n_outputs(
+                np.asarray(list(targets)), classes, mode
+            )
     else:
         log.warning(
             f"Can only infer signal shape of array-like and Datasets, got {type(X)!r}."
