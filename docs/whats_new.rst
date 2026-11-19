@@ -185,6 +185,9 @@ API and behavior changes
   attention over it. :class:`~braindecode.models.SleepFMStager`, whose channels sit
   in fixed modality slots, keeps the release's pooling, and its outputs do not
   change (:gh:`1603` by `Julien Gadonneix`_).
+- Looking up the removed ``braindecode.datautil.scale`` now raises
+  :class:`AttributeError`, so ``hasattr`` and ``getattr`` with a default work
+  for this name (:gh:`1674`).
 - On Intel Gaudi, :func:`braindecode.functional.scaled_dot_product_attention` and
   :class:`braindecode.models.Labram` no longer call the Gaudi bridge's ``FusedSDPA``
   themselves: they call torch's SDPA on every device, which Habana's attention setting
@@ -224,9 +227,6 @@ Requirements
 Bug fixes
 ==========
 
-- Looking up the removed ``braindecode.datautil.scale`` now raises
-  :class:`AttributeError`, so ``hasattr`` and ``getattr`` with a default work
-  for this name.
 - :func:`braindecode.preprocessing.filterbank` preserves channel positions and
   their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
 - ``load_state_dict`` of every braindecode model loads checkpoints saved before
