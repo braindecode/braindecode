@@ -812,7 +812,7 @@ class HubDatasetMixin:
                     if dataset_type == "WindowsDataset"
                     else ds.metadata
                 )
-                _save_window_metadata(grp, metadata)
+                _save_window_metadata(grp, metadata, ds.targets_from)
                 grp.attrs["targets_from"] = ds.targets_from
                 grp.attrs["last_target_only"] = ds.last_target_only
 

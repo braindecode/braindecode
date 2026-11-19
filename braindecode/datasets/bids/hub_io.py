@@ -7,6 +7,7 @@ These functions keep the Zarr serialization details isolated from hub.py.
 
 from __future__ import annotations
 
+import json
 import warnings
 from datetime import datetime
 from numbers import Real
@@ -212,20 +213,41 @@ def _epochs_from_zarr(data, info, metadata, state):
     return epochs
 
 
-def _save_window_metadata(grp, metadata):
+def _save_window_metadata(grp, metadata, targets_from):
+    if not isinstance(metadata, pd.DataFrame):
+        # Fixed windows can compute each metadata cell lazily.
+        metadata = pd.DataFrame(
+            {
+                col: [metadata.loc[i, col] for i in range(len(metadata))]
+                for col in metadata.columns
+            }
+        )
+    if targets_from == "metadata":
+        targets = metadata["target"]
+        kind = pd.api.types.infer_dtype(targets.to_numpy(), skipna=False)
+        if kind == "string":
+            # Preserve literal labels such as "01" and "NA".
+            grp.attrs["string_targets"] = True
+        elif kind.startswith("mixed"):
+            # A TSV cell has no representation for a list or mixed scalar types.
+            # NumPy scalars in a recording description have native equivalents.
+            metadata = metadata.assign(
+                target=targets.apply(
+                    json.dumps, default=lambda obj: obj.tolist(), ensure_ascii=False
+                )
+            )
+            grp.attrs["json_targets"] = True
     store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
     metadata.to_csv(Path(store_path) / grp.path / "metadata.tsv", sep="\t", index=True)
-    if (
-        "target" in metadata
-        and pd.api.types.infer_dtype(metadata["target"], skipna=False) == "string"
-    ):
-        # Pandas otherwise infers labels such as "01" and "NA" as a number or NaN.
-        grp.attrs["string_targets"] = True
 
 
 def _load_window_metadata(grp):
     store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
-    converters = {"target": str} if grp.attrs.get("string_targets") else None
+    converters = None
+    if grp.attrs.get("string_targets"):
+        converters = {"target": str}
+    elif grp.attrs.get("json_targets"):
+        converters = {"target": json.loads}
     return pd.read_csv(
         Path(store_path) / grp.path / "metadata.tsv",
         sep="\t",

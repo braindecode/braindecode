@@ -1684,6 +1684,44 @@ def test_zarr_epochs_restores_channel_targets(tmp_path, last_target_only):
         assert indices == [0, 0, 10]
 
 
+@pytest.mark.parametrize(
+    "use_mne_epochs,lazy_metadata", [(True, False), (False, False), (False, True)]
+)
+def test_zarr_fixed_windows_preserve_multiple_targets(
+    tmp_path, use_mne_epochs, lazy_metadata
+):
+    from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
+    from braindecode.preprocessing import create_fixed_length_windows
+
+    pytest.importorskip("zarr")
+    raw = mne.io.RawArray(
+        np.arange(40.0).reshape(2, 20), mne.create_info(["C3", "C4"], 10, "eeg")
+    )
+    recording = RawDataset(
+        raw,
+        {"score": 3.5, "site": "01", "valid": True},
+        target_name=["score", "site", "valid"],
+    )
+    source = create_fixed_length_windows(
+        BaseConcatDataset([recording]),
+        window_size_samples=5,
+        window_stride_samples=5,
+        on_last_window="drop",
+        use_mne_epochs=use_mne_epochs,
+        lazy_metadata=lazy_metadata,
+    )
+    path = convert_to_zarr(source, tmp_path / "windows.zarr")
+    for preload in (False, True):
+        restored = load_from_zarr(path, preload=preload)
+        for i in range(len(source)):
+            x, y, crop = restored[i]
+            assert isinstance(y, list)
+            assert y == source[i][1] == [3.5, "01", True]
+            assert [type(item) for item in y] == [float, str, bool]
+            np.testing.assert_array_equal(x, source[i][0])
+            assert crop == source[i][2]
+
+
 def test_zarr_legacy_epochs_without_metadata_targets(tmp_path):
     from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
 

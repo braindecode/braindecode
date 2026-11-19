@@ -266,7 +266,8 @@ Bug fixes
 - Zarr exports preserve the first acquisition sample and annotations of continuous
   recordings. Epoched recordings keep their original events, event names,
   selection, sample clock and channel-target settings, including when loaded from
-  :class:`braindecode.datasets.BIDSEpochsDataset`. Older exports with repeated
+  :class:`braindecode.datasets.BIDSEpochsDataset`. Fixed windows retain list-valued
+  targets, including when their metadata was generated lazily. Older exports with repeated
   per-trial starts warn when MNE needs synthetic event times (:gh:`1668` by
   `Bruno Aristimunha`_).
 - :class:`braindecode.models.MAPA` attends with 4-D inputs on every device; on Intel
