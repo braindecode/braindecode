@@ -1,10 +1,11 @@
-"""Window reads from a preloaded ``EEGWindowsDataset``: before and after this change.
+"""Window reads from a preloaded ``EEGWindowsDataset``, against the earlier path.
 
-``Before`` is a frozen copy of the earlier item path, which called
+``BeforeWindows`` repeats the earlier item path (no transform), which called
 ``raw._getitem`` and, with ``targets_from="channels"``, ``raw.get_channel_types()``
 for every window. Both versions read the same windows in alternating rounds,
 and their items are checked equal. The epoch time is one pass of a
-``DataLoader`` (batch 64, shuffled, ``num_workers=0``), data only, no model.
+``DataLoader`` (batch 64, shuffled, ``num_workers=0``, one torch thread), data
+only, no model.
 Run from the repository root::
 
     python -m benchmarks.acceleration.bench_window_getitem
@@ -16,6 +17,7 @@ import time
 import mne
 import numpy as np
 import pandas as pd
+import torch
 from torch.utils.data import DataLoader
 
 from braindecode.datasets import BaseConcatDataset, EEGWindowsDataset
@@ -78,6 +80,9 @@ def main():
     parser.add_argument("--items", type=int, default=1500)
     args = parser.parse_args()
     mne.set_log_level("ERROR")
+    # the batch collate (torch.stack) takes most of an epoch, and with all
+    # threads it varies several-fold whenever other processes load the machine
+    torch.set_num_threads(1)
     print(
         "| channels | targets_from | before us/item | after us/item "
         "| before s/epoch | after s/epoch | epoch speedup |"

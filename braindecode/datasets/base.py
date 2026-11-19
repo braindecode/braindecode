@@ -896,7 +896,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         obj = cls._init_zarr_base(
             zarr_path, group_name, description, info_dict, transform
         )
-        obj.raw = None
+        obj._raw = None
         obj.metadata = metadata
         obj.last_target_only = last_target_only
         if targets_from not in ("metadata", "channels"):
@@ -921,7 +921,6 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
     def raw(self, value):
         self._raw = value
         self._ch_pos = None  # invalidate cached positions
-        self._misc_mask = None
 
     @property
     def ch_pos(self):
@@ -980,9 +979,10 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            if self._misc_mask is None:
-                self._misc_mask = np.array(self.raw.get_channel_types()) == "misc"
-            misc_mask = self._misc_mask
+            # same as get_channel_types() == "misc", which is slow to call per window
+            misc_mask = np.array(
+                [ch["kind"] == FIFF.FIFFV_MISC_CH for ch in self.raw.info["chs"]]
+            )
             if self.last_target_only:
                 y = X[misc_mask, -1]
             else:

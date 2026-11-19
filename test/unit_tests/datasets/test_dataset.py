@@ -1277,7 +1277,7 @@ def test_eeg_windows_equal_mne_getitem(tmp_path, preload, targets_from):
     info = mne.create_info(
         ["C3", "C4", "Cz", "target"], 100.0, ["eeg", "eeg", "eeg", "misc"]
     )
-    info["bads"] = ["C4"]
+    info["bads"] = ["C4"]  # windows keep bad channels, as raw._getitem does
     path = tmp_path / "raw.fif"
     mne.io.RawArray(rng.standard_normal((4, 1000)), info).save(path)
     raw = mne.io.read_raw_fif(path, preload=preload)
@@ -1306,10 +1306,3 @@ def test_eeg_windows_equal_mne_getitem(tmp_path, preload, targets_from):
         else:
             assert y == metadata.loc[i, "target"]
         np.testing.assert_array_equal(X, expected)
-
-    if targets_from == "channels":  # a new raw must not reuse the old misc mask
-        ds.raw = raw.copy().reorder_channels(["target", "C3", "C4", "Cz"])
-        X, y, _ = ds[0]
-        expected = raw._getitem((slice(None), slice(0, 100)), return_times=False)
-        np.testing.assert_array_equal(y, expected[3:].astype("float32"))
-        np.testing.assert_array_equal(X, expected[:3].astype("float32"))
