@@ -102,3 +102,14 @@ class _ZenodoBIDSDataset(BIDSDataset):
         super().__init__(
             *args, root=path_root, extensions=".edf", check=False, **kwargs
         )
+
+    def _get_dataset(self, bids_path):
+        dataset = super()._get_dataset(bids_path)
+        # These events.tsv name each event in ``eventType``, not ``trial_type``:
+        # mne-bids labels every event "n/a" and keeps ``eventType`` in the extras.
+        annotations = dataset.raw.annotations
+        annotations.description = [
+            extras.get("eventType", description)
+            for description, extras in zip(annotations.description, annotations.extras)
+        ]
+        return dataset
