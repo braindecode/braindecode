@@ -124,7 +124,9 @@ def resolve_channel_positions(chs_info, bank, montage=None, on_missing="error"):
         raise ValueError(
             f"on_missing must be error, drop or nearest; got {on_missing!r}"
         )
-    lower = {k.lower(): k for k in bank}
+    lower = {}
+    for k in bank:  # a name differing only in case keeps the first entry
+        lower.setdefault(k.lower(), k)
 
     def lookup(name):
         name = re.sub(r"^eeg\s+|-(ref|le|ar)$", "", name.strip(), flags=re.I)
@@ -133,8 +135,10 @@ def resolve_channel_positions(chs_info, bank, montage=None, on_missing="error"):
             name,
             _ALIASES.get(name.lower()),
         ):
-            if key is not None and key.lower() in lower:
-                return np.asarray(bank[lower[key.lower()]], float)
+            if key is not None and (key in bank or key.lower() in lower):
+                return np.asarray(
+                    bank[key if key in bank else lower[key.lower()]], float
+                )
         ends = name.split("-")
         if len(ends) == 2 and all(ends):
             a, b = lookup(ends[0]), lookup(ends[1])

@@ -47,12 +47,6 @@ def pytest_collection_modifyitems(config, items):
     run_slow = config.getoption("--run-slow") or "slow" in config.option.markexpr
     deselected = []
     for item in items:
-        callspec = getattr(item, "callspec", None)
-        params = getattr(callspec, "params", {}).values()
-        if any(_downloads_positions(param) for param in params):
-            item.add_marker(pytest.mark.network)
-            item.add_marker(pytest.mark.huggingface)
-
         # Network tests, even slow ones (the Hub module), follow --run-network alone.
         if "network" in item.keywords:
             if not run_network:
@@ -61,25 +55,3 @@ def pytest_collection_modifyitems(config, items):
             deselected.append(item)
     config.hook.pytest_deselected(items=deselected)
     items[:] = [item for item in items if item not in deselected]
-
-
-# Models that download their electrode-position table from the Hugging Face Hub.
-_POSITION_DOWNLOAD_MODELS = {"REVE", "Pratibha2"}
-
-
-def _downloads_positions(param):
-    """Return whether a parametrized value identifies a model of
-    ``_POSITION_DOWNLOAD_MODELS``."""
-    if isinstance(param, str):
-        return param in _POSITION_DOWNLOAD_MODELS
-
-    name = getattr(param, "__name__", None)
-    if name in _POSITION_DOWNLOAD_MODELS:
-        return True
-
-    return (
-        isinstance(param, (tuple, list))
-        and len(param) > 0
-        and isinstance(param[0], str)
-        and param[0] in _POSITION_DOWNLOAD_MODELS
-    )

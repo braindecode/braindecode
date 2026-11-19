@@ -4,17 +4,16 @@ Authors: Jonathan Lys (jonathan.lys@imt-atlantique.org)
 License: BSD 3 clause
 """
 
-import json
 import logging
 import math
-import os
 import warnings
+from functools import lru_cache
 from typing import Dict, List, Optional, Union
 
-import pooch
+import numpy as np
 import torch
 import torch.nn.functional as F
-from mne.datasets.utils import _get_path
+from mne.channels import make_standard_montage
 from torch import nn
 
 from braindecode.functional import (
@@ -264,8 +263,8 @@ class REVE(EEGModuleMixin, nn.Module):
 
     Notes
     -----
-    The position bank is downloaded from HuggingFace on first initialization, mapping
-    standard 10-20/10-10/10-05 electrode names to 3D coordinates. This enables the
+    The position bank maps 10-20/10-10/10-05, BioSemi-128 and EGI HydroCel-129
+    electrode names to 3D coordinates, rebuilt from MNE's montages. This enables the
     4D positional encoding to generalize across electrode configurations without
     requiring matched layouts between pretraining and downstream tasks.
     """
@@ -370,10 +369,9 @@ class REVE(EEGModuleMixin, nn.Module):
         self.channel_index = None  # input channels kept by on_missing (None: all)
         self._n_pos_chans: Optional[int] = None
         if self._chs_info is not None:
-            bank = self._position_bank
             pos, kept = resolve_channel_positions(
                 self._chs_info,
-                dict(zip(bank.position_names, bank.embedding.numpy())),
+                _reve_position_bank(),
                 montage,
                 on_missing,
             )
@@ -448,7 +446,7 @@ class REVE(EEGModuleMixin, nn.Module):
         self._build_head(n_outputs)
 
     def get_positions(self, channel_names: list[str]) -> torch.Tensor:
-        """Fetch channel positions from the position bank. The position bank is downloaded when the model is instantiated.
+        """Fetch channel positions from the position bank.
 
         Parameters
         ----------
@@ -887,107 +885,82 @@ class FourierEmb4D(nn.Module):
         return pos_with_time
 
 
-class RevePositionBank(torch.nn.Module):
-    """Position bank for REVE model that maps standard EEG channel names to 3D coordinates.
+@lru_cache(maxsize=1)
+def _reve_position_bank() -> dict[str, np.ndarray]:
+    """REVE's electrode positions (m), rebuilt from MNE's montages.
 
-    The coordinates come from the 92 datasets used during REVE pretraining.
-
-    The bank is cached in the MNE data directory after the first download, so it
-    works offline afterwards. On restricted nodes (e.g. HPC compute nodes without
-    a proxy), drop a prefetched ``reve_positions.json`` in that directory and no
-    download is attempted.
-
-    Parameters
-    ----------
-    url : str, optional
-        URL to download the position bank JSON file. Default is the HuggingFace URL.
-    timeout : int, optional
-        Timeout in seconds for the HTTP request. Default is 5 seconds.
-    cache_dir : str, optional
-        Directory to cache the position bank. If ``None``, resolved like other
-        braindecode datasets via the ``REVE_POSITIONS_PATH`` config key, falling
-        back to the MNE data directory (usually ``~/mne_data``).
-    fname : str, optional
-        Name of the cached file, so banks of other models (e.g.
-        :class:`~braindecode.models.Pratibha2`) can share the directory.
+    The released bank (``brain-bzh/reve-positions``) holds MNE positions in the
+    montage frame: the 10-05 family and BioSemi-128, the EGI HydroCel-129 net
+    moved so that its vertex reference (``E129``) sits on 10-05 ``Cz``, and every
+    BioSemi-128 channel again under a ``biosemi128_`` prefix. Names are unique
+    ignoring case; the first montage below wins a clash.
     """
 
-    def __init__(
-        self,
-        url: str = "https://huggingface.co/brain-bzh/reve-positions/resolve/main/positions.json",
-        timeout: int = 5,
-        cache_dir: Optional[str] = None,
-        fname: str = "reve_positions.json",
-    ):
+    def positions(kind):
+        return make_standard_montage(kind).get_positions()["ch_pos"]
+
+    groups = [
+        positions(kind)
+        for kind in (
+            "colin27_1005",
+            "colin27_1020",
+            "colin27_postfixed",
+            "colin27_primed",
+            "biosemi128",
+        )
+    ]
+    egi = positions("GSN-HydroCel-129")
+    shift = groups[0]["Cz"] - egi["Cz"]
+    groups.append(
+        {("E129" if ch == "Cz" else ch): xyz + shift for ch, xyz in egi.items()}
+    )
+    groups += [positions(kind) for kind in ("colin27_alphabetic", "colin27_prefixed")]
+    groups.append(
+        {f"biosemi128_{ch}": xyz for ch, xyz in positions("biosemi128").items()}
+    )
+    bank: dict[str, np.ndarray] = {}
+    seen = set()
+    for group in groups:
+        for ch, xyz in group.items():
+            if ch.upper() not in seen:
+                seen.add(ch.upper())
+                bank[ch] = xyz
+    return bank
+
+
+class RevePositionBank(torch.nn.Module):
+    """REVE's electrode positions (m) by channel name, ignoring case.
+
+    The positions are those of REVE's pretraining, rebuilt from MNE's montages
+    (no download): the 10-05 family, BioSemi-128 (also as ``biosemi128_<name>``)
+    and EGI HydroCel-129 aligned on 10-05 ``Cz``.
+    """
+
+    def __init__(self):
         super().__init__()
-
-        cache_dir = _get_path(cache_dir, "REVE_POSITIONS_PATH", "REVE positions")
-        cache_file = os.path.join(cache_dir, fname)
-
-        # Offline path: reuse the cached/prefetched file. Download only on a miss
-        # or if the cached copy is unreadable (e.g. an interrupted download).
-        try:
-            with open(cache_file) as f:
-                config = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            try:
-                if os.path.exists(cache_file):
-                    os.remove(cache_file)  # corrupt/partial; force a fresh copy
-                # pooch ships with mne and writes straight into the cache dir.
-                pooch.retrieve(
-                    url,
-                    known_hash=None,
-                    fname=fname,
-                    path=cache_dir,
-                    downloader=pooch.HTTPDownloader(timeout=timeout),
-                )
-                with open(cache_file) as f:
-                    config = json.load(f)
-            except Exception as e:
-                raise RuntimeError(
-                    f"Failed to download the position bank from {url}. On an "
-                    f"offline node, prefetch it to {cache_file} first: {e}"
-                ) from e
-
-        try:
-            self.position_names = list(config.keys())
-            self.mapping = {name: i for i, name in enumerate(self.position_names)}
-            positions_data = list(config.values())
-            positions = torch.tensor(positions_data, dtype=torch.float32)
-            self.register_buffer("embedding", positions, persistent=False)
-
-            # Validate shape (N, 3)
-            if self.embedding.dim() != 2 or self.embedding.shape[1] != 3:
-                raise ValueError(
-                    f"Position data must have shape (N, 3), but got {self.embedding.shape}"
-                )
-
-            assert self.embedding.shape == (len(self.mapping), 3), (
-                f"Expected embedding shape ({len(self.mapping)}, 3), but got {self.embedding.shape}"
-            )
-
-        except (ValueError, TypeError, AssertionError) as e:
-            raise RuntimeError(
-                f"Invalid position data format in the downloaded config: {e}"
-            ) from e
+        bank = _reve_position_bank()
+        self.position_names = list(bank)
+        self.mapping = {name.upper(): i for i, name in enumerate(bank)}
+        positions = torch.as_tensor(np.stack(list(bank.values())), dtype=torch.float32)
+        self.register_buffer("embedding", positions, persistent=False)
 
     @torch.jit.unused  # name lookup at construction; never part of a scripted forward
     def forward(self, channel_names: list[str]) -> torch.Tensor:
-        """Positions ``(len(channel_names), 3)`` of bank names (exact match).
+        """Positions ``(len(channel_names), 3)`` of bank names (ignoring case).
 
         Raises a :class:`ValueError` for a name the bank does not hold, so the
-        rows always match ``channel_names``; to place other names (case,
-        aliases, ``loc``, bipolar pairs) use
+        rows always match ``channel_names``; to place other names (aliases,
+        ``loc``, bipolar pairs) use
         :func:`~braindecode.modules.resolve_channel_positions`.
         """
-        missing = [q for q in channel_names if q not in self.mapping]
+        missing = [q for q in channel_names if q.upper() not in self.mapping]
         if missing:
             raise ValueError(
                 f"The REVE position bank has no position for {missing}; use "
                 "braindecode.modules.resolve_channel_positions to place them "
-                "(case, aliases, 'loc', bipolar pairs) or pass pos to forward."
+                "(aliases, 'loc', bipolar pairs) or pass pos to forward."
             )
-        indices = [self.mapping[q] for q in channel_names]
+        indices = [self.mapping[q.upper()] for q in channel_names]
         indices = torch.tensor(indices, dtype=torch.long, device=self.embedding.device)
         return self.embedding[indices]
 

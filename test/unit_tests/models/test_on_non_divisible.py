@@ -60,13 +60,6 @@ _LEGACY_CROP = [
 ]
 
 
-@pytest.fixture(autouse=True)
-def _reve_position_bank(tmp_path, monkeypatch):
-    bank = {"Cz": [0.0, 0.0, 0.09], "Pz": [0.0, -0.07, 0.06]}
-    (tmp_path / "reve_positions.json").write_text(json.dumps(bank))
-    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
-
-
 def _build(name, n_times, seed=0, **kwargs):
     cls, base, *_ = _MODELS[name]
     torch.manual_seed(seed)

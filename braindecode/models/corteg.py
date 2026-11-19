@@ -17,7 +17,7 @@ from torch.nn import functional as F
 from braindecode.functional import check_ch_mask, masked_mean
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.steegformer import (
-    _channel_order,
+    STEEGFORMER_CHANNEL_ORDER,
     _ChannelPositionalEmbed,
     _init_weights,
     _TemporalPositionalEncoding,
@@ -36,7 +36,7 @@ def _vocab_positions() -> torch.Tensor:
     """
     montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
     ch_pos = montage.get_positions()["ch_pos"]
-    positions = np.stack([ch_pos[name] for name in _channel_order()])
+    positions = np.stack([ch_pos[name] for name in STEEGFORMER_CHANNEL_ORDER])
     return torch.as_tensor(positions, dtype=torch.float32)
 
 

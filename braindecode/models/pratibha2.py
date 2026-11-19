@@ -5,17 +5,16 @@
 """PRATIBHA-2 (formerly MANAS-2): a dense-attention EEG foundation model."""
 
 import re
-from functools import lru_cache, partial
+from functools import partial
 from typing import Optional
 
-import mne
 import numpy as np
 import torch
 from torch import nn
 
 from braindecode.models.axon import _GatedFeedForward
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.reve import RevePositionBank
+from braindecode.models.reve import _reve_position_bank
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import (
     PreNormBlock,
@@ -23,14 +22,13 @@ from braindecode.modules import (
     resolve_channel_positions,
 )
 from braindecode.modules.layers import RMSNorm
-from braindecode.util import resolve_montage_name
 
-# Pretraining electrode table (metres), pinned to the release commit.
-_POSITIONS_URL = (
-    "https://huggingface.co/MannasAI/pratibha-2/resolve/"
-    "863edc940d82a02744776a7820641bf1bc32310b/positions.json"
-)
-_POSITIONS_FNAME = "pratibha2_positions.json"
+# The pretraining electrode table is REVE's bank plus these two entries (m),
+# which sit 1.4 and 0.6 cm from 10-05 AFz and Iz (release 863edc9).
+_EXTRA_POSITIONS = {
+    "AFZ": (0.0010058004409074783, 0.07728150114417076, 0.021591500379145145),
+    "IZ": (-3.840029239654541e-05, -0.1144150011241436, -0.029236000031232834),
+}
 
 # Parameter names of the original release -> names here.
 _ORIGINAL_KEYS = (
@@ -67,18 +65,13 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     .. rubric:: Channel positions
 
-    Positions come from the electrode table used in pretraining (MNE montage
-    frame), looked up by channel name: an exact match first, then the name
-    ignoring case, an ``EEG`` prefix or ``-REF`` suffix, legacy 10-20 aliases
-    (``T3`` -> ``T7``), or the midpoint of a bipolar pair ``A-B`` (see
-    :func:`~braindecode.modules.resolve_channel_positions`). The table covers
-    the 10-05 electrodes seen in pretraining, BioSemi-128 and GSN-HydroCel-129;
-    other 10-05 names take their position in MNE's ``standard_1005`` montage
-    frame, the frame of the table's 10-05 entries. The table is downloaded once
-    from the Hugging Face Hub and cached, like REVE's position bank; on an
-    offline node, prefetch it to the ``REVE_POSITIONS_PATH`` directory as
-    ``pratibha2_positions.json``. Channel ``loc`` values are not used: they are
-    in MNE's head frame, a few centimetres from the pretraining frame.
+    Positions come from the electrode table used in pretraining, REVE's bank
+    (MNE montage frame, no download), looked up by channel name: an exact match
+    first, then the name ignoring case, an ``EEG`` prefix or ``-REF`` suffix,
+    legacy 10-20 aliases (``T3`` -> ``T7``), or the midpoint of a bipolar pair
+    ``A-B`` (see :func:`~braindecode.modules.resolve_channel_positions`).
+    Channel ``loc`` values are not used: they are in MNE's head frame, a few
+    centimetres from the pretraining frame.
 
     .. rubric:: Expected input
 
@@ -220,11 +213,10 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.drop_prob = drop_prob
         self.on_missing = on_missing
 
-        # The position bank is host metadata, including when building on meta.
-        with torch.device("cpu"):
-            bank = RevePositionBank(url=_POSITIONS_URL, fname=_POSITIONS_FNAME)
-        table = dict(zip(bank.position_names, bank.embedding.numpy()))
-        positions, kept = _resolve_positions(self.chs_info, table, on_missing)
+        bank = {**_reve_position_bank(), **_EXTRA_POSITIONS}
+        positions, kept = resolve_channel_positions(
+            self.chs_info, bank, on_missing=on_missing
+        )
         self._positions_cm = (positions.astype(np.float32) * 100.0).tolist()
         self._kept_indices = list(kept) if len(kept) < len(self.chs_info) else []
         self.register_buffer("channel_index", None, persistent=False)
@@ -357,49 +349,6 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 "cls_token": None,  # nosec B105
             }
         return logits
-
-
-def _resolve_positions(chs_info, table, on_missing):
-    """Positions ``(n_kept, 3)`` of ``chs_info`` and the kept indices.
-
-    Exact names first (the table has distinct ``AFz``/``AFZ`` and ``Iz``/``IZ``),
-    also after an ``EEG`` prefix or ``-REF`` suffix and for each end of a bipolar
-    pair, then :func:`~braindecode.modules.resolve_channel_positions`, then MNE's
-    ``standard_1005`` montage frame for 10-05 names missing from the table.
-    """
-    bank = {**_standard_1005_montage_frame(), **table}
-    positions, kept = resolve_channel_positions(chs_info, bank, None, on_missing)
-    positions = np.array(positions, dtype=float)
-
-    def single(name):
-        if name in table:
-            return np.asarray(table[name], dtype=float)
-        try:
-            return resolve_channel_positions([{"ch_name": name}], bank)[0][0]
-        except ValueError:
-            return None
-
-    for row, i in enumerate(kept):
-        name = _STRIP_NAME.sub("", str(chs_info[i]["ch_name"]).strip())
-        ends = name.split("-")
-        if name in table:
-            positions[row] = table[name]
-        elif len(ends) == 2 and any(_STRIP_NAME.sub("", e) in table for e in ends):
-            a, b = (single(_STRIP_NAME.sub("", e)) for e in ends)
-            if a is not None and b is not None:
-                positions[row] = (a + b) / 2
-    return positions, kept
-
-
-# Same prefix/suffix stripping as resolve_channel_positions.
-_STRIP_NAME = re.compile(r"^eeg\s+|-(ref|le|ar)$", flags=re.I)
-
-
-@lru_cache(maxsize=1)
-def _standard_1005_montage_frame() -> dict:
-    """MNE's ``standard_1005`` positions (m) in the montage frame, not the head frame."""
-    montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
-    return dict(montage.get_positions()["ch_pos"])
 
 
 class _Pratibha2Encoder(nn.Module):

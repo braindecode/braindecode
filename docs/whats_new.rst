@@ -184,9 +184,7 @@ Enhancements
 - Add :class:`braindecode.models.Pratibha2` (PRATIBHA-2, formerly MANAS-2), a
   dense-attention EEG foundation model pretrained with raw-band hybrid masked
   autoencoding and constrained reconstruction, with pretrained weights on the
-  Hugging Face Hub; ``RevePositionBank`` takes the
-  cached file name, ``fname``, so other models can keep their position table
-  next to REVE's (:gh:`1654` by `Mahir Jain`_).
+  Hugging Face Hub (:gh:`1654` by `Mahir Jain`_).
 - Add :class:`braindecode.models.MEGXL`, the MEG-XL brain-to-text foundation model (Jayalath and Parker Jones, ICML 2026): a frozen BioCodec tokenizer and a criss-cross transformer pretrained on 150 s MEG windows; the released ``meg-xl-med-v2.ckpt``, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/megxl-pretrained`` and matches the authors' code on CPU. Its ``forward`` refuses ``ch_mask`` with a ``ValueError`` (the head flattens ``n_chans * latent_dim`` features and the sensor geometry is the ``chs_info`` montage), and ``return_features`` gives the pooled ``"features"`` only, no ``"tokens"``. The opt-in ``encode``/``encode_codes`` mask replaces projected code content before sensor metadata and attention, returning real temporal hidden states for caller-owned masked-RVQ-code prediction; it adds no default parameters and expects equal valid-length full-montage windows (:gh:`1554` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.SEANetEncoder` and :class:`~braindecode.modules.SEANetDecoder` (EnCodec's SEANet, with :class:`~braindecode.modules.SEANetConv1d`, :class:`~braindecode.modules.SEANetConvTranspose1d`, :class:`~braindecode.modules.SEANetLSTM` and :class:`~braindecode.modules.SEANetResBlock`), moved from :class:`braindecode.models.BrainOmni`, whose parameters and outputs are unchanged. They take ``in_channels``/``out_channels``, ``n_residual_layers``, ``dilation_base``, ``compress``, ``true_skip`` and ``causal`` (:gh:`1553` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.TCCNet`, a causal temporal-convolution model
@@ -254,6 +252,12 @@ API and behavior changes
   ``"bckg"``, ...). Rows with a missing ``eventType`` keep their BIDS ``trial_type``.
   Before, a seizure could have the same name as background (:gh:`1650` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+
+- :class:`braindecode.models.REVE` and :class:`braindecode.models.STEEGFormer` build
+  offline: REVE's position bank is rebuilt from MNE's standard montages (the released
+  ``reve_positions.json`` to 1e-8 m) and ST-EEGFormer's channel vocabulary ships with
+  the code, so ``REVE_POSITIONS_PATH`` and the ``url``/``cache_dir`` arguments of
+  ``RevePositionBank`` are gone (:gh:`PRNUM` by `Bruno Aristimunha`_).
 
 - Braindecode now requires MNE-Python 1.13.0 or later. This version centres
   both montages on the fitted head origin for spherical-spline interpolation
