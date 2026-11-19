@@ -344,4 +344,3 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
             # The head was supplied by this model, not by the checkpoint
             provenance["loaded"].difference_update(head)
         return result
-
