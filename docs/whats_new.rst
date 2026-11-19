@@ -347,6 +347,10 @@ Bug fixes
   docstring lines, so the rendered links pointed to a truncated forum URL (404)
   and to the Keras constraints index instead of ``MaxNorm``. The SAE examples
   link the SAELens docs at their new home (:gh:`1560` by `Mark Santos`_).
+- :class:`braindecode.models.EEGMiner` can export its generalized Gaussian
+  filters on PyTorch 2.6. Exported filters apply the bounds on frequency,
+  bandwidth and shape when their parameters change
+  (:gh:`1683` by `Bruno Aristimunha`_).
 - The citation pages, the README, ``CITATION.cff`` and the model card printed by a
   pretrained model cite Braindecode with its Zenodo concept DOI,
   ``10.5281/zenodo.8214376``, which resolves to the latest release; the DOI they
