@@ -40,7 +40,7 @@ _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS = set(non_classification_models).diffe
 # Skip all tests in this file if huggingface_hub is not installed
 pytestmark = pytest.mark.skipif(
     not HAS_HF_HUB,
-    reason="huggingface_hub not installed. Install with: pip install braindecode[hug]"
+    reason="huggingface_hub not installed. Install with: pip install 'braindecode[hub]'"
 )
 
 @pytest.fixture(scope="module", params=models_mandatory_parameters, ids=lambda p: p[0])

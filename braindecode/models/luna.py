@@ -99,7 +99,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                repo_id="username/my-luna-model", commit_message="Upload trained LUNA model"
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     Parameters
     ----------
