@@ -2368,15 +2368,24 @@ def test_eegclip_batch_size_one_train_mode():
     assert texts.shape == (1, 4)
 
 
-def test_sstdpn_proto_sep_constrains_class_rows():
-    """``proto_sep`` is renormalized per class-row (dim=0), so each prototype
-    vector has L2 norm <= ``proto_sep_maxnorm`` after a forward pass."""
-    model = SSTDPN(n_outputs=4, n_chans=22, n_times=1000)
-    model.proto_sep.data.fill_(10.0)
-    model(torch.randn(2, 22, 1000))
-    row_norms = model.proto_sep.detach().norm(p=2, dim=1)
-    # float32 renorm leaves a ~1e-6 residual; use a 1e-5 tolerance.
-    assert torch.all(row_norms <= model.proto_sep_maxnorm + 1e-5)
+@pytest.mark.parametrize("exported", [False, True], ids=["eager", "exported"])
+def test_sstdpn_proto_sep_constrains_class_rows(exported):
+    model = SSTDPN(n_outputs=4, n_chans=3, n_times=256, return_features=True).eval()
+    x = torch.randn(2, 3, 256)
+    maxnorm = model.proto_sep_maxnorm
+    if exported:
+        model = torch.export.export(model, (x,), strict=False).module()
+
+    with torch.no_grad():
+        for prototype, length in zip(model.proto_sep, (0.0, 0.25, 2.0, 4.0)):
+            prototype.mul_(length / prototype.norm())
+    expected_norms = torch.tensor([0.0, 0.25, maxnorm, maxnorm])
+    features, logits = model(x)
+    torch.testing.assert_close(model.proto_sep.norm(dim=1), expected_norms)
+    torch.testing.assert_close(logits, features @ model.proto_sep.T)
+    direction = torch.randn_like(logits)
+    gradient = torch.autograd.grad(logits, model.proto_sep, grad_outputs=direction)[0]
+    torch.testing.assert_close(gradient, direction.T @ features)
 
 
 def test_sstdpn_proto_cpt_std_default():
