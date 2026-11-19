@@ -6,7 +6,7 @@ import torch
 # captum (the optional `viz` dep) isn't installed.
 pytest.importorskip("captum")
 
-from braindecode.models import ShallowFBCSPNet  # noqa: E402
+from braindecode.models import EEGSimpleConv, ShallowFBCSPNet  # noqa: E402
 from braindecode.visualization.attribution import (  # noqa: E402
     input_x_gradient,
     integrated_gradients,
@@ -54,6 +54,31 @@ def test_layer_grad_cam_shape(model, batch):
     X, y = batch
     attr = layer_grad_cam(model, X, y, model.final_layer.conv_classifier)
     assert tuple(attr.shape) == (BATCH, N_CHANS, N_TIMES)
+
+
+def test_temporal_layer_grad_cam():
+    from captum.attr import LayerAttribution, LayerGradCam
+
+    torch.manual_seed(SEED)
+    model = EEGSimpleConv(
+        n_chans=3, n_outputs=2, sfreq=80, n_times=64, feature_maps=4, n_convs=1
+    ).eval()
+    x = torch.randn(2, 3, 64)
+    target = torch.tensor([0, 1])
+    cam = LayerGradCam(model, model.conv).attribute(x, target=target)
+    expected = LayerAttribution.interpolate(cam, (64,), interpolate_mode="linear")
+
+    actual = layer_grad_cam(model, x, target, model.conv)
+
+    assert actual.shape == (2, 64)
+    assert not actual.requires_grad
+    torch.testing.assert_close(actual, expected[:, 0])
+
+
+def test_layer_grad_cam_requires_spatial_axis():
+    model = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(12, 2))
+    with pytest.raises(ValueError, match="one or two spatial dimensions"):
+        layer_grad_cam(model, torch.randn(1, 3, 4), torch.tensor([0]), model[1])
 
 
 def test_saliency_meaningfully_nonzero(model, batch):

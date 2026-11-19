@@ -73,6 +73,36 @@ def test_hilbert_freq_matches_scipy(seq_len):
     np.testing.assert_allclose(output[..., 1].numpy(), expected.imag, atol=1e-10)
 
 
+@pytest.mark.parametrize("n_times", [1, 7, 32])
+@pytest.mark.parametrize("real_dft", [False, True])
+def test_known_length_spectrum_matches_hilbert_and_plv(monkeypatch, n_times, real_dft):
+    t = np.arange(n_times)
+    wave = np.cos(2 * np.pi * 3 * t / n_times)
+    x = np.stack([wave, wave + 0.6 * (-1.0) ** t])
+    spectrum = torch.view_as_real(torch.fft.rfft(torch.from_numpy(x)))
+    monkeypatch.setattr(_real_dft, "needs_real_dft", lambda _: real_dft)
+    result = hilbert_freq(spectrum, forward_fourier=False, n_times=n_times)
+    analytic = hilbert(x)
+    np.testing.assert_allclose(torch.view_as_complex(result), analytic, atol=1e-12)
+    phase = analytic / np.sqrt(np.abs(analytic) ** 2 + 1e-6)
+    expected = np.sqrt(np.abs(phase @ phase.conj().T) ** 2 + 1e-6) / n_times
+    np.testing.assert_allclose(
+        plv_time(spectrum, forward_fourier=False, n_times=n_times), expected, atol=1e-12
+    )
+
+
+def test_precomputed_hilbert_length_and_legacy_nyquist():
+    x = (-1.0) ** torch.arange(8)
+    spectrum = torch.view_as_real(torch.fft.rfft(x))
+    torch.testing.assert_close(hilbert_freq(spectrum, False)[..., 0], 2 * x)
+    with pytest.raises(ValueError, match="n_times"):
+        hilbert_freq(spectrum, False, n_times=7)
+    with pytest.raises(ValueError, match="n_times"):
+        hilbert_freq(x, n_times=0)
+    with pytest.raises(ValueError, match="n_times"):
+        hilbert_freq(x, n_times=7)
+
+
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.int16])
 def test_hilbert_freq_dtype(dtype):
     """Floating input keeps its dtype; integer input returns float32, not truncated."""
