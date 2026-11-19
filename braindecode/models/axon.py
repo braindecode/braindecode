@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from braindecode.functional import (
+    check_n_chans,
     scaled_dot_product_attention,
     sinusoidal_positional_encoding,
 )
@@ -254,6 +255,13 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
         torch.Tensor
             Tokens of shape (batch, n_chans, n_patches, embed_dim).
         """
+        check_n_chans(
+            x,
+            self.n_chans,
+            "AXON",
+            "build the model with the chs_info of this montage, or use a "
+            "channel_strategy.",
+        )
         return self.encoder(x)
 
     def forward(self, x: torch.Tensor, return_features: bool = False):
@@ -277,7 +285,7 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
             Logits of shape (batch, n_outputs), or the feature dict when
             ``return_features`` is True.
         """
-        tokens = self.encoder(x)
+        tokens = self.encode(x)
         features = tokens.mean(dim=(1, 2))
         logits = self.final_layer(features)
 

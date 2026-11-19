@@ -17,8 +17,8 @@ decoders by Sujatha Ravindran & Contreras-Vidal (Sci Rep 2023):
   (label-randomization check). An attribution method whose maps are
   unchanged when the asked-about class changes is suspicious — it isn't
   class-discriminative.
-- :func:`cascading_layer_reset` yields model copies with progressively
-  randomized parameters from output to input
+- :func:`cascading_layer_reset` yields the working model after each successive
+  parameter reset from output to input
   (cascading-weight-randomization check). An attribution method whose
   maps survive every cascade level is suspicious — its output likely
   depends on architecture rather than on learned weights.
@@ -73,10 +73,10 @@ def random_target(target, n_classes, generator=None):
 
 
 def cascading_layer_reset(model, deepcopy_first=True):
-    """Yield model copies with progressively-randomized parameters.
+    """Yield the working model after each successive layer reset.
 
     Walks the modules in *reverse* depth-first order (output → input)
-    and yields ``(layer_name, model_copy)`` after each layer's
+    and yields ``(layer_name, randomized_model)`` after each layer's
     ``reset_parameters`` call. Implements the cascading-randomization
     sanity check from Adebayo et al. (NeurIPS 2018), as applied to EEG
     decoders in Sujatha Ravindran & Contreras-Vidal (Sci Rep 2023).
@@ -99,8 +99,10 @@ def cascading_layer_reset(model, deepcopy_first=True):
     layer_name : str
         Dotted-path name of the layer just reset (e.g. ``"final_layer.conv_classifier"``).
     randomized_model : torch.nn.Module
-        A model whose layers from this one back to the output are
-        randomly re-initialized.
+        The same working model at each step, with all layers from the named
+        layer back to the output re-initialized. Compute the attribution
+        before advancing the iterator. To keep a model at a particular
+        step, save ``copy.deepcopy(randomized_model)`` then.
     """
     target = copy.deepcopy(model) if deepcopy_first else model
 

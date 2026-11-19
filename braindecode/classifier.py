@@ -12,9 +12,11 @@ import warnings
 from skorch import NeuralNet
 from skorch.callbacks import EpochScoring
 from skorch.classifier import NeuralNetClassifier
+from torch import Tensor
 from torch.nn import CrossEntropyLoss
 
 from .eegneuralnet import _EEGNeuralNet
+from .training.losses import CroppedLoss, _class_target
 from .training.scoring import predict_trials
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
@@ -173,6 +175,15 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
         loss : float
             The loss value.
         """
+        # CroppedLoss pools logits before comparing them with trial targets.
+        # Composite inputs have their own target dtype contract in the loader.
+        if (
+            isinstance(y_pred, Tensor)
+            and isinstance(y_true, Tensor)
+            and not isinstance(self.criterion_, CroppedLoss)
+            and not isinstance(kwargs.get("X"), (tuple, list))
+        ):
+            y_true = _class_target(y_pred, y_true)
         return NeuralNet.get_loss(self, y_pred, y_true, *args, **kwargs)
 
     def predict(self, X):
