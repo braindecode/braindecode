@@ -1194,6 +1194,24 @@ def test_luna_channel_embed_batch_ordering(luna_base_config):
     assert not torch.allclose(b0[0], b1[0], atol=1e-5)
 
 
+def test_luna_reconstruction_batch_independent():
+    # Each sample of a batch must give the output it gives alone.
+    model = LUNA(n_chans=3, n_outputs=0, n_times=80, patch_size=20, embed_dim=32)
+    model.eval()
+
+    x = torch.randn(2, 3, 80)
+    channel_names = torch.tensor([[0, 1, 2], [10, 11, 12]])
+    with torch.no_grad():
+        batched = model(x, channel_names=channel_names)
+        for i in range(2):
+            alone = model(x[i : i + 1], channel_names=channel_names[i : i + 1])
+            torch.testing.assert_close(batched[i], alone[0], atol=1e-5, rtol=0)
+        # One (C,) id vector is shared by every sample.
+        shared = model(x, channel_names=channel_names[0])
+        expanded = model(x, channel_names=channel_names[0].expand(2, -1))
+    torch.testing.assert_close(shared, expanded)
+
+
 def test_luna_mapping_includes_temperature_typo():
     # pretrained weights have typo key, mapping should handle it
     model = LUNA(
@@ -1736,9 +1754,9 @@ def test_sleepfm_masked_input_is_ignored(cls, masked, training):
     x = torch.randn(2, 3, 1280)
     corrupted = x.clone()
     if masked == "channel":
-        mask = torch.tensor([[False, False, True], [False, True, False]])
-        corrupted[mask] = 1e3
-        kwargs = {"channel_mask": mask}
+        missing = torch.tensor([[False, False, True], [False, True, False]])
+        corrupted[missing] = 1e3
+        kwargs = {"ch_mask": ~missing}
     else:
         mask = torch.zeros(2, 20, dtype=torch.bool)
         mask[1, 12:] = True  # ends inside a chunk
@@ -1752,10 +1770,95 @@ def test_sleepfm_masked_input_is_ignored(cls, masked, training):
     torch.testing.assert_close(runs[0], runs[1])
 
 
+
+@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
+def test_sleepfm_masked_training_with_autocast(cls):
+    model = _small(cls).train()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    before = model.final_layer.weight.detach().clone()
+    x = torch.randn(2, 3, 1280, requires_grad=True)
+    # Every sample lacks modality B; no row of that tokenizer call is valid.
+    real = torch.tensor([[True, False, False], [True, True, False]])
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        logits = model(x, ch_mask=real)
+        loss = logits.float().square().mean()
+    loss.backward()
+    assert torch.isfinite(logits).all()
+    assert x.grad[~real].count_nonzero() == 0
+    assert x.grad[real].abs().sum() > 0
+    optimizer.step()
+    assert all(torch.isfinite(p).all() for p in model.parameters())
+    assert not torch.equal(before, model.final_layer.weight)
+
+
+@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
+def test_sleepfm_rejects_ambiguous_positional_forward_masks(cls):
+    kwargs = {"channel_modalities": ["A"]} if cls is SleepFMStager else {}
+    model = _small(cls, n_chans=1, **kwargs).eval()
+    x = torch.randn(1, 1, 1280)
+    old_mask = torch.ones(1, 1, dtype=torch.bool)
+    for net in (model, torch.jit.script(model)):
+        with pytest.raises((TypeError, RuntimeError, torch.jit.Error), match="ch_mask"):
+            net(x, old_mask)
+
+
+def test_sleepfm_encode_preserves_legacy_positional_mask_polarity():
+    model = _small(SleepFM).eval()
+    x = torch.randn(2, 3, 1280)
+    missing = torch.tensor([[False, True, False], [False, True, True]])
+    with torch.no_grad(), pytest.warns(FutureWarning, match="ch_mask=~channel_mask"):
+        pooled, tokens = model.encode(x, missing)
+    for net in (model, torch.jit.script(model)):
+        expected = net.encode(x, ch_mask=~missing)
+        torch.testing.assert_close(pooled, expected[0])
+        torch.testing.assert_close(tokens, expected[1])
+
+
+def test_sleepfm_stager_applies_attention_to_one_of_four_modality_slots():
+    model = _small(SleepFMStager, channel_modalities=None).eval()
+    pooling = model.staging_head.spatial_pooling
+    captured = []
+
+    def capture_pool(module, args, result):
+        tokens, missing = args[:2]
+        encoded = module.transformer_layer(tokens, src_key_padding_mask=missing)
+        captured.append((result, encoded[:, 0]))
+
+    with pooling.register_forward_hook(capture_pool), torch.no_grad():
+        model(torch.randn(2, 3, 1280))
+    actual, expected = captured[0]
+    torch.testing.assert_close(actual, expected)
+
+
+@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
+def test_sleepfm_channel_mask_is_the_deprecated_inverse_of_ch_mask(cls):
+    model = _small(cls).eval()
+    x = torch.randn(2, 3, 1280)
+    missing = torch.tensor([[False, True, False], [False, False, False]])
+    with torch.no_grad():
+        with pytest.warns(FutureWarning, match="ch_mask=~channel_mask"):
+            old = model(x, channel_mask=missing)
+        torch.testing.assert_close(old, model(x, ch_mask=~missing))
+        with pytest.raises(ValueError, match="ch_mask only"):
+            model(x, ch_mask=~missing, channel_mask=missing)
+
+
+def test_sleepfm_stager_keeps_the_release_pooling():
+    """Only SleepFM's channel pooling is padding-invariant; the stager's modality
+    slots and SleepFM's temporal pooling keep the release's attention."""
+    encoder, stager = _small(SleepFM), _small(SleepFMStager)
+    assert encoder.spatial_pooling.pad_invariant
+    assert not encoder.temporal_pooling.pad_invariant
+    assert not stager.spatial_pooling.pad_invariant
+    assert not stager.staging_head.spatial_pooling.pad_invariant
+
 @pytest.mark.parametrize("n_valid", [16, 12], ids=["chunk_aligned", "inside_chunk"])
 def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
     """Stager = SleepFM.encode per modality and chunk, then the staging head."""
     encoder = _small(SleepFM, max_seq_length=128).eval()
+    # The release's pooling: a modality left with one real channel runs the
+    # attention (SleepFM alone is padding-invariant, the stager's slots are not).
+    encoder.spatial_pooling.pad_invariant = False
     stager = _small(SleepFMStager).eval()
     shared = {
         k: v
@@ -1764,7 +1867,7 @@ def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
     }
     stager.load_state_dict(shared, strict=False)
     x = torch.randn(2, 3, 1280)
-    channel_mask = torch.tensor([[False, True, False], [False, False, False]])
+    missing = torch.tensor([[False, True, False], [False, False, False]])
     temporal_mask = torch.zeros(2, 20, dtype=torch.bool)
     temporal_mask[1, n_valid:] = True
 
@@ -1775,7 +1878,7 @@ def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
                 end = min(start + 8, stop)
                 signal = x[i : i + 1, chans, start * 64 : end * 64]
                 out[i, start:end] = encoder.encode(
-                    signal, channel_mask[i : i + 1, chans]
+                    signal, ch_mask=~missing[i : i + 1, chans]
                 )[1][0]
         return out
 
@@ -1786,7 +1889,7 @@ def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
         modality_mask = torch.tensor([[False, False, True, True]] * 2)
         features = stager.staging_head(embeddings, modality_mask, temporal_mask)
         expected = stager.final_layer(features).transpose(1, 2)
-        output = stager(x, channel_mask, temporal_mask=temporal_mask)
+        output = stager(x, ch_mask=~missing, temporal_mask=temporal_mask)
         permuted = _small(SleepFMStager, channel_modalities=["B", "A", "A"]).eval()
         permuted.load_state_dict(stager.state_dict())
         torch.testing.assert_close(permuted(x[:, [2, 0, 1]]), stager(x))
