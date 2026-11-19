@@ -585,7 +585,8 @@ def test_set_target_rejects_targets_from_channels(set_up):
     must refuse to silently no-op."""
     _, _, mne_epochs, _, _, _ = set_up
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
-    ch_ds = WindowsDataset(mne_epochs, desc, targets_from="channels")
+    epochs = mne_epochs.copy().set_channel_types({mne_epochs.ch_names[-1]: "misc"})
+    ch_ds = WindowsDataset(epochs, desc, targets_from="channels")
     concat = BaseConcatDataset([ch_ds])
     with pytest.raises(ValueError, match="targets_from"):
         concat.set_target("pathological")

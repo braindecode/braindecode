@@ -10,11 +10,13 @@ Test for samplers.
 
 import bisect
 import platform
+from datetime import timedelta
 
 import mne
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.utils.data.distributed import DistributedSampler
@@ -40,62 +42,6 @@ from braindecode.samplers.ssl import (
     DistributedRelativePositioningSampler,
     RelativePositioningSampler,
 )
-
-
-def test_distributed_relative_positioning_sampler_n_examples_formula():
-    """Test that n_examples calculation uses correct operator precedence.
-
-    This is a simple unit test that validates the formula directly without
-    requiring network access or distributed training setup.
-
-    The bug was: n_examples // total_recordings * recordings_per_rank
-    The fix is: n_examples * recordings_per_rank // total_recordings
-
-    Test cases from the bug report:
-    1. n_examples=100, total_recordings=10, recordings_per_rank=2 (world_size=4)
-       - Buggy: 100 // 10 * 2 = 10 * 2 = 20
-       - Fixed: 100 * 2 // 10 = 200 // 10 = 20
-       - In this case both formulas give the same result
-
-    2. n_examples=50, total_recordings=100, recordings_per_rank=50 (world_size=2)
-       - Buggy: 50 // 100 * 50 = 0 * 50 = 0 (WRONG!)
-       - Fixed: 50 * 50 // 100 = 2500 // 100 = 25 (CORRECT)
-
-    3. n_examples=100, total_recordings=10, world_size=4, recordings_per_rank=2 or 3
-       - For rank with 2 recordings:
-         - Buggy: 100 // 10 * 2 = 20
-         - Fixed: 100 * 2 // 10 = 20
-       - For rank with 3 recordings (10 doesn't divide evenly by 4):
-         - Buggy: 100 // 10 * 3 = 30
-         - Fixed: 100 * 3 // 10 = 30
-    """
-    # Test case 1: Equal precision case
-    n_examples, total_recordings, recordings_per_rank = 100, 10, 2
-    buggy = n_examples // total_recordings * recordings_per_rank
-    fixed = n_examples * recordings_per_rank // total_recordings
-    assert buggy == 20
-    assert fixed == 20
-
-    # Test case 2: Critical bug case - buggy formula gives 0
-    n_examples, total_recordings, recordings_per_rank = 50, 100, 50
-    buggy = n_examples // total_recordings * recordings_per_rank
-    fixed = n_examples * recordings_per_rank // total_recordings
-    assert buggy == 0, "Buggy formula should give 0 (this is the bug!)"
-    assert fixed == 25, "Fixed formula should give 25"
-
-    # Test case 3: Another precision loss case
-    n_examples, total_recordings, recordings_per_rank = 100, 10, 3
-    buggy = n_examples // total_recordings * recordings_per_rank
-    fixed = n_examples * recordings_per_rank // total_recordings
-    assert buggy == 30
-    assert fixed == 30
-
-    # Test case 4: More examples showing the difference
-    n_examples, total_recordings, recordings_per_rank = 75, 20, 5
-    buggy = n_examples // total_recordings * recordings_per_rank
-    fixed = n_examples * recordings_per_rank // total_recordings
-    assert buggy == 15, "Buggy: 75 // 20 * 5 = 3 * 5 = 15"
-    assert fixed == 18, "Fixed: 75 * 5 // 20 = 375 // 20 = 18"
 
 
 @pytest.fixture(scope="module")
@@ -348,46 +294,96 @@ def test_distributed_relative_positioning_sampler(windows_ds, same_rec_neg, tmp_
     )
 
 
-@pytest.mark.skipif(platform.system() == 'Windows',
-                    reason="Not supported on Windows because of use_libuv compatibility")
-@pytest.mark.parametrize("n_examples_total,world_size", [
-    (100, 2),  # Test case where division might lose precision
-    (50, 2),   # Test case from bug report that could truncate to 0
-    (100, 4),  # Test case from bug report
-])
-def test_distributed_relative_positioning_sampler_n_examples_calculation(
-    windows_ds, n_examples_total, world_size, tmp_path
-):
-    """Test that n_examples calculation distributes examples correctly across ranks.
-
-    This test validates the fix for the operator precedence bug where:
-    - Buggy: n_examples // total_recordings * recordings_per_rank (double truncation)
-    - Fixed: n_examples * recordings_per_rank // total_recordings (single division)
-    """
-    # Every rank in this process, passed to DistributedSampler explicitly; the
-    # one-process group only serves the sampler's dist.get_rank() log line.
+def _check_pair_budget(rank, rendezvous):
     dist.init_process_group(
-        backend="gloo",
-        init_method=(tmp_path / "rendezvous").as_uri(),
-        rank=0,
-        world_size=1,
+        "gloo",
+        init_method=rendezvous,
+        rank=rank,
+        world_size=2,
+        timeout=timedelta(seconds=60),
     )
     try:
-        for rank in range(world_size):
+        data = pd.DataFrame(
+            {
+                "i_dataset": np.repeat(np.arange(3), 8),
+                "i_start_in_trial": np.tile(np.arange(8), 3),
+            }
+        )
+        for requested, drop_last, per_rank in [
+            (60, False, 30),
+            (60, True, 30),
+            (61, False, 31),
+            (61, True, 30),
+            (1, False, 1),
+            (1, True, 0),
+        ]:
             sampler = DistributedRelativePositioningSampler(
-                windows_ds.get_metadata(),
-                tau_pos=2000,
-                tau_neg=3000,
-                n_examples=n_examples_total,
+                data,
+                tau_pos=2,
+                tau_neg=3,
+                n_examples=requested,
+                drop_last=drop_last,
                 random_state=33,
-                num_replicas=world_size,
-                rank=rank,
             )
-            total_recordings = sampler.info.shape[0]
-            expected = n_examples_total * sampler.n_recordings // total_recordings
-            assert sampler.n_examples == expected, f"rank {rank}"
+            count = sum(1 for pair in sampler)
+            assert count == len(sampler)
+            total = torch.tensor(count)
+            dist.all_reduce(total)
+            assert total.item() == 2 * per_rank
+            assert count == per_rank
     finally:
         dist.destroy_process_group()
+
+
+@pytest.mark.skipif(not dist.is_gloo_available(), reason="Gloo unavailable")
+def test_distributed_relative_positioning_pair_budget(tmp_path):
+    mp.spawn(
+        _check_pair_budget,
+        args=((tmp_path / "rendezvous").as_uri(),),
+        nprocs=2,
+        join=True,
+    )
+
+
+@pytest.mark.parametrize("same_rec_neg", [True, False])
+@pytest.mark.parametrize(
+    "n_recordings,n_examples,drop_last", [(1, 6, True), (2, 1, True), (2, 0, False)]
+)
+def test_distributed_relative_positioning_empty_rank(
+    n_recordings, n_examples, drop_last, same_rec_neg
+):
+    data = pd.DataFrame(
+        {
+            "i_dataset": np.repeat(np.arange(n_recordings), 2),
+            "i_start_in_trial": np.tile([0, 1], n_recordings),
+        }
+    )
+    sampler = DistributedRelativePositioningSampler(
+        data,
+        tau_pos=1,
+        tau_neg=1,
+        n_examples=n_examples,
+        rank=0,
+        num_replicas=2,
+        drop_last=drop_last,
+        same_rec_neg=same_rec_neg,
+    )
+    assert len(sampler) == 0
+    assert list(sampler) == []
+
+
+def test_distributed_cross_recording_pairs_require_two_local_recordings():
+    data = pd.DataFrame({"i_dataset": [0, 1], "i_start_in_trial": [0, 0]})
+    with pytest.raises(ValueError, match="More than one recording"):
+        DistributedRelativePositioningSampler(
+            data,
+            tau_pos=1,
+            tau_neg=1,
+            n_examples=2,
+            rank=0,
+            num_replicas=2,
+            same_rec_neg=False,
+        )
 
 
 @pytest.mark.parametrize("n_windows,n_windows_stride", [[10, 5], [10, 100], [1, 1]])

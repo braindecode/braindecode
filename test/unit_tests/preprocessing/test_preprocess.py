@@ -1,5 +1,6 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
+#          sixty-66 <puzhexin@foxmail.com>
 #
 # License: BSD-3
 
@@ -512,6 +513,16 @@ def _synthetic_filterbank_raw(sfreq=256.0, n_times=2560, seed=0):
 
 def test_filterbank_waveform_metadata_reference():
     raw = _synthetic_filterbank_raw()
+    raw.set_montage(
+        mne.channels.make_dig_montage(
+            ch_pos={"C3": [-0.07, 0.02, 0.1], "Cz": [0.0, 0.02, 0.14]},
+            coord_frame="head",
+        )
+    )
+    # EOG sensors can also be digitized in the head frame.
+    raw.info["chs"][2]["loc"][:3] = [0.01, 0.08, 0.04]
+    raw.info["chs"][2]["coord_frame"] = raw.info["chs"][0]["coord_frame"]
+    original_ch_locs = [ch["loc"].copy() for ch in raw.info["chs"]]
     original_ch_names = list(raw.ch_names)
     original_ch_types = raw.get_channel_types()
     frequency_bands = [(4.0, 8.0), (8.0, 13.0)]
@@ -545,6 +556,13 @@ def test_filterbank_waveform_metadata_reference():
                 actual_data[new_idx], expected_data[band][ch_idx]
             )
             assert actual_types[new_idx] == original_ch_types[ch_idx]
+            assert (
+                actual.info["chs"][new_idx]["coord_frame"]
+                == raw.info["chs"][ch_idx]["coord_frame"]
+            )
+            np.testing.assert_allclose(
+                actual.info["chs"][new_idx]["loc"], original_ch_locs[ch_idx]
+            )
     # sfreq is raw-level, not per-band; checked once against every
     # independently-computed per-band reference sfreq, not just band 0.
     for band in frequency_bands:
@@ -583,6 +601,13 @@ def test_filterbank_waveform_metadata_reference():
         }
     ]
     np.testing.assert_array_equal(ds.datasets[0].raw.get_data(), actual_data)
+    windows = create_fixed_length_windows(
+        ds, window_size_samples=256
+    ).set_return_ch_pos()
+    expected_pos = np.repeat(
+        np.asarray(original_ch_locs)[:, :3], len(frequency_bands), axis=0
+    )
+    np.testing.assert_allclose(windows[0][3], expected_pos)
 
 
 def test_replace_inplace(base_concat_ds):

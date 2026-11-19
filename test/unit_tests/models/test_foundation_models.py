@@ -914,7 +914,7 @@ _ZUNA_SMALL = dict(n_outputs=2, sfreq=250.0, dim=64, n_layers=1, n_heads=2, head
 
 def _zuna_chs_info():
     info = mne.create_info(["Fz", "Cz", "Pz", "C3", "C4", "O1"], 250.0, "eeg")
-    info.set_montage("standard_1020")
+    info.set_montage("colin27_1020")
     return info["chs"]
 
 
@@ -979,7 +979,7 @@ def test_zuna_names_without_locations_take_their_montage_position():
     with pytest.warns(UserWarning, match="standard 10-05 position"):
         filled = ZUNA(chs_info=names_only, **kw)
     info = mne.create_info([ch["ch_name"] for ch in chs], 250.0, "eeg")
-    info.set_montage("standard_1005")
+    info.set_montage("colin27_1005")
     reference = ZUNA(chs_info=info["chs"], **kw)
     torch.testing.assert_close(
         filled.encoder.rotary_cosine, reference.encoder.rotary_cosine
@@ -1194,6 +1194,24 @@ def test_luna_channel_embed_batch_ordering(luna_base_config):
     assert not torch.allclose(b0[0], b1[0], atol=1e-5)
 
 
+def test_luna_reconstruction_batch_independent():
+    # Each sample of a batch must give the output it gives alone.
+    model = LUNA(n_chans=3, n_outputs=0, n_times=80, patch_size=20, embed_dim=32)
+    model.eval()
+
+    x = torch.randn(2, 3, 80)
+    channel_names = torch.tensor([[0, 1, 2], [10, 11, 12]])
+    with torch.no_grad():
+        batched = model(x, channel_names=channel_names)
+        for i in range(2):
+            alone = model(x[i : i + 1], channel_names=channel_names[i : i + 1])
+            torch.testing.assert_close(batched[i], alone[0], atol=1e-5, rtol=0)
+        # One (C,) id vector is shared by every sample.
+        shared = model(x, channel_names=channel_names[0])
+        expanded = model(x, channel_names=channel_names[0].expand(2, -1))
+    torch.testing.assert_close(shared, expanded)
+
+
 def test_luna_mapping_includes_temperature_typo():
     # pretrained weights have typo key, mapping should handle it
     model = LUNA(
@@ -1291,6 +1309,67 @@ def test_luna_variants_different_channel_counts(luna_base_config):
         with torch.no_grad():
             output = model(x)
         assert output.shape == (2, 2)
+
+
+def test_luna_default_locations_without_n_chans():
+    """The channel count may first be known at forward, and the default
+    locations add no key to the state dict, so checkpoints still load."""
+    model = LUNA(n_outputs=2, n_times=80, patch_size=20).eval()
+    assert not any("channel_locations" in key for key in model.state_dict())
+    with torch.no_grad():
+        assert model(torch.randn(2, 5, 80)).shape == (2, 2)
+
+
+def test_luna_matches_explicit_locations_when_channel_count_changes():
+    positions = torch.tensor([[0.1, 0.2, 0.3], [-0.1, 0.3, 0.4], [0.0, -0.2, 0.2]])
+    chs = [{"ch_name": str(i), "loc": row.numpy()} for i, row in enumerate(positions)]
+    model = LUNA(chs_info=chs, n_outputs=2, n_times=80, patch_size=20, depth=1).eval()
+    fallback = torch.zeros(4, 3)
+    fallback[:, 0] = torch.linspace(-1, 1, 4)
+    for expected in (positions[:2], fallback):
+        x = torch.randn(2, len(expected), 80)
+        explicit = expected.expand(len(x), -1, -1)
+        with torch.no_grad():
+            torch.testing.assert_close(model(x), model(x, channel_locations=explicit))
+
+
+@pytest.mark.parametrize("assign", [False, True], ids=["to_empty", "assign"])
+@pytest.mark.parametrize("measured", [False, True], ids=["fallback", "measured"])
+def test_luna_materializes_default_positions_from_checkpoint(assign, measured):
+    chs = None
+    if measured:
+        chs = [{"ch_name": str(i), "loc": [i + 0.1, 0.3, -0.2]} for i in range(3)]
+    kwargs = dict(
+        n_chans=3, chs_info=chs, n_outputs=2, n_times=80, patch_size=20, depth=1
+    )
+    reference = LUNA(**kwargs).eval()
+    with torch.device("meta"):
+        restored = LUNA(**kwargs).eval()
+    if not assign:
+        restored.to_empty(device="cpu")
+        # Make reads from uninitialized floating buffers deterministic.
+        for buffer in restored.buffers():
+            if buffer.is_floating_point():
+                buffer.fill_(float("nan"))
+    restored.load_state_dict(reference.state_dict(), strict=True, assign=assign)
+    x = torch.randn(2, 3, 80)
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x), reference(x))
+
+
+def test_luna_loads_full_model_with_legacy_location_cache(tmp_path):
+    model = LUNA(n_chans=3, n_outputs=2, n_times=80, patch_size=20, depth=1).eval()
+    x = torch.randn(2, 3, 80)
+    with torch.no_grad():
+        expected = model(x)
+    model._channel_location_cache = {3: model._default_channel_locations}
+    del model._default_channel_locations
+    model._load_state_dict_post_hooks.clear()
+    checkpoint = tmp_path / "luna.pt"
+    torch.save(model, checkpoint)
+    restored = torch.load(checkpoint, weights_only=False)  # nosec B614 - own file
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x), expected)
 
 
 def test_luna_variants_output_consistency(
@@ -1736,9 +1815,9 @@ def test_sleepfm_masked_input_is_ignored(cls, masked, training):
     x = torch.randn(2, 3, 1280)
     corrupted = x.clone()
     if masked == "channel":
-        mask = torch.tensor([[False, False, True], [False, True, False]])
-        corrupted[mask] = 1e3
-        kwargs = {"channel_mask": mask}
+        missing = torch.tensor([[False, False, True], [False, True, False]])
+        corrupted[missing] = 1e3
+        kwargs = {"ch_mask": ~missing}
     else:
         mask = torch.zeros(2, 20, dtype=torch.bool)
         mask[1, 12:] = True  # ends inside a chunk
@@ -1752,10 +1831,95 @@ def test_sleepfm_masked_input_is_ignored(cls, masked, training):
     torch.testing.assert_close(runs[0], runs[1])
 
 
+
+@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
+def test_sleepfm_masked_training_with_autocast(cls):
+    model = _small(cls).train()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    before = model.final_layer.weight.detach().clone()
+    x = torch.randn(2, 3, 1280, requires_grad=True)
+    # Every sample lacks modality B; no row of that tokenizer call is valid.
+    real = torch.tensor([[True, False, False], [True, True, False]])
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        logits = model(x, ch_mask=real)
+        loss = logits.float().square().mean()
+    loss.backward()
+    assert torch.isfinite(logits).all()
+    assert x.grad[~real].count_nonzero() == 0
+    assert x.grad[real].abs().sum() > 0
+    optimizer.step()
+    assert all(torch.isfinite(p).all() for p in model.parameters())
+    assert not torch.equal(before, model.final_layer.weight)
+
+
+@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
+def test_sleepfm_rejects_ambiguous_positional_forward_masks(cls):
+    kwargs = {"channel_modalities": ["A"]} if cls is SleepFMStager else {}
+    model = _small(cls, n_chans=1, **kwargs).eval()
+    x = torch.randn(1, 1, 1280)
+    old_mask = torch.ones(1, 1, dtype=torch.bool)
+    for net in (model, torch.jit.script(model)):
+        with pytest.raises((TypeError, RuntimeError, torch.jit.Error), match="ch_mask"):
+            net(x, old_mask)
+
+
+def test_sleepfm_encode_preserves_legacy_positional_mask_polarity():
+    model = _small(SleepFM).eval()
+    x = torch.randn(2, 3, 1280)
+    missing = torch.tensor([[False, True, False], [False, True, True]])
+    with torch.no_grad(), pytest.warns(FutureWarning, match="ch_mask=~channel_mask"):
+        pooled, tokens = model.encode(x, missing)
+    for net in (model, torch.jit.script(model)):
+        expected = net.encode(x, ch_mask=~missing)
+        torch.testing.assert_close(pooled, expected[0])
+        torch.testing.assert_close(tokens, expected[1])
+
+
+def test_sleepfm_stager_applies_attention_to_one_of_four_modality_slots():
+    model = _small(SleepFMStager, channel_modalities=None).eval()
+    pooling = model.staging_head.spatial_pooling
+    captured = []
+
+    def capture_pool(module, args, result):
+        tokens, missing = args[:2]
+        encoded = module.transformer_layer(tokens, src_key_padding_mask=missing)
+        captured.append((result, encoded[:, 0]))
+
+    with pooling.register_forward_hook(capture_pool), torch.no_grad():
+        model(torch.randn(2, 3, 1280))
+    actual, expected = captured[0]
+    torch.testing.assert_close(actual, expected)
+
+
+@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
+def test_sleepfm_channel_mask_is_the_deprecated_inverse_of_ch_mask(cls):
+    model = _small(cls).eval()
+    x = torch.randn(2, 3, 1280)
+    missing = torch.tensor([[False, True, False], [False, False, False]])
+    with torch.no_grad():
+        with pytest.warns(FutureWarning, match="ch_mask=~channel_mask"):
+            old = model(x, channel_mask=missing)
+        torch.testing.assert_close(old, model(x, ch_mask=~missing))
+        with pytest.raises(ValueError, match="ch_mask only"):
+            model(x, ch_mask=~missing, channel_mask=missing)
+
+
+def test_sleepfm_stager_keeps_the_release_pooling():
+    """Only SleepFM's channel pooling is padding-invariant; the stager's modality
+    slots and SleepFM's temporal pooling keep the release's attention."""
+    encoder, stager = _small(SleepFM), _small(SleepFMStager)
+    assert encoder.spatial_pooling.pad_invariant
+    assert not encoder.temporal_pooling.pad_invariant
+    assert not stager.spatial_pooling.pad_invariant
+    assert not stager.staging_head.spatial_pooling.pad_invariant
+
 @pytest.mark.parametrize("n_valid", [16, 12], ids=["chunk_aligned", "inside_chunk"])
 def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
     """Stager = SleepFM.encode per modality and chunk, then the staging head."""
     encoder = _small(SleepFM, max_seq_length=128).eval()
+    # The release's pooling: a modality left with one real channel runs the
+    # attention (SleepFM alone is padding-invariant, the stager's slots are not).
+    encoder.spatial_pooling.pad_invariant = False
     stager = _small(SleepFMStager).eval()
     shared = {
         k: v
@@ -1764,7 +1928,7 @@ def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
     }
     stager.load_state_dict(shared, strict=False)
     x = torch.randn(2, 3, 1280)
-    channel_mask = torch.tensor([[False, True, False], [False, False, False]])
+    missing = torch.tensor([[False, True, False], [False, False, False]])
     temporal_mask = torch.zeros(2, 20, dtype=torch.bool)
     temporal_mask[1, n_valid:] = True
 
@@ -1775,7 +1939,7 @@ def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
                 end = min(start + 8, stop)
                 signal = x[i : i + 1, chans, start * 64 : end * 64]
                 out[i, start:end] = encoder.encode(
-                    signal, channel_mask[i : i + 1, chans]
+                    signal, ch_mask=~missing[i : i + 1, chans]
                 )[1][0]
         return out
 
@@ -1786,7 +1950,7 @@ def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
         modality_mask = torch.tensor([[False, False, True, True]] * 2)
         features = stager.staging_head(embeddings, modality_mask, temporal_mask)
         expected = stager.final_layer(features).transpose(1, 2)
-        output = stager(x, channel_mask, temporal_mask=temporal_mask)
+        output = stager(x, ch_mask=~missing, temporal_mask=temporal_mask)
         permuted = _small(SleepFMStager, channel_modalities=["B", "A", "A"]).eval()
         permuted.load_state_dict(stager.state_dict())
         torch.testing.assert_close(permuted(x[:, [2, 0, 1]]), stager(x))
@@ -2202,7 +2366,7 @@ def test_diver1_cnn_out_size_validation(options, match):
 def test_diver1_mup_attention_scale():
     """The released DIVER-1 checkpoints need attention scaled by 1 / head_dim."""
     info = mne.create_info(["C3", "Cz", "C4"], 500.0, "eeg")
-    info.set_montage("standard_1020")
+    info.set_montage("colin27_1020")
     for mup in (True, False):
         model = DIVER1(
             chs_info=info["chs"], n_outputs=2, n_times=1000, mup_attention=mup
@@ -3316,18 +3480,7 @@ def test_luna_rotary_whole_model_checkpoint_and_output(scripted):
     with torch.no_grad():
         expected = old(x, channel_locations=locations)
         if scripted:
-            try:
-                old_script = torch.jit.script(old)
-            except RuntimeError as error:
-                # A pre-existing whole-model limitation, not a rotary regression.
-                if "has no attribute '_channel_location_cache'" not in str(error):
-                    raise
-                with pytest.raises(RuntimeError, match="_channel_location_cache"):
-                    torch.jit.script(model)
-                pytest.xfail(
-                    "Baseline whole-LUNA scripting cannot infer the empty "
-                    "_channel_location_cache; block scripting is qualified separately."
-                )
+            old_script = torch.jit.script(old)
             model = torch.jit.script(model)
             torch.testing.assert_close(
                 old_script(x, channel_locations=locations), expected
