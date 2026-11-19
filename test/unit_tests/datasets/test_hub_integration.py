@@ -1598,6 +1598,55 @@ def test_zarr_continuous_annotations_and_sample_origin(tmp_path, dated, windowed
         np.testing.assert_array_equal(round_trip[0][0], raw.get_data(start=7, stop=9))
 
 
+@pytest.mark.parametrize("with_hed", [False, True])
+def test_zarr_preserves_annotation_extras_in_strict_json(tmp_path, monkeypatch, with_hed):
+    import sys
+
+    from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
+
+    pytest.importorskip("zarr")
+    raw = mne.io.RawArray(np.zeros((1, 200)), mne.create_info(["C3"], 100, "eeg"))
+    fields = dict(
+        onset=[0.5],
+        duration=[0.25],
+        description=["cue"],
+        extras=[
+            dict(score=np.nan, high=np.inf, low=-np.inf, label="nan", missing=None)
+        ],
+    )
+    if with_hed:
+        pytest.importorskip("hed")
+        if not hasattr(mne, "HEDAnnotations"):
+            pytest.skip("HEDAnnotations was added in MNE 1.12")
+        raw.set_annotations(
+            mne.HEDAnnotations(**fields, hed_string=["Visual-presentation"])
+        )
+    else:
+        raw.set_annotations(mne.Annotations(**fields))
+    path = convert_to_zarr(
+        BaseConcatDataset([RawDataset(raw)]), tmp_path / "events.zarr"
+    )
+    _strict_json_loads((path / "recording_0" / "zarr.json").read_text())
+    for preload in (False, True):
+        annotations = load_from_zarr(path, preload=preload).datasets[0].raw.annotations
+        extra = annotations.extras[0]
+        assert (
+            np.isnan(extra["score"])
+            and extra["high"] == np.inf
+            and extra["low"] == -np.inf
+        )
+        assert extra["label"] == "nan" and extra["missing"] is None
+        if with_hed:
+            assert isinstance(annotations, mne.HEDAnnotations)
+            assert annotations.hed_string == raw.annotations.hed_string
+            assert annotations._hed_version == raw.annotations._hed_version
+    if with_hed:
+        monkeypatch.setitem(sys.modules, "hed", None)
+        with pytest.warns(RuntimeWarning, match="Keeping the HED strings"):
+            plain = load_from_zarr(path, preload=True).datasets[0].raw.annotations
+        assert plain.extras[0]["HED"] == "Visual-presentation"
+
+
 @pytest.mark.parametrize("last_target_only", [False, True])
 def test_zarr_epochs_restores_channel_targets(tmp_path, last_target_only):
     from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr

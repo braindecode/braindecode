@@ -100,14 +100,29 @@ def _restore_nan_from_json(obj):
 def _annotations_for_json(annotations):
     if annotations is None:
         return None
-    return dict(
-        onset=annotations.onset.tolist(),
-        duration=annotations.duration.tolist(),
+    extras = [dict(extra) for extra in annotations.extras]
+    # MNE extras permit scalar strings and floats. A tagged value keeps NaN
+    # distinct from the literal label "nan" in a strict JSON store.
+    for extra in extras:
+        for key, value in extra.items():
+            if isinstance(value, float) and not np.isfinite(value):
+                extra[key] = {"float": str(value)}
+    values = dict(
         description=annotations.description.tolist(),
         orig_time=annotations.orig_time.isoformat() if annotations.orig_time else None,
         ch_names=[list(chs) for chs in annotations.ch_names],
-        extras=[dict(extra) for extra in annotations.extras],
+        extras=extras,
     )
+    for key in ("onset", "duration"):
+        values[key] = [
+            v if np.isfinite(v) else str(v) for v in getattr(annotations, key).tolist()
+        ]
+    if hasattr(annotations, "hed_string"):
+        values.update(
+            hed_string=list(annotations.hed_string),
+            hed_version=annotations._hed_version,
+        )
+    return values
 
 
 def _annotations_from_json(values):
@@ -116,6 +131,24 @@ def _annotations_from_json(values):
     values = dict(values)
     if values["orig_time"] is not None:
         values["orig_time"] = datetime.fromisoformat(values["orig_time"])
+    values["extras"] = [
+        {key: float(v["float"]) if isinstance(v, dict) else v for key, v in row.items()}
+        for row in values["extras"]
+    ]
+    if "hed_string" in values:
+        if hasattr(mne, "HEDAnnotations") and _soft_import(
+            "hed", "HED annotations", strict=False
+        ):
+            return mne.HEDAnnotations(**values)
+        warnings.warn(
+            "Loading HED annotations as MNE HEDAnnotations requires MNE >= 1.12 and hedtools. "
+            "Keeping the HED strings in the annotation extras.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        values.pop("hed_version")
+        for row, tags in zip(values["extras"], values.pop("hed_string")):
+            row["HED"] = tags
     return mne.Annotations(**values)
 
 

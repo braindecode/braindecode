@@ -267,7 +267,8 @@ Bug fixes
   recordings. Epoched recordings keep their original events, event names,
   selection, sample clock and channel-target settings, including when loaded from
   :class:`braindecode.datasets.BIDSEpochsDataset`. Older exports with repeated
-  per-trial starts warn when MNE needs synthetic event times.
+  per-trial starts warn when MNE needs synthetic event times (:gh:`1668` by
+  `Bruno Aristimunha`_).
 - :class:`braindecode.models.MAPA` attends with 4-D inputs on every device; on Intel
   Gaudi it used 5-D ones, which the fused attention kernel gets wrong (outputs 55% and
   gradients 60-70% off). :class:`braindecode.models.EMG2QwertyNet` takes offset 0 of
