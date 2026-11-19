@@ -2221,6 +2221,34 @@ def test_pratibha2_materializes_montage_and_frequencies(pratibha2_bank, assign):
         torch.testing.assert_close(restored(x), source(x))
 
 
+def test_pratibha2_autocast_preserves_fourier_features(pratibha2_bank):
+    model = _pratibha2_model(["Cz"])
+    pos_enc = model.encoder.pos_enc
+    xyz = model.encoder.channel_positions.expand(3, -1)
+    coords = torch.cat((xyz, torch.tensor([[0.0], [4.0], [80.0]])), dim=1)
+    features = []
+    handle = pos_enc.fourier_linear.register_forward_pre_hook(
+        lambda _module, args: features.append(args[0].detach().clone())
+    )
+    try:
+        with torch.no_grad():
+            pos_enc(coords)
+            with torch.autocast("cpu", dtype=torch.bfloat16):
+                pos_enc(coords)
+    finally:
+        handle.remove()
+    torch.testing.assert_close(features[1], features[0], rtol=0, atol=0)
+
+
+def test_pratibha2_invalid_head_keeps_classifier(pratibha2_bank):
+    model = _pratibha2_model(["Cz"])
+    head = model.final_layer
+    with pytest.raises(ValueError, match="n_outputs must be positive"):
+        model.reset_head(-1)
+    assert model.final_layer is head
+    assert model.n_outputs == model.get_config()["n_outputs"] == 3
+
+
 def test_pratibha2_single_sample_zscore(pratibha2_bank):
     model = _pratibha2_model(["Cz"], n_times=1, patch_size=1, patch_stride=1)
     x = torch.ones(2, 1, 1, requires_grad=True)

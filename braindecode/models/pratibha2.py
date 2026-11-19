@@ -265,9 +265,8 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         n_outputs : int
             Number of outputs of the new head.
         """
-        self._n_outputs = n_outputs
+        self._set_n_outputs(n_outputs)
         self.final_layer = self._build_head(n_outputs)
-        self._update_init_kwargs(n_outputs=n_outputs)
 
     @staticmethod
     def _convert_original_keys(state_dict, prefix):
@@ -481,7 +480,10 @@ class _Pratibha2PositionalEncoding(nn.Module):
     def forward(self, coords: torch.Tensor) -> torch.Tensor:
         # bfloat16 cannot represent the angles.
         angle_dtype = torch.promote_types(coords.dtype, torch.float32)
-        phases = coords.to(angle_dtype) @ self.freq_matrix.to(angle_dtype)
+        # Autocast lowers matmul precision even for two float32 operands.
+        phases = (
+            coords.to(angle_dtype).unsqueeze(-1) * self.freq_matrix.to(angle_dtype)
+        ).sum(dim=-2)
         weight_dtype = self.fourier_linear.weight.dtype
         fourier = self.fourier_linear(
             torch.cat([phases.sin(), phases.cos()], dim=-1).to(weight_dtype)
