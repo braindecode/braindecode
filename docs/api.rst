@@ -1113,6 +1113,6 @@ Plotting
      plot_confusion_matrix
 
 .. toctree::
-   :hidden:
+    :hidden:
 
-   samba_pretrained
+    samba_pretrained
