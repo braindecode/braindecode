@@ -223,6 +223,8 @@ Bug fixes
   ``n_chans * (n_times // d_input)`` (343 instead of 330 for 22 channels, 1000
   samples and ``d_input=64``). Each channel now drops the samples after its last
   whole patch. The constructor requires at least one complete patch per channel.
+  ``forward`` raises a ``ValueError`` when the input channel count is not
+  ``n_chans``.
   The positional embedding keeps its size, so checkpoints saved before
   this change still load. Outputs of existing PBT models change when ``n_times`` is
   not a multiple of ``d_input`` and stay the same otherwise (:gh:`1612` by
