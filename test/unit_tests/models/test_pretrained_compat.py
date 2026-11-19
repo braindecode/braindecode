@@ -59,6 +59,7 @@ from braindecode.models import (
     MVPFormer,
     NeuroRVQ,
     PopulationTransformer,
+    Pratibha2,
     SignalJEPA,
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
@@ -298,6 +299,14 @@ COMPAT = {
         channels="coords",
         coords_checked=False,
     ),
+    # Positions by channel name; loc is not read.
+    "Pratibha2": dict(
+        cls=Pratibha2,
+        sfreq=200,
+        n_times=1000,
+        canon=TEN_TWENTY,
+        channels="names",
+    ),
     "MIRepNet": dict(
         cls=MIRepNet,
         sfreq=250,
@@ -460,12 +469,13 @@ STRATEGY_CELLS = {("Labram", "G2"), ("Labram", "G3"), ("Labram", "G3b")}
 
 @pytest.fixture(autouse=True)
 def _reve_position_bank(tmp_path, monkeypatch):
-    """Serve REVE's position bank from a local file instead of the Hub."""
+    """Serve REVE's and Pratibha2's position banks from local files instead of the Hub."""
     pos = _montage("standard_1005").get_positions()["ch_pos"]
     bank = {name: [float(v) for v in xyz] for name, xyz in pos.items()}
-    for ch in chs_coords_only(128):  # EGI-style E1..E128, as in the released bank
+    for ch in chs_coords_only(128):  # EGI-style E1..E128, as in the released banks
         bank[ch["ch_name"]] = [float(v) for v in ch["loc"][:3]]
-    (tmp_path / "reve_positions.json").write_text(json.dumps(bank))
+    for fname in ("reve_positions.json", "pratibha2_positions.json"):
+        (tmp_path / fname).write_text(json.dumps(bank))
     monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
 
 
