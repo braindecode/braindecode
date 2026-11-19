@@ -37,8 +37,20 @@ def test_get_n_outputs_regression():
     )
 
 
+def test_classification_output_count_from_probabilities_and_dense_indices():
+    probabilities = np.tile(np.array([0.85, 0.05, 0.05, 0.05]), (2, 3, 1)).transpose(
+        0, 2, 1
+    )
+    assert _get_n_outputs(probabilities, None, "classification") == 4
+    with pytest.raises(ValueError, match="number of classes"):
+        _get_n_outputs(probabilities, [0, 1], "classification")
+    indices = np.array([[1, 3, 4], [4, 3, 1]])
+    assert _get_n_outputs(indices, None, "classification") == 3
+
+
+@pytest.mark.parametrize("lazy_metadata", [False, True])
 @pytest.mark.parametrize("target_name", ["age", ["age", "score", "bmi"]])
-def test_infer_n_outputs_of_windows_with_several_targets(target_name):
+def test_infer_n_outputs_of_windows_with_several_targets(target_name, lazy_metadata):
     import mne
 
     from braindecode.datasets import BaseConcatDataset, RawDataset
@@ -58,10 +70,71 @@ def test_infer_n_outputs_of_windows_with_several_targets(target_name):
         BaseConcatDataset(datasets),
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="drop",
         # an empty mapping gives several targets as a list
         mapping=None if isinstance(target_name, str) else {},
+        lazy_metadata=lazy_metadata,
     )
     n_targets = 1 if isinstance(target_name, str) else len(target_name)
     signal_kwargs = infer_signal_properties(windows, mode="regression")
     assert signal_kwargs["n_outputs"] == n_targets
+
+
+@pytest.mark.parametrize("lazy_metadata", [False, True])
+def test_window_target_transform_sets_output_count(lazy_metadata):
+    import mne
+
+    from braindecode.datasets import BaseConcatDataset, RawDataset
+    from braindecode.datautil import infer_signal_properties
+    from braindecode.preprocessing import create_fixed_length_windows
+
+    raw = mne.io.RawArray(np.zeros((1, 120)), mne.create_info(["C3"], 100, "eeg"))
+    windows = create_fixed_length_windows(
+        BaseConcatDataset(
+            [
+                RawDataset(raw, {"label": y, "study": "demo"}, target_name="label")
+                for y in range(3)
+            ]
+        ),
+        window_size_samples=60,
+        window_stride_samples=60,
+        on_last_window="drop",
+        lazy_metadata=lazy_metadata,
+    )
+    windows.target_transform = lambda y: y % 2
+    assert [windows[i][1] for i in range(len(windows))] == [0, 0, 1, 1, 0, 0]
+    assert infer_signal_properties(windows)["n_outputs"] == 2
+
+    windows.target_transform = lambda y: np.eye(4)[y] * 0.8 + 0.05
+    assert infer_signal_properties(windows)["n_outputs"] == windows[0][1].shape[0] == 4
+    metadata = windows.get_metadata()
+    assert metadata["target"].tolist() == [0, 0, 1, 1, 2, 2]
+    assert metadata["i_dataset"].tolist() == [0, 0, 1, 1, 2, 2]
+    assert metadata["study"].tolist() == ["demo"] * len(windows)
+
+
+def test_classes_naming_stored_labels_accepted_with_target_transform():
+    import mne
+
+    from braindecode.datasets import BaseConcatDataset, RawDataset
+    from braindecode.datautil import infer_signal_properties
+    from braindecode.preprocessing import create_fixed_length_windows
+
+    raw = mne.io.RawArray(np.zeros((1, 120)), mne.create_info(["C3"], 100, "eeg"))
+    windows = create_fixed_length_windows(
+        BaseConcatDataset(
+            [
+                RawDataset(raw, {"label": y}, target_name="label")
+                for y in ["left", "right"]
+            ]
+        ),
+        window_size_samples=60,
+        window_stride_samples=60,
+        on_last_window="drop",
+    )
+    windows.target_transform = {"left": 0, "right": 1}.__getitem__
+    # ``classes`` may name either the stored or the transformed labels.
+    for classes in (["left", "right"], [0, 1]):
+        assert infer_signal_properties(windows, classes=classes)["n_outputs"] == 2
+    with pytest.raises(AssertionError):
+        infer_signal_properties(windows, classes=["up", "down"])

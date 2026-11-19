@@ -469,6 +469,11 @@ Bug fixes
   stays in the model so the released weights still load; the first head layer takes
   ``d_model`` instead of ``emb_dim`` inputs per token (the same with the defaults).
   Outputs of existing CSBrain classifiers change (:gh:`1541`, :gh:`1572`).
+- :class:`braindecode.augmentation.FTSurrogate` with ``channel_indep=False``
+  no longer raises ``repeat(): Not supported for complex yet!`` on Apple MPS:
+  the shared phase perturbation is now broadcast across channels instead of
+  tiled, which also avoids copying it for each channel on other devices
+  (:gh:`1660` by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.PatchTokenizer`,
   :func:`braindecode.functional.patch_count` and
   :func:`braindecode.functional.pad_or_crop_to_patches` now reject empty time
@@ -515,6 +520,12 @@ Bug fixes
   :class:`braindecode.augmentation.CutMix` in a composed pipeline. They
   preserve both labels and the mixing weights for the training criterion
   (:gh:`1659` by `Bruno Aristimunha`_).
+- :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` keeps the
+  per-window value if a recording description uses the same column name.
+  Classifier and regressor output inference reads the window targets.
+  :meth:`~braindecode.datasets.BaseConcatDataset.set_target` validates every
+  recording before switching the collection's target (:gh:`1646` by
+  `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` raises when ``chs_info`` has positions for
   some channels but not all (MNE stores ``NaN`` for the others). It gave every
   channel a default position, evenly spaced along x, so one name missing from the
@@ -523,6 +534,11 @@ Bug fixes
   :class:`braindecode.models.CORTEG` share this rule; CORTEG now also names a
   channel whose position is ``NaN`` when it is built, where it took the montage
   for one without positions (:gh:`1569` by `Hamza Abdelhedi`_).
+- :func:`braindecode.functional.hilbert_freq` and
+  :func:`braindecode.functional.plv_time` accept ``n_times`` with a precomputed
+  one-sided spectrum. Supplying the original length reconstructs odd-length
+  signals and preserves the Nyquist amplitude for even lengths
+  (:gh:`1663` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` gives the phase of the DC bin, and of the
   Nyquist bin of an even ``patch_size``, as ``0`` or ``pi`` on every device.
   CUDA and MPS FFTs leave rounding noise of either sign in the imaginary part of
