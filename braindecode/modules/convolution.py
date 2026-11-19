@@ -384,6 +384,8 @@ class ChebyshevGraphConv(nn.Module):
 
     def __init__(self, in_features, out_features, cheb_order):
         super().__init__()
+        if cheb_order < 1:
+            raise ValueError(f"cheb_order must be at least 1, got {cheb_order}.")
         self.cheb_order = cheb_order
         self.projection = nn.Linear(in_features * cheb_order, out_features, bias=False)
 

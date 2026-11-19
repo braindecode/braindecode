@@ -47,6 +47,12 @@ from braindecode.modules import (
 from braindecode.modules.quantization import EMACodebook
 
 
+@pytest.mark.parametrize("order", [0, -1])
+def test_chebyshev_graph_convolution_requires_a_term(order):
+    with pytest.raises(ValueError, match="cheb_order must be at least 1"):
+        ChebyshevGraphConv(2, 3, order)
+
+
 @pytest.mark.parametrize("order", [1, 2, 4])
 def test_chebyshev_graph_convolution_filters_each_laplacian_eigenmode(order):
     from braindecode.models.dgcnn import _GraphConvolution
