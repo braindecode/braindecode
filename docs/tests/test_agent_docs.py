@@ -152,6 +152,28 @@ def test_critical_pages_have_canonical_sources():
             assert (docs / (name + ".rst")).is_file()
 
 
+def test_landing_api_links_reach_sections():
+    from docutils import nodes
+    from docutils.core import publish_doctree
+
+    docs = Path(__file__).parents[1]
+    links = set(
+        re.findall(r'href="api\.html#([^"]+)"', (docs / "index.rst").read_text())
+    )
+    tree = publish_doctree(
+        (docs / "api.rst").read_text(),
+        settings_overrides={
+            "report_level": 5,
+            "halt_level": 6,
+            "file_insertion_enabled": False,
+        },
+    )
+    anchors = {
+        anchor for section in tree.findall(nodes.section) for anchor in section["ids"]
+    }
+    assert links <= anchors
+
+
 def test_gallery_index_keeps_curated_navigation(corpus):
     agent_docs.publish(**corpus)
     text = (corpus["html_root"] / "auto_examples/index.md").read_text()
