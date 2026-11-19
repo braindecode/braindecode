@@ -124,7 +124,6 @@ docs = [
     'openneuro-py>=2026.4.0',  # 2026.4.0 fixes DatasetFile.key->id after the OpenNeuro 5.0.0 schema change; older versions break against the live GraphQL server
     'plotly',
     'shap',
-    'nbformat',
     'transformers',
 ]
 
