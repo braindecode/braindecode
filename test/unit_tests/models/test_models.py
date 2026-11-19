@@ -8096,6 +8096,41 @@ def test_cbramod_features_skip_pretraining_proj_out():
     assert any(k.startswith("proj_out.") for k in model.state_dict())
 
 
+def test_caresleepnet_fits_epoch_targets():
+    from braindecode import EEGClassifier
+
+    x = torch.randn(4, 3, 600)
+    y = torch.tensor([[0, 1], [1, 2], [2, 0], [1, 0]])
+    net = EEGClassifier(
+        "CareSleepNet",
+        module__n_epochs=2,
+        module__n_eog_chans=1,
+        max_epochs=1,
+        batch_size=2,
+        lr=1e-4,
+        train_split=None,
+        verbose=0,
+        predict_nonlinearity=nn.Softmax(dim=1),
+    ).fit(x, y)
+    assert np.isfinite(net.history[-1, "train_loss"])
+    with torch.no_grad():
+        logits = net.module_.eval()(x)
+    assert logits.shape == (4, 3, 2)
+    torch.testing.assert_close(
+        torch.from_numpy(net.predict_proba(x)), logits.softmax(1)
+    )
+    np.testing.assert_array_equal(net.predict(x), logits.argmax(1).numpy())
+
+
+def test_caresleepnet_sequence_length():
+    kwargs = dict(n_chans=3, n_outputs=3, n_times=300, n_eog_chans=1)
+    with pytest.raises(ValueError, match="n_epochs must be at least 1"):
+        CareSleepNet(n_epochs=0, **kwargs)
+    model = CareSleepNet(n_epochs=1, **kwargs)
+    with pytest.raises(ValueError, match="input has 2 epochs"):
+        model(torch.randn(1, 2, 3, 300))
+
+
 def test_caresleepnet_matches_authors_code():
     """Outputs and gradients of the authors' Model (wjq-learning/CareSleepNet
     @386e149, 6 EEG + 2 EOG channels, 20 epochs) on the same weights and input.
