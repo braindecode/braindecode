@@ -28,6 +28,10 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
+  between recording descriptions and window metadata, and recording-level subset
+  selection (:gh:`1596` by `Daria Agafonova`_).
+
 - :class:`braindecode.modules.ChannelLayer` maps channels with one linear
   estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
   targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat
@@ -108,14 +112,14 @@ Enhancements
 - :class:`braindecode.models.LUNA` implements ``reset_head``, so
   ``from_pretrained`` can load it with a new ``n_outputs``; a reconstruction
   model (``n_outputs=0``) becomes a classifier (:gh:`1568` by `Hamza Abdelhedi`_).
-- Add :class:`braindecode.models.BBL`, the MEG encoder of *The Brain's Bitter Lesson* (Jayalath et al., ICML 2025): a dataset-conditional convolutional projector, a :class:`~braindecode.modules.SEANetEncoder` and a subject embedding, with optional ``subject_index``/``dataset_index`` and the paper's mean-subject-embedding fallback. It accepts ``ch_mask``: padded channels become the zero sensor slots of the reference collator, so each recording of a padded batch gives its output alone; as the projector mixes all sensors, ``return_features`` has no per-channel ``tokens``. Opt-in ``temporal_mask`` hides raw time samples before any convolution/context, while ``return_temporal_features=True`` with ``return_features=True`` exposes the actual pre-pool sequence and stride/valid-time/context metadata for downstream SSL objectives (no pretraining task heads). The released CamCAN checkpoint, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/bbl-pretrained`` and gives the authors' features, logits and gradients bit for bit on CPU in float32 (by `Bruno Aristimunha`_)
-- Add :class:`braindecode.models.MEGGPT` (MEG-GPT, Huang et al., Imaging Neuroscience 2026), a source-space MEG foundation model: the EphysTokenizer encoder turns each parcel into discrete tokens and a causal time-attention GPT with patched keys and values embeds them; the released Cam-CAN checkpoint, converted without the session embedding the paper discards for downstream use, is on the Hugging Face Hub at ``braindecode/meggpt-pretrained``; ``return_features=True`` also returns the per-channel ``"tokens"`` ``(batch, n_chans, n_segments * n_last_steps, embed_dim)`` and takes a ``ch_mask`` of padded channels, whose features and tokens are zero (the flattened head is tied to ``n_chans``, so logits refuse ``ch_mask``); optional ``token_mask`` hides clean token embeddings before the causal decoder, and ``encode_tokens`` supplies cached-ID encoding with shifted next-token targets, retained-tail indices and valid/selected loss masks for a separate vocabulary head (by `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.MEGXL`, the MEG-XL brain-to-text foundation model (Jayalath and Parker Jones, ICML 2026): a frozen BioCodec tokenizer and a criss-cross transformer pretrained on 150 s MEG windows; the released ``meg-xl-med-v2.ckpt``, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/megxl-pretrained`` and matches the authors' code on CPU. Its ``forward`` refuses ``ch_mask`` with a ``ValueError`` (the head flattens ``n_chans * latent_dim`` features and the sensor geometry is the ``chs_info`` montage), and ``return_features`` gives the pooled ``"features"`` only, no ``"tokens"``. The opt-in ``encode``/``encode_codes`` mask replaces projected code content before sensor metadata and attention, returning real temporal hidden states for caller-owned masked-RVQ-code prediction; it adds no default parameters and expects equal valid-length full-montage windows (by `Bruno Aristimunha`_).
-- Add :class:`braindecode.modules.SEANetEncoder` and :class:`~braindecode.modules.SEANetDecoder` (EnCodec's SEANet, with :class:`~braindecode.modules.SEANetConv1d`, :class:`~braindecode.modules.SEANetConvTranspose1d`, :class:`~braindecode.modules.SEANetLSTM` and :class:`~braindecode.modules.SEANetResBlock`), moved from :class:`braindecode.models.BrainOmni`, whose parameters and outputs are unchanged. They take ``in_channels``/``out_channels``, ``n_residual_layers``, ``dilation_base``, ``compress``, ``true_skip`` and ``causal`` (by `Bruno Aristimunha`_)
+- Add :class:`braindecode.models.BBL`, the MEG encoder of *The Brain's Bitter Lesson* (Jayalath et al., ICML 2025): a dataset-conditional convolutional projector, a :class:`~braindecode.modules.SEANetEncoder` and a subject embedding, with optional ``subject_index``/``dataset_index`` and the paper's mean-subject-embedding fallback. It accepts ``ch_mask``: padded channels become the zero sensor slots of the reference collator, so each recording of a padded batch gives its output alone; as the projector mixes all sensors, ``return_features`` has no per-channel ``tokens``. Opt-in ``temporal_mask`` hides raw time samples before any convolution/context, while ``return_temporal_features=True`` with ``return_features=True`` exposes the actual pre-pool sequence and stride/valid-time/context metadata for downstream SSL objectives (no pretraining task heads). The released CamCAN checkpoint, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/bbl-pretrained`` and gives the authors' features, logits and gradients bit for bit on CPU in float32 (:gh:`1553` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.MEGGPT` (MEG-GPT, Huang et al., Imaging Neuroscience 2026), a source-space MEG foundation model: the EphysTokenizer encoder turns each parcel into discrete tokens and a causal time-attention GPT with patched keys and values embeds them; the released Cam-CAN checkpoint, converted without the session embedding the paper discards for downstream use, is on the Hugging Face Hub at ``braindecode/meggpt-pretrained``; ``return_features=True`` also returns the per-channel ``"tokens"`` ``(batch, n_chans, n_segments * n_last_steps, embed_dim)`` and takes a ``ch_mask`` of padded channels, whose features and tokens are zero (the flattened head is tied to ``n_chans``, so logits refuse ``ch_mask``); optional ``token_mask`` hides clean token embeddings before the causal decoder, and ``encode_tokens`` supplies cached-ID encoding with shifted next-token targets, retained-tail indices and valid/selected loss masks for a separate vocabulary head (:gh:`1555` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.MEGXL`, the MEG-XL brain-to-text foundation model (Jayalath and Parker Jones, ICML 2026): a frozen BioCodec tokenizer and a criss-cross transformer pretrained on 150 s MEG windows; the released ``meg-xl-med-v2.ckpt``, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/megxl-pretrained`` and matches the authors' code on CPU. Its ``forward`` refuses ``ch_mask`` with a ``ValueError`` (the head flattens ``n_chans * latent_dim`` features and the sensor geometry is the ``chs_info`` montage), and ``return_features`` gives the pooled ``"features"`` only, no ``"tokens"``. The opt-in ``encode``/``encode_codes`` mask replaces projected code content before sensor metadata and attention, returning real temporal hidden states for caller-owned masked-RVQ-code prediction; it adds no default parameters and expects equal valid-length full-montage windows (:gh:`1554` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.modules.SEANetEncoder` and :class:`~braindecode.modules.SEANetDecoder` (EnCodec's SEANet, with :class:`~braindecode.modules.SEANetConv1d`, :class:`~braindecode.modules.SEANetConvTranspose1d`, :class:`~braindecode.modules.SEANetLSTM` and :class:`~braindecode.modules.SEANetResBlock`), moved from :class:`braindecode.models.BrainOmni`, whose parameters and outputs are unchanged. They take ``in_channels``/``out_channels``, ``n_residual_layers``, ``dilation_base``, ``compress``, ``true_skip`` and ``causal`` (:gh:`1553` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.TCCNet`, a causal temporal-convolution model
   for sEMG gesture recognition with average-over-time and context-attention
   classification heads (:gh:`1562` by `Arslan Shafique`_).
-- A model loaded with :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` shows where its weights come from: in a notebook (``model`` as the last line of a cell) a panel lists the input geometry, the Hub repository and commit, the licence, the base model and the datasets of the model card (linked to NEMAR, OpenNeuro or the Hub), and a module table with each block marked as loaded from the checkpoint or initialised here, e.g. a head rebuilt for a new ``n_outputs``; ``print(model)`` adds the same facts below the torchinfo table. Both ask users, and AI agents reading the output, to cite Braindecode with its `Zenodo DOI <https://doi.org/10.5281/zenodo.17699192>`__. The card offers BibTeX/APA downloads and selectable citation text, and links training datasets to NEMAR, EEGDash catalogue searches and documented braindecode readers. ``from_pretrained`` now warns when no parameter of the model was loaded from the checkpoint, which happened silently when the checkpoint's keys did not match the model (:gh:`1558` by `Bruno Aristimunha`_).
+- A model loaded with :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` shows where its weights come from: in a notebook (``model`` as the last line of a cell) a panel lists the input geometry, the Hub repository and commit, the licence, the base model and the datasets of the model card (linked to NEMAR, OpenNeuro or the Hub), and a module table with each block marked as loaded from the checkpoint or initialised here, e.g. a head rebuilt for a new ``n_outputs``; ``print(model)`` adds the same facts below the torchinfo table. Both ask users, and AI agents reading the output, to cite Braindecode with its `Zenodo DOI <https://doi.org/10.5281/zenodo.8214376>`__. The card offers BibTeX/APA downloads and selectable citation text, and links training datasets to NEMAR, EEGDash catalogue searches and documented braindecode readers. ``from_pretrained`` now warns when no parameter of the model was loaded from the checkpoint, which happened silently when the checkpoint's keys did not match the model (:gh:`1558` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.CORTEG`, an ST-EEGFormer adapted to
   intracranial ECoG: a spatial adapter places each electrode by its 3D position
   in the frozen pretrained channel codebook, and a high-gamma token stream joins
@@ -130,7 +134,7 @@ Enhancements
   (True hides a sample) replaces raw samples before convolution, for downstream SSL
   losses; ``return_features`` adds the temporal ``"tokens"`` before the global
   projector. Its spatial convolution is sized to ``n_chans``, so it refuses
-  ``ch_mask`` with a ``ValueError`` (by `Bruno Aristimunha`_).
+  ``ch_mask`` with a ``ValueError`` (:gh:`1556` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MAPA` accepts ``ch_mask`` with per-sample
   ``sensor_indices``, ``(batch, n_chans, 3)``, so a batch can mix recordings with
   different montages and channel counts; ``return_features`` also returns the
@@ -153,6 +157,11 @@ Enhancements
   encoder output ``(batch, n_chans, n_tokens, dim)`` with the tokens of padded
   channels zero; DIVER1 gains
   ``return_features`` (:gh:`1540` by `Julien Gadonneix`_).
+- New tutorial :ref:`weight-audit-tutorial`: audit what a released decoder relies on
+  from its weights alone (dominant band, time window and channel ranking of an
+  :class:`braindecode.models.EEGNet`, read through its path weights), then confirm the
+  reading with one occlusion check, shown on a released PhysioNet EEGNet checkpoint and
+  the lateral-cue eye-movement shortcut (:gh:`1538` by `Yiheng Li`_).
 - :ref:`install_gaudi` lists two attention issues of Gaudi software 1.21.4 that give no
   error: wrong values in eager mode when two calls take transposed views with as many
   elements in different shapes (:class:`braindecode.models.AXON`), and no gradient for a
@@ -162,6 +171,20 @@ Enhancements
 API and behavior changes
 ========================
 
+- :class:`braindecode.models.SleepFM` and :class:`braindecode.models.SleepFMStager`
+  take ``ch_mask``, ``True`` for real channels as in every other model and
+  :func:`braindecode.datasets.pad_channels_collate`, so they train on padded batches
+  of different montages. ``channel_mask`` (``True`` for missing channels) is
+  deprecated and will be removed in 2.2. Its existing position in
+  :meth:`~braindecode.models.SleepFM.encode` still warns and is read as
+  ``ch_mask=~channel_mask``. Pass ``ch_mask`` by keyword in both ``encode``
+  and ``forward``. Both models support mixed-precision training with padded
+  input channels. In :class:`~braindecode.models.SleepFM`, a recording with one real
+  channel among padded ones now gets the output it gets alone: the channel pooling
+  returns that channel's token, as for a one-channel input, instead of running the
+  attention over it. :class:`~braindecode.models.SleepFMStager`, whose channels sit
+  in fixed modality slots, keeps the release's pooling, and its outputs do not
+  change (:gh:`1603` by `Julien Gadonneix`_).
 - On Intel Gaudi, :func:`braindecode.functional.scaled_dot_product_attention` and
   :class:`braindecode.models.Labram` no longer call the Gaudi bridge's ``FusedSDPA``
   themselves: they call torch's SDPA on every device, which Habana's attention setting
@@ -196,11 +219,19 @@ Requirements
   every eegprep release for Python 3.11 needs ``sympy>=1.14``, while torch 2.6
   pins ``sympy==1.13.1``. Installing ``braindecode[eegprep]`` with torch 2.6 on
   Python 3.11 now fails with this explicit requirement instead of an opaque
-  resolver conflict (by `Bruno Aristimunha`_).
+  resolver conflict (:gh:`1535` by `Bruno Aristimunha`_).
 
 Bug fixes
 ==========
 
+- :func:`braindecode.preprocessing.filterbank` preserves channel positions and
+  their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
+- ``load_state_dict`` of every braindecode model loads checkpoints saved before
+  the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
+  other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key
+  is mapped to ``parametrizations.weight.original``. Released checkpoints such as
+  the EEGNet weights of Guetschel and Tangermann load without renaming keys
+  (:gh:`1538` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
@@ -274,6 +305,15 @@ Bug fixes
   these real bins, so a negative bin got ``pi`` or ``-pi`` at random; on MPS
   this moved the outputs of the released weights on random-walk input by 7 %
   from the CPU ones. CPU outputs are unchanged (:gh:`1566` by `Hamza Abdelhedi`_).
+- :class:`braindecode.models.LUNA` reconstruction (``n_outputs=0``) adds each
+  sample's own channel-name embedding to the decoder queries. The queries are
+  ordered by sample, but the embedding was repeated in time-major order, so with a
+  batch of more than one sample and different ``channel_names`` per sample, a
+  sample got the embedding of another one and its output depended on the rest of
+  the batch. One ``(n_chans,)`` id vector now also works with a batch of more
+  than one sample. Classification, ``return_features`` and a batch of one are
+  unchanged; no parameter changes, so released weights load as before
+  (:gh:`1602` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.SignalJEPA` and
   :class:`braindecode.models.SignalJEPA_Contextual` no longer fail in ``backward()``
   when the window gives one token per channel (for example 152 samples at 128 Hz)
@@ -312,7 +352,12 @@ Bug fixes
   :class:`braindecode.modules.MaxNormLinear`: each URL was split across two
   docstring lines, so the rendered links pointed to a truncated forum URL (404)
   and to the Keras constraints index instead of ``MaxNorm``. The SAE examples
-  link the SAELens docs at their new home (by `Mark Santos`_).
+  link the SAELens docs at their new home (:gh:`1560` by `Mark Santos`_).
+- The citation pages, the README, ``CITATION.cff`` and the model card printed by a
+  pretrained model cite Braindecode with its Zenodo concept DOI,
+  ``10.5281/zenodo.8214376``, which resolves to the latest release; the DOI they
+  gave, ``10.5281/zenodo.17699192``, is the 1.2.0 archive. The author list adds
+  the contributors of 2.0.0 (:gh:`1571` by `Bruno Aristimunha`_).
 
 Code health
 ============
@@ -339,11 +384,11 @@ Code health
   (:gh:`1545`, :gh:`1548` by `Bruno Aristimunha`_).
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
-  shipped in a release sdist pass (by `Bruno Aristimunha`_).
+  shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).
 - Documentation built from a release tag uses https://braindecode.org/stable/
   for the canonical, Open Graph and JSON-LD URLs and in ``llms.txt``, which
   only calls ``/dev/`` builds a moving development snapshot
-  (by `Bruno Aristimunha`_).
+  (:gh:`1534` by `Bruno Aristimunha`_).
 
 
 Current 2.0.0 (2026-11-02)
@@ -3105,6 +3150,7 @@ API changes
 Authors
 ========
 
+.. _Daria Agafonova: https://github.com/viranovskaya
 .. _Arnaud Delorme: https://github.com/arnodelorme
 .. _Arslan Shafique: https://github.com/arslan-shafique
 .. _Anton Soloviev: https://github.com/antonsoo
@@ -3180,3 +3226,4 @@ Authors
 .. _Bhargav Kowshik: https://github.com/bkowshik
 .. _Mark Santos: https://www.markstudios.com
 .. _Hamza Abdelhedi: https://github.com/BabaSanfour
+.. _sixty-66: https://github.com/sixty-66
