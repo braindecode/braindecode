@@ -164,8 +164,10 @@ def test_ineligible_batches_keep_default_reads(lazy_windows, monkeypatch, case):
     calls = _trace_reads(monkeypatch)
     actual = lazy_windows.__getitems__(indices)
     n_windows = sum(len(i) if isinstance(i, tuple) else 1 for i in indices)
-    # zarr reads no FIF; a double FIF fails the union read, then reads windows
-    assert len(calls) == {"zarr": 0, "double": n_windows + 1}.get(case, n_windows)
+    # zarr and preloaded raws read no FIF; a double FIF fails the union read,
+    # then reads windows
+    expected_calls = {"zarr": 0, "preload": 0, "double": n_windows + 1}
+    assert len(calls) == expected_calls.get(case, n_windows)
     _assert_items_equal(actual, expected)
 
 
@@ -307,9 +309,7 @@ def test_optin_equality_matrix(tmp_path, monkeypatch, kind, layout, workers):
             # Batches inside one recording overlap and are coalesced; the
             # batch spanning both recordings falls back to window reads.
             assert len(calls) == 2 + len(batches[1])
-        elif kind in ("lazy", "preloaded"):
-            # Preloaded raws are not FIF-mapped: the traced reader returns
-            # None and mne's in-memory read is used for each window.
+        elif kind == "lazy":
             assert len(calls) == sum(map(len, batches))
         else:
             assert calls == []

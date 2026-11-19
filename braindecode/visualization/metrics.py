@@ -193,12 +193,9 @@ def _compute(attr, gt, attr_abs, prctile_val):
     G_bool = G.astype(bool)
 
     skip = (
-        (Aabs.sum(axis=1) == 0)
-        | (G.sum(axis=1) == 0)
-        | (A.max(axis=1) == A.min(axis=1))
+        (A.max(axis=1) == A.min(axis=1))
         | (Aabs.max(axis=1) == Aabs.min(axis=1))
         | (G.max(axis=1) == G.min(axis=1))
-        | (k_per_sample == 0)
     )
 
     scores = np.zeros((n, N_METRICS))
@@ -342,9 +339,7 @@ def compute_ssim_metrics(
 
         # Skip degenerate samples; matches compute_metrics' policy.
         if (
-            exp_abs.sum() == 0
-            or ref.sum() == 0
-            or exp.max() == exp.min()
+            exp.max() == exp.min()
             or exp_abs.max() == exp_abs.min()
             or ref.max() == ref.min()
         ):
