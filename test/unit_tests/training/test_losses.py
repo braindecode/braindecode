@@ -69,7 +69,9 @@ def test_dance_loss_backward_with_empty_tokens(dtype):
         model.decoder.end_head,
     ):
         assert torch.isfinite(head.weight.grad).all()
-    assert torch.count_nonzero(model.final_layer.weight.grad)
+    # The spans do not overlap the target, so only these heads get a nonzero grad.
+    for head in (model.final_layer, model.decoder.class_head):
+        assert torch.count_nonzero(head.weight.grad)
 
 
 def test_mixup_criterion():
