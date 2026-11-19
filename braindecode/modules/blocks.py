@@ -277,7 +277,8 @@ class TemporalSpectralPatchEmbedding(nn.Module):
 
         Entries selected by ``mask`` use the frozen mask token. A boolean
         ``ch_mask`` of shape (batch, channels) excludes padded channels from
-        normalization and convolution. Their output embeddings are zero.
+        normalization and convolution. Their embeddings are zero, including
+        when all channels of a recording are padded.
         """
         bz, ch_num, patch_num, patch_size = x.shape
         if mask is None:
