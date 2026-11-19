@@ -83,6 +83,7 @@ if TYPE_CHECKING:
     from .nice import NICE
     from .patchedtransformer import PBT
     from .popt import PopulationTransformer
+    from .pratibha2 import Pratibha2
     from .reve import REVE
     from .sccnet import SCCNet
     from .seizure_transformer import SeizureTransformer
