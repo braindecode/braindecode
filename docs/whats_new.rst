@@ -33,7 +33,7 @@ Enhancements
   autoencoding and constrained reconstruction, with pretrained weights on the
   Hugging Face Hub; :class:`braindecode.models.reve.RevePositionBank` takes the
   cached file name, ``fname``, so other models can keep their position table
-  next to REVE's (by `Mahir Jain`_).
+  next to REVE's (:gh:`1654` by `Mahir Jain`_).
 
 - Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
   between recording descriptions and window metadata, and recording-level subset
