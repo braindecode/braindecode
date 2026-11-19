@@ -1223,10 +1223,14 @@ def test_luna_mapping_includes_temperature_typo():
 @pytest.mark.parametrize(
     "patch_size, embed_dim, message",
     [
+        (0, 16, "patch_size must be a positive multiple of 4"),
+        (-4, 16, "patch_size must be a positive multiple of 4"),
         (3, 16, "patch_size must be a positive multiple of 4"),
         (33, 16, "patch_size must be a positive multiple of 4"),
         (34, 16, "patch_size must be a positive multiple of 4"),
         (35, 16, "patch_size must be a positive multiple of 4"),
+        (40, 0, "embed_dim must be a positive multiple of 16"),
+        (40, -16, "embed_dim must be a positive multiple of 16"),
         (40, 8, "embed_dim must be a positive multiple of 16"),
         (40, 18, "embed_dim must be a positive multiple of 16"),
     ],
@@ -1234,16 +1238,26 @@ def test_luna_mapping_includes_temperature_typo():
 def test_luna_rejects_incompatible_patch_geometry(patch_size, embed_dim, message):
     with pytest.raises(ValueError, match=message):
         LUNA(
-            n_chans=3, n_times=2 * patch_size, n_outputs=2,
-            patch_size=patch_size, embed_dim=embed_dim, num_queries=2, depth=1,
+            n_chans=3,
+            n_times=max(2 * patch_size, 8),
+            n_outputs=2,
+            patch_size=patch_size,
+            embed_dim=embed_dim,
+            num_queries=2,
+            depth=1,
         )
 
 
 @pytest.mark.parametrize("patch_size, embed_dim", [(4, 16), (36, 32)])
 def test_luna_custom_patch_geometry(patch_size, embed_dim):
     model = LUNA(
-        n_chans=3, n_times=2 * patch_size, n_outputs=2,
-        patch_size=patch_size, embed_dim=embed_dim, num_queries=2, depth=1,
+        n_chans=3,
+        n_times=2 * patch_size,
+        n_outputs=2,
+        patch_size=patch_size,
+        embed_dim=embed_dim,
+        num_queries=2,
+        depth=1,
     )
     x = torch.randn(2, 3, 2 * patch_size, requires_grad=True)
     predictions = model(x)
