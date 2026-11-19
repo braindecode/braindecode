@@ -224,6 +224,9 @@ Requirements
 Bug fixes
 ==========
 
+- Looking up the removed ``braindecode.datautil.scale`` now raises
+  :class:`AttributeError`, so ``hasattr`` and ``getattr`` with a default work
+  for this name.
 - :func:`braindecode.preprocessing.filterbank` preserves channel positions and
   their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
 - ``load_state_dict`` of every braindecode model loads checkpoints saved before
