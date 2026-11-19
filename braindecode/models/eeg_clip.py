@@ -200,6 +200,14 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             torch.tensor(math.log(1.0 / initial_temperature))
         )
 
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        if "_default_eeg_encoder" not in state:
+            # Earlier pickles stored the same distinction in the constructor args.
+            self._default_eeg_encoder = (
+                self._braindecode_init_kwargs["eeg_encoder"] is None
+            )
+
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, X):
         """Return projected EEG embeddings, shape ``(batch, n_outputs)``."""

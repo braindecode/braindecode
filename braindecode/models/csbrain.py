@@ -477,6 +477,12 @@ class CSBrain(EEGModuleMixin, nn.Module):
             nn.Linear(self._emb_dim, self.n_outputs),
         )
 
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        if "_encoder_output" not in state:
+            # Earlier pickles select encoder output with this identity head.
+            self._encoder_output = isinstance(self.final_layer, nn.Identity)
+
     def reset_head(self, n_outputs):
         self._set_n_outputs(n_outputs)
         self._update_init_kwargs(return_encoder_output=False)

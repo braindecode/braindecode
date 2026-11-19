@@ -12,6 +12,7 @@
 import inspect
 import math
 import os
+import pickle
 import re
 import subprocess
 import sys
@@ -5313,6 +5314,31 @@ def test_csbrain_masked_forward_replaces_patches():
     assert model(torch.randn(1, 3, 400), mask=mask).shape == (1, 2)
 
 
+@pytest.mark.parametrize("encoder_only", [False, True])
+def test_csbrain_saved_before_channel_count_check(encoder_only):
+    model = CSBrain(
+        n_outputs=2,
+        n_chans=3,
+        n_times=400,
+        n_layer=1,
+        dim_feedforward=64,
+        return_encoder_output=encoder_only,
+    ).eval()
+    x = torch.randn(2, 3, 400)
+    with torch.no_grad():
+        expected = model(x)
+        del model._encoder_output  # historical whole-module pickle
+        restored = pickle.loads(pickle.dumps(model))
+        torch.testing.assert_close(restored(x), expected, rtol=0, atol=0)
+        features = restored(x[:, :2], return_features=True)["features"]
+        assert features.shape[1] == 2
+        if encoder_only:
+            torch.testing.assert_close(restored(x[:, :2]), features, rtol=0, atol=0)
+            restored.reset_head(2)
+        with pytest.raises(ValueError, match="built for 3 channels"):
+            restored(x[:, :2])
+
+
 @pytest.mark.parametrize("batch_size", [1, 3])
 def test_csbrain_train_mode_small_batches(batch_size):
     model = CSBrain(n_outputs=2, n_chans=3, n_times=400, sfreq=200.0, n_layer=1)
@@ -5473,6 +5499,32 @@ def test_csbrain_rejects_invalid_channel_order(kwargs, match):
 
 # ----------------------------------------------------------------------------
 # EEGCLIP
+
+
+@pytest.mark.parametrize("custom", ["none", "text", "eeg"])
+def test_eegclip_saved_before_channel_count_check(custom):
+    # The custom EEG encoder pools any number of channels into eight features.
+    encoder = nn.Sequential(nn.Flatten(), nn.AdaptiveAvgPool1d(8))
+    model = EEGCLIP(
+        n_outputs=2,
+        n_chans=3,
+        n_times=1000,
+        eeg_embedding_dim=8,
+        eeg_encoder=encoder if custom == "eeg" else None,
+        text_encoder=nn.Identity() if custom == "text" else None,
+        projection_layers=1,
+    ).eval()
+    x = torch.randn(2, 3, 1000)
+    with torch.no_grad():
+        expected = model(x)
+        del model._default_eeg_encoder  # historical whole-module pickle
+        restored = pickle.loads(pickle.dumps(model))
+        torch.testing.assert_close(restored(x), expected, rtol=0, atol=0)
+        if custom == "eeg":
+            assert restored(x[:, :2]).shape == (2, 2)
+        else:
+            with pytest.raises(ValueError, match="built for 3 channels"):
+                restored(x[:, :2])
 
 
 def test_eegclip_matches_authors_projection_and_clip_loss():
