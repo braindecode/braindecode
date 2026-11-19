@@ -205,9 +205,13 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})."
             )
         warn_if_sfreq_differs("Pratibha2", self._sfreq, 200.0)
-        if self._n_times is not None and self._n_times < patch_size:
+        try:
+            n_times = self.n_times  # also inferred from input_window_seconds
+        except ValueError:
+            n_times = None
+        if n_times is not None and n_times < patch_size:
             raise ValueError(
-                f"n_times ({self._n_times}) must be at least patch_size ({patch_size})."
+                f"n_times ({n_times}) must be at least patch_size ({patch_size})."
             )
 
         self.embed_dim = embed_dim
@@ -331,7 +335,8 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         return_features : bool
             If True, return a dict with the pooled embedding (``"features"``,
             shape (batch, embed_dim)) and the token grid (``"tokens"``, shape
-            (batch, n_chans, n_patches, embed_dim)) instead of logits.
+            (batch, n_kept_chans, n_patches, embed_dim), see :meth:`encode`)
+            instead of logits.
 
         Returns
         -------
@@ -358,17 +363,36 @@ def _resolve_positions(chs_info, table, on_missing):
     """Positions ``(n_kept, 3)`` of ``chs_info`` and the kept indices.
 
     Exact names first (the table has distinct ``AFz``/``AFZ`` and ``Iz``/``IZ``),
-    then :func:`~braindecode.modules.resolve_channel_positions`, then MNE's
+    also after an ``EEG`` prefix or ``-REF`` suffix and for each end of a bipolar
+    pair, then :func:`~braindecode.modules.resolve_channel_positions`, then MNE's
     ``standard_1005`` montage frame for 10-05 names missing from the table.
     """
     bank = {**_standard_1005_montage_frame(), **table}
     positions, kept = resolve_channel_positions(chs_info, bank, None, on_missing)
     positions = np.array(positions, dtype=float)
+
+    def single(name):
+        if name in table:
+            return np.asarray(table[name], dtype=float)
+        try:
+            return resolve_channel_positions([{"ch_name": name}], bank)[0][0]
+        except ValueError:
+            return None
+
     for row, i in enumerate(kept):
-        name = str(chs_info[i]["ch_name"])
+        name = _STRIP_NAME.sub("", str(chs_info[i]["ch_name"]).strip())
+        ends = name.split("-")
         if name in table:
             positions[row] = table[name]
+        elif len(ends) == 2 and any(_STRIP_NAME.sub("", e) in table for e in ends):
+            a, b = (single(_STRIP_NAME.sub("", e)) for e in ends)
+            if a is not None and b is not None:
+                positions[row] = (a + b) / 2
     return positions, kept
+
+
+# Same prefix/suffix stripping as resolve_channel_positions.
+_STRIP_NAME = re.compile(r"^eeg\s+|-(ref|le|ar)$", flags=re.I)
 
 
 @lru_cache(maxsize=1)

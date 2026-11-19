@@ -2121,6 +2121,28 @@ def test_pratibha2_exact_name_wins_over_case(pratibha2_bank):
     torch.testing.assert_close(model.encoder.channel_positions, 100.0 * expected)
 
 
+def test_pratibha2_exact_name_wins_with_prefix_suffix_and_bipolar(pratibha2_bank):
+    """EEG prefixes, -REF suffixes and bipolar ends keep the exact-case entry."""
+    model = _pratibha2_model(["EEG AFz", "AFz-REF", "EEG IZ-REF", "AFz-Iz"])
+    bank = {k: torch.tensor(v) for k, v in pratibha2_bank.items()}
+    expected = torch.stack(
+        [bank["AFz"], bank["AFz"], bank["IZ"], (bank["AFz"] + bank["Iz"]) / 2]
+    )
+    torch.testing.assert_close(model.encoder.channel_positions, 100.0 * expected)
+
+
+def test_pratibha2_short_window_from_seconds_raises(pratibha2_bank):
+    chs = [{"ch_name": "Cz", "kind": "eeg"}]
+    with pytest.raises(ValueError, match="patch_size"):
+        Pratibha2(
+            chs_info=chs,
+            n_outputs=2,
+            input_window_seconds=0.5,
+            sfreq=200.0,
+            **_PRATIBHA2_SMALL,
+        )
+
+
 def test_pratibha2_names_outside_table_take_standard_1005_montage_frame(pratibha2_bank):
     pos = (
         mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
