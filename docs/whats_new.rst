@@ -284,6 +284,14 @@ Bug fixes
   stays in the model so the released weights still load; the first head layer takes
   ``d_model`` instead of ``emb_dim`` inputs per token (the same with the defaults).
   Outputs of existing CSBrain classifiers change (:gh:`1541`, :gh:`1572`).
+- :class:`braindecode.models.EEGTCNet` no longer applies ``activation`` between the
+  temporal batch norm and the depthwise convolution. The authors' EEG-TCNet code and
+  :class:`braindecode.models.EEGNet` have no activation there. The parameters do not
+  change, so saved weights still load. Old saved configurations restore the
+  previous activation, and configurations saved before 1.6.1 also restore
+  ``tcn_batch_norm=False``. When loading a bare state dict, pass
+  ``temporal_activation=True`` to reproduce the previous outputs
+  (:gh:`1607` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
   averages kept steps that lie after the end of the input. When the last
   segment held fewer real samples than its first kept step position, those

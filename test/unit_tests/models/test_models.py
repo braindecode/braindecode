@@ -2186,6 +2186,58 @@ def test_eegtcnet_batch_size_one_train_mode():
     assert out.shape == (1, 4)
 
 
+def test_eegtcnet_no_activation_after_temporal_bn():
+    """As in the authors' Keras code, the depthwise conv reads the temporal
+    BatchNorm output with no activation in between."""
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125).eval()
+    seen = {}
+    model.eegnet_tc.bn1.register_forward_hook(lambda m, i, o: seen.update(bn=o.clone()))
+    model.eegnet_tc.depthwise_conv.register_forward_pre_hook(
+        lambda m, i: seen.update(dw=i[0].clone())
+    )
+    model(torch.randn(2, 22, 1125))
+    torch.testing.assert_close(seen["dw"], seen["bn"])
+
+
+def test_eegtcnet_temporal_activation_restores_previous_output():
+    """``temporal_activation=True`` gives the outputs of the previous forward,
+    which applied ``activation`` to the temporal BatchNorm output."""
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125).eval()
+    previous = EEGTCNet(
+        n_outputs=4, n_chans=22, n_times=1125, temporal_activation=True
+    ).eval()
+    previous.load_state_dict(model.state_dict())
+    x = torch.randn(2, 22, 1125)
+    eegnet = model.eegnet_tc
+    eegnet.bn1.register_forward_hook(lambda m, i, o: eegnet.activation(o))
+    torch.testing.assert_close(previous(x), model(x))
+
+    config = previous.get_config()
+    del config["temporal_activation"]
+    restored = EEGTCNet.from_config(config).eval()
+    restored.load_state_dict(previous.state_dict(), strict=True)
+    torch.testing.assert_close(restored(x), previous(x))
+
+
+def test_eegtcnet_config_from_before_tcn_batch_norm_loads_previous_model():
+    """A config saved before 1.6.1 has neither ``tcn_batch_norm`` nor
+    ``temporal_activation``; it rebuilds the model of that version."""
+    previous = EEGTCNet(
+        n_outputs=4,
+        n_chans=22,
+        n_times=1125,
+        tcn_batch_norm=False,
+        temporal_activation=True,
+    ).eval()
+    config = previous.get_config()
+    del config["tcn_batch_norm"], config["temporal_activation"]
+    restored = EEGTCNet.from_config(config).eval()
+    assert restored.tcn_batch_norm is False
+    restored.load_state_dict(previous.state_dict(), strict=True)
+    x = torch.randn(2, 22, 1125)
+    torch.testing.assert_close(restored(x), previous(x))
+
+
 def test_eegclip_batch_size_one_train_mode():
     """At n_times=480 the dense Deep4Net gives one time step, so the projection
     head's BatchNorm1d sees a single row in train mode (NeuralBench matrix)."""
