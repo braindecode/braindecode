@@ -729,6 +729,13 @@ models_mandatory_parameters: list[
         # any length; 300 samples is only a test length.
         {"n_chans": 10, "n_times": 300, "sfreq": 100.0},
     ),
+    (
+        "CareSleepNet",
+        ["n_chans", "n_outputs", "n_times"],
+        # 20 sleep epochs of 300 samples (3 s at 100 Hz) keep the tests small;
+        # the reference uses 30 s epochs, n_times=60000. 1 EEG + 2 EOG channels.
+        {"n_times": 6000, "sfreq": 100.0},
+    ),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("NICE", ["n_chans", "n_outputs", "n_times"], None),
@@ -798,6 +805,21 @@ models_mandatory_parameters: list[
             "sfreq": 2000.0,
             "input_window_seconds": 480 / 2000.0,
             "n_outputs": 20,
+        },
+    ),
+    (
+        "TinyMyo",
+        ["n_chans", "n_outputs", "n_times"],
+        {
+            # The pretraining windows: 1000 samples at 2000 Hz
+            "n_chans": 8,
+            "n_times": 1000,
+            "sfreq": 2000.0,
+            "input_window_seconds": 0.5,
+            # 2 of the 8 released blocks; 2 heads also split the
+            # embed_dim=128 of the embedding test into even widths
+            "depth": 2,
+            "num_heads": 2,
         },
     ),
     ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),

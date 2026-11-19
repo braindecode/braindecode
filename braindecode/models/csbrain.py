@@ -266,6 +266,13 @@ class CSBrain(EEGModuleMixin, nn.Module):
         If False (default), the projected encoder output is flattened and
         passed through the task head to produce class logits of size
         ``n_outputs``. If True, return the encoder output features.
+    channel_strategy : str
+        How another montage reaches the encoder; see
+        :class:`~braindecode.models.base.EEGModuleMixin`. The encoder keeps the
+        ``chs_info`` channels (``brain_regions``, ``channel_order`` and the
+        ``mask`` of :meth:`forward` refer to them).
+    channel_strategy_kwargs : dict or None
+        Options of ``channel_strategy``.
 
     Notes
     -----
@@ -312,6 +319,8 @@ class CSBrain(EEGModuleMixin, nn.Module):
         channel_order: Sequence[int] | None = None,
         head_hidden_dim: int | None = None,
         return_encoder_output: bool = False,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -320,6 +329,8 @@ class CSBrain(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
         try:
