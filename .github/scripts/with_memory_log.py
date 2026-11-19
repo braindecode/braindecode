@@ -20,7 +20,8 @@ def _log_memory(stop):
             text=True,
             check=False,
         )
-        print("\n".join(line[:160] for line in top.stdout.splitlines()[:8]))
+        # The first line labels the columns. Keep it and the eight largest processes.
+        print("\n".join(line[:160] for line in top.stdout.splitlines()[:9]))
         print("::endgroup::", flush=True)
 
 
