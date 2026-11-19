@@ -1122,6 +1122,27 @@ def test_set_params(augmented_mock_clf, augmentation, kwargs, random_batch):
     )
 
 
+@pytest.mark.parametrize("n_times", [31, 32])
+@pytest.mark.parametrize(
+    "device",
+    ["cpu", pytest.param("mps", marks=pytest.mark.skipif(
+        not torch.backends.mps.is_available(), reason="Apple MPS not available"
+    ))],
+)
+def test_ft_surrogate_shared_phase_preserves_cross_spectrum(n_times, device):
+    x = torch.randn(2, 3, n_times, generator=torch.Generator().manual_seed(4))
+    y = torch.arange(2, device=device)
+    transformed, labels = FTSurrogate(1.0, random_state=2)(x.to(device), y)
+    assert not torch.allclose(transformed.cpu(), x)
+    torch.testing.assert_close(labels, y)
+    before = torch.fft.rfft(x.double())
+    after = torch.fft.rfft(transformed.cpu().double())
+    torch.testing.assert_close(
+        after * after[:, :1].conj(), before * before[:, :1].conj(),
+        atol=5e-5, rtol=1e-5,
+    )
+
+
 def test_mask_encoding_reaches_last_sample():
     X = torch.ones(100, 2, 10)
     tr_X, _ = MaskEncoding(1, max_mask_ratio=0.3, random_state=0)(X, torch.arange(100))
