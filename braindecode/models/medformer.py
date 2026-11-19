@@ -14,7 +14,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from braindecode.functional import init_weights_
+from braindecode.functional import check_n_chans, init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import SinusoidalPositionalEncoding
 
@@ -314,6 +314,12 @@ class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
         torch.Tensor
             Output tensor of shape (batch_size, n_outputs).
         """
+        check_n_chans(
+            x,
+            self.n_chans,
+            "MEDFormer",
+            "build the model with the chs_info of this montage.",
+        )
         # Embedding
         enc_out = self.enc_embedding(x)
         enc_out, _ = self.encoder(enc_out, attn_mask=None)

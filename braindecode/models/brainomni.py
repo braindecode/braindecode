@@ -18,7 +18,12 @@ import torch.nn.functional as F
 from mne.io.constants import FIFF
 from torch.nn import RMSNorm
 
-from braindecode.functional import apply_rotary, init_weights_, rotary_frequencies
+from braindecode.functional import (
+    apply_rotary,
+    check_n_chans,
+    init_weights_,
+    rotary_frequencies,
+)
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
@@ -245,6 +250,12 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         self.apply(_init_weights)
 
     def _encode_quantize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
+        check_n_chans(
+            x,
+            self.n_chans,
+            "BrainTokenizer",
+            "build the model with the chs_info of this montage.",
+        )
         step = int(self.window_length * (1 - overlap_ratio))
         x = F.pad(x, (0, max(self.window_length - x.shape[-1], 0)))
         if step < self.window_length:  # overlap pads the last window, as released
@@ -531,6 +542,12 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         """L2-normalized ``(batch, n_neuro, n_tokens, lm_dim)`` embedding."""
+        check_n_chans(
+            x,
+            self.n_chans,
+            "BrainOmni",
+            "build the model with the chs_info of this montage.",
+        )
         if torch.jit.is_scripting():
             # TorchScript cannot switch modes, so tokenize() is not scriptable.
             if self.tokenizer.training:

@@ -13,6 +13,7 @@ from einops.layers.torch import Rearrange, Reduce
 from torch import nn
 
 from braindecode.functional import (
+    check_n_chans,
     pad_or_crop_to_patches,
     patch_count,
     sinusoidal_positional_encoding,
@@ -434,6 +435,13 @@ class JungMAE(EEGModuleMixin, nn.Module):
         # out of it: a missing channel is given as NaN instead
         if ch_mask is not None:
             raise ValueError("JungMAE does not accept ch_mask; use NaN channels.")
+        if not return_features:
+            check_n_chans(
+                x,
+                self.n_chans,
+                "JungMAE",
+                "use return_features=True to encode another number of HbO/HbR pairs.",
+            )
 
         # Encoder: one token per patch of each HbO/HbR pair, zero where the
         # patch is invalid ("foundation" in the reference)
@@ -480,6 +488,12 @@ class JungMAE(EEGModuleMixin, nn.Module):
         """
         # Shapes use the symbols of the class docstring: C pairs, P patches of
         # Q samples, tokens of width D.
+
+        n_chans = x.shape[1]
+        if n_chans < 2 or n_chans % 2:
+            raise ValueError(
+                f"JungMAE needs complete HbO/HbR pairs, got {n_chans} channels."
+            )
 
         # Samples hidden by ``mask`` are missing data, like NaN
         # (batch, 2C, n_times), unchanged

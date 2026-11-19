@@ -28,6 +28,29 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- :class:`braindecode.models.AXON`, :class:`~braindecode.models.BENDR`,
+  :class:`~braindecode.models.BrainOmni`, :class:`~braindecode.models.BrainTokenizer`,
+  :class:`~braindecode.models.CBraMod`, :class:`~braindecode.models.CodeBrain`,
+  :class:`~braindecode.models.CSBrain`, :class:`~braindecode.models.DuIN`,
+  :class:`~braindecode.models.EEGCLIP`, :class:`~braindecode.models.EEGPT`,
+  :class:`~braindecode.models.JungMAE`, :class:`~braindecode.models.MEDFormer`,
+  :class:`~braindecode.models.MEGGPT`, :class:`~braindecode.models.MEGXL`,
+  :class:`~braindecode.models.MIRepNet`, :class:`~braindecode.models.PBT`,
+  :class:`~braindecode.models.REVE`, :class:`~braindecode.models.SignalJEPA`,
+  :class:`~braindecode.models.SignalJEPA_Contextual`,
+  :class:`~braindecode.models.SignalJEPA_PostLocal`,
+  :class:`~braindecode.models.SignalJEPA_PreLocal`,
+  :class:`~braindecode.models.SleepFMStager` and :class:`~braindecode.models.ZUNA`
+  raise a ``ValueError`` with both channel counts and how to run the model on
+  this input, through :func:`braindecode.functional.check_n_chans`, when the input
+  does not have the channels the model was built for; it was a shape error deep in
+  the network. REVE accepts a different montage when given ``pos`` with attention
+  pooling or feature extraction. CBraMod, CodeBrain, JungMAE and MEGGPT accept
+  fewer channels when returning features (JungMAE takes complete HbO/HbR pairs).
+  MEGGPT also checks its channel embedding capacity. CSBrain checks its
+  region order. Previously saved CBraMod, CSBrain and EEGCLIP modules recover the
+  channel-count behavior of their original heads and encoders
+  (:gh:`1605` by `Julien Gadonneix`_).
 - Every foundation model takes ``channel_strategy``; 17 of them raised a ``TypeError``.
   :class:`braindecode.models.CSBrain`,
   :class:`~braindecode.models.EEGCLIP`, :class:`~braindecode.models.MEDFormer`,

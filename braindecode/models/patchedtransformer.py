@@ -12,7 +12,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from braindecode.functional import init_weights_, scaled_dot_product_attention
+from braindecode.functional import (
+    check_n_chans,
+    init_weights_,
+    scaled_dot_product_attention,
+)
 from braindecode.models.base import EEGModuleMixin
 
 # Weight initialization of the reference implementation.
@@ -313,8 +317,12 @@ class PBT(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output logits with shape (batch_size, n_outputs).
         """
-        if X.size(1) != self.n_chans:
-            raise ValueError(f"PBT expects {self.n_chans} channels, got {X.size(1)}.")
+        check_n_chans(
+            X,
+            self.n_chans,
+            "PBT",
+            "build the model with the chs_info of this montage.",
+        )
         X, int_pos = self.patch_signal(X)
 
         tokens = self.patching_projection(X)

@@ -542,6 +542,7 @@ The functional module contains various functions that can be used like functiona
     :recursive:
 
      check_ch_mask
+     check_n_chans
      derivation_matrix
      drop_path
      exact_derivation

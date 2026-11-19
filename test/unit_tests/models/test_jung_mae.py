@@ -358,3 +358,19 @@ def test_jung_mae_bfloat16_positions_are_cast_from_float32():
         expected = reference.time_positions(6).to(torch.bfloat16)
         out = model.to(torch.bfloat16).encode(torch.randn(1, 4, 60).bfloat16())
     assert torch.equal(out["foundation"][0, 0], expected)
+
+
+def test_jung_mae_encoder_accepts_other_complete_pairs():
+    model = JungMAE(
+        n_chans=4, n_outputs=2, n_times=30, embed_dim=16, num_heads=2, depth=1
+    ).eval()
+    for n_chans in (2, 6):
+        x = torch.randn(2, n_chans, 30)
+        encoded = model.encode(x)["foundation"]
+        torch.testing.assert_close(
+            model(x, return_features=True)["features"], encoded.flatten(1)
+        )
+        with pytest.raises(ValueError, match="channels"):
+            model(x)
+    with pytest.raises(ValueError, match="pairs"):
+        model.encode(torch.randn(2, 1, 30))

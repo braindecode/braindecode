@@ -15,7 +15,11 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
-from braindecode.functional import check_ch_mask, pad_or_crop_to_patches
+from braindecode.functional import (
+    check_ch_mask,
+    check_n_chans,
+    pad_or_crop_to_patches,
+)
 from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import FeedForwardBlock
@@ -308,6 +312,13 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         """
         if return_features is None:
             return_features = self.return_features
+        if not return_features:  # the flattened head is tied to the channels
+            check_n_chans(
+                x,
+                self.n_chans,
+                "MEGGPT",
+                "build the model with the chs_info of this montage.",
+            )
         ch_mask = check_ch_mask(ch_mask, x)  # (batch, n_chans) or None
         if ch_mask is not None:
             if not return_features:
@@ -379,6 +390,11 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         self, token_ids: Tensor, token_mask: Optional[Tensor] = None
     ) -> Tensor:
         batch_size, n_chans = token_ids.shape[0], token_ids.shape[1]
+        if n_chans > self.channel_embedding.shape[0]:
+            raise ValueError(
+                f"MEGGPT has embeddings for {self.channel_embedding.shape[0]} channels "
+                f"but got {n_chans}. Build the model for this montage."
+            )
         # (batch, n_chans, n_segments * segment_len)
         # -> (batch * n_segments, segment_len, n_chans)
         token_ids = self.to_segments(token_ids)
