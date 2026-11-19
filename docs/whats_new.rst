@@ -275,7 +275,8 @@ Bug fixes
   per-window value if a recording description uses the same column name.
   Classifier and regressor output inference reads the window targets.
   :meth:`~braindecode.datasets.BaseConcatDataset.set_target` validates every
-  recording before switching the collection's target.
+  recording before switching the collection's target (:gh:`1646` by
+  `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` raises when ``chs_info`` has positions for
   some channels but not all (MNE stores ``NaN`` for the others). It gave every
   channel a default position, evenly spaced along x, so one name missing from the
