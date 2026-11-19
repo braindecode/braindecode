@@ -12,6 +12,7 @@
 import inspect
 import math
 import os
+import pickle
 import re
 import subprocess
 import sys
@@ -43,6 +44,7 @@ from braindecode.models import (
     FNIRSCNN1D,
     FNIRST,
     NICE,
+    PBT,
     SSTDPN,
     TCN,
     ATCNet,
@@ -1017,6 +1019,59 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     assert y_pred1.shape == (n_examples, n_classes)
 
 
+def test_attnsleep_attention_query_is_not_normalized():
+    # The authors' code attends with the raw query, so the norm of the residual
+    # attention block must not change the output.
+    model = AttnSleep(sfreq=100, n_outputs=5, input_window_seconds=30, d_model=80)
+    model.eval()
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        expected = model(x)
+        for layer in model.feature_extractor[1].layers:
+            layer.residual_self_attn.norm.weight.fill_(2.0)
+            layer.residual_self_attn.norm.bias.fill_(1.0)
+        actual = model(x)
+    torch.testing.assert_close(actual, expected)
+
+
+def test_attnsleep_attn_query_norm_restores_previous_output():
+    # Before 2.1 the attention got the normalized query, attn(norm(x), key,
+    # value). A hook on the default model rebuilds that call.
+    kwargs = dict(sfreq=100, n_outputs=5, input_window_seconds=30, d_model=80)
+    model = AttnSleep(**kwargs).eval()
+    legacy = AttnSleep(**kwargs, attn_query_norm=True).eval()
+    legacy.load_state_dict(model.state_dict())
+    for layer in model.feature_extractor[1].layers:
+        norm = layer.residual_self_attn.norm
+        layer.residual_self_attn.fn_attn.register_forward_pre_hook(
+            lambda _, args, norm=norm: (norm(args[0]), *args[1:])
+        )
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        torch.testing.assert_close(legacy(x), model(x))
+
+
+def test_attnsleep_saved_without_query_norm_setting_keeps_logits():
+    previous = AttnSleep(
+        sfreq=100, n_outputs=5, input_window_seconds=30, attn_query_norm=True
+    ).eval()
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        expected = previous(x)
+        config = previous.get_config()
+        del config["attn_query_norm"]
+        restored = AttnSleep.from_config(config).eval()
+        restored.load_state_dict(previous.state_dict(), strict=True)
+        torch.testing.assert_close(restored(x), expected)
+
+        # Full-model saves before the switch have no per-layer flag.
+        for layer in previous.feature_extractor[1].layers:
+            del layer.residual_self_attn.norm_query
+        restored = pickle.loads(pickle.dumps(previous))
+        torch.testing.assert_close(restored(x), expected)
+        torch.testing.assert_close(torch.jit.script(restored)(x), expected)
+
+
 def test_attn_sleep_requires_signal_geometry():
     with pytest.raises(ValueError, match="at least two of"):
         AttnSleep(sfreq=100, n_outputs=5)
@@ -1388,7 +1443,7 @@ def test_contrawr_dummy(n_times, n_chans, sfreq, n_outputs):
 def _make_chs_info(n_chans):
     """Create synthetic chs_info with 3-D positions for testing."""
     # Use a standard montage and pick the first n_chans channels
-    montage = mne.channels.make_standard_montage("standard_1005")
+    montage = mne.channels.make_standard_montage("colin27_1005")
     ch_names = montage.ch_names[:n_chans]
     info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
     info.set_montage(montage)
@@ -1410,7 +1465,7 @@ def test_channels_without_positions_give_finite_outputs(name):
 def test_a_montage_with_unplaced_channels_is_refused(name):
     """One channel without a position must not void the others' positions."""
     info = mne.create_info(["Cz", "C3", "C4", "X1"], 250.0, "eeg")
-    info.set_montage("standard_1005", on_missing="ignore")
+    info.set_montage("colin27_1005", on_missing="ignore")
     with pytest.raises(ValueError, match=r"none for \['X1'\]"):
         all_models_dict[name](
             n_outputs=2, n_chans=4, chs_info=info["chs"], n_times=1000, sfreq=250.0
@@ -2130,6 +2185,58 @@ def test_eegtcnet_batch_size_one_train_mode():
     model = EEGTCNet(n_outputs=4, n_chans=22, n_times=64).train()
     out = model(torch.randn(1, 22, 64))
     assert out.shape == (1, 4)
+
+
+def test_eegtcnet_no_activation_after_temporal_bn():
+    """As in the authors' Keras code, the depthwise conv reads the temporal
+    BatchNorm output with no activation in between."""
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125).eval()
+    seen = {}
+    model.eegnet_tc.bn1.register_forward_hook(lambda m, i, o: seen.update(bn=o.clone()))
+    model.eegnet_tc.depthwise_conv.register_forward_pre_hook(
+        lambda m, i: seen.update(dw=i[0].clone())
+    )
+    model(torch.randn(2, 22, 1125))
+    torch.testing.assert_close(seen["dw"], seen["bn"])
+
+
+def test_eegtcnet_temporal_activation_restores_previous_output():
+    """``temporal_activation=True`` gives the outputs of the previous forward,
+    which applied ``activation`` to the temporal BatchNorm output."""
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125).eval()
+    previous = EEGTCNet(
+        n_outputs=4, n_chans=22, n_times=1125, temporal_activation=True
+    ).eval()
+    previous.load_state_dict(model.state_dict())
+    x = torch.randn(2, 22, 1125)
+    eegnet = model.eegnet_tc
+    eegnet.bn1.register_forward_hook(lambda m, i, o: eegnet.activation(o))
+    torch.testing.assert_close(previous(x), model(x))
+
+    config = previous.get_config()
+    del config["temporal_activation"]
+    restored = EEGTCNet.from_config(config).eval()
+    restored.load_state_dict(previous.state_dict(), strict=True)
+    torch.testing.assert_close(restored(x), previous(x))
+
+
+def test_eegtcnet_config_from_before_tcn_batch_norm_loads_previous_model():
+    """A config saved before 1.6.1 has neither ``tcn_batch_norm`` nor
+    ``temporal_activation``; it rebuilds the model of that version."""
+    previous = EEGTCNet(
+        n_outputs=4,
+        n_chans=22,
+        n_times=1125,
+        tcn_batch_norm=False,
+        temporal_activation=True,
+    ).eval()
+    config = previous.get_config()
+    del config["tcn_batch_norm"], config["temporal_activation"]
+    restored = EEGTCNet.from_config(config).eval()
+    assert restored.tcn_batch_norm is False
+    restored.load_state_dict(previous.state_dict(), strict=True)
+    x = torch.randn(2, 22, 1125)
+    torch.testing.assert_close(restored(x), previous(x))
 
 
 def test_eegclip_batch_size_one_train_mode():
@@ -3274,6 +3381,33 @@ def test_brainmodule_forward_runs(kwargs, n_chans, n_outputs, with_subject, chec
     _run_forward(m, n_chans, n_outputs, with_subject=with_subject)
 
 
+def test_brainmodule_trains_when_spatial_dropout_excludes_every_channel():
+    model = BrainModule(
+        chs_info=_rng_chs_info(1),
+        n_times=64,
+        sfreq=128,
+        n_outputs=2,
+        use_merger=True,
+        n_virtual_channels=2,
+        hidden_dim=8,
+        depth=2,
+    ).train()
+    x = torch.randn(2, 1, 64)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    # Put the dropout centre on the only electrode, regardless of the RNG version.
+    with mock.patch("torch.rand", return_value=model.channel_positions[0]):
+        positions = model.channel_positions.expand(len(x), -1, -1)
+        assert torch.count_nonzero(model.merger(x, positions)) == 0
+        logits = model(x)
+    assert torch.isfinite(logits).all()
+    logits.square().mean().backward()
+    torch.testing.assert_close(
+        model.merger.heads.grad, torch.zeros_like(model.merger.heads)
+    )
+    optimizer.step()
+    assert all(torch.isfinite(p).all() for p in model.parameters())
+
+
 @pytest.mark.parametrize(
     "chs_info",
     [
@@ -3768,6 +3902,41 @@ def test_syncnet_filter_weight_shape():
     )
     out = model(torch.randn(2, n_chans, 200))
     assert out.shape == (2, 2)
+
+
+@pytest.mark.parametrize(
+    "n_times, filter_width, pool_size",
+    [(1000, 64, 40), (1001, 41, 40), (1001, 20, 40)],
+)
+def test_syncnet_output_batch_matches_input(n_times, filter_width, pool_size):
+    """The classifier size follows the pooled length, so batch rows stay separate."""
+    model = SyncNet(
+        n_chans=3,
+        n_times=n_times,
+        n_outputs=2,
+        filter_width=filter_width,
+        pool_size=pool_size,
+    ).eval()
+    x = torch.randn(25, 3, n_times)
+    with torch.no_grad():
+        out = model(x)
+        out_first = model(x[:1])
+    assert out.shape == (25, 2)
+    torch.testing.assert_close(out[:1], out_first)
+
+
+@pytest.mark.parametrize(
+    "n_times,filter_width,pool_size", [(5, 4, 16), (5, 4, 0), (5, 0, 1), (1, 5, 1)]
+)
+def test_syncnet_rejects_empty_convolution_or_pool(n_times, filter_width, pool_size):
+    with pytest.raises(ValueError, match="pool_size|filter_width"):
+        SyncNet(
+            n_chans=3,
+            n_outputs=2,
+            n_times=n_times,
+            filter_width=filter_width,
+            pool_size=pool_size,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -5945,7 +6114,7 @@ def test_eegclip_one_empty_rank_nonempty_global_matches_ddp_oracle(tmp_path):
 
 def _cz():
     info = mne.create_info(["Cz"], 256.0, "eeg")
-    return info.set_montage("standard_1005")["chs"]
+    return info.set_montage("colin27_1005")["chs"]
 
 
 @pytest.mark.parametrize(
@@ -8093,3 +8262,65 @@ def test_cbramod_features_skip_pretraining_proj_out():
         feats = model(x, return_features=True)["features"]
     torch.testing.assert_close(feats, tokens)
     assert any(k.startswith("proj_out.") for k in model.state_dict())
+
+
+def test_pbt_patches_are_channel_specific():
+    n_chans, n_times, d_input = 22, 1000, 64  # 1000 is not a multiple of 64
+    model = PBT(n_chans=n_chans, n_times=n_times, n_outputs=2, d_input=d_input)
+    x = torch.arange(n_chans, dtype=torch.float32).view(1, -1, 1).repeat(1, 1, n_times)
+
+    patches, _ = model.patch_signal(x)
+
+    assert patches.shape == (1, n_chans * (n_times // d_input), d_input)
+    assert all(patch.unique().numel() == 1 for patch in patches[0])
+    assert model(x).shape == (1, 2)
+
+
+@pytest.mark.parametrize("n_times", [8, 11])
+def test_pbt_saved_patcher_respects_channel_and_window_boundaries(n_times):
+    n_chans, d_input = 3, 4
+    model = PBT(
+        n_chans=n_chans,
+        n_times=n_times,
+        n_outputs=2,
+        d_input=d_input,
+        embed_dim=8,
+        num_heads=2,
+        num_layers=1,
+    ).eval()
+    x = torch.arange(n_chans * (n_times + 5), dtype=torch.float32).reshape(
+        1, n_chans, n_times + 5
+    )
+    expected = torch.stack(
+        [
+            x[:, c, i : i + d_input]
+            for c in range(n_chans)
+            for i in range(0, n_times - d_input + 1, d_input)
+        ],
+        dim=1,
+    )
+    with torch.no_grad():
+        logits = model(x[..., :n_times])
+        torch.testing.assert_close(model(x), logits)
+        with pytest.raises(ValueError, match="expects 3 channels"):
+            model(x[:, :2])
+        # PBT saves before 2.1 counted patches after flattening the channels.
+        model.patch_signal.num_tokens = n_chans * n_times // d_input
+        restored = pickle.loads(pickle.dumps(model))
+        patches, positions = restored.patch_signal(x)
+        torch.testing.assert_close(patches, expected)
+        torch.testing.assert_close(positions, torch.arange(expected.shape[1] + 1))
+        torch.testing.assert_close(restored(x), logits)
+
+
+@pytest.mark.parametrize("d_input", [-1, 0, 4])
+def test_pbt_requires_a_complete_patch_per_channel(d_input):
+    with pytest.raises(ValueError, match="0 < d_input <= n_times"):
+        PBT(n_chans=3, n_times=3, n_outputs=2, d_input=d_input)
+
+
+def test_pbt_saved_without_a_complete_patch_rejects_the_window():
+    model = PBT(n_chans=3, n_times=4, n_outputs=2, d_input=4)
+    model.patch_signal.num_tokens = 3 * 3 // 4  # old model with n_times=3
+    with pytest.raises(ValueError, match="one complete patch per channel"):
+        model(torch.randn(2, 3, 3))

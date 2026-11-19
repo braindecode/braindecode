@@ -13,14 +13,21 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import mne
+import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
+from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode import EEGRegressor
+from braindecode.datasets import BaseConcatDataset, RawDataset
 from braindecode.models.neuropose import NeuroPose
 from braindecode.models.sensingdynamics import SensingDynamics
 from braindecode.models.vemg2pose import VEMG2Pose
+from braindecode.preprocessing import create_fixed_length_windows
+from braindecode.training import TimeSeriesLoss
 
 
 def _small_neuropose(**overrides: Any) -> NeuroPose:
@@ -96,6 +103,62 @@ def test_pose_models_return_a_sequence(
 
     n_times = input_shape[2] - getattr(model, "left_context", 0)
     assert output.shape == (input_shape[0], n_times, 3)
+
+
+@pytest.mark.parametrize(
+    "factory", [_small_neuropose, _small_vemg2pose, _small_sensingdynamics]
+)
+def test_cropped_joint_angle_regression(factory):
+    torch.manual_seed(0)
+    pose = factory()
+    valid = pose.n_times - getattr(pose, "left_context", 0)
+    n_joints = pose.n_outputs
+    info = mne.create_info(
+        pose.n_chans + n_joints,
+        pose.sfreq,
+        ["emg"] * pose.n_chans + ["misc"] * n_joints,
+    )
+    values = np.random.default_rng(0).normal(size=(info["nchan"], pose.n_times + valid))
+    values[-1, -2] = np.nan  # An unlabelled joint in the valid part of window two.
+    raw = mne.io.RawArray(values, info, verbose=False)
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw)]),
+        window_size_samples=pose.n_times,
+        window_stride_samples=valid,
+        on_last_window="drop",
+        targets_from="channels",
+        last_target_only=False,
+    )
+    net = EEGRegressor(
+        nn.Sequential(pose, Rearrange("b t j -> b j t")),
+        cropped=True,
+        criterion=TimeSeriesLoss,
+        criterion__loss_function=nn.functional.mse_loss,
+        train_split=None,
+        batch_size=2,
+        max_epochs=1,
+        verbose=0,
+    )
+    before = pose.final_layer.weight.detach().clone()
+    net.fit(windows, y=None)
+    assert np.isfinite(net.history[-1, "train_loss"])
+    assert not torch.equal(before, net.module_[0].final_layer.weight)
+
+    x = torch.from_numpy(np.stack([windows[i][0] for i in range(2)]))
+    y = torch.from_numpy(np.stack([windows[i][1] for i in range(2)]))
+    with torch.no_grad():
+        output = net.module_.eval()(x)
+        expected_loss = (output - y[..., -valid:]).square().nanmean()
+        torch.testing.assert_close(net.criterion_(output, y), expected_loss)
+        by_window = output.numpy()
+    np.testing.assert_allclose(net.predict(windows), by_window.mean(-1), atol=1e-5)
+    predictions, targets = net.predict_trials(windows)
+    np.testing.assert_allclose(
+        predictions[0], np.concatenate(by_window, axis=-1), atol=1e-5
+    )
+    np.testing.assert_allclose(
+        targets[0, :, -2 * valid :], values[-n_joints:, -2 * valid :]
+    )
 
 
 @pytest.mark.parametrize(

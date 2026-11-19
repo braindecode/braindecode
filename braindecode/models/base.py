@@ -21,6 +21,7 @@ from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from mne.utils import _soft_import
 from torchinfo import ModelStatistics, summary
 
+from braindecode.functional import check_ch_mask
 from braindecode.models.util import (
     _EEG_PARAMS,
     build_model_config,
@@ -549,17 +550,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 "uses it to map each sample, the backbone never sees it."
             )
         if chs_info is None and pos is not None and ch_mask is not None:  # no names
-            mask = (
-                torch.ones(pos.shape[:2], dtype=torch.bool)
-                if ch_mask is None
-                else ch_mask
-            )
+            mask = check_ch_mask(ch_mask, pos)
+            assert mask is not None
             chs_info = [
                 [
                     {"ch_name": f"E{i}", "kind": "eeg", "loc": np.r_[p, np.zeros(9)]}
-                    for i, p in enumerate(pb[mb.cpu().numpy()])
+                    for i, p in enumerate(pb[mb])
                 ]
-                for pb, mb in zip(pos.detach().cpu().double().numpy(), mask)
+                for pb, mb in zip(
+                    pos.detach().cpu().double().numpy(), mask.cpu().numpy()
+                )
             ]
         elif ch_mask is not None and not (chs_info and isinstance(chs_info[0], list)):
             raise ValueError(
