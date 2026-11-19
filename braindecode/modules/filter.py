@@ -85,7 +85,8 @@ class FilterBankLayer(nn.Module):
             A minimum-phase filter will be constructed by decomposing the zero-phase filter
             into a minimum-phase and all-pass systems, and then retaining only the
             minimum-phase system (of the same length as the original zero-phase filter)
-            via :func:`scipy.signal.minimum_phase`.
+            via :func:`scipy.signal.minimum_phase`. The filter is applied once in
+            the forward direction, without delay compensation, making it causal.
         ``"zero-double"``
             *This is a legacy option for compatibility with MNE <= 0.13.*
             The filter is applied twice, once forward, and once backward
@@ -212,6 +213,10 @@ class FilterBankLayer(nn.Module):
 
         self.method_iir = self.method == "iir"
         self.forward_filter = phase in ("forward", "causal")
+        # A minimum-phase FIR has its energy in the first taps and is causal:
+        # like :func:`mne.filter.filter_data`, apply it without the half-length
+        # delay compensation that only suits the symmetric zero-phase designs.
+        self.fir_delay_compensated = phase not in ("minimum", "minimum-half")
 
         # Prepare ParameterLists
         self.fir_list = nn.ParameterList()
@@ -316,6 +321,12 @@ class FilterBankLayer(nn.Module):
 
         return torch.cat(outs, dim=1)
 
+    def _fir_delay(self, fir: Tensor) -> int:
+        """Samples by which the output of ``fir`` is advanced to undo its delay."""
+        if self.fir_delay_compensated:
+            return (fir.shape[-1] - 1) // 2
+        return 0
+
     def _apply_fir_bank(self, x: Tensor) -> Tensor:
         """Every band's ``fftconvolve(x, filt, mode="same")`` with one FFT of ``x``.
 
@@ -324,6 +335,8 @@ class FilterBankLayer(nn.Module):
         5-smooth ``n >= n_times + filter_length - 1`` (a linear convolution, not
         a circular one). Equal to the per-band convolution up to float rounding.
         HPU inputs take one direct convolution on the device instead.
+        Minimum-phase filters are not delay-compensated: each band is the first
+        ``n_times`` samples of ``fftconvolve(x, filt, mode="full")``.
 
         Returns
         -------
@@ -335,14 +348,12 @@ class FilterBankLayer(nn.Module):
         x_in = spectral_input(x)
         n_times = x.shape[-1]
         length = max([fir.shape[-1] for fir in self.fir_list])
-        start = (length - 1) // 2
+        start = max([self._fir_delay(fir) for fir in self.fir_list])
         n_fft = 2 * _next_fast_len((n_times + length) // 2)
         bank = torch.stack(
             [
                 torch.fft.rfft(
-                    nn.functional.pad(
-                        fir.to(x_in), [start - (fir.shape[-1] - 1) // 2, 0]
-                    ),
+                    nn.functional.pad(fir.to(x_in), [start - self._fir_delay(fir), 0]),
                     n=n_fft,
                 )
                 for fir in self.fir_list
@@ -357,18 +368,19 @@ class FilterBankLayer(nn.Module):
         """The FIR bank as one direct convolution on the device (HPU: no complex FFT).
 
         Every filter sits in one zero-padded kernel, shifted so that its own
-        "same" window (start ``(filter_length - 1) // 2``) lines up with the
-        others'; flipped, since ``conv1d`` is a cross-correlation.
+        "same" window (start ``(filter_length - 1) // 2``, or 0 for the causal
+        minimum-phase filters) lines up with the others'; flipped, since
+        ``conv1d`` is a cross-correlation.
         """
         x32 = x.to(torch.promote_types(x.dtype, torch.float32))
         start, length = 0, 0
         for fir in self.fir_list:
-            start = max(start, (fir.shape[-1] - 1) // 2)
+            start = max(start, self._fir_delay(fir))
         for fir in self.fir_list:
-            length = max(length, start - (fir.shape[-1] - 1) // 2 + fir.shape[-1])
+            length = max(length, start - self._fir_delay(fir) + fir.shape[-1])
         kernels = []
         for fir in self.fir_list:
-            left = start - (fir.shape[-1] - 1) // 2
+            left = start - self._fir_delay(fir)
             kernel = nn.functional.pad(
                 fir.to(x32), [left, length - left - fir.shape[-1]]
             )

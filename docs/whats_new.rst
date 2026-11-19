@@ -352,6 +352,13 @@ Bug fixes
   ``10.5281/zenodo.8214376``, which resolves to the latest release; the DOI they
   gave, ``10.5281/zenodo.17699192``, is the 1.2.0 archive. The author list adds
   the contributors of 2.0.0 (:gh:`1571` by `Bruno Aristimunha`_).
+- :class:`braindecode.modules.FilterBankLayer` with ``method="fir"`` and
+  ``phase="minimum"`` or ``"minimum-half"`` applied the minimum-phase filter with
+  the delay compensation of a zero-phase filter, which made it anti-causal: the
+  output was advanced by ``(filter_length - 1) // 2`` samples (0.82 s for the
+  8-13 Hz band at 250 Hz) and depended on future samples only. These phases are
+  now applied causally, as in :func:`mne.filter.filter_data`; the other phases
+  are unchanged (:gh:`XXXX` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============
@@ -3221,3 +3228,4 @@ Authors
 .. _Mark Santos: https://www.markstudios.com
 .. _Hamza Abdelhedi: https://github.com/BabaSanfour
 .. _sixty-66: https://github.com/sixty-66
+.. _Axel Coiffard-Donaty: https://github.com/AxelNoun

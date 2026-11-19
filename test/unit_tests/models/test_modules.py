@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 from einops import rearrange
-from mne.filter import create_filter
+from mne.filter import create_filter, filter_data
 from mne.time_frequency import psd_array_welch
 from scipy.signal import fftconvolve as fftconvolve_scipy
 from scipy.signal import freqz
@@ -989,10 +989,50 @@ def test_filter_bank_layer_bands_match_per_band_fftconvolve(phase):
     assert len({fir.shape[-1] for fir in layer.fir_list}) > 1
     out = layer(x)
     for band, fir in enumerate(layer.fir_list):
-        expected = fftconvolve_scipy(
-            x.numpy(), fir.detach().numpy()[None, None], mode="same", axes=2
-        )
+        if phase == "minimum":
+            # causal filter: no delay compensation, the output starts at lag 0
+            expected = fftconvolve_scipy(
+                x.numpy(), fir.detach().numpy()[None, None], mode="full", axes=2
+            )[..., : x.shape[-1]]
+        else:
+            expected = fftconvolve_scipy(
+                x.numpy(), fir.detach().numpy()[None, None], mode="same", axes=2
+            )
         np.testing.assert_allclose(out[:, band].numpy(), expected, atol=1e-10)
+
+
+@pytest.mark.parametrize("direct", [False, True])
+@pytest.mark.parametrize("phase", ["minimum", "minimum-half"])
+def test_filter_bank_layer_minimum_phase_is_causal(phase, direct):
+    """A minimum-phase FIR bank is causal and equals mne.filter.filter_data."""
+    sfreq, n_times, onset = 250.0, 3000, 1500
+    bands = [(8.0, 13.0), (13.0, 30.0)]
+    x = torch.randn(
+        1, 2, n_times, dtype=torch.float64, generator=torch.Generator().manual_seed(0)
+    )
+    layer = FilterBankLayer(
+        n_chans=2, sfreq=sfreq, band_filters=bands, phase=phase, verbose=False
+    ).double()
+    apply = layer._apply_fir_bank_direct if direct else layer
+
+    # the output before `onset` does not depend on the input from `onset` on
+    x_changed = x.clone()
+    x_changed[..., onset:] = 0.0
+    torch.testing.assert_close(
+        apply(x_changed)[..., :onset], apply(x)[..., :onset], rtol=0, atol=1e-10
+    )
+
+    # same alignment as MNE (away from the edges, which MNE pads); the layer
+    # keeps float32 coefficients, hence the tolerance
+    out = apply(x).numpy()
+    centre = slice(1000, 2000)
+    for band, (l_freq, h_freq) in enumerate(bands):
+        expected = filter_data(
+            x.numpy(), sfreq, l_freq, h_freq, phase=phase, verbose=False
+        )
+        np.testing.assert_allclose(
+            out[:, band, :, centre], expected[..., centre], atol=1e-6
+        )
 
 
 @pytest.mark.parametrize("phase", ["zero", "minimum"])
