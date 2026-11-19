@@ -151,8 +151,11 @@ Enhancements
   tensor shapes, what is inside each block with the paper's equations (and the S4D
   equations of Gu et al. for FNIRS4D), how time, channels and chromophores are encoded,
   and the differences from the authors' code. Every step of their forward passes is
-  commented in the paper's terms with its shape; outputs and checkpoints are unchanged
-  (:gh:`1586` by `Bruno Aristimunha`_).
+  commented in the paper's terms with its shape; outputs and checkpoints are unchanged.
+  ``FNIRST.pre`` is now an :class:`~torch.nn.Identity` instead of ``None``, so code
+  that set it to ``None`` must set it to ``nn.Identity()``, and the transformer stacks
+  are a module class instead of plain :class:`~torch.nn.Sequential`, which shows in
+  their repr (:gh:`1586` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` compiles with ``torch.compile`` into one graph: its lazy
   kernel-norm initialisation no longer reads a tensor's value on every forward (19 graph breaks
   and 21 compiled graphs for two training steps before, on every device). Checkpoints and
@@ -312,12 +315,18 @@ Requirements
 Bug fixes
 ==========
 
+- :func:`braindecode.preprocessing.filterbank` keeps whole channel names: it cut
+  each name with its band suffix to its last 15 characters (``MEG0111_8.0-13.0``
+  became ``EG0111_8.0-13.0``), a limit MNE no longer has; long names also
+  round-trip through FIF. Filtered channels are therefore named
+  ``{name}_{l_freq}-{h_freq}`` in full, and with ``drop_original_signals=True`` a
+  filtered channel may reuse the name of a dropped source channel (:gh:`1680` by
+  `Bruno Aristimunha`_).
 - Annotation preprocessors preserve existing event sample numbers in undated
   recordings with a nonzero first sample, including after cropping a recording
   (:gh:`1621` by `Bruno Aristimunha`_).
 - :func:`braindecode.preprocessing.filterbank` preserves channel positions and
   their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
-
 - :class:`braindecode.models.LUNA` keeps its default channel locations in a
   non-persistent buffer, so ``model.to(device)`` moves them. Before, they stayed
   on the CPU in a plain dict, and each forward without ``channel_locations``
@@ -327,6 +336,9 @@ Bug fixes
   when loading weights into a model constructed on the meta device. Existing
   state dictionaries and full-model pickles load (:gh:`1616` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.SSTDPN` can be exported with PyTorch 2.6.
+  The exported model projects each class prototype to its maximum norm
+  before computing the logits (:gh:`1681` by `Bruno Aristimunha`_).
 - ``load_state_dict`` of every braindecode model loads checkpoints saved before
   the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
   other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key
@@ -523,6 +535,11 @@ Bug fixes
   mean now covers the real steps only. Windows that are a multiple of the
   segment length, and ``"crop"``, are unchanged (:gh:`1561` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.LUNA` checks its temporal encoder geometry at
+  construction. Patch sizes must be positive multiples of 4 and embedding
+  widths positive multiples of 16. Incompatible settings previously failed
+  in a grouped normalization or when adding the time and frequency features
+  (:gh:`1685` by `Bruno Aristimunha`_).
 - Signal-only augmentations such as :class:`braindecode.augmentation.SignFlip`
   can follow :class:`braindecode.augmentation.Mixup` or
   :class:`braindecode.augmentation.CutMix` in a composed pipeline. They
@@ -686,6 +703,9 @@ Code health
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).
+- Trial-prediction tests import their shared synthetic windows and historical
+  reconstruction reference from a helper module instead of from other collected
+  test modules (:gh:`1672` by `Bruno Aristimunha`_).
 - The :ref:`channel-strategies` guide shows how to exclude and reconstruct a
   bad EEG channel. The API reference lists
   :func:`~braindecode.datasets.pad_channels_collate` and gives the correct
