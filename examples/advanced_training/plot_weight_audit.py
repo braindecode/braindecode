@@ -103,8 +103,10 @@ model.eval()
 #   hand outputs. Scale each feature's contrast by the gain of its
 #   batch-normalization layer in evaluation mode, then take its norm over time.
 # * **Which channels?** Feature importance is pushed back through the
-#   pointwise weights and the first batch-norm gain to each spatial
-#   filter, then through the absolute spatial weights to each channel.
+#   pointwise weights and the gain of the batch normalization after the
+#   spatial filters to each spatial filter, then through the gain of the
+#   temporal batch normalization and the absolute spatial weights to each
+#   channel.
 # * **Which band?** Each temporal kernel is an FIR filter; the kernels'
 #   power spectra, weighted by the importance of the spatial filters they
 #   feed, are averaged over each band inside the input pass-band
@@ -148,7 +150,11 @@ feature_importance = np.linalg.norm(contrast, axis=1)
 filter_importance = batch_norm_gain(model.bnorm_1) * (
     feature_importance @ np.abs(w_point)
 )
-channel_share = pd.Series(filter_importance @ np.abs(w_spatial), CHANNELS, dtype=float)
+# Spatial filter ``j`` reads temporal kernel ``j // D``, scaled by its gain.
+gain_temporal = np.repeat(batch_norm_gain(model.bnorm_temporal), model.D)
+channel_share = pd.Series(
+    (gain_temporal * filter_importance) @ np.abs(w_spatial), CHANNELS, dtype=float
+)
 channel_share /= channel_share.sum()
 
 ######################################################################
@@ -197,7 +203,7 @@ print(f"Window with most classifier contrast: {window}")
 print("Channel shares:", channel_share.round(3).to_dict())
 
 ######################################################################
-# Compare the printed band and window with the two signatures above. The
+# Compare the printed band and window with the two hypotheses above. The
 # five values are normalized band means. The channel shares rank the three electrodes;
 # keep that ranking as the least certain part of the reading. The next
 # step checks the reading on data.
