@@ -37,8 +37,9 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
     The input is ``(batch, n_chans, n_times)`` with the epochs one after the
     other in time, ``n_times = n_epochs * epoch_samples``, or
     ``(batch, n_epochs, n_chans, epoch_samples)`` as the reference takes it.
-    The explicit four-dimensional layout also accepts shorter sequences, up to
-    the configured ``n_epochs``. The last ``n_eog_chans`` channels are EOG.
+    Both layouts accept shorter sequences, up to the configured ``n_epochs``.
+    For flat inputs each epoch always spans ``n_times // n_epochs`` samples.
+    The last ``n_eog_chans`` channels are EOG.
     The others are EEG. The output is
     ``(batch, n_outputs, n_epochs)``.
 
@@ -116,9 +117,9 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
             )
         if n_epochs < 1:
             raise ValueError(f"n_epochs must be at least 1, got {n_epochs}.")
-        if self.n_times % n_epochs:
+        if self.n_times < n_epochs or self.n_times % n_epochs:
             raise ValueError(
-                f"n_times ({self.n_times}) must be a multiple of n_epochs ({n_epochs})."
+                f"n_times ({self.n_times}) must be a positive multiple of n_epochs ({n_epochs})."
             )
         self.n_epochs = n_epochs
         self.n_eog_chans = n_eog_chans
@@ -184,11 +185,18 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         """``(batch, n_chans, n_times)`` or ``(batch, n_epochs, n_chans,
         epoch_samples)`` to ``(batch, n_outputs, n_epochs)``."""
         if x.ndim == 3:
-            x = x.reshape(x.shape[0], x.shape[1], self.n_epochs, -1).transpose(1, 2)
+            epoch_samples = self.n_times // self.n_epochs
+            if x.shape[-1] % epoch_samples:
+                raise ValueError(
+                    f"Each sleep epoch must contain {epoch_samples} samples."
+                )
+            x = x.unflatten(
+                -1, (x.shape[-1] // epoch_samples, epoch_samples)
+            ).transpose(1, 2)
         batch, n_epochs, n_chans, n_samples = x.shape
-        if n_epochs > self.n_epochs:
+        if not 1 <= n_epochs <= self.n_epochs:
             raise ValueError(
-                f"The input has {n_epochs} epochs, but n_epochs={self.n_epochs}."
+                f"The input has {n_epochs} epochs, expected 1 to {self.n_epochs}."
             )
         n_eeg = n_chans - self.n_eog_chans
         eeg = self.eeg_encoder(x[:, :, :n_eeg].reshape(-1, n_eeg, n_samples))
