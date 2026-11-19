@@ -14,7 +14,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from braindecode.functional import init_weights_
+from braindecode.functional import check_n_chans, init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import SinusoidalPositionalEncoding
 
@@ -163,6 +163,11 @@ class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
         If ``True``, returns attention weights for interpretability. The default is ``True``.
     activation_class : nn.Module, optional
         Activation used in the final classification layer. The default is :class:`nn.GELU`.
+    channel_strategy : str
+        How another montage reaches the encoder; see
+        :class:`~braindecode.models.base.EEGModuleMixin`.
+    channel_strategy_kwargs : dict or None
+        Options of ``channel_strategy``.
 
     Notes
     -----
@@ -203,6 +208,8 @@ class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
         single_channel: bool = False,
         output_attention: bool = True,
         activation_class: type[nn.Module] | None = nn.GELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -211,6 +218,8 @@ class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
@@ -305,6 +314,12 @@ class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
         torch.Tensor
             Output tensor of shape (batch_size, n_outputs).
         """
+        check_n_chans(
+            x,
+            self.n_chans,
+            "MEDFormer",
+            "build the model with the chs_info of this montage.",
+        )
         # Embedding
         enc_out = self.enc_embedding(x)
         enc_out, _ = self.encoder(enc_out, attn_mask=None)
