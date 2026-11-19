@@ -62,6 +62,15 @@ def test_reve_exact_names_keep_the_bank_lookup(reve_bank):
     assert torch.equal(model.default_pos, bank(["Cz", "F3", "A1"]))
 
 
+def test_reve_positions_can_change_channels_only_with_a_flexible_head(reve_bank):
+    model = small_reve(chs("Cz", "F3", "A1"))
+    x = torch.randn(2, 2, 380)
+    pos = model.default_pos[None, :2].expand(2, -1, -1)
+    assert model(x, pos=pos, return_features=True)["tokens"].shape[:2] == (2, 2)
+    with pytest.raises(ValueError, match="channels"):
+        model(x, pos=pos)
+
+
 def test_reve_drop_refuses_a_mask_left_without_real_channels(reve_bank):
     with pytest.warns(UserWarning, match="X1"):
         model = small_reve(chs("Cz", "X1"), on_missing="drop", attention_pooling=True)

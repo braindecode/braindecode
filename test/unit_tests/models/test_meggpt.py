@@ -33,3 +33,20 @@ def test_pad_features_of_a_window_shorter_than_the_kept_steps_are_finite():
     model = _model().eval()
     out = model(torch.randn(2, 3, 4), return_features=True)
     assert torch.isfinite(out["features"]).all()
+
+
+def test_raw_and_cached_features_use_the_available_channel_embeddings():
+    model = _model().eval()
+    for n_chans in (2, 4):
+        x = torch.randn(1, n_chans, 16)
+        ids = model.tokenizer(x)
+        if n_chans <= model.n_chans:
+            torch.testing.assert_close(
+                model(x, return_features=True)["tokens"],
+                model.encode_tokens(ids)["tokens"],
+            )
+        else:
+            with pytest.raises(ValueError, match="channels"):
+                model(x, return_features=True)
+            with pytest.raises(ValueError, match="channels"):
+                model.encode_tokens(ids)

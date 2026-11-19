@@ -161,9 +161,15 @@ def windows_dataset_metadata(epochs):
 
 
 @pytest.fixture
-def windows_dataset_channels(epochs):
+def windows_dataset_channels(epochs, Xy):
+    _, y = Xy
+    target = mne.EpochsArray(
+        np.repeat(y[:, None, None], epochs.get_data().shape[-1], axis=-1).astype(float),
+        info=mne.create_info(["target"], sfreq=10, ch_types="misc"),
+        metadata=epochs.metadata,
+    )
     return WindowsDataset(
-        windows=epochs,
+        windows=epochs.copy().add_channels([target]),
         targets_from="channels",
         description={},
     )
@@ -305,7 +311,7 @@ def test_predict_trials(eegneuralnet_cls, preds):
     eegneuralnet.initialize()
     with pytest.warns(
         UserWarning,
-        match="This method was designed to predict " "trials in cropped mode.",
+        match="This method was designed to predict trials in cropped mode.",
     ):
         eegneuralnet.predict_trials(MockDataset(), return_targets=False)
 
@@ -1110,6 +1116,7 @@ def test_cropped_raw_means_and_cache_reset(train_indexed, valid_indexed):
     )
     y = np.array([0, 0, 1, 1])
     array = Dataset(X, y)
+
     # The first prediction in each second window overlaps its predecessor.
     class IndexedWindows(Dataset):
         def __getitem__(self, index):
@@ -1205,3 +1212,85 @@ def test_predict_trials_explicit_loader_kwargs(estimator):
     net.cropped = False
     with pytest.raises(ValueError, match="cropped"):
         net.predict_trials(X, loader_kwargs={"batch_size": 2})
+
+
+@pytest.mark.parametrize("custom", [False, True])
+@pytest.mark.parametrize("probabilities", [False, True])
+def test_classifier_handles_dense_class_indices_and_probabilities(
+    custom, probabilities
+):
+    X = torch.randn(4, 2, 8)
+    model = torch.nn.Conv1d(2, 3, kernel_size=1)
+    if probabilities:
+        y = torch.randn(4, 3, 8).softmax(dim=1)
+        expected_target = y
+    else:
+        y = torch.randint(3, (4, 8)).float()
+        expected_target = y.long()
+    expected = torch.nn.functional.cross_entropy(model(X), expected_target).item()
+    criterion = torch.nn.CrossEntropyLoss
+    if custom:
+
+        def criterion():
+            return torch.nn.functional.cross_entropy
+
+    net = EEGClassifier(
+        model,
+        criterion=criterion,
+        train_split=None,
+        max_epochs=1,
+        batch_size=len(X),
+        verbose=0,
+    ).fit(X, y)
+    assert net.history[-1, "train_loss"] == pytest.approx(expected)
+
+
+class _SeqLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(8, 3)
+
+    def forward(self, x):
+        return self.linear(x)
+
+
+class _ChannelsLastCrossEntropy(torch.nn.Module):
+    def forward(self, logits, target):
+        return torch.nn.functional.cross_entropy(logits.permute(0, 2, 1), target)
+
+
+class _SqueezeCrossEntropy(torch.nn.Module):
+    def forward(self, logits, target):
+        return torch.nn.functional.cross_entropy(logits, target.squeeze(1))
+
+
+class _SliceCrossEntropy(torch.nn.Module):
+    def forward(self, logits, target):
+        return torch.nn.functional.cross_entropy(logits, target[:, -logits.shape[-1] :])
+
+
+@pytest.mark.parametrize("layout", ["channels_last", "column", "sliced"])
+def test_classifier_casts_float_class_indices_with_extra_axes(layout):
+    # Float-stored class indices reach the criterion as long, as on master,
+    # whatever their layout relative to the logits.
+    torch.manual_seed(0)
+    if layout == "channels_last":
+        X, y = torch.randn(4, 5, 8), torch.randint(3, (4, 5)).float()
+        model, criterion = _SeqLinear(), _ChannelsLastCrossEntropy
+    elif layout == "column":
+        X, y = torch.randn(4, 2, 8), torch.randint(3, (4, 1)).float()
+        model = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(16, 3))
+        criterion = _SqueezeCrossEntropy
+    else:
+        X, y = torch.randn(4, 2, 8), torch.randint(3, (4, 8)).float()
+        model, criterion = torch.nn.Conv1d(2, 3, kernel_size=3), _SliceCrossEntropy
+    expected = criterion()(model(X), y.long()).item()
+    net = EEGClassifier(
+        model,
+        criterion=criterion,
+        train_split=None,
+        max_epochs=1,
+        batch_size=len(X),
+        verbose=0,
+    ).fit(X, y)
+    assert net.history[-1, "train_loss"] == pytest.approx(expected)

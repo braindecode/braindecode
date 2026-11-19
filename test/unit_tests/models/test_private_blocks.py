@@ -47,6 +47,7 @@ _KNOWN_PRIVATE_BLOCKS = {
     ("brainomni", "_SpatialTemporalBlock"),
     ("brainomni", "_RotaryPositionalEmbedding"),
     ("brainomni", "_MultiHeadAttentionRoPE"),
+    ("caresleepnet", "_CrossModalBlock"),  # queries from the other signal
     ("cbramod", "_PatchEmbedding"),
     ("cbramod", "_TransformerEncoder"),
     ("codebrain", "_RMSNorm"),
