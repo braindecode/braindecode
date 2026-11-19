@@ -348,12 +348,13 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         ch_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         num_channels = channel_locations.shape[1]
+        n_valid_times = x_signal.shape[-1]
         x_signal = self.tokenizer.prepare_input(x_signal)
         if mask is not None:
             mask = self.tokenizer.prepare_input(mask)
         num_patches_per_channel = x_signal.shape[-1] // self.patch_size
         x_patched = self.patch_embed(x_signal, ch_mask)
-        freq_embed = self.freq_embed(x_signal)
+        freq_embed = self.freq_embed(x_signal, n_valid_times)
         x_patched = x_patched + freq_embed
         x_masked = x_patched.clone()  # (B, N, D), N = C * num_patches_per_channel
 
@@ -631,8 +632,12 @@ class _FrequencyFeatureEmbedder(nn.Module):
             out_features=embed_dim,
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, n_valid_times: Optional[int] = None
+    ) -> torch.Tensor:
         B, C, T = x.size()
+        if n_valid_times is None:
+            n_valid_times = T
         S = T // self.patch_size
         # There is a chance that the input tensor is not divisible by the patch size
         # In this case we need to pad the tensor with zeros
@@ -653,6 +658,9 @@ class _FrequencyFeatureEmbedder(nn.Module):
         imag[..., 0] = 0.0
         if self.patch_size % 2 == 0:
             imag[..., -1] = 0.0
+        # An impulse at the first sample has the same real value at every frequency.
+        if T - n_valid_times == self.patch_size - 1:
+            imag[..., -1, :] = 0.0
         freq_representation = torch.complex(freq_representation.real, imag)
         magnitude = torch.abs(freq_representation)
         if freq_representation.device.type == "mps":

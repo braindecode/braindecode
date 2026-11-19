@@ -307,6 +307,10 @@ Bug fixes
   from the CPU ones. CPU outputs are unchanged (:gh:`1566` by `Hamza Abdelhedi`_).
 - :class:`braindecode.models.LUNA` computes spectral phase on Apple MPS with
   PyTorch 2.6, including the input gradients of silent channels.
+- When the last LUNA patch contains one measured sample followed by padding,
+  all its Fourier coefficients are real. A negative sample now has phase
+  ``pi`` at every frequency. Signed imaginary zeros previously made CPU and
+  GPU FFT implementations select different phases for some frequencies.
 - :class:`braindecode.models.LUNA` reconstruction (``n_outputs=0``) adds each
   sample's own channel-name embedding to the decoder queries. The queries are
   ordered by sample, but the embedding was repeated in time-major order, so with a

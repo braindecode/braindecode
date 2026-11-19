@@ -1319,6 +1319,47 @@ def test_luna_mps_phase_and_input_gradient(patch_size, dtype):
     torch.testing.assert_close(actual_grad.cpu(), expected_grad)
 
 
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "mps",
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason="requires Apple MPS"
+            ),
+        ),
+    ],
+)
+def test_luna_single_sample_tail_has_real_spectrum(device):
+    # The public pad policy turns the last sample into an impulse at t=0.
+    model = LUNA(
+        n_chans=3,
+        n_times=81,
+        n_outputs=2,
+        patch_size=40,
+        embed_dim=16,
+        num_queries=2,
+        depth=1,
+        num_heads=2,
+    ).to(device).eval()
+    signal = torch.randn(1, 3, 81, device=device)
+    signal[0, :, -1] = torch.tensor([-2.0, 2.0, 0.0], device=device)
+    signal.requires_grad_()
+    captured = []
+    model.freq_embed.frequency_to_embed.register_forward_pre_hook(
+        lambda module, args: captured.append(args[0])
+    )
+    model(signal, channel_locations=torch.ones(1, 3, 3, device=device))
+
+    magnitude, phase = captured[0][0, :, -1].chunk(2, dim=-1)
+    expected = torch.tensor([torch.pi, 0, 0], device=device)[:, None]
+    torch.testing.assert_close(phase, expected.expand_as(phase))
+    torch.testing.assert_close(magnitude, signal[0, :, -1:].abs().expand_as(magnitude))
+    (gradient,) = torch.autograd.grad(phase.sum(), signal)
+    torch.testing.assert_close(gradient, torch.zeros_like(signal))
+
+
 def test_luna_variants_different_channel_counts(luna_base_config):
     """Test LUNA handles different channel counts (the variants differ only in
     width and depth; test_luna_variants_output_consistency forwards each)."""
