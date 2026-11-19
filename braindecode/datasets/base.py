@@ -960,8 +960,9 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         i_window_in_trial, i_start, i_stop = crop_inds
         if self._zarr_data is not None:
             X = self._zarr_data[:, i_start:i_stop]
-        elif self.raw.preload:
+        elif isinstance(self.raw, mne.io.BaseRaw) and self.raw.preload:
             # what raw._getitem returns, without parsing the picks on every call
+            # (an Epochs' 3-D _data must not be sliced as channels x times)
             X = self.raw._data[:, i_start:i_stop]
         else:
             X = _read_fif_window(self.raw, i_start, i_stop)

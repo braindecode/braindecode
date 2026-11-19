@@ -1269,9 +1269,12 @@ def test_set_description_overwrite_on_windows_keeps_source_description(key):
     assert raw_ds[0][1] == 0
 
 
+@pytest.mark.parametrize("last_target_only", [True, False])
 @pytest.mark.parametrize("targets_from", ["metadata", "channels"])
 @pytest.mark.parametrize("preload", [True, False])
-def test_eeg_windows_equal_mne_getitem(tmp_path, preload, targets_from):
+def test_eeg_windows_equal_mne_getitem(
+    tmp_path, preload, targets_from, last_target_only
+):
     """Windows equal ``raw._getitem``, for a preloaded raw and a lazy FIF raw."""
     rng = np.random.default_rng(0)
     info = mne.create_info(
@@ -1291,7 +1294,7 @@ def test_eeg_windows_equal_mne_getitem(tmp_path, preload, targets_from):
         }
     )
     ds = EEGWindowsDataset(
-        raw, metadata, targets_from=targets_from, last_target_only=False
+        raw, metadata, targets_from=targets_from, last_target_only=last_target_only
     )
     crop_cols = ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
     for i in range(len(ds)):
@@ -1301,8 +1304,26 @@ def test_eeg_windows_equal_mne_getitem(tmp_path, preload, targets_from):
         expected = raw._getitem((slice(None), slice(start, stop)), return_times=False)
         expected = expected.astype("float32")
         if targets_from == "channels":
-            np.testing.assert_array_equal(y, expected[3:])
+            y_expected = expected[3, -1:] if last_target_only else expected[3:]
+            np.testing.assert_array_equal(y, y_expected)
             expected = expected[:3]
         else:
             assert y == metadata.loc[i, "target"]
         np.testing.assert_array_equal(X, expected)
+
+
+def test_eeg_windows_preloaded_epochs_not_sliced_as_raw():
+    """A preloaded ``mne.Epochs`` is not cut as a 2-D raw array."""
+    info = mne.create_info(3, 100.0, "eeg")
+    epochs = mne.EpochsArray(np.zeros((5, 3, 100)), info, verbose=False)
+    metadata = pd.DataFrame(
+        {
+            "i_window_in_trial": range(5),
+            "i_start_in_trial": [0] * 5,
+            "i_stop_in_trial": [100] * 5,
+            "target": [0] * 5,
+        }
+    )
+    ds = EEGWindowsDataset(epochs, metadata)
+    with pytest.raises(TypeError):
+        ds[0]
