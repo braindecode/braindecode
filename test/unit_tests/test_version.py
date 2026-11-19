@@ -5,18 +5,18 @@ from packaging.version import Version
 import braindecode
 
 
-def test_release_documentation_versions(tmp_path):
+def test_release_documentation_versions(tmp_path, monkeypatch, capsys):
     import json
-    import subprocess
-    import sys
     from pathlib import Path
+    from runpy import run_path
 
     script = Path(__file__).resolve().parents[2] / "scripts" / "monthly_release.py"
+    release = run_path(str(script))["main"]
+    monkeypatch.chdir(tmp_path)
 
     def run(*args):
-        return subprocess.check_output(
-            [sys.executable, script, *args], cwd=tmp_path, text=True
-        )
+        assert release(list(args)) == 0
+        return capsys.readouterr().out
 
     version = tmp_path / "braindecode" / "version.py"
     version.parent.mkdir()
