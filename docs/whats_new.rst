@@ -257,7 +257,7 @@ API and behavior changes
   offline: REVE's position bank is rebuilt from MNE's standard montages (the released
   ``reve_positions.json`` to 1e-8 m) and ST-EEGFormer's channel vocabulary ships with
   the code, so ``REVE_POSITIONS_PATH`` and the ``url``/``cache_dir`` arguments of
-  ``RevePositionBank`` are gone (:gh:`PRNUM` by `Bruno Aristimunha`_).
+  ``RevePositionBank`` are gone (:gh:`1687` by `Bruno Aristimunha`_).
 
 - Braindecode now requires MNE-Python 1.13.0 or later. This version centres
   both montages on the fitted head origin for spherical-spline interpolation
