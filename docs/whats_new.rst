@@ -436,7 +436,9 @@ Bug fixes
 
 - :class:`braindecode.modules.EMACodebook` keeps training counts, sums and
   embeddings in at least float32. A float16 batch assigning 65,536 tokens to
-  one code previously overflowed its count and corrupted subsequent lookups.
+  one code previously overflowed its count and corrupted subsequent lookups
+  (:gh:`1658` by `Bruno Aristimunha`_).
+
 - :class:`braindecode.models.BIOT` looks up all its channel tokens in one embedding call with a
   1-D index, instead of one call per channel with a 0-d index. Outputs and gradients are
   bitwise the same on CPU. On Intel Gaudi, whose embedding backward sends a 0-d index's
