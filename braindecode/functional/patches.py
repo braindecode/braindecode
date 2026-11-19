@@ -7,6 +7,7 @@
 import torch
 import torch.nn.functional as F
 
+
 def _check_on_non_divisible(on_non_divisible: str) -> None:
     """Raise a ``ValueError`` for an unknown ``on_non_divisible`` value."""
     if on_non_divisible not in ("pad", "crop", "error"):
