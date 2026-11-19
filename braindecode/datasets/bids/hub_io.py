@@ -7,10 +7,12 @@ These functions keep the Zarr serialization details isolated from hub.py.
 
 from __future__ import annotations
 
-import json
+import warnings
+from datetime import datetime
 from numbers import Real
 from pathlib import Path
 
+import mne
 import numpy as np
 import pandas as pd
 from mne.utils import _soft_import
@@ -95,15 +97,111 @@ def _restore_nan_from_json(obj):
     return obj
 
 
-def _save_windows_to_zarr(
-    grp, data, metadata, description, info, compressor, target_name
-):
+def _annotations_for_json(annotations):
+    if annotations is None:
+        return None
+    return dict(
+        onset=annotations.onset.tolist(),
+        duration=annotations.duration.tolist(),
+        description=annotations.description.tolist(),
+        orig_time=annotations.orig_time.isoformat() if annotations.orig_time else None,
+        ch_names=[list(chs) for chs in annotations.ch_names],
+        extras=[dict(extra) for extra in annotations.extras],
+    )
+
+
+def _annotations_from_json(values):
+    if values is None:
+        return None
+    values = dict(values)
+    if values["orig_time"] is not None:
+        values["orig_time"] = datetime.fromisoformat(values["orig_time"])
+    return mne.Annotations(**values)
+
+
+def _raw_from_zarr(data, info, state):
+    """Restore a continuous recording on its acquisition sample clock."""
+    raw = mne.io.RawArray(data, info, first_samp=state.get("first_samp", 0))
+    annotations = _annotations_from_json(state.get("annotations"))
+    if annotations is not None:
+        if annotations.orig_time is None:
+            # Raw stores onsets on the acquisition clock. set_annotations expects
+            # undated onsets relative to the first sample in this recording.
+            annotations.onset -= raw.first_time
+        raw.set_annotations(annotations)
+    return raw
+
+
+def _epochs_from_zarr(data, info, metadata, state):
+    """Restore Epochs independently of per-trial window coordinates and labels."""
+    if "events" in state:
+        events = state["events"]
+        kwargs = dict(
+            tmin=state["tmin"],
+            event_id=state["event_id"],
+            selection=state["selection"],
+            raw_sfreq=state["raw_sfreq"],
+            on_missing="ignore",  # a retained event ID may have no remaining epochs
+        )
+        if "drop_log" in state:
+            log = state["drop_log"]
+            kwargs["drop_log"] = tuple(
+                tuple(log["reasons"].get(str(i), ())) for i in range(log["length"])
+            )
+    else:
+        # Older stores only recorded crop coordinates and training targets.
+        starts = metadata["i_start_in_trial"].to_numpy(dtype=int)
+        if len(np.unique(starts)) != len(starts):
+            warnings.warn(
+                "This older Zarr store has repeated event samples and no "
+                "acquisition event clock. Assigning consecutive epochs for MNE.",
+                RuntimeWarning,
+            )
+            starts = np.arange(len(starts)) * data.shape[-1]
+        codes = metadata.get("target")
+        if codes is None or not pd.api.types.is_integer_dtype(codes):
+            codes = np.ones(len(starts), dtype=int)
+        events = np.column_stack([starts, np.zeros(len(starts), dtype=int), codes])
+        kwargs = {}
+    # The samples already contain any projection and baseline correction.
+    epochs = mne.EpochsArray(
+        data, info, events=events, metadata=metadata, proj=False, **kwargs
+    )
+    if state.get("baseline") is not None:
+        epochs.baseline = tuple(state["baseline"])
+    epochs.set_annotations(_annotations_from_json(state.get("annotations")))
+    return epochs
+
+
+def _save_window_metadata(grp, metadata):
+    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
+    metadata.to_csv(Path(store_path) / grp.path / "metadata.tsv", sep="\t", index=True)
+    if (
+        "target" in metadata
+        and pd.api.types.infer_dtype(metadata["target"], skipna=False) == "string"
+    ):
+        # Pandas otherwise infers labels such as "01" and "NA" as a number or NaN.
+        grp.attrs["string_targets"] = True
+
+
+def _load_window_metadata(grp):
+    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
+    converters = {"target": str} if grp.attrs.get("string_targets") else None
+    return pd.read_csv(
+        Path(store_path) / grp.path / "metadata.tsv",
+        sep="\t",
+        index_col=0,
+        converters=converters,
+    )
+
+
+def _save_windows_to_zarr(grp, epochs, compressor):
     """Save windowed data to Zarr group.
 
     Uses 1 window per chunk so the one-time decompression to memmap
     (on lazy load) stays fast per recording.
     """
-    data_array = data.astype(np.float32)
+    data_array = epochs.get_data().astype(np.float32)
     compressors_list = [compressor] if compressor is not None else None
 
     # 1 window per chunk: aligned with __getitem__(index) access pattern.
@@ -121,93 +219,28 @@ def _save_windows_to_zarr(
         compressors=compressors_list,
     )
 
-    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
-    metadata_path = Path(store_path) / grp.path / "metadata.tsv"
-    metadata.to_csv(metadata_path, sep="\t", index=True)
-
-    grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = info
-
-    if target_name is not None:
-        grp.attrs["target_name"] = target_name
-
-
-def _save_eegwindows_to_zarr(
-    grp,
-    raw,
-    metadata,
-    description,
-    info,
-    targets_from,
-    last_target_only,
-    compressor,
-    chunk_size,
-):
-    """Save EEG continuous raw data to Zarr group (low-level function)."""
-    continuous_data = raw.get_data()
-    continuous_float = continuous_data.astype(np.float32)
-    compressors_list = [compressor] if compressor is not None else None
-
-    max_samples_per_chunk = max(1, chunk_size // continuous_float.shape[0])
-    n_samples_per_chunk = min(continuous_float.shape[1], max_samples_per_chunk)
-
-    grp.create_array(
-        "data",
-        data=continuous_float,
-        chunks=(continuous_float.shape[0], n_samples_per_chunk),
-        compressors=compressors_list,
+    grp.create_array("events", data=epochs.events, compressors=compressors_list)
+    grp.create_array("selection", data=epochs.selection, compressors=compressors_list)
+    state = dict(
+        event_id={key: int(code) for key, code in epochs.event_id.items()},
+        tmin=float(epochs.tmin),
+        # Reading an Epochs FIF can produce a one-element array here.
+        raw_sfreq=np.asarray(epochs._raw_sfreq).item(),
+        baseline=epochs.baseline,
+        annotations=_annotations_for_json(epochs.annotations),
     )
-
-    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
-    metadata_path = Path(store_path) / grp.path / "metadata.tsv"
-    metadata.to_csv(metadata_path, sep="\t", index=True)
-
-    grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = info
-    grp.attrs["targets_from"] = targets_from
-    grp.attrs["last_target_only"] = last_target_only
-
-
-def _load_windows_from_zarr(grp, preload):
-    """Load windowed data from Zarr group (low-level function)."""
-    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
-    metadata_path = Path(store_path) / grp.path / "metadata.tsv"
-    metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)
-
-    description = pd.Series(grp.attrs["description"])
-    info_dict = _restore_nan_from_json(grp.attrs["info"])
-
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"]  # lazy zarr.Array reference
-
-    target_name = grp.attrs.get("target_name", None)
-
-    return data, metadata, description, info_dict, target_name
+    # Most windowed recordings have no rejected epochs. Store only the reasons.
+    if any(epochs.drop_log):
+        state["drop_log"] = dict(
+            length=len(epochs.drop_log),
+            reasons={
+                str(i): reasons for i, reasons in enumerate(epochs.drop_log) if reasons
+            },
+        )
+    grp.attrs["mne"] = state
 
 
-def _load_eegwindows_from_zarr(grp, preload):
-    """Load EEG continuous raw data from Zarr group (low-level function)."""
-    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
-    metadata_path = Path(store_path) / grp.path / "metadata.tsv"
-    metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)
-
-    description = pd.Series(grp.attrs["description"])
-    info_dict = _restore_nan_from_json(grp.attrs["info"])
-
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"]  # lazy zarr.Array reference
-
-    targets_from = grp.attrs.get("targets_from", "metadata")
-    last_target_only = grp.attrs.get("last_target_only", True)
-
-    return data, metadata, description, info_dict, targets_from, last_target_only
-
-
-def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor, chunk_size):
+def _save_raw_to_zarr(grp, raw, compressor, chunk_size):
     """Save RawDataset continuous raw data to Zarr group (low-level function)."""
     continuous_data = raw.get_data()
     continuous_float = continuous_data.astype(np.float32)
@@ -223,26 +256,10 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor, chun
         compressors=compressors_list,
     )
 
-    grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = info
-
-    if target_name is not None:
-        grp.attrs["target_name"] = target_name
-
-
-def _load_raw_from_zarr(grp, preload):
-    """Load RawDataset continuous raw data from Zarr group (low-level function)."""
-    description = pd.Series(grp.attrs["description"])
-    info_dict = _restore_nan_from_json(grp.attrs["info"])
-
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"]  # lazy zarr.Array reference
-
-    target_name = grp.attrs.get("target_name", None)
-
-    return data, description, info_dict, target_name
+    grp.attrs["mne"] = dict(
+        first_samp=int(raw.first_samp),
+        annotations=_annotations_for_json(raw.annotations),
+    )
 
 
 def _create_compressor(compression, compression_level):

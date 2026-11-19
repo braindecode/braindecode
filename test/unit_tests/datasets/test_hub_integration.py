@@ -1538,6 +1538,199 @@ _DS_TYPES = ["WindowsDataset", "EEGWindowsDataset", "RawDataset"]
 _DS_CLASSES = {"WindowsDataset": WindowsDataset, "EEGWindowsDataset": EEGWindowsDataset, "RawDataset": RawDataset}
 
 
+@pytest.mark.parametrize("dated", [False, True])
+@pytest.mark.parametrize("windowed", [False, True])
+def test_zarr_continuous_annotations_and_sample_origin(tmp_path, dated, windowed):
+    from datetime import datetime, timezone
+
+    from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
+
+    pytest.importorskip("zarr")
+    raw = mne.io.RawArray(
+        np.arange(120).reshape(2, 60),
+        mne.create_info(["C3", "C4"], 10, "eeg"),
+        first_samp=25,
+    )
+    if dated:
+        raw.set_meas_date(datetime(2023, 6, 1, tzinfo=timezone.utc))
+    raw.set_annotations(
+        mne.Annotations(
+            [0.7, 2.4],
+            [0.4, 0.4],
+            ["left", "right"],
+            ch_names=[["C4"], []],
+            extras=[{"score": 0.75}, {"cue": "beep"}],
+        )
+    )
+    options = dict(
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        window_size_samples=2,
+        window_stride_samples=2,
+        on_last_window="drop",
+        mapping={"left": 1, "right": 2},
+    )
+    source = BaseConcatDataset([RawDataset(raw, {"subject": "01"})])
+    windows = create_windows_from_events(source, **options)
+    path = convert_to_zarr(windows if windowed else source, tmp_path / "raw.zarr")
+    for preload in (False, True):
+        loaded = load_from_zarr(path, preload=preload)
+        actual = loaded.datasets[0].raw
+        assert actual.first_samp == 25
+        assert actual.annotations.orig_time == raw.annotations.orig_time
+        np.testing.assert_allclose(actual.annotations.onset, raw.annotations.onset)
+        np.testing.assert_allclose(
+            actual.annotations.duration, raw.annotations.duration
+        )
+        np.testing.assert_array_equal(
+            actual.annotations.description, raw.annotations.description
+        )
+        assert actual.annotations.ch_names.tolist() == raw.annotations.ch_names.tolist()
+        assert actual.annotations.extras == raw.annotations.extras
+        events, _ = mne.events_from_annotations(actual, event_id=options["mapping"])
+        np.testing.assert_array_equal(events[:, 0], [32, 49])
+        round_trip = (
+            loaded if windowed else create_windows_from_events(loaded, **options)
+        )
+        for i in range(len(windows)):
+            np.testing.assert_array_equal(round_trip[i][0], windows[i][0])
+            assert round_trip[i][1:] == windows[i][1:]
+        np.testing.assert_array_equal(round_trip[0][0], raw.get_data(start=7, stop=9))
+
+
+@pytest.mark.parametrize("last_target_only", [False, True])
+def test_zarr_epochs_restores_channel_targets(tmp_path, last_target_only):
+    from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
+
+    pytest.importorskip("zarr")
+    info = mne.create_info(["C3", "target"], 10, ["eeg", "misc"])
+    signal = np.arange(40).reshape(2, 2, 10)
+    metadata = pd.DataFrame(
+        dict(
+            i_window_in_trial=[0, 0], i_start_in_trial=[0, 0], i_stop_in_trial=[10, 10]
+        )
+    )
+    epochs = mne.EpochsArray(
+        signal,
+        info,
+        events=np.array([[15, 0, 1], [35, 0, 2]]),
+        event_id={"left": 1, "right": 2},
+        metadata=metadata,
+    )
+    source = BaseConcatDataset(
+        [
+            WindowsDataset(
+                epochs, targets_from="channels", last_target_only=last_target_only
+            )
+        ]
+    )
+    path = convert_to_zarr(source, tmp_path / "targets.zarr")
+    for preload in (False, True):
+        restored = load_from_zarr(path, preload=preload)
+        x, y, indices = restored[1]
+        np.testing.assert_array_equal(x, signal[1, :1])
+        np.testing.assert_array_equal(
+            y, signal[1, 1:, -1] if last_target_only else signal[1, 1:]
+        )
+        assert indices == [0, 0, 10]
+
+
+def test_zarr_legacy_epochs_without_metadata_targets(tmp_path):
+    from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
+
+    pytest.importorskip("zarr")
+    info = mne.create_info(["C3", "target"], 10, ["eeg", "misc"])
+    data = np.arange(40).reshape(2, 2, 10)
+    frame = pd.DataFrame(
+        dict(
+            i_window_in_trial=[0, 1], i_start_in_trial=[0, 10], i_stop_in_trial=[10, 20]
+        )
+    )
+    epochs = mne.EpochsArray(data, info, metadata=frame)
+    source = BaseConcatDataset([WindowsDataset(epochs, targets_from="channels")])
+    path = convert_to_zarr(source, tmp_path / "legacy.zarr")
+    group = zarr.open_group(path, mode="a")["recording_0"]
+    del group.attrs["mne"], group["events"], group["selection"]
+    del group.attrs["targets_from"], group.attrs["last_target_only"]
+    for preload in (False, True):
+        loaded = load_from_zarr(path, preload=preload)
+        np.testing.assert_array_equal(loaded[1][0], data[1, :1])
+        np.testing.assert_array_equal(loaded[1][1], data[1, 1:, -1])
+        np.testing.assert_array_equal(loaded.datasets[0].windows.events[:, 2], [1, 1])
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_zarr_loads_legacy_recording_metadata(tmp_path, ds_type):
+    source, path = _make_zarr(tmp_path, ds_type)
+    group = zarr.open_group(path, mode="a")["recording_0"]
+    del group.attrs["mne"]
+    if ds_type == "WindowsDataset":
+        del group["events"], group["selection"]
+        del group.attrs["targets_from"], group.attrs["last_target_only"]
+    for preload in (False, True):
+        loaded = BaseConcatDataset._load_from_zarr_inline(path, preload)
+        recording = loaded.datasets[0]
+        if ds_type == "WindowsDataset":
+            expected = source.datasets[0].metadata
+            np.testing.assert_array_equal(
+                recording.windows.events[:, 0], expected["i_start_in_trial"]
+            )
+            np.testing.assert_array_equal(
+                recording.windows.events[:, 2], expected["target"]
+            )
+        else:
+            assert recording.raw.first_samp == 0 and len(recording.raw.annotations) == 0
+        np.testing.assert_allclose(loaded[0][0], source[0][0], rtol=1e-6)
+
+
+def test_old_zarr_repeated_trial_starts_warn_on_synthetic_event_clock(tmp_path):
+    from braindecode.datautil.hub_formats import load_from_zarr
+
+    source, path = _make_zarr(tmp_path, "WindowsDataset")
+    group = zarr.open_group(path, mode="a")["recording_0"]
+    del group.attrs["mne"], group["events"], group["selection"]
+    frame = source.datasets[0].metadata.copy()
+    frame["i_start_in_trial"] = 0
+    frame["i_stop_in_trial"] = 100
+    frame.to_csv(path / "recording_0" / "metadata.tsv", sep="\t")
+    for preload in (False, True):
+        with pytest.warns(RuntimeWarning, match="no acquisition event clock"):
+            loaded = load_from_zarr(path, preload=preload)
+            epochs = loaded.datasets[0].windows
+        np.testing.assert_array_equal(epochs.events[:, 0], np.arange(len(epochs)) * 100)
+        np.testing.assert_array_equal(loaded.datasets[0].crop_inds[:, 1], 0)
+        np.testing.assert_array_equal(loaded.datasets[0].y, frame["target"])
+
+
+def test_zarr_epochs_keeps_samples_after_baseline_and_inactive_projection(tmp_path):
+    from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
+
+    pytest.importorskip("zarr")
+    raw = mne.io.RawArray(np.zeros((2, 20)), mne.create_info(["C3", "C4"], 10, "eeg"))
+    raw.set_eeg_reference(projection=True)
+    frame = pd.DataFrame(
+        dict(
+            target=[0, 1],
+            i_window_in_trial=[0, 1],
+            i_start_in_trial=[0, 10],
+            i_stop_in_trial=[10, 20],
+        )
+    )
+    signal = np.arange(40.0).reshape(2, 2, 10) ** 2
+    epochs = mne.EpochsArray(signal, raw.info, tmin=-0.2, proj=False, metadata=frame)
+    epochs.apply_baseline((-0.2, 0.0)).apply_function(np.square)
+    path = convert_to_zarr(
+        BaseConcatDataset([WindowsDataset(epochs)]), tmp_path / "epochs.zarr"
+    )
+    for preload in (False, True):
+        copy = load_from_zarr(path, preload=preload).datasets[0].windows
+        assert copy.baseline == epochs.baseline
+        assert copy.info["projs"][0]["active"] is False
+        np.testing.assert_array_equal(
+            copy.get_data(), epochs.get_data().astype("float32")
+        )
+
+
 @pytest.mark.parametrize("ds_type", _DS_TYPES)
 def test_lazy_zarr_round_trip_isinstance(tmp_path, ds_type):
     _, path = _make_zarr(tmp_path, ds_type)
