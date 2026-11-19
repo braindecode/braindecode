@@ -31,7 +31,14 @@ Enhancements
 - Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
   between recording descriptions and window metadata, and recording-level subset
   selection (:gh:`1596` by `Daria Agafonova`_).
-
+- Add :class:`braindecode.models.TinyMyo` (Fasulo et al., IEEE TBME 2026), a
+  foundation model pretrained on surface EMG only. You can fine-tune its
+  3.6M-parameter encoder on a small EMG dataset instead of training from scratch,
+  and the model is small enough to run on GAP9, a low-power microcontroller for
+  wearables. ``from_pretrained`` loads the authors' ``PulpBio/TinyMyo`` files as
+  released, including their NinaPro DB5, EPN-612 and UCI EMG gesture classifiers.
+  With these files, the outputs and the classifier gradients match the authors' code
+  within 1e-5 (:gh:`1649` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.modules.ChannelLayer` maps channels with one linear
   estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
   targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat

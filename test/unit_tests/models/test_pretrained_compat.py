@@ -656,6 +656,7 @@ def test_native_only_models_refuse_a_strategy(name):
 EXCLUDED = {
     "NeuroPose": "sEMG hand-pose regression, no EEG geometry",
     "VEMG2Pose": "sEMG hand-pose regression, no EEG geometry",
+    "TinyMyo": "sEMG channel slots, no EEG geometry",
     "NeuroRVQTokenizer": "returns (target, reconstruction); NeuroRVQ's channel contract",
     "MtReNIRS": "fNIRS HbO/HbR pairs with optode positions, no EEG geometry",
 }

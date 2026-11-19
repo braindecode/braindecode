@@ -106,6 +106,7 @@ if TYPE_CHECKING:
     from .tcn import BDTCN, TCN
     from .tfm_tokenizer import TFMTokenizer, TFMTokenizerOutput
     from .tidnet import TIDNet
+    from .tinymyo import TinyMyo
     from .tmsanet import TMSANet
     from .tsinception import TSception
     from .usleep import USleep
