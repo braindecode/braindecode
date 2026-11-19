@@ -224,6 +224,8 @@ Requirements
 Bug fixes
 ==========
 
+- :func:`braindecode.preprocessing.filterbank` preserves channel positions and
+  their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
 - ``load_state_dict`` of every braindecode model loads checkpoints saved before
   the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
   other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key
@@ -3213,3 +3215,4 @@ Authors
 .. _Bhargav Kowshik: https://github.com/bkowshik
 .. _Mark Santos: https://www.markstudios.com
 .. _Hamza Abdelhedi: https://github.com/BabaSanfour
+.. _sixty-66: https://github.com/sixty-66
