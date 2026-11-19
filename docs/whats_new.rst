@@ -31,7 +31,7 @@ Enhancements
 - Add :class:`braindecode.datasets.SeizeIT2`, the CC0 wearable behind-the-ear EEG
   seizure dataset of 125 patients (OpenNeuro ds005873). Without ``root`` it downloads
   only the EEG runs of the requested ``subjects``: 4 MB to 1.6 GB per subject (median
-  390 MB) instead of the 126 GB of the whole dataset (:gh:`XXXX` by
+  390 MB) instead of the 126 GB of the whole dataset (:gh:`1652` by
   `Aayushya Patel`_).
 
 - Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
