@@ -490,14 +490,18 @@ class _MultiHeadedAttention(nn.Module):
 class _ResidualLayerNormAttn(nn.Module):
     r"""A residual connection followed by a layer norm."""
 
-    norm_query = True  # full models saved before the raw-query option
-
     def __init__(self, size, dropout, fn_attn, norm_query):
         super().__init__()
         self.norm = nn.LayerNorm(size, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
         self.fn_attn = fn_attn
         self.norm_query = norm_query
+
+    def __setstate__(self, state):
+        # Full models pickled before the raw-query option normalized the
+        # query. Set the flag on the instance so TorchScript also sees it.
+        state.setdefault("norm_query", True)
+        super().__setstate__(state)
 
     def forward(
         self,

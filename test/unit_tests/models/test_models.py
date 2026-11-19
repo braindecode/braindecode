@@ -1068,6 +1068,7 @@ def test_attnsleep_saved_without_query_norm_setting_keeps_logits():
             del layer.residual_self_attn.norm_query
         restored = pickle.loads(pickle.dumps(previous))
         torch.testing.assert_close(restored(x), expected)
+        torch.testing.assert_close(torch.jit.script(restored)(x), expected)
 
 
 def test_attn_sleep_requires_signal_geometry():
