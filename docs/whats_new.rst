@@ -48,7 +48,7 @@ Enhancements
   pooling or feature extraction. CBraMod, CodeBrain, JungMAE and MEGGPT accept
   fewer channels when returning features (JungMAE takes complete HbO/HbR pairs).
   MEGGPT also checks its channel embedding capacity. CSBrain checks its
-  region order. Previously saved CSBrain and EEGCLIP modules recover the
+  region order. Previously saved CBraMod, CSBrain and EEGCLIP modules recover the
   channel-count behavior of their original heads and encoders
   (:gh:`1605` by `Julien Gadonneix`_).
 - Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
