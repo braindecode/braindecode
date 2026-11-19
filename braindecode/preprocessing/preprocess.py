@@ -8,6 +8,7 @@
 #          Léo Burgund <leo.burgund@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
 #          Anton Soloviev <anton@praviel.com>
+#          sixty-66 <puzhexin@foxmail.com>
 #
 # License: BSD (3-clause)
 
@@ -656,6 +657,9 @@ def filterbank(
         ]
 
         info = create_info(ch_names=ch_names, ch_types=ch_types, sfreq=sampling_freq)
+        for channel, filtered_channel in zip(info["chs"], filtered.info["chs"]):
+            channel["loc"] = filtered_channel["loc"].copy()
+            channel["coord_frame"] = filtered_channel["coord_frame"]
 
         # Copy fields from original info if they exist
         for field in fields_to_preserve:
