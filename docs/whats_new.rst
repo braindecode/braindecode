@@ -84,6 +84,8 @@ Enhancements
   ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
   ``chs_info``, stacked or in MNE's interleaved order (:gh:`1582` by
   `Bruno Aristimunha`_).
+- The documentation tests render the relative-positioning tutorial's PCA plot
+  and verify the five sleep stages span the full color map (:gh:`1675`).
 - The docstrings of :class:`braindecode.models.FNIRSNet`, :class:`~braindecode.models.FNIRS4D`,
   :class:`~braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT` describe
   each model from the papers: the architecture as named steps with module names and
@@ -157,8 +159,6 @@ Enhancements
   encoder output ``(batch, n_chans, n_tokens, dim)`` with the tokens of padded
   channels zero; DIVER1 gains
   ``return_features`` (:gh:`1540` by `Julien Gadonneix`_).
-- The documentation tests render the relative-positioning tutorial's PCA plot
-  and verify the five sleep stages span the full color map.
 - New tutorial :ref:`weight-audit-tutorial`: audit what a released decoder relies on
   from its weights alone (dominant band, time window and channel ranking of an
   :class:`braindecode.models.EEGNet`, read through its path weights), then confirm the
