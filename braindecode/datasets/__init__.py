@@ -14,6 +14,7 @@ from .collate import pad_channels_collate
 from .mne import create_from_mne_epochs, create_from_mne_raw
 from .moabb import BNCI2014_001, HGD, MOABBDataset
 from .nmt import NMT
+from .seizeit2 import SeizeIT2
 from .siena import SIENA
 from .sleep_physio_challe_18 import SleepPhysionetChallenge2018
 from .sleep_physionet import SleepPhysionet
@@ -39,6 +40,7 @@ __all__ = [
     "SIENA",
     "NMT",
     "CHBMIT",
+    "SeizeIT2",
     "SleepPhysionet",
     "SleepPhysionetChallenge2018",
     "create_from_X_y",

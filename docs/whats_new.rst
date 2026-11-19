@@ -28,6 +28,12 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.datasets.SeizeIT2`, the CC0 wearable behind-the-ear EEG
+  seizure dataset of 125 patients (OpenNeuro ds005873). Without ``root`` it downloads
+  only the EEG runs of the requested ``subjects``: 4 MB to 1.6 GB per subject (median
+  390 MB) instead of the 126 GB of the whole dataset (:gh:`XXXX` by
+  `Aayushya Patel`_).
+
 - Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
   between recording descriptions and window metadata, and recording-level subset
   selection (:gh:`1596` by `Daria Agafonova`_).
@@ -3196,3 +3202,4 @@ Authors
 .. _Bhargav Kowshik: https://github.com/bkowshik
 .. _Mark Santos: https://www.markstudios.com
 .. _Hamza Abdelhedi: https://github.com/BabaSanfour
+.. _Aayushya Patel: https://github.com/ptlnextdoor

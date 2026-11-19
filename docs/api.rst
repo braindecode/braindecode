@@ -602,6 +602,7 @@ Common Datasets
      HGD
      MOABBDataset
      NMT
+     SeizeIT2
      SleepPhysionet
      SIENA
      SleepPhysionetChallenge2018
