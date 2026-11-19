@@ -289,6 +289,15 @@ Bug fixes
   these real bins, so a negative bin got ``pi`` or ``-pi`` at random; on MPS
   this moved the outputs of the released weights on random-walk input by 7 %
   from the CPU ones. CPU outputs are unchanged (:gh:`1566` by `Hamza Abdelhedi`_).
+- :class:`braindecode.models.LUNA` reconstruction (``n_outputs=0``) adds each
+  sample's own channel-name embedding to the decoder queries. The queries are
+  ordered by sample, but the embedding was repeated in time-major order, so with a
+  batch of more than one sample and different ``channel_names`` per sample, a
+  sample got the embedding of another one and its output depended on the rest of
+  the batch. One ``(n_chans,)`` id vector now also works with a batch of more
+  than one sample. Classification, ``return_features`` and a batch of one are
+  unchanged; no parameter changes, so released weights load as before
+  (:gh:`1602` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.SignalJEPA` and
   :class:`braindecode.models.SignalJEPA_Contextual` no longer fail in ``backward()``
   when the window gives one token per channel (for example 152 samples at 128 Hz)

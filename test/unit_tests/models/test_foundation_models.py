@@ -1194,6 +1194,24 @@ def test_luna_channel_embed_batch_ordering(luna_base_config):
     assert not torch.allclose(b0[0], b1[0], atol=1e-5)
 
 
+def test_luna_reconstruction_batch_independent():
+    # Each sample of a batch must give the output it gives alone.
+    model = LUNA(n_chans=3, n_outputs=0, n_times=80, patch_size=20, embed_dim=32)
+    model.eval()
+
+    x = torch.randn(2, 3, 80)
+    channel_names = torch.tensor([[0, 1, 2], [10, 11, 12]])
+    with torch.no_grad():
+        batched = model(x, channel_names=channel_names)
+        for i in range(2):
+            alone = model(x[i : i + 1], channel_names=channel_names[i : i + 1])
+            torch.testing.assert_close(batched[i], alone[0], atol=1e-5, rtol=0)
+        # One (C,) id vector is shared by every sample.
+        shared = model(x, channel_names=channel_names[0])
+        expanded = model(x, channel_names=channel_names[0].expand(2, -1))
+    torch.testing.assert_close(shared, expanded)
+
+
 def test_luna_mapping_includes_temperature_typo():
     # pretrained weights have typo key, mapping should handle it
     model = LUNA(
