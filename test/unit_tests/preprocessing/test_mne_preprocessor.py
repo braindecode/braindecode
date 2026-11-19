@@ -126,7 +126,7 @@ def windows_concat_ds(_windows_dataset):
 @pytest.fixture
 def base_concat_ds_with_montage(base_concat_ds):
     """Dataset with montage set for functions that require it."""
-    montage = mne.channels.make_standard_montage('standard_1020')
+    montage = mne.channels.make_standard_montage('colin27_1020')
     for d in base_concat_ds.datasets:
         d.raw.set_montage(montage, match_case=False, on_missing='ignore')
     return base_concat_ds
@@ -203,7 +203,7 @@ def test_preprocess_windows_kwargs(windows_concat_ds):
     (ApplyHilbert, {"envelope": False}, []),
     (ApplyProj, {}, []),
     (InterpolateBads, {"reset_bads": True}, []),
-    (SetMontage, {"montage": mne.channels.make_standard_montage('standard_1020'), "match_case": False, "on_missing": "ignore"}, []),
+    (SetMontage, {"montage": mne.channels.make_standard_montage('colin27_1020'), "match_case": False, "on_missing": "ignore"}, []),
     (ComputeCurrentSourceDensity, {}, [pytest.mark.skip(reason="requires montage setup")]),
     (Anonymize, {}, []),
     (SetChannelTypes, {"mapping": {"C4": "eog"}}, []),
@@ -507,7 +507,7 @@ def test_interpolate_bads(base_concat_ds_with_bad_channels):
 
 def test_set_montage(base_concat_ds):
     """Test SetMontage preprocessor."""
-    montage = mne.channels.make_standard_montage('standard_1020')
+    montage = mne.channels.make_standard_montage('colin27_1020')
     preprocessors = [SetMontage(montage=montage, match_case=False, on_missing='ignore')]
     preprocess(base_concat_ds, preprocessors)
     # Check that montage was set
@@ -662,7 +662,7 @@ def _montage_raw():
     info = mne.create_info(ch_names, sfreq=200.0, ch_types="eeg")
     rng = np.random.RandomState(0)
     raw = mne.io.RawArray(rng.randn(len(ch_names), 4000) * 1e-5, info, verbose=False)
-    raw.set_montage("standard_1020", verbose=False)
+    raw.set_montage("colin27_1020", verbose=False)
     return raw
 
 
@@ -755,7 +755,7 @@ def _raw_with_eog():
     data = rng.randn(len(ch_names), 4000) * 1e-5
     data[:4] += data[4] * 0.5  # EOG leaking into the EEG channels
     raw = mne.io.RawArray(data, info, verbose=False)
-    raw.set_montage("standard_1020", on_missing="ignore", verbose=False)
+    raw.set_montage("colin27_1020", on_missing="ignore", verbose=False)
     raw.set_eeg_reference(projection=True, verbose=False)
     return raw
 
