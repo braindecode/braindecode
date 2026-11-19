@@ -907,6 +907,9 @@ class RevePositionBank(torch.nn.Module):
         Directory to cache the position bank. If ``None``, resolved like other
         braindecode datasets via the ``REVE_POSITIONS_PATH`` config key, falling
         back to the MNE data directory (usually ``~/mne_data``).
+    fname : str, optional
+        Name of the cached file, so banks of other models (e.g.
+        :class:`~braindecode.models.Pratibha2`) can share the directory.
     """
 
     def __init__(
@@ -914,11 +917,12 @@ class RevePositionBank(torch.nn.Module):
         url: str = "https://huggingface.co/brain-bzh/reve-positions/resolve/main/positions.json",
         timeout: int = 5,
         cache_dir: Optional[str] = None,
+        fname: str = "reve_positions.json",
     ):
         super().__init__()
 
         cache_dir = _get_path(cache_dir, "REVE_POSITIONS_PATH", "REVE positions")
-        cache_file = os.path.join(cache_dir, "reve_positions.json")
+        cache_file = os.path.join(cache_dir, fname)
 
         # Offline path: reuse the cached/prefetched file. Download only on a miss
         # or if the cached copy is unreadable (e.g. an interrupted download).
@@ -933,7 +937,7 @@ class RevePositionBank(torch.nn.Module):
                 pooch.retrieve(
                     url,
                     known_hash=None,
-                    fname="reve_positions.json",
+                    fname=fname,
                     path=cache_dir,
                     downloader=pooch.HTTPDownloader(timeout=timeout),
                 )
