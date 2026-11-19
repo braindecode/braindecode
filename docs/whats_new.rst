@@ -264,7 +264,10 @@ API and behavior changes
   :meth:`~braindecode.models.SleepFM.encode` still warns and is read as
   ``ch_mask=~channel_mask``. Pass ``ch_mask`` by keyword in both ``encode``
   and ``forward``. Both models support mixed-precision training with padded
-  input channels. In :class:`~braindecode.models.SleepFM`, a recording with one real
+  input channels. Under CPU autocast, the staging LSTM runs in its parameter
+  precision, so mixed-precision training also works on CPUs without a bfloat16
+  LSTM kernel (:gh:`1664` by `Bruno Aristimunha`_).
+  In :class:`~braindecode.models.SleepFM`, a recording with one real
   channel among padded ones now gets the output it gets alone: the channel pooling
   returns that channel's token, as for a one-channel input, instead of running the
   attention over it. :class:`~braindecode.models.SleepFMStager`, whose channels sit
@@ -640,6 +643,10 @@ Code health
 - Put the default three-channel test montage with the model fixtures, and
   share canonical channel conversion between the LaBraM and BENDR entries in
   ``models_mandatory_parameters`` (:gh:`1665` by `Bruno Aristimunha`_).
+- The test job logs memory every minute and, when it finishes, the kernel's and
+  systemd-oomd's kills, so a runner lost mid-suite ("lost communication",
+  "shutdown signal") leaves its last memory state in the log
+  (:gh:`1678` by `Bruno Aristimunha`_).
 - Every model is compiled on master: ``test_model_compiled`` no longer skips
   :class:`braindecode.models.MetaNeuromotorHand`, whose MPF featurizer torch
   2.15 compiles in about 90 s. ``test_model_exported`` exports
