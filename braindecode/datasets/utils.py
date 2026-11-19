@@ -111,13 +111,9 @@ class _ZenodoBIDSDataset(BIDSDataset):
         # Before mne 1.13, a list assigned here stays a list and breaks
         # mne.events_from_annotations, so assign an array.
         annotations = dataset.raw.annotations
-        annotations.description = np.array(
-            [
-                extras.get("eventType", description)
-                for description, extras in zip(
-                    annotations.description, annotations.extras
-                )
-            ],
-            dtype=str,
-        )
+        names = []
+        for description, extras in zip(annotations.description, annotations.extras):
+            event_type = extras.get("eventType")
+            names.append(description if event_type in (None, "", "n/a") else event_type)
+        annotations.description = np.asarray(names, dtype=str)
         return dataset
