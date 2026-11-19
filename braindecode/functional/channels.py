@@ -224,171 +224,23 @@ def linear_channel_map(
     return W * ok[:, None], torch.where(ok, var.clamp_min(0), torch.inf)
 
 
-def _torch_legval(
-    x: torch.Tensor, c: torch.Tensor, tensor: bool = True
-) -> torch.Tensor:
-    """
-    Evaluate a Legendre series at points x.
-
-    If `c` is of length `n + 1`, this function returns the value:
-    .. math:: p(x) = c_0 * L_0(x) + c_1 * L_1(x) + ... + c_n * L_n(x)
-    The parameter `x` is converted to an array only if it is a tuple or a
-    list, otherwise it is treated as a scalar. In either case, either `x`
-    or its elements must support multiplication and addition both with
-    themselves and with the elements of `c`.
-    If `c` is a 1-D array, then `p(x)` will have the same shape as `x`.  If
-    `c` is multidimensional, then the shape of the result depends on the
-    value of `tensor`. If `tensor` is true the shape will be c.shape[1:] +
-    x.shape. If `tensor` is false the shape will be c.shape[1:]. Note that
-    scalars have shape (,).
-    Trailing zeros in the coefficients will be used in the evaluation, so
-    they should be avoided if efficiency is a concern.
-
-    Parameters
-    ----------
-    x : array_like, compatible object
-        If `x` is a list or tuple, it is converted to an ndarray, otherwise
-        it is left unchanged and treated as a scalar. In either case, `x`
-        or its elements must support addition and multiplication with
-        with themselves and with the elements of `c`.
-    c : array_like
-        Array of coefficients ordered so that the coefficients for terms of
-        degree n are contained in c[n]. If `c` is multidimensional the
-        remaining indices enumerate multiple polynomials. In the two
-        dimensional case the coefficients may be thought of as stored in
-        the columns of `c`.
-    tensor : boolean, optional
-        If True, the shape of the coefficient array is extended with ones
-        on the right, one for each dimension of `x`. Scalars have dimension 0
-        for this action. The result is that every column of coefficients in
-        `c` is evaluated for every element of `x`. If False, `x` is broadcast
-        over the columns of `c` for the evaluation.  This keyword is useful
-        when `c` is multidimensional. The default value is True.
-        .. versionadded:: 1.7.0
-
-    Returns
-    -------
-    values : ndarray, algebra_like
-        The shape of the return value is described above.
-
-    See Also
-    --------
-    legval2d, leggrid2d, legval3d, leggrid3d
-
-    Notes
-    -----
-    Code copied and modified from Numpy:
-    https://github.com/numpy/numpy/blob/v1.20.0/numpy/polynomial/legendre.py#L835-L920
-
-    Copyright (c) 2005-2021, NumPy Developers.
-    All rights reserved.
-
-    Redistribution and use in source and binary forms, with or without
-    modification, are permitted provided that the following conditions are
-    met:
-        * Redistributions of source code must retain the above copyright
-        notice, this list of conditions and the following disclaimer.
-        * Redistributions in binary form must reproduce the above
-        copyright notice, this list of conditions and the following
-        disclaimer in the documentation and/or other materials provided
-        with the distribution.
-        * Neither the name of the NumPy Developers nor the names of any
-        contributors may be used to endorse or promote products derived
-        from this software without specific prior written permission.
-
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-    """
-    if isinstance(x, (tuple, list)):
-        x = torch.as_tensor(x)
-    dtype = torch.float32 if x.device.type == "mps" else torch.float64
-    c = torch.as_tensor(c, device=x.device, dtype=dtype)
-    if isinstance(x, torch.Tensor) and tensor:
-        c = c.view(c.shape + (1,) * x.ndim)
-
-    if len(c) == 1:
-        c0 = c[0]
-        c1 = 0
-    elif len(c) == 2:
-        c0 = c[0]
-        c1 = c[1]
-    else:
-        nd = len(c)
-        c0 = c[-2]
-        c1 = c[-1]
-        for i in range(3, len(c) + 1):
-            tmp = c0
-            nd = nd - 1
-            c0 = c[-i] - (c1 * (nd - 1)) / nd
-            c1 = tmp + (c1 * x * (2 * nd - 1)) / nd
-    return c0 + c1 * x
-
-
-def _torch_calc_g(
-    cosang: torch.Tensor, stiffness: float = 4, n_legendre_terms: int = 50
-) -> torch.Tensor:
-    """Calculate spherical spline g function between points on a sphere.
-
-    Parameters
-    ----------
-    cosang : array-like of float, shape(n_channels, n_channels)
-        cosine of angles between pairs of points on a spherical surface. This
-        is equivalent to the dot product of unit vectors.
-    stiffness : float
-        stiffness of the spline.
-    n_legendre_terms : int
-        number of Legendre terms to evaluate.
-
-    Returns
-    -------
-    G : torch.Tensor of shape (n_channels, n_channels)
-        The G matrix.
-
-    Notes
-    -----
-    Code copied and modified from MNE-Python:
-    https://github.com/mne-tools/mne-python/blob/bdaa1d460201a3bc3cec95b67fc2b8d31a933652/mne/channels/interpolation.py#L35
-
-    Copyright © 2011-2019, authors of MNE-Python
-    All rights reserved.
-
-    Redistribution and use in source and binary forms, with or without
-    modification, are permitted provided that the following conditions are met:
-        * Redistributions of source code must retain the above copyright
-        notice, this list of conditions and the following disclaimer.
-        * Redistributions in binary form must reproduce the above copyright
-        notice, this list of conditions and the following disclaimer in the
-        documentation and/or other materials provided with the distribution.
-        * Neither the name of the copyright holder nor the names of its
-        contributors may be used to endorse or promote products derived from
-        this software without specific prior written permission.
-
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-    ARE DISCLAIMED. IN NO EVENT SHALL COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE
-    FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-    DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-    SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-    CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-    LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
-    OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
-    DAMAGE.
-    """
-    factors = [
-        (2 * n + 1) / (n**stiffness * (n + 1) ** stiffness * 4 * np.pi)
-        for n in range(1, n_legendre_terms + 1)
-    ]
-    return _torch_legval(cosang, [0] + factors)
+def _spherical_spline_g(
+    cosang: Tensor, stiffness: float = 4, n_terms: int = 50
+) -> Tensor:
+    """Evaluate Perrin's spherical spline on pairwise cosines using Legendre polynomials."""
+    dtype = torch.float32 if cosang.device.type == "mps" else torch.float64
+    cosang = cosang.to(dtype)
+    previous = torch.zeros_like(cosang)
+    polynomial = torch.ones_like(cosang)
+    kernel = 0.0 * cosang
+    for n in range(1, n_terms + 1):
+        previous, polynomial = (
+            polynomial,
+            ((2 * n - 1) * cosang * polynomial - (n - 1) * previous) / n,
+        )
+        coefficient = (2 * n + 1) / (4 * np.pi * (n * (n + 1)) ** stiffness)
+        kernel = kernel + coefficient * polynomial
+    return kernel
 
 
 def spherical_spline_kernel(
@@ -432,7 +284,7 @@ def spherical_spline_kernel(
         torch.nn.functional.normalize(torch.as_tensor(p, dtype=dtype), dim=1)
         for p in (pos_a, pos_b)
     )
-    return _torch_calc_g((a @ b.T).clamp(-1, 1), stiffness, n_terms)
+    return _spherical_spline_g((a @ b.T).clamp(-1, 1), stiffness, n_terms)
 
 
 def exact_derivation(
@@ -528,6 +380,36 @@ def _channel_geometry(chs_info: list[dict]) -> _ChannelGeometry:
     given = np.isfinite(loc).all(1) & (np.abs(loc).max(1) >= 1e-8)
     pos = np.where(given[:, None], loc, std)
     return _ChannelGeometry(names, pos, std, types, given)
+
+
+def _match_measured_channels(source, target_names, target_pos, target_standard, keep):
+    """Map measured or exactly derived targets before spatial interpolation."""
+    names = np.array([name.lower() for name in source.names])
+    standard_dist = np.nan_to_num(
+        cdist(target_standard, source.standard_positions), nan=np.inf
+    )
+    distance = np.nan_to_num(cdist(target_pos, source.positions), nan=np.inf)
+    unnamed_dist = np.where(
+        np.isnan(source.standard_positions).any(1), distance, np.inf
+    )
+    kept = np.flatnonzero(keep)
+    derived, exact = exact_derivation(target_names, [source.names[j] for j in kept])
+    weights = np.zeros((len(target_names), len(source.names)))
+    for row, name in enumerate(target_names):
+        direct = np.flatnonzero((names == name.lower()) & keep)
+        if len(direct):
+            weights[row, direct[np.argmin(unnamed_dist[row, direct])]] = 1
+        elif exact[row]:  # B-A and A-B have the same midpoint but opposite signs.
+            weights[row, kept] = derived[row].numpy()
+        else:
+            for match in (standard_dist[row] < 1e-6, unnamed_dist[row] <= 0.015):
+                candidates = np.flatnonzero(match & keep)
+                if len(candidates):
+                    weights[
+                        row, candidates[np.argmin(unnamed_dist[row, candidates])]
+                    ] = 1
+                    break
+    return weights
 
 
 def resolve_channel_positions(chs_info, bank, montage=None, on_missing="error"):

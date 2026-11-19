@@ -21,7 +21,7 @@ from sklearn.utils import check_random_state
 from torch.fft import fft, ifft
 from torch.nn.functional import one_hot, pad
 
-from braindecode.functional.channels import _torch_calc_g
+from braindecode.functional.channels import _spherical_spline_g
 
 
 def _max_float_dtype(device: torch.device | str) -> torch.dtype:
@@ -721,8 +721,8 @@ def _torch_make_interpolation_matrix(
     # cosine angles between source positions
     cosang_from = torch.matmul(pos_from, pos_from.T)
     cosang_to_from = torch.matmul(pos_to, pos_from.T)
-    G_from = _torch_calc_g(cosang_from)
-    G_to_from = _torch_calc_g(cosang_to_from)
+    G_from = _spherical_spline_g(cosang_from)
+    G_to_from = _spherical_spline_g(cosang_to_from)
     assert G_from.shape == (n_from, n_from)
     assert G_to_from.shape == (n_to, n_from)
 

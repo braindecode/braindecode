@@ -26,15 +26,15 @@ from typing import cast
 
 import numpy as np
 import torch
-from scipy.spatial.distance import cdist
 from torch import Tensor, nn
 
-from braindecode.functional import check_ch_mask, exact_derivation
+from braindecode.functional import check_ch_mask
 from braindecode.functional.channels import (
     _ELECTRODES,
     _channel_electrodes,
     _channel_geometry,
     _derivation_rows,
+    _match_measured_channels,
     _mixing,
     _source,
 )
@@ -229,7 +229,7 @@ class ChannelLayer(nn.Module):
     def _build(self, chs_info: list[dict]) -> dict[str, Tensor]:
         geometry = _channel_geometry(chs_info)
         names, pos = geometry.names, geometry.positions
-        std, types = geometry.standard_positions, geometry.kinds
+        types = geometry.kinds
         bad = [n for n, t in zip(names, types) if t not in _ELECTRODES]
         if bad and not self.drop_non_eeg:
             raise ValueError(
@@ -241,29 +241,7 @@ class ChannelLayer(nn.Module):
                 "channel_strategy='source' uses a scalp-EEG sphere head; use a sensor strategy for intracranial channels."
             )
         mono, tpos, tstd = self._mono, self._tpos, self._tstd
-        # Copy: same name, else same standard position (T3 = T7), else unknown name within 15 mm.
-        low = np.array([n.lower() for n in names])
-        alias = np.nan_to_num(cdist(tstd, std), nan=np.inf) < 1e-6
-        dist = np.nan_to_num(cdist(tpos, pos), nan=np.inf)
-        near = np.where(np.isnan(std).any(1), dist, np.inf)
-        # Names before positions: B-A shares the midpoint of A-B but needs -1.
-        kept = np.flatnonzero(keep)
-        derived, exact = exact_derivation(mono, [names[j] for j in kept])
-        W = np.zeros((len(mono), len(names)))
-        for k, m in enumerate(mono):
-            direct = (low == m.lower()) & keep
-            if direct.any():
-                j = np.flatnonzero(direct)
-                W[k, j[np.argmin(near[k][j])]] = 1.0
-                continue
-            if exact[k]:  # a combination of measured channels
-                W[k, kept] = derived[k].numpy()
-                continue
-            for hit in (alias[k], near[k] <= 0.015):
-                if (hit & keep).any():
-                    j = np.flatnonzero(hit & keep)
-                    W[k, j[np.argmin(near[k][j])]] = 1.0
-                    break
+        W = _match_measured_channels(geometry, mono, tpos, tstd, keep)
         observed = np.abs(W).sum(1) > 0
         D = self._D.copy()
         for row, column in enumerate(self._whole):

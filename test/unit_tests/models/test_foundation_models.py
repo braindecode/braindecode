@@ -1011,7 +1011,9 @@ def test_zuna_named_electrodes_match_the_actual_1020_sites():
         inferred = ZUNA(chs_info=names_only, **kw).eval()
     reference = ZUNA(chs_info=info["chs"], **kw).eval()
     reference.load_state_dict(inferred.state_dict())
-    torch.testing.assert_close(inferred.encoder.rotary_cosine, reference.encoder.rotary_cosine)
+    torch.testing.assert_close(
+        inferred.encoder.rotary_cosine, reference.encoder.rotary_cosine
+    )
     x = torch.randn(2, len(names_only), 256)
     with torch.no_grad():
         torch.testing.assert_close(inferred(x), reference(x))
