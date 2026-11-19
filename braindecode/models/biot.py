@@ -100,7 +100,7 @@ class BIOT(EEGModuleMixin, nn.Module):
                repo_id="username/my-biot-model", commit_message="Upload trained BIOT model"
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     .. versionadded:: 0.9
 

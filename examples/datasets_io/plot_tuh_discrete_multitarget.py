@@ -10,6 +10,7 @@ process step by step.
 """
 
 # Author: Lukas Gemein <l.gemein@gmail.com>
+#         Daria Agafonova
 #
 # License: BSD (3-clause)
 
@@ -39,6 +40,8 @@ set_random_seeds(seed=seed, cuda=cuda)
 # If you want to try this code with the actual data, please delete the next
 # section. We are required to mock some dataset functionality, since the data
 # is not available at creation time of this example.
+# We use the mock's four-recording v1.1.0 corpus so the subset example below
+# includes recordings with different labels.
 from braindecode.datasets.tuh import _TUHMock as TUH  # noqa F811
 
 
@@ -53,6 +56,7 @@ from braindecode.datasets.tuh import _TUHMock as TUH  # noqa F811
 TUH_PATH = "please insert actual path to data here"
 tuh = TUH(
     path=TUH_PATH,
+    version="v1.1.0",
     recording_ids=None,
     target_name=("age", "gender"),  # use both age and gender as decoding target
     preload=False,
@@ -177,3 +181,64 @@ _, matrix_y, _ = next(iter(DataLoader(numeric_windows, batch_size=4)))
 print(f"Matrix target shape: {tuple(matrix_y.shape)}")
 print(matrix_y)
 assert matrix_y.shape == (4, 2)
+
+###############################################################################
+# Changing the prediction target
+# -------------------------------
+#
+# Use :meth:`~braindecode.datasets.BaseConcatDataset.set_target` to switch to a
+# different target without loading the recordings or creating the windows again.
+# For example, select the numeric class label we added to the description.
+# Clear the array transform from the multi-target example so indexing returns a
+# scalar target again.
+
+numeric_windows.target_transform = None
+numeric_windows.set_target("gender_code")
+print(f"Classification target: {numeric_windows[-1][1]}")
+
+###############################################################################
+# The same windows can instead return age as a regression target. Selecting a
+# column does not choose a model, loss, or dtype: here ``float`` converts the
+# returned target to a floating-point value. This transform does not change the
+# stored metadata.
+
+numeric_windows.set_target("age")
+numeric_windows.target_transform = float
+print(f"Regression target: {numeric_windows[-1][1]}")
+
+###############################################################################
+# Recording descriptions and window metadata
+# -------------------------------------------
+#
+# ``description`` has one row per recording; ``get_metadata()`` has one row per
+# window, with recording descriptions repeated alongside the window information.
+# ``set_target`` first looks for the column in each window dataset's metadata,
+# then in its description. A description value such as age is broadcast to all
+# windows of that recording. Editing the DataFrame returned by ``get_metadata()``
+# alone does not update the targets returned by dataset indexing.
+
+description = numeric_windows.description
+print(description[["age", "gender_code"]])
+metadata = numeric_windows.get_metadata()
+print(metadata[["age", "gender_code", "target", "i_window_in_trial"]])
+
+###############################################################################
+# Selecting a subset of recordings
+# ---------------------------------
+#
+# Keep only recordings with ``gender_code == 1``, independently of the current
+# prediction target. To keep several values, use ``isin`` instead of ``eq``.
+# The row positions passed to ``split`` refer to recordings, not individual
+# windows. This selection keeps all windows from each selected recording; it
+# does not filter event classes that vary within a recording.
+# See :ref:`split-dataset-example` for other recording-level splits.
+
+selected_ids = description.index[description["gender_code"].eq(1)].tolist()
+selected_windows = numeric_windows.split({"selected": selected_ids})["selected"]
+print(selected_windows.description[["age", "gender_code"]])
+print(f"Selected {len(selected_windows)} of {len(numeric_windows)} windows")
+
+###############################################################################
+# ``split`` reuses the underlying datasets rather than copying the signals.
+# Later calls to ``set_target`` also affect splits sharing those datasets. Here
+# we finish changing targets before constructing the subset.

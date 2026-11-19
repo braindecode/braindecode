@@ -1,5 +1,5 @@
-.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.17699192.svg
-    :target: https://doi.org/10.5281/zenodo.17699192
+.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.8214376.svg
+    :target: https://doi.org/10.5281/zenodo.8214376
     :alt: DOI
 
 .. image:: https://github.com/braindecode/braindecode/workflows/docs/badge.svg
@@ -90,15 +90,15 @@ https://github.com/braindecode/braindecode/blob/master/CONTRIBUTING.md
 If you use Braindecode in scientific work, please cite the software using the global
 Zenodo DOI shown in the badge below:
 
-.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.17699192.svg
-    :target: https://doi.org/10.5281/zenodo.17699192
+.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.8214376.svg
+    :target: https://doi.org/10.5281/zenodo.8214376
     :alt: DOI
 
 You can use the following BibTeX entry:
 
 .. code-block:: bibtex
 
-    @software{braindecode,
+    @misc{braindecode,
       author = {Aristimunha, Bruno and
                 Guetschel, Pierre and
                 Wimpff, Martin and
@@ -110,17 +110,32 @@ You can use the following BibTeX entry:
                 Brandt, Simon and
                 Gnassounou, Théo and
                 Paillard, Joseph and
+                Srivastava, Aman and
                 {Junqueira Lopes}, Bruna and
                 Sedlar, Sara and
+                Tayal, Sarthak and
+                Truong, Young and
+                Gadonneix, Julien and
+                Mounir, Adam and
+                Zhang, Zhibo and
+                Soloviev, Anton and
+                Li, Qing and
+                Rathi, Raghav and
+                Shah, Vandit and
+                Arthur and
+                Jain, Mahir and
+                Kowshik, Bhargav and
+                Li, Yiheng and
+                Siddique, Fashad Ahmed and
                 Moreau, Thomas and
                 Chevallier, Sylvain and
                 Gramfort, Alexandre and
                 Schirrmeister, Robin Tibor},
       title = {Braindecode: toolbox for decoding raw electrophysiological brain data
                with deep learning models},
+      howpublished = {Zenodo},
       url = {https://github.com/braindecode/braindecode},
-      doi = {10.5281/zenodo.17699192},
-      publisher = {Zenodo},
+      doi = {10.5281/zenodo.8214376},
       license = {BSD-3-Clause},
     }
 
