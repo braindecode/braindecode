@@ -90,3 +90,5 @@ def test_annotations_are_named_after_event_type(
     )
     dataset = cls.__new__(cls)._get_dataset(None)
     assert list(dataset.raw.annotations.description) == ["bckg", "sz", "BAD_ACQ_SKIP"]
+    _, event_id = mne.events_from_annotations(dataset.raw)
+    assert set(event_id) == {"bckg", "sz"}

@@ -173,8 +173,8 @@ API and behavior changes
 
 - :class:`braindecode.datasets.CHBMIT` and :class:`braindecode.datasets.SIENA` now name
   each annotation after the ``eventType`` column of its ``events.tsv`` (``"sz"``,
-  ``"bckg"``, ...). They named every annotation ``"n/a"``, so seizures had lost their
-  labels and could not be told from background (:gh:`XXXX` by
+  ``"bckg"``, ...). Before, every annotation was named ``"n/a"``, so a seizure had the
+  same name as background (:gh:`XXXX` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - On Intel Gaudi, :func:`braindecode.functional.scaled_dot_product_attention` and
