@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 from einops import rearrange
-from mne.filter import create_filter
+from mne.filter import create_filter, filter_data
 from mne.time_frequency import psd_array_welch
 from scipy.signal import fftconvolve as fftconvolve_scipy
 from scipy.signal import freqz
@@ -995,7 +995,7 @@ def test_filter_bank_layer_fftconvolve_comparison_fir(
     )
 
 
-@pytest.mark.parametrize("phase", ["zero", "minimum"])
+@pytest.mark.parametrize("phase", ["zero", "minimum", "minimum-half"])
 def test_filter_bank_layer_bands_match_per_band_fftconvolve(phase):
     """All FIR bands at once (filters of different lengths) equal each band's own convolution."""
     x = torch.randn(
@@ -1011,10 +1011,50 @@ def test_filter_bank_layer_bands_match_per_band_fftconvolve(phase):
     assert len({fir.shape[-1] for fir in layer.fir_list}) > 1
     out = layer(x)
     for band, fir in enumerate(layer.fir_list):
-        expected = fftconvolve_scipy(
-            x.numpy(), fir.detach().numpy()[None, None], mode="same", axes=2
-        )
+        if phase in ("minimum", "minimum-half"):
+            # causal filter: no delay compensation, the output starts at lag 0
+            expected = fftconvolve_scipy(
+                x.numpy(), fir.detach().numpy()[None, None], mode="full", axes=2
+            )[..., : x.shape[-1]]
+        else:
+            expected = fftconvolve_scipy(
+                x.numpy(), fir.detach().numpy()[None, None], mode="same", axes=2
+            )
         np.testing.assert_allclose(out[:, band].numpy(), expected, atol=1e-10)
+
+
+@pytest.mark.parametrize("direct", [False, True])
+@pytest.mark.parametrize("phase", ["minimum", "minimum-half"])
+def test_filter_bank_layer_minimum_phase_is_causal(phase, direct):
+    """A minimum-phase FIR bank is causal and equals mne.filter.filter_data."""
+    sfreq, n_times, onset = 250.0, 3000, 1500
+    bands = [(8.0, 13.0), (13.0, 30.0)]
+    x = torch.randn(
+        1, 2, n_times, dtype=torch.float64, generator=torch.Generator().manual_seed(0)
+    )
+    layer = FilterBankLayer(
+        n_chans=2, sfreq=sfreq, band_filters=bands, phase=phase, verbose=False
+    ).double()
+    apply = layer._apply_fir_bank_direct if direct else layer
+
+    # the output before `onset` does not depend on the input from `onset` on
+    x_changed = x.clone()
+    x_changed[..., onset:] = 0.0
+    torch.testing.assert_close(
+        apply(x_changed)[..., :onset], apply(x)[..., :onset], rtol=0, atol=1e-10
+    )
+
+    # same alignment as MNE (away from the edges, which MNE pads); the layer
+    # keeps float32 coefficients, hence the tolerance
+    out = apply(x).numpy()
+    centre = slice(1000, 2000)
+    for band, (l_freq, h_freq) in enumerate(bands):
+        expected = filter_data(
+            x.numpy(), sfreq, l_freq, h_freq, phase=phase, verbose=False
+        )
+        np.testing.assert_allclose(
+            out[:, band, :, centre], expected[..., centre], atol=1e-6
+        )
 
 
 @pytest.mark.parametrize("phase", ["zero", "minimum"])
@@ -1916,6 +1956,67 @@ def test_patch_count_and_pad_or_crop(n_times, mode, step, expected):
     assert y.unfold(-1, 200, step or 200).shape[2] == expected
     n = min(n_times, y.shape[-1])
     assert torch.equal(y[..., :n], x[..., :n]) and not y[..., n:].any()
+
+
+@pytest.mark.parametrize(
+    "n_times, patch_size, mode, step, message",
+    [
+        (8, 4, "typo", 0, "on_non_divisible"),
+        (5, 4, "typo", 0, "on_non_divisible"),
+        (0, 4, "pad", 0, "n_times"),
+        (8, 0, "pad", 0, "patch_size"),
+        (8, -2, "pad", 0, "patch_size"),
+        (8, 4, "pad", -1, "step"),
+    ],
+)
+def test_invalid_patch_geometry(n_times, patch_size, mode, step, message):
+    from braindecode.functional import pad_or_crop_to_patches, patch_count
+    from braindecode.modules import PatchTokenizer
+
+    x = torch.empty(1, 2, n_times)
+    with pytest.raises(ValueError, match=message):
+        patch_count(n_times, patch_size, mode, step)
+    with pytest.raises(ValueError, match=message):
+        pad_or_crop_to_patches(x, patch_size, mode, step)
+    if step == 0:
+        with pytest.raises(ValueError, match=message):
+            PatchTokenizer(patch_size, n_times, on_non_divisible=mode)(x)
+
+
+def test_patch_tokenizer_rejects_empty_runtime_window():
+    from braindecode.modules import PatchTokenizer
+
+    tokenizer = PatchTokenizer(4, 8)
+    empty = torch.empty(1, 2, 0)
+    with pytest.raises(ValueError, match="n_times"):
+        tokenizer.n_patches(0)
+    with pytest.raises(ValueError, match="n_times"):
+        tokenizer(empty)
+    with pytest.raises(torch.jit.Error, match="n_times"):
+        torch.jit.script(tokenizer)(empty)
+
+
+def test_crop_tokenizer_uses_actual_window_length():
+    from braindecode.modules import PatchTokenizer
+
+    tokenizer = PatchTokenizer(4, 2, on_non_divisible="crop")
+    x = torch.arange(9).reshape(1, 1, 9)
+    torch.testing.assert_close(tokenizer(x), x[..., :8].reshape(1, 1, 2, 4))
+    with pytest.raises(ValueError, match="one full patch"):
+        tokenizer(x[..., :2])
+
+
+@pytest.mark.parametrize(
+    "n_times, expected",
+    [(4, [[1, 2]]), (5, [[1, 2]]), (6, [[1, 2], [6, 0]]), (7, [[1, 2], [6, 7]])],
+)
+def test_gapped_patches_only_pad_a_measured_start(n_times, expected):
+    from braindecode.functional import pad_or_crop_to_patches, patch_count
+
+    x = torch.arange(1, n_times + 1)
+    patches = pad_or_crop_to_patches(x, 2, "pad", step=5).unfold(0, 2, 5)
+    torch.testing.assert_close(patches, torch.tensor(expected))
+    assert patch_count(n_times, 2, "pad", step=5) == len(expected)
 
 
 def test_pad_to_min_patches():
