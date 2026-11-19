@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 
+from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.brainomni import _geometry_from_chs_info, _SpatialTemporalBlock
 from braindecode.models.util import warn_if_sfreq_differs
@@ -138,6 +139,13 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         Entries per codebook.
     codebook_dim : int
         Codebook dimension.
+    channel_strategy : str, default="native"
+        Only ``"native"``: MEG-XL is pretrained on MEG sensors, which the
+        channel layer (electrodes only) cannot map. It builds on any MEG
+        montage from the sensor geometry of ``chs_info``. Any other value
+        raises a ``ValueError``.
+    channel_strategy_kwargs : dict or None, default=None
+        Must be ``None``.
 
     References
     ----------
@@ -168,7 +176,16 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         n_q: int = 6,
         codebook_size: int = 256,
         codebook_dim: int = 16,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
+        if channel_strategy != "native" or channel_strategy_kwargs:
+            raise ValueError(
+                f"{type(self).__name__} is pretrained on MEG sensors, which the "
+                "channel layer (electrodes only) cannot map: only "
+                "channel_strategy='native' is supported. It builds on any MEG montage "
+                "from the sensor geometry of chs_info."
+            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -299,6 +316,12 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         mask is not a waveform mask: neighboring codes can contain information
         from overlapping receptive fields and the whole-window RMS.
         """
+        check_n_chans(
+            x,
+            self.n_chans,
+            "MEGXL",
+            "build the model with the chs_info of this montage.",
+        )
         with torch.no_grad():
             codes = self.tokenize(x)  # (batch, n_chans, n_tokens, n_q)
         return self.encode_codes(codes, mask, mask_value)

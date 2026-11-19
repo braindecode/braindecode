@@ -40,7 +40,7 @@ _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS = set(non_classification_models).diffe
 # Skip all tests in this file if huggingface_hub is not installed
 pytestmark = pytest.mark.skipif(
     not HAS_HF_HUB,
-    reason="huggingface_hub not installed. Install with: pip install braindecode[hug]"
+    reason="huggingface_hub not installed. Install with: pip install 'braindecode[hub]'"
 )
 
 @pytest.fixture(scope="module", params=models_mandatory_parameters, ids=lambda p: p[0])
@@ -926,11 +926,9 @@ def test_model_html_has_logo_and_zenodo_citation(tmp_path):
     assert "braindecode.org/stable/_static/braindecode_long.svg" in page
     assert 'alt="Braindecode"' in page
     assert "Cite Braindecode." in page and "Origin unrecorded" in page
-    assert page.count("10.5281/zenodo.17699192") >= 3  # badge, BibTeX, agent note
-    assert "hbm.23730" not in page
-    assert "Note for AI agents" in page
+    assert 'href="https://doi.org/10.5281/zenodo.8214376"' in page
     model.save_pretrained(tmp_path)
-    assert "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.17699192" in str(
+    assert "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.8214376" in str(
         EEGNet.from_pretrained(tmp_path)
     )
 
@@ -970,10 +968,14 @@ def test_model_html_citation_exports_and_dataset_readers(tmp_path):
     exports = re.findall(r'href="data:text/plain;charset=utf-8,([^"]+)" download="([^"]+)"', page)
     assert len(exports) == 2
     texts = {name: unquote(content) for content, name in exports}
-    assert "@software{braindecode," in texts["braindecode.bib"]
-    assert "10.5281/zenodo.17699192" in texts["braindecode.bib"]
-    assert "[Computer software]. Zenodo." in texts["braindecode-APA.txt"]
-    assert "10.5281/ZENODO.17699192" in texts["braindecode-APA.txt"]
+    bibtex = texts["braindecode.bib"]
+    apa = texts["braindecode-APA.txt"]
+    assert "@misc{braindecode," in bibtex and "Guetschel, Pierre" in bibtex
+    assert "doi = {10.5281/zenodo.8214376}" in bibtex.lower()
+    assert "version =" not in bibtex.lower()
+    assert "Guetschel, P." in apa and "[Computer software]. Zenodo." in apa
+    assert apa.lower().endswith("https://doi.org/10.5281/zenodo.8214376")
+    assert "(version " not in apa.lower()
     assert 'download="braindecode.bib"' in page
     assert 'aria-label="Braindecode APA citation"' in page
     assert "braindecode.datasets.BNCI2014_001.html" in page
