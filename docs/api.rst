@@ -161,6 +161,7 @@ interface for all EEG models and can derive variable names when needed.
      BrainOmni
      BrainTokenizer
      Brant
+     CareSleepNet
      CBraMod
      CodeBrain
      ContraWR
