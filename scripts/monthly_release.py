@@ -28,6 +28,7 @@ Bumping rules (``--bump``)
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from datetime import datetime, timezone
@@ -222,7 +223,30 @@ def insert_next_dev_section(changelog: Path, next_dev_base: str) -> None:
         insert_at = m2.start()
 
     section = EMPTY_SECTION_TEMPLATE.format(base=next_dev_base)
-    changelog.write_text(text[:insert_at] + section + text[insert_at:], encoding="utf-8")
+    changelog.write_text(
+        text[:insert_at] + section + text[insert_at:], encoding="utf-8"
+    )
+
+
+def update_version_switcher(path: Path, release: str, next_dev: str) -> None:
+    """Label the release documentation and retain the previous stable series."""
+    dev, stable, *archives = json.loads(path.read_text(encoding="utf-8"))
+    series = ".".join(release.split(".")[:2])
+    previous = stable["version"]
+    if previous != series and all(entry["version"] != previous for entry in archives):
+        archives.insert(
+            0,
+            {
+                "name": previous,
+                "version": previous,
+                "url": stable["url"].removesuffix("stable/") + f"{previous}/",
+            },
+        )
+    dev["name"] = ".".join(next_dev.split(".")[:2]) + " (dev)"
+    stable.update(name=f"{series} (stable)", version=series)
+    path.write_text(
+        json.dumps([dev, stable, *archives], indent=4) + "\n", encoding="utf-8"
+    )
 
 
 def cmd_compute(args: argparse.Namespace) -> int:
@@ -248,6 +272,12 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         )
     write_version(args.init_file, release_version)
     finalize_changelog(args.changelog, release_version)
+    if args.next_dev_version:
+        update_version_switcher(
+            args.changelog.parent / "_static" / "versions.json",
+            release_version,
+            args.next_dev_version,
+        )
     print(f"{args.init_file} -> {release_version}")
     return 0
 
@@ -297,10 +327,14 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[paths, bump],
         help="Print the planned versions as key=value lines.",
     )
-    sub.add_parser(
+    finalize = sub.add_parser(
         "finalize",
         parents=[paths],
         help="Write the release version to version.py and date the changelog heading.",
+    )
+    finalize.add_argument(
+        "--next-dev-version",
+        help="Also update the documentation version switcher for this development cycle.",
     )
     sub.add_parser(
         "next-dev",

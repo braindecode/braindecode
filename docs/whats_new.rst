@@ -377,6 +377,8 @@ Code health
   ``ch_mask`` with a ``ValueError`` that names it
   (:gh:`1545`, :gh:`1548` by `Bruno Aristimunha`_).
 
+- Update the documentation version selector during the monthly release, so a
+  release-preparation change cannot relabel the public stable documentation.
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).
 - Documentation built from a release tag uses https://braindecode.org/stable/
