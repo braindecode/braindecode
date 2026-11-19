@@ -411,18 +411,24 @@ def test_signal_transform_after_mixer(mixer, n_augmentation):
     expected = SignFlip(0.5, random_state=12)(mixed)
     if n_augmentation:
         expected = torch.cat((x, expected))
-        targets = tuple(torch.cat((a, b)) for a, b in zip((y, y, torch.ones_like(y)), targets))
+        targets = tuple(
+            torch.cat((a, b)) for a, b in zip((y, y, torch.ones_like(y)), targets)
+        )
     torch.testing.assert_close(signals, expected)
     for actual, reference in zip((first, second, weights), targets):
         torch.testing.assert_close(actual, reference)
     logits = torch.randn(len(signals), batch_size)
     log_probs = logits.log_softmax(-1)
     rows = torch.arange(len(signals))
-    loss = -(weights * log_probs[rows, first] + (1 - weights) * log_probs[rows, second]).mean()
+    loss = -(
+        weights * log_probs[rows, first] + (1 - weights) * log_probs[rows, second]
+    ).mean()
     torch.testing.assert_close(mixup_criterion(logits, (first, second, weights)), loss)
 
 
-@pytest.mark.parametrize("transform", [LabelSmoothing(0.1, 3), SegmentationReconstruction(1)])
+@pytest.mark.parametrize(
+    "transform", [LabelSmoothing(0.1, 3), SegmentationReconstruction(1)]
+)
 def test_label_dependent_transform_after_mixer_is_rejected(transform):
     with pytest.raises(ValueError, match="before.*Mixup"):
         Compose([Mixup(0.5), transform])(torch.randn(3, 2, 16), torch.arange(3))
