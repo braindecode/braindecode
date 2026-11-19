@@ -125,7 +125,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
                repo_id="username/my-cbramod-model", commit_message="Upload trained CBraMod model"
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     Parameters
     ----------
