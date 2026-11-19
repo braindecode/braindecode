@@ -219,8 +219,12 @@ Bug fixes
   ``window_kwargs``, so they survive saving and loading. :gh:`515` dropped them:
   with ``targets_from="channels"`` the target channels stayed in ``X`` and ``y``
   came from the recording metadata. Loading older fixed-length Epochs stores
-  now restores their recorded target settings. With channel targets,
-  ``picks`` must include at least one ``misc`` channel (:gh:`1609` by
+  now restores their recorded target settings.
+  :class:`~braindecode.datasets.WindowsDataset` and
+  :class:`~braindecode.datasets.EEGWindowsDataset` with
+  ``targets_from="channels"`` now raise a ``ValueError`` when the selected
+  channels hold no ``misc`` channel, also when a saved dataset is loaded.
+  Before, they returned an empty ``y`` (:gh:`1609` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
