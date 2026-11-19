@@ -230,7 +230,10 @@ Bug fixes
 - :func:`braindecode.preprocessing.filterbank` keeps whole channel names: it cut
   each name with its band suffix to its last 15 characters (``MEG0111_8.0-13.0``
   became ``EG0111_8.0-13.0``), a limit MNE no longer has; long names also
-  round-trip through FIF (by `Bruno Aristimunha`_).
+  round-trip through FIF. Filtered channels are therefore named
+  ``{name}_{l_freq}-{h_freq}`` in full, and with ``drop_original_signals=True`` a
+  filtered channel may reuse the name of a dropped source channel (:gh:`1680` by
+  `Bruno Aristimunha`_).
 - :func:`braindecode.preprocessing.filterbank` preserves channel positions and
   their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
 - ``load_state_dict`` of every braindecode model loads checkpoints saved before
