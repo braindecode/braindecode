@@ -74,9 +74,9 @@ def _resolve(chs_info: list[dict]):
     """Names, positions ``(C, 3)`` (given ``loc``, else ``standard_1005``, else NaN),
     standard positions of the names, channel types and which ``loc`` were given."""
     names = [str(ch["ch_name"]) for ch in chs_info]
-    types = [  # missing kind = EEG; FIFF kind ints as in raw.info
+    types = [  # kind, else ch_type, else EEG; FIFF kind ints as in raw.info
         k.lower() if isinstance(k, str) else _FIFF_KINDS.get(int(k), str(k))
-        for k in (ch.get("kind") or "eeg" for ch in chs_info)
+        for k in (ch.get("kind") or ch.get("ch_type") or "eeg" for ch in chs_info)
     ]
     table, nan = _standard_positions(), np.full(3, np.nan)
     std = np.array(
@@ -452,7 +452,11 @@ class ChannelLayer(nn.Module):
         if chs is self._chs:
             return
         key = tuple(
-            (str(c["ch_name"]), c.get("kind"), np.float64(c.get("loc")).tobytes())
+            (
+                str(c["ch_name"]),
+                c.get("kind") or c.get("ch_type"),
+                np.float64(c.get("loc")).tobytes(),
+            )
             for c in chs
         )
         if key != self._key:
