@@ -38,7 +38,7 @@ Enhancements
   wearables. ``from_pretrained`` loads the authors' ``PulpBio/TinyMyo`` files as
   released, including their NinaPro DB5, EPN-612 and UCI EMG gesture classifiers.
   With these files, the outputs and the classifier gradients match the authors' code
-  within 1e-5 (:gh:`0000` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+  within 1e-5 (:gh:`1649` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.modules.ChannelLayer` maps channels with one linear
   estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
   targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat
