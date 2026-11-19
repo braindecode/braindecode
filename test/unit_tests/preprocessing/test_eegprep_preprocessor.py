@@ -151,7 +151,7 @@ def _create_synthetic_dataset(include_non_eeg=False, correlated_data=False,
     raw = mne.io.RawArray(data, info)
 
     # Set standard 10-20 montage for channel locations (needed for interpolation)
-    montage = mne.channels.make_standard_montage('standard_1020')
+    montage = mne.channels.make_standard_montage('colin27_1020')
     raw.set_montage(montage, on_missing='ignore')
 
     # Create BaseDataset with minimal metadata
@@ -236,7 +236,7 @@ def test_non_eeg_channels_preserved():
     raw = mne.io.RawArray(data, info)
 
     # Set montage for EEG channels (will be ignored for non-EEG)
-    montage = mne.channels.make_standard_montage('standard_1020')
+    montage = mne.channels.make_standard_montage('colin27_1020')
     raw.set_montage(montage, on_missing='ignore')
 
     # Create dataset
@@ -550,7 +550,7 @@ def test_remove_bad_channels():
     raw = mne.io.RawArray(data, info)
 
     # Set standard 10-20 montage for channel locations (required for RemoveBadChannels)
-    montage = mne.channels.make_standard_montage('standard_1020')
+    montage = mne.channels.make_standard_montage('colin27_1020')
     raw.set_montage(montage, on_missing='ignore')
 
     # Create dataset
@@ -962,7 +962,7 @@ def test_eegprep_pipeline_removes_bad_channels_and_windows():
     raw = mne.io.RawArray(data, info)
 
     # Set standard 10-20 montage for channel locations
-    montage = mne.channels.make_standard_montage('standard_1020')
+    montage = mne.channels.make_standard_montage('colin27_1020')
     raw.set_montage(montage, on_missing='ignore')
 
     # Create dataset
@@ -1113,7 +1113,7 @@ def test_remove_bursts():
     raw = mne.io.RawArray(data, info)
 
     # Set standard 10-20 montage
-    montage = mne.channels.make_standard_montage('standard_1020')
+    montage = mne.channels.make_standard_montage('colin27_1020')
     raw.set_montage(montage, on_missing='ignore')
 
     # Create dataset
