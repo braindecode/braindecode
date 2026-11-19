@@ -3,6 +3,7 @@
 # License: BSD (3-clause)
 
 import logging
+from collections.abc import Iterable
 from typing import Any, Literal
 
 import mne
@@ -163,7 +164,9 @@ def infer_signal_properties(
             for ds in datasets
         ):
             # Both window backends return ds.y[i], including with lazy metadata.
-            targets = (ds.y[i] for ds in datasets for i in range(len(ds)))
+            targets: Iterable[Any] = (
+                ds.y[i] for ds in datasets for i in range(len(ds))
+            )
             if isinstance(X, BaseConcatDataset) and X.target_transform is not None:
                 targets = map(X.target_transform, targets)
             signal_kwargs["n_outputs"] = _get_n_outputs(
