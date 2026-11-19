@@ -10,19 +10,24 @@ import threading
 import time
 
 
+def _run(cmd):
+    return subprocess.run(cmd, capture_output=True, text=True, check=False).stdout
+
+
 def _log_memory(stop):
     while not stop.wait(60):
-        print(f"::group::memory {time.strftime('%H:%M:%S', time.gmtime())}", flush=True)
-        subprocess.run(["free", "-m"], check=False)
-        top = subprocess.run(
-            ["ps", "-eo", "rss,etime,args", "--sort=-rss"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        free = _run(["free", "-m"]).rstrip("\n")
+        top = _run(["ps", "-eo", "rss,etime,args", "--sort=-rss"])
         # The first line labels the columns. Keep it and the eight largest processes.
-        print("\n".join(line[:160] for line in top.stdout.splitlines()[:9]))
-        print("::endgroup::", flush=True)
+        top = "\n".join(line[:160] for line in top.splitlines()[:9])
+        stamp = time.strftime("%H:%M:%S", time.gmtime())
+        # pytest -vv leaves its current line open while a test runs, and GitHub
+        # only reads ::group:: at the start of a line: open with a newline, and
+        # write the block in one call so worker output cannot land inside it.
+        sys.stdout.write(
+            f"\n::group::memory {stamp}\n{free}\n{top}\n::endgroup::\n"
+        )
+        sys.stdout.flush()
 
 
 stop = threading.Event()

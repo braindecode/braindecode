@@ -142,7 +142,7 @@ jobs:
     # A runner lost mid-suite ("lost communication", "shutdown signal") leaves the
     # memory log above; a finished job reports the kernel's and systemd-oomd's kills.
     - name: Memory pressure events
-      if: always()
+      if: ${{ always() && runner.os == 'Linux' }}
       run: |
         echo "systemd-oomd: $(systemctl is-active systemd-oomd 2>/dev/null || true)"
         sudo dmesg | grep -iE "out of memory|oom-kill|killed process" | tail -20 || true
