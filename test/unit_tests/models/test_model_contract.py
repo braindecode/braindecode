@@ -631,6 +631,12 @@ _CH_MASK_EXTRAS = {
 }
 
 
+# Channels tied to slots of the configuration: a recording keeps all of them and
+# masks the missing ones, so it has no shorter input to run alone
+# (test_sleepfm_masked_input_is_ignored covers its ch_mask).
+_CH_MASK_SLOTS = {"SleepFMStager": "channels are grouped by channel_modalities slot"}
+
+
 def _ch_mask_case(model_name, required_params, signal_params):
     """Two recordings with ``C - 1`` and ``C`` real channels, padded with NaN.
 
@@ -643,6 +649,8 @@ def _ch_mask_case(model_name, required_params, signal_params):
     """
     if "ch_mask" not in inspect.signature(all_models_dict[model_name].forward).parameters:
         pytest.skip("forward takes no ch_mask")
+    if model_name in _CH_MASK_SLOTS:
+        pytest.skip(_CH_MASK_SLOTS[model_name])
     torch.manual_seed(0)  # same weights and data on every run: no flaky tolerance
     model, x = _build_case(model_name, required_params, signal_params)
     n_real = [x.shape[1] - 1, x.shape[1]]
