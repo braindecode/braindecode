@@ -248,6 +248,12 @@ class CBraMod(EEGModuleMixin, nn.Module):
                 nn.Flatten(), nn.LazyLinear(self.n_outputs)
             )
 
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        if "_encoder_output" not in state:
+            # Earlier pickles select encoder output with this identity head.
+            self._encoder_output = isinstance(self.final_layer, nn.Identity)
+
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
         self._update_init_kwargs(n_outputs=n_outputs)

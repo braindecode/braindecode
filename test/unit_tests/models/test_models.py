@@ -8145,3 +8145,41 @@ def test_cbramod_features_skip_pretraining_proj_out():
         feats = model(x, return_features=True)["features"]
     torch.testing.assert_close(feats, tokens)
     assert any(k.startswith("proj_out.") for k in model.state_dict())
+
+
+@pytest.mark.parametrize("encoder_only", [False, True])
+def test_cbramod_saved_before_encoder_output_flag(encoder_only):
+    model = CBraMod(
+        n_outputs=2,
+        n_chans=3,
+        n_times=400,
+        n_layer=1,
+        nhead=2,
+        return_encoder_output=encoder_only,
+    ).eval()
+    x = torch.randn(2, 3, 400)
+    with torch.no_grad():
+        expected = model(x)
+        del model._encoder_output  # whole-module pickle from braindecode 2.0
+        restored = pickle.loads(pickle.dumps(model))
+        torch.testing.assert_close(restored(x), expected, rtol=0, atol=0)
+        if encoder_only:
+            assert restored(x[:, :2]).shape[1] == 2
+        else:
+            with pytest.raises(ValueError, match="built for 3 channels"):
+                restored(x[:, :2])
+
+
+def test_axon_encode_checks_channel_count():
+    from braindecode.models import AXON
+
+    info = mne.create_info(["Fz", "Cz", "Pz", "Oz"], 200.0, "eeg")
+    info.set_montage("standard_1020")
+    model = AXON(n_outputs=2, chs_info=info["chs"], n_times=400).eval()
+    x = torch.randn(2, 4, 400)
+    with torch.no_grad():
+        torch.testing.assert_close(
+            model(x, return_features=True)["tokens"], model.encode(x)
+        )
+        with pytest.raises(ValueError, match="built for 4 channels"):
+            model.encode(x[:, :3])
