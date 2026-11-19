@@ -658,6 +658,10 @@ Code health
   reference encoder at ``atol=1e-5``: the reference packs the valid tokens and
   the model masks the invalid ones, so float32 rounding depends on the machine
   (:gh:`1594` by `Bruno Aristimunha`_).
+- :class:`braindecode.modules.Perceiver` builds the Fourier features for
+  :class:`braindecode.models.DANCE` directly along the time axis. A training
+  test checks its per-token logits and the gradients of all three event heads
+  (:gh:`1677` by `Bruno Aristimunha`_).
 - Codacy runs Bandit from a root ``bandit.yml`` that skips B105, which flagged every ``"cls_token"`` key of the foundation-model feature dicts as a hardcoded password, and B101, the test ``assert`` statements (:gh:`1546` by `Bruno Aristimunha`_).
 - Every registered model whose ``forward`` takes ``ch_mask`` is checked with no
   per-model test case, like the other cross-model contracts: each recording of a
