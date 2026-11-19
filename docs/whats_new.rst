@@ -215,7 +215,8 @@ Bug fixes
   rate with ``align_corners=True``, as emg2pose does in ``pose_modules.py``. It used
   ``False``, so with the same weights its outputs differed from the reference
   implementation. Outputs of existing VEMG2Pose models change by a few thousandths of
-  a radian with the released ``braindecode/VEMG2Pose-emg2pose`` weights. Parameters
+  a radian with each of the four released checkpoints (``braindecode/VEMG2Pose-emg2pose``,
+  ``braindecode/EMG2Pose-emg2pose`` and their ``-tracking`` variants). Parameters
   are unchanged, so released weights still load (:gh:`1613` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
