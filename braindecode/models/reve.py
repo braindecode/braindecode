@@ -19,6 +19,7 @@ from torch import nn
 
 from braindecode.functional import (
     check_ch_mask,
+    check_n_chans,
     pad_or_crop_to_patches,
     patch_count,
     scaled_dot_product_attention,
@@ -524,6 +525,23 @@ class REVE(EEGModuleMixin, nn.Module):
             raise ValueError(
                 "ch_mask needs attention_pooling=True: the flattened head is tied "
                 "to the channels."
+            )
+        if pos is None and self.default_pos is not None:  # the chs_info montage
+            check_n_chans(
+                eeg,
+                self.n_chans,
+                "REVE",
+                "pass pos for these channels, or use a channel_strategy.",
+            )
+        elif pos is not None and not (
+            self.use_attention_pooling or return_output or return_features
+        ):
+            head_channels = self._n_pos_chans
+            check_n_chans(
+                eeg,
+                self.n_chans if head_channels is None else head_channels,
+                "REVE",
+                "use attention_pooling=True or return_features=True for another montage.",
             )
         channel_index = self.channel_index
         if pos is None and channel_index is not None:

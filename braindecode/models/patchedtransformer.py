@@ -12,7 +12,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from braindecode.functional import init_weights_, scaled_dot_product_attention
+from braindecode.functional import (
+    check_n_chans,
+    init_weights_,
+    scaled_dot_product_attention,
+)
 from braindecode.models.base import EEGModuleMixin
 
 # Weight initialization of the reference implementation.
@@ -179,6 +183,11 @@ class PBT(EEGModuleMixin, nn.Module):
         Whether to use bias in Transformer linear layers.
     activation : nn.Module, optional
         Activation function class to use in Transformer feed-forward layers.
+    channel_strategy : str
+        How another montage reaches the encoder; see
+        :class:`~braindecode.models.base.EEGModuleMixin`.
+    channel_strategy_kwargs : dict or None
+        Options of ``channel_strategy``.
 
     References
     ----------
@@ -216,6 +225,8 @@ class PBT(EEGModuleMixin, nn.Module):
         learnable_cls=True,
         bias_transformer=False,
         activation: type[nn.Module] = nn.GELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ) -> None:
         super().__init__(
             n_outputs=n_outputs,
@@ -224,6 +235,8 @@ class PBT(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if not 0 < d_input <= self.n_times:
@@ -304,8 +317,12 @@ class PBT(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output logits with shape (batch_size, n_outputs).
         """
-        if X.size(1) != self.n_chans:
-            raise ValueError(f"PBT expects {self.n_chans} channels, got {X.size(1)}.")
+        check_n_chans(
+            X,
+            self.n_chans,
+            "PBT",
+            "build the model with the chs_info of this montage.",
+        )
         X, int_pos = self.patch_signal(X)
 
         tokens = self.patching_projection(X)

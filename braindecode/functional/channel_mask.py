@@ -52,6 +52,33 @@ def check_ch_mask(
     return ch_mask
 
 
+def check_n_chans(x: torch.Tensor, n_chans: int, model: str, hint: str) -> None:
+    """Check that the input has the channels a model was built for.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input of shape ``(batch, n_chans, ...)``.
+    n_chans : int
+        Number of channels the model was built for.
+    model : str
+        Name of the model, for the error message.
+    hint : str
+        How to run the model on this input, ending the error message.
+
+    Raises
+    ------
+    ValueError
+        If ``x`` does not have ``n_chans`` channels, instead of a shape error
+        deep in the network.
+    """
+    if x.shape[1] != n_chans:
+        raise ValueError(
+            f"{model} was built for {n_chans} channels but got input with "
+            f"{x.shape[1]}; {hint}"
+        )
+
+
 def pack_channels(
     x: torch.Tensor, ch_mask: Optional[torch.Tensor] = None
 ) -> torch.Tensor:
