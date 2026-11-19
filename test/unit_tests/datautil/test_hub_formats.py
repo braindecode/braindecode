@@ -310,6 +310,20 @@ def test_zarr_read_only_store_replacement(tmp_path, monkeypatch):
     assert _signal_and_target(load_from_zarr(path, preload=False)) == (2, 2)
 
 
+def test_zarr_store_on_filesystem_without_locks(tmp_path, monkeypatch):
+    """NFS without lockd refuses flock: loading and replacing still work."""
+    pytest.importorskip("zarr")
+    path = convert_to_zarr(_recording(1), tmp_path / "recording.zarr")
+
+    def no_locks(lock):
+        raise OSError(errno.ENOLCK, "No locks available")
+
+    monkeypatch.setattr(hub_formats.FileLock, "acquire", no_locks)
+    old = load_from_zarr(path, preload=False)
+    convert_to_zarr(_recording(2), path, overwrite=True)
+    assert _read_zarr_generations(old, path) == ((1, 1), (2, 2))
+
+
 def test_zarr_reader_through_symlink_shares_writer_lock(tmp_path, monkeypatch):
     pytest.importorskip("zarr")
     path = convert_to_zarr(_recording(1), tmp_path / "recording.zarr")

@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 import shutil
 from contextlib import contextmanager
-from errno import EACCES, EPERM, EROFS
+from errno import ENOLCK, ENOSYS, ENOTSUP, EOPNOTSUPP
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
@@ -44,16 +44,19 @@ def _store_access(path, *, reading=False):
     try:
         lock.acquire()
     except OSError as error:
-        if not reading or error.errno not in (EACCES, EPERM, EROFS):
+        if reading:
+            # Read-only media, or a filesystem without locks (e.g. NFS without
+            # lockd), cannot host the lock. Detect a concurrent replacement.
+            before = path.stat()
+            yield
+            if not os.path.samestat(before, path.stat()):
+                raise OSError(
+                    f"Zarr store {path} changed while reading it. Retry the load."
+                )
+            return
+        if error.errno not in (ENOLCK, ENOSYS, ENOTSUP, EOPNOTSUPP):
             raise
-        # Read-only media cannot host a lock. Detect replacement by another user.
-        before = path.stat()
-        yield
-        if not os.path.samestat(before, path.stat()):
-            raise OSError(
-                f"Zarr store {path} changed while reading it. Retry the load."
-            )
-        return
+        lock = None  # the filesystem has no locks: replace the store unlocked
     try:
         previous = path.parent / f".{path.name}_memmap" / ".previous-store"
         if previous.is_dir():  # a process stopped between publication and cleanup
@@ -63,7 +66,8 @@ def _store_access(path, *, reading=False):
                 shutil.rmtree(previous)
         yield previous
     finally:
-        lock.release()
+        if lock is not None:
+            lock.release()
 
 
 def convert_to_zarr(
