@@ -230,6 +230,16 @@ Bug fixes
 
 - :func:`braindecode.preprocessing.filterbank` preserves channel positions and
   their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
+
+- :class:`braindecode.models.LUNA` keeps its default channel locations in a
+  non-persistent buffer, so ``model.to(device)`` moves them. Before, they stayed
+  on the CPU in a plain dict, and each forward without ``channel_locations``
+  copied them to the device of the input. When the channel count changes, LUNA
+  uses the corresponding measured positions or builds its fallback on the model
+  device. The positions are reconstructed during checkpoint loading, including
+  when loading weights into a model constructed on the meta device. Existing
+  state dictionaries and full-model pickles load (:gh:`1616` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - ``load_state_dict`` of every braindecode model loads checkpoints saved before
   the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
   other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key

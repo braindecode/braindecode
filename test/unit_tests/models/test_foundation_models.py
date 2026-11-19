@@ -1311,6 +1311,67 @@ def test_luna_variants_different_channel_counts(luna_base_config):
         assert output.shape == (2, 2)
 
 
+def test_luna_default_locations_without_n_chans():
+    """The channel count may first be known at forward, and the default
+    locations add no key to the state dict, so checkpoints still load."""
+    model = LUNA(n_outputs=2, n_times=80, patch_size=20).eval()
+    assert not any("channel_locations" in key for key in model.state_dict())
+    with torch.no_grad():
+        assert model(torch.randn(2, 5, 80)).shape == (2, 2)
+
+
+def test_luna_matches_explicit_locations_when_channel_count_changes():
+    positions = torch.tensor([[0.1, 0.2, 0.3], [-0.1, 0.3, 0.4], [0.0, -0.2, 0.2]])
+    chs = [{"ch_name": str(i), "loc": row.numpy()} for i, row in enumerate(positions)]
+    model = LUNA(chs_info=chs, n_outputs=2, n_times=80, patch_size=20, depth=1).eval()
+    fallback = torch.zeros(4, 3)
+    fallback[:, 0] = torch.linspace(-1, 1, 4)
+    for expected in (positions[:2], fallback):
+        x = torch.randn(2, len(expected), 80)
+        explicit = expected.expand(len(x), -1, -1)
+        with torch.no_grad():
+            torch.testing.assert_close(model(x), model(x, channel_locations=explicit))
+
+
+@pytest.mark.parametrize("assign", [False, True], ids=["to_empty", "assign"])
+@pytest.mark.parametrize("measured", [False, True], ids=["fallback", "measured"])
+def test_luna_materializes_default_positions_from_checkpoint(assign, measured):
+    chs = None
+    if measured:
+        chs = [{"ch_name": str(i), "loc": [i + 0.1, 0.3, -0.2]} for i in range(3)]
+    kwargs = dict(
+        n_chans=3, chs_info=chs, n_outputs=2, n_times=80, patch_size=20, depth=1
+    )
+    reference = LUNA(**kwargs).eval()
+    with torch.device("meta"):
+        restored = LUNA(**kwargs).eval()
+    if not assign:
+        restored.to_empty(device="cpu")
+        # Make reads from uninitialized floating buffers deterministic.
+        for buffer in restored.buffers():
+            if buffer.is_floating_point():
+                buffer.fill_(float("nan"))
+    restored.load_state_dict(reference.state_dict(), strict=True, assign=assign)
+    x = torch.randn(2, 3, 80)
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x), reference(x))
+
+
+def test_luna_loads_full_model_with_legacy_location_cache(tmp_path):
+    model = LUNA(n_chans=3, n_outputs=2, n_times=80, patch_size=20, depth=1).eval()
+    x = torch.randn(2, 3, 80)
+    with torch.no_grad():
+        expected = model(x)
+    model._channel_location_cache = {3: model._default_channel_locations}
+    del model._default_channel_locations
+    model._load_state_dict_post_hooks.clear()
+    checkpoint = tmp_path / "luna.pt"
+    torch.save(model, checkpoint)
+    restored = torch.load(checkpoint, weights_only=False)  # nosec B614 - own file
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x), expected)
+
+
 def test_luna_variants_output_consistency(
     luna_base_config, luna_large_config, luna_huge_config
 ):
@@ -3419,18 +3480,7 @@ def test_luna_rotary_whole_model_checkpoint_and_output(scripted):
     with torch.no_grad():
         expected = old(x, channel_locations=locations)
         if scripted:
-            try:
-                old_script = torch.jit.script(old)
-            except RuntimeError as error:
-                # A pre-existing whole-model limitation, not a rotary regression.
-                if "has no attribute '_channel_location_cache'" not in str(error):
-                    raise
-                with pytest.raises(RuntimeError, match="_channel_location_cache"):
-                    torch.jit.script(model)
-                pytest.xfail(
-                    "Baseline whole-LUNA scripting cannot infer the empty "
-                    "_channel_location_cache; block scripting is qualified separately."
-                )
+            old_script = torch.jit.script(old)
             model = torch.jit.script(model)
             torch.testing.assert_close(
                 old_script(x, channel_locations=locations), expected
