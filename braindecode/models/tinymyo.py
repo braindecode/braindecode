@@ -16,17 +16,11 @@ from functools import partial
 from typing import Literal, Optional
 
 import torch
-import torch.nn.functional as F
 from torch import nn
 
-from braindecode.functional import (
-    apply_rotary,
-    init_weights_,
-    rotary_angles,
-    rotary_frequencies,
-)
+from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import PreNormBlock, TimmMlp
+from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
 
 # Number of channel-slot embeddings in the released checkpoints.
@@ -246,13 +240,13 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
             [
                 PreNormBlock(
                     embed_dim,
-                    _ChannelRotaryAttention(
+                    TimmAttention(
                         embed_dim,
                         num_heads=num_heads,
-                        n_chans=self.n_chans,
                         qkv_bias=qkv_bias,
                         attn_drop=attn_drop,
                         proj_drop=drop_prob,
+                        rotary_runs=self.n_chans,
                     ),
                     TimmMlp(
                         embed_dim,
@@ -351,51 +345,3 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
             provenance["loaded"].difference_update(head)
         return result
 
-
-class _ChannelRotaryAttention(nn.Module):
-    """Self-attention with RoPE positions that restart at each channel.
-
-    The tokens are channel-major, ``n_chans`` runs of the same patch
-    positions ``0 .. P - 1``.
-    """
-
-    def __init__(
-        self,
-        dim: int,
-        num_heads: int,
-        n_chans: int,
-        qkv_bias: bool = True,
-        attn_drop: float = 0.0,
-        proj_drop: float = 0.0,
-    ) -> None:
-        super().__init__()
-        self.num_heads = num_heads
-        self.n_chans = n_chans
-        self.attn_drop = attn_drop
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch, n_tokens, dim = x.shape
-        q, k, v = (
-            self.qkv(x)
-            .reshape(batch, n_tokens, 3, self.num_heads, dim // self.num_heads)
-            .permute(2, 0, 3, 1, 4)
-            .unbind(0)
-        )  # (batch, heads, tokens, head_dim) each
-        # Rotate in float32 at least, as the reference does
-        dtype = torch.promote_types(q.dtype, torch.float32)
-        positions = torch.arange(n_tokens // self.n_chans, device=x.device, dtype=dtype)
-        angles = rotary_angles(
-            positions.repeat(self.n_chans),
-            rotary_frequencies(q.shape[-1], device=x.device, dtype=dtype),
-        )
-        cos, sin = angles.cos(), angles.sin()
-        q = apply_rotary(q.to(dtype), cos, sin).to(v.dtype)
-        k = apply_rotary(k.to(dtype), cos, sin).to(v.dtype)
-        x = F.scaled_dot_product_attention(
-            q, k, v, dropout_p=self.attn_drop if self.training else 0.0
-        )
-        x = x.transpose(1, 2).flatten(2)  # (batch, tokens, dim)
-        return self.proj_drop(self.proj(x))

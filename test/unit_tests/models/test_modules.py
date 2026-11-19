@@ -2339,6 +2339,28 @@ def test_timm_attention_keys_and_weights():
         TimmAttention(16, num_heads=32)
 
 
+def test_timm_attention_rotary_positions_restart_in_each_run():
+    from braindecode.modules import TimmAttention
+
+    torch.manual_seed(0)
+    plain = TimmAttention(16, num_heads=2)
+    runs = TimmAttention(16, num_heads=2, rotary_runs=2)
+    runs.load_state_dict(plain.state_dict())
+    one_run = TimmAttention(16, num_heads=2, rotary_runs=1)
+    one_run.load_state_dict(plain.state_dict())
+    x = torch.randn(2, 6, 16)
+    q, k, _ = runs._heads(x)
+    q_first, k_first, _ = one_run._heads(x[:, :3])
+    q_second, k_second, _ = one_run._heads(x[:, 3:])
+    torch.testing.assert_close(q, torch.cat((q_first, q_second), dim=2))
+    torch.testing.assert_close(k, torch.cat((k_first, k_second), dim=2))
+    q_plain, _, _ = plain._heads(x)
+    torch.testing.assert_close(q[:, :, :1], q_plain[:, :, :1])  # position 0
+    assert not torch.allclose(q, q_plain)
+    with pytest.raises(ValueError, match="even"):
+        TimmAttention(12, num_heads=4, rotary_runs=1)
+
+
 def test_pre_norm_block_keys_and_forward():
     from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
 
