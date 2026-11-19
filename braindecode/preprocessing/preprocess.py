@@ -625,12 +625,6 @@ def filterbank(
     """
     if not frequency_bands:
         raise ValueError(f"Expected at least one frequency band, got {frequency_bands}")
-    if not all([len(ch_name) < 8 for ch_name in raw.ch_names]):
-        warn(
-            "Try to use shorter channel names, since frequency band "
-            "annotation requires an estimated 4-8 chars depending on the "
-            "frequency ranges. Will truncate to 15 chars (mne max)."
-        )
     original_ch_names = raw.ch_names
     all_filtered = []
     for l_freq, h_freq in frequency_bands:
@@ -670,10 +664,9 @@ def filterbank(
         filtered.info = info
 
         # add frequency band annotation to channel names
-        # truncate to a max of 15 characters, since mne does not allow for more
         filtered.rename_channels(
             {
-                old_name: (old_name + f"_{l_freq}-{h_freq}")[-15:]
+                old_name: f"{old_name}_{l_freq}-{h_freq}"
                 for old_name in filtered.ch_names
             }
         )
