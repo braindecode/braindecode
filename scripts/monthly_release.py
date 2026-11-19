@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Monthly stable release helper for braindecode.
+"""Stable and development release versions for braindecode.
 
-Three subcommands, used by ``.github/workflows/monthly-release.yml``:
+Commands used by the publishing workflows:
 
 ``compute``
     Print ``current_version``, ``release_version``, ``next_dev_version``,
@@ -19,6 +19,12 @@ Three subcommands, used by ``.github/workflows/monthly-release.yml``:
     ``1.7.0dev0`` for a minor bump after ``1.6.0``) and insert a fresh
     ``Current X.Y.Z (GitHub)`` section at the top of ``docs/whats_new.rst``.
 
+``latest-tag``
+    Print the highest vX.Y.Z stable release tag, or an empty line for the first release.
+
+``dev-build``
+    Set the development version from the first-parent history of the checked-out commit.
+
 Bumping rules (``--bump``)
     ``minor`` (default): ``1.6.0`` -> next dev ``1.7.0dev0``.
     ``patch``:           ``1.6.0`` -> next dev ``1.6.1dev0``.
@@ -29,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -222,7 +229,43 @@ def insert_next_dev_section(changelog: Path, next_dev_base: str) -> None:
         insert_at = m2.start()
 
     section = EMPTY_SECTION_TEMPLATE.format(base=next_dev_base)
-    changelog.write_text(text[:insert_at] + section + text[insert_at:], encoding="utf-8")
+    changelog.write_text(
+        text[:insert_at] + section + text[insert_at:], encoding="utf-8"
+    )
+
+
+def latest_stable_tag() -> str:
+    """Return the highest version-sorted tag whose entire name is vX.Y.Z."""
+    tags = subprocess.check_output(
+        ["git", "tag", "--list", "--sort=-version:refname"], text=True
+    ).splitlines()
+    return next(
+        (tag for tag in tags if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag)), ""
+    )
+
+
+def dev_build(init_file: Path) -> str:
+    """Number master commits in order, above the former 32-bit hash suffixes."""
+    if (
+        subprocess.check_output(
+            ["git", "rev-parse", "--is-shallow-repository"], text=True
+        ).strip()
+        == "true"
+    ):
+        raise SystemExit("Development versions require a full Git history.")
+    version = Version(read_version(init_file))
+    if not version.is_devrelease:
+        raise SystemExit(
+            f"Expected a development version in {init_file}, got {version}."
+        )
+    count = int(
+        subprocess.check_output(
+            ["git", "rev-list", "--first-parent", "--count", "HEAD"]
+        )
+    )
+    build = f"{version.base_version}.dev{2**32 + count}"
+    write_version(init_file, build)
+    return build
 
 
 def cmd_compute(args: argparse.Namespace) -> int:
@@ -307,12 +350,21 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[paths, bump],
         help="Write the next .dev0 version and add a blank changelog section.",
     )
+    sub.add_parser("latest-tag", help="Print the highest stable release tag.")
+    dev = sub.add_parser("dev-build", help="Write this commit's development version.")
+    dev.add_argument("--init-file", type=Path, default=Path("braindecode/version.py"))
     return ap
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = build_parser()
     args = ap.parse_args(argv)
+    if args.cmd == "latest-tag":
+        print(latest_stable_tag())
+        return 0
+    if args.cmd == "dev-build":
+        print(dev_build(args.init_file))
+        return 0
     if args.cmd == "compute":
         return cmd_compute(args)
     if args.cmd == "finalize":

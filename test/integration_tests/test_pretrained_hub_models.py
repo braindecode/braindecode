@@ -359,41 +359,35 @@ def test_all_pretrained_models_load(
 
 
 @pytest.mark.parametrize(
-    "model_cls,repo_id",
+    "model_cls,repo_id,kwargs",
     [
-        ("BENDR", "braindecode/braindecode-bendr"),
-        ("BIOT", "braindecode/biot-pretrained-prest-16chs"),
-        # SignalJEPA_Contextual/PreLocal/PostLocal require extra kwargs
-        # (n_times, n_outputs, strict=False); exercised by their dedicated
-        # Test*Pretrained classes above.
-        ("Labram", "braindecode/labram-pretrained"),
-        ("MIRepNet", "braindecode/mirepnet-pretrained"),
-        ("STEEGFormer", "braindecode/STEEGFormer-small"),
-        ("BrainBERT", "braindecode/brainbert-pretrained"),
-        ("DuIN", "braindecode/duin-pretrained"),
+        ("BENDR", "braindecode/braindecode-bendr", {"n_outputs": 2}),
+        ("BIOT", "braindecode/biot-pretrained-prest-16chs", {}),
+        ("Labram", "braindecode/labram-pretrained", {}),
+        ("MIRepNet", "braindecode/mirepnet-pretrained", {}),
+        ("STEEGFormer", "braindecode/STEEGFormer-small", {"n_outputs": 2}),
+        ("BrainBERT", "braindecode/brainbert-pretrained", {}),
+        pytest.param(
+            "DuIN",
+            "braindecode/duin-pretrained",
+            {"revision": "18241249ceb6a23fe048211a11f7daa8401861d4"},
+            marks=pytest.mark.release_checkpoint,
+            id="released-DuIN",
+        ),
     ],
 )
-def test_pretrained_models_forward_pass(model_cls, repo_id, hub_cache_dir):
-    """Test forward pass for all classification-ready pre-trained models."""
+def test_pretrained_models_forward_pass(model_cls, repo_id, kwargs, hub_cache_dir):
+    """A released classification checkpoint produces finite logits."""
     import braindecode.models as models
 
-    cls = getattr(models, model_cls)
-    cache_dir = hub_cache_dir
-
-    # BENDR and STEEGFormer require/request n_outputs parameter
-    if model_cls == "BENDR":
-        model = cls.from_pretrained(repo_id, n_outputs=2, cache_dir=cache_dir)
-        x = torch.randn(2, model.n_chans, 256 * 5)
-    elif model_cls == "STEEGFormer":
-        model = cls.from_pretrained(repo_id, n_outputs=2, cache_dir=cache_dir)
-        x = torch.randn(2, model.n_chans, model.n_times)
-    else:
-        model = cls.from_pretrained(repo_id, cache_dir=cache_dir)
-        x = torch.randn(2, model.n_chans, model.n_times)
-
-    model.eval()
+    model = (
+        getattr(models, model_cls)
+        .from_pretrained(repo_id, cache_dir=hub_cache_dir, **kwargs)
+        .eval()
+    )
+    n_times = 256 * 5 if model_cls == "BENDR" else model.n_times
+    x = torch.randn(2, model.n_chans, n_times)
     with torch.no_grad():
-        out = model(x)
-
-    assert out.shape[0] == 2  # batch size
-    assert len(out.shape) == 2  # (batch, n_outputs)
+        logits = model(x)
+    assert logits.shape == (2, model.n_outputs)
+    assert torch.isfinite(logits).all()
