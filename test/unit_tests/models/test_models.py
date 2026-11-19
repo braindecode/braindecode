@@ -12,6 +12,7 @@
 import inspect
 import math
 import os
+import pickle
 import re
 import subprocess
 import sys
@@ -1015,6 +1016,59 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
 
     y_pred1 = model(X)  # 3D inputs
     assert y_pred1.shape == (n_examples, n_classes)
+
+
+def test_attnsleep_attention_query_is_not_normalized():
+    # The authors' code attends with the raw query, so the norm of the residual
+    # attention block must not change the output.
+    model = AttnSleep(sfreq=100, n_outputs=5, input_window_seconds=30, d_model=80)
+    model.eval()
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        expected = model(x)
+        for layer in model.feature_extractor[1].layers:
+            layer.residual_self_attn.norm.weight.fill_(2.0)
+            layer.residual_self_attn.norm.bias.fill_(1.0)
+        actual = model(x)
+    torch.testing.assert_close(actual, expected)
+
+
+def test_attnsleep_attn_query_norm_restores_previous_output():
+    # Before 2.1 the attention got the normalized query, attn(norm(x), key,
+    # value). A hook on the default model rebuilds that call.
+    kwargs = dict(sfreq=100, n_outputs=5, input_window_seconds=30, d_model=80)
+    model = AttnSleep(**kwargs).eval()
+    legacy = AttnSleep(**kwargs, attn_query_norm=True).eval()
+    legacy.load_state_dict(model.state_dict())
+    for layer in model.feature_extractor[1].layers:
+        norm = layer.residual_self_attn.norm
+        layer.residual_self_attn.fn_attn.register_forward_pre_hook(
+            lambda _, args, norm=norm: (norm(args[0]), *args[1:])
+        )
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        torch.testing.assert_close(legacy(x), model(x))
+
+
+def test_attnsleep_saved_without_query_norm_setting_keeps_logits():
+    previous = AttnSleep(
+        sfreq=100, n_outputs=5, input_window_seconds=30, attn_query_norm=True
+    ).eval()
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        expected = previous(x)
+        config = previous.get_config()
+        del config["attn_query_norm"]
+        restored = AttnSleep.from_config(config).eval()
+        restored.load_state_dict(previous.state_dict(), strict=True)
+        torch.testing.assert_close(restored(x), expected)
+
+        # Full-model saves before the switch have no per-layer flag.
+        for layer in previous.feature_extractor[1].layers:
+            del layer.residual_self_attn.norm_query
+        restored = pickle.loads(pickle.dumps(previous))
+        torch.testing.assert_close(restored(x), expected)
+        torch.testing.assert_close(torch.jit.script(restored)(x), expected)
 
 
 def test_attn_sleep_requires_signal_geometry():
