@@ -5,6 +5,7 @@
 import copy
 import json
 import os
+import re
 import sys
 import warnings
 from contextlib import nullcontext
@@ -43,6 +44,7 @@ from braindecode.models import (
     DuIN,
     Labram,
     PopulationTransformer,
+    Pratibha2,
     SleepFM,
     SleepFMStager,
     STEEGFormer,
@@ -2052,6 +2054,166 @@ def test_axon_too_short_window_raises():
 def test_axon_warns_on_non_200_hz():
     with pytest.warns(UserWarning, match="200 Hz"):
         AXON(chs_info=_axon_chs(), n_outputs=2, sfreq=250.0, **_AXON_SMALL)
+
+
+# ==============================================================================
+# Tests for Pratibha2 Model
+# ==============================================================================
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_pratibha2_pretrained_loads():
+    chs_info = [{"ch_name": n, "kind": "eeg"} for n in ["Fz", "C3", "Cz", "C4", "Pz"]]
+    model = Pratibha2.from_pretrained(
+        "MannasAI/pratibha-2", chs_info=chs_info, n_outputs=2, n_times=1000
+    )
+    out = model(torch.randn(2, 5, 1000))
+    assert out.shape == (2, 2)
+
+
+_PRATIBHA2_SMALL = dict(embed_dim=32, n_freqs=2, depth=2, num_heads=4)
+_PRATIBHA2_NAMES = ["Fp1", "Fp2", "F3", "F4", "C3", "Cz", "C4", "P3", "P4", "O1", "O2"]
+
+
+@pytest.fixture
+def pratibha2_bank(tmp_path, monkeypatch):
+    """A small pretraining table in place of the Hub download: standard_1005
+    positions (montage frame) and two upper-case variants at other positions,
+    as in the released table."""
+    pos = (
+        mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
+        .get_positions()["ch_pos"]
+    )
+    bank = {n: [float(v) for v in pos[n]] for n in _PRATIBHA2_NAMES + ["AFz", "Iz"]}
+    bank["AFZ"] = [0.001, 0.0773, 0.0216]
+    bank["IZ"] = [0.0, -0.1144, -0.0292]
+    bank["E1"] = [0.05, 0.05, 0.05]
+    (tmp_path / "pratibha2_positions.json").write_text(json.dumps(bank))
+    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
+    return bank
+
+
+def _pratibha2_model(names=_PRATIBHA2_NAMES, **kw):
+    torch.manual_seed(0)
+    chs = [{"ch_name": n, "kind": "eeg"} for n in names]
+    return Pratibha2(
+        chs_info=chs, n_outputs=3, sfreq=200.0, **{**_PRATIBHA2_SMALL, **kw}
+    ).eval()
+
+
+def test_pratibha2_channel_order_does_not_matter(pratibha2_bank):
+    """Positions travel with the names, so permuting channels together with
+    chs_info must leave the pooled embedding unchanged."""
+    model = _pratibha2_model()
+    perm = torch.randperm(len(_PRATIBHA2_NAMES))
+    permuted = _pratibha2_model([_PRATIBHA2_NAMES[i] for i in perm])
+    permuted.load_state_dict(model.state_dict())
+    x = torch.randn(2, len(_PRATIBHA2_NAMES), 1000)
+    with torch.no_grad():
+        a = model(x, return_features=True)["features"]
+        b = permuted(x[:, perm], return_features=True)["features"]
+    torch.testing.assert_close(a, b, atol=1e-5, rtol=1e-5)
+
+
+def test_pratibha2_exact_name_wins_over_case(pratibha2_bank):
+    """The table has distinct AFz/AFZ and Iz/IZ; each name keeps its own entry."""
+    model = _pratibha2_model(["AFz", "AFZ", "Iz", "IZ", "E1"])
+    expected = torch.tensor(
+        [pratibha2_bank[n] for n in ["AFz", "AFZ", "Iz", "IZ", "E1"]]
+    )
+    torch.testing.assert_close(model.encoder.channel_positions, 100.0 * expected)
+
+
+def test_pratibha2_names_outside_table_take_standard_1005_montage_frame(pratibha2_bank):
+    """10-05 names missing from the table take MNE's montage-frame position (cm);
+    case, the EEG prefix and legacy aliases go through the shared resolver."""
+    pos = (
+        mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
+        .get_positions()["ch_pos"]
+    )
+    model = _pratibha2_model(["FT9", "EEG fc3", "T3"])
+    expected = torch.stack(
+        [torch.as_tensor(pos[n], dtype=torch.float32) for n in ("FT9", "FC3", "T7")]
+    )
+    torch.testing.assert_close(model.encoder.channel_positions, 100.0 * expected)
+
+
+def test_pratibha2_unknown_channel_raises_or_drops(pratibha2_bank):
+    names = ["Fp1", "NOT_A_CHANNEL", "Cz"]
+    with pytest.raises(ValueError, match="NOT_A_CHANNEL"):
+        _pratibha2_model(names)
+    with pytest.warns(UserWarning, match="NOT_A_CHANNEL"):
+        model = _pratibha2_model(names, on_missing="drop")
+    x = torch.randn(2, 3, 600)
+    with torch.no_grad():
+        assert model.encode(x).shape[1] == 2
+        torch.testing.assert_close(
+            model.encode(x), _pratibha2_model(["Fp1", "Cz"]).encode(x[:, [0, 2]])
+        )
+
+
+def test_pratibha2_loads_original_parameter_names(pratibha2_bank):
+    """Checkpoints of the original release (``transformers`` layout, with its
+    stored frequency matrix) load strictly and give the same weights."""
+    source = _pratibha2_model()
+    to_original = (
+        (r"encoder\.patch_embed\.", "patch_embed.linear."),
+        (r"encoder\.pos_enc\.learned_linear\.", "pos_enc.learned_linear.0."),
+        (r"encoder\.pos_enc\.learned_norm\.", "pos_enc.learned_linear.2."),
+        (r"encoder\.pos_enc\.", "pos_enc."),
+        (r"encoder\.blocks\.(\d+)\.norm1\.", r"encoder.layers.\1.pre_attn_norm."),
+        (r"encoder\.blocks\.(\d+)\.attn\.qkv\.", r"encoder.layers.\1.attn.qkv_proj."),
+        (r"encoder\.blocks\.(\d+)\.attn\.proj\.", r"encoder.layers.\1.attn.out_proj."),
+        (r"encoder\.blocks\.(\d+)\.norm2\.", r"encoder.layers.\1.pre_ffn_norm."),
+        (r"encoder\.blocks\.(\d+)\.mlp\.", r"encoder.layers.\1.ffn."),
+    )
+    original = {}
+    for key, value in source.state_dict().items():
+        for pattern, new in to_original:
+            if re.match(pattern, key):
+                key = re.sub(pattern, new, key, count=1)
+                break
+        original[key] = value
+    original["pos_enc.freq_matrix"] = source.encoder.pos_enc.freq_matrix
+    assert "encoder.layers.0.attn.qkv_proj.weight" in original
+
+    target = _pratibha2_model()
+    with torch.no_grad():
+        for param in target.parameters():
+            param.add_(1.0)
+    target.load_state_dict(original, strict=True)
+    for key, value in source.state_dict().items():
+        torch.testing.assert_close(target.state_dict()[key], value, rtol=0, atol=0)
+
+
+def test_pratibha2_weights_load_onto_another_montage(pratibha2_bank):
+    """Channel positions are not stored in the weights."""
+    source = _pratibha2_model()
+    target = _pratibha2_model(["C3", "Cz", "C4", "FC3", "CP4"])
+    target.load_state_dict(source.state_dict(), strict=True)
+    state = source.state_dict()
+    assert "encoder.channel_positions" not in state
+    assert "encoder.pos_enc.freq_matrix" not in state
+
+
+def test_pratibha2_input_unit_does_not_matter(pratibha2_bank):
+    """Microvolts and volts (MNE's default) give the same output."""
+    model = _pratibha2_model()
+    x_uv = 20.0 * torch.randn(2, len(_PRATIBHA2_NAMES), 600) + 5.0
+    with torch.no_grad():
+        torch.testing.assert_close(model(x_uv), model(x_uv * 1e-6), atol=1e-4, rtol=1e-4)
+
+
+def test_pratibha2_too_short_window_raises(pratibha2_bank):
+    with pytest.raises(ValueError, match="patch_size"):
+        _pratibha2_model(n_times=100)
+
+
+def test_pratibha2_warns_on_non_200_hz(pratibha2_bank):
+    chs = [{"ch_name": n, "kind": "eeg"} for n in _PRATIBHA2_NAMES]
+    with pytest.warns(UserWarning, match="200 Hz"):
+        Pratibha2(chs_info=chs, n_outputs=2, sfreq=250.0, **_PRATIBHA2_SMALL)
 
 
 @pytest.fixture

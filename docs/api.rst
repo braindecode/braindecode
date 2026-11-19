@@ -218,6 +218,7 @@ interface for all EEG models and can derive variable names when needed.
      NICE
      PBT
     PopulationTransformer
+     Pratibha2
      REVE
      SCCNet
      SeizureTransformer

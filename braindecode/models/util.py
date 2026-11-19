@@ -630,6 +630,7 @@ models_mandatory_parameters: list[
 ] = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("AXON", ["chs_info", "n_outputs"], {"sfreq": 200.0, "n_times": 1000}),
+    ("Pratibha2", ["chs_info", "n_outputs"], {"sfreq": 200.0, "n_times": 1000}),
     (
         "BaRISTA",
         ["chs_info", "n_outputs", "n_times"],

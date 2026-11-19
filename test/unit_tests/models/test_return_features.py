@@ -36,6 +36,7 @@ from braindecode.models import (
     MIRepNet,
     MtReNIRS,
     PopulationTransformer,
+    Pratibha2,
     SignalJEPA,
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
@@ -97,6 +98,13 @@ _MODELS = [
         {"chs_info": _chs(), "embed_dim": 64, "depth": 2, "num_heads": 4},
         False,
         id="AXON",
+    ),
+    pytest.param(
+        Pratibha2,
+        N_CHANS,
+        {"chs_info": _chs(), "embed_dim": 32, "n_freqs": 2, "depth": 2, "num_heads": 4},
+        False,
+        id="Pratibha2",
     ),
     pytest.param(
         REVE,

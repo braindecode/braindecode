@@ -28,6 +28,13 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.Pratibha2` (PRATIBHA-2, formerly MANAS-2), a
+  dense-attention EEG foundation model pretrained with raw-band hybrid masked
+  autoencoding and constrained reconstruction, with pretrained weights on the
+  Hugging Face Hub; :class:`braindecode.models.reve.RevePositionBank` takes the
+  cached file name, ``fname``, so other models can keep their position table
+  next to REVE's (by `Mahir Jain`_).
+
 - Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
   between recording descriptions and window metadata, and recording-level subset
   selection (:gh:`1596` by `Daria Agafonova`_).
