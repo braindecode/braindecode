@@ -30,24 +30,24 @@ def test_network():
 def test_slow_network():
     pass
 
-# conftest marks REVE-parametrized tests as network.
-@pytest.mark.slow
+# Catalog cases with a model name work without network access.
 @pytest.mark.parametrize("model", ["REVE"])
-def test_slow_param(model):
+def test_catalog(model):
     pass
 """
 
-NETWORK = {"test_network", "test_slow_network", "test_slow_param[REVE]"}
-ALL = {"test_plain", "test_slow"} | NETWORK
+NETWORK = {"test_network", "test_slow_network"}
+OFFLINE = {"test_plain", "test_catalog[REVE]"}
+ALL = OFFLINE | {"test_slow"} | NETWORK
 
 
 @pytest.mark.parametrize(
     "args, passed, skipped",
     [
-        ([], {"test_plain"}, NETWORK),
+        ([], OFFLINE, NETWORK),
         # Network tests that are also slow (the Hub module) need no --run-slow.
-        (["--run-network"], {"test_plain"} | NETWORK, set()),
-        (["--run-slow"], {"test_plain", "test_slow"}, NETWORK),
+        (["--run-network"], OFFLINE | NETWORK, set()),
+        (["--run-slow"], OFFLINE | {"test_slow"}, NETWORK),
         (["-m", "slow"], {"test_slow"}, NETWORK - {"test_network"}),
         (["--run-slow", "--run-network"], ALL, set()),
     ],

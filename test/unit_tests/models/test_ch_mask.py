@@ -11,8 +11,10 @@ import mne
 import numpy as np
 import pytest
 import torch
+import torch.nn.functional as F
 
 from braindecode.models import (
+    BBL,
     BIOT,
     CORTEG,
     DIVER1,
@@ -404,11 +406,7 @@ _FIXED_HEADS = {
 
 
 @pytest.mark.parametrize("name", list(_FIXED_HEADS))
-def test_ch_mask_is_refused_by_fixed_size_heads(name, tmp_path, monkeypatch):
-    # REVE reads its position bank at construction: a local one keeps
-    # "REVE-flatten" offline (conftest marks only the "REVE" key as network).
-    (tmp_path / "reve_positions.json").write_text('{"Cz": [0.0, 0.0, 0.09]}')
-    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
+def test_ch_mask_is_refused_by_fixed_size_heads(name):
     model, n_times = _FIXED_HEADS[name]()
     x = torch.randn(len(N_REAL), 3, n_times)
     mask = torch.arange(3) < torch.tensor(N_REAL)[:, None]
@@ -683,3 +681,52 @@ def test_meggpt_no_corruption_and_false_mask_match_including_rng_and_grad(script
     for key in grads[0]:
         torch.testing.assert_close(grads[0][key], grads[1][key], rtol=0, atol=0)
     assert x.grad is None
+
+
+def test_bbl_raw_time_mask_training_before_context_and_channel_padding():
+    """A downstream clean-latent matching smoke, not an author pretext loss.
+    Corruption happens before conv/context; padding and hidden inputs send no
+    gradient, while the real backbone receives finite nonzero gradients."""
+    torch.manual_seed(0)
+    model = BBL(
+        n_chans=3, n_outputs=2, n_times=39, n_sensors=5, n_datasets=2,
+        n_subjects=4, model_dim=8, subject_dim=2, n_filters=2,
+    ).train()
+    clean = torch.randn(2, 3, 39)
+    real = torch.tensor([[True, True, False], [True, True, True]])
+    hide = torch.zeros(2, 39, dtype=torch.bool)
+    hide[0, 8:19] = True
+    hide[1, 20:33] = True
+    targets = model(clean, ch_mask=real, return_features=True, return_temporal_features=True)["temporal_features"].detach().clone()
+    selected = ~real[:, :, None] | hide[:, None, :]
+    corrupt = clean.masked_fill(selected, float("nan")).requires_grad_(True)
+    projector_inputs, encoder_inputs = [], []
+    h1 = model.projector.register_forward_pre_hook(lambda m, a: projector_inputs.append(a[0].detach().clone()))
+    h2 = model.encoder.register_forward_pre_hook(lambda m, a: encoder_inputs.append(a[0].detach().clone()))
+    out = model(corrupt, ch_mask=real, temporal_mask=hide, return_features=True, return_temporal_features=True)
+    h1.remove()
+    h2.remove()
+    expected_input = F.pad(clean.masked_fill(selected, 0.0), (0, 0, 0, 2))
+    assert torch.equal(projector_inputs[0], expected_input)
+    assert torch.isfinite(encoder_inputs[0]).all()
+    assert torch.isnan(corrupt.detach()[selected.expand_as(corrupt)]).all()
+    reference = model(clean.masked_fill(selected, 0.0), return_features=True, return_temporal_features=True)
+    assert torch.equal(out["temporal_features"], reference["temporal_features"])
+    # Padded values cannot affect the temporal representation.
+    other_padding = corrupt.detach().masked_fill(~real[:, :, None], 12345.0)
+    other = model(other_padding, ch_mask=real, temporal_mask=hide, return_features=True, return_temporal_features=True)
+    assert torch.equal(out["temporal_features"], other["temporal_features"])
+    loss = F.mse_loss(out["temporal_features"], targets)
+    assert torch.isfinite(loss) and loss > 0
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    optimizer.zero_grad()
+    loss.backward()
+    ignored = selected.expand_as(corrupt)
+    assert torch.equal(corrupt.grad[ignored], torch.zeros_like(corrupt.grad[ignored]))
+    assert torch.isfinite(corrupt.grad).all()
+    backbone = [p for p in [*model.projector.parameters(), *model.encoder.parameters()] if p.grad is not None]
+    assert backbone and all(torch.isfinite(p.grad).all() for p in backbone)
+    assert any(p.grad.abs().sum() > 0 for p in backbone)
+    before = model.projector[0].weight.detach().clone()
+    optimizer.step()
+    assert not torch.equal(before, model.projector[0].weight)

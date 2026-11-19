@@ -365,8 +365,8 @@ class REVE(EEGModuleMixin, nn.Module):
         self.on_missing = on_missing
 
         self._position_bank = RevePositionBank()
-        self.default_pos = None
-        self.channel_index = None  # input channels kept by on_missing (None: all)
+        self.register_buffer("default_pos", None, persistent=False)
+        self.register_buffer("channel_index", None, persistent=False)
         self._n_pos_chans: Optional[int] = None
         if self._chs_info is not None:
             bank = self._position_bank
@@ -559,8 +559,7 @@ class REVE(EEGModuleMixin, nn.Module):
             attn_mask = token_mask[:, None, None, :]
 
         pos = FourierEmb4D.add_time_patch(pos, n_patches)
-        # Positions stay in float32 for the Fourier features; the embedding
-        # follows the signal's dtype.
+        # The Fourier phase uses at least float32; the output follows the signal.
         pos_embed = self.ln(
             self.fourier4d(pos).to(eeg.dtype) + self.mlp4d(pos.to(eeg.dtype))
         )
@@ -780,14 +779,15 @@ class FourierEmb4D(nn.Module):
         self.margin = margin
 
     def forward(self, positions_: torch.Tensor) -> torch.Tensor:
-        # In float32 with autocast off: Intel Gaudi (HPU) autocast also downcasts
-        # the position * frequency products to bf16 before sin/cos (~3 % off).
-        if torch.jit.is_scripting():  # TorchScript needs a constant autocast device
-            emb = self._embed(positions_.float()).to(positions_.dtype)
+        # Keep the phase products in at least float32. HPU autocast would
+        # otherwise downcast them before sin/cos.
+        work = positions_ if positions_.dtype == torch.float64 else positions_.float()
+        if torch.jit.is_scripting():
+            emb = self._embed(work)
         else:
             with torch.autocast(device_type=positions_.device.type, enabled=False):
-                emb = self._embed(positions_.float()).to(positions_.dtype)
-        return emb
+                emb = self._embed(work)
+        return emb.to(positions_.dtype)
 
     def _embed(self, positions_: torch.Tensor) -> torch.Tensor:
         positions = positions_.clone()
@@ -795,7 +795,9 @@ class FourierEmb4D(nn.Module):
         input_shape = positions.shape
         batch_dims = list(input_shape[:-1])
 
-        freqs_w = torch.arange(self.freqs).to(positions)
+        freqs_w = torch.arange(
+            self.freqs, device=positions.device, dtype=positions.dtype
+        )
         freqs_z = freqs_w[:, None]
         freqs_y = freqs_z[:, None]
         freqs_x = freqs_y[:, None]
@@ -853,9 +855,8 @@ class FourierEmb4D(nn.Module):
             1, 1, num_patches, 1
         )  # Shape: (batch, nchans, num_patches, 3)
         # Generate time values with the specified increment
-        time_values = torch.arange(
-            0, num_patches, 1, device=pos.device
-        ).float()  # Shape: (num_patches,)
+        phase_dtype = torch.float64 if pos.dtype == torch.float64 else torch.float32
+        time_values = torch.arange(num_patches, device=pos.device, dtype=phase_dtype)
         time_values = time_values.view(1, 1, num_patches, 1).expand(
             batch, nchans, num_patches, 1
         )  # (batch, nchans, num_patches, 1)

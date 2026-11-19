@@ -47,12 +47,6 @@ def pytest_collection_modifyitems(config, items):
     run_slow = config.getoption("--run-slow") or "slow" in config.option.markexpr
     deselected = []
     for item in items:
-        callspec = getattr(item, "callspec", None)
-        params = getattr(callspec, "params", {}).values()
-        if any(_is_reve_param(param) for param in params):
-            item.add_marker(pytest.mark.network)
-            item.add_marker(pytest.mark.huggingface)
-
         # Network tests, even slow ones (the Hub module), follow --run-network alone.
         if "network" in item.keywords:
             if not run_network:
@@ -63,13 +57,49 @@ def pytest_collection_modifyitems(config, items):
     items[:] = [item for item in items if item not in deselected]
 
 
-def _is_reve_param(param):
-    """Return whether a parametrized value identifies the REVE model."""
-    if isinstance(param, str):
-        return param == "REVE"
+@pytest.fixture(scope="session", autouse=True)
+def offline_reve_positions(request, tmp_path_factory):
+    """Use one position bank for construction and reload, including module fixtures."""
+    if request.config.getoption("--run-network"):
+        yield
+        return
 
-    name = getattr(param, "__name__", None)
-    if name == "REVE":
-        return True
+    import json
 
-    return isinstance(param, (tuple, list)) and len(param) > 0 and param[0] == "REVE"
+    import mne
+
+    from braindecode.util import resolve_montage_name
+
+    positions = {}
+    for name in (resolve_montage_name("standard_1005"), "GSN-HydroCel-128"):
+        montage = mne.channels.make_standard_montage(name)
+        positions.update(montage.get_positions()["ch_pos"])
+    folder = tmp_path_factory.mktemp("reve_positions")
+    (folder / "reve_positions.json").write_text(
+        json.dumps({name: xyz.tolist() for name, xyz in positions.items()})
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("REVE_POSITIONS_PATH", str(folder))
+        yield
+
+
+@pytest.fixture
+def eeg_recordings():
+    """Two independent recordings with EEG, EOG and two annotated trials."""
+    import mne
+    import numpy as np
+
+    from braindecode.datasets import BaseConcatDataset, RawDataset
+
+    rng = np.random.default_rng(42)
+    info = mne.create_info(["C3", "Cz", "C4", "EOG"], 250, ["eeg"] * 3 + ["eog"])
+    recordings = []
+    for subject in (1, 2):
+        raw = mne.io.RawArray(
+            rng.normal(scale=1e-6, size=(4, 3000)), info, verbose=False
+        )
+        raw.set_annotations(mne.Annotations([1.0, 7.0], [2.0, 2.0], ["left", "right"]))
+        recordings.append(
+            RawDataset(raw, {"subject": subject, "session": "0", "run": "0"})
+        )
+    return BaseConcatDataset(recordings)

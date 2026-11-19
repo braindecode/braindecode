@@ -16,7 +16,7 @@ import pandas as pd
 import pytest
 from numpy import multiply
 
-from braindecode.datasets import BaseConcatDataset, MOABBDataset, RawDataset
+from braindecode.datasets import BaseConcatDataset, RawDataset
 from braindecode.datautil.serialization import load_concat_dataset
 from braindecode.preprocessing.preprocess import (
     Preprocessor,
@@ -33,41 +33,22 @@ from braindecode.preprocessing.windowers import (
     create_windows_from_events,
 )
 
-# We can't use fixtures with scope='module' as the dataset objects are modified
-# inplace during preprocessing. To avoid the long setup time caused by calling
-# the dataset/windowing functions multiple times, we instantiate the dataset
-# objects once and deep-copy them in fixture.
-raw_ds = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[1, 2])
-windows_ds = create_fixed_length_windows(
-    raw_ds,
-    start_offset_samples=100,
-    stop_offset_samples=None,
-    window_size_samples=1000,
-    window_stride_samples=1000,
-    drop_last_window=True,
-    mapping=None,
-    preload=True,
-)
-mne_windows_ds = create_windows_from_events(
-    raw_ds,
-    preload=True,
-    use_mne_epochs=True,
-)
+
+@pytest.fixture
+def windows_concat_ds(eeg_recordings):
+    return create_fixed_length_windows(
+        eeg_recordings,
+        start_offset_samples=100,
+        window_size_samples=1000,
+        window_stride_samples=1000,
+        on_last_window="drop",
+        preload=True,
+    )
 
 
 @pytest.fixture
-def base_concat_ds():
-    return copy.deepcopy(raw_ds)
-
-
-@pytest.fixture
-def windows_concat_ds():
-    return copy.deepcopy(windows_ds)
-
-
-@pytest.fixture
-def mne_windows_concat_ds():
-    return copy.deepcopy(mne_windows_ds)
+def mne_windows_concat_ds(eeg_recordings):
+    return create_windows_from_events(eeg_recordings, preload=True, use_mne_epochs=True)
 
 
 def modify_windows_object(epochs, factor=1):
@@ -89,20 +70,20 @@ def test_no_raw_or_epochs():
         preprocess(ds, ["dummy", "dummy"])
 
 
-def test_method_not_available(base_concat_ds):
+def test_method_not_available(eeg_recordings):
     preprocessors = [
         Preprocessor(
             "this_method_is_not_real",
         )
     ]
     with pytest.raises(AttributeError):
-        preprocess(base_concat_ds, preprocessors)
+        preprocess(eeg_recordings, preprocessors)
 
 
-def test_preprocess_raw_str(base_concat_ds):
+def test_preprocess_raw_str(eeg_recordings):
     preprocessors = [Preprocessor("crop", tmax=10, include_tmax=False)]
-    preprocess(base_concat_ds, preprocessors)
-    assert len(base_concat_ds.datasets[0].raw.times) == 2500
+    preprocess(eeg_recordings, preprocessors)
+    assert len(eeg_recordings.datasets[0].raw.times) == 2500
     assert all(
         ds.raw_preproc_kwargs
         == [
@@ -113,7 +94,7 @@ def test_preprocess_raw_str(base_concat_ds):
                 "apply_on_array": False,
             },
         ]
-        for ds in base_concat_ds.datasets
+        for ds in eeg_recordings.datasets
     )
 
 
@@ -169,21 +150,6 @@ def test_preprocess_mne_windows_str(mne_windows_concat_ds):
     )
 
 
-def test_preprocess_raw_callable_on_array(base_concat_ds):
-    # Case tested in test_zscore_continuous
-    pass
-
-
-def test_preprocess_windows_callable_on_array(windows_concat_ds):
-    # Case tested in test_zscore_windows
-    pass
-
-
-def test_preprocess_raw_callable_on_object(base_concat_ds):
-    # Case tested in test_filterbank
-    pass
-
-
 def test_preprocess_windows_callable_on_object(windows_concat_ds):
     factor = 10
     preprocessors = [
@@ -196,7 +162,7 @@ def test_preprocess_windows_callable_on_object(windows_concat_ds):
     ):
         preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(
-        windows_concat_ds[0][0], raw_window * factor, rtol=1e-4, atol=1e-4
+        windows_concat_ds[0][0], raw_window * factor, rtol=1e-4, atol=1e-12
     )
 
 
@@ -212,20 +178,20 @@ def test_preprocess_mne_windows_callable_on_object(mne_windows_concat_ds):
         warnings.simplefilter("error")
         preprocess(mne_windows_concat_ds, preprocessors)
     np.testing.assert_allclose(
-        mne_windows_concat_ds[0][0], raw_window * factor, rtol=1e-4, atol=1e-4
+        mne_windows_concat_ds[0][0], raw_window * factor, rtol=1e-4, atol=1e-12
     )
 
 
-def test_scale_continuous(base_concat_ds):
+def test_scale_continuous(eeg_recordings):
     factor = 1e6
     preprocessors = [
         Preprocessor("pick_types", eeg=True, meg=False, stim=False),
         Preprocessor(lambda data: multiply(data, factor)),
     ]
-    raw_timepoint = base_concat_ds[0][0][:22]  # only keep EEG channels
-    preprocess(base_concat_ds, preprocessors)
+    raw_timepoint = eeg_recordings[0][0][:3]  # C3, Cz and C4
+    preprocess(eeg_recordings, preprocessors)
     np.testing.assert_allclose(
-        base_concat_ds[0][0], raw_timepoint * factor, rtol=1e-4, atol=1e-4
+        eeg_recordings[0][0], raw_timepoint * factor, rtol=1e-4, atol=1e-12
     )
 
     assert all(
@@ -236,7 +202,7 @@ def test_scale_continuous(base_concat_ds):
             "apply_on_array": False,
         }
         in ds.raw_preproc_kwargs
-        for ds in base_concat_ds.datasets
+        for ds in eeg_recordings.datasets
     )
 
 
@@ -246,14 +212,14 @@ def test_scale_windows(windows_concat_ds):
         Preprocessor("pick_types", eeg=True, meg=False, stim=False),
         Preprocessor(lambda data: multiply(data, factor)),
     ]
-    raw_window = windows_concat_ds[0][0][:22]  # only keep EEG channels
+    raw_window = windows_concat_ds[0][0][:3]  # C3, Cz and C4
     with pytest.warns(
         UserWarning,
         match="Applying preprocessors .* to the mne.io.Raw of an EEGWindowsDataset.",
     ):
         preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(
-        windows_concat_ds[0][0], raw_window * factor, rtol=1e-4, atol=1e-4
+        windows_concat_ds[0][0], raw_window * factor, rtol=1e-4, atol=1e-12
     )
 
     assert all(
@@ -389,8 +355,8 @@ def test_exponential_running_init_block_size(mock_data):
     )
 
 
-def test_filterbank(base_concat_ds):
-    base_concat_ds = base_concat_ds.split([[0]])["0"]
+def test_filterbank(eeg_recordings):
+    eeg_recordings = eeg_recordings.split([[0]])["0"]
     preprocessors = [
         Preprocessor("pick_channels", ch_names=sorted(["C4", "Cz"]), ordered=True),
         Preprocessor(
@@ -400,16 +366,16 @@ def test_filterbank(base_concat_ds):
             apply_on_array=False,
         ),
     ]
-    preprocess(base_concat_ds, preprocessors)
-    for x, y in base_concat_ds:
+    preprocess(eeg_recordings, preprocessors)
+    for x, y in eeg_recordings:
         break
     assert x.shape[0] == 8
     freq_band_annots = [
-        ch.split("_")[-1] for ch in base_concat_ds.datasets[0].raw.ch_names if "_" in ch
+        ch.split("_")[-1] for ch in eeg_recordings.datasets[0].raw.ch_names if "_" in ch
     ]
     assert len(np.unique(freq_band_annots)) == 3
     np.testing.assert_array_equal(
-        base_concat_ds.datasets[0].raw.ch_names,
+        eeg_recordings.datasets[0].raw.ch_names,
         [
             "C4",
             "C4_0-4",
@@ -440,12 +406,12 @@ def test_filterbank(base_concat_ds):
                 "apply_on_array": False,
             },
         ]
-        for ds in base_concat_ds.datasets
+        for ds in eeg_recordings.datasets
     )
 
 
-def test_filterbank_order_channels_by_freq(base_concat_ds):
-    base_concat_ds = base_concat_ds.split([[0]])["0"]
+def test_filterbank_order_channels_by_freq(eeg_recordings):
+    eeg_recordings = eeg_recordings.split([[0]])["0"]
     preprocessors = [
         Preprocessor("pick_channels", ch_names=sorted(["C4", "Cz"]), ordered=True),
         Preprocessor(
@@ -456,9 +422,9 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
             apply_on_array=False,
         ),
     ]
-    preprocess(base_concat_ds, preprocessors)
+    preprocess(eeg_recordings, preprocessors)
     np.testing.assert_array_equal(
-        base_concat_ds.datasets[0].raw.ch_names,
+        eeg_recordings.datasets[0].raw.ch_names,
         ["C4", "Cz", "C4_0-4", "Cz_0-4", "C4_4-8", "Cz_4-8", "C4_8-13", "Cz_8-13"],
     )
     assert all(
@@ -481,7 +447,7 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
                 "apply_on_array": False,
             },
         ]
-        for ds in base_concat_ds.datasets
+        for ds in eeg_recordings.datasets
     )
 
 
@@ -610,33 +576,33 @@ def test_filterbank_waveform_metadata_reference():
     np.testing.assert_allclose(windows[0][3], expected_pos)
 
 
-def test_replace_inplace(base_concat_ds):
-    base_concat_ds2 = copy.deepcopy(base_concat_ds)
-    for i in range(len(base_concat_ds2.datasets)):
-        base_concat_ds2.datasets[i].raw.crop(0, 10, include_tmax=False)
-    _replace_inplace(base_concat_ds, base_concat_ds2)
+def test_replace_inplace(eeg_recordings):
+    eeg_recordings2 = copy.deepcopy(eeg_recordings)
+    for i in range(len(eeg_recordings2.datasets)):
+        eeg_recordings2.datasets[i].raw.crop(0, 10, include_tmax=False)
+    _replace_inplace(eeg_recordings, eeg_recordings2)
 
-    assert all(len(ds.raw.times) == 2500 for ds in base_concat_ds.datasets)
+    assert all(len(ds.raw.times) == 2500 for ds in eeg_recordings.datasets)
 
 
-def test_replace_inplace_updates_cumulative_sizes(base_concat_ds):
+def test_replace_inplace_updates_cumulative_sizes(eeg_recordings):
     """Test that _replace_inplace correctly updates cumulative_sizes after dataset replacement.
 
     This test addresses the bug where cumulative_sizes was not recomputed after replacing
     datasets that have different lengths than the originals (e.g., after cropping).
     """
     # Store original cumulative sizes and dataset lengths
-    original_cumulative_sizes = base_concat_ds.cumulative_sizes.copy()
-    original_lengths = [len(ds) for ds in base_concat_ds.datasets]
+    original_cumulative_sizes = eeg_recordings.cumulative_sizes.copy()
+    original_lengths = [len(ds) for ds in eeg_recordings.datasets]
 
     # Create a copy and crop the datasets to much smaller sizes
-    base_concat_ds2 = copy.deepcopy(base_concat_ds)
-    for i in range(len(base_concat_ds2.datasets)):
+    eeg_recordings2 = copy.deepcopy(eeg_recordings)
+    for i in range(len(eeg_recordings2.datasets)):
         # Crop to 2 seconds (at 250 Hz = 500 samples)
-        base_concat_ds2.datasets[i].raw.crop(0, 2, include_tmax=False)
+        eeg_recordings2.datasets[i].raw.crop(0, 2, include_tmax=False)
 
     # Get the new expected lengths after cropping
-    new_lengths = [len(ds) for ds in base_concat_ds2.datasets]
+    new_lengths = [len(ds) for ds in eeg_recordings2.datasets]
 
     # Calculate expected cumulative sizes manually
     expected_cumulative_sizes = []
@@ -646,34 +612,34 @@ def test_replace_inplace_updates_cumulative_sizes(base_concat_ds):
         expected_cumulative_sizes.append(cumsum)
 
     # Replace datasets in place
-    _replace_inplace(base_concat_ds, base_concat_ds2)
+    _replace_inplace(eeg_recordings, eeg_recordings2)
 
     # Verify that cumulative_sizes has been updated correctly
-    assert base_concat_ds.cumulative_sizes == expected_cumulative_sizes, (
+    assert eeg_recordings.cumulative_sizes == expected_cumulative_sizes, (
         f"cumulative_sizes not updated correctly. "
-        f"Expected {expected_cumulative_sizes}, got {base_concat_ds.cumulative_sizes}"
+        f"Expected {expected_cumulative_sizes}, got {eeg_recordings.cumulative_sizes}"
     )
 
     # Verify that the total length is correct
-    assert len(base_concat_ds) == sum(new_lengths), (
-        f"Total dataset length incorrect. Expected {sum(new_lengths)}, got {len(base_concat_ds)}"
+    assert len(eeg_recordings) == sum(new_lengths), (
+        f"Total dataset length incorrect. Expected {sum(new_lengths)}, got {len(eeg_recordings)}"
     )
 
     # Verify that cumulative_sizes changed from the original
-    assert base_concat_ds.cumulative_sizes != original_cumulative_sizes, (
+    assert eeg_recordings.cumulative_sizes != original_cumulative_sizes, (
         "cumulative_sizes should have changed after replacing with cropped datasets"
     )
 
     # Verify we can access all valid indices without IndexError
     # This is the real-world bug - accessing indices that should be valid
-    for idx in range(len(base_concat_ds)):
+    for idx in range(len(eeg_recordings)):
         try:
-            _ = base_concat_ds[idx]
+            _ = eeg_recordings[idx]
         except IndexError:
-            pytest.fail(f"IndexError when accessing valid index {idx} out of {len(base_concat_ds)}")
+            pytest.fail(f"IndexError when accessing valid index {idx} out of {len(eeg_recordings)}")
 
 
-def test_set_raw_preproc_kwargs(base_concat_ds):
+def test_set_raw_preproc_kwargs(eeg_recordings):
     raw_preproc_kwargs = [
         {
             "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
@@ -683,7 +649,7 @@ def test_set_raw_preproc_kwargs(base_concat_ds):
         }
     ]
     preprocessors = [Preprocessor("crop", tmax=10, include_tmax=False)]
-    ds = base_concat_ds.datasets[0]
+    ds = eeg_recordings.datasets[0]
     _set_preproc_kwargs(ds, preprocessors)
 
     assert hasattr(ds, "raw_preproc_kwargs")
@@ -707,10 +673,10 @@ def test_set_window_preproc_kwargs(windows_concat_ds):
     assert ds.raw_preproc_kwargs == window_preproc_kwargs
 
 
-def test_set_preproc_kwargs_wrong_type(base_concat_ds):
+def test_set_preproc_kwargs_wrong_type(eeg_recordings):
     preprocessors = [Preprocessor("crop", tmax=10, include_tmax=False)]
     with pytest.raises(TypeError):
-        _set_preproc_kwargs(base_concat_ds, preprocessors)
+        _set_preproc_kwargs(eeg_recordings, preprocessors)
 
 
 def test_preprocessor_deserialization():
@@ -743,7 +709,7 @@ def test_preprocessor_overwrites_apply_on_array():
 # None and 1 take the same sequential path, -1 and 2 the same joblib one.
 @pytest.mark.parametrize("n_jobs", [None, 2])
 def test_preprocess_save_dir(
-    base_concat_ds, windows_concat_ds, tmp_path, kind, save, overwrite, n_jobs
+    eeg_recordings, windows_concat_ds, tmp_path, kind, save, overwrite, n_jobs
 ):
     preproc_kwargs = [
         {
@@ -761,7 +727,7 @@ def test_preprocess_save_dir(
     # as underlying data is always raw
     preproc_kwargs_name = "raw_preproc_kwargs"
     if kind == "raw":
-        concat_ds = base_concat_ds
+        concat_ds = eeg_recordings
     elif kind == "windows":
         concat_ds = windows_concat_ds
 
@@ -788,25 +754,25 @@ def test_preprocess_save_dir(
 
 
 @pytest.mark.parametrize("overwrite", [True, False])
-def test_preprocess_overwrite(base_concat_ds, tmp_path, overwrite):
+def test_preprocess_overwrite(eeg_recordings, tmp_path, overwrite):
     preprocessors = [Preprocessor("crop", tmax=10, include_tmax=False)]
 
     # Create temporary directory with preexisting files
     save_dir = str(tmp_path)
-    for i, ds in enumerate(base_concat_ds.datasets):
+    for i, ds in enumerate(eeg_recordings.datasets):
         concat_ds = BaseConcatDataset([ds])
         save_subdir = os.path.join(save_dir, str(i))
         os.makedirs(save_subdir)
         concat_ds.save(save_subdir, overwrite=True)
 
     if overwrite:
-        preprocess(base_concat_ds, preprocessors, save_dir, overwrite=True)
+        preprocess(eeg_recordings, preprocessors, save_dir, overwrite=True)
         # Make sure the serialized data is preprocessed
         preproc_concat_ds = load_concat_dataset(save_dir, True)
         assert all(len(ds.raw.times) == 2500 for ds in preproc_concat_ds.datasets)
     else:
         with pytest.raises(FileExistsError):
-            preprocess(base_concat_ds, preprocessors, save_dir, overwrite=False)
+            preprocess(eeg_recordings, preprocessors, save_dir, overwrite=False)
 
 
 def test_preprocessors_with_misc_channels():
@@ -931,10 +897,10 @@ def test_serialization(preprocessor_name, args, kwargs):
     assert preprocessor == deserialized
 
 
-def test_preprocess_save_dir_leaves_lazy_inputs_unloaded(base_concat_ds, tmp_path):
+def test_preprocess_save_dir_leaves_lazy_inputs_unloaded(eeg_recordings, tmp_path):
     """With save_dir, preprocess() returns the reloaded saved copies; the lazy
     input recordings are not loaded and kept in memory meanwhile (n_jobs=1)."""
-    base_concat_ds.save(str(tmp_path / "in"))
+    eeg_recordings.save(str(tmp_path / "in"))
     lazy = load_concat_dataset(str(tmp_path / "in"), preload=False)
     inputs = [ds.raw for ds in lazy.datasets]
     preprocessors = [

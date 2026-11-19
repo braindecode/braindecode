@@ -193,9 +193,7 @@ COMPAT = {
         channels="coords",
         coords_checked=False,
     ),
-    # Not keyed "REVE": test/conftest.py marks that literal as network-only.
-    # The position bank comes from a local file (``_reve_position_bank``).
-    "REVE-local-bank": dict(
+    "REVE": dict(
         cls=REVE,
         sfreq=200,
         n_times=800,
@@ -455,17 +453,6 @@ COMPAT = {
 
 # LaBraM looks names up at forward: these montages go through the channel layer.
 STRATEGY_CELLS = {("Labram", "G2"), ("Labram", "G3"), ("Labram", "G3b")}
-
-
-@pytest.fixture(autouse=True)
-def _reve_position_bank(tmp_path, monkeypatch):
-    """Serve REVE's position bank from a local file instead of the Hub."""
-    pos = _montage("standard_1005").get_positions()["ch_pos"]
-    bank = {name: [float(v) for v in xyz] for name, xyz in pos.items()}
-    for ch in chs_coords_only(128):  # EGI-style E1..E128, as in the released bank
-        bank[ch["ch_name"]] = [float(v) for v in ch["loc"][:3]]
-    (tmp_path / "reve_positions.json").write_text(json.dumps(bank))
-    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
 
 
 def geometries(spec):
