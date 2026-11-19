@@ -262,6 +262,14 @@ Bug fixes
   key from the state dict and load with ``strict=False`` (:gh:`1601` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
+- :meth:`braindecode.datasets.BaseConcatDataset.save` now saves a recording
+  created with the default ``description=None`` and writes an empty description
+  for it. Before, it raised an ``AttributeError`` after it had written the signal
+  file, which left a subdirectory that
+  :func:`braindecode.datautil.load_concat_dataset` could not read. Directly
+  constructed windows keep ``targets_from`` and ``last_target_only`` after
+  saving and loading. Older stores without these settings load with
+  ``targets_from="metadata"``, the constructor default (:gh:`1610` by
 - :func:`braindecode.preprocessing.create_fixed_length_windows` with
   ``use_mne_epochs=True`` (also set by ``picks``, ``reject`` or ``flat``) passes
   ``targets_from`` and ``last_target_only`` to

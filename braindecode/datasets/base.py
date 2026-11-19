@@ -2134,6 +2134,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     @staticmethod
     def _save_description(sub_dir, description):
         description_file_path = os.path.join(sub_dir, "description.json")
+        if description is None:
+            description = pd.Series(dtype=object)
         description.to_json(description_file_path, default_handler=str)
 
     @staticmethod
@@ -2143,13 +2145,25 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             "window_kwargs",
             "window_preproc_kwargs",
         ]:
-            if hasattr(ds, kwargs_name):
-                kwargs_file_name = ".".join([kwargs_name, "json"])
-                kwargs_file_path = os.path.join(sub_dir, kwargs_file_name)
-                kwargs = getattr(ds, kwargs_name)
-                if kwargs is not None:
-                    with open(kwargs_file_path, "w") as f:
-                        json.dump(kwargs, f, indent=2)
+            kwargs = getattr(ds, kwargs_name, None)
+            if (
+                kwargs_name == "window_kwargs"
+                and not kwargs
+                and isinstance(ds, (EEGWindowsDataset, WindowsDataset))
+            ):
+                # Directly constructed windows have no windower history.
+                cls = (
+                    EEGWindowsDataset
+                    if isinstance(ds, EEGWindowsDataset)
+                    else WindowsDataset
+                )
+                settings = dict(
+                    targets_from=ds.targets_from, last_target_only=ds.last_target_only
+                )
+                kwargs = [(cls.__name__, settings)]
+            if kwargs is not None:
+                with open(os.path.join(sub_dir, f"{kwargs_name}.json"), "w") as f:
+                    json.dump(kwargs, f, indent=2)
 
     @staticmethod
     def _save_target_name(sub_dir, ds):
