@@ -836,8 +836,11 @@ class _SleepFMStagingHead(nn.Module):
         features = self.transformer_encoder(
             features, src_key_padding_mask=temporal_mask
         )
-        if features.device.type == "cpu":
-            # Some CPUs have no oneDNN bfloat16 LSTM training kernel.
+        if torch.jit.is_scripting():  # TorchScript has no autocast state query
+            features, _ = self.lstm(features)
+        elif features.device.type == "cpu" and torch.is_autocast_enabled("cpu"):
+            # Some CPUs have no oneDNN bfloat16 LSTM training kernel, so CPU
+            # autocast runs the LSTM in its parameter precision instead.
             with torch.autocast("cpu", enabled=False):
                 features, _ = self.lstm(features.to(self.lstm.weight_ih_l0.dtype))
         else:

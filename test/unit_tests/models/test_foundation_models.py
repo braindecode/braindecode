@@ -1791,6 +1791,30 @@ def test_sleepfm_masked_training_with_autocast(cls):
     assert not torch.equal(before, model.final_layer.weight)
 
 
+def test_sleepfm_staging_lstm_runs_in_parameter_precision_under_cpu_autocast(
+    monkeypatch,
+):
+    """Some CPUs have no oneDNN bfloat16 LSTM kernel (gh-1664)."""
+    lstm_forward = nn.LSTM.forward
+    seen = []
+
+    def strict_forward(self, input, hx=None):
+        seen.append((input.dtype, torch.is_autocast_enabled("cpu")))
+        if input.dtype == torch.bfloat16 or torch.is_autocast_enabled("cpu"):
+            raise RuntimeError("no bfloat16 LSTM kernel on this CPU")
+        return lstm_forward(self, input, hx)
+
+    monkeypatch.setattr(nn.LSTM, "forward", strict_forward)
+    model = _small(SleepFMStager).train()
+    x = torch.randn(2, 3, 1280)
+    real = torch.tensor([[True, False, False], [True, True, False]])
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        logits = model(x, ch_mask=real)
+    logits.float().square().mean().backward()
+    assert seen == [(torch.float32, False)]
+    assert torch.isfinite(logits).all()
+
+
 @pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
 def test_sleepfm_rejects_ambiguous_positional_forward_masks(cls):
     kwargs = {"channel_modalities": ["A"]} if cls is SleepFMStager else {}
