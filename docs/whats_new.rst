@@ -157,6 +157,8 @@ Enhancements
   encoder output ``(batch, n_chans, n_tokens, dim)`` with the tokens of padded
   channels zero; DIVER1 gains
   ``return_features`` (:gh:`1540` by `Julien Gadonneix`_).
+- The documentation tests render the relative-positioning tutorial's PCA plot
+  and verify the five sleep stages span the full color map.
 - New tutorial :ref:`weight-audit-tutorial`: audit what a released decoder relies on
   from its weights alone (dominant band, time window and channel ranking of an
   :class:`braindecode.models.EEGNet`, read through its path weights), then confirm the
