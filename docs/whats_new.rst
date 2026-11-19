@@ -287,7 +287,7 @@ Bug fixes
 - :class:`braindecode.samplers.DistributedRelativePositioningSampler` divides
   the requested pair count evenly across ranks, including when the recording
   count requires padding or truncation. Uneven pair budgets round up by
-  default and down with ``drop_last=True``.
+  default and down with ``drop_last=True`` (:gh:`1633`).
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
   averages kept steps that lie after the end of the input. When the last
   segment held fewer real samples than its first kept step position, those
