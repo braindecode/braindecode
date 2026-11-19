@@ -657,6 +657,12 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             final_layer.in_features)`` with ``pooling="mean"``, zero for padded
             channels.
         """
+        if sensor_indices is not None and hasattr(self, "channel_layer"):
+            raise ValueError(
+                "Under a channel_strategy x is mapped onto the chs_info montage, "
+                "so sensor_indices of the input recording no longer describe its "
+                "channels: pass chs_info (and ch_mask) instead of sensor_indices."
+            )
         spectrogram = self.normalization == "session"
         n_bins = self._n_bins
         if x.ndim != (4 if spectrogram else 3) or (

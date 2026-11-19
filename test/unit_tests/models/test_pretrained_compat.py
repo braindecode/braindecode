@@ -666,6 +666,14 @@ def test_strategy_refused_for_inputs_the_layer_cannot_map(cls, kw):
         cls(n_outputs=2, n_times=512, **kw, channel_strategy="spline")
 
 
+def test_mapa_refuses_sensor_indices_under_a_strategy():
+    chs = chs_coords_only(4, "seeg")
+    model = MAPA(n_outputs=2, n_times=512, chs_info=chs, channel_strategy="spline")
+    x = torch.randn(1, 4, 512)
+    with pytest.raises(ValueError, match="sensor_indices"):
+        model(x, sensor_indices=model.default_sensor_indices)
+
+
 _SUMMARY = Path(__file__).parents[3] / "braindecode" / "models" / "summary.csv"
 FOUNDATION = [
     row["Model"]
