@@ -225,8 +225,8 @@ Bug fixes
 ==========
 
 - Annotation preprocessors preserve existing event sample numbers in undated
-  recordings with a nonzero first sample, including after cropping a recording.
-
+  recordings with a nonzero first sample, including after cropping a recording
+  (:gh:`1621` by `Bruno Aristimunha`_).
 - :func:`braindecode.preprocessing.filterbank` preserves channel positions and
   their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
 - ``load_state_dict`` of every braindecode model loads checkpoints saved before
