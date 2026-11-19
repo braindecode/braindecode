@@ -3978,6 +3978,33 @@ def test_gni_default_contract(gni_default):
     assert lengths[1] > lengths[0]
 
 
+def test_gni_ctc_ignores_padding_before_its_first_emission(gni_default):
+    lengths = gni_default.compute_output_lengths(torch.tensor([19853, 19854]))
+    assert lengths.tolist() == [0, 1]
+    x = torch.randn(2, 16, 19854)
+    x[0, :, -1] = 0
+    logits = gni_default(x)
+    assert logits.shape[1] == 1
+    loss = nn.CTCLoss(reduction="sum")(
+        logits.log_softmax(-1).transpose(0, 1),
+        torch.tensor([1]),
+        lengths,
+        torch.tensor([0, 1]),
+    )
+    (gradient,) = torch.autograd.grad(loss, logits)
+    assert torch.isfinite(gradient).all()
+    assert gradient[0].count_nonzero() == 0
+    assert gradient[1].count_nonzero() > 0
+
+
+@pytest.mark.parametrize("n_times", [19854, 20135, 20200, 21000])
+def test_gni_output_lengths_match_forward(gni_default, n_times):
+    with torch.no_grad():
+        y = gni_default(torch.randn(1, 16, n_times))
+    lengths = gni_default.compute_output_lengths(torch.tensor([n_times]))
+    assert lengths.item() == y.shape[1]
+
+
 def test_gni_threaded_cpu_eigh_equals_eigh():
     from braindecode.models.meta_neuromotor import _cpu_eigh
 

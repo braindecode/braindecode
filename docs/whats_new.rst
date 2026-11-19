@@ -300,6 +300,12 @@ Bug fixes
   recording reference, preventing duplicated columns and misplaced weights
   (:gh:`1597` by `lindicaphxag-tech`_).
 
+- :meth:`braindecode.models.MetaNeuromotorHand.compute_output_lengths` returns
+  zero valid CTC emissions for recordings shorter than the model's receptive
+  field instead of one: rounding toward zero counted one emission for the 280
+  input lengths just below the first emission of the default model (19,574 to
+  19,853 samples), so CTC scored a frame computed only from padding
+  (:gh:`1618` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.PBT` cuts each patch from one channel, as the
   authors' code does. When ``n_times`` was not a multiple of ``d_input``, it cut the
   patches from the flattened ``n_chans x n_times`` signal, so some patches held the
