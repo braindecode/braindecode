@@ -1,7 +1,12 @@
 import numpy as np
 import pytest
 
-from braindecode.visualization.metrics import METRIC_NAMES, compute_metrics
+from braindecode.visualization.metrics import (
+    METRIC_NAMES,
+    SSIM_METRIC_NAMES,
+    compute_metrics,
+    compute_ssim_metrics,
+)
 
 from .conftest import SEED
 
@@ -112,21 +117,42 @@ def test_perfect_scores_higher_than_random():
         )
 
 
-def test_abs_reference_false_keeps_signed_reference():
-    """abs_reference=False uses reference as-is. Perfect match → high signed metrics."""
-    reference = np.random.default_rng(SEED + 2).standard_normal(
-        (N_SAMPLES, N_CHANS, N_TIMES)
-    ).astype(np.float32)
-    scores, _ = compute_metrics(reference.copy(), reference.copy(), abs_reference=False)
-    assert np.all(scores[:, 2] > 0.99), f"Cosine_norm: {scores[:, 2]}"
-    assert np.all(scores[:, 10] > 0.99), f"Pearson_norm: {scores[:, 10]}"
+@pytest.mark.parametrize(
+    "compute, names, normalized",
+    [
+        (compute_metrics, METRIC_NAMES, ["Cosine_norm", "Pearson_norm_vs_refnorm"]),
+        (compute_ssim_metrics, SSIM_METRIC_NAMES, ["SSIM_norm"]),
+    ],
+)
+def test_signed_reference_and_constant_controls(compute, names, normalized):
+    centered = np.tile([-1.0, 1.0, -2.0, 2.0], (4, 1))
+    negative = centered - 3
+    explanations = np.stack([centered, negative, centered, centered])
+    reference = np.stack(
+        [centered, negative, np.ones_like(centered), np.zeros_like(centered)]
+    )
+
+    scores, skipped = compute(
+        explanations, reference, abs_reference=False, abs_explanation=True
+    )
+
+    assert skipped == 2
+    np.testing.assert_allclose(
+        scores[:2, [names.index(name) for name in normalized]], 1.0
+    )
+    np.testing.assert_array_equal(scores[2:], 0.0)
 
 
 def test_abs_explanation_recovers_negatives():
     """abs_explanation=True recovers all-negative explanations; clipping zeros them."""
-    reference = np.abs(
-        np.random.default_rng(SEED + 3).standard_normal((N_SAMPLES, N_CHANS, N_TIMES))
-    ).astype(np.float32) + 0.1
+    reference = (
+        np.abs(
+            np.random.default_rng(SEED + 3).standard_normal(
+                (N_SAMPLES, N_CHANS, N_TIMES)
+            )
+        ).astype(np.float32)
+        + 0.1
+    )
     explanations = -reference.copy()
     scores_clip, _ = compute_metrics(explanations.copy(), reference.copy(), abs_explanation=False)
     scores_abs, _ = compute_metrics(explanations.copy(), reference.copy(), abs_explanation=True)

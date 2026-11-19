@@ -10,7 +10,11 @@ import numpy as np
 from skorch.helper import SliceDataset
 from skorch.utils import is_dataset
 
-from braindecode.datasets.base import BaseConcatDataset, WindowsDataset
+from braindecode.datasets.base import (
+    BaseConcatDataset,
+    EEGWindowsDataset,
+    WindowsDataset,
+)
 from braindecode.models.util import SigArgName
 
 log = logging.getLogger(__name__)
@@ -53,8 +57,26 @@ def samples_to_ms(n_samples, fs):
     return n_samples * 1000.0 / fs
 
 
+def _labels_within(y, classes) -> bool:
+    try:
+        return set(np.unique(np.asarray(y))) <= set(classes)
+    except TypeError:  # unhashable or unsortable labels
+        return False
+
+
 def _get_n_outputs(y, classes, mode):
     if mode == "classification":
+        y = np.asarray(y)
+        if y.ndim >= 2 and y.shape[1] > 1 and np.issubdtype(y.dtype, np.floating):
+            # Probability targets carry the class axis, including unobserved classes.
+            if np.all(y >= 0) and np.allclose(
+                y.sum(axis=1), 1, atol=np.finfo(y.dtype).eps
+            ):
+                if classes is not None and len(classes) != y.shape[1]:
+                    raise ValueError(
+                        "The number of classes must match the probability target width."
+                    )
+                return y.shape[1]
         classes_y = np.unique(y)
         if classes is not None:
             assert set(classes_y) <= set(classes)
@@ -97,11 +119,14 @@ def infer_signal_properties(
     X : array-like or mne.BaseEpochs or Dataset
         Input data
     y : array-like or None
-        Targets
+        Targets. For floating-point class probabilities, axis 1 is the
+        class axis. For window datasets with metadata labels, the dataset's
+        target transform is applied before inferring the output size.
     mode : "classification" or "regression"
         Mode of the task
     classes : list or None
-        List of classes for classification
+        List of classes for classification. With a dataset ``target_transform``,
+        it may name either the stored labels or the transformed ones.
 
     Returns
     -------
@@ -134,20 +159,33 @@ def infer_signal_properties(
             signal_kwargs["n_times"] = X.shape[-1]
             signal_kwargs["n_chans"] = X.shape[-2]
     elif is_dataset(X):
-        log.info(f"Using Dataset {X!r} to find signal-related parameters.")
+        log.info("Using %s to find signal-related parameters.", type(X).__name__)
         X0 = X[0][0]
         Xshape = X0.shape
         signal_kwargs["n_times"] = Xshape[-1]
         signal_kwargs["n_chans"] = Xshape[-2]
-        if isinstance(X, BaseConcatDataset) and all(
-            ds.targets_from == "metadata" for ds in X.datasets
+        datasets = X.datasets if isinstance(X, BaseConcatDataset) else [X]
+        if all(
+            isinstance(ds, (EEGWindowsDataset, WindowsDataset))
+            and ds.targets_from == "metadata"
+            for ds in datasets
         ):
-            # an array: several targets per window give one column each
-            y_target = np.asarray(X.get_metadata().target.to_list())
-            signal_kwargs["n_outputs"] = _get_n_outputs(y_target, classes, mode)
-        elif isinstance(X, WindowsDataset) and X.targets_from == "metadata":
-            y_target = np.asarray(X.windows.metadata.target.to_list())
-            signal_kwargs["n_outputs"] = _get_n_outputs(y_target, classes, mode)
+            # Both window backends return ds.y[i], including with lazy metadata.
+            stored = [ds.y[i] for ds in datasets for i in range(len(ds))]
+            targets = stored
+            if isinstance(X, BaseConcatDataset) and X.target_transform is not None:
+                targets = [X.target_transform(t) for t in stored]
+                if (
+                    mode == "classification"
+                    and classes is not None
+                    and not _labels_within(targets, classes)
+                    and _labels_within(stored, classes)
+                ):
+                    # ``classes`` names the stored labels the transform encodes.
+                    targets = stored
+            signal_kwargs["n_outputs"] = _get_n_outputs(
+                np.asarray(targets), classes, mode
+            )
     else:
         log.warning(
             f"Can only infer signal shape of array-like and Datasets, got {type(X)!r}."

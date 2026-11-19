@@ -540,6 +540,12 @@ def create_fixed_length_windows(
     flat: dict | None
         Epoch rejection parameters based on flatness of signals. If None, no
         rejection based on flatness is done. See mne.Epochs.
+    targets_from : {"metadata", "channels"}
+        Read targets from the recording description or from the selected
+        channels of type ``misc``. The latter are removed from the inputs.
+    last_target_only : bool
+        When reading targets from channels, return the last sample of each
+        target channel. If False, return the full target time series.
     lazy_metadata: bool
         If True, metadata is not computed immediately, but only when accessed
         by using the _LazyDataFrame (experimental). Cannot be used together
@@ -1102,14 +1108,10 @@ def _create_fixed_length_windows(
         windows_ds = WindowsDataset(
             mne_epochs,
             ds.description,
+            targets_from=targets_from,
+            last_target_only=last_target_only,
         )
     else:
-        window_kwargs.append(
-            (
-                EEGWindowsDataset.__name__,
-                {"targets_from": targets_from, "last_target_only": last_target_only},
-            )
-        )
         windows_ds = EEGWindowsDataset(
             ds.raw,
             metadata=metadata,
@@ -1117,6 +1119,12 @@ def _create_fixed_length_windows(
             targets_from=targets_from,
             last_target_only=last_target_only,
         )
+    window_kwargs.append(
+        (
+            type(windows_ds).__name__,
+            {"targets_from": targets_from, "last_target_only": last_target_only},
+        )
+    )
     # add window_kwargs and raw_preproc_kwargs to windows dataset
     setattr(windows_ds, "window_kwargs", window_kwargs)
     kwargs_name = "raw_preproc_kwargs"
