@@ -782,7 +782,7 @@ class FourierEmb4D(nn.Module):
         # Keep the phase products in at least float32. HPU autocast would
         # otherwise downcast them before sin/cos.
         work = positions_ if positions_.dtype == torch.float64 else positions_.float()
-        if torch.jit.is_scripting():
+        if torch.jit.is_scripting() or positions_.is_meta:
             emb = self._embed(work)
         else:
             with torch.autocast(device_type=positions_.device.type, enabled=False):
