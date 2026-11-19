@@ -7,7 +7,7 @@
 # License: BSD (3-clause)
 
 from numbers import Real
-from typing import Any, Callable, Union
+from typing import Any, Callable, TypeGuard, Union
 
 import numpy as np
 import torch
@@ -109,8 +109,7 @@ class Transform(torch.nn.Module):
             out_X = out_X[None, ...]
 
         if y is not None:
-            y = torch.as_tensor(y).to(out_X.device)
-            out_y = y.clone()
+            out_y = torch.as_tensor(y, device=out_X.device).clone()
             if len(out_y.shape) == 0:
                 out_y = out_y.reshape(1)
         else:
@@ -208,7 +207,7 @@ class Compose(Transform):
         return X, y
 
 
-def _is_mixed_target(y):
+def _is_mixed_target(y: object) -> TypeGuard[tuple[Tensor, ...] | list[Tensor]]:
     return (
         isinstance(y, (tuple, list))
         and len(y) == 3
