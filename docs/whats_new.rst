@@ -201,12 +201,6 @@ Requirements
 Bug fixes
 ==========
 
-- :class:`braindecode.modules.ChannelMerger` keeps gradients finite when spatial
-  dropout excludes every electrode of a recording during training in
-  :class:`~braindecode.models.BrainModule` or :class:`~braindecode.models.DANCE`.
-  Nonfinite values in excluded electrodes no longer leak into the merged signal
-  (:gh:`1617`).
-
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
@@ -295,6 +289,12 @@ Bug fixes
   concatenates them. Outputs and parameters are unchanged for equal widths
   (:gh:`1604` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - The Eldele et al. (2021) sleep staging tutorial (``plot_sleep_staging_eldele2021.py``) splits train and validation by subject, as its text says; ``split`` took the ids as recording indices, so it trained on subjects 0-1 and validated on subject 2 while subjects 3-5 were loaded and unused (:gh:`1559` by `Bruno Aristimunha`_).
+- :class:`braindecode.modules.ChannelMerger` keeps gradients finite when spatial
+  dropout excludes every electrode of a recording during training in
+  :class:`~braindecode.models.BrainModule` or :class:`~braindecode.models.DANCE`.
+  Nonfinite values in excluded electrodes no longer leak into the merged signal
+  (:gh:`1617`).
+
 - :class:`braindecode.models.ZUNA` defaults to ``pos_bins=100``, the value ZUNA1.1 was trained with (paper Table II and Zyphra's configs); the old default ``50`` was ZUNA1's and gave the released encoder outputs up to 5.2 away from the original. The ``braindecode/ZUNA`` checkpoint now holds the ZUNA1.1 encoder in braindecode's parameter names (the earlier ZUNA1 file loaded no parameter into the class) and sets ``pos_bins`` in its config (:gh:`1557` by `Bruno Aristimunha`_).
 - ``from_pretrained`` of :class:`braindecode.models.Brant` loads a checkpoint at
   a shorter ``n_times``: the learned temporal positions keep the checkpoint's
