@@ -1135,7 +1135,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             f"Trained on (model card): {', '.join(data['datasets']) or 'not listed'}\n"
             f"Loaded from the listed checkpoint(s): {data['loaded']:,} of {data['total']:,} "
             f"{scope} ({data['percent']:.1f}% of materialised parameters){new}\n"
-            "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.17699192"
+            "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.8214376"
         )
 
     def _repr_html_(self) -> str:
