@@ -513,7 +513,8 @@ Bug fixes
 - Signal-only augmentations such as :class:`braindecode.augmentation.SignFlip`
   can follow :class:`braindecode.augmentation.Mixup` or
   :class:`braindecode.augmentation.CutMix` in a composed pipeline. They
-  preserve both labels and the mixing weights for the training criterion.
+  preserve both labels and the mixing weights for the training criterion
+  (:gh:`1659` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` raises when ``chs_info`` has positions for
   some channels but not all (MNE stores ``NaN`` for the others). It gave every
   channel a default position, evenly spaced along x, so one name missing from the
