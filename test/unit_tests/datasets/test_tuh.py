@@ -301,7 +301,9 @@ def test_tuh_events(tmp_path, monkeypatch, version):
     assert pd.isna(event_prefixes[2])
     assert description.run.to_list() == [0, 2, 0]
     assert [ds.raw.annotations.description.tolist() for ds in tuh_ev.datasets] == [
-        ["bckg"], ["pled"], ["spsw"]
+        ["bckg"],
+        ["pled"],
+        ["spsw"],
     ]
     assert description.age.to_list() == [36, 68, 19]
     assert description.gender.to_list() == ["F", "F", "F"]
