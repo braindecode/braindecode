@@ -177,7 +177,7 @@ class REVE(EEGModuleMixin, nn.Module):
                repo_id="username/my-reve-model", commit_message="Upload trained REVE model"
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     .. rubric:: Usage
 

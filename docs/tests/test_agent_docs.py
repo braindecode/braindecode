@@ -152,6 +152,28 @@ def test_critical_pages_have_canonical_sources():
             assert (docs / (name + ".rst")).is_file()
 
 
+def test_landing_api_links_reach_sections():
+    from docutils import nodes
+    from docutils.core import publish_doctree
+
+    docs = Path(__file__).parents[1]
+    links = set(
+        re.findall(r'href="api\.html#([^"]+)"', (docs / "index.rst").read_text())
+    )
+    tree = publish_doctree(
+        (docs / "api.rst").read_text(),
+        settings_overrides={
+            "report_level": 5,
+            "halt_level": 6,
+            "file_insertion_enabled": False,
+        },
+    )
+    anchors = {
+        anchor for section in tree.findall(nodes.section) for anchor in section["ids"]
+    }
+    assert links <= anchors
+
+
 def test_gallery_index_keeps_curated_navigation(corpus):
     agent_docs.publish(**corpus)
     text = (corpus["html_root"] / "auto_examples/index.md").read_text()
@@ -160,22 +182,38 @@ def test_gallery_index_keeps_curated_navigation(corpus):
 
 def test_html_then_markdown_gallery_integration(tmp_path):
     """Exercise real extension nodes and shared doctrees without any datasets."""
+    import json
     from io import StringIO
+    from shutil import copyfile
 
     from sphinx.application import Sphinx
 
     source, examples = tmp_path / "source", tmp_path / "examples"
     source.mkdir()
     examples.mkdir()
-    extension_dir = Path(__file__).parents[1] / "sphinxext"
+    docs = Path(__file__).parents[1]
+    extension_dir = docs / "sphinxext"
+    templates = source / "_templates"
+    templates.mkdir()
+    copyfile(
+        docs / "_templates/sg_launcher_links.html", templates / "sg_launcher_links.html"
+    )
+    (templates / "page.html").write_text(
+        '{% extends "!page.html" %}{% block body %}{{ super() }}'
+        '{% include "sg_launcher_links.html" %}{% endblock %}'
+    )
     (source / "conf.py").write_text(
         f"import sys\nsys.path.insert(0, {str(extension_dir)!r})\n"
         'extensions = ["sphinx_markdown_builder", "agent_markdown", '
         '"sphinx_gallery.gen_gallery", "sphinx_design", "sphinxcontrib.bibtex"]\n'
         'markdown_uri_doc_suffix = ".html"\nmarkdown_anchor_sections = True\n'
         'bibtex_bibfiles = ["refs.bib"]\n'
+        'templates_path = ["_templates"]\n'
+        'html_context = {"doc_version": "1.9"}\n'
         'sphinx_gallery_conf = {"examples_dirs": "../examples", '
         '"gallery_dirs": "auto_examples", "image_scrapers": ("matplotlib",), '
+        '"filename_pattern": "plot_test.py", "promote_jupyter_magic": True, '
+        '"first_notebook_cell": "%pip install braindecode==1.9", '
         '"reset_modules": (), "download_all_examples": False}\n'
     )
     (source / "refs.bib").write_text(
@@ -195,6 +233,10 @@ def test_html_then_markdown_gallery_integration(tmp_path):
     )
     (source / "sample.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
     (examples / "README.txt").write_text("Examples\n========\n")
+    copyfile(
+        docs.parent / "examples/advanced_training/plot_exca_config.py",
+        examples / "plot_exca_config.py",
+    )
     (examples / "plot_test.py").write_text(
         '"""\nExample\n=======\n\nA no-data fixture.\n"""\n'
         'from pathlib import Path\np = Path("executions.txt")\n'
@@ -217,6 +259,26 @@ def test_html_then_markdown_gallery_integration(tmp_path):
         assert app.statuscode == 0
         assert "unknown node type" not in warnings.getvalue()
     assert (examples / "executions.txt").read_text() == "x"
+    exca_page = tmp_path / "html/auto_examples/plot_exca_config.html"
+    links = re.findall(r'href="([^"]+\.ipynb)"', exca_page.read_text())
+    download = next(link for link in links if link.startswith("../_downloads/"))
+    published = (exca_page.parent / download).resolve()
+    assert (
+        "https://colab.research.google.com/github/braindecode/braindecode.github.io/"
+        f"blob/master/1.9/{published.relative_to(tmp_path / 'html').as_posix()}"
+        in links
+    )
+    cells = [
+        "".join(cell["source"])
+        for cell in json.loads(published.read_text())["cells"]
+        if cell["cell_type"] == "code"
+    ]
+    assert cells[0].strip() == "%pip install braindecode==1.9"
+    setup = next(
+        i for i, cell in enumerate(cells) if "braindecode[typing,moabb]" in cell
+    )
+    imports = next(i for i, cell in enumerate(cells) if "import exca" in cell)
+    assert setup < imports
     markdown = tmp_path / "markdown"
     page = (markdown / "nested/page.md").read_text()
     assert "![image](../_images/sample.svg)" in page
