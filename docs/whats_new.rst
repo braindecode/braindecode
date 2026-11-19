@@ -265,6 +265,20 @@ Bug fixes
   recording reference, preventing duplicated columns and misplaced weights
   (:gh:`1597` by `lindicaphxag-tech`_).
 
+- :class:`braindecode.models.PBT` cuts each patch from one channel, as the
+  authors' code does. When ``n_times`` was not a multiple of ``d_input``, it cut the
+  patches from the flattened ``n_chans x n_times`` signal, so some patches held the
+  end of one channel and the start of the next, and the model had more tokens than
+  ``n_chans * (n_times // d_input)`` (343 instead of 330 for 22 channels, 1000
+  samples and ``d_input=64``). Each channel now drops the samples after its last
+  whole patch. The constructor requires at least one complete patch per channel.
+  ``forward`` raises a ``ValueError`` when the input channel count is not
+  ``n_chans``.
+  The positional embedding keeps its size, so checkpoints saved before
+  this change still load. Outputs of existing PBT models change when ``n_times`` is
+  not a multiple of ``d_input`` and stay the same otherwise (:gh:`1612` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+
 - :class:`braindecode.modules.ChannelLayer` computes every target that is a
   combination of the measured channels exactly, under every strategy including
   ``"exact"``: ``A-B`` from a measured ``B-A`` with weight -1 (copied before with
