@@ -415,9 +415,10 @@ class REVE(EEGModuleMixin, nn.Module):
         bank = self._position_bank.embedding
         super()._apply(fn, recurse)
         if self._position_bank.embedding.dtype in (torch.float16, torch.bfloat16):
-            self._position_bank.embedding = bank.to(self._position_bank.embedding.device)
+            device = self._position_bank.embedding.device
+            self._position_bank.embedding = bank.to(device=device, dtype=torch.float32)
             if pos is not None:
-                self.default_pos = pos.to(self.default_pos.device)
+                self.default_pos = pos.to(device=device, dtype=torch.float32)
         return self
 
     def _get_flattened_output_dim(self) -> int:
