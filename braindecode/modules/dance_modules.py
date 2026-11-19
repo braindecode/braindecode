@@ -93,9 +93,8 @@ class SimpleConv(nn.Module):
             )
             dilation = dilation * dilation_growth
         self.sequence = nn.ModuleList(blocks)
-        # Dilation of the LAST block, read from the built conv stack so it
-        # reflects the int-cumulative ConvSequence schedule (Global Constraint
-        # line 22) rather than the power-form ``int(growth ** (depth - 1))``.
+        # Dilation of the last block, read from the built stack so it follows
+        # the cumulative integer schedule rather than ``int(growth ** (depth - 1))``.
         self.max_dilation = self.sequence[-1].conv.dilation[0]
 
     def forward(

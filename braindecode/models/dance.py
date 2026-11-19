@@ -258,6 +258,7 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
             activation=nn.ReLU,
             merger=merger,
         )
+        # Same padding preserves T, so one first-block kernel is the minimum.
         self._min_n_times = conv_kernel_size
         self.perceiver = Perceiver(
             input_dim=embed_dim,

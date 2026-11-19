@@ -311,6 +311,8 @@ def _build_rotary_cache(
     TCFormer repeats the half-width angle table across the feature dimension
     and rotates adjacent feature pairs in queries and keys. Angles use at
     least float32 precision. The returned tables use the token ``dtype``.
+    The half-split table with pair rotation is intentional: it matches the
+    reference TCFormer and its pretrained weights.
     """
     work = torch.float32 if dtype is None else torch.promote_types(dtype, torch.float32)
     theta = rotary_frequencies(head_dim, device=device, dtype=work)
