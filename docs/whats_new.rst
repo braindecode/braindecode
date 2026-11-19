@@ -274,6 +274,9 @@ Bug fixes
   these real bins, so a negative bin got ``pi`` or ``-pi`` at random; on MPS
   this moved the outputs of the released weights on random-walk input by 7 %
   from the CPU ones. CPU outputs are unchanged (:gh:`1566` by `Hamza Abdelhedi`_).
+- :class:`braindecode.augmentation.FTSurrogate` applies a shared phase
+  perturbation across channels on Apple MPS. Broadcasting that phase also
+  avoids copying it for each channel on other devices.
 - :class:`braindecode.models.SignalJEPA` and
   :class:`braindecode.models.SignalJEPA_Contextual` no longer fail in ``backward()``
   when the window gives one token per channel (for example 152 samples at 128 Hz)

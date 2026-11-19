@@ -206,8 +206,6 @@ def ft_surrogate(
         device=device,
         random_state=random_state,
     )
-    if not channel_indep:
-        random_phase = torch.tile(random_phase, (1, f.shape[-2], 1))
     if isinstance(phase_noise_magnitude, torch.Tensor):
         phase_noise_magnitude = phase_noise_magnitude.to(device)
     f_shifted = f * torch.exp(phase_noise_magnitude * random_phase)
