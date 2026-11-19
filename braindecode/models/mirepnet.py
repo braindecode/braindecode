@@ -12,6 +12,7 @@ from typing import Dict, Optional, Union
 import torch.nn.functional as F
 from torch import Tensor, nn
 
+from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules import (
@@ -272,6 +273,13 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     def forward(
         self, x: Tensor, return_features: Optional[bool] = None
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
+        check_n_chans(
+            x,
+            self.n_chans,
+            "MIRepNet",
+            "build the model with the chs_info of this montage, or use a "
+            "channel_strategy.",
+        )
         tokens = self.transformer(self.embedding(x))
         features = tokens.mean(dim=1)
         if return_features is None:
