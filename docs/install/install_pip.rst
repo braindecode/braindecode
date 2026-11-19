@@ -4,7 +4,7 @@
  Installing from PyPI
 ######################
 
-Braincode can be installed via pip from `PyPI <braindecode-pypi_>`_.
+Braindecode can be installed via pip from `PyPI <braindecode-pypi_>`_.
 
 .. note::
 
@@ -20,14 +20,14 @@ Braindecode can also be installed along `MOABB <moabb_>`_ to download open datas
 
 .. code-block:: bash
 
-    pip install braindecode[moabb]
+    pip install "braindecode[moabb]"
 
 Braindecode can also be installed with all optional dependencies for testing and
 documentation building:
 
 .. code-block:: bash
 
-    pip install braindecode[all]
+    pip install "braindecode[all]"
 
 To use the potential of the deep learning modules PyTorch with GPU, we recommend the
 following sequence before installing the braindecode:

@@ -12,9 +12,31 @@ are all one linear estimate of ``B v`` from ``A v`` (:func:`linear_channel_map`)
 
 from __future__ import annotations
 
+from itertools import chain
+
 import numpy as np
 import torch
 from torch import Tensor
+
+
+def _channel_electrodes(name):
+    """Return the two electrodes of a bipolar channel, or its literal name."""
+    ends = name.split("-")
+    return ends if len(ends) == 2 and all(ends) else [name]
+
+
+def _derivation_rows(parts, electrodes):
+    """Build signed rows, keeping the first spelling of each electrode."""
+    names = {}
+    for name in chain(electrodes, chain.from_iterable(parts)):
+        names.setdefault(name.lower(), name)
+    columns = {name: i for i, name in enumerate(names)}
+    matrix = torch.zeros(len(parts), len(names), dtype=torch.float64)
+    for row, ends in enumerate(parts):
+        matrix[row, columns[ends[0].lower()]] += 1
+        if len(ends) == 2:
+            matrix[row, columns[ends[1].lower()]] -= 1
+    return matrix, list(names.values())
 
 
 def derivation_matrix(
@@ -44,22 +66,12 @@ def derivation_matrix(
     electrodes : list of str
         The columns.
     """
-    parts = [
-        ends if len(ends := n.lower().split("-")) == 2 and all(ends) else [n.lower()]
-        for n in ch_names
-    ]
+    parts = [_channel_electrodes(name.lower()) for name in ch_names]
     if reference is not None and reference != "average":
         parts = [p if len(p) == 2 else [p[0], reference.lower()] for p in parts]
-    electrodes = list(
-        dict.fromkeys([*(e.lower() for e in (electrodes or [])), *sum(parts, [])])
-    )
-    matrix = torch.zeros(len(ch_names), len(electrodes), dtype=torch.float64)
-    for row, ends in enumerate(parts):
-        matrix[row, electrodes.index(ends[0])] += 1.0
-        if len(ends) == 2:
-            matrix[row, electrodes.index(ends[1])] -= 1.0
+    matrix, electrodes = _derivation_rows(parts, (e.lower() for e in electrodes or []))
     if reference == "average":
-        single = torch.tensor([len(p) == 1 for p in parts])
+        single = torch.tensor([len(p) == 1 for p in parts], dtype=torch.bool)
         matrix[single] -= matrix[single].mean(0)
     return matrix, electrodes
 

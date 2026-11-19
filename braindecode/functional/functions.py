@@ -248,7 +248,9 @@ def _get_gaussian_kernel1d(kernel_size: int, sigma: float) -> torch.Tensor:
     return kernel1d
 
 
-def hilbert_freq(x: torch.Tensor, forward_fourier: bool = True) -> torch.Tensor:
+def hilbert_freq(
+    x: torch.Tensor, forward_fourier: bool = True, n_times: Optional[int] = None
+) -> torch.Tensor:
     r"""
     Compute the Hilbert transform using PyTorch, separating the real and
     imaginary parts.
@@ -268,42 +270,60 @@ def hilbert_freq(x: torch.Tensor, forward_fourier: bool = True) -> torch.Tensor:
 
     Parameters
     ----------
-    input : torch.Tensor
-        Input tensor. The expected shape depends on the `forward_fourier` parameter:
-
-        - If `forward_fourier` is True:
-            (..., seq_len)
-        - If `forward_fourier` is False:
-            (..., seq_len / 2 + 1, 2)
-
-    forward_fourier : bool, optional
-        Determines the format of the input tensor.
-        - If True, the input is in the forward Fourier domain.
-        - If False, the input contains separate real and imaginary parts.
-        Default is True.
+    x : torch.Tensor
+        Time-domain signal of shape ``(..., n_times)``, or its one-sided RFFT
+        as real and imaginary pairs of shape ``(..., n_times // 2 + 1, 2)``.
+    forward_fourier : bool, default=True
+        Compute the RFFT of a time-domain signal. Set to False to supply its
+        spectrum directly.
+    n_times : int | None, optional
+        Original number of time samples. Supply it with a precomputed spectrum
+        to distinguish odd from even lengths and preserve the Nyquist term of
+        an even-length signal. Omitting it for a spectrum retains the historical
+        even output length and doubled final bin used by EEGMiner.
 
     Returns
     -------
     torch.Tensor
-        Output tensor with shape (..., seq_len, 2), where the last dimension represents
-        the real and imaginary parts of the Hilbert transform.
+        Analytic signal of shape ``(..., n_times, 2)``, where the last dimension
+        holds its real and imaginary parts. For a spectrum given without
+        ``n_times``, the length is ``2 * (n_freqs - 1)``.
 
     Examples
     --------
     >>> import torch
-    >>> input = torch.randn(10, 100)  # Example input tensor
-    >>> output = hilbert_transform(input)
-    >>> print(output.shape)
+    >>> x = torch.randn(10, 100)
+    >>> hilbert_freq(x).shape
     torch.Size([10, 100, 2])
 
-    Notes
-    -----
-    The implementation is matching scipy implementation, but using torch.
-    https://github.com/scipy/scipy/blob/v1.14.1/scipy/signal/_signaltools.py#L2287-L2394
-
+    See Also
+    --------
+    scipy.signal.hilbert : Analytic signal of a real waveform.
     """
+    if n_times is not None and n_times < 1:
+        raise ValueError(f"n_times must be positive, got {n_times}.")
+    if forward_fourier:
+        seq_len = x.shape[-1]
+        if n_times is not None and n_times != seq_len:
+            raise ValueError(
+                f"n_times={n_times} differs from the signal length {seq_len}."
+            )
+    else:
+        if x.ndim < 2 or x.shape[-1] != 2:
+            raise ValueError(
+                "Expected a one-sided spectrum with real and imaginary pairs."
+            )
+        n_freqs = x.shape[-2]
+        seq_len = 2 * (n_freqs - 1) if n_times is None else n_times
+        if n_times is not None and n_freqs != n_times // 2 + 1:
+            raise ValueError(
+                f"Spectrum with {n_freqs} bins does not match n_times={n_times}."
+            )
+    keep_nyquist = seq_len % 2 == 0 and (forward_fourier or n_times is not None)
     if _real_dft.needs_real_dft(x):
-        return _real_dft.hilbert_freq_real(x, forward_fourier).to(x.dtype)
+        return _real_dft.hilbert_freq_real(
+            x, forward_fourier, seq_len, keep_nyquist
+        ).to(x.dtype)
 
     input_dtype = x.dtype
     cast_back = x.is_floating_point()
@@ -315,16 +335,11 @@ def hilbert_freq(x: torch.Tensor, forward_fourier: bool = True) -> torch.Tensor:
     x = spectral_input(x)
 
     if forward_fourier:
-        seq_len = x.shape[-1]
         x = torch.fft.rfft(x, norm=None, dim=-1)
         x = torch.view_as_real(x)
-    else:
-        # The one-sided spectrum does not record whether the signal length
-        # was odd or even, so assume an even length here.
-        seq_len = 2 * (x.shape[-2] - 1)
     x = x * 2.0
     x[..., 0, :] = x[..., 0, :] / 2.0  # Don't multiply the DC-term by 2
-    if forward_fourier and seq_len % 2 == 0:
+    if keep_nyquist:
         # Nor the Nyquist term, which only exists for even lengths
         x[..., -1, :] = x[..., -1, :] / 2.0
     x = F.pad(
@@ -339,7 +354,10 @@ def hilbert_freq(x: torch.Tensor, forward_fourier: bool = True) -> torch.Tensor:
 
 
 def plv_time(
-    x: torch.Tensor, forward_fourier: bool = True, epsilon: float = 1e-6
+    x: torch.Tensor,
+    forward_fourier: bool = True,
+    epsilon: float = 1e-6,
+    n_times: Optional[int] = None,
 ) -> torch.Tensor:
     """Compute the Phase Locking Value (PLV) metric in the time domain.
 
@@ -367,6 +385,10 @@ def plv_time(
         Default is `True`.
     epsilon : float, default 1e-6
         Small numerical value to ensure positivity constraint on the complex part
+    n_times : int | None, optional
+        Original signal length. With a precomputed spectrum, supply it to
+        compute the same analytic signal as the time-domain input. See
+        :func:`hilbert_freq` for the historical default.
 
     Returns
     -------
@@ -382,7 +404,7 @@ def plv_time(
     """
     # Compute the analytic signal using the Hilbert transform.
     # x_a has separate real and imaginary parts.
-    analytic_signal = hilbert_freq(x, forward_fourier)
+    analytic_signal = hilbert_freq(x, forward_fourier, n_times)
     # Calculate the amplitude (magnitude) of the analytic signal.
     # Adding a small epsilon (1e-6) to avoid division by zero.
     amplitude = torch.sqrt(

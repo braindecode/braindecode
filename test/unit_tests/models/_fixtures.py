@@ -14,6 +14,8 @@ non_classification_models = [
     "SignalJEPA",
     # Emits token-wise logits (batch, n_outputs, n_patches).
     "SleepFMStager",
+    # Emits one prediction per sleep epoch (batch, n_outputs, n_epochs).
+    "CareSleepNet",
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
     "MetaNeuromotorHand",
     "EMG2QwertyNet",

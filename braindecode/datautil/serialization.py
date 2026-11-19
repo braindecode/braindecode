@@ -299,12 +299,19 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
     if is_raw and (not has_stored_windows):
         dataset = RawDataset(signals, description, target_name)
     else:
-        window_kwargs = _load_kwargs_json("window_kwargs", sub_dir)
+        window_kwargs = _load_kwargs_json("window_kwargs", sub_dir) or []
         windows_ds_kwargs = [
             kwargs[1]
             for kwargs in window_kwargs
             if kwargs[0] in ("WindowsDataset", "EEGWindowsDataset")
         ]
+        if not windows_ds_kwargs:
+            # Older fixed-length Epochs stores only recorded the windower arguments.
+            windows_ds_kwargs = [
+                params
+                for name, params in window_kwargs
+                if name == "create_fixed_length_windows"
+            ]
         windows_ds_kwargs = windows_ds_kwargs[0] if len(windows_ds_kwargs) == 1 else {}
         if is_raw:
             metadata = pd.read_pickle(path / i / "metadata_df.pkl")
