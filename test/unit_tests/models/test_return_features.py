@@ -42,6 +42,7 @@ from braindecode.models import (
     SignalJEPA_PreLocal,
     SleepFM,
     STEEGFormer,
+    TinyMyo,
 )
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
@@ -262,6 +263,7 @@ _MODELS = [
         False,
         id="JungMAE",
     ),
+    pytest.param(TinyMyo, 8, {"depth": 1}, False, id="TinyMyo"),
 ]
 
 
