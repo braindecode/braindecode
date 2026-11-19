@@ -328,7 +328,7 @@ Bug fixes
   same tensor storage and view. The module versions stored by
   PyTorch are also preserved, so missing BatchNorm buffers are checked against
   the checkpoint's version
-  (:gh:`1538` by `Bruno Aristimunha`_).
+  (:gh:`1538`, :gh:`1639` by `Bruno Aristimunha`_).
 - Replacing a local Zarr dataset keeps the previous store readable if the
   export fails. Fresh lazy readers see the replacement recording, while open
   readers and their workers retain the signal associated with their labels.
