@@ -17,6 +17,7 @@ import mne
 import numpy as np
 import pytest
 import torch
+import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
 
@@ -263,6 +264,28 @@ def test_vemg2pose_position_and_velocity_parameterizations_diverge():
 def test_vemg2pose_rejects_malformed_schedules(kwargs, message):
     with pytest.raises(ValueError, match=message):
         _small_vemg2pose(**kwargs)
+
+
+def test_vemg2pose_rollout_features_resampled_with_aligned_corners():
+    # emg2pose resamples the encoder features with align_corners=True.
+    model = _small_vemg2pose().eval()
+    x = torch.randn(2, 4, 64)
+    decoder_inputs = []
+    model.decoder.register_forward_hook(
+        lambda module, args, output: decoder_inputs.append(args[0])
+    )
+
+    with torch.no_grad():
+        model(x)
+        encoded = model.encoder(x)
+
+    n_steps = len(decoder_inputs)
+    expected = F.interpolate(encoded, size=n_steps, mode="linear", align_corners=True)
+    feature_dim = encoded.shape[1]
+    rollout_features = torch.stack(
+        [step_input[:, :feature_dim] for step_input in decoder_inputs], dim=-1
+    )
+    torch.testing.assert_close(rollout_features, expected)
 
 
 def test_sensingdynamics_derives_custom_electrode_stride_geometry():
