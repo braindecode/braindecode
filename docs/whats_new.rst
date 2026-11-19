@@ -678,6 +678,9 @@ Code health
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).
+- Trial-prediction tests import their shared synthetic windows and historical
+  reconstruction reference from a helper module instead of from other collected
+  test modules (:gh:`1672` by `Bruno Aristimunha`_).
 - The :ref:`channel-strategies` guide shows how to exclude and reconstruct a
   bad EEG channel. The API reference lists
   :func:`~braindecode.datasets.pad_channels_collate` and gives the correct
