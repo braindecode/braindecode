@@ -43,6 +43,7 @@ from braindecode.models import (
     SignalJEPA_PreLocal,
     SleepFM,
     STEEGFormer,
+    TinyMyo,
 )
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
@@ -81,7 +82,7 @@ _REVE_CHS = [
 
 
 def _chs(names=None, n=N_CHANS):
-    montage = mne.channels.make_standard_montage("standard_1020")
+    montage = mne.channels.make_standard_montage("colin27_1020")
     ch = names or montage.ch_names[:n]
     info = mne.create_info(ch_names=ch, sfreq=256, ch_types="eeg")
     info.set_montage(montage)
@@ -270,6 +271,7 @@ _MODELS = [
         False,
         id="JungMAE",
     ),
+    pytest.param(TinyMyo, 8, {"depth": 1}, False, id="TinyMyo"),
 ]
 
 

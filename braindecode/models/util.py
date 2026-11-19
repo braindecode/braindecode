@@ -35,6 +35,7 @@ from torch import nn
 from torchaudio.transforms import Resample
 
 from braindecode import modules as bd_modules
+from braindecode.functional import check_n_chans  # noqa: F401
 from braindecode.util import resolve_montage_name
 
 # Canonical MNE channel-type name for the electrode kinds braindecode models
@@ -123,7 +124,11 @@ _BATCH_NORM_MODULES = (
 
 
 def _disable_batch_norm_training_if_batch_size_one(forward):
-    """Temporarily set BatchNorm layers to train(False) for batch size one."""
+    """Temporarily set BatchNorm layers to train(False) for batch size one.
+
+    TorchScript resolves the names of a wrapped forward in this module, hence
+    the imports of ``torch`` and ``check_n_chans`` at the top.
+    """
     forward_signature = inspect.signature(forward)
 
     @wraps(forward)
@@ -365,7 +370,7 @@ _rng = np.random.default_rng(12)
 def _fixture_montage_chs() -> tuple[tuple[str, tuple[float, ...]], ...]:
     """Channels of the montage that supplies the test fixtures' real positions.
 
-    The montage is ``standard_1005``, spelled ``colin27_1005`` on MNE >= 1.13
+    The montage is ``colin27_1005``, named ``standard_1005`` before MNE 1.13
     (see :func:`braindecode.util.resolve_montage_name`; the positions are
     identical). The positions are read back from ``info["chs"][i]["loc"]``
     after :meth:`mne.Info.set_montage`, i.e. in the head frame and in metres,
@@ -725,6 +730,13 @@ models_mandatory_parameters: list[
         # any length; 300 samples is only a test length.
         {"n_chans": 10, "n_times": 300, "sfreq": 100.0},
     ),
+    (
+        "CareSleepNet",
+        ["n_chans", "n_outputs", "n_times"],
+        # 20 sleep epochs of 300 samples (3 s at 100 Hz) keep the tests small;
+        # the reference uses 30 s epochs, n_times=60000. 1 EEG + 2 EOG channels.
+        {"n_times": 6000, "sfreq": 100.0},
+    ),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("NICE", ["n_chans", "n_outputs", "n_times"], None),
@@ -794,6 +806,21 @@ models_mandatory_parameters: list[
             "sfreq": 2000.0,
             "input_window_seconds": 480 / 2000.0,
             "n_outputs": 20,
+        },
+    ),
+    (
+        "TinyMyo",
+        ["n_chans", "n_outputs", "n_times"],
+        {
+            # The pretraining windows: 1000 samples at 2000 Hz
+            "n_chans": 8,
+            "n_times": 1000,
+            "sfreq": 2000.0,
+            "input_window_seconds": 0.5,
+            # 2 of the 8 released blocks; 2 heads also split the
+            # embed_dim=128 of the embedding test into even widths
+            "depth": 2,
+            "num_heads": 2,
         },
     ),
     ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),

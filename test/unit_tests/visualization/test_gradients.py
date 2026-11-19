@@ -9,6 +9,7 @@ import torch
 from torch import nn
 
 from braindecode.util import set_random_seeds
+from braindecode.visualization import cascading_layer_reset
 from braindecode.visualization.frequency import (
     amplitude_gradients,
     amplitude_gradients_per_trial,
@@ -106,3 +107,32 @@ def test_amplitude_gradients_preserves_parameter_grads(pending_grads):
         assert parameter.grad is grad_object
         if value is not None:
             torch.testing.assert_close(parameter.grad, value, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("deepcopy_first", [False, True])
+def test_amplitude_gradients_at_successive_layer_resets(deepcopy_first):
+    torch.manual_seed(13)
+    model = nn.Sequential(nn.Flatten(), nn.Linear(8, 4), nn.Linear(4, 2)).eval()
+    x = torch.randn(3, 1, 8)
+    trained_input = model[1].weight.detach().clone()
+    trained_output = model[2].weight.detach().clone()
+
+    cascade = cascading_layer_reset(model, deepcopy_first=deepcopy_first)
+    name, working = next(cascade)
+    assert name == "2"
+    assert (working is model) == (not deepcopy_first)
+    torch.testing.assert_close(working[1].weight, trained_input)
+    assert not torch.equal(working[2].weight, trained_output)
+    reset_output = working[2].weight.detach().clone()
+    output_only = amplitude_gradients(working, x)
+
+    name, next_model = next(cascade)
+    assert name == "1"
+    assert next_model is working
+    assert not torch.equal(working[1].weight, trained_input)
+    torch.testing.assert_close(working[2].weight, reset_output)
+    assert not np.allclose(amplitude_gradients(working, x), output_only)
+    assert list(cascade) == []
+    if deepcopy_first:
+        torch.testing.assert_close(model[1].weight, trained_input)
+        torch.testing.assert_close(model[2].weight, trained_output)
