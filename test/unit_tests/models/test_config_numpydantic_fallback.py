@@ -1,5 +1,5 @@
 # Authors: Sarthak Tayal <sarthaktayal2@gmail.com>
-import subprocess
+import subprocess  # nosec B404 - reruns a fixed test with sys.executable
 import sys
 
 import mne
@@ -34,7 +34,7 @@ def test_mne_channel_metadata_roundtrip():
 
 def test_config_without_numpydantic():
     # Exercise the core install in isolation from the typed configs already imported.
-    subprocess.run(
+    subprocess.run(  # nosec B603 - fixed Python source and interpreter
         [
             sys.executable,
             "-c",
