@@ -327,7 +327,6 @@ Bug fixes
   (:gh:`1621` by `Bruno Aristimunha`_).
 - :func:`braindecode.preprocessing.filterbank` preserves channel positions and
   their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
-
 - :class:`braindecode.models.LUNA` keeps its default channel locations in a
   non-persistent buffer, so ``model.to(device)`` moves them. Before, they stayed
   on the CPU in a plain dict, and each forward without ``channel_locations``
@@ -337,6 +336,9 @@ Bug fixes
   when loading weights into a model constructed on the meta device. Existing
   state dictionaries and full-model pickles load (:gh:`1616` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.SSTDPN` can be exported with PyTorch 2.6.
+  The exported model projects each class prototype to its maximum norm
+  before computing the logits (:gh:`1681` by `Bruno Aristimunha`_).
 - ``load_state_dict`` of every braindecode model loads checkpoints saved before
   the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
   other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key
