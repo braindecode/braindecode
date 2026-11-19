@@ -328,8 +328,13 @@ Bug fixes
   the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
   other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key
   is mapped to ``parametrizations.weight.original``. Released checkpoints such as
-  the EEGNet weights of Guetschel and Tangermann load without renaming keys
-  (:gh:`1538` by `Bruno Aristimunha`_).
+  the EEGNet weights of Guetschel and Tangermann load without renaming keys.
+  If a checkpoint supplies both names, the current weight takes precedence
+  and a strict load reports the obsolete key unless both names refer to the
+  same tensor storage and view. The module versions stored by
+  PyTorch are also preserved, so missing BatchNorm buffers are checked against
+  the checkpoint's version
+  (:gh:`1538`, :gh:`1639` by `Bruno Aristimunha`_).
 - Replacing a local Zarr dataset keeps the previous store readable if the
   export fails. Fresh lazy readers see the replacement recording, while open
   readers and their workers retain the signal associated with their labels.
