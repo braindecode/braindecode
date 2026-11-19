@@ -253,6 +253,9 @@ Bug fixes
   stays in the model so the released weights still load; the first head layer takes
   ``d_model`` instead of ``emb_dim`` inputs per token (the same with the defaults).
   Outputs of existing CSBrain classifiers change (:gh:`1541`, :gh:`1572`).
+- :class:`braindecode.augmentation.FTSurrogate` applies a shared phase
+  perturbation across channels on Apple MPS. Broadcasting that phase also
+  avoids copying it for each channel on other devices.
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
   averages kept steps that lie after the end of the input. When the last
   segment held fewer real samples than its first kept step position, those
@@ -274,9 +277,6 @@ Bug fixes
   these real bins, so a negative bin got ``pi`` or ``-pi`` at random; on MPS
   this moved the outputs of the released weights on random-walk input by 7 %
   from the CPU ones. CPU outputs are unchanged (:gh:`1566` by `Hamza Abdelhedi`_).
-- :class:`braindecode.augmentation.FTSurrogate` applies a shared phase
-  perturbation across channels on Apple MPS. Broadcasting that phase also
-  avoids copying it for each channel on other devices.
 - :class:`braindecode.models.SignalJEPA` and
   :class:`braindecode.models.SignalJEPA_Contextual` no longer fail in ``backward()``
   when the window gives one token per channel (for example 152 samples at 128 Hz)
