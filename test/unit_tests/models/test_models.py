@@ -2718,6 +2718,54 @@ def test_fbcnet_specified_filter_parameters():
 
 
 @pytest.mark.parametrize(
+    "device,dtype",
+    [
+        ("cpu", torch.float32),
+        ("cpu", torch.float16),
+        ("cpu", torch.bfloat16),
+        pytest.param(
+            "mps",
+            torch.float32,
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason="requires MPS"
+            ),
+        ),
+    ],
+)
+def test_fbcnet_cast_preserves_iir_filter(device, dtype, tmp_path):
+    torch.manual_seed(42)
+    kwargs = dict(
+        n_chans=3,
+        n_times=1024,
+        n_outputs=2,
+        sfreq=256,
+        n_filters_spat=2,
+        n_bands=[(4, 8)],
+        filter_parameters=dict(
+            method="iir", iir_params=dict(ftype="butter", output="ba", order=4)
+        ),
+    )
+    model = FBCNet(**kwargs).eval()
+    x = torch.randn(2, 3, 1024).to(device=device, dtype=dtype).requires_grad_()
+    bank = model.spectral_filtering
+    expected = bank(x.detach())
+    denominator = bank.a_list[0].clone()
+
+    model.to(device=device, dtype=dtype)
+    logits = model(x)
+    assert torch.isfinite(logits).all()
+    logits.float().square().mean().backward()
+    assert torch.isfinite(x.grad).all()
+    torch.testing.assert_close(bank.a_list[0].cpu(), denominator, rtol=0, atol=0)
+    torch.testing.assert_close(bank(x.detach()), expected, rtol=0, atol=0)
+    path = tmp_path / "fbcnet.pt"
+    torch.save(model.state_dict(), path)
+    restored = FBCNet(**kwargs).to(device=device, dtype=dtype).eval()
+    restored.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
+    torch.testing.assert_close(restored(x.detach()), logits.detach(), rtol=0, atol=0)
+
+
+@pytest.mark.parametrize(
     "n_chans, n_bands, n_filters_spat, stride_factor",
     [
         (3, 9, 32, 4),
