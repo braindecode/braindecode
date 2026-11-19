@@ -345,7 +345,8 @@ Bug fixes
 - :class:`braindecode.datasets.TUHEvents` keeps the electrode associated with
   each annotation when ``.rec`` rows are out of order. Overlapping or touching
   events of the same type retain their full duration when merged. An empty
-  sidecar leaves the recording's annotations intact (by `Bruno Aristimunha`_).
+  sidecar leaves the recording's annotations intact (:gh:`1673` by
+  `Bruno Aristimunha`_).
 - Fix the PyTorch forum and TensorFlow references of
   :class:`braindecode.modules.MaxNormLinear`: each URL was split across two
   docstring lines, so the rendered links pointed to a truncated forum URL (404)
