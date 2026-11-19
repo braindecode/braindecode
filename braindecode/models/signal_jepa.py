@@ -553,7 +553,7 @@ class SignalJEPA(_BaseSignalJEPA):
         )
         local_features = self.feature_encoder(X)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
-        local_features += pos_encoding  # type: ignore
+        local_features = local_features + pos_encoding  # type: ignore
         contextual_features = self._encode(local_features)  # type: ignore
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
@@ -747,7 +747,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         )
         local_features = self.feature_encoder(X)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
-        local_features += pos_encoding  # type: ignore
+        local_features = local_features + pos_encoding  # type: ignore
         contextual_features = self._encode(local_features)  # type: ignore
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
