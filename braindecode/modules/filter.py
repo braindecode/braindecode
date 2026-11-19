@@ -17,6 +17,21 @@ from braindecode.functional._lfilter import filtfilt, lfilter
 from braindecode.functional.functions import _next_fast_len
 
 
+class _IIRCoefficients(nn.ParameterList):
+    """Frozen transfer-function coefficients whose poles depend on float64 precision."""
+
+    def _apply(self, fn, recurse=True):
+        def move(coefficient):
+            # Module.to() keeps integers intact during a dtype conversion.
+            data = coefficient.view(torch.uint8)
+            moved = fn(data)
+            if moved.dtype != data.dtype:  # Module.type() also converts integers.
+                moved = data.to(device=moved.device)
+            return moved.view(coefficient.dtype)
+
+        return super()._apply(move, recurse)
+
+
 class FilterBankLayer(nn.Module):
     """Apply multiple band-pass filters to generate multiview signal representation.
 
@@ -143,6 +158,8 @@ class FilterBankLayer(nn.Module):
     torch.Size([2, 2, 2, 256])
     """
 
+    __constants__ = ["method_iir"]
+
     def __init__(
         self,
         n_chans: int,
@@ -222,8 +239,8 @@ class FilterBankLayer(nn.Module):
         # Prepare ParameterLists
         self.fir_list = nn.ParameterList()
         self.fir_a_list = nn.ParameterList()
-        self.b_list = nn.ParameterList()
-        self.a_list = nn.ParameterList()
+        self.b_list = _IIRCoefficients()
+        self.a_list = _IIRCoefficients()
 
         if self.method_iir:
             if iir_params is None:
@@ -435,11 +452,9 @@ class FilterBankLayer(nn.Module):
         ----------
         x : Tensor
             Input tensor of shape (batch_size, n_chans, n_times).
-        filter : dict
-            Dictionary containing IIR filter coefficients
-
-            - "b": Tensor of numerator coefficients.
-            - "a": Tensor of denominator coefficients.
+        b_coeffs, a_coeffs : Tensor
+            Numerator and denominator of the filter transfer function, in
+            float64 design precision.
         forward_filter : bool
             If True, apply the filter once in the forward direction.
 
@@ -451,14 +466,14 @@ class FilterBankLayer(nn.Module):
         # Run the recursion in float64 and cast back: IIR band-passes with poles
         # near the unit circle (e.g. cheby2 banks used by FBMSNet/FBCNet) diverge
         # to NaN in float32. The coefficient buffers are already float64.
-        # On the CPU for HPU inputs (spectral_input): no float64 there.
-        x64 = spectral_input(x).double()
+        # MPS and HPU run the float64 recurrence on the CPU.
+        x64 = x.cpu().double() if x.device.type in ("hpu", "mps") else x.double()
         if forward_filter:
             filtered = lfilter(x64, a_coeffs.to(x64), b_coeffs.to(x64))
         else:
             filtered = filtfilt(x64, a_coeffs.to(x64), b_coeffs.to(x64))
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
-        return filtered.to(x).unsqueeze(1)
+        return filtered.to(dtype=x.dtype).to(device=x.device).unsqueeze(1)
 
 
 class GeneralizedGaussianFilter(nn.Module):
