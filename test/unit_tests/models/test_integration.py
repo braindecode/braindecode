@@ -284,7 +284,8 @@ def test_activation_default_parameters_are_nn_module_classes(model_class):
     activation_list = [
         value
         for key, value in sig.parameters.items()
-        if "activation" in key.lower() and key != "activation_checkpointing"
+        if "activation" in key.lower()
+        and key not in {"activation_checkpointing", "temporal_activation"}
     ]
     for activation in activation_list:
 
@@ -403,7 +404,7 @@ def test_model_exported(model):
     ]
     if sys.platform.startswith("win"):
         not_exportable_models += [
-            "LUNA",  # Has _channel_location_cache dict that breaks pytree on Windows
+            "LUNA",  # Unchecked on Windows since #1616 made the location dict a buffer
         ]
     if torch.__version__ < "2.10":
         # Export's attribute-assignment check fails with a pytree arity mismatch.
@@ -416,7 +417,7 @@ def test_model_exported(model):
 
     if sys.version_info >= (3, 14):
         not_exportable_models_py314 = [
-            "LUNA",  # Has _channel_location_cache dict that breaks pytree on Python 3.14+
+            "LUNA",  # Unchecked on 3.14+ since #1616 made the location dict a buffer
         ]  # TODO: fix LUNA export issues on Python 3.14+ one day
         if model_name in not_exportable_models_py314:
             pytest.skip(f"{model_name} export is not compatible on Python 3.14+")

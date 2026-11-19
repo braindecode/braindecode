@@ -287,9 +287,10 @@ intersphinx_mapping = {
 }
 
 if release.endswith("dev0"):
+    _revision = os.environ.get("GITHUB_SHA", "master")
     _pip_install_cell = (
         "# Install the development version of braindecode\n"
-        "%pip install git+https://github.com/braindecode/braindecode.git"
+        f"%pip install git+https://github.com/braindecode/braindecode.git@{_revision}"
     )
 else:
     _pip_install_cell = (
@@ -310,6 +311,7 @@ sphinx_gallery_conf = {
     "show_memory": _gallery_jobs == 1,
     "reference_url": dict(braindecode=None),
     "first_notebook_cell": _pip_install_cell,
+    "promote_jupyter_magic": True,
     "subsection_order": ExplicitOrder(
         [
             "../examples/model_building",
