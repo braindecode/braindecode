@@ -250,7 +250,9 @@ Bug fixes
   ``window_kwargs``, so they survive saving and loading. :gh:`515` dropped them:
   with ``targets_from="channels"`` the target channels stayed in ``X`` and ``y``
   came from the recording metadata. Loading older fixed-length Epochs stores
-  now restores their recorded target settings.
+  now restores their recorded target settings. The Hugging Face Hub (Zarr)
+  format now also stores both settings for
+  :class:`~braindecode.datasets.WindowsDataset`.
   :class:`~braindecode.datasets.WindowsDataset` and
   :class:`~braindecode.datasets.EEGWindowsDataset` with
   ``targets_from="channels"`` now raise a ``ValueError`` when the selected
