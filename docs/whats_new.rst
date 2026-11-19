@@ -40,7 +40,7 @@ Enhancements
   unchanged. :class:`braindecode.datasets.EEGWindowsDataset` now slices each
   window from the preloaded array without the channel parsing of
   ``raw._getitem``, and finds the misc channels from their kind instead of
-  calling ``raw.get_channel_types()`` (:gh:`0000` by
+  calling ``raw.get_channel_types()`` (:gh:`1651` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.modules.ChannelLayer` maps channels with one linear
   estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
