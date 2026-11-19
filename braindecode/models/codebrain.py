@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 
-from braindecode.functional import _real_dft, spectral_input
+from braindecode.functional import _real_dft, check_n_chans, spectral_input
 from braindecode.functional.functions import _next_fast_len
 from braindecode.models.base import EEGModuleMixin
 
@@ -272,6 +272,15 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         Dict[str, Optional[torch.Tensor]],
         Tuple[torch.Tensor, torch.Tensor],
     ]:
+        # The backbone takes any number of channels, the flattened head does not.
+        if not (return_features or self.pretrain_mode):
+            check_n_chans(
+                inputs,
+                self.n_chans,
+                "CodeBrain",
+                "build the model with the chs_info of this montage, or use a "
+                "channel_strategy.",
+            )
         # inputs: (batch, n_chans, n_times)
         batch, n_chans, n_times = inputs.shape
         patch_size = self.patch_size

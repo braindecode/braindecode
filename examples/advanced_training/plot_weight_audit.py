@@ -5,10 +5,9 @@ Auditing what a decoder relies on from its weights
 
 A decoder can score well by reading a signal other than the one it claims
 to decode. On the PhysioNet motor imagery dataset the cue is a target that
-appears on the left or on the right of the screen, the eyes move toward
-it, and the slow potential of that eye movement reaches every frontal and
-temporal electrode. A left-versus-right decoder trained on accuracy alone
-takes that signal when it is easier than the sensorimotor rhythm. Gao
+appears on the left or on the right of the screen. A cue-directed eye
+movement can produce a slow potential at scalp electrodes, giving a
+left-versus-right decoder another signal alongside the sensorimotor rhythm. Gao
 (2026) [1]_ ran a preregistered audit of this shortcut on PhysioNet. In an
 exploratory analysis of that audit, the decoders trained there beat
 controls with the lateral eye signal regressed out, and the gap grew with
@@ -21,7 +20,7 @@ released checkpoint without its training set, a clinical model whose data
 cannot leave the hospital, a model card that describes the preprocessing
 only approximately. This example audits a released EEG decoder from its
 weights with the simplest possible reader: a path-weighted statistic of
-the weights, then one occlusion test on data to confirm it.
+the weights, then an occlusion test on data to check the reading.
 
 .. topic:: What the audit looks for
 
@@ -31,10 +30,9 @@ the weights, then one occlusion test on data to confirm it.
     says which band it passes, the spatial weights say which electrodes it
     mixes, and the classifier says which pooled time bins separate the
     classes. Pooling these through the network's own path weights gives a
-    data-free estimate of the band and the time window the decoder relies
-    on. On PhysioNet the shortcut signature is a band below 4 Hz and a
-    window in the first second after the cue; the sensorimotor signature
-    is 8-30 Hz and the seconds after that.
+    ranking of bands, time windows and channels. The PhysioNet comparison
+    tests two hypotheses: early activity below 4 Hz could carry the cue,
+    while later activity at 8-30 Hz could carry sensorimotor rhythms.
 
 .. contents:: This example covers:
    :local:
@@ -101,17 +99,18 @@ model.eval()
 # The reader follows the EEGNet forward path backwards, for the contrast
 # between the left- and right-hand outputs:
 #
-# * **Which features matter?** The classifier weights, reshaped to
-#   ``(n_outputs, F2, n_time_bins)``, are centred across the two outputs;
-#   a feature's importance is the norm of that contrast times its
-#   batch-norm gain.
+# * **Which features matter?** Subtract the classifier weights of the two
+#   hand outputs. Scale each feature's contrast by the gain of its
+#   batch-normalization layer in evaluation mode, then take its norm over time.
 # * **Which channels?** Feature importance is pushed back through the
-#   pointwise weights and the first batch-norm gain to each spatial
-#   filter, then through the absolute spatial weights to each channel.
+#   pointwise weights and the gain of the batch normalization after the
+#   spatial filters to each spatial filter, then through the gain of the
+#   temporal batch normalization and the absolute spatial weights to each
+#   channel.
 # * **Which band?** Each temporal kernel is an FIR filter; the kernels'
 #   power spectra, weighted by the importance of the spatial filters they
 #   feed, are averaged over each band inside the input pass-band
-#   (0.5-40 Hz). The band with the most power is the reading.
+#   (0.5-40 Hz). A mean lets us compare bands of different widths.
 # * **Which time window?** The classifier contrast energy per pooled time
 #   bin, averaged in one-second windows.
 #
@@ -120,27 +119,42 @@ model.eval()
 # how much a filter *mixes* an electrode, not how much signal arrives
 # there (Haufe et al. [4]_ make this point for linear models), so the
 # channel ranking is the weakest part of the reading. The band and the
-# window come from the temporal kernels and the classifier.
+# window come from the first temporal kernels and the classifier. This
+# heuristic omits the second depthwise temporal convolution, pooling,
+# nonlinearities and the input spectrum. Occlusion can disagree with it.
 #
 # First, the weights of each layer as arrays. ``numpy(force=True)`` detaches
 # a parameter and moves it to the CPU; ``conv_spatial.weight`` is the
 # spatial filter after its max-norm.
 
+
+def batch_norm_gain(layer):
+    """Return the absolute slope of a fitted batch-normalization layer."""
+    return np.abs(layer.weight.numpy(force=True)) / np.sqrt(
+        layer.running_var.numpy(force=True) + layer.eps
+    )
+
+
 w_temporal = model.conv_temporal.weight.numpy(force=True)[:, 0, 0, :]  # (F1, n_taps)
+w_temporal = batch_norm_gain(model.bnorm_temporal)[:, None] * w_temporal
 w_spatial = model.conv_spatial.weight.numpy(force=True)[:, 0, :, 0]  # (F1*D, n_chans)
 w_point = model.conv_separable_point.weight.numpy(force=True)[:, :, 0, 0]  # (F2, F1*D)
-gain_1 = np.abs(model.bnorm_1.weight.numpy(force=True))  # (F1*D,)
-gain_2 = np.abs(model.bnorm_2.weight.numpy(force=True))  # (F2,)
 w_head = model.final_layer.conv_classifier.weight.numpy(force=True)
-w_head = w_head.reshape(model.n_outputs, model.F2, -1)[[LEFT, RIGHT]]
+w_head = w_head.reshape(model.n_outputs, model.F2, -1)
 
 ######################################################################
 # Feature, then spatial filter, then channel.
 
-contrast = w_head - w_head.mean(axis=0, keepdims=True)  # (2, F2, n_time_bins)
-feature_importance = gain_2 * np.sqrt((contrast**2).sum(axis=(0, 2)))
-filter_importance = gain_1 * (feature_importance @ np.abs(w_point))
-channel_share = pd.Series(filter_importance @ np.abs(w_spatial), CHANNELS, dtype=float)
+contrast = batch_norm_gain(model.bnorm_2)[:, None] * (w_head[LEFT] - w_head[RIGHT])
+feature_importance = np.linalg.norm(contrast, axis=1)
+filter_importance = batch_norm_gain(model.bnorm_1) * (
+    feature_importance @ np.abs(w_point)
+)
+# Spatial filter ``j`` reads temporal kernel ``j // D``, scaled by its gain.
+gain_temporal = np.repeat(batch_norm_gain(model.bnorm_temporal), model.D)
+channel_share = pd.Series(
+    (gain_temporal * filter_importance) @ np.abs(w_spatial), CHANNELS, dtype=float
+)
 channel_share /= channel_share.sum()
 
 ######################################################################
@@ -173,30 +187,29 @@ band_power = pd.Series(spectrum[passed]).groupby(band, observed=False).mean()
 band_share = band_power / band_power.sum()
 
 ######################################################################
-# The window. Each classifier time bin covers ``n_times / n_time_bins``
-# samples from the cue; the contrast energy is averaged over the bins
-# whose centre falls in each second.
+# Approximate the time of each pooled classifier bin from its centre within
+# the trial. Convolution and pooling give neighbouring bins overlapping
+# receptive fields. Average the contrast energy within each one-second window.
 
-energy = (feature_importance[:, None] * contrast**2).sum(axis=(0, 1))
+energy = (contrast**2).sum(axis=0)
 bin_centre_s = (np.arange(energy.size) + 0.5) * model.n_times / energy.size / SFREQ
 window_energy = pd.Series(energy).groupby(np.floor(bin_centre_s).astype(int)).mean()
 best = window_energy.idxmax()
 window = f"{best:+d}..{best + 1:+d} s"
 
-print(f"Band with the most power: {band_share.idxmax()}")
+print(f"Band with the highest mean kernel power: {band_share.idxmax()}")
 print(band_share.round(3).to_string())
 print(f"Window with most classifier contrast: {window}")
 print("Channel shares:", channel_share.round(3).to_dict())
 
 ######################################################################
-# Compare the printed band and window with the two signatures above. The
-# five values are each band's share of the mean power; they show how far
-# ahead the first band is. The channel shares rank the three electrodes;
+# Compare the printed band and window with the two hypotheses above. The
+# five values are normalized band means. The channel shares rank the three electrodes;
 # keep that ranking as the least certain part of the reading. The next
 # step checks the reading on data.
 #
-# Confirm on data: one occlusion test
-# -----------------------------------
+# Check the reading on recorded trials
+# ------------------------------------
 #
 # Loading PhysioNet as the checkpoint saw it
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -246,22 +259,22 @@ print(f"{len(X)} trials, {X.shape[1]} channels x {X.shape[2]} samples")
 # Removing what the weights point to
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# The reading is a claim. One test checks it: remove a band, a time
-# window or a channel, and see how far the left-versus-right accuracy
-# drops. A decoder that reads the cue-directed eye movement loses accuracy
-# when 0.5-4 Hz is removed, when only 8-30 Hz is kept, or when the first
-# second is zeroed, and keeps it when 1-3 s is zeroed. A decoder that
-# reads the sensorimotor rhythm does the opposite.
+# Remove a band, a time window or a channel, and measure the change in
+# left-versus-right accuracy. High-pass and low-pass perturbations check
+# the low and high ends of the input spectrum. A third perturbation keeps
+# the 8-30 Hz band containing the sensorimotor rhythms.
 #
 # Each test is a modified copy of the trials: filtered with a 4th-order
 # zero-phase Butterworth filter, or multiplied by a mask that zeroes some
 # samples or one channel.
 
 highpass_4hz = butter(4, 4.0, "highpass", fs=SFREQ, output="sos")
+lowpass_30hz = butter(4, 30.0, "lowpass", fs=SFREQ, output="sos")
 bandpass_8_30hz = butter(4, [8.0, 30.0], "bandpass", fs=SFREQ, output="sos")
 first_second = np.arange(X.shape[-1]) < int(SFREQ)
 X_tests = {
     "remove\n0.5-4 Hz": sosfiltfilt(highpass_4hz, X).astype(np.float32),
+    "remove\n30-40 Hz": sosfiltfilt(lowpass_30hz, X).astype(np.float32),
     "keep\n8-30 Hz only": sosfiltfilt(bandpass_8_30hz, X).astype(np.float32),
     "zero\n0-1 s": X * ~first_second,
     "zero\n1-3 s": X * first_second,
@@ -293,22 +306,16 @@ print(f"Channel ranked first by the weights: {top_weights}")
 print(f"Channel whose removal costs the most: {top_data}")
 
 ######################################################################
-# The chart puts the data check next to what the weights said (in the
-# title). Orange bars are the tests an eye-movement decoder fails, the
-# blue bar the one a sensorimotor decoder fails, grey bars remove one
-# electrode. If the orange bars cost accuracy and zeroing 1-3 s costs
-# little, the data agree with the band and the window read from the
-# weights. The last two printed lines compare the channel the weights
-# rank first with the one whose removal costs the most; the channel
-# ranking is where the reading and the data are most likely to part. Here
-# the two channels differ, so the channel ranking is the one place where
-# the reading from the weights fails in this example.
+# The chart groups frequency, time and channel perturbations by colour.
+# Compare the two frequency removals with the band ranked first by the
+# kernels, and the two time masks with the highest-scoring classifier window.
+# The last two printed lines compare the channel rankings.
 
-fig, ax = plt.subplots(figsize=(7, 3.6))
+fig, ax = plt.subplots(figsize=(8, 3.6))
 ax.bar(
     drops.index,
     100 * drops.to_numpy(),
-    color=["#D55E00"] * 3 + ["#0072B2"] + ["#999999"] * 3,
+    color=["#D55E00"] * 3 + ["#0072B2"] * 2 + ["#999999"] * 3,
 )
 ax.axhline(0, color="black", lw=0.8)
 ax.set_ylabel("Accuracy drop (points)")
@@ -337,13 +344,12 @@ fig.tight_layout()
 # next audit easier: the exact preprocessing of the input, and the
 # initialisation seed.
 #
-# The occlusion test here is a check on the reading, not a proof of
-# generalisation. The real test is cross-dataset transfer. On a dataset
-# whose cue is in the centre of the screen, one would expect a decoder
-# that reads cue-directed eye movements to fall towards chance, and a
-# decoder that reads the sensorimotor rhythm to keep some of its
-# accuracy. If the weight reading says "eye movement", run that transfer
-# before relying on the decoder.
+# Filtering and masking change the inputs. A loss of accuracy measures
+# sensitivity to that change on these training subjects. Slow cortical
+# activity and ocular activity can both contribute. To investigate the
+# source, compare predictions with independently recorded eye movements.
+# To investigate transfer, test held-out data acquired with a different
+# cue arrangement.
 #
 # References
 # ----------

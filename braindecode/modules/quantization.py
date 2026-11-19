@@ -57,7 +57,9 @@ def _rotate_to(src: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
 class EMACodebook(nn.Module):
     """EMA-updated Euclidean codebook.
 
-    Buffer keys match the upstream BrainOmni checkpoint for state-dict parity.
+    Buffer keys match the upstream BrainOmni checkpoint. Codebook statistics
+    and embeddings use at least float32. The quantized output follows the
+    input dtype.
 
     Parameters
     ----------
@@ -121,6 +123,16 @@ class EMACodebook(nn.Module):
         self.register_buffer("embed", embed)
         self.register_buffer("embed_avg", embed.clone())
 
+    def _apply(self, fn, recurse=True):
+        def move_buffer(buffer):
+            moved = fn(buffer)
+            if moved.dtype in (torch.float16, torch.bfloat16):
+                # Preserve the original values when the parent model is cast.
+                return buffer.to(device=moved.device, dtype=torch.float32)
+            return moved
+
+        return super()._apply(move_buffer, recurse)
+
     def _sample_vectors(self, samples: torch.Tensor, num: int) -> torch.Tensor:
         num_samples, device = samples.shape[0], samples.device
         if num_samples >= num:
@@ -143,6 +155,8 @@ class EMACodebook(nn.Module):
                 dtype=dtype,
             )
             samples = torch.cat([samples, noise], dim=0)
+        # Cluster sums can exceed float16 range even when every sample is finite.
+        samples = samples.to(torch.promote_types(dtype, torch.float32))
         centers = self._sample_vectors(samples, self.codebook_size)
         bins = torch.ones(self.codebook_size, device=samples.device, dtype=torch.long)
         # A batch smaller than the 4096 drawn vectors is sampled with replacement:
@@ -151,20 +165,16 @@ class EMACodebook(nn.Module):
         for _ in range(self.kmeans_iters):
             # Exact (non-matmul) mode keeps the released ``kmeans`` assignments
             # without materialising the (n_samples, codebook_size, dim) broadcast.
-            # cdist has no bf16/fp16 kernel: compute in at least float32.
-            work = torch.promote_types(dtype, torch.float32)
             distances = torch.cdist(
-                rows.to(work),
-                centers.to(work),
+                rows,
+                centers,
                 compute_mode="donot_use_mm_for_euclid_dist",
             )
             buckets = distances.argmin(dim=-1)[inverse]
             bins = torch.bincount(buckets, minlength=self.codebook_size)
             empty = bins == 0
             bins[empty] = 1
-            new_centers = torch.zeros(
-                self.codebook_size, dim, device=samples.device, dtype=dtype
-            )
+            new_centers = samples.new_zeros((self.codebook_size, dim))
             new_centers.scatter_add_(0, buckets.unsqueeze(-1).expand(-1, dim), samples)
             new_centers = new_centers / bins.unsqueeze(-1)
             centers = torch.where(empty.unsqueeze(-1), centers, new_centers)
@@ -248,7 +258,7 @@ class EMACodebook(nn.Module):
             work = torch.promote_types(dtype, torch.float32)
             ones = x.new_ones(flat_ind.shape[0], dtype=work)
             one_hot_sum = ones.new_zeros(self.codebook_size)
-            one_hot_sum = one_hot_sum.index_add_(0, flat_ind, ones).type(dtype)
+            one_hot_sum = one_hot_sum.index_add_(0, flat_ind, ones)
             if not torch.jit.is_scripting():
                 _all_reduce_sum(one_hot_sum)
             self.cluster_size.data.mul_(self.decay).add_(

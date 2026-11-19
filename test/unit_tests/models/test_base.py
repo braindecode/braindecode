@@ -14,6 +14,7 @@ import pytest
 import torch
 from torch import nn
 
+from braindecode.models import EEGNet
 from braindecode.models.base import EEGModuleMixin
 
 if TYPE_CHECKING:
@@ -844,3 +845,94 @@ def test_application_registered_type_coder_roundtrip(tmp_path, explicit_override
     assert decoded == ["identity-v1"]
     for key, value in model.state_dict().items():
         torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)
+
+
+def test_load_state_dict_from_before_max_norm_parametrization():
+    # Released checkpoints (e.g. PierreGtch/EEGNetv4) store the max-norm
+    # spatial filters as ``conv_spatial.weight`` and the classifier under its
+    # old name. load_state_dict maps both to the current keys.
+    torch.manual_seed(0)
+    model = EEGNet(n_chans=3, n_outputs=5, n_times=385).eval()
+    legacy = {
+        k.replace("parametrizations.weight.original", "weight").replace(
+            "final_layer.conv_classifier", "conv_classifier"
+        ): v
+        for k, v in model.state_dict().items()
+    }
+    assert "conv_spatial.weight" in legacy
+
+    loaded = EEGNet(n_chans=3, n_outputs=5, n_times=385).eval()
+    loaded.load_state_dict(legacy)
+
+    x = torch.randn(2, 3, 385)
+    torch.testing.assert_close(loaded(x), model(x))
+
+
+@pytest.mark.parametrize("legacy_first", [False, True])
+@pytest.mark.parametrize("legacy, current", [
+    ("conv_spatial.weight", "conv_spatial.parametrizations.weight.original"),
+    ("conv_classifier.weight", "final_layer.conv_classifier.weight"),
+])
+def test_legacy_key_cannot_overwrite_current_weight(legacy, current, legacy_first):
+    model = EEGNet(n_chans=3, n_outputs=5, n_times=385)
+    state = model.state_dict()
+    expected = state[current].clone()
+    obsolete = {legacy: torch.zeros_like(expected)}
+    checkpoint = obsolete | state if legacy_first else state | obsolete
+
+    with pytest.raises(RuntimeError, match="Unexpected key"):
+        model.load_state_dict(checkpoint)
+    result = model.load_state_dict(checkpoint, strict=False)
+    assert result.unexpected_keys == [legacy]
+    torch.testing.assert_close(model.state_dict()[current], expected)
+
+
+def test_legacy_weight_does_not_bypass_a_custom_parametrization():
+    model = DummyModuleNTime(n_times=4)
+    state = model.state_dict()
+    nn.utils.parametrize.register_parametrization(model.dummy, "weight", nn.Sigmoid())
+
+    result = model.load_state_dict(state, strict=False)
+    assert result.unexpected_keys == ["dummy.weight"]
+    assert result.missing_keys == ["dummy.parametrizations.weight.original"]
+
+
+@pytest.mark.parametrize("legacy, current", [
+    ("conv_spatial.weight", "conv_spatial.parametrizations.weight.original"),
+    ("conv_classifier.weight", "final_layer.conv_classifier.weight"),
+])
+def test_load_state_dict_accepts_tied_historical_names(tmp_path, legacy, current):
+    model = EEGNet(n_chans=3, n_outputs=2, n_times=128).eval()
+    state = model.state_dict()
+    state[legacy] = state[current].detach()
+    # Saving a module registered twice produces two tensor objects backed by
+    # the same storage in raw PyTorch checkpoints.
+    path = tmp_path / "tied.pt"
+    torch.save(state, path)
+    restored = torch.load(path, weights_only=True)
+    model.load_state_dict(restored)
+    assert restored[current].is_set_to(restored[legacy])
+
+    # Equal values in an independent tensor, or a different interpretation of
+    # the same bytes, are competing entries rather than tied weights.
+    for competing in (
+        restored[current].clone(),
+        restored[current].view(torch.int32),
+        restored[current].transpose(0, 1),
+        restored[current][1:],
+    ):
+        restored[legacy] = competing
+        with pytest.raises(RuntimeError, match="Unexpected key"):
+            model.load_state_dict(restored)
+
+
+def test_load_state_dict_preserves_batch_norm_version():
+    model = EEGNet(n_chans=3, n_outputs=2, n_times=128)
+    state = model.state_dict()
+    del state["bnorm_1.num_batches_tracked"]
+    with pytest.raises(RuntimeError, match=r"bnorm_1\.num_batches_tracked"):
+        model.load_state_dict(state)
+
+    # PyTorch added this buffer in BatchNorm version 2.
+    state._metadata["bnorm_1"]["version"] = 1
+    model.load_state_dict(state)
