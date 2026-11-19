@@ -4,6 +4,7 @@ pressure mid-suite leaves its last state in the job log.
 Usage: python .github/scripts/with_memory_log.py pytest ...
 """
 
+import signal
 import subprocess
 import sys
 import threading
@@ -32,7 +33,12 @@ def _log_memory(stop):
 
 stop = threading.Event()
 threading.Thread(target=_log_memory, args=(stop,), daemon=True).start()
-code = subprocess.call(sys.argv[1:])
+child = subprocess.Popen(sys.argv[1:])
+# Pass cancel and timeout signals on to pytest so it can print its interrupted
+# summary; left alone, SIGINT kills it outright and SIGTERM orphans it.
+for sig in (signal.SIGINT, signal.SIGTERM):
+    signal.signal(sig, lambda signum, frame: child.send_signal(signum))
+code = child.wait()
 stop.set()
 # A child terminated by a signal has a negative return code in subprocess.
 sys.exit(128 - code if code < 0 else code)
