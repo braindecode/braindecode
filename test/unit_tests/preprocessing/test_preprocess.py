@@ -526,6 +526,28 @@ def test_filterbank_keeps_long_channel_names():
     ]
 
 
+def test_filterbank_reuses_a_dropped_channel_name():
+    name = "Anterior selected depth electrode"
+    names = [name, f"{name}_4-8", f"{name}_4-8_"]
+    raw = mne.io.RawArray(
+        np.random.default_rng(2).standard_normal((3, 512)),
+        mne.create_info(names, 128, "eeg"),
+        verbose=False,
+    )
+    expected = raw.copy().filter(4, 8, method="iir", verbose=False).get_data()
+
+    # Keeping both would give two signals the same name.
+    with pytest.raises(ValueError, match="present in more than one"):
+        filterbank(
+            raw, [(4, 8)], drop_original_signals=False, method="iir", verbose=False
+        )
+    assert raw.ch_names == names
+
+    filterbank(raw, [(4, 8)], method="iir", verbose=False)
+    assert raw.ch_names == [f"{source}_4-8" for source in names]
+    np.testing.assert_array_equal(raw.get_data(), expected)
+
+
 def test_filterbank_waveform_metadata_reference():
     raw = _synthetic_filterbank_raw()
     raw.set_montage(
@@ -556,7 +578,7 @@ def test_filterbank_waveform_metadata_reference():
     filterbank(actual, frequency_bands, drop_original_signals=True, verbose="ERROR")
 
     expected_ch_order = [
-        (ch + f"_{band[0]}-{band[1]}")[-15:]
+        f"{ch}_{band[0]}-{band[1]}"
         for ch in original_ch_names
         for band in frequency_bands
     ]
