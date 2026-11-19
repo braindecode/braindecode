@@ -324,6 +324,11 @@ Bug fixes
   is mapped to ``parametrizations.weight.original``. Released checkpoints such as
   the EEGNet weights of Guetschel and Tangermann load without renaming keys
   (:gh:`1538` by `Bruno Aristimunha`_).
+- Replacing a local Zarr dataset keeps the previous store readable if the
+  export fails. Fresh lazy readers see the replacement recording, while open
+  readers and their workers retain the signal associated with their labels.
+  Stores on filesystems without file locks still load and overwrite
+  (:gh:`1627` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
