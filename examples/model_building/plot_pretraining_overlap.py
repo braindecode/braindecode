@@ -70,7 +70,7 @@ print(restored.card_data.datasets)
 # parameters came from the checkpoint (a head rebuilt for another
 # ``n_outputs`` is marked as new). ``print(model)`` adds the same lines below
 # its table. Both end with the Braindecode citation: if you use Braindecode in
-# scientific work, cite it with its Zenodo DOI, 10.5281/zenodo.17699192.
+# scientific work, cite it with its Zenodo DOI, 10.5281/zenodo.8214376.
 # The card offers BibTeX and APA exports, and its dataset-access section links
 # to NEMAR, EEGDash catalogue searches and braindecode reader documentation.
 

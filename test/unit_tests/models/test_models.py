@@ -3655,6 +3655,27 @@ def test_medformer_token_embedding_matches_its_conv2d(single_channel):
     torch.testing.assert_close(emb(x), emb.token_conv(x))
 
 
+def test_load_state_dict_from_before_max_norm_parametrization():
+    # Released checkpoints (e.g. PierreGtch/EEGNetv4) store the max-norm
+    # spatial filters as ``conv_spatial.weight`` and the classifier under its
+    # old name. load_state_dict maps both to the current keys.
+    torch.manual_seed(0)
+    model = EEGNet(n_chans=3, n_outputs=5, n_times=385).eval()
+    legacy = {
+        k.replace("parametrizations.weight.original", "weight").replace(
+            "final_layer.conv_classifier", "conv_classifier"
+        ): v
+        for k, v in model.state_dict().items()
+    }
+    assert "conv_spatial.weight" in legacy
+
+    loaded = EEGNet(n_chans=3, n_outputs=5, n_times=385).eval()
+    loaded.load_state_dict(legacy)
+
+    x = torch.randn(2, 3, 385)
+    torch.testing.assert_close(loaded(x), model(x))
+
+
 def test_eegitnet_mapping_targets():
     # mapping values should point to real keys in the model state dict
     model = EEGITNet(
