@@ -2,6 +2,7 @@ include README.rst
 include LICENSE.txt
 include NOTICE.txt
 
+include braindecode/models/_exports.pyi
 include braindecode/models/summary.csv
 include braindecode/models/model.html.jinja
 
