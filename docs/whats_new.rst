@@ -373,8 +373,9 @@ Code health
   contact indices and LaBraM's canonical channel order through training
   and prediction. Preprocessing and Hub format tests use local annotated
   recordings, and offline REVE tests use a local position bank. REVE now
-  moves its default positions and selected-channel indices with the model
-  and retains float64 precision for its Fourier positional features.
+  moves its default positions and selected-channel indices with the model,
+  preserves the sensor coordinates during half-precision conversion and
+  retains float64 precision for its Fourier positional features (:gh:`1662`).
 
 - Every registered model whose ``forward`` takes ``ch_mask`` is checked with no
   per-model test case, like the other cross-model contracts: each recording of a

@@ -409,6 +409,17 @@ class REVE(EEGModuleMixin, nn.Module):
         if self.use_attention_pooling:
             self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
 
+    def _apply(self, fn, recurse=True):
+        # Half precision must not round the sensor positions before the Fourier phase.
+        pos = self.default_pos
+        bank = self._position_bank.embedding
+        super()._apply(fn, recurse)
+        if self._position_bank.embedding.dtype in (torch.float16, torch.bfloat16):
+            self._position_bank.embedding = bank.to(self._position_bank.embedding.device)
+            if pos is not None:
+                self.default_pos = pos.to(self.default_pos.device)
+        return self
+
     def _get_flattened_output_dim(self) -> int:
         """Helper function to compute the flattened output dimension after the transformer."""
 

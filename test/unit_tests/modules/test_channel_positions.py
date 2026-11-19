@@ -62,6 +62,19 @@ def test_reve_exact_names_keep_the_bank_lookup(reve_bank):
     assert torch.equal(model.default_pos, bank(["Cz", "F3", "A1"]))
 
 
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_reve_preserves_sensor_positions_across_dtype_casts(reve_bank, dtype):
+    names = ["Cz", "F3", "A1"]
+    model = small_reve(chs(*names))
+    pos = torch.tensor([BANK[name] for name in names])
+    model.to(dtype=dtype)
+    torch.testing.assert_close(model.get_positions(names), pos, rtol=0, atol=0)
+    model.float()
+    x = torch.randn(2, len(names), 380)
+    with torch.no_grad():
+        torch.testing.assert_close(model(x), model(x, pos=pos[None]), rtol=0, atol=0)
+
+
 def test_reve_drop_refuses_a_mask_left_without_real_channels(reve_bank):
     with pytest.warns(UserWarning, match="X1"):
         model = small_reve(chs("Cz", "X1"), on_missing="drop", attention_pooling=True)
