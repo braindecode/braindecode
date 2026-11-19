@@ -161,9 +161,15 @@ def windows_dataset_metadata(epochs):
 
 
 @pytest.fixture
-def windows_dataset_channels(epochs):
+def windows_dataset_channels(epochs, Xy):
+    _, y = Xy
+    target = mne.EpochsArray(
+        np.repeat(y[:, None, None], epochs.get_data().shape[-1], axis=-1).astype(float),
+        info=mne.create_info(["target"], sfreq=10, ch_types="misc"),
+        metadata=epochs.metadata,
+    )
     return WindowsDataset(
-        windows=epochs,
+        windows=epochs.copy().add_channels([target]),
         targets_from="channels",
         description={},
     )

@@ -306,7 +306,7 @@ class Guetschel2026(EEGModuleMixin, nn.Module, license="mit"):
 
         from braindecode.models import Guetschel2026
 
-        raw.set_montage("standard_1020")  # channel positions, in metres
+        raw.set_montage("colin27_1020")  # channel positions, in metres
         model = Guetschel2026.from_pretrained(
             Guetschel2026.hub_repo_id("mae", "9cm", 2),
             chs_info=raw.info["chs"],
