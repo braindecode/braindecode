@@ -340,9 +340,15 @@ def create_mne_dummy_raw(
     return raw, save_fname
 
 
+# MNE 1.13 renamed these montages (mne-python#13903); the legacy names warn and
+# will raise in MNE 1.14. The positions are unchanged.
 _RENAMED_STANDARD_MONTAGES = {
     "standard_1005": "colin27_1005",
     "standard_1020": "colin27_1020",
+    "standard_alphabetic": "colin27_alphabetic",
+    "standard_postfixed": "colin27_postfixed",
+    "standard_prefixed": "colin27_prefixed",
+    "standard_primed": "colin27_primed",
 }
 
 
@@ -352,14 +358,14 @@ def resolve_montage_name(name):
     Parameters
     ----------
     name : str
-        A standard montage name. The legacy names ``standard_1005`` and
-        ``standard_1020`` are also accepted.
+        A standard montage name. The legacy ``standard_*`` names that MNE
+        1.13 renamed to ``colin27_*`` are also accepted.
 
     Returns
     -------
     str
-        The corresponding MNE montage name, with ``colin27_1005`` and
-        ``colin27_1020`` used for the two renamed montages.
+        The corresponding MNE montage name, with the ``colin27_*`` name used
+        for each renamed montage.
     """
     return _RENAMED_STANDARD_MONTAGES.get(name, name)
 
