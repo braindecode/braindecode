@@ -264,7 +264,10 @@ API and behavior changes
   :meth:`~braindecode.models.SleepFM.encode` still warns and is read as
   ``ch_mask=~channel_mask``. Pass ``ch_mask`` by keyword in both ``encode``
   and ``forward``. Both models support mixed-precision training with padded
-  input channels. In :class:`~braindecode.models.SleepFM`, a recording with one real
+  input channels. Under CPU autocast, the staging LSTM runs in its parameter
+  precision, so mixed-precision training also works on CPUs without a bfloat16
+  LSTM kernel (:gh:`1664` by `Bruno Aristimunha`_).
+  In :class:`~braindecode.models.SleepFM`, a recording with one real
   channel among padded ones now gets the output it gets alone: the channel pooling
   returns that channel's token, as for a one-channel input, instead of running the
   attention over it. :class:`~braindecode.models.SleepFMStager`, whose channels sit
@@ -637,6 +640,13 @@ Bug fixes
 Code health
 ============
 
+- Put the default three-channel test montage with the model fixtures, and
+  share canonical channel conversion between the LaBraM and BENDR entries in
+  ``models_mandatory_parameters`` (:gh:`1665` by `Bruno Aristimunha`_).
+- The test job logs memory every minute and, when it finishes, the kernel's and
+  systemd-oomd's kills, so a runner lost mid-suite ("lost communication",
+  "shutdown signal") leaves its last memory state in the log
+  (:gh:`1678` by `Bruno Aristimunha`_).
 - Every model is compiled on master: ``test_model_compiled`` no longer skips
   :class:`braindecode.models.MetaNeuromotorHand`, whose MPF featurizer torch
   2.15 compiles in about 90 s. ``test_model_exported`` exports
@@ -648,6 +658,10 @@ Code health
   reference encoder at ``atol=1e-5``: the reference packs the valid tokens and
   the model masks the invalid ones, so float32 rounding depends on the machine
   (:gh:`1594` by `Bruno Aristimunha`_).
+- :class:`braindecode.modules.Perceiver` builds the Fourier features for
+  :class:`braindecode.models.DANCE` directly along the time axis. A training
+  test checks its per-token logits and the gradients of all three event heads
+  (:gh:`1677` by `Bruno Aristimunha`_).
 - Codacy runs Bandit from a root ``bandit.yml`` that skips B105, which flagged every ``"cls_token"`` key of the foundation-model feature dicts as a hardcoded password, and B101, the test ``assert`` statements (:gh:`1546` by `Bruno Aristimunha`_).
 - Every registered model whose ``forward`` takes ``ch_mask`` is checked with no
   per-model test case, like the other cross-model contracts: each recording of a
