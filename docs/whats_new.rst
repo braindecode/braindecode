@@ -371,6 +371,10 @@ Bug fixes
   stays in the model so the released weights still load; the first head layer takes
   ``d_model`` instead of ``emb_dim`` inputs per token (the same with the defaults).
   Outputs of existing CSBrain classifiers change (:gh:`1541`, :gh:`1572`).
+- :class:`braindecode.samplers.DistributedRelativePositioningSampler` divides
+  the requested pair count evenly across ranks, including when the recording
+  count requires padding or truncation. Uneven pair budgets round up by
+  default and down with ``drop_last=True`` (:gh:`1633`).
 - :class:`braindecode.models.SyncNet` sizes its linear head from the real pooled
   length, which counts the zero padding of both the input and the convolution
   output. The old size, ``ceil(n_times / pool_size) * num_filters``, is wrong for
