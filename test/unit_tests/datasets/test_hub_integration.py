@@ -1722,6 +1722,32 @@ def test_zarr_fixed_windows_preserve_multiple_targets(
             assert crop == source[i][2]
 
 
+@pytest.mark.parametrize(
+    "targets", [["NA", "01", "", "None"], ["NA", 1, None, [3, "NA"]]]
+)
+def test_zarr_window_target_literals_and_missing_metadata(tmp_path, targets):
+    from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
+
+    pytest.importorskip("zarr")
+    raw = mne.io.RawArray(np.zeros((1, 40)), mne.create_info(["C3"], 10, "eeg"))
+    starts = np.arange(0, 40, 10)
+    metadata = pd.DataFrame(
+        {
+            "i_window_in_trial": np.arange(4),
+            "i_start_in_trial": starts,
+            "i_stop_in_trial": starts + 10,
+            "target": targets,
+            "score": [np.nan, 1.0, 2.0, np.nan],
+        }
+    )
+    source = BaseConcatDataset([EEGWindowsDataset(raw, metadata)])
+    path = convert_to_zarr(source, tmp_path / "windows.zarr")
+    for preload in (False, True):
+        restored = load_from_zarr(path, preload=preload)
+        assert [restored[i][1] for i in range(4)] == targets
+        np.testing.assert_allclose(restored.get_metadata()["score"], metadata["score"])
+
+
 def test_zarr_legacy_epochs_without_metadata_targets(tmp_path):
     from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
 

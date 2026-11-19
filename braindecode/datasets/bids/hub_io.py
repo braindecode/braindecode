@@ -243,17 +243,20 @@ def _save_window_metadata(grp, metadata, targets_from):
 
 def _load_window_metadata(grp):
     store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
-    converters = None
-    if grp.attrs.get("string_targets"):
-        converters = {"target": str}
-    elif grp.attrs.get("json_targets"):
-        converters = {"target": json.loads}
-    return pd.read_csv(
+    json_targets = grp.attrs.get("json_targets", False)
+    text_targets = json_targets or grp.attrs.get("string_targets", False)
+    # pandas also checks converter results for missing-value strings, including "NA".
+    metadata = pd.read_csv(
         Path(store_path) / grp.path / "metadata.tsv",
         sep="\t",
         index_col=0,
-        converters=converters,
+        converters={"target": str.encode} if text_targets else None,
     )
+    if text_targets:
+        metadata["target"] = metadata["target"].map(
+            json.loads if json_targets else bytes.decode
+        )
+    return metadata
 
 
 def _save_windows_to_zarr(grp, epochs, compressor):
