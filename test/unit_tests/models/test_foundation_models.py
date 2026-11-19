@@ -2078,9 +2078,7 @@ _PRATIBHA2_NAMES = ["Fp1", "Fp2", "F3", "F4", "C3", "Cz", "C4", "P3", "P4", "O1"
 
 @pytest.fixture
 def pratibha2_bank(tmp_path, monkeypatch):
-    """A small pretraining table in place of the Hub download: standard_1005
-    positions (montage frame) and two upper-case variants at other positions,
-    as in the released table."""
+    """Local stand-in for the Hub position table."""
     pos = (
         mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
         .get_positions()["ch_pos"]
@@ -2103,8 +2101,6 @@ def _pratibha2_model(names=_PRATIBHA2_NAMES, **kw):
 
 
 def test_pratibha2_channel_order_does_not_matter(pratibha2_bank):
-    """Positions travel with the names, so permuting channels together with
-    chs_info must leave the pooled embedding unchanged."""
     model = _pratibha2_model()
     perm = torch.randperm(len(_PRATIBHA2_NAMES))
     permuted = _pratibha2_model([_PRATIBHA2_NAMES[i] for i in perm])
@@ -2117,7 +2113,7 @@ def test_pratibha2_channel_order_does_not_matter(pratibha2_bank):
 
 
 def test_pratibha2_exact_name_wins_over_case(pratibha2_bank):
-    """The table has distinct AFz/AFZ and Iz/IZ; each name keeps its own entry."""
+    """The table has distinct AFz/AFZ and Iz/IZ entries."""
     model = _pratibha2_model(["AFz", "AFZ", "Iz", "IZ", "E1"])
     expected = torch.tensor(
         [pratibha2_bank[n] for n in ["AFz", "AFZ", "Iz", "IZ", "E1"]]
@@ -2126,8 +2122,6 @@ def test_pratibha2_exact_name_wins_over_case(pratibha2_bank):
 
 
 def test_pratibha2_names_outside_table_take_standard_1005_montage_frame(pratibha2_bank):
-    """10-05 names missing from the table take MNE's montage-frame position (cm);
-    case, the EEG prefix and legacy aliases go through the shared resolver."""
     pos = (
         mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
         .get_positions()["ch_pos"]
@@ -2154,8 +2148,6 @@ def test_pratibha2_unknown_channel_raises_or_drops(pratibha2_bank):
 
 
 def test_pratibha2_loads_original_parameter_names(pratibha2_bank):
-    """Checkpoints of the original release (``transformers`` layout, with its
-    stored frequency matrix) load strictly and give the same weights."""
     source = _pratibha2_model()
     to_original = (
         (r"encoder\.patch_embed\.", "patch_embed.linear."),

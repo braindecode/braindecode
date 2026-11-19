@@ -298,8 +298,7 @@ COMPAT = {
         channels="coords",
         coords_checked=False,
     ),
-    # Positions by name from the pretraining table (10-05, BioSemi-128,
-    # HydroCel E1..E129) or MNE's standard_1005 montage frame; loc is not read.
+    # Positions by channel name; loc is not read.
     "Pratibha2": dict(
         cls=Pratibha2,
         sfreq=200,

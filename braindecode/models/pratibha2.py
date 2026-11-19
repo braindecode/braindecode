@@ -25,16 +25,14 @@ from braindecode.modules import (
 from braindecode.modules.layers import RMSNorm
 from braindecode.util import resolve_montage_name
 
-# Electrode table used in pretraining (metres, MNE montage frame), pinned to the
-# commit of the released checkpoint so the positions cannot change under the weights.
+# Pretraining electrode table (metres), pinned to the release commit.
 _POSITIONS_URL = (
     "https://huggingface.co/MannasAI/pratibha-2/resolve/"
     "863edc940d82a02744776a7820641bf1bc32310b/positions.json"
 )
 _POSITIONS_FNAME = "pratibha2_positions.json"
 
-# Parameter names of the original release (MannasAI/pratibha-2, ``transformers``
-# layout) -> names here. Its ``pos_enc.freq_matrix`` is recomputed, not loaded.
+# Parameter names of the original release -> names here.
 _ORIGINAL_KEYS = (
     (r"patch_embed\.linear\.", "encoder.patch_embed."),
     (r"pos_enc\.learned_linear\.0\.", "encoder.pos_enc.learned_linear."),
@@ -224,7 +222,6 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
             self.channel_index = torch.as_tensor(kept)
 
         self.encoder = _Pratibha2Encoder(
-            # cm: the unit the pretrained position encoding saw (the table is in m).
             channel_positions=100.0 * torch.as_tensor(positions, dtype=torch.float32),
             patch_size=patch_size,
             patch_stride=patch_stride,
@@ -261,7 +258,6 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self._update_init_kwargs(n_outputs=n_outputs)
 
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
-        # Checkpoints of the original release use its own parameter names.
         for key in [k for k in state_dict if k.startswith(prefix)]:
             name = key[len(prefix) :]
             if name == "pos_enc.freq_matrix":
@@ -332,15 +328,11 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
 
 def _resolve_positions(chs_info, table, on_missing):
-    """Positions ``(n_kept, 3)`` of ``chs_info`` in ``table``, and the kept indices.
+    """Positions ``(n_kept, 3)`` of ``chs_info`` and the kept indices.
 
-    An exact name match wins, as in the reference implementation; other names go
-    through :func:`~braindecode.modules.resolve_channel_positions`, whose
-    case-insensitive lookup alone would merge entries that differ only in case
-    (the pretraining table has distinct ``AFz``/``AFZ`` and ``Iz``/``IZ``).
-    10-05 names absent from the table take their position in MNE's
-    ``standard_1005`` montage frame, the frame of the table's own 10-05 entries
-    (identical where both have the name).
+    Exact names first (the table has distinct ``AFz``/``AFZ`` and ``Iz``/``IZ``),
+    then :func:`~braindecode.modules.resolve_channel_positions`, then MNE's
+    ``standard_1005`` montage frame for 10-05 names missing from the table.
     """
     bank = {**_standard_1005_montage_frame(), **table}
     positions, kept = resolve_channel_positions(chs_info, bank, None, on_missing)
@@ -354,8 +346,7 @@ def _resolve_positions(chs_info, table, on_missing):
 
 @lru_cache(maxsize=1)
 def _standard_1005_montage_frame() -> dict:
-    """Name -> position (m) of MNE's ``standard_1005`` montage, in its own frame
-    (not the head frame that ``info.set_montage`` gives)."""
+    """MNE's ``standard_1005`` positions (m) in the montage frame, not the head frame."""
     montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
     return dict(montage.get_positions()["ch_pos"])
 
@@ -407,9 +398,6 @@ class _Pratibha2Encoder(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.normalize_input:
-            # Per-channel z-score within each window, in at least float32 so
-            # that a flat channel cannot become 0/0 in float16. Scale-free, so
-            # volts (MNE) and microvolts give the same result.
             x32 = x.to(torch.promote_types(x.dtype, torch.float32))
             mean = x32.mean(dim=-1, keepdim=True)
             std = x32.std(dim=-1, keepdim=True)
@@ -418,7 +406,6 @@ class _Pratibha2Encoder(nn.Module):
         tokens = self.patch_embed(patches)  # (B, C, P, D)
         batch, n_chans, n_patches, _ = tokens.shape
 
-        # 4D coordinates (x, y, z in cm, patch index), shared by the batch.
         positions = self.channel_positions
         positions = positions.to(torch.promote_types(positions.dtype, torch.float32))
         time = torch.arange(n_patches, device=tokens.device, dtype=positions.dtype)
@@ -441,14 +428,12 @@ class _Pratibha2Encoder(nn.Module):
 class _Pratibha2PositionalEncoding(nn.Module):
     """4D position encoding: Fourier features plus a learned gated branch.
 
-    Kept private: the ``fourier_linear`` / ``learned_linear`` / ``final_norm``
-    layout and the swish-plus-GELU gate are what the released weights depend on.
+    Kept private: the released weights depend on this layout.
     """
 
     def __init__(self, embed_dim: int, n_freqs: int):
         super().__init__()
         freqs = torch.linspace(1.0, 10.0, n_freqs)
-        # (4, n_freqs ** 4): every combination of one frequency per coordinate.
         self.register_buffer(
             "freq_matrix",
             torch.cartesian_prod(freqs, freqs, freqs, freqs).T.contiguous(),
@@ -460,7 +445,7 @@ class _Pratibha2PositionalEncoding(nn.Module):
         self.final_norm = RMSNorm(embed_dim, eps=1e-8)
 
     def forward(self, coords: torch.Tensor) -> torch.Tensor:
-        # Angles in at least float32: bfloat16 cannot represent them.
+        # bfloat16 cannot represent the angles.
         angle_dtype = torch.promote_types(coords.dtype, torch.float32)
         phases = coords.to(angle_dtype) @ self.freq_matrix.to(angle_dtype)
         weight_dtype = self.fourier_linear.weight.dtype
