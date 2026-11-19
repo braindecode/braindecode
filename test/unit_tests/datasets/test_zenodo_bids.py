@@ -208,8 +208,9 @@ class _Response:
 
 
 def test_seizeit2_list_files_follows_pages_and_drops_multipart_md5(monkeypatch):
+    next_page = "second-page"
     pages = [
-        _s3_page(("ds005873/a.tsv", "abc"), token="next"),
+        _s3_page(("ds005873/a.tsv", "abc"), token=next_page),
         _s3_page(("ds005873/b.edf", "def-3")),
     ]
     requests_made = []
@@ -223,7 +224,7 @@ def test_seizeit2_list_files_follows_pages_and_drops_multipart_md5(monkeypatch):
     assert files == [("ds005873/a.tsv", "abc"), ("ds005873/b.edf", None)]
     assert [r["delimiter"] for r in requests_made] == ["/", "/"]
     assert "continuation-token" not in requests_made[0]
-    assert requests_made[1]["continuation-token"] == "next"
+    assert requests_made[1]["continuation-token"] == next_page
 
 
 def test_seizeit2_fetch_all_subjects_and_unverified_files(monkeypatch, tmp_path):
