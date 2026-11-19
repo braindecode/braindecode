@@ -204,6 +204,19 @@ def _channel_info(mne_obj):
     return n_ch, type_str, sfreq
 
 
+def _check_window_targets(targets_from, info):
+    if targets_from not in ("metadata", "channels"):
+        raise ValueError("Wrong value for parameter `targets_from`.")
+    if targets_from == "channels":
+        if not isinstance(info, mne.Info):  # lazy Zarr stores hold serialized Info
+            info = mne.Info.from_json_dict(info)
+        if "misc" not in info.get_channel_types():
+            raise ValueError(
+                "targets_from='channels' requires a misc channel in the selected channels."
+            )
+    return targets_from
+
+
 def _compute_ch_pos(info, targets_from):
     """Return ``(n_ch, 3)`` float32 electrode positions aligned to ``X``'s rows.
 
@@ -870,9 +883,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         self.metadata = metadata
 
         self.last_target_only = last_target_only
-        if targets_from not in ("metadata", "channels"):
-            raise ValueError("Wrong value for parameter `targets_from`.")
-        self.targets_from = targets_from
+        self.targets_from = _check_window_targets(targets_from, raw.info)
         self.crop_inds = metadata.loc[
             :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
         ].to_numpy()
@@ -899,9 +910,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         obj._raw = None
         obj.metadata = metadata
         obj.last_target_only = last_target_only
-        if targets_from not in ("metadata", "channels"):
-            raise ValueError("Wrong value for parameter `targets_from`.")
-        obj.targets_from = targets_from
+        obj.targets_from = _check_window_targets(targets_from, info_dict)
         obj.crop_inds = metadata.loc[
             :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
         ].to_numpy()
@@ -1133,9 +1142,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
             )
         self.windows = windows
         self.last_target_only = last_target_only
-        if targets_from not in ("metadata", "channels"):
-            raise ValueError("Wrong value for parameter `targets_from`.")
-        self.targets_from = targets_from
+        self.targets_from = _check_window_targets(targets_from, windows.info)
 
         metadata = self.windows.metadata
         assert metadata is not None, "WindowsDataset requires windows with metadata."
@@ -1169,9 +1176,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         obj.target_name = target_name
         obj._fast_disk = False
         obj.last_target_only = last_target_only
-        if targets_from not in ("metadata", "channels"):
-            raise ValueError("Wrong value for parameter `targets_from`.")
-        obj.targets_from = targets_from
+        obj.targets_from = _check_window_targets(targets_from, info_dict)
         obj.metadata = metadata
         obj.crop_inds = metadata.loc[
             :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
