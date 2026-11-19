@@ -249,7 +249,10 @@ Bug fixes
 
 - :meth:`braindecode.models.MetaNeuromotorHand.compute_output_lengths` returns
   zero valid CTC emissions for recordings shorter than the model's receptive
-  field, including those just one sample short (by `Bruno Aristimunha`_).
+  field instead of one: rounding toward zero counted one emission for the 280
+  input lengths just below the first emission of the default model (19,574 to
+  19,853 samples), so CTC scored a frame computed only from padding
+  (:gh:`1618` by `Bruno Aristimunha`_).
 
 - :class:`braindecode.modules.ChannelLayer` computes every target that is a
   combination of the measured channels exactly, under every strategy including
