@@ -130,19 +130,11 @@ jobs:
             --version "$(python -c 'import braindecode; print(braindecode.__version__)')" \
             --revision "$(git rev-parse HEAD)"
 
-      - name: Generate Notebooks from Examples
+      - name: Preserve previously published notebook URLs
         run: |
-          set -euo pipefail
-          echo "Converting Python examples to notebooks in docs/_build/html/auto_examples/_notebooks..."
           mkdir -p docs/_build/html/auto_examples/_notebooks
-          find examples -type f -name '*.py' | while read -r f; do
-            rel="${f#examples/}"
-            out_dir="docs/_build/html/auto_examples/_notebooks/$(dirname "$rel")"
-            mkdir -p "$out_dir"
-            base="$(basename "$rel" .py)"
-            out_path="$out_dir/$base.ipynb"
-            python .github/scripts/convert_to_notebook.py --input "$f" --output "$out_path"
-          done
+          rsync -am --include='*/' --include='*.ipynb' --exclude='*' \
+            docs/auto_examples/ docs/_build/html/auto_examples/_notebooks/
 
       - name: Save MNE Data Cache
         if: ${{ github.event_name != 'pull_request' && steps.cache-mne_data.outputs.cache-hit != 'true' }}

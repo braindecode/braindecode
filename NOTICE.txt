@@ -38,6 +38,7 @@ same noncommercial ShareAlike terms.
 
 The following components are licensed under the MIT License:
 
+- `braindecode/models/caresleepnet.py`
 - `braindecode/models/ctnet.py`
 - `braindecode/models/dance.py`
 - `braindecode/models/duin.py`
@@ -87,6 +88,7 @@ The following components are licensed under the Apache License 2.0:
 - `braindecode/models/mvpformer.py`
 - `braindecode/models/zuna.py`
 - `braindecode/models/luna.py`
+- `braindecode/models/tinymyo.py`
 - `braindecode/models/mapa.py`
 - `braindecode/models/brant.py`
 - `braindecode/models/diver1.py`
