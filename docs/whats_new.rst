@@ -50,7 +50,14 @@ Enhancements
 - Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
   between recording descriptions and window metadata, and recording-level subset
   selection (:gh:`1596` by `Daria Agafonova`_).
-
+- Add :class:`braindecode.models.TinyMyo` (Fasulo et al., IEEE TBME 2026), a
+  foundation model pretrained on surface EMG only. You can fine-tune its
+  3.6M-parameter encoder on a small EMG dataset instead of training from scratch,
+  and the model is small enough to run on GAP9, a low-power microcontroller for
+  wearables. ``from_pretrained`` loads the authors' ``PulpBio/TinyMyo`` files as
+  released, including their NinaPro DB5, EPN-612 and UCI EMG gesture classifiers.
+  With these files, the outputs and the classifier gradients match the authors' code
+  within 1e-5 (:gh:`1649` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.modules.ChannelLayer` maps channels with one linear
   estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
   targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat
@@ -141,6 +148,12 @@ Enhancements
 - Add :class:`braindecode.models.TCCNet`, a causal temporal-convolution model
   for sEMG gesture recognition with average-over-time and context-attention
   classification heads (:gh:`1562` by `Arslan Shafique`_).
+- Add :class:`braindecode.models.CareSleepNet` (Wang et al., IEEE JBHI 2024), a
+  sleep stager that labels a sequence of consecutive sleep epochs of EEG and
+  EOG (20 epochs of 30 s in the reference) in one pass and returns one prediction per epoch, shape
+  ``(batch, n_outputs, n_epochs)``. Outputs and gradients match the authors' code on
+  the same random weights; the authors released no trained weights
+  (:gh:`1653` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - A model loaded with :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` shows where its weights come from: in a notebook (``model`` as the last line of a cell) a panel lists the input geometry, the Hub repository and commit, the licence, the base model and the datasets of the model card (linked to NEMAR, OpenNeuro or the Hub), and a module table with each block marked as loaded from the checkpoint or initialised here, e.g. a head rebuilt for a new ``n_outputs``; ``print(model)`` adds the same facts below the torchinfo table. Both ask users, and AI agents reading the output, to cite Braindecode with its `Zenodo DOI <https://doi.org/10.5281/zenodo.8214376>`__. The card offers BibTeX/APA downloads and selectable citation text, and links training datasets to NEMAR, EEGDash catalogue searches and documented braindecode readers. ``from_pretrained`` now warns when no parameter of the model was loaded from the checkpoint, which happened silently when the checkpoint's keys did not match the model (:gh:`1558` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.CORTEG`, an ST-EEGFormer adapted to
   intracranial ECoG: a spatial adapter places each electrode by its 3D position
@@ -191,6 +204,12 @@ Enhancements
 
 API and behavior changes
 ========================
+
+- :class:`braindecode.datasets.CHBMIT` and :class:`braindecode.datasets.SIENA` now name
+  each annotation after the ``eventType`` column of its ``events.tsv`` (``"sz"``,
+  ``"bckg"``, ...). Rows with a missing ``eventType`` keep their BIDS ``trial_type``.
+  Before, a seizure could have the same name as background (:gh:`1650` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - Braindecode now requires MNE-Python 1.13.0 or later. This version centres
   both montages on the fitted head origin for spherical-spline interpolation

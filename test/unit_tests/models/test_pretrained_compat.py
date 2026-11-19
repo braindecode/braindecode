@@ -731,6 +731,7 @@ def test_foundation_model_maps_each_sample_under_a_strategy(name):
 EXCLUDED = {
     "NeuroPose": "sEMG hand-pose regression, no EEG geometry",
     "VEMG2Pose": "sEMG hand-pose regression, no EEG geometry",
+    "TinyMyo": "sEMG channel slots, no EEG geometry",
     "NeuroRVQTokenizer": "returns (target, reconstruction); NeuroRVQ's channel contract",
     "MtReNIRS": "fNIRS HbO/HbR pairs with optode positions, no EEG geometry",
 }
