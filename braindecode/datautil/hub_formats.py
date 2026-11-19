@@ -98,6 +98,12 @@ def convert_to_zarr(
     """
     output_path = Path(output_path)
 
+    # Check the dependency before removing an existing store on overwrite.
+    from ..datasets.bids import hub as _hub
+
+    if _hub.zarr is False:
+        raise ImportError("Local Zarr storage requires zarr>=3.1.")
+
     if output_path.exists():
         if not overwrite:
             raise FileExistsError(

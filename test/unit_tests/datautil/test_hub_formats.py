@@ -166,6 +166,20 @@ def test_local_load_without_zarr(tmp_path, monkeypatch):
         load_from_zarr(tmp_path)
 
 
+def test_overwrite_without_zarr_keeps_existing_store(tmp_path, monkeypatch):
+    output_path = tmp_path / "dataset.zarr"
+    output_path.mkdir()
+    marker = output_path / "keep.txt"
+    marker.write_text("existing")
+    info = mne.create_info(["C3"], sfreq=100, ch_types="eeg")
+    raw = mne.io.RawArray(np.zeros((1, 100)), info)
+    dataset = BaseConcatDataset([RawDataset(raw, {"subject": "1"})])
+    monkeypatch.setattr("braindecode.datasets.bids.hub.zarr", False)
+    with pytest.raises(ImportError, match="zarr"):
+        convert_to_zarr(dataset, output_path, overwrite=True)
+    assert marker.read_text() == "existing"
+
+
 def test_get_format_info_rawdataset():
     """Test getting format information from RawDataset."""
     # Create a simple RawDataset
