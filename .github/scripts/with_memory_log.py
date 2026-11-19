@@ -28,4 +28,5 @@ stop = threading.Event()
 threading.Thread(target=_log_memory, args=(stop,), daemon=True).start()
 code = subprocess.call(sys.argv[1:])
 stop.set()
-sys.exit(code)
+# A child terminated by a signal has a negative return code in subprocess.
+sys.exit(128 - code if code < 0 else code)
