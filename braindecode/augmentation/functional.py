@@ -1030,7 +1030,7 @@ def sensors_rotation(
         ``mne`` through::
 
          >>> ten_twenty_montage = mne.channels.make_standard_montage(
-         ...    'standard_1020'  # 'colin27_1020' on MNE >= 1.13
+         ...    'colin27_1020'
          ... ).get_positions()['ch_pos']
     axis : 'x' | 'y' | 'z'
         Axis around which to rotate.

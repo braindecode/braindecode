@@ -90,7 +90,7 @@ preprocess(dataset, preprocessors_reference)
 print("Set EEG reference to average")
 
 # 6. Set montage for proper channel positions
-montage = mne.channels.make_standard_montage("standard_1020")
+montage = mne.channels.make_standard_montage("colin27_1020")
 preprocessors_montage = [
     SetMontage(montage=montage, match_case=False, on_missing="ignore"),
 ]
@@ -150,7 +150,7 @@ print("=" * 60)
 dataset_complete = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[1])
 
 # Set montage first (needed for interpolation)
-montage = mne.channels.make_standard_montage("standard_1020")
+montage = mne.channels.make_standard_montage("colin27_1020")
 
 complete_pipeline = [
     # 1. Set montage
