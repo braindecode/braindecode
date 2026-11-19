@@ -217,9 +217,9 @@ Bug fixes
   for it. Before, it raised an ``AttributeError`` after it had written the signal
   file, which left a subdirectory that
   :func:`braindecode.datautil.load_concat_dataset` could not read. Directly
-  constructed windows also retain their target source and time axis after
-  saving and loading. Older stores without recorded target settings reopen
-  using the constructor default, metadata targets (:gh:`1610` by
+  constructed windows keep ``targets_from`` and ``last_target_only`` after
+  saving and loading. Older stores without these settings load with
+  ``targets_from="metadata"``, the constructor default (:gh:`1610` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
