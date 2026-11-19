@@ -226,6 +226,9 @@ Bug fixes
 
 - :func:`braindecode.preprocessing.filterbank` preserves channel positions and
   their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
+- :class:`braindecode.models.SSTDPN` can be exported with PyTorch 2.6.
+  The exported model projects each class prototype to its maximum norm
+  before computing the logits.
 - ``load_state_dict`` of every braindecode model loads checkpoints saved before
   the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
   other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key
