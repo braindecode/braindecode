@@ -345,19 +345,45 @@ def test_distributed_relative_positioning_pair_budget(tmp_path):
     )
 
 
-def test_distributed_relative_positioning_empty_rank():
-    data = pd.DataFrame({"i_dataset": [0, 0], "i_start_in_trial": [0, 1]})
+@pytest.mark.parametrize("same_rec_neg", [True, False])
+@pytest.mark.parametrize(
+    "n_recordings,n_examples,drop_last", [(1, 6, True), (2, 1, True), (2, 0, False)]
+)
+def test_distributed_relative_positioning_empty_rank(
+    n_recordings, n_examples, drop_last, same_rec_neg
+):
+    data = pd.DataFrame(
+        {
+            "i_dataset": np.repeat(np.arange(n_recordings), 2),
+            "i_start_in_trial": np.tile([0, 1], n_recordings),
+        }
+    )
     sampler = DistributedRelativePositioningSampler(
         data,
         tau_pos=1,
         tau_neg=1,
-        n_examples=6,
+        n_examples=n_examples,
         rank=0,
         num_replicas=2,
-        drop_last=True,
+        drop_last=drop_last,
+        same_rec_neg=same_rec_neg,
     )
     assert len(sampler) == 0
     assert list(sampler) == []
+
+
+def test_distributed_cross_recording_pairs_require_two_local_recordings():
+    data = pd.DataFrame({"i_dataset": [0, 1], "i_start_in_trial": [0, 0]})
+    with pytest.raises(ValueError, match="More than one recording"):
+        DistributedRelativePositioningSampler(
+            data,
+            tau_pos=1,
+            tau_neg=1,
+            n_examples=2,
+            rank=0,
+            num_replicas=2,
+            same_rec_neg=False,
+        )
 
 
 @pytest.mark.parametrize("n_windows,n_windows_stride", [[10, 5], [10, 100], [1, 1]])

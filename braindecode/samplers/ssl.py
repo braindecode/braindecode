@@ -194,7 +194,7 @@ class DistributedRelativePositioningSampler(DistributedRecordingSampler):
             n_examples += self.num_replicas - 1
         self.n_examples = n_examples // self.num_replicas if self.n_recordings else 0
 
-        if not same_rec_neg and self.n_recordings < 2:
+        if self.n_examples > 0 and not same_rec_neg and self.n_recordings < 2:
             raise ValueError(
                 "More than one recording must be available when "
                 "using across-recording negative sampling."
