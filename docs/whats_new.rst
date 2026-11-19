@@ -345,7 +345,7 @@ Code health
 
 - BENDR and MSCFormer regression tests now live with their respective
   model suites. Frequency-shift device and gradient cases run alongside
-  the transform's numerical tests.
+  the transform's numerical tests (:gh:`1656` by `Bruno Aristimunha`_).
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (by `Bruno Aristimunha`_).
