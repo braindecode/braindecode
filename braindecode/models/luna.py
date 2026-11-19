@@ -110,12 +110,13 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
         is not a multiple of ``patch_size`` (right zero-pad, crop, or raise).
     patch_size : int
-        Number of time samples per patch. Default: 40.
+        Number of time samples per patch. Must be a positive multiple of 4.
+        Default: 40.
     num_queries : int
         Number of learned queries for channel unification.
         Paper uses: 4 (Base), 6 (Large), 8 (Huge). Default: 4.
     embed_dim : int
-        Embedding dimension for patch features.
+        Embedding dimension for patch features. Must be a positive multiple of 16.
         Paper uses: 64 (Base), 96 (Large), 128 (Huge). Default: 64.
     depth : int
         Number of transformer encoder blocks.
@@ -192,6 +193,17 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             "channel_location_embedder.0.norm.bias": "channel_location_embedder.norm.bias",
             "cross_attn.temparature": "cross_attn.temperature",  # typo in pretrained weights
         }
+
+        # The temporal stem flattens four positions per output channel and
+        # splits its embed_dim // 4 channels into four normalization groups.
+        if patch_size < 4 or patch_size % 4:
+            raise ValueError(
+                f"patch_size must be a positive multiple of 4, got {patch_size}."
+            )
+        if embed_dim < 16 or embed_dim % 16:
+            raise ValueError(
+                f"embed_dim must be a positive multiple of 16, got {embed_dim}."
+            )
 
         # Model parameters
         self.num_classes = self.n_outputs if self.n_outputs else 0
