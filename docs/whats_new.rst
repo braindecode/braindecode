@@ -611,6 +611,11 @@ Bug fixes
   ``forward`` stacked them, which needs equal widths. ``forward`` now
   concatenates them. Outputs and parameters are unchanged for equal widths
   (:gh:`1604` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`~braindecode.models.GCNsNet` estimates its electrode graph from the
+  training partition of array and MNE Epochs inputs. Fresh estimator fits
+  recompute the graph, and constant channels have no edges. A passed GCNsNet
+  instance is trained in place, as every model: its graph comes from its first
+  fit and persists with its weights (:gh:`1629` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.AttnSleep` attends with the raw query, as the authors'
   code does. Since the TorchScript refactor (:gh:`729`), the residual block
   normalized the query before the attention. This changes the outputs of new
