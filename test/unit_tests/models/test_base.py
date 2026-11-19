@@ -655,7 +655,7 @@ assert config["n_spat_filters"] == 2
 restored = SignalJEPA_Contextual.from_config(config)
 restored.load_state_dict(model.state_dict(), strict=True)
 """
-    subprocess.run([sys.executable, "-c", code], check=True)
+    subprocess.run([sys.executable, "-c", code], check=True)  # nosec B603 - fixed test
 
 
 def test_hub_method_install_hint_no_hf():
