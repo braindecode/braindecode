@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from .brainmodule import BrainModule
     from .brainomni import BrainOmni, BrainTokenizer
     from .brant import Brant
+    from .caresleepnet import CareSleepNet
     from .cbramod import CBraMod
     from .codebrain import CodeBrain
     from .contrawr import ContraWR
@@ -82,6 +83,7 @@ if TYPE_CHECKING:
     from .nice import NICE
     from .patchedtransformer import PBT
     from .popt import PopulationTransformer
+    from .pratibha2 import Pratibha2
     from .reve import REVE
     from .sccnet import SCCNet
     from .seizure_transformer import SeizureTransformer
@@ -106,6 +108,7 @@ if TYPE_CHECKING:
     from .tcn import BDTCN, TCN
     from .tfm_tokenizer import TFMTokenizer, TFMTokenizerOutput
     from .tidnet import TIDNet
+    from .tinymyo import TinyMyo
     from .tmsanet import TMSANet
     from .tsinception import TSception
     from .usleep import USleep

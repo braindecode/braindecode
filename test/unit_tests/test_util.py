@@ -538,11 +538,15 @@ def test_resolve_montage_name():
     renamed = {
         "standard_1005": "colin27_1005",
         "standard_1020": "colin27_1020",
+        "standard_alphabetic": "colin27_alphabetic",
+        "standard_postfixed": "colin27_postfixed",
+        "standard_prefixed": "colin27_prefixed",
+        "standard_primed": "colin27_primed",
     }
     for legacy, new in renamed.items():
-        resolved = resolve_montage_name(legacy)
-        assert resolved in (legacy, new)
-        assert resolved in mne.channels.get_builtin_montages()
+        assert resolve_montage_name(legacy) == new
+        assert resolve_montage_name(new) == new
+        assert new in mne.channels.get_builtin_montages()
 
     # names that were not renamed pass through untouched
     assert resolve_montage_name("biosemi64") == "biosemi64"
@@ -552,7 +556,14 @@ def test_resolve_montage_name():
 def test_resolve_montage_name_raises_no_future_warning():
     with warnings.catch_warnings():
         warnings.simplefilter("error", FutureWarning)
-        for name in ("standard_1005", "standard_1020"):
+        for name in (
+            "standard_1005",
+            "standard_1020",
+            "standard_alphabetic",
+            "standard_postfixed",
+            "standard_prefixed",
+            "standard_primed",
+        ):
             montage = mne.channels.make_standard_montage(resolve_montage_name(name))
             assert isinstance(montage, mne.channels.DigMontage)
 
