@@ -206,7 +206,7 @@ def test_registered_model_serialization_contract(
 # Trainable parameters the default forward does not reach (pretraining heads,
 # other read-outs, reference quirks); kept so released checkpoints load.
 _UNUSED_IN_FORWARD = {
-    "AttnSleep": r"self_attn\.convs\.0\.",  # the reference never convolves the query
+    "AttnSleep": r"self_attn\.(convs\.0|norm)\.",  # the reference attends with the raw query
     "BrainOmni": r"^blocks\.11\.",  # the reference encode() skips the last block
     "Brant": r"spatial_encoder\.proj_out\.",  # reconstruction head
     "CBraMod": r"^proj_out\.",  # pretraining reconstruction layer

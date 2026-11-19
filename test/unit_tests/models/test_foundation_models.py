@@ -914,7 +914,7 @@ _ZUNA_SMALL = dict(n_outputs=2, sfreq=250.0, dim=64, n_layers=1, n_heads=2, head
 
 def _zuna_chs_info():
     info = mne.create_info(["Fz", "Cz", "Pz", "C3", "C4", "O1"], 250.0, "eeg")
-    info.set_montage("standard_1020")
+    info.set_montage("colin27_1020")
     return info["chs"]
 
 
@@ -979,7 +979,7 @@ def test_zuna_names_without_locations_take_their_montage_position():
     with pytest.warns(UserWarning, match="standard 10-05 position"):
         filled = ZUNA(chs_info=names_only, **kw)
     info = mne.create_info([ch["ch_name"] for ch in chs], 250.0, "eeg")
-    info.set_montage("standard_1005")
+    info.set_montage("colin27_1005")
     reference = ZUNA(chs_info=info["chs"], **kw)
     torch.testing.assert_close(
         filled.encoder.rotary_cosine, reference.encoder.rotary_cosine
@@ -2366,7 +2366,7 @@ def test_diver1_cnn_out_size_validation(options, match):
 def test_diver1_mup_attention_scale():
     """The released DIVER-1 checkpoints need attention scaled by 1 / head_dim."""
     info = mne.create_info(["C3", "Cz", "C4"], 500.0, "eeg")
-    info.set_montage("standard_1020")
+    info.set_montage("colin27_1020")
     for mup in (True, False):
         model = DIVER1(
             chs_info=info["chs"], n_outputs=2, n_times=1000, mup_attention=mup

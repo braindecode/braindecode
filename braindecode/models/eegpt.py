@@ -449,7 +449,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
 # These channels correspond to a subset of the standard 10-20 system.
 # The order matches the pre-trained weights and corresponds to
-# mne.channels.make_standard_montage("standard_1020") (filtered).
+# mne.channels.make_standard_montage("colin27_1020") (filtered).
 _ALLOWED_CHANNELS = {
     "FP1",
     "FPZ",
