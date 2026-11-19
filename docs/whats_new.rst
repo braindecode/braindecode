@@ -179,7 +179,9 @@ API and behavior changes
   :meth:`~braindecode.models.SleepFM.encode` still warns and is read as
   ``ch_mask=~channel_mask``. Pass ``ch_mask`` by keyword in both ``encode``
   and ``forward``. Both models support mixed-precision training with padded
-  input channels. In :class:`~braindecode.models.SleepFM`, a recording with one real
+  input channels. On CPU, the staging LSTM uses its parameter precision so
+  mixed-precision training also works on CPUs without a bfloat16 LSTM kernel.
+  In :class:`~braindecode.models.SleepFM`, a recording with one real
   channel among padded ones now gets the output it gets alone: the channel pooling
   returns that channel's token, as for a one-channel input, instead of running the
   attention over it. :class:`~braindecode.models.SleepFMStager`, whose channels sit
