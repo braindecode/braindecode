@@ -569,12 +569,12 @@ def test_geometry_contract(name, gname, gkw):
 
 
 # ``native`` only, refused with a ValueError naming why: polysomnography
-# grouped by modality (SleepFM), MEG sensors or source parcels (BBL, MEGGPT,
-# MEGXL), or a second per-channel input the layer would not map (CORTEG's x_hi).
-NATIVE_ONLY = {"SleepFM", "SleepFMStager", "BBL", "MEGGPT", "MEGXL", "CORTEG"}
+# grouped by modality.
+NATIVE_ONLY = {"SleepFM", "SleepFMStager"}
 
-# No ``channel_strategy`` argument (not a foundation model).
-NO_STRATEGY = {"NICE"}
+# No ``channel_strategy`` argument: MEG (BBL, MEGGPT, MEGXL), a second
+# per-channel input (CORTEG's x_hi), or not a foundation model (NICE).
+NO_STRATEGY = {"BBL", "CORTEG", "MEGGPT", "MEGXL", "NICE"}
 
 
 # BIOT's canonical input is bipolar; under a strategy it takes electrodes.
@@ -687,10 +687,9 @@ FOUNDATION = [
     row["Model"]
     for row in csv.DictReader(_SUMMARY.read_text(encoding="utf-8-sig").splitlines())
     if "Foundation" in row["Categorization"]
+    and "channel_strategy" in inspect.signature(models_dict[row["Model"]]).parameters
 ]
 FIXTURES = {name: sp for name, _, sp in models_mandatory_parameters}
-# Foundation models outside COMPAT that refuse a strategy: fNIRS HbO/HbR.
-STRATEGY_REFUSED = NATIVE_ONLY | {"GeoNIRS", "JungMAE", "MtReNIRS"}
 
 
 def _output_tensors(y):
@@ -701,7 +700,7 @@ def _output_tensors(y):
 
 @pytest.mark.parametrize("name", FOUNDATION)
 def test_foundation_model_maps_each_sample_under_a_strategy(name):
-    """Every foundation model takes ``channel_strategy``: it refuses with a
+    """A foundation model that takes ``channel_strategy`` refuses with a
     ValueError naming ``"native"``, or a zero-padded batch of three recordings
     with different montages (``ch_mask`` and one ``chs_info`` per sample) gives
     each recording its output alone."""
@@ -709,7 +708,7 @@ def test_foundation_model_maps_each_sample_under_a_strategy(name):
     sp = _get_signal_params(FIXTURES[name])
     kw = {k: v for k, v in sp.items() if k not in ("chs_info", "n_chans")}
     chs = sp["chs_info"]
-    if name in STRATEGY_REFUSED:
+    if name in NATIVE_ONLY:
         with pytest.raises(ValueError, match="native"):
             cls(**kw, chs_info=chs, channel_strategy="idw")
         return
