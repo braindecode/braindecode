@@ -21,6 +21,7 @@ from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from mne.utils import _soft_import
 from torchinfo import ModelStatistics, summary
 
+from braindecode.functional import check_ch_mask
 from braindecode.models.util import (
     _EEG_PARAMS,
     build_model_config,
@@ -29,7 +30,11 @@ from braindecode.models.util import (
     track_model_init_kwargs,
 )
 from braindecode.modules.channels import ChannelLayer
-from braindecode.modules.parametrization import make_parametrizations_scriptable
+from braindecode.modules.parametrization import (
+    MaxNorm,
+    MaxNormParametrize,
+    make_parametrizations_scriptable,
+)
 from braindecode.version import __version__
 
 huggingface_hub = _soft_import(
@@ -549,17 +554,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 "uses it to map each sample, the backbone never sees it."
             )
         if chs_info is None and pos is not None and ch_mask is not None:  # no names
-            mask = (
-                torch.ones(pos.shape[:2], dtype=torch.bool)
-                if ch_mask is None
-                else ch_mask
-            )
+            mask = check_ch_mask(ch_mask, pos)
+            assert mask is not None
             chs_info = [
                 [
                     {"ch_name": f"E{i}", "kind": "eeg", "loc": np.r_[p, np.zeros(9)]}
-                    for i, p in enumerate(pb[mb.cpu().numpy()])
+                    for i, p in enumerate(pb[mb])
                 ]
-                for pb, mb in zip(pos.detach().cpu().double().numpy(), mask)
+                for pb, mb in zip(
+                    pos.detach().cpu().double().numpy(), mask.cpu().numpy()
+                )
             ]
         elif ch_mask is not None and not (chs_info and isinstance(chs_info[0], list)):
             raise ValueError(
@@ -915,15 +919,51 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     _channel_target: Optional[list] = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):
-        mapping = self.mapping if self.mapping else {}
-        new_state_dict = OrderedDict()
-        for k, v in state_dict.items():
-            if k in mapping:
-                new_state_dict[mapping[k]] = v
-            else:
-                new_state_dict[k] = v
-        # A backbone checkpoint has no weights for a trainable channel layer.
         own = super().state_dict()
+        new_state_dict = OrderedDict(state_dict)
+        if hasattr(state_dict, "_metadata"):
+            new_state_dict._metadata = state_dict._metadata
+
+        def rename(old, current):
+            if current not in new_state_dict:
+                new_state_dict[current] = new_state_dict.pop(old)
+                return
+            # Old modules registered under two names can save two views of
+            # exactly the same tensor in a raw PyTorch checkpoint.
+            previous, canonical = new_state_dict[old], new_state_dict[current]
+            if previous is canonical or (
+                isinstance(previous, torch.Tensor)
+                and isinstance(canonical, torch.Tensor)
+                and previous.layout == canonical.layout == torch.strided
+                and previous.device == canonical.device
+                and not previous.is_meta
+                and previous.dtype == canonical.dtype
+                and not torch.nn.parameter.is_lazy(previous)
+                and not torch.nn.parameter.is_lazy(canonical)
+                and previous.is_conj() == canonical.is_conj()
+                and previous.is_neg() == canonical.is_neg()
+                and previous.is_set_to(canonical)
+            ):
+                del new_state_dict[old]
+
+        for old, current in (self.mapping or {}).items():
+            if old in state_dict and old != current:
+                rename(old, current)
+        # Older max-norm layers saved their weight directly. Leave conflicting
+        # aliases in the dictionary so PyTorch reports them as unexpected.
+        for key in new_state_dict.keys() - own.keys():
+            module, _, name = key.rpartition(".")
+            if name != "weight":
+                continue
+            original = key.removesuffix("weight") + "parametrizations.weight.original"
+            if original not in own:
+                continue
+            transforms = self.get_submodule(module).parametrizations.weight
+            if len(transforms) == 1 and isinstance(
+                transforms[0], (MaxNorm, MaxNormParametrize)
+            ):
+                rename(key, original)
+        # A backbone checkpoint has no weights for a trainable channel layer.
         # Load hooks may expand tensors with locally initialized values. Only
         # attribute whole tensors whose checkpoint shape already matches.
         from_checkpoint = {
@@ -1130,7 +1170,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             f"Trained on (model card): {', '.join(data['datasets']) or 'not listed'}\n"
             f"Loaded from the listed checkpoint(s): {data['loaded']:,} of {data['total']:,} "
             f"{scope} ({data['percent']:.1f}% of materialised parameters){new}\n"
-            "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.17699192"
+            "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.8214376"
         )
 
     def _repr_html_(self) -> str:
@@ -1158,6 +1198,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         serialized = []
         for ch in chs_info:
             ch_dict = {"ch_name": ch.get("ch_name", "")}
+            if ch.get("ch_type") is not None:
+                ch_dict["ch_type"] = ch["ch_type"]
             for key in _INT_FIELDS:
                 val = ch.get(key)
                 if val is not None:

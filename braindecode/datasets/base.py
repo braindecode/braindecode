@@ -26,7 +26,7 @@ from itertools import chain
 from operator import attrgetter
 from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import mne
 import mne.io
@@ -204,6 +204,19 @@ def _channel_info(mne_obj):
     type_counts = Counter(ch_types)
     type_str = ", ".join(f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items()))
     return n_ch, type_str, sfreq
+
+
+def _check_window_targets(targets_from, info):
+    if targets_from not in ("metadata", "channels"):
+        raise ValueError("Wrong value for parameter `targets_from`.")
+    if targets_from == "channels":
+        if not isinstance(info, mne.Info):  # lazy Zarr stores hold serialized Info
+            info = mne.Info.from_json_dict(info)
+        if "misc" not in info.get_channel_types():
+            raise ValueError(
+                "targets_from='channels' requires a misc channel in the selected channels."
+            )
+    return targets_from
 
 
 def _compute_ch_pos(info, targets_from):
@@ -502,20 +515,23 @@ def _zarr_to_memmap(zarr_path, group_name):
     so they can never collide with a live writer, they are never
     read by the fast path, and they do not prevent subsequent
     callers from producing a correct result.  Caches written by
-    earlier braindecode versions remain valid: the fast path only
-    requires ``<group>.npy`` to exist.
+    earlier braindecode versions remain valid for stores without a store ID.
+    New stores have a separate cache for each export, including overwrites.
     """
-    zarr_p = Path(zarr_path)
+    zarr_p = Path(zarr_path).absolute()
     cache_dir = zarr_p.parent / f".{zarr_p.name}_memmap"
+    store_stat = zarr_p.stat()
+    root = zarr.open(str(zarr_p), mode="r")
+    store_id = root.attrs.get("store_id")
+    if store_id is not None:
+        cache_dir /= UUID(store_id).hex
     npy_path = cache_dir / f"{group_name}.npy"
 
-    # Fast path: the file is already fully materialised.  A single
-    # stat() is all the steady-state workload pays.
     if npy_path.exists():
         return npy_path
 
     cache_dir.mkdir(parents=True, exist_ok=True)
-    arr = zarr.open(zarr_path, mode="r")[group_name]["data"]
+    arr = root[group_name]["data"]
     # Unique per call, not per pid: threads of one process must not share it.
     # Exclusive creation, not tempfile.mkstemp, which would make it 0600.
     tmp_path = cache_dir / f"{group_name}.{uuid4().hex}.tmp.npy"
@@ -534,6 +550,11 @@ def _zarr_to_memmap(zarr_path, group_name):
             mm.flush()
         finally:
             del mm
+
+        # A reader on read-only media may be unable to acquire the store lock.
+        # Never publish a mixture of chunks under the previous store's ID.
+        if not os.path.samestat(store_stat, zarr_p.stat()):
+            raise OSError(f"Zarr store {zarr_p} changed while populating its cache.")
 
         # Atomic publication.  ``os.link`` never replaces an existing
         # destination, so the published inode is immutable for the
@@ -570,7 +591,14 @@ class _ZarrMixin:
     _zarr_data = None
 
     def _open_zarr(self):
-        npy_path = _zarr_to_memmap(self._zarr_path, self._group_name)
+        npy_path = getattr(self, "_zarr_cache_path", None)
+        if npy_path is None or not npy_path.exists():
+            current = _zarr_to_memmap(self._zarr_path, self._group_name)
+            if npy_path is not None and current != npy_path:
+                raise FileNotFoundError(
+                    f"The cache for the original Zarr store was removed: {npy_path}"
+                )
+            self._zarr_cache_path = npy_path = current
         # 'c' = copy-on-write: reads from file, writes to RAM
         self._zarr_data = np.load(npy_path, mmap_mode="c")
 
@@ -882,9 +910,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         self.metadata = metadata
 
         self.last_target_only = last_target_only
-        if targets_from not in ("metadata", "channels"):
-            raise ValueError("Wrong value for parameter `targets_from`.")
-        self.targets_from = targets_from
+        self.targets_from = _check_window_targets(targets_from, raw.info)
         self.crop_inds = metadata.loc[
             :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
         ].to_numpy()
@@ -910,9 +936,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         )
         obj.metadata = metadata
         obj.last_target_only = last_target_only
-        if targets_from not in ("metadata", "channels"):
-            raise ValueError("Wrong value for parameter `targets_from`.")
-        obj.targets_from = targets_from
+        obj.targets_from = _check_window_targets(targets_from, info_dict)
         obj.crop_inds = metadata.loc[
             :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
         ].to_numpy()
@@ -972,6 +996,10 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         i_window_in_trial, i_start, i_stop = crop_inds
         if self._zarr_data is not None:
             X = self._zarr_data[:, i_start:i_stop]
+        elif isinstance(self.raw, mne.io.BaseRaw) and self.raw.preload:
+            # what raw._getitem returns, without parsing the picks on every call
+            # (an Epochs' 3-D _data must not be sliced as channels x times)
+            X = self.raw._data[:, i_start:i_stop]
         else:
             X = _read_fif_window(self.raw, i_start, i_stop)
             if X is None:
@@ -988,8 +1016,12 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         if self.targets_from == "metadata":
             y = self.y[index]
         else:
+            # The FIFF kind, as get_channel_types() == "misc" but fast per window; from
+            # the loaded or the stored info, so a lazy recording is not read.
             info = self._raw.info if self._raw is not None else self._make_mne_info()
-            misc_mask = np.asarray(info.get_channel_types()) == "misc"
+            misc_mask = np.array(
+                [ch["kind"] == FIFF.FIFFV_MISC_CH for ch in info["chs"]]
+            )
             if self.last_target_only:
                 y = X[misc_mask, -1]
             else:
@@ -1148,9 +1180,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
             )
         self.windows = windows
         self.last_target_only = last_target_only
-        if targets_from not in ("metadata", "channels"):
-            raise ValueError("Wrong value for parameter `targets_from`.")
-        self.targets_from = targets_from
+        self.targets_from = _check_window_targets(targets_from, windows.info)
 
         metadata = self.windows.metadata
         assert metadata is not None, "WindowsDataset requires windows with metadata."
@@ -1183,9 +1213,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         obj.target_name = target_name
         obj._fast_disk = False
         obj.last_target_only = last_target_only
-        if targets_from not in ("metadata", "channels"):
-            raise ValueError("Wrong value for parameter `targets_from`.")
-        obj.targets_from = targets_from
+        obj.targets_from = _check_window_targets(targets_from, info_dict)
         obj.metadata = metadata
         obj.crop_inds = metadata.loc[
             :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
@@ -1669,7 +1697,11 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             BaseConcatDataset, with the metadata and description information
             for each window, and an ``i_dataset`` column giving the position
             in ``datasets`` of the dataset (recording) each window comes from.
-            Samplers use it to keep recordings apart.
+            Samplers use it to keep recordings apart. If a recording description
+            and a window have a column with the same name, the window value is
+            retained. The recording value remains accessible on the dataset's
+            description. For lazy fixed windows this accessor materializes the
+            table. It reports the stored labels before any ``target_transform``.
         """
         if not all(
             [
@@ -1682,7 +1714,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 "datasets are WindowsDataset."
             )
 
-        for ds in self.datasets:
+        all_dfs = []
+        for i_ds, ds in enumerate(self.datasets):
             if hasattr(ds, "_windows") and ds._windows is not None:
                 df = ds._windows.metadata
             else:
@@ -1704,18 +1737,19 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                     "position of the dataset each window comes from. Rename it."
                 )
 
-        all_dfs = list()
-        for i_ds, ds in enumerate(self.datasets):
-            if hasattr(ds, "_windows") and ds._windows is not None:
-                df = ds._windows.metadata
-            else:
-                df = ds.metadata
             if isinstance(df, pd.DataFrame):
-                # copy so the description columns stay out of the dataset
                 df = df.copy()
-            description = ds.description if ds.description is not None else {}
+            else:
+                # Only this public accessor materializes fixed-window lazy metadata.
+                df = pd.DataFrame(
+                    {
+                        col: [df.loc[i, col] for i in range(len(df))]
+                        for col in df.columns
+                    }
+                )
             for k, v in description.items():
-                df[k] = v
+                if k not in df.columns:
+                    df[k] = v
             df["i_dataset"] = i_ds
             all_dfs.append(df)
 
@@ -1781,6 +1815,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             no-op since ``__getitem__`` reads y from misc channels, not
             from ``metadata['target']``).
         """
+        windows_to_update = []
+        raw_to_update = []
         for i, ds in enumerate(self.datasets):
             if isinstance(ds, (WindowsDataset, EEGWindowsDataset)):
                 if not isinstance(ds.metadata, pd.DataFrame):
@@ -1823,19 +1859,15 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                         f"metadata cols={list(md.columns)}, "
                         f"description keys={desc_keys}."
                     )
-                # In-place write so the WindowsDataset's metadata and the
-                # underlying mne.Epochs.metadata (which start as the same
-                # object reference) both reflect the new target. Defensive
-                # second write covers the case where they got de-aliased
-                # earlier by a caller-side reassignment.
-                md["target"] = values
-                windows_obj = getattr(ds, "_windows", None)
-                if windows_obj is not None and windows_obj.metadata is not md:
-                    windows_obj.metadata["target"] = values
-                # values is already a fresh list (Series.to_list() / [x] * n);
-                # no defensive copy needed — pandas keeps its own representation
-                # for md["target"] so mutating ds.y won't reach back into it.
-                ds.y = values
+                frames = [md]
+                epochs = getattr(ds, "_windows", None)
+                if epochs is not None and epochs.metadata is not md:
+                    frames.append(epochs.metadata)
+                if any(frame is None or len(frame) != len(values) for frame in frames):
+                    raise ValueError(
+                        f"Window metadata must have one row per window in datasets[{i}]."
+                    )
+                windows_to_update.append((ds, frames, values))
             elif isinstance(ds, RawDataset):
                 if (
                     not isinstance(ds.description, pd.Series)
@@ -1850,12 +1882,19 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                         f"Column {column!r} not found on datasets[{i}] "
                         f"description (keys={desc_keys})."
                     )
-                ds.target_name = column
+                raw_to_update.append(ds)
             else:
                 raise TypeError(
                     "set_target requires WindowsDataset, EEGWindowsDataset, "
                     f"or RawDataset; datasets[{i}] is {type(ds).__name__}."
                 )
+        # Preserve shared DataFrame objects while changing all recordings together.
+        for ds, frames, values in windows_to_update:
+            for frame in frames:
+                frame["target"] = values
+            ds.y = values
+        for ds in raw_to_update:
+            ds.target_name = column
         return self
 
     def set_return_ch_pos(self, value: bool = True) -> "BaseConcatDataset":
@@ -2149,6 +2188,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     @staticmethod
     def _save_description(sub_dir, description):
         description_file_path = os.path.join(sub_dir, "description.json")
+        if description is None:
+            description = pd.Series(dtype=object)
         description.to_json(description_file_path, default_handler=str)
 
     @staticmethod
@@ -2158,13 +2199,25 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             "window_kwargs",
             "window_preproc_kwargs",
         ]:
-            if hasattr(ds, kwargs_name):
-                kwargs_file_name = ".".join([kwargs_name, "json"])
-                kwargs_file_path = os.path.join(sub_dir, kwargs_file_name)
-                kwargs = getattr(ds, kwargs_name)
-                if kwargs is not None:
-                    with open(kwargs_file_path, "w") as f:
-                        json.dump(kwargs, f, indent=2)
+            kwargs = getattr(ds, kwargs_name, None)
+            if (
+                kwargs_name == "window_kwargs"
+                and not kwargs
+                and isinstance(ds, (EEGWindowsDataset, WindowsDataset))
+            ):
+                # Directly constructed windows have no windower history.
+                cls = (
+                    EEGWindowsDataset
+                    if isinstance(ds, EEGWindowsDataset)
+                    else WindowsDataset
+                )
+                settings = dict(
+                    targets_from=ds.targets_from, last_target_only=ds.last_target_only
+                )
+                kwargs = [(cls.__name__, settings)]
+            if kwargs is not None:
+                with open(os.path.join(sub_dir, f"{kwargs_name}.json"), "w") as f:
+                    json.dump(kwargs, f, indent=2)
 
     @staticmethod
     def _save_target_name(sub_dir, ds):

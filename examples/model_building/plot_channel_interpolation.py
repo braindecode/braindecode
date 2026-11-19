@@ -54,7 +54,7 @@ rng = np.random.default_rng(0)
 # A synthetic 32-channel recording
 # --------------------------------
 #
-# We place 32 channels of the ``standard_1020`` montage and fill them with
+# We place 32 channels of the ``colin27_1020`` montage and fill them with
 # spatially smooth activity: a few broad scalp fields (low-order functions
 # of the electrode position), each with its own oscillation, plus a little
 # sensor noise. Smooth fields are what EEG looks like at the scalp, so the
@@ -68,7 +68,7 @@ ch_names = [
 sfreq = 256.0
 n_times = 4 * int(sfreq)
 
-montage = mne.channels.make_standard_montage("standard_1020")
+montage = mne.channels.make_standard_montage("colin27_1020")
 info = mne.create_info(ch_names, sfreq=sfreq, ch_types="eeg")
 info.set_montage(montage)
 pos = np.array([info["chs"][i]["loc"][:3] for i in range(len(ch_names))])

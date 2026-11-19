@@ -44,7 +44,7 @@ def _raw_ds(ch_names, label=0, sfreq=100.0, n_times=1000, montage=True):
     data = np.random.RandomState(label).randn(len(ch_names), n_times) * 1e-6
     raw = mne.io.RawArray(data, info)
     if montage:
-        raw.set_montage("standard_1020")
+        raw.set_montage("colin27_1020")
     return RawDataset(raw, description={"label": label})
 
 
@@ -139,7 +139,7 @@ def test_ch_pos_misc_alignment():
     info = mne.create_info(ch_names, 100.0, ch_types=["eeg"] * len(CHS_A) + ["misc"])
     data = np.random.RandomState(0).randn(len(ch_names), 1000) * 1e-6
     raw = mne.io.RawArray(data, info)
-    raw.set_montage("standard_1020", on_missing="ignore")
+    raw.set_montage("colin27_1020", on_missing="ignore")
     metadata = pd.DataFrame(
         {"i_window_in_trial": [0], "i_start_in_trial": [0], "i_stop_in_trial": [200]}
     )
@@ -206,7 +206,7 @@ def test_info_json_roundtrip_preserves_positions():
     # ``mne.Info.from_json_dict``; ``loc`` must survive the JSON round-trip.
     info = mne.create_info(CHS_A, 100.0, ch_types="eeg")
     raw = mne.io.RawArray(np.zeros((len(CHS_A), 10)), info)
-    raw.set_montage("standard_1020")
+    raw.set_montage("colin27_1020")
     before = np.asarray([ch["loc"][:3] for ch in raw.info["chs"]], dtype="float32")
 
     json_dict = json.loads(json.dumps(raw.info.to_json_dict()))

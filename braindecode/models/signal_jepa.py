@@ -14,6 +14,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import (
+    check_n_chans,
     init_weights_,
     scaled_dot_product_attention,
     sinusoidal_positional_encoding,
@@ -543,6 +544,13 @@ class SignalJEPA(_BaseSignalJEPA):
     def forward(
         self, X: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
+        check_n_chans(
+            X,
+            self.n_chans,
+            "SignalJEPA",
+            "build the model with the chs_info of this montage, or use a "
+            "channel_strategy.",
+        )
         local_features = self.feature_encoder(X)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features = local_features + pos_encoding  # type: ignore
@@ -730,6 +738,13 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
     def forward(
         self, X: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
+        check_n_chans(
+            X,
+            self.n_chans,
+            "SignalJEPA_Contextual",
+            "build the model with the chs_info of this montage, or use a "
+            "channel_strategy.",
+        )
         local_features = self.feature_encoder(X)  # type: ignore
         pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features = local_features + pos_encoding  # type: ignore
@@ -1044,6 +1059,13 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
     def forward(
         self, X: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
+        check_n_chans(
+            X,
+            self.n_chans,
+            "SignalJEPA_PostLocal",
+            "build the model with the chs_info of this montage, or use a "
+            "channel_strategy.",
+        )
         local_features = self.feature_encoder(X)  # type: ignore[misc]
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
@@ -1285,6 +1307,13 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
     def forward(
         self, X: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
+        check_n_chans(
+            X,
+            self.n_chans,
+            "SignalJEPA_PreLocal",
+            "build the model with the chs_info of this montage, or use a "
+            "channel_strategy.",
+        )
         X = self.spatial_conv(X)
         local_features = self.feature_encoder(X)  # type: ignore[misc]
         if return_features:

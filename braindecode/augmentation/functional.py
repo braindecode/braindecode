@@ -206,8 +206,6 @@ def ft_surrogate(
         device=device,
         random_state=random_state,
     )
-    if not channel_indep:
-        random_phase = torch.tile(random_phase, (1, f.shape[-2], 1))
     if isinstance(phase_noise_magnitude, torch.Tensor):
         phase_noise_magnitude = phase_noise_magnitude.to(device)
     f_shifted = f * torch.exp(phase_noise_magnitude * random_phase)
@@ -1030,7 +1028,7 @@ def sensors_rotation(
         ``mne`` through::
 
          >>> ten_twenty_montage = mne.channels.make_standard_montage(
-         ...    'standard_1020'  # 'colin27_1020' on MNE >= 1.13
+         ...    'colin27_1020'
          ... ).get_positions()['ch_pos']
     axis : 'x' | 'y' | 'z'
         Axis around which to rotate.

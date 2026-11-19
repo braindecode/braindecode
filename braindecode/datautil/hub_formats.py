@@ -14,9 +14,15 @@ HubDatasetMixin methods for all actual implementations.
 
 from __future__ import annotations
 
+import os
 import shutil
+from contextlib import contextmanager
+from errno import ENOLCK, ENOSYS, ENOTSUP, EOPNOTSUPP
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
+
+from filelock import FileLock
 
 # Import registry for dynamic class lookup
 from ..datasets.registry import get_dataset_class
@@ -29,6 +35,39 @@ if TYPE_CHECKING:
 # =============================================================================
 # Zarr Format Converters
 # =============================================================================
+
+
+@contextmanager
+def _store_access(path, *, reading=False):
+    """Keep a local open or directory replacement on one complete store."""
+    lock = FileLock(path.parent / f".{path.name}.braindecode.lock")
+    try:
+        lock.acquire()
+    except OSError as error:
+        if reading:
+            # Read-only media, or a filesystem without locks (e.g. NFS without
+            # lockd), cannot host the lock. Detect a concurrent replacement.
+            before = path.stat()
+            yield
+            if not os.path.samestat(before, path.stat()):
+                raise OSError(
+                    f"Zarr store {path} changed while reading it. Retry the load."
+                )
+            return
+        if error.errno not in (ENOLCK, ENOSYS, ENOTSUP, EOPNOTSUPP):
+            raise
+        lock = None  # the filesystem has no locks: replace the store unlocked
+    try:
+        previous = path.parent / f".{path.name}_memmap" / ".previous-store"
+        if previous.is_dir():  # a process stopped between publication and cleanup
+            if not path.exists():
+                previous.rename(path)
+            elif not reading:
+                shutil.rmtree(previous)
+        yield previous
+    finally:
+        if lock is not None:
+            lock.release()
 
 
 def convert_to_zarr(
@@ -67,7 +106,11 @@ def convert_to_zarr(
         For pre-cut windowed data (WindowsDataset), this controls how many windows are
         grouped together in each chunk (i.e., multiple windows can be stored per chunk).
     overwrite : bool, default=False
-        Whether to overwrite existing directory.
+        Whether to replace an existing directory after writing the complete new
+        store. The two stores must fit on the same filesystem during export.
+        Open lazy readers retain their original signal in the sibling memmap
+        cache. Remove old caches only when those readers and their workers have
+        finished.
 
     Returns
     -------
@@ -98,18 +141,32 @@ def convert_to_zarr(
     """
     output_path = Path(output_path)
 
-    if output_path.exists():
-        if not overwrite:
-            raise FileExistsError(
-                f"{output_path} already exists. Set overwrite=True to replace it."
-            )
-        # Remove existing directory if overwrite is True
-        shutil.rmtree(output_path)
+    exists_message = f"{output_path} already exists. Set overwrite=True to replace it."
+    if output_path.exists() and not overwrite:
+        raise FileExistsError(exists_message)
 
-    # Delegate to HubDatasetMixin method
-    dataset._convert_to_zarr_inline(
-        output_path, compression, compression_level, chunk_size
-    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=output_path.parent) as tmp:
+        staged = Path(tmp) / "store"
+        dataset._convert_to_zarr_inline(
+            staged, compression, compression_level, chunk_size
+        )
+        with _store_access(output_path) as previous:
+            if output_path.exists():
+                if not overwrite:
+                    raise FileExistsError(exists_message)
+                if output_path.is_symlink() or not output_path.is_dir():
+                    raise ValueError(f"Expected a Zarr directory at {output_path}")
+                previous.parent.mkdir(exist_ok=True)
+                output_path.rename(previous)
+            try:
+                staged.rename(output_path)
+            except BaseException:
+                if previous.exists():
+                    previous.rename(output_path)
+                raise
+            if previous.exists():
+                shutil.rmtree(previous)
 
     return output_path
 
@@ -151,8 +208,12 @@ def load_from_zarr(
     # Delegate to HubDatasetMixin static method
     BaseConcatDataset = get_dataset_class("BaseConcatDataset")
 
-    # Load full dataset using mixin method
-    dataset = BaseConcatDataset._load_from_zarr_inline(Path(input_path), preload)
+    # Readers through a symlink must share the writer's lock and recording cache.
+    path = Path(input_path).resolve()
+    if not path.parent.is_dir():
+        raise FileNotFoundError(f"{path} does not exist.")
+    with _store_access(path, reading=True):
+        dataset = BaseConcatDataset._load_from_zarr_inline(path, preload)
 
     # Filter to specific IDs if requested
     if ids_to_load is not None:
