@@ -179,8 +179,9 @@ class _Attention(nn.Module):
 class Perceiver(nn.Module):
     """Perceiver cross-attention bottleneck to a fixed latent grid.
 
-    The learnable latents start on a sinusoidal grid. At each layer they
-    cross-attend to the signal features and their Fourier-encoded time positions.
+    Adapted from ``perceiver_pytorch`` 0.9.0. The learnable latents start
+    on a sinusoidal grid. At each layer they cross-attend to the signal
+    features and their Fourier-encoded time positions.
     """
 
     def __init__(
@@ -296,7 +297,8 @@ class DanceDetrDecoder(nn.Module):
     Each layer uses pre-normalized self-attention, cross-attention and a
     GEGLU feed-forward network. This adaptation predicts class logits and
     independent sigmoid start and end coordinates. The published DANCE
-    decoder also predicts event centers and durations.
+    decoder also predicts event centers and durations. The ``activation``
+    argument is retained for compatibility and the feed-forward layers use GEGLU.
     """
 
     def __init__(
