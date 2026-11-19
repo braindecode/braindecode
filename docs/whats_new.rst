@@ -342,6 +342,9 @@ Bug fixes
   ``forward`` that takes them. A model without them now raises a clear
   ``ValueError`` instead of a ``TypeError`` deep in skorch
   (:gh:`1545` by `Bruno Aristimunha`_).
+- :meth:`braindecode.EEGClassifier.predict_proba` normalizes the classes at each
+  output position when using PyTorch cross-entropy. Sequence models now return
+  a probability distribution over classes for each epoch.
 - Fix the PyTorch forum and TensorFlow references of
   :class:`braindecode.modules.MaxNormLinear`: each URL was split across two
   docstring lines, so the rendered links pointed to a truncated forum URL (404)
