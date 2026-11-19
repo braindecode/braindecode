@@ -12,7 +12,11 @@ accept only ``"native"`` and say why in a ``ValueError``:
 :class:`~braindecode.models.MEGGPT` and :class:`~braindecode.models.BBL` (MEG),
 :class:`~braindecode.models.GeoNIRS`, :class:`~braindecode.models.JungMAE` and
 :class:`~braindecode.models.MtReNIRS` (fNIRS), and :class:`~braindecode.models.CORTEG`
-(a second per-channel stream, ``x_hi``):
+(a second per-channel stream, ``x_hi``). The same holds, for some inputs only, for
+:class:`~braindecode.models.BrainOmni` and :class:`~braindecode.models.BrainTokenizer`
+with MEG sensors, :class:`~braindecode.models.NeuroRVQ` and
+:class:`~braindecode.models.NeuroRVQTokenizer` with a non-EEG ``modality``, and
+:class:`~braindecode.models.MAPA` with ``normalization="session"``:
 
 .. code-block:: python
 
