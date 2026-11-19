@@ -13,8 +13,8 @@
 If you use Braindecode in scientific work, please cite the software using the global
 Zenodo DOI shown in the badge below:
 
-.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.17699192.svg
-    :target: https://doi.org/10.5281/zenodo.17699192
+.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.8214376.svg
+    :target: https://doi.org/10.5281/zenodo.8214376
     :alt: DOI
 
 You can use the following BibTeX entry:
@@ -33,8 +33,23 @@ You can use the following BibTeX entry:
                 Brandt, Simon and
                 Gnassounou, Théo and
                 Paillard, Joseph and
+                Srivastava, Aman and
                 {Junqueira Lopes}, Bruna and
                 Sedlar, Sara and
+                Tayal, Sarthak and
+                Truong, Young and
+                Gadonneix, Julien and
+                Mounir, Adam and
+                Zhang, Zhibo and
+                Soloviev, Anton and
+                Li, Qing and
+                Rathi, Raghav and
+                Shah, Vandit and
+                Arthur and
+                Jain, Mahir and
+                Kowshik, Bhargav and
+                Li, Yiheng and
+                Siddique, Fashad Ahmed and
                 Moreau, Thomas and
                 Chevallier, Sylvain and
                 Gramfort, Alexandre and
@@ -43,17 +58,20 @@ You can use the following BibTeX entry:
                with deep learning models},
       howpublished = {Zenodo},
       url = {https://github.com/braindecode/braindecode},
-      doi = {10.5281/zenodo.17699192},
+      doi = {10.5281/zenodo.8214376},
       license = {BSD-3-Clause},
     }
 
 Or the following APA reference:
 
     Aristimunha, B., Guetschel, P., Wimpff, M., Gemein, L., Rommel, C., Banville, H.,
-    Sliwowski, M., Wilson, D., Brandt, S., Gnassounou, T., Paillard, J., Junqueira
-    Lopes, B., Sedlar, S., Moreau, T., Chevallier, S., Gramfort, A., & Schirrmeister, R.
-    T. *Braindecode: toolbox for decoding raw electrophysiological brain data with deep
-    learning models* [Software]. Zenodo. https://doi.org/10.5281/zenodo.17699192
+    Sliwowski, M., Wilson, D., Brandt, S., Gnassounou, T., Paillard, J., Srivastava, A.,
+    Junqueira Lopes, B., Sedlar, S., Tayal, S., Truong, Y., Gadonneix, J., Mounir, A.,
+    Zhang, Z., Soloviev, A., Li, Q., Rathi, R., Shah, V., Arthur, Jain, M., Kowshik, B.,
+    Li, Y., Siddique, F. A., Moreau, T., Chevallier, S., Gramfort, A., & Schirrmeister,
+    R. T. *Braindecode: toolbox for decoding raw electrophysiological brain data with
+    deep learning models* [Computer software]. Zenodo.
+    https://doi.org/10.5281/zenodo.8214376
 
 Additionally, we highly encourage you to cite the article that originally introduced the
 Braindecode library and has served as a foundational reference for many works on deep
