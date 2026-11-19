@@ -423,6 +423,9 @@ def _preprocess(
         if hasattr(ds, kind):
             setattr(ds, kind, getattr(ds, kind).copy())
 
+    if isinstance(ds, (EEGWindowsDataset, WindowsDataset)):
+        # MNE can pick or reorder channels in place without invoking a setter.
+        ds._ch_pos = None
     if hasattr(ds, "raw"):
         if isinstance(ds, EEGWindowsDataset):
             warn(
