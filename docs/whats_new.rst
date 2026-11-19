@@ -533,6 +533,11 @@ Bug fixes
   mean now covers the real steps only. Windows that are a multiple of the
   segment length, and ``"crop"``, are unchanged (:gh:`1561` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.LUNA` checks its temporal encoder geometry at
+  construction. Patch sizes must be positive multiples of 4 and embedding
+  widths positive multiples of 16. Incompatible settings previously failed
+  in a grouped normalization or when adding the time and frequency features
+  (:gh:`1685` by `Bruno Aristimunha`_).
 - Signal-only augmentations such as :class:`braindecode.augmentation.SignFlip`
   can follow :class:`braindecode.augmentation.Mixup` or
   :class:`braindecode.augmentation.CutMix` in a composed pipeline. They
