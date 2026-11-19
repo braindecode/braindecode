@@ -600,9 +600,8 @@ EVENTS_MAP = {
 class TUHEvents(TUH):
     """Temple University Hospital (TUH) EEG Event Corpus.
 
-    This is a thin wrapper around :class:`TUH` that extracts event annotations
-    (from accompanying ``.rec`` or ``.lab`` files when available) and stores
-    them in the dataset description under the ``events`` key.
+    Event annotations are read from the ``.rec`` file beside each EDF recording
+    and stored in its ``raw.annotations``.
 
     The dataset layout follows the TUH EEG Event Corpus structure (train/eval
     folders) as documented in the corpus README.
@@ -709,78 +708,61 @@ class TUHEvents(TUH):
     def _set_annotations(
         file_path: str | Path, raw: mne.io.Raw, channel_events: bool, merge_events: bool
     ):
-        """Parse event annotations for a single EDF file.
-        Then set the annotations in the provided raw object."""
-        file_path = Path(file_path)
-        rec_path = file_path.parent / (file_path.stem + ".rec")
-        ch_names = raw.ch_names
-
+        """Set annotations from the EDF recording's event sidecar."""
+        rec_path = Path(file_path).with_suffix(".rec")
         if not rec_path.exists():
             warnings.warn(
                 f"File '{rec_path}' does not exist. No event annotations will be added."
             )
-            return None
-        onsets = []
-        durations = []
-        descriptions = []
-        ch_name_list: list[list[str]] = []
-        lines = rec_path.read_text().splitlines()
-        for line in lines:
+            return
+
+        events = []
+        for line in rec_path.read_text().splitlines():
             parts = line.strip().split(",")
             if len(parts) != 4:
                 warnings.warn(
                     f"Unexpected format in '{rec_path}': '{line}'. No event annotations will be added."
                 )
-                return None
-            channel_idx, start, stop, event_code = parts
+                return
+            channel_idx, start_text, stop_text, event_code = parts
             if event_code not in EVENTS_MAP:
                 warnings.warn(
                     f"Unknown event code '{event_code}' in '{rec_path}'. No event annotations will be added."
                 )
-                return None
-            onsets.append(float(start))
-            durations.append(float(stop) - float(start))
-            descriptions.append(EVENTS_MAP[event_code])
-            ch_name_list.append([ch_names[int(channel_idx)]])
+                return
+            channel = raw.ch_names[int(channel_idx)]
+            channels = (channel,) if channel_events else ()
+            events.append(
+                (float(start_text), float(stop_text), EVENTS_MAP[event_code], channels)
+            )
 
-        # remove duplicates
-        if not channel_events:
-            unique_events = set(zip(onsets, durations, descriptions))
-            onsets, durations, descriptions = zip(*unique_events)  # type: ignore[assignment]
-        # merge consecutive events
+        if not events:
+            return
+
         if merge_events:
             assert not channel_events
-            merged_onsets: list[float] = []
-            merged_durations: list[float] = []
-            merged_descriptions: list[str] = []
-            sorted_events = sorted(zip(onsets, durations, descriptions))
-            unique_descriptions = set(descriptions)
-            for description in unique_descriptions:
-                new = True
-                for onset, duration, this_description in sorted_events:
-                    if this_description != description:
-                        continue
-                    if new or (onset > merged_onsets[-1] + merged_durations[-1]):
-                        # initialize new event
-                        merged_onsets.append(onset)
-                        merged_durations.append(duration)
-                        merged_descriptions.append(this_description)
-                    else:
-                        # update last event duration
-                        merged_durations[-1] = (onset + duration) - merged_onsets[-1]
-                    new = False
-            onsets = merged_onsets
-            durations = merged_durations
-            descriptions = merged_descriptions
-        # sort by onset time
-        sorted_events = sorted(zip(onsets, durations, descriptions))
-        onsets, durations, descriptions = zip(*sorted_events)  # type: ignore[assignment]
+            # Merge each label separately so intervals of other types can overlap.
+            events.sort(key=lambda event: (event[2], event[0]))
+            merged = [events[0]]
+            for event in events[1:]:
+                onset, stop, label, channels = event
+                last_onset, last_stop, last_label, _ = merged[-1]
+                if label == last_label and onset <= last_stop:
+                    merged[-1] = (last_onset, max(last_stop, stop), label, channels)
+                else:
+                    merged.append(event)
+            events = merged
+        elif not channel_events:
+            events = list(set(events))
 
+        onsets, stops, descriptions, ch_names = zip(
+            *sorted(events, key=lambda event: event[:3])
+        )
         annotations = mne.Annotations(
             onset=onsets,
-            duration=durations,
+            duration=np.subtract(stops, onsets),
             description=descriptions,
-            ch_names=ch_name_list if channel_events else None,
+            ch_names=ch_names if channel_events else None,
         )
         raw.set_annotations(annotations)
 
