@@ -357,8 +357,8 @@ Bug fixes
   braindecode writes next to each EDF file for a physician report: with one
   recording in a directory the description held the date JSON instead of the
   report, and with several recordings an ``AssertionError`` without message was
-  raised. A missing report or several candidate reports now raise an explicit
-  :class:`RuntimeError` (:gh:`1655` by `Axel Coiffard-Donaty`_).
+  raised. In shared directories, reports are matched to the EDF or its session.
+  A missing or ambiguous report raises :class:`RuntimeError` (:gh:`1655` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============

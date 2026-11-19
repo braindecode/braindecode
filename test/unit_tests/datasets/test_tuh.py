@@ -343,13 +343,14 @@ def test_tuh_date_fif_cannot_store_stays_in_description(tmp_path, date, year):
     assert reloaded.datasets[0].raw.info["meas_date"] is None
 
 
-def _make_tuh_recordings(directory, names, date=None):
-    """Create empty EDF placeholders and the `_date.txt` files `_read_date` writes."""
-    date = {"year": 2013, "month": 8, "day": 15} if date is None else date
-    edfs = [str(directory / f"{name}.edf") for name in names]
+def _make_tuh_recordings(directory, names):
+    """Create EDF placeholders and the date sidecars written by _read_date."""
+    edfs = [directory / f"{name}.edf" for name in names]
     for edf in edfs:
-        open(edf, "wb").close()
-        pd.Series(date).to_json(edf.replace(".edf", "_date.txt"))
+        edf.touch()
+        pd.Series({"year": 2013, "month": 8, "day": 15}).to_json(
+            edf.with_name(f"{edf.stem}_date.txt")
+        )
     return edfs
 
 
@@ -383,6 +384,23 @@ def test_read_physician_report_several_reports_raises(tmp_path):
 
     (edf,) = _make_tuh_recordings(tmp_path, ["aaaaaaav_s004_t000"])
     (tmp_path / "aaaaaaav_s004.txt").write_text("first report")
-    (tmp_path / "aaaaaaav_s005.txt").write_text("second report")
+    (tmp_path / "aaaaaaav_s004_t000.txt").write_text("second report")
     with pytest.raises(RuntimeError, match="Expected at most one physician report"):
         _read_physician_report(edf)
+
+
+@pytest.mark.parametrize("filename", ["aaaaaaav_s004.txt", "report.txt"])
+def test_report_from_another_session_is_never_attached(tmp_path, filename):
+    from braindecode.datasets.tuh import _read_physician_report
+
+    first, second = _make_tuh_recordings(
+        tmp_path, ["aaaaaaav_s004_t000", "aaaaaaaw_s001_t000"]
+    )
+    (tmp_path / filename).write_bytes("Session A, résumé".encode("latin-1"))
+    with pytest.raises(RuntimeError, match="Could not read physician report"):
+        _read_physician_report(second)
+    if filename == "report.txt":
+        (tmp_path / filename).rename(tmp_path / "aaaaaaav_s004.txt")
+    (tmp_path / "aaaaaaaw_s001.txt").write_text("Session B")
+    assert _read_physician_report(first) == "Session A, résumé"
+    assert _read_physician_report(second) == "Session B"

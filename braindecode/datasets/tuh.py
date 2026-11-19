@@ -436,34 +436,39 @@ def _parse_description_from_file_path(
 
 
 def _read_physician_report(file_path):
-    directory = os.path.dirname(file_path)
-    txt_file = glob.glob(os.path.join(directory, "**/*.txt"), recursive=True)
-    # `_read_date` stores the recording date in a `*_date.txt` file next to each
-    # EDF file; these are written by braindecode and are not physician reports
-    txt_file = [f for f in txt_file if not f.endswith("_date.txt")]
-    # check that there is at most one report in the same directory
-    if len(txt_file) > 1:
-        raise RuntimeError(
-            f"Expected at most one physician report in {directory}, "
-            f"found {len(txt_file)}: {sorted(txt_file)}."
+    recording = Path(file_path)
+    session = re.sub(r"_t\d+$", "", recording.stem)
+    reports = [
+        p for p in recording.parent.rglob("*.txt") if not p.name.endswith("_date.txt")
+    ]
+    matched = [p for p in reports if p.stem in (recording.stem, session)]
+    if matched:
+        reports = matched
+    elif reports:
+        # An unnamed report is usable only in a directory belonging to one session.
+        foreign_report = any(
+            re.fullmatch(r"[^_]+_s\d+(?:_t\d+)?", p.stem) for p in reports
         )
-    report = ""
-    if txt_file:
-        txt_file = txt_file[0]
-        # somewhere in the corpus, encoding apparently changed
-        # first try to read as utf-8, if it does not work use latin-1
+        shared_directory = any(
+            re.sub(r"_t\d+$", "", p.stem) != session
+            for p in recording.parent.rglob("*.edf")
+        )
+        if foreign_report or shared_directory:
+            reports = []
+    if len(reports) > 1:
+        raise RuntimeError(
+            f"Expected at most one physician report for {recording}, found {sorted(reports)}."
+        )
+    if reports:
         try:
-            with open(txt_file, "r", encoding="utf-8") as f:
-                report = f.read()
+            report = reports[0].read_text(encoding="utf-8")
         except UnicodeDecodeError:
-            with open(txt_file, "r", encoding="latin-1") as f:
-                report = f.read()
-    if not report:
-        raise RuntimeError(
-            f"Could not read physician report ({txt_file or directory}). "
-            f"Disable option or choose appropriate directory."
-        )
-    return report
+            report = reports[0].read_text(encoding="latin-1")
+        if report:
+            return report
+    raise RuntimeError(
+        f"Could not read physician report for {recording}. Disable add_physician_reports or check the recording directory."
+    )
 
 
 def _read_edf_header(file_path):
