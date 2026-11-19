@@ -6443,6 +6443,25 @@ def test_megxl_batched_geometry_gradients():
     assert all(torch.equal(a, b) for a, b in zip(reference_grads, actual_grads))
 
 
+def test_megxl_uses_half_projections_with_float_codebooks():
+    from braindecode.models import MEGXL
+
+    model = MEGXL(
+        chs_info=_make_chs_info(2), n_outputs=2, n_times=25, sfreq=50.0,
+        latent_dim=32, num_layers=0, num_heads=4, fourier_pos_dim=16,
+        tokenizer_dim=16, n_filters=4, n_q=2, codebook_size=8, codebook_dim=4,
+    ).half().eval()
+    for layer in model.quantizer.layers:
+        layer._codebook.embed.normal_()
+    x = torch.randn(2, 2, 25, dtype=torch.float16)
+    with torch.no_grad():
+        codes = model.tokenize(x)
+        latents = model.encode_codes(codes)
+        torch.testing.assert_close(latents, model.encode(x))
+        assert latents.dtype == x.dtype
+        assert torch.isfinite(latents).all()
+
+
 def test_megxl_masked_codes_before_context():
     """Hide clean code content before metadata/context, not the prediction."""
     from braindecode.models import MEGXL
