@@ -244,9 +244,7 @@ def insert_next_dev_section(changelog: Path, next_dev_base: str) -> None:
         insert_at = m2.start()
 
     section = EMPTY_SECTION_TEMPLATE.format(base=next_dev_base)
-    changelog.write_text(
-        text[:insert_at] + section + text[insert_at:], encoding="utf-8"
-    )
+    changelog.write_text(text[:insert_at] + section + text[insert_at:], encoding="utf-8")
 
 
 def cmd_compute(args: argparse.Namespace) -> int:
