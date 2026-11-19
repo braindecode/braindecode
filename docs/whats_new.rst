@@ -224,6 +224,8 @@ Requirements
 Bug fixes
 ==========
 
+- ``convert_to_zarr`` and ``load_from_zarr`` work with a local Zarr installation.
+  Uploading or downloading a dataset also requires ``huggingface_hub``.
 - :func:`braindecode.preprocessing.filterbank` preserves channel positions and
   their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
 - ``load_state_dict`` of every braindecode model loads checkpoints saved before

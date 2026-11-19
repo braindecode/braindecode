@@ -703,11 +703,8 @@ class HubDatasetMixin:
     ) -> None:
         """Convert dataset to Zarr format (inline implementation)."""
 
-        if zarr is False or huggingface_hub is False:
-            raise ImportError(
-                "huggingface hub functionality is not installed. Install with: "
-                "pip install braindecode[hub]"
-            )
+        if zarr is False:
+            raise ImportError("Local Zarr storage requires zarr>=3.1.")
 
         if output_path.exists():
             raise FileExistsError(
@@ -890,6 +887,9 @@ class HubDatasetMixin:
         """
         if not input_path.exists():
             raise FileNotFoundError(f"{input_path} does not exist.")
+
+        if zarr is False:
+            raise ImportError("Local Zarr storage requires zarr>=3.1.")
 
         # Open zarr store (zarr v3 API)
         root = zarr.open(str(input_path), mode="r")
