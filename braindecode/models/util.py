@@ -109,9 +109,15 @@ def _has_type_annotation(annotation):
     )
 
 
-_EEG_PARAMS = frozenset(
-    {"n_outputs", "n_chans", "chs_info", "n_times", "input_window_seconds", "sfreq"}
-)
+SigArgName = Literal[
+    "n_outputs",
+    "n_chans",
+    "chs_info",
+    "n_times",
+    "input_window_seconds",
+    "sfreq",
+]
+_EEG_PARAMS = frozenset(get_args(SigArgName))
 
 _JSON_SAFE = (int, float, str, bool, type(None))
 _BATCH_NORM_MODULES = (
@@ -323,73 +329,14 @@ def _get_model_class(model_name: str):
     raise ValueError(f"Unknown model name {model_name!r}.")
 
 
-# Keep in sync with _EEG_PARAMS above.
-SigArgName = Literal[
-    "n_outputs",
-    "n_chans",
-    "chs_info",
-    "n_times",
-    "input_window_seconds",
-    "sfreq",
-]
-
-
-################################################################
-# Test cases for models
-#
-# This list should be updated whenever a new model is added to
-# braindecode (otherwise `test_completeness__models_test_cases`
-# will fail).
-# Each element in the list should be a tuple with structure
-# (model_class, required_params, signal_params), such that:
-#
-# model_name: str
-#   The name of the class of the model to be tested.
-# required_params: list[str]
-#   The signal-related parameters that are needed to initialize
-#   the model.
-# signal_params: dict | callable | None
-#   The characteristics of the signal that should be passed to
-#   the model tested in case the default_signal_params are not
-#   compatible with this model.  May also be a zero-argument
-#   callable returning a dict (used to defer imports that would
-#   create circular dependencies, or the fixture-montage load).
-#   The keys of this dictionary can only be among those of
-#   default_signal_params.
-################################################################
-
-_rng = np.random.default_rng(12)
-
-
 @lru_cache(maxsize=1)
 def _fixture_montage_chs() -> tuple[tuple[str, tuple[float, ...]], ...]:
-    """Channels of the montage that supplies the test fixtures' real positions.
+    """Read the distinct EEG positions of the 10-05 montage for model examples.
 
-    The montage is ``standard_1005``, spelled ``colin27_1005`` on MNE >= 1.13
-    (see :func:`braindecode.util.resolve_montage_name`; the positions are
-    identical). The positions are read back from ``info["chs"][i]["loc"]``
-    after :meth:`mne.Info.set_montage`, i.e. in the head frame and in metres,
-    exactly what a user gets from ``raw.set_montage(...)``. ``loc[3:]`` is set
-    to zeros rather than to MNE's ``[0, 0, 0, nan, ...]`` padding, like the
-    other canonical fixtures of this module (LaBraM, BENDR, BaRISTA): a NaN
-    would only add noise to models that check ``np.isfinite(loc).all()``.
-
-    The four legacy 10-20 aliases that the montage lists at exactly the
-    position of their modern name (T3=T7, T4=T8, T5=P7, T6=P8) are dropped:
-    a channel is kept only if no channel listed before it has the same
-    position, so that no two channels share a position (339 channels remain).
-
-    Loading the montage costs about 5 ms once ``braindecode`` is imported
-    (about 0.2 s in a process where ``mne.channels`` is not imported yet). It
-    is deferred to the first call and cached, so that importing ``braindecode``
-    never reads the montage file nor risks a montage-name deprecation warning.
-
-    Returns
-    -------
-    tuple of (str, tuple of float)
-        ``(ch_name, loc)`` for every channel of the montage except the
-        dropped co-located legacy aliases (339 channels), ``loc`` having the
-        12 elements of MNE's format.
+    Each entry pairs a channel name with a 12-value MNE location. The first
+    three values are head coordinates in metres, and the remaining values
+    are zero. The first name at each position takes precedence over its
+    legacy aliases (T3, T4, T5 and T6).
     """
     montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
     info = mne.create_info(montage.ch_names, 1.0, "eeg")
@@ -408,14 +355,7 @@ def _fixture_montage_chs() -> tuple[tuple[str, tuple[float, ...]], ...]:
 
 
 def _draw_chs_info(n_chans: int, rng: np.random.Generator) -> list[dict]:
-    """Draw ``n_chans`` distinct real EEG channels of the fixture montage.
-
-    "Distinct" holds for the names and for the positions (see
-    :func:`_fixture_montage_chs`).
-
-    Each channel keeps its real name together with its real head-frame
-    position, so that models that look channels up by name see the position
-    that goes with the name.
+    """Sample EEG channel names and their head positions without replacement.
 
     Parameters
     ----------
@@ -450,69 +390,29 @@ def _draw_chs_info(n_chans: int, rng: np.random.Generator) -> list[dict]:
     ]
 
 
-# Default 3-channel chs_info used by most model tests: the real 10-10 channels
-# C1, C2 and C3 of the montage of ``_fixture_montage_chs`` (head frame, metres).
-# They are inlined, as loading the montage here would slow ``import
-# braindecode`` down; ``test_chs_info_3ch_matches_the_montage`` checks them.
-_chs_info_3ch = [
-    {"ch_name": name, "kind": "eeg", "loc": np.array([x, y, z, *[0.0] * 9])}
-    for name, (x, y, z) in {
-        "C1": (-0.03793783, 0.02633745, 0.12977061),
-        "C2": (0.03589271, 0.02635814, 0.12841234),
-        "C3": (-0.06714873, 0.02335823, 0.10451068),
-    }.items()
-]
-# Draws of the former random locs (3 channels, then a removed 4-channel
-# fixture), kept so that the sEEG locs that the BaRISTA entry below still draws
-# from ``_rng`` are unchanged; BaRISTA is the only later reader of ``_rng``.
-_rng.random(3 * 12)
-_rng.random(4 * 12)
+def _canonical_example_channels(channels) -> list[dict]:
+    """Give canonical model channels the 12-value location used in the public examples."""
+    result = []
+    for ch in channels:
+        loc = np.zeros(12)
+        loc[:3] = ch["loc"][:3]
+        result.append(
+            {"ch_name": ch["ch_name"], "kind": ch["kind"], "loc": loc.tolist()}
+        )
+    return result
 
 
 def _get_labram_chs_info() -> list[dict]:
-    """Return the 128-channel canonical chs_info for LaBraM with 12-element locs.
-
-    Uses a lazy import from the ``labram`` module to avoid a circular import:
-    ``util.py`` is loaded by ``base.py`` before ``labram.py`` is fully
-    initialized.  The ``_LABRAM_TARGET_CHS_INFO`` entries store only a
-    3-element loc; this function zero-pads each to the 12-element MNE format
-    required by ``ChsInfoType``.
-    """
-    import numpy as np
-
+    # Import when the example is requested to avoid the model/base import cycle.
     from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
 
-    result = []
-    for ch in _LABRAM_TARGET_CHS_INFO:
-        loc3 = np.asarray(ch["loc"], dtype=float)
-        loc12 = np.zeros(12, dtype=float)
-        loc12[:3] = loc3[:3]
-        result.append(
-            {"ch_name": ch["ch_name"], "kind": ch["kind"], "loc": loc12.tolist()}
-        )
-    return result
+    return _canonical_example_channels(_LABRAM_TARGET_CHS_INFO)
 
 
 def _get_bendr_chs_info() -> list[dict]:
-    """Return the 20-channel canonical chs_info for BENDR with 12-element locs.
-
-    Same lazy-import rationale as :func:`_get_labram_chs_info`. The last entry
-    is the ``SCALE`` amplitude-statistic placeholder (see
-    ``braindecode.models.bendr``).
-    """
-    import numpy as np
-
     from braindecode.models.bendr import _BENDR_TARGET_CHS_INFO
 
-    result = []
-    for ch in _BENDR_TARGET_CHS_INFO:
-        loc3 = np.asarray(ch["loc"], dtype=float)
-        loc12 = np.zeros(12, dtype=float)
-        loc12[:3] = loc3[:3]
-        result.append(
-            {"ch_name": ch["ch_name"], "kind": ch["kind"], "loc": loc12.tolist()}
-        )
-    return result
+    return _canonical_example_channels(_BENDR_TARGET_CHS_INFO)
 
 
 # FreeSurfer's left-hemisphere Desikan-Killiany cortical gyri occupy the
@@ -620,13 +520,14 @@ def _fnirs_chs_info(n_pairs: int, interleaved: bool = False) -> list[dict]:
     return chs
 
 
-# (name, required signal parameters, test parameters). The test parameters are
-# signal parameters the default test signal does not fit, plus, for the
-# largest models, architecture arguments that keep the test instance small
-# (CI runners hold four of them at once; the released configurations are
-# covered by test_pretrained_compat).
+# The published BaRISTA example starts at the 85th float64 draw from PCG64(12).
+_barista_rng = np.random.Generator(np.random.PCG64(12).advance(84))
+
+# Braindecode exports these ordered triples. Config generation reads the name
+# and required signal arguments. The third field supplies example constructor
+# arguments for models that use different settings from the default example.
 models_mandatory_parameters: list[
-    tuple[str, list[SigArgName], dict[str, Any] | None | Any]
+    tuple[str, list[SigArgName], dict[str, Any] | Callable[[], dict[str, Any]] | None]
 ] = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("AXON", ["chs_info", "n_outputs"], {"sfreq": 200.0, "n_times": 1000}),
@@ -644,7 +545,7 @@ models_mandatory_parameters: list[
                     "ch_name": f"E{i + 1}",
                     "kind": "seeg",
                     "loc": np.concatenate(
-                        [0.06 * (2 * _rng.random(3) - 1), np.zeros(9)]
+                        [0.06 * (2 * _barista_rng.random(3) - 1), np.zeros(9)]
                     ),
                 }
                 for i in range(8)
@@ -986,15 +887,7 @@ models_mandatory_parameters: list[
     ),
 ]
 
-################################################################
-# List of models that are not meant for classification
-#
-# Their output shape may difer from the expected output shape
-# for classification models.
-################################################################
 
-
-################################################################
 def get_summary_table(dir_name=None):
     if dir_name is None:
         dir_path = Path(__file__).parent

@@ -356,6 +356,9 @@ Bug fixes
 Code health
 ============
 
+- Put the default three-channel test montage with the model fixtures, and
+  share canonical channel conversion between the LaBraM and BENDR entries in
+  ``models_mandatory_parameters``.
 - Every model is compiled on master: ``test_model_compiled`` no longer skips
   :class:`braindecode.models.MetaNeuromotorHand`, whose MPF featurizer torch
   2.15 compiles in about 90 s. ``test_model_exported`` exports
