@@ -43,6 +43,29 @@ def test_mixup_criterion_plain_target(n_samples):
     assert loss == pytest.approx(expected)
 
 
+@pytest.mark.parametrize("soft", [False, True])
+def test_mixup_criterion_weights_dense_targets_per_trial(soft):
+    logits = torch.randn(3, 4, 5)
+    first = torch.randint(4, (3, 5))
+    second = torch.randint(4, (3, 5))
+    if soft:
+        first = torch.randn_like(logits).softmax(1)
+        second = torch.randn_like(logits).softmax(1)
+    weights = torch.tensor([0.2, 0.5, 0.8])
+    expected = torch.stack(
+        [
+            weights[i]
+            * torch.nn.functional.cross_entropy(logits[i : i + 1], first[i : i + 1])
+            + (1 - weights[i])
+            * torch.nn.functional.cross_entropy(logits[i : i + 1], second[i : i + 1])
+            for i in range(len(logits))
+        ]
+    ).mean()
+    torch.testing.assert_close(
+        mixup_criterion(logits, (first, second, weights)), expected
+    )
+
+
 def test_mixup_criterion_accepts_list_target():
     n_samples = 3
     y_a = torch.zeros(n_samples, dtype=torch.int64)

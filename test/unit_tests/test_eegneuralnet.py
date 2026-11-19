@@ -1207,13 +1207,29 @@ def test_predict_trials_explicit_loader_kwargs(estimator):
         net.predict_trials(X, loader_kwargs={"batch_size": 2})
 
 
-def test_classifier_keeps_float_class_indices_for_dense_logits():
+@pytest.mark.parametrize("custom", [False, True])
+@pytest.mark.parametrize("probabilities", [False, True])
+def test_classifier_handles_dense_class_indices_and_probabilities(
+    custom, probabilities
+):
     X = torch.randn(4, 2, 8)
-    y = torch.tensor([[0.0, 1.0] * 4] * 4)
-    model = torch.nn.Conv1d(2, 2, kernel_size=1)
-    expected = torch.nn.functional.cross_entropy(model(X), y.long()).item()
+    model = torch.nn.Conv1d(2, 3, kernel_size=1)
+    if probabilities:
+        y = torch.randn(4, 3, 8).softmax(dim=1)
+        expected_target = y
+    else:
+        y = torch.randint(3, (4, 8)).float()
+        expected_target = y.long()
+    expected = torch.nn.functional.cross_entropy(model(X), expected_target).item()
+    criterion = torch.nn.CrossEntropyLoss
+    if custom:
+
+        def criterion():
+            return torch.nn.functional.cross_entropy
+
     net = EEGClassifier(
         model,
+        criterion=criterion,
         train_split=None,
         max_epochs=1,
         batch_size=len(X),

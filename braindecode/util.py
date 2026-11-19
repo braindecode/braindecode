@@ -446,9 +446,7 @@ class ThrowAwayIndexLoader(object):
         return {signal_name: signal, **extras}
 
     def _cast_target(self, target):
-        if self.is_regression or (
-            target.is_floating_point() and target.ndim == 2 and target.shape[1] > 1
-        ):
+        if self.is_regression or (target.is_floating_point() and target.ndim > 1):
             return target.float()
         return target.long()
 
