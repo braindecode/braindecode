@@ -449,6 +449,15 @@ Bug fixes
   stays in the model so the released weights still load; the first head layer takes
   ``d_model`` instead of ``emb_dim`` inputs per token (the same with the defaults).
   Outputs of existing CSBrain classifiers change (:gh:`1541`, :gh:`1572`).
+- :class:`braindecode.modules.PatchTokenizer`,
+  :func:`braindecode.functional.patch_count` and
+  :func:`braindecode.functional.pad_or_crop_to_patches` now reject empty time
+  axes, invalid patch sizes, negative patch steps (which used to mean the
+  default step) and unknown boundary policies consistently. With
+  ``on_non_divisible="pad"`` and a step larger than ``patch_size``, a final
+  patch is added only when its start lies within the signal, so a window
+  whose remaining samples all fall in the gap no longer gets an all-zero
+  patch (:gh:`1638` by `Bruno Aristimunha`_).
 - :func:`braindecode.visualization.layer_grad_cam` returns a temporal
   class activation map of shape ``(batch, n_times)`` for one-dimensional
   convolutional layers, including those of :class:`~braindecode.models.EEGSimpleConv`.
@@ -536,6 +545,11 @@ Bug fixes
   a shorter ``n_times``: the learned temporal positions keep the checkpoint's
   leading ones instead of raising a size mismatch
   (:gh:`1537` by `Julien Gadonneix`_).
+- :class:`~braindecode.EEGClassifier` keeps the class probabilities produced by
+  :class:`~braindecode.augmentation.LabelSmoothing`, including when it precedes
+  Mixup. Dense class-probability targets also retain their class axis, and
+  :func:`~braindecode.training.mixup_criterion` weights each trial's dense predictions
+  (:gh:`1630` by `Bruno Aristimunha`_).
 - :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor`
   route the batches of :func:`braindecode.datasets.pad_channels_collate` and
   ``set_return_ch_pos`` by the model's ``forward`` signature: the signal goes to
@@ -559,6 +573,20 @@ Bug fixes
   ``10.5281/zenodo.8214376``, which resolves to the latest release; the DOI they
   gave, ``10.5281/zenodo.17699192``, is the 1.2.0 archive. The author list adds
   the contributors of 2.0.0 (:gh:`1571` by `Bruno Aristimunha`_).
+- :class:`braindecode.datasets.TUH` and :class:`braindecode.datasets.TUHAbnormal`
+  with ``add_physician_reports=True`` no longer take the ``_date.txt`` file that
+  braindecode writes next to each EDF file for a physician report: with one
+  recording in a directory the description held the date JSON instead of the
+  report, and with several recordings an ``AssertionError`` without message was
+  raised. In shared directories, reports are matched to the EDF or its session.
+  A missing or ambiguous report raises :class:`RuntimeError` (:gh:`1655` by `Axel Coiffard-Donaty`_).
+- :class:`braindecode.modules.FilterBankLayer` with ``method="fir"`` and
+  ``phase="minimum"`` or ``"minimum-half"`` applied the minimum-phase filter with
+  the delay compensation of a zero-phase filter, which made it anti-causal: the
+  output was advanced by ``(filter_length - 1) // 2`` samples (0.82 s for the
+  8-13 Hz band at 250 Hz) and depended on future samples only. These phases are
+  now applied causally, as in :func:`mne.filter.filter_data`; the other phases
+  are unchanged (:gh:`1686` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============
@@ -3436,3 +3464,4 @@ Authors
 .. _Mark Santos: https://www.markstudios.com
 .. _Hamza Abdelhedi: https://github.com/BabaSanfour
 .. _sixty-66: https://github.com/sixty-66
+.. _Axel Coiffard-Donaty: https://github.com/AxelNoun
