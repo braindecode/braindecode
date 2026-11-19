@@ -127,17 +127,18 @@ def test_get_format_info_eegwindows(setup_concat_eegwindows_dataset):
     assert info["total_size_mb"] > 0
 
 
-def test_zarr_round_trip_rawdataset(tmp_path):
-    """Test saving and loading RawDataset in Zarr format."""
+def test_zarr_round_trip_rawdataset(tmp_path, monkeypatch):
+    """Local Zarr files can be written and read without a Hub client."""
     pytest.importorskip("zarr")
+    monkeypatch.setattr("braindecode.datasets.bids.hub.huggingface_hub", False)
 
     # Create a simple RawDataset
     ch_names = ["C3", "C4", "Cz"]
     sfreq = 100
     info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="eeg")
-    data = np.random.randn(3, 1000)
+    data = np.arange(3000, dtype=np.float32).reshape(3, 1000)
     raw = mne.io.RawArray(data, info)
-    raw_ds = RawDataset(raw, pd.Series({"subject": "1"}))
+    raw_ds = RawDataset(raw, {"subject": "1", "label": 2}, target_name="label")
 
     # Create BaseConcatDataset
     dataset = BaseConcatDataset([raw_ds])
@@ -158,6 +159,28 @@ def test_zarr_round_trip_rawdataset(tmp_path):
     assert loaded.datasets[0].raw.info["sfreq"] == dataset.datasets[0].raw.info["sfreq"]
     # Verify it's actually a RawDataset
     assert get_dataset_type(loaded.datasets[0]) == "RawDataset"
+    np.testing.assert_array_equal(loaded.datasets[0].raw.get_data(), data)
+    assert loaded[0][1] == 2
+
+
+def test_local_load_without_zarr(tmp_path, monkeypatch):
+    monkeypatch.setattr("braindecode.datasets.bids.hub.zarr", False)
+    with pytest.raises(ImportError, match="zarr"):
+        load_from_zarr(tmp_path)
+
+
+def test_overwrite_without_zarr_keeps_existing_store(tmp_path, monkeypatch):
+    output_path = tmp_path / "dataset.zarr"
+    output_path.mkdir()
+    marker = output_path / "keep.txt"
+    marker.write_text("existing")
+    info = mne.create_info(["C3"], sfreq=100, ch_types="eeg")
+    raw = mne.io.RawArray(np.zeros((1, 100)), info)
+    dataset = BaseConcatDataset([RawDataset(raw, {"subject": "1"})])
+    monkeypatch.setattr("braindecode.datasets.bids.hub.zarr", False)
+    with pytest.raises(ImportError, match="zarr"):
+        convert_to_zarr(dataset, output_path, overwrite=True)
+    assert marker.read_text() == "existing"
 
 
 def test_get_format_info_rawdataset():

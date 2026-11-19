@@ -315,6 +315,9 @@ Requirements
 Bug fixes
 ==========
 
+- ``convert_to_zarr`` and ``load_from_zarr`` work with a local Zarr installation.
+  Uploading or downloading a dataset also requires ``huggingface_hub``
+  (:gh:`1684` by `Bruno Aristimunha`_).
 - :func:`braindecode.preprocessing.filterbank` keeps whole channel names: it cut
   each name with its band suffix to its last 15 characters (``MEG0111_8.0-13.0``
   became ``EG0111_8.0-13.0``), a limit MNE no longer has; long names also
