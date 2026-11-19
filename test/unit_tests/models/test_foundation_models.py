@@ -2145,10 +2145,16 @@ def test_pratibha2_unknown_channel_raises_or_drops(pratibha2_bank):
         torch.testing.assert_close(
             model.encode(x), _pratibha2_model(["Fp1", "Cz"]).encode(x[:, [0, 2]])
         )
+        with pytest.raises(ValueError, match="3 channels"):
+            model.encode(torch.cat([x, x[:, :1]], dim=1))
 
 
-def test_pratibha2_loads_original_parameter_names(pratibha2_bank):
+@pytest.mark.parametrize("loader", ["state_dict", "nested", "pretrained"])
+def test_pratibha2_loads_original_parameter_names(pratibha2_bank, tmp_path, loader):
     source = _pratibha2_model()
+    with torch.no_grad():
+        for param in source.parameters():
+            param.add_(0.1)
     to_original = (
         (r"encoder\.patch_embed\.", "patch_embed.linear."),
         (r"encoder\.pos_enc\.learned_linear\.", "pos_enc.learned_linear.0."),
@@ -2174,9 +2180,90 @@ def test_pratibha2_loads_original_parameter_names(pratibha2_bank):
     with torch.no_grad():
         for param in target.parameters():
             param.add_(1.0)
-    target.load_state_dict(original, strict=True)
+    if loader == "pretrained":
+        safetensors = pytest.importorskip("safetensors.torch")
+        pytest.importorskip("huggingface_hub")
+        target.save_pretrained(tmp_path)
+        backbone = {
+            k: v for k, v in original.items() if not k.startswith("final_layer.")
+        }
+        safetensors.save_file(backbone, str(tmp_path / "model.safetensors"))
+        target = Pratibha2.from_pretrained(tmp_path, local_files_only=True).eval()
+        expected = {k for k in source.state_dict() if k.startswith("encoder.")}
+        assert target._pretrained_provenance["loaded"] == expected
+    elif loader == "nested":
+        nn.Sequential(target).load_state_dict(
+            {"0." + k: v for k, v in original.items()}
+        )
+    else:
+        target.load_state_dict(original, strict=True)
     for key, value in source.state_dict().items():
+        if loader == "pretrained" and key.startswith("final_layer."):
+            continue
         torch.testing.assert_close(target.state_dict()[key], value, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("assign", [True, False])
+def test_pratibha2_materializes_montage_and_frequencies(pratibha2_bank, assign):
+    names = ["Fp1", "NOT_A_CHANNEL", "Cz"]
+    with pytest.warns(UserWarning, match="NOT_A_CHANNEL"):
+        source = _pratibha2_model(names, on_missing="drop")
+    with torch.device("meta"), pytest.warns(UserWarning, match="NOT_A_CHANNEL"):
+        restored = _pratibha2_model(names, on_missing="drop")
+    assert restored.channel_index.is_meta
+    if not assign:
+        restored.to_empty(device="cpu")
+        for buf in restored.buffers():
+            buf.fill_(float("nan") if buf.is_floating_point() else -1)
+    restored.load_state_dict(source.state_dict(), strict=True, assign=assign)
+    x = torch.randn(2, 3, 380)
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x), source(x))
+
+
+def test_pratibha2_single_sample_zscore(pratibha2_bank):
+    model = _pratibha2_model(["Cz"], n_times=1, patch_size=1, patch_stride=1)
+    x = torch.ones(2, 1, 1, requires_grad=True)
+    logits = model(x)
+    assert logits.isfinite().all()
+    logits.sum().backward()
+    assert x.grad.isfinite().all()
+
+
+def test_pratibha2_fits_and_restores_on_another_montage(pratibha2_bank, tmp_path):
+    pytest.importorskip("huggingface_hub")
+    pytest.importorskip("safetensors")
+    from braindecode import EEGClassifier
+
+    chs = [{"ch_name": n, "kind": "eeg"} for n in ["C3", "Cz", "C4"]]
+    x = torch.randn(4, 3, 380)
+    y = torch.tensor([0, 1, 2, 1])
+    net = EEGClassifier(
+        "Pratibha2",
+        module__chs_info=chs,
+        module__sfreq=200.0,
+        module__embed_dim=16,
+        module__n_freqs=2,
+        module__depth=1,
+        module__num_heads=2,
+        max_epochs=1,
+        batch_size=2,
+        train_split=None,
+        verbose=0,
+    ).fit(x, y)
+    trained = net.module_.eval()
+    assert torch.isfinite(torch.tensor(net.history[-1, "train_loss"]))
+    with torch.no_grad():
+        expected = trained(x)
+        torch.testing.assert_close(
+            torch.from_numpy(net.predict_proba(x)), expected.softmax(1)
+        )
+    trained.save_pretrained(tmp_path)
+    restored = Pratibha2.from_pretrained(
+        tmp_path, chs_info=chs[::-1], strict=True, local_files_only=True
+    ).eval()
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x.flip(1)), expected, atol=1e-5, rtol=1e-5)
 
 
 def test_pratibha2_weights_load_onto_another_montage(pratibha2_bank):
@@ -2194,7 +2281,9 @@ def test_pratibha2_input_unit_does_not_matter(pratibha2_bank):
     model = _pratibha2_model()
     x_uv = 20.0 * torch.randn(2, len(_PRATIBHA2_NAMES), 600) + 5.0
     with torch.no_grad():
-        torch.testing.assert_close(model(x_uv), model(x_uv * 1e-6), atol=1e-4, rtol=1e-4)
+        torch.testing.assert_close(
+            model(x_uv), model(x_uv * 1e-6), atol=1e-4, rtol=1e-4
+        )
 
 
 def test_pratibha2_too_short_window_raises(pratibha2_bank):

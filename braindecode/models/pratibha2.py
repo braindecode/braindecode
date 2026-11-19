@@ -160,6 +160,8 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
        https://arxiv.org/abs/2609.13717
     """
 
+    channel_index: Optional[torch.Tensor]
+
     def __init__(
         self,
         # signal parameters
@@ -214,15 +216,16 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.drop_prob = drop_prob
         self.on_missing = on_missing
 
-        bank = RevePositionBank(url=_POSITIONS_URL, fname=_POSITIONS_FNAME)
+        # The position bank is host metadata, including when building on meta.
+        with torch.device("cpu"):
+            bank = RevePositionBank(url=_POSITIONS_URL, fname=_POSITIONS_FNAME)
         table = dict(zip(bank.position_names, bank.embedding.numpy()))
         positions, kept = _resolve_positions(self.chs_info, table, on_missing)
-        self.channel_index: Optional[torch.Tensor] = None
-        if len(kept) < len(self.chs_info):
-            self.channel_index = torch.as_tensor(kept)
+        self._positions_cm = (positions.astype(np.float32) * 100.0).tolist()
+        self._kept_indices = list(kept) if len(kept) < len(self.chs_info) else []
+        self.register_buffer("channel_index", None, persistent=False)
 
         self.encoder = _Pratibha2Encoder(
-            channel_positions=100.0 * torch.as_tensor(positions, dtype=torch.float32),
             patch_size=patch_size,
             patch_stride=patch_stride,
             embed_dim=embed_dim,
@@ -234,6 +237,15 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
             att_drop_prob=att_drop_prob,
         )
         self.final_layer = self._build_head(self.n_outputs)
+        self._restore_montage()
+        self.register_load_state_dict_post_hook(self._restore_montage)
+
+    def _restore_montage(self, _module=None, _incompatible_keys=None):
+        # The target montage is independent of the loaded checkpoint.
+        anchor = self.encoder.patch_embed.weight
+        self.encoder.channel_positions = anchor.new_tensor(self._positions_cm)
+        if self._kept_indices:
+            self.channel_index = anchor.new_tensor(self._kept_indices, dtype=torch.long)
 
     def _build_head(self, n_outputs: int) -> nn.Module:
         return nn.Sequential(
@@ -257,7 +269,8 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.final_layer = self._build_head(n_outputs)
         self._update_init_kwargs(n_outputs=n_outputs)
 
-    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+    @staticmethod
+    def _convert_original_keys(state_dict, prefix):
         for key in [k for k in state_dict if k.startswith(prefix)]:
             name = key[len(prefix) :]
             if name == "pos_enc.freq_matrix":
@@ -269,6 +282,16 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
                         state_dict.pop(key)
                     )
                     break
+
+    def load_state_dict(self, state_dict, strict=True, assign=False):
+        # The mixin records provenance from the names it receives.
+        converted = dict(state_dict)
+        self._convert_original_keys(converted, "")
+        return super().load_state_dict(converted, strict=strict, assign=assign)
+
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        if prefix:  # A parent PyTorch module owns the load.
+            self._convert_original_keys(state_dict, prefix)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
@@ -287,8 +310,13 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
             Tokens of shape (batch, n_kept_chans, n_patches, embed_dim), where
             ``n_kept_chans`` excludes channels dropped by ``on_missing="drop"``.
         """
-        if self.channel_index is not None:
-            x = x[:, self.channel_index.to(x.device)]
+        if x.dim() != 3 or x.shape[1] != self.n_chans:
+            raise ValueError(
+                f"Expected EEG with {self.n_chans} channels in the configured montage."
+            )
+        channel_index = self.channel_index
+        if channel_index is not None:
+            x = x.index_select(1, channel_index)
         return self.encoder(x)
 
     def forward(self, x: torch.Tensor, return_features: bool = False):
@@ -359,7 +387,6 @@ class _Pratibha2Encoder(nn.Module):
 
     def __init__(
         self,
-        channel_positions: torch.Tensor,
         patch_size: int,
         patch_stride: int,
         embed_dim: int,
@@ -376,7 +403,7 @@ class _Pratibha2Encoder(nn.Module):
         self.embed_dim = embed_dim
         self.normalize_input = normalize_input
         # Not persistent: the pretrained weights must load onto any montage.
-        self.register_buffer("channel_positions", channel_positions, persistent=False)
+        self.register_buffer("channel_positions", torch.empty(0, 3), persistent=False)
 
         self.patch_embed = nn.Linear(patch_size, embed_dim, bias=False)
         self.pos_enc = _Pratibha2PositionalEncoding(embed_dim, n_freqs)
@@ -400,7 +427,7 @@ class _Pratibha2Encoder(nn.Module):
         if self.normalize_input:
             x32 = x.to(torch.promote_types(x.dtype, torch.float32))
             mean = x32.mean(dim=-1, keepdim=True)
-            std = x32.std(dim=-1, keepdim=True)
+            std = x32.std(dim=-1, keepdim=True, unbiased=x32.size(-1) > 1)
             x = ((x32 - mean) / std.clamp_min(1e-12)).to(x.dtype)
         patches = x.unfold(-1, self.patch_size, self.patch_stride)  # (B, C, P, S)
         tokens = self.patch_embed(patches)  # (B, C, P, D)
@@ -433,16 +460,23 @@ class _Pratibha2PositionalEncoding(nn.Module):
 
     def __init__(self, embed_dim: int, n_freqs: int):
         super().__init__()
-        freqs = torch.linspace(1.0, 10.0, n_freqs)
-        self.register_buffer(
-            "freq_matrix",
-            torch.cartesian_prod(freqs, freqs, freqs, freqs).T.contiguous(),
-            persistent=False,
-        )
+        self.n_freqs = n_freqs
+        self.register_buffer("freq_matrix", torch.empty(0), persistent=False)
         self.fourier_linear = nn.Linear(2 * n_freqs**4, embed_dim, bias=False)
         self.learned_linear = nn.Linear(4, 2 * embed_dim, bias=False)
         self.learned_norm = RMSNorm(embed_dim, eps=1e-8)
         self.final_norm = RMSNorm(embed_dim, eps=1e-8)
+        self._restore_frequencies()
+        self.register_load_state_dict_post_hook(self._restore_frequencies)
+
+    def _restore_frequencies(self, _module=None, _incompatible_keys=None):
+        anchor = self.fourier_linear.weight
+        freqs = torch.linspace(
+            1.0, 10.0, self.n_freqs, dtype=torch.float32, device=anchor.device
+        )
+        self.freq_matrix = (
+            torch.cartesian_prod(freqs, freqs, freqs, freqs).T.contiguous().to(anchor)
+        )
 
     def forward(self, coords: torch.Tensor) -> torch.Tensor:
         # bfloat16 cannot represent the angles.
