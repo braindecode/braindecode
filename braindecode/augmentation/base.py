@@ -7,7 +7,7 @@
 # License: BSD (3-clause)
 
 from numbers import Real
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Union
 
 import numpy as np
 import torch
@@ -52,6 +52,7 @@ class Transform(torch.nn.Module):
     """
 
     operation: Operation
+    signal_only = False
 
     def __init__(self, probability=1.0, random_state=None):
         super().__init__()
@@ -70,15 +71,19 @@ class Transform(torch.nn.Module):
     def get_augmentation_params(self, *batch):
         return dict()
 
-    def forward(self, X: Tensor, y: Optional[Tensor] = None) -> Output:
+    def forward(
+        self, X: Tensor, y: Union[Tensor, tuple[Tensor, ...], list[Tensor], None] = None
+    ) -> Output:
         """General forward pass for an augmentation transform.
 
         Parameters
         ----------
         X : torch.Tensor
             EEG input example or batch.
-        y : torch.Tensor | None
-            EEG labels for the example or batch. Defaults to None.
+        y : torch.Tensor | tuple of torch.Tensor | None
+            EEG labels for the example or batch. Transforms that operate
+            independently of the labels can set ``signal_only = True`` to
+            accept the ``(y_a, y_b, lam)`` target from Mixup or CutMix.
 
         Returns
         -------
@@ -88,6 +93,15 @@ class Transform(torch.nn.Module):
             Transformed labels. Only returned when y is not None.
         """
         X = torch.as_tensor(X).float()
+        mixed_target = None
+        if _is_mixed_target(y):
+            if not self.signal_only:
+                raise ValueError(
+                    f"{type(self).__name__} requires a single target tensor. "
+                    "Apply label-dependent transforms before Mixup or CutMix."
+                )
+            mixed_target = tuple(part.to(X.device) for part in y)
+            y = None
 
         out_X = X.clone()
         # check if input has a batch dimension
@@ -130,6 +144,8 @@ class Transform(torch.nn.Module):
 
         # potentially remove empty batch dimension again
         out_X = out_X.reshape_as(X)
+        if mixed_target is not None:
+            return out_X, mixed_target
         if y is not None:
             return out_X, out_y
         else:
@@ -146,7 +162,13 @@ class Transform(torch.nn.Module):
         return self._probability
 
 
-class IdentityTransform(Transform):
+class _SignalTransform(Transform):
+    """Augment the signal without consulting or changing its target."""
+
+    signal_only = True
+
+
+class IdentityTransform(_SignalTransform):
     """Identity transform.
 
     Transform that does not change the input.
@@ -165,7 +187,9 @@ class Compose(Transform):
     Parameters
     ----------
     transforms : list
-        Sequence of Transforms to be composed.
+        Sequence of Transforms to be composed. Signal-only transforms may
+        follow Mixup or CutMix. Apply transforms that use or change labels
+        before mixing.
     """
 
     def __init__(self, transforms):
@@ -184,9 +208,17 @@ class Compose(Transform):
         return X, y
 
 
+def _is_mixed_target(y):
+    return (
+        isinstance(y, (tuple, list))
+        and len(y) == 3
+        and all(isinstance(part, Tensor) and part.ndim > 0 for part in y)
+    )
+
+
 def _as_mixed_target(y, lam_dtype):
     # an untouched target is the same as being mixed with itself with lam of one
-    if isinstance(y, (tuple, list)) and len(y) == 3:
+    if _is_mixed_target(y):
         return tuple(y)
     lam = torch.ones(y.shape[0], device=y.device, dtype=lam_dtype)
     return y, y, lam
@@ -317,11 +349,7 @@ class _AugmentationCollate:
             aug_X, aug_y = self.transform(X, y)
             xs.append(aug_X)
             ys.append(aug_y)
-        mixed_ys = [
-            aug_y
-            for aug_y in ys
-            if isinstance(aug_y, (tuple, list)) and len(aug_y) == 3
-        ]
+        mixed_ys = [aug_y for aug_y in ys if _is_mixed_target(aug_y)]
         _assert_stackable(xs, "X")
         if mixed_ys:
             # a target-mixing transform such as Mixup returns (y_a, y_b, lam),

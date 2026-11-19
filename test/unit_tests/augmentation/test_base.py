@@ -18,9 +18,12 @@ from braindecode.augmentation.base import (
     _AugmentationCollate,
 )
 from braindecode.augmentation.transforms import (
+    CutMix,
     GaussianNoise,
     LabelSmoothing,
     Mixup,
+    SegmentationReconstruction,
+    SignFlip,
     SmoothTimeMask,
 )
 from braindecode.datasets import create_from_mne_epochs
@@ -386,6 +389,43 @@ def test_augmented_data_loader_negative_n_augmentation():
     dataset = TensorDataset(torch.randn(4, 4, 20), torch.arange(4))
     with pytest.raises(ValueError, match="n_augmentation"):
         AugmentedDataLoader(dataset, n_augmentation=-1, batch_size=4)
+
+
+@pytest.mark.parametrize("mixer", [Mixup, CutMix])
+@pytest.mark.parametrize("n_augmentation", [0, 1])
+def test_signal_transform_after_mixer(mixer, n_augmentation):
+    from torch.utils.data import TensorDataset
+
+    batch_size = 5
+    x = torch.arange(batch_size * 16, dtype=torch.float32).reshape(batch_size, 1, 16)
+    y = torch.arange(batch_size)
+    mix_args = dict(alpha=0.5, beta_per_sample=True, random_state=51)
+    loader = AugmentedDataLoader(
+        TensorDataset(x, y),
+        transforms=[mixer(**mix_args), Compose([SignFlip(0.5, random_state=12)])],
+        n_augmentation=n_augmentation,
+        batch_size=batch_size,
+    )
+    signals, (first, second, weights) = next(iter(loader))
+    mixed, targets = mixer(**mix_args)(x, y)
+    expected = SignFlip(0.5, random_state=12)(mixed)
+    if n_augmentation:
+        expected = torch.cat((x, expected))
+        targets = tuple(torch.cat((a, b)) for a, b in zip((y, y, torch.ones_like(y)), targets))
+    torch.testing.assert_close(signals, expected)
+    for actual, reference in zip((first, second, weights), targets):
+        torch.testing.assert_close(actual, reference)
+    logits = torch.randn(len(signals), batch_size)
+    log_probs = logits.log_softmax(-1)
+    rows = torch.arange(len(signals))
+    loss = -(weights * log_probs[rows, first] + (1 - weights) * log_probs[rows, second]).mean()
+    torch.testing.assert_close(mixup_criterion(logits, (first, second, weights)), loss)
+
+
+@pytest.mark.parametrize("transform", [LabelSmoothing(0.1, 3), SegmentationReconstruction(1)])
+def test_label_dependent_transform_after_mixer_is_rejected(transform):
+    with pytest.raises(ValueError, match="before.*Mixup"):
+        Compose([Mixup(0.5), transform])(torch.randn(3, 2, 16), torch.arange(3))
 
 
 @pytest.mark.parametrize("beta_per_sample", [False, True])
