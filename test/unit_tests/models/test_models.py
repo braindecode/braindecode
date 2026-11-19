@@ -1427,7 +1427,8 @@ def test_gcnsnet_adjacency():
 
 
 @pytest.mark.parametrize("epochs", [False, True], ids=["array", "mne-epochs"])
-def test_gcnsnet_graph_uses_training_arrays_only(epochs):
+@pytest.mark.parametrize("initialized", [False, True], ids=["class", "instance"])
+def test_gcnsnet_graph_uses_training_arrays_only(epochs, initialized):
     from sklearn.base import clone
     from torch.utils.data import Subset
 
@@ -1438,16 +1439,25 @@ def test_gcnsnet_graph_uses_training_arrays_only(epochs):
 
     X = np.random.default_rng(0).standard_normal((8, 3, 16)).astype(np.float32)
     y = np.arange(len(X)) % 2
-    net = EEGClassifier(
-        GCNsNet,
-        module__n_features=(4,),
-        module__cheb_orders=(2,),
-        module__pool_sizes=(1,),
-        train_split=split,
-        max_epochs=1,
-        batch_size=2,
-        verbose=0,
-    )
+    model_kwargs = dict(n_features=(4,), cheb_orders=(2,), pool_sizes=(1,))
+
+    def estimator(**kwargs):
+        params = {**model_kwargs, **kwargs}
+        if initialized:
+            module = GCNsNet(n_chans=3, n_times=16, n_outputs=2, **params)
+            return EEGClassifier(
+                module, train_split=split, max_epochs=1, batch_size=2, verbose=0
+            )
+        return EEGClassifier(
+            GCNsNet,
+            **{f"module__{key}": value for key, value in params.items()},
+            train_split=split,
+            max_epochs=1,
+            batch_size=2,
+            verbose=0,
+        )
+
+    net = estimator()
 
     def expected_laplacian(data):
         from scipy.sparse.csgraph import laplacian
@@ -1478,16 +1488,16 @@ def test_gcnsnet_graph_uses_training_arrays_only(epochs):
     np.testing.assert_allclose(net.module_.laplacians[0].matrix, expected, atol=1e-6)
 
     net.set_params(warm_start=False)
-    for estimator in (net, fresh):
-        estimator.fit(inputs(), y)
+    for refit in (net, fresh):
+        refit.fit(inputs(), y)
         np.testing.assert_allclose(
-            estimator.module_.laplacians[0].matrix, expected_laplacian(X[:6]), atol=1e-6
+            refit.module_.laplacians[0].matrix, expected_laplacian(X[:6]), atol=1e-6
         )
 
     adjacency = torch.ones(3, 3)
-    fresh.set_params(module__adjacency=adjacency).fit(inputs(), y)
+    explicit = estimator(adjacency=adjacency).fit(inputs(), y)
     np.testing.assert_allclose(
-        fresh.module_.laplacians[0].matrix, (np.eye(3) - 1) / 2, atol=1e-6
+        explicit.module_.laplacians[0].matrix, (np.eye(3) - 1) / 2, atol=1e-6
     )
     torch.testing.assert_close(adjacency, torch.ones(3, 3))
 
