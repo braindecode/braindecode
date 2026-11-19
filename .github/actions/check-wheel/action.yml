@@ -14,15 +14,25 @@ runs:
         python -m build
         python -m twine check --strict dist/*
     - name: Exercise the installed wheel
-      shell: bash
+      shell: python
       env:
         UV_TORCH_BACKEND: cpu
         HF_HUB_OFFLINE: "1"
         OMP_NUM_THREADS: "1"
       run: |
-        wheels=("$PWD"/dist/*.whl)
-        test "${#wheels[@]}" -eq 1
-        interpreter="$(python -c 'import sys; print(sys.executable)')"
-        cd "$RUNNER_TEMP"
-        uv run --no-project --isolated --python "$interpreter" --with "${wheels[0]}[hub]" \
-          python -I "$GITHUB_WORKSPACE/scripts/check_wheel.py"
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        wheel, = Path("dist").glob("*.whl")
+        smoke = Path(os.environ["GITHUB_WORKSPACE"]) / "scripts" / "check_wheel.py"
+        subprocess.run(
+            [
+                "uv", "run", "--no-project", "--isolated", "--python", sys.executable,
+                "--with", f"braindecode[hub] @ {wheel.resolve().as_uri()}",
+                "python", "-I", str(smoke),
+            ],
+            cwd=os.environ["RUNNER_TEMP"],
+            check=True,
+        )
