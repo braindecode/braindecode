@@ -106,6 +106,9 @@ Enhancements
   emb_size)`` and zero for padded channels, like CBraMod and LaBraM; they could
   only be read with a forward hook on ``encoder.transformer``. Outputs and
   ``"features"`` are unchanged (:gh:`1570` by `Hamza Abdelhedi`_).
+- The :class:`braindecode.training.TimeSeriesLoss` documentation shows how to
+  train hand-pose models with :class:`braindecode.EEGRegressor` and align
+  per-joint predictions to continuous targets (:gh:`1619` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` takes ``return_features=True``, like the other
   foundation models: it returns the normed encoder output before the head,
   ``(batch, n_patches, num_queries * embed_dim)``, as ``"features"`` (:gh:`1565` by `Hamza Abdelhedi`_).
@@ -157,11 +160,10 @@ Enhancements
   encoder output ``(batch, n_chans, n_tokens, dim)`` with the tokens of padded
   channels zero; DIVER1 gains
   ``return_features`` (:gh:`1540` by `Julien Gadonneix`_).
-- New tutorial :ref:`weight-audit-tutorial`: audit what a released decoder relies on
-  from its weights alone (dominant band, time window and channel ranking of an
-  :class:`braindecode.models.EEGNet`, read through its path weights), then confirm the
-  reading with one occlusion check, shown on a released PhysioNet EEGNet checkpoint and
-  the lateral-cue eye-movement shortcut (:gh:`1538` by `Yiheng Li`_).
+- The :ref:`weight-audit-tutorial` ranks bands, time windows and channels
+  from the weights of a released :class:`braindecode.models.EEGNet`, then
+  compares the rankings with occlusion on three PhysioNet participants
+  (:gh:`1538` by `Yiheng Li`_, :gh:`1641` by `Bruno Aristimunha`_).
 - :ref:`install_gaudi` lists two attention issues of Gaudi software 1.21.4 that give no
   error: wrong values in eager mode when two calls take transposed views with as many
   elements in different shapes (:class:`braindecode.models.AXON`), and no gradient for a
@@ -170,6 +172,10 @@ Enhancements
 
 API and behavior changes
 ========================
+
+- Braindecode now requires MNE-Python 1.13.0 or later. This version centres
+  both montages on the fitted head origin for spherical-spline interpolation
+  (:gh:`1615` by `Bruno Aristimunha`_).
 
 - :class:`braindecode.models.SleepFM` and :class:`braindecode.models.SleepFMStager`
   take ``ch_mask``, ``True`` for real channels as in every other model and
@@ -224,8 +230,21 @@ Requirements
 Bug fixes
 ==========
 
+- Annotation preprocessors preserve existing event sample numbers in undated
+  recordings with a nonzero first sample, including after cropping a recording
+  (:gh:`1621` by `Bruno Aristimunha`_).
 - :func:`braindecode.preprocessing.filterbank` preserves channel positions and
   their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
+
+- :class:`braindecode.models.LUNA` keeps its default channel locations in a
+  non-persistent buffer, so ``model.to(device)`` moves them. Before, they stayed
+  on the CPU in a plain dict, and each forward without ``channel_locations``
+  copied them to the device of the input. When the channel count changes, LUNA
+  uses the corresponding measured positions or builds its fallback on the model
+  device. The positions are reconstructed during checkpoint loading, including
+  when loading weights into a model constructed on the meta device. Existing
+  state dictionaries and full-model pickles load (:gh:`1616` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - ``load_state_dict`` of every braindecode model loads checkpoints saved before
   the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
   other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key
@@ -242,10 +261,64 @@ Bug fixes
   size and no longer loads; ``mask_encoding`` is a frozen zero vector, so drop that
   key from the state dict and load with ``strict=False`` (:gh:`1601` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.VEMG2Pose` resamples the encoder features to the rollout
+  rate with ``align_corners=True``, as emg2pose does in ``pose_modules.py``. It used
+  ``False``, so with the same weights its outputs differed from the reference
+  implementation. Outputs of existing VEMG2Pose models change by a few thousandths of
+  a radian with each of the four released checkpoints (``braindecode/VEMG2Pose-emg2pose``,
+  ``braindecode/EMG2Pose-emg2pose`` and their ``-tracking`` variants). Parameters
+  are unchanged, so released weights still load (:gh:`1613` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+
+- :meth:`braindecode.datasets.BaseConcatDataset.save` now saves a recording
+  created with the default ``description=None`` and writes an empty description
+  for it. Before, it raised an ``AttributeError`` after it had written the signal
+  file, which left a subdirectory that
+  :func:`braindecode.datautil.load_concat_dataset` could not read. Directly
+  constructed windows keep ``targets_from`` and ``last_target_only`` after
+  saving and loading. Older stores without these settings load with
+  ``targets_from="metadata"``, the constructor default (:gh:`1610` by
+- :func:`braindecode.preprocessing.create_fixed_length_windows` with
+  ``use_mne_epochs=True`` (also set by ``picks``, ``reject`` or ``flat``) passes
+  ``targets_from`` and ``last_target_only`` to
+  :class:`~braindecode.datasets.WindowsDataset` again and records them in
+  ``window_kwargs``, so they survive saving and loading. :gh:`515` dropped them:
+  with ``targets_from="channels"`` the target channels stayed in ``X`` and ``y``
+  came from the recording metadata. Loading older fixed-length Epochs stores
+  now restores their recorded target settings. The Hugging Face Hub (Zarr)
+  format now also stores both settings for
+  :class:`~braindecode.datasets.WindowsDataset`.
+  :class:`~braindecode.datasets.WindowsDataset` and
+  :class:`~braindecode.datasets.EEGWindowsDataset` with
+  ``targets_from="channels"`` now raise a ``ValueError`` when the selected
+  channels hold no ``misc`` channel, also when a saved dataset is loaded.
+  Before, they returned an empty ``y`` (:gh:`1609` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+
 - :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
   supplied electrode names without regard to case, including with a named
   recording reference, preventing duplicated columns and misplaced weights
   (:gh:`1597` by `lindicaphxag-tech`_).
+
+- :meth:`braindecode.models.MetaNeuromotorHand.compute_output_lengths` returns
+  zero valid CTC emissions for recordings shorter than the model's receptive
+  field instead of one: rounding toward zero counted one emission for the 280
+  input lengths just below the first emission of the default model (19,574 to
+  19,853 samples), so CTC scored a frame computed only from padding
+  (:gh:`1618` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.PBT` cuts each patch from one channel, as the
+  authors' code does. When ``n_times`` was not a multiple of ``d_input``, it cut the
+  patches from the flattened ``n_chans x n_times`` signal, so some patches held the
+  end of one channel and the start of the next, and the model had more tokens than
+  ``n_chans * (n_times // d_input)`` (343 instead of 330 for 22 channels, 1000
+  samples and ``d_input=64``). Each channel now drops the samples after its last
+  whole patch. The constructor requires at least one complete patch per channel.
+  ``forward`` raises a ``ValueError`` when the input channel count is not
+  ``n_chans``.
+  The positional embedding keeps its size, so checkpoints saved before
+  this change still load. Outputs of existing PBT models change when ``n_times`` is
+  not a multiple of ``d_input`` and stay the same otherwise (:gh:`1612` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - :class:`braindecode.modules.ChannelLayer` computes every target that is a
   combination of the measured channels exactly, under every strategy including
@@ -257,6 +330,20 @@ Bug fixes
   :func:`braindecode.functional.derivation_matrix` and
   :func:`~braindecode.functional.exact_derivation`
   (:gh:`1577` by `lindicaphxag-tech`_ and `Bruno Aristimunha`_).
+- :class:`braindecode.modules.ChannelLayer` honours changes to electrode order,
+  type and location when an input montage is reused. Padded channels are
+  excluded from the map even with NaN padding. Literal channel names and
+  bipolar derivations follow :func:`braindecode.functional.derivation_matrix`.
+  With a ``reference``, every single-electrode EEG target is re-referenced,
+  including measured electrodes without a known position, and non-electrode
+  targets such as BENDR's ``SCALE`` are left out
+  (:gh:`1620` by `Bruno Aristimunha`_).
+
+- Document the migration from the 1.4 ``compute_amplitude_gradients`` API to
+  :func:`braindecode.visualization.amplitude_gradients_per_trial`, including
+  the old seed and minibatch scaling, and the lifetime of each model yielded
+  by :func:`~braindecode.visualization.cascading_layer_reset`
+  (:gh:`1636` by `Bruno Aristimunha`_).
 
 - :class:`braindecode.models.BIOT` looks up all its channel tokens in one embedding call with a
   1-D index, instead of one call per channel with a 0-d index. Outputs and gradients are
@@ -288,6 +375,27 @@ Bug fixes
   class activation map of shape ``(batch, n_times)`` for one-dimensional
   convolutional layers, including those of :class:`~braindecode.models.EEGSimpleConv`.
   It raised an error for these layers (:gh:`1634` by `Bruno Aristimunha`_).
+- :class:`braindecode.samplers.DistributedRelativePositioningSampler` divides
+  the requested pair count evenly across ranks, including when the recording
+  count requires padding or truncation. Uneven pair budgets round up by
+  default and down with ``drop_last=True`` (:gh:`1633`).
+- :class:`braindecode.models.SyncNet` sizes its linear head from the real pooled
+  length, which counts the zero padding of both the input and the convolution
+  output. The old size, ``ceil(n_times / pool_size) * num_filters``, is wrong for
+  many settings with ``filter_width != pool_size``. The forward pass then raised a
+  ``RuntimeError`` or returned a different number of rows than the batch held.
+  A ``filter_width`` or ``pool_size`` below 1, or window settings that yield zero
+  convolution or pooling samples, raise a ``ValueError`` at construction. Settings where the two sizes agree, such as the defaults,
+  keep their parameter shapes and outputs (:gh:`1611` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.EEGTCNet` no longer applies ``activation`` between the
+  temporal batch norm and the depthwise convolution. The authors' EEG-TCNet code and
+  :class:`braindecode.models.EEGNet` have no activation there. The parameters do not
+  change, so saved weights still load. Old saved configurations restore the
+  previous activation, and configurations saved before 1.6.1 also restore
+  ``tcn_batch_norm=False``. When loading a bare state dict, pass
+  ``temporal_activation=True`` to reproduce the previous outputs
+  (:gh:`1607` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
   averages kept steps that lie after the end of the input. When the last
   segment held fewer real samples than its first kept step position, those
@@ -332,7 +440,19 @@ Bug fixes
   ``forward`` stacked them, which needs equal widths. ``forward`` now
   concatenates them. Outputs and parameters are unchanged for equal widths
   (:gh:`1604` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.AttnSleep` attends with the raw query, as the authors'
+  code does. Since the TorchScript refactor (:gh:`729`), the residual block
+  normalized the query before the attention. This changes the outputs of new
+  models and of bare state dicts. Old saved model configurations and
+  full-model pickles retain the previous outputs. When loading a bare
+  state dict, pass ``attn_query_norm=True`` to reproduce those outputs
+  (:gh:`1606` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - The Eldele et al. (2021) sleep staging tutorial (``plot_sleep_staging_eldele2021.py``) splits train and validation by subject, as its text says; ``split`` took the ids as recording indices, so it trained on subjects 0-1 and validated on subject 2 while subjects 3-5 were loaded and unused (:gh:`1559` by `Bruno Aristimunha`_).
+- :class:`braindecode.modules.ChannelMerger` keeps gradients finite when spatial
+  dropout excludes every electrode of a recording during training in
+  :class:`~braindecode.models.BrainModule` or :class:`~braindecode.models.DANCE`.
+  Nonfinite values in excluded electrodes no longer leak into the merged signal
+  (:gh:`1617` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ZUNA` defaults to ``pos_bins=100``, the value ZUNA1.1 was trained with (paper Table II and Zyphra's configs); the old default ``50`` was ZUNA1's and gave the released encoder outputs up to 5.2 away from the original. The ``braindecode/ZUNA`` checkpoint now holds the ZUNA1.1 encoder in braindecode's parameter names (the earlier ZUNA1 file loaded no parameter into the class) and sets ``pos_bins`` in its config (:gh:`1557` by `Bruno Aristimunha`_).
 - ``from_pretrained`` of :class:`braindecode.models.Brant` loads a checkpoint at
   a shorter ``n_times``: the learned temporal positions keep the checkpoint's
@@ -346,6 +466,11 @@ Bug fixes
   ``forward`` that takes them. A model without them now raises a clear
   ``ValueError`` instead of a ``TypeError`` deep in skorch
   (:gh:`1545` by `Bruno Aristimunha`_).
+- :func:`braindecode.visualization.compute_metrics` and
+  :func:`~braindecode.visualization.compute_ssim_metrics` score nonconstant
+  signed references when positive and negative values sum to zero, and
+  signed references with no positive value; only constant explanations or
+  references are skipped now (:gh:`1635` by `Bruno Aristimunha`_).
 - Fix the PyTorch forum and TensorFlow references of
   :class:`braindecode.modules.MaxNormLinear`: each URL was split across two
   docstring lines, so the rendered links pointed to a truncated forum URL (404)
@@ -383,10 +508,18 @@ Code health
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).
+- The :ref:`channel-strategies` guide shows how to exclude and reconstruct a
+  bad EEG channel. The API reference lists
+  :func:`~braindecode.datasets.pad_channels_collate` and gives the correct
+  installation extra for Hub models (:gh:`1628` by `Bruno Aristimunha`_).
 - Documentation built from a release tag uses https://braindecode.org/stable/
   for the canonical, Open Graph and JSON-LD URLs and in ``llms.txt``, which
   only calls ``/dev/`` builds a moving development snapshot
   (:gh:`1534` by `Bruno Aristimunha`_).
+- The Colab launcher opens the same notebook as the gallery download.
+  Published development notebooks install the build's commit, and the
+  Exca tutorial installs the optional packages it imports (:gh:`1640` by
+  `Bruno Aristimunha`_).
 
 
 Current 2.0.0 (2026-11-02)
@@ -2151,16 +2284,16 @@ Enhancements
   instantiation, so keeping them in ``state_dict`` only bloated checkpoints and
   caused spurious mismatches when ``n_chans`` (or the position-bank config)
   differed between save and load. (:gh:`993` by `Pierre Guetschel`_)
-- Add :mod:`braindecode.visualization` interpretability utilities, all built on
-  plain PyTorch autograd with no extra dependencies:
-  :func:`~braindecode.visualization.saliency`,
+- Add :mod:`braindecode.visualization` interpretability utilities.
+  Install ``braindecode[viz]`` for the Captum-based time-domain methods,
+  including :func:`~braindecode.visualization.saliency`,
   :func:`~braindecode.visualization.input_x_gradient`,
-  :func:`~braindecode.visualization.integrated_gradients`,
-  :func:`~braindecode.visualization.layer_grad_cam`,
-  :func:`~braindecode.visualization.project_to_topomap` (thin wrapper around
-  :func:`mne.viz.plot_topomap`), and :func:`~braindecode.visualization.compute_metrics`
-  for quantitative attribution comparison. A new tutorial,
-  :ref:`interpretability-tutorial`, walks through the full pipeline.
+  :func:`~braindecode.visualization.integrated_gradients` and
+  :func:`~braindecode.visualization.layer_grad_cam`.
+  :func:`~braindecode.visualization.project_to_topomap` uses SciPy
+  interpolation on electrode coordinates obtained from MNE.
+  :func:`~braindecode.visualization.compute_metrics` compares attribution
+  maps. The :ref:`interpretability-tutorial` demonstrates these utilities.
 - Add :class:`braindecode.models.MetaNeuromotorHand`, a port of the
   handwriting decoder from Meta / CTRL-labs' generic neuromotor interface
   (Kaifosh, Reardon et al., Nature 2025). The model takes raw 16-channel

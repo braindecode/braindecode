@@ -273,7 +273,7 @@ class Labram(EEGModuleMixin, nn.Module):
                repo_id="username/my-labram-model", commit_message="Upload trained Labram model"
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     .. versionadded:: 0.9
 
