@@ -969,6 +969,10 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         i_window_in_trial, i_start, i_stop = crop_inds
         if self._zarr_data is not None:
             X = self._zarr_data[:, i_start:i_stop]
+        elif isinstance(self.raw, mne.io.BaseRaw) and self.raw.preload:
+            # what raw._getitem returns, without parsing the picks on every call
+            # (an Epochs' 3-D _data must not be sliced as channels x times)
+            X = self.raw._data[:, i_start:i_stop]
         else:
             X = _read_fif_window(self.raw, i_start, i_stop)
             if X is None:
@@ -985,7 +989,10 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            misc_mask = np.array(self.raw.get_channel_types()) == "misc"
+            # same as get_channel_types() == "misc", which is slow to call per window
+            misc_mask = np.array(
+                [ch["kind"] == FIFF.FIFFV_MISC_CH for ch in self.raw.info["chs"]]
+            )
             if self.last_target_only:
                 y = X[misc_mask, -1]
             else:

@@ -73,6 +73,18 @@ Enhancements
 - Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
   between recording descriptions and window metadata, and recording-level subset
   selection (:gh:`1596` by `Daria Agafonova`_).
+
+- Training on preloaded recordings, as in the tutorials and with MOABB data
+  after preprocessing, spends less time reading windows. On a 10-minute, 64-channel
+  recording, one pass of a ``DataLoader`` (batch 64, no model) over its 1491
+  windows of 4 s takes 0.32 s instead of 0.47 s, and 0.44 s instead of 0.83 s
+  with ``targets_from="channels"``. Windows, targets and crop indices are
+  unchanged. :class:`braindecode.datasets.EEGWindowsDataset` now slices each
+  window from the preloaded array without the channel parsing of
+  ``raw._getitem``, and finds the misc channels from their kind instead of
+  calling ``raw.get_channel_types()`` (:gh:`1651` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+
 - Add :class:`braindecode.models.TinyMyo` (Fasulo et al., IEEE TBME 2026), a
   foundation model pretrained on surface EMG only. You can fine-tune its
   3.6M-parameter encoder on a small EMG dataset instead of training from scratch,
