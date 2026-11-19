@@ -427,7 +427,7 @@ class TestSignalJEPAChannelEmbedding:
             sfreq=128.0,
             ch_types="eeg",
         )
-        info.set_montage(mne.channels.make_standard_montage("standard_1020"))
+        info.set_montage(mne.channels.make_standard_montage("colin27_1020"))
         model = SignalJEPA(chs_info=info["chs"], n_times=1600, sfreq=200.0)
         emb_weight = model.pos_encoder.pos_encoder_spat.weight
         assert not torch.isnan(emb_weight).any(), (
