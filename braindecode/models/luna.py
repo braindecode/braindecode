@@ -618,7 +618,11 @@ class _FrequencyFeatureEmbedder(nn.Module):
     r"""
     This class takes data that is of the form (B, C, T) and patches it
     along the time dimension (T) into patches of size P (patch_size).
-    The output is of the form (B, C, S, P) where S = T // P.
+    The output is of the form (B, C * S, embed_dim) where S = ceil(T / P).
+
+    ``forward`` takes an optional ``n_valid_times``: the number of measured
+    samples before any zero padding. When the last patch holds a single
+    measured sample, its spectrum is set to be exactly real.
     """
 
     def __init__(self, patch_size: int, embed_dim: int) -> None:
@@ -661,6 +665,10 @@ class _FrequencyFeatureEmbedder(nn.Module):
         # An impulse at the first sample has the same real value at every frequency.
         if T - n_valid_times == self.patch_size - 1:
             imag[..., -1, :] = 0.0
+        # FFT backends disagree on the sign of exact imaginary zeros, which
+        # flips the phase of a negative real bin between pi and -pi. Adding
+        # +0 maps -0 to +0 and keeps the gradient.
+        imag = imag + 0.0
         freq_representation = torch.complex(freq_representation.real, imag)
         magnitude = torch.abs(freq_representation)
         if freq_representation.device.type == "mps":

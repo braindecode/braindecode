@@ -1360,6 +1360,31 @@ def test_luna_single_sample_tail_has_real_spectrum(device):
     torch.testing.assert_close(gradient, torch.zeros_like(signal))
 
 
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "mps",
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason="requires Apple MPS"
+            ),
+        ),
+    ],
+)
+def test_luna_impulse_patch_phase_without_internal_padding(device):
+    # Padding added before LUNA gives the same impulse as its own padding.
+    patch_size = 40
+    signal = torch.zeros(1, 2, 2 * patch_size)
+    signal[0, :, patch_size] = torch.tensor([-2.0, 2.0])
+    embedder = luna_module._FrequencyFeatureEmbedder(patch_size, 1)
+    embedder.frequency_to_embed = torch.nn.Identity()
+    features = embedder.to(device)(signal.to(device)).cpu()
+    phase = features.unflatten(1, (2, 2))[0, :, -1, patch_size // 2 + 1 :]
+    expected = torch.tensor([torch.pi, 0.0])[:, None].expand_as(phase)
+    torch.testing.assert_close(phase, expected)
+
+
 def test_luna_variants_different_channel_counts(luna_base_config):
     """Test LUNA handles different channel counts (the variants differ only in
     width and depth; test_luna_variants_output_consistency forwards each)."""
