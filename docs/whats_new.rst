@@ -640,6 +640,9 @@ Bug fixes
 Code health
 ============
 
+- Put the default three-channel test montage with the model fixtures, and
+  share canonical channel conversion between the LaBraM and BENDR entries in
+  ``models_mandatory_parameters`` (:gh:`1665` by `Bruno Aristimunha`_).
 - The test job logs memory every minute and, when it finishes, the kernel's and
   systemd-oomd's kills, so a runner lost mid-suite ("lost communication",
   "shutdown signal") leaves its last memory state in the log
