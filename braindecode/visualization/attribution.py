@@ -72,12 +72,19 @@ def integrated_gradients(model, x, target, baseline=None, steps=50):
 def layer_grad_cam(model, x, target, layer):
     """Compute a class activation map at a convolutional layer with Captum.
 
-    A temporal layer returns one map per trial with shape
-    ``(batch, n_times)``. A two-dimensional layer returns
-    ``(batch, n_chans, n_times)``, interpreting its two spatial axes in
-    channel, time order. The map is linearly or bilinearly interpolated to
-    the input resolution. Its localization is limited by the spatial
-    resolution of the selected layer.
+    A layer with a three-dimensional output ``(batch, features, length)``,
+    such as a temporal convolution, gives one map per trial of shape
+    ``(batch, n_times)``: its last axis is linearly interpolated to
+    ``n_times``. A layer with a four-dimensional output ``(batch, features,
+    height, width)`` gives a map of shape ``(batch, n_chans, n_times)``: its
+    two last axes are bilinearly interpolated to ``(n_chans, n_times)`` in
+    that order. The map is only read correctly when these axes are the
+    layer's time axis, or its channel and time axes in that order. Layers of
+    :class:`~braindecode.models.ShallowFBCSPNet` and
+    :class:`~braindecode.models.Deep4Net` after their ``dimshuffle`` hold
+    time on the height axis, and token sequences of transformers hold tokens
+    on the features axis, so their maps are not maps over channels and time.
+    Localization is limited by the resolution of the selected layer.
     """
     _require_captum()
     from captum.attr import LayerAttribution, LayerGradCam

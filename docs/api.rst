@@ -997,9 +997,10 @@ Time-domain attribution
 
 These `Captum <https://captum.ai/>`_ wrappers compute one attribution map per trial.
 Install the optional dependency with ``pip install braindecode[viz]``. Input-space
-methods return a tensor with the spatial shape of ``x``. :func:`layer_grad_cam` follows
-the spatial axes of its selected layer and returns a temporal map for a one-dimensional
-convolution.
+methods return a tensor with the spatial shape of ``x``. :func:`layer_grad_cam` returns
+``(batch, n_times)`` for a layer with one spatial axis, such as a one-dimensional
+convolution, and ``(batch, n_chans, n_times)`` for a layer with two; see its docstring
+for the axis order this assumes.
 
 .. autosummary::
     :toctree: generated/
