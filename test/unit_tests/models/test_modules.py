@@ -2100,6 +2100,39 @@ def test_feed_forward_block_options(gated):
     torch.jit.script(module)
 
 
+@pytest.mark.parametrize("state_dtype", [torch.float32, torch.float16])
+def test_ema_codebook_large_half_batch_survives_reload(state_dtype):
+    codebook = EMACodebook(1, 2, decay=0, threshold_ema_dead_code=0, kmeans_init=False)
+    codebook.to(state_dtype)
+    codebook.embed.copy_(torch.tensor([[0.0], [10.0]]))
+    x = torch.ones(65_536, 1, dtype=torch.float16)
+    embeddings, indices = codebook(x)
+    assert embeddings.dtype == x.dtype
+    assert torch.count_nonzero(embeddings) == torch.count_nonzero(indices) == 0
+    torch.testing.assert_close(codebook.cluster_size.float(), torch.tensor([65_536.0, 0.0]))
+    torch.testing.assert_close(codebook.embed.float(), torch.tensor([[1.0], [0.0]]))
+
+    restored = EMACodebook(1, 2, decay=0, threshold_ema_dead_code=0, kmeans_init=False)
+    restored.load_state_dict(codebook.state_dict(), strict=True)
+    restored.half()
+    torch.testing.assert_close(restored.cluster_size, codebook.cluster_size)
+    embeddings, indices = restored(2 * x[:3])
+    torch.testing.assert_close(embeddings, x[:3])
+    assert torch.count_nonzero(indices) == 0
+    torch.testing.assert_close(restored.cluster_size.float(), torch.tensor([3.0, 0.0]))
+    torch.testing.assert_close(restored.embed.float(), torch.tensor([[2.0], [0.0]]))
+
+
+def test_ema_codebook_kmeans_initializes_from_a_concentrated_half_batch():
+    codebook = EMACodebook(1, 1, decay=0, kmeans_iters=1).half()
+    x = torch.full((65_536, 1), 100.0, dtype=torch.float16)
+    embeddings, indices = codebook(x)
+    torch.testing.assert_close(embeddings, x)
+    assert indices.count_nonzero() == 0
+    assert codebook.embed.item() == 100
+    assert codebook.cluster_size.item() == len(x)
+
+
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64])
 @pytest.mark.parametrize("n_rows", [0, 1, 64])
 def test_ema_codebook_quantize_preserves_distances(dtype, n_rows):
