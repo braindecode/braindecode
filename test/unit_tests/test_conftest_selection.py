@@ -11,6 +11,16 @@ pytest_plugins = ["pytester"]
 
 CONFTEST = (Path(__file__).resolve().parents[1] / "conftest.py").read_text()
 
+
+@pytest.fixture
+def conftest_project(pytester, monkeypatch):
+    """Run the copied conftest in a project with only pytest's built-in plugins."""
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+    monkeypatch.delenv("PYTEST_PLUGINS", raising=False)
+    pytester.makeconftest(CONFTEST)
+    return pytester
+
+
 MARKED_TESTS = """
 import pytest
 
@@ -53,10 +63,9 @@ ALL = OFFLINE | {"test_slow"} | NETWORK
     ],
     ids=["default", "run-network", "run-slow", "m-slow", "run-slow-and-network"],
 )
-def test_slow_and_network_selection(pytester, args, passed, skipped):
-    pytester.makeconftest(CONFTEST)
-    pytester.makepyfile(test_marked=MARKED_TESTS)
-    reprec = pytester.inline_run("-p", "no:cacheprovider", "-p", "no:xdist", *args)
+def test_slow_and_network_selection(conftest_project, args, passed, skipped):
+    conftest_project.makepyfile(test_marked=MARKED_TESTS)
+    reprec = conftest_project.inline_run("-p", "no:cacheprovider", *args)
     outcomes = [{r.nodeid.split("::")[-1] for r in rs} for rs in reprec.listoutcomes()]
     assert outcomes == [passed, skipped, set()]
     # Whatever neither runs nor skips is deselected, never silently dropped.
@@ -76,9 +85,8 @@ def _caller_state():
     )
 
 
-def test_acceleration_caller_state_restores_after_pass_and_failure(pytester):
-    pytester.makeconftest(CONFTEST)
-    pytester.makepyfile(
+def test_acceleration_caller_state_restores_after_pass_and_failure(conftest_project):
+    conftest_project.makepyfile(
         """
         import random
 
@@ -100,6 +108,6 @@ def test_acceleration_caller_state_restores_after_pass_and_failure(pytester):
         """
     )
     before = _caller_state()
-    reprec = pytester.inline_run("-p", "no:cacheprovider", "-p", "no:xdist")
+    reprec = conftest_project.inline_run("-p", "no:cacheprovider")
     reprec.assertoutcome(passed=1, failed=1)
     assert _caller_state() == before
