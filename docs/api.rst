@@ -79,6 +79,7 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`Labram` - Large Brain Model with pre-trained weights
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
+    - :class:`TinyMyo` - Small sEMG foundation model with pre-trained weights
     - :class:`MAPA` - Masked autoencoder for intracranial EEG with anatomical priors
     - :class:`MIRepNet` - Motor-imagery pre-trained model
     - :class:`NeuroRVQ` - Multi-scale biosignal tokenizer foundation model
@@ -242,6 +243,7 @@ interface for all EEG models and can derive variable names when needed.
      TFMTokenizerOutput
      TCFormer
      TIDNet
+     TinyMyo
      TMSANet
      TSception
      USleep

@@ -802,6 +802,21 @@ models_mandatory_parameters: list[
             "n_outputs": 20,
         },
     ),
+    (
+        "TinyMyo",
+        ["n_chans", "n_outputs", "n_times"],
+        {
+            # The pretraining windows: 1000 samples at 2000 Hz
+            "n_chans": 8,
+            "n_times": 1000,
+            "sfreq": 2000.0,
+            "input_window_seconds": 0.5,
+            # 2 of the 8 released blocks; 2 heads also split the
+            # embed_dim=128 of the embedding test into even widths
+            "depth": 2,
+            "num_heads": 2,
+        },
+    ),
     ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("IFNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("PBT", ["n_chans", "n_outputs", "n_times"], None),
