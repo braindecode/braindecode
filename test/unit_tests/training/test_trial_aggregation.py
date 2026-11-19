@@ -1,10 +1,11 @@
 # License: BSD-3
 """Tests for the private streaming trial reconstruction primitive.
 
-The oracle is a frozen copy of ``trial_preds_from_window_preds`` as it was at
-d9340316 (before it delegated to ``iter_trial_preds``). Every reconstructed
-trial must be bit-identical to it, and the streaming iterator must hold at
-most the windows of the trial in progress plus one boundary lookahead.
+The oracle, ``_trial_fixtures.reference_trial_preds``, is a frozen copy of
+``trial_preds_from_window_preds`` as it was at d9340316 (before it delegated
+to ``iter_trial_preds``). Every reconstructed trial must be bit-identical to
+it, and the streaming iterator must hold at most the windows of the trial in
+progress plus one boundary lookahead.
 """
 
 import gc
@@ -140,6 +141,8 @@ _INVALID = {
 
 
 def _raised(func, *args):
+    # Only the first message line: any assert introspection pytest appends
+    # is not part of the message being compared.
     with pytest.raises(Exception) as excinfo:
         func(*args)
     return type(excinfo.value), str(excinfo.value).split("\n")[0]
@@ -205,7 +208,9 @@ class _CountingIterable:
     ids=["long_first", "one_window_first", "two"],
 )
 def test_streaming_does_not_consume_all_trials(trial_lengths):
-    _, preds, i_windows, i_stops = make_trial_windows(trial_lengths, n_preds=10, stride=7)
+    _, preds, i_windows, i_stops = make_trial_windows(
+        trial_lengths, n_preds=10, stride=7
+    )
     reference = reference_trial_preds(preds, i_windows, i_stops)
     n_windows = np.bincount(np.cumsum(np.array(i_windows) == 0) - 1)
     sources = [_CountingIterable(x) for x in (preds, i_windows, i_stops)]
@@ -222,7 +227,9 @@ def test_streaming_does_not_consume_all_trials(trial_lengths):
 
 
 def test_streaming_early_close_stops_consumption():
-    _, preds, i_windows, i_stops = make_trial_windows([40, 23, 31], n_preds=10, stride=7)
+    _, preds, i_windows, i_stops = make_trial_windows(
+        [40, 23, 31], n_preds=10, stride=7
+    )
     sources = [_CountingIterable(x) for x in (preds, i_windows, i_stops)]
     it = iter_trial_preds(*sources)
     next(it)

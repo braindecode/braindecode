@@ -44,7 +44,9 @@ def window_stops(length, n_preds, stride):
     return stops
 
 
-def make_trial_windows(trial_lengths, n_preds, stride, n_classes=3, dtype=np.float64, seed=0):
+def make_trial_windows(
+    trial_lengths, n_preds, stride, n_classes=3, dtype=np.float64, seed=0
+):
     """Windows cut from known per-trial signals, in chronological order."""
     rng = np.random.default_rng(seed)
     signals, preds, i_windows, i_stops = [], [], [], []

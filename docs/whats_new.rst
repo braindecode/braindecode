@@ -379,8 +379,9 @@ Code health
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).
-- Trial-prediction and estimator compiler tests share their synthetic windows.
-  The chunk and aggregation tests use the same historical reconstruction reference.
+- Trial-prediction tests import their shared synthetic windows and historical
+  reconstruction reference from a helper module instead of from other collected
+  test modules (:gh:`1672` by `Bruno Aristimunha`_).
 - Documentation built from a release tag uses https://braindecode.org/stable/
   for the canonical, Open Graph and JSON-LD URLs and in ``llms.txt``, which
   only calls ``/dev/`` builds a moving development snapshot

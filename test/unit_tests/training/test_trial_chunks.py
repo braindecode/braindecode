@@ -181,9 +181,7 @@ def test_chunks_special_values_and_targets(monkeypatch):
     monkeypatch.setattr(scoring, "_iter_prediction_windows", rows)
     expected = next(scoring.iter_trial_predictions(InferenceModule(), []))
     chunks = list(
-        scoring.iter_trial_prediction_chunks(
-            InferenceModule(), [], windows_per_chunk=2
-        )
+        scoring.iter_trial_prediction_chunks(InferenceModule(), [], windows_per_chunk=2)
     )
     _equal(np.concatenate([c.prediction for c in chunks], axis=1), expected[0])
     _equal(np.concatenate([c.target for c in chunks], axis=1), expected[1])
