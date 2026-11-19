@@ -8,11 +8,13 @@
 # License: BSD (3-clause)
 
 import warnings
+from functools import partial
 
 from skorch import NeuralNet
 from skorch.callbacks import EpochScoring
 from skorch.classifier import NeuralNetClassifier
-from torch.nn import CrossEntropyLoss, Softmax
+from torch import Tensor
+from torch.nn import CrossEntropyLoss
 
 from .eegneuralnet import _EEGNeuralNet
 from .training.scoring import predict_trials
@@ -105,7 +107,7 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
             criterion = getattr(self, self._criteria[0] + "_")
             if isinstance(getattr(criterion, "_orig_mod", criterion), CrossEntropyLoss):
                 # CrossEntropyLoss expects classes on axis 1, including dense targets.
-                return Softmax(dim=1)
+                return partial(Tensor.softmax, dim=1)
         return nonlinearity
 
     def predict_proba(self, X):
