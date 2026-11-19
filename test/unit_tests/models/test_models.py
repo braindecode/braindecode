@@ -37,6 +37,7 @@ from braindecode.models import (
     BDTCN,
     BENDR,
     BIOT,
+    DANCE,
     EEGCLIP,
     EEGPT,
     FNIRS4D,
@@ -123,6 +124,7 @@ from braindecode.models.util import (
     models_dict,
     models_mandatory_parameters,
 )
+from braindecode.training import DanceLoss
 from braindecode.util import set_random_seeds
 from test.unit_tests.models._fixtures import (
     _get_possible_signal_params,
@@ -3341,6 +3343,65 @@ def test_brainmodule_default_unchanged():
     m = BrainModule(n_chans=8, n_outputs=2, n_times=512, sfreq=128)
     assert m.merger is None
     assert m.use_merger is False
+
+
+def test_dance_detection_trains_event_and_dense_heads():
+    torch.manual_seed(19)
+    model = DANCE(
+        n_outputs=3,
+        n_chans=2,
+        n_times=32,
+        sfreq=128,
+        use_channel_merger=False,
+        n_queries=4,
+        num_latents=6,
+        embed_dim=8,
+        conv_initial_linear=8,
+        conv_depth=1,
+        perceiver_depth=1,
+        cross_dim_head=4,
+        latent_dim_head=4,
+        decoder_dim=8,
+        decoder_depth=1,
+        decoder_heads=2,
+        drop_prob=0.0,
+    )
+    # Overlapping predicted and target spans give both bounds a training signal.
+    with torch.no_grad():
+        for head, bias in ((model.decoder.start_head, -1), (model.decoder.end_head, 1)):
+            head.weight.zero_()
+            head.bias.fill_(bias)
+
+    x = torch.randn(2, 2, 32, requires_grad=True)
+    predictions = model.detect(x)
+    assert predictions["class"].shape == (2, 4, 3)
+    assert predictions["dense"].shape == (2, 6, 3)
+    with torch.no_grad():
+        torch.testing.assert_close(predictions["dense"], model(x), rtol=0, atol=0)
+
+    targets = {
+        "class": torch.tensor([[1], [2]]),
+        "start": torch.tensor([[0.2], [0.3]]),
+        "end": torch.tensor([[0.7], [0.8]]),
+    }
+    criterion = DanceLoss(num_latents=model.num_latents)
+    loss, _ = criterion(predictions, targets)
+    assert torch.isfinite(loss)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    before = model.decoder.query_embed.detach().clone()
+    loss.backward()
+    for parameter in (
+        x,
+        model.decoder.query_embed,
+        model.decoder.class_head.weight,
+        model.decoder.start_head.weight,
+        model.decoder.end_head.weight,
+        model.final_layer.weight,
+    ):
+        assert torch.isfinite(parameter.grad).all()
+        assert torch.count_nonzero(parameter.grad)
+    optimizer.step()
+    assert not torch.equal(model.decoder.query_embed, before)
 
 
 def test_bendr_parameter_counts():
