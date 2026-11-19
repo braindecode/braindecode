@@ -257,7 +257,8 @@ Bug fixes
   temporal batch norm and the depthwise convolution. The authors' EEG-TCNet code and
   :class:`braindecode.models.EEGNet` have no activation there. The parameters do not
   change, so saved weights still load. Old saved configurations restore the
-  previous activation. When loading a bare state dict, pass
+  previous activation, and configurations saved before 1.6.1 also restore
+  ``tcn_batch_norm=False``. When loading a bare state dict, pass
   ``temporal_activation=True`` to reproduce the previous outputs
   (:gh:`1607` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer

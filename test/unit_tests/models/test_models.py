@@ -2165,6 +2165,25 @@ def test_eegtcnet_temporal_activation_restores_previous_output():
     torch.testing.assert_close(restored(x), previous(x))
 
 
+def test_eegtcnet_config_from_before_tcn_batch_norm_loads_previous_model():
+    """A config saved before 1.6.1 has neither ``tcn_batch_norm`` nor
+    ``temporal_activation``; it rebuilds the model of that version."""
+    previous = EEGTCNet(
+        n_outputs=4,
+        n_chans=22,
+        n_times=1125,
+        tcn_batch_norm=False,
+        temporal_activation=True,
+    ).eval()
+    config = previous.get_config()
+    del config["tcn_batch_norm"], config["temporal_activation"]
+    restored = EEGTCNet.from_config(config).eval()
+    assert restored.tcn_batch_norm is False
+    restored.load_state_dict(previous.state_dict(), strict=True)
+    x = torch.randn(2, 22, 1125)
+    torch.testing.assert_close(restored(x), previous(x))
+
+
 def test_eegclip_batch_size_one_train_mode():
     """At n_times=480 the dense Deep4Net gives one time step, so the projection
     head's BatchNorm1d sees a single row in train mode (NeuralBench matrix)."""

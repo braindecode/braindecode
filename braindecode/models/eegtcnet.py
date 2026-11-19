@@ -165,8 +165,15 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
 
     @classmethod
     def _fill_legacy_defaults(cls, kwargs):
+        """Rebuild configs saved before a key existed as they were.
+
+        Saved configs hold every init argument, so a missing key means an
+        older save: ``temporal_activation`` (added in 2.1) defaults to
+        ``True`` and ``tcn_batch_norm`` (added in 1.6.1) to ``False``.
+        """
         super()._fill_legacy_defaults(kwargs)
         kwargs.setdefault("temporal_activation", True)
+        kwargs.setdefault("tcn_batch_norm", False)
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:
