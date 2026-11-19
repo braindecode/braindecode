@@ -21,6 +21,7 @@ from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from mne.utils import _soft_import
 from torchinfo import ModelStatistics, summary
 
+from braindecode.functional import check_ch_mask
 from braindecode.models.util import (
     _EEG_PARAMS,
     build_model_config,
@@ -549,17 +550,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 "uses it to map each sample, the backbone never sees it."
             )
         if chs_info is None and pos is not None and ch_mask is not None:  # no names
-            mask = (
-                torch.ones(pos.shape[:2], dtype=torch.bool)
-                if ch_mask is None
-                else ch_mask
-            )
+            mask = check_ch_mask(ch_mask, pos)
+            assert mask is not None
             chs_info = [
                 [
                     {"ch_name": f"E{i}", "kind": "eeg", "loc": np.r_[p, np.zeros(9)]}
-                    for i, p in enumerate(pb[mb.cpu().numpy()])
+                    for i, p in enumerate(pb[mb])
                 ]
-                for pb, mb in zip(pos.detach().cpu().double().numpy(), mask)
+                for pb, mb in zip(
+                    pos.detach().cpu().double().numpy(), mask.cpu().numpy()
+                )
             ]
         elif ch_mask is not None and not (chs_info and isinstance(chs_info[0], list)):
             raise ValueError(
@@ -1135,7 +1135,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             f"Trained on (model card): {', '.join(data['datasets']) or 'not listed'}\n"
             f"Loaded from the listed checkpoint(s): {data['loaded']:,} of {data['total']:,} "
             f"{scope} ({data['percent']:.1f}% of materialised parameters){new}\n"
-            "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.17699192"
+            "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.8214376"
         )
 
     def _repr_html_(self) -> str:
@@ -1163,6 +1163,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         serialized = []
         for ch in chs_info:
             ch_dict = {"ch_name": ch.get("ch_name", "")}
+            if ch.get("ch_type") is not None:
+                ch_dict["ch_type"] = ch["ch_type"]
             for key in _INT_FIELDS:
                 val = ch.get(key)
                 if val is not None:
