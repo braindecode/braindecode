@@ -15,7 +15,7 @@ from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import scaled_dot_product_attention
+from braindecode.functional import check_n_chans, scaled_dot_product_attention
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     extract_channel_locations_from_chs_info,
@@ -360,6 +360,13 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         input_tensor: torch.Tensor,
         return_features: bool = False,
     ):
+        check_n_chans(
+            input_tensor,
+            self.num_channels,
+            "ZUNA",
+            "build the model with the chs_info of this montage, or use a "
+            "channel_strategy.",
+        )
         patch_tokens = self.patch_embedding(input_tensor)
         token_latents = self.encoder(patch_tokens)
         structured_latents = token_latents.reshape(
@@ -403,14 +410,9 @@ def _channel_positions(chs_info, n_chans):
     names = [str(chs_info[i].get("ch_name", "")) for i in missing]
     unknown = [n for n in names if not n]
     if not unknown:
-        montage = (
-            "colin27_1005"  # standard_1005's name from MNE 1.13
-            if "colin27_1005" in mne.channels.get_builtin_montages()
-            else "standard_1005"
-        )
         info = mne.create_info(names, 256.0, "eeg")
         info.set_montage(
-            montage, match_case=False, match_alias=True, on_missing="ignore"
+            "colin27_1005", match_case=False, match_alias=True, on_missing="ignore"
         )
         filled = np.array([ch["loc"][:3] for ch in info["chs"]], dtype=locs.dtype)
         ok = np.isfinite(filled).all(1) & filled.any(1)

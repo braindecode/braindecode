@@ -5,6 +5,7 @@
 #          Anton Soloviev <anton@praviel.com>
 #
 # License: BSD (3-clause)
+import copy
 import pickle  # nosec B403 - only round-trips objects built in the tests
 
 import numpy as np
@@ -26,6 +27,7 @@ from braindecode.augmentation.functional import (
     _frequency_shift,
     _torch_normalize_vectors,
     cutmix,
+    frequency_shift,
     sensors_rotation,
 )
 from braindecode.augmentation.transforms import (
@@ -464,6 +466,49 @@ def test_frequency_shift_funcion(make_sinusoid, shift):
     rolled_psd = np.roll(psd_orig, shift_samples)[shift_samples:-shift_samples]
     diff = np.abs(psd_shifted[shift_samples:-shift_samples] - rolled_psd)
     assert np.max(diff) / np.max(psd_orig) < 0.4
+
+
+@pytest.mark.parametrize("device", ["cpu", pytest.param(
+    "cuda", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+)])
+@pytest.mark.parametrize("kind", ["int", "float", "list", "array", "tensor", "device_tensor"])
+def test_frequency_shift_places_shift_on_input_device(device, kind):
+    X = torch.ones(2, 3, 128, device=device)
+    y = torch.tensor([0, 1], device=device)
+    shift = {
+        "int": 2,
+        "float": 2.0,
+        "list": [2.0, 2.0],
+        "array": np.array([2.0, 2.0]),
+        "tensor": torch.tensor([2.0, 2.0]),
+        "device_tensor": torch.tensor([2.0, 2.0], device=device),
+    }[kind]
+
+    actual, actual_y = frequency_shift(X, y, delta_freq=shift, sfreq=128)
+
+    # The analytic signal of a constant is one, so modulation is a cosine.
+    time = torch.arange(128, device=device) / 128
+    expected = torch.cos(2 * torch.pi * 2 * time).expand_as(X)
+    torch.testing.assert_close(actual, expected, rtol=1e-6, atol=1e-6)
+    assert actual.device == X.device
+    assert torch.equal(actual_y, y)
+    assert torch.equal(X, torch.ones_like(X))
+
+
+@pytest.mark.parametrize("device", ["cpu", pytest.param(
+    "cuda", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+)])
+def test_frequency_shift_keeps_gradient_to_host_shift(device):
+    X = torch.ones(2, 3, 128, device=device)
+    shift = torch.tensor([1.0, -2.0], dtype=torch.float64, requires_grad=True)
+    actual, _ = frequency_shift(X, torch.tensor([0, 1], device=device), shift, 128)
+    actual.sum().backward()
+
+    time = torch.arange(128, dtype=shift.dtype) / 128
+    phase = 2 * torch.pi * shift.detach()[:, None] * time
+    expected = -3 * (2 * torch.pi * time * torch.sin(phase)).sum(dim=-1)
+    torch.testing.assert_close(shift.grad, expected, rtol=1e-6, atol=1e-6)
+    assert shift.grad.device == shift.device
 
 
 @pytest.mark.parametrize("max_shift", [0.0, 1.0, 2])
@@ -1077,6 +1122,27 @@ def test_set_params(augmented_mock_clf, augmentation, kwargs, random_batch):
     )
 
 
+@pytest.mark.parametrize("n_times", [31, 32])
+@pytest.mark.parametrize(
+    "device",
+    ["cpu", pytest.param("mps", marks=pytest.mark.skipif(
+        not torch.backends.mps.is_available(), reason="Apple MPS not available"
+    ))],
+)
+def test_ft_surrogate_shared_phase_preserves_cross_spectrum(n_times, device):
+    x = torch.randn(2, 3, n_times, generator=torch.Generator().manual_seed(4))
+    y = torch.arange(2, device=device)
+    transformed, labels = FTSurrogate(1.0, random_state=2)(x.to(device), y)
+    assert not torch.allclose(transformed.cpu(), x)
+    torch.testing.assert_close(labels, y)
+    before = torch.fft.rfft(x.double())
+    after = torch.fft.rfft(transformed.cpu().double())
+    torch.testing.assert_close(
+        after * after[:, :1].conj(), before * before[:, :1].conj(),
+        atol=5e-5, rtol=1e-5,
+    )
+
+
 def test_mask_encoding_reaches_last_sample():
     X = torch.ones(100, 2, 10)
     tr_X, _ = MaskEncoding(1, max_mask_ratio=0.3, random_state=0)(X, torch.arange(100))
@@ -1215,3 +1281,53 @@ def test_label_smoothing_in_augmented_loader(rng_seed):
     assert torch.equal(X_aug, X)
     _, y_expected = transform(X, y)
     assert torch.equal(y_aug, y_expected)
+
+
+@pytest.mark.parametrize("loss", ["cross_entropy", "soft_cross_entropy", "mixup"])
+def test_classifier_step_with_label_smoothing(loss):
+    from braindecode.training import mixup_criterion
+
+    torch.manual_seed(0)
+    X = torch.randn(6, 2, 8)
+    y = torch.arange(len(X)) % 3
+    model = nn.Sequential(nn.Flatten(), nn.Linear(16, 3))
+    reference = copy.deepcopy(model)
+    soft = torch.nn.functional.one_hot(y, 3).float() * 0.9 + 0.1 / 3
+    transforms = [LabelSmoothing(0.1, 3)]
+    criterion = nn.CrossEntropyLoss
+    batch_X = X
+    if loss == "mixup":
+        transforms.append(Mixup(0.5, random_state=17))
+        batch_X, (first, second, weight) = Mixup(0.5, random_state=17)(X, soft)
+        soft = weight[:, None] * first + (1 - weight[:, None]) * second
+
+        def criterion():
+            return mixup_criterion
+
+    elif loss == "soft_cross_entropy":
+
+        class SoftCrossEntropy(nn.Module):
+            def forward(self, logits, target):
+                return -(target * logits.log_softmax(dim=-1)).sum(-1).mean()
+
+        criterion = SoftCrossEntropy
+
+    expected_loss = -(soft * reference(batch_X).log_softmax(dim=1)).sum(dim=1).mean()
+    expected_loss.backward()
+    expected_weight = reference[1].weight.detach() - 0.1 * reference[1].weight.grad
+    net = EEGClassifier(
+        model,
+        criterion=criterion,
+        optimizer=torch.optim.SGD,
+        lr=0.1,
+        iterator_train=AugmentedDataLoader,
+        iterator_train__transforms=transforms,
+        iterator_train__shuffle=False,
+        train_split=None,
+        max_epochs=1,
+        batch_size=len(X),
+        verbose=0,
+    ).fit(X, y)
+    assert net.history[-1, "train_loss"] == pytest.approx(expected_loss.item())
+    torch.testing.assert_close(net.module_[1].weight, expected_weight)
+    assert not torch.equal(net.module_[1].weight, reference[1].weight)

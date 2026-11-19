@@ -17,6 +17,7 @@ from torch import nn
 
 from braindecode.functional import (
     check_ch_mask,
+    check_n_chans,
     patch_count,
     sinusoidal_positional_encoding,
 )
@@ -582,6 +583,12 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         """
         if isinstance(return_features, torch.Tensor):
             raise TypeError("Pass ch_mask by keyword. True marks real channels.")
+        check_n_chans(
+            x,
+            self.n_chans,
+            "SleepFMStager",
+            "build the model with the chs_info of this montage.",
+        )
         # The count the tokenizer produces (padded patch included with "pad").
         n_patches = self.patch_embedding.patchify.n_patches(x.shape[-1])
         patch_mask = _check_mask(
@@ -836,7 +843,15 @@ class _SleepFMStagingHead(nn.Module):
         features = self.transformer_encoder(
             features, src_key_padding_mask=temporal_mask
         )
-        features, _ = self.lstm(features)
+        if torch.jit.is_scripting():  # TorchScript has no autocast state query
+            features, _ = self.lstm(features)
+        elif features.device.type == "cpu" and torch.is_autocast_enabled("cpu"):
+            # Some CPUs have no oneDNN bfloat16 LSTM training kernel, so CPU
+            # autocast runs the LSTM in its parameter precision instead.
+            with torch.autocast("cpu", enabled=False):
+                features, _ = self.lstm(features.to(self.lstm.weight_ih_l0.dtype))
+        else:
+            features, _ = self.lstm(features)
         return features
 
 

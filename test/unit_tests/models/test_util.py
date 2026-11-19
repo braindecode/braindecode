@@ -17,7 +17,6 @@ from sklearn.preprocessing import OneHotEncoder
 
 from braindecode import models
 from braindecode.models.util import (
-    _chs_info_3ch,
     _draw_chs_info,
     _fixture_montage_chs,
     _fnirs_chs_info,
@@ -38,7 +37,7 @@ from braindecode.modules.util import (
     aggregate_probas,
 )
 from braindecode.util import resolve_montage_name
-from test.unit_tests.models._fixtures import _get_signal_params
+from test.unit_tests.models._fixtures import _chs_info_3ch, _get_signal_params
 
 
 @pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64])

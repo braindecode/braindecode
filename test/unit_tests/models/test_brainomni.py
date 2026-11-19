@@ -114,6 +114,23 @@ def test_geometry_sensor_type(ch, expected):
     assert _geometry_from_chs_info([ch])[1].tolist() == [expected]
 
 
+@pytest.mark.parametrize("make_model", [_small_tokenizer, _small_brainomni])
+def test_channel_strategy_uses_the_native_sensor_type(make_model):
+    chs = [
+        {
+            "ch_name": "MEG1",
+            "ch_type": "mag",
+            "loc": _loc(0.04, 0.03, 0.07, 1.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0),
+        }
+    ]
+    assert _geometry_from_chs_info(chs)[1].tolist() == [1]
+    with pytest.raises(ValueError, match="native"):
+        make_model(chs_info=chs, channel_strategy="exact")
+    model = make_model(chs_info=chs)
+    restored = type(model).from_config(model.get_config())
+    assert _geometry_from_chs_info(restored.chs_info)[1].tolist() == [1]
+
+
 @pytest.mark.parametrize(
     "kind, coil_type, axes",
     [("grad", 3012, slice(3, 6)), ("grad", 5001, slice(9, 12)), ("mag", 3022, slice(9, 12))],
