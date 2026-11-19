@@ -52,6 +52,7 @@ from braindecode.models import (
     BrainBERT,
     BrainModule,
     Brant,
+    CareSleepNet,
     CBraMod,
     ContraWR,
     Deep4Net,
@@ -8093,3 +8094,65 @@ def test_cbramod_features_skip_pretraining_proj_out():
         feats = model(x, return_features=True)["features"]
     torch.testing.assert_close(feats, tokens)
     assert any(k.startswith("proj_out.") for k in model.state_dict())
+
+
+def test_caresleepnet_matches_authors_code():
+    """Outputs and gradients of the authors' Model (wjq-learning/CareSleepNet
+    @386e149, 6 EEG + 2 EOG channels, 20 epochs) on the same weights and input.
+
+    No weights were released, so the weights come from a seeded generator in
+    this port's state-dict order, mapped to the authors' keys (q, k, v packed
+    into ``in_proj``). Expected values are ``out[0, :, ::4]`` in eval mode
+    and the gradients of ``out.square().sum()``.
+    """
+    model = CareSleepNet(n_chans=8, n_outputs=5, n_times=20 * 300, sfreq=100)
+    g = torch.Generator().manual_seed(0)
+    state = {}
+    for key, value in model.state_dict().items():
+        if not value.is_floating_point():
+            state[key] = value
+        elif key.endswith("running_var"):
+            state[key] = torch.rand(value.shape, generator=g) + 0.5
+        else:
+            state[key] = 0.1 * torch.randn(value.shape, generator=g)
+    model.load_state_dict(state)
+    model.eval()
+    x = torch.randn(1, 8, 6000, generator=torch.Generator().manual_seed(1))
+
+    out = model(x)
+    out.square().sum().backward()
+
+    expected_out = [
+        [-0.03093, -0.08215, -0.06242, -0.02872, -0.09657],
+        [0.09201, 0.0908, 0.00959, 0.04218, 0.06034],
+        [-0.0491, -0.0875, -0.06552, -0.11908, -0.04712],
+        [0.1937, 0.26706, 0.17067, 0.19254, 0.27939],
+        [0.17228, 0.14427, 0.23244, 0.21872, 0.18733],
+    ]
+    torch.testing.assert_close(
+        out[0, :, ::4], torch.tensor(expected_out), rtol=0, atol=1e-5
+    )
+    torch.testing.assert_close(
+        model.final_layer.weight.grad[:, 0],
+        torch.tensor([-0.28439873, 0.27055088, -0.32742125, 0.99876374, 0.84471232]),
+        rtol=1e-4,
+        atol=1e-5,
+    )
+    # First convolution of each epoch encoder: the gradient crosses the
+    # sequence encoder, the cross-modal blocks and the whole epoch encoder.
+    torch.testing.assert_close(
+        model.eeg_encoder[0].branches[0][0].weight.grad[:4, 0, 0],
+        torch.tensor([3.6584692e-07, -1.2531478e-06, 1.1815977e-07, -6.0829626e-09]),
+        rtol=1e-3,
+        atol=1e-10,
+    )
+    torch.testing.assert_close(
+        model.eog_encoder[0].shortcut[0].weight.grad[:4, 0, 0],
+        torch.tensor([-5.3465715e-07, 1.0978920e-06, 1.2812049e-07, -2.7368708e-07]),
+        rtol=1e-3,
+        atol=1e-10,
+    )
+    # The reference's (batch, n_epochs, n_chans, epoch_samples) layout.
+    with torch.no_grad():
+        sequence = x.reshape(1, 8, 20, 300).transpose(1, 2)
+        torch.testing.assert_close(model(sequence), out.detach())

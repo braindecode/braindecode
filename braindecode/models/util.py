@@ -724,6 +724,13 @@ models_mandatory_parameters: list[
         # any length; 300 samples is only a test length.
         {"n_chans": 10, "n_times": 300, "sfreq": 100.0},
     ),
+    (
+        "CareSleepNet",
+        ["n_chans", "n_outputs", "n_times"],
+        # 20 sleep epochs of 300 samples (3 s at 100 Hz) keep the tests small;
+        # the reference uses 30 s epochs, n_times=60000. 1 EEG + 2 EOG channels.
+        {"n_times": 6000, "sfreq": 100.0},
+    ),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("NICE", ["n_chans", "n_outputs", "n_times"], None),

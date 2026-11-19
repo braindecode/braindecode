@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from .brainmodule import BrainModule
     from .brainomni import BrainOmni, BrainTokenizer
     from .brant import Brant
+    from .caresleepnet import CareSleepNet
     from .cbramod import CBraMod
     from .codebrain import CodeBrain
     from .contrawr import ContraWR
