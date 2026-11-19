@@ -98,7 +98,9 @@ class Transform(torch.nn.Module):
             if not self.signal_only:
                 raise ValueError(
                     f"{type(self).__name__} requires a single target tensor. "
-                    "Apply label-dependent transforms before Mixup or CutMix."
+                    "Apply label-dependent transforms before Mixup or CutMix, "
+                    "or set ``signal_only = True`` on transforms that leave the "
+                    "target unchanged."
                 )
             mixed_target = tuple(part.to(X.device) for part in y)
             y = None
