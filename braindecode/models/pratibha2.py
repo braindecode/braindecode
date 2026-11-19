@@ -4,7 +4,6 @@
 # Reference implementation and weights: https://huggingface.co/MannasAI/pratibha-2 (Apache-2.0).
 """PRATIBHA-2 (formerly MANAS-2): a dense-attention EEG foundation model."""
 
-import re
 from functools import lru_cache, partial
 from typing import Optional
 
@@ -13,11 +12,11 @@ import torch
 from mne.channels import make_standard_montage
 from torch import nn
 
-from braindecode.models.axon import _GatedFeedForward
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.reve import _reve_position_bank
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import (
+    FeedForwardBlock,
     PreNormBlock,
     TimmAttention,
     resolve_channel_positions,
@@ -25,81 +24,80 @@ from braindecode.modules import (
 from braindecode.modules.layers import RMSNorm
 from braindecode.util import resolve_montage_name
 
-# Parameter names of the original release -> names here.
-_ORIGINAL_KEYS = (
-    (r"patch_embed\.linear\.", "encoder.patch_embed."),
-    (r"pos_enc\.learned_linear\.0\.", "encoder.pos_enc.learned_linear."),
-    (r"pos_enc\.learned_linear\.2\.", "encoder.pos_enc.learned_norm."),
-    (r"pos_enc\.(fourier_linear|final_norm)\.", r"encoder.pos_enc.\1."),
-    (r"encoder\.layers\.(\d+)\.pre_attn_norm\.", r"encoder.blocks.\1.norm1."),
-    (r"encoder\.layers\.(\d+)\.attn\.qkv_proj\.", r"encoder.blocks.\1.attn.qkv."),
-    (r"encoder\.layers\.(\d+)\.attn\.out_proj\.", r"encoder.blocks.\1.attn.proj."),
-    (r"encoder\.layers\.(\d+)\.pre_ffn_norm\.", r"encoder.blocks.\1.norm2."),
-    (r"encoder\.layers\.(\d+)\.ffn\.", r"encoder.blocks.\1.mlp."),
-)
-
 
 class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
-    r"""PRATIBHA-2 (formerly MANAS-2), an EEG foundation model from Kulkarni et al. (2026) [manas2]_.
+    r"""PRATIBHA-2 (formerly MANAS-2) from Kulkarni et al. (2026) [manas2]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel`
 
-    PRATIBHA-2 is a transformer encoder pretrained with masked autoencoding on
-    clinical and research EEG. Pretraining combines waveform and spectral
-    reconstruction (Raw-Band Hybrid) with a constraint on the local RMS energy of
-    the reconstructed waveform (Constrained Reconstruction). Each window is cut
-    into tokens, one per electrode per one-second patch (0.1 s overlap), and
-    every layer applies dense self-attention over all tokens of the window.
+    .. rubric:: Architecture Overview
 
-    .. rubric:: Position encoding
+    A transformer encoder pretrained with masked autoencoding on clinical and
+    research EEG: waveform and spectral reconstruction (Raw-Band Hybrid) with a
+    constraint on the local RMS energy of the reconstructed waveform
+    (Constrained Reconstruction). Every electrode-patch pair is one token and
+    every layer attends densely over all tokens of the window::
 
-    Every token gets a 4D position: the electrode's 3D scalp position (in
-    centimetres) and the patch index. A Fourier branch (sines and cosines of
-    256 frequency combinations) and a learned branch are summed and
-    RMS-normalized, and the result is added to the patch embedding.
+        (batch, n_chans, n_times) -> per-channel z-score -> 1 s patches
+        (0.1 s overlap) -> patch embedding + 4D position encoding -> dense
+        transformer -> mean over tokens -> head -> (batch, n_outputs)
 
-    .. rubric:: Channel positions
+    .. rubric:: Macro Components
 
-    Positions come from the electrode table used in pretraining, REVE's bank
-    plus its own ``AFZ`` and ``IZ`` (MNE montage frame, no download), looked up
-    by channel name: an exact match first, then the name ignoring case, an
-    ``EEG`` prefix or ``-REF`` suffix, legacy 10-20 aliases (``T3`` -> ``T7``),
-    or the midpoint of a bipolar pair ``A-B`` (see
-    :func:`~braindecode.modules.resolve_channel_positions`). Other 10-05 names
-    take their position in MNE's ``standard_1005`` montage frame, the frame of
-    the table's 10-05 entries. Channel ``loc`` values are not used: they are in
-    MNE's head frame, a few centimetres from the pretraining frame.
+    ``Pratibha2.encoder.patch_embed``
+        **Operations.** ``Linear(patch_size, embed_dim)`` on each patch.
 
-    .. rubric:: Expected input
+    ``Pratibha2.encoder.pos_enc``
+        **Operations.** Sines and cosines of ``n_freqs ** 4`` frequency
+        combinations of the token's 4D position (electrode position in cm,
+        patch index), projected to ``embed_dim``, plus a learned gated branch;
+        the sum is RMS-normalized and added to the patch embedding.
 
-    - sampling rate **200 Hz** (resample beforehand);
-    - windows of at least one patch (``patch_size`` samples, 1 s);
-    - by default each channel is z-scored within each window inside the model
-      (``normalize_input=True``). The z-score is scale-free, so data in volts
-      (MNE's default) or microvolts give the same output; on microvolt data it
-      matches the reference preprocessing ``(x - mean) / (std + 1e-6)``.
+    ``Pratibha2.encoder.blocks``
+        **Operations.** ``depth`` pre-norm blocks (RMSNorm) of multi-head
+        self-attention and a gated feed-forward network
+        ``fc2(fc1(x) * (swish(g) + gelu_tanh(g)))``, ``g = fc_gate(x)``.
+        **Role.** The pretrained backbone; :meth:`encode` returns its token grid.
+
+    ``Pratibha2.final_layer``
+        **Operations.** ``Linear -> head_activation -> Dropout -> Linear`` on
+        the token mean. Not pretrained.
+
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Temporal:** 1 s patches with a learned linear embedding, ordered by the
+      patch index of the position encoding.
+    - **Spatial:** electrodes enter only through their 3D positions, so any
+      montage the position table places can be read.
+    - **Spectral:** learned by the band-power reconstruction target.
+
+    .. rubric:: Additional Mechanisms
+
+    - **Channel positions.** The pretraining electrode table, REVE's bank plus
+      PRATIBHA-2's own ``AFZ`` and ``IZ``, looked up by name (exact spelling
+      first, then ignoring case, ``EEG``/``-REF``, ``T3``-style aliases, or the
+      midpoint of a bipolar ``A-B``; see
+      :func:`~braindecode.modules.resolve_channel_positions`). Other 10-05 names
+      take their position in MNE's ``standard_1005`` montage frame, the frame of
+      the table's 10-05 entries. Channel ``loc`` values are not used: they are in
+      MNE's head frame, a few centimetres from the pretraining frame.
+    - **Input scale.** With ``normalize_input=True`` each channel is z-scored
+      within each window, so volts and microvolts give the same output.
 
     .. important::
-       **Pretrained weights.** The 92.8M-parameter encoder is on the Hugging
-       Face Hub (`MannasAI/pratibha-2 <https://huggingface.co/MannasAI/pratibha-2>`_,
-       `License <https://www.apache.org/licenses/LICENSE-2.0>`_) and is loaded
-       with :meth:`from_pretrained`, which maps the parameter names of that
-       release. The classification head is not pretrained and must be trained
-       for your task::
 
-           import mne
-           from braindecode.models import Pratibha2
+        Resample to **200 Hz**; windows need at least ``patch_size`` samples.
+        The released encoder, converted to these parameter names, is on the
+        Hugging Face Hub at ``braindecode/pratibha2-pretrained``; the head is not
+        pretrained::
 
-           raw = mne.io.read_raw_edf("recording.edf", preload=True)
-           raw.resample(200)
-           model = Pratibha2.from_pretrained(
-               "MannasAI/pratibha-2",
-               chs_info=raw.info["chs"],
-               n_outputs=4,
-               n_times=1000,
-           )
+            from braindecode.models import Pratibha2
+            model = Pratibha2.from_pretrained(
+                "braindecode/pratibha2-pretrained",
+                chs_info=raw.info["chs"], n_outputs=4, n_times=1000,
+            )
 
-       For linear probing, freeze everything except ``final_layer``.
+    .. versionadded:: 2.1
 
     Parameters
     ----------
@@ -116,9 +114,7 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
     ffn_expansion : int
         Width multiplier of the gated feed-forward network.
     n_freqs : int
-        Frequencies per axis of the Fourier position encoding, which projects
-        the sines and cosines of ``n_freqs ** 4`` frequency combinations to
-        ``embed_dim``.
+        Frequencies per axis of the Fourier position encoding.
     head_hidden_dim : int
         Hidden size of the classification head.
     normalize_input : bool
@@ -132,9 +128,7 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
     on_missing : str
         Channels the position table cannot place: ``"error"`` raises,
         ``"drop"`` leaves them out of the input, ``"nearest"`` takes the table
-        entry closest to the channel's ``loc`` (approximate: ``loc`` is in a
-        different frame); see
-        :func:`~braindecode.modules.resolve_channel_positions`.
+        entry closest to the channel's ``loc``.
     channel_strategy : str
         How another montage reaches the encoder; see
         :class:`~braindecode.models.base.EEGModuleMixin`. PRATIBHA-2 reads any
@@ -154,14 +148,13 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     def __init__(
         self,
-        # signal parameters
         n_outputs=None,
         n_chans=None,
         chs_info=None,
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
-        # model parameters
+        *,
         patch_size: int = 200,
         patch_stride: int = 180,
         embed_dim: int = 512,
@@ -213,11 +206,12 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         positions, kept = resolve_channel_positions(
             self.chs_info, _pratibha2_position_bank(), on_missing=on_missing
         )
-        self._positions_cm = (positions.astype(np.float32) * 100.0).tolist()
-        self._kept_indices = list(kept) if len(kept) < len(self.chs_info) else []
-        self.register_buffer("channel_index", None, persistent=False)
-
+        dropped = len(kept) < len(self.chs_info)
+        self.register_buffer(
+            "channel_index", torch.tensor(kept) if dropped else None, persistent=False
+        )
         self.encoder = _Pratibha2Encoder(
+            channel_positions=torch.tensor(positions, dtype=torch.float32) * 100.0,
             patch_size=patch_size,
             patch_stride=patch_stride,
             embed_dim=embed_dim,
@@ -229,15 +223,6 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
             att_drop_prob=att_drop_prob,
         )
         self.final_layer = self._build_head(self.n_outputs)
-        self._restore_montage()
-        self.register_load_state_dict_post_hook(self._restore_montage)
-
-    def _restore_montage(self, _module=None, _incompatible_keys=None):
-        # The target montage is independent of the loaded checkpoint.
-        anchor = self.encoder.patch_embed.weight
-        self.encoder.channel_positions = anchor.new_tensor(self._positions_cm)
-        if self._kept_indices:
-            self.channel_index = anchor.new_tensor(self._kept_indices, dtype=torch.long)
 
     def _build_head(self, n_outputs: int) -> nn.Module:
         return nn.Sequential(
@@ -259,31 +244,6 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         """
         self._set_n_outputs(n_outputs)
         self.final_layer = self._build_head(n_outputs)
-
-    @staticmethod
-    def _convert_original_keys(state_dict, prefix):
-        for key in [k for k in state_dict if k.startswith(prefix)]:
-            name = key[len(prefix) :]
-            if name == "pos_enc.freq_matrix":
-                del state_dict[key]
-                continue
-            for pattern, new in _ORIGINAL_KEYS:
-                if re.match(pattern, name):
-                    state_dict[prefix + re.sub(pattern, new, name, count=1)] = (
-                        state_dict.pop(key)
-                    )
-                    break
-
-    def load_state_dict(self, state_dict, strict=True, assign=False):
-        # The mixin records provenance from the names it receives.
-        converted = dict(state_dict)
-        self._convert_original_keys(converted, "")
-        return super().load_state_dict(converted, strict=strict, assign=assign)
-
-    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
-        if prefix:  # A parent PyTorch module owns the load.
-            self._convert_original_keys(state_dict, prefix)
-        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         """Encode EEG into the grid of token embeddings.
@@ -347,6 +307,13 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         return logits
 
 
+class _SwishGelu(nn.Module):
+    """``swish(x) + gelu_tanh(x)``, the gate activation of PRATIBHA-2."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * torch.sigmoid(x) + nn.functional.gelu(x, approximate="tanh")
+
+
 # The pretraining electrode table is REVE's bank plus these two entries (m), which
 # sit 1.43 and 0.74 cm from 10-05 AFz and Iz (release 863edc9). They come last, so
 # a name that matches only ignoring case (``afz``) takes them, as in the release.
@@ -380,6 +347,7 @@ class _Pratibha2Encoder(nn.Module):
 
     def __init__(
         self,
+        channel_positions: torch.Tensor,
         patch_size: int,
         patch_stride: int,
         embed_dim: int,
@@ -396,7 +364,7 @@ class _Pratibha2Encoder(nn.Module):
         self.embed_dim = embed_dim
         self.normalize_input = normalize_input
         # Not persistent: the pretrained weights must load onto any montage.
-        self.register_buffer("channel_positions", torch.empty(0, 3), persistent=False)
+        self.register_buffer("channel_positions", channel_positions, persistent=False)
 
         self.patch_embed = nn.Linear(patch_size, embed_dim, bias=False)
         self.pos_enc = _Pratibha2PositionalEncoding(embed_dim, n_freqs)
@@ -408,7 +376,9 @@ class _Pratibha2Encoder(nn.Module):
                     attn=TimmAttention(
                         embed_dim, num_heads, qkv_bias=True, attn_drop=att_drop_prob
                     ),
-                    mlp=_GatedFeedForward(embed_dim, ffn_expansion),
+                    mlp=FeedForwardBlock(
+                        embed_dim, ffn_expansion, 0.0, _SwishGelu, gated=True
+                    ),
                     norm_layer=norm,
                 )
                 for _ in range(depth)
@@ -446,30 +416,18 @@ class _Pratibha2Encoder(nn.Module):
 
 
 class _Pratibha2PositionalEncoding(nn.Module):
-    """4D position encoding: Fourier features plus a learned gated branch.
-
-    Kept private: the released weights depend on this layout.
-    """
+    """4D position encoding: Fourier features plus a learned gated branch."""
 
     def __init__(self, embed_dim: int, n_freqs: int):
         super().__init__()
-        self.n_freqs = n_freqs
-        self.register_buffer("freq_matrix", torch.empty(0), persistent=False)
+        freqs = torch.linspace(1.0, 10.0, n_freqs)
+        grid = torch.cartesian_prod(freqs, freqs, freqs, freqs).reshape(-1, 4)
+        self.register_buffer("freq_matrix", grid.T.contiguous(), persistent=False)
         self.fourier_linear = nn.Linear(2 * n_freqs**4, embed_dim, bias=False)
         self.learned_linear = nn.Linear(4, 2 * embed_dim, bias=False)
+        self.gate_activation = _SwishGelu()
         self.learned_norm = RMSNorm(embed_dim, eps=1e-8)
         self.final_norm = RMSNorm(embed_dim, eps=1e-8)
-        self._restore_frequencies()
-        self.register_load_state_dict_post_hook(self._restore_frequencies)
-
-    def _restore_frequencies(self, _module=None, _incompatible_keys=None):
-        anchor = self.fourier_linear.weight
-        freqs = torch.linspace(
-            1.0, 10.0, self.n_freqs, dtype=torch.float32, device=anchor.device
-        )
-        self.freq_matrix = (
-            torch.cartesian_prod(freqs, freqs, freqs, freqs).T.contiguous().to(anchor)
-        )
 
     def forward(self, coords: torch.Tensor) -> torch.Tensor:
         # bfloat16 cannot represent the angles.
@@ -483,6 +441,5 @@ class _Pratibha2PositionalEncoding(nn.Module):
             torch.cat([phases.sin(), phases.cos()], dim=-1).to(weight_dtype)
         )
         value, gate = self.learned_linear(coords.to(weight_dtype)).chunk(2, dim=-1)
-        gate = gate * torch.sigmoid(gate) + nn.functional.gelu(gate, approximate="tanh")
-        learned = self.learned_norm(value * gate)
+        learned = self.learned_norm(value * self.gate_activation(gate))
         return self.final_norm(fourier + learned)

@@ -5,7 +5,6 @@
 import copy
 import json
 import os
-import re
 import sys
 import warnings
 from contextlib import nullcontext
@@ -2284,13 +2283,21 @@ def test_axon_warns_on_non_200_hz():
 
 @pytest.mark.network
 @pytest.mark.huggingface
-def test_pratibha2_pretrained_loads():
-    chs_info = [{"ch_name": n, "kind": "eeg"} for n in ["Fz", "C3", "Cz", "C4", "Pz"]]
+def test_pratibha2_pretrained_matches_the_release():
+    """The re-hosted encoder gives the features of MannasAI/pratibha-2 (863edc9)."""
+    chs_info = [{"ch_name": n} for n in ("Fp1", "Cz", "O2", "AFZ")]
     model = Pratibha2.from_pretrained(
-        "MannasAI/pratibha-2", chs_info=chs_info, n_outputs=2, n_times=1000
-    )
-    out = model(torch.randn(2, 5, 1000))
-    assert out.shape == (2, 2)
+        "braindecode/pratibha2-pretrained",
+        revision="dea9139fb70046c8e3d04e1e7c8acb7e81822afe",
+        chs_info=chs_info,
+        n_outputs=2,
+        n_times=400,
+    ).eval()
+    x = torch.arange(4 * 400.0).reshape(1, 4, 400).mul(0.05).sin()
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+    expected = torch.tensor([-0.257265, 0.106954, 0.051851, -0.371086, 0.046977])
+    torch.testing.assert_close(features[0, :5], expected, rtol=0, atol=1e-5)
 
 
 _PRATIBHA2_SMALL = dict(embed_dim=32, n_freqs=2, depth=2, num_heads=4)
@@ -2354,78 +2361,6 @@ def test_pratibha2_drops_unplaced_channels():
         )
         with pytest.raises(ValueError, match="3 channels"):
             model.encode(torch.cat([x, x[:, :1]], dim=1))
-
-
-@pytest.mark.parametrize("loader", ["state_dict", "nested", "pretrained"])
-def test_pratibha2_loads_original_parameter_names(tmp_path, loader):
-    source = _pratibha2_model()
-    with torch.no_grad():
-        for param in source.parameters():
-            param.add_(0.1)
-    to_original = (
-        (r"encoder\.patch_embed\.", "patch_embed.linear."),
-        (r"encoder\.pos_enc\.learned_linear\.", "pos_enc.learned_linear.0."),
-        (r"encoder\.pos_enc\.learned_norm\.", "pos_enc.learned_linear.2."),
-        (r"encoder\.pos_enc\.", "pos_enc."),
-        (r"encoder\.blocks\.(\d+)\.norm1\.", r"encoder.layers.\1.pre_attn_norm."),
-        (r"encoder\.blocks\.(\d+)\.attn\.qkv\.", r"encoder.layers.\1.attn.qkv_proj."),
-        (r"encoder\.blocks\.(\d+)\.attn\.proj\.", r"encoder.layers.\1.attn.out_proj."),
-        (r"encoder\.blocks\.(\d+)\.norm2\.", r"encoder.layers.\1.pre_ffn_norm."),
-        (r"encoder\.blocks\.(\d+)\.mlp\.", r"encoder.layers.\1.ffn."),
-    )
-    original = {}
-    for key, value in source.state_dict().items():
-        for pattern, new in to_original:
-            if re.match(pattern, key):
-                key = re.sub(pattern, new, key, count=1)
-                break
-        original[key] = value
-    original["pos_enc.freq_matrix"] = source.encoder.pos_enc.freq_matrix
-    assert "encoder.layers.0.attn.qkv_proj.weight" in original
-
-    target = _pratibha2_model()
-    with torch.no_grad():
-        for param in target.parameters():
-            param.add_(1.0)
-    if loader == "pretrained":
-        safetensors = pytest.importorskip("safetensors.torch")
-        pytest.importorskip("huggingface_hub")
-        target.save_pretrained(tmp_path)
-        backbone = {
-            k: v for k, v in original.items() if not k.startswith("final_layer.")
-        }
-        safetensors.save_file(backbone, str(tmp_path / "model.safetensors"))
-        target = Pratibha2.from_pretrained(tmp_path, local_files_only=True).eval()
-        expected = {k for k in source.state_dict() if k.startswith("encoder.")}
-        assert target._pretrained_provenance["loaded"] == expected
-    elif loader == "nested":
-        nn.Sequential(target).load_state_dict(
-            {"0." + k: v for k, v in original.items()}
-        )
-    else:
-        target.load_state_dict(original, strict=True)
-    for key, value in source.state_dict().items():
-        if loader == "pretrained" and key.startswith("final_layer."):
-            continue
-        torch.testing.assert_close(target.state_dict()[key], value, rtol=0, atol=0)
-
-
-@pytest.mark.parametrize("assign", [True, False])
-def test_pratibha2_materializes_montage_and_frequencies(assign):
-    names = ["Fp1", "NOT_A_CHANNEL", "Cz"]
-    with pytest.warns(UserWarning, match="NOT_A_CHANNEL"):
-        source = _pratibha2_model(names, on_missing="drop")
-    with torch.device("meta"), pytest.warns(UserWarning, match="NOT_A_CHANNEL"):
-        restored = _pratibha2_model(names, on_missing="drop")
-    assert restored.channel_index.is_meta
-    if not assign:
-        restored.to_empty(device="cpu")
-        for buf in restored.buffers():
-            buf.fill_(float("nan") if buf.is_floating_point() else -1)
-    restored.load_state_dict(source.state_dict(), strict=True, assign=assign)
-    x = torch.randn(2, 3, 380)
-    with torch.no_grad():
-        torch.testing.assert_close(restored(x), source(x))
 
 
 def test_pratibha2_warns_on_non_200_hz():
