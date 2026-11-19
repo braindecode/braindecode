@@ -56,7 +56,7 @@ interface for all EEG models and can derive variable names when needed.
 
     ::
 
-        pip install braindecode[hug]
+        pip install "braindecode[hub]"
 
     **Available pre-trained models:**
 
@@ -252,7 +252,9 @@ DIVER-1 recording metadata
 
 .. autofunction:: braindecode.models.diver1.channel_metadata_from_chs_info
 
-Modules
+*********
+ Modules
+*********
 
 :py:mod:`braindecode.modules`:
 
@@ -608,6 +610,14 @@ Common Datasets
      TUH
      TUHAbnormal
      TUHEvents
+
+Batch collation
+===============
+
+.. autosummary::
+    :toctree: generated/
+
+     pad_channels_collate
 
 Dataset Builders Functions
 ==========================

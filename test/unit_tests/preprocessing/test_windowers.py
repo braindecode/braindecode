@@ -10,6 +10,7 @@
 
 import copy
 import inspect
+import json
 import logging
 import platform
 import warnings
@@ -27,6 +28,7 @@ from braindecode.datasets.base import (
     WindowsDataset,
 )
 from braindecode.datasets.moabb import fetch_data_with_moabb
+from braindecode.datautil import load_concat_dataset
 from braindecode.preprocessing import (
     create_fixed_length_windows,
     create_windows_from_events,
@@ -2324,3 +2326,91 @@ def test_windows_from_events_dict_stop_offset_uses_own_event_type():
             drop_last_window=False,
             mapping={"a": 0, "b": 1},
         )
+
+
+@pytest.mark.parametrize("backend", ["raw", "epochs", "picks"])
+@pytest.mark.parametrize(
+    "targets_from,last_target_only",
+    [("channels", False), ("channels", True), ("metadata", True)],
+)
+def test_fixed_length_windows_channel_targets_round_trip(
+    tmp_path, backend, targets_from, last_target_only
+):
+    data = np.arange(36, dtype=float).reshape(3, 12)
+    info = mne.create_info(["C3", "Cz", "target"], 100, ["eeg", "eeg", "misc"])
+    raw = mne.io.RawArray(data, info, verbose=False)
+    ds = BaseConcatDataset([RawDataset(raw, {"label": 101}, target_name="label")])
+    # Selecting and reordering channels also selects the Epochs backend.
+    options = (
+        {"picks": ["target", "Cz"]}
+        if backend == "picks"
+        else {"use_mne_epochs": backend == "epochs"}
+    )
+    windows = create_fixed_length_windows(
+        ds,
+        window_size_samples=4,
+        window_stride_samples=4,
+        on_last_window="drop",
+        targets_from=targets_from,
+        last_target_only=last_target_only,
+        **options,
+    )
+    windows.save(tmp_path)
+    datasets = [windows, load_concat_dataset(tmp_path, preload=False)]
+    if backend == "epochs":
+        # Older Epochs stores recorded the requested mode only in the windower entry.
+        path = tmp_path / "0" / "window_kwargs.json"
+        history = json.loads(path.read_text())
+        path.write_text(
+            json.dumps([entry for entry in history if entry[0] != "WindowsDataset"])
+        )
+        datasets.append(load_concat_dataset(tmp_path, preload=False))
+    for dataset in datasets:
+        for i in range(3):
+            x, y, indices = dataset[i]
+            start, stop = 4 * i, 4 * (i + 1)
+            if targets_from == "channels":
+                expected_x = data[1:2] if backend == "picks" else data[:2]
+                expected_y = (
+                    data[2:, stop - 1] if last_target_only else data[2:, start:stop]
+                )
+            else:
+                expected_x = data[[2, 1]] if backend == "picks" else data
+                expected_y = 101
+            np.testing.assert_array_equal(x, expected_x[:, start:stop])
+            np.testing.assert_array_equal(y, expected_y)
+            assert indices == [i, start, stop]
+
+
+def test_fixed_length_window_picks_must_keep_a_target_channel():
+    info = mne.create_info(["Cz", "target"], 100, ["eeg", "misc"])
+    raw = mne.io.RawArray(np.zeros((2, 20)), info, verbose=False)
+    with pytest.raises(ValueError, match="misc"):
+        create_fixed_length_windows(
+            BaseConcatDataset([RawDataset(raw)]),
+            window_size_samples=10,
+            picks="eeg",
+            targets_from="channels",
+        )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [True, False])
+def test_historical_channel_targets_require_a_saved_misc_channel(
+    tmp_path, use_mne_epochs
+):
+    info = mne.create_info(["Cz"], 100, "eeg")
+    raw = mne.io.RawArray(np.zeros((1, 20)), info, verbose=False)
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw, {"label": 1}, target_name="label")]),
+        window_size_samples=10,
+        use_mne_epochs=use_mne_epochs,
+    )
+    windows.save(tmp_path)
+    # The saved data contains only EEG after the original picks.
+    history_file = tmp_path / "0" / "window_kwargs.json"
+    history = json.loads(history_file.read_text())
+    name, settings = history[0]
+    settings.update(targets_from="channels", picks="eeg")
+    history_file.write_text(json.dumps([[name, settings]]))
+    with pytest.raises(ValueError, match="misc channel"):
+        load_concat_dataset(tmp_path, preload=False)

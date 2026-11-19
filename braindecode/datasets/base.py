@@ -204,6 +204,19 @@ def _channel_info(mne_obj):
     return n_ch, type_str, sfreq
 
 
+def _check_window_targets(targets_from, info):
+    if targets_from not in ("metadata", "channels"):
+        raise ValueError("Wrong value for parameter `targets_from`.")
+    if targets_from == "channels":
+        if not isinstance(info, mne.Info):  # lazy Zarr stores hold serialized Info
+            info = mne.Info.from_json_dict(info)
+        if "misc" not in info.get_channel_types():
+            raise ValueError(
+                "targets_from='channels' requires a misc channel in the selected channels."
+            )
+    return targets_from
+
+
 def _compute_ch_pos(info, targets_from):
     """Return ``(n_ch, 3)`` float32 electrode positions aligned to ``X``'s rows.
 
@@ -870,9 +883,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         self.metadata = metadata
 
         self.last_target_only = last_target_only
-        if targets_from not in ("metadata", "channels"):
-            raise ValueError("Wrong value for parameter `targets_from`.")
-        self.targets_from = targets_from
+        self.targets_from = _check_window_targets(targets_from, raw.info)
         self.crop_inds = metadata.loc[
             :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
         ].to_numpy()
@@ -899,9 +910,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         obj._raw = None
         obj.metadata = metadata
         obj.last_target_only = last_target_only
-        if targets_from not in ("metadata", "channels"):
-            raise ValueError("Wrong value for parameter `targets_from`.")
-        obj.targets_from = targets_from
+        obj.targets_from = _check_window_targets(targets_from, info_dict)
         obj.crop_inds = metadata.loc[
             :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
         ].to_numpy()
@@ -1133,9 +1142,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
             )
         self.windows = windows
         self.last_target_only = last_target_only
-        if targets_from not in ("metadata", "channels"):
-            raise ValueError("Wrong value for parameter `targets_from`.")
-        self.targets_from = targets_from
+        self.targets_from = _check_window_targets(targets_from, windows.info)
 
         metadata = self.windows.metadata
         assert metadata is not None, "WindowsDataset requires windows with metadata."
@@ -1169,9 +1176,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         obj.target_name = target_name
         obj._fast_disk = False
         obj.last_target_only = last_target_only
-        if targets_from not in ("metadata", "channels"):
-            raise ValueError("Wrong value for parameter `targets_from`.")
-        obj.targets_from = targets_from
+        obj.targets_from = _check_window_targets(targets_from, info_dict)
         obj.metadata = metadata
         obj.crop_inds = metadata.loc[
             :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
@@ -2129,6 +2134,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     @staticmethod
     def _save_description(sub_dir, description):
         description_file_path = os.path.join(sub_dir, "description.json")
+        if description is None:
+            description = pd.Series(dtype=object)
         description.to_json(description_file_path, default_handler=str)
 
     @staticmethod
@@ -2138,13 +2145,25 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             "window_kwargs",
             "window_preproc_kwargs",
         ]:
-            if hasattr(ds, kwargs_name):
-                kwargs_file_name = ".".join([kwargs_name, "json"])
-                kwargs_file_path = os.path.join(sub_dir, kwargs_file_name)
-                kwargs = getattr(ds, kwargs_name)
-                if kwargs is not None:
-                    with open(kwargs_file_path, "w") as f:
-                        json.dump(kwargs, f, indent=2)
+            kwargs = getattr(ds, kwargs_name, None)
+            if (
+                kwargs_name == "window_kwargs"
+                and not kwargs
+                and isinstance(ds, (EEGWindowsDataset, WindowsDataset))
+            ):
+                # Directly constructed windows have no windower history.
+                cls = (
+                    EEGWindowsDataset
+                    if isinstance(ds, EEGWindowsDataset)
+                    else WindowsDataset
+                )
+                settings = dict(
+                    targets_from=ds.targets_from, last_target_only=ds.last_target_only
+                )
+                kwargs = [(cls.__name__, settings)]
+            if kwargs is not None:
+                with open(os.path.join(sub_dir, f"{kwargs_name}.json"), "w") as f:
+                    json.dump(kwargs, f, indent=2)
 
     @staticmethod
     def _save_target_name(sub_dir, ds):
