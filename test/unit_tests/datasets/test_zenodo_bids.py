@@ -92,3 +92,25 @@ def test_annotations_are_named_after_event_type(
     assert list(dataset.raw.annotations.description) == ["bckg", "sz", "BAD_ACQ_SKIP"]
     _, event_id = mne.events_from_annotations(dataset.raw)
     assert set(event_id) == {"bckg", "sz"}
+
+
+def test_szcore_bids_falls_back_to_trial_type(tmp_path):
+    from mne_bids import BIDSPath, write_raw_bids
+
+    pytest.importorskip("edfio")
+    raw = mne.io.RawArray(np.zeros((1, 500)), mne.create_info(["C3"], 100, "eeg"))
+    path = BIDSPath(subject="01", task="monitoring", datatype="eeg", root=tmp_path)
+    write_raw_bids(raw, path, allow_preload=True, format="EDF", verbose="ERROR")
+    events = path.copy().update(suffix="events", extension=".tsv")
+    events.fpath.write_text(
+        "onset\tduration\ttrial_type\teventType\n"
+        "1\t0.2\tbaseline\tn/a\n"
+        "3\t0.5\tseizure\tsz\n",
+        encoding="utf-8",
+    )
+
+    loaded = CHBMIT(root=tmp_path).datasets[0].raw
+    np.testing.assert_array_equal(loaded.annotations.description, ["baseline", "sz"])
+    samples, ids = mne.events_from_annotations(loaded)
+    np.testing.assert_array_equal(samples[:, 0], [100, 300])
+    assert ids == {"baseline": 1, "sz": 2}
