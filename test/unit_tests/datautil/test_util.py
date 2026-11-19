@@ -111,3 +111,30 @@ def test_window_target_transform_sets_output_count(lazy_metadata):
     assert metadata["target"].tolist() == [0, 0, 1, 1, 2, 2]
     assert metadata["i_dataset"].tolist() == [0, 0, 1, 1, 2, 2]
     assert metadata["study"].tolist() == ["demo"] * len(windows)
+
+
+def test_classes_naming_stored_labels_accepted_with_target_transform():
+    import mne
+
+    from braindecode.datasets import BaseConcatDataset, RawDataset
+    from braindecode.datautil import infer_signal_properties
+    from braindecode.preprocessing import create_fixed_length_windows
+
+    raw = mne.io.RawArray(np.zeros((1, 120)), mne.create_info(["C3"], 100, "eeg"))
+    windows = create_fixed_length_windows(
+        BaseConcatDataset(
+            [
+                RawDataset(raw, {"label": y}, target_name="label")
+                for y in ["left", "right"]
+            ]
+        ),
+        window_size_samples=60,
+        window_stride_samples=60,
+        on_last_window="drop",
+    )
+    windows.target_transform = {"left": 0, "right": 1}.__getitem__
+    # ``classes`` may name either the stored or the transformed labels.
+    for classes in (["left", "right"], [0, 1]):
+        assert infer_signal_properties(windows, classes=classes)["n_outputs"] == 2
+    with pytest.raises(AssertionError):
+        infer_signal_properties(windows, classes=["up", "down"])

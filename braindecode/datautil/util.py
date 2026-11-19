@@ -3,7 +3,6 @@
 # License: BSD (3-clause)
 
 import logging
-from collections.abc import Iterable
 from typing import Any, Literal
 
 import mne
@@ -56,6 +55,13 @@ def samples_to_ms(n_samples, fs):
     milliseconds : int
     """
     return n_samples * 1000.0 / fs
+
+
+def _labels_within(y, classes) -> bool:
+    try:
+        return set(np.unique(np.asarray(y))) <= set(classes)
+    except TypeError:  # unhashable or unsortable labels
+        return False
 
 
 def _get_n_outputs(y, classes, mode):
@@ -119,7 +125,8 @@ def infer_signal_properties(
     mode : "classification" or "regression"
         Mode of the task
     classes : list or None
-        List of classes for classification
+        List of classes for classification. With a dataset ``target_transform``,
+        it may name either the stored labels or the transformed ones.
 
     Returns
     -------
@@ -164,13 +171,20 @@ def infer_signal_properties(
             for ds in datasets
         ):
             # Both window backends return ds.y[i], including with lazy metadata.
-            targets: Iterable[Any] = (
-                ds.y[i] for ds in datasets for i in range(len(ds))
-            )
+            stored = [ds.y[i] for ds in datasets for i in range(len(ds))]
+            targets = stored
             if isinstance(X, BaseConcatDataset) and X.target_transform is not None:
-                targets = map(X.target_transform, targets)
+                targets = [X.target_transform(t) for t in stored]
+                if (
+                    mode == "classification"
+                    and classes is not None
+                    and not _labels_within(targets, classes)
+                    and _labels_within(stored, classes)
+                ):
+                    # ``classes`` names the stored labels the transform encodes.
+                    targets = stored
             signal_kwargs["n_outputs"] = _get_n_outputs(
-                np.asarray(list(targets)), classes, mode
+                np.asarray(targets), classes, mode
             )
     else:
         log.warning(
