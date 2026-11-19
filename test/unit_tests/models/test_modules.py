@@ -2359,6 +2359,17 @@ def test_timm_attention_rotary_positions_restart_in_each_run():
     assert not torch.allclose(q, q_plain)
     with pytest.raises(ValueError, match="even"):
         TimmAttention(12, num_heads=4, rotary_runs=1)
+    with pytest.raises(ValueError, match="rotary_runs must be positive"):
+        TimmAttention(16, rotary_runs=0)
+    with pytest.raises(ValueError, match="divisible by rotary_runs"):
+        runs(x[:, :5])
+
+    # Full-module checkpoints written before RoPE have no rotary_runs field.
+    logits, weights = plain(x), plain(x, need_weights=True)
+    del plain.rotary_runs
+    torch.testing.assert_close(plain(x), logits, rtol=0, atol=0)
+    torch.testing.assert_close(plain(x, need_weights=True), weights, rtol=0, atol=0)
+    torch.testing.assert_close(torch.jit.script(plain)(x), logits, rtol=0, atol=0)
 
 
 def test_pre_norm_block_keys_and_forward():

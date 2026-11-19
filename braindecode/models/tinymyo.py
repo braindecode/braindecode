@@ -45,7 +45,7 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
     It comes from the same group (ETH Zurich, PULP platform) as
     :class:`~braindecode.models.LUNA`.
 
-    .. rubric:: Architectural Overview
+    .. rubric:: Architecture Overview
 
     The model cuts each channel into patches of ``patch_size`` samples, and
     each patch becomes one token. One Transformer encoder reads the tokens of
@@ -69,18 +69,27 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
       ``patch_size`` samples to a ``D``-wide token (a strided
       :class:`~torch.nn.Conv2d` in the reference, the same operation).
     - ``TinyMyo.channel_embed`` **Channel slots.** A learned vector per
-      channel index, added to every token of that channel. It identifies the
-      slot, not an electrode position, so the channel order must be the one
-      used in fine-tuning. The checkpoints have 16 slots, and a model with
-      fewer channels uses the first ``n_chans``.
+      channel index, added to every token of that channel.
     - ``TinyMyo.blocks`` **Transformer encoder.** Pre-norm blocks with
-      rotary position embeddings (RoPE) on queries and keys. The positions
-      restart at 0 for each channel, so the first patch of every channel has
-      the same position.
+      rotary position embeddings (RoPE) on queries and keys.
     - ``TinyMyo.final_layer`` **Classification head.** The head averages the
       tokens of each channel over time, concatenates the channels and applies
       one :class:`~torch.nn.Linear` (``EMGClassificationHead`` in the
       reference).
+
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Time.** The rotary positions restart at zero for each channel, so
+      the first patch of every channel has the same position.
+    - **Channels.** Channel slots follow the electrode order used in
+      fine-tuning. The checkpoints have 16 slots, and a model with fewer
+      channels uses the first ``n_chans``.
+    - **Frequency.** The patch projection takes time-domain EMG samples.
+
+    .. rubric:: Additional Mechanisms
+
+    During training, each Transformer block applies stochastic depth to its
+    attention and MLP residual branches.
 
     .. rubric:: Pretrained Weights
 
@@ -126,7 +135,7 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
        ``load_state_dict`` reads the released files. It removes their
        ``model.`` prefix, renames the reference layers and drops the
-       pretraining-only keys (``mask_token``, the reconstruction decoder). A
+       mask token, reconstruction decoder and DB8 regression head. A released
        file without a classifier keeps the head of this model.
 
     The authors pretrain on 20-450 Hz band-passed signals with a 50 Hz notch,
@@ -217,10 +226,12 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        if self.n_chans > _MAX_CHANS:
+        if not 1 <= self.n_chans <= _MAX_CHANS:
             raise ValueError(
-                f"TinyMyo has {_MAX_CHANS} channel slots, got n_chans={self.n_chans}."
+                f"TinyMyo needs 1 to {_MAX_CHANS} channel slots, got n_chans={self.n_chans}."
             )
+        if embed_dim < 1 or num_heads < 1:
+            raise ValueError("embed_dim and num_heads must be positive.")
         if embed_dim % num_heads or (embed_dim // num_heads) % 2:
             raise ValueError(
                 f"embed_dim ({embed_dim}) must split into num_heads ({num_heads}) "
@@ -268,7 +279,11 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
     def _init_parameters(self) -> None:
         """Initialization of the reference."""
         nn.init.trunc_normal_(self.channel_embed, std=0.02, a=-0.02, b=0.02)
-        self.apply(_init_weights)
+        # The reference reinitializes the patch convolution weight and keeps
+        # the bias drawn by Conv2d, whose fan-in equals that of this Linear.
+        nn.init.xavier_uniform_(self.patch_embed.proj.weight)
+        for module in (self.blocks, self.norm, self.final_layer):
+            module.apply(_init_weights)
         # Deeper blocks start with smaller residual branches
         with torch.no_grad():
             for layer_id, block in enumerate(self.blocks, start=1):
@@ -320,22 +335,28 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
         """Load a state dict, or a released ``PulpBio/TinyMyo`` file.
 
         The released keys carry a ``model.`` prefix and the reference layer
-        names. The pretraining mask token and decoder are dropped, and a
-        file without a classifier keeps the head of this model.
+        names. The mask token, reconstruction decoder and DB8 regression head
+        are dropped. A released encoder keeps the head of this model.
         """
         renamed = {}
+        has_reference_stem = False
         for key, value in state_dict.items():
             key = key.removeprefix("model.")
-            if key == "mask_token" or key.startswith("model_head.decoder_pred."):
+            if key == "mask_token" or key.startswith(
+                ("model_head.decoder_pred.", "model_head.regressor.")
+            ):
                 continue
             if key.startswith("patch_embedding.patch_embed.proj."):
+                has_reference_stem = True
                 key = key.replace("patch_embedding.patch_embed.", "patch_embed.")
                 # Conv2d(1, D, (1, patch_size)) -> Linear(patch_size, D)
                 value = value.flatten(1) if key.endswith("weight") else value
             key = key.replace("model_head.classifier.", "final_layer.")
             renamed[key] = value
         head = {}
-        if not any(key.startswith("final_layer.") for key in renamed):
+        if has_reference_stem and not any(
+            key.startswith("final_layer.") for key in renamed
+        ):
             head = self.final_layer.state_dict(prefix="final_layer.")
             renamed.update(head)
         result = super().load_state_dict(renamed, strict=strict, assign=assign)

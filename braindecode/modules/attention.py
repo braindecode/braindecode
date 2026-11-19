@@ -901,6 +901,8 @@ class TimmAttention(nn.Module):
             )
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
+        if rotary_runs is not None and rotary_runs < 1:
+            raise ValueError(f"rotary_runs must be positive, got {rotary_runs}.")
         if rotary_runs is not None and self.head_dim % 2:
             raise ValueError(
                 f"head_dim ({self.head_dim}) must be even: RoPE rotates in pairs."
@@ -931,16 +933,23 @@ class TimmAttention(nn.Module):
         # unbind, not qkv[0..2]: the backward of three selects writes three
         # zero-filled copies of the whole qkv tensor and sums them.
         q, k, v = qkv.permute(2, 0, 3, 1, 4).unbind(0)
-        if self.rotary_runs is not None:
-            q, k = self._rotate(q, k)
+        # Full models saved before RoPE have no rotary_runs attribute.
+        rotary_runs = getattr(self, "rotary_runs", None)
+        if rotary_runs is not None:
+            q, k = self._rotate(q, k, rotary_runs)
         return q, k, v
 
-    def _rotate(self, q: Tensor, k: Tensor) -> tuple[Tensor, Tensor]:
+    def _rotate(self, q: Tensor, k: Tensor, rotary_runs: int) -> tuple[Tensor, Tensor]:
+        n_tokens = q.shape[-2]
+        if n_tokens % rotary_runs:
+            raise ValueError(
+                f"Token count ({n_tokens}) must be divisible by rotary_runs ({rotary_runs})."
+            )
         # Rotate in float32 at least, as the reference implementations do
         dtype = torch.promote_types(q.dtype, torch.float32)
         positions = torch.arange(
-            q.shape[-2] // self.rotary_runs, device=q.device, dtype=dtype
-        ).repeat(self.rotary_runs)
+            n_tokens // rotary_runs, device=q.device, dtype=dtype
+        ).repeat(rotary_runs)
         angles = rotary_angles(
             positions, rotary_frequencies(self.head_dim, device=q.device, dtype=dtype)
         )

@@ -115,6 +115,50 @@ def test_tinymyo_matches_the_reference():
         torch.testing.assert_close(param.grad, their_grad, rtol=0, atol=1e-5)
 
 
+@pytest.mark.parametrize("task_head", ["decoder_pred", "regressor.0"])
+def test_tinymyo_loads_released_encoder_but_checks_native_head(task_head):
+    torch.manual_seed(123)
+    reference_bias = nn.Conv2d(1, 12, (1, 20), stride=(1, 20)).bias.detach()
+    torch.manual_seed(123)
+    model = TinyMyo(
+        n_chans=2, n_outputs=3, n_times=40, embed_dim=12, num_heads=2, depth=1
+    )
+    torch.testing.assert_close(
+        model.patch_embed.proj.bias, reference_bias, rtol=0, atol=0
+    )
+    reference = _TinyMyoReference(2, 3, patch_size=20, dim=12, depth=1, heads=2)
+    weights = {
+        f"model.{k}": v
+        for k, v in reference.state_dict().items()
+        if not k.startswith("model_head.")
+    }
+    weights[f"model.model_head.{task_head}.weight"] = torch.ones(12, 12)
+    head = {k: v.clone() for k, v in model.final_layer.state_dict().items()}
+    model.load_state_dict(weights, strict=True)
+    for k, v in model.final_layer.state_dict().items():
+        torch.testing.assert_close(v, head[k], rtol=0, atol=0)
+    torch.testing.assert_close(
+        model.channel_embed, reference.channel_embed, rtol=0, atol=0
+    )
+
+    native_encoder = {
+        k: v for k, v in model.state_dict().items() if not k.startswith("final_layer.")
+    }
+    with pytest.raises(RuntimeError, match="final_layer.weight"):
+        model.load_state_dict(native_encoder, strict=True)
+    result = model.load_state_dict(native_encoder, strict=False)
+    assert set(result.missing_keys) == {"final_layer.weight", "final_layer.bias"}
+
+
+@pytest.mark.parametrize("kwargs", [{"n_chans": 0}, {"num_heads": 0}, {"embed_dim": 0}])
+def test_tinymyo_requires_positive_geometry(kwargs):
+    config = dict(
+        n_chans=2, n_outputs=3, n_times=40, embed_dim=12, num_heads=2, depth=1
+    )
+    with pytest.raises(ValueError, match="n_chans|num_heads|embed_dim"):
+        TinyMyo(**(config | kwargs))
+
+
 # Logits of the authors' TinyMyo (BioFoundation@d4484fe) with
 # EPN612/EPN_finetune_5sec.safetensors on the input below.
 _EPN612_LOGITS = [
