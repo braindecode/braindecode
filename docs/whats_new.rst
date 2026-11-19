@@ -178,6 +178,12 @@ Enhancements
   model (``n_outputs=0``) becomes a classifier (:gh:`1568` by `Hamza Abdelhedi`_).
 - Add :class:`braindecode.models.BBL`, the MEG encoder of *The Brain's Bitter Lesson* (Jayalath et al., ICML 2025): a dataset-conditional convolutional projector, a :class:`~braindecode.modules.SEANetEncoder` and a subject embedding, with optional ``subject_index``/``dataset_index`` and the paper's mean-subject-embedding fallback. It accepts ``ch_mask``: padded channels become the zero sensor slots of the reference collator, so each recording of a padded batch gives its output alone; as the projector mixes all sensors, ``return_features`` has no per-channel ``tokens``. Opt-in ``temporal_mask`` hides raw time samples before any convolution/context, while ``return_temporal_features=True`` with ``return_features=True`` exposes the actual pre-pool sequence and stride/valid-time/context metadata for downstream SSL objectives (no pretraining task heads). The released CamCAN checkpoint, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/bbl-pretrained`` and gives the authors' features, logits and gradients bit for bit on CPU in float32 (:gh:`1553` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.MEGGPT` (MEG-GPT, Huang et al., Imaging Neuroscience 2026), a source-space MEG foundation model: the EphysTokenizer encoder turns each parcel into discrete tokens and a causal time-attention GPT with patched keys and values embeds them; the released Cam-CAN checkpoint, converted without the session embedding the paper discards for downstream use, is on the Hugging Face Hub at ``braindecode/meggpt-pretrained``; ``return_features=True`` also returns the per-channel ``"tokens"`` ``(batch, n_chans, n_segments * n_last_steps, embed_dim)`` and takes a ``ch_mask`` of padded channels, whose features and tokens are zero (the flattened head is tied to ``n_chans``, so logits refuse ``ch_mask``); optional ``token_mask`` hides clean token embeddings before the causal decoder, and ``encode_tokens`` supplies cached-ID encoding with shifted next-token targets, retained-tail indices and valid/selected loss masks for a separate vocabulary head (:gh:`1555` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.Pratibha2` (PRATIBHA-2, formerly MANAS-2), a
+  dense-attention EEG foundation model pretrained with raw-band hybrid masked
+  autoencoding and constrained reconstruction, with pretrained weights on the
+  Hugging Face Hub; ``RevePositionBank`` takes the
+  cached file name, ``fname``, so other models can keep their position table
+  next to REVE's (:gh:`1654` by `Mahir Jain`_).
 - Add :class:`braindecode.models.MEGXL`, the MEG-XL brain-to-text foundation model (Jayalath and Parker Jones, ICML 2026): a frozen BioCodec tokenizer and a criss-cross transformer pretrained on 150 s MEG windows; the released ``meg-xl-med-v2.ckpt``, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/megxl-pretrained`` and matches the authors' code on CPU. Its ``forward`` refuses ``ch_mask`` with a ``ValueError`` (the head flattens ``n_chans * latent_dim`` features and the sensor geometry is the ``chs_info`` montage), and ``return_features`` gives the pooled ``"features"`` only, no ``"tokens"``. The opt-in ``encode``/``encode_codes`` mask replaces projected code content before sensor metadata and attention, returning real temporal hidden states for caller-owned masked-RVQ-code prediction; it adds no default parameters and expects equal valid-length full-montage windows (:gh:`1554` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.SEANetEncoder` and :class:`~braindecode.modules.SEANetDecoder` (EnCodec's SEANet, with :class:`~braindecode.modules.SEANetConv1d`, :class:`~braindecode.modules.SEANetConvTranspose1d`, :class:`~braindecode.modules.SEANetLSTM` and :class:`~braindecode.modules.SEANetResBlock`), moved from :class:`braindecode.models.BrainOmni`, whose parameters and outputs are unchanged. They take ``in_channels``/``out_channels``, ``n_residual_layers``, ``dilation_base``, ``compress``, ``true_skip`` and ``causal`` (:gh:`1553` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.TCCNet`, a causal temporal-convolution model
@@ -322,8 +328,13 @@ Bug fixes
   the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
   other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key
   is mapped to ``parametrizations.weight.original``. Released checkpoints such as
-  the EEGNet weights of Guetschel and Tangermann load without renaming keys
-  (:gh:`1538` by `Bruno Aristimunha`_).
+  the EEGNet weights of Guetschel and Tangermann load without renaming keys.
+  If a checkpoint supplies both names, the current weight takes precedence
+  and a strict load reports the obsolete key unless both names refer to the
+  same tensor storage and view. The module versions stored by
+  PyTorch are also preserved, so missing BatchNorm buffers are checked against
+  the checkpoint's version
+  (:gh:`1538`, :gh:`1639` by `Bruno Aristimunha`_).
 - Replacing a local Zarr dataset keeps the previous store readable if the
   export fails. Fresh lazy readers see the replacement recording, while open
   readers and their workers retain the signal associated with their labels.
@@ -435,6 +446,11 @@ Bug fixes
   copy; on Gaudi, the roll by 0 of a slice of the stacked gradient gave a wrong input
   gradient. Outputs and gradients are unchanged on CPU (:gh:`1595` by
   `Bruno Aristimunha`_).
+- :class:`braindecode.training.DanceLoss` computes consistency probabilities in
+  at least float32. Training :class:`braindecode.models.DANCE` in float16 now
+  gives a finite loss when an event query leaves time bins uncovered, and
+  its Hungarian matcher accepts bfloat16 predictions
+  (:gh:`1647` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
   original fine-tuning code replaces it by ``nn.Identity()``, so the head now reads
@@ -442,6 +458,10 @@ Bug fixes
   weights still load; the head input size is ``d_model`` instead of ``emb_dim``
   (the same with the defaults). Outputs of existing CBraMod classifiers change
   (:gh:`1541`).
+- :class:`braindecode.modules.FilterBankLayer` preserves its float64 IIR
+  coefficients when casting a model. Narrow-band filters in
+  :class:`braindecode.models.FBCNet` could produce NaN predictions after
+  ``model.float()`` rounded the coefficients of a stable filter (:gh:`1657`).
 - :class:`braindecode.models.CSBrain` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head, as
   for :class:`braindecode.models.CBraMod`. The original fine-tuning code replaces
@@ -617,6 +637,10 @@ Code health
   :func:`braindecode.datasets.pad_channels_collate`; a model may instead refuse
   ``ch_mask`` with a ``ValueError`` that names it
   (:gh:`1545`, :gh:`1548` by `Bruno Aristimunha`_).
+
+- BENDR and MSCFormer regression tests now live with their respective
+  model suites. Frequency-shift device and gradient cases run alongside
+  the transform's numerical tests (:gh:`1656` by `Bruno Aristimunha`_).
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).

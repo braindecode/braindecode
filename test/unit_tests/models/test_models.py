@@ -2718,6 +2718,54 @@ def test_fbcnet_specified_filter_parameters():
 
 
 @pytest.mark.parametrize(
+    "device,dtype",
+    [
+        ("cpu", torch.float32),
+        ("cpu", torch.float16),
+        ("cpu", torch.bfloat16),
+        pytest.param(
+            "mps",
+            torch.float32,
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason="requires MPS"
+            ),
+        ),
+    ],
+)
+def test_fbcnet_cast_preserves_iir_filter(device, dtype, tmp_path):
+    torch.manual_seed(42)
+    kwargs = dict(
+        n_chans=3,
+        n_times=1024,
+        n_outputs=2,
+        sfreq=256,
+        n_filters_spat=2,
+        n_bands=[(4, 8)],
+        filter_parameters=dict(
+            method="iir", iir_params=dict(ftype="butter", output="ba", order=4)
+        ),
+    )
+    model = FBCNet(**kwargs).eval()
+    x = torch.randn(2, 3, 1024).to(device=device, dtype=dtype).requires_grad_()
+    bank = model.spectral_filtering
+    expected = bank(x.detach())
+    denominator = bank.a_list[0].clone()
+
+    model.to(device=device, dtype=dtype)
+    logits = model(x)
+    assert torch.isfinite(logits).all()
+    logits.float().square().mean().backward()
+    assert torch.isfinite(x.grad).all()
+    torch.testing.assert_close(bank.a_list[0].cpu(), denominator, rtol=0, atol=0)
+    torch.testing.assert_close(bank(x.detach()), expected, rtol=0, atol=0)
+    path = tmp_path / "fbcnet.pt"
+    torch.save(model.state_dict(), path)
+    restored = FBCNet(**kwargs).to(device=device, dtype=dtype).eval()
+    restored.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
+    torch.testing.assert_close(restored(x.detach()), logits.detach(), rtol=0, atol=0)
+
+
+@pytest.mark.parametrize(
     "n_chans, n_bands, n_filters_spat, stride_factor",
     [
         (3, 9, 32, 4),
@@ -3592,215 +3640,6 @@ def test_brainmodule_default_unchanged():
     assert m.use_merger is False
 
 
-def test_bendr_parameter_counts():
-    """
-    Test BENDR parameter counts match paper specifications.
-
-    Paper reports ~157M parameters total:
-    - Encoder: ~4M parameters
-    - Contextualizer: ~153M parameters
-    """
-    set_random_seeds(0, False)
-
-    # Standard 20-channel configuration
-    model = BENDR(
-        n_chans=20,
-        n_outputs=2,
-        n_times=5120,
-        sfreq=256,
-    )
-
-    # Count total parameters
-    total_params = sum(p.numel() for p in model.parameters())
-
-    # Should be close to paper: 157,141,049,
-    # At braindecode, there are 2 k params difference
-    # that might come from implementation details from different
-    # torch versions or minor code changes. 157,143,101 in my case.
-
-    # Allow 0.1% tolerance
-    expected = 157_141_049
-    assert abs(total_params - expected) / expected < 0.001, \
-        f"Expected ~{expected:,} params, got {total_params:,}"
-
-    # Count encoder parameters (should be ~4M)
-    encoder_params = sum(p.numel() for p in model.encoder.parameters())
-    assert 3_900_000 < encoder_params < 4_100_000, \
-        f"Encoder should have ~4M params, got {encoder_params:,}"
-
-    # Count contextualizer parameters (should be ~153M)
-    contextualizer_params = sum(p.numel() for p in model.contextualizer.parameters())
-    assert 152_000_000 < contextualizer_params < 154_000_000, \
-        f"Contextualizer should have ~153M params, got {contextualizer_params:,}"
-
-
-def test_bendr_different_channels():
-    """
-    Test BENDR with different channel counts.
-    Parameter count should scale with number of channels.
-    """
-    set_random_seeds(0, False)
-
-    configs = [
-        (1, 157_112_891),   # Single channel
-        (20, 157_142_075),  # Standard
-        (64, 157_209_659),  # More channels
-    ]
-
-    for n_chans, expected_params in configs:
-        model = BENDR(
-            n_chans=n_chans,
-            n_outputs=2,
-            n_times=5120,
-            sfreq=256,
-        )
-
-        total_params = sum(p.numel() for p in model.parameters())
-
-        # Check exact match
-        assert total_params == expected_params, \
-            f"For {n_chans} channels: expected {expected_params:,}, got {total_params:,}"
-
-
-def test_bendr_gradient_flow():
-    """
-    Test that gradients flow through the entire model.
-    """
-    set_random_seeds(0, False)
-
-    model = BENDR(n_chans=20, n_outputs=4, n_times=5120, sfreq=256)
-    x = torch.randn(2, 20, 5120, requires_grad=True)
-
-    y = model(x)
-    loss = y.sum()
-    loss.backward()
-
-    # Check gradients exist in encoder
-    encoder_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.encoder.parameters()
-    )
-    assert encoder_has_grad, "No gradients in encoder"
-
-    # Check gradients exist in contextualizer
-    contextualizer_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.contextualizer.parameters()
-    )
-    assert contextualizer_has_grad, "No gradients in contextualizer"
-
-
-@pytest.mark.parametrize("drop_prob", [0.0, 0.1, 0.15])
-def test_bendr_dropout_configurations(drop_prob):
-    """
-    Test BENDR with different dropout rates.
-    Paper uses 0.15 for pretraining, 0.0 for fine-tuning.
-    """
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=20,
-        n_outputs=4,
-        n_times=5120,
-        sfreq=256,
-        drop_prob=drop_prob,
-    )
-
-    x = torch.randn(2, 20, 5120)
-
-    # Training mode
-    model.train()
-    y_train = model(x)
-    assert y_train.shape == (2, 4)
-
-    # Eval mode
-    model.eval()
-    y_eval = model(x)
-    assert y_eval.shape == (2, 4)
-
-    # With dropout=0, outputs should be identical
-    if drop_prob == 0.0:
-        np.testing.assert_allclose(
-            y_train.detach().numpy(),
-            y_eval.detach().numpy(),
-            rtol=1e-5,
-            atol=1e-7,
-        )
-
-
-def test_bendr_encoder_only_gradient_flow():
-    """Encoder-only mode: encoder has grads, contextualizer does not."""
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=True,
-    )
-    x = torch.randn(2, 20, 5120, requires_grad=True)
-    model(x).sum().backward()
-
-    encoder_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.encoder.parameters()
-    )
-    assert encoder_has_grad, "No gradients in encoder"
-
-    ctx_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.contextualizer.parameters()
-    )
-    assert not ctx_has_grad, "Contextualizer should have no grads"
-
-
-def test_bendr_encoder_only_parameter_counts():
-    """Encoder/contextualizer params match full model; final_layer is larger."""
-    set_random_seeds(0, False)
-
-    model_full = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=False,
-    )
-    model_enc = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=True,
-    )
-
-    for name in ("encoder", "contextualizer"):
-        p_full = sum(p.numel() for p in getattr(model_full, name).parameters())
-        p_enc = sum(p.numel() for p in getattr(model_enc, name).parameters())
-        assert p_full == p_enc, f"{name} params differ: {p_full} vs {p_enc}"
-
-    fl_full = sum(p.numel() for p in model_full.final_layer.parameters())
-    fl_enc = sum(p.numel() for p in model_enc.final_layer.parameters())
-    assert fl_enc > fl_full
-
-
-def test_bendr_backward_compatibility():
-    """encoder_only=False (default) produces identical output to original."""
-    set_random_seeds(0, False)
-
-    model_default = BENDR(n_chans=20, n_outputs=4, n_times=5120, sfreq=256)
-    model_explicit = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=False,
-    )
-    model_explicit.load_state_dict(model_default.state_dict())
-    model_default.eval()
-    model_explicit.eval()
-
-    x = torch.randn(2, 20, 5120)
-    np.testing.assert_allclose(
-        model_default(x).detach().numpy(),
-        model_explicit(x).detach().numpy(),
-        rtol=1e-5, atol=1e-7,
-    )
-
-
-def test_bendr_encoder_only_short_input_raises():
-    """RuntimeError when input is too short for 4-chunk pooling."""
-    model = BENDR(
-        n_chans=20, n_outputs=4, n_times=None, sfreq=256, encoder_only=True,
-    )
-    with pytest.raises(RuntimeError, match="too few"):
-        model(torch.randn(2, 20, 96))
-
-
 @pytest.mark.parametrize(
     "no_inter_attn,single_channel,output_attention",
     [
@@ -3902,27 +3741,6 @@ def test_medformer_token_embedding_matches_its_conv2d(single_channel):
     emb = model.enc_embedding.value_embeddings[1]
     x = torch.randn(2, 1, emb.token_conv.kernel_size[0], 30, dtype=torch.float64)
     torch.testing.assert_close(emb(x), emb.token_conv(x))
-
-
-def test_load_state_dict_from_before_max_norm_parametrization():
-    # Released checkpoints (e.g. PierreGtch/EEGNetv4) store the max-norm
-    # spatial filters as ``conv_spatial.weight`` and the classifier under its
-    # old name. load_state_dict maps both to the current keys.
-    torch.manual_seed(0)
-    model = EEGNet(n_chans=3, n_outputs=5, n_times=385).eval()
-    legacy = {
-        k.replace("parametrizations.weight.original", "weight").replace(
-            "final_layer.conv_classifier", "conv_classifier"
-        ): v
-        for k, v in model.state_dict().items()
-    }
-    assert "conv_spatial.weight" in legacy
-
-    loaded = EEGNet(n_chans=3, n_outputs=5, n_times=385).eval()
-    loaded.load_state_dict(legacy)
-
-    x = torch.randn(2, 3, 385)
-    torch.testing.assert_close(loaded(x), model(x))
 
 
 def test_eegitnet_mapping_targets():
@@ -4929,43 +4747,6 @@ def test_barista_coords_fallback_uses_left_inferior_posterior_order():
     left, inferior, posterior = model.spatial_emb.default_indices[0].tolist()
     centre = model.spatial_emb.tables[0].num_embeddings // 2
     assert (left, inferior, posterior) == (centre - 10, centre - 30, centre - 20)
-
-
-def test_mscformer_default_attention_scale_matches_original_source():
-    """MSCFormer's default attention scale must reproduce the released
-    source's ``embed_dim ** -0.5`` logit scaling.
-
-    The original MSCFormer code divides attention logits by
-    ``sqrt(emb_size)`` for every head, not by ``sqrt(head_dim)`` (braindecode's
-    more common default for :class:`~braindecode.modules.MultiHeadAttention`).
-    The two only coincide when ``num_heads == 1``; with the paper's defaults
-    (``num_heads=8``, ``emb_size=48``) they differ by ``sqrt(num_heads)``. A
-    state-dict-matched parity check against the original implementation gives
-    a max abs logit diff of about 2e-7 with this default, versus about 0.035
-    with ``head_dim ** -0.5``.
-    """
-    from braindecode.models.mscformer import MSCFormer
-
-    model = MSCFormer(n_outputs=4, n_chans=22, n_times=1000)
-    expected_scale = model.embed_dim**-0.5
-    assert model.embed_dim == 48
-    for block in model.trans.layers:
-        assert block.attention.module.scale == pytest.approx(expected_scale)
-
-    custom_scale = 0.25
-    model_custom = MSCFormer(
-        n_outputs=4, n_chans=22, n_times=1000, attention_scale=custom_scale
-    )
-    for block in model_custom.trans.layers:
-        assert block.attention.module.scale == pytest.approx(custom_scale)
-
-
-@pytest.mark.parametrize("bad_scale", [0.0, -1.0])
-def test_mscformer_rejects_non_positive_attention_scale(bad_scale):
-    from braindecode.models.mscformer import MSCFormer
-
-    with pytest.raises(ValueError, match="attention_scale"):
-        MSCFormer(n_outputs=4, n_chans=22, n_times=1000, attention_scale=bad_scale)
 
 
 # ---------------------------------------------------------------------------

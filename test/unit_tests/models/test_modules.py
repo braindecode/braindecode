@@ -887,21 +887,18 @@ def test_generic_lfilter_core_loop_matches_torchaudio():
 
 
 @pytest.mark.parametrize("phase", ["zero", "forward"])
-def test_filter_bank_layer_scripts(phase):
-    """FIR banks, zero-phase and causal, script and match eager.
-
-    Scripting compiles the causal ``lfilter`` path even for the zero-phase
-    bank, so both phases need the scriptable ``lfilter``.
-    """
+@pytest.mark.parametrize("method", ["fir", "iir"])
+def test_filter_bank_layer_scripts(phase, method):
+    """FIR and IIR banks script and match eager after a model dtype conversion."""
     torch.manual_seed(0)
     layer = FilterBankLayer(
         n_chans=3,
         sfreq=128,
         band_filters=[(4, 8), (8, 30)],
-        method="fir",
+        method=method,
         phase=phase,
         verbose=False,
-    ).eval()
+    ).float().eval()
     x = torch.randn(2, 3, 512)
     with torch.no_grad():
         expected = layer(x)
