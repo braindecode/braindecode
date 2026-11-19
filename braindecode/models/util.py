@@ -410,6 +410,7 @@ def _get_labram_chs_info() -> list[dict]:
 
 
 def _get_bendr_chs_info() -> list[dict]:
+    # Lazy import for the same model/base import cycle as LaBraM.
     from braindecode.models.bendr import _BENDR_TARGET_CHS_INFO
 
     return _canonical_example_channels(_BENDR_TARGET_CHS_INFO)
@@ -520,12 +521,17 @@ def _fnirs_chs_info(n_pairs: int, interleaved: bool = False) -> list[dict]:
     return chs
 
 
-# The published BaRISTA example starts at the 85th float64 draw from PCG64(12).
+# The published BaRISTA example starts at the 85th float64 draw from PCG64(12):
+# the first 84 draws (3 * 12 + 4 * 12) went to fixtures that no longer exist,
+# and skipping them keeps the BaRISTA locations unchanged.
 _barista_rng = np.random.Generator(np.random.PCG64(12).advance(84))
 
 # Braindecode exports these ordered triples. Config generation reads the name
 # and required signal arguments. The third field supplies example constructor
-# arguments for models that use different settings from the default example.
+# arguments for models that use different settings from the default example
+# (``default_signal_params`` in the test package); for the largest models it
+# also shrinks the architecture to keep CI small, so it is not the released
+# configuration (covered by ``test_pretrained_compat``).
 models_mandatory_parameters: list[
     tuple[str, list[SigArgName], dict[str, Any] | Callable[[], dict[str, Any]] | None]
 ] = [

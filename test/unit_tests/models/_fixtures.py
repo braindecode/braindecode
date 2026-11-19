@@ -32,7 +32,8 @@ non_classification_models = [
     "SeizureTransformer",
 ]
 
-# Head-frame positions in metres for the default synthetic EEG input.
+# Head-frame positions in metres for the default synthetic EEG input, inlined
+# to avoid loading the montage; test_chs_info_3ch_matches_the_montage checks them.
 _chs_info_3ch = [
     {"ch_name": name, "kind": "eeg", "loc": np.array([x, y, z, *[0.0] * 9])}
     for name, (x, y, z) in {
