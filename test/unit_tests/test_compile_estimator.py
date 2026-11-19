@@ -280,9 +280,9 @@ class CroppedCompileModule(torch.nn.Module):
 @pytest.mark.slow
 def test_compiled_estimator_long_trial_chunks():
     from braindecode.training.scoring import iter_trial_prediction_chunks
-    from test.unit_tests.training.test_scoring import _InferenceWindows
+    from test.unit_tests.training._trial_fixtures import InferenceWindows
 
-    class Float32Windows(_InferenceWindows):
+    class Float32Windows(InferenceWindows):
         def __getitem__(self, index):
             signal, target, indices = super().__getitem__(index)
             return signal.astype(np.float32), target, indices

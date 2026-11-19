@@ -17,93 +17,13 @@ import torch
 
 from braindecode.training._trial_aggregation import iter_trial_preds
 from braindecode.training.scoring import trial_preds_from_window_preds
-
-
-def _reference_trial_preds(preds, i_window_in_trials, i_stop_in_trials):
-    """Frozen BASE (d9340316) ``trial_preds_from_window_preds``: the oracle."""
-    assert len(preds) == len(i_window_in_trials) == len(i_stop_in_trials), (
-        f"{len(preds)}, {len(i_window_in_trials)}, {len(i_stop_in_trials)}"
-    )
-    preds_per_trial = []
-    cur_trial_preds = []
-    i_last_stop = None
-    i_last_window = -1
-    for window_preds, i_window, i_stop in zip(
-        preds, i_window_in_trials, i_stop_in_trials
-    ):
-        window_preds = np.array(window_preds)
-        if i_window != (i_last_window + 1):
-            assert i_window == 0, "window numbers in new trial should start from 0"
-            preds_per_trial.append(np.concatenate(cur_trial_preds, axis=1))
-            cur_trial_preds = []
-            i_last_stop = None
-
-        if i_last_stop is not None:
-            n_needed_preds = i_stop - i_last_stop
-            window_preds = window_preds[:, -n_needed_preds:]
-        cur_trial_preds.append(window_preds)
-        i_last_window = i_window
-        i_last_stop = i_stop
-    preds_per_trial.append(np.concatenate(cur_trial_preds, axis=1))
-    return preds_per_trial
-
-
-def _window_stops(length, n_preds, stride):
-    stops = list(range(n_preds, length + 1, stride))
-    if stops[-1] != length:
-        # last window aligned to the trial end: duplicate time overlap
-        stops.append(length)
-    return stops
-
-
-def _make_case(trial_lengths, n_preds, stride, n_classes=3, dtype=np.float64, seed=0):
-    """Windows cut from known per-trial signals, in chronological order."""
-    rng = np.random.default_rng(seed)
-    signals, preds, i_windows, i_stops = [], [], [], []
-    for length in trial_lengths:
-        assert length >= n_preds
-        signal = (rng.standard_normal((n_classes, length)) * 100).astype(dtype)
-        signals.append(signal)
-        for i_window, stop in enumerate(_window_stops(length, n_preds, stride)):
-            preds.append(signal[:, stop - n_preds : stop].copy())
-            i_windows.append(i_window)
-            i_stops.append(stop)
-    return signals, preds, i_windows, i_stops
-
-
-_LAYOUTS = {
-    "1_trial": {"trial_lengths": [40], "n_preds": 10, "stride": 7},
-    "2_trials": {"trial_lengths": [40, 23], "n_preds": 10, "stride": 7},
-    "17_trials_unequal": {
-        "trial_lengths": [
-            10,
-            31,
-            57,
-            12,
-            10,
-            44,
-            23,
-            59,
-            18,
-            36,
-            11,
-            50,
-            27,
-            10,
-            41,
-            33,
-            19,
-        ],
-        "n_preds": 10,
-        "stride": 4,
-    },
-    "17_trials_dense_overlap": {
-        "trial_lengths": [8 + 3 * i for i in range(17)],
-        "n_preds": 8,
-        "stride": 1,
-    },
-    "no_overlap": {"trial_lengths": [30, 30, 15], "n_preds": 5, "stride": 5},
-}
+from test.unit_tests.training._trial_fixtures import (
+    TRIAL_LAYOUTS,
+    WINDOW_CASES,
+    make_trial_windows,
+    reference_trial_preds,
+    window_stops,
+)
 
 
 def _batched_rows(preds, batch_size):
@@ -155,13 +75,13 @@ def _assert_bit_identical(actual_trials, reference_trials):
         "batched_generator",
     ],
 )
-@pytest.mark.parametrize("layout", list(_LAYOUTS))
+@pytest.mark.parametrize("layout", list(TRIAL_LAYOUTS))
 def test_streaming_trial_preds_matches_reference(layout, container):
-    signals, preds, i_windows, i_stops = _make_case(**_LAYOUTS[layout])
+    signals, preds, i_windows, i_stops = make_trial_windows(**TRIAL_LAYOUTS[layout])
     oracle_inputs = _containers(preds, i_windows, i_stops)[container]
     if container == "batched_generator":
         oracle_inputs = (list(preds), i_windows, i_stops)
-    reference = _reference_trial_preds(*oracle_inputs)
+    reference = reference_trial_preds(*oracle_inputs)
     assert len(reference) == len(signals)
 
     actual = list(iter_trial_preds(*_containers(preds, i_windows, i_stops)[container]))
@@ -180,7 +100,7 @@ def test_streaming_trial_preds_matches_reference(layout, container):
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int64])
 def test_streaming_matches_reference_dtypes_and_special_values(dtype):
-    _, preds, i_windows, i_stops = _make_case(
+    _, preds, i_windows, i_stops = make_trial_windows(
         [23, 10, 31], n_preds=10, stride=6, dtype=dtype, seed=3
     )
     if np.issubdtype(dtype, np.floating):
@@ -189,47 +109,17 @@ def test_streaming_matches_reference_dtypes_and_special_values(dtype):
         preds[1][1, -1] = np.inf
         preds[4][2, 0] = -0.0
         preds[-1][:, -2:] = np.nan
-    reference = _reference_trial_preds(preds, i_windows, i_stops)
+    reference = reference_trial_preds(preds, i_windows, i_stops)
     _assert_bit_identical(list(iter_trial_preds(preds, i_windows, i_stops)), reference)
     _assert_bit_identical(
         trial_preds_from_window_preds(preds, i_windows, i_stops), reference
     )
 
 
-_QUIRKY = {
-    # same stop twice: n_needed_preds == 0 keeps the whole window ([:, -0:])
-    "repeated_stop": (
-        [[[0, 1, 2, 3]], [[4, 5, 6, 7]], [[8, 9, 10, 11]]],
-        [0, 1, 2],
-        [4, 4, 6],
-    ),
-    # decreasing stop: negative n_needed_preds slices from the front
-    "decreasing_stop": ([[[0, 1, 2, 3]], [[4, 5, 6, 7]]], [0, 1], [8, 6]),
-    # gap larger than the window: the whole window is kept
-    "gap_larger_than_window": ([[[0, 1, 2, 3]], [[4, 5, 6, 7]]], [0, 1], [4, 10]),
-    # extra trailing axis: overlap is removed along axis 1 only
-    "three_dim_windows": (
-        list(np.arange(3 * 2 * 4 * 2).reshape(3, 2, 4, 2)),
-        [0, 1, 0],
-        [4, 6, 4],
-    ),
-    "single_window_trials": (
-        list(np.arange(5 * 2 * 3).reshape(5, 2, 3)),
-        [0, 0, 0, 0, 0],
-        [3, 3, 3, 3, 3],
-    ),
-    "existing_three_windows_two_trials": (
-        [[[4, 5, 6, 7]], [[6, 7, 8, 9]], [[0, 1, 2, 3]]],
-        [0, 1, 0],
-        [8, 10, 8],
-    ),
-}
-
-
-@pytest.mark.parametrize("case", list(_QUIRKY))
+@pytest.mark.parametrize("case", list(WINDOW_CASES))
 def test_streaming_matches_reference_on_quirky_stops(case):
-    preds, i_windows, i_stops = _QUIRKY[case]
-    reference = _reference_trial_preds(preds, i_windows, i_stops)
+    preds, i_windows, i_stops = WINDOW_CASES[case]
+    reference = reference_trial_preds(preds, i_windows, i_stops)
     _assert_bit_identical(list(iter_trial_preds(preds, i_windows, i_stops)), reference)
     _assert_bit_identical(
         trial_preds_from_window_preds(preds, i_windows, i_stops), reference
@@ -250,8 +140,6 @@ _INVALID = {
 
 
 def _raised(func, *args):
-    # Only the first message line: pytest rewrites asserts in this test module
-    # (the oracle) and appends introspection that production asserts lack.
     with pytest.raises(Exception) as excinfo:
         func(*args)
     return type(excinfo.value), str(excinfo.value).split("\n")[0]
@@ -260,14 +148,14 @@ def _raised(func, *args):
 @pytest.mark.parametrize("case", list(_INVALID))
 def test_invalid_inputs_raise_as_before(case):
     args = _INVALID[case]
-    expected = _raised(_reference_trial_preds, *args)
+    expected = _raised(reference_trial_preds, *args)
     assert _raised(trial_preds_from_window_preds, *args) == expected
     assert _raised(lambda *a: list(iter_trial_preds(*a)), *args) == expected
 
 
 def test_wrapper_keeps_length_assertion():
     args = ([[[1, 2]], [[3, 4]], [[5, 6]]], [0, 1], [2, 3, 4])
-    expected = _raised(_reference_trial_preds, *args)
+    expected = _raised(reference_trial_preds, *args)
     assert expected == (AssertionError, "3, 2, 3")
     assert _raised(trial_preds_from_window_preds, *args) == expected
 
@@ -291,7 +179,7 @@ def test_streaming_is_lazy_and_errors_after_completed_trials():
     # trials completed before an invalid window are still delivered, in order
     preds = [[[1, 2]], [[2, 3]], [[7, 8]], [[8, 9]], [[0, 1]]]
     i_windows, i_stops = [0, 1, 0, 1, 3], [2, 3, 2, 3, 5]
-    expected = _reference_trial_preds(preds[:3], i_windows[:3], i_stops[:3])[:1]
+    expected = reference_trial_preds(preds[:3], i_windows[:3], i_stops[:3])[:1]
     it = iter_trial_preds(preds, i_windows, i_stops)
     _assert_bit_identical([next(it)], expected)
     with pytest.raises(AssertionError, match="should start from 0"):
@@ -317,8 +205,8 @@ class _CountingIterable:
     ids=["long_first", "one_window_first", "two"],
 )
 def test_streaming_does_not_consume_all_trials(trial_lengths):
-    _, preds, i_windows, i_stops = _make_case(trial_lengths, n_preds=10, stride=7)
-    reference = _reference_trial_preds(preds, i_windows, i_stops)
+    _, preds, i_windows, i_stops = make_trial_windows(trial_lengths, n_preds=10, stride=7)
+    reference = reference_trial_preds(preds, i_windows, i_stops)
     n_windows = np.bincount(np.cumsum(np.array(i_windows) == 0) - 1)
     sources = [_CountingIterable(x) for x in (preds, i_windows, i_stops)]
     it = iter_trial_preds(*sources)
@@ -334,7 +222,7 @@ def test_streaming_does_not_consume_all_trials(trial_lengths):
 
 
 def test_streaming_early_close_stops_consumption():
-    _, preds, i_windows, i_stops = _make_case([40, 23, 31], n_preds=10, stride=7)
+    _, preds, i_windows, i_stops = make_trial_windows([40, 23, 31], n_preds=10, stride=7)
     sources = [_CountingIterable(x) for x in (preds, i_windows, i_stops)]
     it = iter_trial_preds(*sources)
     next(it)
@@ -378,11 +266,11 @@ def _iterator_owned_arrays(it):
 def test_streaming_retains_no_completed_trial_storage():
     n_classes, n_preds = 3, 10
     # trial 0 has 10 windows (batches 0, 1 and part of 2), then two more trials
-    _, preds, i_windows, i_stops = _make_case(
+    _, preds, i_windows, i_stops = make_trial_windows(
         [10 + 9 * 5, 23, 31], n_preds=n_preds, stride=5, n_classes=n_classes
     )
     assert i_windows[:11] == list(range(10)) + [0]
-    reference = _reference_trial_preds(preds, i_windows, i_stops)
+    reference = reference_trial_preds(preds, i_windows, i_stops)
     window_nbytes = preds[0].nbytes
     batch_refs = []
 
@@ -411,7 +299,7 @@ def test_streaming_retains_no_completed_trial_storage():
 
 def test_streaming_completed_trial_storage_is_bounded_over_long_sequences():
     n_trials, n_classes, n_preds, stride, length = 200, 4, 64, 32, 256
-    stops = _window_stops(length, n_preds, stride)
+    stops = window_stops(length, n_preds, stride)
     i_windows = list(range(len(stops))) * n_trials
     i_stops = stops * n_trials
     window_nbytes = n_classes * n_preds * 8
