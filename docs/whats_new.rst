@@ -160,11 +160,10 @@ Enhancements
   encoder output ``(batch, n_chans, n_tokens, dim)`` with the tokens of padded
   channels zero; DIVER1 gains
   ``return_features`` (:gh:`1540` by `Julien Gadonneix`_).
-- New tutorial :ref:`weight-audit-tutorial`: audit what a released decoder relies on
-  from its weights alone (dominant band, time window and channel ranking of an
-  :class:`braindecode.models.EEGNet`, read through its path weights), then confirm the
-  reading with one occlusion check, shown on a released PhysioNet EEGNet checkpoint and
-  the lateral-cue eye-movement shortcut (:gh:`1538` by `Yiheng Li`_).
+- The :ref:`weight-audit-tutorial` ranks bands, time windows and channels
+  from the weights of a released :class:`braindecode.models.EEGNet`, then
+  compares the rankings with occlusion on three PhysioNet participants
+  (:gh:`1538` by `Yiheng Li`_, :gh:`1641` by `Bruno Aristimunha`_).
 - :ref:`install_gaudi` lists two attention issues of Gaudi software 1.21.4 that give no
   error: wrong values in eager mode when two calls take transposed views with as many
   elements in different shapes (:class:`braindecode.models.AXON`), and no gradient for a
