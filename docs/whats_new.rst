@@ -352,6 +352,13 @@ Bug fixes
   ``10.5281/zenodo.8214376``, which resolves to the latest release; the DOI they
   gave, ``10.5281/zenodo.17699192``, is the 1.2.0 archive. The author list adds
   the contributors of 2.0.0 (:gh:`1571` by `Bruno Aristimunha`_).
+- :class:`braindecode.datasets.TUH` and :class:`braindecode.datasets.TUHAbnormal`
+  with ``add_physician_reports=True`` no longer take the ``_date.txt`` file that
+  braindecode writes next to each EDF file for a physician report: with one
+  recording in a directory the description held the date JSON instead of the
+  report, and with several recordings an ``AssertionError`` without message was
+  raised. A missing report or several candidate reports now raise an explicit
+  :class:`RuntimeError` (:gh:`1655` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============
@@ -3221,3 +3228,4 @@ Authors
 .. _Mark Santos: https://www.markstudios.com
 .. _Hamza Abdelhedi: https://github.com/BabaSanfour
 .. _sixty-66: https://github.com/sixty-66
+.. _Axel Coiffard-Donaty: https://github.com/AxelNoun

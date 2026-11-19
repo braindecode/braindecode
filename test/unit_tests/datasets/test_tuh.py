@@ -341,3 +341,48 @@ def test_tuh_date_fif_cannot_store_stays_in_description(tmp_path, date, year):
     reloaded = load_concat_dataset(tmp_path, preload=False)
     assert reloaded.description["year"].tolist() == [year]
     assert reloaded.datasets[0].raw.info["meas_date"] is None
+
+
+def _make_tuh_recordings(directory, names, date=None):
+    """Create empty EDF placeholders and the `_date.txt` files `_read_date` writes."""
+    date = {"year": 2013, "month": 8, "day": 15} if date is None else date
+    edfs = [str(directory / f"{name}.edf") for name in names]
+    for edf in edfs:
+        open(edf, "wb").close()
+        pd.Series(date).to_json(edf.replace(".edf", "_date.txt"))
+    return edfs
+
+
+@pytest.mark.parametrize("n_recordings", [1, 2])
+def test_read_physician_report_ignores_date_side_files(tmp_path, n_recordings):
+    """The `_date.txt` files written by `_read_date` are not physician reports."""
+    from braindecode.datasets.tuh import _read_physician_report
+
+    names = ["aaaaaaav_s004_t000", "aaaaaaav_s004_t001"][:n_recordings]
+    edfs = _make_tuh_recordings(tmp_path, names)
+    (tmp_path / "aaaaaaav_s004.txt").write_text("CLINICAL HISTORY: none.")
+    for edf in edfs:
+        assert _read_physician_report(edf) == "CLINICAL HISTORY: none."
+
+
+@pytest.mark.parametrize("n_recordings", [1, 2])
+def test_read_physician_report_missing_report_raises(tmp_path, n_recordings):
+    """Without a report, raise instead of returning the content of a `_date.txt`."""
+    from braindecode.datasets.tuh import _read_physician_report
+
+    names = ["aaaaaaav_s004_t000", "aaaaaaaw_s001_t000"][:n_recordings]
+    edfs = _make_tuh_recordings(tmp_path, names)
+    for edf in edfs:
+        with pytest.raises(RuntimeError, match="Could not read physician report"):
+            _read_physician_report(edf)
+
+
+def test_read_physician_report_several_reports_raises(tmp_path):
+    """Several candidate reports give an error that names the directory."""
+    from braindecode.datasets.tuh import _read_physician_report
+
+    (edf,) = _make_tuh_recordings(tmp_path, ["aaaaaaav_s004_t000"])
+    (tmp_path / "aaaaaaav_s004.txt").write_text("first report")
+    (tmp_path / "aaaaaaav_s005.txt").write_text("second report")
+    with pytest.raises(RuntimeError, match="Expected at most one physician report"):
+        _read_physician_report(edf)

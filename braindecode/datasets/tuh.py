@@ -438,8 +438,15 @@ def _parse_description_from_file_path(
 def _read_physician_report(file_path):
     directory = os.path.dirname(file_path)
     txt_file = glob.glob(os.path.join(directory, "**/*.txt"), recursive=True)
-    # check that there is at most one txt file in the same directory
-    assert len(txt_file) in [0, 1]
+    # `_read_date` stores the recording date in a `*_date.txt` file next to each
+    # EDF file; these are written by braindecode and are not physician reports
+    txt_file = [f for f in txt_file if not f.endswith("_date.txt")]
+    # check that there is at most one report in the same directory
+    if len(txt_file) > 1:
+        raise RuntimeError(
+            f"Expected at most one physician report in {directory}, "
+            f"found {len(txt_file)}: {sorted(txt_file)}."
+        )
     report = ""
     if txt_file:
         txt_file = txt_file[0]
@@ -453,7 +460,7 @@ def _read_physician_report(file_path):
                 report = f.read()
     if not report:
         raise RuntimeError(
-            f"Could not read physician report ({txt_file}). "
+            f"Could not read physician report ({txt_file or directory}). "
             f"Disable option or choose appropriate directory."
         )
     return report
