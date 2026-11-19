@@ -12,6 +12,7 @@ Hugging Face Hub when the optional huggingface_hub dependency is installed.
 
 import inspect
 import json
+import shutil
 
 import numpy as np
 import pytest
@@ -534,8 +535,11 @@ def test_local_binary_fallback_replaces_previous_weights(tmp_path, monkeypatch):
     )
     with pytest.warns(UserWarning, match="pytorch_model.bin"):
         model.save_pretrained(tmp_path)
+    nested = tmp_path / "recording-a" / "pytorch_model.bin"
+    nested.parent.mkdir()
+    shutil.copyfile(tmp_path / "pytorch_model.bin", nested)
     x = torch.randn(2, 2, 128)
-    for name in (None, "pytorch_model.bin"):
+    for name in (None, "pytorch_model.bin", "recording-a/pytorch_model.bin"):
         restored = EEGNet.from_pretrained(
             tmp_path, filename=name, local_files_only=True, strict=True
         )
@@ -558,6 +562,26 @@ def test_duration_override_uses_saved_time_geometry(
     )
     assert restored.n_times == expected_samples
     assert restored.sfreq == pytest.approx(expected_samples / 3)
+
+
+@pytest.mark.parametrize(
+    "geometry, override, expected",
+    [
+        ({"n_times": 256}, {"n_times": 384}, (384, 128)),
+        ({"sfreq": 128}, {"sfreq": 64}, (256, 64)),
+    ],
+)
+def test_override_preserves_the_inferred_saved_geometry(
+    tmp_path, geometry, override, expected
+):
+    model = EEGNet(
+        n_chans=2, n_outputs=2, final_conv_length=1, input_window_seconds=2, **geometry
+    )
+    model.save_pretrained(tmp_path)
+    restored = EEGNet.from_pretrained(
+        tmp_path, local_files_only=True, strict=True, **override
+    )
+    assert (restored.n_times, restored.sfreq) == expected
 
 
 @pytest.mark.parametrize("filename", [None, "missing.safetensors"])

@@ -1360,20 +1360,20 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             except (OSError, json.JSONDecodeError, KeyError):
                 pass
 
-            # When a new duration is the only time quantity, retain the rate
-            # of the saved recording or its sample count if no rate was known.
-            if (
-                model_kwargs.get("input_window_seconds") is not None
-                and model_kwargs.get("n_times") is None
-                and model_kwargs.get("sfreq") is None
-                and saved_config.get("n_times") is not None
-            ):
-                if saved_config.get("input_window_seconds"):
-                    model_kwargs["sfreq"] = (
-                        saved_config["n_times"] / saved_config["input_window_seconds"]
-                    )
-                else:
-                    model_kwargs["n_times"] = saved_config["n_times"]
+            # Equivalent saved geometries may spell out any two of these three
+            # quantities. With just one effective override, infer its complement.
+            time_keys = ("sfreq", "n_times", "input_window_seconds")
+            if sum(model_kwargs.get(k) is not None for k in time_keys) == 1:
+                rate, samples, duration = (saved_config.get(k) for k in time_keys)
+                if duration:
+                    if samples is None and rate is not None:
+                        samples = round(duration * rate)
+                    elif rate is None and samples is not None:
+                        rate = samples / duration
+                for key, value in zip(time_keys, (rate, samples, duration)):
+                    if model_kwargs.get(key) is None and value is not None:
+                        model_kwargs[key] = value
+                        break
 
             saved_n_outputs = saved_config.get("n_outputs")
             requested_n_outputs = model_kwargs.get("n_outputs")
@@ -1430,7 +1430,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                         **download_kwargs,
                     )
                 model = cls(**model_kwargs)
-                if is_local and filename == "pytorch_model.bin":
+                if is_local and Path(filename).name == "pytorch_model.bin":
                     state = torch.load(
                         model_file, map_location=map_location, weights_only=True
                     )
