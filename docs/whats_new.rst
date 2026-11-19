@@ -357,6 +357,15 @@ Bug fixes
   stays in the model so the released weights still load; the first head layer takes
   ``d_model`` instead of ``emb_dim`` inputs per token (the same with the defaults).
   Outputs of existing CSBrain classifiers change (:gh:`1541`, :gh:`1572`).
+- :class:`braindecode.models.SyncNet` sizes its linear head from the real pooled
+  length, which counts the zero padding of both the input and the convolution
+  output. The old size, ``ceil(n_times / pool_size) * num_filters``, is wrong for
+  many settings with ``filter_width != pool_size``. The forward pass then raised a
+  ``RuntimeError`` or returned a different number of rows than the batch held.
+  A ``filter_width`` or ``pool_size`` below 1, or window settings that yield zero
+  convolution or pooling samples, raise a ``ValueError`` at construction. Settings where the two sizes agree, such as the defaults,
+  keep their parameter shapes and outputs (:gh:`1611` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.EEGTCNet` no longer applies ``activation`` between the
   temporal batch norm and the depthwise convolution. The authors' EEG-TCNet code and
   :class:`braindecode.models.EEGNet` have no activation there. The parameters do not
