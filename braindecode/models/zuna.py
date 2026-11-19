@@ -404,7 +404,9 @@ def _channel_positions(chs_info, n_chans):
 
     names = [str(chs_info[i].get("ch_name", "")) for i in missing]
     standard = _standard_positions()
-    aliases = list(dict.fromkeys(n for n in names if n and n.lower() not in standard))
+    aliases = list(
+        dict.fromkeys(n.lower() for n in names if n and n.lower() not in standard)
+    )
     if aliases:
         # MNE also recognizes aliases outside the montage, such as Cb1 for POO7.
         info = mne.create_info(aliases, 256.0, "eeg")
