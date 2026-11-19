@@ -12,6 +12,7 @@
 import inspect
 import math
 import os
+import pickle
 import re
 import subprocess
 import sys
@@ -37,12 +38,14 @@ from braindecode.models import (
     BDTCN,
     BENDR,
     BIOT,
+    DANCE,
     EEGCLIP,
     EEGPT,
     FNIRS4D,
     FNIRSCNN1D,
     FNIRST,
     NICE,
+    PBT,
     SSTDPN,
     TCN,
     ATCNet,
@@ -52,6 +55,7 @@ from braindecode.models import (
     BrainBERT,
     BrainModule,
     Brant,
+    CareSleepNet,
     CBraMod,
     ContraWR,
     Deep4Net,
@@ -123,6 +127,7 @@ from braindecode.models.util import (
     models_dict,
     models_mandatory_parameters,
 )
+from braindecode.training import DanceLoss
 from braindecode.util import set_random_seeds
 from test.unit_tests.models._fixtures import (
     _get_possible_signal_params,
@@ -965,6 +970,120 @@ def test_usleep_n_params():
     assert n_params == 3114337  # From paper's supplementary materials, Table 2
 
 
+def test_caresleepnet_fits_epoch_targets():
+    from braindecode import EEGClassifier
+
+    x = torch.randn(4, 3, 600)
+    y = torch.tensor([[0, 1], [1, 2], [2, 0], [1, 0]])
+    net = EEGClassifier(
+        "CareSleepNet",
+        module__n_epochs=2,
+        module__n_eog_chans=1,
+        max_epochs=1,
+        batch_size=2,
+        lr=1e-4,
+        train_split=None,
+        verbose=0,
+        predict_nonlinearity=nn.Softmax(dim=1),
+    ).fit(x, y)
+    assert np.isfinite(net.history[-1, "train_loss"])
+    with torch.no_grad():
+        logits = net.module_.eval()(x)
+    assert logits.shape == (4, 3, 2)
+    torch.testing.assert_close(
+        torch.from_numpy(net.predict_proba(x)), logits.softmax(1)
+    )
+    np.testing.assert_array_equal(net.predict(x), logits.argmax(1).numpy())
+
+
+def test_caresleepnet_sequence_length():
+    kwargs = dict(n_chans=3, n_outputs=3, n_times=300, n_eog_chans=1)
+    with pytest.raises(ValueError, match="n_epochs must be at least 1"):
+        CareSleepNet(n_epochs=0, **kwargs)
+    model = CareSleepNet(n_epochs=1, **kwargs)
+    with pytest.raises(ValueError, match="input has 2 epochs"):
+        model(torch.randn(1, 2, 3, 300))
+    with pytest.raises(ValueError, match="input has 0 epochs"):
+        model(torch.empty(1, 0, 3, 300))
+
+    model = CareSleepNet(n_epochs=4, **(kwargs | {"n_times": 1200})).eval()
+    x = torch.randn(1, 3, 900)
+    with torch.no_grad():
+        explicit = x.reshape(1, 3, 3, 300).transpose(1, 2)
+        torch.testing.assert_close(model(x), model(explicit))
+    with pytest.raises(ValueError, match="300 samples"):
+        model(x[..., :-1])
+    with pytest.raises(ValueError, match="shape \\(3, 300\\)"):
+        model(torch.randn(1, 3, 3, 3000))
+    with pytest.raises(ValueError, match="shape \\(3, 300\\)"):
+        model(torch.randn(1, 3, 4, 300))
+    with pytest.raises(ValueError, match="at least 169 samples"):
+        CareSleepNet(n_chans=3, n_outputs=5, n_times=3000)
+    CareSleepNet(n_epochs=2, **(kwargs | {"n_times": 338}))
+
+
+def test_caresleepnet_matches_authors_code():
+    """Outputs and gradients of the authors' Model (wjq-learning/CareSleepNet
+    @386e149, 6 EEG + 2 EOG channels, 20 epochs) on the same weights and input.
+
+    No weights were released, so the weights come from a seeded generator in
+    this port's state-dict order, mapped to the authors' keys (q, k, v packed
+    into ``in_proj``). Expected values are ``out[0, :, ::4]`` in eval mode
+    and the gradients of ``out.square().sum()``.
+    """
+    model = CareSleepNet(n_chans=8, n_outputs=5, n_times=20 * 300, sfreq=100)
+    g = torch.Generator().manual_seed(0)
+    state = {}
+    for key, value in model.state_dict().items():
+        if not value.is_floating_point():
+            state[key] = value
+        elif key.endswith("running_var"):
+            state[key] = torch.rand(value.shape, generator=g) + 0.5
+        else:
+            state[key] = 0.1 * torch.randn(value.shape, generator=g)
+    model.load_state_dict(state)
+    model.eval()
+    x = torch.randn(1, 8, 6000, generator=torch.Generator().manual_seed(1))
+
+    out = model(x)
+    out.square().sum().backward()
+
+    expected_out = [
+        [-0.03093, -0.08215, -0.06242, -0.02872, -0.09657],
+        [0.09201, 0.0908, 0.00959, 0.04218, 0.06034],
+        [-0.0491, -0.0875, -0.06552, -0.11908, -0.04712],
+        [0.1937, 0.26706, 0.17067, 0.19254, 0.27939],
+        [0.17228, 0.14427, 0.23244, 0.21872, 0.18733],
+    ]
+    torch.testing.assert_close(
+        out[0, :, ::4], torch.tensor(expected_out), rtol=0, atol=1e-5
+    )
+    torch.testing.assert_close(
+        model.final_layer.weight.grad[:, 0],
+        torch.tensor([-0.28439873, 0.27055088, -0.32742125, 0.99876374, 0.84471232]),
+        rtol=1e-4,
+        atol=1e-5,
+    )
+    # First convolution of each epoch encoder: the gradient crosses the
+    # sequence encoder, the cross-modal blocks and the whole epoch encoder.
+    torch.testing.assert_close(
+        model.eeg_encoder[0].branches[0][0].weight.grad[:4, 0, 0],
+        torch.tensor([3.6584692e-07, -1.2531478e-06, 1.1815977e-07, -6.0829626e-09]),
+        rtol=1e-3,
+        atol=1e-10,
+    )
+    torch.testing.assert_close(
+        model.eog_encoder[0].shortcut[0].weight.grad[:4, 0, 0],
+        torch.tensor([-5.3465715e-07, 1.0978920e-06, 1.2812049e-07, -2.7368708e-07]),
+        rtol=1e-3,
+        atol=1e-10,
+    )
+    # The reference's (batch, n_epochs, n_chans, epoch_samples) layout.
+    with torch.no_grad():
+        sequence = x.reshape(1, 8, 20, 300).transpose(1, 2)
+        torch.testing.assert_close(model(sequence), out.detach())
+
+
 def test_sleep_stager_return_feats():
     n_channels = 2
     sfreq = 10
@@ -1015,6 +1134,59 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
 
     y_pred1 = model(X)  # 3D inputs
     assert y_pred1.shape == (n_examples, n_classes)
+
+
+def test_attnsleep_attention_query_is_not_normalized():
+    # The authors' code attends with the raw query, so the norm of the residual
+    # attention block must not change the output.
+    model = AttnSleep(sfreq=100, n_outputs=5, input_window_seconds=30, d_model=80)
+    model.eval()
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        expected = model(x)
+        for layer in model.feature_extractor[1].layers:
+            layer.residual_self_attn.norm.weight.fill_(2.0)
+            layer.residual_self_attn.norm.bias.fill_(1.0)
+        actual = model(x)
+    torch.testing.assert_close(actual, expected)
+
+
+def test_attnsleep_attn_query_norm_restores_previous_output():
+    # Before 2.1 the attention got the normalized query, attn(norm(x), key,
+    # value). A hook on the default model rebuilds that call.
+    kwargs = dict(sfreq=100, n_outputs=5, input_window_seconds=30, d_model=80)
+    model = AttnSleep(**kwargs).eval()
+    legacy = AttnSleep(**kwargs, attn_query_norm=True).eval()
+    legacy.load_state_dict(model.state_dict())
+    for layer in model.feature_extractor[1].layers:
+        norm = layer.residual_self_attn.norm
+        layer.residual_self_attn.fn_attn.register_forward_pre_hook(
+            lambda _, args, norm=norm: (norm(args[0]), *args[1:])
+        )
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        torch.testing.assert_close(legacy(x), model(x))
+
+
+def test_attnsleep_saved_without_query_norm_setting_keeps_logits():
+    previous = AttnSleep(
+        sfreq=100, n_outputs=5, input_window_seconds=30, attn_query_norm=True
+    ).eval()
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        expected = previous(x)
+        config = previous.get_config()
+        del config["attn_query_norm"]
+        restored = AttnSleep.from_config(config).eval()
+        restored.load_state_dict(previous.state_dict(), strict=True)
+        torch.testing.assert_close(restored(x), expected)
+
+        # Full-model saves before the switch have no per-layer flag.
+        for layer in previous.feature_extractor[1].layers:
+            del layer.residual_self_attn.norm_query
+        restored = pickle.loads(pickle.dumps(previous))
+        torch.testing.assert_close(restored(x), expected)
+        torch.testing.assert_close(torch.jit.script(restored)(x), expected)
 
 
 def test_attn_sleep_requires_signal_geometry():
@@ -1388,7 +1560,7 @@ def test_contrawr_dummy(n_times, n_chans, sfreq, n_outputs):
 def _make_chs_info(n_chans):
     """Create synthetic chs_info with 3-D positions for testing."""
     # Use a standard montage and pick the first n_chans channels
-    montage = mne.channels.make_standard_montage("standard_1005")
+    montage = mne.channels.make_standard_montage("colin27_1005")
     ch_names = montage.ch_names[:n_chans]
     info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
     info.set_montage(montage)
@@ -1410,7 +1582,7 @@ def test_channels_without_positions_give_finite_outputs(name):
 def test_a_montage_with_unplaced_channels_is_refused(name):
     """One channel without a position must not void the others' positions."""
     info = mne.create_info(["Cz", "C3", "C4", "X1"], 250.0, "eeg")
-    info.set_montage("standard_1005", on_missing="ignore")
+    info.set_montage("colin27_1005", on_missing="ignore")
     with pytest.raises(ValueError, match=r"none for \['X1'\]"):
         all_models_dict[name](
             n_outputs=2, n_chans=4, chs_info=info["chs"], n_times=1000, sfreq=250.0
@@ -2217,6 +2389,58 @@ def test_eegtcnet_batch_size_one_train_mode():
     assert out.shape == (1, 4)
 
 
+def test_eegtcnet_no_activation_after_temporal_bn():
+    """As in the authors' Keras code, the depthwise conv reads the temporal
+    BatchNorm output with no activation in between."""
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125).eval()
+    seen = {}
+    model.eegnet_tc.bn1.register_forward_hook(lambda m, i, o: seen.update(bn=o.clone()))
+    model.eegnet_tc.depthwise_conv.register_forward_pre_hook(
+        lambda m, i: seen.update(dw=i[0].clone())
+    )
+    model(torch.randn(2, 22, 1125))
+    torch.testing.assert_close(seen["dw"], seen["bn"])
+
+
+def test_eegtcnet_temporal_activation_restores_previous_output():
+    """``temporal_activation=True`` gives the outputs of the previous forward,
+    which applied ``activation`` to the temporal BatchNorm output."""
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125).eval()
+    previous = EEGTCNet(
+        n_outputs=4, n_chans=22, n_times=1125, temporal_activation=True
+    ).eval()
+    previous.load_state_dict(model.state_dict())
+    x = torch.randn(2, 22, 1125)
+    eegnet = model.eegnet_tc
+    eegnet.bn1.register_forward_hook(lambda m, i, o: eegnet.activation(o))
+    torch.testing.assert_close(previous(x), model(x))
+
+    config = previous.get_config()
+    del config["temporal_activation"]
+    restored = EEGTCNet.from_config(config).eval()
+    restored.load_state_dict(previous.state_dict(), strict=True)
+    torch.testing.assert_close(restored(x), previous(x))
+
+
+def test_eegtcnet_config_from_before_tcn_batch_norm_loads_previous_model():
+    """A config saved before 1.6.1 has neither ``tcn_batch_norm`` nor
+    ``temporal_activation``; it rebuilds the model of that version."""
+    previous = EEGTCNet(
+        n_outputs=4,
+        n_chans=22,
+        n_times=1125,
+        tcn_batch_norm=False,
+        temporal_activation=True,
+    ).eval()
+    config = previous.get_config()
+    del config["tcn_batch_norm"], config["temporal_activation"]
+    restored = EEGTCNet.from_config(config).eval()
+    assert restored.tcn_batch_norm is False
+    restored.load_state_dict(previous.state_dict(), strict=True)
+    x = torch.randn(2, 22, 1125)
+    torch.testing.assert_close(restored(x), previous(x))
+
+
 def test_eegclip_batch_size_one_train_mode():
     """At n_times=480 the dense Deep4Net gives one time step, so the projection
     head's BatchNorm1d sees a single row in train mode (NeuralBench matrix)."""
@@ -2229,15 +2453,24 @@ def test_eegclip_batch_size_one_train_mode():
     assert texts.shape == (1, 4)
 
 
-def test_sstdpn_proto_sep_constrains_class_rows():
-    """``proto_sep`` is renormalized per class-row (dim=0), so each prototype
-    vector has L2 norm <= ``proto_sep_maxnorm`` after a forward pass."""
-    model = SSTDPN(n_outputs=4, n_chans=22, n_times=1000)
-    model.proto_sep.data.fill_(10.0)
-    model(torch.randn(2, 22, 1000))
-    row_norms = model.proto_sep.detach().norm(p=2, dim=1)
-    # float32 renorm leaves a ~1e-6 residual; use a 1e-5 tolerance.
-    assert torch.all(row_norms <= model.proto_sep_maxnorm + 1e-5)
+@pytest.mark.parametrize("exported", [False, True], ids=["eager", "exported"])
+def test_sstdpn_proto_sep_constrains_class_rows(exported):
+    model = SSTDPN(n_outputs=4, n_chans=3, n_times=256, return_features=True).eval()
+    x = torch.randn(2, 3, 256)
+    maxnorm = model.proto_sep_maxnorm
+    if exported:
+        model = torch.export.export(model, (x,), strict=False).module()
+
+    with torch.no_grad():
+        for prototype, length in zip(model.proto_sep, (0.0, 0.25, 2.0, 4.0)):
+            prototype.mul_(length / prototype.norm())
+    expected_norms = torch.tensor([0.0, 0.25, maxnorm, maxnorm])
+    features, logits = model(x)
+    torch.testing.assert_close(model.proto_sep.norm(dim=1), expected_norms)
+    torch.testing.assert_close(logits, features @ model.proto_sep.T)
+    direction = torch.randn_like(logits)
+    gradient = torch.autograd.grad(logits, model.proto_sep, grad_outputs=direction)[0]
+    torch.testing.assert_close(gradient, direction.T @ features)
 
 
 def test_sstdpn_proto_cpt_std_default():
@@ -2578,6 +2811,54 @@ def test_fbcnet_specified_filter_parameters():
     assert filter_bank_layer.method == "fir"
     assert filter_bank_layer.n_chans == 22
     assert filter_bank_layer.method_iir is False
+
+
+@pytest.mark.parametrize(
+    "device,dtype",
+    [
+        ("cpu", torch.float32),
+        ("cpu", torch.float16),
+        ("cpu", torch.bfloat16),
+        pytest.param(
+            "mps",
+            torch.float32,
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason="requires MPS"
+            ),
+        ),
+    ],
+)
+def test_fbcnet_cast_preserves_iir_filter(device, dtype, tmp_path):
+    torch.manual_seed(42)
+    kwargs = dict(
+        n_chans=3,
+        n_times=1024,
+        n_outputs=2,
+        sfreq=256,
+        n_filters_spat=2,
+        n_bands=[(4, 8)],
+        filter_parameters=dict(
+            method="iir", iir_params=dict(ftype="butter", output="ba", order=4)
+        ),
+    )
+    model = FBCNet(**kwargs).eval()
+    x = torch.randn(2, 3, 1024).to(device=device, dtype=dtype).requires_grad_()
+    bank = model.spectral_filtering
+    expected = bank(x.detach())
+    denominator = bank.a_list[0].clone()
+
+    model.to(device=device, dtype=dtype)
+    logits = model(x)
+    assert torch.isfinite(logits).all()
+    logits.float().square().mean().backward()
+    assert torch.isfinite(x.grad).all()
+    torch.testing.assert_close(bank.a_list[0].cpu(), denominator, rtol=0, atol=0)
+    torch.testing.assert_close(bank(x.detach()), expected, rtol=0, atol=0)
+    path = tmp_path / "fbcnet.pt"
+    torch.save(model.state_dict(), path)
+    restored = FBCNet(**kwargs).to(device=device, dtype=dtype).eval()
+    restored.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
+    torch.testing.assert_close(restored(x.detach()), logits.detach(), rtol=0, atol=0)
 
 
 @pytest.mark.parametrize(
@@ -3359,6 +3640,33 @@ def test_brainmodule_forward_runs(kwargs, n_chans, n_outputs, with_subject, chec
     _run_forward(m, n_chans, n_outputs, with_subject=with_subject)
 
 
+def test_brainmodule_trains_when_spatial_dropout_excludes_every_channel():
+    model = BrainModule(
+        chs_info=_rng_chs_info(1),
+        n_times=64,
+        sfreq=128,
+        n_outputs=2,
+        use_merger=True,
+        n_virtual_channels=2,
+        hidden_dim=8,
+        depth=2,
+    ).train()
+    x = torch.randn(2, 1, 64)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    # Put the dropout centre on the only electrode, regardless of the RNG version.
+    with mock.patch("torch.rand", return_value=model.channel_positions[0]):
+        positions = model.channel_positions.expand(len(x), -1, -1)
+        assert torch.count_nonzero(model.merger(x, positions)) == 0
+        logits = model(x)
+    assert torch.isfinite(logits).all()
+    logits.square().mean().backward()
+    torch.testing.assert_close(
+        model.merger.heads.grad, torch.zeros_like(model.merger.heads)
+    )
+    optimizer.step()
+    assert all(torch.isfinite(p).all() for p in model.parameters())
+
+
 @pytest.mark.parametrize(
     "chs_info",
     [
@@ -3428,213 +3736,101 @@ def test_brainmodule_default_unchanged():
     assert m.use_merger is False
 
 
-def test_bendr_parameter_counts():
-    """
-    Test BENDR parameter counts match paper specifications.
-
-    Paper reports ~157M parameters total:
-    - Encoder: ~4M parameters
-    - Contextualizer: ~153M parameters
-    """
-    set_random_seeds(0, False)
-
-    # Standard 20-channel configuration
-    model = BENDR(
-        n_chans=20,
-        n_outputs=2,
-        n_times=5120,
-        sfreq=256,
+def test_dance_detection_trains_event_and_dense_heads():
+    torch.manual_seed(19)
+    model = DANCE(
+        n_outputs=3,
+        n_chans=2,
+        n_times=32,
+        sfreq=128,
+        use_channel_merger=False,
+        n_queries=4,
+        num_latents=6,
+        embed_dim=8,
+        conv_initial_linear=8,
+        conv_depth=1,
+        perceiver_depth=1,
+        cross_dim_head=4,
+        latent_dim_head=4,
+        decoder_dim=8,
+        decoder_depth=1,
+        decoder_heads=2,
+        drop_prob=0.0,
     )
+    # Overlapping predicted and target spans give both bounds a training signal.
+    with torch.no_grad():
+        for head, bias in ((model.decoder.start_head, -1), (model.decoder.end_head, 1)):
+            head.weight.zero_()
+            head.bias.fill_(bias)
 
-    # Count total parameters
-    total_params = sum(p.numel() for p in model.parameters())
+    x = torch.randn(2, 2, 32, requires_grad=True)
+    predictions = model.detect(x)
+    assert predictions["class"].shape == (2, 4, 3)
+    assert predictions["dense"].shape == (2, 6, 3)
+    with torch.no_grad():
+        torch.testing.assert_close(predictions["dense"], model(x), rtol=0, atol=0)
 
-    # Should be close to paper: 157,141,049,
-    # At braindecode, there are 2 k params difference
-    # that might come from implementation details from different
-    # torch versions or minor code changes. 157,143,101 in my case.
-
-    # Allow 0.1% tolerance
-    expected = 157_141_049
-    assert abs(total_params - expected) / expected < 0.001, \
-        f"Expected ~{expected:,} params, got {total_params:,}"
-
-    # Count encoder parameters (should be ~4M)
-    encoder_params = sum(p.numel() for p in model.encoder.parameters())
-    assert 3_900_000 < encoder_params < 4_100_000, \
-        f"Encoder should have ~4M params, got {encoder_params:,}"
-
-    # Count contextualizer parameters (should be ~153M)
-    contextualizer_params = sum(p.numel() for p in model.contextualizer.parameters())
-    assert 152_000_000 < contextualizer_params < 154_000_000, \
-        f"Contextualizer should have ~153M params, got {contextualizer_params:,}"
-
-
-def test_bendr_different_channels():
-    """
-    Test BENDR with different channel counts.
-    Parameter count should scale with number of channels.
-    """
-    set_random_seeds(0, False)
-
-    configs = [
-        (1, 157_112_891),   # Single channel
-        (20, 157_142_075),  # Standard
-        (64, 157_209_659),  # More channels
-    ]
-
-    for n_chans, expected_params in configs:
-        model = BENDR(
-            n_chans=n_chans,
-            n_outputs=2,
-            n_times=5120,
-            sfreq=256,
-        )
-
-        total_params = sum(p.numel() for p in model.parameters())
-
-        # Check exact match
-        assert total_params == expected_params, \
-            f"For {n_chans} channels: expected {expected_params:,}, got {total_params:,}"
-
-
-def test_bendr_gradient_flow():
-    """
-    Test that gradients flow through the entire model.
-    """
-    set_random_seeds(0, False)
-
-    model = BENDR(n_chans=20, n_outputs=4, n_times=5120, sfreq=256)
-    x = torch.randn(2, 20, 5120, requires_grad=True)
-
-    y = model(x)
-    loss = y.sum()
+    targets = {
+        "class": torch.tensor([[1], [2]]),
+        "start": torch.tensor([[0.2], [0.3]]),
+        "end": torch.tensor([[0.7], [0.8]]),
+    }
+    criterion = DanceLoss(num_latents=model.num_latents)
+    loss, _ = criterion(predictions, targets)
+    assert torch.isfinite(loss)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    before = model.decoder.query_embed.detach().clone()
     loss.backward()
+    for parameter in (
+        x,
+        model.decoder.query_embed,
+        model.decoder.class_head.weight,
+        model.decoder.start_head.weight,
+        model.decoder.end_head.weight,
+        model.final_layer.weight,
+    ):
+        assert torch.isfinite(parameter.grad).all()
+        assert torch.count_nonzero(parameter.grad)
+    optimizer.step()
+    assert not torch.equal(model.decoder.query_embed, before)
 
-    # Check gradients exist in encoder
-    encoder_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.encoder.parameters()
+
+def test_dance_perceiver_fourier_features_match_reference():
+    """Perceiver context keeps the perceiver_pytorch Fourier encoding."""
+    from braindecode.modules import Perceiver
+
+    torch.manual_seed(0)
+    max_freq, num_bands, input_dim, t = 10.0, 6, 4, 7
+    perceiver = Perceiver(
+        input_dim=input_dim,
+        depth=1,
+        num_latents=3,
+        latent_dim=8,
+        cross_dim_head=4,
+        latent_dim_head=4,
+        max_freq=max_freq,
+        num_freq_bands=num_bands,
     )
-    assert encoder_has_grad, "No gradients in encoder"
+    captured = {}
 
-    # Check gradients exist in contextualizer
-    contextualizer_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.contextualizer.parameters()
-    )
-    assert contextualizer_has_grad, "No gradients in contextualizer"
+    def _hook(module, args, kwargs):
+        captured["context"] = kwargs["context"]
 
+    perceiver.layers[0][0].register_forward_pre_hook(_hook, with_kwargs=True)
+    data = torch.randn(2, t, input_dim)
+    perceiver(data)
 
-@pytest.mark.parametrize("drop_prob", [0.0, 0.1, 0.15])
-def test_bendr_dropout_configurations(drop_prob):
-    """
-    Test BENDR with different dropout rates.
-    Paper uses 0.15 for pretraining, 0.0 for fine-tuning.
-    """
-    set_random_seeds(0, False)
+    # Reference: perceiver_pytorch.fourier_encode on a linspace(-1, 1) grid.
+    pos = torch.linspace(-1.0, 1.0, t).unsqueeze(-1)
+    scales = torch.linspace(1.0, max_freq / 2, num_bands)
+    angles = pos * scales * math.pi
+    expected = torch.cat((angles.sin(), angles.cos(), pos), dim=-1)
 
-    model = BENDR(
-        n_chans=20,
-        n_outputs=4,
-        n_times=5120,
-        sfreq=256,
-        drop_prob=drop_prob,
-    )
-
-    x = torch.randn(2, 20, 5120)
-
-    # Training mode
-    model.train()
-    y_train = model(x)
-    assert y_train.shape == (2, 4)
-
-    # Eval mode
-    model.eval()
-    y_eval = model(x)
-    assert y_eval.shape == (2, 4)
-
-    # With dropout=0, outputs should be identical
-    if drop_prob == 0.0:
-        np.testing.assert_allclose(
-            y_train.detach().numpy(),
-            y_eval.detach().numpy(),
-            rtol=1e-5,
-            atol=1e-7,
-        )
-
-
-def test_bendr_encoder_only_gradient_flow():
-    """Encoder-only mode: encoder has grads, contextualizer does not."""
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=True,
-    )
-    x = torch.randn(2, 20, 5120, requires_grad=True)
-    model(x).sum().backward()
-
-    encoder_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.encoder.parameters()
-    )
-    assert encoder_has_grad, "No gradients in encoder"
-
-    ctx_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.contextualizer.parameters()
-    )
-    assert not ctx_has_grad, "Contextualizer should have no grads"
-
-
-def test_bendr_encoder_only_parameter_counts():
-    """Encoder/contextualizer params match full model; final_layer is larger."""
-    set_random_seeds(0, False)
-
-    model_full = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=False,
-    )
-    model_enc = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=True,
-    )
-
-    for name in ("encoder", "contextualizer"):
-        p_full = sum(p.numel() for p in getattr(model_full, name).parameters())
-        p_enc = sum(p.numel() for p in getattr(model_enc, name).parameters())
-        assert p_full == p_enc, f"{name} params differ: {p_full} vs {p_enc}"
-
-    fl_full = sum(p.numel() for p in model_full.final_layer.parameters())
-    fl_enc = sum(p.numel() for p in model_enc.final_layer.parameters())
-    assert fl_enc > fl_full
-
-
-def test_bendr_backward_compatibility():
-    """encoder_only=False (default) produces identical output to original."""
-    set_random_seeds(0, False)
-
-    model_default = BENDR(n_chans=20, n_outputs=4, n_times=5120, sfreq=256)
-    model_explicit = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=False,
-    )
-    model_explicit.load_state_dict(model_default.state_dict())
-    model_default.eval()
-    model_explicit.eval()
-
-    x = torch.randn(2, 20, 5120)
-    np.testing.assert_allclose(
-        model_default(x).detach().numpy(),
-        model_explicit(x).detach().numpy(),
-        rtol=1e-5, atol=1e-7,
-    )
-
-
-def test_bendr_encoder_only_short_input_raises():
-    """RuntimeError when input is too short for 4-chunk pooling."""
-    model = BENDR(
-        n_chans=20, n_outputs=4, n_times=None, sfreq=256, encoder_only=True,
-    )
-    with pytest.raises(RuntimeError, match="too few"):
-        model(torch.randn(2, 20, 96))
+    context = captured["context"]
+    assert context.shape == (2, t, input_dim + 2 * num_bands + 1)
+    torch.testing.assert_close(context[..., :input_dim], data, rtol=0, atol=0)
+    for b in range(2):
+        torch.testing.assert_close(context[b, :, input_dim:], expected)
 
 
 @pytest.mark.parametrize(
@@ -3834,6 +4030,41 @@ def test_syncnet_filter_weight_shape():
     assert out.shape == (2, 2)
 
 
+@pytest.mark.parametrize(
+    "n_times, filter_width, pool_size",
+    [(1000, 64, 40), (1001, 41, 40), (1001, 20, 40)],
+)
+def test_syncnet_output_batch_matches_input(n_times, filter_width, pool_size):
+    """The classifier size follows the pooled length, so batch rows stay separate."""
+    model = SyncNet(
+        n_chans=3,
+        n_times=n_times,
+        n_outputs=2,
+        filter_width=filter_width,
+        pool_size=pool_size,
+    ).eval()
+    x = torch.randn(25, 3, n_times)
+    with torch.no_grad():
+        out = model(x)
+        out_first = model(x[:1])
+    assert out.shape == (25, 2)
+    torch.testing.assert_close(out[:1], out_first)
+
+
+@pytest.mark.parametrize(
+    "n_times,filter_width,pool_size", [(5, 4, 16), (5, 4, 0), (5, 0, 1), (1, 5, 1)]
+)
+def test_syncnet_rejects_empty_convolution_or_pool(n_times, filter_width, pool_size):
+    with pytest.raises(ValueError, match="pool_size|filter_width"):
+        SyncNet(
+            n_chans=3,
+            n_outputs=2,
+            n_times=n_times,
+            filter_width=filter_width,
+            pool_size=pool_size,
+        )
+
+
 # ---------------------------------------------------------------------------
 # MetaNeuromotorHand
 # ---------------------------------------------------------------------------
@@ -3871,6 +4102,33 @@ def test_gni_default_contract(gni_default):
     assert y.shape == (1, 38, 100)
     assert lengths[0].item() == y.shape[1]
     assert lengths[1] > lengths[0]
+
+
+def test_gni_ctc_ignores_padding_before_its_first_emission(gni_default):
+    lengths = gni_default.compute_output_lengths(torch.tensor([19853, 19854]))
+    assert lengths.tolist() == [0, 1]
+    x = torch.randn(2, 16, 19854)
+    x[0, :, -1] = 0
+    logits = gni_default(x)
+    assert logits.shape[1] == 1
+    loss = nn.CTCLoss(reduction="sum")(
+        logits.log_softmax(-1).transpose(0, 1),
+        torch.tensor([1]),
+        lengths,
+        torch.tensor([0, 1]),
+    )
+    (gradient,) = torch.autograd.grad(loss, logits)
+    assert torch.isfinite(gradient).all()
+    assert gradient[0].count_nonzero() == 0
+    assert gradient[1].count_nonzero() > 0
+
+
+@pytest.mark.parametrize("n_times", [19854, 20135, 20200, 21000])
+def test_gni_output_lengths_match_forward(gni_default, n_times):
+    with torch.no_grad():
+        y = gni_default(torch.randn(1, 16, n_times))
+    lengths = gni_default.compute_output_lengths(torch.tensor([n_times]))
+    assert lengths.item() == y.shape[1]
 
 
 def test_gni_threaded_cpu_eigh_equals_eigh():
@@ -4684,43 +4942,6 @@ def test_barista_coords_fallback_uses_left_inferior_posterior_order():
     assert (left, inferior, posterior) == (centre - 10, centre - 30, centre - 20)
 
 
-def test_mscformer_default_attention_scale_matches_original_source():
-    """MSCFormer's default attention scale must reproduce the released
-    source's ``embed_dim ** -0.5`` logit scaling.
-
-    The original MSCFormer code divides attention logits by
-    ``sqrt(emb_size)`` for every head, not by ``sqrt(head_dim)`` (braindecode's
-    more common default for :class:`~braindecode.modules.MultiHeadAttention`).
-    The two only coincide when ``num_heads == 1``; with the paper's defaults
-    (``num_heads=8``, ``emb_size=48``) they differ by ``sqrt(num_heads)``. A
-    state-dict-matched parity check against the original implementation gives
-    a max abs logit diff of about 2e-7 with this default, versus about 0.035
-    with ``head_dim ** -0.5``.
-    """
-    from braindecode.models.mscformer import MSCFormer
-
-    model = MSCFormer(n_outputs=4, n_chans=22, n_times=1000)
-    expected_scale = model.embed_dim**-0.5
-    assert model.embed_dim == 48
-    for block in model.trans.layers:
-        assert block.attention.module.scale == pytest.approx(expected_scale)
-
-    custom_scale = 0.25
-    model_custom = MSCFormer(
-        n_outputs=4, n_chans=22, n_times=1000, attention_scale=custom_scale
-    )
-    for block in model_custom.trans.layers:
-        assert block.attention.module.scale == pytest.approx(custom_scale)
-
-
-@pytest.mark.parametrize("bad_scale", [0.0, -1.0])
-def test_mscformer_rejects_non_positive_attention_scale(bad_scale):
-    from braindecode.models.mscformer import MSCFormer
-
-    with pytest.raises(ValueError, match="attention_scale"):
-        MSCFormer(n_outputs=4, n_chans=22, n_times=1000, attention_scale=bad_scale)
-
-
 # ---------------------------------------------------------------------------
 # NeuroRVQ
 # ---------------------------------------------------------------------------
@@ -5377,6 +5598,31 @@ def test_csbrain_masked_forward_replaces_patches():
     assert model(torch.randn(1, 3, 400), mask=mask).shape == (1, 2)
 
 
+@pytest.mark.parametrize("encoder_only", [False, True])
+def test_csbrain_saved_before_channel_count_check(encoder_only):
+    model = CSBrain(
+        n_outputs=2,
+        n_chans=3,
+        n_times=400,
+        n_layer=1,
+        dim_feedforward=64,
+        return_encoder_output=encoder_only,
+    ).eval()
+    x = torch.randn(2, 3, 400)
+    with torch.no_grad():
+        expected = model(x)
+        del model._encoder_output  # historical whole-module pickle
+        restored = pickle.loads(pickle.dumps(model))
+        torch.testing.assert_close(restored(x), expected, rtol=0, atol=0)
+        features = restored(x[:, :2], return_features=True)["features"]
+        assert features.shape[1] == 2
+        if encoder_only:
+            torch.testing.assert_close(restored(x[:, :2]), features, rtol=0, atol=0)
+            restored.reset_head(2)
+        with pytest.raises(ValueError, match="built for 3 channels"):
+            restored(x[:, :2])
+
+
 @pytest.mark.parametrize("batch_size", [1, 3])
 def test_csbrain_train_mode_small_batches(batch_size):
     model = CSBrain(n_outputs=2, n_chans=3, n_times=400, sfreq=200.0, n_layer=1)
@@ -5537,6 +5783,32 @@ def test_csbrain_rejects_invalid_channel_order(kwargs, match):
 
 # ----------------------------------------------------------------------------
 # EEGCLIP
+
+
+@pytest.mark.parametrize("custom", ["none", "text", "eeg"])
+def test_eegclip_saved_before_channel_count_check(custom):
+    # The custom EEG encoder pools any number of channels into eight features.
+    encoder = nn.Sequential(nn.Flatten(), nn.AdaptiveAvgPool1d(8))
+    model = EEGCLIP(
+        n_outputs=2,
+        n_chans=3,
+        n_times=1000,
+        eeg_embedding_dim=8,
+        eeg_encoder=encoder if custom == "eeg" else None,
+        text_encoder=nn.Identity() if custom == "text" else None,
+        projection_layers=1,
+    ).eval()
+    x = torch.randn(2, 3, 1000)
+    with torch.no_grad():
+        expected = model(x)
+        del model._default_eeg_encoder  # historical whole-module pickle
+        restored = pickle.loads(pickle.dumps(model))
+        torch.testing.assert_close(restored(x), expected, rtol=0, atol=0)
+        if custom == "eeg":
+            assert restored(x[:, :2]).shape == (2, 2)
+        else:
+            with pytest.raises(ValueError, match="built for 3 channels"):
+                restored(x[:, :2])
 
 
 def test_eegclip_matches_authors_projection_and_clip_loss():
@@ -6009,7 +6281,7 @@ def test_eegclip_one_empty_rank_nonempty_global_matches_ddp_oracle(tmp_path):
 
 def _cz():
     info = mne.create_info(["Cz"], 256.0, "eeg")
-    return info.set_montage("standard_1005")["chs"]
+    return info.set_montage("colin27_1005")["chs"]
 
 
 @pytest.mark.parametrize(
@@ -6362,6 +6634,25 @@ def test_megxl_batched_geometry_gradients():
     reference_grads = torch.autograd.grad(expected, params, grad_outputs=cotangent)
     actual_grads = torch.autograd.grad(actual, params, grad_outputs=cotangent)
     assert all(torch.equal(a, b) for a, b in zip(reference_grads, actual_grads))
+
+
+def test_megxl_uses_half_projections_with_float_codebooks():
+    from braindecode.models import MEGXL
+
+    model = MEGXL(
+        chs_info=_make_chs_info(2), n_outputs=2, n_times=25, sfreq=50.0,
+        latent_dim=32, num_layers=0, num_heads=4, fourier_pos_dim=16,
+        tokenizer_dim=16, n_filters=4, n_q=2, codebook_size=8, codebook_dim=4,
+    ).half().eval()
+    for layer in model.quantizer.layers:
+        layer._codebook.embed.normal_()
+    x = torch.randn(2, 2, 25, dtype=torch.float16)
+    with torch.no_grad():
+        codes = model.tokenize(x)
+        latents = model.encode_codes(codes)
+        torch.testing.assert_close(latents, model.encode(x))
+        assert latents.dtype == x.dtype
+        assert torch.isfinite(latents).all()
 
 
 def test_megxl_masked_codes_before_context():
@@ -8157,3 +8448,103 @@ def test_cbramod_features_skip_pretraining_proj_out():
         feats = model(x, return_features=True)["features"]
     torch.testing.assert_close(feats, tokens)
     assert any(k.startswith("proj_out.") for k in model.state_dict())
+
+
+@pytest.mark.parametrize("encoder_only", [False, True])
+def test_cbramod_saved_before_encoder_output_flag(encoder_only):
+    model = CBraMod(
+        n_outputs=2,
+        n_chans=3,
+        n_times=400,
+        n_layer=1,
+        nhead=2,
+        return_encoder_output=encoder_only,
+    ).eval()
+    x = torch.randn(2, 3, 400)
+    with torch.no_grad():
+        expected = model(x)
+        del model._encoder_output  # whole-module pickle from braindecode 2.0
+        restored = pickle.loads(pickle.dumps(model))
+        torch.testing.assert_close(restored(x), expected, rtol=0, atol=0)
+        if encoder_only:
+            assert restored(x[:, :2]).shape[1] == 2
+        else:
+            with pytest.raises(ValueError, match="built for 3 channels"):
+                restored(x[:, :2])
+
+
+def test_axon_encode_checks_channel_count():
+    from braindecode.models import AXON
+
+    info = mne.create_info(["Fz", "Cz", "Pz", "Oz"], 200.0, "eeg")
+    info.set_montage("standard_1020")
+    model = AXON(n_outputs=2, chs_info=info["chs"], n_times=400).eval()
+    x = torch.randn(2, 4, 400)
+    with torch.no_grad():
+        torch.testing.assert_close(
+            model(x, return_features=True)["tokens"], model.encode(x)
+        )
+        with pytest.raises(ValueError, match="built for 4 channels"):
+            model.encode(x[:, :3])
+
+
+def test_pbt_patches_are_channel_specific():
+    n_chans, n_times, d_input = 22, 1000, 64  # 1000 is not a multiple of 64
+    model = PBT(n_chans=n_chans, n_times=n_times, n_outputs=2, d_input=d_input)
+    x = torch.arange(n_chans, dtype=torch.float32).view(1, -1, 1).repeat(1, 1, n_times)
+
+    patches, _ = model.patch_signal(x)
+
+    assert patches.shape == (1, n_chans * (n_times // d_input), d_input)
+    assert all(patch.unique().numel() == 1 for patch in patches[0])
+    assert model(x).shape == (1, 2)
+
+
+@pytest.mark.parametrize("n_times", [8, 11])
+def test_pbt_saved_patcher_respects_channel_and_window_boundaries(n_times):
+    n_chans, d_input = 3, 4
+    model = PBT(
+        n_chans=n_chans,
+        n_times=n_times,
+        n_outputs=2,
+        d_input=d_input,
+        embed_dim=8,
+        num_heads=2,
+        num_layers=1,
+    ).eval()
+    x = torch.arange(n_chans * (n_times + 5), dtype=torch.float32).reshape(
+        1, n_chans, n_times + 5
+    )
+    expected = torch.stack(
+        [
+            x[:, c, i : i + d_input]
+            for c in range(n_chans)
+            for i in range(0, n_times - d_input + 1, d_input)
+        ],
+        dim=1,
+    )
+    with torch.no_grad():
+        logits = model(x[..., :n_times])
+        torch.testing.assert_close(model(x), logits)
+        with pytest.raises(ValueError, match="built for 3 channels"):
+            model(x[:, :2])
+        # PBT saves before 2.1 counted patches after flattening the channels.
+        model.patch_signal.num_tokens = n_chans * n_times // d_input
+        restored = pickle.loads(pickle.dumps(model))
+        patches, positions = restored.patch_signal(x)
+        torch.testing.assert_close(patches, expected)
+        torch.testing.assert_close(positions, torch.arange(expected.shape[1] + 1))
+        torch.testing.assert_close(restored(x), logits)
+
+
+@pytest.mark.parametrize("d_input", [-1, 0, 4])
+def test_pbt_requires_a_complete_patch_per_channel(d_input):
+    with pytest.raises(ValueError, match="0 < d_input <= n_times"):
+        PBT(n_chans=3, n_times=3, n_outputs=2, d_input=d_input)
+
+
+def test_pbt_saved_without_a_complete_patch_rejects_the_window():
+    model = PBT(n_chans=3, n_times=4, n_outputs=2, d_input=4)
+    model.patch_signal.num_tokens = 3 * 3 // 4  # old model with n_times=3
+    with pytest.raises(ValueError, match="one complete patch per channel"):
+        model(torch.randn(2, 3, 3))

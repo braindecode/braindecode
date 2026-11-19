@@ -4,7 +4,10 @@
 
 """Simple tests for Zarr format converters."""
 
+import errno
 import inspect
+import multiprocessing as mp
+from pathlib import Path
 
 import mne
 import numpy as np
@@ -124,17 +127,18 @@ def test_get_format_info_eegwindows(setup_concat_eegwindows_dataset):
     assert info["total_size_mb"] > 0
 
 
-def test_zarr_round_trip_rawdataset(tmp_path):
-    """Test saving and loading RawDataset in Zarr format."""
+def test_zarr_round_trip_rawdataset(tmp_path, monkeypatch):
+    """Local Zarr files can be written and read without a Hub client."""
     pytest.importorskip("zarr")
+    monkeypatch.setattr("braindecode.datasets.bids.hub.huggingface_hub", False)
 
     # Create a simple RawDataset
     ch_names = ["C3", "C4", "Cz"]
     sfreq = 100
     info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="eeg")
-    data = np.random.randn(3, 1000)
+    data = np.arange(3000, dtype=np.float32).reshape(3, 1000)
     raw = mne.io.RawArray(data, info)
-    raw_ds = RawDataset(raw, pd.Series({"subject": "1"}))
+    raw_ds = RawDataset(raw, {"subject": "1", "label": 2}, target_name="label")
 
     # Create BaseConcatDataset
     dataset = BaseConcatDataset([raw_ds])
@@ -155,6 +159,28 @@ def test_zarr_round_trip_rawdataset(tmp_path):
     assert loaded.datasets[0].raw.info["sfreq"] == dataset.datasets[0].raw.info["sfreq"]
     # Verify it's actually a RawDataset
     assert get_dataset_type(loaded.datasets[0]) == "RawDataset"
+    np.testing.assert_array_equal(loaded.datasets[0].raw.get_data(), data)
+    assert loaded[0][1] == 2
+
+
+def test_local_load_without_zarr(tmp_path, monkeypatch):
+    monkeypatch.setattr("braindecode.datasets.bids.hub.zarr", False)
+    with pytest.raises(ImportError, match="zarr"):
+        load_from_zarr(tmp_path)
+
+
+def test_overwrite_without_zarr_keeps_existing_store(tmp_path, monkeypatch):
+    output_path = tmp_path / "dataset.zarr"
+    output_path.mkdir()
+    marker = output_path / "keep.txt"
+    marker.write_text("existing")
+    info = mne.create_info(["C3"], sfreq=100, ch_types="eeg")
+    raw = mne.io.RawArray(np.zeros((1, 100)), info)
+    dataset = BaseConcatDataset([RawDataset(raw, {"subject": "1"})])
+    monkeypatch.setattr("braindecode.datasets.bids.hub.zarr", False)
+    with pytest.raises(ImportError, match="zarr"):
+        convert_to_zarr(dataset, output_path, overwrite=True)
+    assert marker.read_text() == "existing"
 
 
 def test_get_format_info_rawdataset():
@@ -211,32 +237,136 @@ def test_zarr_load_specific_ids(tmp_path):
     assert str(loaded.datasets[1].description["subject"]) == "2"
 
 
-def test_zarr_overwrite_protection(tmp_path):
-    """Test overwrite parameter prevents accidental data loss."""
-    pytest.importorskip("zarr")
+def _signal_and_target(dataset):
+    x, y = dataset[0]
+    return x.item(), y
 
-    # Create a simple dataset
-    ch_names = ["C3", "C4"]
-    sfreq = 100
-    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="eeg")
-    data = np.random.randn(2, 500)
-    raw = mne.io.RawArray(data, info)
-    raw_ds = RawDataset(raw, pd.Series({"subject": "1"}))
-    dataset = BaseConcatDataset([raw_ds])
 
-    zarr_path = tmp_path / "overwrite_test.zarr"
+def _read_zarr_generations(old, path):
+    fresh = load_from_zarr(path, preload=False)
+    return _signal_and_target(old), _signal_and_target(fresh)
 
-    # First save should work
-    convert_to_zarr(dataset, zarr_path)
-    assert zarr_path.exists()
 
-    # Second save without overwrite=True should fail
+def _recording(value):
+    info = mne.create_info(["C3"], 100, "eeg")
+    raw = mne.io.RawArray(np.full((1, 10), value), info)
+    return BaseConcatDataset([RawDataset(raw, {"label": value}, target_name="label")])
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_zarr_overwrite_protection(tmp_path, legacy):
+    """Replacing a store preserves the recording each reader opened."""
+    zarr = pytest.importorskip("zarr")
+    path = convert_to_zarr(_recording(1), tmp_path / "recording.zarr")
+    if legacy:
+        del zarr.open_group(path, mode="a").attrs["store_id"]
+    old = load_from_zarr(path, preload=False)
     with pytest.raises(FileExistsError, match="already exists"):
-        convert_to_zarr(dataset, zarr_path, overwrite=False)
+        convert_to_zarr(_recording(2), path)
 
-    # Second save with overwrite=True should work
-    convert_to_zarr(dataset, zarr_path, overwrite=True)
-    assert zarr_path.exists()
+    invalid = _recording(2)
+    invalid.datasets[0].raw_preproc_kwargs = [{"scale": np.inf}]
+    with pytest.raises(ValueError, match="raw_preproc_kwargs"):
+        convert_to_zarr(invalid, path, overwrite=True)
+    assert _signal_and_target(load_from_zarr(path)) == (1, 1)
+
+    convert_to_zarr(_recording(2), path, overwrite=True)
+    assert _signal_and_target(load_from_zarr(path)) == (2, 2)
+    assert _read_zarr_generations(old, path) == ((1, 1), (2, 2))
+    with mp.get_context("spawn").Pool(1) as pool:
+        assert pool.apply_async(_read_zarr_generations, (old, path)).get(120) == (
+            (1, 1),
+            (2, 2),
+        )
+
+
+def test_zarr_publication_rollback(tmp_path, monkeypatch):
+    pytest.importorskip("zarr")
+    path = convert_to_zarr(_recording(1), tmp_path / "recording.zarr")
+    rename = Path.rename
+    backup = None
+
+    def fail_publication(source, destination):
+        nonlocal backup
+        if source == path:
+            backup = destination
+        elif destination == path and source != backup:
+            raise OSError("cannot publish")
+        return rename(source, destination)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "rename", fail_publication)
+        with pytest.raises(OSError, match="cannot publish"):
+            convert_to_zarr(_recording(2), path, overwrite=True)
+    assert _signal_and_target(load_from_zarr(path)) == (1, 1)
+
+    # A killed writer cannot run its rollback after moving the previous store.
+    path.rename(backup)
+    assert _signal_and_target(load_from_zarr(path)) == (1, 1)
+    assert path.is_dir()
+
+
+def test_zarr_read_only_store_replacement(tmp_path, monkeypatch):
+    pytest.importorskip("zarr")
+    path = convert_to_zarr(_recording(1), tmp_path / "recording.zarr")
+    replacement = convert_to_zarr(_recording(2), tmp_path / "replacement.zarr")
+    cache = path.parent / f".{path.name}_memmap"
+
+    def deny_lock(lock):
+        raise PermissionError(errno.EACCES, "read-only lock file")
+
+    monkeypatch.setattr(hub_formats.FileLock, "acquire", deny_lock)
+    assert _signal_and_target(load_from_zarr(path)) == (1, 1)
+
+    open_memmap = np.lib.format.open_memmap
+
+    def switch_store(*args, **kwargs):
+        path.rename(tmp_path / "previous.zarr")
+        replacement.rename(path)
+        return open_memmap(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(np.lib.format, "open_memmap", switch_store)
+        with pytest.raises(OSError, match="changed while"):
+            load_from_zarr(path, preload=False)
+    assert not list(cache.rglob("*.npy"))
+    assert _signal_and_target(load_from_zarr(path, preload=False)) == (2, 2)
+
+
+def test_zarr_store_on_filesystem_without_locks(tmp_path, monkeypatch):
+    """NFS without lockd refuses flock: loading and replacing still work."""
+    pytest.importorskip("zarr")
+    path = convert_to_zarr(_recording(1), tmp_path / "recording.zarr")
+
+    def no_locks(lock):
+        raise OSError(errno.ENOLCK, "No locks available")
+
+    monkeypatch.setattr(hub_formats.FileLock, "acquire", no_locks)
+    old = load_from_zarr(path, preload=False)
+    convert_to_zarr(_recording(2), path, overwrite=True)
+    assert _read_zarr_generations(old, path) == ((1, 1), (2, 2))
+
+
+def test_zarr_reader_through_symlink_shares_writer_lock(tmp_path, monkeypatch):
+    pytest.importorskip("zarr")
+    path = convert_to_zarr(_recording(1), tmp_path / "recording.zarr")
+    link = tmp_path / "alias.zarr"
+    try:
+        link.symlink_to(path, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"symlinks are unavailable: {error}")
+    locks = []
+    acquire = hub_formats.FileLock.acquire
+
+    def record_lock(lock):
+        locks.append(Path(lock.lock_file).resolve())
+        return acquire(lock)
+
+    monkeypatch.setattr(hub_formats.FileLock, "acquire", record_lock)
+    old = load_from_zarr(link, preload=False)
+    convert_to_zarr(_recording(2), path, overwrite=True)
+    assert _read_zarr_generations(old, link) == ((1, 1), (2, 2))
+    assert len(locks) == 3 and len(set(locks)) == 1
 
 
 def test_no_lazy_imports_in_hub_formats():

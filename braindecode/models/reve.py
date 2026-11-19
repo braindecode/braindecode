@@ -19,6 +19,7 @@ from torch import nn
 
 from braindecode.functional import (
     check_ch_mask,
+    check_n_chans,
     pad_or_crop_to_patches,
     patch_count,
     scaled_dot_product_attention,
@@ -177,7 +178,7 @@ class REVE(EEGModuleMixin, nn.Module):
                repo_id="username/my-reve-model", commit_message="Upload trained REVE model"
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     .. rubric:: Usage
 
@@ -524,6 +525,23 @@ class REVE(EEGModuleMixin, nn.Module):
             raise ValueError(
                 "ch_mask needs attention_pooling=True: the flattened head is tied "
                 "to the channels."
+            )
+        if pos is None and self.default_pos is not None:  # the chs_info montage
+            check_n_chans(
+                eeg,
+                self.n_chans,
+                "REVE",
+                "pass pos for these channels, or use a channel_strategy.",
+            )
+        elif pos is not None and not (
+            self.use_attention_pooling or return_output or return_features
+        ):
+            head_channels = self._n_pos_chans
+            check_n_chans(
+                eeg,
+                self.n_chans if head_channels is None else head_channels,
+                "REVE",
+                "use attention_pooling=True or return_features=True for another montage.",
             )
         channel_index = self.channel_index
         if pos is None and channel_index is not None:
@@ -889,6 +907,9 @@ class RevePositionBank(torch.nn.Module):
         Directory to cache the position bank. If ``None``, resolved like other
         braindecode datasets via the ``REVE_POSITIONS_PATH`` config key, falling
         back to the MNE data directory (usually ``~/mne_data``).
+    fname : str, optional
+        Name of the cached file, so banks of other models (e.g.
+        :class:`~braindecode.models.Pratibha2`) can share the directory.
     """
 
     def __init__(
@@ -896,11 +917,12 @@ class RevePositionBank(torch.nn.Module):
         url: str = "https://huggingface.co/brain-bzh/reve-positions/resolve/main/positions.json",
         timeout: int = 5,
         cache_dir: Optional[str] = None,
+        fname: str = "reve_positions.json",
     ):
         super().__init__()
 
         cache_dir = _get_path(cache_dir, "REVE_POSITIONS_PATH", "REVE positions")
-        cache_file = os.path.join(cache_dir, "reve_positions.json")
+        cache_file = os.path.join(cache_dir, fname)
 
         # Offline path: reuse the cached/prefetched file. Download only on a miss
         # or if the cached copy is unreadable (e.g. an interrupted download).
@@ -915,7 +937,7 @@ class RevePositionBank(torch.nn.Module):
                 pooch.retrieve(
                     url,
                     known_hash=None,
-                    fname="reve_positions.json",
+                    fname=fname,
                     path=cache_dir,
                     downloader=pooch.HTTPDownloader(timeout=timeout),
                 )

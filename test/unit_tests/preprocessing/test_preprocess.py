@@ -1,5 +1,6 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
+#          sixty-66 <puzhexin@foxmail.com>
 #
 # License: BSD-3
 
@@ -510,8 +511,55 @@ def _synthetic_filterbank_raw(sfreq=256.0, n_times=2560, seed=0):
     return raw
 
 
+def test_filterbank_keeps_long_channel_names():
+    # Names longer than 15 characters with their band suffix were cut to their
+    # last 15 (MEG0111_8.0-13.0 became EG0111_8.0-13.0); MNE keeps long names.
+    info = mne.create_info(["MEG0111", "MEG0112"], 256.0, "mag")
+    data = np.random.default_rng(0).standard_normal((2, 2560)) * 1e-12
+    raw = mne.io.RawArray(data, info, verbose="error")
+    filterbank(raw, frequency_bands=[(4.0, 8.0), (8.0, 13.0)], verbose="error")
+    assert raw.ch_names == [
+        "MEG0111_4.0-8.0",
+        "MEG0111_8.0-13.0",
+        "MEG0112_4.0-8.0",
+        "MEG0112_8.0-13.0",
+    ]
+
+
+def test_filterbank_reuses_a_dropped_channel_name():
+    name = "Anterior selected depth electrode"
+    names = [name, f"{name}_4-8", f"{name}_4-8_"]
+    raw = mne.io.RawArray(
+        np.random.default_rng(2).standard_normal((3, 512)),
+        mne.create_info(names, 128, "eeg"),
+        verbose=False,
+    )
+    expected = raw.copy().filter(4, 8, method="iir", verbose=False).get_data()
+
+    # Keeping both would give two signals the same name.
+    with pytest.raises(ValueError, match="present in more than one"):
+        filterbank(
+            raw, [(4, 8)], drop_original_signals=False, method="iir", verbose=False
+        )
+    assert raw.ch_names == names
+
+    filterbank(raw, [(4, 8)], method="iir", verbose=False)
+    assert raw.ch_names == [f"{source}_4-8" for source in names]
+    np.testing.assert_array_equal(raw.get_data(), expected)
+
+
 def test_filterbank_waveform_metadata_reference():
     raw = _synthetic_filterbank_raw()
+    raw.set_montage(
+        mne.channels.make_dig_montage(
+            ch_pos={"C3": [-0.07, 0.02, 0.1], "Cz": [0.0, 0.02, 0.14]},
+            coord_frame="head",
+        )
+    )
+    # EOG sensors can also be digitized in the head frame.
+    raw.info["chs"][2]["loc"][:3] = [0.01, 0.08, 0.04]
+    raw.info["chs"][2]["coord_frame"] = raw.info["chs"][0]["coord_frame"]
+    original_ch_locs = [ch["loc"].copy() for ch in raw.info["chs"]]
     original_ch_names = list(raw.ch_names)
     original_ch_types = raw.get_channel_types()
     frequency_bands = [(4.0, 8.0), (8.0, 13.0)]
@@ -530,7 +578,7 @@ def test_filterbank_waveform_metadata_reference():
     filterbank(actual, frequency_bands, drop_original_signals=True, verbose="ERROR")
 
     expected_ch_order = [
-        (ch + f"_{band[0]}-{band[1]}")[-15:]
+        f"{ch}_{band[0]}-{band[1]}"
         for ch in original_ch_names
         for band in frequency_bands
     ]
@@ -545,6 +593,13 @@ def test_filterbank_waveform_metadata_reference():
                 actual_data[new_idx], expected_data[band][ch_idx]
             )
             assert actual_types[new_idx] == original_ch_types[ch_idx]
+            assert (
+                actual.info["chs"][new_idx]["coord_frame"]
+                == raw.info["chs"][ch_idx]["coord_frame"]
+            )
+            np.testing.assert_allclose(
+                actual.info["chs"][new_idx]["loc"], original_ch_locs[ch_idx]
+            )
     # sfreq is raw-level, not per-band; checked once against every
     # independently-computed per-band reference sfreq, not just band 0.
     for band in frequency_bands:
@@ -583,6 +638,13 @@ def test_filterbank_waveform_metadata_reference():
         }
     ]
     np.testing.assert_array_equal(ds.datasets[0].raw.get_data(), actual_data)
+    windows = create_fixed_length_windows(
+        ds, window_size_samples=256
+    ).set_return_ch_pos()
+    expected_pos = np.repeat(
+        np.asarray(original_ch_locs)[:, :3], len(frequency_bands), axis=0
+    )
+    np.testing.assert_allclose(windows[0][3], expected_pos)
 
 
 def test_replace_inplace(base_concat_ds):
