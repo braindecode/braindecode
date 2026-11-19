@@ -5,9 +5,18 @@
 ####################################
 
 The pretrained EEG models take ``channel_strategy=`` to map your montage onto the
-channels their backbone was trained on. :class:`~braindecode.models.SleepFM` and
-:class:`~braindecode.models.SleepFMStager` take polysomnography grouped by modality, not
-an EEG montage, so they accept only ``"native"``:
+channels their backbone was trained on. The models whose input the layer cannot map
+accept only ``"native"`` and say why in a ``ValueError``:
+:class:`~braindecode.models.SleepFM` and :class:`~braindecode.models.SleepFMStager`
+(polysomnography grouped by modality), :class:`~braindecode.models.MEGXL`,
+:class:`~braindecode.models.MEGGPT` and :class:`~braindecode.models.BBL` (MEG),
+:class:`~braindecode.models.GeoNIRS`, :class:`~braindecode.models.JungMAE` and
+:class:`~braindecode.models.MtReNIRS` (fNIRS), and :class:`~braindecode.models.CORTEG`
+(a second per-channel stream, ``x_hi``). The same holds, for some inputs only, for
+:class:`~braindecode.models.BrainOmni` and :class:`~braindecode.models.BrainTokenizer`
+with MEG sensors, :class:`~braindecode.models.NeuroRVQ` and
+:class:`~braindecode.models.NeuroRVQTokenizer` with a non-EEG ``modality``, and
+:class:`~braindecode.models.MAPA` with ``normalization="session"``:
 
 .. code-block:: python
 

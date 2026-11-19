@@ -207,6 +207,12 @@ class JungMAE(EEGModuleMixin, nn.Module):
         What to do when ``n_times`` is not a multiple of ``patch_size``:
         raise, as the reference does; pad with missing samples, to which the
         validity rule applies; or crop.
+    channel_strategy : str, default="native"
+        Only ``"native"``: the input is fNIRS HbO/HbR pairs, not electrodes
+        the channel layer can map. Mark a missing channel with NaN instead.
+        Any other value raises a ``ValueError``.
+    channel_strategy_kwargs : dict or None, default=None
+        Must be ``None``.
 
     Notes
     -----
@@ -257,7 +263,15 @@ class JungMAE(EEGModuleMixin, nn.Module):
         activation: type[nn.Module] = nn.GELU,
         channel_order: Literal["stacked", "interleaved"] | None = None,
         on_non_divisible: Literal["error", "pad", "crop"] = "error",
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ) -> None:
+        if channel_strategy != "native" or channel_strategy_kwargs:
+            raise ValueError(
+                f"{type(self).__name__} takes fNIRS HbO/HbR pairs, not electrodes the "
+                "channel layer can map: only channel_strategy='native' is supported. "
+                "Mark a missing channel with NaN instead."
+            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,

@@ -136,6 +136,14 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         straight-through estimator.
     drop_prob : float
         Attention dropout.
+    channel_strategy : str
+        How another EEG montage reaches the encoder; see
+        :class:`~braindecode.models.base.EEGModuleMixin`. The channel layer maps
+        electrodes only, so a ``chs_info`` with MEG sensors takes only
+        ``"native"``. BrainTokenizer builds on any EEG/MEG montage from the sensor
+        geometry of ``chs_info`` (the weights do not depend on it).
+    channel_strategy_kwargs : dict or None
+        Options of ``channel_strategy``.
 
     References
     ----------
@@ -167,7 +175,10 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         num_quantizers: int = 4,
         rotation_trick: bool = True,
         drop_prob: float = 0.0,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
+        _check_channel_strategy(self, chs_info, channel_strategy)
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -175,6 +186,8 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         warn_if_sfreq_differs("BrainTokenizer", self.sfreq, 256)
@@ -388,6 +401,14 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         Transformer dropout.
     activation : type[nn.Module]
         Activation of the classification head.
+    channel_strategy : str
+        How another EEG montage reaches the encoder; see
+        :class:`~braindecode.models.base.EEGModuleMixin`. The channel layer maps
+        electrodes only, so a ``chs_info`` with MEG sensors takes only
+        ``"native"``. BrainOmni builds on any EEG/MEG montage from the sensor
+        geometry of ``chs_info`` (the weights do not depend on it).
+    channel_strategy_kwargs : dict or None
+        Options of ``channel_strategy``.
 
     References
     ----------
@@ -425,7 +446,10 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         depth: int = 12,
         drop_prob: float = 0.1,
         activation: type[nn.Module] = nn.SELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
+        _check_channel_strategy(self, chs_info, channel_strategy)
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -433,6 +457,8 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if not 0 <= overlap_ratio < 1:
@@ -571,6 +597,25 @@ def _sensor_type_of(chs_info, index: int) -> str:
     if resolved_type is None:
         resolved_type = mne.channel_type({"chs": chs_info}, index)
     return str(resolved_type).lower()
+
+
+def _check_channel_strategy(model, chs_info, channel_strategy):
+    """The channel layer maps electrodes only: a montage with MEG stays native."""
+    if channel_strategy == "native" or not chs_info:
+        return
+    other = [
+        ch["ch_name"]
+        for index, ch in enumerate(chs_info)
+        if _sensor_type_of(chs_info, index) != "eeg"
+    ]
+    if other:
+        raise ValueError(
+            f"{type(model).__name__} reads EEG and MEG, but the channel layer maps "
+            f"electrodes only and chs_info has other sensors ({other}): only "
+            f"channel_strategy='native' is supported for them. "
+            f"{type(model).__name__} builds on any EEG/MEG montage from the sensor "
+            f"geometry of chs_info."
+        )
 
 
 def _geometry_from_chs_info(chs_info):

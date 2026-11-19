@@ -168,6 +168,13 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         right zero-padded, cropped, or rejected.
     return_features : bool, default=False
         Whether ``forward`` returns the feature dictionary by default.
+    channel_strategy : str, default="native"
+        Only ``"native"``: the input is 52 source-space MEG parcels in the
+        order of the released parcellation, not electrodes the channel layer
+        can map. With ``return_features=True``, ``ch_mask`` takes recordings
+        with fewer parcels. Any other value raises a ``ValueError``.
+    channel_strategy_kwargs : dict or None, default=None
+        Must be ``None``.
 
     Input shape
     -----------
@@ -217,7 +224,16 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
         drop_prob: float = 0.2,
         on_non_divisible: str = "pad",
         return_features: bool = False,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
+        if channel_strategy != "native" or channel_strategy_kwargs:
+            raise ValueError(
+                f"{type(self).__name__} takes source-space MEG parcels in the order of "
+                "the released parcellation, not electrodes the channel layer can map: "
+                "only channel_strategy='native' is supported. With "
+                "return_features=True, ch_mask takes recordings with fewer parcels."
+            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,

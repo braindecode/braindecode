@@ -28,6 +28,25 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Every foundation model takes ``channel_strategy``; 17 of them raised a ``TypeError``.
+  :class:`braindecode.models.CSBrain`,
+  :class:`~braindecode.models.EEGCLIP`, :class:`~braindecode.models.MEDFormer`,
+  :class:`~braindecode.models.PBT`, :class:`~braindecode.models.TFMTokenizer`,
+  :class:`~braindecode.models.NeuroRVQ` and
+  :class:`~braindecode.models.NeuroRVQTokenizer` (EEG modality),
+  :class:`~braindecode.models.MAPA` (raw input), and
+  :class:`~braindecode.models.BrainOmni` and
+  :class:`~braindecode.models.BrainTokenizer` (EEG montages) map any montage
+  through the :class:`~braindecode.modules.ChannelLayer`, one per sample in a
+  padded batch. The others refuse any value but ``"native"`` with a ``ValueError``
+  that says why:
+  :class:`~braindecode.models.MEGXL`, :class:`~braindecode.models.MEGGPT` and
+  :class:`~braindecode.models.BBL` take MEG (as do BrainOmni and BrainTokenizer
+  with MEG sensors), :class:`~braindecode.models.GeoNIRS`,
+  :class:`~braindecode.models.JungMAE` and :class:`~braindecode.models.MtReNIRS`
+  take fNIRS HbO/HbR, and :class:`~braindecode.models.CORTEG` takes a second
+  per-channel stream, ``x_hi``, that the layer would not map
+  (:gh:`1608` by `Julien Gadonneix`_).
 - Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
   between recording descriptions and window metadata, and recording-level subset
   selection (:gh:`1596` by `Daria Agafonova`_).

@@ -76,6 +76,18 @@ def test_d_non_eeg_rejected_or_dropped():
     assert torch.equal(layer(x)[0], x[:, :-1])
 
 
+def test_d_non_eeg_ch_type_without_kind_rejected():
+    """A serialized chs_info may carry ``ch_type`` and no ``kind``."""
+    src = [{"ch_name": c["ch_name"], "ch_type": "mag"} for c in chs(SUBSET)]
+    with pytest.raises(ValueError, match="not EEG"):
+        ChannelLayer(chs(TEN_TWENTY), "spline", src)
+    layer = ChannelLayer(chs(SUBSET), "exact", chs(SUBSET))
+    x = torch.randn(1, len(SUBSET), 10)
+    layer(x, chs_info=chs(SUBSET))
+    with pytest.raises(ValueError, match="not EEG"):  # same names, other type
+        layer(x, chs_info=[dict(c, kind=None, ch_type="mag") for c in chs(SUBSET)])
+
+
 @pytest.mark.parametrize("per_sample", [False, True])
 def test_dropped_non_eeg_channels_do_not_propagate_nans(per_sample):
     inputs = chs(["F3"]) + chs(["EOG"], kind="eog")
