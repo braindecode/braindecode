@@ -76,8 +76,8 @@ class FilterBankLayer(nn.Module):
         Only used for ``method='fir'``.
     phase : str, default='zero'
         Phase of the filter.
-        When ``method='fir'``, symmetric linear-phase FIR filters are constructed
-        with the following behaviors when ``method="fir"``:
+        When ``method='fir'``, the FIR filters are constructed and applied with
+        the following behaviors:
 
         ``"zero"`` (default)
             The delay of this filter is compensated for, making it non-causal.
@@ -97,7 +97,8 @@ class FilterBankLayer(nn.Module):
         ``"minimum-half"``
             *This is a legacy option for compatibility with MNE <= 1.6.*
             A minimum-phase filter will be reconstructed from the zero-phase filter with
-            half the length of the original filter.
+            half the length of the original filter. Like ``"minimum"``, it is
+            applied without delay compensation, making it causal.
 
         When ``method='iir'``, ``phase='zero'`` (default) or equivalently
         ``'zero-double'`` constructs and applies IIR filter twice, once forward,
@@ -328,7 +329,9 @@ class FilterBankLayer(nn.Module):
         return 0
 
     def _apply_fir_bank(self, x: Tensor) -> Tensor:
-        """Every band's ``fftconvolve(x, filt, mode="same")`` with one FFT of ``x``.
+        """Every band's FIR convolution with one FFT of ``x``.
+
+        Zero-phase filters give ``fftconvolve(x, filt, mode="same")``.
 
         Each filter is shifted (zeros on the left) so that its own "same"
         window starts where the longest filter's does; the FFT length is the

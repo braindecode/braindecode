@@ -973,7 +973,7 @@ def test_filter_bank_layer_fftconvolve_comparison_fir(
     )
 
 
-@pytest.mark.parametrize("phase", ["zero", "minimum"])
+@pytest.mark.parametrize("phase", ["zero", "minimum", "minimum-half"])
 def test_filter_bank_layer_bands_match_per_band_fftconvolve(phase):
     """All FIR bands at once (filters of different lengths) equal each band's own convolution."""
     x = torch.randn(
@@ -989,7 +989,7 @@ def test_filter_bank_layer_bands_match_per_band_fftconvolve(phase):
     assert len({fir.shape[-1] for fir in layer.fir_list}) > 1
     out = layer(x)
     for band, fir in enumerate(layer.fir_list):
-        if phase == "minimum":
+        if phase in ("minimum", "minimum-half"):
             # causal filter: no delay compensation, the output starts at lag 0
             expected = fftconvolve_scipy(
                 x.numpy(), fir.detach().numpy()[None, None], mode="full", axes=2
