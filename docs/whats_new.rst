@@ -371,6 +371,10 @@ Bug fixes
   stays in the model so the released weights still load; the first head layer takes
   ``d_model`` instead of ``emb_dim`` inputs per token (the same with the defaults).
   Outputs of existing CSBrain classifiers change (:gh:`1541`, :gh:`1572`).
+- :func:`braindecode.visualization.layer_grad_cam` returns a temporal
+  class activation map of shape ``(batch, n_times)`` for one-dimensional
+  convolutional layers, including those of :class:`~braindecode.models.EEGSimpleConv`.
+  It raised an error for these layers (:gh:`1634` by `Bruno Aristimunha`_).
 - :class:`braindecode.samplers.DistributedRelativePositioningSampler` divides
   the requested pair count evenly across ranks, including when the recording
   count requires padding or truncation. Uneven pair budgets round up by
