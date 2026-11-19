@@ -1755,28 +1755,37 @@ def test_zarr_epochs_keeps_samples_after_baseline_and_inactive_projection(tmp_pa
     from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
 
     pytest.importorskip("zarr")
-    raw = mne.io.RawArray(np.zeros((2, 20)), mne.create_info(["C3", "C4"], 10, "eeg"))
+    raw = mne.io.RawArray(np.zeros((2, 100)), mne.create_info(["C3", "C4"], 100, "eeg"))
     raw.set_eeg_reference(projection=True)
     frame = pd.DataFrame(
         dict(
             target=[0, 1],
             i_window_in_trial=[0, 1],
-            i_start_in_trial=[0, 10],
-            i_stop_in_trial=[10, 20],
+            i_start_in_trial=[0, 50],
+            i_stop_in_trial=[50, 100],
         )
     )
-    signal = np.arange(40.0).reshape(2, 2, 10) ** 2
-    epochs = mne.EpochsArray(signal, raw.info, tmin=-0.2, proj=False, metadata=frame)
-    epochs.apply_baseline((-0.2, 0.0)).apply_function(np.square)
+    signal = np.arange(200.0).reshape(2, 2, 50) ** 2
+    epochs = mne.EpochsArray(signal, raw.info, tmin=-0.1, proj=False, metadata=frame)
+    epochs.apply_baseline((-0.1, 0.0)).apply_function(np.square)
+    epochs.decimate(4, offset=1)
+    assert epochs.tmin == -0.07
     path = convert_to_zarr(
         BaseConcatDataset([WindowsDataset(epochs)]), tmp_path / "epochs.zarr"
     )
     for preload in (False, True):
         copy = load_from_zarr(path, preload=preload).datasets[0].windows
+        np.testing.assert_allclose(copy.times, epochs.times, atol=1e-14, rtol=0)
         assert copy.baseline == epochs.baseline
         assert copy.info["projs"][0]["active"] is False
         np.testing.assert_array_equal(
             copy.get_data(), epochs.get_data().astype("float32")
+        )
+        expected = epochs.copy().decimate(2)
+        copy.decimate(2)
+        np.testing.assert_allclose(copy.times, expected.times, atol=1e-14, rtol=0)
+        np.testing.assert_array_equal(
+            copy.get_data(), expected.get_data().astype("float32")
         )
 
 

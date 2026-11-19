@@ -200,6 +200,12 @@ def _epochs_from_zarr(data, info, metadata, state):
     epochs = mne.EpochsArray(
         data, info, events=events, metadata=metadata, proj=False, **kwargs
     )
+    if "tmin" in state and epochs.tmin != state["tmin"]:
+        # EpochsArray rounds tmin to the current sample grid. A decimation
+        # offset or shift_time can start the epoch between those grid points.
+        epochs.shift_time(state["tmin"], relative=False)
+        # MNE's next decimation uses the preloaded sample clock.
+        epochs._raw_times = epochs.times
     if state.get("baseline") is not None:
         epochs.baseline = tuple(state["baseline"])
     epochs.set_annotations(_annotations_from_json(state.get("annotations")))
