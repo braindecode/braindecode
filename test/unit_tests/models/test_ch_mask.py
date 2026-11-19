@@ -30,6 +30,7 @@ from braindecode.models import (
     MtReNIRS,
     MVPFormer,
     PopulationTransformer,
+    SleepFM,
 )
 from braindecode.models.diver1 import channel_metadata_from_chs_info
 from braindecode.models.util import _fnirs_chs_info
@@ -147,6 +148,13 @@ _CASES = {
         ("sensor_indices", _mapa_indices, False),
     ),
     "CORTEG": lambda: (_corteg(), 64, ("pos", _positions, True)),
+    "SleepFM": lambda: (
+        SleepFM(n_chans=3, n_outputs=3, n_times=640, sfreq=128.0, patch_size=64,
+                embed_dim=16, num_heads=4, num_layers=1, pooling_heads=4,
+                drop_prob=0.0, max_seq_length=32),
+        640,
+        None,
+    ),
     "MtReNIRS": lambda: (
         MtReNIRS(n_chans=3, n_outputs=3, n_times=100, window_samples=50, embed_dim=32,
                  depth=1, num_heads=2, mlp_dim=64, pool="channel_temporal_mean"),
