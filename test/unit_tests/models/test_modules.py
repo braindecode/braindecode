@@ -1777,6 +1777,32 @@ def test_sdpa_helper_fused_in_lazy_has_no_effect():
         assert torch.equal(outs[0], outs[1])
 
 
+def test_temporal_spectral_patch_embedding_with_nan_padding():
+    from braindecode.modules import TemporalSpectralPatchEmbedding
+
+    layer = TemporalSpectralPatchEmbedding(8, [(4, 3, 2, 1, (2, 4))], drop_prob=0)
+    x = torch.randn(1, 3, 2, 8, dtype=torch.float64)
+    x[:, 2] = torch.nan
+    x.requires_grad_()
+    compact = x[:, :2].detach().requires_grad_()
+    ch_mask = torch.tensor([[True, True, False]])
+    mask = torch.tensor([[[False, True], [False, False], [False, False]]])
+    layer.double()
+    padded = layer(x, mask, ch_mask)
+    expected = layer(compact, mask[:, :2])
+    torch.testing.assert_close(padded[:, :2], expected)
+    assert padded[:, 2].count_nonzero() == 0
+
+    params = [p for p in layer.parameters() if p.requires_grad]
+    delta = torch.randn_like(expected)
+    full_grad = torch.autograd.grad(padded[:, :2], [x, *params], delta)
+    compact_grad = torch.autograd.grad(expected, [compact, *params], delta)
+    torch.testing.assert_close(full_grad[0][:, :2], compact_grad[0])
+    assert full_grad[0][:, 2].count_nonzero() == 0
+    for actual, ref in zip(full_grad[1:], compact_grad[1:]):
+        torch.testing.assert_close(actual, ref)
+
+
 def test_patch_tokenizer():
     from braindecode.modules import PatchTokenizer
 

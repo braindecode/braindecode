@@ -308,8 +308,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
                     "ch_mask needs return_encoder_output=True: the flattened "
                     "head is tied to the channels."
                 )
-            # Padding may hold NaN, which the patch embedding would spread.
-            x = x.masked_fill(~ch_mask[:, :, None], 0.0)
             key_padding_mask = ~ch_mask
         x = self.rearrange(x)
         patch_emb = self.patch_embedding(x, mask, ch_mask)

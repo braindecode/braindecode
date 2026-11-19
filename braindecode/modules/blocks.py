@@ -277,7 +277,7 @@ class TemporalSpectralPatchEmbedding(nn.Module):
 
         Entries selected by ``mask`` use the frozen mask token. A boolean
         ``ch_mask`` of shape (batch, channels) excludes padded channels from
-        normalization and from the positional convolution's input.
+        normalization and convolution. Their output embeddings are zero.
         """
         bz, ch_num, patch_num, patch_size = x.shape
         if mask is None:
@@ -285,6 +285,9 @@ class TemporalSpectralPatchEmbedding(nn.Module):
         else:
             mask_x = x.clone()
             mask_x[mask == 1] = self.mask_encoding
+        if ch_mask is not None:
+            # NaN padding would enter the convolution and the FFT backward.
+            mask_x = mask_x.masked_fill(~ch_mask[:, :, None, None], 0.0)
 
         mask_x = mask_x.reshape(bz, 1, ch_num * patch_num, patch_size)
         if ch_mask is None:
@@ -327,7 +330,8 @@ class TemporalSpectralPatchEmbedding(nn.Module):
         positional_embedding = positional_embedding.permute(0, 2, 3, 1)
 
         patch_emb = patch_emb + positional_embedding
-
+        if ch_mask is not None:
+            patch_emb = patch_emb.masked_fill(~ch_mask[:, :, None, None], 0.0)
         return patch_emb
 
 
