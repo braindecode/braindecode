@@ -514,8 +514,10 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         """
         lengths = self.featurizer.compute_time_downsampling(input_lengths)
         slc = self.output_slice
+        # ``floor`` (not ``trunc``): an input shorter than the first emission
+        # must map to 0 emissions, not 1.
         lengths = (
-            torch.div(lengths - slc.start - 1, slc.step, rounding_mode="trunc") + 1
+            torch.div(lengths - slc.start - 1, slc.step, rounding_mode="floor") + 1
         )
         return lengths.clamp_min(0)
 

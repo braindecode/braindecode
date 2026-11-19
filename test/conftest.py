@@ -49,7 +49,7 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         callspec = getattr(item, "callspec", None)
         params = getattr(callspec, "params", {}).values()
-        if any(_is_reve_param(param) for param in params):
+        if any(_downloads_positions(param) for param in params):
             item.add_marker(pytest.mark.network)
             item.add_marker(pytest.mark.huggingface)
 
@@ -63,13 +63,23 @@ def pytest_collection_modifyitems(config, items):
     items[:] = [item for item in items if item not in deselected]
 
 
-def _is_reve_param(param):
-    """Return whether a parametrized value identifies the REVE model."""
+# Models that download their electrode-position table from the Hugging Face Hub.
+_POSITION_DOWNLOAD_MODELS = {"REVE", "Pratibha2"}
+
+
+def _downloads_positions(param):
+    """Return whether a parametrized value identifies a model of
+    ``_POSITION_DOWNLOAD_MODELS``."""
     if isinstance(param, str):
-        return param == "REVE"
+        return param in _POSITION_DOWNLOAD_MODELS
 
     name = getattr(param, "__name__", None)
-    if name == "REVE":
+    if name in _POSITION_DOWNLOAD_MODELS:
         return True
 
-    return isinstance(param, (tuple, list)) and len(param) > 0 and param[0] == "REVE"
+    return (
+        isinstance(param, (tuple, list))
+        and len(param) > 0
+        and isinstance(param[0], str)
+        and param[0] in _POSITION_DOWNLOAD_MODELS
+    )
