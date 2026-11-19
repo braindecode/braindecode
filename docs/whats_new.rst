@@ -515,6 +515,11 @@ Bug fixes
   mean now covers the real steps only. Windows that are a multiple of the
   segment length, and ``"crop"``, are unchanged (:gh:`1561` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- Signal-only augmentations such as :class:`braindecode.augmentation.SignFlip`
+  can follow :class:`braindecode.augmentation.Mixup` or
+  :class:`braindecode.augmentation.CutMix` in a composed pipeline. They
+  preserve both labels and the mixing weights for the training criterion
+  (:gh:`1659` by `Bruno Aristimunha`_).
 - :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` keeps the
   per-window value if a recording description uses the same column name.
   Classifier and regressor output inference reads the window targets.
