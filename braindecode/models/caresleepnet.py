@@ -13,6 +13,10 @@ from torch import nn
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import LearnedPositionalEncoding, TimmMlp
 
+# Shortest epoch the epoch encoder accepts: the stride-12 convolution and the
+# stride-2 pooling must leave at least 8 steps for the three pool-by-2 layers.
+_MIN_EPOCH_SAMPLES = 169
+
 
 class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
     r"""CareSleepNet from Wang et al. (2024) [caresleepnet2024]_.
@@ -121,7 +125,13 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError(
                 f"n_times ({self.n_times}) must be a positive multiple of n_epochs ({n_epochs})."
             )
+        if self.n_times // n_epochs < _MIN_EPOCH_SAMPLES:
+            raise ValueError(
+                f"Each sleep epoch must have at least {_MIN_EPOCH_SAMPLES} samples, "
+                f"got n_times // n_epochs = {self.n_times // n_epochs}."
+            )
         self.n_epochs = n_epochs
+        self.epoch_samples = self.n_times // n_epochs
         self.n_eog_chans = n_eog_chans
         dim = 512
 
@@ -184,8 +194,8 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """``(batch, n_chans, n_times)`` or ``(batch, n_epochs, n_chans,
         epoch_samples)`` to ``(batch, n_outputs, n_epochs)``."""
+        epoch_samples = self.epoch_samples
         if x.ndim == 3:
-            epoch_samples = self.n_times // self.n_epochs
             if x.shape[-1] % epoch_samples:
                 raise ValueError(
                     f"Each sleep epoch must contain {epoch_samples} samples."
@@ -197,6 +207,11 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         if not 1 <= n_epochs <= self.n_epochs:
             raise ValueError(
                 f"The input has {n_epochs} epochs, expected 1 to {self.n_epochs}."
+            )
+        if n_chans != self.n_chans or n_samples != epoch_samples:
+            raise ValueError(
+                f"Each epoch must have shape ({self.n_chans}, {epoch_samples}), "
+                f"got ({n_chans}, {n_samples})."
             )
         n_eeg = n_chans - self.n_eog_chans
         eeg = self.eeg_encoder(x[:, :, :n_eeg].reshape(-1, n_eeg, n_samples))

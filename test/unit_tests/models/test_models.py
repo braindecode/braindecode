@@ -1009,6 +1009,13 @@ def test_caresleepnet_sequence_length():
         torch.testing.assert_close(model(x), model(explicit))
     with pytest.raises(ValueError, match="300 samples"):
         model(x[..., :-1])
+    with pytest.raises(ValueError, match="shape \\(3, 300\\)"):
+        model(torch.randn(1, 3, 3, 3000))
+    with pytest.raises(ValueError, match="shape \\(3, 300\\)"):
+        model(torch.randn(1, 3, 4, 300))
+    with pytest.raises(ValueError, match="at least 169 samples"):
+        CareSleepNet(n_chans=3, n_outputs=5, n_times=3000)
+    CareSleepNet(n_epochs=2, **(kwargs | {"n_times": 338}))
 
 
 def test_caresleepnet_matches_authors_code():
