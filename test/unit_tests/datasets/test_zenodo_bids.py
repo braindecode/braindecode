@@ -163,3 +163,65 @@ def test_seizeit2_fetch_gets_top_level_files_and_eeg_of_the_subjects(
             "sub-001/ses-01/eeg/sub-001_ses-01_run-01_events.tsv",
         ]
     ]
+
+
+def _s3_page(*items, token=None):
+    contents = "".join(
+        f"<Contents><Key>{key}</Key><ETag>&quot;{etag}&quot;</ETag></Contents>"
+        for key, etag in items
+    )
+    more = f"<NextContinuationToken>{token}</NextContinuationToken>" if token else ""
+    return (
+        '<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+        f"{contents}{more}</ListBucketResult>"
+    ).encode()
+
+
+class _Response:
+    def __init__(self, content):
+        self.content = content
+
+    def raise_for_status(self):
+        pass
+
+
+def test_seizeit2_list_files_follows_pages_and_drops_multipart_md5(monkeypatch):
+    pages = [
+        _s3_page(("ds005873/a.tsv", "abc"), token="next"),
+        _s3_page(("ds005873/b.edf", "def-3")),
+    ]
+    requests_made = []
+
+    def get(url, params, timeout):
+        requests_made.append(dict(params))
+        return _Response(pages[len(requests_made) - 1])
+
+    monkeypatch.setattr(seizeit2_module.requests, "get", get)
+    files = list(seizeit2_module._list_files("ds005873/", delimiter="/"))
+    assert files == [("ds005873/a.tsv", "abc"), ("ds005873/b.edf", None)]
+    assert [r["delimiter"] for r in requests_made] == ["/", "/"]
+    assert "continuation-token" not in requests_made[0]
+    assert requests_made[1]["continuation-token"] == "next"
+
+
+def test_seizeit2_fetch_all_subjects_and_unverified_files(monkeypatch, tmp_path):
+    (tmp_path / "ds005873").mkdir()
+    (tmp_path / "ds005873" / "participants.tsv").write_text(
+        "participant_id\nsub-001\nsub-002\n"
+    )
+    listed = []
+
+    def list_files(prefix, delimiter=None):
+        listed.append(prefix)
+        return [(f"{prefix}eeg/x.edf" if "sub-" in prefix else "ds005873/a", None)]
+
+    monkeypatch.setattr(seizeit2_module, "_list_files", list_files)
+    hashes = []
+    monkeypatch.setattr(
+        seizeit2_module.pooch,
+        "retrieve",
+        lambda url, known_hash, fname, path: hashes.append(known_hash),
+    )
+    seizeit2_module._fetch_seizeit2(path=tmp_path)
+    assert listed == ["ds005873/", "ds005873/sub-001/", "ds005873/sub-002/"]
+    assert hashes == [None, None, None]

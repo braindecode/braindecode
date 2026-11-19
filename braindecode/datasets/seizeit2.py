@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import os
 import xml.etree.ElementTree as ET
-from urllib.parse import urlencode
-from urllib.request import urlopen
 
 import pandas as pd
 import pooch
+import requests
 from mne.datasets.utils import _get_path
 
 from braindecode.datasets.utils import _ZenodoBIDSDataset
@@ -34,8 +33,9 @@ def _list_files(prefix, delimiter=None):
     if delimiter is not None:
         params["delimiter"] = delimiter
     while True:
-        with urlopen(f"{SEIZEIT2_URL}?{urlencode(params)}", timeout=60) as page:
-            listing = ET.parse(page).getroot()
+        response = requests.get(SEIZEIT2_URL, params=params, timeout=60)
+        response.raise_for_status()
+        listing = ET.fromstring(response.content)
         for item in listing.iterfind("s3:Contents", _S3_NS):
             etag = item.findtext("s3:ETag", namespaces=_S3_NS).strip('"')
             # The ETag of a multipart upload is not the MD5 of the file.
