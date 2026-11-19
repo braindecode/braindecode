@@ -422,6 +422,11 @@ Bug fixes
   ``forward`` that takes them. A model without them now raises a clear
   ``ValueError`` instead of a ``TypeError`` deep in skorch
   (:gh:`1545` by `Bruno Aristimunha`_).
+- :func:`braindecode.visualization.compute_metrics` and
+  :func:`~braindecode.visualization.compute_ssim_metrics` score nonconstant
+  signed references when positive and negative values sum to zero, and
+  signed references with no positive value; only constant explanations or
+  references are skipped now (:gh:`1635` by `Bruno Aristimunha`_).
 - Fix the PyTorch forum and TensorFlow references of
   :class:`braindecode.modules.MaxNormLinear`: each URL was split across two
   docstring lines, so the rendered links pointed to a truncated forum URL (404)
