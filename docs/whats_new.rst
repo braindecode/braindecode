@@ -290,8 +290,9 @@ Bug fixes
   (:gh:`1604` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.AttnSleep` attends with the raw query, as the authors'
   code does. Since the TorchScript refactor (:gh:`729`), the residual block
-  normalized the query before the attention. Old saved model configurations
-  and full-model pickles retain the previous outputs. When loading a bare
+  normalized the query before the attention. This changes the outputs of new
+  models and of bare state dicts. Old saved model configurations and
+  full-model pickles retain the previous outputs. When loading a bare
   state dict, pass ``attn_query_norm=True`` to reproduce those outputs
   (:gh:`1606` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - The Eldele et al. (2021) sleep staging tutorial (``plot_sleep_staging_eldele2021.py``) splits train and validation by subject, as its text says; ``split`` took the ids as recording indices, so it trained on subjects 0-1 and validated on subject 2 while subjects 3-5 were loaded and unused (:gh:`1559` by `Bruno Aristimunha`_).
