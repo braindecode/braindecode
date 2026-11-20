@@ -101,6 +101,15 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
        rule; exact checkpoint equivalence cannot be asserted without the
        unreleased implementation.
 
+    .. rubric:: Cropped regression with EEGRegressor
+
+    ``forward`` returns ``(batch, time, joints)``. Train it as
+    :class:`~braindecode.models.NeuroPose` does, with
+    ``nn.Sequential(SensingDynamics(...), Rearrange("b t j -> b j t"))`` in an
+    :class:`~braindecode.EEGRegressor` with ``cropped=True`` and
+    :class:`~braindecode.training.TimeSeriesLoss`. It predicts every sample, so
+    the window stride can be up to ``n_times``.
+
     .. versionadded:: 1.8
 
     Parameters
