@@ -475,6 +475,7 @@ def test_window_shorter_than_the_layers_raises_value_error(name):
         ("EEGITNet", 8, {}),
         ("TSception", 50, {"pool_size": 64}),
         ("TSception", 3, {}),
+        ("AttnSleep", 1, {"n_chans": 1}),
     ],
 )
 def test_window_shorter_than_the_layers_raises_value_error_at_init(
@@ -482,8 +483,13 @@ def test_window_shorter_than_the_layers_raises_value_error_at_init(
 ):
     from braindecode.models.util import models_dict
 
-    with pytest.raises(ValueError, match=rf"too small `n_times`.*\(1, 2, {n_times}\)"):
-        models_dict[name](n_chans=2, n_outputs=2, n_times=n_times, sfreq=100.0, **kwargs)
+    n_chans = kwargs.get("n_chans", 2)
+    with pytest.raises(
+        ValueError, match=rf"too small `n_times`.*\(1, {n_chans}, {n_times}\)"
+    ):
+        models_dict[name](
+            n_outputs=2, n_times=n_times, sfreq=100.0, **{"n_chans": 2, **kwargs}
+        )
 
 
 @pytest.mark.parametrize(

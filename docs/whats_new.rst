@@ -613,6 +613,8 @@ Bug fixes
 Code health
 ============
 
+- :class:`~braindecode.models.AttnSleep` computes its MRCNN feature length by
+  arithmetic instead of a dummy forward, raising ``ValueError`` for too-short windows.
 - :class:`braindecode.models.Deep4Net`, :class:`~braindecode.models.ShallowFBCSPNet`,
   :class:`~braindecode.models.EEGNet`, :class:`~braindecode.models.EEGITNet` and the CTC models size
   their heads by arithmetic, not by a forward pass at construction (:gh:`1694` by `Bruno Aristimunha`_).
