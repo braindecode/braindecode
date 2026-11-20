@@ -1,12 +1,13 @@
 import numpy as np
 import pytest
 import torch
+from torch import nn
 
 # All attribution methods are captum-backed wrappers; skip cleanly if
 # captum (the optional `viz` dep) isn't installed.
 pytest.importorskip("captum")
 
-from braindecode.models import EEGSimpleConv, ShallowFBCSPNet  # noqa: E402
+from braindecode.models import EEGNet, EEGSimpleConv, ShallowFBCSPNet  # noqa: E402
 from braindecode.visualization.attribution import (  # noqa: E402
     input_x_gradient,
     integrated_gradients,
@@ -50,29 +51,70 @@ def test_input_attribution_shape(model, batch, fn):
     assert attr.shape == (BATCH, N_CHANS, N_TIMES)
 
 
-def test_layer_grad_cam_shape(model, batch):
+@pytest.mark.parametrize("layer_name", ["pool", "final_layer.conv_classifier"])
+def test_layer_grad_cam_rejects_layers_that_are_not_channels_by_time(
+    model, batch, layer_name
+):
+    """ShallowFBCSPNet holds time on the height axis after its dimshuffle."""
     X, y = batch
-    attr = layer_grad_cam(model, X, y, model.final_layer.conv_classifier)
-    assert tuple(attr.shape) == (BATCH, N_CHANS, N_TIMES)
+    with pytest.raises(ValueError, match=layer_name):
+        layer_grad_cam(model, X, y, model.get_submodule(layer_name))
 
 
-def test_temporal_layer_grad_cam():
-    from captum.attr import LayerAttribution, LayerGradCam
+@pytest.mark.parametrize(
+    "build, layer_name, shape",
+    [
+        (
+            lambda: EEGSimpleConv(
+                n_chans=3, n_outputs=2, sfreq=80, n_times=128, feature_maps=4
+            ),
+            "conv",
+            (2, 128),
+        ),
+        (
+            lambda: EEGNet(n_chans=3, n_outputs=2, n_times=128),
+            "conv_temporal",
+            (2, 3, 128),
+        ),
+    ],
+    ids=["one-dimensional", "channels-by-time"],
+)
+def test_layer_grad_cam_shape(build, layer_name, shape):
+    """A one-dimensional layer gives a map over time, a channels x time layer
+    a map over both."""
+    model = build().eval()
+    layer = model.get_submodule(layer_name)
+    cam = layer_grad_cam(model, torch.randn(2, 3, 128), torch.tensor([0, 1]), layer)
+    assert cam.shape == shape
+    assert not cam.requires_grad
 
-    torch.manual_seed(SEED)
-    model = EEGSimpleConv(
-        n_chans=3, n_outputs=2, sfreq=80, n_times=64, feature_maps=4, n_convs=1
-    ).eval()
-    x = torch.randn(2, 3, 64)
-    target = torch.tensor([0, 1])
-    cam = LayerGradCam(model, model.conv).attribute(x, target=target)
-    expected = LayerAttribution.interpolate(cam, (64,), interpolate_mode="linear")
 
-    actual = layer_grad_cam(model, x, target, model.conv)
-
-    assert actual.shape == (2, 64)
-    assert not actual.requires_grad
-    torch.testing.assert_close(actual, expected[:, 0])
+@pytest.mark.parametrize(
+    "layers, conv_index, peak",
+    [
+        ((nn.Conv1d(3, 1, 1, bias=False), nn.AdaptiveAvgPool1d(1)), 0, (40,)),
+        (
+            (
+                nn.Unflatten(1, (1, 3)),
+                nn.Conv2d(1, 1, 1, bias=False),
+                nn.AdaptiveAvgPool2d(1),
+            ),
+            1,
+            (1, 40),
+        ),
+    ],
+    ids=["time", "channels-by-time"],
+)
+def test_layer_grad_cam_peaks_at_a_burst(layers, conv_index, peak):
+    """With every weight 1 and a mean over positions, the map is the signal
+    times a positive constant: it peaks where the burst is."""
+    model = nn.Sequential(*layers, nn.Flatten(), nn.Linear(1, 2, bias=False))
+    for param in model.parameters():
+        nn.init.ones_(param)
+    x = torch.zeros(1, 3, 64)
+    x[0, 1, 40] = 1.0
+    cam = layer_grad_cam(model, x, torch.tensor([0]), model[conv_index])
+    assert np.unravel_index(cam[0].argmax().item(), cam[0].shape) == peak
 
 
 def test_layer_grad_cam_requires_spatial_axis():

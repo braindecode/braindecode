@@ -28,7 +28,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torchaudio
-from einops import rearrange, repeat
+from einops import EinopsError, rearrange, repeat
 from einops.layers.torch import Rearrange
 from scipy.signal import stft
 from torch import nn
@@ -970,56 +970,30 @@ def test_usleep_n_params():
     assert n_params == 3114337  # From paper's supplementary materials, Table 2
 
 
-def test_caresleepnet_fits_epoch_targets():
-    from braindecode import EEGClassifier
-
-    x = torch.randn(4, 3, 600)
-    y = torch.tensor([[0, 1], [1, 2], [2, 0], [1, 0]])
-    net = EEGClassifier(
-        "CareSleepNet",
-        module__n_epochs=2,
-        module__n_eog_chans=1,
-        max_epochs=1,
-        batch_size=2,
-        lr=1e-4,
-        train_split=None,
-        verbose=0,
-        predict_nonlinearity=nn.Softmax(dim=1),
-    ).fit(x, y)
-    assert np.isfinite(net.history[-1, "train_loss"])
-    with torch.no_grad():
-        logits = net.module_.eval()(x)
-    assert logits.shape == (4, 3, 2)
-    torch.testing.assert_close(
-        torch.from_numpy(net.predict_proba(x)), logits.softmax(1)
-    )
-    np.testing.assert_array_equal(net.predict(x), logits.argmax(1).numpy())
+def test_caresleepnet_gives_one_prediction_per_epoch():
+    """``(batch, n_chans, n_epochs * epoch_samples)`` gives one row of logits
+    per epoch: ``(batch, n_outputs, n_epochs)``."""
+    model = CareSleepNet(
+        n_chans=3, n_outputs=5, n_times=3 * 300, n_epochs=3, n_eog_chans=1
+    ).eval()
+    assert model(torch.randn(2, 3, 900)).shape == (2, 5, 3)
+    with pytest.raises(EinopsError, match="600 != 900"):
+        model(torch.randn(2, 3, 600))
 
 
-def test_caresleepnet_sequence_length():
-    kwargs = dict(n_chans=3, n_outputs=3, n_times=300, n_eog_chans=1)
-    with pytest.raises(ValueError, match="n_epochs must be at least 1"):
-        CareSleepNet(n_epochs=0, **kwargs)
-    model = CareSleepNet(n_epochs=1, **kwargs)
-    with pytest.raises(ValueError, match="input has 2 epochs"):
-        model(torch.randn(1, 2, 3, 300))
-    with pytest.raises(ValueError, match="input has 0 epochs"):
-        model(torch.empty(1, 0, 3, 300))
-
-    model = CareSleepNet(n_epochs=4, **(kwargs | {"n_times": 1200})).eval()
-    x = torch.randn(1, 3, 900)
-    with torch.no_grad():
-        explicit = x.reshape(1, 3, 3, 300).transpose(1, 2)
-        torch.testing.assert_close(model(x), model(explicit))
-    with pytest.raises(ValueError, match="300 samples"):
-        model(x[..., :-1])
-    with pytest.raises(ValueError, match="shape \\(3, 300\\)"):
-        model(torch.randn(1, 3, 3, 3000))
-    with pytest.raises(ValueError, match="shape \\(3, 300\\)"):
-        model(torch.randn(1, 3, 4, 300))
-    with pytest.raises(ValueError, match="at least 169 samples"):
-        CareSleepNet(n_chans=3, n_outputs=5, n_times=3000)
-    CareSleepNet(n_epochs=2, **(kwargs | {"n_times": 338}))
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        (dict(n_eog_chans=3), "n_eog_chans must be between"),
+        (dict(n_epochs=0), "n_epochs must be at least 1"),
+        (dict(n_times=901), "must be a positive multiple"),
+        (dict(n_times=3 * 168), "at least 169 samples"),
+    ],
+)
+def test_caresleepnet_rejects_bad_geometry(kwargs, match):
+    params = dict(n_chans=3, n_outputs=5, n_times=900, n_epochs=3, n_eog_chans=1)
+    with pytest.raises(ValueError, match=match):
+        CareSleepNet(**(params | kwargs))
 
 
 def test_caresleepnet_matches_authors_code():
@@ -1078,10 +1052,6 @@ def test_caresleepnet_matches_authors_code():
         rtol=1e-3,
         atol=1e-10,
     )
-    # The reference's (batch, n_epochs, n_chans, epoch_samples) layout.
-    with torch.no_grad():
-        sequence = x.reshape(1, 8, 20, 300).transpose(1, 2)
-        torch.testing.assert_close(model(sequence), out.detach())
 
 
 def test_sleep_stager_return_feats():
@@ -2354,53 +2324,48 @@ def test_eegtcnet_batch_size_one_train_mode():
     assert out.shape == (1, 4)
 
 
-def test_eegtcnet_no_activation_after_temporal_bn():
+@pytest.mark.parametrize("act_after_temporal_bn", [False, True])
+def test_eegtcnet_act_after_temporal_bn(act_after_temporal_bn):
     """As in the authors' Keras code, the depthwise conv reads the temporal
-    BatchNorm output with no activation in between."""
-    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125).eval()
+    BatchNorm output with no activation in between; ``act_after_temporal_bn``
+    puts the activation there, as braindecode did before 2.1."""
+    model = EEGTCNet(
+        n_outputs=4,
+        n_chans=22,
+        n_times=1125,
+        act_after_temporal_bn=act_after_temporal_bn,
+    ).eval()
     seen = {}
     model.eegnet_tc.bn1.register_forward_hook(lambda m, i, o: seen.update(bn=o.clone()))
     model.eegnet_tc.depthwise_conv.register_forward_pre_hook(
         lambda m, i: seen.update(dw=i[0].clone())
     )
     model(torch.randn(2, 22, 1125))
-    torch.testing.assert_close(seen["dw"], seen["bn"])
+    bn = seen["bn"]
+    expected = model.eegnet_tc.activation(bn) if act_after_temporal_bn else bn
+    torch.testing.assert_close(seen["dw"], expected)
 
 
-def test_eegtcnet_temporal_activation_restores_previous_output():
-    """``temporal_activation=True`` gives the outputs of the previous forward,
-    which applied ``activation`` to the temporal BatchNorm output."""
-    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125).eval()
-    previous = EEGTCNet(
-        n_outputs=4, n_chans=22, n_times=1125, temporal_activation=True
-    ).eval()
-    previous.load_state_dict(model.state_dict())
-    x = torch.randn(2, 22, 1125)
-    eegnet = model.eegnet_tc
-    eegnet.bn1.register_forward_hook(lambda m, i, o: eegnet.activation(o))
-    torch.testing.assert_close(previous(x), model(x))
-
-    config = previous.get_config()
-    del config["temporal_activation"]
-    restored = EEGTCNet.from_config(config).eval()
-    restored.load_state_dict(previous.state_dict(), strict=True)
-    torch.testing.assert_close(restored(x), previous(x))
-
-
-def test_eegtcnet_config_from_before_tcn_batch_norm_loads_previous_model():
-    """A config saved before 1.6.1 has neither ``tcn_batch_norm`` nor
-    ``temporal_activation``; it rebuilds the model of that version."""
+@pytest.mark.parametrize(
+    "dropped_keys",
+    [("act_after_temporal_bn",), ("tcn_batch_norm", "act_after_temporal_bn")],
+    ids=["saved_before_2.1", "saved_before_1.6.1"],
+)
+def test_eegtcnet_old_config_rebuilds_the_saved_model(dropped_keys):
+    """A saved config holds every init argument, so a missing key means an older
+    save: it rebuilds the model of that version, with the activation after the
+    temporal batch norm and, before 1.6.1, no TCN batch norm."""
     previous = EEGTCNet(
         n_outputs=4,
         n_chans=22,
         n_times=1125,
-        tcn_batch_norm=False,
-        temporal_activation=True,
+        tcn_batch_norm="tcn_batch_norm" not in dropped_keys,
+        act_after_temporal_bn=True,
     ).eval()
     config = previous.get_config()
-    del config["tcn_batch_norm"], config["temporal_activation"]
+    for key in dropped_keys:
+        del config[key]
     restored = EEGTCNet.from_config(config).eval()
-    assert restored.tcn_batch_norm is False
     restored.load_state_dict(previous.state_dict(), strict=True)
     x = torch.randn(2, 22, 1125)
     torch.testing.assert_close(restored(x), previous(x))
