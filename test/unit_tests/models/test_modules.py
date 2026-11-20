@@ -923,6 +923,36 @@ def test_filter_bank_layer_scripts(phase, method):
         torch.testing.assert_close(scripted(x), expected)
 
 
+def test_iir_filterbank_half_matches_float64_design():
+    """``.half()`` keeps the float64 IIR design: the output is the float64 one to float16 precision."""
+    kwargs = dict(
+        n_chans=2, sfreq=256, band_filters=[(4, 8), (8, 12)], method="iir", verbose=False
+    )
+    x = torch.randn(2, 2, 1024).half()
+    expected = FilterBankLayer(**kwargs)(x.double())
+    out = FilterBankLayer(**kwargs).half()(x)
+    assert out.dtype == torch.float16
+    torch.testing.assert_close(out.double(), expected, rtol=1e-3, atol=1e-3)
+
+
+@pytest.mark.skipif(not torch.backends.mps.is_available(), reason="requires MPS")
+@pytest.mark.parametrize("method,phase", [("iir", "zero"), ("fir", "forward")])
+def test_filter_bank_layer_float64_filtering_runs_on_mps(method, phase):
+    """MPS has no float64: the filters recurse on the CPU and the bands come back on MPS."""
+    layer = FilterBankLayer(
+        n_chans=3,
+        sfreq=128,
+        band_filters=[(4, 8), (8, 30)],
+        method=method,
+        phase=phase,
+        verbose=False,
+    )
+    x = torch.randn(2, 3, 512)
+    out = layer.to("mps")(x.to("mps"))
+    assert out.device.type == "mps"
+    torch.testing.assert_close(out.cpu(), layer.cpu()(x), rtol=1e-4, atol=1e-4)
+
+
 @pytest.mark.parametrize(
     "phase", ["linear", "zero", "zero-double", "minimum", "minimum-half"]
 )
@@ -1210,7 +1240,7 @@ def test_filter_bank_layer_frequency_response():
     # Prepare plots
     # Iterate over each filter in the filter bank
     for idx, ((l_freq, h_freq), b_value) in enumerate(
-        zip(band_filters, filter_bank_layer.b_list)
+        zip(band_filters, filter_bank_layer.fir_list)
     ):
         # Extract filter coefficients
         b = b_value.detach().numpy()
@@ -2513,33 +2543,26 @@ def test_timm_attention_rotary_positions_restart_in_each_run():
     from braindecode.modules import TimmAttention
 
     torch.manual_seed(0)
-    plain = TimmAttention(16, num_heads=2)
-    runs = TimmAttention(16, num_heads=2, rotary_runs=2)
-    runs.load_state_dict(plain.state_dict())
-    one_run = TimmAttention(16, num_heads=2, rotary_runs=1)
-    one_run.load_state_dict(plain.state_dict())
+    attn = TimmAttention(16, num_heads=2, rotary_runs=2).eval()
     x = torch.randn(2, 6, 16)
-    q, k, _ = runs._heads(x)
-    q_first, k_first, _ = one_run._heads(x[:, :3])
-    q_second, k_second, _ = one_run._heads(x[:, 3:])
-    torch.testing.assert_close(q, torch.cat((q_first, q_second), dim=2))
-    torch.testing.assert_close(k, torch.cat((k_first, k_second), dim=2))
-    q_plain, _, _ = plain._heads(x)
-    torch.testing.assert_close(q[:, :, :1], q_plain[:, :, :1])  # position 0
-    assert not torch.allclose(q, q_plain)
+    # Two runs of three tokens: swapping the runs keeps every token's position,
+    # so the outputs swap with them
+    swap_runs = [3, 4, 5, 0, 1, 2]
+    torch.testing.assert_close(attn(x[:, swap_runs]), attn(x)[:, swap_runs])
+    # Reversing each run moves its tokens to other positions
+    reverse_runs = [2, 1, 0, 5, 4, 3]
+    assert not torch.allclose(attn(x[:, reverse_runs]), attn(x)[:, reverse_runs])
+    with pytest.raises(ValueError, match="divisible by rotary_runs"):
+        attn(x[:, :5])
     with pytest.raises(ValueError, match="even"):
         TimmAttention(12, num_heads=4, rotary_runs=1)
     with pytest.raises(ValueError, match="rotary_runs must be positive"):
         TimmAttention(16, rotary_runs=0)
-    with pytest.raises(ValueError, match="divisible by rotary_runs"):
-        runs(x[:, :5])
-
-    # Full-module checkpoints written before RoPE have no rotary_runs field.
-    logits, weights = plain(x), plain(x, need_weights=True)
+    # A v2.0.0 full-module pickle has no rotary_runs attribute
+    plain = TimmAttention(16, num_heads=2).eval()
+    expected = plain(x)
     del plain.rotary_runs
-    torch.testing.assert_close(plain(x), logits, rtol=0, atol=0)
-    torch.testing.assert_close(plain(x, need_weights=True), weights, rtol=0, atol=0)
-    torch.testing.assert_close(torch.jit.script(plain)(x), logits, rtol=0, atol=0)
+    torch.testing.assert_close(plain(x), expected, rtol=0, atol=0)
 
 
 def test_pre_norm_block_keys_and_forward():
@@ -2645,3 +2668,15 @@ def test_seanet_resblock_matches_encodec_padding(causal):
     conv = SEANetConv1d(4, 3, 4, 2, causal=True)
     expected = conv.conv(torch.nn.functional.pad(x, (2, 1), mode="reflect"))
     assert torch.equal(conv(x), expected)
+
+
+def test_iir_filter_bank_built_on_meta_device_runs_after_to_empty():
+    """A meta-device build (then ``to_empty``) keeps the IIR design: it is not a meta tensor."""
+    kwargs = dict(
+        n_chans=2, sfreq=128, band_filters=[(4, 8)], method="iir", verbose=False
+    )
+    x = torch.randn(1, 2, 256)
+    with torch.device("meta"):
+        layer = FilterBankLayer(**kwargs)
+    layer.to_empty(device="cpu")
+    torch.testing.assert_close(layer(x), FilterBankLayer(**kwargs)(x))
