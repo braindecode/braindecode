@@ -579,8 +579,8 @@ def _zarr_to_memmap(zarr_path, group_name):
         finally:
             del mm
 
-        # A reader on read-only media may be unable to acquire the store lock.
-        # Never publish a mixture of chunks under the previous store's ID.
+        # A writer may replace the store while the cache is filled; never publish
+        # a mixture of chunks under the previous store's ID.
         if not os.path.samestat(store_stat, zarr_p.stat()):
             raise OSError(f"Zarr store {zarr_p} changed while populating its cache.")
 
