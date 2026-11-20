@@ -580,6 +580,8 @@ Code health
 - Tests that spawned processes, built the 157M-parameter :class:`~braindecode.models.BENDR`
   14 times, spied on SDPA calls or re-implemented the code they check are now in-process,
   small or gone (:gh:`1701` by `Bruno Aristimunha`_).
+- The relative-positioning tutorial's sleep-stage colors are tested on its rendered
+  PCA figure instead of on a standalone colormap sample (:gh:`1675` by `Bruno Aristimunha`_).
 - :class:`~braindecode.models.AttnSleep` computes its MRCNN feature length by
   arithmetic instead of a dummy forward, raising ``ValueError`` for too-short windows
   (:gh:`1707` by `Bruno Aristimunha`_).
