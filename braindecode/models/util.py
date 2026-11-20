@@ -35,6 +35,7 @@ from torch import nn
 from torchaudio.transforms import Resample
 
 from braindecode import modules as bd_modules
+from braindecode.functional import check_n_chans  # noqa: F401
 from braindecode.util import resolve_montage_name
 
 # Canonical MNE channel-type name for the electrode kinds braindecode models
@@ -109,9 +110,15 @@ def _has_type_annotation(annotation):
     )
 
 
-_EEG_PARAMS = frozenset(
-    {"n_outputs", "n_chans", "chs_info", "n_times", "input_window_seconds", "sfreq"}
-)
+SigArgName = Literal[
+    "n_outputs",
+    "n_chans",
+    "chs_info",
+    "n_times",
+    "input_window_seconds",
+    "sfreq",
+]
+_EEG_PARAMS = frozenset(get_args(SigArgName))
 
 _JSON_SAFE = (int, float, str, bool, type(None))
 _BATCH_NORM_MODULES = (
@@ -123,7 +130,11 @@ _BATCH_NORM_MODULES = (
 
 
 def _disable_batch_norm_training_if_batch_size_one(forward):
-    """Temporarily set BatchNorm layers to train(False) for batch size one."""
+    """Temporarily set BatchNorm layers to train(False) for batch size one.
+
+    TorchScript resolves the names of a wrapped forward in this module, hence
+    the imports of ``torch`` and ``check_n_chans`` at the top.
+    """
     forward_signature = inspect.signature(forward)
 
     @wraps(forward)
@@ -172,7 +183,16 @@ def track_model_init_kwargs(cls) -> None:
         # A wrapped parent receives only the arguments the subclass forwards.
         if type(self).__init__ is not wrapped:
             return init(self, *args, **kwargs)
-        bound = init_signature.bind(self, *args, **kwargs)
+        try:
+            bound = init_signature.bind(self, *args, **kwargs)
+        except TypeError as error:
+            name = type(self).__name__
+            if "channel_strategy" in kwargs:
+                raise TypeError(
+                    f"{name} takes no channel_strategy: it reads its input "
+                    "natively (see the channel strategies page of the user guide)."
+                ) from None
+            raise TypeError(f"{name}: {error}") from None
         bound.apply_defaults()
 
         captured_kwargs = {}
@@ -326,73 +346,24 @@ def _get_model_class(model_name: str):
     raise ValueError(f"Unknown model name {model_name!r}.")
 
 
-# Keep in sync with _EEG_PARAMS above.
-SigArgName = Literal[
-    "n_outputs",
-    "n_chans",
-    "chs_info",
-    "n_times",
-    "input_window_seconds",
-    "sfreq",
-]
-
-
-################################################################
-# Test cases for models
-#
-# This list should be updated whenever a new model is added to
-# braindecode (otherwise `test_completeness__models_test_cases`
-# will fail).
-# Each element in the list should be a tuple with structure
-# (model_class, required_params, signal_params), such that:
-#
-# model_name: str
-#   The name of the class of the model to be tested.
-# required_params: list[str]
-#   The signal-related parameters that are needed to initialize
-#   the model.
-# signal_params: dict | callable | None
-#   The characteristics of the signal that should be passed to
-#   the model tested in case the default_signal_params are not
-#   compatible with this model.  May also be a zero-argument
-#   callable returning a dict (used to defer imports that would
-#   create circular dependencies, or the fixture-montage load).
-#   The keys of this dictionary can only be among those of
-#   default_signal_params.
-################################################################
-
-_rng = np.random.default_rng(12)
-
-
 @lru_cache(maxsize=1)
 def _fixture_montage_chs() -> tuple[tuple[str, tuple[float, ...]], ...]:
-    """Channels of the montage that supplies the test fixtures' real positions.
+    """Read the distinct EEG positions of the 10-05 montage for model examples.
 
-    The montage is ``standard_1005``, spelled ``colin27_1005`` on MNE >= 1.13
-    (see :func:`braindecode.util.resolve_montage_name`; the positions are
-    identical). The positions are read back from ``info["chs"][i]["loc"]``
-    after :meth:`mne.Info.set_montage`, i.e. in the head frame and in metres,
-    exactly what a user gets from ``raw.set_montage(...)``. ``loc[3:]`` is set
-    to zeros rather than to MNE's ``[0, 0, 0, nan, ...]`` padding, like the
-    other canonical fixtures of this module (LaBraM, BENDR, BaRISTA): a NaN
-    would only add noise to models that check ``np.isfinite(loc).all()``.
+    Each entry pairs a channel name with a 12-value MNE location. The first
+    three values are head coordinates in metres, and the remaining values
+    are zero. The first name at each position takes precedence over its
+    legacy aliases (T3, T4, T5 and T6).
 
-    The four legacy 10-20 aliases that the montage lists at exactly the
-    position of their modern name (T3=T7, T4=T8, T5=P7, T6=P8) are dropped:
-    a channel is kept only if no channel listed before it has the same
-    position, so that no two channels share a position (339 channels remain).
-
-    Loading the montage costs about 5 ms once ``braindecode`` is imported
-    (about 0.2 s in a process where ``mne.channels`` is not imported yet). It
-    is deferred to the first call and cached, so that importing ``braindecode``
-    never reads the montage file nor risks a montage-name deprecation warning.
+    The montage is ``colin27_1005``, named ``standard_1005`` before MNE 1.13
+    (see :func:`braindecode.util.resolve_montage_name`). It is loaded on the
+    first call and cached, so that importing ``braindecode`` never reads the
+    montage file nor risks a montage-name deprecation warning.
 
     Returns
     -------
     tuple of (str, tuple of float)
-        ``(ch_name, loc)`` for every channel of the montage except the
-        dropped co-located legacy aliases (339 channels), ``loc`` having the
-        12 elements of MNE's format.
+        ``(ch_name, loc)`` for the 339 distinct channels of the montage.
     """
     montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
     info = mne.create_info(montage.ch_names, 1.0, "eeg")
@@ -411,14 +382,7 @@ def _fixture_montage_chs() -> tuple[tuple[str, tuple[float, ...]], ...]:
 
 
 def _draw_chs_info(n_chans: int, rng: np.random.Generator) -> list[dict]:
-    """Draw ``n_chans`` distinct real EEG channels of the fixture montage.
-
-    "Distinct" holds for the names and for the positions (see
-    :func:`_fixture_montage_chs`).
-
-    Each channel keeps its real name together with its real head-frame
-    position, so that models that look channels up by name see the position
-    that goes with the name.
+    """Sample EEG channel names and their head positions without replacement.
 
     Parameters
     ----------
@@ -453,69 +417,30 @@ def _draw_chs_info(n_chans: int, rng: np.random.Generator) -> list[dict]:
     ]
 
 
-# Default 3-channel chs_info used by most model tests: the real 10-10 channels
-# C1, C2 and C3 of the montage of ``_fixture_montage_chs`` (head frame, metres).
-# They are inlined, as loading the montage here would slow ``import
-# braindecode`` down; ``test_chs_info_3ch_matches_the_montage`` checks them.
-_chs_info_3ch = [
-    {"ch_name": name, "kind": "eeg", "loc": np.array([x, y, z, *[0.0] * 9])}
-    for name, (x, y, z) in {
-        "C1": (-0.03793783, 0.02633745, 0.12977061),
-        "C2": (0.03589271, 0.02635814, 0.12841234),
-        "C3": (-0.06714873, 0.02335823, 0.10451068),
-    }.items()
-]
-# Draws of the former random locs (3 channels, then a removed 4-channel
-# fixture), kept so that the sEEG locs that the BaRISTA entry below still draws
-# from ``_rng`` are unchanged; BaRISTA is the only later reader of ``_rng``.
-_rng.random(3 * 12)
-_rng.random(4 * 12)
+def _canonical_example_channels(channels) -> list[dict]:
+    """Give canonical model channels the 12-value location used in the public examples."""
+    result = []
+    for ch in channels:
+        loc = np.zeros(12)
+        loc[:3] = ch["loc"][:3]
+        result.append(
+            {"ch_name": ch["ch_name"], "kind": ch["kind"], "loc": loc.tolist()}
+        )
+    return result
 
 
 def _get_labram_chs_info() -> list[dict]:
-    """Return the 128-channel canonical chs_info for LaBraM with 12-element locs.
-
-    Uses a lazy import from the ``labram`` module to avoid a circular import:
-    ``util.py`` is loaded by ``base.py`` before ``labram.py`` is fully
-    initialized.  The ``_LABRAM_TARGET_CHS_INFO`` entries store only a
-    3-element loc; this function zero-pads each to the 12-element MNE format
-    required by ``ChsInfoType``.
-    """
-    import numpy as np
-
+    # Import when the example is requested to avoid the model/base import cycle.
     from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
 
-    result = []
-    for ch in _LABRAM_TARGET_CHS_INFO:
-        loc3 = np.asarray(ch["loc"], dtype=float)
-        loc12 = np.zeros(12, dtype=float)
-        loc12[:3] = loc3[:3]
-        result.append(
-            {"ch_name": ch["ch_name"], "kind": ch["kind"], "loc": loc12.tolist()}
-        )
-    return result
+    return _canonical_example_channels(_LABRAM_TARGET_CHS_INFO)
 
 
 def _get_bendr_chs_info() -> list[dict]:
-    """Return the 20-channel canonical chs_info for BENDR with 12-element locs.
-
-    Same lazy-import rationale as :func:`_get_labram_chs_info`. The last entry
-    is the ``SCALE`` amplitude-statistic placeholder (see
-    ``braindecode.models.bendr``).
-    """
-    import numpy as np
-
+    # Lazy import for the same model/base import cycle as LaBraM.
     from braindecode.models.bendr import _BENDR_TARGET_CHS_INFO
 
-    result = []
-    for ch in _BENDR_TARGET_CHS_INFO:
-        loc3 = np.asarray(ch["loc"], dtype=float)
-        loc12 = np.zeros(12, dtype=float)
-        loc12[:3] = loc3[:3]
-        result.append(
-            {"ch_name": ch["ch_name"], "kind": ch["kind"], "loc": loc12.tolist()}
-        )
-    return result
+    return _canonical_example_channels(_BENDR_TARGET_CHS_INFO)
 
 
 # FreeSurfer's left-hemisphere Desikan-Killiany cortical gyri occupy the
@@ -623,16 +548,20 @@ def _fnirs_chs_info(n_pairs: int, interleaved: bool = False) -> list[dict]:
     return chs
 
 
-# (name, required signal parameters, test parameters). The test parameters are
-# signal parameters the default test signal does not fit, plus, for the
-# largest models, architecture arguments that keep the test instance small
-# (CI runners hold four of them at once; the released configurations are
-# covered by test_pretrained_compat).
+_barista_rng = np.random.default_rng(12)
+
+# Braindecode exports these ordered triples. Config generation reads the name
+# and required signal arguments. The third field supplies example constructor
+# arguments for models that use different settings from the default example
+# (``default_signal_params`` in the test package); for the largest models it
+# also shrinks the architecture to keep CI small, so it is not the released
+# configuration (covered by ``test_pretrained_compat``).
 models_mandatory_parameters: list[
-    tuple[str, list[SigArgName], dict[str, Any] | None | Any]
+    tuple[str, list[SigArgName], dict[str, Any] | Callable[[], dict[str, Any]] | None]
 ] = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("AXON", ["chs_info", "n_outputs"], {"sfreq": 200.0, "n_times": 1000}),
+    ("Pratibha2", ["chs_info", "n_outputs"], {"sfreq": 200.0, "n_times": 1000}),
     (
         "BaRISTA",
         ["chs_info", "n_outputs", "n_times"],
@@ -647,7 +576,7 @@ models_mandatory_parameters: list[
                     "ch_name": f"E{i + 1}",
                     "kind": "seeg",
                     "loc": np.concatenate(
-                        [0.06 * (2 * _rng.random(3) - 1), np.zeros(9)]
+                        [0.06 * (2 * _barista_rng.random(3) - 1), np.zeros(9)]
                     ),
                 }
                 for i in range(8)
@@ -727,6 +656,13 @@ models_mandatory_parameters: list[
         # any length; 300 samples is only a test length.
         {"n_chans": 10, "n_times": 300, "sfreq": 100.0},
     ),
+    (
+        "CareSleepNet",
+        ["n_chans", "n_outputs", "n_times"],
+        # 20 sleep epochs of 300 samples (3 s at 100 Hz) keep the tests small;
+        # the reference uses 30 s epochs, n_times=60000. 1 EEG + 2 EOG channels.
+        {"n_times": 6000, "sfreq": 100.0},
+    ),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("NICE", ["n_chans", "n_outputs", "n_times"], None),
@@ -796,6 +732,21 @@ models_mandatory_parameters: list[
             "sfreq": 2000.0,
             "input_window_seconds": 480 / 2000.0,
             "n_outputs": 20,
+        },
+    ),
+    (
+        "TinyMyo",
+        ["n_chans", "n_outputs", "n_times"],
+        {
+            # The pretraining windows: 1000 samples at 2000 Hz
+            "n_chans": 8,
+            "n_times": 1000,
+            "sfreq": 2000.0,
+            "input_window_seconds": 0.5,
+            # 2 of the 8 released blocks; 2 heads also split the
+            # embed_dim=128 of the embedding test into even widths
+            "depth": 2,
+            "num_heads": 2,
         },
     ),
     ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
@@ -989,15 +940,7 @@ models_mandatory_parameters: list[
     ),
 ]
 
-################################################################
-# List of models that are not meant for classification
-#
-# Their output shape may difer from the expected output shape
-# for classification models.
-################################################################
 
-
-################################################################
 def get_summary_table(dir_name=None):
     if dir_name is None:
         dir_path = Path(__file__).parent

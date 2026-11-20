@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 from operator import attrgetter
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -14,6 +15,7 @@ import pytest
 import torch
 from torch import nn
 
+from braindecode.models import EEGCLIP, LUNA, PBT, CBraMod, Deep4Net, EEGNet
 from braindecode.models.base import EEGModuleMixin
 
 if TYPE_CHECKING:
@@ -463,12 +465,32 @@ def test_window_shorter_than_the_layers_raises_value_error(name):
         model(torch.randn(2, 2, 50))
 
 
-@pytest.mark.parametrize("name", ["SleepStagerBlanco2020", "EEGConformer", "MSVTNet"])
-def test_window_shorter_than_the_layers_raises_value_error_at_init(name):
+@pytest.mark.parametrize(
+    "name, n_times, kwargs",
+    [
+        ("SleepStagerBlanco2020", 50, {}),
+        ("EEGConformer", 50, {}),
+        ("MSVTNet", 50, {}),
+        ("ShallowFBCSPNet", 50, {}),
+        ("EEGNet", 8, {}),
+        ("EEGITNet", 8, {}),
+        ("TSception", 50, {"pool_size": 64}),
+        ("TSception", 3, {}),
+        ("AttnSleep", 1, {"n_chans": 1}),
+    ],
+)
+def test_window_shorter_than_the_layers_raises_value_error_at_init(
+    name, n_times, kwargs
+):
     from braindecode.models.util import models_dict
 
-    with pytest.raises(ValueError, match=r"too small `n_times`.*\(1, 2, 50\)"):
-        models_dict[name](n_chans=2, n_outputs=2, n_times=50, sfreq=100.0)
+    n_chans = kwargs.get("n_chans", 2)
+    with pytest.raises(
+        ValueError, match=rf"too small `n_times`.*\(1, {n_chans}, {n_times}\)"
+    ):
+        models_dict[name](
+            n_outputs=2, n_times=n_times, sfreq=100.0, **{"n_chans": 2, **kwargs}
+        )
 
 
 @pytest.mark.parametrize(
@@ -865,3 +887,108 @@ def test_application_registered_type_coder_roundtrip(tmp_path, explicit_override
     assert decoded == ["identity-v1"]
     for key, value in model.state_dict().items():
         torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)
+
+
+def test_load_state_dict_from_before_max_norm_parametrization():
+    # Released checkpoints (e.g. PierreGtch/EEGNetv4) store the max-norm
+    # spatial filters as ``conv_spatial.weight`` and the classifier under its
+    # old name. load_state_dict maps both to the current keys.
+    torch.manual_seed(0)
+    model = EEGNet(n_chans=3, n_outputs=5, n_times=385).eval()
+    legacy = {
+        k.replace("parametrizations.weight.original", "weight").replace(
+            "final_layer.conv_classifier", "conv_classifier"
+        ): v
+        for k, v in model.state_dict().items()
+    }
+    assert "conv_spatial.weight" in legacy
+
+    loaded = EEGNet(n_chans=3, n_outputs=5, n_times=385).eval()
+    loaded.load_state_dict(legacy)
+
+    x = torch.randn(2, 3, 385)
+    torch.testing.assert_close(loaded(x), model(x))
+
+
+def test_load_state_dict_preserves_batch_norm_version():
+    model = EEGNet(n_chans=3, n_outputs=2, n_times=128)
+    state = model.state_dict()
+    del state["bnorm_1.num_batches_tracked"]
+    with pytest.raises(RuntimeError, match=r"bnorm_1\.num_batches_tracked"):
+        model.load_state_dict(state)
+
+    # PyTorch added this buffer in BatchNorm version 2.
+    state._metadata["bnorm_1"]["version"] = 1
+    model.load_state_dict(state)
+
+
+# Saved with braindecode 2.0.0 (git tag v2.0.0) and torch 2.6: each model below built
+# after ``torch.manual_seed(0)`` (``proj_out`` of CBraMod set to the identity, as 2.1
+# does not apply it), ``y = model.eval()(x)`` for an ``x`` drawn with seed 1.
+# ``v2_pickles.pth`` holds ``torch.save(model)`` after that forward pass, for the models
+# that can be pickled whole. EEGNet, whose weights are parametrized, cannot: its
+# ``state_dict()`` is in ``v2_state_dicts.pth``.
+_V2_DATA = Path(__file__).parent / "data"
+_V2_MODELS = {
+    "EEGNet": lambda: EEGNet(
+        n_chans=3, n_outputs=2, n_times=64, F1=2, D=2, kernel_length=8,
+        depthwise_kernel_length=4,
+    ),
+    "CBraMod": lambda: CBraMod(
+        n_chans=3, n_outputs=2, n_times=32, patch_size=16, emb_dim=16, nhead=2,
+        n_layer=1, dim_feedforward=16,
+        channels_kernel_stride_padding_norm=(
+            (4, 9, 4, 4, (2, 4)), (4, 3, 1, 1, (2, 4)), (4, 3, 1, 1, (2, 4))
+        ),
+    ),
+    "EEGCLIP": lambda: EEGCLIP(
+        n_chans=3, n_outputs=2, n_times=700, text_embedding_dim=8, eeg_embedding_dim=4,
+        projection_layers=1,
+        eeg_encoder=Deep4Net(
+            n_chans=3, n_times=700, n_outputs=4, final_conv_length=2,
+            stride_before_pool=True, n_filters_time=2, n_filters_spat=2,
+            n_filters_2=2, n_filters_3=2, n_filters_4=2,
+        ),
+    ),
+    "LUNA": lambda: LUNA(
+        n_chans=3, n_times=40, n_outputs=2, patch_size=20, num_queries=1,
+        embed_dim=16, depth=1, num_heads=1, mlp_ratio=1.0,
+    ),
+    "PBT": lambda: PBT(
+        n_chans=3, n_times=32, n_outputs=2, d_input=8, embed_dim=16, num_heads=2,
+        num_layers=1,
+    ),
+}
+
+
+def _v2_pickle(name):
+    # Unpickling runs code: this file is part of the repository.
+    pickles = torch.load(_V2_DATA / "v2_pickles.pth", weights_only=False)  # nosec B614
+    return pickles[name]
+
+
+@pytest.mark.parametrize("name", _V2_MODELS)
+def test_v2_checkpoints_load(name):
+    if name == "EEGNet":
+        saved = torch.load(_V2_DATA / "v2_state_dicts.pth", weights_only=True)[name]
+        state = saved["state_dict"]
+    else:
+        saved = _v2_pickle(name)
+        state = saved["model"].state_dict()
+    model = _V2_MODELS[name]().eval()
+    model.load_state_dict(state, strict=True)
+    with torch.no_grad():
+        torch.testing.assert_close(model(saved["x"]), saved["y"])
+
+
+@pytest.mark.parametrize("name", ["CBraMod", "EEGCLIP", "LUNA", "PBT"])
+def test_v2_pickles_run(name):
+    saved = _v2_pickle(name)
+    with torch.no_grad():
+        torch.testing.assert_close(saved["model"](saved["x"]), saved["y"])
+
+
+def test_reset_head_on_v2_cbramod_pickle():
+    saved = _v2_pickle("CBraMod")
+    saved["model"].reset_head(3)
+    assert saved["model"](saved["x"]).shape == (2, 3)
