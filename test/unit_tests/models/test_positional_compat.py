@@ -83,6 +83,8 @@ POSITIONAL_1_8_1 = {
 
 
 def test_1_8_1_positional_parameters_keep_their_position():
+    # One test over all models: a parametrized REVE case would be deselected as
+    # slow by the conftest.
     moved = {}
     for name, old in POSITIONAL_1_8_1.items():
         params = [

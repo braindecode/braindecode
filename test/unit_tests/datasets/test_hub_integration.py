@@ -7,6 +7,7 @@
 
 import inspect
 import json
+from datetime import datetime, timezone
 from unittest import mock
 
 import mne
@@ -25,12 +26,15 @@ except ImportError:
     zarr = None
 
 import copy
+import pickle
 
 from braindecode.datasets import (
+    BNCI2014_001,
     BaseConcatDataset,
     EEGWindowsDataset,
     RawDataset,
     WindowsDataset,
+    pad_channels_collate,
 )
 from braindecode.datasets.bids import hub_io
 from braindecode.datasets.bids.hub import (
@@ -39,17 +43,44 @@ from braindecode.datasets.bids.hub import (
 )
 from braindecode.datasets.bids.hub_io import _create_compressor
 from braindecode.datasets.registry import get_dataset_class, get_dataset_type
-from braindecode.preprocessing import create_windows_from_events
+from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
+from braindecode.preprocessing import (
+    Preprocessor,
+    create_fixed_length_windows,
+    create_windows_from_events,
+    preprocess,
+)
 
 
 @pytest.fixture()
-def setup_concat_windows_dataset(eeg_recordings):
-    return create_windows_from_events(eeg_recordings, use_mne_epochs=True)
+def setup_concat_windows_dataset():
+    """Create a small windowed dataset for testing.
+
+    Uses BNCI2014_001 dataset with subject_ids=[1, 2] which downloads
+    real EEG data for two subjects.
+    """
+    # Download data for subjects 1 and 2
+    dataset = BNCI2014_001(subject_ids=[1, 2])
+
+    # Use first 2 recordings to keep tests fast while testing multiple subjects
+    windowed = create_windows_from_events(
+        concat_ds=BaseConcatDataset(dataset.datasets[:2]),
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        use_mne_epochs=True,
+    )
+    return windowed
 
 
-def test_hub_mixin_methods_exist():
-    assert callable(BaseConcatDataset.push_to_hub)
-    assert callable(BaseConcatDataset.pull_from_hub)
+def test_hub_mixin_methods_exist(setup_concat_windows_dataset):
+    """Test that Hub mixin methods are available on BaseConcatDataset."""
+    dataset = setup_concat_windows_dataset
+
+    # Check that methods exist
+    assert hasattr(dataset, "push_to_hub")
+    assert hasattr(dataset, "pull_from_hub")
+    assert callable(dataset.push_to_hub)
+    assert callable(dataset.pull_from_hub)
 
 
 def test_infer_license_from_descriptions_detects_single_license():
@@ -175,7 +206,7 @@ def test_no_lazy_imports_in_hub_module():
             ), f"{func.__name__} has circular import"
 
 
-def test_registry_pattern_works(setup_concat_windows_dataset):
+def test_registry_pattern_works():
     """Test that registry pattern allows access to dataset classes without circular imports."""
     # Get classes from registry
     WindowsDataset = get_dataset_class("WindowsDataset")
@@ -187,19 +218,28 @@ def test_registry_pattern_works(setup_concat_windows_dataset):
     assert isinstance(EEGWindowsDataset, type)
     assert isinstance(BaseConcatDataset, type)
 
-    windowed = setup_concat_windows_dataset
+    # Test get_dataset_type with actual dataset
+    dataset = BNCI2014_001(subject_ids=[1])
+    windowed = create_windows_from_events(
+        concat_ds=BaseConcatDataset([dataset.datasets[0]]),
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        use_mne_epochs=True,
+    )
+
     # Check type detection works
     assert get_dataset_type(windowed.datasets[0]) == "WindowsDataset"
     assert get_dataset_type(windowed) == "BaseConcatDataset"
 
 
-def test_eegwindows_lossless_round_trip(eeg_recordings, tmp_path):
+def test_eegwindows_lossless_round_trip(tmp_path):
     """Test that EEGWindowsDataset has lossless round-trip with continuous data preserved."""
     pytest.importorskip("zarr")
 
     # Create EEGWindowsDataset with continuous raw (use_mne_epochs=False)
+    dataset = BNCI2014_001(subject_ids=[1])
     windowed = create_windows_from_events(
-        concat_ds=BaseConcatDataset([eeg_recordings.datasets[0]]),
+        concat_ds=BaseConcatDataset([dataset.datasets[0]]),
         trial_start_offset_samples=0,
         trial_stop_offset_samples=0,
         use_mne_epochs=False,  # Creates EEGWindowsDataset
@@ -312,13 +352,16 @@ def test_rawdataset_basic_save_load(tmp_path):
     assert loaded.datasets[0].raw.ch_names == ch_names
 
 
-def test_rawdataset_lossless_round_trip(eeg_recordings, tmp_path):
+def test_rawdataset_lossless_round_trip(tmp_path):
     """Test that RawDataset has lossless round-trip with continuous data preserved."""
     pytest.importorskip("zarr")
 
+    # Use BNCI2014_001 to get real RawDataset
+    dataset = BNCI2014_001(subject_ids=[1])
+
     # Get the first recording (which is a BaseDataset wrapping a RawDataset internally)
     # We need to create a RawDataset from it
-    first_recording = eeg_recordings.datasets[0]
+    first_recording = dataset.datasets[0]
     raw_dataset = RawDataset(first_recording.raw, first_recording.description)
 
     # Create BaseConcatDataset with RawDataset
@@ -362,13 +405,16 @@ def test_rawdataset_lossless_round_trip(eeg_recordings, tmp_path):
     )
 
 
-def test_rawdataset_mixed_concat(eeg_recordings, tmp_path):
+def test_rawdataset_mixed_concat(tmp_path):
     """Test that mixed RawDataset concat works correctly."""
     pytest.importorskip("zarr")
 
+    # Use BNCI2014_001 with 2 subjects
+    dataset = BNCI2014_001(subject_ids=[1, 2])
+
     # Create RawDatasets from first 2 recordings
-    raw_ds1 = RawDataset(eeg_recordings.datasets[0].raw, eeg_recordings.datasets[0].description)
-    raw_ds2 = RawDataset(eeg_recordings.datasets[1].raw, eeg_recordings.datasets[1].description)
+    raw_ds1 = RawDataset(dataset.datasets[0].raw, dataset.datasets[0].description)
+    raw_ds2 = RawDataset(dataset.datasets[1].raw, dataset.datasets[1].description)
 
     # Create BaseConcatDataset
     concat_ds = BaseConcatDataset([raw_ds1, raw_ds2])
@@ -463,13 +509,14 @@ def test_rawdataset_format_info():
     assert format_info["total_size_mb"] > 0
 
 
-def test_mixed_dataset_types_not_supported(eeg_recordings, tmp_path):
+def test_mixed_dataset_types_not_supported(tmp_path):
     """Test that mixing different dataset types raises clear error."""
     pytest.importorskip("zarr")
 
     # Create a WindowsDataset
+    dataset = BNCI2014_001(subject_ids=[1])
     windowed = create_windows_from_events(
-        concat_ds=BaseConcatDataset([eeg_recordings.datasets[0]]),
+        concat_ds=BaseConcatDataset([dataset.datasets[0]]),
         trial_start_offset_samples=0,
         trial_stop_offset_samples=0,
         use_mne_epochs=True,  # Creates WindowsDataset
@@ -477,7 +524,7 @@ def test_mixed_dataset_types_not_supported(eeg_recordings, tmp_path):
     windows_ds = windowed.datasets[0]
 
     # Create a RawDataset from same source
-    raw_ds = RawDataset(eeg_recordings.datasets[0].raw, eeg_recordings.datasets[0].description)
+    raw_ds = RawDataset(dataset.datasets[0].raw, dataset.datasets[0].description)
 
     # Mix different types in BaseConcatDataset
     mixed_concat = BaseConcatDataset([windows_ds, raw_ds])
@@ -613,12 +660,13 @@ def test_different_lengths_allowed(tmp_path):
     assert loaded.datasets[1].raw.get_data().shape[1] == 2000
 
 
-def test_lazy_loading_support(eeg_recordings, tmp_path):
+def test_lazy_loading_support(tmp_path):
     """Test that datasets can be loaded lazily with preload=False."""
     pytest.importorskip("zarr")
 
+    dataset = BNCI2014_001(subject_ids=[1])
     windowed = create_windows_from_events(
-        concat_ds=BaseConcatDataset([eeg_recordings.datasets[0]]),
+        concat_ds=BaseConcatDataset([dataset.datasets[0]]),
         trial_start_offset_samples=0,
         trial_stop_offset_samples=0,
         use_mne_epochs=True,
@@ -646,13 +694,14 @@ def test_lazy_loading_support(eeg_recordings, tmp_path):
         assert ly == ey and li == ei
 
 
-def test_preprocessing_kwargs_preserved(eeg_recordings, tmp_path):
+def test_preprocessing_kwargs_preserved(tmp_path):
     """Test that preprocessing kwargs (window_kwargs, etc.) are preserved."""
     pytest.importorskip("zarr")
 
     # Create windowed dataset with specific kwargs
+    dataset = BNCI2014_001(subject_ids=[1])
     windowed = create_windows_from_events(
-        concat_ds=BaseConcatDataset([eeg_recordings.datasets[0]]),
+        concat_ds=BaseConcatDataset([dataset.datasets[0]]),
         trial_start_offset_samples=0,
         trial_stop_offset_samples=0,
         use_mne_epochs=True,
@@ -1031,13 +1080,14 @@ def test_info_nonfinite_preflight_is_atomic(tmp_path, nonfinite, path, category)
 
 
 @pytest.mark.parametrize("use_mne_epochs", [True, False])
-def test_zarr_round_trip_parametrized(eeg_recordings, tmp_path, use_mne_epochs):
+def test_zarr_round_trip_parametrized(tmp_path, use_mne_epochs):
     """Parametrized test for WindowsDataset and EEGWindowsDataset round-trip."""
     pytest.importorskip("zarr")
 
     # Create dataset with parametrized type
+    dataset = BNCI2014_001(subject_ids=[1])
     windowed = create_windows_from_events(
-        concat_ds=BaseConcatDataset([eeg_recordings.datasets[0]]),
+        concat_ds=BaseConcatDataset([dataset.datasets[0]]),
         trial_start_offset_samples=0,
         trial_stop_offset_samples=0,
         use_mne_epochs=use_mne_epochs,
@@ -1534,6 +1584,101 @@ def test_lazy_zarr_serialization(tmp_path, ds_type):
 
 
 @pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_preprocessing_survives_pickling(tmp_path, ds_type):
+    source, path = _make_zarr(tmp_path, ds_type)
+    loaded = load_from_zarr(path, preload=False)
+    original = source.datasets[0]
+    if ds_type == "WindowsDataset":
+        expected = original.windows.get_data(item=0, picks=[1])[0, :, 10:]
+    else:
+        stop = 11 if ds_type == "RawDataset" else 110
+        expected = original.raw.get_data(picks=[1], start=10, stop=stop)
+
+    preprocess(
+        loaded,
+        [
+            Preprocessor(np.negative),
+            Preprocessor("pick", picks=["ch1"]),
+            Preprocessor("crop", tmin=0.1),
+        ],
+    )
+    sample, label, *_ = loaded[0]
+    assert sample.dtype == np.float32
+    np.testing.assert_allclose(sample, -expected, rtol=1e-6)
+    # A spawned DataLoader worker receives the dataset through this pickling.
+    restored = pickle.loads(pickle.dumps(loaded))
+    restored_sample, restored_label, *_ = restored[0]
+    np.testing.assert_array_equal(restored_sample, sample)
+    assert restored_label == label
+    np.testing.assert_allclose(load_from_zarr(path)[0][0], source[0][0], rtol=1e-6)
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_lazy_zarr_positions_survive_pickling(tmp_path, use_mne_epochs):
+    pytest.importorskip("zarr")
+    info = mne.create_info(["C3", "C4"], 10, "eeg").set_montage("standard_1020")
+    raw = mne.io.RawArray(np.arange(60).reshape(2, 30), info)
+    source = BaseConcatDataset([RawDataset(raw, {"label": 2}, target_name="label")])
+    windows = create_fixed_length_windows(
+        source,
+        window_size_samples=5,
+        window_stride_samples=5,
+        drop_last_window=True,
+        use_mne_epochs=use_mne_epochs,
+    )
+    path = convert_to_zarr(windows, tmp_path / "windows.zarr")
+    loaded = load_from_zarr(path, preload=False).set_return_ch_pos()
+    # Inspecting the dataset before pickling must keep it on the memmap.
+    assert "C4" in repr(loaded)
+    assert loaded.datasets[0]._zarr_data is not None
+    restored = pickle.loads(pickle.dumps(loaded))
+    samples, labels, crops, positions, mask = pad_channels_collate(
+        [restored[0], restored[1]]
+    )
+    np.testing.assert_array_equal(samples, np.stack([windows[i][0] for i in (0, 1)]))
+    np.testing.assert_array_equal(labels, [2, 2])
+    np.testing.assert_array_equal(crops[1], [0, 5])
+    np.testing.assert_allclose(positions[0], [ch["loc"][:3] for ch in info["chs"]])
+    np.testing.assert_array_equal(positions[0], positions[1])
+    assert mask.all()
+
+
+@pytest.mark.parametrize("plain_int_kind", [False, True])
+@pytest.mark.parametrize("last_target_only", [False, True])
+def test_lazy_zarr_channel_targets_keep_memmap(
+    tmp_path, last_target_only, plain_int_kind
+):
+    pytest.importorskip("zarr")
+    info = mne.create_info(["C3", "target"], 10, ["eeg", "misc"])
+    if plain_int_kind:
+        # Channels that are not typed through mne's NamedInt, such as the cHPI
+        # channels of MEGIN recordings, are stored as bare ints.
+        info["chs"][1]["kind"] = int(info["chs"][1]["kind"])
+    raw = mne.io.RawArray(np.arange(40).reshape(2, 20), info)
+    montage = mne.channels.make_dig_montage(
+        {"C3": [0.0, 0.05, 0.1]}, coord_frame="head"
+    )
+    raw.set_montage(montage)
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw, {"subject": "01"})]),
+        window_size_samples=5,
+        targets_from="channels",
+        last_target_only=last_target_only,
+    )
+    path = convert_to_zarr(windows, tmp_path / "windows.zarr")
+    loaded = load_from_zarr(path, preload=False)
+    x, y, _ = loaded[0]
+    np.testing.assert_array_equal(x, [[0, 1, 2, 3, 4]])
+    expected_y = [24] if last_target_only else [[20, 21, 22, 23, 24]]
+    np.testing.assert_array_equal(y, expected_y)
+    assert loaded.datasets[0]._zarr_data is not None
+    # the positions of the signal rows only, from the stored info
+    np.testing.assert_allclose(
+        loaded.set_return_ch_pos()[0][3], [[0.0, 0.05, 0.1]], atol=1e-6
+    )
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
 def test_lazy_zarr_repr(tmp_path, ds_type):
     _, path = _make_zarr(tmp_path, ds_type)
     ds = BaseConcatDataset._load_from_zarr_inline(path, preload=False).datasets[0]
@@ -1579,3 +1724,141 @@ def test_lazy_zarr_preload_true_unchanged(tmp_path):
     _, path = _make_zarr(tmp_path, "WindowsDataset")
     eager = BaseConcatDataset._load_from_zarr_inline(path, preload=True)
     assert eager.datasets[0].windows is not None and eager.datasets[0]._zarr_data is None
+
+
+@pytest.mark.parametrize("preload", [True, False])
+def test_epochs_windows_channel_targets_zarr_round_trip(tmp_path, preload):
+    """Epochs-backed windows keep channel targets through a Zarr round trip."""
+    pytest.importorskip("zarr")
+
+    data = np.arange(36, dtype=float).reshape(3, 12)
+    info = mne.create_info(["C3", "Cz", "target"], 100, ["eeg", "eeg", "misc"])
+    raw = mne.io.RawArray(data, info, verbose=False)
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw, {"label": 101}, target_name="label")]),
+        window_size_samples=4,
+        window_stride_samples=4,
+        on_last_window="drop",
+        targets_from="channels",
+        last_target_only=False,
+        use_mne_epochs=True,
+    )
+    zarr_path = tmp_path / "dataset.zarr"
+    windows._convert_to_zarr_inline(zarr_path, "blosc", 5)
+    loaded = windows._load_from_zarr_inline(zarr_path, preload=preload)
+
+    assert loaded.datasets[0].targets_from == "channels"
+    assert loaded.datasets[0].last_target_only is False
+    for i in range(3):
+        x, y, _ = loaded[i]
+        start, stop = 4 * i, 4 * (i + 1)
+        np.testing.assert_allclose(x, data[:2, start:stop])
+        np.testing.assert_allclose(y, data[2:, start:stop])
+
+
+@pytest.mark.parametrize("dated", [False, True])
+@pytest.mark.parametrize("windowed", [False, True])
+def test_zarr_continuous_recording_keeps_first_sample_and_annotations(
+    tmp_path, dated, windowed
+):
+    """A reloaded recording keeps its sample clock and can be windowed again."""
+    pytest.importorskip("zarr")
+    raw = mne.io.RawArray(
+        np.arange(120).reshape(2, 60),
+        mne.create_info(["C3", "C4"], 10, "eeg"),
+        first_samp=25,
+    )
+    if dated:
+        raw.set_meas_date(datetime(2023, 6, 1, tzinfo=timezone.utc))
+    raw.set_annotations(
+        mne.Annotations(
+            [0.7, 2.4], [0.4, 0.4], ["left", "right"], ch_names=[["C4"], []]
+        )
+    )
+    options = dict(
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        window_size_samples=2,
+        window_stride_samples=2,
+        on_last_window="drop",
+        mapping={"left": 1, "right": 2},
+    )
+    source = BaseConcatDataset([RawDataset(raw)])  # no description
+    windows = create_windows_from_events(source, **options)
+    path = convert_to_zarr(windows if windowed else source, tmp_path / "raw.zarr")
+
+    for preload in (False, True):
+        loaded = load_from_zarr(path, preload=preload)
+        actual = loaded.datasets[0].raw
+        assert actual.first_samp == raw.first_samp
+        got, want = actual.annotations, raw.annotations
+        assert got.orig_time == want.orig_time
+        np.testing.assert_allclose(got.onset, want.onset)
+        np.testing.assert_allclose(got.duration, want.duration)
+        np.testing.assert_array_equal(got.description, want.description)
+        assert got.ch_names.tolist() == want.ch_names.tolist()
+        again = loaded if windowed else create_windows_from_events(loaded, **options)
+        for i in range(len(windows)):
+            np.testing.assert_array_equal(again[i][0], windows[i][0])
+            assert again[i][1:] == windows[i][1:]
+
+
+def test_zarr_epochs_keep_events_tmin_samples_and_channel_targets(tmp_path):
+    """Epochs come back with their events, tmin and unprojected samples."""
+    pytest.importorskip("zarr")
+    info = mne.create_info(["C3", "C4", "target"], 100, ["eeg", "eeg", "misc"])
+    raw = mne.io.RawArray(np.zeros((3, 100)), info)
+    raw.set_eeg_reference(projection=True)  # a projector that is not applied
+    signal = np.arange(60.0).reshape(2, 3, 10)
+    events = np.array([[15, 0, 1], [35, 0, 2]])
+    # Both windows start at 0 in their trial, like BIDS epochs; no "target" column.
+    metadata = pd.DataFrame(
+        dict(
+            i_window_in_trial=[0, 0], i_start_in_trial=[0, 0], i_stop_in_trial=[10, 10]
+        )
+    )
+    epochs = mne.EpochsArray(
+        signal,
+        raw.info,
+        events=events,
+        event_id={"left": 1, "right": 2},
+        tmin=-0.1,
+        metadata=metadata,
+        proj=False,
+    )
+    source = BaseConcatDataset(
+        [WindowsDataset(epochs, {"subject": "01"}, targets_from="channels")]
+    )
+    path = convert_to_zarr(source, tmp_path / "epochs.zarr")
+
+    for preload in (False, True):
+        loaded = load_from_zarr(path, preload=preload)
+        restored = loaded.datasets[0].windows
+        np.testing.assert_array_equal(restored.events, events)
+        assert restored.event_id == epochs.event_id
+        np.testing.assert_allclose(restored.times, epochs.times)
+        assert restored.info["projs"][0]["active"] is False
+        np.testing.assert_array_equal(restored.get_data(), signal)
+        x, y, _ = loaded[1]
+        np.testing.assert_array_equal(x, signal[1, :2])
+        np.testing.assert_array_equal(y, signal[1, 2:, -1])
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_zarr_store_without_mne_state_still_loads(tmp_path, ds_type):
+    """Stores written by v2.0.0 have no first sample, annotations or events."""
+    source, path = _make_zarr(tmp_path, ds_type)
+    group = zarr.open_group(path, mode="a")["recording_0"]
+    group.attrs.pop("mne", None)
+    if "events" in group:
+        del group["events"]
+
+    for preload in (False, True):
+        loaded = load_from_zarr(path, preload=preload)
+        recording = loaded.datasets[0]
+        if ds_type == "WindowsDataset":
+            starts = source.datasets[0].metadata["i_start_in_trial"]
+            np.testing.assert_array_equal(recording.windows.events[:, 0], starts)
+        else:
+            assert recording.raw.first_samp == 0
+        np.testing.assert_allclose(loaded[0][0], source[0][0], rtol=1e-6)

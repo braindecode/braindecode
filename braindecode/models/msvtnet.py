@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 
-from braindecode.models.base import EEGModuleMixin, _too_short_input_error
+from braindecode.models.base import EEGModuleMixin
 
 
 class MSVTNet(EEGModuleMixin, nn.Module):
@@ -127,15 +127,21 @@ class MSVTNet(EEGModuleMixin, nn.Module):
                 for b in range(len(n_filters_list))
             ]
         )
-        branch_linear_in = self._forward_flatten(cat=False)
+        # Each branch keeps time through its "same" convolutions and divides it
+        # by the two poolings; its tokens have n_filters * depth_multiplier features
+        seq_len = self.n_times // pool1_size // pool2_size
+        if seq_len < 1:
+            raise ValueError(
+                "The two poolings leave no token: too small "
+                f"`n_times`/`input_window_seconds` for the input {self.input_shape}."
+            )
+        branch_dims = [n_filters * depth_multiplier for n_filters in n_filters_list]
         self.branch_head = nn.ModuleList(
-            [
-                _DenseLayers(branch_linear_in[b].shape[1], self.n_outputs)
-                for b in range(len(n_filters_list))
-            ]
+            [_DenseLayers(seq_len * dim, self.n_outputs) for dim in branch_dims]
         )
 
-        seq_len, d_model = self._forward_mstsconv().shape[1:3]  # type: ignore
+        # The branches' tokens are concatenated feature-wise
+        d_model = sum(branch_dims)
         self.transformer = _Transformer(
             seq_len,
             d_model,
@@ -145,32 +151,10 @@ class MSVTNet(EEGModuleMixin, nn.Module):
             num_layers,
         )
 
-        linear_in = self._forward_flatten().shape[1]  # type: ignore
+        # The transformer returns its class token
+        linear_in = d_model
         self.flatten_layer = nn.Flatten()
         self.final_layer = nn.Linear(linear_in, self.n_outputs)
-
-    def _forward_mstsconv(
-        self, cat: bool = True
-    ) -> Union[torch.Tensor, list[torch.Tensor]]:
-        x = torch.randn(1, 1, self.n_chans, self.n_times)
-        try:
-            x = [tsconv(x) for tsconv in self.mstsconv]
-        except RuntimeError as exc:
-            raise _too_short_input_error(exc, self.input_shape) or exc
-        if cat:
-            x = torch.cat(x, dim=2)
-        return x
-
-    def _forward_flatten(
-        self, cat: bool = True
-    ) -> Union[torch.Tensor, list[torch.Tensor]]:
-        x = self._forward_mstsconv(cat)
-        if cat:
-            x = self.transformer(x)
-            x = x.flatten(start_dim=1, end_dim=-1)
-        else:
-            x = [_.flatten(start_dim=1, end_dim=-1) for _ in x]
-        return x
 
     def forward(
         self, x: torch.Tensor

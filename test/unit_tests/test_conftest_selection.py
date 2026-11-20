@@ -11,16 +11,6 @@ pytest_plugins = ["pytester"]
 
 CONFTEST = (Path(__file__).resolve().parents[1] / "conftest.py").read_text()
 
-
-@pytest.fixture
-def conftest_project(pytester, monkeypatch):
-    """Run the copied conftest in a project with only pytest's built-in plugins."""
-    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
-    monkeypatch.delenv("PYTEST_PLUGINS", raising=False)
-    pytester.makeconftest(CONFTEST)
-    return pytester
-
-
 MARKED_TESTS = """
 import pytest
 
@@ -40,32 +30,37 @@ def test_network():
 def test_slow_network():
     pass
 
-# Catalog cases with a model name work without network access.
-@pytest.mark.parametrize("model", ["REVE"])
-def test_catalog(model):
+# conftest marks the REVE and Pratibha2 cases slow, with no marker of their own.
+@pytest.mark.parametrize("model", ["REVE", "Pratibha2", "EEGNet"])
+def test_param(model):
     pass
 """
 
 NETWORK = {"test_network", "test_slow_network"}
-OFFLINE = {"test_plain", "test_catalog[REVE]"}
-ALL = OFFLINE | {"test_slow"} | NETWORK
+FULL_SIZE = {"test_param[REVE]", "test_param[Pratibha2]"}
+ALL = {"test_plain", "test_slow", "test_param[EEGNet]"} | NETWORK | FULL_SIZE
 
 
 @pytest.mark.parametrize(
     "args, passed, skipped",
     [
-        ([], OFFLINE, NETWORK),
+        ([], {"test_plain", "test_param[EEGNet]"}, NETWORK),
         # Network tests that are also slow (the Hub module) need no --run-slow.
-        (["--run-network"], OFFLINE | NETWORK, set()),
-        (["--run-slow"], OFFLINE | {"test_slow"}, NETWORK),
-        (["-m", "slow"], {"test_slow"}, NETWORK - {"test_network"}),
+        (["--run-network"], {"test_plain", "test_param[EEGNet]"} | NETWORK, set()),
+        (
+            ["--run-slow"],
+            {"test_plain", "test_slow", "test_param[EEGNet]"} | FULL_SIZE,
+            NETWORK,
+        ),
+        (["-m", "slow"], {"test_slow"} | FULL_SIZE, {"test_slow_network"}),
         (["--run-slow", "--run-network"], ALL, set()),
     ],
     ids=["default", "run-network", "run-slow", "m-slow", "run-slow-and-network"],
 )
-def test_slow_and_network_selection(conftest_project, args, passed, skipped):
-    conftest_project.makepyfile(test_marked=MARKED_TESTS)
-    reprec = conftest_project.inline_run("-p", "no:cacheprovider", *args)
+def test_slow_and_network_selection(pytester, args, passed, skipped):
+    pytester.makeconftest(CONFTEST)
+    pytester.makepyfile(test_marked=MARKED_TESTS)
+    reprec = pytester.inline_run("-p", "no:cacheprovider", "-p", "no:xdist", *args)
     outcomes = [{r.nodeid.split("::")[-1] for r in rs} for rs in reprec.listoutcomes()]
     assert outcomes == [passed, skipped, set()]
     # Whatever neither runs nor skips is deselected, never silently dropped.
@@ -85,8 +80,9 @@ def _caller_state():
     )
 
 
-def test_acceleration_caller_state_restores_after_pass_and_failure(conftest_project):
-    conftest_project.makepyfile(
+def test_acceleration_caller_state_restores_after_pass_and_failure(pytester):
+    pytester.makeconftest(CONFTEST)
+    pytester.makepyfile(
         """
         import random
 
@@ -108,6 +104,6 @@ def test_acceleration_caller_state_restores_after_pass_and_failure(conftest_proj
         """
     )
     before = _caller_state()
-    reprec = conftest_project.inline_run("-p", "no:cacheprovider")
+    reprec = pytester.inline_run("-p", "no:cacheprovider", "-p", "no:xdist")
     reprec.assertoutcome(passed=1, failed=1)
     assert _caller_state() == before

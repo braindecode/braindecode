@@ -56,11 +56,18 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
     tcn_batch_norm : bool, optional
         If ``True`` (default), insert a :class:`~torch.nn.BatchNorm1d` after each
         TCN convolution and use a bias in the residual ``1x1`` downsample, matching
-        the original Keras source. Set to ``False`` to recover the previous
-        braindecode architecture (e.g. to load checkpoints trained before this
-        change). Default is ``True``.
+        the original Keras source. Set to ``False`` to get the TCN block of
+        braindecode before 1.6.1, for example to load checkpoints trained with it.
+        To also get the outputs of that version, set ``act_after_temporal_bn=True``.
+        Default is ``True``.
 
         .. versionadded:: 1.6.1
+    act_after_temporal_bn : bool, optional
+        If ``True``, apply ``activation`` between the temporal batch norm and the
+        depthwise convolution, as braindecode did before 2.1. The authors' code
+        has no activation there. Default is ``False``.
+
+        .. versionadded:: 2.1
 
     References
     ----------
@@ -92,6 +99,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         drop_prob_eeg: float | None = None,
         drop_prob_tcn: float | None = None,
         tcn_batch_norm: bool = True,
+        act_after_temporal_bn: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -110,6 +118,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         self.drop_prob_eeg = drop_prob if drop_prob_eeg is None else drop_prob_eeg
         self.drop_prob_tcn = drop_prob if drop_prob_tcn is None else drop_prob_tcn
         self.tcn_batch_norm = tcn_batch_norm
+        self.act_after_temporal_bn = act_after_temporal_bn
         self.depth_multiplier = depth_multiplier
         self.filter_1 = filter_1
         self.kern_length = kern_length
@@ -130,6 +139,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
             depth_multiplier=self.depth_multiplier,
             drop_prob=self.drop_prob_eeg,
             activation=self.activation,
+            act_after_temporal_bn=self.act_after_temporal_bn,
         )
         self.arrange_dim_eegnet = Rearrange(
             "batch filter2 rtimes 1 -> batch rtimes filter2"
@@ -152,6 +162,18 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
             out_features=self.n_outputs,
             max_norm_val=self.max_norm_const,
         )
+
+    @classmethod
+    def _fill_legacy_defaults(cls, kwargs):
+        """Rebuild configs saved before a key existed as they were.
+
+        Saved configs hold every init argument, so a missing key means an
+        older save: ``act_after_temporal_bn`` (added in 2.1) defaults to
+        ``True`` and ``tcn_batch_norm`` (added in 1.6.1) to ``False``.
+        """
+        super()._fill_legacy_defaults(kwargs)
+        kwargs.setdefault("act_after_temporal_bn", True)
+        kwargs.setdefault("tcn_batch_norm", False)
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -191,6 +213,17 @@ class _EEGNetTC(nn.Module):
     implementation in a future issue; we will re-evaluate if it is necessary
     to maintain this separate implementation.
 
+    Steps, for an input of shape ``(batch, 1, n_times, n_chans)`` (time is the
+    height axis); ``time`` is ``n_times`` up to the zero padding:
+
+    1. Temporal convolution and batch norm, then ``activation`` if
+       ``act_after_temporal_bn``: ``(batch, filter_1, time, n_chans)``.
+    2. Depthwise convolution over the channels, batch norm, ``activation``,
+       average pooling by 8 and dropout: ``(batch, filter_2, time // 8, 1)``.
+    3. Separable convolution (depthwise over time, then pointwise), batch norm,
+       ``activation``, average pooling by ``filter_1`` and dropout:
+       ``(batch, filter_2, reduced_time, 1)``.
+
     Parameters
     ----------
     n_chans : int
@@ -205,6 +238,8 @@ class _EEGNetTC(nn.Module):
         Dropout rate.
     activation : nn.Module
         Activation function.
+    act_after_temporal_bn : bool
+        If ``True``, apply ``activation`` after the temporal batch norm.
     """
 
     def __init__(
@@ -215,10 +250,12 @@ class _EEGNetTC(nn.Module):
         depth_multiplier: int = 2,
         drop_prob: float = 0.5,
         activation: type[nn.Module] = nn.ELU,
+        act_after_temporal_bn: bool = False,
     ):
         super().__init__()
         self.activation = activation()
         self.drop_prob = drop_prob
+        self.act_after_temporal_bn = act_after_temporal_bn
         self.n_chans = n_chans
         self.filter_1 = filter_1
         self.filter_2 = self.filter_1 * depth_multiplier
@@ -265,25 +302,29 @@ class _EEGNetTC(nn.Module):
         self.drop2 = nn.Dropout(p=drop_prob)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x shape: (batch_size, 1, n_times, n_chans)
-        x = self.conv1(x)
+        # x: (batch, 1, n_times, n_chans)
+        # Temporal filters, applied along time to each channel.
+        x = self.conv1(x)  # (batch, filter_1, time, n_chans)
         x = self.bn1(x)
-        x = self.activation(x)
+        if self.act_after_temporal_bn:
+            x = self.activation(x)
 
-        x = self.depthwise_conv(x)
+        # Spatial filters: depthwise convolution that collapses the channels.
+        x = self.depthwise_conv(x)  # (batch, filter_2, time, 1)
         x = self.bn2(x)
         x = self.activation(x)
-        x = self.pool1(x)
+        x = self.pool1(x)  # (batch, filter_2, time // 8, 1)
         x = self.drop1(x)
 
-        x = self.separable_conv_depthwise(x)
+        # Separable convolution: filters over time, then a mix of the filters.
+        x = self.separable_conv_depthwise(x)  # (batch, filter_2, time // 8 + 1, 1)
         x = self.separable_conv_pointwise(x)
         x = self.bn3(x)
         x = self.activation(x)
-        x = self.pool2(x)
+        x = self.pool2(x)  # (batch, filter_2, reduced_time, 1)
         x = self.drop2(x)
 
-        return x  # Shape: (batch_size, F2, reduced_time, 1)
+        return x
 
 
 class _TCNBlock(nn.Module):

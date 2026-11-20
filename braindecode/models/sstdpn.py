@@ -94,7 +94,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
         - *Operations.* Learnable vectors optimized during training using prototype learning losses.
           The `proto_sep` (Inter-class Separation Prototype) is constrained via L2 weight-normalization
-          (:math:`\lVert s_i \rVert_2 \leq` `proto_sep_maxnorm`) during inference.
+          (:math:`\lVert s_i \rVert_2 \leq` `proto_sep_maxnorm`) on every forward pass.
         - *Role.* `proto_sep` achieves inter-class separation; `proto_cpt` enhances intra-class compactness.
 
     .. rubric:: How the information is encoded temporally, spatially, and spectrally
@@ -330,13 +330,14 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         """
 
         features = self.encoder(x)  # (b, feat_dim)
-        # Renormalize inter-class separation prototypes. ``proto_sep`` has shape
-        # (n_outputs, feat_dim); the source constrains each class-row prototype
-        # vector (``||s_i|| <= S``), i.e. renorm along dim=0.
-        with torch.no_grad():  # in place, like ``.data =`` (not scriptable)
-            self.proto_sep.copy_(
-                torch.renorm(self.proto_sep, p=2, dim=0, maxnorm=self.proto_sep_maxnorm)
-            )
+        # Project each class prototype before computing its dot-product gradient.
+        # ``proto_sep`` is (n_outputs, feat_dim): renorm along dim=0 bounds each
+        # class row (``||s_i|| <= S``). The in-place copy into a detached alias
+        # mirrors the source's ``.data =`` and keeps the model exportable.
+        prototypes = self.proto_sep.detach()
+        prototypes.copy_(
+            torch.renorm(prototypes, p=2, dim=0, maxnorm=self.proto_sep_maxnorm)
+        )
         logits = torch.einsum("bd,cd->bc", features, self.proto_sep)  # (b, n_outputs)
         logits = self.final_layer(logits)
 

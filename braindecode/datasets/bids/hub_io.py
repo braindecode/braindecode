@@ -7,10 +7,11 @@ These functions keep the Zarr serialization details isolated from hub.py.
 
 from __future__ import annotations
 
-import json
+from datetime import datetime
 from numbers import Real
 from pathlib import Path
 
+import mne
 import numpy as np
 import pandas as pd
 from mne.utils import _soft_import
@@ -95,15 +96,43 @@ def _restore_nan_from_json(obj):
     return obj
 
 
-def _save_windows_to_zarr(
-    grp, data, metadata, description, info, compressor, target_name
-):
-    """Save windowed data to Zarr group.
+def _annotations_to_json(annotations):
+    """Return the annotations of a recording as JSON.
+
+    Steps:
+
+    1. ``onset``, ``duration`` and ``description``: one list entry per
+       annotation, shape (n_annotations,), with onsets and durations in seconds.
+    2. ``ch_names``: the channel names of each annotation, shape
+       (n_annotations, n_names), empty for an annotation on every channel.
+    3. ``orig_time``: the time the onsets are counted from, as an ISO string, or
+       None for onsets on the acquisition clock of an undated recording.
+    """
+    orig_time = annotations.orig_time
+    return {
+        "onset": annotations.onset.tolist(),
+        "duration": annotations.duration.tolist(),
+        "description": annotations.description.tolist(),
+        "ch_names": [list(names) for names in annotations.ch_names],
+        "orig_time": None if orig_time is None else orig_time.isoformat(),
+    }
+
+
+def _save_windows_to_zarr(grp, epochs, compressor):
+    """Save the windows of an :class:`mne.Epochs` to Zarr group.
 
     Uses 1 window per chunk so the one-time decompression to memmap
     (on lazy load) stays fast per recording.
+
+    Steps:
+
+    1. ``data``: the windows as float32, shape (n_windows, n_channels, n_times).
+    2. ``metadata.tsv``: the window metadata, one row per window.
+    3. ``events``: the events of the epochs, shape (n_windows, 3), on the sample
+       clock of the recording. The ``mne`` attribute holds their ``event_id`` and
+       ``tmin``.
     """
-    data_array = data.astype(np.float32)
+    data_array = epochs.get_data().astype(np.float32)
     compressors_list = [compressor] if compressor is not None else None
 
     # 1 window per chunk: aligned with __getitem__(index) access pattern.
@@ -123,47 +152,36 @@ def _save_windows_to_zarr(
 
     store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
     metadata_path = Path(store_path) / grp.path / "metadata.tsv"
-    metadata.to_csv(metadata_path, sep="\t", index=True)
+    epochs.metadata.to_csv(metadata_path, sep="\t", index=True)
 
-    grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = info
-
-    if target_name is not None:
-        grp.attrs["target_name"] = target_name
+    # events: (n_windows, 3), kept so that each window keeps its sample position
+    grp.create_array("events", data=epochs.events)
+    # event_id maps the event names to the codes of events; tmin is the time of
+    # the first sample of a window relative to its event, in seconds
+    grp.attrs["mne"] = {
+        "event_id": {name: int(code) for name, code in epochs.event_id.items()},
+        "tmin": float(epochs.tmin),
+    }
 
 
 def _save_eegwindows_to_zarr(
-    grp,
-    raw,
-    metadata,
-    description,
-    info,
-    targets_from,
-    last_target_only,
-    compressor,
-    chunk_size,
+    grp, raw, metadata, targets_from, last_target_only, compressor, chunk_size
 ):
-    """Save EEG continuous raw data to Zarr group (low-level function)."""
-    continuous_data = raw.get_data()
-    continuous_float = continuous_data.astype(np.float32)
-    compressors_list = [compressor] if compressor is not None else None
+    """Save EEG continuous raw data and the window metadata to Zarr group.
 
-    max_samples_per_chunk = max(1, chunk_size // continuous_float.shape[0])
-    n_samples_per_chunk = min(continuous_float.shape[1], max_samples_per_chunk)
+    Steps:
 
-    grp.create_array(
-        "data",
-        data=continuous_float,
-        chunks=(continuous_float.shape[0], n_samples_per_chunk),
-        compressors=compressors_list,
-    )
+    1. The continuous recording, with its first sample and annotations, as in
+       :func:`_save_raw_to_zarr`.
+    2. ``metadata.tsv``: the window metadata, one row per window.
+    3. The ``targets_from`` and ``last_target_only`` attributes.
+    """
+    _save_raw_to_zarr(grp, raw, compressor, chunk_size)
 
     store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
     metadata_path = Path(store_path) / grp.path / "metadata.tsv"
     metadata.to_csv(metadata_path, sep="\t", index=True)
 
-    grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = info
     grp.attrs["targets_from"] = targets_from
     grp.attrs["last_target_only"] = last_target_only
 
@@ -207,8 +225,15 @@ def _load_eegwindows_from_zarr(grp, preload):
     return data, metadata, description, info_dict, targets_from, last_target_only
 
 
-def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor, chunk_size):
-    """Save RawDataset continuous raw data to Zarr group (low-level function)."""
+def _save_raw_to_zarr(grp, raw, compressor, chunk_size):
+    """Save continuous raw data to Zarr group (low-level function).
+
+    Steps:
+
+    1. ``data``: the signal as float32, shape (n_channels, n_times).
+    2. The ``mne`` attribute holds the ``first_samp`` of the recording and its
+       annotations, so that events keep their position on the acquisition clock.
+    """
     continuous_data = raw.get_data()
     continuous_float = continuous_data.astype(np.float32)
     compressors_list = [compressor] if compressor is not None else None
@@ -223,11 +248,12 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor, chun
         compressors=compressors_list,
     )
 
-    grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = info
-
-    if target_name is not None:
-        grp.attrs["target_name"] = target_name
+    # first_samp: sample index of the recording's first sample on the acquisition
+    # clock; annotations: JSON with one entry per annotation
+    grp.attrs["mne"] = {
+        "first_samp": int(raw.first_samp),
+        "annotations": _annotations_to_json(raw.annotations),
+    }
 
 
 def _load_raw_from_zarr(grp, preload):
@@ -243,6 +269,86 @@ def _load_raw_from_zarr(grp, preload):
     target_name = grp.attrs.get("target_name", None)
 
     return data, description, info_dict, target_name
+
+
+def _raw_from_zarr(data, info, state):
+    """Rebuild a continuous recording from its signal and its ``mne`` state.
+
+    Steps:
+
+    1. ``data``, shape (n_channels, n_times), becomes a RawArray that starts at
+       the stored ``first_samp`` (0 for stores that did not keep it).
+    2. The stored annotations are set on it. Undated onsets are stored on the
+       acquisition clock, but ``set_annotations`` reads them from the first
+       sample, so ``raw.first_time`` is subtracted from them.
+    """
+    # raw: (n_channels, n_times), whose first sample is the stored first_samp
+    raw = mne.io.RawArray(data, info, first_samp=state.get("first_samp", 0))
+    stored = state.get("annotations")
+    if stored is not None:
+        orig_time = stored["orig_time"]
+        onset = np.asarray(stored["onset"], dtype=float)
+        if orig_time is None:
+            # onset: seconds from the acquisition clock to seconds from the first sample
+            onset = onset - raw.first_time
+        else:
+            orig_time = datetime.fromisoformat(orig_time)
+        # one annotation per entry: onset, duration, description and channel names
+        raw.set_annotations(
+            mne.Annotations(
+                onset,
+                stored["duration"],
+                stored["description"],
+                orig_time=orig_time,
+                ch_names=stored["ch_names"],
+            )
+        )
+    return raw
+
+
+def _epochs_from_zarr(data, info, metadata, state):
+    """Rebuild epochs from their signal, window metadata and ``mne`` state.
+
+    Steps:
+
+    1. The events, shape (n_windows, 3), are the stored ones with their
+       ``event_id`` and ``tmin``. Stores that did not keep them take the events
+       from the metadata: ``i_start_in_trial`` of each window, with integer
+       targets as event codes.
+    2. ``data``, shape (n_windows, n_channels, n_times), becomes an EpochsArray.
+       ``proj=False`` keeps the samples as stored, so a projector that was not
+       applied stays unapplied. ``on_missing="ignore"`` keeps an ``event_id``
+       whose epochs were all dropped.
+    """
+    if "events" in state:
+        # events: (n_windows, 3), sample on the clock of the recording, 0, event code
+        events, event_id, tmin = state["events"], state["event_id"], state["tmin"]
+    else:
+        # events: (n_windows, 3), rebuilt from the window starts of the metadata
+        targets = metadata["target"].values
+        event_ids = (
+            targets
+            if np.issubdtype(targets.dtype, np.integer)
+            else np.ones(len(metadata), dtype=int)
+        )
+        events = np.column_stack(
+            [
+                metadata["i_start_in_trial"].values.astype(int),
+                np.zeros(len(metadata), dtype=int),
+                event_ids,
+            ]
+        )
+        event_id, tmin = None, 0.0
+    return mne.EpochsArray(
+        data,
+        info,
+        events=events,
+        event_id=event_id,
+        tmin=tmin,
+        metadata=metadata,
+        proj=False,
+        on_missing="ignore",
+    )
 
 
 def _create_compressor(compression, compression_level):
