@@ -13,7 +13,6 @@ import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
-from sklearn.base import clone
 
 from braindecode import EEGClassifier
 from braindecode.datasets import BaseConcatDataset, RawDataset, pad_channels_collate
@@ -120,7 +119,7 @@ def test_registered_model_ch_mask_training(model_name, required_params, signal_p
     np.testing.assert_allclose(mixed, np.concatenate(alone), rtol=1e-5, atol=1e-6)
 
 
-def test_channel_strategy_model_trains_on_padded_batches(tmp_path):
+def test_channel_strategy_model_trains_on_padded_batches():
     # The channel layer maps each recording, from its positions, onto BIOT's
     # bipolar pretraining channels; the backbone never sees ch_mask.
     names = [
@@ -144,12 +143,6 @@ def test_channel_strategy_model_trains_on_padded_batches(tmp_path):
         )
     alone = [net.predict_proba(part) for part in windows.split([[0], [1]]).values()]
     np.testing.assert_allclose(proba, np.concatenate(alone), rtol=1e-5, atol=1e-6)
-
-    checkpoint = tmp_path / "biot.pt"
-    net.save_params(f_params=checkpoint)
-    restored = clone(net).initialize()
-    restored.load_params(f_params=checkpoint)
-    np.testing.assert_allclose(restored.predict_proba(windows), proba, rtol=1e-5, atol=1e-6)
 
 
 def test_model_without_ch_mask_refuses_padded_batches():

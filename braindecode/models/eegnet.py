@@ -311,12 +311,27 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
         )
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
-        output_shape = self.get_output_shape()
-        n_out_virtual_chans = output_shape[2]
-
+        # The spatial convolution collapses the electrodes into one row. In
+        # time, each padded convolution keeps n + 2 * (k // 2) - k + 1 samples
+        # and each pooling keeps n // pool_size.
+        n_out_virtual_chans = 1
         if self.final_conv_length == "auto":
-            n_out_time = output_shape[3]
-            self.final_conv_length = n_out_time
+            n_time = (
+                self.n_times + 2 * (self.kernel_length // 2) - self.kernel_length + 1
+            )
+            n_time //= self.pool1_kernel_size
+            n_pool1 = n_time
+            n_time += (
+                2 * (self.depthwise_kernel_length // 2)
+                - self.depthwise_kernel_length
+                + 1
+            )
+            self.final_conv_length = n_time // self.pool2_kernel_size
+            if min(n_pool1, self.final_conv_length) < 1:
+                raise ValueError(
+                    "The convolutions and poolings leave no time sample: too small "
+                    f"`n_times`/`input_window_seconds` for the input {self.input_shape}."
+                )
 
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()

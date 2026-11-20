@@ -195,9 +195,7 @@ COMPAT = {
         channels="coords",
         coords_checked=False,
     ),
-    # Not keyed "REVE": test/conftest.py marks that literal as network-only.
-    # The position bank comes from a local file (``_reve_position_bank``).
-    "REVE-local-bank": dict(
+    "REVE": dict(
         cls=REVE,
         sfreq=200,
         n_times=800,
@@ -465,18 +463,6 @@ COMPAT = {
 
 # LaBraM looks names up at forward: these montages go through the channel layer.
 STRATEGY_CELLS = {("Labram", "G2"), ("Labram", "G3"), ("Labram", "G3b")}
-
-
-@pytest.fixture(autouse=True)
-def _reve_position_bank(tmp_path, monkeypatch):
-    """Serve REVE's and Pratibha2's position banks from local files instead of the Hub."""
-    pos = _montage("standard_1005").get_positions()["ch_pos"]
-    bank = {name: [float(v) for v in xyz] for name, xyz in pos.items()}
-    for ch in chs_coords_only(128):  # EGI-style E1..E128, as in the released banks
-        bank[ch["ch_name"]] = [float(v) for v in ch["loc"][:3]]
-    for fname in ("reve_positions.json", "pratibha2_positions.json"):
-        (tmp_path / fname).write_text(json.dumps(bank))
-    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
 
 
 def geometries(spec):
@@ -756,11 +742,13 @@ def test_foundation_model_maps_each_sample_under_a_strategy(name):
 
 # Classes with released weights that are outside this EEG/iEEG contract.
 EXCLUDED = {
+    "GeoNIRS": "fNIRS channels placed by optode positions, no EEG geometry",
     "NeuroPose": "sEMG hand-pose regression, no EEG geometry",
     "VEMG2Pose": "sEMG hand-pose regression, no EEG geometry",
     "TinyMyo": "sEMG channel slots, no EEG geometry",
     "NeuroRVQTokenizer": "returns (target, reconstruction); NeuroRVQ's channel contract",
     "MtReNIRS": "fNIRS HbO/HbR pairs with optode positions, no EEG geometry",
+    "JungMAE": "fNIRS channel patches, no EEG geometry",
 }
 _SHIPS_WEIGHTS = re.compile(
     r"hf_hub_download|from_pretrained\(|huggingface\.co/|Hugging Face Hub"

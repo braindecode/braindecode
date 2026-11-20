@@ -57,31 +57,24 @@ def samples_to_ms(n_samples, fs):
     return n_samples * 1000.0 / fs
 
 
-def _labels_within(y, classes) -> bool:
-    try:
-        return set(np.unique(np.asarray(y))) <= set(classes)
-    except TypeError:  # unhashable or unsortable labels
-        return False
+def _get_n_outputs(y, classes, mode, stored=None):
+    """Number of outputs for the targets ``y`` the model trains on.
 
-
-def _get_n_outputs(y, classes, mode):
+    Classification: ``len(classes)``, else the number of distinct values of ``y``,
+    whatever its shape (class probabilities need ``classes`` or ``n_outputs``).
+    ``classes`` names the labels as ``stored``, before any ``target_transform``.
+    """
     if mode == "classification":
-        y = np.asarray(y)
-        if y.ndim >= 2 and y.shape[1] > 1 and np.issubdtype(y.dtype, np.floating):
-            # Probability targets carry the class axis, including unobserved classes.
-            if np.all(y >= 0) and np.allclose(
-                y.sum(axis=1), 1, atol=np.finfo(y.dtype).eps
-            ):
-                if classes is not None and len(classes) != y.shape[1]:
-                    raise ValueError(
-                        "The number of classes must match the probability target width."
-                    )
-                return y.shape[1]
-        classes_y = np.unique(y)
-        if classes is not None:
-            assert set(classes_y) <= set(classes)
-        else:
-            classes = classes_y
+        if classes is None:
+            return len(np.unique(y))
+        labels = np.asarray(y if stored is None else stored)
+        if labels.ndim == 1:  # class probabilities are not labels
+            missing = sorted(set(np.unique(labels).tolist()) - set(classes))
+            if missing:
+                raise ValueError(
+                    f"Labels {missing} are not in classes {list(classes)}. classes "
+                    "names the labels as stored, before any target_transform."
+                )
         return len(classes)
     elif mode == "regression":
         if y is None:
@@ -99,6 +92,7 @@ def infer_signal_properties(
     y=None,
     mode: Literal["classification", "regression"] = "classification",
     classes: list | None = None,
+    n_outputs: int | None = None,
 ) -> dict[SigArgName, Any]:
     """Infers signal properties from the data.
 
@@ -119,14 +113,17 @@ def infer_signal_properties(
     X : array-like or mne.BaseEpochs or Dataset
         Input data
     y : array-like or None
-        Targets. For floating-point class probabilities, axis 1 is the
-        class axis. For window datasets with metadata labels, the dataset's
-        target transform is applied before inferring the output size.
+        Targets of array-like ``X``, ignored for a dataset, which holds its own
+        (after its ``target_transform``). In classification they give one output
+        per distinct value: class probabilities need ``n_outputs`` or ``classes``.
     mode : "classification" or "regression"
         Mode of the task
     classes : list or None
-        List of classes for classification. With a dataset ``target_transform``,
-        it may name either the stored labels or the transformed ones.
+        List of classes for classification, as stored, before any
+        ``target_transform``. ``n_outputs`` is its length.
+    n_outputs : int or None
+        Number of outputs, if known: it is returned as is and the targets are
+        not read.
 
     Returns
     -------
@@ -143,7 +140,9 @@ def infer_signal_properties(
     ):
         if y is None:
             raise ValueError("y must be specified if X is array-like.")
-        signal_kwargs["n_outputs"] = _get_n_outputs(y, classes, mode)
+        signal_kwargs["n_outputs"] = (
+            n_outputs if n_outputs is not None else _get_n_outputs(y, classes, mode)
+        )
         if isinstance(X, mne.BaseEpochs):
             log.info("Using mne.Epochs to find signal-related parameters.")
             signal_kwargs["n_times"] = len(X.times)
@@ -165,26 +164,21 @@ def infer_signal_properties(
         signal_kwargs["n_times"] = Xshape[-1]
         signal_kwargs["n_chans"] = Xshape[-2]
         datasets = X.datasets if isinstance(X, BaseConcatDataset) else [X]
-        if all(
+        if n_outputs is not None:
+            signal_kwargs["n_outputs"] = n_outputs
+        elif all(
             isinstance(ds, (EEGWindowsDataset, WindowsDataset))
             and ds.targets_from == "metadata"
             for ds in datasets
         ):
-            # Both window backends return ds.y[i], including with lazy metadata.
+            # One label per window, as stored (both window backends, lazy metadata
+            # included) and as the model receives it, after any target_transform.
             stored = [ds.y[i] for ds in datasets for i in range(len(ds))]
             targets = stored
             if isinstance(X, BaseConcatDataset) and X.target_transform is not None:
                 targets = [X.target_transform(t) for t in stored]
-                if (
-                    mode == "classification"
-                    and classes is not None
-                    and not _labels_within(targets, classes)
-                    and _labels_within(stored, classes)
-                ):
-                    # ``classes`` names the stored labels the transform encodes.
-                    targets = stored
             signal_kwargs["n_outputs"] = _get_n_outputs(
-                np.asarray(targets), classes, mode
+                np.asarray(targets), classes, mode, stored=np.asarray(stored)
             )
     else:
         log.warning(

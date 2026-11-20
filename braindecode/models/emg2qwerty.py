@@ -483,15 +483,13 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         return (spec_len - self._n_conv_blocks * (self.kernel_width - 1)).clamp_min(0)
 
     def get_output_shape(self) -> tuple[int, ...]:
-        """Shape of ``forward`` output for a batch of size 1.
+        """Shape of the ``forward`` output for one window, ``(1, T_out, n_outputs)``.
 
-        Uses the user-supplied ``n_times`` so this method's reported
-        shape is consistent with what ``forward()`` accepts. If the
-        configured ``n_times`` is below the encoder's receptive field,
-        ``forward()`` would raise; we mirror that here. Falls back to
-        the receptive-field minimum only when ``n_times`` was not set
-        at construction time.
+        ``T_out`` is :meth:`compute_output_lengths` of ``n_times``; without a
+        configured ``n_times``, of the encoder's receptive field.
         """
+        # Receptive field: one STFT frame, plus the frames each convolution
+        # block consumes (kernel_width - 1 of them, hop_length samples apart)
         min_n_times = (
             self.n_fft + self._n_conv_blocks * (self.kernel_width - 1) * self.hop_length
         )
@@ -506,19 +504,8 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
                 f"this input. Increase n_times or override n_fft / hop_length "
                 f"/ kernel_width."
             )
-        with torch.inference_mode():
-            dtype = next(self.parameters()).dtype
-            device = next(self.parameters()).device
-            dummy_input = torch.zeros(
-                1, self.n_chans, n_times, dtype=dtype, device=device
-            )
-            # ``return_features=False`` keeps the dict path off; the init
-            # ``return_feature`` flag may still produce a tuple, so unpack
-            # the emissions explicitly to report the public output shape.
-            out = self.forward(dummy_input, return_features=False)
-            emissions = out[0] if isinstance(out, tuple) else out
-            assert isinstance(emissions, torch.Tensor)
-            return tuple(emissions.shape)
+        n_emissions = int(self.compute_output_lengths(torch.tensor([n_times]))[0])
+        return (1, n_emissions, self.final_layer.out_features)
 
 
 class _LogSpectrogram(nn.Module):
