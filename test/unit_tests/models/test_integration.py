@@ -284,8 +284,7 @@ def test_activation_default_parameters_are_nn_module_classes(model_class):
     activation_list = [
         value
         for key, value in sig.parameters.items()
-        if "activation" in key.lower()
-        and key not in {"activation_checkpointing", "temporal_activation"}
+        if "activation" in key.lower() and key != "activation_checkpointing"
     ]
     for activation in activation_list:
 

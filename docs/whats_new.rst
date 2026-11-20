@@ -181,12 +181,9 @@ Enhancements
 - Add :class:`braindecode.models.TCCNet`, a causal temporal-convolution model
   for sEMG gesture recognition with average-over-time and context-attention
   classification heads (:gh:`1562` by `Arslan Shafique`_).
-- Add :class:`braindecode.models.CareSleepNet` (Wang et al., IEEE JBHI 2024), a
-  sleep stager that labels a sequence of consecutive sleep epochs of EEG and
-  EOG (20 epochs of 30 s in the reference) in one pass and returns one prediction per epoch, shape
-  ``(batch, n_outputs, n_epochs)``. Outputs and gradients match the authors' code on
-  the same random weights; the authors released no trained weights
-  (:gh:`1653` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- Add :class:`braindecode.models.CareSleepNet` (Wang et al., IEEE JBHI 2024), a sleep stager
+  that labels a sequence of consecutive epochs of EEG and EOG in one pass, one prediction per
+  epoch, ``(batch, n_outputs, n_epochs)`` (:gh:`1653` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - A model loaded with :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` shows where its weights come from: in a notebook (``model`` as the last line of a cell) a panel lists the input geometry, the Hub repository and commit, the licence, the base model and the datasets of the model card (linked to NEMAR, OpenNeuro or the Hub), and a module table with each block marked as loaded from the checkpoint or initialised here, e.g. a head rebuilt for a new ``n_outputs``; ``print(model)`` adds the same facts below the torchinfo table. Both ask users, and AI agents reading the output, to cite Braindecode with its `Zenodo DOI <https://doi.org/10.5281/zenodo.8214376>`__. The card offers BibTeX/APA downloads and selectable citation text, and links training datasets to NEMAR, EEGDash catalogue searches and documented braindecode readers. ``from_pretrained`` now warns when no parameter of the model was loaded from the checkpoint, which happened silently when the checkpoint's keys did not match the model (:gh:`1558` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.CORTEG`, an ST-EEGFormer adapted to
   intracranial ECoG: a spatial adapter places each electrode by its 3D position
@@ -453,11 +450,9 @@ Bug fixes
   an in-place channel selection or reordering during preprocessing
   (:gh:`1643` by `Bruno Aristimunha`_).
 
-- :class:`braindecode.models.BIOT` looks up all its channel tokens in one embedding call with a
-  1-D index, instead of one call per channel with a 0-d index. Outputs and gradients are
-  bitwise the same on CPU. On Intel Gaudi, whose embedding backward sends a 0-d index's
-  gradient to row 0, only the first channel token trained before (:gh:`1585` by
-  `Bruno Aristimunha`_).
+- :class:`braindecode.models.BIOT` looks up all its channel tokens in one embedding call
+  instead of one call per channel. Outputs and gradients are unchanged
+  (:gh:`1585` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MAPA` attends with 4-D inputs on every device; on Intel
   Gaudi it used 5-D ones, which the fused attention kernel gets wrong (outputs 55% and
   gradients 60-70% off). :class:`braindecode.models.EMG2QwertyNet` takes offset 0 of
@@ -502,10 +497,9 @@ Bug fixes
   patch is added only when its start lies within the signal, so a window
   whose remaining samples all fall in the gap no longer gets an all-zero
   patch (:gh:`1638` by `Bruno Aristimunha`_).
-- :func:`braindecode.visualization.layer_grad_cam` returns a temporal
-  class activation map of shape ``(batch, n_times)`` for one-dimensional
-  convolutional layers, including those of :class:`~braindecode.models.EEGSimpleConv`.
-  It raised an error for these layers (:gh:`1634` by `Bruno Aristimunha`_).
+- :func:`braindecode.visualization.layer_grad_cam` returns a map ``(batch, n_times)`` for a
+  one-dimensional convolutional layer, which raised an error before. A two-dimensional layer
+  that is not channels x time raises a ``ValueError`` (:gh:`1634` by `Bruno Aristimunha`_).
 - :class:`braindecode.samplers.DistributedRelativePositioningSampler` divides
   the requested pair count evenly across ranks, including when the recording
   count requires padding or truncation. Uneven pair budgets round up by
@@ -519,14 +513,9 @@ Bug fixes
   convolution or pooling samples, raise a ``ValueError`` at construction. Settings where the two sizes agree, such as the defaults,
   keep their parameter shapes and outputs (:gh:`1611` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
-- :class:`braindecode.models.EEGTCNet` no longer applies ``activation`` between the
-  temporal batch norm and the depthwise convolution. The authors' EEG-TCNet code and
-  :class:`braindecode.models.EEGNet` have no activation there. The parameters do not
-  change, so saved weights still load. Old saved configurations restore the
-  previous activation, and configurations saved before 1.6.1 also restore
-  ``tcn_batch_norm=False``. When loading a bare state dict, pass
-  ``temporal_activation=True`` to reproduce the previous outputs
-  (:gh:`1607` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.EEGTCNet` drops the ``activation`` after its temporal batch norm,
+  as in the authors' code. Saved configurations keep it; with a bare state dict, pass
+  ``act_after_temporal_bn=True`` (:gh:`1607` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
   averages kept steps that lie after the end of the input. When the last
   segment held fewer real samples than its first kept step position, those
@@ -605,13 +594,9 @@ Bug fixes
   recompute the graph, and constant channels have no edges. A passed GCNsNet
   instance is trained in place, as every model: its graph comes from its first
   fit and persists with its weights (:gh:`1629` by `Bruno Aristimunha`_).
-- :class:`braindecode.models.AttnSleep` attends with the raw query, as the authors'
-  code does. Since the TorchScript refactor (:gh:`729`), the residual block
-  normalized the query before the attention. This changes the outputs of new
-  models and of bare state dicts. Old saved model configurations and
-  full-model pickles retain the previous outputs. When loading a bare
-  state dict, pass ``attn_query_norm=True`` to reproduce those outputs
-  (:gh:`1606` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.AttnSleep` attends with the raw query, as the authors' code does,
+  which changes the outputs of new models and bare state dicts; ``attn_query_norm=True`` keeps
+  the old ones, as saved configurations do (:gh:`1606` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - The Eldele et al. (2021) sleep staging tutorial (``plot_sleep_staging_eldele2021.py``) splits train and validation by subject, as its text says; ``split`` took the ids as recording indices, so it trained on subjects 0-1 and validated on subject 2 while subjects 3-5 were loaded and unused (:gh:`1559` by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.ChannelMerger` keeps gradients finite when spatial
   dropout excludes every electrode of a recording during training in

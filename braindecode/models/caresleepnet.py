@@ -13,39 +13,74 @@ from torch import nn
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import LearnedPositionalEncoding, TimmMlp
 
-# Shortest epoch the epoch encoder accepts: the stride-12 convolution and the
-# stride-2 pooling must leave at least 8 steps for the three pool-by-2 layers.
-_MIN_EPOCH_SAMPLES = 169
-
 
 class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
     r"""CareSleepNet from Wang et al. (2024) [caresleepnet2024]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
 
-    A sequence-to-sequence sleep stager: it reads a sequence of ``n_epochs``
-    consecutive sleep epochs of EEG and EOG and returns one prediction per
-    epoch.
+    .. rubric:: Architecture Overview
 
-    - **Epoch encoder** (one for EEG, one for EOG). Four multi-scale dilated
-      convolution blocks (three dilated convolutions and a 1x1 shortcut,
-      summed and layer-normalized), each followed by max pooling; the last
-      three are each followed by a post-norm transformer layer over time. The
-      average over time gives one 512-dimensional vector per epoch.
-    - **Cross-modal encoder.** EEG attends to EOG and EOG to EEG: in each
-      pre-norm block, the queries come from one signal and the keys, values
-      and residual from the other. The two outputs are summed.
-    - **Sequence encoder.** A learned positional encoding and one pre-norm
-      transformer layer over the epochs, then a linear classifier per epoch.
+    A sequence-to-sequence sleep stager: it reads ``n_epochs`` consecutive sleep
+    epochs of EEG and EOG and returns one prediction per epoch::
 
-    The input is ``(batch, n_chans, n_times)`` with the epochs one after the
-    other in time, ``n_times = n_epochs * epoch_samples``, or
-    ``(batch, n_epochs, n_chans, epoch_samples)`` as the reference takes it.
-    Both layouts accept shorter sequences, up to the configured ``n_epochs``.
-    For flat inputs each epoch always spans ``n_times // n_epochs`` samples.
-    The last ``n_eog_chans`` channels are EOG.
-    The others are EEG. The output is
-    ``(batch, n_outputs, n_epochs)``.
+        (batch, n_chans, n_times) -> split into n_epochs epochs -> EEG and EOG
+        epoch encoders -> (batch, n_epochs, 512) each -> cross-modal blocks,
+        summed -> positional encoding -> sequence encoder -> linear classifier
+        per epoch -> (batch, n_outputs, n_epochs)
+
+    .. rubric:: Macro Components
+
+    ``CareSleepNet.eeg_encoder`` and ``CareSleepNet.eog_encoder``
+        **Operations.** Four multi-scale dilated convolution blocks (three
+        convolutions of dilation 1, 2 and 4 and a 1x1 shortcut, summed and
+        layer-normalized), each followed by max pooling; the last three are each
+        followed by a post-norm transformer layer over time, then the average
+        over time. **Role.** One 512-dimensional vector per epoch, from the EEG
+        channels and from the EOG channels.
+
+    ``CareSleepNet.eog_to_eeg`` and ``CareSleepNet.eeg_to_eog``
+        **Operations.** Pre-norm blocks of multi-head attention and an MLP: the
+        queries come from one signal, the keys, values and residual from the
+        other. The two outputs are summed. **Role.** Cross-modal fusion.
+
+    ``CareSleepNet.positional_encoding`` and ``CareSleepNet.sequence_encoder``
+        **Operations.** A learned positional encoding over the epochs and one
+        pre-norm transformer layer. **Role.** Context across the epochs.
+
+    ``CareSleepNet.final_layer``
+        **Operations.** A layer norm and a linear classifier, applied to each
+        epoch.
+
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Temporal:** dilated convolutions and transformer layers within each
+      epoch, then a transformer over the epochs of the sequence.
+    - **Spatial:** EEG and EOG channels are encoded apart, each mixed by the
+      first convolution of its encoder, then fused by cross-modal attention.
+    - **Spectral:** learned by the multi-scale dilated convolutions.
+
+    .. rubric:: Additional Mechanisms
+
+    - The input holds the epochs one after the other in time,
+      ``n_times = n_epochs * epoch_samples``, so each epoch spans
+      ``n_times // n_epochs`` samples. The last ``n_eog_chans`` channels are
+      EOG and the others EEG.
+    - The transformer layers of the epoch encoders are BERT layers (post-norm,
+      ``eps=1e-12``, no dropout between the GELU and the second linear layer);
+      the reference's all-ones attention mask is a no-op and is left out. The
+      initialization follows the reference.
+
+    .. important::
+
+        The reference code [caresleepnetcode]_ takes signals resampled to
+        100 Hz (ISRUC also band-passed at 0.3-40 Hz), cut into sequences of 20
+        epochs of 30 s, with 5 classes (W, N1, N2, N3, REM) and, on ISRUC, 6
+        EEG and 2 EOG channels. No trained weights were released.
+
+    .. versionadded:: 2.1
+
+    `License <https://github.com/wjq-learning/CareSleepNet/blob/386e149f7eac8d93207972268f8bc82ea37361c1/LICENSE>`_
 
     Parameters
     ----------
@@ -59,24 +94,6 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         Dropout rate of every dropout layer.
     activation : type[nn.Module], default=nn.GELU
         Activation of every convolution branch and transformer MLP.
-
-    Notes
-    -----
-    Protocol of the reference code [caresleepnetcode]_: signals resampled to
-    100 Hz (ISRUC also band-passed at 0.3-40 Hz), cut into 20-epoch
-    sequences of 30 s, 5 classes (W, N1, N2, N3, REM); Adam (learning rate
-    1e-4, cosine annealing over all steps), batch size 16, 60 epochs,
-    gradient-norm clipping at 1, cross-entropy, 10-fold cross-validation.
-    The reference hard-codes 6 EEG and 2 EOG channels and 20 epochs; this
-    port makes them parameters. Every dropout rate of the reference is 0.1,
-    the default ``drop_prob``.
-
-    The epoch encoder's transformer layers are BERT layers (post-norm,
-    ``eps=1e-12``, no dropout between the GELU and the second linear layer)
-    with an all-ones attention mask, which is a no-op and is left out. No
-    trained weights were released. The initialization follows the reference.
-
-    `License <https://github.com/wjq-learning/CareSleepNet/blob/386e149f7eac8d93207972268f8bc82ea37361c1/LICENSE>`_
 
     References
     ----------
@@ -131,20 +148,31 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
                 f"got n_times // n_epochs = {self.n_times // n_epochs}."
             )
         self.n_epochs = n_epochs
-        self.epoch_samples = self.n_times // n_epochs
         self.n_eog_chans = n_eog_chans
-        dim = 512
+        dim = 512  # width of the epoch vectors and of the sequence model
+        n_heads = 8  # attention heads of the cross-modal and sequence blocks
+
+        # The epoch encoders see one epoch at a time: fold the epochs into the
+        # batch, then unfold their vectors into a sequence of epochs.
+        self.epochs_to_batch = Rearrange(
+            "batch chans (epoch time) -> (batch epoch) chans time", epoch=n_epochs
+        )
+        self.batch_to_epochs = Rearrange(
+            "(batch epoch) dim -> batch epoch dim", epoch=n_epochs
+        )
+        # The classifier gives one row per epoch; the output has them last.
+        self.epochs_last = Rearrange("batch epoch out -> batch out epoch")
 
         self.eeg_encoder = _epoch_encoder(
             self.n_chans - n_eog_chans, drop_prob, activation
         )
         self.eog_encoder = _epoch_encoder(n_eog_chans, drop_prob, activation)
-        self.eog_to_eeg = _CrossModalBlock(dim, 8, dim, drop_prob, activation)
-        self.eeg_to_eog = _CrossModalBlock(dim, 8, dim, drop_prob, activation)
+        self.eog_to_eeg = _CrossModalBlock(dim, n_heads, dim, drop_prob, activation)
+        self.eeg_to_eog = _CrossModalBlock(dim, n_heads, dim, drop_prob, activation)
         self.positional_encoding = LearnedPositionalEncoding(n_epochs, dim, drop_prob)
         self.sequence_encoder = nn.TransformerEncoderLayer(
             dim,
-            8,
+            n_heads,
             dim,
             drop_prob,
             activation=activation(),
@@ -192,36 +220,39 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """``(batch, n_chans, n_times)`` or ``(batch, n_epochs, n_chans,
-        epoch_samples)`` to ``(batch, n_outputs, n_epochs)``."""
-        epoch_samples = self.epoch_samples
-        if x.ndim == 3:
-            if x.shape[-1] % epoch_samples:
-                raise ValueError(
-                    f"Each sleep epoch must contain {epoch_samples} samples."
-                )
-            x = x.unflatten(
-                -1, (x.shape[-1] // epoch_samples, epoch_samples)
-            ).transpose(1, 2)
-        batch, n_epochs, n_chans, n_samples = x.shape
-        if not 1 <= n_epochs <= self.n_epochs:
-            raise ValueError(
-                f"The input has {n_epochs} epochs, expected 1 to {self.n_epochs}."
-            )
-        if n_chans != self.n_chans or n_samples != epoch_samples:
-            raise ValueError(
-                f"Each epoch must have shape ({self.n_chans}, {epoch_samples}), "
-                f"got ({n_chans}, {n_samples})."
-            )
-        n_eeg = n_chans - self.n_eog_chans
-        eeg = self.eeg_encoder(x[:, :, :n_eeg].reshape(-1, n_eeg, n_samples))
-        eog = self.eog_encoder(x[:, :, n_eeg:].reshape(-1, self.n_eog_chans, n_samples))
-        eeg = eeg.reshape(batch, n_epochs, -1)
-        eog = eog.reshape(batch, n_epochs, -1)
+        """Predict a sleep stage for each epoch of a sequence.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            ``(batch, n_chans, n_times)``: the epochs one after the other in
+            time, the EEG channels first and the last ``n_eog_chans`` EOG.
+
+        Returns
+        -------
+        torch.Tensor
+            ``(batch, n_outputs, n_epochs)``.
+        """
+        # x: (batch, n_chans, n_times), the epochs one after the other in time
+        x = self.epochs_to_batch(x)  # (batch * n_epochs, n_chans, epoch_samples)
+        # The EEG and EOG channels, each with its own epoch encoder that gives
+        # one vector per epoch.
+        eeg, eog = x.split([self.n_chans - self.n_eog_chans, self.n_eog_chans], dim=1)
+        eeg = self.batch_to_epochs(self.eeg_encoder(eeg))  # (batch, n_epochs, 512)
+        eog = self.batch_to_epochs(self.eog_encoder(eog))  # (batch, n_epochs, 512)
+        # Each signal attends to the other; the two views are summed:
+        # (batch, n_epochs, 512)
         x = self.eog_to_eeg(eeg, eog) + self.eeg_to_eog(eog, eeg)
+        # Context across the epochs of the sequence: (batch, n_epochs, 512)
         x = self.sequence_encoder(self.positional_encoding(x))
+        # One row of logits per epoch: (batch, n_epochs, n_outputs)
         x = self.final_layer(self.sequence_norm(x))
-        return x.transpose(1, 2)
+        return self.epochs_last(x)  # (batch, n_outputs, n_epochs)
+
+
+# Shortest epoch the epoch encoder accepts: the stride-12 convolution and the
+# stride-2 pooling must leave at least 8 steps for the three pool-by-2 layers.
+_MIN_EPOCH_SAMPLES = 169
 
 
 def _epoch_encoder(
