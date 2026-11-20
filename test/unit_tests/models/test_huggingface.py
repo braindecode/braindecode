@@ -706,7 +706,7 @@ def test_from_pretrained_reports_loaded_parameters(tmp_path):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         same = EEGNet.from_pretrained(tmp_path / "same")
-    assert not [w for w in caught if "no parameter of" in str(w.message)]
+    assert not [w for w in caught if "not loaded from" in str(w.message)]
     assert set(dict(same.named_parameters())) <= same._pretrained_provenance["loaded"]
 
     # Same weights under other key names (e.g. an upstream checkpoint mirrored
@@ -716,9 +716,31 @@ def test_from_pretrained_reports_loaded_parameters(tmp_path):
     (other / "config.json").write_text((tmp_path / "same" / "config.json").read_text())
     weights = load_file(tmp_path / "same" / "model.safetensors")
     save_file({f"model.{k}": v for k, v in weights.items()}, other / "model.safetensors")
-    with pytest.warns(UserWarning, match="no parameter of EEGNet was loaded from"):
+    with pytest.warns(UserWarning, match="parameters of EEGNet were not loaded from"):
         renamed = EEGNet.from_pretrained(other)
     assert not renamed._pretrained_provenance["loaded"]
+
+
+@pytest.mark.parametrize(
+    "dropped, warns", [("conv_temporal", True), ("final_layer", False)]
+)
+def test_from_pretrained_warns_for_unloaded_parameters_outside_the_head(
+    tmp_path, dropped, warns
+):
+    import warnings
+
+    from safetensors.torch import load_file, save_file
+
+    EEGNet(n_chans=4, n_times=128, n_outputs=2).save_pretrained(tmp_path)
+    path = tmp_path / "model.safetensors"
+    weights = load_file(path)
+    save_file({k: v for k, v in weights.items() if not k.startswith(dropped)}, path)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        EEGNet.from_pretrained(tmp_path)
+    messages = [str(w.message) for w in caught if "not loaded from" in str(w.message)]
+    assert bool(messages) == warns
+    assert not warns or "conv_temporal.weight" in messages[0]
 
 
 def test_model_card_scalar_and_escaped_html(tmp_path):

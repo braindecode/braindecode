@@ -231,6 +231,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self.proj_out = nn.Sequential(nn.Linear(d_model, emb_dim))
 
         self._patch_size = patch_size
+        self._encoder_output = return_encoder_output
         self._init_parameters()
 
         if return_encoder_output:
@@ -246,11 +247,18 @@ class CBraMod(EEGModuleMixin, nn.Module):
                 nn.Flatten(), nn.LazyLinear(self.n_outputs)
             )
 
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        if "_encoder_output" not in state:
+            # Earlier pickles select encoder output with this identity head.
+            self._encoder_output = isinstance(self.final_layer, nn.Identity)
+
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
         self._update_init_kwargs(n_outputs=n_outputs)
         # A head implies a classifier, also when built with return_encoder_output.
         self._update_init_kwargs(return_encoder_output=False)
+        self._encoder_output = False
         if self._knows_geometry():
             n_patch = self._n_patch()
             # proj_out reads the encoder output, whose size is d_model.
@@ -300,15 +308,14 @@ class CBraMod(EEGModuleMixin, nn.Module):
         :func:`~braindecode.datasets.pad_channels_collate` pads: the
         positional convolution reads neighbouring channels."""
         ch_mask = check_ch_mask(ch_mask, x)
-        encoder_output = isinstance(self.final_layer, nn.Identity)
         # The encoder takes any number of channels, the flattened head does not.
         if self._n_chans_for_jit is not None and not (
-            return_features or encoder_output
+            return_features or self._encoder_output
         ):
             check_n_chans(x, self._n_chans_for_jit, "CBraMod")
         key_padding_mask: Optional[Tensor] = None
         if ch_mask is not None:
-            if not return_features and not encoder_output:
+            if not return_features and not self._encoder_output:
                 raise ValueError(
                     "ch_mask needs return_encoder_output=True: the flattened "
                     "head is tied to the channels."

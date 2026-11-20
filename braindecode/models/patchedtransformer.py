@@ -664,6 +664,8 @@ class _Patcher(nn.Module):
         # gives floor(T/D) for both that count and the current C*floor(T/D).
         n_chans = X.size(1)
         n_patches = self.num_tokens // n_chans
+        if n_patches == 0:
+            raise ValueError("PBT requires at least one complete patch per channel.")
         x_patched = X[..., : n_patches * self.d_input].reshape(
             X.size(0), n_chans * n_patches, self.d_input
         )

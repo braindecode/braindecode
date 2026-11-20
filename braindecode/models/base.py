@@ -925,10 +925,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         own = super().state_dict()
-        mapping = self.mapping or {}
-        new_state_dict = OrderedDict(
-            (mapping.get(key, key), value) for key, value in state_dict.items()
-        )
+        new_state_dict = OrderedDict(state_dict)
+        # An old name never replaces a current one: strict loads report it.
+        for old, current in (self.mapping or {}).items():
+            if old in new_state_dict and current not in new_state_dict:
+                new_state_dict[current] = new_state_dict.pop(old)
         # Keep the module versions saved in the checkpoint (BatchNorm's, for one).
         if hasattr(state_dict, "_metadata"):
             new_state_dict._metadata = state_dict._metadata
@@ -1291,14 +1292,23 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             if isinstance(model, torch.nn.Module):
                 provenance = model.__dict__.setdefault("_pretrained_provenance", {})
                 provenance.update(_checkpoint_source(*args, **kwargs))
-                params = {
-                    name for name, _ in model.named_parameters(remove_duplicate=False)
-                }
-                if params and not params & (provenance.get("loaded") or set()):
+                params = list(model.named_parameters(remove_duplicate=False))
+                loaded = provenance.get("loaded") or set()
+                # Tied parameters may be saved under only one of their names.
+                loaded_ids = {id(p) for n, p in params if n in loaded}
+                # A new head is initialised here: only the rest must load.
+                unloaded = [
+                    n
+                    for n, p in params
+                    if id(p) not in loaded_ids and not n.startswith("final_layer.")
+                ]
+                if unloaded:
+                    more = ", ..." if len(unloaded) > 10 else ""
                     warnings.warn(
-                        f"no parameter of {cls.__name__} was loaded from "
-                        f"{provenance['repo_id']}; the checkpoint keys do not "
-                        "match the model",
+                        f"{len(unloaded)} of {len(params)} parameters of "
+                        f"{cls.__name__} were not loaded from "
+                        f"{provenance['repo_id']} (the checkpoint keys do not "
+                        f"match the model): {', '.join(unloaded[:10])}{more}",
                         UserWarning,
                         stacklevel=2,
                     )

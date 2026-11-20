@@ -503,14 +503,23 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             self._register_channel_locations()
 
     def _register_channel_locations(self):
-        """Locations used when ``forward`` gets no ``channel_locations``: the
-        positions of ``chs_info``, or points along the x axis without them. They
-        stay out of the state dict."""
-        positions = chs_info_positions(self._chs_info, "LUNA")
+        self.register_buffer(
+            "_default_channel_locations", torch.empty(0, 3), persistent=False
+        )
+        self._reset_channel_locations()
+        self.register_load_state_dict_post_hook(self._reset_channel_locations)
+
+    def _reset_channel_locations(self, _module=None, _incompatible_keys=None):
+        """Rebuild the nonpersistent coordinates after initialization or checkpoint load."""
+        # MNE metadata holds real coordinates, including while constructing on meta.
+        with torch.device("cpu"):
+            positions = chs_info_positions(self._chs_info, "LUNA")
+        anchor = next(self.parameters())
         self._has_measured_positions = positions is not None
         if positions is None:
-            positions = _x_axis_locations(self._n_chans_for_jit or 0)
-        self.register_buffer("_default_channel_locations", positions, persistent=False)
+            self._default_channel_locations = anchor.new_empty(0, 3)
+            positions = self.build_channel_location_template(self._n_chans_for_jit or 0)
+        self._default_channel_locations = positions.to(anchor)
 
     def get_default_channel_locations(
         self,
@@ -544,7 +553,12 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             return template
         if self._has_measured_positions and num_channels < template.shape[0]:
             return template[:num_channels]
-        return _x_axis_locations(num_channels, template.device)
+
+        positions = torch.linspace(
+            -1.0, 1.0, steps=num_channels, dtype=torch.float32, device=template.device
+        )
+        zeros = torch.zeros_like(positions)
+        return torch.stack([positions, zeros, zeros], dim=-1)
 
     def _get_default_channel_locations(
         self,
@@ -562,17 +576,6 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     def _build_channel_location_template(self, num_channels: int) -> torch.Tensor:
         return self.build_channel_location_template(num_channels)
-
-
-def _x_axis_locations(
-    num_channels: int, device: Optional[torch.device] = None
-) -> torch.Tensor:
-    """Channel locations ``(num_channels, 3)`` spread along the x axis, -1 to 1."""
-    positions = torch.linspace(
-        -1.0, 1.0, steps=num_channels, dtype=torch.float32, device=device
-    )
-    zeros = torch.zeros_like(positions)
-    return torch.stack([positions, zeros, zeros], dim=-1)
 
 
 def trunc_normal_(tensor: torch.Tensor, mean: float = 0.0, std: float = 1.0) -> None:

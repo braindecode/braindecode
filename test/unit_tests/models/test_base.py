@@ -15,7 +15,7 @@ import pytest
 import torch
 from torch import nn
 
-from braindecode.models import EEGCLIP, LUNA, PBT, CBraMod, CSBrain, Deep4Net, EEGNet
+from braindecode.models import EEGCLIP, LUNA, PBT, CBraMod, Deep4Net, EEGNet
 from braindecode.models.base import EEGModuleMixin
 
 if TYPE_CHECKING:
@@ -882,10 +882,11 @@ def test_load_state_dict_preserves_batch_norm_version():
 
 
 # Saved with braindecode 2.0.0 (git tag v2.0.0) and torch 2.6: each model below built
-# after ``torch.manual_seed(0)`` (``proj_out`` of CBraMod and CSBrain set to the
-# identity, as 2.1 does not apply it), ``y = model.eval()(x)`` for an ``x`` drawn with
-# seed 1. ``v2_pickles.pth`` holds ``torch.save(model)`` after that forward pass, for
-# the models that can be pickled whole (not EEGNet, whose weights are parametrized).
+# after ``torch.manual_seed(0)`` (``proj_out`` of CBraMod set to the identity, as 2.1
+# does not apply it), ``y = model.eval()(x)`` for an ``x`` drawn with seed 1.
+# ``v2_pickles.pth`` holds ``torch.save(model)`` after that forward pass, for the models
+# that can be pickled whole. EEGNet, whose weights are parametrized, cannot: its
+# ``state_dict()`` is in ``v2_state_dicts.pth``.
 _V2_DATA = Path(__file__).parent / "data"
 _V2_MODELS = {
     "EEGNet": lambda: EEGNet(
@@ -898,10 +899,6 @@ _V2_MODELS = {
         channels_kernel_stride_padding_norm=(
             (4, 9, 4, 4, (2, 4)), (4, 3, 1, 1, (2, 4)), (4, 3, 1, 1, (2, 4))
         ),
-    ),
-    "CSBrain": lambda: CSBrain(
-        n_chans=3, n_outputs=2, n_times=100, patch_size=50, emb_dim=50, nhead=2,
-        n_layer=1, dim_feedforward=8, head_hidden_dim=8, temporal_kernel_sizes=(1, 3),
     ),
     "EEGCLIP": lambda: EEGCLIP(
         n_chans=3, n_outputs=2, n_times=700, text_embedding_dim=8, eeg_embedding_dim=4,
@@ -923,19 +920,24 @@ _V2_MODELS = {
 }
 
 
-@pytest.mark.parametrize("name", _V2_MODELS)
-def test_v2_checkpoints_load(name):
-    saved = torch.load(_V2_DATA / "v2_state_dicts.pth", weights_only=True)[name]
-    model = _V2_MODELS[name]().eval()
-    model.load_state_dict(saved["state_dict"], strict=True)
-    with torch.no_grad():
-        torch.testing.assert_close(model(saved["x"]), saved["y"])
-
-
 def _v2_pickle(name):
     # Unpickling runs code: this file is part of the repository.
     pickles = torch.load(_V2_DATA / "v2_pickles.pth", weights_only=False)  # nosec B614
     return pickles[name]
+
+
+@pytest.mark.parametrize("name", _V2_MODELS)
+def test_v2_checkpoints_load(name):
+    if name == "EEGNet":
+        saved = torch.load(_V2_DATA / "v2_state_dicts.pth", weights_only=True)[name]
+        state = saved["state_dict"]
+    else:
+        saved = _v2_pickle(name)
+        state = saved["model"].state_dict()
+    model = _V2_MODELS[name]().eval()
+    model.load_state_dict(state, strict=True)
+    with torch.no_grad():
+        torch.testing.assert_close(model(saved["x"]), saved["y"])
 
 
 @pytest.mark.parametrize("name", ["CBraMod", "EEGCLIP", "LUNA", "PBT"])

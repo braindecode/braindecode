@@ -429,6 +429,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
         self._d_model = d_model
         self._head_drop_prob = drop_prob if head_drop_prob is None else head_drop_prob
         self._head_hidden_dim = head_hidden_dim
+        self._encoder_output = return_encoder_output
         self._init_parameters()
 
         if return_encoder_output:
@@ -487,9 +488,16 @@ class CSBrain(EEGModuleMixin, nn.Module):
             nn.Linear(self._emb_dim, self.n_outputs),
         )
 
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        if "_encoder_output" not in state:
+            # Earlier pickles select encoder output with this identity head.
+            self._encoder_output = isinstance(self.final_layer, nn.Identity)
+
     def reset_head(self, n_outputs):
         self._set_n_outputs(n_outputs)
         self._update_init_kwargs(return_encoder_output=False)
+        self._encoder_output = False
         self.final_layer = self._make_task_head()
 
     def _init_parameters(self):
@@ -514,9 +522,9 @@ class CSBrain(EEGModuleMixin, nn.Module):
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
         # The region order and the flattened head are tied to the channels, the
         # encoder alone is not.
-        encoder_output = isinstance(self.final_layer, nn.Identity)
         if self._n_chans_for_jit is not None and (
-            self.sorted_indices is not None or not (return_features or encoder_output)
+            self.sorted_indices is not None
+            or not (return_features or self._encoder_output)
         ):
             check_n_chans(x, self._n_chans_for_jit, "CSBrain")
         x = self.rearrange(x)
