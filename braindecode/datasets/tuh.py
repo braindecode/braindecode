@@ -436,39 +436,21 @@ def _parse_description_from_file_path(
 
 
 def _read_physician_report(file_path):
+    # TUH names the report of a session `<subject>_<session>.txt` and its recordings
+    # `<subject>_<session>_<segment>.edf`; the `*_date.txt` side files never match.
     recording = Path(file_path)
     session = re.sub(r"_t\d+$", "", recording.stem)
-    reports = [
-        p for p in recording.parent.rglob("*.txt") if not p.name.endswith("_date.txt")
-    ]
-    matched = [p for p in reports if p.stem in (recording.stem, session)]
-    if matched:
-        reports = matched
-    elif reports:
-        # An unnamed report is usable only in a directory belonging to one session.
-        foreign_report = any(
-            re.fullmatch(r"[^_]+_s\d+(?:_t\d+)?", p.stem) for p in reports
-        )
-        shared_directory = any(
-            re.sub(r"_t\d+$", "", p.stem) != session
-            for p in recording.parent.rglob("*.edf")
-        )
-        if foreign_report or shared_directory:
-            reports = []
-    if len(reports) > 1:
+    reports = list(recording.parent.rglob(f"{session}.txt"))
+    if len(reports) != 1:
         raise RuntimeError(
-            f"Expected at most one physician report for {recording}, found {sorted(reports)}."
+            f"Could not read physician report for {recording}: found {len(reports)} "
+            f"files named {session}.txt. Disable add_physician_reports or check the "
+            "recording directory."
         )
-    if reports:
-        try:
-            report = reports[0].read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            report = reports[0].read_text(encoding="latin-1")
-        if report:
-            return report
-    raise RuntimeError(
-        f"Could not read physician report for {recording}. Disable add_physician_reports or check the recording directory."
-    )
+    try:
+        return reports[0].read_text(encoding="utf-8")
+    except UnicodeDecodeError:  # somewhere in the corpus, the encoding changed
+        return reports[0].read_text(encoding="latin-1")
 
 
 def _read_edf_header(file_path):

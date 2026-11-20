@@ -17,6 +17,7 @@ from braindecode.datasets.tuh import (
     _create_description,
     _get_header,
     _parse_description_from_file_path,
+    _read_physician_report,
     _sort_chronologically,
     _TUHAbnormalMock,
     _TUHEventsMock,
@@ -343,64 +344,27 @@ def test_tuh_date_fif_cannot_store_stays_in_description(tmp_path, date, year):
     assert reloaded.datasets[0].raw.info["meas_date"] is None
 
 
-def _make_tuh_recordings(directory, names):
-    """Create EDF placeholders and the date sidecars written by _read_date."""
-    edfs = [directory / f"{name}.edf" for name in names]
-    for edf in edfs:
-        edf.touch()
-        pd.Series({"year": 2013, "month": 8, "day": 15}).to_json(
-            edf.with_name(f"{edf.stem}_date.txt")
-        )
-    return edfs
-
-
-@pytest.mark.parametrize("n_recordings", [1, 2])
-def test_read_physician_report_ignores_date_side_files(tmp_path, n_recordings):
-    """The `_date.txt` files written by `_read_date` are not physician reports."""
-    from braindecode.datasets.tuh import _read_physician_report
-
-    names = ["aaaaaaav_s004_t000", "aaaaaaav_s004_t001"][:n_recordings]
-    edfs = _make_tuh_recordings(tmp_path, names)
-    (tmp_path / "aaaaaaav_s004.txt").write_text("CLINICAL HISTORY: none.")
-    for edf in edfs:
-        assert _read_physician_report(edf) == "CLINICAL HISTORY: none."
-
-
-@pytest.mark.parametrize("n_recordings", [1, 2])
-def test_read_physician_report_missing_report_raises(tmp_path, n_recordings):
-    """Without a report, raise instead of returning the content of a `_date.txt`."""
-    from braindecode.datasets.tuh import _read_physician_report
-
-    names = ["aaaaaaav_s004_t000", "aaaaaaaw_s001_t000"][:n_recordings]
-    edfs = _make_tuh_recordings(tmp_path, names)
-    for edf in edfs:
+@pytest.mark.parametrize(
+    "files, report",
+    [
+        pytest.param(
+            {"aaaaaaav_s004.txt": "Session A, résumé".encode("latin-1")},
+            "Session A, résumé",
+            id="session-file",
+        ),
+        pytest.param({"aaaaaaav_s004_t000_date.txt": b"{}"}, None, id="only-date-file"),
+        pytest.param({}, None, id="none"),
+    ],
+)
+def test_tuh_report_matches_session_name(tmp_path, files, report):
+    """A recording takes the report named after its session, not a `_date.txt`
+    side file nor the report of another session in the same directory."""
+    (tmp_path / "aaaaaaaw_s001.txt").write_text("Session B")
+    for name, content in files.items():
+        (tmp_path / name).write_bytes(content)
+    edf = tmp_path / "aaaaaaav_s004_t000.edf"
+    if report is None:
         with pytest.raises(RuntimeError, match="Could not read physician report"):
             _read_physician_report(edf)
-
-
-def test_read_physician_report_several_reports_raises(tmp_path):
-    """Several candidate reports give an error that names the directory."""
-    from braindecode.datasets.tuh import _read_physician_report
-
-    (edf,) = _make_tuh_recordings(tmp_path, ["aaaaaaav_s004_t000"])
-    (tmp_path / "aaaaaaav_s004.txt").write_text("first report")
-    (tmp_path / "aaaaaaav_s004_t000.txt").write_text("second report")
-    with pytest.raises(RuntimeError, match="Expected at most one physician report"):
-        _read_physician_report(edf)
-
-
-@pytest.mark.parametrize("filename", ["aaaaaaav_s004.txt", "report.txt"])
-def test_report_from_another_session_is_never_attached(tmp_path, filename):
-    from braindecode.datasets.tuh import _read_physician_report
-
-    first, second = _make_tuh_recordings(
-        tmp_path, ["aaaaaaav_s004_t000", "aaaaaaaw_s001_t000"]
-    )
-    (tmp_path / filename).write_bytes("Session A, résumé".encode("latin-1"))
-    with pytest.raises(RuntimeError, match="Could not read physician report"):
-        _read_physician_report(second)
-    if filename == "report.txt":
-        (tmp_path / filename).rename(tmp_path / "aaaaaaav_s004.txt")
-    (tmp_path / "aaaaaaaw_s001.txt").write_text("Session B")
-    assert _read_physician_report(first) == "Session A, résumé"
-    assert _read_physician_report(second) == "Session B"
+    else:
+        assert _read_physician_report(edf) == report
