@@ -203,15 +203,19 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.drop_prob = drop_prob
         self.on_missing = on_missing
 
+        # positions: (n_kept, 3) in m; kept: indices of the placed input channels.
         positions, kept = resolve_channel_positions(
             self.chs_info, _pratibha2_position_bank(), on_missing=on_missing
         )
+        # channel_index: (n_kept,) input channels the encoder reads; None reads all.
         dropped = len(kept) < len(self.chs_info)
         self.register_buffer(
             "channel_index", torch.tensor(kept) if dropped else None, persistent=False
         )
+        # positions_cm: (n_kept, 3), in the release's centimetres.
+        positions_cm = torch.tensor(positions, dtype=torch.float32) * _CM_PER_M
         self.encoder = _Pratibha2Encoder(
-            channel_positions=torch.tensor(positions, dtype=torch.float32) * 100.0,
+            channel_positions=positions_cm.to(torch.get_default_dtype()),
             patch_size=patch_size,
             patch_stride=patch_stride,
             embed_dim=embed_dim,
@@ -308,11 +312,19 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
 
 class _SwishGelu(nn.Module):
-    """``swish(x) + gelu_tanh(x)``, the gate activation of PRATIBHA-2."""
+    """``swish(x) + gelu_tanh(x)``, the gate activation of PRATIBHA-2.
+
+    Elementwise: the output has the shape of ``x``.
+    """
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x * torch.sigmoid(x) + nn.functional.gelu(x, approximate="tanh")
 
+
+# The release encodes electrode positions in centimetres.
+_CM_PER_M = 100.0
+# Fourier frequencies per axis of the position encoding span [1, 10] (release 863edc9).
+_FREQ_RANGE = (1.0, 10.0)
 
 # The pretraining electrode table is REVE's bank plus these two entries (m), which
 # sit 1.43 and 0.74 cm from 10-05 AFz and Iz (release 863edc9). They come last, so
@@ -342,7 +354,10 @@ def _pratibha2_position_bank() -> dict[str, np.ndarray]:
 class _Pratibha2Encoder(nn.Module):
     """Patch embedding, position encoding and the stack of transformer blocks.
 
-    Maps EEG (B, C, T) to the token grid (B, C, P, D).
+    Maps EEG (B, C, T) to the token grid (B, C, P, D): optional per-channel
+    z-score, 1 s patches (B, C, P, patch_size), ``patch_embed`` (B, C, P, D) plus
+    the encoding of ``channel_positions`` ((C, 3), cm) and the patch index, then
+    ``depth`` blocks and ``final_norm`` over the C * P tokens.
     """
 
     def __init__(
@@ -416,11 +431,19 @@ class _Pratibha2Encoder(nn.Module):
 
 
 class _Pratibha2PositionalEncoding(nn.Module):
-    """4D position encoding: Fourier features plus a learned gated branch."""
+    """4D position encoding: Fourier features plus a learned gated branch.
+
+    Kept private: the re-hosted weights use this parameter layout. ``coords``
+    (C, P, 4), electrode position in cm and patch index, gives (C, P, embed_dim):
+    the sines and cosines of the phases ``coords @ freq_matrix`` through
+    ``fourier_linear``, plus ``learned_norm(value * gate_activation(gate))`` from
+    ``learned_linear``, then ``final_norm``.
+    """
 
     def __init__(self, embed_dim: int, n_freqs: int):
         super().__init__()
-        freqs = torch.linspace(1.0, 10.0, n_freqs)
+        # freq_matrix: (4, n_freqs ** 4), every combination of the per-axis frequencies.
+        freqs = torch.linspace(*_FREQ_RANGE, n_freqs)
         grid = torch.cartesian_prod(freqs, freqs, freqs, freqs).reshape(-1, 4)
         self.register_buffer("freq_matrix", grid.T.contiguous(), persistent=False)
         self.fourier_linear = nn.Linear(2 * n_freqs**4, embed_dim, bias=False)
@@ -432,14 +455,17 @@ class _Pratibha2PositionalEncoding(nn.Module):
     def forward(self, coords: torch.Tensor) -> torch.Tensor:
         # bfloat16 cannot represent the angles.
         angle_dtype = torch.promote_types(coords.dtype, torch.float32)
-        # Autocast lowers matmul precision even for two float32 operands.
+        # phases: (C, P, n_freqs ** 4). Autocast lowers matmul precision even
+        # for two float32 operands, hence the elementwise product and sum.
         phases = (
             coords.to(angle_dtype).unsqueeze(-1) * self.freq_matrix.to(angle_dtype)
         ).sum(dim=-2)
         weight_dtype = self.fourier_linear.weight.dtype
+        # fourier: (C, P, embed_dim)
         fourier = self.fourier_linear(
             torch.cat([phases.sin(), phases.cos()], dim=-1).to(weight_dtype)
         )
+        # value, gate: (C, P, embed_dim) each
         value, gate = self.learned_linear(coords.to(weight_dtype)).chunk(2, dim=-1)
         learned = self.learned_norm(value * self.gate_activation(gate))
         return self.final_norm(fourier + learned)
