@@ -17,8 +17,14 @@ from braindecode.training.losses import (
 )
 
 
-@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-def test_dance_loss_backward_with_empty_tokens(dtype):
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_dance_loss_trains_every_head(dtype):
+    """``DanceLoss`` on ``detect`` gives every head a finite, nonzero gradient.
+
+    Every query predicts the span (sigmoid(-1), sigmoid(1)) = (0.27, 0.73), which
+    overlaps the targets, so both bounds train; tokens 0, 4 and 5 of 6 lie in no
+    span, which made the consistency term NaN in float16.
+    """
     torch.manual_seed(0)
     model = DANCE(
         n_outputs=3,
@@ -26,52 +32,47 @@ def test_dance_loss_backward_with_empty_tokens(dtype):
         n_times=32,
         sfreq=128,
         use_channel_merger=False,
-        n_queries=2,
+        n_queries=4,
+        num_latents=6,
         embed_dim=8,
-        conv_hidden=8,
+        conv_initial_linear=8,
         conv_depth=1,
-        conv_kernel_size=3,
-        conv_initial_linear=4,
-        num_latents=8,
         perceiver_depth=1,
-        cross_attn_heads=1,
-        latent_attn_heads=1,
         cross_dim_head=4,
         latent_dim_head=4,
         decoder_dim=8,
         decoder_depth=1,
-        decoder_heads=1,
-        n_virtual_channels=2,
+        decoder_heads=2,
         drop_prob=0.0,
-        conv_drop_prob=0.0,
     ).to(dtype)
-    x = torch.randn(2, 2, 32).to(dtype)
-    preds = model.detect(x)
-    assert all(torch.isfinite(value).all() for value in preds.values())
-    targets = {
-        "class": torch.tensor([[1, 0], [0, 0]]),
-        "start": torch.tensor([[0.2, 0.0], [0.0, 0.0]], dtype=dtype),
-        "end": torch.tensor([[0.4, 0.0], [0.0, 0.0]], dtype=dtype),
-    }
-    criterion = DanceLoss(num_latents=8)
-    loss, details = criterion(preds, targets)
     with torch.no_grad():
-        _, expected = criterion(
-            {name: value.float() for name, value in preds.items()}, targets
-        )
+        for head, bias in ((model.decoder.start_head, -1), (model.decoder.end_head, 1)):
+            head.weight.zero_()
+            head.bias.fill_(bias)
+    x = torch.randn(2, 2, 32).to(dtype).requires_grad_()
+    preds = model.detect(x)
+    assert preds["class"].shape == (2, 4, 3) and preds["dense"].shape == (2, 6, 3)
+    torch.testing.assert_close(preds["dense"], model(x), rtol=0, atol=0)
+
+    targets = {
+        "class": torch.tensor([[1], [2]]),
+        "start": torch.tensor([[0.2], [0.3]], dtype=dtype),
+        "end": torch.tensor([[0.7], [0.8]], dtype=dtype),
+    }
+    criterion = DanceLoss(num_latents=model.num_latents)
+    loss, details = criterion(preds, targets)
+    with torch.no_grad():  # the consistency term does not depend on the precision
+        _, expected = criterion({k: v.float() for k, v in preds.items()}, targets)
     assert details["consistency_loss"] == pytest.approx(expected["consistency_loss"])
-    assert torch.isfinite(loss)
     loss.backward()
-    for head in (
+    heads = (
         model.final_layer,
         model.decoder.class_head,
         model.decoder.start_head,
         model.decoder.end_head,
-    ):
-        assert torch.isfinite(head.weight.grad).all()
-    # The spans do not overlap the target, so only these heads get a nonzero grad.
-    for head in (model.final_layer, model.decoder.class_head):
-        assert torch.count_nonzero(head.weight.grad)
+    )
+    for grad in (x.grad, model.decoder.query_embed.grad, *(h.weight.grad for h in heads)):
+        assert torch.isfinite(grad).all() and torch.count_nonzero(grad)
 
 
 def test_mixup_criterion():

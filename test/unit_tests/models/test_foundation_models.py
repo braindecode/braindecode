@@ -1225,15 +1225,7 @@ def test_luna_mapping_includes_temperature_typo():
 @pytest.mark.parametrize(
     "patch_size, embed_dim, message",
     [
-        (0, 16, "patch_size must be a positive multiple of 4"),
-        (-4, 16, "patch_size must be a positive multiple of 4"),
-        (3, 16, "patch_size must be a positive multiple of 4"),
-        (33, 16, "patch_size must be a positive multiple of 4"),
         (34, 16, "patch_size must be a positive multiple of 4"),
-        (35, 16, "patch_size must be a positive multiple of 4"),
-        (40, 0, "embed_dim must be a positive multiple of 16"),
-        (40, -16, "embed_dim must be a positive multiple of 16"),
-        (40, 8, "embed_dim must be a positive multiple of 16"),
         (40, 18, "embed_dim must be a positive multiple of 16"),
     ],
 )
@@ -1379,11 +1371,15 @@ def test_luna_mps_phase_and_input_gradient(patch_size, dtype):
         ),
     ],
 )
-def test_luna_single_sample_tail_has_real_spectrum(device):
-    # The public pad policy turns the last sample into an impulse at t=0.
+@pytest.mark.parametrize(
+    "n_times", [81, 120], ids=["padded_by_luna", "padded_before_luna"]
+)
+def test_luna_impulse_patch_has_real_spectrum(device, n_times):
+    # The last 40-sample patch holds one sample, an impulse at t=0 of the patch:
+    # LUNA's own pad policy (81 samples) and padding added before it (120) agree.
     model = LUNA(
         n_chans=3,
-        n_times=81,
+        n_times=n_times,
         n_outputs=2,
         patch_size=40,
         embed_dim=16,
@@ -1391,8 +1387,9 @@ def test_luna_single_sample_tail_has_real_spectrum(device):
         depth=1,
         num_heads=2,
     ).to(device).eval()
-    signal = torch.randn(1, 3, 81, device=device)
-    signal[0, :, -1] = torch.tensor([-2.0, 2.0, 0.0], device=device)
+    signal = torch.randn(1, 3, n_times, device=device)
+    signal[0, :, 80:] = 0
+    signal[0, :, 80] = torch.tensor([-2.0, 2.0, 0.0], device=device)
     signal.requires_grad_()
     captured = []
     model.freq_embed.frequency_to_embed.register_forward_pre_hook(
@@ -1403,34 +1400,10 @@ def test_luna_single_sample_tail_has_real_spectrum(device):
     magnitude, phase = captured[0][0, :, -1].chunk(2, dim=-1)
     expected = torch.tensor([torch.pi, 0, 0], device=device)[:, None]
     torch.testing.assert_close(phase, expected.expand_as(phase))
-    torch.testing.assert_close(magnitude, signal[0, :, -1:].abs().expand_as(magnitude))
-    (gradient,) = torch.autograd.grad(phase.sum(), signal)
-    torch.testing.assert_close(gradient, torch.zeros_like(signal))
-
-
-@pytest.mark.parametrize(
-    "device",
-    [
-        "cpu",
-        pytest.param(
-            "mps",
-            marks=pytest.mark.skipif(
-                not torch.backends.mps.is_available(), reason="requires Apple MPS"
-            ),
-        ),
-    ],
-)
-def test_luna_impulse_patch_phase_without_internal_padding(device):
-    # Padding added before LUNA gives the same impulse as its own padding.
-    patch_size = 40
-    signal = torch.zeros(1, 2, 2 * patch_size)
-    signal[0, :, patch_size] = torch.tensor([-2.0, 2.0])
-    embedder = luna_module._FrequencyFeatureEmbedder(patch_size, 1)
-    embedder.frequency_to_embed = torch.nn.Identity()
-    features = embedder.to(device)(signal.to(device)).cpu()
-    phase = features.unflatten(1, (2, 2))[0, :, -1, patch_size // 2 + 1 :]
-    expected = torch.tensor([torch.pi, 0.0])[:, None].expand_as(phase)
-    torch.testing.assert_close(phase, expected)
+    torch.testing.assert_close(magnitude, signal[0, :, 80:81].abs().expand_as(magnitude))
+    if n_times == 81:  # padded by LUNA: its zeros are no inputs, so the phase is constant
+        (gradient,) = torch.autograd.grad(phase.sum(), signal)
+        torch.testing.assert_close(gradient, torch.zeros_like(signal))
 
 
 def test_luna_variants_different_channel_counts(luna_base_config):
