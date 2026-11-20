@@ -1,17 +1,13 @@
 from .attention import scaled_dot_product_attention
 from .channel_mask import (
     check_ch_mask,
+    check_n_chans,
     masked_group_norm,
     masked_mean,
     pack_channels,
     unpack_channels,
 )
-from .channels import (
-    derivation_matrix,
-    exact_derivation,
-    linear_channel_map,
-    spherical_spline_kernel,
-)
+from .channels import derivation_matrix, exact_derivation
 from .functions import (
     _get_gaussian_kernel1d,
     apply_rotary,
@@ -46,6 +42,7 @@ __all__ = [
     "_get_gaussian_kernel1d",
     "apply_rotary",
     "check_ch_mask",
+    "check_n_chans",
     "daubechies_filters",
     "derivation_matrix",
     "drop_path",
@@ -55,7 +52,6 @@ __all__ = [
     "hilbert_freq",
     "identity",
     "iou_1d",
-    "linear_channel_map",
     "masked_group_norm",
     "masked_mean",
     "pack_channels",
@@ -71,7 +67,6 @@ __all__ = [
     "safe_log",
     "scaled_dot_product_attention",
     "sinusoidal_positional_encoding",
-    "spherical_spline_kernel",
     "spectral_input",
     "square",
     "unpack_channels",

@@ -31,11 +31,11 @@ import contextlib
 import copy
 import json
 import logging
-import os
 import tempfile
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
+from uuid import uuid4
 
 import mne
 import numpy as np
@@ -55,13 +55,12 @@ from ..registry import get_dataset_class, get_dataset_type
 from . import hub_format, hub_validation
 from .hub_io import (
     _create_compressor,
-    _epochs_from_zarr,
-    _load_window_metadata,
+    _load_eegwindows_from_zarr,
+    _load_raw_from_zarr,
+    _load_windows_from_zarr,
     _prepare_info_for_json,
-    _raw_from_zarr,
-    _restore_nan_from_json,
+    _save_eegwindows_to_zarr,
     _save_raw_to_zarr,
-    _save_window_metadata,
     _save_windows_to_zarr,
 )
 
@@ -705,11 +704,8 @@ class HubDatasetMixin:
     ) -> None:
         """Convert dataset to Zarr format (inline implementation)."""
 
-        if zarr is False or huggingface_hub is False:
-            raise ImportError(
-                "huggingface hub functionality is not installed. Install with: "
-                "pip install braindecode[hub]"
-            )
+        if zarr is False:
+            raise ImportError("Local Zarr storage requires zarr>=3.1.")
 
         if output_path.exists():
             raise FileExistsError(
@@ -771,6 +767,7 @@ class HubDatasetMixin:
         # Store global metadata
         root.attrs["n_datasets"] = len(self.datasets)
         root.attrs["dataset_type"] = dataset_type
+        root.attrs["store_id"] = uuid4().hex
         root.attrs["braindecode_version"] = braindecode.__version__
 
         # Track dependency versions for reproducibility
@@ -789,32 +786,66 @@ class HubDatasetMixin:
         for i_ds, ds in enumerate(self.datasets):
             grp = root.create_group(f"recording_{i_ds}")
 
-            grp.attrs["info"] = prepared_infos[i_ds]
-            description = ds.description
-            grp.attrs["description"] = (
-                {}
-                if description is None
-                else json.loads(
-                    description.to_json(date_format="iso", default_handler=os.fspath)
-                )
-            )
-            if getattr(ds, "target_name", None) is not None:
-                grp.attrs["target_name"] = ds.target_name
-
             if dataset_type == "WindowsDataset":
-                _save_windows_to_zarr(grp, ds.windows, compressor)
-            else:
-                _save_raw_to_zarr(grp, ds.raw, compressor, chunk_size)
-            if dataset_type in ("EEGWindowsDataset", "WindowsDataset"):
-                # Reading epochs can drop rejected trials and update their metadata.
-                metadata = (
-                    ds.windows.metadata
-                    if dataset_type == "WindowsDataset"
-                    else ds.metadata
+                # Extract data from WindowsDataset
+                data = ds.windows.get_data()
+                metadata = ds.windows.metadata
+                description = ds.description
+                info_dict = prepared_infos[i_ds]
+                target_name = ds.target_name if hasattr(ds, "target_name") else None
+
+                # Save using inlined function
+                _save_windows_to_zarr(
+                    grp,
+                    data,
+                    metadata,
+                    description,
+                    info_dict,
+                    compressor,
+                    target_name,
                 )
-                _save_window_metadata(grp, metadata, ds.targets_from)
                 grp.attrs["targets_from"] = ds.targets_from
                 grp.attrs["last_target_only"] = ds.last_target_only
+
+            elif dataset_type == "EEGWindowsDataset":
+                # Get continuous raw data and metadata from EEGWindowsDataset
+                raw = ds.raw
+                metadata = ds.metadata
+                description = ds.description
+                info_dict = prepared_infos[i_ds]
+                targets_from = ds.targets_from
+                last_target_only = ds.last_target_only
+
+                # Save using inlined function (saves continuous raw directly)
+                _save_eegwindows_to_zarr(
+                    grp,
+                    raw,
+                    metadata,
+                    description,
+                    info_dict,
+                    targets_from,
+                    last_target_only,
+                    compressor,
+                    chunk_size,
+                )
+
+            elif dataset_type == "RawDataset":
+                # Get continuous raw data from RawDataset
+                raw = ds.raw
+                description = ds.description
+                info_dict = prepared_infos[i_ds]
+                target_name = ds.target_name if hasattr(ds, "target_name") else None
+
+                # Save using inlined function
+                _save_raw_to_zarr(
+                    grp,
+                    raw,
+                    description,
+                    info_dict,
+                    target_name,
+                    compressor,
+                    chunk_size,
+                )
 
     def _get_format_info_inline(self):
         """Get format info (inline implementation).
@@ -861,6 +892,9 @@ class HubDatasetMixin:
         if not input_path.exists():
             raise FileNotFoundError(f"{input_path} does not exist.")
 
+        if zarr is False:
+            raise ImportError("Local Zarr storage requires zarr>=3.1.")
+
         # Open zarr store (zarr v3 API)
         root = zarr.open(str(input_path), mode="r")
 
@@ -875,32 +909,42 @@ class HubDatasetMixin:
 
         datasets = []
         for i_ds in range(n_datasets):
+            grp = root[f"recording_{i_ds}"]
             group_name = f"recording_{i_ds}"
-            grp = root[group_name]
-            description = pd.Series(grp.attrs["description"])
-            info_dict = _restore_nan_from_json(grp.attrs["info"])
-            target_name = grp.attrs.get("target_name")
-            mne_state = grp.attrs.get("mne", {})
-            if preload:
-                data = grp["data"][:]
-                info = mne.Info.from_json_dict(info_dict)
-            if dataset_type in ("WindowsDataset", "EEGWindowsDataset"):
-                metadata = _load_window_metadata(grp)
-                target_settings = dict(
-                    targets_from=grp.attrs.get(
-                        "targets_from",
-                        "metadata" if "target" in metadata else "channels",
-                    ),
-                    last_target_only=grp.attrs.get("last_target_only", True),
-                )
 
             if dataset_type == "WindowsDataset":
-                if "events" in grp:
-                    mne_state["events"] = grp["events"][:]
-                    mne_state["selection"] = grp["selection"][:]
+                # Load using inlined function
+                data, metadata, description, info_dict, target_name = (
+                    _load_windows_from_zarr(grp, preload)
+                )
+                # Stores written before these attributes existed used metadata.
+                targets_from = grp.attrs.get("targets_from", "metadata")
+                last_target_only = grp.attrs.get("last_target_only", True)
+
                 if preload:
-                    epochs = _epochs_from_zarr(data, info, metadata, mne_state)
-                    ds = WindowsDataset(epochs, description, **target_settings)
+                    # Convert to MNE objects and create dataset
+                    info = mne.Info.from_json_dict(info_dict)
+                    targets = metadata["target"].values
+                    if np.issubdtype(targets.dtype, np.integer):
+                        event_ids = targets
+                    else:
+                        event_ids = np.ones(len(metadata), dtype=int)
+                    events = np.column_stack(
+                        [
+                            metadata["i_start_in_trial"].values.astype(int),
+                            np.zeros(len(metadata), dtype=int),
+                            event_ids,
+                        ]
+                    )
+                    epochs = mne.EpochsArray(
+                        data, info, events=events, metadata=metadata
+                    )
+                    ds = WindowsDataset(
+                        epochs,
+                        description,
+                        targets_from=targets_from,
+                        last_target_only=last_target_only,
+                    )
                     if target_name is not None:
                         ds.target_name = target_name
                 else:
@@ -911,18 +955,32 @@ class HubDatasetMixin:
                         description=description,
                         info_dict=info_dict,
                         target_name=target_name,
-                        mne_state=mne_state,
-                        **target_settings,
+                        targets_from=targets_from,
+                        last_target_only=last_target_only,
                     )
 
             elif dataset_type == "EEGWindowsDataset":
+                # Load using inlined function
+                (
+                    data,
+                    metadata,
+                    description,
+                    info_dict,
+                    targets_from,
+                    last_target_only,
+                ) = _load_eegwindows_from_zarr(grp, preload)
+
                 if preload:
-                    raw = _raw_from_zarr(data, info, mne_state)
+                    # Convert to MNE objects and create dataset
+                    # Data is already in continuous format [n_channels, n_timepoints]
+                    info = mne.Info.from_json_dict(info_dict)
+                    raw = mne.io.RawArray(data, info)
                     ds = EEGWindowsDataset(
                         raw=raw,
                         metadata=metadata,
                         description=description,
-                        **target_settings,
+                        targets_from=targets_from,
+                        last_target_only=last_target_only,
                     )
                 else:
                     ds = EEGWindowsDataset._from_zarr(
@@ -931,13 +989,21 @@ class HubDatasetMixin:
                         metadata=metadata,
                         description=description,
                         info_dict=info_dict,
-                        mne_state=mne_state,
-                        **target_settings,
+                        targets_from=targets_from,
+                        last_target_only=last_target_only,
                     )
 
             elif dataset_type == "RawDataset":
+                # Load using inlined function
+                data, description, info_dict, target_name = _load_raw_from_zarr(
+                    grp, preload
+                )
+
                 if preload:
-                    raw = _raw_from_zarr(data, info, mne_state)
+                    # Convert to MNE objects and create dataset
+                    # Data is in continuous format [n_channels, n_timepoints]
+                    info = mne.Info.from_json_dict(info_dict)
+                    raw = mne.io.RawArray(data, info)
                     ds = RawDataset(raw, description)
                     if target_name is not None:
                         ds.target_name = target_name
@@ -948,7 +1014,6 @@ class HubDatasetMixin:
                         description=description,
                         info_dict=info_dict,
                         target_name=target_name,
-                        mne_state=mne_state,
                     )
 
             else:

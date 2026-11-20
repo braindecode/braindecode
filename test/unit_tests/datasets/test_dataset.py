@@ -10,8 +10,14 @@ import mne
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
-from braindecode.datasets import BaseConcatDataset, RawDataset, WindowsDataset
+from braindecode.datasets import (
+    BaseConcatDataset,
+    EEGWindowsDataset,
+    RawDataset,
+    WindowsDataset,
+)
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
     create_fixed_length_windows,
@@ -580,7 +586,8 @@ def test_set_target_rejects_targets_from_channels(set_up):
     must refuse to silently no-op."""
     _, _, mne_epochs, _, _, _ = set_up
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
-    ch_ds = WindowsDataset(mne_epochs, desc, targets_from="channels")
+    epochs = mne_epochs.copy().set_channel_types({mne_epochs.ch_names[-1]: "misc"})
+    ch_ds = WindowsDataset(epochs, desc, targets_from="channels")
     concat = BaseConcatDataset([ch_ds])
     with pytest.raises(ValueError, match="targets_from"):
         concat.set_target("pathological")
@@ -1113,6 +1120,39 @@ def test_windows_dataset_fast_vs_preload_consistency(basic_raw_and_metadata, tmp
         assert crop_fast == crop_preloaded
 
 
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_window_targets_take_precedence_over_description(use_mne_epochs):
+    from braindecode.datautil import infer_signal_properties
+
+    raw = mne.io.RawArray(np.zeros((1, 512)), mne.create_info(["C3"], 128.0, "eeg"))
+    raw.set_annotations(mne.Annotations([0.0, 2.0], [2.0, 2.0], ["left", "right"]))
+    recordings = BaseConcatDataset([RawDataset(raw, {"target": "recording"})])
+    windows = create_windows_from_events(
+        recordings, mapping={"left": 0, "right": 1}, use_mne_epochs=use_mne_epochs
+    )
+    # The window labels win over the description column of the same name.
+    assert windows.get_metadata()["target"].tolist() == [0, 1]
+    assert windows.datasets[0].description["target"] == "recording"
+    assert infer_signal_properties(windows)["n_outputs"] == 2
+
+
+def test_set_target_changes_no_recording_on_error():
+    raw = mne.io.RawArray(np.zeros((1, 100)), mne.create_info(["C3"], 100.0, "eeg"))
+    description = {"label": 0, "task": 1}
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw, description, target_name="label")]),
+        window_size_samples=100,
+        use_mne_epochs=True,
+    ).datasets[0]
+    recording = RawDataset(raw, description, target_name="label")
+    # The last recording has no "task", so nothing may change before the error.
+    concat = BaseConcatDataset([recording, windows, RawDataset(raw, {"label": 2})])
+    with pytest.raises(ValueError, match="task"):
+        concat.set_target("task")
+    assert [ds[0][1] for ds in concat.datasets] == [0, 0, None]
+    assert windows.windows.metadata["target"].tolist() == [0]
+
+
 def test_get_metadata_leaves_dataset_metadata_untouched(concat_ds_targets):
     concat_ds, _ = concat_ds_targets
     windows_ds = create_windows_from_events(
@@ -1262,3 +1302,64 @@ def test_set_description_overwrite_on_windows_keeps_source_description(key):
     assert windows.description.loc[0, key] == 5
     assert raw_ds.description.to_dict() == {"subject": 1, "target": 0}
     assert raw_ds[0][1] == 0
+
+
+@pytest.mark.parametrize("last_target_only", [True, False])
+@pytest.mark.parametrize("targets_from", ["metadata", "channels"])
+@pytest.mark.parametrize("preload", [True, False])
+def test_eeg_windows_equal_mne_getitem(
+    tmp_path, preload, targets_from, last_target_only
+):
+    """Windows equal ``raw._getitem``, for a preloaded raw and a lazy FIF raw."""
+    rng = np.random.default_rng(0)
+    info = mne.create_info(
+        ["C3", "C4", "Cz", "target"], 100.0, ["eeg", "eeg", "eeg", "misc"]
+    )
+    info["bads"] = ["C4"]  # windows keep bad channels, as raw._getitem does
+    path = tmp_path / "raw.fif"
+    mne.io.RawArray(rng.standard_normal((4, 1000)), info).save(path)
+    raw = mne.io.read_raw_fif(path, preload=preload)
+    starts = np.arange(0, 900, 70)
+    metadata = pd.DataFrame(
+        {
+            "i_window_in_trial": np.arange(len(starts)),
+            "i_start_in_trial": starts,
+            "i_stop_in_trial": starts + 100,
+            "target": rng.integers(0, 2, len(starts)),
+        }
+    )
+    ds = EEGWindowsDataset(
+        raw, metadata, targets_from=targets_from, last_target_only=last_target_only
+    )
+    crop_cols = ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+    for i in range(len(ds)):
+        X, y, crop_inds = ds[i]
+        assert crop_inds == metadata.loc[i, crop_cols].tolist()
+        _, start, stop = crop_inds
+        expected = raw._getitem((slice(None), slice(start, stop)), return_times=False)
+        expected = expected.astype("float32")
+        if targets_from == "channels":
+            y_expected = expected[3, -1:] if last_target_only else expected[3:]
+            np.testing.assert_array_equal(y, y_expected)
+            expected = expected[:3]
+        else:
+            assert y == metadata.loc[i, "target"]
+        np.testing.assert_array_equal(X, expected)
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_channel_targets_follow_a_transform_returning_tensors(use_mne_epochs):
+    data = np.arange(60.0).reshape(3, 20)
+    info = mne.create_info(["C3", "C4", "target"], 100.0, ["eeg", "eeg", "misc"])
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(mne.io.RawArray(data, info))]),
+        window_size_samples=5,
+        window_stride_samples=5,
+        on_last_window="drop",
+        targets_from="channels",
+        use_mne_epochs=use_mne_epochs,
+    )
+    windows.datasets[0].transform = torch.as_tensor
+    X, y, _ = windows[1]
+    torch.testing.assert_close(X, torch.as_tensor(data[:2, 5:10], dtype=torch.float32))
+    torch.testing.assert_close(y, torch.tensor([data[2, 9]], dtype=torch.float32))

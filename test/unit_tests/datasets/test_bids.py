@@ -63,13 +63,15 @@ def test_bids_epochs_dataset(bids_dataset_root):
     assert y in ["left_hand", "right_hand"]
 
 
-@pytest.fixture
-def kept_bids_epochs(tmp_path):
+def test_bids_epochs_dataset_targets_of_the_kept_epochs(tmp_path):
+    """Targets are the annotations at the time zero of the kept epochs, not all
+    the annotations of the recording, which also hold dropped epochs and BAD
+    segments."""
     import mne
     import numpy as np
 
     info = mne.create_info(["C3", "C4"], 100.0, "eeg")
-    raw = mne.io.RawArray(np.arange(2400).reshape(2, 1200), info, verbose="ERROR")
+    raw = mne.io.RawArray(np.zeros((2, 1200)), info, verbose="ERROR")
     raw.set_annotations(
         mne.Annotations(
             onset=[1, 3, 5, 7, 9, 11], duration=1, description=list("ababa") + ["BAD"]
@@ -84,55 +86,16 @@ def kept_bids_epochs(tmp_path):
     epochs.drop([1], verbose="ERROR")  # the first "b"
     eeg_dir = tmp_path / "sub-01" / "eeg"
     eeg_dir.mkdir(parents=True)
-    path = eeg_dir / "sub-01_task-x_epo.fif"
-    epochs.save(path, verbose="ERROR")
-    return path, epochs
+    epochs.save(eeg_dir / "sub-01_task-x_epo.fif", verbose="ERROR")
 
-
-def test_bids_epochs_dataset_targets_of_the_kept_epochs(tmp_path, kept_bids_epochs):
-    """Targets are the annotations at time zero of the kept epochs."""
-    path, epochs = kept_bids_epochs
     dataset = BIDSEpochsDataset(tmp_path)
     assert [dataset[i][1] for i in range(len(dataset))] == ["a", "a", "b", "a"]
     # without the annotations, the targets are the event names
     epochs.set_annotations(None)
     epochs.event_id = {"x": 1, "y": 2}
-    epochs.save(path, overwrite=True, verbose="ERROR")
+    epochs.save(eeg_dir / "sub-01_task-x_epo.fif", overwrite=True, verbose="ERROR")
     dataset = BIDSEpochsDataset(tmp_path)
     assert [dataset[i][1] for i in range(len(dataset))] == ["x", "x", "y", "x"]
-
-
-@pytest.mark.parametrize("preload", [False, True])
-def test_bids_epochs_zarr_restores_original_events(tmp_path, kept_bids_epochs, preload):
-    import numpy as np
-
-    from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
-
-    pytest.importorskip("zarr")
-    path, epochs = kept_bids_epochs
-    epochs.annotations.rename({"a": "01", "b": "NA"})
-    epochs.crop(tmin=0.12).decimate(2)
-    epochs.save(path, overwrite=True, verbose="ERROR")
-    source = BIDSEpochsDataset(tmp_path)
-    before = source.datasets[0].windows
-    store = convert_to_zarr(source, tmp_path / "recordings.zarr")
-    restored = load_from_zarr(store, preload=preload)
-    actual = restored.datasets[0].windows
-    assert restored.datasets[0].description["path"] == str(path)
-    np.testing.assert_array_equal(actual.events, before.events)
-    assert actual.event_id == before.event_id
-    np.testing.assert_array_equal(actual.selection, before.selection)
-    assert actual.drop_log == before.drop_log
-    assert actual._raw_sfreq == before._raw_sfreq
-    np.testing.assert_array_equal(actual.times, before.times)
-    np.testing.assert_array_equal(actual.annotations.onset, before.annotations.onset)
-    np.testing.assert_array_equal(
-        actual.annotations.description, before.annotations.description
-    )
-    for i, label in enumerate(["01", "01", "NA", "01"]):
-        signal, target, indices = restored[i]
-        np.testing.assert_array_equal(signal, source[i][0])
-        assert target == label and indices == source[i][2]
 
 
 @pytest.mark.parametrize(
