@@ -11,10 +11,7 @@ that is a combination of measured channels is computed exactly
 (:func:`braindecode.functional.exact_derivation`): ``F3-C3`` from ``C3-F3``,
 ``F3-P3`` from ``F3-C3`` and ``C3-P3``, ``F3-C3`` from ``F3`` and ``C3``. The
 strategy fills the other targets that have a position from the positioned
-inputs; a target without a position (BENDR's ``SCALE``) is zero. ``spline``,
-``wiener`` and a kernel passed as the strategy are one Gaussian estimate
-(:func:`braindecode.functional.linear_channel_map`), which also gives each
-target's posterior variance.
+inputs; a target without a position (BENDR's ``SCALE``) is zero.
 """
 
 from __future__ import annotations
@@ -25,7 +22,6 @@ import warnings
 from collections import OrderedDict
 from functools import lru_cache
 from typing import cast
-from unittest import mock
 
 import mne
 import numpy as np
@@ -36,11 +32,8 @@ from scipy.linalg import solve
 from scipy.spatial.distance import cdist
 from torch import Tensor, nn
 
-from braindecode.functional import (
-    exact_derivation,
-    linear_channel_map,
-    spherical_spline_kernel,
-)
+from braindecode.functional import check_ch_mask, exact_derivation
+from braindecode.functional.channels import channel_electrodes, derivation_rows
 from braindecode.util import resolve_montage_name
 
 STRATEGIES = (
@@ -73,10 +66,12 @@ def _standard_positions() -> dict[str, np.ndarray]:
 def _resolve(chs_info: list[dict]):
     """Names, positions ``(C, 3)`` (given ``loc``, else ``standard_1005``, else NaN),
     standard positions of the names, channel types and which ``loc`` were given."""
+    if not chs_info:
+        raise ValueError("A montage must contain at least one channel.")
     names = [str(ch["ch_name"]) for ch in chs_info]
     types = [  # missing kind = EEG; FIFF kind ints as in raw.info
         k.lower() if isinstance(k, str) else _FIFF_KINDS.get(int(k), str(k))
-        for k in (ch.get("kind") or "eeg" for ch in chs_info)
+        for k in (ch.get("kind") or ch.get("ch_type") or "eeg" for ch in chs_info)
     ]
     table, nan = _standard_positions(), np.full(3, np.nan)
     std = np.array(
@@ -104,10 +99,13 @@ def resolve_channel_positions(chs_info, bank, montage=None, on_missing="error"):
     Each channel takes, in order: ``"<montage>_<name>"`` when ``montage`` is
     given (``"biosemi128"``), its name, its name ignoring case and an ``EEG``
     prefix or ``-REF`` suffix, its legacy alias (``T3`` -> ``T7``), or for a
-    bipolar ``A-B`` the midpoint of ``A`` and ``B``. Other channels follow
-    ``on_missing``: ``"error"`` raises, ``"drop"`` leaves them out, and
-    ``"nearest"`` takes the bank entry closest to the channel's ``loc`` (in the
-    bank's frame), or drops it when it has no ``loc``. No position is invented.
+    bipolar ``A-B`` the midpoint of ``A`` and ``B``. A name the bank holds
+    exactly takes that entry; one that matches only ignoring case takes the last
+    entry that matches (``cz`` in ``{"CZ": a, "Cz": b}`` gives ``b``). Other
+    channels follow ``on_missing``: ``"error"`` raises, ``"drop"`` leaves them
+    out, and ``"nearest"`` takes the bank entry closest to the channel's ``loc``
+    (in the bank's frame), or drops it when it has no ``loc``. No position is
+    invented.
 
     Returns
     -------
@@ -120,7 +118,7 @@ def resolve_channel_positions(chs_info, bank, montage=None, on_missing="error"):
         raise ValueError(
             f"on_missing must be error, drop or nearest; got {on_missing!r}"
         )
-    lower = {k.lower(): k for k in bank}
+    lower = {k.lower(): k for k in bank}  # entries differing only in case: the last
 
     def lookup(name):
         name = re.sub(r"^eeg\s+|-(ref|le|ar)$", "", name.strip(), flags=re.I)
@@ -129,8 +127,10 @@ def resolve_channel_positions(chs_info, bank, montage=None, on_missing="error"):
             name,
             _ALIASES.get(name.lower()),
         ):
-            if key is not None and key.lower() in lower:
-                return np.asarray(bank[lower[key.lower()]], float)
+            if key is not None and (key in bank or key.lower() in lower):
+                return np.asarray(
+                    bank[key if key in bank else lower[key.lower()]], float
+                )
         ends = name.split("-")
         if len(ends) == 2 and all(ends):
             a, b = lookup(ends[0]), lookup(ends[1])
@@ -209,14 +209,11 @@ def _sphere_head(n_parcels: int, grid_mm: float):
     """4-shell sphere fitted to standard_1005, volume grid, k-means parcels
     (seed 0) and their orientation (first right singular vector of the lead
     field on the dense standard_1005)."""
-    # ponytail: patches a private MNE helper; drop the patch if MNE renames it.
-    fit = mock.patch.object(  # deterministic fit: reuse its result
-        mne.bem,
-        "_fwd_eeg_fit_berg_scherg",
-        lambda m, *_: m.update(zip(("mu", "lambda"), _MU_LAMBDA), nfit=3) or 0.0,
-    )
-    with mne.utils.use_log_level("ERROR"), fit:
+    with mne.utils.use_log_level("ERROR"):
         sphere = mne.make_sphere_model(r0=_SPHERE_R0, head_radius=_SPHERE_RADIUS)
+        # Deterministic: keep the calibrated fit, not MNE's COBYLA result.
+        sphere["mu"], sphere["lambda"] = (values.copy() for values in _MU_LAMBDA)
+        sphere["nfit"] = len(sphere["mu"])
         src = mne.setup_volume_source_space(
             sphere=sphere, pos=grid_mm, mindist=5.0, exclude=20.0
         )
@@ -246,32 +243,8 @@ def _source(src_pos, tgt_pos, n_parcels=64, lam=0.1, grid_mm=15.0):
     return L[k:] - L[:k].mean(0), S
 
 
-def _head_origin(src_pos) -> np.ndarray:
-    """Centre of the sphere fitted to ``src_pos``, as ``interpolate_to(origin="auto")``."""
-    names = [f"S{i}" for i in range(len(src_pos))]
-    info = mne.create_info(names, 100.0, "eeg")
-    info.set_montage(
-        mne.channels.make_dig_montage(dict(zip(names, src_pos)), coord_frame="head")
-    )
-    return mne.bem.fit_sphere_to_headshape(info, units="m", verbose="ERROR")[1]
-
-
-def _kriging(cov, k, noise, match_gain=False, flat=True):
-    """Rows ``k:`` of ``cov`` from rows ``:k`` (``linear_channel_map``): ``(W, var)``."""
-    eye = torch.eye(len(cov), dtype=torch.float64)
-    W, var = linear_channel_map(
-        eye[:k],
-        eye[k:],
-        torch.as_tensor(cov),
-        noise,
-        eye.sum(1, keepdim=True) if flat else None,
-        match_gain,
-    )  # flat: the unknown recording reference
-    return W.numpy(), var.numpy()
-
-
 def _mixing(
-    name,
+    name: str,
     src_pos,
     tgt_pos,
     reg=None,
@@ -280,18 +253,11 @@ def _mixing(
     radius=None,
     cov=None,
     dense_pos=None,
-    match_gain=False,
     **source_kw,
-):
-    """``(M, k)`` matrix filling ``M`` target positions from ``k`` input positions,
-    and the targets' posterior variance (``None`` without a prior covariance)."""
-    if name == "spline" or callable(name):  # positions from MNE's fitted head centre
-        k = torch.as_tensor(np.vstack([src_pos, tgt_pos]) - _head_origin(src_pos))
-        kernel = spherical_spline_kernel if name == "spline" else name
-        cov = np.asarray(kernel(k, k), float)
-        return _kriging(cov, len(src_pos), 1e-3 if reg is None else reg, match_gain)
+) -> np.ndarray:
+    """``(M, k)`` matrix filling ``M`` target positions from ``k`` input positions."""
     if name in ("zero", "latent"):  # latent: the attention fills these rows
-        return np.zeros((len(tgt_pos), len(src_pos))), None
+        return np.zeros((len(tgt_pos), len(src_pos)))
     if name == "wiener":  # C_to (C_oo + noise * tr / k * I)^-1
         if cov is None or not len(cov):
             raise ValueError("The 'wiener' strategy needs a covariance: call fit().")
@@ -302,24 +268,39 @@ def _mixing(
                 f"'wiener': positions {both[d.min(1) > 0.015].round(3).tolist()} have no electrode of the fitted dense montage within 15 mm."
             )
         jo, jt = np.split(d.argmin(1), [len(src_pos)])
-        sigma2 = noise * np.trace(cov[np.ix_(jo, jo)]) / len(jo)
-        j = np.r_[jo, jt]
-        return _kriging(cov[np.ix_(j, j)], len(jo), sigma2, match_gain, flat=False)
+        Cxx = cov[np.ix_(jo, jo)]
+        Cxx = Cxx + noise * np.trace(Cxx) / len(jo) * np.eye(len(jo))
+        return solve(Cxx, cov[np.ix_(jo, jt)], assume_a="sym").T
     if name == "region":  # mean within radius (default 1.5 x median input spacing)
         if radius is None:
             nn_d = cdist(src_pos, src_pos) + np.diag(np.full(len(src_pos), np.inf))
             radius = 1.5 * np.median(nn_d.min(1))
         w = (cdist(tgt_pos, src_pos) <= radius).astype(float)
-        return w / np.maximum(w.sum(1, keepdims=True), 1.0), None
+        return w / np.maximum(w.sum(1, keepdims=True), 1.0)
     if name in ("nearest", "idw"):
         w = np.maximum(cdist(tgt_pos, src_pos), 1e-6) ** -p
         w = w == w.max(1, keepdims=True) if name == "nearest" else w
-        return w / w.sum(1, keepdims=True), None
+        return w / w.sum(1, keepdims=True)
+    if name == "spline":
+        return _interp("spline", src_pos, tgt_pos, 1e-3 if reg is None else reg)
     if name == "field":  # MNE maps average-referenced data: keep the input reference
         W = _interp("MNE", src_pos, tgt_pos, 0.0 if reg is None else reg)
-        return W + (1.0 - W.sum(1, keepdims=True)) / W.shape[1], None
+        return W + (1.0 - W.sum(1, keepdims=True)) / W.shape[1]
     Lt, S = _source(src_pos, tgt_pos, **source_kw)
-    return Lt @ S + 1.0 / len(src_pos), None  # rows sum to 1: the input's reference
+    return Lt @ S + 1.0 / len(src_pos)  # rows sum to 1: the input's own reference
+
+
+@lru_cache(maxsize=32)  # bounded: augmentations that drop channels at random vary it
+def _montage_at(positions: bytes) -> list[dict]:
+    """Channels ``#0, #1, ...`` at ``positions``, an ``(n, 3)`` float64 array as bytes.
+
+    No montage uses these names, so each channel is matched by position only.
+    """
+    xyz = np.frombuffer(positions, dtype=np.float64).reshape(-1, 3)
+    return [
+        {"ch_name": f"#{i}", "kind": "eeg", "loc": np.r_[p, np.zeros(9)]}
+        for i, p in enumerate(xyz)
+    ]
 
 
 class ChannelLayer(nn.Module):
@@ -331,7 +312,7 @@ class ChannelLayer(nn.Module):
     ----------
     target : list of dict
         Channels the backbone consumes (``ch_name``, optional ``loc``).
-    strategy : str or callable
+    strategy : str
         ``"exact"`` (a missing target is an error), ``"zero"``, ``"nearest"``,
         ``"idw"`` (``p``), ``"spline"`` (``reg=1e-3``), ``"field"`` (``reg=0``)
         or ``"source"`` (``n_parcels=64``, ``lam=0.1``, ``grid_mm=15``,
@@ -340,43 +321,20 @@ class ChannelLayer(nn.Module):
         (mean within ``radius``, default 1.5 x the median input spacing) or
         ``"latent"`` (``d_model=64``, ``n_freqs=8``: learned cross-attention from
         each missing target's position over the inputs' positions and statistics).
-        A callable ``kernel(pos_a, pos_b) -> (n_a, n_b)`` covariance of the
-        potentials at two sets of positions (metres, from the centre of the
-        sphere fitted to the inputs, as ``"spline"``), e.g.
-        :func:`~braindecode.functional.spherical_spline_kernel`, fills them with
-        :func:`~braindecode.functional.linear_channel_map` (``reg``: the noise
-        variance, default 1e-3; the recording reference is left unknown).
-        ``spline`` and ``wiener`` are that estimate with their own covariance;
-        ``match_gain=True`` gives each reconstructed target its prior variance.
     chs_info : list of dict, optional
         Montage used when :meth:`forward` gets none.
     drop_non_eeg : bool
         Ignore input channels that are not electrodes instead of raising.
-    reference : str, optional
-        Reference of the backbone's single-electrode targets: ``None`` (the
-        input's), an electrode name (``"Cz"``: target ``A`` is ``V(A) -
-        V(Cz)``, with ``Cz`` copied or reconstructed like any target) or
-        ``"average"`` (minus their mean). Bipolar targets need none.
-
-    Attributes
-    ----------
-    variance : torch.Tensor
-        Posterior variance of each target for the current montage: 0 when
-        measured or exact, from the estimate (before ``match_gain``) for a
-        single-electrode target of ``spline``, ``wiener`` or a kernel, ``nan``
-        when not computed (other strategies, or a target mixing several
-        reconstructed channels, as with ``reference="average"``).
 
     Notes
     -----
     ``forward`` also takes one montage per sample (``chs_info`` a list of
     montages, ``x`` padded to the largest and ``ch_mask`` the real channels),
     for the strategies without trained state (not ``latent`` or ``trainable``);
-    ``observed`` is then ``(batch, n_targets)`` and the buffers (``weight``,
-    ``variance``) are those of the last sample.
-    A model with a ``channel_strategy`` builds these montages from the ``pos`` and
-    ``ch_mask`` of :func:`~braindecode.datasets.pad_channels_collate`. A function
-    strategy is not saved by ``save_pretrained``: pass it again when loading.
+    ``observed`` is then ``(batch, n_targets)`` and the buffer ``weight`` is that
+    of the last sample. A model with a ``channel_strategy`` builds these montages
+    from the ``pos`` and ``ch_mask`` of
+    :func:`~braindecode.datasets.pad_channels_collate` with :meth:`montages`.
     """
 
     def __init__(
@@ -387,11 +345,10 @@ class ChannelLayer(nn.Module):
         *,
         drop_non_eeg=False,
         trainable=False,
-        reference=None,
         **kwargs,
     ):
         super().__init__()
-        if not callable(strategy) and strategy not in STRATEGIES:
+        if strategy not in STRATEGIES:
             close = difflib.get_close_matches(strategy, STRATEGIES, n=3)
             raise ValueError(
                 f"Unknown channel strategy {strategy!r}. Did you mean {close}? Available: {STRATEGIES}."
@@ -401,33 +358,36 @@ class ChannelLayer(nn.Module):
             c if g or np.isnan(p).any() else {**c, "loc": np.r_[p, np.zeros(9)]}
             for c, p, g in zip(target, pos, given)
         ]
-        self.strategy, self.chs_info, self.reference = strategy, chs_info, reference
+        self.strategy, self.chs_info = strategy, chs_info
         self.drop_non_eeg, self.kwargs = drop_non_eeg, kwargs
         # Per-montage maps: LRU of device tensors; the current one is the buffers.
-        self._cache, self._key, self._chs = OrderedDict(), None, None
+        self._cache, self._key = OrderedDict(), None
         self.register_buffer("weight", torch.zeros(0, 0), persistent=False)
-        tnames = [str(c["ch_name"]) for c in self.target]
-        named = {n: c for n, c in zip(tnames, self.target) if "-" not in n}
-        # referenced: single-electrode targets with a position (not BENDR's SCALE)
-        self._referenced = np.array(
-            ["-" not in n and np.isfinite(p).all() for n, p in zip(tnames, pos)]
+        parts = [channel_electrodes(str(ch["ch_name"])) for ch in self.target]
+        named = {
+            ends[0].lower(): ch
+            for ends, ch in zip(parts, self.target)
+            if len(ends) == 1
+        }
+        # A measured A-B takes precedence over reconstructing A and B separately.
+        bipolar = {
+            row: "-".join(ends) for row, ends in enumerate(parts) if len(ends) == 2
+        }
+        derivations, mono = derivation_rows(parts, bipolar.values())
+        columns = {name.lower(): i for i, name in enumerate(mono)}
+        self._whole = [
+            columns[bipolar[row].lower()] if row in bipolar else -1
+            for row in range(len(parts))
+        ]
+        _, tpos, tstd, *_ = _resolve(
+            [named.get(m.lower(), {"ch_name": m}) for m in mono]
         )
-        if reference not in (None, "average"):  # target A is the derivation A-ref
-            tnames = [
-                f"{n}-{reference}" if r else n for n, r in zip(tnames, self._referenced)
-            ]
-        # A-B is copied when measured, else derived from A and B (both columns).
-        mono = list(dict.fromkeys(m for n in tnames for m in (n, *n.split("-"))))
-        _, tpos, tstd, *_ = _resolve([named.get(m, {"ch_name": m}) for m in mono])
-        self._whole = [mono.index(n) for n in tnames]
-        D = np.array(
-            [
-                [(m == n.split("-")[0]) - (m == n.split("-")[-1] != n) for m in mono]
-                for n in tnames
-            ],
-            float,
+        self._mono, self._tpos, self._tstd, self._D = (
+            mono,
+            tpos,
+            tstd,
+            derivations.numpy(),
         )
-        self._mono, self._tpos, self._tstd, self._D = mono, tpos, tstd, D
         self.trainable = trainable and strategy == "source"
         if self.trainable:
             n = kwargs.get("n_parcels", 64)
@@ -447,23 +407,25 @@ class ChannelLayer(nn.Module):
             self._use(chs_info)  # surface montage errors at construction
 
     def _use(self, chs: list[dict]) -> None:
-        """Make the maps of ``chs`` the buffers (identity, then LRU, then build)."""
-        # ponytail: identity fast path; a montage list mutated in place is not seen.
-        if chs is self._chs:
-            return
-        key = tuple(
-            (str(c["ch_name"]), c.get("kind"), np.float64(c.get("loc")).tobytes())
+        """Select the cached map for the current channel metadata, or build one."""
+        metadata = tuple(
+            (
+                str(c["ch_name"]),
+                c.get("kind") or c.get("ch_type") or "eeg",
+                np.asarray(c.get("loc"), dtype=np.float64).tobytes(),
+            )
             for c in chs
         )
+        key = (self.drop_non_eeg, metadata)
         if key != self._key:
             maps = self._cache.pop(key, None) or self._build(chs)
             self._cache[key] = maps  # most recent last
+            # shortcut: keep 16 maps; revisit if mixed batches repeatedly rebuild evicted maps.
             if len(self._cache) > 16:
                 self._cache.popitem(last=False)
             for name, t in maps.items():
                 self.register_buffer(name, t, persistent=False)
             self._key = key
-        self._chs = chs
 
     @torch.inference_mode(False)  # maps built in an eval pass serve training
     def _build(self, chs_info: list[dict]) -> dict[str, Tensor]:
@@ -503,12 +465,11 @@ class ChannelLayer(nn.Module):
                     W[k, j[np.argmin(near[k][j])]] = 1.0
                     break
         observed = np.abs(W).sum(1) > 0
-        copied = observed[self._whole][:, None]  # a measured A-B target: copy it
-        D = np.where(copied, np.eye(len(mono))[self._whole], self._D)
-        measured = (np.abs(D) @ ~observed == 0).any()  # before re-referencing
-        ref = self._referenced
-        if self.reference == "average" and ref.any():  # minus their mean
-            D[ref] -= D[ref].mean(0)
+        D = self._D.copy()
+        for row, column in enumerate(self._whole):  # a measured A-B target: copy it
+            if column >= 0 and observed[column]:
+                D[row] = 0
+                D[row, column] = 1
         missing = ~observed & np.abs(D).any(0)
         todo = missing & np.isfinite(tpos).all(1)
         if self.strategy == "exact" and todo.any():
@@ -516,7 +477,7 @@ class ChannelLayer(nn.Module):
                 f"Strategy 'exact': target channels {[m for m, t in zip(mono, todo) if t]} are not in the input montage {names}; use a reconstructing strategy (e.g. 'spline') or supply them."
             )
         seen = np.abs(D) @ missing == 0
-        if not measured and (self.strategy == "zero" or not todo.any()):
+        if not seen.any() and (self.strategy == "zero" or not todo.any()):
             raise ValueError(
                 f"No target channel of {[c['ch_name'] for c in self.target]} is in the input montage {names}, and strategy {self.strategy!r} reconstructs none: the model would see only zeros. Supply matching names or positions, or a reconstructing strategy (e.g. 'spline')."
             )
@@ -527,22 +488,19 @@ class ChannelLayer(nn.Module):
                 stacklevel=4,
             )
         use = keep & np.isfinite(pos).all(1)
-        need = _MIN_POSITIONS.get(self.strategy, 4)  # a kernel: as spline
-        if todo.any() and use.sum() < need:
+        if todo.any() and use.sum() < _MIN_POSITIONS[self.strategy]:
             raise ValueError(
-                f"Strategy {self.strategy!r} needs at least {need} channels with a position; got {int(use.sum())} of {names}. Supply 'loc' or standard 10-05 names."
+                f"Strategy {self.strategy!r} needs at least {_MIN_POSITIONS[self.strategy]} channels with a position; got {int(use.sum())} of {names}. Supply 'loc' or standard 10-05 names."
             )
         fitted = {  # wiener: device-safe float64 copies
             k: getattr(self, k).detach().cpu().double().numpy()
             for k in ("cov", "dense_pos")
             if hasattr(self, k)
         }
-        var = np.where(observed, 0.0, np.nan)
         if todo.any():
-            W[np.ix_(todo, use)], v = _mixing(
+            W[np.ix_(todo, use)] = _mixing(
                 self.strategy, pos[use], tpos[todo], **self.kwargs, **fitted
             )
-            var[todo] = np.nan if v is None else v
             gain = np.abs(W[todo]).sum(1).max()
             if gain > 2:
                 warnings.warn(
@@ -551,12 +509,7 @@ class ChannelLayer(nn.Module):
                     stacklevel=4,
                 )
         dev, dt = self.weight.device, self.weight.dtype  # built where the module is
-        # one reconstructed entry in a row: its variance times its weight squared
-        hit = (D != 0) & missing
-        j, rows = hit.argmax(1), np.arange(len(D))
-        own = D[rows, j] ** 2 * var[j]
-        variance = np.where(seen, 0.0, np.where(hit.sum(1) == 1, own, np.nan))
-        maps = dict(weight=D @ W, variance=variance)
+        maps = dict(weight=D @ W)
         if self.trainable:  # nothing to reconstruct: zero correction, no inverse
             n = self.parcel_mix.shape[0]
             Lt, S = (
@@ -577,6 +530,8 @@ class ChannelLayer(nn.Module):
             k: v if torch.is_tensor(v) else torch.tensor(v, device=dev, dtype=dt)
             for k, v in maps.items()
         }
+        if self.drop_non_eeg:
+            maps["electrode_mask"] = torch.as_tensor(keep, device=dev)
         maps["observed"] = torch.as_tensor(seen, device=dev)
         return maps
 
@@ -588,8 +543,22 @@ class ChannelLayer(nn.Module):
         return self
 
     def fit(self, X, chs_info_dense: list[dict]) -> ChannelLayer:
-        """``wiener``: fit the spatial covariance on ``X`` ``(n_samples, n_dense)``
-        recorded with ``chs_info_dense`` (matched to the montages by position)."""
+        """Fit the spatial covariance of the ``wiener`` strategy on a dense recording.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, n_dense)
+            Samples of the dense recording.
+        chs_info_dense : list of dict
+            Channels of ``X`` in its column order, in metres in the head frame (a
+            standard electrode name supplies a missing position). Each montage is
+            matched to them by position, within 15 mm.
+
+        Returns
+        -------
+        ChannelLayer
+            This layer; its covariance and positions are saved in the ``state_dict``.
+        """
         pos = _resolve(chs_info_dense)[1]
         X = np.asarray(X, float)
         if self.strategy != "wiener" or X.shape[1:] != pos.shape[:1]:
@@ -600,16 +569,42 @@ class ChannelLayer(nn.Module):
         self.cov = torch.tensor(np.cov(X.T), dtype=torch.float32, device=dev)
         self.dense_pos = torch.tensor(pos, dtype=torch.float32, device=dev)
         self._cache.clear()
-        self._key = self._chs = None
+        self._key = None
         return self
 
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
         self._cache.clear()  # maps are rebuilt after a load
-        self._key = self._chs = None
+        self._key = None
         for k in ("cov", "dense_pos"):  # fitted buffers change size
             if hasattr(self, k) and prefix + k in state_dict:
                 setattr(self, k, torch.empty_like(state_dict[prefix + k]))
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
+    def montages(self, pos: Tensor, ch_mask: Tensor) -> list[list[dict]]:
+        """One montage per sample from the positions of a padded batch.
+
+        Parameters
+        ----------
+        pos : torch.Tensor of shape (batch, channels, 3)
+            Head-frame positions of each sample's channels, as
+            :func:`~braindecode.datasets.pad_channels_collate` pads them.
+        ch_mask : torch.Tensor of shape (batch, channels)
+            ``True`` for the real channels of each sample.
+
+        Returns
+        -------
+        list of list of dict
+            For each sample, its real channels named ``#0, #1, ...`` at their
+            positions, for :meth:`forward`. A montage is built once per set of
+            positions (the last 32 are kept), so the maps of :meth:`forward` stay
+            cached per montage.
+        """
+        # MNE builds the maps on the host; one small copy per forward.
+        positions = pos.detach().cpu().double().numpy()
+        real = (
+            cast(Tensor, check_ch_mask(ch_mask, pos)).cpu().numpy()
+        )  # (batch, channels)
+        return [_montage_at(p[m].tobytes()) for p, m in zip(positions, real)]
 
     def forward(
         self,
@@ -617,10 +612,29 @@ class ChannelLayer(nn.Module):
         chs_info: list[dict] | list[list[dict]] | None = None,
         ch_mask: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
-        """Map ``x`` (B, C, T) recorded with ``chs_info``, or with one montage per
-        sample whose channels are the ``True`` entries of ``ch_mask`` (B, C)
-        (default: the first ones, as :func:`~braindecode.datasets.pad_channels_collate`
-        pads); return ``(x, observed)``."""
+        """Map a batch onto the target channels.
+
+        Parameters
+        ----------
+        x : torch.Tensor of shape (batch, channels, time)
+            Signal recorded with ``chs_info``; with one montage per sample, padded
+            to the largest montage.
+        chs_info : list of dict or list of list of dict, optional
+            Montage of ``x``, or one montage per sample. Defaults to the montage
+            given at construction.
+        ch_mask : torch.Tensor of shape (batch, channels), optional
+            With one montage per sample, ``True`` for the real channels of each
+            sample (default: the first ones, as
+            :func:`~braindecode.datasets.pad_channels_collate` pads).
+
+        Returns
+        -------
+        mapped : torch.Tensor of shape (batch, n_targets, time)
+            ``x`` in the target channels.
+        observed : torch.Tensor of bool
+            Targets that are measured or exactly derived: ``(n_targets,)``, or
+            ``(batch, n_targets)`` with one montage per sample.
+        """
         chs = chs_info if chs_info is not None else self.chs_info
         if chs is None:
             raise ValueError(
@@ -632,33 +646,36 @@ class ChannelLayer(nn.Module):
                 raise ValueError(
                     f"One montage per sample needs a strategy without trained state and one montage of at most {x.shape[1]} channels for each of the {len(x)} samples; got {self.strategy!r} and {len(chs)} montages."
                 )
-            weights, observed = [], []
-            # ponytail: one map per distinct montage, LRU of 16; a batch of many
-            # recordings rebuilds maps on the host, cache by montage if it shows.
-            for b, c in enumerate(cast(list[list[dict]], chs)):
-                self._use(c)
-                cols = (
-                    ch_mask[b].nonzero().squeeze(1)
-                    if ch_mask is not None
-                    else torch.arange(len(c), device=x.device)
+            ch_mask = check_ch_mask(ch_mask, x)
+            # real: the mask on the host, one read per batch instead of a sync per sample
+            real = None if ch_mask is None else ch_mask.cpu().numpy()
+            signals, observed = [], []
+            for b, montage in enumerate(cast(list[list[dict]], chs)):
+                signal = (  # x[b]: (C, T) -> the real channels (len(montage), T)
+                    x[b, : len(montage)]
+                    if real is None
+                    else x[b, torch.as_tensor(np.flatnonzero(real[b]), device=x.device)]
                 )
-                if len(cols) != len(c):
+                if signal.shape[0] != len(montage):
                     raise ValueError(
-                        f"Sample {b}: ch_mask has {len(cols)} channels, its montage {len(c)}."
+                        f"Sample {b}: ch_mask has {signal.shape[0]} channels, "
+                        f"its montage {len(montage)}."
                     )
-                w = self.weight.new_zeros(len(self.weight), x.shape[1])
-                w[:, cols] = self.weight
-                weights.append(w)
+                self._use(montage)
+                if self.drop_non_eeg:
+                    signal = signal.masked_fill(~self.electrode_mask[:, None], 0)
+                signals.append(self.weight @ signal)
                 observed.append(self.observed)
-            return torch.stack(weights) @ x, torch.stack(observed)
+            return torch.stack(signals), torch.stack(observed)
         if ch_mask is not None:
             raise ValueError("ch_mask needs one montage per sample in chs_info.")
         if x.shape[1] != len(chs):
             raise ValueError(
                 f"Input has {x.shape[1]} channels but the montage has {len(chs)}; they must match."
             )
-        # steady state: no host work, every map already on device
         self._use(cast(list[dict], chs))
+        if self.drop_non_eeg:
+            x = x.masked_fill(~self.electrode_mask[:, None], 0)
         out = self.weight @ x
         if self.trainable:
             out = out + self.lead @ (self.parcel_mix @ (self.inverse @ x))

@@ -1,7 +1,5 @@
 """resolve_channel_positions and its use in REVE."""
 
-import json
-
 import numpy as np
 import pytest
 import torch
@@ -32,6 +30,12 @@ def test_names_aliases_montage_and_bipolar():
     np.testing.assert_array_equal(pos[0], BANK["biosemi128_A1"])
 
 
+def test_exact_name_first_then_the_last_entry_equal_ignoring_case():
+    bank = {"CZ": [0.0, 0.0, 1.0], "Cz": [0.0, 0.0, 2.0]}
+    pos, _ = resolve_channel_positions(chs("CZ", "Cz", "cz", "EEG cz-REF"), bank)
+    np.testing.assert_array_equal(pos[:, 2], [1.0, 2.0, 2.0, 2.0])
+
+
 def test_on_missing():
     with pytest.raises(ValueError, match="X1"):
         resolve_channel_positions(chs("Cz", "X1"), BANK)
@@ -45,24 +49,27 @@ def test_on_missing():
         resolve_channel_positions(chs("X1"), BANK, on_missing="nearest")
 
 
-@pytest.fixture
-def reve_bank(tmp_path, monkeypatch):
-    (tmp_path / "reve_positions.json").write_text(json.dumps(BANK))
-    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
-
-
 def small_reve(chs_info, **kw):
     kwargs = dict(n_outputs=2, n_times=380, embed_dim=32, depth=1, heads=2, head_dim=16)
     return REVE(chs_info=chs_info, **kwargs, **kw).eval()
 
 
-def test_reve_exact_names_keep_the_bank_lookup(reve_bank):
+def test_reve_exact_names_keep_the_bank_lookup():
     model = small_reve(chs("Cz", "F3", "A1"))
     bank = model._position_bank
     assert torch.equal(model.default_pos, bank(["Cz", "F3", "A1"]))
 
 
-def test_reve_drop_refuses_a_mask_left_without_real_channels(reve_bank):
+def test_reve_positions_can_change_channels_only_with_a_flexible_head():
+    model = small_reve(chs("Cz", "F3", "A1"))
+    x = torch.randn(2, 2, 380)
+    pos = model.default_pos[None, :2].expand(2, -1, -1)
+    assert model(x, pos=pos, return_features=True)["tokens"].shape[:2] == (2, 2)
+    with pytest.raises(ValueError, match="channels"):
+        model(x, pos=pos)
+
+
+def test_reve_drop_refuses_a_mask_left_without_real_channels():
     with pytest.warns(UserWarning, match="X1"):
         model = small_reve(chs("Cz", "X1"), on_missing="drop", attention_pooling=True)
     mask = torch.tensor([[True, True], [False, True]])  # sample 2: X1 only, dropped
@@ -70,7 +77,7 @@ def test_reve_drop_refuses_a_mask_left_without_real_channels(reve_bank):
         model(torch.randn(2, 2, 380), ch_mask=mask)
 
 
-def test_reve_drop_reads_the_kept_channels(reve_bank):
+def test_reve_drop_reads_the_kept_channels():
     torch.manual_seed(0)
     with pytest.warns(UserWarning, match="X1"):
         dropping = small_reve(chs("Cz", "X1", "F3"), on_missing="drop")

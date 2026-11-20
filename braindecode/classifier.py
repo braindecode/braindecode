@@ -157,6 +157,9 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
     def get_loss(self, y_pred, y_true, *args, **kwargs):
         """Return the loss for this batch by calling NeuralNet get_loss.
 
+        A floating ``y_true`` with the shape of ``y_pred`` is read as class
+        probabilities; with any other shape, as class indices, cast to int64.
+
         Parameters
         ----------
         y_pred : torch tensor
@@ -184,6 +187,7 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
         loss : float
             The loss value.
         """
+        y_true = _class_indices(y_pred, y_true)
         return NeuralNet.get_loss(self, y_pred, y_true, *args, **kwargs)
 
     def predict(self, X):
@@ -281,3 +285,25 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
                 )
             )
         return callbacks
+
+
+# Helper of EEGClassifier.get_loss, below the class.
+def _class_indices(y_pred, y_true):
+    """Cast a float target to int64 unless it has the shape of ``y_pred``.
+
+    Window datasets slice targets out of the float32 signal, and labels read from
+    a table can be floats: the loader keeps floats, and the shape tells class
+    probabilities (the shape of the predictions) from class indices. A Mixup target
+    ``(y_a, y_b, lam)`` casts ``y_a`` and ``y_b``, never the weights ``lam``.
+    """
+    if isinstance(y_true, (tuple, list)) and len(y_true) == 3:
+        y_a, y_b, lam = y_true
+        return _class_indices(y_pred, y_a), _class_indices(y_pred, y_b), lam
+    if (
+        isinstance(y_pred, Tensor)
+        and isinstance(y_true, Tensor)
+        and y_true.is_floating_point()
+        and y_true.shape != y_pred.shape
+    ):
+        return y_true.long()
+    return y_true

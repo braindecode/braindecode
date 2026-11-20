@@ -33,6 +33,7 @@ from braindecode.training.scoring import (
     trial_preds_from_window_preds,
 )
 from braindecode.util import set_random_seeds
+from test.unit_tests.training._trial_fixtures import InferenceModule, InferenceWindows
 
 bnci_kwargs = {
     "n_sessions": 1,
@@ -611,60 +612,9 @@ def test_predict_trials_multi_value_targets():
     np.testing.assert_array_equal(ys, [[0, 10], [1, 11]])
 
 
-class _InferenceWindows(Dataset):
-    """Five windows, overlapping in two unequal trials; no stored signals."""
-
-    def __init__(self, target_kind="scalar", repeats=1, fail_at=None, ch_pos=False):
-        self.target_kind = target_kind
-        self.repeats = repeats
-        self.reads = 0
-        self.fail_at = fail_at
-        self.ch_pos = ch_pos
-
-    def __len__(self):
-        return 5 * self.repeats
-
-    def __getitem__(self, index):
-        self.reads += 1
-        if index == self.fail_at:
-            raise RuntimeError("dataset failure")
-        local = index % 5
-        trial = index // 5 * 2 + (local >= 2)
-        window = local if local < 2 else local - 2
-        start = window * 2
-        signal = np.arange(start, start + 4, dtype=np.float64)[None] + 100 * trial
-        if self.target_kind == "scalar":
-            target = np.int64(trial)
-        elif self.target_kind == "multi":
-            target = np.array([trial, trial + 10], dtype=np.int64)
-        else:
-            target = signal.astype(np.int64)
-        row = (signal, target, [window, start, start + 4])
-        return (*row, np.zeros((1, 3))) if self.ch_pos else row
-
-    def get_metadata(self):
-        return pd.DataFrame({"i_window_in_trial": [0, 1, 0, 1, 2] * self.repeats})
-
-
-class _InferenceModule(torch.nn.Module):
-    def __init__(self, fail=False):
-        super().__init__()
-        self.scale = torch.nn.Parameter(torch.ones((), dtype=torch.float64))
-        self.batch_sizes = []
-        self.fail = fail
-
-    def forward(self, X):
-        assert not self.training
-        assert not torch.is_grad_enabled()
-        self.batch_sizes.append(len(X))
-        if self.fail:
-            raise RuntimeError("forward failure")
-        return X * self.scale
-
-
 def test_predict_trials_explicit_loader_kwargs():
-    module = _InferenceModule()
-    dataset = _InferenceWindows()
+    module = InferenceModule()
+    dataset = InferenceWindows()
     preds, targets = predict_trials(module, dataset, loader_kwargs={"batch_size": 2})
     assert module.batch_sizes == [2, 2, 1]
     assert dataset.reads == 5
@@ -693,7 +643,7 @@ def test_predict_trials_explicit_loader_kwargs():
 def test_trial_loader_rejects_ordering_and_unknown_keys(key):
     with pytest.raises(ValueError, match=key):
         predict_trials(
-            _InferenceModule(), _InferenceWindows(), loader_kwargs={key: None}
+            InferenceModule(), InferenceWindows(), loader_kwargs={key: None}
         )
 
 
@@ -709,7 +659,7 @@ def test_trial_loader_rejects_ordering_and_unknown_keys(key):
 )
 def test_trial_loader_enforces_dataloader_constraints(options):
     with pytest.raises((ValueError, TypeError)):
-        predict_trials(_InferenceModule(), _InferenceWindows(), loader_kwargs=options)
+        predict_trials(InferenceModule(), InferenceWindows(), loader_kwargs=options)
 
 
 @pytest.mark.parametrize("kind", ["scalar", "multi", "time"])
@@ -720,8 +670,8 @@ def test_iter_trial_predictions_matches_materialized_reference(
 ):
     from braindecode.training.scoring import iter_trial_predictions
 
-    dataset = _InferenceWindows(kind)
-    module = _InferenceModule()
+    dataset = InferenceWindows(kind)
+    module = InferenceModule()
     options = {"batch_size": batch_size}
     results = list(
         iter_trial_predictions(module, dataset, return_targets, loader_kwargs=options)
@@ -765,8 +715,8 @@ def test_trial_iterator_does_not_retain_unused_targets(monkeypatch):
 
     monkeypatch.setattr(scoring, "DataLoader", TrackingLoader)
     iterator = scoring.iter_trial_predictions(
-        _InferenceModule(),
-        _InferenceWindows(repeats=20),
+        InferenceModule(),
+        InferenceWindows(repeats=20),
         False,
         loader_kwargs={"batch_size": 1},
     )
@@ -780,7 +730,7 @@ def test_trial_iterator_does_not_retain_unused_targets(monkeypatch):
 def test_trial_iterator_accepts_whitelisted_loader_kwargs():
     from braindecode.training.scoring import iter_trial_predictions
 
-    module = _InferenceModule()
+    module = InferenceModule()
     options = {
         "batch_size": 2,
         "num_workers": 0,
@@ -790,7 +740,7 @@ def test_trial_iterator_accepts_whitelisted_loader_kwargs():
         "worker_init_fn": None,
         "generator": torch.Generator().manual_seed(2),
     }
-    list(iter_trial_predictions(module, _InferenceWindows(), loader_kwargs=options))
+    list(iter_trial_predictions(module, InferenceWindows(), loader_kwargs=options))
     assert module.batch_sizes == [2, 2, 1]
     assert options["batch_size"] == 2
 
@@ -798,12 +748,12 @@ def test_trial_iterator_accepts_whitelisted_loader_kwargs():
 def test_trial_materialization_preserves_container_types():
     # Variable trials must stay lists, never tuples; fixed trials stay arrays.
     variable, time_targets = predict_trials(
-        _InferenceModule(), _InferenceWindows("time")
+        InferenceModule(), InferenceWindows("time")
     )
     assert isinstance(variable, list)
     assert isinstance(time_targets, list)
 
-    class FixedWindows(_InferenceWindows):
+    class FixedWindows(InferenceWindows):
         def __len__(self):
             return 4
 
@@ -811,7 +761,7 @@ def test_trial_materialization_preserves_container_types():
             # Keep two windows of each trial.
             return super().__getitem__(index)
 
-    fixed, targets = predict_trials(_InferenceModule(), FixedWindows())
+    fixed, targets = predict_trials(InferenceModule(), FixedWindows())
     assert isinstance(fixed, np.ndarray)
     assert isinstance(targets, np.ndarray)
     assert fixed.shape == (2, 1, 6)
