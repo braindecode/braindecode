@@ -813,7 +813,7 @@ def _fake_raw(*args, **kwargs):
 
 def _get_header(*args, **kwargs):
     all_paths = {}
-    for paths_dict in [_TUH_EEG_PATHS, _TUH_EEG_ABNORMAL_PATHS, _TUH_EEG_EVENTS_PATHS]:
+    for paths_dict in [_TUH_EEG_PATHS, _TUH_EEG_ABNORMAL_PATHS]:
         for version_dict in paths_dict.values():
             all_paths.update(version_dict)
     # Mock keys use POSIX separators; pathlib emits backslashes on Windows.
@@ -850,13 +850,6 @@ _TUH_EEG_ABNORMAL_PATHS = {
         # noqa E501
         "tuh_abnormal_eeg/v2.0.0/edf/eval/abnormal/01_tcp_ar/059/00005932/s004_2013_03_14/00005932_s004_t000.edf": b"0       00005932 M 01-JAN-1963 00005932 Age:50                                          ",
         # noqa E501
-    }
-}
-_TUH_EEG_EVENTS_PATHS = {
-    "v2.0.1": {
-        "tuh_eeg_events/v2.0.1/edf/eval/000/bckg_000_a_.edf": b"0       000 F 01-JAN-0000 000 Age:36                                                    ",  # noaq E501
-        "tuh_eeg_events/v2.0.1/edf/train/aaaaaaar/aaaaaaar_00000001.edf": b"0       /aa F 01-JAN-0000 /aa Age:19                                                    ",  # noqa E501
-        "tuh_eeg_events/v2.0.1/edf/eval/001/pled_001_a_2.edf": b"0       001 F 01-JAN-0000 001 Age:68                                                    ",  # noqa E501
     }
 }
 
@@ -960,45 +953,4 @@ class _TUHAbnormalMock(TUHAbnormal):
     def _expected_files_count(self):
         if self.version == "v2.0.0":
             return 5
-        return None
-
-
-class _TUHEventsMock(TUHEvents):
-    """Mocked class for testing and examples."""
-
-    @mock.patch("glob.glob", new=_MockGlob(_TUH_EEG_EVENTS_PATHS))
-    @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
-    @mock.patch("braindecode.datasets.tuh._read_edf_header", new=_get_header)
-    def __init__(
-        self,
-        path: str,
-        recording_ids: list[int] | None = None,
-        target_name: str | tuple[str, ...] | None = "pathological",
-        preload: bool = False,
-        add_physician_reports: bool = False,
-        rename_channels: bool = False,
-        set_montage: bool = False,
-        on_missing_files: Literal["warn", "raise"] = "raise",
-        version: Literal["v2.0.1"] = "v2.0.1",
-        n_jobs: int = 1,
-    ):
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="Cannot save date file")
-            super().__init__(
-                path=path,
-                recording_ids=recording_ids,
-                target_name=target_name,
-                preload=preload,
-                add_physician_reports=add_physician_reports,
-                rename_channels=rename_channels,
-                set_montage=set_montage,
-                on_missing_files=on_missing_files,
-                version=version,
-                n_jobs=n_jobs,
-            )
-
-    @property
-    def _expected_files_count(self):
-        if self.version == "v2.0.1":
-            return 3
         return None
