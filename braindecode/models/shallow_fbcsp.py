@@ -186,9 +186,13 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         )
         self.add_module("pool_nonlin_exp", self.pool_nonlin())
         self.add_module("drop", nn.Dropout(p=self.drop_prob))
-        self.eval()
         if self.final_conv_length == "auto":
-            self.final_conv_length = self.get_output_shape()[2]
+            # The temporal convolution keeps n_times - filter_time_length + 1
+            # samples; the pooling windows them pool_time_stride apart
+            n_conv = self.n_times - self.filter_time_length + 1
+            self.final_conv_length = (
+                n_conv - self.pool_time_length
+            ) // self.pool_time_stride + 1
 
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()

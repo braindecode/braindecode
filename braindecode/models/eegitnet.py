@@ -207,7 +207,11 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         # Moved flatten to another layer
         self.add_module("flatten", nn.Flatten())
 
-        num_features = self.get_output_shape()[-1]
+        # The inception branches keep the time axis ("same" padding) and
+        # collapse the electrodes; the causal TC blocks keep it too. Only the
+        # two average poolings shorten it.
+        n_time = self.n_times // pool_kernel // tcn_kernel_size
+        num_features = tcn_in_channel * n_time
 
         # The authors constrain the final dense with ``max_norm(0.25)``.
         self.add_module(

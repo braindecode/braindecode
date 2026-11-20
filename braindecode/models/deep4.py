@@ -313,9 +313,19 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             self, self.n_filters_3, self.n_filters_4, self.filter_length_4, 4
         )
 
-        self.eval()
         if self.final_conv_length == "auto":
-            self.final_conv_length = self.get_output_shape()[2]
+            # Each of the four blocks convolves time without padding, then
+            # pools it; the stride sits on one of the two (stride_before_pool)
+            n_time = self.n_times
+            for filter_length in (
+                self.filter_time_length,
+                self.filter_length_2,
+                self.filter_length_3,
+                self.filter_length_4,
+            ):
+                n_time = (n_time - filter_length) // conv_stride + 1
+                n_time = (n_time - self.pool_time_length) // pool_stride + 1
+            self.final_conv_length = n_time
 
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
