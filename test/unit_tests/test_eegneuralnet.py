@@ -1202,3 +1202,17 @@ def test_classifier_casts_float_class_indices_with_extra_axes(layout):
         verbose=0,
     ).fit(X, y)
     assert net.history[-1, "train_loss"] == pytest.approx(expected)
+
+
+def test_get_split_datasets_works_before_initialize():
+    """skorch's public ``get_split_datasets`` needs no initialized module (v2.0.0)."""
+    X = np.random.randn(8, 3, 200).astype("float32")
+    clf = EEGClassifier(
+        ShallowFBCSPNet,
+        module__n_chans=3,
+        module__n_times=200,
+        module__n_outputs=2,
+        train_split=None,
+    )
+    dataset_train, dataset_valid = clf.get_split_datasets(X, np.array([0, 1] * 4))
+    assert len(dataset_train) == 8 and dataset_valid is None

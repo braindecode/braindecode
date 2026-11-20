@@ -150,7 +150,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         only after the split: ``on_train_begin`` receives the unsplit ``X``.
         """
         dataset_train, dataset_valid = super().get_split_datasets(X, y, **fit_params)
-        fit_graph = getattr(self.module_, "fit_graph", None)
+        fit_graph = getattr(getattr(self, "module_", None), "fit_graph", None)
         if fit_graph is not None and is_skorch_dataset(dataset_train):
             windows, _ = data_from_dataset(
                 dataset_train, X_indexing=_select_array, y_indexing=noop

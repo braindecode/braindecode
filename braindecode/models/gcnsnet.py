@@ -153,6 +153,15 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         """
         if self.graph_initialized:
             return
+        try:
+            n_chans = self.n_chans
+        except ValueError:  # neither n_chans nor chs_info: the windows set it
+            n_chans = X.shape[1]
+        if X.ndim != 3 or X.shape[1] != n_chans:
+            raise ValueError(
+                f"fit_graph expects windows of shape (n_windows, {n_chans}, n_times), "
+                f"got {tuple(X.shape)}."
+            )
         # adjacency: (n_chans, n_chans), on the device and dtype of the weights
         adjacency = self._adjacency(X.float()).to(next(self.parameters()))
         self._initialize_graph(adjacency)

@@ -413,6 +413,7 @@ class ChebyshevGraphConv(nn.Module):
         if self.cheb_order > 1:
             cheb_components.append(torch.matmul(laplacian, x))  # T_1(L) x = L x
 
+        # T_k(L) x = 2 L T_{k-1}(L) x - T_{k-2}(L) x, the Chebyshev recurrence
         for _ in range(2, self.cheb_order):
             cheb_components.append(
                 2 * torch.matmul(laplacian, cheb_components[-1]) - cheb_components[-2]
