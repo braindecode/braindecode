@@ -17,7 +17,14 @@ import torch
 from sklearn.metrics import get_scorer
 from skorch import NeuralNet
 from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
-from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score
+from skorch.utils import (
+    data_from_dataset,
+    is_skorch_dataset,
+    noop,
+    to_numpy,
+    train_loss_score,
+    valid_loss_score,
+)
 
 from braindecode.datautil import infer_signal_properties
 
@@ -37,6 +44,11 @@ def _get_model(model: Any) -> Any:
     if isinstance(model, str):
         model = _get_model_class(model)
     return model
+
+
+def _select_array(X, indices):
+    """Index arrays and tensors; skorch's default fails on a ``range``."""
+    return X[indices] if isinstance(X, (np.ndarray, torch.Tensor)) else None
 
 
 class _EEGNeuralNet(NeuralNet, abc.ABC):
@@ -131,11 +143,22 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         ]
         return train_valid_callbacks
 
-    def on_epoch_begin(self, net, dataset_train=None, dataset_valid=None, **kwargs):
-        super().on_epoch_begin(net, dataset_train, dataset_valid, **kwargs)
-        fit_training_data = getattr(self.module_, "_fit_training_data", None)
-        if fit_training_data is not None:
-            fit_training_data(dataset_train)
+    def get_split_datasets(self, X, y=None, **fit_params):
+        """Split the data, then fit the module's graph on the training windows.
+
+        ``fit_loop`` calls this once per fit, and the training windows exist
+        only after the split: ``on_train_begin`` receives the unsplit ``X``.
+        """
+        dataset_train, dataset_valid = super().get_split_datasets(X, y, **fit_params)
+        fit_graph = getattr(self.module_, "fit_graph", None)
+        if fit_graph is not None and is_skorch_dataset(dataset_train):
+            windows, _ = data_from_dataset(
+                dataset_train, X_indexing=_select_array, y_indexing=noop
+            )
+            # Other inputs, e.g. window datasets, leave the graph to the module.
+            if isinstance(windows, (np.ndarray, torch.Tensor)) and len(windows):
+                fit_graph(torch.as_tensor(windows))
+        return dataset_train, dataset_valid
 
     def on_batch_end(self, net, *batch, training=False, **kwargs):
         # If training is false, assume that our loader has indices for this

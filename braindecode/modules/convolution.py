@@ -361,3 +361,62 @@ class DepthwiseConv2d(torch.nn.Conv2d):
             bias=bias,
             padding_mode=padding_mode,
         )
+
+
+class ChebyshevGraphConv(nn.Module):
+    r"""Apply a Chebyshev spectral convolution to graph signals.
+
+    Projects the concatenated responses of Chebyshev polynomials of orders
+    zero through ``cheb_order - 1`` of a graph Laplacian. The bias-free linear
+    projection mixes the input features and polynomial orders at each node.
+    Both :class:`~braindecode.models.DGCNN` and
+    :class:`~braindecode.models.GCNsNet` use this layer.
+
+    Parameters
+    ----------
+    in_features : int
+        Number of input features per node.
+    out_features : int
+        Number of output features per node.
+    cheb_order : int
+        Number of Chebyshev terms, including the unfiltered input.
+    """
+
+    def __init__(self, in_features, out_features, cheb_order):
+        super().__init__()
+        self.cheb_order = cheb_order
+        self.projection = nn.Linear(in_features * cheb_order, out_features, bias=False)
+
+    def forward(self, x, laplacian):
+        r"""Apply Chebyshev graph convolution.
+
+        Computes :math:`[T_0(\mathbf{L})\mathbf{x},\;\ldots,\;
+        T_{K-1}(\mathbf{L})\mathbf{x}]` and projects the concatenation
+        through a learned weight matrix.
+
+        Parameters
+        ----------
+        x : Tensor, shape (B, N, F_in)
+            Input node features, where *N* is the number of graph nodes
+            (EEG channels) and *F_in* the input feature dimension.
+        laplacian : Tensor, shape (N, N)
+            Graph Laplacian.
+
+        Returns
+        -------
+        Tensor, shape (B, N, F_out)
+            Filtered node features.
+        """
+        # Every T_k(L) x below has the shape of x: (B, N, F_in)
+        cheb_components = [x]  # T_0(L) x = x
+
+        if self.cheb_order > 1:
+            cheb_components.append(torch.matmul(laplacian, x))  # T_1(L) x = L x
+
+        for _ in range(2, self.cheb_order):
+            cheb_components.append(
+                2 * torch.matmul(laplacian, cheb_components[-1]) - cheb_components[-2]
+            )
+
+        # (B, N, cheb_order * F_in) -> (B, N, F_out)
+        return self.projection(torch.cat(cheb_components, dim=-1))
