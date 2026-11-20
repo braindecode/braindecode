@@ -8137,39 +8137,6 @@ def test_mtrenirs_chromophores_and_valid_window_pooling():
         MtReNIRS(n_chans=4, n_outputs=2, n_times=100, embed_dim=12, num_heads=4)
 
 
-_FNIRS_WEIGHTS = os.environ.get("BRAINDECODE_FNIRS_WEIGHTS", "")
-
-
-def _fnirs_checkpoint(file):
-    """``file`` from ``BRAINDECODE_FNIRS_WEIGHTS``; the test is skipped without it."""
-    path = os.path.join(_FNIRS_WEIGHTS, file)
-    if not (_FNIRS_WEIGHTS and os.path.isfile(path)):
-        pytest.skip(f"{file} not in BRAINDECODE_FNIRS_WEIGHTS")
-    return path
-
-
-def _check_released_fnirs_checkpoint(path, cls, kwargs, expected):
-    """The checkpoint, as released (decoders included), loads strictly with
-    ``weights_only=True``, every backbone tensor is the checkpoint's, and the
-    first features equal ``expected``, the authors' code on the same input."""
-    payload = torch.load(path, map_location="cpu", weights_only=True)
-    model = cls(chs_info=_fnirs_chs_info(10), n_outputs=2, **kwargs).eval()
-    model.load_state_dict(payload, strict=True)
-    state = model.state_dict()
-    backbone = [k for k in state if not k.startswith("final_layer.")]
-    assert all(torch.equal(state[k], payload["model"][k]) for k in backbone)
-    torch.manual_seed(0)
-    x = torch.randn(2, model.n_chans, model.n_times)
-    with torch.no_grad():
-        features = model(x, return_features=True)["features"]
-    torch.testing.assert_close(features[:, :4], torch.tensor(expected), rtol=0, atol=1e-5)
-
-
-# features[:, :4] of the authors' code on the input of
-# _check_released_fnirs_checkpoint, computed with the authors' code at the
-# commit each test names
-
-
 @pytest.mark.network
 @pytest.mark.huggingface
 @pytest.mark.parametrize(
