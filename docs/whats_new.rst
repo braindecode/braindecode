@@ -270,7 +270,8 @@ Bug fixes
 ==========
 
 - :class:`braindecode.datasets.EEGWindowsDataset` and :class:`~braindecode.datasets.WindowsDataset`
-  with ``targets_from="channels"`` raise ``ValueError`` when no ``misc`` channel remains (by `Bruno Aristimunha`_).
+  with ``targets_from="channels"`` raise ``ValueError`` when no ``misc`` channel remains
+  (:gh:`1708` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.EEGConformer`, :class:`~braindecode.models.TSception` and :class:`~braindecode.models.MSVTNet`
   no longer run a training-mode forward pass at construction, which updated BatchNorm and drew
   random numbers, so seeded weights change (:gh:`1694` by `Bruno Aristimunha`_).

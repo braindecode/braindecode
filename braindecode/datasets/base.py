@@ -234,12 +234,12 @@ def _split_channel_targets(X, info, last_target_only):
         Signal and targets.
     """
     misc_mask = _misc_mask(info)
-    if not misc_mask.any():
+    y = X[misc_mask, -1] if last_target_only else X[misc_mask]
+    if not len(y):
         raise ValueError(
             "targets_from='channels' needs a misc channel, but this window has "
             "none (was it removed by preprocessing?)"
         )
-    y = X[misc_mask, -1] if last_target_only else X[misc_mask]
     return X[~misc_mask], y
 
 
