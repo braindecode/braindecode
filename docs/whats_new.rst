@@ -555,12 +555,9 @@ Bug fixes
   :class:`braindecode.augmentation.CutMix` in a composed pipeline. They
   preserve both labels and the mixing weights for the training criterion
   (:gh:`1659` by `Bruno Aristimunha`_).
-- :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` keeps the
-  per-window value if a recording description uses the same column name.
-  Classifier and regressor output inference reads the window targets.
-  :meth:`~braindecode.datasets.BaseConcatDataset.set_target` validates every
-  recording before switching the collection's target (:gh:`1646` by
-  `Bruno Aristimunha`_).
+- :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` keeps window values over
+  same-named description columns, ``n_outputs`` is inferred after ``target_transform``,
+  and ``set_target`` checks all recordings first (:gh:`1646` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` raises when ``chs_info`` has positions for
   some channels but not all (MNE stores ``NaN`` for the others). It gave every
   channel a default position, evenly spaced along x, so one name missing from the

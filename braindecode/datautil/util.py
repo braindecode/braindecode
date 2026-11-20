@@ -57,26 +57,8 @@ def samples_to_ms(n_samples, fs):
     return n_samples * 1000.0 / fs
 
 
-def _labels_within(y, classes) -> bool:
-    try:
-        return set(np.unique(np.asarray(y))) <= set(classes)
-    except TypeError:  # unhashable or unsortable labels
-        return False
-
-
 def _get_n_outputs(y, classes, mode):
     if mode == "classification":
-        y = np.asarray(y)
-        if y.ndim >= 2 and y.shape[1] > 1 and np.issubdtype(y.dtype, np.floating):
-            # Probability targets carry the class axis, including unobserved classes.
-            if np.all(y >= 0) and np.allclose(
-                y.sum(axis=1), 1, atol=np.finfo(y.dtype).eps
-            ):
-                if classes is not None and len(classes) != y.shape[1]:
-                    raise ValueError(
-                        "The number of classes must match the probability target width."
-                    )
-                return y.shape[1]
         classes_y = np.unique(y)
         if classes is not None:
             assert set(classes_y) <= set(classes)
@@ -119,14 +101,13 @@ def infer_signal_properties(
     X : array-like or mne.BaseEpochs or Dataset
         Input data
     y : array-like or None
-        Targets. For floating-point class probabilities, axis 1 is the
-        class axis. For window datasets with metadata labels, the dataset's
-        target transform is applied before inferring the output size.
+        Targets. For window datasets with metadata labels, the dataset's
+        target transform is applied before inferring the output size. For
+        class probabilities, pass ``n_outputs`` to the model instead.
     mode : "classification" or "regression"
         Mode of the task
     classes : list or None
-        List of classes for classification. With a dataset ``target_transform``,
-        it may name either the stored labels or the transformed ones.
+        List of classes for classification, after any ``target_transform``.
 
     Returns
     -------
@@ -170,19 +151,11 @@ def infer_signal_properties(
             and ds.targets_from == "metadata"
             for ds in datasets
         ):
-            # Both window backends return ds.y[i], including with lazy metadata.
-            stored = [ds.y[i] for ds in datasets for i in range(len(ds))]
-            targets = stored
+            # One target per window as the model receives it: the stored label (both
+            # window backends, lazy metadata included) after any target_transform.
+            targets = [ds.y[i] for ds in datasets for i in range(len(ds))]
             if isinstance(X, BaseConcatDataset) and X.target_transform is not None:
-                targets = [X.target_transform(t) for t in stored]
-                if (
-                    mode == "classification"
-                    and classes is not None
-                    and not _labels_within(targets, classes)
-                    and _labels_within(stored, classes)
-                ):
-                    # ``classes`` names the stored labels the transform encodes.
-                    targets = stored
+                targets = [X.target_transform(t) for t in targets]
             signal_kwargs["n_outputs"] = _get_n_outputs(
                 np.asarray(targets), classes, mode
             )

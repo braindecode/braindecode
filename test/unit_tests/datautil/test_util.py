@@ -37,15 +37,12 @@ def test_get_n_outputs_regression():
     )
 
 
-def test_classification_output_count_from_probabilities_and_dense_indices():
-    probabilities = np.tile(np.array([0.85, 0.05, 0.05, 0.05]), (2, 3, 1)).transpose(
-        0, 2, 1
-    )
-    assert _get_n_outputs(probabilities, None, "classification") == 4
-    with pytest.raises(ValueError, match="number of classes"):
-        _get_n_outputs(probabilities, [0, 1], "classification")
-    indices = np.array([[1, 3, 4], [4, 3, 1]])
-    assert _get_n_outputs(indices, None, "classification") == 3
+def test_float_binary_targets_keep_v2_n_outputs():
+    from braindecode.datautil import infer_signal_properties
+
+    # Rows of binary labels can sum to one; they still count two classes, as in v2.0.0.
+    y = np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]], dtype=np.float32)
+    assert infer_signal_properties(np.zeros((3, 2, 8)), y)["n_outputs"] == 2
 
 
 @pytest.mark.parametrize("lazy_metadata", [False, True])
@@ -81,7 +78,7 @@ def test_infer_n_outputs_of_windows_with_several_targets(target_name, lazy_metad
 
 
 @pytest.mark.parametrize("lazy_metadata", [False, True])
-def test_window_target_transform_sets_output_count(lazy_metadata):
+def test_classes_name_the_transformed_window_targets(lazy_metadata):
     import mne
 
     from braindecode.datasets import BaseConcatDataset, RawDataset
@@ -89,52 +86,14 @@ def test_window_target_transform_sets_output_count(lazy_metadata):
     from braindecode.preprocessing import create_fixed_length_windows
 
     raw = mne.io.RawArray(np.zeros((1, 120)), mne.create_info(["C3"], 100, "eeg"))
+    recordings = [RawDataset(raw, {"label": y}, target_name="label") for y in "abc"]
     windows = create_fixed_length_windows(
-        BaseConcatDataset(
-            [
-                RawDataset(raw, {"label": y, "study": "demo"}, target_name="label")
-                for y in range(3)
-            ]
-        ),
-        window_size_samples=60,
-        window_stride_samples=60,
-        on_last_window="drop",
-        lazy_metadata=lazy_metadata,
+        BaseConcatDataset(recordings), window_size_samples=60, lazy_metadata=lazy_metadata
     )
-    windows.target_transform = lambda y: y % 2
-    assert [windows[i][1] for i in range(len(windows))] == [0, 0, 1, 1, 0, 0]
+    # The metadata keeps the stored labels; inference and classes see the model's.
+    windows.target_transform = {"a": 0, "b": 1, "c": 0}.__getitem__
+    assert windows.get_metadata()["target"].tolist() == list("aabbcc")
     assert infer_signal_properties(windows)["n_outputs"] == 2
-
-    windows.target_transform = lambda y: np.eye(4)[y] * 0.8 + 0.05
-    assert infer_signal_properties(windows)["n_outputs"] == windows[0][1].shape[0] == 4
-    metadata = windows.get_metadata()
-    assert metadata["target"].tolist() == [0, 0, 1, 1, 2, 2]
-    assert metadata["i_dataset"].tolist() == [0, 0, 1, 1, 2, 2]
-    assert metadata["study"].tolist() == ["demo"] * len(windows)
-
-
-def test_classes_naming_stored_labels_accepted_with_target_transform():
-    import mne
-
-    from braindecode.datasets import BaseConcatDataset, RawDataset
-    from braindecode.datautil import infer_signal_properties
-    from braindecode.preprocessing import create_fixed_length_windows
-
-    raw = mne.io.RawArray(np.zeros((1, 120)), mne.create_info(["C3"], 100, "eeg"))
-    windows = create_fixed_length_windows(
-        BaseConcatDataset(
-            [
-                RawDataset(raw, {"label": y}, target_name="label")
-                for y in ["left", "right"]
-            ]
-        ),
-        window_size_samples=60,
-        window_stride_samples=60,
-        on_last_window="drop",
-    )
-    windows.target_transform = {"left": 0, "right": 1}.__getitem__
-    # ``classes`` may name either the stored or the transformed labels.
-    for classes in (["left", "right"], [0, 1]):
-        assert infer_signal_properties(windows, classes=classes)["n_outputs"] == 2
+    assert infer_signal_properties(windows, classes=[0, 1, 2])["n_outputs"] == 3
     with pytest.raises(AssertionError):
-        infer_signal_properties(windows, classes=["up", "down"])
+        infer_signal_properties(windows, classes=list("abc"))
