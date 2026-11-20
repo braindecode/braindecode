@@ -1,12 +1,18 @@
 import gc
+import os
 
 import pytest
 
 
 def pytest_collection_finish(session):
     """Freeze what the imports and the collection allocated, so that the
-    collection after each test only walks the objects tests create."""
-    if gc.get_freeze_count() == 0:  # once: not again in a pytester session
+    collection after each test only walks the objects tests create.
+
+    Only the outermost session freezes: a pytester session runs inside a test,
+    which pytest marks in ``PYTEST_CURRENT_TEST``. ``gc.get_freeze_count() == 0``
+    cannot tell them apart, as CPython 3.12 starts with 375 objects frozen.
+    """
+    if "PYTEST_CURRENT_TEST" not in os.environ:
         gc.collect()
         gc.freeze()
 
