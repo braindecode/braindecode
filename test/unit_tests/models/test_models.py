@@ -1162,9 +1162,10 @@ def test_attn_sleep_requires_signal_geometry():
         AttnSleep(sfreq=100, n_outputs=5)
 
 
-def test_attn_sleep_reports_required_d_model():
-    with pytest.raises(ValueError, match="d_model=54"):
-        AttnSleep(sfreq=100, n_outputs=5, n_times=2000)
+@pytest.mark.parametrize("sfreq, expected_d_model", [(100, 54), (125, 55)])
+def test_attn_sleep_reports_required_d_model(sfreq, expected_d_model):
+    with pytest.raises(ValueError, match=f"d_model={expected_d_model}"):
+        AttnSleep(sfreq=sfreq, n_outputs=5, n_times=2000)
 
 
 def test_attn_sleep_rejects_invalid_attention_heads():
