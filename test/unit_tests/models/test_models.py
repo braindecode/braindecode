@@ -128,6 +128,7 @@ from braindecode.models.util import (
 )
 from braindecode.util import set_random_seeds
 from test.unit_tests.models._fixtures import (
+    _architecture_kwargs,
     _get_possible_signal_params,
     _get_signal_params,
 )
@@ -1414,7 +1415,7 @@ def test_model_creation(model):
     ],
 )
 def test_atcnet_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 64
+    batch_size = 2
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -1439,7 +1440,7 @@ def test_atcnet_dummy(n_times, n_chans, sfreq, n_outputs):
     ],
 )
 def test_tsception_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 64
+    batch_size = 2
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -1487,7 +1488,7 @@ def test_tmsanet_released_configurations(
     ],
 )
 def test_sccnet_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 64
+    batch_size = 2
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -1528,7 +1529,7 @@ def test_sccnet_dummy(n_times, n_chans, sfreq, n_outputs):
     ],
 )
 def test_contrawr_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 64
+    batch_size = 2
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -1785,7 +1786,7 @@ def test_gcnsnet_state_dict_round_trip():
     ],
 )
 def test_biot_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 64
+    batch_size = 2
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -1810,7 +1811,7 @@ def test_biot_dummy(n_times, n_chans, sfreq, n_outputs):
     ],
 )
 def test_attentionbasenet_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 64
+    batch_size = 2
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -3680,7 +3681,9 @@ def test_medformer_encoder_layer_keeps_dropout_per_granularity():
 
 
 def test_medformer_window_longer_than_5000_samples():
-    model = MEDFormer(n_chans=2, n_outputs=4, n_times=6000).eval()
+    # One attention head: the window, not the head count, reaches the
+    # 5000-row table (8 heads on 3000 tokens took 4.9 GB).
+    model = MEDFormer(n_chans=2, n_outputs=4, n_times=6000, num_heads=1).eval()
     with torch.no_grad():
         assert model(torch.randn(2, 2, 6000)).shape == (2, 4)
 
@@ -6056,14 +6059,15 @@ def test_zuna_accepts_windows_longer_than_max_seqlen():
     """The rotary table grows with the window; shorter windows are unchanged."""
     from braindecode.models import ZUNA
 
+    arch = _architecture_kwargs("ZUNA")  # the 64-wide heads of the release
     torch.manual_seed(0)
-    short = ZUNA(n_outputs=2, chs_info=_cz(), n_times=512, sfreq=256.0).eval()
+    short = ZUNA(n_outputs=2, chs_info=_cz(), n_times=512, sfreq=256.0, **arch).eval()
     torch.manual_seed(0)
-    small_table = ZUNA(n_outputs=2, chs_info=_cz(), n_times=512, sfreq=256.0, max_seqlen=64).eval()
+    small_table = ZUNA(n_outputs=2, chs_info=_cz(), n_times=512, sfreq=256.0, max_seqlen=64, **arch).eval()
     x = torch.randn(2, 1, 512)
     with torch.no_grad():
         torch.testing.assert_close(short(x), small_table(x), rtol=0, atol=0)
-    long = ZUNA(n_outputs=2, chs_info=_cz(), n_times=15360, sfreq=256.0).eval()
+    long = ZUNA(n_outputs=2, chs_info=_cz(), n_times=15360, sfreq=256.0, **arch).eval()
     with torch.no_grad():
         out = long(torch.randn(1, 1, 15360))
     assert out.shape == (1, 2) and torch.isfinite(out).all()
