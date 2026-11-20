@@ -27,6 +27,8 @@ from braindecode.models import (
     ShallowFBCSPNet,
 )
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import models_dict, models_mandatory_parameters
+from test.unit_tests.models._fixtures import _get_signal_params
 
 if TYPE_CHECKING:
     from typing import Any as RuntimeOnlyMetadata
@@ -369,6 +371,17 @@ def test_printing_a_model_does_not_keep_it_alive():
     # cycles that only the cycle collector frees.
     model = ShallowFBCSPNet(n_chans=4, n_outputs=2, n_times=500)
     str(model)
+    ref = weakref.ref(model)
+    del model
+    assert ref() is None
+
+
+@pytest.mark.parametrize("name", ["LUNA", "CORTEG", "GCNsNet"])
+def test_model_with_a_load_hook_is_freed_by_reference_counting(name):
+    required, signal_params = next(
+        (r, s) for n, r, s in models_mandatory_parameters if n == name
+    )
+    model = models_dict[name](**_get_signal_params(signal_params, required))
     ref = weakref.ref(model)
     del model
     assert ref() is None

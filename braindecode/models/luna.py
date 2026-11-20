@@ -507,9 +507,11 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             "_default_channel_locations", torch.empty(0, 3), persistent=False
         )
         self._reset_channel_locations()
-        self.register_load_state_dict_post_hook(self._reset_channel_locations)
+        # The function, not the bound method: a model that holds a reference to
+        # itself is freed only by the cyclic garbage collector.
+        self.register_load_state_dict_post_hook(type(self)._reset_channel_locations)
 
-    def _reset_channel_locations(self, _module=None, _incompatible_keys=None):
+    def _reset_channel_locations(self, _incompatible_keys=None):
         """Rebuild the nonpersistent coordinates after initialization or checkpoint load."""
         # MNE metadata holds real coordinates, including while constructing on meta.
         with torch.device("cpu"):

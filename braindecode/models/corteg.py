@@ -316,7 +316,9 @@ class CORTEG(EEGModuleMixin, nn.Module):
 
         self._init_parameters()
         # Loading a bare ST-EEGFormer checkpoint warm-starts the high-gamma embedding.
-        self.register_load_state_dict_post_hook(self._warm_start_high_gamma)
+        # The function, not the bound method: a model holding itself is freed
+        # only by the cycle collector.
+        self.register_load_state_dict_post_hook(type(self)._warm_start_high_gamma)
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""
@@ -346,7 +348,7 @@ class CORTEG(EEGModuleMixin, nn.Module):
         hi.weight.copy_(resized[0])
         hi.bias.copy_(lo.bias)
 
-    def _warm_start_high_gamma(self, _module, incompatible_keys):
+    def _warm_start_high_gamma(self, incompatible_keys):
         """Post-load hook: warm-start the high-gamma embedding a checkpoint lacks.
 
         A bare ST-EEGFormer checkpoint loads ``patch_embed`` but has no
