@@ -34,6 +34,7 @@ from braindecode.models.base import EEGModuleMixin
 # from braindecode.models.util import models_dict
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.preprocessing import create_fixed_length_windows
+from braindecode.samplers import SequenceSampler
 from braindecode.training import CroppedLoss, mixup_criterion
 from braindecode.training.scoring import CroppedTrialEpochScoring, predict_trials
 
@@ -1123,17 +1124,55 @@ def test_predict_trials_explicit_loader_kwargs(estimator):
         net.predict_trials(X, loader_kwargs={"batch_size": 2})
 
 
+def _per_trial_logits():
+    return torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(16, 3))  # (batch, 3)
+
+
+def _dense_logits():
+    return torch.nn.Conv1d(2, 3, kernel_size=1)  # (batch, 3, 8)
+
+
 @pytest.mark.parametrize(
-    "y, transforms, dtype",
+    "y, transforms, model, dtype",
     [
-        (torch.tensor([0.0, 1.0, 2.0, 1.0]), [], torch.int64),
-        (torch.eye(3)[[0, 1, 2, 1]], [], torch.float32),
-        (torch.tensor([0, 1, 2, 1]), [LabelSmoothing(0.1, 3)], torch.float32),
-        (torch.tensor([0, 1, 2, 1]), [LabelSmoothing(0.1, 3), Mixup(0.5)], torch.float32),
+        (torch.tensor([0.0, 1.0, 2.0, 1.0]), [], _per_trial_logits, torch.int64),
+        # a layout that differs from the logits' is class indices, not probabilities
+        (
+            torch.arange(32).reshape(4, 8).remainder(3).float(),
+            [],
+            _dense_logits,
+            torch.int64,
+        ),
+        (
+            torch.tensor([0.0, 1.0, 2.0, 1.0]),
+            [Mixup(0.5)],
+            _per_trial_logits,
+            torch.int64,
+        ),
+        (torch.eye(3)[[0, 1, 2, 1]], [], _per_trial_logits, torch.float32),
+        (
+            torch.tensor([0, 1, 2, 1]),
+            [LabelSmoothing(0.1, 3)],
+            _per_trial_logits,
+            torch.float32,
+        ),
+        (
+            torch.tensor([0, 1, 2, 1]),
+            [LabelSmoothing(0.1, 3), Mixup(0.5)],
+            _per_trial_logits,
+            torch.float32,
+        ),
     ],
-    ids=["float_indices", "one_hot", "smoothed", "smoothed_mixup"],
+    ids=[
+        "float_indices",
+        "dense_float_indices",
+        "float_indices_mixup",
+        "one_hot",
+        "smoothed",
+        "smoothed_mixup",
+    ],
 )
-def test_classifier_target_dtypes(y, transforms, dtype):
+def test_classifier_target_dtypes(y, transforms, model, dtype):
     received = []
 
     class RecordingLoss(torch.nn.Module):
@@ -1143,7 +1182,7 @@ def test_classifier_target_dtypes(y, transforms, dtype):
             return mixup_criterion(logits, target)
 
     EEGClassifier(
-        torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(16, 3)),
+        model(),
         criterion=RecordingLoss,
         iterator_train=AugmentedDataLoader,
         iterator_train__transforms=transforms,
@@ -1153,3 +1192,128 @@ def test_classifier_target_dtypes(y, transforms, dtype):
         verbose=0,
     ).fit(torch.randn(len(y), 2, 8), y)
     assert received == [dtype]
+
+
+class _SequenceLinear(torch.nn.Module):
+    """(batch, n_windows, n_chans, n_times) to (batch, n_classes, n_windows)."""
+
+    def __init__(self, n_features, n_classes):
+        super().__init__()
+        self.linear = torch.nn.Linear(n_features, n_classes)
+
+    def forward(self, x):
+        return self.linear(x.flatten(start_dim=2)).transpose(1, 2)
+
+
+@pytest.mark.parametrize("layout", ["last_target", "all_targets", "sequences"])
+def test_channel_target_classification_trains(layout):
+    # Window targets sliced out of the float32 signal are floats holding class
+    # indices: (batch, 1) or (batch, 1, n_times) from a misc channel of sleep
+    # stages, (batch, 3) for float labels read in sequences of 3 windows.
+    n_windows, n_times = 8, 8
+    rng = np.random.RandomState(0)
+    fit_kwargs = {}
+    if layout == "sequences":
+        info = mne.create_info(["C3", "C4"], 100.0, "eeg")
+        recordings = [
+            RawDataset(
+                mne.io.RawArray(rng.randn(2, n_windows * n_times), info),
+                {"label": float(i % 3)},
+                target_name="label",
+            )
+            for i in range(4)
+        ]
+        windows = create_fixed_length_windows(
+            BaseConcatDataset(recordings),
+            window_size_samples=n_times,
+            window_stride_samples=n_times,
+            on_last_window="drop",
+        )
+        model = _SequenceLinear(2 * n_times, 3)
+        fit_kwargs = dict(
+            iterator_train__sampler=SequenceSampler(windows.get_metadata(), 3, 1),
+            iterator_train__shuffle=False,
+        )
+    else:
+        # one integer stage per window in the misc channel
+        data = rng.randn(3, n_windows * n_times)
+        data[2] = np.repeat(np.arange(n_windows) % 3, n_times)
+        info = mne.create_info(["C3", "C4", "stage"], 100.0, ["eeg", "eeg", "misc"])
+        windows = create_fixed_length_windows(
+            BaseConcatDataset([RawDataset(mne.io.RawArray(data, info))]),
+            window_size_samples=n_times,
+            window_stride_samples=n_times,
+            on_last_window="drop",
+            targets_from="channels",
+            last_target_only=layout == "last_target",
+        )
+        if layout == "last_target":
+            model = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(16, 3))
+        else:
+            model = torch.nn.Conv1d(2, 3, kernel_size=1)
+
+    received = []
+
+    class IndexCrossEntropy(torch.nn.Module):
+        def forward(self, logits, target):
+            received.append(target.dtype)
+            # class indices laid out as the logits without their class axis
+            target = target.reshape(logits.shape[:1] + logits.shape[2:])
+            return torch.nn.functional.cross_entropy(logits, target)
+
+    net = EEGClassifier(
+        model,
+        criterion=IndexCrossEntropy,
+        train_split=None,
+        max_epochs=1,
+        batch_size=4,
+        verbose=0,
+        **fit_kwargs,
+    ).fit(windows, y=None)
+    assert received and set(received) == {torch.int64}
+    assert np.isfinite(net.history[-1, "train_loss"])
+
+
+class _LinearHead(torch.nn.Module):
+    def __init__(self, n_chans, n_times, n_outputs):
+        super().__init__()
+        self.linear = torch.nn.Linear(n_chans * n_times, n_outputs)
+
+    def forward(self, x):
+        return self.linear(x.flatten(start_dim=1))
+
+
+@pytest.mark.parametrize("data", ["arrays", "windows"])
+def test_soft_labels_with_n_outputs_and_classes(data):
+    # Soft labels are not class names: the n_outputs the user passes is used as is,
+    # and classes names the stored labels, which are not the soft vectors.
+    rng = np.random.RandomState(0)
+    soft = np.eye(3, dtype="float32") * 0.8 + 0.1
+    if data == "arrays":
+        X = rng.randn(6, 2, 8).astype("float32")
+        y, classes = soft[[0, 1, 2] * 2], [0, 1, 2]
+    else:
+        info = mne.create_info(["C3", "C4"], 100.0, "eeg")
+        raw = mne.io.RawArray(rng.randn(2, 16), info)
+        labels = ["left", "right", "rest"]
+        recordings = [
+            RawDataset(raw, {"label": label}, target_name="label") for label in labels
+        ]
+        X = create_fixed_length_windows(
+            BaseConcatDataset(recordings),
+            window_size_samples=8,
+            window_stride_samples=8,
+            on_last_window="drop",
+        )
+        X.target_transform = dict(zip(labels, soft)).__getitem__
+        y, classes = None, labels
+    net = EEGClassifier(
+        _LinearHead,
+        module__n_outputs=3,
+        classes=classes,
+        train_split=None,
+        max_epochs=1,
+        batch_size=2,
+        verbose=0,
+    ).fit(X, y)
+    assert net.module_.linear.out_features == 3

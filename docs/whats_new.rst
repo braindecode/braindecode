@@ -291,6 +291,9 @@ API and behavior changes
   hands float32 attention with dropout to torch's SDPA on Gaudi, whose fused kernel takes
   0.39x (EEGPT shapes) and 0.54x (REVE) the time of the math path in eager mode, 0.75x
   and 0.88x compiled; the CPU keeps the math path (:gh:`1583` by `Bruno Aristimunha`_).
+- :class:`~braindecode.EEGClassifier` reads a float target with the shape of the
+  predictions as class probabilities (v2.0.0 raised) and any other as class indices;
+  ``n_outputs`` of 2-D targets is their width (:gh:`1630`, :gh:`1692` by `Bruno Aristimunha`_).
 
 Requirements
 ============
@@ -545,8 +548,8 @@ Bug fixes
   preserve both labels and the mixing weights for the training criterion
   (:gh:`1659` by `Bruno Aristimunha`_).
 - :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` keeps window values over
-  same-named description columns, ``n_outputs`` is inferred after ``target_transform``,
-  and ``set_target`` checks all recordings first (:gh:`1646` by `Bruno Aristimunha`_).
+  same-named description columns, output inference reads the window targets, and
+  ``set_target`` checks all recordings first (:gh:`1646` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` raises when ``chs_info`` has positions for
   some channels but not all (MNE stores ``NaN`` for the others). It gave every
   channel a default position, evenly spaced along x, so one name missing from the
@@ -620,9 +623,9 @@ Bug fixes
   a shorter ``n_times``: the learned temporal positions keep the checkpoint's
   leading ones instead of raising a size mismatch
   (:gh:`1537` by `Julien Gadonneix`_).
-- :class:`~braindecode.EEGClassifier` keeps float targets with more than one dimension
-  (smoothed labels) as floats, so dense class indices must be integers; ``mixup_criterion``
-  weights each trial's mean dense loss (:gh:`1630` by `Bruno Aristimunha`_).
+- :class:`~braindecode.EEGClassifier` keeps the class probabilities of
+  :class:`~braindecode.augmentation.LabelSmoothing`, also before Mixup, and
+  ``mixup_criterion`` weights each trial's mean dense loss (:gh:`1630` by `Bruno Aristimunha`_).
 - :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor`
   route the batches of :func:`braindecode.datasets.pad_channels_collate` and
   ``set_return_ch_pos`` by the model's ``forward`` signature: the signal goes to

@@ -10,6 +10,7 @@ import mne
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
 from braindecode.datasets import (
     BaseConcatDataset,
@@ -1344,6 +1345,24 @@ def test_eeg_windows_equal_mne_getitem(
         else:
             assert y == metadata.loc[i, "target"]
         np.testing.assert_array_equal(X, expected)
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_channel_targets_follow_a_transform_returning_tensors(use_mne_epochs):
+    data = np.arange(60.0).reshape(3, 20)
+    info = mne.create_info(["C3", "C4", "target"], 100.0, ["eeg", "eeg", "misc"])
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(mne.io.RawArray(data, info))]),
+        window_size_samples=5,
+        window_stride_samples=5,
+        on_last_window="drop",
+        targets_from="channels",
+        use_mne_epochs=use_mne_epochs,
+    )
+    windows.datasets[0].transform = torch.as_tensor
+    X, y, _ = windows[1]
+    torch.testing.assert_close(X, torch.as_tensor(data[:2, 5:10], dtype=torch.float32))
+    torch.testing.assert_close(y, torch.tensor([data[2, 9]], dtype=torch.float32))
 
 
 def test_eeg_windows_preloaded_epochs_not_sliced_as_raw():

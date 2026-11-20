@@ -2357,6 +2357,19 @@ def test_fixed_length_channel_targets_survive_saving(
         np.testing.assert_array_equal(y, expected_y)
 
 
+def test_target_channels_windower_picks_by_channel_kind():
+    # An EEG channel named "misc" next to the misc-typed target channel: the name
+    # must not be read as the channel type.
+    info = mne.create_info(["misc", "target"], 10, ["eeg", "misc"])
+    data = np.vstack([np.arange(40.0), np.full(40, np.nan)])
+    data[1, 9::10] = [1.0, 2.0, 3.0, 4.0]
+    concat = BaseConcatDataset([RawDataset(mne.io.RawArray(data, info, verbose=False))])
+    windows = create_windows_from_target_channels(concat, window_size_samples=5)
+    x, y, _ = windows[0]
+    np.testing.assert_array_equal(x, [data[0, 5:10]])
+    np.testing.assert_array_equal(y, [1.0])
+
+
 def test_channel_targets_require_a_misc_channel(tmp_path):
     info = mne.create_info(["Cz", "target"], 100, ["eeg", "misc"])
     raw = mne.io.RawArray(np.zeros((2, 20)), info, verbose=False)

@@ -248,7 +248,11 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             return
         if classes is None:
             classes = getattr(self, "classes", None)
-        signal_kwargs = infer_signal_properties(X, y, mode=self.mode, classes=classes)
+        # An n_outputs the user passes is used as is, the targets are not read for it.
+        n_outputs = self.get_params_for("module").get("n_outputs")
+        signal_kwargs = infer_signal_properties(
+            X, y, mode=self.mode, classes=classes, n_outputs=n_outputs
+        )
         module = _get_model(self.module)
         if not signal_kwargs:
             return
@@ -380,6 +384,8 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
           * other Dataset: ``n_times``, ``n_chans``
           * other types: no parameters are inferred.
 
+        ``n_outputs`` of 2-D targets is their width, ``module__n_outputs`` overrides it.
+
         Parameters
         ----------
         X : input data, compatible with skorch.dataset.Dataset
@@ -432,6 +438,8 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             (or BaseConcatDataset of such datasets): ``n_times``, ``n_chans``, ``n_outputs``
           * other Dataset: ``n_times``, ``n_chans``
           * other types: no parameters are inferred.
+
+        ``n_outputs`` of 2-D targets is their width, ``module__n_outputs`` overrides it.
 
         Parameters
         ----------

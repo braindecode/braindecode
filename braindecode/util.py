@@ -432,9 +432,12 @@ class ThrowAwayIndexLoader(object):
         return {signal_name: signal, **extras}
 
     def _cast_target(self, target):
-        """Float32 for regression and class probabilities (floats with ``ndim > 1``),
-        int64 class indices otherwise; decided by dtype and shape, not values."""
-        if self.is_regression or (target.is_floating_point() and target.ndim > 1):
+        """Float32 for regression and floating targets, int64 otherwise.
+
+        Floats stay floats here: ``EEGClassifier.get_loss`` tells class
+        probabilities from class indices stored as floats by their shape.
+        """
+        if self.is_regression or target.is_floating_point():
             return target.float()
         return target.long()
 

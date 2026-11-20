@@ -57,14 +57,31 @@ def samples_to_ms(n_samples, fs):
     return n_samples * 1000.0 / fs
 
 
-def _get_n_outputs(y, classes, mode):
+def _get_n_outputs(y, classes, mode, stored=None):
+    """Number of outputs for the targets ``y`` the model trains on.
+
+    Classification: 1-D labels count the distinct labels (or ``classes``), 2-D
+    targets ``(n, k)`` their width ``k``, whatever the values. ``classes`` names
+    the labels as ``stored``, before any ``target_transform`` (``y`` by default).
+    """
     if mode == "classification":
-        classes_y = np.unique(y)
-        if classes is not None:
-            assert set(classes_y) <= set(classes)
-        else:
-            classes = classes_y
-        return len(classes)
+        y = np.asarray(y)
+        labels = y if stored is None else np.asarray(stored)
+        if classes is not None and labels.ndim == 1:
+            missing = sorted(set(np.unique(labels).tolist()) - set(classes))
+            if missing:
+                raise ValueError(
+                    f"Labels {missing} are not in classes {list(classes)}. classes "
+                    "names the labels as stored, before any target_transform."
+                )
+        if y.ndim > 1:  # (n, k, ...): class probabilities, one-hot or multi-label
+            if classes is not None and len(classes) != y.shape[1]:
+                raise ValueError(
+                    f"The number of classes ({len(classes)}) must match the "
+                    f"target width ({y.shape[1]})."
+                )
+            return y.shape[1]
+        return len(np.unique(y)) if classes is None else len(classes)
     elif mode == "regression":
         if y is None:
             return None
@@ -81,6 +98,7 @@ def infer_signal_properties(
     y=None,
     mode: Literal["classification", "regression"] = "classification",
     classes: list | None = None,
+    n_outputs: int | None = None,
 ) -> dict[SigArgName, Any]:
     """Infers signal properties from the data.
 
@@ -101,13 +119,19 @@ def infer_signal_properties(
     X : array-like or mne.BaseEpochs or Dataset
         Input data
     y : array-like or None
-        Targets. For window datasets with metadata labels, the dataset's
-        target transform is applied before inferring the output size. For
-        class probabilities, pass ``n_outputs`` to the model instead.
+        Targets of array-like ``X``, ignored for a dataset, which holds its own
+        (after its ``target_transform``). In classification, 1-D labels give one
+        output per distinct label, and 2-D targets ``(n, k)`` (class probabilities,
+        one-hot, multi-label) their width ``k``. Dense class indices
+        ``(n, n_times)`` are 2-D too: pass ``n_outputs``.
     mode : "classification" or "regression"
         Mode of the task
     classes : list or None
-        List of classes for classification, after any ``target_transform``.
+        List of classes for classification, as stored, before any
+        ``target_transform``. ``n_outputs`` is its length.
+    n_outputs : int or None
+        Number of outputs, if known: it is returned as is and the targets are
+        not read.
 
     Returns
     -------
@@ -124,7 +148,9 @@ def infer_signal_properties(
     ):
         if y is None:
             raise ValueError("y must be specified if X is array-like.")
-        signal_kwargs["n_outputs"] = _get_n_outputs(y, classes, mode)
+        signal_kwargs["n_outputs"] = (
+            n_outputs if n_outputs is not None else _get_n_outputs(y, classes, mode)
+        )
         if isinstance(X, mne.BaseEpochs):
             log.info("Using mne.Epochs to find signal-related parameters.")
             signal_kwargs["n_times"] = len(X.times)
@@ -146,18 +172,21 @@ def infer_signal_properties(
         signal_kwargs["n_times"] = Xshape[-1]
         signal_kwargs["n_chans"] = Xshape[-2]
         datasets = X.datasets if isinstance(X, BaseConcatDataset) else [X]
-        if all(
+        if n_outputs is not None:
+            signal_kwargs["n_outputs"] = n_outputs
+        elif all(
             isinstance(ds, (EEGWindowsDataset, WindowsDataset))
             and ds.targets_from == "metadata"
             for ds in datasets
         ):
-            # One target per window as the model receives it: the stored label (both
-            # window backends, lazy metadata included) after any target_transform.
-            targets = [ds.y[i] for ds in datasets for i in range(len(ds))]
+            # One label per window, as stored (both window backends, lazy metadata
+            # included) and as the model receives it, after any target_transform.
+            stored = [ds.y[i] for ds in datasets for i in range(len(ds))]
+            targets = stored
             if isinstance(X, BaseConcatDataset) and X.target_transform is not None:
-                targets = [X.target_transform(t) for t in targets]
+                targets = [X.target_transform(t) for t in stored]
             signal_kwargs["n_outputs"] = _get_n_outputs(
-                np.asarray(targets), classes, mode
+                np.asarray(targets), classes, mode, stored=np.asarray(stored)
             )
     else:
         log.warning(
