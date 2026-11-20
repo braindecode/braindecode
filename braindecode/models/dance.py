@@ -14,9 +14,7 @@ from torch import nn
 
 from braindecode.functional import init_weights_
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import (
-    _disable_batch_norm_training_if_batch_size_one,  # decorates ``forward``
-)
+from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.models.util import has_valid_locations as _has_valid_locations
 from braindecode.models.util import positions_from_chs_info as _positions_from_chs_info
 from braindecode.modules import ChannelMerger, Perceiver, SimpleConv
@@ -53,10 +51,10 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
 
     ``DANCE.conv`` (SimpleConv dilated front-end)
         **Operations.** :class:`~braindecode.modules.SimpleConv` runs the nested
-        merger, a ``1x1`` ``initial_linear`` projection, then ``conv_depth``
-        residual dilated ``Conv1d`` blocks (``nn.ReLU``, dilation accumulating as
-        ``int(dilation * conv_dilation_growth)`` per block, same-padding preserves
-        ``T``), mapping ``-> (B, embed_dim, T)``.
+        merger, the ``1x1`` input projections, then ``conv_depth`` successive
+        dilated convolutions with ReLU between blocks. Dilation starts at one
+        and grows by ``conv_dilation_growth`` per block, with the integer part
+        used for each convolution. The front end returns ``(B, embed_dim, T)``.
         **Role.** Builds the temporal feature representation (Défossez lineage).
 
     ``DANCE.perceiver`` (Perceiver bottleneck)
@@ -126,10 +124,8 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
     conv_initial_depth : int, optional
         Number of 1x1 projections. The default is ``1``.
     conv_drop_prob : float, optional
-        Conv-block dropout knob, exposed for API symmetry. NOTE: the verified
-        DANCE config has NO conv dropout, so this maps to no upstream weights
-        and does not affect parity; kept for forward-compatibility. The
-        default is ``0.2`` (the paper value).
+        Accepted for compatibility with saved configurations. The convolution
+        blocks ignore this value. The default is ``0.2``.
     num_latents : int, optional
         Perceiver latent count (detection token grid). The default is ``256``.
     perceiver_depth : int, optional
@@ -153,15 +149,13 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
     decoder_heads : int, optional
         DETR decoder heads. The default is ``4``.
     activation : type[nn.Module], optional
-        Accepted for interface symmetry but currently INERT: it is forwarded to
-        ``self.decoder`` yet the decoder feed-forward hardwires GEGLU
-        (:class:`~braindecode.modules.dance_modules._FeedForward`), and the
-        ``SimpleConv`` front-end hardcodes ``nn.ReLU`` to match upstream. No
-        submodule reads it today. The default is ``nn.GELU``.
+        Accepted for compatibility with saved configurations. DANCE uses
+        ReLU in its convolutions and GEGLU in the decoder feed-forward layers
+        for every value of this parameter. The default is ``nn.GELU``.
     drop_prob : float, optional
         Dropout applied to the raw input (``self.input_drop``) and inside the
-        DETR decoder (``self.decoder``). Does NOT touch the merger (use
-        ``merger_drop_prob``) or the conv stack (no conv dropout upstream).
+        DETR decoder (``self.decoder``). ``merger_drop_prob`` controls the
+        virtual-channel dropout separately.
         The default is ``0.1``.
 
     References
@@ -226,7 +220,6 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
         self.n_queries = n_queries
         self.embed_dim = embed_dim
 
-        # Decide the merger up front (fall back to no-merger if no locations).
         if use_channel_merger and not _has_valid_locations(self.chs_info):
             warnings.warn(
                 "DANCE: chs_info has no usable electrode locations "
@@ -235,15 +228,8 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
                 UserWarning,
             )
             use_channel_merger = False
-        # Public flag mirroring the fallback decision (``self.conv.merger`` is the
-        # source of truth in forward); kept for introspection/tests.
         self.use_channel_merger = use_channel_merger
 
-        # The merger is NESTED INSIDE SimpleConv (self.conv.merger), matching
-        # upstream SimpleConvModel's call path and state_dict layout. There is
-        # NO top-level self.channel_merger. The (n_chans, 2) positions buffer is
-        # derived from chs_info and broadcast in forward; subject_ids is always
-        # None (braindecode has no subjects; per_subject=False).
         merger = None
         if use_channel_merger:
             positions = _positions_from_chs_info(self.chs_info)
@@ -272,10 +258,7 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
             activation=nn.ReLU,
             merger=merger,
         )
-        # The conv stack is SAME-padded, so it preserves length for any T >= 1;
-        # the dilated receptive field is not an input-length requirement. The
-        # genuine minimum is one first-block kernel (dilation 1), so the guard
-        # uses ``conv_kernel_size`` rather than the full receptive field.
+        # Same padding preserves T, so one first-block kernel is the minimum.
         self._min_n_times = conv_kernel_size
         self.perceiver = Perceiver(
             input_dim=embed_dim,
@@ -299,8 +282,6 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
             drop_prob=drop_prob,
             activation=activation,
         )
-        # final_layer LAST so it lands in the last two named_children(); init
-        # weights AFTER it exists so the dense head gets the custom init too.
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
         self._init_parameters()
 
@@ -319,11 +300,9 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
                 f"length ({self._min_n_times} samples = one conv kernel)."
             )
         x = self.input_drop(x)
-        # The merger is nested inside self.conv; pass positions through it.
-        # subject_ids is always None (braindecode has no subjects).
         if self.conv.merger is not None:
             pos = self.channel_positions.unsqueeze(0).expand(x.size(0), -1, -1)
-            x = self.conv(x, positions=pos)  # merger -> initial_linear -> blocks
+            x = self.conv(x, positions=pos)
         else:
             x = self.conv(x)  # (B, embed_dim, T)
         x = x.transpose(2, 1)  # (B, T, embed_dim)

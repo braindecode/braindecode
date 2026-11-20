@@ -1,8 +1,11 @@
-"""CHBMIT and SIENA: download-or-root handling, shared by both datasets."""
+"""CHBMIT and SIENA: download-or-root handling and event names, shared by both
+datasets."""
 
+import mne
+import numpy as np
 import pytest
 
-from braindecode.datasets import BIDSDataset
+from braindecode.datasets import BIDSDataset, RawDataset
 from braindecode.datasets.chb_mit import CHBMIT, CHB_MIT_dataset_params
 from braindecode.datasets.siena import SIENA, SIENA_dataset_params
 
@@ -65,3 +68,39 @@ def test_no_root_fetches_and_corrects_the_path(
         ("correct", ("/data/raw", archive, subdir)),
     ]
     assert captured["bids"] == dict(root="/data/bids", extensions=".edf", check=False)
+
+
+@pytest.mark.parametrize("cls,params,archive,subdir", CASES)
+def test_annotations_are_named_after_event_type(
+    cls, params, archive, subdir, monkeypatch
+):
+    # mne-bids reads an events.tsv without trial_type as "n/a" annotations and
+    # keeps the other columns in the extras; with a trial_type column it names the
+    # annotation after it (here "baseline", whose eventType is "n/a"); EDF+ gaps
+    # carry no extras.
+    raw = mne.io.RawArray(np.zeros((1, 2560)), mne.create_info(1, 256.0, "eeg"))
+    raw.set_annotations(
+        mne.Annotations(
+            [1, 3, 5, 7],
+            [1, 1, 1, 1],
+            ["n/a", "n/a", "BAD_ACQ_SKIP", "baseline"],
+            extras=[
+                {"eventType": "bckg"},
+                {"eventType": "sz"},
+                {},
+                {"eventType": "n/a"},
+            ],
+        )
+    )
+    monkeypatch.setattr(
+        BIDSDataset, "_get_dataset", lambda self, path: RawDataset(raw, {})
+    )
+    dataset = cls.__new__(cls)._get_dataset(None)
+    assert list(dataset.raw.annotations.description) == [
+        "bckg",
+        "sz",
+        "BAD_ACQ_SKIP",
+        "baseline",
+    ]
+    _, event_id = mne.events_from_annotations(dataset.raw)
+    assert set(event_id) == {"bckg", "sz", "baseline"}

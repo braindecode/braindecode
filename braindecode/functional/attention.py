@@ -5,6 +5,7 @@
 # License: BSD (3-clause)
 
 import math
+import warnings
 from typing import Optional
 
 import torch
@@ -37,7 +38,7 @@ def scaled_dot_product_attention(
     attn_mask: Optional[Tensor] = None,
     dropout_p: float = 0.0,
     scale: Optional[float] = None,
-    fused_in_lazy: bool = False,
+    fused_in_lazy: Optional[bool] = None,
     exact: bool = False,
 ) -> Tensor:
     """``F.scaled_dot_product_attention``, or the textbook op order (``exact``).
@@ -53,10 +54,11 @@ def scaled_dot_product_attention(
         Dropout on the attention weights; pass ``0.0`` in eval mode.
     scale : float, optional
         Score scale; ``None`` is ``1 / sqrt(head_dim)``.
-    fused_in_lazy : bool, default=False
-        No effect; kept so that existing calls still work. On Intel Gaudi,
-        Habana's attention setting decides whether this call runs on the
-        bridge's fused kernel (:ref:`install_gaudi`).
+    fused_in_lazy : bool, optional
+        No effect; kept so that existing calls still work.
+
+        .. deprecated:: 2.1
+            Setting it emits a ``FutureWarning``, and it will be removed in 2.2.
     exact : bool, default=False
         Run the textbook op order instead of torch's kernels:
         ``softmax((q @ k^T) / sqrt(d)) @ v``, or ``softmax((q @ k^T) * scale) @ v``
@@ -77,6 +79,16 @@ def scaled_dot_product_attention(
     mask (:ref:`install_gaudi`), dropout included. On CPU, dropout on float32
     or float64 inputs without a mask keeps torch's math path.
     """
+    if (
+        fused_in_lazy is not None
+        and not torch.jit.is_scripting()
+        and not torch.compiler.is_compiling()
+    ):
+        warnings.warn(
+            "`fused_in_lazy` has no effect and will be removed in braindecode 2.2.",
+            FutureWarning,
+            stacklevel=2,
+        )
     if exact:
         scores = torch.matmul(query, key.transpose(-2, -1))
         if scale is None:

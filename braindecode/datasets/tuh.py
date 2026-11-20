@@ -436,27 +436,25 @@ def _parse_description_from_file_path(
 
 
 def _read_physician_report(file_path):
-    directory = os.path.dirname(file_path)
-    txt_file = glob.glob(os.path.join(directory, "**/*.txt"), recursive=True)
-    # check that there is at most one txt file in the same directory
-    assert len(txt_file) in [0, 1]
-    report = ""
-    if txt_file:
-        txt_file = txt_file[0]
-        # somewhere in the corpus, encoding apparently changed
-        # first try to read as utf-8, if it does not work use latin-1
-        try:
-            with open(txt_file, "r", encoding="utf-8") as f:
-                report = f.read()
-        except UnicodeDecodeError:
-            with open(txt_file, "r", encoding="latin-1") as f:
-                report = f.read()
-    if not report:
+    """Return the text of the physician report of a recording's session.
+
+    TUH names the report of a session ``<subject>_<session>.txt`` and its
+    recordings ``<subject>_<session>_<segment>.edf``. The ``*_date.txt`` side
+    files, and the reports of other sessions in the directory, never match.
+    """
+    recording = Path(file_path)
+    session = re.sub(r"_t\d+$", "", recording.stem)
+    reports = list(recording.parent.rglob(f"{session}.txt"))
+    if len(reports) != 1:
         raise RuntimeError(
-            f"Could not read physician report ({txt_file}). "
-            f"Disable option or choose appropriate directory."
+            f"Could not read physician report for {recording}: found {len(reports)} "
+            f"files named {session}.txt. Disable add_physician_reports or check the "
+            "recording directory."
         )
-    return report
+    try:
+        return reports[0].read_text(encoding="utf-8")
+    except UnicodeDecodeError:  # somewhere in the corpus, the encoding changed
+        return reports[0].read_text(encoding="latin-1")
 
 
 def _read_edf_header(file_path):
@@ -600,9 +598,8 @@ EVENTS_MAP = {
 class TUHEvents(TUH):
     """Temple University Hospital (TUH) EEG Event Corpus.
 
-    This is a thin wrapper around :class:`TUH` that extracts event annotations
-    (from accompanying ``.rec`` or ``.lab`` files when available) and stores
-    them in the dataset description under the ``events`` key.
+    Event annotations are read from the ``.rec`` file beside each EDF recording
+    and stored in its ``raw.annotations``.
 
     The dataset layout follows the TUH EEG Event Corpus structure (train/eval
     folders) as documented in the corpus README.
@@ -640,11 +637,13 @@ class TUHEvents(TUH):
     set_montage : bool
         If True, set the montage to the standard 10-05 system.
     channel_events : bool
-        If True, add channel-specific event annotations to the Raw objects.
-        If False, only global events will be added.
+        If True, each ``.rec`` channel index selects a name in ``raw.ch_names``.
+        This requires the EDF channels to match the annotation montage, including
+        its bipolar derivations and their order. If False, events are global and
+        the channel index is ignored.
     merge_events : bool
-        If True, merge consecutive identical events into a single event with
-        duration covering the entire span.
+        If True, merge overlapping or touching events of the same type into a
+        single event covering their full span.
     on_missing_files : Literal["warn", "raise"]
         Behavior when the number of files found in the dataset directory
         does not match the expected number of files.
@@ -709,78 +708,68 @@ class TUHEvents(TUH):
     def _set_annotations(
         file_path: str | Path, raw: mne.io.Raw, channel_events: bool, merge_events: bool
     ):
-        """Parse event annotations for a single EDF file.
-        Then set the annotations in the provided raw object."""
-        file_path = Path(file_path)
-        rec_path = file_path.parent / (file_path.stem + ".rec")
-        ch_names = raw.ch_names
+        """Set ``raw.annotations`` from the ``.rec`` sidecar of an EDF recording.
 
+        Each row of the sidecar is ``channel_index,start,stop,event_code``, with
+        times in seconds. The rows become events that are merged by type
+        (``merge_events``) or, for global events, deduplicated, then sorted by onset.
+        """
+        rec_path = Path(file_path).with_suffix(".rec")
         if not rec_path.exists():
             warnings.warn(
                 f"File '{rec_path}' does not exist. No event annotations will be added."
             )
-            return None
-        onsets = []
-        durations = []
-        descriptions = []
-        ch_name_list: list[list[str]] = []
-        lines = rec_path.read_text().splitlines()
-        for line in lines:
+            return
+
+        # One (onset, stop, label, channels) tuple per row: sorting and merging move
+        # whole rows, so a channel always keeps the times of its own event.
+        events = []
+        for line in rec_path.read_text().splitlines():
             parts = line.strip().split(",")
             if len(parts) != 4:
                 warnings.warn(
                     f"Unexpected format in '{rec_path}': '{line}'. No event annotations will be added."
                 )
-                return None
-            channel_idx, start, stop, event_code = parts
+                return
+            channel_idx, start_text, stop_text, event_code = parts
             if event_code not in EVENTS_MAP:
                 warnings.warn(
                     f"Unknown event code '{event_code}' in '{rec_path}'. No event annotations will be added."
                 )
-                return None
-            onsets.append(float(start))
-            durations.append(float(stop) - float(start))
-            descriptions.append(EVENTS_MAP[event_code])
-            ch_name_list.append([ch_names[int(channel_idx)]])
+                return
+            channels = (raw.ch_names[int(channel_idx)],) if channel_events else ()
+            events.append(
+                (float(start_text), float(stop_text), EVENTS_MAP[event_code], channels)
+            )
 
-        # remove duplicates
-        if not channel_events:
-            unique_events = set(zip(onsets, durations, descriptions))
-            onsets, durations, descriptions = zip(*unique_events)  # type: ignore[assignment]
-        # merge consecutive events
+        if not events:
+            return
+
         if merge_events:
-            assert not channel_events
-            merged_onsets: list[float] = []
-            merged_durations: list[float] = []
-            merged_descriptions: list[str] = []
-            sorted_events = sorted(zip(onsets, durations, descriptions))
-            unique_descriptions = set(descriptions)
-            for description in unique_descriptions:
-                new = True
-                for onset, duration, this_description in sorted_events:
-                    if this_description != description:
-                        continue
-                    if new or (onset > merged_onsets[-1] + merged_durations[-1]):
-                        # initialize new event
-                        merged_onsets.append(onset)
-                        merged_durations.append(duration)
-                        merged_descriptions.append(this_description)
-                    else:
-                        # update last event duration
-                        merged_durations[-1] = (onset + duration) - merged_onsets[-1]
-                    new = False
-            onsets = merged_onsets
-            durations = merged_durations
-            descriptions = merged_descriptions
-        # sort by onset time
-        sorted_events = sorted(zip(onsets, durations, descriptions))
-        onsets, durations, descriptions = zip(*sorted_events)  # type: ignore[assignment]
+            # Merge each label separately so intervals of other types can overlap.
+            events.sort(key=lambda event: (event[2], event[0]))
+            merged = [events[0]]
+            for event in events[1:]:
+                onset, stop, label, channels = event
+                last_onset, last_stop, last_label, _ = merged[-1]
+                if label == last_label and onset <= last_stop:
+                    merged[-1] = (last_onset, max(last_stop, stop), label, channels)
+                else:
+                    merged.append(event)
+            events = merged
+        elif not channel_events:
+            events = list(set(events))  # global events: drop repeated rows
 
+        # Annotations sorted by onset: one onset, stop, description and channel
+        # tuple per event.
+        onsets, stops, descriptions, ch_names = zip(
+            *sorted(events, key=lambda event: event[:3])
+        )
         annotations = mne.Annotations(
             onset=onsets,
-            duration=durations,
+            duration=np.subtract(stops, onsets),
             description=descriptions,
-            ch_names=ch_name_list if channel_events else None,
+            ch_names=ch_names if channel_events else None,
         )
         raw.set_annotations(annotations)
 
@@ -819,7 +808,7 @@ def _fake_raw(*args, **kwargs):
 
 def _get_header(*args, **kwargs):
     all_paths = {}
-    for paths_dict in [_TUH_EEG_PATHS, _TUH_EEG_ABNORMAL_PATHS, _TUH_EEG_EVENTS_PATHS]:
+    for paths_dict in [_TUH_EEG_PATHS, _TUH_EEG_ABNORMAL_PATHS]:
         for version_dict in paths_dict.values():
             all_paths.update(version_dict)
     # Mock keys use POSIX separators; pathlib emits backslashes on Windows.
@@ -856,13 +845,6 @@ _TUH_EEG_ABNORMAL_PATHS = {
         # noqa E501
         "tuh_abnormal_eeg/v2.0.0/edf/eval/abnormal/01_tcp_ar/059/00005932/s004_2013_03_14/00005932_s004_t000.edf": b"0       00005932 M 01-JAN-1963 00005932 Age:50                                          ",
         # noqa E501
-    }
-}
-_TUH_EEG_EVENTS_PATHS = {
-    "v2.0.1": {
-        "tuh_eeg_events/v2.0.1/edf/eval/000/bckg_000_a_.edf": b"0       000 F 01-JAN-0000 000 Age:36                                                    ",  # noaq E501
-        "tuh_eeg_events/v2.0.1/edf/train/aaaaaaar/aaaaaaar_00000001.edf": b"0       /aa F 01-JAN-0000 /aa Age:19                                                    ",  # noqa E501
-        "tuh_eeg_events/v2.0.1/edf/eval/001/pled_001_a_2.edf": b"0       001 F 01-JAN-0000 001 Age:68                                                    ",  # noqa E501
     }
 }
 
@@ -966,45 +948,4 @@ class _TUHAbnormalMock(TUHAbnormal):
     def _expected_files_count(self):
         if self.version == "v2.0.0":
             return 5
-        return None
-
-
-class _TUHEventsMock(TUHEvents):
-    """Mocked class for testing and examples."""
-
-    @mock.patch("glob.glob", new=_MockGlob(_TUH_EEG_EVENTS_PATHS))
-    @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
-    @mock.patch("braindecode.datasets.tuh._read_edf_header", new=_get_header)
-    def __init__(
-        self,
-        path: str,
-        recording_ids: list[int] | None = None,
-        target_name: str | tuple[str, ...] | None = "pathological",
-        preload: bool = False,
-        add_physician_reports: bool = False,
-        rename_channels: bool = False,
-        set_montage: bool = False,
-        on_missing_files: Literal["warn", "raise"] = "raise",
-        version: Literal["v2.0.1"] = "v2.0.1",
-        n_jobs: int = 1,
-    ):
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="Cannot save date file")
-            super().__init__(
-                path=path,
-                recording_ids=recording_ids,
-                target_name=target_name,
-                preload=preload,
-                add_physician_reports=add_physician_reports,
-                rename_channels=rename_channels,
-                set_montage=set_montage,
-                on_missing_files=on_missing_files,
-                version=version,
-                n_jobs=n_jobs,
-            )
-
-    @property
-    def _expected_files_count(self):
-        if self.version == "v2.0.1":
-            return 3
         return None

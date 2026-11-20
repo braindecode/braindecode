@@ -511,6 +511,21 @@ def _synthetic_filterbank_raw(sfreq=256.0, n_times=2560, seed=0):
     return raw
 
 
+def test_filterbank_keeps_long_channel_names():
+    # Names longer than 15 characters with their band suffix were cut to their
+    # last 15 (MEG0111_8.0-13.0 became EG0111_8.0-13.0); MNE keeps long names.
+    info = mne.create_info(["MEG0111", "MEG0112"], 256.0, "mag")
+    data = np.random.default_rng(0).standard_normal((2, 2560)) * 1e-12
+    raw = mne.io.RawArray(data, info, verbose="error")
+    filterbank(raw, frequency_bands=[(4.0, 8.0), (8.0, 13.0)], verbose="error")
+    assert raw.ch_names == [
+        "MEG0111_4.0-8.0",
+        "MEG0111_8.0-13.0",
+        "MEG0112_4.0-8.0",
+        "MEG0112_8.0-13.0",
+    ]
+
+
 def test_filterbank_waveform_metadata_reference():
     raw = _synthetic_filterbank_raw()
     raw.set_montage(
@@ -541,7 +556,7 @@ def test_filterbank_waveform_metadata_reference():
     filterbank(actual, frequency_bands, drop_original_signals=True, verbose="ERROR")
 
     expected_ch_order = [
-        (ch + f"_{band[0]}-{band[1]}")[-15:]
+        f"{ch}_{band[0]}-{band[1]}"
         for ch in original_ch_names
         for band in frequency_bands
     ]
