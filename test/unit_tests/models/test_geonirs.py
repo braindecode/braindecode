@@ -55,21 +55,24 @@ def test_geonirs_mean_std_over_valid_patches():
     assert not features[3].any()
 
 
-# features[0, :5] of the authors' geonirs_base.pt and geonirs_large.pt
+# features[0, :5] (HbO tokens) and features[0, -5:] (HbR tokens) of the authors'
+# geonirs_base.pt and geonirs_large.pt
 # (GeoNIRS@81f8995) on the input of the test, loaded as released
 @pytest.mark.network
 @pytest.mark.huggingface
 @pytest.mark.parametrize(
-    "repo_id, revision, expected",
+    "repo_id, revision, expected, expected_hbr",
     [
         ("braindecode/geonirs-base-pretrained", "a483f904180dce2c0fdc6dd48917b95498913d9a",
-         [0.067987166, -0.007574921, -0.350337952, 0.147298455, -0.141785607]),
+         [0.067987166, -0.007574921, -0.350337952, 0.147298455, -0.141785607],
+         [-0.119261660, 0.040913288, -0.013012240, -0.140069067, 0.107298315]),
         ("braindecode/geonirs-large-pretrained", "f51061d599032f726ba6732083bce2dbc7c3fcd1",
-         [-3.116364002, -2.744976997, -0.223239779, -1.097928047, -0.808620572]),
+         [-3.116364002, -2.744976997, -0.223239779, -1.097928047, -0.808620572],
+         [2.245513439, -1.460690856, 0.737670124, 2.605016947, -0.031923484]),
     ],
     ids=["base", "large"],
 )
-def test_geonirs_pretrained_matches_the_release(repo_id, revision, expected):
+def test_geonirs_pretrained_matches_the_release(repo_id, revision, expected, expected_hbr):
     pytest.importorskip("huggingface_hub")
     model = GeoNIRS.from_pretrained(
         repo_id, revision=revision, chs_info=_fnirs_chs_info(4), n_outputs=3, n_times=150
@@ -78,3 +81,5 @@ def test_geonirs_pretrained_matches_the_release(repo_id, revision, expected):
     with torch.no_grad():
         features = model(x, return_features=True)["features"]
     torch.testing.assert_close(features[0, :5], torch.tensor(expected), rtol=0, atol=1e-5)
+    # the last features are HbR tokens, the only ones hbr_projection writes
+    torch.testing.assert_close(features[0, -5:], torch.tensor(expected_hbr), rtol=0, atol=1e-5)

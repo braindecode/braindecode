@@ -300,7 +300,11 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
                     f"({n_heads}): a head takes embed_dim / {name} features."
                 )
         # The projections take the tokens from embed_dim to feature_dim
-        if projection_dims[0] != embed_dim or projection_dims[-1] != feature_dim:
+        if (
+            not projection_dims
+            or projection_dims[0] != embed_dim
+            or projection_dims[-1] != feature_dim
+        ):
             raise ValueError(
                 f"projection_dims must start at embed_dim ({embed_dim}) and end "
                 f"at feature_dim ({feature_dim}), got {tuple(projection_dims)}."
