@@ -220,7 +220,6 @@ API and behavior changes
   MNE's montages (within 2e-8 m of the release) and ``RevePositionBank`` ignores ``url``, ``timeout``, ``cache_dir``;
   ``resolve_channel_positions`` takes an exact name, else the last entry equal ignoring case (:gh:`1687` by `Bruno Aristimunha`_).
 
-
 - Braindecode now requires MNE-Python 1.13.0 or later, whose spherical-spline interpolation
   centres both montages on the fitted head origin; ``standard_*`` montage names resolve to the
   ``colin27_*`` names MNE 1.13 gives them (:gh:`1615` by `Bruno Aristimunha`_).
