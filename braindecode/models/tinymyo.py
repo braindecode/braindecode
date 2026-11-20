@@ -18,16 +18,10 @@ from typing import Literal, Optional
 import torch
 from torch import nn
 
-from braindecode.functional import init_weights_
+from braindecode.functional import check_n_chans, init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
-
-# Number of channel-slot embeddings in the released checkpoints.
-_MAX_CHANS = 16
-
-# Weight initialization of the reference implementation.
-_init_weights = partial(init_weights_, weights={nn.Linear: nn.init.xavier_uniform_})
 
 
 class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -93,19 +87,18 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     .. rubric:: Pretrained Weights
 
-    The authors release the weights on the Hugging Face Hub at
-    `PulpBio/TinyMyo <https://huggingface.co/PulpBio/TinyMyo>`_ under
-    CC BY-ND 4.0. Braindecode does not ship them. ``from_pretrained``
-    downloads the released files from the Hub.
+    The authors' weights (`PulpBio/TinyMyo
+    <https://huggingface.co/PulpBio/TinyMyo>`_, CC BY-ND 4.0), converted to
+    these parameter names, are on the Hugging Face Hub:
 
-    ===========================================  ===========  =========  =====================
-    File                                         ``n_chans``  Outputs    Task
-    ===========================================  ===========  =========  =====================
-    ``pretraining/TinyMyo/TinyMyo.safetensors``  16           (encoder)  masked reconstruction
-    ``DB5/DB5_finetune_5sec.safetensors``        16           53         NinaPro DB5 gestures
-    ``EPN612/EPN_finetune_5sec.safetensors``     8            6          EPN-612 gestures
-    ``UCI_EMG/UCI_finetune_5sec.safetensors``    8            6          UCI EMG gestures
-    ===========================================  ===========  =========  =====================
+    ==================================  ===========  =========  =====================
+    Repository                          ``n_chans``  Outputs    Task
+    ==================================  ===========  =========  =====================
+    ``braindecode/tinymyo-pretrained``  up to 16     (encoder)  masked reconstruction
+    ``braindecode/tinymyo-db5``         16           53         NinaPro DB5 gestures
+    ``braindecode/tinymyo-epn612``      8            6          EPN-612 gestures
+    ``braindecode/tinymyo-uci-emg``     8            6          UCI EMG gestures
+    ==================================  ===========  =========  =====================
 
     .. important::
        Fine-tune the pretrained encoder with a new head, or load a released
@@ -117,26 +110,11 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
            # Pretrained encoder, new 4-class head
            model = TinyMyo.from_pretrained(
-               "PulpBio/TinyMyo",
-               filename="pretraining/TinyMyo/TinyMyo.safetensors",
-               n_chans=8,
-               n_outputs=4,
-               n_times=1000,
+               "braindecode/tinymyo-pretrained", n_chans=8, n_outputs=4, n_times=1000
            )
 
            # Released EPN-612 classifier
-           model = TinyMyo.from_pretrained(
-               "PulpBio/TinyMyo",
-               filename="EPN612/EPN_finetune_5sec.safetensors",
-               n_chans=8,
-               n_outputs=6,
-               n_times=1000,
-           )
-
-       ``load_state_dict`` reads the released files. It removes their
-       ``model.`` prefix, renames the reference layers and drops the
-       mask token, reconstruction decoder and DB8 regression head. A released
-       file without a classifier keeps the head of this model.
+           model = TinyMyo.from_pretrained("braindecode/tinymyo-epn612")
 
     The authors pretrain on 20-450 Hz band-passed signals with a 50 Hz notch,
     min-max normalized per channel. In fine-tuning they band-pass at 20-90
@@ -146,8 +124,8 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     - This class ports the classification head only. The reference also has
       the pretraining decoder (with ``mask`` and ``pad_mask_ch`` inputs) and
-      a convolutional regression head for NinaPro DB8, so
-      ``DB8/DB8_finetune_500ms.safetensors`` loads its encoder only.
+      a convolutional regression head for NinaPro DB8, whose checkpoint is not
+      re-hosted.
     - The reference requires ``n_times`` to equal its ``img_size``. This
       class computes the RoPE tables for the input length, so any length
       works, and ``on_non_divisible`` handles a partial last patch. The
@@ -309,59 +287,43 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
         torch.Tensor or dict
             Logits of shape ``(batch, n_outputs)``, or the features.
         """
-        # The RoPE positions and the head assume n_chans channels
-        if x.shape[1] != self.n_chans:
-            raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}.")
-        # (batch, C, n_times) -> (batch, C, P, D)
+        # The rotary runs and the head are built for n_chans channels
+        check_n_chans(
+            x,
+            self.n_chans,
+            "TinyMyo",
+            "build the model with the n_chans of this input.",
+        )
+        # A token per patch of each channel: (batch, C, n_times) -> (batch, C, P, D)
         x = self.patch_embed(x)
-        n_chans, n_patches = x.shape[1], x.shape[2]
-        x = x + self.channel_embed[:, :n_chans]
-        # Channel-major tokens: every patch of channel 0, then of channel 1...
+        n_patches = x.shape[2]
+        # The embedding of its channel slot added to every token: (batch, C, P, D)
+        x = x + self.channel_embed[:, : self.n_chans]
+        # One sequence, the patches of channel 0 first: (batch, C * P, D)
         x = x.flatten(1, 2)
+        # Attention over time and channels; the RoPE positions restart at each
+        # channel: (batch, C * P, D)
         for block in self.blocks:
             x = block(x)
-        x = self.norm(x).unflatten(1, (n_chans, n_patches))
+        # Normed tokens, channels back on their own axis: (batch, C, P, D)
+        x = self.norm(x).unflatten(1, (self.n_chans, n_patches))
         if return_features:
             return {"features": x, "cls_token": None}
-        # Mean over time, then the channels side by side: (batch, C * D)
-        return self.final_layer(x.mean(dim=2).flatten(1))
+        # Mean over the patches of each channel, channels side by side:
+        # (batch, C * D)
+        x = x.mean(dim=2).flatten(1)
+        # Linear classifier: (batch, n_outputs)
+        return self.final_layer(x)
 
     def reset_head(self, n_outputs: int) -> None:
         self._set_n_outputs(n_outputs)
         self.final_layer = nn.Linear(self.final_layer.in_features, n_outputs)
         _init_weights(self.final_layer)
 
-    def load_state_dict(self, state_dict, strict: bool = True, assign: bool = False):
-        """Load a state dict, or a released ``PulpBio/TinyMyo`` file.
 
-        The released keys carry a ``model.`` prefix and the reference layer
-        names. The mask token, reconstruction decoder and DB8 regression head
-        are dropped. A released encoder keeps the head of this model.
-        """
-        renamed = {}
-        has_reference_stem = False
-        for key, value in state_dict.items():
-            key = key.removeprefix("model.")
-            if key == "mask_token" or key.startswith(
-                ("model_head.decoder_pred.", "model_head.regressor.")
-            ):
-                continue
-            if key.startswith("patch_embedding.patch_embed.proj."):
-                has_reference_stem = True
-                key = key.replace("patch_embedding.patch_embed.", "patch_embed.")
-                # Conv2d(1, D, (1, patch_size)) -> Linear(patch_size, D)
-                value = value.flatten(1) if key.endswith("weight") else value
-            key = key.replace("model_head.classifier.", "final_layer.")
-            renamed[key] = value
-        head = {}
-        if has_reference_stem and not any(
-            key.startswith("final_layer.") for key in renamed
-        ):
-            head = self.final_layer.state_dict(prefix="final_layer.")
-            renamed.update(head)
-        result = super().load_state_dict(renamed, strict=strict, assign=assign)
-        provenance = self.__dict__.get("_pretrained_provenance")
-        if provenance is not None:
-            # The head was supplied by this model, not by the checkpoint
-            provenance["loaded"].difference_update(head)
-        return result
+# Number of channel slots (channel_embed rows) of the released checkpoints
+_MAX_CHANS = 16
+
+# Xavier-uniform Linear weights and zero biases, the initialization of the
+# reference (models/TinyMyo.py of pulp-bio/BioFoundation)
+_init_weights = partial(init_weights_, weights={nn.Linear: nn.init.xavier_uniform_})
