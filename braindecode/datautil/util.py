@@ -60,28 +60,22 @@ def samples_to_ms(n_samples, fs):
 def _get_n_outputs(y, classes, mode, stored=None):
     """Number of outputs for the targets ``y`` the model trains on.
 
-    Classification: 1-D labels count the distinct labels (or ``classes``), 2-D
-    targets ``(n, k)`` their width ``k``, whatever the values. ``classes`` names
-    the labels as ``stored``, before any ``target_transform`` (``y`` by default).
+    Classification: ``len(classes)``, else the number of distinct values of ``y``,
+    whatever its shape (class probabilities need ``classes`` or ``n_outputs``).
+    ``classes`` names the labels as ``stored``, before any ``target_transform``.
     """
     if mode == "classification":
-        y = np.asarray(y)
-        labels = y if stored is None else np.asarray(stored)
-        if classes is not None and labels.ndim == 1:
+        if classes is None:
+            return len(np.unique(y))
+        labels = np.asarray(y if stored is None else stored)
+        if labels.ndim == 1:  # class probabilities are not labels
             missing = sorted(set(np.unique(labels).tolist()) - set(classes))
             if missing:
                 raise ValueError(
                     f"Labels {missing} are not in classes {list(classes)}. classes "
                     "names the labels as stored, before any target_transform."
                 )
-        if y.ndim > 1:  # (n, k, ...): class probabilities, one-hot or multi-label
-            if classes is not None and len(classes) != y.shape[1]:
-                raise ValueError(
-                    f"The number of classes ({len(classes)}) must match the "
-                    f"target width ({y.shape[1]})."
-                )
-            return y.shape[1]
-        return len(np.unique(y)) if classes is None else len(classes)
+        return len(classes)
     elif mode == "regression":
         if y is None:
             return None
@@ -120,10 +114,8 @@ def infer_signal_properties(
         Input data
     y : array-like or None
         Targets of array-like ``X``, ignored for a dataset, which holds its own
-        (after its ``target_transform``). In classification, 1-D labels give one
-        output per distinct label, and 2-D targets ``(n, k)`` (class probabilities,
-        one-hot, multi-label) their width ``k``. Dense class indices
-        ``(n, n_times)`` are 2-D too: pass ``n_outputs``.
+        (after its ``target_transform``). In classification they give one output
+        per distinct value: class probabilities need ``n_outputs`` or ``classes``.
     mode : "classification" or "regression"
         Mode of the task
     classes : list or None

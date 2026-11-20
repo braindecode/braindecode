@@ -384,7 +384,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
           * other Dataset: ``n_times``, ``n_chans``
           * other types: no parameters are inferred.
 
-        ``n_outputs`` of 2-D targets is their width, ``module__n_outputs`` overrides it.
+        Class probabilities need ``module__n_outputs`` or ``classes``.
 
         Parameters
         ----------
@@ -439,7 +439,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
           * other Dataset: ``n_times``, ``n_chans``
           * other types: no parameters are inferred.
 
-        ``n_outputs`` of 2-D targets is their width, ``module__n_outputs`` overrides it.
+        Class probabilities need ``module__n_outputs`` or ``classes``.
 
         Parameters
         ----------

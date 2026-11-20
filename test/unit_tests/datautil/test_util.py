@@ -41,33 +41,28 @@ def test_get_n_outputs_regression():
     "y, n_outputs",
     [
         (np.array([2, 0, 2, 1]), 3),
-        (np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]], dtype=np.float32), 3),
-        (np.array([[1, 0, 1], [0, 0, 1]]), 3),
-        (np.random.default_rng(0).dirichlet(np.ones(4), size=1000), 4),
-        (np.full((2, 4, 3), 0.25), 4),
+        # dense class indices (n, n_times) count the classes, not the 8 time steps
+        (np.arange(32).reshape(4, 8) % 3, 3),
+        (np.arange(32.0).reshape(4, 8) % 3, 3),
     ],
-    ids=["labels", "one_hot", "multi_label", "soft", "dense_probabilities"],
+    ids=["labels", "dense_int_indices", "dense_float_indices"],
 )
-def test_n_outputs_follows_the_target_shape(y, n_outputs):
+def test_n_outputs_counts_the_distinct_labels_of_any_shape(y, n_outputs):
     from braindecode.datautil import infer_signal_properties
 
-    # 1-D labels count the distinct labels, 2-D targets give their width, whatever
-    # the values: binary rows can sum to one, a soft target has 1000 distinct values.
-    # Axis 1 is the class axis of dense probabilities (batch, classes, time).
     signal_kwargs = infer_signal_properties(np.zeros((len(y), 2, 8)), y)
     assert signal_kwargs["n_outputs"] == n_outputs
 
 
-def test_classes_name_the_labels_and_fit_the_target_width():
+def test_classes_name_the_labels():
     from braindecode.datautil import infer_signal_properties
 
     X, soft = np.zeros((4, 2, 8)), np.full((4, 3), 1 / 3)
     assert infer_signal_properties(X, [0, 1, 0, 1], classes=[0, 1, 2])["n_outputs"] == 3
+    # class probabilities are not labels: classes alone sizes the model
     assert infer_signal_properties(X, soft, classes=[0, 1, 2])["n_outputs"] == 3
     with pytest.raises(ValueError, match=r"Labels \[2\] are not in classes \[0, 1\]"):
         infer_signal_properties(X, [0, 2, 0, 1], classes=[0, 1])
-    with pytest.raises(ValueError, match="number of classes"):
-        infer_signal_properties(X, soft, classes=[0, 1])
 
 
 @pytest.mark.parametrize("lazy_metadata", [False, True])
@@ -129,15 +124,6 @@ def test_classes_name_the_stored_window_labels(lazy_metadata):
     assert infer_signal_properties(windows, classes=list("abc"))["n_outputs"] == 3
     with pytest.raises(ValueError, match=r"Labels \['c'\] are not in classes"):
         infer_signal_properties(windows, classes=list("ab"))
-
-
-@pytest.mark.parametrize("lazy_metadata", [False, True])
-def test_n_outputs_of_a_one_hot_target_transform_is_its_width(lazy_metadata):
-    from braindecode.datautil import infer_signal_properties
-
-    windows = _windows_of_labels(range(4), lazy_metadata)
-    windows.target_transform = lambda label: np.eye(4)[label]
-    assert infer_signal_properties(windows)["n_outputs"] == 4
-    assert infer_signal_properties(windows, classes=[0, 1, 2, 3])["n_outputs"] == 4
-    with pytest.raises(ValueError, match="number of classes"):
-        infer_signal_properties(windows, classes=[0, 1, 2, 3, 4])
+    # vectors from the transform are not labels either: classes alone sizes the model
+    windows.target_transform = lambda label: np.eye(3)["abc".index(label)]
+    assert infer_signal_properties(windows, classes=list("abc"))["n_outputs"] == 3

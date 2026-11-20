@@ -1291,15 +1291,19 @@ class _LinearHead(torch.nn.Module):
         return self.linear(x.flatten(start_dim=1))
 
 
-@pytest.mark.parametrize("data", ["arrays", "windows"])
+@pytest.mark.parametrize("data", ["one_hot", "dirichlet", "windows"])
 def test_soft_labels_with_n_outputs_and_classes(data):
-    # Soft labels are not class names: the n_outputs the user passes is used as is,
-    # and classes names the stored labels, which are not the soft vectors.
+    # Class probabilities are not class names and do not size the model: the
+    # n_outputs the user passes is used as is, and classes names the stored labels.
     rng = np.random.RandomState(0)
     soft = np.eye(3, dtype="float32") * 0.8 + 0.1
-    if data == "arrays":
+    if data != "windows":
         X = rng.randn(6, 2, 8).astype("float32")
-        y, classes = soft[[0, 1, 2] * 2], [0, 1, 2]
+        if data == "one_hot":
+            y = np.eye(3, dtype="float32")[[0, 1, 2] * 2]
+        else:
+            y = rng.dirichlet(np.ones(3), size=6).astype("float32")
+        classes = [0, 1, 2]
     else:
         info = mne.create_info(["C3", "C4"], 100.0, "eeg")
         raw = mne.io.RawArray(rng.randn(2, 16), info)

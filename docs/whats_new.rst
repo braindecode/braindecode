@@ -293,7 +293,7 @@ API and behavior changes
   and 0.88x compiled; the CPU keeps the math path (:gh:`1583` by `Bruno Aristimunha`_).
 - :class:`~braindecode.EEGClassifier` reads a float target with the shape of the
   predictions as class probabilities (v2.0.0 raised) and any other as class indices;
-  ``n_outputs`` of 2-D targets is their width (:gh:`1630`, :gh:`1692` by `Bruno Aristimunha`_).
+  probabilities need ``module__n_outputs`` or ``classes`` (:gh:`1630`, :gh:`1692` by `Bruno Aristimunha`_).
 
 Requirements
 ============
