@@ -268,6 +268,9 @@ Bug fixes
   random numbers, so seeded weights change (:gh:`1694` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.Deep4Net` with ``mean`` pooling trains right after construction
   and after ``get_output_shape()`` (:gh:`1694` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.CSBrain` builds its patch embedding once instead of forking the RNG
+  and redrawing it, which did not restore the accelerator generator under ``with torch.device(...)``;
+  seeded weights of its four patch-embedding convolutions change (:gh:`1645` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.EEGMiner` exports with
   ``torch.export.export(..., strict=False)`` on PyTorch 2.6 (:gh:`1690` by `Bruno Aristimunha`_).
 - ``convert_to_zarr`` and ``load_from_zarr`` work with a local Zarr installation.
