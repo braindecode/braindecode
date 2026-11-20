@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from braindecode.models.util import SigArgName, _chs_info_3ch, _draw_chs_info
+from braindecode.models.util import SigArgName, _draw_chs_info
 
 non_classification_models = [
     # Returns reconstructed patches and discrete codes, not class logits.
@@ -14,6 +14,8 @@ non_classification_models = [
     "SignalJEPA",
     # Emits token-wise logits (batch, n_outputs, n_patches).
     "SleepFMStager",
+    # Emits one prediction per sleep epoch (batch, n_outputs, n_epochs).
+    "CareSleepNet",
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
     "MetaNeuromotorHand",
     "EMG2QwertyNet",
@@ -30,6 +32,17 @@ non_classification_models = [
     # forward returns (batch, n_outputs, n_times) per-sample logits, not
     # window logits.
     "SeizureTransformer",
+]
+
+# Head-frame positions in metres for the default synthetic EEG input, inlined
+# to avoid loading the montage; test_chs_info_3ch_matches_the_montage checks them.
+_chs_info_3ch = [
+    {"ch_name": name, "kind": "eeg", "loc": np.array([x, y, z, *[0.0] * 9])}
+    for name, (x, y, z) in {
+        "C1": (-0.03793783, 0.02633745, 0.12977061),
+        "C2": (0.03589271, 0.02635814, 0.12841234),
+        "C3": (-0.06714873, 0.02335823, 0.10451068),
+    }.items()
 ]
 
 default_signal_params: dict[SigArgName, Any] = {

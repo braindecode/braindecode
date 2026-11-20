@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
-from numpy import arange, ceil
+from numpy import arange
 
 from braindecode.models.base import EEGModuleMixin
 
@@ -118,6 +118,24 @@ class SyncNet(EEGModuleMixin, nn.Module):
         self.beta_init_values = beta_init_values
         self.phase_init_values = phase_init_values
 
+        if self.filter_width < 1 or self.pool_size < 1:
+            raise ValueError("filter_width and pool_size must be positive.")
+        self.padding = self._compute_padding(filter_width=self.filter_width)
+        # Both the input and the convolution output are zero padded.
+        conv_length = self.n_times + sum(self.padding) - self.filter_width + 1
+        if conv_length < 1:
+            raise ValueError(
+                f"filter_width={self.filter_width} leaves no convolution output "
+                f"for n_times={self.n_times}."
+            )
+        pooled_length = (conv_length + sum(self.padding)) // self.pool_size
+        if pooled_length < 1:
+            raise ValueError(
+                f"pool_size={self.pool_size} leaves no pooled samples for "
+                f"n_times={self.n_times} and filter_width={self.filter_width}."
+            )
+        self.classifier_input_size = pooled_length * self.num_filters
+
         # Initialize parameters
         self.amplitude = nn.Parameter(
             torch.FloatTensor(1, 1, self.n_chans, self.num_filters).uniform_(
@@ -131,11 +149,6 @@ class SyncNet(EEGModuleMixin, nn.Module):
         )
 
         self.bias = nn.Parameter(torch.zeros(self.num_filters))
-
-        # Calculate the output size after pooling
-        self.classifier_input_size = int(
-            ceil(float(self.n_times) / float(self.pool_size)) * self.num_filters
-        )
 
         # Create time vector t
         if self.filter_width % 2 == 0:
@@ -159,7 +172,6 @@ class SyncNet(EEGModuleMixin, nn.Module):
             )
         )
 
-        self.padding = self._compute_padding(filter_width=self.filter_width)
         self.pad_input = nn.ConstantPad1d(self.padding, 0.0)
         self.pad_res = nn.ConstantPad1d(self.padding, 0.0)
 
@@ -215,7 +227,7 @@ class SyncNet(EEGModuleMixin, nn.Module):
         res_pooled = self.pool(res_padded)
 
         # Flatten the result
-        res_flat = res_pooled.view(-1, self.classifier_input_size)
+        res_flat = res_pooled.flatten(1)
 
         # Ensure beta remains non-negative
         self.beta.data.clamp_(min=0)

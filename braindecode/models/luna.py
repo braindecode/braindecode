@@ -34,10 +34,7 @@ from braindecode.functional import (
 )
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.signal_jepa import _GroupNorm
-from braindecode.models.util import (
-    chs_info_positions,
-    extract_channel_locations_from_chs_info,
-)
+from braindecode.models.util import chs_info_positions
 from braindecode.modules import PreNormBlock, TimmMlp
 from braindecode.modules.blocks import PatchTokenizer
 
@@ -102,7 +99,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                repo_id="username/my-luna-model", commit_message="Upload trained LUNA model"
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     Parameters
     ----------
@@ -110,12 +107,13 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         How :class:`~braindecode.modules.PatchTokenizer` treats a time axis that
         is not a multiple of ``patch_size`` (right zero-pad, crop, or raise).
     patch_size : int
-        Number of time samples per patch. Default: 40.
+        Number of time samples per patch. Must be a positive multiple of 4.
+        Default: 40.
     num_queries : int
         Number of learned queries for channel unification.
         Paper uses: 4 (Base), 6 (Large), 8 (Huge). Default: 4.
     embed_dim : int
-        Embedding dimension for patch features.
+        Embedding dimension for patch features. Must be a positive multiple of 16.
         Paper uses: 64 (Base), 96 (Large), 128 (Huge). Default: 64.
     depth : int
         Number of transformer encoder blocks.
@@ -140,9 +138,6 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         The Thirty-Ninth Annual Conference on Neural Information Processing Systems - NeurIPS.
         Retrieved from https://openreview.net/forum?id=uazfjnFL0G
     """
-
-    # Class-level, so TorchScript types the cache while it is still empty.
-    _channel_location_cache: Dict[int, torch.Tensor]
 
     def __init__(
         self,
@@ -180,7 +175,6 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        chs_info_positions(getattr(self, "_chs_info", None), "LUNA")  # all or none
 
         # Mapping for loading pretrained weights
         self.mapping = {
@@ -192,6 +186,17 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             "channel_location_embedder.0.norm.bias": "channel_location_embedder.norm.bias",
             "cross_attn.temparature": "cross_attn.temperature",  # typo in pretrained weights
         }
+
+        # The temporal stem flattens four positions per output channel and
+        # splits its embed_dim // 4 channels into four normalization groups.
+        if patch_size < 4 or patch_size % 4:
+            raise ValueError(
+                f"patch_size must be a positive multiple of 4, got {patch_size}."
+            )
+        if embed_dim < 16 or embed_dim % 16:
+            raise ValueError(
+                f"embed_dim must be a positive multiple of 16, got {embed_dim}."
+            )
 
         # Model parameters
         self.num_classes = self.n_outputs if self.n_outputs else 0
@@ -264,7 +269,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         self.norm = norm_layer(int(self.embed_dim * self.num_queries))
 
-        self._channel_location_cache: Dict[int, torch.Tensor] = {}
+        self._register_channel_locations()
 
         if self.num_classes == 0:
             self.decoder_head = _PatchReconstructionHeadWithQueries(
@@ -348,12 +353,13 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         ch_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         num_channels = channel_locations.shape[1]
+        n_valid_times = x_signal.shape[-1]
         x_signal = self.tokenizer.prepare_input(x_signal)
         if mask is not None:
             mask = self.tokenizer.prepare_input(mask)
         num_patches_per_channel = x_signal.shape[-1] // self.patch_size
         x_patched = self.patch_embed(x_signal, ch_mask)
-        freq_embed = self.freq_embed(x_signal)
+        freq_embed = self.freq_embed(x_signal, n_valid_times)
         x_patched = x_patched + freq_embed
         x_masked = x_patched.clone()  # (B, N, D), N = C * num_patches_per_channel
 
@@ -483,10 +489,37 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # Reconstruction head (num_classes == 0): eager only, so the classifier scripts.
         if channel_names is None:
             raise ValueError("channel_names must be provided for reconstruction tasks.")
-        channel_emb = self.channel_emb(channel_names)
-        channel_emb = channel_emb.repeat(x_latent.shape[1], 1, 1)
+        # (C,) ids are shared by the batch; query rows are (B t), batch outermost.
+        channel_emb = self.channel_emb(channel_names).expand(x_latent.shape[0], -1, -1)
+        channel_emb = channel_emb.repeat_interleave(x_latent.shape[1], dim=0)
         decoder_queries = channel_locations_emb + channel_emb
         return self.decoder_head(x_latent, decoder_queries)
+
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        if "_channel_location_cache" in self.__dict__:
+            # Full models saved before the coordinates became a module buffer.
+            del self.__dict__["_channel_location_cache"]
+            self._register_channel_locations()
+
+    def _register_channel_locations(self):
+        self.register_buffer(
+            "_default_channel_locations", torch.empty(0, 3), persistent=False
+        )
+        self._reset_channel_locations()
+        self.register_load_state_dict_post_hook(self._reset_channel_locations)
+
+    def _reset_channel_locations(self, _module=None, _incompatible_keys=None):
+        """Rebuild the nonpersistent coordinates after initialization or checkpoint load."""
+        # MNE metadata holds real coordinates, including while constructing on meta.
+        with torch.device("cpu"):
+            positions = chs_info_positions(self._chs_info, "LUNA")
+        anchor = next(self.parameters())
+        self._has_measured_positions = positions is not None
+        if positions is None:
+            self._default_channel_locations = anchor.new_empty(0, 3)
+            positions = self.build_channel_location_template(self._n_chans_for_jit or 0)
+        self._default_channel_locations = positions.to(anchor)
 
     def get_default_channel_locations(
         self,
@@ -495,12 +528,8 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         device: torch.device,
         dtype: torch.dtype,
     ) -> torch.Tensor:
-        if num_channels not in self._channel_location_cache:
-            template = self.build_channel_location_template(num_channels)
-            self._channel_location_cache[num_channels] = template
-        template = self._channel_location_cache[num_channels].to(
-            device=device, dtype=dtype
-        )
+        template = self.build_channel_location_template(num_channels)
+        template = template.to(device=device, dtype=dtype)
         return template.unsqueeze(0).repeat(batch_size, 1, 1)
 
     def build_channel_location_template(self, num_channels: int) -> torch.Tensor:
@@ -519,23 +548,17 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         torch.Tensor
             Tensor of shape (num_channels, 3) with channel locations in 3D space.
         """
-        # Try to extract channel locations from chs_info using the unified utility
-        channel_info = getattr(self, "_chs_info", None)
-        if channel_info is not None:
-            locs = extract_channel_locations_from_chs_info(
-                channel_info, num_channels=num_channels
-            )
-            if locs is not None and len(locs) == num_channels:
-                locs = torch.from_numpy(locs).float()
-                # MNE stores NaN for a channel without a position.
-                if locs.isfinite().all():
-                    return locs
+        template = self._default_channel_locations
+        if num_channels == template.shape[0]:
+            return template
+        if self._has_measured_positions and num_channels < template.shape[0]:
+            return template[:num_channels]
 
-        # Fallback: generate default linear spacing along x-axis
-        positions = torch.linspace(-1.0, 1.0, steps=num_channels, dtype=torch.float32)
+        positions = torch.linspace(
+            -1.0, 1.0, steps=num_channels, dtype=torch.float32, device=template.device
+        )
         zeros = torch.zeros_like(positions)
-        locs_tensor = torch.stack([positions, zeros, zeros], dim=-1)
-        return locs_tensor
+        return torch.stack([positions, zeros, zeros], dim=-1)
 
     def _get_default_channel_locations(
         self,
@@ -616,7 +639,11 @@ class _FrequencyFeatureEmbedder(nn.Module):
     r"""
     This class takes data that is of the form (B, C, T) and patches it
     along the time dimension (T) into patches of size P (patch_size).
-    The output is of the form (B, C, S, P) where S = T // P.
+    The output is of the form (B, C * S, embed_dim) where S = ceil(T / P).
+
+    ``forward`` takes an optional ``n_valid_times``: the number of measured
+    samples before any zero padding. When the last patch holds a single
+    measured sample, its spectrum is set to be exactly real.
     """
 
     def __init__(self, patch_size: int, embed_dim: int) -> None:
@@ -630,8 +657,12 @@ class _FrequencyFeatureEmbedder(nn.Module):
             out_features=embed_dim,
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, n_valid_times: Optional[int] = None
+    ) -> torch.Tensor:
         B, C, T = x.size()
+        if n_valid_times is None:
+            n_valid_times = T
         S = T // self.patch_size
         # There is a chance that the input tensor is not divisible by the patch size
         # In this case we need to pad the tensor with zeros
@@ -652,9 +683,27 @@ class _FrequencyFeatureEmbedder(nn.Module):
         imag[..., 0] = 0.0
         if self.patch_size % 2 == 0:
             imag[..., -1] = 0.0
+        # An impulse at the first sample has the same real value at every frequency.
+        if T - n_valid_times == self.patch_size - 1:
+            imag[..., -1, :] = 0.0
+        # FFT backends disagree on the sign of exact imaginary zeros, which
+        # flips the phase of a negative real bin between pi and -pi. Adding
+        # +0 maps -0 to +0 and keeps the gradient.
+        imag = imag + 0.0
         freq_representation = torch.complex(freq_representation.real, imag)
         magnitude = torch.abs(freq_representation)
-        phase = torch.angle(freq_representation)
+        if freq_representation.device.type == "mps":
+            # PyTorch 2.6 lacks complex angle on MPS. At zero, retain the
+            # signed phase and its zero gradient without differentiating atan2(0, 0).
+            real = freq_representation.real
+            silent = magnitude == 0
+            signed_one = torch.copysign(torch.ones_like(real), real)
+            phase = torch.atan2(
+                torch.where(silent, imag.detach(), imag),
+                torch.where(silent, signed_one, real),
+            )
+        else:
+            phase = torch.angle(freq_representation)
 
         # Concatenate magnitude and phase along the frequency axis (last dimension)
         freq_features = torch.cat((magnitude, phase), dim=-1).to(x)
