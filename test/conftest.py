@@ -49,9 +49,9 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         callspec = getattr(item, "callspec", None)
         params = getattr(callspec, "params", {}).values()
-        if any(_downloads_positions(param) for param in params):
-            item.add_marker(pytest.mark.network)
-            item.add_marker(pytest.mark.huggingface)
+        # 69.5M-parameter REVE and 92.9M-parameter Pratibha2 builds exhaust the parallel job's memory.
+        if any(_is_full_size_model(param) for param in params):
+            item.add_marker(pytest.mark.slow)
 
         # Network tests, even slow ones (the Hub module), follow --run-network alone.
         if "network" in item.keywords:
@@ -63,23 +63,22 @@ def pytest_collection_modifyitems(config, items):
     items[:] = [item for item in items if item not in deselected]
 
 
-# Models that download their electrode-position table from the Hugging Face Hub.
-_POSITION_DOWNLOAD_MODELS = {"REVE", "Pratibha2"}
+_FULL_SIZE_MODELS = {"REVE", "Pratibha2"}
 
 
-def _downloads_positions(param):
+def _is_full_size_model(param):
     """Return whether a parametrized value identifies a model of
-    ``_POSITION_DOWNLOAD_MODELS``."""
+    ``_FULL_SIZE_MODELS``."""
     if isinstance(param, str):
-        return param in _POSITION_DOWNLOAD_MODELS
+        return param in _FULL_SIZE_MODELS
 
     name = getattr(param, "__name__", None)
-    if name in _POSITION_DOWNLOAD_MODELS:
+    if name in _FULL_SIZE_MODELS:
         return True
 
     return (
         isinstance(param, (tuple, list))
         and len(param) > 0
         and isinstance(param[0], str)
-        and param[0] in _POSITION_DOWNLOAD_MODELS
+        and param[0] in _FULL_SIZE_MODELS
     )

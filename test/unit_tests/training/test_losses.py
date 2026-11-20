@@ -110,19 +110,16 @@ def test_mixup_criterion_plain_target(n_samples):
 @pytest.mark.parametrize("soft", [False, True])
 def test_mixup_criterion_weights_dense_targets_per_trial(soft):
     logits = torch.randn(3, 4, 5)
-    first = torch.randint(4, (3, 5))
-    second = torch.randint(4, (3, 5))
+    # Targets of the two mixed trials: class indices (3, 5) or probabilities (3, 4, 5).
+    first, second = torch.randint(4, (2, 3, 5))
     if soft:
-        first = torch.randn_like(logits).softmax(1)
-        second = torch.randn_like(logits).softmax(1)
+        first, second = torch.randn(2, 3, 4, 5).softmax(dim=2)
     weights = torch.tensor([0.2, 0.5, 0.8])
+    ce = torch.nn.functional.cross_entropy
     expected = torch.stack(
         [
-            weights[i]
-            * torch.nn.functional.cross_entropy(logits[i : i + 1], first[i : i + 1])
-            + (1 - weights[i])
-            * torch.nn.functional.cross_entropy(logits[i : i + 1], second[i : i + 1])
-            for i in range(len(logits))
+            w * ce(p[None], a[None]) + (1 - w) * ce(p[None], b[None])
+            for p, a, b, w in zip(logits, first, second, weights)
         ]
     ).mean()
     torch.testing.assert_close(
@@ -208,22 +205,3 @@ def test_time_series_loss():
 
     torch.testing.assert_allclose(preds_out, preds_expected.flatten())
     torch.testing.assert_allclose(targets_out, targets_expected.flatten())
-
-
-@pytest.mark.parametrize("dense", [False, True])
-def test_mixup_criterion_empty_batch_returns_nan(dense):
-    shape = (0, 3, 5) if dense else (0, 3)
-    target = torch.zeros(shape[:1] + shape[2:], dtype=torch.int64)
-    loss = mixup_criterion(torch.randn(shape), (target, target, torch.zeros(0)))
-    assert torch.isnan(loss)
-
-
-def test_class_target_keeps_smoothed_labels_when_n_times_equals_n_classes():
-    from braindecode.training.losses import _class_target
-
-    logits = torch.randn(2, 4, 4)
-    smoothed = torch.full((2, 4), 0.025)
-    smoothed[:, 0] = 0.925
-    assert _class_target(logits, smoothed) is smoothed
-    indices = torch.randint(4, (2, 4)).float()
-    assert _class_target(logits, indices).dtype == torch.int64

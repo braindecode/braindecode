@@ -1642,11 +1642,22 @@ def test_lazy_zarr_positions_survive_pickling(tmp_path, use_mne_epochs):
     assert mask.all()
 
 
+@pytest.mark.parametrize("plain_int_kind", [False, True])
 @pytest.mark.parametrize("last_target_only", [False, True])
-def test_lazy_zarr_channel_targets_keep_memmap(tmp_path, last_target_only):
+def test_lazy_zarr_channel_targets_keep_memmap(
+    tmp_path, last_target_only, plain_int_kind
+):
     pytest.importorskip("zarr")
     info = mne.create_info(["C3", "target"], 10, ["eeg", "misc"])
+    if plain_int_kind:
+        # Channels that are not typed through mne's NamedInt, such as the cHPI
+        # channels of MEGIN recordings, are stored as bare ints.
+        info["chs"][1]["kind"] = int(info["chs"][1]["kind"])
     raw = mne.io.RawArray(np.arange(40).reshape(2, 20), info)
+    montage = mne.channels.make_dig_montage(
+        {"C3": [0.0, 0.05, 0.1]}, coord_frame="head"
+    )
+    raw.set_montage(montage)
     windows = create_fixed_length_windows(
         BaseConcatDataset([RawDataset(raw, {"subject": "01"})]),
         window_size_samples=5,
@@ -1660,6 +1671,10 @@ def test_lazy_zarr_channel_targets_keep_memmap(tmp_path, last_target_only):
     expected_y = [24] if last_target_only else [[20, 21, 22, 23, 24]]
     np.testing.assert_array_equal(y, expected_y)
     assert loaded.datasets[0]._zarr_data is not None
+    # the positions of the signal rows only, from the stored info
+    np.testing.assert_allclose(
+        loaded.set_return_ch_pos()[0][3], [[0.0, 0.05, 0.1]], atol=1e-6
+    )
 
 
 @pytest.mark.parametrize("ds_type", _DS_TYPES)

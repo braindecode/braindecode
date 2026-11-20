@@ -206,16 +206,44 @@ def _channel_info(mne_obj):
     return n_ch, type_str, sfreq
 
 
+def _misc_mask(info):
+    """Boolean mask ``(n_chans,)`` of the ``misc`` channels, which hold the targets.
+
+    Reads the FIFF kind of each channel, ``FIFFV_MISC_CH`` being the only kind of
+    type ``misc``, from an ``mne.Info`` or from the JSON form of Info that lazy Zarr
+    stores hold, so no Info is built. There a kind is a ``{"value": int, ...}``
+    dict, or a bare int when it was not an mne ``NamedInt``.
+    """
+    kinds = [ch["kind"] for ch in info["chs"]]
+    kinds = [kind["value"] if isinstance(kind, dict) else kind for kind in kinds]
+    return np.asarray(kinds) == FIFF.FIFFV_MISC_CH
+
+
+def _split_channel_targets(X, info, last_target_only):
+    """Split a window ``X: (n_chans, n_times)`` into its signal and its targets.
+
+    The targets are the ``misc`` channels of ``info`` (an ``mne.Info`` or the stored
+    one, so a lazy recording is not read): their last sample ``(n_misc,)`` if
+    ``last_target_only``, else all of them ``(n_misc, n_times)``. The signal keeps
+    the other rows ``(n_chans - n_misc, n_times)``.
+
+    Returns
+    -------
+    X, y
+        Signal and targets.
+    """
+    misc_mask = _misc_mask(info)
+    y = X[misc_mask, -1] if last_target_only else X[misc_mask]
+    return X[~misc_mask], y
+
+
 def _check_window_targets(targets_from, info):
     if targets_from not in ("metadata", "channels"):
         raise ValueError("Wrong value for parameter `targets_from`.")
-    if targets_from == "channels":
-        if not isinstance(info, mne.Info):  # lazy Zarr stores hold serialized Info
-            info = mne.Info.from_json_dict(info)
-        if "misc" not in info.get_channel_types():
-            raise ValueError(
-                "targets_from='channels' requires a misc channel in the selected channels."
-            )
+    if targets_from == "channels" and not _misc_mask(info).any():
+        raise ValueError(
+            "targets_from='channels' requires a misc channel in the selected channels."
+        )
     return targets_from
 
 
@@ -226,13 +254,13 @@ def _compute_ch_pos(info, targets_from):
     (meters) -- the same representation braindecode models already consume (see
     e.g. ``signal_jepa``/``REVE``). When ``targets_from != "metadata"`` the
     window's misc channels are dropped from ``X`` in ``__getitem__``, so the
-    matching misc rows are dropped here too. Emits a one-time ``UserWarning`` if
-    no channel carries a real position (no montage set).
+    matching misc rows are dropped here too. ``info`` is an ``mne.Info`` or the
+    stored one of a lazy dataset. Emits a one-time ``UserWarning`` if no channel
+    carries a real position (no montage set).
     """
     pos = np.asarray([ch["loc"][:3] for ch in info["chs"]], dtype="float32")
     if targets_from != "metadata":
-        misc_mask = np.asarray(info.get_channel_types()) == "misc"
-        pos = pos[~misc_mask]
+        pos = pos[~_misc_mask(info)]
     has_pos = np.isfinite(pos).all(axis=1) & np.any(pos != 0, axis=1)
     if pos.size and not has_pos.any():
         warnings.warn(
@@ -551,8 +579,8 @@ def _zarr_to_memmap(zarr_path, group_name):
         finally:
             del mm
 
-        # A reader on read-only media may be unable to acquire the store lock.
-        # Never publish a mixture of chunks under the previous store's ID.
+        # A writer may replace the store while the cache is filled; never publish
+        # a mixture of chunks under the previous store's ID.
         if not os.path.samestat(store_stat, zarr_p.stat()):
             raise OSError(f"Zarr store {zarr_p} changed while populating its cache.")
 
@@ -604,11 +632,7 @@ class _ZarrMixin:
 
     def _make_mne_info(self):
         """Reconstruct ``mne.Info`` from stored dict (no data I/O)."""
-        if not hasattr(self, "_zarr_info"):
-            self._zarr_info = mne.Info.from_json_dict(
-                _restore_nan_from_json(self._info_dict)
-            )
-        return self._zarr_info
+        return mne.Info.from_json_dict(_restore_nan_from_json(self._info_dict))
 
     @classmethod
     def _init_zarr_base(cls, zarr_path, group_name, description, info_dict, transform):
@@ -625,7 +649,6 @@ class _ZarrMixin:
     def __getstate__(self):
         state = self.__dict__.copy()
         state.pop("_zarr_data", None)
-        state.pop("_zarr_info", None)
         return state
 
     def __setstate__(self, state):
@@ -967,7 +990,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         ``targets_from="channels"``). All-zero/NaN when no montage is set.
         """
         if self._ch_pos is None:
-            info = self._raw.info if self._raw is not None else self._make_mne_info()
+            info = self._raw.info if self._raw is not None else self._info_dict
             self._ch_pos = _compute_ch_pos(info, self.targets_from)
         return self._ch_pos
 
@@ -1016,18 +1039,8 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            # The FIFF kind, as get_channel_types() == "misc" but fast per window; from
-            # the loaded or the stored info, so a lazy recording is not read.
-            info = self._raw.info if self._raw is not None else self._make_mne_info()
-            misc_mask = np.array(
-                [ch["kind"] == FIFF.FIFFV_MISC_CH for ch in info["chs"]]
-            )
-            if self.last_target_only:
-                y = X[misc_mask, -1]
-            else:
-                y = X[misc_mask, :]
-            y = y.copy()
-            X = X[~misc_mask, :]
+            info = self._raw.info if self._raw is not None else self._info_dict
+            X, y = _split_channel_targets(X, info, self.last_target_only)
         if self.return_ch_pos:
             return X, y, crop_inds, self.ch_pos
         return X, y, crop_inds
@@ -1262,11 +1275,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         ``targets_from="channels"``). All-zero/NaN when no montage is set.
         """
         if self._ch_pos is None:
-            info = (
-                self._windows.info
-                if self._windows is not None
-                else self._make_mne_info()
-            )
+            info = self._windows.info if self._windows is not None else self._info_dict
             self._ch_pos = _compute_ch_pos(info, self.targets_from)
         return self._ch_pos
 
@@ -1312,17 +1321,8 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            info = (
-                self._windows.info
-                if self._windows is not None
-                else self._make_mne_info()
-            )
-            misc_mask = np.asarray(info.get_channel_types()) == "misc"
-            if self.last_target_only:
-                y = X[misc_mask, -1]
-            else:
-                y = X[misc_mask, :]
-            X = X[~misc_mask, :]
+            info = self._windows.info if self._windows is not None else self._info_dict
+            X, y = _split_channel_targets(X, info, self.last_target_only)
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
         crop_inds = self.crop_inds[index].tolist()

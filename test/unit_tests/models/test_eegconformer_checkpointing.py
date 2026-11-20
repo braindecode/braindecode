@@ -142,7 +142,8 @@ def test_outer_hooks_and_buffers_unchanged():
     model.patch_embedding.register_forward_hook(lambda *args: calls.append("stem"))
     model(torch.randn(2, 4, 256)).sum().backward()
     assert calls == ["stem", "model"]
-    assert model.patch_embedding.shallownet[2].num_batches_tracked == 2
+    # One training forward: construction runs no batch through BatchNorm
+    assert model.patch_embedding.shallownet[2].num_batches_tracked == 1
 
 
 @pytest.mark.parametrize("no_grad", [False, True])
@@ -353,7 +354,7 @@ def test_checkpoint_compile_rejected(backend, fullgraph, training, entry):
                 compiled = torch.compile(model, backend=backend, fullgraph=fullgraph)
             compiled(x)
         # Rejection must occur before the stem changes BatchNorm/RNG state.
-        assert model.patch_embedding.shallownet[2].num_batches_tracked == 1
+        assert model.patch_embedding.shallownet[2].num_batches_tracked == 0
         _equal(rng, torch.get_rng_state())
         assert model._compiled_call_impl is None
         model(x).sum().backward()

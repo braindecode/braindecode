@@ -488,7 +488,17 @@ class _MultiHeadedAttention(nn.Module):
 
 
 class _ResidualLayerNormAttn(nn.Module):
-    r"""A residual connection followed by a layer norm."""
+    r"""Attention sublayer of the encoder, with a residual connection.
+
+    Steps, for ``x``, ``key`` and ``value`` of shape
+    ``(batch, after_reduced_cnn_size, d_model)``:
+
+    1. The query is ``x``, layer-normalized if ``norm_query``.
+    2. The multi-head attention reads the query, ``key`` and ``value``.
+    3. Dropout, then the residual ``x`` is added.
+
+    The output has the shape of ``x``.
+    """
 
     def __init__(self, size, dropout, fn_attn, norm_query):
         super().__init__()
@@ -513,9 +523,10 @@ class _ResidualLayerNormAttn(nn.Module):
         # The reference attends with the raw query. ``norm_query`` keeps the
         # braindecode 1.0 to 2.0 behaviour.
         query = self.norm(x) if self.norm_query else x
+        # Attention output: (batch, after_reduced_cnn_size, d_model)
         out = self.fn_attn(query, key, value)
 
-        return x + self.dropout(out)
+        return x + self.dropout(out)  # (batch, after_reduced_cnn_size, d_model)
 
 
 class _ResidualLayerNormFF(nn.Module):
