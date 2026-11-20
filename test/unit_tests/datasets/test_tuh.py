@@ -328,6 +328,55 @@ def test_tuh_shared_montage_matches_a_fresh_one():
         assert ds.raw.info["dig"] == ref.info["dig"]
 
 
+@pytest.mark.parametrize(
+    "rows, channel_events, merge_events, expected",
+    [
+        pytest.param(
+            "1,6,7,1\n0,1,2,3\n",
+            True,
+            False,
+            [(1, 1, "pled", ("EEG A1-REF",)), (6, 1, "spsw", ("EEG A2-REF",))],
+            id="unsorted-channel-events",
+        ),
+        pytest.param(
+            "0,1,9,3\n1,2,3,3\n1,4,5,1\n0,8,10,3\n1,10,11,3\n0,15,16,3\n",
+            False,
+            True,
+            [(1, 10, "pled", ()), (4, 1, "spsw", ()), (15, 1, "pled", ())],
+            id="nested-touching-and-separate-events",
+        ),
+        pytest.param(
+            "1,6,7,1\n0,1,2,3\n21,1,2,3\n0,2,3,3\n",
+            False,
+            False,
+            [(1, 1, "pled", ()), (2, 1, "pled", ()), (6, 1, "spsw", ())],
+            id="unmerged-global-events",
+        ),
+        pytest.param("", False, True, [], id="empty-sidecar"),
+    ],
+)
+def test_tuh_events_annotations(
+    tmp_path, monkeypatch, rows, channel_events, merge_events, expected
+):
+    edf = tmp_path / "v2.0.1" / "edf" / "eval" / "000" / "pled_000_a_0.edf"
+    edf.parent.mkdir(parents=True)
+    edf.write_bytes(b"0       synthetic F 01-JAN-0000 sample Age:36".ljust(88))
+    edf.with_suffix(".rec").write_text(rows, encoding="ascii")
+    monkeypatch.setattr("mne.io.read_raw_edf", _fake_raw)
+    with pytest.warns(UserWarning, match="Expected 518 files but found 1"):
+        dataset = TUHEvents(
+            path=str(tmp_path),
+            channel_events=channel_events,
+            merge_events=merge_events,
+            on_missing_files="warn",
+        )
+    annot = dataset.datasets[0].raw.annotations
+    assert (
+        list(zip(annot.onset, annot.duration, annot.description, annot.ch_names))
+        == expected
+    )
+
+
 @pytest.mark.parametrize("date", [{"year": 2013, "month": 8, "day": 15}, {}])
 def test_read_date_side_file_roundtrip(tmp_path, date):
     """_read_date returns what _read_date wrote (the `_date.txt` beside each EDF)."""
