@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.error import URLError
 
 import mne
-import pooch
+import numpy as np
 import pytest
 import torch
 import torch.nn as nn
@@ -43,15 +43,22 @@ from braindecode.models import (
     DuIN,
     Labram,
     PopulationTransformer,
+    Pratibha2,
     SleepFM,
     SleepFMStager,
     STEEGFormer,
-    steegformer,
 )
 from braindecode.models.diver1 import _STCPE, channel_metadata_from_chs_info
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
-from braindecode.models.reve import Attention, FourierEmb4D, RevePositionBank
+from braindecode.models.reve import (
+    Attention,
+    FourierEmb4D,
+    RevePositionBank,
+    _reve_position_bank,
+)
+from braindecode.models.steegformer import STEEGFORMER_CHANNEL_ORDER
+from braindecode.modules import resolve_channel_positions
 from braindecode.util import resolve_montage_name
 
 _ORIGINAL_TORCH_CAT = torch.cat
@@ -334,6 +341,19 @@ def test_labram_neural_decoder_initialization(model_decoder):
     assert model_decoder.n_chans == 128
     assert model_decoder.n_times == 1000
     assert model_decoder.n_outputs == 4
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({}, "n_chans could not be inferred"),
+        ({"n_chans": 4, "conv_in_channels": 3}, "divisible by in_channels"),
+    ],
+)
+def test_labram_neural_decoder_rejects_bad_channels_at_construction(kwargs, match):
+    """The decoder averages n_chans / conv_in_channels channels into each token."""
+    with pytest.raises(ValueError, match=match):
+        Labram(n_times=800, n_outputs=2, neural_tokenizer=False, **kwargs)
 
 
 @pytest.mark.network
@@ -914,7 +934,7 @@ _ZUNA_SMALL = dict(n_outputs=2, sfreq=250.0, dim=64, n_layers=1, n_heads=2, head
 
 def _zuna_chs_info():
     info = mne.create_info(["Fz", "Cz", "Pz", "C3", "C4", "O1"], 250.0, "eeg")
-    info.set_montage("standard_1020")
+    info.set_montage("colin27_1020")
     return info["chs"]
 
 
@@ -979,7 +999,7 @@ def test_zuna_names_without_locations_take_their_montage_position():
     with pytest.warns(UserWarning, match="standard 10-05 position"):
         filled = ZUNA(chs_info=names_only, **kw)
     info = mne.create_info([ch["ch_name"] for ch in chs], 250.0, "eeg")
-    info.set_montage("standard_1005")
+    info.set_montage("colin27_1005")
     reference = ZUNA(chs_info=info["chs"], **kw)
     torch.testing.assert_close(
         filled.encoder.rotary_cosine, reference.encoder.rotary_cosine
@@ -1220,6 +1240,46 @@ def test_luna_mapping_includes_temperature_typo():
     assert "cross_attn.temparature" in model.mapping
 
 
+@pytest.mark.parametrize(
+    "patch_size, embed_dim, message",
+    [
+        (0, 16, "patch_size must be a positive multiple of 4"),
+        (34, 16, "patch_size must be a positive multiple of 4"),
+        (40, 0, "embed_dim must be a positive multiple of 16"),
+        (40, 18, "embed_dim must be a positive multiple of 16"),
+    ],
+)
+def test_luna_rejects_incompatible_patch_geometry(patch_size, embed_dim, message):
+    with pytest.raises(ValueError, match=message):
+        LUNA(
+            n_chans=3,
+            n_times=max(2 * patch_size, 8),
+            n_outputs=2,
+            patch_size=patch_size,
+            embed_dim=embed_dim,
+            num_queries=2,
+            depth=1,
+        )
+
+
+@pytest.mark.parametrize("patch_size, embed_dim", [(4, 16), (36, 32)])
+def test_luna_custom_patch_geometry(patch_size, embed_dim):
+    model = LUNA(
+        n_chans=3,
+        n_times=2 * patch_size,
+        n_outputs=2,
+        patch_size=patch_size,
+        embed_dim=embed_dim,
+        num_queries=2,
+        depth=1,
+    )
+    x = torch.randn(2, 3, 2 * patch_size, requires_grad=True)
+    predictions = model(x)
+    assert predictions.shape == (2, 2)
+    predictions.square().mean().backward()
+    assert torch.isfinite(x.grad).all()
+
+
 def test_luna_variants_parameter_count_hierarchy(
     luna_base_model, luna_large_model, luna_huge_model
 ):
@@ -1297,6 +1357,75 @@ def test_luna_phase_ignores_fft_noise_on_real_bins(patch_size, monkeypatch):
         torch.testing.assert_close(embedder(x), expected, rtol=0, atol=0)
 
 
+@pytest.mark.skipif(not torch.backends.mps.is_available(), reason="requires Apple MPS")
+@pytest.mark.parametrize("patch_size, dtype", [(12, torch.float32), (11, torch.float16)])
+def test_luna_mps_phase_and_input_gradient(patch_size, dtype):
+    generator = torch.Generator().manual_seed(12)
+    signal = torch.randn(1, 2, patch_size, generator=generator).to(dtype)
+    signal[:, 0] = 0  # A silent channel must also have a finite gradient.
+    cpu_x = signal.requires_grad_()
+    mps_x = signal.detach().to("mps").requires_grad_()
+
+    spectrum = torch.fft.rfft(cpu_x.float())
+    expected = torch.angle(spectrum).to(dtype)
+    embedder = luna_module._FrequencyFeatureEmbedder(patch_size, 1)
+    embedder.frequency_to_embed = torch.nn.Identity()
+    features = embedder.to("mps")(mps_x)
+    phase = features[..., expected.shape[-1] :]
+
+    torch.testing.assert_close(phase.cpu(), expected)
+    (expected_grad,) = torch.autograd.grad(expected.sum(), cpu_x)
+    (actual_grad,) = torch.autograd.grad(phase.sum(), mps_x)
+    torch.testing.assert_close(actual_grad.cpu(), expected_grad)
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "mps",
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason="requires Apple MPS"
+            ),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "n_times", [81, 120], ids=["padded_by_luna", "padded_before_luna"]
+)
+def test_luna_impulse_patch_has_real_spectrum(device, n_times):
+    # The last 40-sample patch holds one sample, an impulse at t=0 of the patch:
+    # LUNA's own pad policy (81 samples) and padding added before it (120) agree.
+    model = LUNA(
+        n_chans=3,
+        n_times=n_times,
+        n_outputs=2,
+        patch_size=40,
+        embed_dim=16,
+        num_queries=2,
+        depth=1,
+        num_heads=2,
+    ).to(device).eval()
+    signal = torch.randn(1, 3, n_times, device=device)
+    signal[0, :, 80:] = 0
+    signal[0, :, 80] = torch.tensor([-2.0, 2.0, 0.0], device=device)
+    signal.requires_grad_()
+    captured = []
+    model.freq_embed.frequency_to_embed.register_forward_pre_hook(
+        lambda module, args: captured.append(args[0])
+    )
+    model(signal, channel_locations=torch.ones(1, 3, 3, device=device))
+
+    magnitude, phase = captured[0][0, :, -1].chunk(2, dim=-1)
+    expected = torch.tensor([torch.pi, 0, 0], device=device)[:, None]
+    torch.testing.assert_close(phase, expected.expand_as(phase))
+    torch.testing.assert_close(magnitude, signal[0, :, 80:81].abs().expand_as(magnitude))
+    if n_times == 81:  # padded by LUNA: its zeros are no inputs, so the phase is constant
+        (gradient,) = torch.autograd.grad(phase.sum(), signal)
+        torch.testing.assert_close(gradient, torch.zeros_like(signal))
+
+
 def test_luna_variants_different_channel_counts(luna_base_config):
     """Test LUNA handles different channel counts (the variants differ only in
     width and depth; test_luna_variants_output_consistency forwards each)."""
@@ -1309,6 +1438,67 @@ def test_luna_variants_different_channel_counts(luna_base_config):
         with torch.no_grad():
             output = model(x)
         assert output.shape == (2, 2)
+
+
+def test_luna_default_locations_without_n_chans():
+    """The channel count may first be known at forward, and the default
+    locations add no key to the state dict, so checkpoints still load."""
+    model = LUNA(n_outputs=2, n_times=80, patch_size=20).eval()
+    assert not any("channel_locations" in key for key in model.state_dict())
+    with torch.no_grad():
+        assert model(torch.randn(2, 5, 80)).shape == (2, 2)
+
+
+def test_luna_matches_explicit_locations_when_channel_count_changes():
+    positions = torch.tensor([[0.1, 0.2, 0.3], [-0.1, 0.3, 0.4], [0.0, -0.2, 0.2]])
+    chs = [{"ch_name": str(i), "loc": row.numpy()} for i, row in enumerate(positions)]
+    model = LUNA(chs_info=chs, n_outputs=2, n_times=80, patch_size=20, depth=1).eval()
+    fallback = torch.zeros(4, 3)
+    fallback[:, 0] = torch.linspace(-1, 1, 4)
+    for expected in (positions[:2], fallback):
+        x = torch.randn(2, len(expected), 80)
+        explicit = expected.expand(len(x), -1, -1)
+        with torch.no_grad():
+            torch.testing.assert_close(model(x), model(x, channel_locations=explicit))
+
+
+@pytest.mark.parametrize("assign", [False, True], ids=["to_empty", "assign"])
+@pytest.mark.parametrize("measured", [False, True], ids=["fallback", "measured"])
+def test_luna_materializes_default_positions_from_checkpoint(assign, measured):
+    chs = None
+    if measured:
+        chs = [{"ch_name": str(i), "loc": [i + 0.1, 0.3, -0.2]} for i in range(3)]
+    kwargs = dict(
+        n_chans=3, chs_info=chs, n_outputs=2, n_times=80, patch_size=20, depth=1
+    )
+    reference = LUNA(**kwargs).eval()
+    with torch.device("meta"):
+        restored = LUNA(**kwargs).eval()
+    if not assign:
+        restored.to_empty(device="cpu")
+        # Make reads from uninitialized floating buffers deterministic.
+        for buffer in restored.buffers():
+            if buffer.is_floating_point():
+                buffer.fill_(float("nan"))
+    restored.load_state_dict(reference.state_dict(), strict=True, assign=assign)
+    x = torch.randn(2, 3, 80)
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x), reference(x))
+
+
+def test_luna_loads_full_model_with_legacy_location_cache(tmp_path):
+    model = LUNA(n_chans=3, n_outputs=2, n_times=80, patch_size=20, depth=1).eval()
+    x = torch.randn(2, 3, 80)
+    with torch.no_grad():
+        expected = model(x)
+    model._channel_location_cache = {3: model._default_channel_locations}
+    del model._default_channel_locations
+    model._load_state_dict_post_hooks.clear()
+    checkpoint = tmp_path / "luna.pt"
+    torch.save(model, checkpoint)
+    restored = torch.load(checkpoint, weights_only=False)  # nosec B614 - own file
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x), expected)
 
 
 def test_luna_variants_output_consistency(
@@ -1424,32 +1614,20 @@ def _get_reve_cache_dir():
 @pytest.mark.network
 @pytest.mark.huggingface
 def test_reve_positions_match():
-    """Test that the positions from both implementations match."""
-    pytest.skip(
-        "TODO: Fix me. The test is broken on the CI but works locally (even after erasing the cache dir)."
+    """The bank has the released names, in the release's order, at its positions."""
+    with open(
+        hf_hub_download(
+            REVE_POSITIONS_ID,
+            "positions.json",
+            revision="befa5b57a455b77cf302daf610c2e9ed8140bace",
+        )
+    ) as f:
+        released = json.load(f)
+    bank = RevePositionBank()
+    assert bank.get_all_positions() == list(released)
+    np.testing.assert_allclose(
+        bank.embedding.numpy(), np.array(list(released.values())), rtol=0, atol=2e-8
     )
-    try:
-        from transformers import AutoModel
-    except ImportError:
-        pytest.skip("transformers not installed")
-
-    cache_dir = _get_reve_cache_dir()
-    pos_bank_hf = AutoModel.from_pretrained(
-        REVE_POSITIONS_ID,
-        cache_dir=cache_dir,
-        trust_remote_code=True,
-    )
-    pos_bank_bd = RevePositionBank()
-
-    all_pos_hf = pos_bank_hf.get_all_positions()
-    all_pos_bd = pos_bank_bd.get_all_positions()
-
-    assert all_pos_hf == all_pos_bd, "Position names mismatch"
-
-    for pos in all_pos_bd:
-        pos_hf = pos_bank_hf([pos])
-        pos_bd = pos_bank_bd([pos])
-        assert torch.allclose(pos_hf, pos_bd)
 
 
 @pytest.mark.skipif(HF_TOKEN_REVE_MISSING, reason="HF token for REVE is missing")
@@ -1517,46 +1695,54 @@ def test_reve_model_outputs_match():
 # ==============================================================================
 
 
-def test_reve_position_bank_uses_prefetched_file(tmp_path, monkeypatch):
-    """A prefetched positions file is used offline, without any download."""
-    config = {"Cz": [0.0, 0.0, 1.0], "Pz": [0.0, -0.5, 0.5]}
-    (tmp_path / "reve_positions.json").write_text(json.dumps(config))
-    monkeypatch.setattr(
-        pooch, "retrieve", lambda *a, **k: pytest.fail("unexpected download")
-    )
-
-    bank = RevePositionBank(cache_dir=str(tmp_path))
-
-    assert bank.get_all_positions() == list(config.keys())
-    assert bank.forward(["Cz", "Pz"]).shape == (2, 3)
-
-
-def test_reve_position_bank_download_failure_raises(tmp_path, monkeypatch):
-    """On a cache miss, a download failure points the user at offline prefetch."""
-
-    def _fail(*args, **kwargs):
-        raise OSError("no network")
-
-    monkeypatch.setattr(pooch, "retrieve", _fail)
-
-    with pytest.raises(RuntimeError, match="prefetch it to"):
-        RevePositionBank(cache_dir=str(tmp_path))
+def test_reve_position_bank_has_the_released_names_and_positions():
+    """543 names in the release's order, with coordinates copied from the release."""
+    bank = _reve_position_bank()
+    names = list(bank)
+    assert len(names) == 543
+    assert names[:6] == ["A1", "A2", "C3", "C4", "CZ", "F3"]
+    assert names[-4:] == [f"biosemi128_D{i}" for i in (29, 30, 31, 32)]
+    released = {  # metres, from brain-bzh/reve-positions
+        "Cz": [0.0004008999967481941, -0.009166999720036983, 0.10024400055408478],
+        "E129": [0.0004008999967481941, -0.009166999720036983, 0.10024400055408478],
+        "biosemi128_A1": [0.0, 0.0, 0.0949999988079071],
+        "CZ": [0.0004008999967481941, -0.009166999720036983, 0.10024400055408478],
+    }
+    for name, xyz in released.items():
+        np.testing.assert_allclose(bank[name], xyz, rtol=0, atol=1e-7)
 
 
-def test_reve_position_bank_corrupt_cache_redownloads(tmp_path, monkeypatch):
-    """A corrupt/partial cached file triggers a re-download instead of crashing."""
-    cache_file = tmp_path / "reve_positions.json"
-    cache_file.write_text("{ this is not valid json")
-    config = {"Cz": [0.0, 0.0, 1.0]}
+def test_reve_position_bank_lookup_is_exact_then_ignores_case():
+    bank = RevePositionBank()
+    assert bank.mapping[bank.position_names[0]] == 0  # exact names, as in 2.0.0
+    pos = bank(["Cz", "CZ", "cz", "AFz", "afz"])
+    torch.testing.assert_close(pos[0], pos[2])
+    torch.testing.assert_close(pos[3], pos[4])
+    with pytest.raises(ValueError, match="X1"):
+        bank(["X1"])
+    with pytest.warns(FutureWarning, match="no longer downloads"):
+        RevePositionBank(url="https://example.invalid/positions.json", timeout=1)
 
-    def _fake_retrieve(url, known_hash, fname, path, **kwargs):
-        (tmp_path / fname).write_text(json.dumps(config))
 
-    monkeypatch.setattr(pooch, "retrieve", _fake_retrieve)
+@pytest.mark.network
+@pytest.mark.huggingface
+@pytest.mark.parametrize(
+    "repo, revision, extra",
+    [
+        ("brain-bzh/reve-positions", "befa5b57a455b77cf302daf610c2e9ed8140bace", {}),
+        ("MannasAI/pratibha-2", "863edc940d82a02744776a7820641bf1bc32310b", None),
+    ],
+    ids=["REVE", "Pratibha2"],
+)
+def test_reve_position_bank_matches_the_release(repo, revision, extra):
+    from braindecode.models.pratibha2 import _EXTRA_POSITIONS
 
-    bank = RevePositionBank(cache_dir=str(tmp_path))
-
-    assert bank.get_all_positions() == list(config.keys())
+    with open(hf_hub_download(repo, "positions.json", revision=revision)) as f:
+        released = json.load(f)
+    bank = {**_reve_position_bank(), **(_EXTRA_POSITIONS if extra is None else extra)}
+    pos, kept = resolve_channel_positions([{"ch_name": n} for n in released], bank)
+    assert len(kept) == len(released)
+    np.testing.assert_allclose(pos, np.array(list(released.values())), atol=1e-7)
 
 
 def test_reve_fourier_emb_4d_computes_in_float32():
@@ -1770,8 +1956,36 @@ def test_sleepfm_masked_input_is_ignored(cls, masked, training):
     torch.testing.assert_close(runs[0], runs[1])
 
 
+def _cpu_bf16_lstm_runs():
+    """Whether a one-step ``nn.LSTM`` trains under CPU bfloat16 autocast here.
 
-@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
+    Some CPUs have no oneDNN bfloat16 LSTM training kernel (gh-1664).
+    """
+    lstm = nn.LSTM(2, 2)
+    try:
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            out, _ = lstm(torch.zeros(1, 1, 2))  # (time, batch, features)
+        out.float().sum().backward()
+    except RuntimeError:
+        return False
+    return True
+
+
+_CPU_BF16_LSTM = _cpu_bf16_lstm_runs()
+
+
+@pytest.mark.parametrize(
+    "cls",
+    [
+        SleepFM,
+        pytest.param(
+            SleepFMStager,
+            marks=pytest.mark.skipif(
+                not _CPU_BF16_LSTM, reason="no CPU bfloat16 LSTM training kernel"
+            ),
+        ),
+    ],
+)
 def test_sleepfm_masked_training_with_autocast(cls):
     model = _small(cls).train()
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
@@ -1791,17 +2005,6 @@ def test_sleepfm_masked_training_with_autocast(cls):
     assert not torch.equal(before, model.final_layer.weight)
 
 
-@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
-def test_sleepfm_rejects_ambiguous_positional_forward_masks(cls):
-    kwargs = {"channel_modalities": ["A"]} if cls is SleepFMStager else {}
-    model = _small(cls, n_chans=1, **kwargs).eval()
-    x = torch.randn(1, 1, 1280)
-    old_mask = torch.ones(1, 1, dtype=torch.bool)
-    for net in (model, torch.jit.script(model)):
-        with pytest.raises((TypeError, RuntimeError, torch.jit.Error), match="ch_mask"):
-            net(x, old_mask)
-
-
 def test_sleepfm_encode_preserves_legacy_positional_mask_polarity():
     model = _small(SleepFM).eval()
     x = torch.randn(2, 3, 1280)
@@ -1814,20 +2017,27 @@ def test_sleepfm_encode_preserves_legacy_positional_mask_polarity():
         torch.testing.assert_close(tokens, expected[1])
 
 
-def test_sleepfm_stager_applies_attention_to_one_of_four_modality_slots():
-    model = _small(SleepFMStager, channel_modalities=None).eval()
-    pooling = model.staging_head.spatial_pooling
-    captured = []
+@pytest.mark.parametrize(
+    "cls,n_real", [(SleepFM, 1), (SleepFMStager, 2)], ids=["SleepFM", "SleepFMStager"]
+)
+def test_sleepfm_padded_sample_gives_its_unpadded_output(cls, n_real):
+    """A sample padded with masked channels gives the output it gives without them.
 
-    def capture_pool(module, args, result):
-        tokens, missing = args[:2]
-        encoded = module.transformer_layer(tokens, src_key_padding_mask=missing)
-        captured.append((result, encoded[:, 0]))
+    The stager keeps the release's attention over a padded set, so it is
+    checked with two real channels, where the release and SleepFM agree.
+    """
 
-    with pooling.register_forward_hook(capture_pool), torch.no_grad():
-        model(torch.randn(2, 3, 1280))
-    actual, expected = captured[0]
-    torch.testing.assert_close(actual, expected)
+    def build(n_chans):
+        kwargs = {"channel_modalities": ["A"] * n_chans} if cls is SleepFMStager else {}
+        return _small(cls, n_chans=n_chans, **kwargs).eval()
+
+    unpadded, padded = build(n_real), build(3)
+    padded.load_state_dict(unpadded.state_dict())
+    x = torch.randn(2, n_real, 1280)
+    x_padded = torch.cat([x, torch.full((2, 3 - n_real, 1280), float("nan"))], dim=1)
+    ch_mask = (torch.arange(3) < n_real).expand(2, 3)
+    with torch.no_grad():
+        torch.testing.assert_close(padded(x_padded, ch_mask=ch_mask), unpadded(x))
 
 
 @pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
@@ -1842,15 +2052,6 @@ def test_sleepfm_channel_mask_is_the_deprecated_inverse_of_ch_mask(cls):
         with pytest.raises(ValueError, match="ch_mask only"):
             model(x, ch_mask=~missing, channel_mask=missing)
 
-
-def test_sleepfm_stager_keeps_the_release_pooling():
-    """Only SleepFM's channel pooling is padding-invariant; the stager's modality
-    slots and SleepFM's temporal pooling keep the release's attention."""
-    encoder, stager = _small(SleepFM), _small(SleepFMStager)
-    assert encoder.spatial_pooling.pad_invariant
-    assert not encoder.temporal_pooling.pad_invariant
-    assert not stager.spatial_pooling.pad_invariant
-    assert not stager.staging_head.spatial_pooling.pad_invariant
 
 @pytest.mark.parametrize("n_valid", [16, 12], ids=["chunk_aligned", "inside_chunk"])
 def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
@@ -1917,6 +2118,20 @@ def test_sleepfm_stager_completes_a_head_only_checkpoint(tmp_path):
     expected = encoder.state_dict() | head_only
     for key, value in loaded.state_dict().items():
         torch.testing.assert_close(value, expected[key], msg=key)
+
+
+def test_sleepfm_stager_loads_a_v2_state_dict():
+    """A state dict saved by braindecode 2.0.0 loads with strict=True.
+
+    The file lists the keys and shapes of the reduced stager that 2.0.0 saved
+    (``_small(SleepFMStager)``); strict loading checks nothing else.
+    """
+    layout = Path(__file__).parent / "data" / "sleepfm_stager_v2.0.0.txt"
+    state = {}
+    for line in layout.read_text().splitlines():
+        key, shape = line.split(" ", 1)
+        state[key] = torch.zeros(json.loads(shape))
+    _small(SleepFMStager).load_state_dict(state)
 
 
 @pytest.mark.network
@@ -2052,6 +2267,194 @@ def test_axon_too_short_window_raises():
 def test_axon_warns_on_non_200_hz():
     with pytest.warns(UserWarning, match="200 Hz"):
         AXON(chs_info=_axon_chs(), n_outputs=2, sfreq=250.0, **_AXON_SMALL)
+
+
+# ==============================================================================
+# Tests for Pratibha2 Model
+# ==============================================================================
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_pratibha2_pretrained_matches_the_release():
+    """The re-hosted encoder gives the features of MannasAI/pratibha-2 (863edc9)."""
+    chs_info = [{"ch_name": n} for n in ("Fp1", "Cz", "O2", "AFZ")]
+    model = Pratibha2.from_pretrained(
+        "braindecode/pratibha2-pretrained",
+        revision="dea9139fb70046c8e3d04e1e7c8acb7e81822afe",
+        chs_info=chs_info,
+        n_outputs=2,
+        n_times=400,
+    ).eval()
+    x = torch.arange(4 * 400.0).reshape(1, 4, 400).mul(0.05).sin()
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+    expected = torch.tensor([-0.257265, 0.106954, 0.051851, -0.371086, 0.046977])
+    torch.testing.assert_close(features[0, :5], expected, rtol=0, atol=1e-5)
+
+
+_PRATIBHA2_SMALL = dict(embed_dim=32, n_freqs=2, depth=2, num_heads=4)
+_PRATIBHA2_NAMES = ["Fp1", "Fp2", "F3", "F4", "C3", "Cz", "C4", "P3", "P4", "O1", "O2"]
+
+
+def _pratibha2_model(names=_PRATIBHA2_NAMES, **kw):
+    torch.manual_seed(0)
+    chs = [{"ch_name": n, "kind": "eeg"} for n in names]
+    return Pratibha2(
+        chs_info=chs, n_outputs=3, sfreq=200.0, **{**_PRATIBHA2_SMALL, **kw}
+    ).eval()
+
+
+def test_pratibha2_positions():
+    """Its own AFZ and IZ for those spellings and for a name equal to them only
+    ignoring case (the last matching entry); other names from REVE's bank."""
+    from braindecode.models.pratibha2 import _EXTRA_POSITIONS
+
+    bank = _reve_position_bank()
+    names = ["AFZ", "AFz", "afz", "EEG afz-REF", "IZ", "iz", "EEG T3-REF", "C3-C4"]
+    model = _pratibha2_model(names)
+    expected = [
+        _EXTRA_POSITIONS["AFZ"],
+        bank["AFz"],
+        _EXTRA_POSITIONS["AFZ"],
+        _EXTRA_POSITIONS["AFZ"],
+        _EXTRA_POSITIONS["IZ"],
+        _EXTRA_POSITIONS["IZ"],
+        bank["T7"],
+        (bank["C3"] + bank["C4"]) / 2,
+    ]
+    expected = 100 * torch.tensor(np.array(expected), dtype=torch.float32)
+    torch.testing.assert_close(model.encoder.channel_positions, expected)
+
+
+def test_pratibha2_is_montage_agnostic():
+    """Positions are not weights: the weights run on any order and any unit."""
+    model = _pratibha2_model()
+    perm = torch.randperm(len(_PRATIBHA2_NAMES))
+    permuted = _pratibha2_model([_PRATIBHA2_NAMES[i] for i in perm])
+    permuted.load_state_dict(model.state_dict(), strict=True)
+    x = 20.0 * torch.randn(2, len(_PRATIBHA2_NAMES), 600) + 5.0
+    with torch.no_grad():
+        torch.testing.assert_close(permuted(x[:, perm]), model(x), atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(model(x * 1e-6), model(x), atol=1e-4, rtol=1e-4)
+
+
+def test_pratibha2_drops_unplaced_channels():
+    with pytest.raises(ValueError, match="BAD"):
+        _pratibha2_model(["Fp1", "BAD", "Cz"])
+    with pytest.raises(ValueError, match="patch_size"):
+        _pratibha2_model(n_times=100)
+    with pytest.warns(UserWarning, match="BAD"):
+        model = _pratibha2_model(["Fp1", "BAD", "Cz"], on_missing="drop")
+    x = torch.randn(2, 3, 600)
+    with torch.no_grad():
+        assert model.encode(x).shape[1] == 2
+        torch.testing.assert_close(
+            model.encode(x), _pratibha2_model(["Fp1", "Cz"]).encode(x[:, [0, 2]])
+        )
+        with pytest.raises(ValueError, match="3 channels"):
+            model.encode(torch.cat([x, x[:, :1]], dim=1))
+
+
+def test_pratibha2_warns_on_non_200_hz():
+    chs = [{"ch_name": n, "kind": "eeg"} for n in _PRATIBHA2_NAMES]
+    with pytest.warns(UserWarning, match="200 Hz"):
+        Pratibha2(chs_info=chs, n_outputs=2, sfreq=250.0, **_PRATIBHA2_SMALL)
+
+
+def test_pratibha2_short_window_from_seconds_raises():
+    chs = [{"ch_name": "Cz", "kind": "eeg"}]
+    with pytest.raises(ValueError, match="patch_size"):
+        Pratibha2(
+            chs_info=chs,
+            n_outputs=2,
+            input_window_seconds=0.5,
+            sfreq=200.0,
+            **_PRATIBHA2_SMALL,
+        )
+
+
+def test_pratibha2_autocast_preserves_fourier_features():
+    model = _pratibha2_model(["Cz"])
+    pos_enc = model.encoder.pos_enc
+    xyz = model.encoder.channel_positions.expand(3, -1)
+    coords = torch.cat((xyz, torch.tensor([[0.0], [4.0], [80.0]])), dim=1)
+    features = []
+    handle = pos_enc.fourier_linear.register_forward_pre_hook(
+        lambda _module, args: features.append(args[0].detach().clone())
+    )
+    try:
+        with torch.no_grad():
+            pos_enc(coords)
+            with torch.autocast("cpu", dtype=torch.bfloat16):
+                pos_enc(coords)
+    finally:
+        handle.remove()
+    torch.testing.assert_close(features[1], features[0], rtol=0, atol=0)
+
+
+def test_pratibha2_invalid_head_keeps_classifier():
+    model = _pratibha2_model(["Cz"])
+    head = model.final_layer
+    with pytest.raises(ValueError, match="n_outputs must be positive"):
+        model.reset_head(-1)
+    assert model.final_layer is head
+    assert model.n_outputs == model.get_config()["n_outputs"] == 3
+
+
+def test_pratibha2_single_sample_zscore():
+    model = _pratibha2_model(["Cz"], n_times=1, patch_size=1, patch_stride=1)
+    x = torch.ones(2, 1, 1, requires_grad=True)
+    logits = model(x)
+    assert logits.isfinite().all()
+    logits.sum().backward()
+    assert x.grad.isfinite().all()
+
+
+def test_pratibha2_fits_and_restores_on_another_montage(tmp_path):
+    pytest.importorskip("huggingface_hub")
+    pytest.importorskip("safetensors")
+    from braindecode import EEGClassifier
+
+    chs = [{"ch_name": n, "kind": "eeg"} for n in ["C3", "Cz", "C4"]]
+    x = torch.randn(4, 3, 380)
+    y = torch.tensor([0, 1, 2, 1])
+    net = EEGClassifier(
+        "Pratibha2",
+        module__chs_info=chs,
+        module__sfreq=200.0,
+        module__embed_dim=16,
+        module__n_freqs=2,
+        module__depth=1,
+        module__num_heads=2,
+        max_epochs=1,
+        batch_size=2,
+        train_split=None,
+        verbose=0,
+    ).fit(x, y)
+    trained = net.module_.eval()
+    assert torch.isfinite(torch.tensor(net.history[-1, "train_loss"]))
+    with torch.no_grad():
+        expected = trained(x)
+        torch.testing.assert_close(
+            torch.from_numpy(net.predict_proba(x)), expected.softmax(1)
+        )
+    trained.save_pretrained(tmp_path)
+    restored = Pratibha2.from_pretrained(
+        tmp_path, chs_info=chs[::-1], strict=True, local_files_only=True
+    ).eval()
+    with torch.no_grad():
+        torch.testing.assert_close(restored(x.flip(1)), expected, atol=1e-5, rtol=1e-5)
+
+
+def test_pratibha2_positions_are_not_in_the_state_dict():
+    """Channel positions are not stored in the weights."""
+    source = _pratibha2_model()
+    target = _pratibha2_model(["C3", "Cz", "C4", "FC3", "CP4"])
+    target.load_state_dict(source.state_dict(), strict=True)
+    state = source.state_dict()
+    assert "encoder.channel_positions" not in state
+    assert "encoder.pos_enc.freq_matrix" not in state
 
 
 @pytest.fixture
@@ -2305,7 +2708,7 @@ def test_diver1_cnn_out_size_validation(options, match):
 def test_diver1_mup_attention_scale():
     """The released DIVER-1 checkpoints need attention scaled by 1 / head_dim."""
     info = mne.create_info(["C3", "Cz", "C4"], 500.0, "eeg")
-    info.set_montage("standard_1020")
+    info.set_montage("colin27_1020")
     for mup in (True, False):
         model = DIVER1(
             chs_info=info["chs"], n_outputs=2, n_times=1000, mup_attention=mup
@@ -2316,30 +2719,17 @@ def test_diver1_mup_attention_scale():
             assert module.scale == (1.0 / module.head_dim if mup else None)
 
 
-@pytest.fixture
-def steeg_vocab(monkeypatch):
-    """Use an offline vocabulary; keep the model's real 145-slot capacity."""
-    names = ["Fp1", "Fp2", "Cz", "Oz", "T7", "T8", "Pz", "Fz"]
-    monkeypatch.setattr(steegformer, "_channel_order", lambda: names)
-    monkeypatch.setattr(
-        steegformer,
-        "_channel_index",
-        lambda: {n.upper(): i for i, n in enumerate(names)},
-    )
-    return names
-
-
 @pytest.mark.parametrize(
     "names, explicit, expected, warning",
     [
-        (["oz", "FP1", "Cz"], None, [3, 0, 2], None),
-        (["E1", "fp1", "E2"], None, [3, 0, 5], "nearest 10-05 site"),
+        (["oz", "FP1", "Cz"], None, ["Oz", "Fp1", "Cz"], None),
+        (["E1", "fp1", "E2"], None, ["Oz", "Fp1", "T8"], "nearest 10-05 site"),
         (["E1", "fp1", "E2"], [5, 4, 3], [5, 4, 3], None),
     ],
     ids=["known-names", "mixed-positions", "explicit-override"],
 )
 @pytest.mark.filterwarnings("error")
-def test_steegformer_channel_mapping(steeg_vocab, names, explicit, expected, warning):
+def test_steegformer_channel_mapping(names, explicit, expected, warning):
     info = mne.create_info(["Oz", "Cz", "T8"], 250, "eeg")
     info.set_montage(
         mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
@@ -2359,7 +2749,8 @@ def test_steegformer_channel_mapping(steeg_vocab, names, explicit, expected, war
             depth=1,
             num_heads=2,
         )
-    assert model.channel_indices.tolist() == expected
+    slots = [STEEGFORMER_CHANNEL_ORDER.index(e) if isinstance(e, str) else e for e in expected]
+    assert model.channel_indices.tolist() == slots
 
 
 @pytest.mark.parametrize(
@@ -2372,22 +2763,12 @@ def test_steegformer_channel_mapping(steeg_vocab, names, explicit, expected, war
         (146, "absent", 145),
         (3, "unpublished", 256),
         (257, "unpublished", 256),
-        (3, "unavailable", 145),
-        (146, "unavailable", 145),
     ],
 )
-def test_steegformer_montage_fallback(
-    steeg_vocab, monkeypatch, n_chans, fallback, n_chans_pos
-):
+def test_steegformer_montage_fallback(n_chans, fallback, n_chans_pos):
     info = mne.create_info([f"E{i + 1}" for i in range(n_chans)], 250, "eeg")
     if fallback == "hydrocel":
         info.set_montage(mne.channels.make_standard_montage("GSN-HydroCel-256"))
-    if fallback == "unavailable":
-
-        def unavailable():
-            raise OSError("offline")
-
-        monkeypatch.setattr(steegformer, "_channel_index", unavailable)
     overflow = n_chans > n_chans_pos and fallback != "hydrocel"
     expectation = (
         pytest.raises(ValueError, match="identity mapping.*chan_pos_idx")
@@ -2412,7 +2793,7 @@ def test_steegformer_montage_fallback(
         if fallback == "hydrocel":
             slots = model.channel_indices
             assert slots.shape == (256,)
-            assert 0 <= int(slots.min()) <= int(slots.max()) < len(steeg_vocab)
+            assert 0 <= int(slots.min()) <= int(slots.max()) < len(STEEGFORMER_CHANNEL_ORDER)
         else:
             assert model.channel_indices.tolist() == list(range(n_chans))
 
@@ -3419,18 +3800,7 @@ def test_luna_rotary_whole_model_checkpoint_and_output(scripted):
     with torch.no_grad():
         expected = old(x, channel_locations=locations)
         if scripted:
-            try:
-                old_script = torch.jit.script(old)
-            except RuntimeError as error:
-                # A pre-existing whole-model limitation, not a rotary regression.
-                if "has no attribute '_channel_location_cache'" not in str(error):
-                    raise
-                with pytest.raises(RuntimeError, match="_channel_location_cache"):
-                    torch.jit.script(model)
-                pytest.xfail(
-                    "Baseline whole-LUNA scripting cannot infer the empty "
-                    "_channel_location_cache; block scripting is qualified separately."
-                )
+            old_script = torch.jit.script(old)
             model = torch.jit.script(model)
             torch.testing.assert_close(
                 old_script(x, channel_locations=locations), expected

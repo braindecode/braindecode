@@ -5,6 +5,8 @@
 """Simple tests for Zarr format converters."""
 
 import inspect
+import pickle
+from pathlib import Path
 
 import mne
 import numpy as np
@@ -19,7 +21,10 @@ from braindecode.datautil.hub_formats import (
     get_format_info,
     load_from_zarr,
 )
-from braindecode.preprocessing import create_windows_from_events
+from braindecode.preprocessing import (
+    create_fixed_length_windows,
+    create_windows_from_events,
+)
 
 
 @pytest.fixture()
@@ -124,17 +129,18 @@ def test_get_format_info_eegwindows(setup_concat_eegwindows_dataset):
     assert info["total_size_mb"] > 0
 
 
-def test_zarr_round_trip_rawdataset(tmp_path):
-    """Test saving and loading RawDataset in Zarr format."""
+def test_zarr_round_trip_rawdataset(tmp_path, monkeypatch):
+    """Local Zarr files can be written and read without a Hub client."""
     pytest.importorskip("zarr")
+    monkeypatch.setattr("braindecode.datasets.bids.hub.huggingface_hub", False)
 
     # Create a simple RawDataset
     ch_names = ["C3", "C4", "Cz"]
     sfreq = 100
     info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="eeg")
-    data = np.random.randn(3, 1000)
+    data = np.arange(3000, dtype=np.float32).reshape(3, 1000)
     raw = mne.io.RawArray(data, info)
-    raw_ds = RawDataset(raw, pd.Series({"subject": "1"}))
+    raw_ds = RawDataset(raw, {"subject": "1", "label": 2}, target_name="label")
 
     # Create BaseConcatDataset
     dataset = BaseConcatDataset([raw_ds])
@@ -155,6 +161,28 @@ def test_zarr_round_trip_rawdataset(tmp_path):
     assert loaded.datasets[0].raw.info["sfreq"] == dataset.datasets[0].raw.info["sfreq"]
     # Verify it's actually a RawDataset
     assert get_dataset_type(loaded.datasets[0]) == "RawDataset"
+    np.testing.assert_array_equal(loaded.datasets[0].raw.get_data(), data)
+    assert loaded[0][1] == 2
+
+
+def test_local_load_without_zarr(tmp_path, monkeypatch):
+    monkeypatch.setattr("braindecode.datasets.bids.hub.zarr", False)
+    with pytest.raises(ImportError, match="zarr"):
+        load_from_zarr(tmp_path)
+
+
+def test_overwrite_without_zarr_keeps_existing_store(tmp_path, monkeypatch):
+    output_path = tmp_path / "dataset.zarr"
+    output_path.mkdir()
+    marker = output_path / "keep.txt"
+    marker.write_text("existing")
+    info = mne.create_info(["C3"], sfreq=100, ch_types="eeg")
+    raw = mne.io.RawArray(np.zeros((1, 100)), info)
+    dataset = BaseConcatDataset([RawDataset(raw, {"subject": "1"})])
+    monkeypatch.setattr("braindecode.datasets.bids.hub.zarr", False)
+    with pytest.raises(ImportError, match="zarr"):
+        convert_to_zarr(dataset, output_path, overwrite=True)
+    assert marker.read_text() == "existing"
 
 
 def test_get_format_info_rawdataset():
@@ -211,32 +239,61 @@ def test_zarr_load_specific_ids(tmp_path):
     assert str(loaded.datasets[1].description["subject"]) == "2"
 
 
-def test_zarr_overwrite_protection(tmp_path):
-    """Test overwrite parameter prevents accidental data loss."""
+def _windows(value):
+    raw = mne.io.RawArray(np.full((1, 20), value), mne.create_info(["C3"], 10, "eeg"))
+    recording = RawDataset(raw, {"target": value}, target_name="target")
+    return create_fixed_length_windows(
+        BaseConcatDataset([recording]), window_size_samples=10
+    )
+
+
+def _first_window(dataset):
+    X, y, _ = dataset[0]
+    return X.mean(), y
+
+
+def test_overwrite_keeps_one_cache_and_the_lazy_dataset_readable(tmp_path):
+    """An overwrite serves the new windows and leaves a single memmap cache."""
     pytest.importorskip("zarr")
-
-    # Create a simple dataset
-    ch_names = ["C3", "C4"]
-    sfreq = 100
-    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="eeg")
-    data = np.random.randn(2, 500)
-    raw = mne.io.RawArray(data, info)
-    raw_ds = RawDataset(raw, pd.Series({"subject": "1"}))
-    dataset = BaseConcatDataset([raw_ds])
-
-    zarr_path = tmp_path / "overwrite_test.zarr"
-
-    # First save should work
-    convert_to_zarr(dataset, zarr_path)
-    assert zarr_path.exists()
-
-    # Second save without overwrite=True should fail
+    path = convert_to_zarr(_windows(1), tmp_path / "windows.zarr")
     with pytest.raises(FileExistsError, match="already exists"):
-        convert_to_zarr(dataset, zarr_path, overwrite=False)
+        convert_to_zarr(_windows(2), path)
+    lazy = load_from_zarr(path, preload=False)
+    assert _first_window(lazy) == (1, 1)
+    for value in (2, 3):
+        convert_to_zarr(_windows(value), path, overwrite=True)
+        assert _first_window(load_from_zarr(path, preload=False)) == (value, value)
+    assert _first_window(lazy) == (1, 1)
+    with pytest.raises(FileNotFoundError, match="original Zarr store"):
+        pickle.loads(pickle.dumps(lazy))
+    assert len({npy.parent for npy in tmp_path.rglob("*.npy")}) == 1
 
-    # Second save with overwrite=True should work
-    convert_to_zarr(dataset, zarr_path, overwrite=True)
-    assert zarr_path.exists()
+
+def test_failed_publication_restores_the_old_store(tmp_path, monkeypatch):
+    """A rename that fails after the old store moved aside puts it back."""
+    pytest.importorskip("zarr")
+    path = convert_to_zarr(_windows(1), tmp_path / "windows.zarr")
+    rename = Path.rename
+
+    def fail_to_publish(source, destination):
+        if source.name == "store":  # the staged export, not the backup
+            raise OSError("cannot publish")
+        return rename(source, destination)
+
+    monkeypatch.setattr(Path, "rename", fail_to_publish)
+    with pytest.raises(OSError, match="cannot publish"):
+        convert_to_zarr(_windows(2), path, overwrite=True)
+    assert _first_window(load_from_zarr(path, preload=False)) == (1, 1)
+
+
+def test_overwrite_refuses_a_file_destination(tmp_path):
+    """Only a store directory is replaced; any other file is left untouched."""
+    pytest.importorskip("zarr")
+    destination = tmp_path / "windows.zarr"
+    destination.write_text("user data")
+    with pytest.raises(NotADirectoryError, match="not a Zarr directory"):
+        convert_to_zarr(_windows(1), destination, overwrite=True)
+    assert destination.read_text() == "user data"
 
 
 def test_no_lazy_imports_in_hub_formats():

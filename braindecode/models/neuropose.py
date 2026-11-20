@@ -129,6 +129,31 @@ class NeuroPose(EEGModuleMixin, nn.Module):
             n_res_blocks=3, n_convs_per_block=2,
         )
 
+    .. rubric:: Cropped regression with EEGRegressor
+
+    ``forward`` returns ``(batch, time, joints)``. Put the joint axis before
+    time, so that the loss, window averaging and trial prediction share one
+    time axis::
+
+        from einops.layers.torch import Rearrange
+        from torch import nn
+        from torch.nn.functional import mse_loss
+        from braindecode import EEGRegressor
+        from braindecode.training import TimeSeriesLoss
+
+        pose_model = NeuroPose(n_chans=16, n_outputs=20, n_times=960, sfreq=2000)
+        module = nn.Sequential(pose_model, Rearrange("b t j -> b j t"))
+        net = EEGRegressor(module, cropped=True, criterion=TimeSeriesLoss,
+                           criterion__loss_function=mse_loss)
+
+    Pass windows made with ``targets_from="channels"`` and
+    ``last_target_only=False`` to ``net.fit(windows, y=None)``. Then
+    ``net.predict(windows)`` gives one mean per joint and window, and
+    ``net.predict_trials(windows)`` returns the joint-by-time predictions of
+    each trial with its targets: compare them with the last
+    ``prediction.shape[-1]`` target samples. NeuroPose predicts every sample,
+    so the window stride can be up to ``n_times``.
+
     .. versionadded:: 1.8
 
     Parameters

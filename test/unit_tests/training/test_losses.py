@@ -8,7 +8,71 @@ import numpy as np
 import pytest
 import torch
 
-from braindecode.training.losses import CroppedLoss, TimeSeriesLoss, mixup_criterion
+from braindecode.models import DANCE
+from braindecode.training.losses import (
+    CroppedLoss,
+    DanceLoss,
+    TimeSeriesLoss,
+    mixup_criterion,
+)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_dance_loss_trains_every_head(dtype):
+    """``DanceLoss`` on ``detect`` gives every head a finite, nonzero gradient.
+
+    Every query predicts the span (sigmoid(-1), sigmoid(1)) = (0.27, 0.73), which
+    overlaps the targets, so both bounds train; tokens 0, 4 and 5 of 6 lie in no
+    span, which made the consistency term NaN in float16.
+    """
+    torch.manual_seed(0)
+    model = DANCE(
+        n_outputs=3,
+        n_chans=2,
+        n_times=32,
+        sfreq=128,
+        use_channel_merger=False,
+        n_queries=4,
+        num_latents=6,
+        embed_dim=8,
+        conv_initial_linear=8,
+        conv_depth=1,
+        perceiver_depth=1,
+        cross_dim_head=4,
+        latent_dim_head=4,
+        decoder_dim=8,
+        decoder_depth=1,
+        decoder_heads=2,
+        drop_prob=0.0,
+    ).to(dtype)
+    with torch.no_grad():
+        for head, bias in ((model.decoder.start_head, -1), (model.decoder.end_head, 1)):
+            head.weight.zero_()
+            head.bias.fill_(bias)
+    x = torch.randn(2, 2, 32).to(dtype).requires_grad_()
+    preds = model.detect(x)
+    assert preds["class"].shape == (2, 4, 3) and preds["dense"].shape == (2, 6, 3)
+    torch.testing.assert_close(preds["dense"], model(x), rtol=0, atol=0)
+
+    targets = {
+        "class": torch.tensor([[1], [2]]),
+        "start": torch.tensor([[0.2], [0.3]], dtype=dtype),
+        "end": torch.tensor([[0.7], [0.8]], dtype=dtype),
+    }
+    criterion = DanceLoss(num_latents=model.num_latents)
+    loss, details = criterion(preds, targets)
+    with torch.no_grad():  # the consistency term does not depend on the precision
+        _, expected = criterion({k: v.float() for k, v in preds.items()}, targets)
+    assert details["consistency_loss"] == pytest.approx(expected["consistency_loss"])
+    loss.backward()
+    heads = (
+        model.final_layer,
+        model.decoder.class_head,
+        model.decoder.start_head,
+        model.decoder.end_head,
+    )
+    for grad in (x.grad, model.decoder.query_embed.grad, *(h.weight.grad for h in heads)):
+        assert torch.isfinite(grad).all() and torch.count_nonzero(grad)
 
 
 def test_mixup_criterion():
@@ -41,6 +105,26 @@ def test_mixup_criterion_plain_target(n_samples):
     loss = mixup_criterion(preds, target)
     expected = -preds.log_softmax(dim=1)[:, 0].mean()
     assert loss == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("soft", [False, True])
+def test_mixup_criterion_weights_dense_targets_per_trial(soft):
+    logits = torch.randn(3, 4, 5)
+    # Targets of the two mixed trials: class indices (3, 5) or probabilities (3, 4, 5).
+    first, second = torch.randint(4, (2, 3, 5))
+    if soft:
+        first, second = torch.randn(2, 3, 4, 5).softmax(dim=2)
+    weights = torch.tensor([0.2, 0.5, 0.8])
+    ce = torch.nn.functional.cross_entropy
+    expected = torch.stack(
+        [
+            w * ce(p[None], a[None]) + (1 - w) * ce(p[None], b[None])
+            for p, a, b, w in zip(logits, first, second, weights)
+        ]
+    ).mean()
+    torch.testing.assert_close(
+        mixup_criterion(logits, (first, second, weights)), expected
+    )
 
 
 def test_mixup_criterion_accepts_list_target():

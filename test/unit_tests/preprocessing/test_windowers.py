@@ -10,6 +10,7 @@
 
 import copy
 import inspect
+import json
 import logging
 import platform
 import warnings
@@ -27,6 +28,7 @@ from braindecode.datasets.base import (
     WindowsDataset,
 )
 from braindecode.datasets.moabb import fetch_data_with_moabb
+from braindecode.datautil import load_concat_dataset
 from braindecode.preprocessing import (
     create_fixed_length_windows,
     create_windows_from_events,
@@ -2324,3 +2326,86 @@ def test_windows_from_events_dict_stop_offset_uses_own_event_type():
             drop_last_window=False,
             mapping={"a": 0, "b": 1},
         )
+
+
+@pytest.mark.parametrize("last_target_only", [False, True])
+@pytest.mark.parametrize("picks", [None, ["target", "C3"]])
+def test_fixed_length_channel_targets_survive_saving(
+    tmp_path, picks, last_target_only
+):
+    # C3 holds the signal and "target" the targets; picks select the Epochs backend.
+    data = np.arange(24.0).reshape(2, 12)
+    info = mne.create_info(["C3", "target"], 100, ["eeg", "misc"])
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(mne.io.RawArray(data, info, verbose=False))]),
+        window_size_samples=4,
+        picks=picks,
+        targets_from="channels",
+        last_target_only=last_target_only,
+    )
+    windows.save(tmp_path)
+    loaded = load_concat_dataset(tmp_path, preload=False)
+    # Older stores recorded the target settings in the windower entry only.
+    path = tmp_path / "0" / "window_kwargs.json"
+    history = json.loads(path.read_text())
+    path.write_text(json.dumps([e for e in history if not e[0].endswith("Dataset")]))
+    for dataset in (windows, loaded, load_concat_dataset(tmp_path, preload=False)):
+        x, y, _ = dataset[1]
+        # The second window (samples 4 to 8) without its target channel, (1, 4).
+        np.testing.assert_array_equal(x, data[:1, 4:8])
+        expected_y = data[1:, 7] if last_target_only else data[1:, 4:8]
+        np.testing.assert_array_equal(y, expected_y)
+
+
+def test_target_channels_windower_picks_by_channel_kind():
+    # An EEG channel named "misc" next to the misc-typed target channel: the name
+    # must not be read as the channel type.
+    info = mne.create_info(["misc", "target"], 10, ["eeg", "misc"])
+    data = np.vstack([np.arange(40.0), np.full(40, np.nan)])
+    data[1, 9::10] = [1.0, 2.0, 3.0, 4.0]
+    concat = BaseConcatDataset([RawDataset(mne.io.RawArray(data, info, verbose=False))])
+    windows = create_windows_from_target_channels(concat, window_size_samples=5)
+    x, y, _ = windows[0]
+    np.testing.assert_array_equal(x, [data[0, 5:10]])
+    np.testing.assert_array_equal(y, [1.0])
+
+
+@pytest.mark.parametrize(
+    "types, kwargs",
+    [
+        # picks drops the target channel before the Epochs are made
+        (["eeg", "misc"], dict(picks="eeg")),
+        # raw-backed windows take no picks: the recording has no target channel
+        (["eeg", "eeg"], dict(use_mne_epochs=False)),
+    ],
+    ids=["epochs", "raw"],
+)
+def test_channel_targets_require_a_misc_channel(tmp_path, types, kwargs):
+    info = mne.create_info(["Cz", "target"], 100, types)
+    raw = mne.io.RawArray(np.zeros((2, 20)), info, verbose=False)
+    concat = BaseConcatDataset([RawDataset(raw, {"label": 1}, target_name="label")])
+    kwargs = dict(window_size_samples=10, **kwargs)
+    with pytest.raises(ValueError, match="misc channel"):
+        create_fixed_length_windows(concat, targets_from="channels", **kwargs)
+    # A store saved without the misc channel whose history asks for channel targets.
+    create_fixed_length_windows(concat, **kwargs).save(tmp_path)
+    path = tmp_path / "0" / "window_kwargs.json"
+    (name, settings), *_ = json.loads(path.read_text())
+    path.write_text(json.dumps([[name, {**settings, "targets_from": "channels"}]]))
+    with pytest.raises(ValueError, match="misc channel"):
+        load_concat_dataset(tmp_path, preload=False)
+
+
+@pytest.mark.parametrize("use_mne_epochs", [True, False])
+def test_channel_targets_raise_after_preprocessing_drops_misc(use_mne_epochs):
+    info = mne.create_info(["C3", "target"], 100, ["eeg", "misc"])
+    raw = mne.io.RawArray(np.zeros((2, 20)), info, verbose=False)
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw)]),
+        window_size_samples=5,
+        targets_from="channels",
+        use_mne_epochs=use_mne_epochs,
+    )
+    preprocess(windows, [Preprocessor("pick", picks="eeg", apply_on_array=False)])
+    with pytest.raises(ValueError, match="misc"):
+        _ = windows[0]

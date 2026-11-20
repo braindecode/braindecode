@@ -5,9 +5,7 @@
 ####################################
 
 The pretrained EEG models take ``channel_strategy=`` to map your montage onto the
-channels their backbone was trained on. :class:`~braindecode.models.SleepFM` and
-:class:`~braindecode.models.SleepFMStager` take polysomnography grouped by modality, not
-an EEG montage, so they accept only ``"native"``:
+channels their backbone was trained on:
 
 .. code-block:: python
 
@@ -20,6 +18,20 @@ an EEG montage, so they accept only ``"native"``:
     )
     y = model(x)  # x: (batch, len(chs_info), n_times)
     y = model(x_other, chs_info=other_chs)  # another montage, per call
+
+Models that read their input natively take no ``channel_strategy`` and say so in a
+``TypeError``: the MEG models (:class:`~braindecode.models.BBL`,
+:class:`~braindecode.models.MEGGPT`, :class:`~braindecode.models.MEGXL`), the fNIRS
+models (:class:`~braindecode.models.GeoNIRS`, :class:`~braindecode.models.JungMAE`,
+:class:`~braindecode.models.MtReNIRS`), :class:`~braindecode.models.TinyMyo` (sEMG) and
+:class:`~braindecode.models.CORTEG` (its second input, ``x_hi``).
+:class:`~braindecode.models.SleepFM` and :class:`~braindecode.models.SleepFMStager` take
+polysomnography grouped by modality, so they accept only ``"native"`` and say why in a
+``ValueError``. The same holds, for some inputs only, for
+:class:`~braindecode.models.BrainOmni` and :class:`~braindecode.models.BrainTokenizer`
+with MEG sensors, :class:`~braindecode.models.NeuroRVQ` and
+:class:`~braindecode.models.NeuroRVQTokenizer` with a non-EEG ``modality``, and
+:class:`~braindecode.models.MAPA` with ``normalization="session"``.
 
 ``"native"`` (the default) leaves the model as it is: the released checkpoints give the
 same outputs (max-abs difference 0.0) with the same ``state_dict``. Any other strategy
@@ -62,15 +74,28 @@ not exact from ``F3-R1`` and ``C3-R2``, nor ``F3`` from bipolar channels only. N
 channels raise unless ``channel_strategy_kwargs={"drop_non_eeg": True}``. The layer runs
 in eager mode; TorchScript works under ``native`` only.
 
-``spline``, ``wiener`` and a kernel passed as ``channel_strategy`` (any ``kernel(pos_a,
-pos_b)`` covariance, such as :func:`~braindecode.functional.spherical_spline_kernel`)
-are one estimate, :func:`~braindecode.functional.linear_channel_map`: inputs ``y = A
-v``, targets ``t = B v``, a prior covariance of the potentials ``v`` and a flat prior on
-the unknown recording reference. It also gives each target's posterior variance
-(``model.channel_layer.variance``); ``match_gain=True`` restores the amplitude the
-estimate shrinks. ``channel_strategy_kwargs={"reference": "average"}`` (or an electrode
-name) gives the backbone its pretraining reference. Bad channels are left out of ``x``
-and ``chs_info`` (``raw.pick(exclude="bads")``) and reconstructed like any missing one.
+To reconstruct a bad EEG channel, keep the full montage as the target. Select the good
+EEG channels before extracting the signal and its input montage:
+
+.. doctest::
+
+    >>> import mne
+    >>> import numpy as np
+    >>> import torch
+    >>> from braindecode.modules import ChannelLayer
+    >>> info = mne.create_info(["C3", "Cz", "C4"], sfreq=100, ch_types="eeg")
+    >>> signals = np.array([[1.0, 2.0], [9.0, 9.0], [3.0, 4.0]]) * 1e-6
+    >>> raw = mne.io.RawArray(signals, info, verbose=False)
+    >>> raw.info["bads"] = ["Cz"]
+    >>> good = raw.copy().pick("eeg", exclude="bads")
+    >>> layer = ChannelLayer(raw.info["chs"], "nearest", good.info["chs"])
+    >>> x = torch.tensor(good.get_data(), dtype=torch.float32).unsqueeze(0)
+    >>> mapped, observed = layer(x)
+    >>> observed.tolist()
+    [True, False, True]
+    >>> torch.equal(mapped[:, observed], x)
+    True
+
 The layer also takes one montage per sample: ``chs_info`` a list of montages, ``x``
 padded to the largest and ``ch_mask`` the real channels. Batches of
 :func:`~braindecode.datasets.pad_channels_collate` (``pos`` and ``ch_mask``) work as
