@@ -8,9 +8,8 @@ Port of Yang et al. (2026), https://github.com/LiuyinYang1101/STEEGFormer
 
 from __future__ import annotations
 
-import json
 import warnings
-from functools import lru_cache, partial
+from functools import partial
 from typing import Dict, Optional, Union
 
 import torch
@@ -18,7 +17,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import init_weights_, sinusoidal_positional_encoding
-from braindecode.models.base import _HF_INSTALL_HINT, EEGModuleMixin, huggingface_hub
+from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import resolve_channel_indices
 from braindecode.modules import (
     FeedForwardBlock,
@@ -29,50 +28,6 @@ from braindecode.modules import (
 
 # Weight initialization of the reference implementation.
 _init_weights = partial(init_weights_, weights={nn.Linear: nn.init.xavier_uniform_})
-
-# Shared montage vocabulary of the official ST-EEGFormer checkpoints: the
-# learned channel embedding has one slot per entry, in this order (the slot
-# index of an electrode is its position in this list). It is the authors'
-# ``channels_mapping`` (``LiuyinYang1101/STEEGFormer``, MIT), used by
-# small/base/large (vocab 145); the HBN ``largeV2`` model uses a different,
-# larger vocabulary. Like REVE's position bank, it is downloaded from the Hub
-# on first use (and cached) rather than shipped with the package -- and only
-# when a ``chs_info`` montage actually needs name-based slot resolution.
-_CHANNELS_REPO = "braindecode/STEEGFormer-small"
-_CHANNELS_FILE = "steegformer_channels.json"
-# Pinned commit of the Hub repository that hosts the vocabulary file, so the
-# download is immutable and reproducible. Bump deliberately when the file
-# changes upstream.
-_CHANNELS_REVISION = "633c9c0d76c6e26459e1e0d1337c91858578f13d"
-# Embedding size (n_chans_pos) the published vocabulary is valid for. Name-based
-# chs_info resolution only applies to the small/base/large variants; largeV2's
-# 256-slot HBN vocabulary has no published electrode names.
-_CHANNELS_VOCAB_SIZE = 145
-
-
-@lru_cache(maxsize=1)
-def _channel_order() -> list[str]:
-    """Download (and cache) the shared montage vocabulary from the Hub."""
-    if huggingface_hub is False:
-        raise ImportError(f"STEEGFormer channel vocabulary {_HF_INSTALL_HINT}")
-    path = huggingface_hub.hf_hub_download(
-        _CHANNELS_REPO, _CHANNELS_FILE, revision=_CHANNELS_REVISION
-    )
-    with open(path) as f:
-        return json.load(f)
-
-
-@lru_cache(maxsize=1)
-def _channel_index() -> dict[str, int]:
-    return {name.upper(): i for i, name in enumerate(_channel_order())}
-
-
-def __getattr__(name: str):
-    # PEP 562: expose STEEGFORMER_CHANNEL_ORDER lazily so importing this module
-    # never triggers a network call; the vocabulary is fetched on first access.
-    if name == "STEEGFORMER_CHANNEL_ORDER":
-        return list(_channel_order())
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class STEEGFormer(EEGModuleMixin, nn.Module):
@@ -435,15 +390,14 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         """Resolve montage-vocabulary slots from the ``chs_info`` electrode names.
 
         Looks each electrode name up in :data:`STEEGFORMER_CHANNEL_ORDER`
-        (case-insensitive), which is downloaded from the Hub on first use. Only
-        valid for the 145-slot variants (small/base/large); for other
-        ``n_chans_pos`` (e.g. largeV2's 256-slot HBN vocabulary, whose names are
-        not published) pass ``chan_pos_idx`` explicitly. Unknown names use the
-        nearest 10-05 site from valid head-frame positions. Falls back to the
-        identity mapping -- and warns -- when ``chs_info`` is absent, the
-        vocabulary does not apply or cannot be fetched, or an unknown channel
-        lacks a valid position. Raises an actionable error if the identity
-        mapping exceeds the embedding capacity.
+        (case-insensitive). Only valid for the 145-slot variants
+        (small/base/large); for other ``n_chans_pos`` (e.g. largeV2's 256-slot
+        HBN vocabulary, whose names are not published) pass ``chan_pos_idx``
+        explicitly. Unknown names use the nearest 10-05 site from valid
+        head-frame positions. Falls back to the identity mapping -- and warns --
+        when ``chs_info`` is absent, the vocabulary does not apply, or an
+        unknown channel lacks a valid position. Raises an actionable error if
+        the identity mapping exceeds the embedding capacity.
         """
         try:
             chs_info = self.chs_info
@@ -472,26 +426,13 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 stacklevel=2,
             )
             return identity
-        try:
-            index = _channel_index()  # downloaded from the Hub on first use
-        except Exception as exc:  # noqa: BLE001 - any download/parse failure
-            identity = self._identity_channel_indices()
-            warnings.warn(
-                f"STEEGFormer: could not fetch the channel vocabulary ({exc}); "
-                f"falling back to the identity channel mapping. Pass "
-                f"`chan_pos_idx` explicitly to align an arbitrary montage with "
-                f"the pre-trained channel embedding.",
-                UserWarning,
-                stacklevel=2,
-            )
-            return identity
         names = [ch.get("ch_name", "") for ch in chs_info]  # type: ignore[attr-defined]
-        idx = [index.get(n.upper()) for n in names]
+        idx = [_CHANNEL_INDEX.get(n.upper()) for n in names]
         missing = [n for n, j in zip(names, idx) if j is None]
         if missing:
             shown = ", ".join(missing[:8]) + ("..." if len(missing) > 8 else "")
             by_position = resolve_channel_indices(
-                chs_info, _channel_order(), montage="standard_1005"
+                chs_info, STEEGFORMER_CHANNEL_ORDER, montage="standard_1005"
             )
             if by_position is not None:
                 warnings.warn(
@@ -586,6 +527,27 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         else:  # "cls"
             x = self.norm(x)[:, 0]
         return self.final_layer(self.head_drop(x))
+
+
+# Slot order of the official checkpoints' channel embedding (``channels_mapping``
+# of LiuyinYang1101/STEEGFormer, MIT): an electrode's slot is its index here.
+# small/base/large have 145 slots, the last three unnamed; the HBN ``largeV2``
+# model uses a different, unpublished vocabulary.
+STEEGFORMER_CHANNEL_ORDER = """
+    C1 Pz C4 F6 FTT8h Oz Fp1 FCC5h TPP8h CPP6h C2 F4 OI2h AF4 FCz CCP6h TP8 POO10h
+    FC1 FC6 C5 P8 FT8 P6 P9 Fz AFF1 TPP10h AFF2 P10 CPP2h M1 FCC6h FTT7h FC2 PPO2
+    AFp3h AF7 PO10 AF8 CPP1h P7 F1 AFp4h PO9 FT9 CP2 Iz FCC1h FC5 T5 CP5 CP6 FFC5h
+    F2 M2 POO9h AFF5h PO4 POO3h Fp2 T3 CP4 POz TTP7h T7 A2 CCP4h T8 PPO10h FC3 F3 F5
+    A1 P3 FC4 FCC2h FFC6h FFT8h CCP2h CPP4h T6 FTT9h PPO6h CP3 CP1 AF3 FT10 OI1h
+    TPP9h P5 I2 CCP1h T4 CCP3h O1 PO5 PPO9h PPO5h P1 AFz PO6 PO3 O2 CPP5h FFC1h
+    FCC4h FFT7h FFC2h FFC4h Cz TP7 Fpz FTT10h PO7 CPP3h P4 P2 F8 CPz FCC3h FFC3h FT7
+    I1 TTP8h AFF6h CCP5h C6 PPO1 PO8 C3 POO4h TPP7h F7 T9 TP9 T10 TP10 POO1 POO2
+    PPO1h PPO2h
+""".split()
+# Slots of the vocabulary above, the size of the embedding the names are valid for.
+_CHANNELS_VOCAB_SIZE = 145
+# Upper-cased electrode name -> slot, for a case-insensitive lookup of ``chs_info`` names.
+_CHANNEL_INDEX = {name.upper(): i for i, name in enumerate(STEEGFORMER_CHANNEL_ORDER)}
 
 
 class _TemporalPositionalEncoding(nn.Module):

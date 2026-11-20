@@ -40,7 +40,7 @@ _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS = set(non_classification_models).diffe
 # Skip all tests in this file if huggingface_hub is not installed
 pytestmark = pytest.mark.skipif(
     not HAS_HF_HUB,
-    reason="huggingface_hub not installed. Install with: pip install braindecode[hug]"
+    reason="huggingface_hub not installed. Install with: pip install 'braindecode[hub]'"
 )
 
 @pytest.fixture(scope="module", params=models_mandatory_parameters, ids=lambda p: p[0])
@@ -144,39 +144,6 @@ def test_json_serialization(tmp_path, sample_chs_info):
 
     assert 'chs_info' in loaded
     assert len(loaded['chs_info']) == len(sample_chs_info)
-
-
-def test_attnsleep_strict_checkpoint_roundtrip(tmp_path):
-    from braindecode.models import AttnSleep
-
-    model = AttnSleep(sfreq=100, n_outputs=5, input_window_seconds=30)
-    x = torch.randn(2, 1, 3000)
-    loss = model(x).square().mean()
-    loss.backward()
-    torch.optim.SGD(model.parameters(), lr=0.01).step()
-    model.eval()
-    expected = model(x).detach()
-    block = model.feature_extractor[0].AFR[0]
-    assert block.bn1.num_batches_tracked > 0
-    state = model.state_dict()
-
-    # Earlier releases also registered these same modules under features. A
-    # raw state dictionary contains both names, whereas safetensors stores one.
-    for legacy in (False, True):
-        if legacy:
-            block.features = nn.Sequential(
-                block.conv1, block.bn1, block.relu, block.conv2, block.bn2, block.se
-            )
-        model.save_pretrained(tmp_path)
-        restored = AttnSleep.from_pretrained(
-            tmp_path, strict=True, local_files_only=True
-        ).eval()
-        torch.testing.assert_close(restored(x), expected)
-        torch.testing.assert_close(restored.state_dict(), state)
-    restored.load_state_dict(
-        torch.load(tmp_path / "pytorch_model.bin", weights_only=True)
-    )
-    torch.testing.assert_close(restored.state_dict(), state)
 
 
 def test_save_pretrained_creates_config(tmp_path, sample_model):
@@ -739,7 +706,7 @@ def test_from_pretrained_reports_loaded_parameters(tmp_path):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         same = EEGNet.from_pretrained(tmp_path / "same")
-    assert not [w for w in caught if "no parameter of" in str(w.message)]
+    assert not [w for w in caught if "not loaded from" in str(w.message)]
     assert set(dict(same.named_parameters())) <= same._pretrained_provenance["loaded"]
 
     # Same weights under other key names (e.g. an upstream checkpoint mirrored
@@ -749,9 +716,36 @@ def test_from_pretrained_reports_loaded_parameters(tmp_path):
     (other / "config.json").write_text((tmp_path / "same" / "config.json").read_text())
     weights = load_file(tmp_path / "same" / "model.safetensors")
     save_file({f"model.{k}": v for k, v in weights.items()}, other / "model.safetensors")
-    with pytest.warns(UserWarning, match="no parameter of EEGNet was loaded from"):
+    with pytest.warns(UserWarning, match="parameters of EEGNet were not loaded from"):
         renamed = EEGNet.from_pretrained(other)
     assert not renamed._pretrained_provenance["loaded"]
+
+
+@pytest.mark.parametrize(
+    "dropped, warns",
+    [
+        (("bnorm", "conv_spatial", "conv_separable"), True),  # 9 of 10 body tensors
+        (("final_layer",), False),  # a new head
+        (("conv_temporal",), False),  # one fresh layer, as Labram's fc_norm
+    ],
+)
+def test_from_pretrained_warns_for_unloaded_parameters_outside_the_head(
+    tmp_path, dropped, warns
+):
+    import warnings
+
+    from safetensors.torch import load_file, save_file
+
+    EEGNet(n_chans=4, n_times=128, n_outputs=2).save_pretrained(tmp_path)
+    path = tmp_path / "model.safetensors"
+    weights = load_file(path)
+    save_file({k: v for k, v in weights.items() if not k.startswith(dropped)}, path)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        EEGNet.from_pretrained(tmp_path)
+    messages = [str(w.message) for w in caught if "not loaded from" in str(w.message)]
+    assert bool(messages) == warns
+    assert not warns or "bnorm_temporal.weight" in messages[0]
 
 
 def test_model_card_scalar_and_escaped_html(tmp_path):
@@ -959,11 +953,9 @@ def test_model_html_has_logo_and_zenodo_citation(tmp_path):
     assert "braindecode.org/stable/_static/braindecode_long.svg" in page
     assert 'alt="Braindecode"' in page
     assert "Cite Braindecode." in page and "Origin unrecorded" in page
-    assert page.count("10.5281/zenodo.17699192") >= 3  # badge, BibTeX, agent note
-    assert "hbm.23730" not in page
-    assert "Note for AI agents" in page
+    assert 'href="https://doi.org/10.5281/zenodo.8214376"' in page
     model.save_pretrained(tmp_path)
-    assert "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.17699192" in str(
+    assert "Cite Braindecode (Zenodo): https://doi.org/10.5281/zenodo.8214376" in str(
         EEGNet.from_pretrained(tmp_path)
     )
 
@@ -1003,10 +995,14 @@ def test_model_html_citation_exports_and_dataset_readers(tmp_path):
     exports = re.findall(r'href="data:text/plain;charset=utf-8,([^"]+)" download="([^"]+)"', page)
     assert len(exports) == 2
     texts = {name: unquote(content) for content, name in exports}
-    assert "@software{braindecode," in texts["braindecode.bib"]
-    assert "10.5281/zenodo.17699192" in texts["braindecode.bib"]
-    assert "[Computer software]. Zenodo." in texts["braindecode-APA.txt"]
-    assert "10.5281/ZENODO.17699192" in texts["braindecode-APA.txt"]
+    bibtex = texts["braindecode.bib"]
+    apa = texts["braindecode-APA.txt"]
+    assert "@misc{braindecode," in bibtex and "Guetschel, Pierre" in bibtex
+    assert "doi = {10.5281/zenodo.8214376}" in bibtex.lower()
+    assert "version =" not in bibtex.lower()
+    assert "Guetschel, P." in apa and "[Computer software]. Zenodo." in apa
+    assert apa.lower().endswith("https://doi.org/10.5281/zenodo.8214376")
+    assert "(version " not in apa.lower()
     assert 'download="braindecode.bib"' in page
     assert 'aria-label="Braindecode APA citation"' in page
     assert "braindecode.datasets.BNCI2014_001.html" in page

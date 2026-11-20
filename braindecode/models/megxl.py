@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 
+from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.brainomni import _geometry_from_chs_info, _SpatialTemporalBlock
 from braindecode.models.util import warn_if_sfreq_differs
@@ -270,9 +271,10 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
             # (codebook_size, codebook_dim)
             codebook = F.normalize(vq._codebook.embed, p=2.0, dim=1)
             # (batch * n_chans, n_tokens, codebook_size) -> (batch * n_chans, n_tokens)
-            index = (z @ codebook.t()).max(dim=-1).indices
+            index = (z @ codebook.to(z).t()).max(dim=-1).indices
             # (batch * n_chans, n_tokens, tokenizer_dim)
-            residual = residual - vq.project_out(F.embedding(index, vq._codebook.embed))
+            selected = F.embedding(index, vq._codebook.embed).to(residual)
+            residual = residual - vq.project_out(selected)
             codes.append(index)
         # n_q x (batch * n_chans, n_tokens) -> (batch * n_chans, n_tokens, n_q)
         # -> (batch, n_chans, n_tokens, n_q)
@@ -298,6 +300,12 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         mask is not a waveform mask: neighboring codes can contain information
         from overlapping receptive fields and the whole-window RMS.
         """
+        check_n_chans(
+            x,
+            self.n_chans,
+            "MEGXL",
+            "build the model with the chs_info of this montage.",
+        )
         with torch.no_grad():
             codes = self.tokenize(x)  # (batch, n_chans, n_tokens, n_q)
         return self.encode_codes(codes, mask, mask_value)
@@ -350,7 +358,8 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         # (batch, n_chans, n_tokens, n_q, codebook_dim)
         # -> (batch, n_chans, n_tokens, n_q * codebook_dim)
         # -> (batch, n_chans, n_tokens, latent_dim)
-        h = self.rvq_projector(torch.stack(levels, dim=3).flatten(3))
+        features = torch.stack(levels, dim=3).flatten(3).to(self.rvq_projector.weight)
+        h = self.rvq_projector(features)
         if mask is not None:
             if mask.dtype != torch.bool or list(mask.shape) != list(codes.shape[:3]):
                 raise ValueError("mask must be boolean (batch, n_chans, n_tokens).")

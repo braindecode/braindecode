@@ -7,12 +7,13 @@ import torch
 
 from braindecode.training import scoring
 from braindecode.training._trial_aggregation import iter_trial_preds
-from test.unit_tests.training.test_scoring import _InferenceModule, _InferenceWindows
-from test.unit_tests.training.test_trial_aggregation import (
-    _LAYOUTS,
-    _QUIRKY,
-    _make_case,
-    _reference_trial_preds,
+from test.unit_tests.training._trial_fixtures import (
+    TRIAL_LAYOUTS,
+    WINDOW_CASES,
+    InferenceModule,
+    InferenceWindows,
+    make_trial_windows,
+    reference_trial_preds,
 )
 
 pytestmark = pytest.mark.usefixtures("acceleration_caller_state")
@@ -25,13 +26,13 @@ def _equal(actual, expected):
 
 
 @pytest.mark.parametrize("size", [1, 2, 3, 100])
-@pytest.mark.parametrize("layout", list(_LAYOUTS) + list(_QUIRKY))
+@pytest.mark.parametrize("layout", list(TRIAL_LAYOUTS) + list(WINDOW_CASES))
 def test_primitive_chunks_exact(size, layout):
-    if layout in _LAYOUTS:
-        _, preds, windows, stops = _make_case(**_LAYOUTS[layout])
+    if layout in TRIAL_LAYOUTS:
+        _, preds, windows, stops = make_trial_windows(**TRIAL_LAYOUTS[layout])
     else:
-        preds, windows, stops = _QUIRKY[layout]
-    expected = _reference_trial_preds(preds, windows, stops)
+        preds, windows, stops = WINDOW_CASES[layout]
+    expected = reference_trial_preds(preds, windows, stops)
     actual = list(iter_trial_preds(preds, windows, stops, windows_per_chunk=size))
     # Trial boundaries are preserved, even when the final chunk is short.
     counts = []
@@ -55,16 +56,16 @@ def test_primitive_chunks_exact(size, layout):
 @pytest.mark.parametrize("targets", [False, True])
 def test_inference_chunks_exact(kind, size, batch_size, targets):
     options = {"batch_size": batch_size}
-    module = _InferenceModule()
+    module = InferenceModule()
     expected = list(
         scoring.iter_trial_predictions(
-            module, _InferenceWindows(kind), targets, loader_kwargs=options
+            module, InferenceWindows(kind), targets, loader_kwargs=options
         )
     )
     actual = list(
         scoring.iter_trial_prediction_chunks(
             module,
-            _InferenceWindows(kind),
+            InferenceWindows(kind),
             windows_per_chunk=size,
             return_targets=targets,
             loader_kwargs=options,
@@ -99,9 +100,9 @@ def _iterate(chunked, module, dataset, **kwargs):
 
 @pytest.mark.parametrize("chunked", [False, True])
 def test_lazy_bounded_and_restores_mode_checkpoint_rng(chunked):
-    module = _InferenceModule()
+    module = InferenceModule()
     module.child = torch.nn.Dropout().eval()
-    dataset = _InferenceWindows(repeats=1000)
+    dataset = InferenceWindows(repeats=1000)
     checkpoint = {k: v.clone() for k, v in module.state_dict().items()}
     state = torch.random.get_rng_state()
     iterator = _iterate(chunked, module, dataset, batch_size=2)
@@ -123,7 +124,7 @@ def test_lazy_bounded_and_restores_mode_checkpoint_rng(chunked):
         torch.testing.assert_close(value, checkpoint[key], rtol=0, atol=0)
     chunk_state = torch.random.get_rng_state()
     torch.random.set_rng_state(state)
-    reference = scoring.iter_trial_predictions(_InferenceModule(), _InferenceWindows())
+    reference = scoring.iter_trial_predictions(InferenceModule(), InferenceWindows())
     next(reference)
     reference.close()
     assert torch.equal(torch.random.get_rng_state(), chunk_state)
@@ -147,8 +148,8 @@ def test_cleanup_stops_workers_and_restores_mode(
             return batches
 
     monkeypatch.setattr(scoring, "DataLoader", TrackingLoader)
-    module = _InferenceModule(fail=failure == "forward")
-    dataset = _InferenceWindows(
+    module = InferenceModule(fail=failure == "forward")
+    dataset = InferenceWindows(
         fail_at=2 if failure == "dataset" else None,
         ch_pos=failure == "channels",
     )
@@ -178,11 +179,9 @@ def test_chunks_special_values_and_targets(monkeypatch):
             yield value, value.copy(), window, stop
 
     monkeypatch.setattr(scoring, "_iter_prediction_windows", rows)
-    expected = next(scoring.iter_trial_predictions(_InferenceModule(), []))
+    expected = next(scoring.iter_trial_predictions(InferenceModule(), []))
     chunks = list(
-        scoring.iter_trial_prediction_chunks(
-            _InferenceModule(), [], windows_per_chunk=2
-        )
+        scoring.iter_trial_prediction_chunks(InferenceModule(), [], windows_per_chunk=2)
     )
     _equal(np.concatenate([c.prediction for c in chunks], axis=1), expected[0])
     _equal(np.concatenate([c.target for c in chunks], axis=1), expected[1])
@@ -191,11 +190,11 @@ def test_chunks_special_values_and_targets(monkeypatch):
 
 @pytest.mark.parametrize("size", [0, -2, 1.5, True, None])
 def test_chunk_api_rejects_invalid_limits(size):
-    module = _InferenceModule()
+    module = InferenceModule()
     with pytest.raises(ValueError, match="positive integer"):
         list(
             scoring.iter_trial_prediction_chunks(
-                module, _InferenceWindows(), windows_per_chunk=size
+                module, InferenceWindows(), windows_per_chunk=size
             )
         )
     assert module.training
@@ -205,8 +204,8 @@ def test_chunk_arrays_released_after_advance():
     import weakref
 
     iterator = scoring.iter_trial_prediction_chunks(
-        _InferenceModule(),
-        _InferenceWindows("time", repeats=100),
+        InferenceModule(),
+        InferenceWindows("time", repeats=100),
         windows_per_chunk=1,
         return_targets=True,
     )
@@ -232,7 +231,7 @@ def test_long_trial_does_not_pin_tee_history(monkeypatch):
 
     monkeypatch.setattr(scoring, "_iter_prediction_windows", rows)
     iterator = scoring.iter_trial_prediction_chunks(
-        _InferenceModule(), [], windows_per_chunk=3
+        InferenceModule(), [], windows_per_chunk=3
     )
     for _ in range(40):
         next(iterator)
@@ -245,15 +244,15 @@ def test_long_trial_does_not_pin_tee_history(monkeypatch):
 def test_chunk_time_targets_wider_than_predictions():
     # A model output shorter than its window makes the time target wider than
     # the prediction; chunk offsets then differ between the two (this crashed).
-    class Cropping(_InferenceModule):
+    class Cropping(InferenceModule):
         def forward(self, X):
             return super().forward(X)[..., 1:]
 
     module = Cropping()
-    expected = list(scoring.iter_trial_predictions(module, _InferenceWindows("time")))
+    expected = list(scoring.iter_trial_predictions(module, InferenceWindows("time")))
     chunks = list(
         scoring.iter_trial_prediction_chunks(
-            module, _InferenceWindows("time"), windows_per_chunk=1
+            module, InferenceWindows("time"), windows_per_chunk=1
         )
     )
     for trial, (prediction, target) in enumerate(expected):
