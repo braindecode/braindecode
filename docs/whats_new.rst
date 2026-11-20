@@ -403,7 +403,7 @@ Bug fixes
   (:gh:`1647` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.AttnSleep` registers its adaptive feature recalibration
   layers once, so its safetensors checkpoints reload with ``strict=True``. Checkpoints
-  saved by braindecode 2.0 still load (:gh:`1648` by `Bruno Aristimunha`_).
+  and pickles saved by braindecode 2.0 still load (:gh:`1648` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
   original fine-tuning code replaces it by ``nn.Identity()``, so the head now reads

@@ -334,6 +334,11 @@ class _SEBasicBlock(nn.Module):
         self.downsample = downsample
         self.stride = stride
 
+    def __setstate__(self, state):
+        # braindecode 2.0 pickles also hold these layers as ``features``.
+        state["_modules"].pop("features", None)
+        super().__setstate__(state)
+
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
         # braindecode 2.0 state dicts also hold these layers as ``features.<index>``.
         for key in [k for k in state_dict if k.startswith(f"{prefix}features.")]:
