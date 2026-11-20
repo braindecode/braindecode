@@ -190,6 +190,11 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             activation=activation_mrcnn,
             activation_se=activation,
         )
+        # braindecode 2.0 also saved the AFR layers as ``features.<index>``.
+        afr = "feature_extractor.0.AFR.0."
+        for index, name in enumerate(_AFR_LAYERS):
+            for key in mrcnn.AFR[0].get_submodule(name).state_dict():
+                self.mapping[f"{afr}features.{index}.{key}"] = f"{afr}{name}.{key}"
         attn = _MultiHeadedAttention(n_attn_heads, d_model, after_reduced_cnn_size)
         ff = _PositionwiseFeedForward(d_model, d_ff, drop_prob, activation=activation)
         tce = _TCE(
@@ -288,7 +293,25 @@ class _SELayer(nn.Module):
         return x * y.expand_as(x)
 
 
+# Layers of ``_SEBasicBlock`` in the order of braindecode 2.0's ``features``.
+_AFR_LAYERS = ("conv1", "bn1", "relu", "conv2", "bn2", "se")
+
+
 class _SEBasicBlock(nn.Module):
+    r"""Residual block with squeeze-and-excitation (SE) recalibration, the AFR block.
+
+    Steps, for an input of shape ``(batch, inplanes, n_times)``:
+
+    1. A 1x1 convolution (``conv1``), batch normalization (``bn1``) and activation
+       (``relu``).
+    2. A 1x1 convolution (``conv2``) and batch normalization (``bn2``).
+    3. The SE layer (``se``) rescales the channels.
+    4. The input, through a 1x1 convolution and batch normalization when
+       ``inplanes != planes``, is added as a residual, then the activation is applied.
+
+    The output has shape ``(batch, planes, n_times)``.
+    """
+
     expansion = 1
 
     def __init__(
@@ -310,30 +333,43 @@ class _SEBasicBlock(nn.Module):
         self.se = _SELayer(planes, reduction, activation=activation)
         self.downsample = downsample
         self.stride = stride
-        self.features = nn.Sequential(
-            self.conv1, self.bn1, self.relu, self.conv2, self.bn2, self.se
-        )
+
+    def __setstate__(self, state):
+        # braindecode 2.0 pickles also hold these layers as ``features``.
+        state["_modules"].pop("features", None)
+        super().__setstate__(state)
+
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        # braindecode 2.0 state dicts also hold these layers as ``features.<index>``.
+        for key in [k for k in state_dict if k.startswith(f"{prefix}features.")]:
+            del state_dict[key]
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass of the SE layer.
+        Forward pass of the residual SE block.
 
         Parameters
         ----------
         x : torch.Tensor
-            Input tensor of shape (batch_size, n_chans, n_times).
+            Input tensor of shape (batch_size, inplanes, n_times).
 
         Returns
         -------
         torch.Tensor
-            Output tensor after applying the SE recalibration.
+            Output tensor of shape (batch_size, planes, n_times).
         """
         residual = x
-        out = self.features(x)
+        # Convolution, normalization and activation: (batch, planes, n_times)
+        out = self.relu(self.bn1(self.conv1(x)))
+        # Convolution, normalization and SE recalibration: (batch, planes, n_times)
+        out = self.se(self.bn2(self.conv2(out)))
 
+        # Match the residual to the output channels: (batch, planes, n_times)
         if self.downsample is not None:
             residual = self.downsample(x)
 
+        # Add the residual, then activate: (batch, planes, n_times)
         out += residual
         out = self.relu(out)
 

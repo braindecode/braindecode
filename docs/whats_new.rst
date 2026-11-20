@@ -147,6 +147,9 @@ Enhancements
   ``CORTEG.from_pretrained("braindecode/corteg-small-pretrained", ...)`` loads
   ST-EEGFormer small with the high-gamma embedding warm-started; ``ch_mask`` takes
   padded batches (:gh:`1551` by `Julien Gadonneix`_).
+- :class:`braindecode.models.CORTEG` loads a bare :class:`~braindecode.models.STEEGFormer`
+  checkpoint with its high-gamma embedding warm-started from the loaded low-frequency one
+  (:gh:`1625` by `Bruno Aristimunha`_).
 - Adding :class:`braindecode.models.NICE`, the EEG/MEG encoder of the NICE image-decoding
   framework (Song et al., ICLR 2024): TSConv plus the projector into the CLIP image space,
   configured through ``n_chans``/``n_times`` for THINGS-EEG2 and THINGS-MEG; the authors'
@@ -268,6 +271,9 @@ Bug fixes
   random numbers, so seeded weights change (:gh:`1694` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.Deep4Net` with ``mean`` pooling trains right after construction
   and after ``get_output_shape()`` (:gh:`1694` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.CSBrain` builds its patch embedding once instead of forking the RNG
+  and redrawing it, which did not restore the accelerator generator under ``with torch.device(...)``;
+  seeded weights of its four patch-embedding convolutions change (:gh:`1645` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.EEGMiner` exports with
   ``torch.export.export(..., strict=False)`` on PyTorch 2.6 (:gh:`1690` by `Bruno Aristimunha`_).
 - ``convert_to_zarr`` and ``load_from_zarr`` work with a local Zarr installation.
@@ -406,6 +412,9 @@ Bug fixes
   gives a finite loss when an event query leaves time bins uncovered, and
   its Hungarian matcher accepts bfloat16 predictions
   (:gh:`1647` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.AttnSleep` registers its adaptive feature recalibration
+  layers once, so its safetensors checkpoints reload with ``strict=True``. Checkpoints
+  and pickles saved by braindecode 2.0 still load (:gh:`1648` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CBraMod` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head. The
   original fine-tuning code replaces it by ``nn.Identity()``, so the head now reads
@@ -452,6 +461,9 @@ Bug fixes
 - :class:`braindecode.models.EEGTCNet` drops the ``activation`` after its temporal batch norm,
   as in the authors' code. Saved configurations keep it; with a bare state dict, pass
   ``act_after_temporal_bn=True`` (:gh:`1607` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.EEGPT` raises at construction when a learned ``chan_proj_type`` gets an
+  ``n_chans_target`` other than 19: a width of 1 was broadcast over the 19 channel embeddings and
+  other widths failed in forward (:gh:`1624` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
   averages kept steps that lie after the end of the input. When the last
   segment held fewer real samples than its first kept step position, those
@@ -515,6 +527,9 @@ Bug fixes
   ``forward`` stacked them, which needs equal widths. ``forward`` now
   concatenates them. Outputs and parameters are unchanged for equal widths
   (:gh:`1604` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- ``from_pretrained`` takes a new ``n_times``, ``sfreq`` or ``input_window_seconds`` over the saved
+  pair, and loads the local ``pytorch_model.bin`` that ``save_pretrained`` falls back to; without
+  the Hub, ``get_config`` keeps the SignalJEPA arguments (:gh:`1637` by `Bruno Aristimunha`_).
 - :class:`~braindecode.models.GCNsNet` estimates its electrode graph from the
   training partition of array and MNE Epochs inputs. Fresh estimator fits
   recompute the graph, and constant channels have no edges. A passed GCNsNet
@@ -530,6 +545,9 @@ Bug fixes
   Nonfinite values in excluded electrodes no longer leak into the merged signal
   (:gh:`1617` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ZUNA` defaults to ``pos_bins=100``, the value ZUNA1.1 was trained with (paper Table II and Zyphra's configs); the old default ``50`` was ZUNA1's and gave the released encoder outputs up to 5.2 away from the original. The ``braindecode/ZUNA`` checkpoint now holds the ZUNA1.1 encoder in braindecode's parameter names (the earlier ZUNA1 file loaded no parameter into the class) and sets ``pos_bins`` in its config (:gh:`1557` by `Bruno Aristimunha`_).
+- Model configs keep each channel's MNE ``coord_frame``. A
+  :class:`~braindecode.models.STEEGFormer` built on channels outside the head frame
+  reloads with the slots it was built with (:gh:`1631` by `Bruno Aristimunha`_).
 - ``from_pretrained`` of :class:`braindecode.models.Brant` loads a checkpoint at
   a shorter ``n_times``: the learned temporal positions keep the checkpoint's
   leading ones instead of raising a size mismatch
@@ -550,6 +568,9 @@ Bug fixes
   signed references when positive and negative values sum to zero, and
   signed references with no positive value; only constant explanations or
   references are skipped now (:gh:`1635` by `Bruno Aristimunha`_).
+- Pydantic model configs accept ``info["chs"]`` as MNE gives it (integer
+  ``kind``, NaN ``loc``) and ``ch_type`` keys, and keep ``loc`` through JSON
+  with or without ``numpydantic`` (:gh:`1632` by `Bruno Aristimunha`_).
 - :meth:`braindecode.EEGClassifier.predict_proba` normalizes ``CrossEntropyLoss``
   outputs over the classes (axis 1), not the last axis, which gave wrong ``predict``
   labels for sequence outputs such as USleep's (:gh:`1669` by `Bruno Aristimunha`_).

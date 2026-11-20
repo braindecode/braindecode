@@ -15,7 +15,7 @@ import pytest
 import torch
 from torch import nn
 
-from braindecode.models import EEGCLIP, LUNA, PBT, CBraMod, Deep4Net, EEGNet
+from braindecode.models import EEGCLIP, LUNA, PBT, AttnSleep, CBraMod, Deep4Net, EEGNet
 from braindecode.models.base import EEGModuleMixin
 
 if TYPE_CHECKING:
@@ -659,6 +659,25 @@ def test_init_kwargs_tracked_for_subclass():
     assert kwargs["n_times"] == 100
 
 
+def test_signal_jepa_subclass_config_without_hub():
+    """A subclass keeps its own constructor arguments in ``get_config`` without the Hub."""
+    code = """
+import sys
+sys.modules["huggingface_hub"] = None
+import mne
+from braindecode.models import SignalJEPA_Contextual
+from braindecode.models.base import HAS_HF_HUB
+assert not HAS_HF_HUB
+info = mne.create_info(["Cz", "Pz"], 128, "eeg").set_montage("standard_1020")
+model = SignalJEPA_Contextual(chs_info=info["chs"], n_times=256, sfreq=128,
+                             n_outputs=2, n_spat_filters=2,
+                             transformer__num_encoder_layers=1,
+                             transformer__num_decoder_layers=1)
+assert model.get_config()["n_spat_filters"] == 2
+"""
+    subprocess.run([sys.executable, "-c", code], check=True)  # nosec B603 - fixed test
+
+
 def test_hub_method_install_hint_no_hf():
     """Stubs raise ImportError with install hint when huggingface_hub is absent."""
     from braindecode.models.base import _BaseHubMixinStub
@@ -971,3 +990,45 @@ def test_reset_head_on_v2_cbramod_pickle():
     saved = _v2_pickle("CBraMod")
     saved["model"].reset_head(3)
     assert saved["model"](saved["x"]).shape == (2, 3)
+
+
+def _small_attn_sleep():
+    # PReLU has weights, so they are among those of the layers that braindecode
+    # 2.0.0 registered twice, as ``features.<index>``.
+    return AttnSleep(
+        sfreq=100, n_outputs=2, input_window_seconds=30, n_tce=1, d_ff=8,
+        after_reduced_cnn_size=16, n_attn_heads=1, activation=nn.PReLU,
+    )
+
+
+def _v2_layout(name):
+    """Zeros with the keys and shapes braindecode 2.0.0 saved for the small model."""
+    pairs = (line.split(" ", 1) for line in (_V2_DATA / name).read_text().splitlines())
+    return {key: torch.zeros(json.loads(shape)) for key, shape in pairs}
+
+
+def test_attn_sleep_reloads_its_checkpoint_strictly(tmp_path):
+    pytest.importorskip("huggingface_hub")
+    model = _small_attn_sleep().eval()
+    model.save_pretrained(tmp_path)
+    restored = AttnSleep.from_pretrained(tmp_path, strict=True).eval()
+    x = torch.randn(2, 1, 3000)
+    torch.testing.assert_close(restored(x), model(x))
+
+
+def test_attn_sleep_loads_a_v2_state_dict():
+    # 2.0.0 state dicts hold both names of the layers it registered twice.
+    state = _v2_layout("attn_sleep_v2.0.0_state_dict.txt")
+    _small_attn_sleep().load_state_dict(state, strict=True)
+
+
+def test_attn_sleep_loads_a_v2_safetensors_file(tmp_path):
+    pytest.importorskip("huggingface_hub")
+    from safetensors.torch import save_file
+
+    # safetensors keeps one name per tied tensor: the SE and PReLU weights of the
+    # AFR block are saved as ``features.<index>``, the other layers under their names.
+    _small_attn_sleep().save_pretrained(tmp_path)
+    state = _v2_layout("attn_sleep_v2.0.0_safetensors.txt")
+    save_file(state, tmp_path / "model.safetensors")
+    AttnSleep.from_pretrained(tmp_path, strict=True)
