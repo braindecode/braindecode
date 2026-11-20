@@ -35,6 +35,7 @@ import tempfile
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
+from uuid import uuid4
 
 import mne
 import numpy as np
@@ -703,11 +704,8 @@ class HubDatasetMixin:
     ) -> None:
         """Convert dataset to Zarr format (inline implementation)."""
 
-        if zarr is False or huggingface_hub is False:
-            raise ImportError(
-                "huggingface hub functionality is not installed. Install with: "
-                "pip install braindecode[hub]"
-            )
+        if zarr is False:
+            raise ImportError("Local Zarr storage requires zarr>=3.1.")
 
         if output_path.exists():
             raise FileExistsError(
@@ -769,6 +767,7 @@ class HubDatasetMixin:
         # Store global metadata
         root.attrs["n_datasets"] = len(self.datasets)
         root.attrs["dataset_type"] = dataset_type
+        root.attrs["store_id"] = uuid4().hex
         root.attrs["braindecode_version"] = braindecode.__version__
 
         # Track dependency versions for reproducibility
@@ -805,6 +804,8 @@ class HubDatasetMixin:
                     compressor,
                     target_name,
                 )
+                grp.attrs["targets_from"] = ds.targets_from
+                grp.attrs["last_target_only"] = ds.last_target_only
 
             elif dataset_type == "EEGWindowsDataset":
                 # Get continuous raw data and metadata from EEGWindowsDataset
@@ -891,6 +892,9 @@ class HubDatasetMixin:
         if not input_path.exists():
             raise FileNotFoundError(f"{input_path} does not exist.")
 
+        if zarr is False:
+            raise ImportError("Local Zarr storage requires zarr>=3.1.")
+
         # Open zarr store (zarr v3 API)
         root = zarr.open(str(input_path), mode="r")
 
@@ -913,6 +917,9 @@ class HubDatasetMixin:
                 data, metadata, description, info_dict, target_name = (
                     _load_windows_from_zarr(grp, preload)
                 )
+                # Stores written before these attributes existed used metadata.
+                targets_from = grp.attrs.get("targets_from", "metadata")
+                last_target_only = grp.attrs.get("last_target_only", True)
 
                 if preload:
                     # Convert to MNE objects and create dataset
@@ -932,7 +939,12 @@ class HubDatasetMixin:
                     epochs = mne.EpochsArray(
                         data, info, events=events, metadata=metadata
                     )
-                    ds = WindowsDataset(epochs, description)
+                    ds = WindowsDataset(
+                        epochs,
+                        description,
+                        targets_from=targets_from,
+                        last_target_only=last_target_only,
+                    )
                     if target_name is not None:
                         ds.target_name = target_name
                 else:
@@ -943,6 +955,8 @@ class HubDatasetMixin:
                         description=description,
                         info_dict=info_dict,
                         target_name=target_name,
+                        targets_from=targets_from,
+                        last_target_only=last_target_only,
                     )
 
             elif dataset_type == "EEGWindowsDataset":

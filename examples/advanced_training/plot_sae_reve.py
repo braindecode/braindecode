@@ -57,8 +57,8 @@ brings a language-model dependency stack, but no language model or pretrained
 SAE is used here. The REVE-base weights (``brain-bzh/reve-base``, about
 277 MB) are downloaded from the Hugging Face Hub the first time the example
 runs. They are distributed under the REVE Responsible Use License, which you
-accept by downloading them. REVE's electrode position bank is a small file
-that is cached in the MNE data directory.
+accept by downloading them. REVE's electrode position bank needs no download:
+it is built from MNE's standard montages.
 
 .. contents:: This example covers:
    :local:

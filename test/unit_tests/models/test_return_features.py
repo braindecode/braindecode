@@ -36,12 +36,14 @@ from braindecode.models import (
     MIRepNet,
     MtReNIRS,
     PopulationTransformer,
+    Pratibha2,
     SignalJEPA,
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
     SignalJEPA_PreLocal,
     SleepFM,
     STEEGFormer,
+    TinyMyo,
 )
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
@@ -80,7 +82,7 @@ _REVE_CHS = [
 
 
 def _chs(names=None, n=N_CHANS):
-    montage = mne.channels.make_standard_montage("standard_1020")
+    montage = mne.channels.make_standard_montage("colin27_1020")
     ch = names or montage.ch_names[:n]
     info = mne.create_info(ch_names=ch, sfreq=256, ch_types="eeg")
     info.set_montage(montage)
@@ -97,6 +99,13 @@ _MODELS = [
         {"chs_info": _chs(), "embed_dim": 64, "depth": 2, "num_heads": 4},
         False,
         id="AXON",
+    ),
+    pytest.param(
+        Pratibha2,
+        N_CHANS,
+        {"chs_info": _chs(), "embed_dim": 32, "n_freqs": 2, "depth": 2, "num_heads": 4},
+        False,
+        id="Pratibha2",
     ),
     pytest.param(
         REVE,
@@ -229,6 +238,7 @@ _MODELS = [
             "depth": 1,
             "num_heads": 4,
             "embed_dim": 64,
+            "projection_dims": (64, 64),
             "chs_info": _fnirs_chs_info(2),
         },
         False,
@@ -262,6 +272,7 @@ _MODELS = [
         False,
         id="JungMAE",
     ),
+    pytest.param(TinyMyo, 8, {"depth": 1}, False, id="TinyMyo"),
 ]
 
 
