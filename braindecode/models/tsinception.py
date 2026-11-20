@@ -120,6 +120,11 @@ class TSception(EEGModuleMixin, nn.Module):
         for window in self.inception_windows:
             # 1. Calculate the temporal kernel size for this block
             kernel_size_t = int(window * self.sfreq)
+            if kernel_size_t < 1:
+                raise ValueError(
+                    "An inception window is shorter than one sample: too small "
+                    f"`n_times`/`input_window_seconds` for the input {self.input_shape}."
+                )
 
             # 2. Calculate the output length of the convolution
             conv_out_len = self.n_times - kernel_size_t + 1

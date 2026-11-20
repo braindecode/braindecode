@@ -474,6 +474,7 @@ def test_window_shorter_than_the_layers_raises_value_error(name):
         ("EEGNet", 8, {}),
         ("EEGITNet", 8, {}),
         ("TSception", 50, {"pool_size": 64}),
+        ("TSception", 3, {}),
     ],
 )
 def test_window_shorter_than_the_layers_raises_value_error_at_init(
