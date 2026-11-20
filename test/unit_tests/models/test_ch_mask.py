@@ -244,25 +244,6 @@ def test_labram_ch_mask_matches_each_recording_alone():
     _assert_matches_alone(*_labram_case())
 
 
-def test_geonirs_ch_mask_pairs_match_each_recording_alone():
-    # GeoNIRS reads HbO/HbR pairs: recordings of 1, 3 and 2 interleaved pairs
-    torch.manual_seed(0)
-    model = GeoNIRS(n_chans=6, n_outputs=3, n_times=40, channel_order="interleaved",
-                    embed_dim=32, num_heads=4, depth=1,
-                    n_latent_channels=4, feature_dim=8).eval()
-    xs = [torch.randn(2 * n_real, 40) for n_real in N_REAL]
-    geoms = [_positions(i, n_real).repeat(1, 2) for i, n_real in enumerate(N_REAL)]
-    mask = torch.arange(6) < 2 * torch.tensor(N_REAL)[:, None]
-    x = torch.full((len(N_REAL), 6, 40), float("nan"))
-    padded = torch.zeros(len(N_REAL), 3, 6)
-    for i, (xi, geom) in enumerate(zip(xs, geoms)):
-        x[i, : len(xi)] = xi
-        padded[i, : len(geom)] = geom
-    _assert_matches_alone(
-        model, x, mask, xs, {"geometry": padded}, [{"geometry": g[None]} for g in geoms]
-    )
-
-
 def _mne_fnirs_chs(n_pairs):
     """MNE fNIRS chs_info: interleaved HbO/HbR pairs with optode positions."""
     names = [f"S{i}_D{i} {c}" for i in range(1, n_pairs + 1) for c in ("hbo", "hbr")]
@@ -283,7 +264,7 @@ def test_fnirs_chs_info_ch_mask_matches_each_recording_alone(name):
     if name == "GeoNIRS":
         model = GeoNIRS(chs_info=_mne_fnirs_chs(3), n_outputs=3, n_times=40,
                         embed_dim=32, num_heads=4, depth=1,
-                        n_latent_channels=4, feature_dim=8)
+                        n_latent_channels=4, feature_dim=8, projection_dims=(32, 8))
         assert model.channel_order == "interleaved"
         alone = [{"geometry": model.default_geometry[:n_real]} for n_real in N_REAL]
     else:

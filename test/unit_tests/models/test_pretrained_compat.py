@@ -756,6 +756,7 @@ def test_foundation_model_maps_each_sample_under_a_strategy(name):
 
 # Classes with released weights that are outside this EEG/iEEG contract.
 EXCLUDED = {
+    "GeoNIRS": "fNIRS channels placed by optode positions, no EEG geometry",
     "NeuroPose": "sEMG hand-pose regression, no EEG geometry",
     "VEMG2Pose": "sEMG hand-pose regression, no EEG geometry",
     "TinyMyo": "sEMG channel slots, no EEG geometry",
