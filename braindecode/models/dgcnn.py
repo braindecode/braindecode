@@ -19,82 +19,11 @@ from sklearn.neighbors import kneighbors_graph
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
+from braindecode.modules import ChebyshevGraphConv
 from braindecode.util import resolve_montage_name
 
-
-class _GraphConvolution(nn.Module):
-    r"""Chebyshev spectral graph convolution with :math:`1 \times 1` mixing.
-
-    Implements Equations 11-13 of Song et al. (2018).  The spectral
-    filter :math:`g(\boldsymbol{\Lambda}^*)` is approximated by a
-    :math:`K`-order Chebyshev polynomial expansion:
-
-    .. math::
-
-        \mathbf{y}
-        = \sum_{k=0}^{K-1} \theta_k\, T_k(\tilde{\mathbf{L}}^*)\,\mathbf{x},
-
-    where :math:`T_k` are Chebyshev polynomials of the first kind
-    computed recursively (Eq. 12):
-
-    .. math::
-
-        T_0(x) = 1,\quad T_1(x) = x,\quad
-        T_k(x) = 2x\,T_{k-1}(x) - T_{k-2}(x),\quad k \ge 2,
-
-    and :math:`\tilde{\mathbf{L}}^*` is the rescaled normalized Laplacian.
-    The learnable coefficients :math:`\theta_k` are absorbed into a single
-    linear projection of the concatenated Chebyshev components, which
-    simultaneously acts as a :math:`1 \times 1` convolution that mixes
-    features across frequency bands (see Fig. 2 in the paper).
-
-    Parameters
-    ----------
-    in_features : int
-        Number of input features per node (e.g. number of time samples
-        or frequency bands).
-    out_features : int
-        Number of output features per node (number of spectral filters).
-    cheb_order : int
-        Order :math:`K` of the Chebyshev polynomial approximation.
-    """
-
-    def __init__(self, in_features, out_features, cheb_order):
-        super().__init__()
-        self.cheb_order = cheb_order
-        self.projection = nn.Linear(in_features * cheb_order, out_features, bias=False)
-
-    def forward(self, x, laplacian):
-        r"""Apply Chebyshev graph convolution.
-
-        Computes :math:`[T_0(\mathbf{L})\mathbf{x},\;\ldots,\;
-        T_{K-1}(\mathbf{L})\mathbf{x}]` and projects the concatenation
-        through a learned weight matrix.
-
-        Parameters
-        ----------
-        x : Tensor, shape (B, N, F_in)
-            Input node features, where *N* is the number of graph nodes
-            (EEG channels) and *F_in* the input feature dimension.
-        laplacian : Tensor, shape (N, N)
-            Normalized graph Laplacian.
-
-        Returns
-        -------
-        Tensor, shape (B, N, F_out)
-            Filtered node features.
-        """
-        cheb_components = [x]  # T_0(L) x = x
-
-        if self.cheb_order > 1:
-            cheb_components.append(torch.matmul(laplacian, x))  # T_1(L) x = L x
-
-        for _ in range(2, self.cheb_order):
-            cheb_components.append(
-                2 * torch.matmul(laplacian, cheb_components[-1]) - cheb_components[-2]
-            )
-
-        return self.projection(torch.cat(cheb_components, dim=-1))
+# Full-model pickles use the former class name in this module.
+_GraphConvolution = ChebyshevGraphConv
 
 
 def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
@@ -309,7 +238,7 @@ class DGCNN(EEGModuleMixin, nn.Module):
         The adjacency matrix captures intrinsic functional relationships
         between EEG channels that pure spatial proximity may not reflect.
 
-    - :class:`_GraphConvolution` **(Chebyshev spectral graph convolution +
+    - :class:`~braindecode.modules.ChebyshevGraphConv` **(Chebyshev spectral graph convolution +
       1x1 mixing)**
 
         - *Operations.*
@@ -459,7 +388,7 @@ class DGCNN(EEGModuleMixin, nn.Module):
         )
 
         # Chebyshev graph convolution + 1x1 conv (Eq. 13 + Fig. 2)
-        self.graph_conv = _GraphConvolution(
+        self.graph_conv = ChebyshevGraphConv(
             in_features=self.n_times,
             out_features=n_filters,
             cheb_order=cheb_order,

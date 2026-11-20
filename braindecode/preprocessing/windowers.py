@@ -33,6 +33,7 @@ from ..datasets.base import (
     EEGWindowsDataset,
     RawDataset,
     WindowsDataset,
+    _misc_mask,
 )
 
 
@@ -1189,7 +1190,8 @@ def _create_windows_from_target_channels(
     window_kwargs = [
         (create_windows_from_target_channels.__name__, _get_windowing_kwargs(locals())),
     ]
-    target = ds.raw.get_data(picks="misc")
+    # picks="misc" raises for an EEG channel that is named "misc"
+    target = ds.raw.get_data(picks=np.flatnonzero(_misc_mask(ds.raw.info)))
 
     # check all misc channels for valid targets, not just the first one.
     # when multiple target channels exist, some may have values at timepoints
