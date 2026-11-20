@@ -202,9 +202,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
     layer_norm_eps : float, default=1e-6
         Epsilon value for the normalization layer.
     n_chans_target : int, default=19
-        The learned channel projection uses the 19 named electrodes of the
-        pretrained probe. With ``chan_proj_type="none"``, the encoder uses the
-        input montage directly and ignores this parameter.
+        Output channels of the learned channel projection. It must be 19, the
+        electrodes of EEGPT's original linear probe (``EEGPT_19_CHANNELS``).
+        Ignored with ``chan_proj_type="none"``.
 
     References
     ----------
@@ -305,13 +305,14 @@ class EEGPT(EEGModuleMixin, nn.Module):
         self.chan_proj_type = chan_proj_type
         self.n_chans_target = n_chans_target
 
-        # Build channel projection (before encoder)
+        # The learned projection maps x onto the 19 electrodes of EEGPT_19_CHANNELS,
+        # whose embeddings chans_id indexes: x (batch, 19, n_times).
         if chan_proj_type != "none":
             if n_chans_target != len(EEGPT_19_CHANNELS):
                 raise ValueError(
-                    f"EEGPT's learned projection requires n_chans_target={len(EEGPT_19_CHANNELS)}, "
-                    f"got {n_chans_target}. Use chan_proj_type='none' to encode the "
-                    "input montage directly."
+                    "A learned chan_proj_type needs "
+                    f"n_chans_target={len(EEGPT_19_CHANNELS)}, got {n_chans_target}; "
+                    "use chan_proj_type='none' to encode the input montage directly."
                 )
             self.chan_proj = _ChannelProjection(
                 in_channels=self.n_chans,
