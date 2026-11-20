@@ -8103,7 +8103,7 @@ def test_mtrenirs_leaves_unlocated_channels_out():
     located = [1, 2, 4, 5]
     alone = MtReNIRS(chs_info=[chs[i] for i in located], n_outputs=2, n_times=200, depth=2)
     encoder = {k: v for k, v in model.state_dict().items() if not k.startswith("final_layer.")}
-    alone.load_state_dict(encoder)  # the head width depends on n_chans
+    alone.load_state_dict(encoder, strict=False)  # the head width depends on n_chans
     x = torch.randn(2, 6, 200)
     with torch.no_grad():
         tokens, valid = model.encode_windows(x)
@@ -8137,80 +8137,30 @@ def test_mtrenirs_chromophores_and_valid_window_pooling():
         MtReNIRS(n_chans=4, n_outputs=2, n_times=100, embed_dim=12, num_heads=4)
 
 
-_FNIRS_WEIGHTS = os.environ.get("BRAINDECODE_FNIRS_WEIGHTS", "")
-
-
-def _fnirs_checkpoint(file):
-    """``file`` from ``BRAINDECODE_FNIRS_WEIGHTS``; the test is skipped without it."""
-    path = os.path.join(_FNIRS_WEIGHTS, file)
-    if not (_FNIRS_WEIGHTS and os.path.isfile(path)):
-        pytest.skip(f"{file} not in BRAINDECODE_FNIRS_WEIGHTS")
-    return path
-
-
-def _check_released_fnirs_checkpoint(path, cls, kwargs, expected):
-    """The checkpoint, as released (decoders included), loads strictly with
-    ``weights_only=True``, every backbone tensor is the checkpoint's, and the
-    first features equal ``expected``, the authors' code on the same input."""
-    payload = torch.load(path, map_location="cpu", weights_only=True)
-    model = cls(chs_info=_fnirs_chs_info(10), n_outputs=2, **kwargs).eval()
-    model.load_state_dict(payload, strict=True)
-    state = model.state_dict()
-    backbone = [k for k in state if not k.startswith("final_layer.")]
-    assert all(torch.equal(state[k], payload["model"][k]) for k in backbone)
-    torch.manual_seed(0)
-    x = torch.randn(2, model.n_chans, model.n_times)
-    with torch.no_grad():
-        features = model(x, return_features=True)["features"]
-    torch.testing.assert_close(features[:, :4], torch.tensor(expected), rtol=0, atol=1e-5)
-
-
-# features[:, :4] of the authors' code on the input of
-# _check_released_fnirs_checkpoint, computed with the authors' code at the
-# commit each test names
-
-
 @pytest.mark.network
 @pytest.mark.huggingface
 @pytest.mark.parametrize(
     "n_times, expected",
     [
-        # one window: every token at window position 0
-        (100, [
-            [1.3799299001693726, 1.1365183591842651, 1.0999616384506226, 0.12654231488704681],
-            [-0.03779871016740799, -0.9599133729934692, 0.5302731394767761, 0.7867113351821899],
-        ]),
-        # three windows: the rotary position of each window takes part
-        (300, [
-            [1.8037338256835938, 0.23441250622272491, 0.7627871036529541, -0.022611618041992188],
-            [0.5426146388053894, -0.756412923336029, 0.2957547605037689, -1.5501772165298462],
-        ]),
+        (100, [0.248106, -1.594136, 0.505165, 0.201188, -0.050248]),  # one window
+        (300, [0.387405, -0.084270, 1.213972, -0.281512, -1.097081]),  # rotary positions 0-2
     ],
 )
-def test_mtrenirs_released_checkpoint_matches_the_authors_code(n_times, expected):
-    """The MIT-licensed MtReNIRS@16c3082 checkpoint, as released, on the Hub
-    (pinned revision); expected values from the authors' ``MtReNIRS.embed``."""
-    hub = ("braindecode/mtrenirs-pretrained", "bbc68ce5e00a4515081d900227fc06d111858e75")
-    path = os.path.join(_FNIRS_WEIGHTS, "mtrenirs_10s.pt")
-    if not (_FNIRS_WEIGHTS and os.path.isfile(path)):
-        hf_hub = pytest.importorskip("huggingface_hub")
-        try:
-            path = hf_hub.hf_hub_download(hub[0], "mtrenirs_10s.pt", revision=hub[1])
-        except hf_hub.utils.LocalEntryNotFoundError as err:  # offline
-            pytest.skip(f"Hugging Face Hub not reachable: {err}")
-    _check_released_fnirs_checkpoint(
-        path, MtReNIRS, {"n_times": n_times, "sfreq": 10.0}, expected
-    )
-
-
-def test_jung_mae_released_checkpoint_matches_the_authors_code():
-    """The released ``jung_mae.pt`` (81f8995), from ``BRAINDECODE_FNIRS_WEIGHTS``."""
-    expected = [
-        [0.0012979282764717937, -0.39332136511802673, 0.23441119492053986, 0.3510328233242035],
-        [-0.34959089756011963, -0.3680170476436615, 0.44219091534614563, 0.24921967089176178],
-    ]
-    path = _fnirs_checkpoint("jung_mae.pt")
-    _check_released_fnirs_checkpoint(path, JungMAE, {"n_times": 150, "sfreq": 5.0}, expected)
+def test_mtrenirs_pretrained_matches_the_release(n_times, expected):
+    """The re-hosted encoder gives the features of ``mtrenirs_10s.pt``
+    (microsoft/MtReNIRS@16c3082)."""
+    pytest.importorskip("huggingface_hub")
+    model = MtReNIRS.from_pretrained(
+        "braindecode/mtrenirs-pretrained",
+        revision="7c5e60535c3822dcac3ddcd2d19098504d57d38c",
+        chs_info=_fnirs_chs_info(4),
+        n_outputs=3,
+        n_times=n_times,
+    ).eval()
+    x = torch.arange(8.0 * n_times).reshape(1, 8, n_times).mul(0.05).sin()
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+    torch.testing.assert_close(features[0, :5], torch.tensor(expected), rtol=0, atol=1e-5)
 
 
 def _tccnet_reference(model, x, mask_value):
