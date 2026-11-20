@@ -8548,3 +8548,21 @@ def test_pbt_saved_without_a_complete_patch_rejects_the_window():
     model.patch_signal.num_tokens = 3 * 3 // 4  # old model with n_times=3
     with pytest.raises(ValueError, match="one complete patch per channel"):
         model(torch.randn(2, 3, 3))
+
+
+@pytest.mark.parametrize(
+    "cls, n_times",
+    [
+        (EMG2QwertyNet, 4000),
+        (EMG2QwertyNet, 8001),
+        (MetaNeuromotorHand, 30000),
+        (MetaNeuromotorHand, 50001),
+    ],
+)
+def test_output_shape_by_formula(cls, n_times):
+    """get_output_shape computes the size; it equals the shape forward gives."""
+    model = cls(n_outputs=5, n_times=n_times, sfreq=2000.0).eval()
+    with torch.no_grad():
+        out = model(torch.zeros(1, model.n_chans, n_times))
+    out = out[0] if isinstance(out, tuple) else out
+    assert model.get_output_shape() == tuple(out.shape)
