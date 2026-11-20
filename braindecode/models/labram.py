@@ -27,185 +27,6 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import MLP, DropPath
 from braindecode.modules.blocks import PatchTokenizer
 
-# -----------------------------------------------------------------------------
-# Standard 10-20 system electrode positions used by LaBraM for position embeddings.
-# This defines the canonical channel order that the pretrained LaBraM model expects.
-# Channels from input data will be automatically reordered to match this order.
-# Reference: https://github.com/935963004/LaBraM/blob/c431221e6cfd23dbfa9950e0180682fb322b0548/utils.py#L42-L57
-# We just commented the last 8 channels to match the 128 in the pretrained weights here
-#
-# Channels positions come from several sources, all in the head frame that
-# ``raw.set_montage`` gives (one fiducial transform of the montages' own frame):
-#   - standard_1005 names (majority): looked up directly by uppercase key
-#   - bipolar pairs "A-B"  → midpoint of A and B (from standard_1005).
-#     TODO: this is a simplification. A bipolar signal V(A)-V(B) cannot
-#     be faithfully recovered by spatial interpolation at the midpoint.
-#     Revisit in a follow-up PR (e.g. a dedicated BipolarDerivationLayer).
-#   - legacy 10-20 aliases T3/T4/T5/T6 → T7/T8/P7/P8 (standard_1005)
-#   - mastoid M1/M2, ear A1/A2 → standard_1005 (A1/A2 already present there)
-#   - O9/O10 → standard_1020
-#   - CB1/CB2 → standard_postfixed (Cb1/Cb2 cerebellar sites)
-#   - T1/T2 → standard_postfixed (anterior temporal, same as FT9/FT10)
-#   - IZ → standard_1005 (inion area)
-#   - intermediate CFC1-CFC6 → midpoint(FCn, Cn) in standard_1005
-#   - CFC7/CFC8 → midpoint(FT7, T7) / midpoint(FT8, T8)
-#   - CCP7/CCP8 → midpoint(T7, TP7) / midpoint(T8, TP8)
-#   - FTT9h/TTP7h/TPP9h/FTT10h/TPP8h/TPP10h → standard_1005 (h-suffix entries)
-#
-# The `loc` values are only used to build an MNE interpolation matrix
-# for the channel layer. They are NOT used by Labram itself, which
-# relies on learned position embeddings indexed by channel name.
-# -----------------------------------------------------------------------------
-
-# fmt: off
-_LABRAM_TARGET_CHS_TUPLES: list[tuple[str, tuple[float, float, float]]] = [
-    ("FP1", (-0.03090260, 0.11458518, 0.02786657)),  # standard_1005
-    ("FPZ", (-0.00133734, 0.11910180, 0.03288990)),  # standard_1005
-    ("FP2", (0.02840949, 0.11534631, 0.02772126)),  # standard_1005
-    ("AF9", (-0.05051523, 0.09255244, -0.01163823)),  # standard_1005
-    ("AF7", (-0.05636067, 0.09915152, 0.02514129)),  # standard_1005
-    ("AF5", (-0.04693314, 0.10433931, 0.04143977)),  # standard_1005
-    ("AF3", (-0.03518601, 0.10912957, 0.05643921)),  # standard_1005
-    ("AF1", (-0.01994389, 0.11279006, 0.06777204)),  # standard_1005
-    ("AFZ", (-0.00123739, 0.11373993, 0.07038366)),  # standard_1005
-    ("AF2", (0.01834928, 0.11305167, 0.06776147)),  # standard_1005
-    ("AF4", (0.03422985, 0.10981127, 0.05711667)),  # standard_1005
-    ("AF6", (0.04508465, 0.10495921, 0.04144208)),  # standard_1005
-    ("AF8", (0.05422545, 0.09983162, 0.02491507)),  # standard_1005
-    ("AF10", (0.04888931, 0.09196351, -0.01194746)),  # standard_1005
-    ("F9", (-0.07172634, 0.07010038, -0.01263317)),  # standard_1005
-    ("F7", (-0.07187663, 0.07310353, 0.02579046)),  # standard_1005
-    ("F5", (-0.06605409, 0.08023978, 0.05377108)),  # standard_1005
-    ("F3", (-0.05180905, 0.08668790, 0.07871409)),  # standard_1005
-    ("F1", (-0.02904395, 0.09144848, 0.09661865)),  # standard_1005
-    ("FZ", (-0.00122928, 0.09327445, 0.10263929)),  # standard_1005
-    ("F2", (0.02796791, 0.09186996, 0.09577992)),  # standard_1005
-    ("F4", (0.05027427, 0.08743839, 0.07727065)),  # standard_1005
-    ("F6", (0.06633133, 0.08152896, 0.05311628)),  # standard_1005
-    ("F8", (0.07143526, 0.07450512, 0.02510103)),  # standard_1005
-    ("F10", (0.07049013, 0.06997984, -0.01315592)),  # standard_1005
-    ("FT9", (-0.08579655, 0.04308171, -0.01157568)),  # standard_1005
-    ("FT7", (-0.08248932, 0.04484874, 0.02768058)),  # standard_1005
-    ("FC5", (-0.07890598, 0.05136739, 0.06296235)),  # standard_1005
-    ("FC3", (-0.06185234, 0.05713329, 0.09376583)),  # standard_1005
-    ("FC1", (-0.03571587, 0.06171406, 0.11798302)),  # standard_1005
-    ("FCZ", (-0.00127143, 0.06345979, 0.12657198)),  # standard_1005
-    ("FC2", (0.03313097, 0.06182848, 0.11678170)),  # standard_1005
-    ("FC4", (0.06062547, 0.05770742, 0.09379462)),  # standard_1005
-    ("FC6", (0.07784661, 0.05209881, 0.06286711)),  # standard_1005
-    ("FT8", (0.08010432, 0.04555358, 0.02741239)),  # standard_1005
-    ("FT10", (0.08239065, 0.04227491, -0.01167313)),  # standard_1005
-    ("T9", (-0.08772227, 0.01286266, -0.00771191)),  # standard_1005
-    ("T7", (-0.08598209, 0.01487164, 0.03117337)),  # standard_1005
-    ("C5", (-0.08208531, 0.01929363, 0.06948967)),  # standard_1005
-    ("C3", (-0.06714873, 0.02335823, 0.10451068)),  # standard_1005
-    ("C1", (-0.03793783, 0.02633745, 0.12977061)),  # standard_1005
-    ("CZ", (-0.00137414, 0.02761709, 0.14019949)),  # standard_1005
-    ("C2", (0.03589271, 0.02635814, 0.12841234)),  # standard_1005
-    ("C4", (0.06532887, 0.02357310, 0.10369243)),  # standard_1005
-    ("C6", (0.08165316, 0.01969565, 0.06948181)),  # standard_1005
-    ("T8", (0.08326136, 0.01525818, 0.03097297)),  # standard_1005
-    ("T10", (0.08372876, 0.01172163, -0.00766987)),  # standard_1005
-    ("TP9", (-0.08755584, -0.01762902, -0.00340241)),  # standard_1005
-    ("TP7", (-0.08675729, -0.01495097, 0.03515866)),  # standard_1005
-    ("CP5", (-0.08151352, -0.01334569, 0.07313263)),  # standard_1005
-    ("CP3", (-0.06547224, -0.01189660, 0.10777792)),  # standard_1005
-    ("CP1", (-0.03742513, -0.01082424, 0.13344371)),  # standard_1005
-    ("CPZ", (-0.00152491, -0.01051838, 0.14154914)),  # standard_1005
-    ("CP2", (0.03647195, -0.01090379, 0.13281227)),  # standard_1005
-    ("CP4", (0.06469625, -0.01199118, 0.10771287)),  # standard_1005
-    ("CP6", (0.08140110, -0.01346205, 0.07336367)),  # standard_1005
-    ("TP8", (0.08362232, -0.01508568, 0.03505770)),  # standard_1005
-    ("TP10", (0.08422219, -0.01876909, -0.00353477)),  # standard_1005
-    ("P9", (-0.07504186, -0.04461433, 0.00284215)),  # standard_1005
-    ("P7", (-0.07445797, -0.04212316, 0.04127363)),  # standard_1005
-    ("P5", (-0.06929985, -0.04322697, 0.07225380)),  # standard_1005
-    ("P3", (-0.05503824, -0.04421030, 0.09990898)),  # standard_1005
-    ("P1", (-0.03065362, -0.04492739, 0.11947205)),  # standard_1005
-    ("PZ", (-0.00170945, -0.04521299, 0.12667292)),  # standard_1005
-    ("P2", (0.02988639, -0.04503254, 0.12074782)),  # standard_1005
-    ("P4", (0.05363601, -0.04433453, 0.10051603)),  # standard_1005
-    ("P6", (0.06586061, -0.04333852, 0.07194131)),  # standard_1005
-    ("P8", (0.07103246, -0.04225998, 0.04119886)),  # standard_1005
-    ("P10", (0.07185895, -0.04577312, 0.00265579)),  # standard_1005
-    ("PO9", (-0.05702819, -0.06860540, 0.00974109)),  # standard_1005
-    ("PO7", (-0.05694863, -0.06592324, 0.04790744)),  # standard_1005
-    ("PO5", (-0.05053531, -0.06669109, 0.06678691)),  # standard_1005
-    ("PO3", (-0.03862461, -0.06736158, 0.08241555)),  # standard_1005
-    ("PO1", (-0.02108708, -0.06780708, 0.09182133)),  # standard_1005
-    ("POZ", (-0.00189983, -0.06805410, 0.09591000)),  # standard_1005
-    ("PO2", (0.01776256, -0.06797835, 0.09167995)),  # standard_1005
-    ("PO4", (0.03466779, -0.06766214, 0.08164653)),  # standard_1005
-    ("PO6", (0.04770772, -0.06713848, 0.06692061)),  # standard_1005
-    ("PO8", (0.05355732, -0.06641694, 0.04785098)),  # standard_1005
-    ("PO10", (0.05286893, -0.06904690, 0.00966777)),  # standard_1005
-    ("O1", (-0.03157357, -0.08056835, 0.05478965)),  # standard_1005
-    ("OZ", (-0.00206025, -0.08278299, 0.06073663)),  # standard_1005
-    ("O2", (0.02768309, -0.08048884, 0.05473408)),  # standard_1005
-    ("O9", (-0.03199379, -0.08483939, 0.01691581)),  # standard_1020
-    ("CB1", (-0.05702819, -0.06860540, 0.00974109)),  # standard_postfixed (cerebellar site; coincides with PO9 in standard_1005)
-    ("CB2", (0.05286893, -0.06904690, 0.00966777)),  # standard_postfixed (cerebellar site; coincides with PO10 in standard_1005)
-    ("IZ", (-0.00218402, -0.08858648, 0.02327017)),  # standard_1005 (inion area)
-    ("O10", (0.02756693, -0.08474405, 0.01685829)),  # standard_1020
-    ("T3", (-0.08598209, 0.01487164, 0.03117337)),  # legacy alias of T7 (standard_1005)
-    ("T5", (-0.07445797, -0.04212316, 0.04127363)),  # legacy alias of P7 (standard_1005)
-    ("T4", (0.08326136, 0.01525818, 0.03097297)),  # legacy alias of T8 (standard_1005)
-    ("T6", (0.07103246, -0.04225998, 0.04119886)),  # legacy alias of P8 (standard_1005)
-    ("M1", (-0.08801182, -0.01736641, -0.02573202)),  # standard_1005 (left mastoid)
-    ("M2", (0.08385701, -0.01799998, -0.02577594)),  # standard_1005 (right mastoid)
-    ("A1", (-0.08794079, 0.00260137, -0.02686454)),  # standard_1005 (left ear reference)
-    ("A2", (0.08392805, 0.00196780, -0.02690846)),  # standard_1005 (right ear reference)
-    ("CFC1", (-0.03682685, 0.04402576, 0.12387681)),  # midpoint(FC1, C1) in standard_1005
-    ("CFC2", (0.03451184, 0.04409331, 0.12259702)),  # midpoint(FC2, C2) in standard_1005
-    ("CFC3", (-0.06450054, 0.04024576, 0.09913825)),  # midpoint(FC3, C3) in standard_1005
-    ("CFC4", (0.06297717, 0.04064026, 0.09874353)),  # midpoint(FC4, C4) in standard_1005
-    ("CFC5", (-0.08049564, 0.03533051, 0.06622601)),  # midpoint(FC5, C5) in standard_1005
-    ("CFC6", (0.07974989, 0.03589723, 0.06617446)),  # midpoint(FC6, C6) in standard_1005
-    ("CFC7", (-0.08423570, 0.02986019, 0.02942698)),  # midpoint(FT7, T7) in standard_1005
-    ("CFC8", (0.08168284, 0.03040588, 0.02919268)),  # midpoint(FT8, T8) in standard_1005
-    ("CCP1", (-0.03877554, 0.00789637, 0.13280188)),  # standard_1005
-    ("CCP2", (0.03669505, 0.00792920, 0.13202553)),  # standard_1005
-    ("CCP3", (-0.06798115, 0.00581263, 0.10704846)),  # standard_1005
-    ("CCP4", (0.06700242, 0.00601575, 0.10752244)),  # standard_1005
-    ("CCP5", (-0.08340637, 0.00297459, 0.07153029)),  # standard_1005
-    ("CCP6", (0.08269152, 0.00321106, 0.07208924)),  # standard_1005
-    ("CCP7", (-0.08636969, -0.00003966, 0.03316601)),  # midpoint(T7, TP7) in standard_1005
-    ("CCP8", (0.08344184, 0.00008625, 0.03301533)),  # midpoint(T8, TP8) in standard_1005
-    ("T1", (-0.08579655, 0.04308171, -0.01157568)),  # standard_postfixed (anterior temporal; same position as FT9 in standard_1005)
-    ("T2", (0.08239065, 0.04227491, -0.01167313)),  # standard_postfixed (anterior temporal; same position as FT10 in standard_1005)
-    ("FTT9h", (-0.08589978, 0.02786280, 0.00995568)),  # standard_1005 (h-suffix intermediate position)
-    ("TTP7h", (-0.08743383, 0.00145095, 0.05246679)),  # standard_1005 (h-suffix intermediate position)
-    ("TPP9h", (-0.08014305, -0.03063547, 0.01925194)),  # standard_1005 (h-suffix intermediate position)
-    ("FTT10h", (0.08234732, 0.02731141, 0.01010915)),  # standard_1005 (h-suffix intermediate position)
-    ("TPP8h", (0.07654453, -0.02878936, 0.05590055)),  # standard_1005 (h-suffix intermediate position)
-    ("TPP10h", (0.07691815, -0.03139144, 0.01928207)),  # standard_1005 (h-suffix intermediate position)
-    ("FP1-F7", (-0.05138961, 0.09384436, 0.02682852)),  # bipolar: midpoint(FP1, F7) from standard_1005
-    ("F7-T7", (-0.07892936, 0.04398759, 0.02848191)),  # bipolar: midpoint(F7, T7) from standard_1005
-    ("T7-P7", (-0.08022003, -0.01362576, 0.03622350)),  # bipolar: midpoint(T7, P7) from standard_1005
-    ("P7-O1", (-0.05301577, -0.06134576, 0.04803164)),  # bipolar: midpoint(P7, O1) from standard_1005
-    ("FP2-F8", (0.04992237, 0.09492571, 0.02641114)),  # bipolar: midpoint(FP2, F8) from standard_1005
-    ("F8-T8", (0.07734831, 0.04488165, 0.02803700)),  # bipolar: midpoint(F8, T8) from standard_1005
-    ("T8-P8", (0.07714691, -0.01350090, 0.03608592)),  # bipolar: midpoint(T8, P8) from standard_1005
-    ("P8-O2", (0.04935778, -0.06137441, 0.04796647)),  # bipolar: midpoint(P8, O2) from standard_1005
-]   # "FP1-F3", "F3-C3", "C3-P3", "P3-O1", "FP2-F4", "F4-C4", "C4-P4", "P4-O2"
-# fmt: on
-
-_LABRAM_TARGET_CHS_INFO = [
-    {
-        "ch_name": ch,
-        "kind": "eeg",
-        "loc": np.asarray(loc, dtype=float),
-    }
-    for ch, loc in _LABRAM_TARGET_CHS_TUPLES
-]
-LABRAM_CHANNEL_ORDER = [ch for ch, _ in _LABRAM_TARGET_CHS_TUPLES]
-
-#: Absolute time slots of the original LaBraM (``time_embed`` in its
-#: ``modeling_finetune.py``), whatever the window length. A window of P patches
-#: uses slots 0..P-1, and the released weights hold all 16 of them.
-_LABRAM_N_TIME_SLOTS = 16
-_LABRAM_CANONICAL_INDEX = {n.upper(): i for i, n in enumerate(LABRAM_CHANNEL_ORDER)}
-
 
 class Labram(EEGModuleMixin, nn.Module):
     r"""Labram from Jiang, W B et al (2024) [Jiang2024]_.
@@ -371,7 +192,6 @@ class Labram(EEGModuleMixin, nn.Module):
        arXiv:2208.06366 [cs.CV]
     """
 
-    _channel_target = _LABRAM_TARGET_CHS_INFO
     # Constant, so TorchScript compiles only the mode in use (the decoder-only
     # locals do not exist in tokenizer mode).
     __constants__ = ["neural_tokenizer"]
@@ -502,7 +322,7 @@ class Labram(EEGModuleMixin, nn.Module):
         else:
             # If not, the model will be used as Neural Decoder mode
             # So the input here will be after the VQVAE encoder
-            # To be used to extract the ampliture and phase outputs.
+            # To be used to extract the amplitude and phase outputs.
             # Adding inside a Sequential to use the same convention as the
             # Neural Tokenizer mode.
             self.patch_embed = nn.Sequential()
@@ -516,21 +336,29 @@ class Labram(EEGModuleMixin, nn.Module):
                     on_non_divisible=on_non_divisible,
                 ),
             )
+            # Each token averages n_chans / conv_in_channels channels.
+            if self.n_chans % conv_in_channels:
+                raise ValueError(
+                    f"The input channel dimension ({self.n_chans}) must be "
+                    f"divisible by in_channels ({conv_in_channels})."
+                )
 
-        with torch.no_grad():
-            dummy = torch.zeros(1, self.n_chans, self.n_times)
-            out = self.patch_embed(dummy)
-        # out.shape for tokenizer: (1, n_chans, emb_dim)
-        # for decoder:        (1, n_patch, patch_size, emb_dim), but we want last dim
-        if neural_tokenizer and out.shape[-1] != self.embed_dim:
+        # Token width: the temporal convolution's flattened output in the
+        # Neural Tokenizer mode, embed_dim in the Neural Decoder mode.
+        token_dim = (
+            self.patch_embed.temporal_conv.out_features(self.patch_size)
+            if neural_tokenizer
+            else self.embed_dim
+        )
+        if token_dim != self.embed_dim:
             warn(
                 f"In the Neural Tokenizer mode the embedding dimension is set "
                 f"by the temporal convolution (conv_out_channels, patch_size): "
-                f"using embed_dim={out.shape[-1]} instead of the given "
+                f"using embed_dim={token_dim} instead of the given "
                 f"embed_dim={self.embed_dim}.",
                 UserWarning,
             )
-        self.embed_dim = out.shape[-1]
+        self.embed_dim = token_dim
         self.num_features = self.embed_dim
 
         # Defining the parameters
@@ -1026,8 +854,8 @@ class Labram(EEGModuleMixin, nn.Module):
 class _SegmentPatch(nn.Module):
     r"""Segment and Patch for EEG data.
 
-    Adapted Patch Embedding inspired in the Visual Transform approach
-    to extract the learned segmentor, we expect get the input shape as:
+    Adapted Patch Embedding inspired by the Vision Transformer approach
+    to learn the segmentation; the input shape is:
     (Batch, Number of Channels, number of times points).
 
     We apply a 2D convolution with kernel size of (1, patch_size)
@@ -1041,19 +869,19 @@ class _SegmentPatch(nn.Module):
     The number of patches is calculated as the number of samples divided
     by the patch size.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     n_times: int (default=2000)
         Number of temporal components of the input tensor.
     in_chans: int (default=1)
-        number of electrods from the EEG signal
+        number of electrodes of the EEG signal
     emb_dim: int (default=200)
         Number of n_output to be used in the convolution, here,
         we used the same as patch_size.
     patch_size: int (default=200)
         Size of the patch, default is 1-seconds with 200Hz.
-    Returns:
-    --------
+    Returns
+    -------
     x_patched: torch.Tensor
         Output tensor of shape (batch, n_chans, num_patches, emb_dim).
     """
@@ -1103,13 +931,13 @@ class _SegmentPatch(nn.Module):
         """
         Using an 1D convolution to generate segments of EEG signal.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         X: Tensor
             [batch, n_chans, n_times]
 
-        Returns:
-        --------
+        Returns
+        -------
         X_patch: Tensor
             [batch, n_chans, n_patchs, emb_dim] if ``learned_patcher``, else
             [batch, n_chans, n_patchs, patch_size], where ``n_patchs`` is
@@ -1162,8 +990,8 @@ class _PatchEmbed(nn.Module):
     and finally averages over grouped channels to produce one embedding per
     temporal patch.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     n_times: int (default=2000)
         Number of temporal components of the input tensor (used for dimension calculation).
     patch_size: int (default=200)
@@ -1286,8 +1114,8 @@ class _Attention(nn.Module):
     The flag window_size is used to determine if the attention is
     window-based or not.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     dim: int
         Number of input features.
     num_heads: int (default=8)
@@ -1397,8 +1225,8 @@ class _Attention(nn.Module):
         """
         Apply the attention mechanism to the input tensor.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         x: torch.Tensor
             Input tensor of shape (Batch, N, C).
         return_attention: bool (default=False)
@@ -1408,8 +1236,8 @@ class _Attention(nn.Module):
             the output tensor.
         key_mask: torch.Tensor, optional
             (Batch, N) boolean mask of the keys that take part.
-        Returns:
-        --------
+        Returns
+        -------
         x: torch.Tensor
             Output tensor of shape (Batch, N, C).
         qkv: torch.Tensor (optional)
@@ -1487,8 +1315,8 @@ class _WindowsAttentionBlock(nn.Module):
     Notes: This code is strong inspired by:
     BeiTv2 from Microsoft.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     dim: int
         Number of input features.
     num_heads: int (default=8)
@@ -1522,8 +1350,8 @@ class _WindowsAttentionBlock(nn.Module):
         If not None, use this value as the head_dim. If None,
         the classes use dim // num_heads
 
-    Returns:
-    --------
+    Returns
+    -------
     x: torch.Tensor
         Output tensor of shape (Batch, N, C). [I think]
 
@@ -1632,17 +1460,17 @@ class _TemporalConv(nn.Module):
     r"""
     Temporal Convolutional Module inspired by Visual Transformer.
 
-    In this module we apply the follow steps three times repeatedly
+    In this module we apply the following steps three times
     to the input tensor, reducing the temporal dimension only in the first.
     - Apply a 2D convolution.
-    - Apply a GELU activation function.
-    - Apply a GroupNorm with 4 groups.
+    - Apply a GroupNorm with ``num_groups`` groups.
+    - Apply the activation (GELU by default).
 
-    Parameters:
-    -----------
-    in_chans: int (default=1)
+    Parameters
+    ----------
+    in_channels: int (default=1)
         Number of input channels.
-    out_chans: int (default=8)
+    out_channels: int (default=8)
         Number of output channels.
     num_groups: int (default=4)
         Number of groups for GroupNorm.
@@ -1660,10 +1488,10 @@ class _TemporalConv(nn.Module):
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
 
-    Returns:
-    --------
+    Returns
+    -------
     x: torch.Tensor
-        Output tensor of shape (Batch, NA, Temporal Channel).
+        Output tensor of shape (batch, n_chans * n_patches, out_features(patch_size)).
     """
 
     def __init__(
@@ -1716,23 +1544,36 @@ class _TemporalConv(nn.Module):
 
         self.transpose_temporal_channel = Rearrange("Batch C NA T -> Batch NA (T C)")
 
+    def out_features(self, patch_size: int) -> int:
+        """Width of each output token for patches of ``patch_size`` samples.
+
+        Each convolution keeps ``(n + 2 * padding - kernel) // stride + 1`` of
+        its ``n`` input samples, and the ``out_channels`` maps of the last one
+        are flattened into one token.
+        """
+        n_samples = patch_size
+        for conv in (self.conv1, self.conv2, self.conv3):
+            n_samples = (
+                n_samples + 2 * conv.padding[1] - conv.kernel_size[1]
+            ) // conv.stride[1] + 1
+        return self.conv3.out_channels * n_samples
+
     def forward(self, x, ch_mask: Optional[torch.Tensor] = None):
         """
-        Apply 3 steps of 2D convolution, GELU activation function,
-        and GroupNorm.
+        Apply 3 steps of 2D convolution, GroupNorm and activation.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         x: torch.Tensor
             Input tensor of shape (Batch, Channels, n_patchs, size_patch).
         ch_mask: torch.Tensor, optional
             (Batch, Channels) boolean mask of real channels; padded channels
             then take no part in the GroupNorm statistics.
 
-        Returns:
-        --------
+        Returns
+        -------
         x: torch.Tensor
-            Output tensor of shape (Batch, NA, Temporal Channel).
+            Output tensor of shape (batch, n_chans * n_patches, out_features(patch_size)).
         """
         row_mask: Optional[torch.Tensor] = None
         if ch_mask is not None:
@@ -1769,3 +1610,187 @@ class _TemporalConv(nn.Module):
         x = self.act_layer_3(x)
         x = self.transpose_temporal_channel(x)
         return x
+
+
+# -----------------------------------------------------------------------------
+# LaBraM's 128 pretraining channels as (name, (x, y, z)) pairs, in the order of
+# the rows of ``position_embedding`` (channel i owns row i + 1; row 0 is the cls
+# token). forward(ch_names=...) looks each input channel up by name; without
+# ch_names the input must hold exactly these channels, in this order.
+# Reference: https://github.com/935963004/LaBraM/blob/c431221e6cfd23dbfa9950e0180682fb322b0548/utils.py#L42-L57
+# (its last 8 bipolar pairs, listed after the table, have no row in the weights).
+#
+# Positions are in metres. They come from several sources, all in the head frame that
+# ``raw.set_montage`` gives (one fiducial transform of the montages' own frame):
+#   - standard_1005 names (majority): looked up directly by uppercase key
+#   - bipolar pairs "A-B"  → midpoint of A and B (from standard_1005).
+#     TODO: this is a simplification. A bipolar signal V(A)-V(B) cannot
+#     be faithfully recovered by spatial interpolation at the midpoint.
+#     Revisit in a follow-up PR (e.g. a dedicated BipolarDerivationLayer).
+#   - legacy 10-20 aliases T3/T4/T5/T6 → T7/T8/P7/P8 (standard_1005)
+#   - mastoid M1/M2, ear A1/A2 → standard_1005 (A1/A2 already present there)
+#   - O9/O10 → standard_1020
+#   - CB1/CB2 → standard_postfixed (Cb1/Cb2 cerebellar sites)
+#   - T1/T2 → standard_postfixed (anterior temporal, same as FT9/FT10)
+#   - IZ → standard_1005 (inion area)
+#   - intermediate CFC1-CFC6 → midpoint(FCn, Cn) in standard_1005
+#   - CFC7/CFC8 → midpoint(FT7, T7) / midpoint(FT8, T8)
+#   - CCP7/CCP8 → midpoint(T7, TP7) / midpoint(T8, TP8)
+#   - FTT9h/TTP7h/TPP9h/FTT10h/TPP8h/TPP10h → standard_1005 (h-suffix entries)
+#
+# Labram itself uses only the names; the positions build the ChannelLayer's
+# interpolation matrix under a channel_strategy.
+# -----------------------------------------------------------------------------
+
+# fmt: off
+_LABRAM_TARGET_CHS_TUPLES: list[tuple[str, tuple[float, float, float]]] = [
+    ("FP1", (-0.03090260, 0.11458518, 0.02786657)),  # standard_1005
+    ("FPZ", (-0.00133734, 0.11910180, 0.03288990)),  # standard_1005
+    ("FP2", (0.02840949, 0.11534631, 0.02772126)),  # standard_1005
+    ("AF9", (-0.05051523, 0.09255244, -0.01163823)),  # standard_1005
+    ("AF7", (-0.05636067, 0.09915152, 0.02514129)),  # standard_1005
+    ("AF5", (-0.04693314, 0.10433931, 0.04143977)),  # standard_1005
+    ("AF3", (-0.03518601, 0.10912957, 0.05643921)),  # standard_1005
+    ("AF1", (-0.01994389, 0.11279006, 0.06777204)),  # standard_1005
+    ("AFZ", (-0.00123739, 0.11373993, 0.07038366)),  # standard_1005
+    ("AF2", (0.01834928, 0.11305167, 0.06776147)),  # standard_1005
+    ("AF4", (0.03422985, 0.10981127, 0.05711667)),  # standard_1005
+    ("AF6", (0.04508465, 0.10495921, 0.04144208)),  # standard_1005
+    ("AF8", (0.05422545, 0.09983162, 0.02491507)),  # standard_1005
+    ("AF10", (0.04888931, 0.09196351, -0.01194746)),  # standard_1005
+    ("F9", (-0.07172634, 0.07010038, -0.01263317)),  # standard_1005
+    ("F7", (-0.07187663, 0.07310353, 0.02579046)),  # standard_1005
+    ("F5", (-0.06605409, 0.08023978, 0.05377108)),  # standard_1005
+    ("F3", (-0.05180905, 0.08668790, 0.07871409)),  # standard_1005
+    ("F1", (-0.02904395, 0.09144848, 0.09661865)),  # standard_1005
+    ("FZ", (-0.00122928, 0.09327445, 0.10263929)),  # standard_1005
+    ("F2", (0.02796791, 0.09186996, 0.09577992)),  # standard_1005
+    ("F4", (0.05027427, 0.08743839, 0.07727065)),  # standard_1005
+    ("F6", (0.06633133, 0.08152896, 0.05311628)),  # standard_1005
+    ("F8", (0.07143526, 0.07450512, 0.02510103)),  # standard_1005
+    ("F10", (0.07049013, 0.06997984, -0.01315592)),  # standard_1005
+    ("FT9", (-0.08579655, 0.04308171, -0.01157568)),  # standard_1005
+    ("FT7", (-0.08248932, 0.04484874, 0.02768058)),  # standard_1005
+    ("FC5", (-0.07890598, 0.05136739, 0.06296235)),  # standard_1005
+    ("FC3", (-0.06185234, 0.05713329, 0.09376583)),  # standard_1005
+    ("FC1", (-0.03571587, 0.06171406, 0.11798302)),  # standard_1005
+    ("FCZ", (-0.00127143, 0.06345979, 0.12657198)),  # standard_1005
+    ("FC2", (0.03313097, 0.06182848, 0.11678170)),  # standard_1005
+    ("FC4", (0.06062547, 0.05770742, 0.09379462)),  # standard_1005
+    ("FC6", (0.07784661, 0.05209881, 0.06286711)),  # standard_1005
+    ("FT8", (0.08010432, 0.04555358, 0.02741239)),  # standard_1005
+    ("FT10", (0.08239065, 0.04227491, -0.01167313)),  # standard_1005
+    ("T9", (-0.08772227, 0.01286266, -0.00771191)),  # standard_1005
+    ("T7", (-0.08598209, 0.01487164, 0.03117337)),  # standard_1005
+    ("C5", (-0.08208531, 0.01929363, 0.06948967)),  # standard_1005
+    ("C3", (-0.06714873, 0.02335823, 0.10451068)),  # standard_1005
+    ("C1", (-0.03793783, 0.02633745, 0.12977061)),  # standard_1005
+    ("CZ", (-0.00137414, 0.02761709, 0.14019949)),  # standard_1005
+    ("C2", (0.03589271, 0.02635814, 0.12841234)),  # standard_1005
+    ("C4", (0.06532887, 0.02357310, 0.10369243)),  # standard_1005
+    ("C6", (0.08165316, 0.01969565, 0.06948181)),  # standard_1005
+    ("T8", (0.08326136, 0.01525818, 0.03097297)),  # standard_1005
+    ("T10", (0.08372876, 0.01172163, -0.00766987)),  # standard_1005
+    ("TP9", (-0.08755584, -0.01762902, -0.00340241)),  # standard_1005
+    ("TP7", (-0.08675729, -0.01495097, 0.03515866)),  # standard_1005
+    ("CP5", (-0.08151352, -0.01334569, 0.07313263)),  # standard_1005
+    ("CP3", (-0.06547224, -0.01189660, 0.10777792)),  # standard_1005
+    ("CP1", (-0.03742513, -0.01082424, 0.13344371)),  # standard_1005
+    ("CPZ", (-0.00152491, -0.01051838, 0.14154914)),  # standard_1005
+    ("CP2", (0.03647195, -0.01090379, 0.13281227)),  # standard_1005
+    ("CP4", (0.06469625, -0.01199118, 0.10771287)),  # standard_1005
+    ("CP6", (0.08140110, -0.01346205, 0.07336367)),  # standard_1005
+    ("TP8", (0.08362232, -0.01508568, 0.03505770)),  # standard_1005
+    ("TP10", (0.08422219, -0.01876909, -0.00353477)),  # standard_1005
+    ("P9", (-0.07504186, -0.04461433, 0.00284215)),  # standard_1005
+    ("P7", (-0.07445797, -0.04212316, 0.04127363)),  # standard_1005
+    ("P5", (-0.06929985, -0.04322697, 0.07225380)),  # standard_1005
+    ("P3", (-0.05503824, -0.04421030, 0.09990898)),  # standard_1005
+    ("P1", (-0.03065362, -0.04492739, 0.11947205)),  # standard_1005
+    ("PZ", (-0.00170945, -0.04521299, 0.12667292)),  # standard_1005
+    ("P2", (0.02988639, -0.04503254, 0.12074782)),  # standard_1005
+    ("P4", (0.05363601, -0.04433453, 0.10051603)),  # standard_1005
+    ("P6", (0.06586061, -0.04333852, 0.07194131)),  # standard_1005
+    ("P8", (0.07103246, -0.04225998, 0.04119886)),  # standard_1005
+    ("P10", (0.07185895, -0.04577312, 0.00265579)),  # standard_1005
+    ("PO9", (-0.05702819, -0.06860540, 0.00974109)),  # standard_1005
+    ("PO7", (-0.05694863, -0.06592324, 0.04790744)),  # standard_1005
+    ("PO5", (-0.05053531, -0.06669109, 0.06678691)),  # standard_1005
+    ("PO3", (-0.03862461, -0.06736158, 0.08241555)),  # standard_1005
+    ("PO1", (-0.02108708, -0.06780708, 0.09182133)),  # standard_1005
+    ("POZ", (-0.00189983, -0.06805410, 0.09591000)),  # standard_1005
+    ("PO2", (0.01776256, -0.06797835, 0.09167995)),  # standard_1005
+    ("PO4", (0.03466779, -0.06766214, 0.08164653)),  # standard_1005
+    ("PO6", (0.04770772, -0.06713848, 0.06692061)),  # standard_1005
+    ("PO8", (0.05355732, -0.06641694, 0.04785098)),  # standard_1005
+    ("PO10", (0.05286893, -0.06904690, 0.00966777)),  # standard_1005
+    ("O1", (-0.03157357, -0.08056835, 0.05478965)),  # standard_1005
+    ("OZ", (-0.00206025, -0.08278299, 0.06073663)),  # standard_1005
+    ("O2", (0.02768309, -0.08048884, 0.05473408)),  # standard_1005
+    ("O9", (-0.03199379, -0.08483939, 0.01691581)),  # standard_1020
+    ("CB1", (-0.05702819, -0.06860540, 0.00974109)),  # standard_postfixed (cerebellar site; coincides with PO9 in standard_1005)
+    ("CB2", (0.05286893, -0.06904690, 0.00966777)),  # standard_postfixed (cerebellar site; coincides with PO10 in standard_1005)
+    ("IZ", (-0.00218402, -0.08858648, 0.02327017)),  # standard_1005 (inion area)
+    ("O10", (0.02756693, -0.08474405, 0.01685829)),  # standard_1020
+    ("T3", (-0.08598209, 0.01487164, 0.03117337)),  # legacy alias of T7 (standard_1005)
+    ("T5", (-0.07445797, -0.04212316, 0.04127363)),  # legacy alias of P7 (standard_1005)
+    ("T4", (0.08326136, 0.01525818, 0.03097297)),  # legacy alias of T8 (standard_1005)
+    ("T6", (0.07103246, -0.04225998, 0.04119886)),  # legacy alias of P8 (standard_1005)
+    ("M1", (-0.08801182, -0.01736641, -0.02573202)),  # standard_1005 (left mastoid)
+    ("M2", (0.08385701, -0.01799998, -0.02577594)),  # standard_1005 (right mastoid)
+    ("A1", (-0.08794079, 0.00260137, -0.02686454)),  # standard_1005 (left ear reference)
+    ("A2", (0.08392805, 0.00196780, -0.02690846)),  # standard_1005 (right ear reference)
+    ("CFC1", (-0.03682685, 0.04402576, 0.12387681)),  # midpoint(FC1, C1) in standard_1005
+    ("CFC2", (0.03451184, 0.04409331, 0.12259702)),  # midpoint(FC2, C2) in standard_1005
+    ("CFC3", (-0.06450054, 0.04024576, 0.09913825)),  # midpoint(FC3, C3) in standard_1005
+    ("CFC4", (0.06297717, 0.04064026, 0.09874353)),  # midpoint(FC4, C4) in standard_1005
+    ("CFC5", (-0.08049564, 0.03533051, 0.06622601)),  # midpoint(FC5, C5) in standard_1005
+    ("CFC6", (0.07974989, 0.03589723, 0.06617446)),  # midpoint(FC6, C6) in standard_1005
+    ("CFC7", (-0.08423570, 0.02986019, 0.02942698)),  # midpoint(FT7, T7) in standard_1005
+    ("CFC8", (0.08168284, 0.03040588, 0.02919268)),  # midpoint(FT8, T8) in standard_1005
+    ("CCP1", (-0.03877554, 0.00789637, 0.13280188)),  # standard_1005
+    ("CCP2", (0.03669505, 0.00792920, 0.13202553)),  # standard_1005
+    ("CCP3", (-0.06798115, 0.00581263, 0.10704846)),  # standard_1005
+    ("CCP4", (0.06700242, 0.00601575, 0.10752244)),  # standard_1005
+    ("CCP5", (-0.08340637, 0.00297459, 0.07153029)),  # standard_1005
+    ("CCP6", (0.08269152, 0.00321106, 0.07208924)),  # standard_1005
+    ("CCP7", (-0.08636969, -0.00003966, 0.03316601)),  # midpoint(T7, TP7) in standard_1005
+    ("CCP8", (0.08344184, 0.00008625, 0.03301533)),  # midpoint(T8, TP8) in standard_1005
+    ("T1", (-0.08579655, 0.04308171, -0.01157568)),  # standard_postfixed (anterior temporal; same position as FT9 in standard_1005)
+    ("T2", (0.08239065, 0.04227491, -0.01167313)),  # standard_postfixed (anterior temporal; same position as FT10 in standard_1005)
+    ("FTT9h", (-0.08589978, 0.02786280, 0.00995568)),  # standard_1005 (h-suffix intermediate position)
+    ("TTP7h", (-0.08743383, 0.00145095, 0.05246679)),  # standard_1005 (h-suffix intermediate position)
+    ("TPP9h", (-0.08014305, -0.03063547, 0.01925194)),  # standard_1005 (h-suffix intermediate position)
+    ("FTT10h", (0.08234732, 0.02731141, 0.01010915)),  # standard_1005 (h-suffix intermediate position)
+    ("TPP8h", (0.07654453, -0.02878936, 0.05590055)),  # standard_1005 (h-suffix intermediate position)
+    ("TPP10h", (0.07691815, -0.03139144, 0.01928207)),  # standard_1005 (h-suffix intermediate position)
+    ("FP1-F7", (-0.05138961, 0.09384436, 0.02682852)),  # bipolar: midpoint(FP1, F7) from standard_1005
+    ("F7-T7", (-0.07892936, 0.04398759, 0.02848191)),  # bipolar: midpoint(F7, T7) from standard_1005
+    ("T7-P7", (-0.08022003, -0.01362576, 0.03622350)),  # bipolar: midpoint(T7, P7) from standard_1005
+    ("P7-O1", (-0.05301577, -0.06134576, 0.04803164)),  # bipolar: midpoint(P7, O1) from standard_1005
+    ("FP2-F8", (0.04992237, 0.09492571, 0.02641114)),  # bipolar: midpoint(FP2, F8) from standard_1005
+    ("F8-T8", (0.07734831, 0.04488165, 0.02803700)),  # bipolar: midpoint(F8, T8) from standard_1005
+    ("T8-P8", (0.07714691, -0.01350090, 0.03608592)),  # bipolar: midpoint(T8, P8) from standard_1005
+    ("P8-O2", (0.04935778, -0.06137441, 0.04796647)),  # bipolar: midpoint(P8, O2) from standard_1005
+]   # "FP1-F3", "F3-C3", "C3-P3", "P3-O1", "FP2-F4", "F4-C4", "C4-P4", "P4-O2"
+# fmt: on
+
+_LABRAM_TARGET_CHS_INFO = [
+    {
+        "ch_name": ch,
+        "kind": "eeg",
+        "loc": np.asarray(loc, dtype=float),
+    }
+    for ch, loc in _LABRAM_TARGET_CHS_TUPLES
+]
+LABRAM_CHANNEL_ORDER = [ch for ch, _ in _LABRAM_TARGET_CHS_TUPLES]
+
+#: Absolute time slots of the original LaBraM (``time_embed`` in its
+#: ``modeling_finetune.py``), whatever the window length. A window of P patches
+#: uses slots 0..P-1, and the released weights hold all 16 of them.
+_LABRAM_N_TIME_SLOTS = 16
+# Upper-case name -> index in LABRAM_CHANNEL_ORDER (position_embedding row - 1).
+_LABRAM_CANONICAL_INDEX = {n.upper(): i for i, n in enumerate(LABRAM_CHANNEL_ORDER)}
+
+# Under a channel_strategy the backbone consumes this montage.
+Labram._channel_target = _LABRAM_TARGET_CHS_INFO
