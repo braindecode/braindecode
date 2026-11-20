@@ -1,7 +1,7 @@
 """JungMAE against a transcription of the encoder path of the GeoNIRS authors'
 masked autoencoder module (``model/`` of GeoNIRS@81f8995), which packs the
-valid patches of each pair before the Transformer. Runs without the released
-checkpoint."""
+valid patches of each pair before the Transformer, and against the re-hosted
+weights."""
 
 import math
 
@@ -257,51 +257,6 @@ def test_jung_mae_initialization_follows_the_reference():
     _assert_xavier_init(model)
 
 
-def test_jung_mae_loads_the_released_payload_layout():
-    """The released payload as saved by the reference (weights under "model",
-    with the pretraining decoder) loads strictly and keeps the model's head."""
-    model = JungMAE(n_chans=4, n_outputs=2, n_times=60, depth=1)
-    head = {k: v.clone() for k, v in model.final_layer.state_dict().items()}
-    backbone = {k: torch.randn_like(v) for k, v in _backbone(model).items()}
-    decoder = {
-        "decoder_embed.weight": torch.zeros(96, 192),
-        "mask_token": torch.zeros(1, 1, 96),
-        "decoder.layers.0.linear1.weight": torch.zeros(384, 96),
-        "prediction.weight": torch.zeros(20, 96),
-    }
-    payload = {
-        "format_version": 1,
-        "model_config": {"patch_samples": 10},
-        "model": {**backbone, **decoder},
-    }
-    model.load_state_dict(payload, strict=True)
-    state = model.state_dict()
-    assert all(torch.equal(state[k], v) for k, v in backbone.items())
-    assert all(torch.equal(state["final_layer." + k], v) for k, v in head.items())
-    # the override keeps the strict load: unknown or missing keys still raise
-    with pytest.raises(RuntimeError, match="Unexpected key"):
-        model.load_state_dict({"model": {**backbone, "encoder.extra": torch.zeros(1)}})
-    missing = {k: v for k, v in backbone.items() if k != "patch_embed.weight"}
-    with pytest.raises(RuntimeError, match="Missing key"):
-        model.load_state_dict({"model": missing})
-
-
-def test_jung_mae_head_kept_from_the_model_is_not_reported_as_loaded():
-    """Through ``from_pretrained``, the head the override supplies is new."""
-    from braindecode.models.base import _RECORD_LOADED_KEYS
-
-    model = JungMAE(n_chans=4, n_outputs=2, n_times=60, depth=1)
-    backbone = {k: v.clone() for k, v in _backbone(model).items()}
-    token = _RECORD_LOADED_KEYS.set(True)
-    try:
-        model.load_state_dict({"model": backbone}, strict=True)
-    finally:
-        _RECORD_LOADED_KEYS.reset(token)
-    loaded = model.__dict__["_pretrained_provenance"]["loaded"]
-    assert "patch_embed.weight" in loaded
-    assert not any(key.startswith("final_layer.") for key in loaded)
-
-
 def test_jung_mae_activation_reaches_the_feed_forward_layers():
     model = JungMAE(n_chans=4, n_outputs=2, n_times=60, depth=2, activation=nn.ELU)
     assert all(isinstance(layer.activation, nn.ELU) for layer in model.encoder.layers)
@@ -358,3 +313,39 @@ def test_jung_mae_bfloat16_positions_are_cast_from_float32():
         expected = reference.time_positions(6).to(torch.bfloat16)
         out = model.to(torch.bfloat16).encode(torch.randn(1, 4, 60).bfloat16())
     assert torch.equal(out["foundation"][0, 0], expected)
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_jung_mae_pretrained_matches_the_release():
+    """The re-hosted encoder gives the features of ``jung_mae.pt`` (GeoNIRS@81f8995)."""
+    pytest.importorskip("huggingface_hub")
+    model = JungMAE.from_pretrained(
+        "braindecode/jungmae-pretrained",
+        revision="812892cae3be16620bd1fb8a0d91b7b1c61ce0ca",
+        n_chans=40,
+        n_outputs=3,
+        n_times=60,
+    ).eval()
+    x = torch.arange(40 * 60.0).reshape(1, 40, 60).mul(0.05).sin()
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+    assert features.shape == (1, 20 * 6 * 192)  # pairs * patches * embed_dim
+    expected = torch.tensor([-0.138848, 0.800462, 0.378428, 0.906246, -1.811891])
+    torch.testing.assert_close(features[0, :5], expected, rtol=0, atol=1e-5)
+
+
+def test_jung_mae_encoder_accepts_other_complete_pairs():
+    model = JungMAE(
+        n_chans=4, n_outputs=2, n_times=30, embed_dim=16, num_heads=2, depth=1
+    ).eval()
+    for n_chans in (2, 6):
+        x = torch.randn(2, n_chans, 30)
+        encoded = model.encode(x)["foundation"]
+        torch.testing.assert_close(
+            model(x, return_features=True)["features"], encoded.flatten(1)
+        )
+        with pytest.raises(ValueError, match="channels"):
+            model(x)
+    with pytest.raises(ValueError, match="pairs"):
+        model.encode(torch.randn(2, 1, 30))

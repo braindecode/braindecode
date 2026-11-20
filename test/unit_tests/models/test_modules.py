@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 from einops import rearrange
-from mne.filter import create_filter
+from mne.filter import create_filter, filter_data
 from mne.time_frequency import psd_array_welch
 from scipy.signal import fftconvolve as fftconvolve_scipy
 from scipy.signal import freqz
@@ -28,6 +28,8 @@ from braindecode.modules import (
     MLP,
     AvgPool2dWithConv,
     CausalConv1d,
+    ChannelMerger,
+    ChebyshevGraphConv,
     Chomp1d,
     CombinedConv,
     DropPath,
@@ -46,6 +48,43 @@ from braindecode.modules import (
 )
 from braindecode.modules.layers import GroupNorm
 from braindecode.modules.quantization import EMACodebook
+
+
+@pytest.mark.parametrize("order", [1, 2, 4])
+def test_chebyshev_graph_convolution_filters_each_laplacian_eigenmode(order):
+    layer = ChebyshevGraphConv(2, 3, order).double()
+    x = torch.randn(2, 3, 2, dtype=torch.float64)
+    basis, _ = torch.linalg.qr(torch.randn(3, 3, dtype=torch.float64))
+    values = torch.tensor([-0.8, 0.2, 0.9], dtype=torch.float64)
+    laplacian = (basis * values) @ basis.T
+    # Each eigenmode of the kth term is scaled by T_k(s) = cos(k arccos(s)).
+    filtered = [
+        (basis * (k * values.acos()).cos()) @ basis.T @ x for k in range(order)
+    ]
+    torch.testing.assert_close(
+        layer(x, laplacian), layer.projection(torch.cat(filtered, dim=-1))
+    )
+
+
+def test_channel_merger_excludes_nonfinite_padded_channels():
+    merger = ChannelMerger(out_channels=2, pos_dim=8, dropout=0)
+    positions = torch.full((2, 2, 2), merger.invalid_value)
+    positions[1, 0] = 0.5
+    x = torch.full((2, 2, 3), float("nan"))
+    x[1, 0] = torch.tensor([1.0, 2.0, 3.0])
+    x.requires_grad_()
+    merged = merger(x, positions)
+    expected = torch.zeros_like(merged)
+    expected[1] = x[1, 0].detach()
+    torch.testing.assert_close(merged, expected)
+    merged.sum().backward()
+    grad = torch.zeros_like(x)
+    grad[1, 0] = merger.heads.shape[0]
+    torch.testing.assert_close(x.grad, grad)
+    assert torch.isfinite(merger.heads.grad).all()
+    measured_nan = x.detach().clone()
+    measured_nan[1, 0, 0] = float("nan")
+    assert torch.isnan(merger(measured_nan, positions)[1, :, 0]).all()
 
 
 @pytest.mark.parametrize(
@@ -205,12 +244,25 @@ def test_avgpool2dwithconv_cache_requires_exact_device_identity():
         def size(self):
             return torch.Size(weight_shape)
 
+        def is_inference(self):
+            return False
+
     module._pool_weights = FakeTensor("cuda:0", torch.float32)
     same_device = FakeTensor("cuda:0", torch.float32)
     other_device = FakeTensor("cuda:1", torch.float32)
 
     assert module._pool_weights_match_input(same_device, weight_shape)
     assert not module._pool_weights_match_input(other_device, weight_shape)
+
+
+def test_avgpool2dwithconv_trains_after_an_inference_mode_forward():
+    module = AvgPool2dWithConv(kernel_size=(1, 4), stride=(1, 4))
+    with torch.inference_mode():
+        module(torch.randn(2, 3, 1, 16))
+
+    x = torch.randn(2, 3, 1, 16, requires_grad=True)
+    module(x).sum().backward()
+    assert x.grad is not None
 
 
 def test_time_distributed():
@@ -904,26 +956,53 @@ def test_generic_lfilter_core_loop_matches_torchaudio():
 
 
 @pytest.mark.parametrize("phase", ["zero", "forward"])
-def test_filter_bank_layer_scripts(phase):
-    """FIR banks, zero-phase and causal, script and match eager.
-
-    Scripting compiles the causal ``lfilter`` path even for the zero-phase
-    bank, so both phases need the scriptable ``lfilter``.
-    """
+@pytest.mark.parametrize("method", ["fir", "iir"])
+def test_filter_bank_layer_scripts(phase, method):
+    """FIR and IIR banks script and match eager after a model dtype conversion."""
     torch.manual_seed(0)
     layer = FilterBankLayer(
         n_chans=3,
         sfreq=128,
         band_filters=[(4, 8), (8, 30)],
-        method="fir",
+        method=method,
         phase=phase,
         verbose=False,
-    ).eval()
+    ).float().eval()
     x = torch.randn(2, 3, 512)
     with torch.no_grad():
         expected = layer(x)
         scripted = torch.jit.script(layer)
         torch.testing.assert_close(scripted(x), expected)
+
+
+def test_iir_filterbank_half_matches_float64_design():
+    """``.half()`` keeps the float64 IIR design: the output is the float64 one to float16 precision."""
+    kwargs = dict(
+        n_chans=2, sfreq=256, band_filters=[(4, 8), (8, 12)], method="iir", verbose=False
+    )
+    x = torch.randn(2, 2, 1024).half()
+    expected = FilterBankLayer(**kwargs)(x.double())
+    out = FilterBankLayer(**kwargs).half()(x)
+    assert out.dtype == torch.float16
+    torch.testing.assert_close(out.double(), expected, rtol=1e-3, atol=1e-3)
+
+
+@pytest.mark.skipif(not torch.backends.mps.is_available(), reason="requires MPS")
+@pytest.mark.parametrize("method,phase", [("iir", "zero"), ("fir", "forward")])
+def test_filter_bank_layer_float64_filtering_runs_on_mps(method, phase):
+    """MPS has no float64: the filters recurse on the CPU and the bands come back on MPS."""
+    layer = FilterBankLayer(
+        n_chans=3,
+        sfreq=128,
+        band_filters=[(4, 8), (8, 30)],
+        method=method,
+        phase=phase,
+        verbose=False,
+    )
+    x = torch.randn(2, 3, 512)
+    out = layer.to("mps")(x.to("mps"))
+    assert out.device.type == "mps"
+    torch.testing.assert_close(out.cpu(), layer.cpu()(x), rtol=1e-4, atol=1e-4)
 
 
 @pytest.mark.parametrize(
@@ -1012,7 +1091,7 @@ def test_filter_bank_layer_fftconvolve_comparison_fir(
     )
 
 
-@pytest.mark.parametrize("phase", ["zero", "minimum"])
+@pytest.mark.parametrize("phase", ["zero", "minimum", "minimum-half"])
 def test_filter_bank_layer_bands_match_per_band_fftconvolve(phase):
     """All FIR bands at once (filters of different lengths) equal each band's own convolution."""
     x = torch.randn(
@@ -1028,10 +1107,50 @@ def test_filter_bank_layer_bands_match_per_band_fftconvolve(phase):
     assert len({fir.shape[-1] for fir in layer.fir_list}) > 1
     out = layer(x)
     for band, fir in enumerate(layer.fir_list):
-        expected = fftconvolve_scipy(
-            x.numpy(), fir.detach().numpy()[None, None], mode="same", axes=2
-        )
+        if phase in ("minimum", "minimum-half"):
+            # causal filter: no delay compensation, the output starts at lag 0
+            expected = fftconvolve_scipy(
+                x.numpy(), fir.detach().numpy()[None, None], mode="full", axes=2
+            )[..., : x.shape[-1]]
+        else:
+            expected = fftconvolve_scipy(
+                x.numpy(), fir.detach().numpy()[None, None], mode="same", axes=2
+            )
         np.testing.assert_allclose(out[:, band].numpy(), expected, atol=1e-10)
+
+
+@pytest.mark.parametrize("direct", [False, True])
+@pytest.mark.parametrize("phase", ["minimum", "minimum-half"])
+def test_filter_bank_layer_minimum_phase_is_causal(phase, direct):
+    """A minimum-phase FIR bank is causal and equals mne.filter.filter_data."""
+    sfreq, n_times, onset = 250.0, 3000, 1500
+    bands = [(8.0, 13.0), (13.0, 30.0)]
+    x = torch.randn(
+        1, 2, n_times, dtype=torch.float64, generator=torch.Generator().manual_seed(0)
+    )
+    layer = FilterBankLayer(
+        n_chans=2, sfreq=sfreq, band_filters=bands, phase=phase, verbose=False
+    ).double()
+    apply = layer._apply_fir_bank_direct if direct else layer
+
+    # the output before `onset` does not depend on the input from `onset` on
+    x_changed = x.clone()
+    x_changed[..., onset:] = 0.0
+    torch.testing.assert_close(
+        apply(x_changed)[..., :onset], apply(x)[..., :onset], rtol=0, atol=1e-10
+    )
+
+    # same alignment as MNE (away from the edges, which MNE pads); the layer
+    # keeps float32 coefficients, hence the tolerance
+    out = apply(x).numpy()
+    centre = slice(1000, 2000)
+    for band, (l_freq, h_freq) in enumerate(bands):
+        expected = filter_data(
+            x.numpy(), sfreq, l_freq, h_freq, phase=phase, verbose=False
+        )
+        np.testing.assert_allclose(
+            out[:, band, :, centre], expected[..., centre], atol=1e-6
+        )
 
 
 @pytest.mark.parametrize("phase", ["zero", "minimum"])
@@ -1173,7 +1292,7 @@ def test_filter_bank_layer_frequency_response():
     # Prepare plots
     # Iterate over each filter in the filter bank
     for idx, ((l_freq, h_freq), b_value) in enumerate(
-        zip(band_filters, filter_bank_layer.b_list)
+        zip(band_filters, filter_bank_layer.fir_list)
     ):
         # Extract filter coefficients
         b = b_value.detach().numpy()
@@ -1797,23 +1916,24 @@ def test_multi_head_attention_qkv_bias():
     assert no_bias(torch.randn(2, 3, 8)).shape == (2, 3, 8)
 
 
-def test_sdpa_helper_fused_in_lazy_has_no_effect():
-    """``fused_in_lazy`` stays in the signature for existing calls, and changes
-    nothing: Habana's attention setting picks Gaudi's fused kernel."""
+def test_sdpa_helper_fused_in_lazy_is_deprecated():
+    """``fused_in_lazy`` shipped in 2.0.0 and has no effect: setting it warns."""
     from braindecode.functional import scaled_dot_product_attention
 
-    qkv = torch.randn(2, 5, 3, 4, 8).permute(2, 0, 3, 1, 4)  # heads split off
-    mask = torch.arange(5) < torch.tensor([5, 3])[:, None, None, None]
-    for kwargs in ({}, {"attn_mask": mask}, {"dropout_p": 0.3}):
-        outs = []
-        for fused_in_lazy in (False, True):
-            torch.manual_seed(0)
-            outs.append(
-                scaled_dot_product_attention(
-                    *qkv.unbind(0), fused_in_lazy=fused_in_lazy, **kwargs
-                )
-            )
-        assert torch.equal(outs[0], outs[1])
+    q = torch.randn(1, 2, 3, 4)
+    with catch_warnings():
+        simplefilter("error")  # the default stays silent
+        expected = scaled_dot_product_attention(q, q, q)
+    for fused_in_lazy in (False, True):
+        with pytest.warns(FutureWarning, match="removed in braindecode 2.2"):
+            out = scaled_dot_product_attention(q, q, q, fused_in_lazy=fused_in_lazy)
+        assert torch.equal(out, expected)
+    compiled = torch.compile(
+        lambda t: scaled_dot_product_attention(t, t, t, fused_in_lazy=True),
+        backend="eager",
+        fullgraph=True,
+    )
+    assert torch.equal(compiled(q), expected)
 
 
 def test_patch_tokenizer():
@@ -1933,6 +2053,67 @@ def test_patch_count_and_pad_or_crop(n_times, mode, step, expected):
     assert y.unfold(-1, 200, step or 200).shape[2] == expected
     n = min(n_times, y.shape[-1])
     assert torch.equal(y[..., :n], x[..., :n]) and not y[..., n:].any()
+
+
+@pytest.mark.parametrize(
+    "n_times, patch_size, mode, step, message",
+    [
+        (8, 4, "typo", 0, "on_non_divisible"),
+        (5, 4, "typo", 0, "on_non_divisible"),
+        (0, 4, "pad", 0, "n_times"),
+        (8, 0, "pad", 0, "patch_size"),
+        (8, -2, "pad", 0, "patch_size"),
+        (8, 4, "pad", -1, "step"),
+    ],
+)
+def test_invalid_patch_geometry(n_times, patch_size, mode, step, message):
+    from braindecode.functional import pad_or_crop_to_patches, patch_count
+    from braindecode.modules import PatchTokenizer
+
+    x = torch.empty(1, 2, n_times)
+    with pytest.raises(ValueError, match=message):
+        patch_count(n_times, patch_size, mode, step)
+    with pytest.raises(ValueError, match=message):
+        pad_or_crop_to_patches(x, patch_size, mode, step)
+    if step == 0:
+        with pytest.raises(ValueError, match=message):
+            PatchTokenizer(patch_size, n_times, on_non_divisible=mode)(x)
+
+
+def test_patch_tokenizer_rejects_empty_runtime_window():
+    from braindecode.modules import PatchTokenizer
+
+    tokenizer = PatchTokenizer(4, 8)
+    empty = torch.empty(1, 2, 0)
+    with pytest.raises(ValueError, match="n_times"):
+        tokenizer.n_patches(0)
+    with pytest.raises(ValueError, match="n_times"):
+        tokenizer(empty)
+    with pytest.raises(torch.jit.Error, match="n_times"):
+        torch.jit.script(tokenizer)(empty)
+
+
+def test_crop_tokenizer_uses_actual_window_length():
+    from braindecode.modules import PatchTokenizer
+
+    tokenizer = PatchTokenizer(4, 2, on_non_divisible="crop")
+    x = torch.arange(9).reshape(1, 1, 9)
+    torch.testing.assert_close(tokenizer(x), x[..., :8].reshape(1, 1, 2, 4))
+    with pytest.raises(ValueError, match="one full patch"):
+        tokenizer(x[..., :2])
+
+
+@pytest.mark.parametrize(
+    "n_times, expected",
+    [(4, [[1, 2]]), (5, [[1, 2]]), (6, [[1, 2], [6, 0]]), (7, [[1, 2], [6, 7]])],
+)
+def test_gapped_patches_only_pad_a_measured_start(n_times, expected):
+    from braindecode.functional import pad_or_crop_to_patches, patch_count
+
+    x = torch.arange(1, n_times + 1)
+    patches = pad_or_crop_to_patches(x, 2, "pad", step=5).unfold(0, 2, 5)
+    torch.testing.assert_close(patches, torch.tensor(expected))
+    assert patch_count(n_times, 2, "pad", step=5) == len(expected)
 
 
 def test_pad_to_min_patches():
@@ -2137,6 +2318,39 @@ def test_feed_forward_block_options(gated):
     assert next(module.parameters()).shape == (13, 8)
     assert torch.count_nonzero(module(torch.randn(2, 3, 8))) == 0
     torch.jit.script(module)
+
+
+@pytest.mark.parametrize("state_dtype", [torch.float32, torch.float16])
+def test_ema_codebook_large_half_batch_survives_reload(state_dtype):
+    codebook = EMACodebook(1, 2, decay=0, threshold_ema_dead_code=0, kmeans_init=False)
+    codebook.to(state_dtype)
+    codebook.embed.copy_(torch.tensor([[0.0], [10.0]]))
+    x = torch.ones(65_536, 1, dtype=torch.float16)
+    embeddings, indices = codebook(x)
+    assert embeddings.dtype == x.dtype
+    assert torch.count_nonzero(embeddings) == torch.count_nonzero(indices) == 0
+    torch.testing.assert_close(codebook.cluster_size.float(), torch.tensor([65_536.0, 0.0]))
+    torch.testing.assert_close(codebook.embed.float(), torch.tensor([[1.0], [0.0]]))
+
+    restored = EMACodebook(1, 2, decay=0, threshold_ema_dead_code=0, kmeans_init=False)
+    restored.load_state_dict(codebook.state_dict(), strict=True)
+    restored.half()
+    torch.testing.assert_close(restored.cluster_size, codebook.cluster_size)
+    embeddings, indices = restored(2 * x[:3])
+    torch.testing.assert_close(embeddings, x[:3])
+    assert torch.count_nonzero(indices) == 0
+    torch.testing.assert_close(restored.cluster_size.float(), torch.tensor([3.0, 0.0]))
+    torch.testing.assert_close(restored.embed.float(), torch.tensor([[2.0], [0.0]]))
+
+
+def test_ema_codebook_kmeans_initializes_from_a_concentrated_half_batch():
+    codebook = EMACodebook(1, 1, decay=0, kmeans_iters=1).half()
+    x = torch.full((65_536, 1), 100.0, dtype=torch.float16)
+    embeddings, indices = codebook(x)
+    torch.testing.assert_close(embeddings, x)
+    assert indices.count_nonzero() == 0
+    assert codebook.embed.item() == 100
+    assert codebook.cluster_size.item() == len(x)
 
 
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64])
@@ -2378,6 +2592,32 @@ def test_timm_attention_keys_and_weights():
         TimmAttention(16, num_heads=32)
 
 
+def test_timm_attention_rotary_positions_restart_in_each_run():
+    from braindecode.modules import TimmAttention
+
+    torch.manual_seed(0)
+    attn = TimmAttention(16, num_heads=2, rotary_runs=2).eval()
+    x = torch.randn(2, 6, 16)
+    # Two runs of three tokens: swapping the runs keeps every token's position,
+    # so the outputs swap with them
+    swap_runs = [3, 4, 5, 0, 1, 2]
+    torch.testing.assert_close(attn(x[:, swap_runs]), attn(x)[:, swap_runs])
+    # Reversing each run moves its tokens to other positions
+    reverse_runs = [2, 1, 0, 5, 4, 3]
+    assert not torch.allclose(attn(x[:, reverse_runs]), attn(x)[:, reverse_runs])
+    with pytest.raises(ValueError, match="divisible by rotary_runs"):
+        attn(x[:, :5])
+    with pytest.raises(ValueError, match="even"):
+        TimmAttention(12, num_heads=4, rotary_runs=1)
+    with pytest.raises(ValueError, match="rotary_runs must be positive"):
+        TimmAttention(16, rotary_runs=0)
+    # A v2.0.0 full-module pickle has no rotary_runs attribute
+    plain = TimmAttention(16, num_heads=2).eval()
+    expected = plain(x)
+    del plain.rotary_runs
+    torch.testing.assert_close(plain(x), expected, rtol=0, atol=0)
+
+
 def test_pre_norm_block_keys_and_forward():
     from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
 
@@ -2481,3 +2721,15 @@ def test_seanet_resblock_matches_encodec_padding(causal):
     conv = SEANetConv1d(4, 3, 4, 2, causal=True)
     expected = conv.conv(torch.nn.functional.pad(x, (2, 1), mode="reflect"))
     assert torch.equal(conv(x), expected)
+
+
+def test_iir_filter_bank_built_on_meta_device_runs_after_to_empty():
+    """A meta-device build (then ``to_empty``) keeps the IIR design: it is not a meta tensor."""
+    kwargs = dict(
+        n_chans=2, sfreq=128, band_filters=[(4, 8)], method="iir", verbose=False
+    )
+    x = torch.randn(1, 2, 256)
+    with torch.device("meta"):
+        layer = FilterBankLayer(**kwargs)
+    layer.to_empty(device="cpu")
+    torch.testing.assert_close(layer(x), FilterBankLayer(**kwargs)(x))

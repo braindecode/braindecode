@@ -88,6 +88,13 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         Activation of the convolutional blocks.
     drop_prob : float, default=0.2
         Dropout of the attention blocks.
+    channel_strategy : str, default="native"
+        How another montage reaches the tokenizer; see
+        :class:`~braindecode.models.base.EEGModuleMixin`. The tokenizer keeps
+        the ``chs_info`` channels: ``spectrogram_mask`` and :meth:`tokenize`
+        refer to them.
+    channel_strategy_kwargs : dict or None, default=None
+        Options of ``channel_strategy``.
 
     Notes
     -----
@@ -186,6 +193,8 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
         commitment_cost: float = 1.0,
         activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.2,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -194,6 +203,8 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         if self.sfreq <= 0 or not float(self.sfreq).is_integer() or self.sfreq % 2:
             raise ValueError(

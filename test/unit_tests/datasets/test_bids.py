@@ -12,6 +12,7 @@ from moabb.datasets import FakeDataset
 from moabb.paradigms import LeftRightImagery
 
 from braindecode.datasets import BIDSDataset, BIDSEpochsDataset
+from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr
 
 
 @pytest.fixture(scope="module")
@@ -96,6 +97,40 @@ def test_bids_epochs_dataset_targets_of_the_kept_epochs(tmp_path):
     epochs.save(eeg_dir / "sub-01_task-x_epo.fif", overwrite=True, verbose="ERROR")
     dataset = BIDSEpochsDataset(tmp_path)
     assert [dataset[i][1] for i in range(len(dataset))] == ["x", "x", "y", "x"]
+
+
+def test_bids_epochs_zarr_round_trip_keeps_events(tmp_path):
+    """BIDS epochs, whose windows all start at 0, come back at their event samples."""
+    import mne
+    import numpy as np
+
+    pytest.importorskip("zarr")
+    raw = mne.io.RawArray(
+        np.arange(2400).reshape(2, 1200),
+        mne.create_info(["C3", "C4"], 100.0, "eeg"),
+        verbose="ERROR",
+    )
+    events = np.array([[100, 0, 1], [300, 0, 2], [500, 0, 1], [700, 0, 2]])
+    epochs = mne.Epochs(
+        raw, events, {"a": 1, "b": 2}, tmin=-0.1, tmax=0.4, baseline=None, preload=True
+    )
+    eeg_dir = tmp_path / "sub-01" / "eeg"
+    eeg_dir.mkdir(parents=True)
+    path = eeg_dir / "sub-01_task-x_epo.fif"
+    epochs.save(path, verbose="ERROR")
+
+    source = BIDSEpochsDataset(tmp_path)
+    store = convert_to_zarr(source, tmp_path / "recordings.zarr")
+    for preload in (False, True):
+        restored = load_from_zarr(store, preload=preload)
+        windows = restored.datasets[0].windows
+        np.testing.assert_array_equal(windows.events, events)
+        assert windows.event_id == epochs.event_id
+        np.testing.assert_allclose(windows.times, epochs.times)
+        assert restored.datasets[0].description["path"] == str(path)
+        for i in range(len(source)):
+            np.testing.assert_array_equal(restored[i][0], source[i][0])
+            assert restored[i][1:] == source[i][1:]
 
 
 @pytest.mark.parametrize(

@@ -11,22 +11,23 @@ import pytest
 
 from braindecode.datasets.tuh import (
     _TUH_EEG_ABNORMAL_PATHS,
-    _TUH_EEG_EVENTS_PATHS,
     _TUH_EEG_PATHS,
+    TUH,
     TUHAbnormal,
+    TUHEvents,
     _create_description,
+    _fake_raw,
     _get_header,
     _parse_description_from_file_path,
     _sort_chronologically,
     _TUHAbnormalMock,
-    _TUHEventsMock,
     _TUHMock,
 )
 
 
 def test_mock_header_accepts_posix_and_windows_paths():
     """All shared mock headers accept either separator on every host OS."""
-    for corpus in (_TUH_EEG_PATHS, _TUH_EEG_ABNORMAL_PATHS, _TUH_EEG_EVENTS_PATHS):
+    for corpus in (_TUH_EEG_PATHS, _TUH_EEG_ABNORMAL_PATHS):
         for headers in corpus.values():
             for path, expected_header in headers.items():
                 assert _get_header(path) == expected_header
@@ -257,12 +258,26 @@ def test_tuh_abnormal(version):
     platform.system() == "Windows", reason="Not supported on Windows"
 )  # TODO: Fix this
 @pytest.mark.parametrize("version", ["v2.0.1"])
-def test_tuh_events(version):
-    tuh_ev = _TUHEventsMock(path="", n_jobs=1, version=version)
-    files_count = tuh_ev._expected_files_count
+def test_tuh_events(tmp_path, monkeypatch, version):
+    recordings = [
+        ("eval/000/bckg_000_a_.edf", 36, 6),
+        ("eval/001/pled_001_a_2.edf", 68, 3),
+        ("train/aaaaaaar/aaaaaaar_00000001.edf", 19, 1),
+    ]
+    for filename, age, event_code in recordings:
+        path = tmp_path / version / "edf" / filename
+        path.parent.mkdir(parents=True)
+        # TUH reads age and gender from the first 88 bytes of the EDF header.
+        header = f"0       synthetic F 01-JAN-0000 sample Age:{age}".encode("ascii")
+        path.write_bytes(header.ljust(88))
+        path.with_suffix(".rec").write_text(
+            f"0,1.0,2.0,{event_code}\n", encoding="ascii"
+        )
+    monkeypatch.setattr("mne.io.read_raw_edf", _fake_raw)
+    with pytest.warns(UserWarning, match="Expected 518 files but found 3"):
+        tuh_ev = TUHEvents(path=str(tmp_path), version=version, on_missing_files="warn")
     description = tuh_ev.description
-    assert files_count is not None
-    assert len(tuh_ev.datasets) == files_count
+    assert len(tuh_ev.datasets) == len(recordings)
     assert set(description.columns) == {
         "path",
         "subject",
@@ -277,15 +292,20 @@ def test_tuh_events(version):
         "month",
         "day",
     }
-    assert len(tuh_ev) == 3600 * files_count
+    assert len(tuh_ev) == 3600 * len(recordings)
     assert description.subject.to_list() == ["000", "001", "aaaaaaar"]
-    assert description.version.to_list() == [version] * files_count
+    assert description.version.to_list() == [version] * len(recordings)
     assert description.session.to_list() == [1, 1, 1]
     assert description.split.to_list() == ["eval", "eval", "train"]
     event_prefixes = description.event_prefix.to_list()
     assert event_prefixes[:2] == ["bckg", "pled"]
     assert pd.isna(event_prefixes[2])
     assert description.run.to_list() == [0, 2, 0]
+    assert [ds.raw.annotations.description.tolist() for ds in tuh_ev.datasets] == [
+        ["bckg"],
+        ["pled"],
+        ["spsw"],
+    ]
     assert description.age.to_list() == [36, 68, 19]
     assert description.gender.to_list() == ["F", "F", "F"]
 
@@ -306,6 +326,55 @@ def test_tuh_shared_montage_matches_a_fresh_one():
     for ds in tuh.datasets:
         ref = ds.raw.copy().set_montage(fresh, on_missing="ignore")
         assert ds.raw.info["dig"] == ref.info["dig"]
+
+
+@pytest.mark.parametrize(
+    "rows, channel_events, merge_events, expected",
+    [
+        pytest.param(
+            "1,6,7,1\n0,1,2,3\n",
+            True,
+            False,
+            [(1, 1, "pled", ("EEG A1-REF",)), (6, 1, "spsw", ("EEG A2-REF",))],
+            id="unsorted-channel-events",
+        ),
+        pytest.param(
+            "0,1,9,3\n1,2,3,3\n1,4,5,1\n0,8,10,3\n1,10,11,3\n0,15,16,3\n",
+            False,
+            True,
+            [(1, 10, "pled", ()), (4, 1, "spsw", ()), (15, 1, "pled", ())],
+            id="nested-touching-and-separate-events",
+        ),
+        pytest.param(
+            "1,6,7,1\n0,1,2,3\n21,1,2,3\n0,2,3,3\n",
+            False,
+            False,
+            [(1, 1, "pled", ()), (2, 1, "pled", ()), (6, 1, "spsw", ())],
+            id="unmerged-global-events",
+        ),
+        pytest.param("", False, True, [], id="empty-sidecar"),
+    ],
+)
+def test_tuh_events_annotations(
+    tmp_path, monkeypatch, rows, channel_events, merge_events, expected
+):
+    edf = tmp_path / "v2.0.1" / "edf" / "eval" / "000" / "pled_000_a_0.edf"
+    edf.parent.mkdir(parents=True)
+    edf.write_bytes(b"0       synthetic F 01-JAN-0000 sample Age:36".ljust(88))
+    edf.with_suffix(".rec").write_text(rows, encoding="ascii")
+    monkeypatch.setattr("mne.io.read_raw_edf", _fake_raw)
+    with pytest.warns(UserWarning, match="Expected 518 files but found 1"):
+        dataset = TUHEvents(
+            path=str(tmp_path),
+            channel_events=channel_events,
+            merge_events=merge_events,
+            on_missing_files="warn",
+        )
+    annot = dataset.datasets[0].raw.annotations
+    assert (
+        list(zip(annot.onset, annot.duration, annot.description, annot.ch_names))
+        == expected
+    )
 
 
 @pytest.mark.parametrize("date", [{"year": 2013, "month": 8, "day": 15}, {}])
@@ -341,3 +410,37 @@ def test_tuh_date_fif_cannot_store_stays_in_description(tmp_path, date, year):
     reloaded = load_concat_dataset(tmp_path, preload=False)
     assert reloaded.description["year"].tolist() == [year]
     assert reloaded.datasets[0].raw.info["meas_date"] is None
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="Not supported on Windows")
+@pytest.mark.parametrize(
+    "files, report",
+    [
+        pytest.param(
+            {"00000021_s004.txt": "Session A, résumé".encode("latin-1")},
+            "Session A, résumé",
+            id="session-file",
+        ),
+        pytest.param({"00000021_s004_t000_date.txt": b"{}"}, None, id="only-date-file"),
+        pytest.param({}, None, id="none"),
+    ],
+)
+def test_tuh_report_matches_session_name(tmp_path, monkeypatch, files, report):
+    """A recording takes the report named after its session, not a `_date.txt`
+    side file nor the report of another session in the same directory."""
+    session_dir = tmp_path / "v1.2.0/edf/01_tcp_ar/000/00000021/s004_2013_08_15"
+    session_dir.mkdir(parents=True)
+    # TUH reads age and gender from the first 88 bytes of the EDF header.
+    edf = session_dir / "00000021_s004_t000.edf"
+    edf.write_bytes(b"0       synthetic F 01-JAN-0000 sample Age:36".ljust(88))
+    (session_dir / "00000022_s001.txt").write_text("Session B")
+    for name, content in files.items():
+        (session_dir / name).write_bytes(content)
+    monkeypatch.setattr("mne.io.read_raw_edf", _fake_raw)
+    with pytest.warns(UserWarning, match="Could not verify that the number of files"):
+        if report is None:
+            with pytest.raises(RuntimeError, match="Could not read physician report"):
+                TUH(str(tmp_path), version="v1.2.0", add_physician_reports=True)
+        else:
+            tuh = TUH(str(tmp_path), version="v1.2.0", add_physician_reports=True)
+            assert tuh.description["report"].tolist() == [report]

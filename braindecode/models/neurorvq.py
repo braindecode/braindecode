@@ -198,6 +198,17 @@ def _modality(model, modality: str, resample: bool = False) -> dict:
     return preset
 
 
+def _check_channel_strategy(model, modality, channel_strategy, strategy_kwargs):
+    """The channel layer maps electrodes: ECG, EMG and PPG channels stay native."""
+    if modality in _MODALITIES and modality != "eeg":
+        if channel_strategy != "native" or strategy_kwargs:
+            raise ValueError(
+                f"{type(model).__name__} with modality={modality!r} takes "
+                f"{modality.upper()} channels, not electrodes the channel layer "
+                f"can map: only channel_strategy='native' is supported."
+            )
+
+
 def _channel_slots(
     model, channel_names, channels: tuple[str, ...], on_missing: str = "error"
 ):
@@ -444,6 +455,13 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     activation : type[nn.Module], default=nn.GELU
         Activation in the multi-scale temporal patch embedding. GELU reproduces
         the released model.
+    channel_strategy : str, default="native"
+        How another montage reaches the encoder; see
+        :class:`~braindecode.models.base.EEGModuleMixin`. EEG only: the channel
+        layer maps electrodes, so with another ``modality`` any value but
+        ``"native"`` raises a ``ValueError``.
+    channel_strategy_kwargs : dict or None, default=None
+        Options of ``channel_strategy``.
 
     Notes
     -----
@@ -490,7 +508,12 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         attn_drop_rate: float = 0.0,
         drop_path_rate: float = 0.0,
         activation: type[nn.Module] = nn.GELU,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
+        _check_channel_strategy(
+            self, modality, channel_strategy, channel_strategy_kwargs
+        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -498,6 +521,8 @@ class NeuroRVQ(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if on_missing not in ("error", "drop"):

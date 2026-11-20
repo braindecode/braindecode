@@ -40,7 +40,7 @@ _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS = set(non_classification_models).diffe
 # Skip all tests in this file if huggingface_hub is not installed
 pytestmark = pytest.mark.skipif(
     not HAS_HF_HUB,
-    reason="huggingface_hub not installed. Install with: pip install braindecode[hug]"
+    reason="huggingface_hub not installed. Install with: pip install 'braindecode[hub]'"
 )
 
 @pytest.fixture(scope="module", params=models_mandatory_parameters, ids=lambda p: p[0])
@@ -148,8 +148,7 @@ def test_json_serialization(tmp_path, sample_chs_info):
 
 def test_save_pretrained_creates_config(tmp_path, sample_model):
     sample_model, name, _ = sample_model
-    # TODO: fix for AttnSleep
-    if name in _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS | {"AttnSleep"}:
+    if name in _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS:
         pytest.skip(f"Skipping config test for non-classification model: {name}")
 
     if any(isinstance(p, nn.UninitializedParameter) for p in sample_model.parameters()):
@@ -220,8 +219,7 @@ def test_config_contains_all_parameters(tmp_path, sample_model):
 def test_local_push_and_pull_roundtrip(tmp_path, sample_model):
     """Roundtrip through local Hub save/load mimics push/pull."""
     model, name, sp = sample_model
-    # TODO: fix for AttnSleep
-    if name in _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS | {"AttnSleep"}:
+    if name in _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS:
         pytest.skip(f"Skipping Hugging Face Hub test for non-classification model: {name}")
     assert hasattr(model, 'from_pretrained')
     assert callable(getattr(model, 'from_pretrained'))
@@ -245,9 +243,6 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model):
         n_chans = len(sp['chs_info'])
     if n_chans is None:
         n_chans = 22
-    # TODO: small adjust necessary for SignalJEPA_Contextual
-    if name == "SignalJEPA_Contextual":
-        n_chans = 3
     torch.manual_seed(42)
 
     sample_input = torch.randn(2, n_chans, n_times)
@@ -518,6 +513,46 @@ def test_local_weights_selected_symlinks_and_native_modes(tmp_path, filename):
         torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)
 
 
+def test_local_binary_fallback_replaces_previous_weights(tmp_path):
+    model = EEGNet(n_chans=2, n_outputs=2, n_times=128).eval()
+    model.save_pretrained(tmp_path)
+    with torch.no_grad():
+        next(model.parameters()).add_(0.5)
+    # Overlapping views: safetensors refuses to save them, so the next save
+    # falls back to pytorch_model.bin.
+    storage = torch.zeros(3)
+    model.register_buffer("view_a", storage[:2])
+    model.register_buffer("view_b", storage[1:])
+    with pytest.warns(UserWarning, match="pytorch_model.bin"):
+        model.save_pretrained(tmp_path)
+    x = torch.randn(2, 2, 128)
+    for name in (None, "pytorch_model.bin"):
+        restored = EEGNet.from_pretrained(
+            tmp_path, filename=name, local_files_only=True
+        )
+        torch.testing.assert_close(restored(x), model(x))
+
+
+@pytest.mark.parametrize(
+    "geometry, override, expected",
+    [
+        ({"n_times": 256}, {"n_times": 384}, (384, 128)),
+        ({"sfreq": 128}, {"sfreq": 64}, (256, 64)),
+    ],
+)
+def test_override_preserves_the_inferred_saved_geometry(
+    tmp_path, geometry, override, expected
+):
+    model = EEGNet(
+        n_chans=2, n_outputs=2, final_conv_length=1, input_window_seconds=2, **geometry
+    )
+    model.save_pretrained(tmp_path)
+    restored = EEGNet.from_pretrained(
+        tmp_path, local_files_only=True, strict=True, **override
+    )
+    assert (restored.n_times, restored.sfreq) == expected
+
+
 @pytest.mark.parametrize("filename", [None, "missing.safetensors"])
 def test_custom_weights_missing_does_not_use_default_pickle_fallback(tmp_path, monkeypatch, filename):
     import huggingface_hub
@@ -706,7 +741,7 @@ def test_from_pretrained_reports_loaded_parameters(tmp_path):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         same = EEGNet.from_pretrained(tmp_path / "same")
-    assert not [w for w in caught if "no parameter of" in str(w.message)]
+    assert not [w for w in caught if "not loaded from" in str(w.message)]
     assert set(dict(same.named_parameters())) <= same._pretrained_provenance["loaded"]
 
     # Same weights under other key names (e.g. an upstream checkpoint mirrored
@@ -716,9 +751,36 @@ def test_from_pretrained_reports_loaded_parameters(tmp_path):
     (other / "config.json").write_text((tmp_path / "same" / "config.json").read_text())
     weights = load_file(tmp_path / "same" / "model.safetensors")
     save_file({f"model.{k}": v for k, v in weights.items()}, other / "model.safetensors")
-    with pytest.warns(UserWarning, match="no parameter of EEGNet was loaded from"):
+    with pytest.warns(UserWarning, match="parameters of EEGNet were not loaded from"):
         renamed = EEGNet.from_pretrained(other)
     assert not renamed._pretrained_provenance["loaded"]
+
+
+@pytest.mark.parametrize(
+    "dropped, warns",
+    [
+        (("bnorm", "conv_spatial", "conv_separable"), True),  # 9 of 10 body tensors
+        (("final_layer",), False),  # a new head
+        (("conv_temporal",), False),  # one fresh layer, as Labram's fc_norm
+    ],
+)
+def test_from_pretrained_warns_for_unloaded_parameters_outside_the_head(
+    tmp_path, dropped, warns
+):
+    import warnings
+
+    from safetensors.torch import load_file, save_file
+
+    EEGNet(n_chans=4, n_times=128, n_outputs=2).save_pretrained(tmp_path)
+    path = tmp_path / "model.safetensors"
+    weights = load_file(path)
+    save_file({k: v for k, v in weights.items() if not k.startswith(dropped)}, path)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        EEGNet.from_pretrained(tmp_path)
+    messages = [str(w.message) for w in caught if "not loaded from" in str(w.message)]
+    assert bool(messages) == warns
+    assert not warns or "bnorm_temporal.weight" in messages[0]
 
 
 def test_model_card_scalar_and_escaped_html(tmp_path):

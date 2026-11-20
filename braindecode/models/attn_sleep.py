@@ -95,6 +95,12 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         Activation function class to apply in the multi-resolution CNN layer.
         Should be a PyTorch activation module class like ``nn.ReLU`` or
         ``nn.GELU``. Default is ``nn.GELU``.
+    attn_query_norm : bool
+        If ``True``, apply the layer norm of the attention block to the query
+        before the attention, as braindecode 1.0 to 2.0 did. If ``False``
+        (default), attend with the raw query, as the authors' code does.
+
+        .. versionadded:: 2.1
 
     References
     ----------
@@ -124,6 +130,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         chs_info=None,
         n_chans=None,
         n_times=None,
+        attn_query_norm=False,
     ):
         if (
             sum(value is not None for value in (n_times, sfreq, input_window_seconds))
@@ -166,19 +173,10 @@ class AttnSleep(EEGModuleMixin, nn.Module):
                 UserWarning,
             )
 
-        # the usual kernel size for the mrcnn, for sfreq 100
-        kernel_size = 7
+        # Coarse-branch kernel size of the MRCNN (6 at 125 Hz, 7 otherwise).
+        kernel_size = 6 if self.sfreq == 125 else 7
 
-        if self.sfreq == 125:
-            kernel_size = 6
-
-        mrcnn = _MRCNN(
-            after_reduced_cnn_size,
-            kernel_size,
-            activation=activation_mrcnn,
-            activation_se=activation,
-        )
-        feature_length = self._feature_length(mrcnn, self.n_times)
+        feature_length = self._feature_length(self.n_times, kernel_size)
         if feature_length != d_model:
             raise ValueError(
                 f"d_model is {d_model} but the feature extractor returns "
@@ -186,11 +184,27 @@ class AttnSleep(EEGModuleMixin, nn.Module):
                 f"samples at {self.sfreq} Hz. Set d_model={feature_length}, with "
                 "an n_attn_heads that divides it."
             )
+        mrcnn = _MRCNN(
+            after_reduced_cnn_size,
+            kernel_size,
+            activation=activation_mrcnn,
+            activation_se=activation,
+        )
+        # braindecode 2.0 also saved the AFR layers as ``features.<index>``.
+        afr = "feature_extractor.0.AFR.0."
+        for index, name in enumerate(_AFR_LAYERS):
+            for key in mrcnn.AFR[0].get_submodule(name).state_dict():
+                self.mapping[f"{afr}features.{index}.{key}"] = f"{afr}{name}.{key}"
         attn = _MultiHeadedAttention(n_attn_heads, d_model, after_reduced_cnn_size)
         ff = _PositionwiseFeedForward(d_model, d_ff, drop_prob, activation=activation)
         tce = _TCE(
             _EncoderLayer(
-                d_model, deepcopy(attn), deepcopy(ff), after_reduced_cnn_size, drop_prob
+                d_model,
+                deepcopy(attn),
+                deepcopy(ff),
+                after_reduced_cnn_size,
+                drop_prob,
+                attn_query_norm,
             ),
             n_tce,
         )
@@ -205,17 +219,25 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         if not return_feats:
             self.final_layer = nn.Linear(self.len_last_layer, self.n_outputs)
 
+    @classmethod
+    def _fill_legacy_defaults(cls, kwargs):
+        super()._fill_legacy_defaults(kwargs)
+        kwargs.setdefault("attn_query_norm", True)
+
     @staticmethod
-    def _feature_length(mrcnn, n_times):
-        training_states = [(module, module.training) for module in mrcnn.modules()]
-        mrcnn.eval()
-        try:
-            with torch.no_grad():
-                out = mrcnn(torch.zeros(1, 1, n_times))
-        finally:
-            for module, was_training in training_states:
-                module.training = was_training
-        return out.shape[-1]
+    def _feature_length(n_times: int, kernel_size: int) -> int:
+        """Closed-form temporal length returned by the MRCNN feature extractor.
+
+        Propagates ``n_times`` through the Conv1d and MaxPool1d layers of both
+        MRCNN branches and sums the two branch lengths, matching the time-axis
+        concatenation before the length-preserving 1x1 AFR block.
+        """
+        # Fine branch: (batch, 1, n_times) -> (batch, 128, fine_len)
+        fine_len = _branch_output_length(n_times, _MRCNN_FINE_SPECS)
+        # Coarse branch: (batch, 1, n_times) -> (batch, 128, coarse_len)
+        coarse_len = _branch_output_length(n_times, _mrcnn_coarse_specs(kernel_size))
+        # Concatenation along time, preserved by AFR: (batch, after_reduced_cnn_size, fine_len + coarse_len)
+        return fine_len + coarse_len
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -226,8 +248,9 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             Batch of EEG windows of shape (batch_size, n_channels, n_times).
         """
-
+        # MRCNN + TCE feature extraction: (batch, 1, n_times) -> (batch, after_reduced_cnn_size, d_model)
         encoded_features = self.feature_extractor(x)
+        # Flatten channels and time steps: (batch, after_reduced_cnn_size * d_model)
         encoded_features = encoded_features.contiguous().view(
             encoded_features.shape[0], -1
         )
@@ -235,6 +258,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         if self.return_feats:
             return encoded_features
 
+        # Classification head: (batch, n_outputs)
         return self.final_layer(encoded_features)
 
 
@@ -269,7 +293,25 @@ class _SELayer(nn.Module):
         return x * y.expand_as(x)
 
 
+# Layers of ``_SEBasicBlock`` in the order of braindecode 2.0's ``features``.
+_AFR_LAYERS = ("conv1", "bn1", "relu", "conv2", "bn2", "se")
+
+
 class _SEBasicBlock(nn.Module):
+    r"""Residual block with squeeze-and-excitation (SE) recalibration, the AFR block.
+
+    Steps, for an input of shape ``(batch, inplanes, n_times)``:
+
+    1. A 1x1 convolution (``conv1``), batch normalization (``bn1``) and activation
+       (``relu``).
+    2. A 1x1 convolution (``conv2``) and batch normalization (``bn2``).
+    3. The SE layer (``se``) rescales the channels.
+    4. The input, through a 1x1 convolution and batch normalization when
+       ``inplanes != planes``, is added as a residual, then the activation is applied.
+
+    The output has shape ``(batch, planes, n_times)``.
+    """
+
     expansion = 1
 
     def __init__(
@@ -291,37 +333,135 @@ class _SEBasicBlock(nn.Module):
         self.se = _SELayer(planes, reduction, activation=activation)
         self.downsample = downsample
         self.stride = stride
-        self.features = nn.Sequential(
-            self.conv1, self.bn1, self.relu, self.conv2, self.bn2, self.se
-        )
+
+    def __setstate__(self, state):
+        # braindecode 2.0 pickles also hold these layers as ``features``.
+        state["_modules"].pop("features", None)
+        super().__setstate__(state)
+
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        # braindecode 2.0 state dicts also hold these layers as ``features.<index>``.
+        for key in [k for k in state_dict if k.startswith(f"{prefix}features.")]:
+            del state_dict[key]
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass of the SE layer.
+        Forward pass of the residual SE block.
 
         Parameters
         ----------
         x : torch.Tensor
-            Input tensor of shape (batch_size, n_chans, n_times).
+            Input tensor of shape (batch_size, inplanes, n_times).
 
         Returns
         -------
         torch.Tensor
-            Output tensor after applying the SE recalibration.
+            Output tensor of shape (batch_size, planes, n_times).
         """
         residual = x
-        out = self.features(x)
+        # Convolution, normalization and activation: (batch, planes, n_times)
+        out = self.relu(self.bn1(self.conv1(x)))
+        # Convolution, normalization and SE recalibration: (batch, planes, n_times)
+        out = self.se(self.bn2(self.conv2(out)))
 
+        # Match the residual to the output channels: (batch, planes, n_times)
         if self.downsample is not None:
             residual = self.downsample(x)
 
+        # Add the residual, then activate: (batch, planes, n_times)
         out += residual
         out = self.relu(out)
 
         return out
 
 
+# Temporal (kernel_size, stride, padding, dilation) specs of the two MRCNN
+# branches from Eldele et al. (2021). The fine branch captures high-frequency
+# detail; the coarse branch captures low-frequency structure and uses
+# kernel_size=6 at 125 Hz and 7 otherwise in its deeper convolutions.
+_MRCNN_FINE_SPECS = (
+    (50, 6, 24, 1),  # fine conv1
+    (8, 2, 4, 1),  # fine max-pool1
+    (8, 1, 4, 1),  # fine conv2
+    (8, 1, 4, 1),  # fine conv3
+    (4, 4, 2, 1),  # fine max-pool2
+)
+_MRCNN_COARSE_STEM_SPECS = (
+    (400, 50, 200, 1),  # coarse conv1
+    (4, 2, 2, 1),  # coarse max-pool1
+)
+_MRCNN_COARSE_DEEP_PADDING = 3
+_MRCNN_COARSE_TAIL_POOL = (2, 2, 1, 1)  # coarse max-pool2
+
+
+def _mrcnn_coarse_specs(kernel_size: int) -> tuple[tuple[int, int, int, int], ...]:
+    """Temporal (kernel_size, stride, padding, dilation) specs of the coarse branch."""
+    deep_conv = (kernel_size, 1, _MRCNN_COARSE_DEEP_PADDING, 1)
+    return (*_MRCNN_COARSE_STEM_SPECS, deep_conv, deep_conv, _MRCNN_COARSE_TAIL_POOL)
+
+
+def _conv1d_output_length(
+    length: int,
+    kernel_size: int,
+    stride: int = 1,
+    padding: int = 0,
+    dilation: int = 1,
+) -> int:
+    """Closed-form output length of a 1-D Conv1d or MaxPool1d layer."""
+    return (length + 2 * padding - dilation * (kernel_size - 1) - 1) // stride + 1
+
+
+def _branch_output_length(
+    n_times: int, specs: tuple[tuple[int, int, int, int], ...]
+) -> int:
+    """Propagate temporal length through one MRCNN branch of Conv1d/MaxPool1d specs."""
+    length = int(n_times)
+    for kernel_size, stride, padding, dilation in specs:
+        length = _conv1d_output_length(length, kernel_size, stride, padding, dilation)
+        if length <= 0:
+            raise ValueError(
+                "Input window has too small `n_times`/`input_window_seconds` for "
+                f"AttnSleep's feature extractor: layer output length became "
+                f"{length} for input shape (1, 1, {n_times})."
+            )
+    return length
+
+
+def _branch_conv(
+    in_channels: int, out_channels: int, spec: tuple[int, int, int, int]
+) -> nn.Conv1d:
+    """Build a bias-free Conv1d from a ``(kernel_size, stride, padding, dilation)`` spec."""
+    kernel_size, stride, padding, dilation = spec
+    return nn.Conv1d(
+        in_channels,
+        out_channels,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        bias=False,
+    )
+
+
+def _branch_pool(spec: tuple[int, int, int, int]) -> nn.MaxPool1d:
+    """Build a MaxPool1d from a ``(kernel_size, stride, padding, dilation)`` spec."""
+    kernel_size, stride, padding, dilation = spec
+    return nn.MaxPool1d(
+        kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation
+    )
+
+
 class _MRCNN(nn.Module):
+    r"""Multi-resolution CNN and adaptive feature recalibration (AFR) block.
+
+    Applies two parallel 1-D convolutional/max-pooling branches (fine and
+    coarse) to a single-channel EEG input of shape ``(batch, 1, n_times)``,
+    concatenates their outputs along time to ``(batch, 128, L_1 + L_2)``,
+    applies dropout, and recalibrates channels through a 1x1 residual SE block
+    to produce ``(batch, after_reduced_cnn_size, L_1 + L_2)``.
+    """
+
     def __init__(
         self,
         after_reduced_cnn_size,
@@ -332,38 +472,37 @@ class _MRCNN(nn.Module):
         super(_MRCNN, self).__init__()
         drate = 0.5
         self.GELU = activation()
+        f_conv1, f_pool1, f_conv2, f_conv3, f_pool2 = _MRCNN_FINE_SPECS
+        c_conv1, c_pool1, c_conv2, c_conv3, c_pool2 = _mrcnn_coarse_specs(kernel_size)
+
         self.features1 = nn.Sequential(
-            nn.Conv1d(1, 64, kernel_size=50, stride=6, bias=False, padding=24),
+            _branch_conv(1, 64, f_conv1),
             nn.BatchNorm1d(64),
             self.GELU,
-            nn.MaxPool1d(kernel_size=8, stride=2, padding=4),
+            _branch_pool(f_pool1),
             nn.Dropout(drate),
-            nn.Conv1d(64, 128, kernel_size=8, stride=1, bias=False, padding=4),
+            _branch_conv(64, 128, f_conv2),
             nn.BatchNorm1d(128),
             self.GELU,
-            nn.Conv1d(128, 128, kernel_size=8, stride=1, bias=False, padding=4),
+            _branch_conv(128, 128, f_conv3),
             nn.BatchNorm1d(128),
             self.GELU,
-            nn.MaxPool1d(kernel_size=4, stride=4, padding=2),
+            _branch_pool(f_pool2),
         )
 
         self.features2 = nn.Sequential(
-            nn.Conv1d(1, 64, kernel_size=400, stride=50, bias=False, padding=200),
+            _branch_conv(1, 64, c_conv1),
             nn.BatchNorm1d(64),
             self.GELU,
-            nn.MaxPool1d(kernel_size=4, stride=2, padding=2),
+            _branch_pool(c_pool1),
             nn.Dropout(drate),
-            nn.Conv1d(
-                64, 128, kernel_size=kernel_size, stride=1, bias=False, padding=3
-            ),
+            _branch_conv(64, 128, c_conv2),
             nn.BatchNorm1d(128),
             self.GELU,
-            nn.Conv1d(
-                128, 128, kernel_size=kernel_size, stride=1, bias=False, padding=3
-            ),
+            _branch_conv(128, 128, c_conv3),
             nn.BatchNorm1d(128),
             self.GELU,
-            nn.MaxPool1d(kernel_size=2, stride=2, padding=1),
+            _branch_pool(c_pool2),
         )
 
         self.dropout = nn.Dropout(drate)
@@ -399,10 +538,13 @@ class _MRCNN(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Fine and coarse temporal branches: (batch, 1, n_times) -> (batch, 128, L_1/L_2)
         x1 = self.features1(x)
         x2 = self.features2(x)
+        # Concatenate both resolutions along time: (batch, 128, L_1 + L_2)
         x_concat = torch.cat((x1, x2), dim=2)
         x_concat = self.dropout(x_concat)
+        # Adaptive feature recalibration: (batch, after_reduced_cnn_size, L_1 + L_2)
         x_concat = self.AFR(x_concat)
         return x_concat
 
@@ -471,13 +613,30 @@ class _MultiHeadedAttention(nn.Module):
 
 
 class _ResidualLayerNormAttn(nn.Module):
-    r"""A residual connection followed by a layer norm."""
+    r"""Attention sublayer of the encoder, with a residual connection.
 
-    def __init__(self, size, dropout, fn_attn):
+    Steps, for ``x``, ``key`` and ``value`` of shape
+    ``(batch, after_reduced_cnn_size, d_model)``:
+
+    1. The query is ``x``, layer-normalized if ``norm_query``.
+    2. The multi-head attention reads the query, ``key`` and ``value``.
+    3. Dropout, then the residual ``x`` is added.
+
+    The output has the shape of ``x``.
+    """
+
+    def __init__(self, size, dropout, fn_attn, norm_query):
         super().__init__()
         self.norm = nn.LayerNorm(size, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
         self.fn_attn = fn_attn
+        self.norm_query = norm_query
+
+    def __setstate__(self, state):
+        # Full models pickled before the raw-query option normalized the
+        # query. Set the flag on the instance so TorchScript also sees it.
+        state.setdefault("norm_query", True)
+        super().__setstate__(state)
 
     def forward(
         self,
@@ -486,11 +645,13 @@ class _ResidualLayerNormAttn(nn.Module):
         value: torch.Tensor,
     ) -> torch.Tensor:
         """Apply residual connection to any sublayer with the same size."""
-        x_norm = self.norm(x)
+        # The reference attends with the raw query. ``norm_query`` keeps the
+        # braindecode 1.0 to 2.0 behaviour.
+        query = self.norm(x) if self.norm_query else x
+        # Attention output: (batch, after_reduced_cnn_size, d_model)
+        out = self.fn_attn(query, key, value)
 
-        out = self.fn_attn(x_norm, key, value)
-
-        return x + self.dropout(out)
+        return x + self.dropout(out)  # (batch, after_reduced_cnn_size, d_model)
 
 
 class _ResidualLayerNormFF(nn.Module):
@@ -537,7 +698,15 @@ class _EncoderLayer(nn.Module):
     Each of these sublayers have residual and layer norm, implemented by _ResidualLayerNorm.
     """
 
-    def __init__(self, size, self_attn, feed_forward, after_reduced_cnn_size, dropout):
+    def __init__(
+        self,
+        size,
+        self_attn,
+        feed_forward,
+        after_reduced_cnn_size,
+        dropout,
+        attn_query_norm,
+    ):
         super().__init__()
         self.size = size
         self.self_attn = self_attn
@@ -547,6 +716,7 @@ class _EncoderLayer(nn.Module):
             size=size,
             dropout=dropout,
             fn_attn=self_attn,
+            norm_query=attn_query_norm,
         )
         self.residual_ff = _ResidualLayerNormFF(
             size=size,

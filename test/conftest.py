@@ -49,9 +49,9 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         callspec = getattr(item, "callspec", None)
         params = getattr(callspec, "params", {}).values()
-        if any(_is_reve_param(param) for param in params):
-            item.add_marker(pytest.mark.network)
-            item.add_marker(pytest.mark.huggingface)
+        # 69.5M-parameter REVE and 92.9M-parameter Pratibha2 builds exhaust the parallel job's memory.
+        if any(_is_full_size_model(param) for param in params):
+            item.add_marker(pytest.mark.slow)
 
         # Network tests, even slow ones (the Hub module), follow --run-network alone.
         if "network" in item.keywords:
@@ -63,13 +63,22 @@ def pytest_collection_modifyitems(config, items):
     items[:] = [item for item in items if item not in deselected]
 
 
-def _is_reve_param(param):
-    """Return whether a parametrized value identifies the REVE model."""
+_FULL_SIZE_MODELS = {"REVE", "Pratibha2"}
+
+
+def _is_full_size_model(param):
+    """Return whether a parametrized value identifies a model of
+    ``_FULL_SIZE_MODELS``."""
     if isinstance(param, str):
-        return param == "REVE"
+        return param in _FULL_SIZE_MODELS
 
     name = getattr(param, "__name__", None)
-    if name == "REVE":
+    if name in _FULL_SIZE_MODELS:
         return True
 
-    return isinstance(param, (tuple, list)) and len(param) > 0 and param[0] == "REVE"
+    return (
+        isinstance(param, (tuple, list))
+        and len(param) > 0
+        and isinstance(param[0], str)
+        and param[0] in _FULL_SIZE_MODELS
+    )

@@ -2,6 +2,8 @@ import importlib
 import pkgutil
 import subprocess  # nosec B404 - runs constant snippets with sys.executable
 import sys
+from pathlib import Path
+from zipfile import ZipFile
 
 import braindecode
 from braindecode import models
@@ -47,13 +49,34 @@ assert registry and set(seen) == {0}, sorted(set(seen))
 """
 
 
-def _run(code):
+def _run(code, *args):
     # Fresh interpreter: the test session has already imported every model.
-    subprocess.run([sys.executable, "-c", code], check=True)  # nosec B603 - own code
+    subprocess.run([sys.executable, "-c", code, *args], check=True)  # nosec B603 - own code
 
 
 def test_import_braindecode_does_not_load_models():
     _run(CODE)
+
+
+# zipimport: neither the registry source nor summary.csv is a file on disk.
+ZIP_CODE = """
+import sys
+sys.path.insert(0, sys.argv[1])
+from braindecode import models
+from braindecode.models.util import get_summary_table
+assert models.__file__.startswith(sys.argv[1]), models.__file__
+assert "EEGNet" in models.__all__ and "EEGNet" in get_summary_table().index
+"""
+
+
+def test_models_import_from_zip(tmp_path):
+    package = Path(braindecode.__file__).parent
+    archive = tmp_path / "braindecode.zip"
+    with ZipFile(archive, "w") as zipped:
+        for path in package.rglob("*"):
+            if path.suffix in {".py", ".csv"}:
+                zipped.write(path, path.relative_to(package.parent))
+    _run(ZIP_CODE, str(archive))
 
 
 def test_subpackages_load_on_attribute_access():
