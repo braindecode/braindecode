@@ -77,20 +77,9 @@ Enhancements
 - Add :class:`braindecode.models.TinyMyo` (Fasulo et al., IEEE TBME 2026), a small sEMG foundation
   model; its encoder is on the Hugging Face Hub at ``braindecode/tinymyo-pretrained``, its gesture classifiers
   at ``braindecode/tinymyo-db5``, ``-epn612`` and ``-uci-emg`` (:gh:`1649` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
-- :class:`braindecode.modules.ChannelLayer` maps channels with one linear
-  estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
-  targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat
-  prior on the unknown reference (universal kriging). ``spline`` (now Perrin's
-  kernel, :func:`~braindecode.functional.spherical_spline_kernel`) and ``wiener``
-  use it with unchanged maps; ``channel_strategy`` also takes any covariance
-  kernel, fed positions from the fitted head centre, with ``reg=1e-3`` and at
-  least four positioned channels, as ``spline``. The layer gives each target's posterior ``variance``, matches the
-  amplitude with ``match_gain=True``, re-references the targets with
-  ``reference="average"`` or an electrode name
-  (:func:`~braindecode.functional.derivation_matrix` takes ``reference`` too),
-  and takes one montage per sample: a model with a ``channel_strategy`` now takes
-  the ``pos``/``ch_mask`` batches of :func:`~braindecode.datasets.pad_channels_collate`
-  instead of refusing ``ch_mask`` (:gh:`1593` by `Bruno Aristimunha`_).
+- :class:`braindecode.modules.ChannelLayer` takes one montage per sample: a model
+  with a ``channel_strategy`` now takes the ``pos``/``ch_mask`` batches of
+  :func:`~braindecode.datasets.pad_channels_collate` (:gh:`1593` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.JungMAE`, the GeoNIRS authors' implementation of the
   masked autoencoder of Jung et al. (IEEE BCI 2025); its encoder is on the Hugging Face
   Hub at ``braindecode/jungmae-pretrained`` (:gh:`1589` by `Bruno Aristimunha`_).
@@ -385,9 +374,8 @@ Bug fixes
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
-  supplied electrode names without regard to case, including with a named
-  recording reference, preventing duplicated columns and misplaced weights
-  (:gh:`1597` by `lindicaphxag-tech`_).
+  supplied electrode names without regard to case, preventing duplicated columns and
+  misplaced weights (:gh:`1597` by `lindicaphxag-tech`_).
 
 - :meth:`braindecode.models.MetaNeuromotorHand.compute_output_lengths` returns
   zero valid CTC emissions for recordings shorter than the model's receptive
@@ -419,14 +407,9 @@ Bug fixes
   :func:`braindecode.functional.derivation_matrix` and
   :func:`~braindecode.functional.exact_derivation`
   (:gh:`1577` by `lindicaphxag-tech`_ and `Bruno Aristimunha`_).
-- :class:`braindecode.modules.ChannelLayer` honours changes to electrode order,
-  type and location when an input montage is reused. Padded channels are
-  excluded from the map even with NaN padding. Literal channel names and
-  bipolar derivations follow :func:`braindecode.functional.derivation_matrix`.
-  With a ``reference``, every single-electrode EEG target is re-referenced,
-  including measured electrodes without a known position, and non-electrode
-  targets such as BENDR's ``SCALE`` are left out
-  (:gh:`1620` by `Bruno Aristimunha`_).
+- :class:`braindecode.modules.ChannelLayer` follows in-place changes of a reused
+  input montage and ignores padded channels, even NaN ones; literal channel names
+  follow :func:`braindecode.functional.derivation_matrix` (:gh:`1620` by `Bruno Aristimunha`_).
 
 - Document the migration from the 1.4 ``compute_amplitude_gradients`` API to
   :func:`braindecode.visualization.amplitude_gradients_per_trial`, including
