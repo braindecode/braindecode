@@ -1877,23 +1877,24 @@ def test_multi_head_attention_qkv_bias():
     assert no_bias(torch.randn(2, 3, 8)).shape == (2, 3, 8)
 
 
-def test_sdpa_helper_fused_in_lazy_has_no_effect():
-    """``fused_in_lazy`` stays in the signature for existing calls, and changes
-    nothing: Habana's attention setting picks Gaudi's fused kernel."""
+def test_sdpa_helper_fused_in_lazy_is_deprecated():
+    """``fused_in_lazy`` shipped in 2.0.0 and has no effect: setting it warns."""
     from braindecode.functional import scaled_dot_product_attention
 
-    qkv = torch.randn(2, 5, 3, 4, 8).permute(2, 0, 3, 1, 4)  # heads split off
-    mask = torch.arange(5) < torch.tensor([5, 3])[:, None, None, None]
-    for kwargs in ({}, {"attn_mask": mask}, {"dropout_p": 0.3}):
-        outs = []
-        for fused_in_lazy in (False, True):
-            torch.manual_seed(0)
-            outs.append(
-                scaled_dot_product_attention(
-                    *qkv.unbind(0), fused_in_lazy=fused_in_lazy, **kwargs
-                )
-            )
-        assert torch.equal(outs[0], outs[1])
+    q = torch.randn(1, 2, 3, 4)
+    with catch_warnings():
+        simplefilter("error")  # the default stays silent
+        expected = scaled_dot_product_attention(q, q, q)
+    for fused_in_lazy in (False, True):
+        with pytest.warns(FutureWarning, match="removed in braindecode 2.2"):
+            out = scaled_dot_product_attention(q, q, q, fused_in_lazy=fused_in_lazy)
+        assert torch.equal(out, expected)
+    compiled = torch.compile(
+        lambda t: scaled_dot_product_attention(t, t, t, fused_in_lazy=True),
+        backend="eager",
+        fullgraph=True,
+    )
+    assert torch.equal(compiled(q), expected)
 
 
 def test_patch_tokenizer():

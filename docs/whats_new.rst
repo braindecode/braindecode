@@ -190,6 +190,9 @@ Enhancements
 API and behavior changes
 ========================
 
+- :func:`braindecode.functional.scaled_dot_product_attention` emits a ``FutureWarning``
+  when ``fused_in_lazy`` is set: it has had no effect since :gh:`1581` and will be
+  removed in 2.2 (:gh:`1701` by `Bruno Aristimunha`_).
 - :class:`braindecode.datasets.CHBMIT` and :class:`braindecode.datasets.SIENA` now name
   each annotation after the ``eventType`` column of its ``events.tsv`` (``"sz"``,
   ``"bckg"``, ...). Rows with a missing ``eventType`` keep their BIDS ``trial_type``.
@@ -563,6 +566,9 @@ Bug fixes
 Code health
 ============
 
+- Tests that spawned processes, built the 157M-parameter :class:`~braindecode.models.BENDR`
+  14 times, spied on SDPA calls or re-implemented the code they check are now in-process,
+  small or gone (:gh:`1701` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.Deep4Net`, :class:`~braindecode.models.ShallowFBCSPNet`,
   :class:`~braindecode.models.EEGNet`, :class:`~braindecode.models.EEGITNet` and the CTC models size
   their heads by arithmetic, not by a forward pass at construction (:gh:`1694` by `Bruno Aristimunha`_).

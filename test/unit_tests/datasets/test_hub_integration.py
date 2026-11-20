@@ -14,7 +14,6 @@ import numpy as np
 import pandas as pd
 import pytest
 import scipy
-from torch.utils.data import DataLoader
 
 # Optional imports for Hub functionality
 try:
@@ -26,6 +25,7 @@ except ImportError:
     zarr = None
 
 import copy
+import pickle
 
 from braindecode.datasets import (
     BNCI2014_001,
@@ -1583,7 +1583,7 @@ def test_lazy_zarr_serialization(tmp_path, ds_type):
 
 
 @pytest.mark.parametrize("ds_type", _DS_TYPES)
-def test_lazy_zarr_preprocessing_in_spawned_worker(tmp_path, ds_type):
+def test_lazy_zarr_preprocessing_survives_pickling(tmp_path, ds_type):
     source, path = _make_zarr(tmp_path, ds_type)
     loaded = load_from_zarr(path, preload=False)
     original = source.datasets[0]
@@ -1604,24 +1604,16 @@ def test_lazy_zarr_preprocessing_in_spawned_worker(tmp_path, ds_type):
     sample, label, *_ = loaded[0]
     assert sample.dtype == np.float32
     np.testing.assert_allclose(sample, -expected, rtol=1e-6)
-    loader = DataLoader(
-        loaded, sampler=[0], num_workers=1, multiprocessing_context="spawn", collate_fn=list
-    )
-    (batch,) = list(loader)
-    np.testing.assert_array_equal(batch[0][0], sample)
-    assert batch[0][1] == label
+    # A spawned DataLoader worker receives the dataset through this pickling.
+    restored = pickle.loads(pickle.dumps(loaded))
+    restored_sample, restored_label, *_ = restored[0]
+    np.testing.assert_array_equal(restored_sample, sample)
+    assert restored_label == label
     np.testing.assert_allclose(load_from_zarr(path)[0][0], source[0][0], rtol=1e-6)
 
 
-def _padded_worker_arrays(batch):
-    # Exercise the collator in the worker; NumPy arrays can travel through
-    # the loader's queue without a platform-specific shared-memory daemon.
-    x, y, crops, positions, mask = pad_channels_collate(batch)
-    return x.numpy(), y.numpy(), [c.numpy() for c in crops], positions.numpy(), mask.numpy()
-
-
 @pytest.mark.parametrize("use_mne_epochs", [False, True])
-def test_lazy_zarr_positions_in_spawned_worker(tmp_path, use_mne_epochs):
+def test_lazy_zarr_positions_survive_pickling(tmp_path, use_mne_epochs):
     pytest.importorskip("zarr")
     info = mne.create_info(["C3", "C4"], 10, "eeg").set_montage("standard_1020")
     raw = mne.io.RawArray(np.arange(60).reshape(2, 30), info)
@@ -1635,18 +1627,13 @@ def test_lazy_zarr_positions_in_spawned_worker(tmp_path, use_mne_epochs):
     )
     path = convert_to_zarr(windows, tmp_path / "windows.zarr")
     loaded = load_from_zarr(path, preload=False).set_return_ch_pos()
-    # Inspecting the dataset before spawning must keep lazy workers on the memmap.
+    # Inspecting the dataset before pickling must keep it on the memmap.
     assert "C4" in repr(loaded)
     assert loaded.datasets[0]._zarr_data is not None
-    loader = DataLoader(
-        loaded,
-        sampler=[0, 1],
-        batch_size=2,
-        num_workers=1,
-        multiprocessing_context="spawn",
-        collate_fn=_padded_worker_arrays,
+    restored = pickle.loads(pickle.dumps(loaded))
+    samples, labels, crops, positions, mask = pad_channels_collate(
+        [restored[0], restored[1]]
     )
-    ((samples, labels, crops, positions, mask),) = list(loader)
     np.testing.assert_array_equal(samples, np.stack([windows[i][0] for i in (0, 1)]))
     np.testing.assert_array_equal(labels, [2, 2])
     np.testing.assert_array_equal(crops[1], [0, 5])
