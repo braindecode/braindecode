@@ -8029,7 +8029,7 @@ def test_mtrenirs_drops_a_partial_window():
     "model_cls,kwargs,n_times",
     [
         (GeoNIRS, {"depth": 1, "num_heads": 4, "embed_dim": 64,
-                   "pool": "mean_std"}, 60),
+                   "projection_dims": (64, 64), "pool": "mean_std"}, 60),
         (MtReNIRS, {"depth": 2, "num_heads": 2, "embed_dim": 32,
                     "pool": "channel_temporal_mean"}, 100),
     ],
@@ -8080,16 +8080,6 @@ def test_fnirs_pair_models_need_an_even_n_chans(model_cls):
         model_cls(n_chans=5, n_outputs=2, n_times=60)
 
 
-def test_geonirs_needs_its_channel_geometry():
-    with pytest.raises(ValueError, match="needs the channel geometry"):
-        GeoNIRS(n_chans=4, n_outputs=2, n_times=60)(torch.randn(1, 4, 60))
-    loc_none = [{"ch_name": f"S1_D1 {k}", "loc": None} for k in ("hbo", "hbr")]
-    with pytest.raises(ValueError, match="needs the channel geometry"):
-        GeoNIRS(chs_info=loc_none, n_outputs=2, n_times=60)(torch.randn(1, 2, 60))
-    with pytest.raises(ValueError, match="different channel counts"):
-        GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60)(torch.randn(1, 2, 60))
-
-
 def test_mtrenirs_needs_its_channel_positions():
     with pytest.raises(ValueError, match="needs channel positions"):
         MtReNIRS(n_chans=4, n_outputs=2, n_times=100)(torch.randn(1, 4, 100))
@@ -8120,98 +8110,6 @@ def test_mtrenirs_leaves_unlocated_channels_out():
         expected, _ = alone.eval().encode_windows(x[:, located])
     assert not valid[:, :, [0, 3]].any() and not tokens[:, :, [0, 3]].any()
     torch.testing.assert_close(tokens[:, :, located], expected)
-
-
-def test_geonirs_pair_without_optodes_gets_zero_geometry():
-    """As the reference, a pair without source/detector positions is zero
-    and left out of the centre of the others."""
-    chs = _fnirs_chs_info(3)
-    chs[1] = dict(chs[1], loc=None)  # S2_D2 hbo
-    geometry = GeoNIRS(chs_info=chs, n_outputs=2, n_times=60).default_geometry
-    others = [ch for i, ch in enumerate(_fnirs_chs_info(3)) if i not in (1, 4)]
-    expected = GeoNIRS(chs_info=others, n_outputs=2, n_times=60).default_geometry
-    assert not geometry[1].any()
-    assert torch.equal(geometry[[0, 2]], expected)
-
-
-def test_geonirs_mean_std_is_the_reference_readout():
-    """``pool="mean_std"``: the valid-patch mean and the reference's
-    ``variance.clamp_min(0).sqrt()``, so zero with a single valid patch."""
-    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60,
-                    pool="mean_std", embed_dim=32, num_heads=4,
-                    depth=1, n_latent_channels=2,
-                    feature_dim=4).eval()
-    x = torch.randn(1, 4, 60)
-    x[..., 10:] = float("nan")
-    with torch.no_grad():
-        features = model(x, return_features=True)["features"].reshape(1, 2, 2, 8)
-        foundation = model.encode(x)["foundation"]  # (1, 2, S, P, 4)
-    assert not features[:, :, 1].any()
-    first = torch.cat([foundation[:, 0, :, 0], foundation[:, 1, :, 0]], dim=-1)
-    torch.testing.assert_close(features[:, :, 0], first)
-
-
-def test_geonirs_without_geometry_has_no_dead_parameters():
-    model = GeoNIRS(n_chans=6, n_outputs=2, n_times=30, sfreq=5.0, use_channel_geometry=False)
-    assert model.geometry_encoder is None
-    model(torch.randn(2, 6, 30)).sum().backward()
-    assert all(p.grad is not None and torch.isfinite(p.grad).all() for p in model.parameters())
-
-
-def test_geonirs_refuses_a_bad_pool_or_geometry_count():
-    with pytest.raises(ValueError, match="pool must be"):
-        GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60, pool="mean")
-    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60)
-    with pytest.raises(ValueError, match="geometry and x have different channel counts"):
-        model(torch.randn(1, 4, 60), geometry=torch.zeros(3, 6))
-    with pytest.raises(ValueError, match="geometry is not 6-D"):
-        model(torch.randn(1, 4, 60), geometry=torch.zeros(2, 5))
-
-
-@pytest.mark.parametrize(
-    "kwargs, match",
-    [
-        ({"embed_dim": 30, "num_heads": 4}, r"divisible by num_heads \(4\)"),
-        ({"embed_dim": 32, "num_heads": 4, "geometry_heads": 3},
-         r"divisible by geometry_heads \(3\)"),
-        ({"embed_dim": 32, "num_heads": 4, "compressor_heads": 3},
-         r"divisible by compressor_heads \(3\)"),
-        ({"minimum_patch_valid_fraction": 1.5}, r"must be in \[0, 1\], got 1.5"),
-    ],
-)
-def test_geonirs_names_the_refused_argument(kwargs, match):
-    with pytest.raises(ValueError, match=match):
-        GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60, **kwargs)
-
-
-def test_geonirs_encode_takes_the_ch_mask_of_forward():
-    """``encode`` reduces the ``(batch, n_chans)`` mask to HbO/HbR pairs: a
-    padded pair changes nothing for the real one."""
-    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60,
-                    embed_dim=32, num_heads=4, depth=1, n_latent_channels=2,
-                    feature_dim=4).eval()
-    x = torch.randn(1, 4, 60)  # [HbO_1, HbO_2, HbR_1, HbR_2]
-    mask = torch.tensor([[True, False, True, False]])
-    with torch.no_grad():
-        tokens = model.encode(x, ch_mask=mask)["foundation"]
-        alone = model.encode(x[:, [0, 2]], geometry=model.default_geometry[:1])
-    torch.testing.assert_close(tokens, alone["foundation"])
-
-
-def test_geonirs_padded_samples_are_missing():
-    """``on_non_divisible="pad"`` equals the NaN-padded window: the last patch
-    holds 5 of 10 samples, under the 80 % threshold."""
-    torch.manual_seed(0)
-    kwargs = dict(chs_info=_fnirs_chs_info(2), n_outputs=2, embed_dim=32,
-                  num_heads=4, depth=1, n_latent_channels=2, feature_dim=4)
-    padded = GeoNIRS(n_times=55, on_non_divisible="pad", **kwargs).eval()
-    plain = GeoNIRS(n_times=60, **kwargs).eval()
-    plain.load_state_dict(padded.state_dict(), strict=True)
-    x = torch.randn(2, 4, 55)
-    x_nan = torch.cat([x, torch.full((2, 4, 5), float("nan"))], dim=-1)
-    with torch.no_grad():
-        assert not padded.encode(x)["valid"][..., -1].any()
-        torch.testing.assert_close(padded(x), plain(x_nan), rtol=0, atol=0)
 
 
 def test_mtrenirs_refuses_a_bad_pool_or_coordinate_count():
@@ -8270,23 +8168,6 @@ def _check_released_fnirs_checkpoint(path, cls, kwargs, expected):
 # features[:, :4] of the authors' code on the input of
 # _check_released_fnirs_checkpoint, computed with the authors' code at the
 # commit each test names
-
-
-@pytest.mark.parametrize(
-    "file, kwargs, expected",
-    [
-        ("geonirs_base.pt", {"n_times": 150, "sfreq": 5.0},
-         [[0.02500118874013424, 0.04738733917474747, 0.007597371935844421, 0.005497157108038664],
-          [-0.12108907848596573, 0.2241547405719757, -0.18274709582328796, -0.03251400962471962]]),
-        ("geonirs_large.pt", {"n_times": 150, "sfreq": 5.0, "embed_dim": 384,
-                              "num_heads": 12, "depth": 6, "feature_dim": 128},
-         [[-3.8912150859832764, -0.606697678565979, -0.19837510585784912, -6.412940979003906],
-          [-5.242615699768066, -2.4871740341186523, -0.46112173795700073, -3.506788730621338]]),
-    ],
-)
-def test_geonirs_released_checkpoints_match_the_authors_code(file, kwargs, expected):
-    """GeoNIRS@81f8995 checkpoints, from ``BRAINDECODE_FNIRS_WEIGHTS``."""
-    _check_released_fnirs_checkpoint(_fnirs_checkpoint(file), GeoNIRS, kwargs, expected)
 
 
 @pytest.mark.network

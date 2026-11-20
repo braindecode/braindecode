@@ -106,11 +106,8 @@ Enhancements
   released, and the docstring gives the 0.01-0.5 Hz band-pass its weights expect
   (:gh:`1590` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.GeoNIRS` (Li et al., 2026), an fNIRS foundation model
-  that compresses paired HbO/HbR channels onto latent channels with a cross-attention
-  conditioned on the source-detector geometry read from ``chs_info``;
-  ``load_state_dict`` takes ``geonirs_base.pt`` and ``geonirs_large.pt`` as released,
-  and ``ch_mask`` handles montages of different sizes (:gh:`1591` by
-  `Bruno Aristimunha`_).
+  conditioned on the source-detector geometry; its encoders are on the Hugging Face Hub at
+  ``braindecode/geonirs-base-pretrained`` and ``-large-pretrained`` (:gh:`1591` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan
   et al. (Neurophotonics 2018) as the GeoNIRS benchmark (Li et al., 2026)
   implements it: two temporal convolutions with GroupNorm and GELU, a time
