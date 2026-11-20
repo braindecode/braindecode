@@ -1151,7 +1151,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         """Serialize MNE channel info (``info["chs"]``) to JSON-compatible dicts."""
         if chs_info is None:
             return None
-        _INT_FIELDS = ("kind", "coil_type", "unit")
+        _INT_FIELDS = ("kind", "coil_type", "unit", "coord_frame")
         _FLOAT_FIELDS = ("cal", "range")
         serialized = []
         for ch in chs_info:
