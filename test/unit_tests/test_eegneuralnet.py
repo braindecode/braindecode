@@ -1329,3 +1329,17 @@ def test_soft_labels_with_n_outputs_and_classes(data):
         verbose=0,
     ).fit(X, y)
     assert net.module_.linear.out_features == 3
+
+
+def test_get_split_datasets_works_before_initialize():
+    """skorch's public ``get_split_datasets`` needs no initialized module (v2.0.0)."""
+    X = np.random.randn(8, 3, 200).astype("float32")
+    clf = EEGClassifier(
+        ShallowFBCSPNet,
+        module__n_chans=3,
+        module__n_times=200,
+        module__n_outputs=2,
+        train_split=None,
+    )
+    dataset_train, dataset_valid = clf.get_split_datasets(X, np.array([0, 1] * 4))
+    assert len(dataset_train) == 8 and dataset_valid is None

@@ -8,16 +8,14 @@ from __future__ import annotations
 
 from math import log2
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from scipy.sparse.csgraph import laplacian
-from skorch.utils import data_from_dataset, is_skorch_dataset, noop
 from torch import nn
 from torch.nn.modules.lazy import LazyModuleMixin
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.dgcnn import _GraphConvolution
+from braindecode.modules import ChebyshevGraphConv
 
 
 class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
@@ -44,11 +42,11 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
     Parameters
     ----------
     adjacency : Tensor, optional
-        Adjacency matrix of shape (n_chans, n_chans). If not provided, it is
-        computed from the training partition of an array or MNE Epochs passed
-        to ``EEGClassifier.fit`` or ``EEGRegressor.fit``. For window datasets
-        and direct module use, the first forward batch supplies the graph.
-        Constant channels have no edges.
+        Adjacency matrix of shape (n_chans, n_chans). If not provided,
+        ``fit_graph`` fits it on the training partition of an array or MNE
+        Epochs passed to ``EEGClassifier.fit`` or ``EEGRegressor.fit``. For
+        window datasets and direct module use, the first forward batch
+        supplies the graph. Constant channels have no edges.
     n_features : tuple of int, default=(16, 32, 64, 128, 256, 512)
         Number of filters of each graph convolution.
     cheb_orders : tuple of int, default=(2, 2, 2, 2, 2, 2)
@@ -115,7 +113,7 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
 
         in_features = [1, *n_features[:-1]]  # one scalar per node at the input
         self.graph_convs = nn.ModuleList(
-            _GraphConvolution(f_in, f_out, k)
+            ChebyshevGraphConv(f_in, f_out, k)
             for f_in, f_out, k in zip(in_features, n_features, cheb_orders)
         )
         self.biases = nn.ModuleList([_NodeBias() for _ in n_features])
@@ -127,20 +125,46 @@ class GCNsNet(EEGModuleMixin, nn.Module, license="mit"):
         self.register_load_state_dict_pre_hook(self._prepare_graph_state)
 
     @torch.no_grad()
-    def _fit_training_data(self, dataset):
-        """Initialize the graph from the estimator's training partition."""
-        if self.graph_initialized or not is_skorch_dataset(dataset):
+    def fit_graph(self, X: torch.Tensor) -> None:
+        """Fit the electrode graph on training windows.
+
+        ``EEGClassifier`` and ``EEGRegressor`` call this once per fit with the
+        training windows only. A graph that is already set is kept, whether it
+        comes from ``adjacency``, an earlier fit or a checkpoint: the weights
+        are tied to its node order.
+
+        The steps are:
+
+        1. Correlate the channels over all windows and time samples, take the
+           absolute value and zero the diagonal: the adjacency of the
+           electrodes, ``(n_chans, n_chans)``.
+        2. Coarsen the adjacency with Graclus, so that each pooling layer
+           merges pairs of nodes. This gives one graph per graph convolution,
+           with ``n_nodes`` shrinking at each pooling layer, and the
+           permutation ``(n_nodes_padded,)`` that puts the merged pairs side
+           by side in the zero-padded input.
+        3. Store the rescaled normalized Laplacian of each graph,
+           ``(n_nodes, n_nodes)``, and the permutation.
+
+        Parameters
+        ----------
+        X : torch.Tensor
+            Training windows of shape ``(n_windows, n_chans, n_times)``.
+        """
+        if self.graph_initialized:
             return
-
-        def select_array(X, indices):
-            if isinstance(X, (np.ndarray, torch.Tensor)):
-                return X[indices]
-            return None
-
-        X, _ = data_from_dataset(dataset, X_indexing=select_array, y_indexing=noop)
-        if isinstance(X, (np.ndarray, torch.Tensor)) and len(X):
-            adjacency = self._adjacency(torch.as_tensor(X, dtype=torch.float32))
-            self._initialize_graph(adjacency.to(next(self.parameters())))
+        try:
+            n_chans = self.n_chans
+        except ValueError:  # neither n_chans nor chs_info: the windows set it
+            n_chans = X.shape[1]
+        if X.ndim != 3 or X.shape[1] != n_chans:
+            raise ValueError(
+                f"fit_graph expects windows of shape (n_windows, {n_chans}, n_times), "
+                f"got {tuple(X.shape)}."
+            )
+        # adjacency: (n_chans, n_chans), on the device and dtype of the weights
+        adjacency = self._adjacency(X.float()).to(next(self.parameters()))
+        self._initialize_graph(adjacency)
 
     @staticmethod
     def _adjacency(x):

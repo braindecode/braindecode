@@ -28,6 +28,7 @@ from braindecode.modules import (
     AvgPool2dWithConv,
     CausalConv1d,
     ChannelMerger,
+    ChebyshevGraphConv,
     Chomp1d,
     CombinedConv,
     DropPath,
@@ -45,6 +46,22 @@ from braindecode.modules import (
     TimeDistributed,
 )
 from braindecode.modules.quantization import EMACodebook
+
+
+@pytest.mark.parametrize("order", [1, 2, 4])
+def test_chebyshev_graph_convolution_filters_each_laplacian_eigenmode(order):
+    layer = ChebyshevGraphConv(2, 3, order).double()
+    x = torch.randn(2, 3, 2, dtype=torch.float64)
+    basis, _ = torch.linalg.qr(torch.randn(3, 3, dtype=torch.float64))
+    values = torch.tensor([-0.8, 0.2, 0.9], dtype=torch.float64)
+    laplacian = (basis * values) @ basis.T
+    # Each eigenmode of the kth term is scaled by T_k(s) = cos(k arccos(s)).
+    filtered = [
+        (basis * (k * values.acos()).cos()) @ basis.T @ x for k in range(order)
+    ]
+    torch.testing.assert_close(
+        layer(x, laplacian), layer.projection(torch.cat(filtered, dim=-1))
+    )
 
 
 def test_channel_merger_excludes_nonfinite_padded_channels():

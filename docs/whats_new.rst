@@ -655,6 +655,9 @@ Bug fixes
 Code health
 ============
 
+- :class:`~braindecode.models.GCNsNet` fits its graph with the public ``fit_graph``,
+  called once per fit by the estimators; it and :class:`~braindecode.models.DGCNN`
+  share :class:`~braindecode.modules.ChebyshevGraphConv` (:gh:`1700` by `Bruno Aristimunha`_).
 - Put the default three-channel test montage with the model fixtures, and
   share canonical channel conversion between the LaBraM and BENDR entries in
   ``models_mandatory_parameters`` (:gh:`1665` by `Bruno Aristimunha`_).
