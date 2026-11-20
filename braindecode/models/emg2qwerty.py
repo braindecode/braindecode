@@ -505,7 +505,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
                 f"/ kernel_width."
             )
         n_emissions = int(self.compute_output_lengths(torch.tensor([n_times]))[0])
-        return (1, n_emissions, self.n_outputs)
+        return (1, n_emissions, self.final_layer.out_features)
 
 
 class _LogSpectrogram(nn.Module):

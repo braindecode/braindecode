@@ -464,12 +464,25 @@ def test_window_shorter_than_the_layers_raises_value_error(name):
         model(torch.randn(2, 2, 50))
 
 
-@pytest.mark.parametrize("name", ["SleepStagerBlanco2020", "EEGConformer", "MSVTNet"])
-def test_window_shorter_than_the_layers_raises_value_error_at_init(name):
+@pytest.mark.parametrize(
+    "name, n_times, kwargs",
+    [
+        ("SleepStagerBlanco2020", 50, {}),
+        ("EEGConformer", 50, {}),
+        ("MSVTNet", 50, {}),
+        ("ShallowFBCSPNet", 50, {}),
+        ("EEGNet", 8, {}),
+        ("EEGITNet", 8, {}),
+        ("TSception", 50, {"pool_size": 64}),
+    ],
+)
+def test_window_shorter_than_the_layers_raises_value_error_at_init(
+    name, n_times, kwargs
+):
     from braindecode.models.util import models_dict
 
-    with pytest.raises(ValueError, match=r"too small `n_times`.*\(1, 2, 50\)"):
-        models_dict[name](n_chans=2, n_outputs=2, n_times=50, sfreq=100.0)
+    with pytest.raises(ValueError, match=rf"too small `n_times`.*\(1, 2, {n_times}\)"):
+        models_dict[name](n_chans=2, n_outputs=2, n_times=n_times, sfreq=100.0, **kwargs)
 
 
 @pytest.mark.parametrize(

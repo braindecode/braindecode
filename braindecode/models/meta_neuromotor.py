@@ -533,7 +533,7 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
                 f"n_times={self.n_times} is too short: the featurizer and the "
                 "output slice leave no emission. Use longer windows."
             )
-        return (1, n_emissions, self.n_outputs)
+        return (1, n_emissions, self.final_layer.out_features)
 
 
 # ---------------------------------------------------------------------------

@@ -141,6 +141,11 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
                 nn.AvgPool2d(kernel_size=(1, pool_kernel)), nn.Dropout(drop_prob)
             ),
         )
+        if tcn_padding != tcn_dilatation * (tcn_kernel_size - 1):
+            raise ValueError(
+                "The TC blocks keep the time axis only with tcn_padding == "
+                "tcn_dilatation * (tcn_kernel_size - 1)."
+            )
         # =========== TC blocks =====================
         self.add_module(
             "TC_block1",
@@ -211,6 +216,11 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         # collapse the electrodes; the causal TC blocks keep it too. Only the
         # two average poolings shorten it.
         n_time = self.n_times // pool_kernel // tcn_kernel_size
+        if n_time < 1:
+            raise ValueError(
+                "The convolutions and poolings leave no time sample: too small "
+                f"`n_times`/`input_window_seconds` for the input {self.input_shape}."
+            )
         num_features = tcn_in_channel * n_time
 
         # The authors constrain the final dense with ``max_norm(0.25)``.

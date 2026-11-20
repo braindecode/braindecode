@@ -193,6 +193,11 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             self.final_conv_length = (
                 n_conv - self.pool_time_length
             ) // self.pool_time_stride + 1
+            if self.final_conv_length < 1:
+                raise ValueError(
+                    "The convolutions and poolings leave no time sample: too small "
+                    f"`n_times`/`input_window_seconds` for the input {self.input_shape}."
+                )
 
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()

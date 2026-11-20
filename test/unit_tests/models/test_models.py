@@ -3966,6 +3966,12 @@ def test_eegitnet_inception_kernel_scales():
     assert k3 == klen * 4
 
 
+def test_eegitnet_rejects_a_tcn_padding_that_changes_the_length():
+    # The TC blocks keep the time axis only if the padding covers the dilated kernel
+    with pytest.raises(ValueError, match="tcn_padding"):
+        EEGITNet(n_outputs=4, n_chans=3, n_times=1000, tcn_padding=1)
+
+
 def test_eeginceptionmi_mapping_targets():
     # mapping keys should match old param names, values should exist in state dict
     model = EEGInceptionMI(
@@ -8566,3 +8572,10 @@ def test_output_shape_by_formula(cls, n_times):
         out = model(torch.zeros(1, model.n_chans, n_times))
     out = out[0] if isinstance(out, tuple) else out
     assert model.get_output_shape() == tuple(out.shape)
+
+
+@pytest.mark.parametrize("cls, n_times", [(EMG2QwertyNet, 4000), (MetaNeuromotorHand, 30000)])
+def test_output_shape_follows_a_replaced_head(cls, n_times):
+    model = cls(n_outputs=5, n_times=n_times, sfreq=2000.0)
+    model.final_layer = nn.Linear(model.final_layer.in_features, 7)
+    assert model.get_output_shape()[-1] == 7

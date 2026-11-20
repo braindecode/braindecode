@@ -231,6 +231,11 @@ class TSception(EEGModuleMixin, nn.Module):
             conv_len = self.n_times - int(window * self.sfreq) + 1
             n_time += conv_len // max(1, min(self.pool_size, conv_len))
         n_time //= self.pool_size // 4
+        if n_time < 1:
+            raise ValueError(
+                "The convolutions and poolings leave no time sample: too small "
+                f"`n_times`/`input_window_seconds` for the input {self.input_shape}."
+            )
         n_rows = 1 + self.n_chans // max(1, self.n_chans // 2)
         return self.number_filter_spat * n_rows * n_time
 

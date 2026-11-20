@@ -362,7 +362,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
                 "The temporal convolution and pooling leave no token: too small "
                 f"`n_times`/`input_window_seconds` for the input {self.input_shape}."
             )
-        return n_tokens * self.patch_embedding.n_filters_time
+        return n_tokens * self.patch_embedding.shallownet[0].out_channels
 
 
 class _PatchEmbedding(nn.Module):
@@ -403,11 +403,6 @@ class _PatchEmbedding(nn.Module):
         activation: type[nn.Module] = nn.ELU,
     ):
         super().__init__()
-        self.n_filters_time = n_filters_time
-        # The temporal convolution and the pooling set the number of tokens
-        self.filter_time_length = filter_time_length
-        self.pool_time_length = pool_time_length
-        self.stride_avg_pool = stride_avg_pool
 
         self.shallownet = nn.Sequential(
             nn.Conv2d(1, n_filters_time, (1, filter_time_length), (1, 1)),
@@ -436,8 +431,9 @@ class _PatchEmbedding(nn.Module):
         samples (the spatial convolution keeps the length), and the average
         pooling windows them by ``pool_time_length``, ``stride_avg_pool`` apart.
         """
-        n_samples = n_times - self.filter_time_length + 1
-        return (n_samples - self.pool_time_length) // self.stride_avg_pool + 1
+        conv_time, pool = self.shallownet[0], self.shallownet[4]
+        n_samples = n_times - conv_time.kernel_size[1] + 1
+        return (n_samples - pool.kernel_size[1]) // pool.stride[1] + 1
 
     def forward(self, x: Tensor) -> Tensor:
         # Nothing runs between the temporal and the spatial convolution, so
