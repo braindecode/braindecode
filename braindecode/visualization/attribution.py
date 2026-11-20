@@ -97,7 +97,7 @@ def layer_grad_cam(model, x, target, layer):
     elif cam.ndim == 4:
         # cam: (batch, 1, height, width) of the layer. It is a channels x time
         # map only if the height axis is the channels and the width axis time.
-        if cam.shape[-2] not in (x.shape[-2], 1) or cam.shape[-1] == 1:
+        if cam.shape[-2] > x.shape[-2] or cam.shape[-1] == 1:
             name = next(
                 (n for n, m in model.named_modules() if m is layer),
                 type(layer).__name__,

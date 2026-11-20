@@ -317,7 +317,7 @@ class _EEGNetTC(nn.Module):
         x = self.drop1(x)
 
         # Separable convolution: filters over time, then a mix of the filters.
-        x = self.separable_conv_depthwise(x)  # (batch, filter_2, time // 8, 1)
+        x = self.separable_conv_depthwise(x)  # (batch, filter_2, time // 8 + 1, 1)
         x = self.separable_conv_pointwise(x)
         x = self.bn3(x)
         x = self.activation(x)

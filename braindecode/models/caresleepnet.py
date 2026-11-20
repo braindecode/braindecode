@@ -155,7 +155,9 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
         # The epoch encoders see one epoch at a time: fold the epochs into the
         # batch, then unfold their vectors into a sequence of epochs.
         self.epochs_to_batch = Rearrange(
-            "batch chans (epoch time) -> (batch epoch) chans time", epoch=n_epochs
+            "batch chans (epoch time) -> (batch epoch) chans time",
+            epoch=n_epochs,
+            time=self.n_times // n_epochs,
         )
         self.batch_to_epochs = Rearrange(
             "(batch epoch) dim -> batch epoch dim", epoch=n_epochs

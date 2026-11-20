@@ -28,7 +28,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torchaudio
-from einops import rearrange, repeat
+from einops import EinopsError, rearrange, repeat
 from einops.layers.torch import Rearrange
 from scipy.signal import stft
 from torch import nn
@@ -977,6 +977,23 @@ def test_caresleepnet_gives_one_prediction_per_epoch():
         n_chans=3, n_outputs=5, n_times=3 * 300, n_epochs=3, n_eog_chans=1
     ).eval()
     assert model(torch.randn(2, 3, 900)).shape == (2, 5, 3)
+    with pytest.raises(EinopsError, match="600 != 900"):
+        model(torch.randn(2, 3, 600))
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        (dict(n_eog_chans=3), "n_eog_chans must be between"),
+        (dict(n_epochs=0), "n_epochs must be at least 1"),
+        (dict(n_times=901), "must be a positive multiple"),
+        (dict(n_times=3 * 168), "at least 169 samples"),
+    ],
+)
+def test_caresleepnet_rejects_bad_geometry(kwargs, match):
+    params = dict(n_chans=3, n_outputs=5, n_times=900, n_epochs=3, n_eog_chans=1)
+    with pytest.raises(ValueError, match=match):
+        CareSleepNet(**(params | kwargs))
 
 
 def test_caresleepnet_matches_authors_code():
