@@ -242,11 +242,9 @@ API and behavior changes
   Before, a seizure could have the same name as background (:gh:`1650` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
-- :class:`braindecode.models.REVE` and :class:`braindecode.models.STEEGFormer` build
-  offline: REVE's position bank is rebuilt from MNE's standard montages (the released
-  ``reve_positions.json`` to 1e-8 m) and ST-EEGFormer's channel vocabulary ships with
-  the code, so ``REVE_POSITIONS_PATH`` and the ``url``/``cache_dir`` arguments of
-  ``RevePositionBank`` are gone (:gh:`1687` by `Bruno Aristimunha`_).
+- :class:`~braindecode.models.REVE`, Pratibha2 and ST-EEGFormer build offline: REVE's 543 positions come from
+  MNE's montages (within 2e-8 m of the release) and ``RevePositionBank`` ignores ``url``, ``timeout``, ``cache_dir``;
+  ``resolve_channel_positions`` takes an exact name, else the last entry equal ignoring case (:gh:`1687` by `Bruno Aristimunha`_).
 
 - Braindecode now requires MNE-Python 1.13.0 or later. This version centres
   both montages on the fitted head origin for spherical-spline interpolation

@@ -5,11 +5,12 @@
 """PRATIBHA-2 (formerly MANAS-2): a dense-attention EEG foundation model."""
 
 import re
-from functools import partial
+from functools import lru_cache, partial
 from typing import Optional
 
 import numpy as np
 import torch
+from mne.channels import make_standard_montage
 from torch import nn
 
 from braindecode.models.axon import _GatedFeedForward
@@ -22,13 +23,7 @@ from braindecode.modules import (
     resolve_channel_positions,
 )
 from braindecode.modules.layers import RMSNorm
-
-# The pretraining electrode table is REVE's bank plus these two entries (m),
-# which sit 1.4 and 0.6 cm from 10-05 AFz and Iz (release 863edc9).
-_EXTRA_POSITIONS = {
-    "AFZ": (0.0010058004409074783, 0.07728150114417076, 0.021591500379145145),
-    "IZ": (-3.840029239654541e-05, -0.1144150011241436, -0.029236000031232834),
-}
+from braindecode.util import resolve_montage_name
 
 # Parameter names of the original release -> names here.
 _ORIGINAL_KEYS = (
@@ -66,12 +61,14 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
     .. rubric:: Channel positions
 
     Positions come from the electrode table used in pretraining, REVE's bank
-    (MNE montage frame, no download), looked up by channel name: an exact match
-    first, then the name ignoring case, an ``EEG`` prefix or ``-REF`` suffix,
-    legacy 10-20 aliases (``T3`` -> ``T7``), or the midpoint of a bipolar pair
-    ``A-B`` (see :func:`~braindecode.modules.resolve_channel_positions`).
-    Channel ``loc`` values are not used: they are in MNE's head frame, a few
-    centimetres from the pretraining frame.
+    plus its own ``AFZ`` and ``IZ`` (MNE montage frame, no download), looked up
+    by channel name: an exact match first, then the name ignoring case, an
+    ``EEG`` prefix or ``-REF`` suffix, legacy 10-20 aliases (``T3`` -> ``T7``),
+    or the midpoint of a bipolar pair ``A-B`` (see
+    :func:`~braindecode.modules.resolve_channel_positions`). Other 10-05 names
+    take their position in MNE's ``standard_1005`` montage frame, the frame of
+    the table's 10-05 entries. Channel ``loc`` values are not used: they are in
+    MNE's head frame, a few centimetres from the pretraining frame.
 
     .. rubric:: Expected input
 
@@ -213,9 +210,8 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.drop_prob = drop_prob
         self.on_missing = on_missing
 
-        bank = {**_reve_position_bank(), **_EXTRA_POSITIONS}
         positions, kept = resolve_channel_positions(
-            self.chs_info, bank, on_missing=on_missing
+            self.chs_info, _pratibha2_position_bank(), on_missing=on_missing
         )
         self._positions_cm = (positions.astype(np.float32) * 100.0).tolist()
         self._kept_indices = list(kept) if len(kept) < len(self.chs_info) else []
@@ -349,6 +345,31 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 "cls_token": None,  # nosec B105
             }
         return logits
+
+
+# The pretraining electrode table is REVE's bank plus these two entries (m), which
+# sit 1.43 and 0.74 cm from 10-05 AFz and Iz (release 863edc9). They come last, so
+# a name that matches only ignoring case (``afz``) takes them, as in the release.
+_EXTRA_POSITIONS = {
+    "AFZ": (0.0010058004409074783, 0.07728150114417076, 0.021591500379145145),
+    "IZ": (-3.840029239654541e-05, -0.1144150011241436, -0.029236000031232834),
+}
+
+
+@lru_cache(maxsize=1)
+def _pratibha2_position_bank() -> dict[str, np.ndarray]:
+    """Name -> position (m) of the pretraining table, in MNE's montage frame.
+
+    The table is REVE's bank plus ``_EXTRA_POSITIONS``. It is laid over MNE's
+    ``standard_1005`` montage, which places the 10-05 names the table lacks in the
+    frame of its 10-05 entries.
+    """
+    montage = make_standard_montage(resolve_montage_name("standard_1005"))
+    return {
+        **montage.get_positions()["ch_pos"],
+        **_reve_position_bank(),
+        **_EXTRA_POSITIONS,
+    }
 
 
 class _Pratibha2Encoder(nn.Module):

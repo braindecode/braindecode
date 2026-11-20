@@ -30,6 +30,12 @@ def test_names_aliases_montage_and_bipolar():
     np.testing.assert_array_equal(pos[0], BANK["biosemi128_A1"])
 
 
+def test_exact_name_first_then_the_last_entry_equal_ignoring_case():
+    bank = {"CZ": [0.0, 0.0, 1.0], "Cz": [0.0, 0.0, 2.0]}
+    pos, _ = resolve_channel_positions(chs("CZ", "Cz", "cz", "EEG cz-REF"), bank)
+    np.testing.assert_array_equal(pos[:, 2], [1.0, 2.0, 2.0, 2.0])
+
+
 def test_on_missing():
     with pytest.raises(ValueError, match="X1"):
         resolve_channel_positions(chs("Cz", "X1"), BANK)

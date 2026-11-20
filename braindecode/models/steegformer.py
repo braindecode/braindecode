@@ -29,26 +29,6 @@ from braindecode.modules import (
 # Weight initialization of the reference implementation.
 _init_weights = partial(init_weights_, weights={nn.Linear: nn.init.xavier_uniform_})
 
-# Slot order of the official checkpoints' channel embedding (``channels_mapping``
-# of LiuyinYang1101/STEEGFormer, MIT): an electrode's slot is its index here.
-# small/base/large have 145 slots, the last three unnamed; the HBN ``largeV2``
-# model uses a different, unpublished vocabulary.
-STEEGFORMER_CHANNEL_ORDER = tuple(
-    """
-    C1 Pz C4 F6 FTT8h Oz Fp1 FCC5h TPP8h CPP6h C2 F4 OI2h AF4 FCz CCP6h TP8 POO10h
-    FC1 FC6 C5 P8 FT8 P6 P9 Fz AFF1 TPP10h AFF2 P10 CPP2h M1 FCC6h FTT7h FC2 PPO2
-    AFp3h AF7 PO10 AF8 CPP1h P7 F1 AFp4h PO9 FT9 CP2 Iz FCC1h FC5 T5 CP5 CP6 FFC5h
-    F2 M2 POO9h AFF5h PO4 POO3h Fp2 T3 CP4 POz TTP7h T7 A2 CCP4h T8 PPO10h FC3 F3 F5
-    A1 P3 FC4 FCC2h FFC6h FFT8h CCP2h CPP4h T6 FTT9h PPO6h CP3 CP1 AF3 FT10 OI1h
-    TPP9h P5 I2 CCP1h T4 CCP3h O1 PO5 PPO9h PPO5h P1 AFz PO6 PO3 O2 CPP5h FFC1h
-    FCC4h FFT7h FFC2h FFC4h Cz TP7 Fpz FTT10h PO7 CPP3h P4 P2 F8 CPz FCC3h FFC3h FT7
-    I1 TTP8h AFF6h CCP5h C6 PPO1 PO8 C3 POO4h TPP7h F7 T9 TP9 T10 TP10 POO1 POO2
-    PPO1h PPO2h
-    """.split()
-)
-_CHANNELS_VOCAB_SIZE = 145
-_CHANNEL_INDEX = {name.upper(): i for i, name in enumerate(STEEGFORMER_CHANNEL_ORDER)}
-
 
 class STEEGFormer(EEGModuleMixin, nn.Module):
     r"""STEEGFormer from Yang et al. (2026) [Yang2026]_.
@@ -410,15 +390,14 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         """Resolve montage-vocabulary slots from the ``chs_info`` electrode names.
 
         Looks each electrode name up in :data:`STEEGFORMER_CHANNEL_ORDER`
-        (case-insensitive), which is downloaded from the Hub on first use. Only
-        valid for the 145-slot variants (small/base/large); for other
-        ``n_chans_pos`` (e.g. largeV2's 256-slot HBN vocabulary, whose names are
-        not published) pass ``chan_pos_idx`` explicitly. Unknown names use the
-        nearest 10-05 site from valid head-frame positions. Falls back to the
-        identity mapping -- and warns -- when ``chs_info`` is absent, the
-        vocabulary does not apply or cannot be fetched, or an unknown channel
-        lacks a valid position. Raises an actionable error if the identity
-        mapping exceeds the embedding capacity.
+        (case-insensitive). Only valid for the 145-slot variants
+        (small/base/large); for other ``n_chans_pos`` (e.g. largeV2's 256-slot
+        HBN vocabulary, whose names are not published) pass ``chan_pos_idx``
+        explicitly. Unknown names use the nearest 10-05 site from valid
+        head-frame positions. Falls back to the identity mapping -- and warns --
+        when ``chs_info`` is absent, the vocabulary does not apply, or an
+        unknown channel lacks a valid position. Raises an actionable error if
+        the identity mapping exceeds the embedding capacity.
         """
         try:
             chs_info = self.chs_info
@@ -548,6 +527,27 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         else:  # "cls"
             x = self.norm(x)[:, 0]
         return self.final_layer(self.head_drop(x))
+
+
+# Slot order of the official checkpoints' channel embedding (``channels_mapping``
+# of LiuyinYang1101/STEEGFormer, MIT): an electrode's slot is its index here.
+# small/base/large have 145 slots, the last three unnamed; the HBN ``largeV2``
+# model uses a different, unpublished vocabulary.
+STEEGFORMER_CHANNEL_ORDER = """
+    C1 Pz C4 F6 FTT8h Oz Fp1 FCC5h TPP8h CPP6h C2 F4 OI2h AF4 FCz CCP6h TP8 POO10h
+    FC1 FC6 C5 P8 FT8 P6 P9 Fz AFF1 TPP10h AFF2 P10 CPP2h M1 FCC6h FTT7h FC2 PPO2
+    AFp3h AF7 PO10 AF8 CPP1h P7 F1 AFp4h PO9 FT9 CP2 Iz FCC1h FC5 T5 CP5 CP6 FFC5h
+    F2 M2 POO9h AFF5h PO4 POO3h Fp2 T3 CP4 POz TTP7h T7 A2 CCP4h T8 PPO10h FC3 F3 F5
+    A1 P3 FC4 FCC2h FFC6h FFT8h CCP2h CPP4h T6 FTT9h PPO6h CP3 CP1 AF3 FT10 OI1h
+    TPP9h P5 I2 CCP1h T4 CCP3h O1 PO5 PPO9h PPO5h P1 AFz PO6 PO3 O2 CPP5h FFC1h
+    FCC4h FFT7h FFC2h FFC4h Cz TP7 Fpz FTT10h PO7 CPP3h P4 P2 F8 CPz FCC3h FFC3h FT7
+    I1 TTP8h AFF6h CCP5h C6 PPO1 PO8 C3 POO4h TPP7h F7 T9 TP9 T10 TP10 POO1 POO2
+    PPO1h PPO2h
+""".split()
+# Slots of the vocabulary above, the size of the embedding the names are valid for.
+_CHANNELS_VOCAB_SIZE = 145
+# Upper-cased electrode name -> slot, for a case-insensitive lookup of ``chs_info`` names.
+_CHANNEL_INDEX = {name.upper(): i for i, name in enumerate(STEEGFORMER_CHANNEL_ORDER)}
 
 
 class _TemporalPositionalEncoding(nn.Module):
