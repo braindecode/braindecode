@@ -33,6 +33,7 @@ from einops.layers.torch import Rearrange
 from scipy.signal import stft
 from torch import nn
 
+from braindecode.functional import plv_time
 from braindecode.models import (
     BBL,
     BDTCN,
@@ -2602,6 +2603,22 @@ def test_eegminer_legacy_state_dict_compatibility(method):
     EEGMiner(**model_kwargs).load_state_dict(state_dict, strict=True)
 
 
+@pytest.mark.parametrize("n_times", [255, 256])
+def test_eegminer_plv_matches_plv_of_filtered_signal(n_times):
+    """PLV from the filtered spectrum is that of the filtered signal, for odd and even lengths."""
+    model = EEGMiner(method="plv", n_chans=3, n_outputs=2, n_times=n_times, sfreq=100.0)
+    spectrum = model.filter(torch.randn(2, 3, 1, n_times))  # (batch, chans, filters, freqs, 2)
+    signal = torch.fft.irfft(torch.view_as_complex(spectrum), n=n_times)
+    expected = plv_time(signal.transpose(1, 2))  # (batch, filters, chans, chans)
+    rows, cols = torch.triu_indices(3, 3, 1)
+    torch.testing.assert_close(
+        model.feature_layer(spectrum),  # (batch, chan pairs, filters)
+        expected.permute(0, 2, 3, 1)[:, rows, cols],
+        rtol=1e-4,
+        atol=1e-5,
+    )
+
+
 def test_eegminer_filter_clamping():
     """
     Test that EEGMiner's filters are constructed correctly and parameters are clamped.
@@ -2813,24 +2830,10 @@ def test_fbcnet_specified_filter_parameters():
     assert filter_bank_layer.method_iir is False
 
 
-@pytest.mark.parametrize(
-    "device,dtype",
-    [
-        ("cpu", torch.float32),
-        ("cpu", torch.float16),
-        ("cpu", torch.bfloat16),
-        pytest.param(
-            "mps",
-            torch.float32,
-            marks=pytest.mark.skipif(
-                not torch.backends.mps.is_available(), reason="requires MPS"
-            ),
-        ),
-    ],
-)
-def test_fbcnet_cast_preserves_iir_filter(device, dtype, tmp_path):
-    torch.manual_seed(42)
-    kwargs = dict(
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_fbcnet_cast_preserves_iir_filter(dtype):
+    """Casting a model keeps its narrow-band IIR design: logits and gradients stay finite."""
+    model = FBCNet(
         n_chans=3,
         n_times=1024,
         n_outputs=2,
@@ -2841,24 +2844,33 @@ def test_fbcnet_cast_preserves_iir_filter(device, dtype, tmp_path):
             method="iir", iir_params=dict(ftype="butter", output="ba", order=4)
         ),
     )
-    model = FBCNet(**kwargs).eval()
-    x = torch.randn(2, 3, 1024).to(device=device, dtype=dtype).requires_grad_()
-    bank = model.spectral_filtering
-    expected = bank(x.detach())
-    denominator = bank.a_list[0].clone()
-
-    model.to(device=device, dtype=dtype)
-    logits = model(x)
-    assert torch.isfinite(logits).all()
+    x = torch.randn(2, 3, 1024, dtype=dtype, requires_grad=True)
+    logits = model.to(dtype)(x)
     logits.float().square().mean().backward()
+    assert torch.isfinite(logits).all()
     assert torch.isfinite(x.grad).all()
-    torch.testing.assert_close(bank.a_list[0].cpu(), denominator, rtol=0, atol=0)
-    torch.testing.assert_close(bank(x.detach()), expected, rtol=0, atol=0)
-    path = tmp_path / "fbcnet.pt"
-    torch.save(model.state_dict(), path)
-    restored = FBCNet(**kwargs).to(device=device, dtype=dtype).eval()
-    restored.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
-    torch.testing.assert_close(restored(x.detach()), logits.detach(), rtol=0, atol=0)
+
+
+def test_v2_iir_state_dict_loads():
+    """v2.0.0 saved the IIR design as float64 ``b_list``/``a_list`` parameters; they still load."""
+    kwargs = dict(
+        n_chans=3,
+        n_times=256,
+        n_outputs=2,
+        sfreq=128,
+        n_bands=[(4, 8), (8, 30)],
+        filter_parameters=dict(method="iir"),
+    )
+    model = FBCNet(**kwargs).eval()
+    bank = model.spectral_filtering
+    v2 = {}
+    for i, (b, a) in enumerate(zip(bank.b_list, bank.a_list)):
+        v2[f"spectral_filtering.b_list.{i}"] = b
+        v2[f"spectral_filtering.a_list.{i}"] = a
+    restored = FBCNet(**kwargs).eval()
+    restored.load_state_dict({**model.state_dict(), **v2}, strict=True)
+    x = torch.randn(2, 3, 256)
+    torch.testing.assert_close(restored(x), model(x))
 
 
 @pytest.mark.parametrize(

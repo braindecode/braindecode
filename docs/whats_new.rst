@@ -477,10 +477,9 @@ Bug fixes
   weights still load; the head input size is ``d_model`` instead of ``emb_dim``
   (the same with the defaults). Outputs of existing CBraMod classifiers change
   (:gh:`1541`).
-- :class:`braindecode.modules.FilterBankLayer` preserves its float64 IIR
-  coefficients when casting a model. Narrow-band filters in
-  :class:`braindecode.models.FBCNet` could produce NaN predictions after
-  ``model.float()`` rounded the coefficients of a stable filter (:gh:`1657`).
+- :class:`braindecode.modules.FilterBankLayer` keeps its float64 IIR design when a model
+  is cast, instead of giving NaN in narrow-band :class:`braindecode.models.FBCNet`
+  filters, and runs its IIR and causal FIR filters on MPS (:gh:`1657`).
 - :class:`braindecode.models.CSBrain` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head, as
   for :class:`braindecode.models.CBraMod`. The original fine-tuning code replaces
@@ -558,11 +557,9 @@ Bug fixes
   :class:`braindecode.models.CORTEG` share this rule; CORTEG now also names a
   channel whose position is ``NaN`` when it is built, where it took the montage
   for one without positions (:gh:`1569` by `Hamza Abdelhedi`_).
-- :func:`braindecode.functional.hilbert_freq` and
-  :func:`braindecode.functional.plv_time` accept ``n_times`` with a precomputed
-  one-sided spectrum. Supplying the original length reconstructs odd-length
-  signals and preserves the Nyquist amplitude for even lengths
-  (:gh:`1663` by `Bruno Aristimunha`_).
+- :func:`braindecode.functional.hilbert_freq` and :func:`braindecode.functional.plv_time`
+  take ``n_times`` with a precomputed spectrum, for odd lengths and the Nyquist bin.
+  :class:`braindecode.models.EEGMiner` passes it, changing its PLV (:gh:`1663` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` gives the phase of the DC bin, and of the
   Nyquist bin of an even ``patch_size``, as ``0`` or ``pi`` on every device.
   CUDA and MPS FFTs leave rounding noise of either sign in the imaginary part of

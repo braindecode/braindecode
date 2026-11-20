@@ -906,6 +906,36 @@ def test_filter_bank_layer_scripts(phase, method):
         torch.testing.assert_close(scripted(x), expected)
 
 
+def test_iir_filterbank_half_matches_float64_design():
+    """``.half()`` keeps the float64 IIR design: the output is the float64 one to float16 precision."""
+    kwargs = dict(
+        n_chans=2, sfreq=256, band_filters=[(4, 8), (8, 12)], method="iir", verbose=False
+    )
+    x = torch.randn(2, 2, 1024).half()
+    expected = FilterBankLayer(**kwargs)(x.double())
+    out = FilterBankLayer(**kwargs).half()(x)
+    assert out.dtype == torch.float16
+    torch.testing.assert_close(out.double(), expected, rtol=1e-3, atol=1e-3)
+
+
+@pytest.mark.skipif(not torch.backends.mps.is_available(), reason="requires MPS")
+@pytest.mark.parametrize("method,phase", [("iir", "zero"), ("fir", "forward")])
+def test_filter_bank_layer_float64_filtering_runs_on_mps(method, phase):
+    """MPS has no float64: the filters recurse on the CPU and the bands come back on MPS."""
+    layer = FilterBankLayer(
+        n_chans=3,
+        sfreq=128,
+        band_filters=[(4, 8), (8, 30)],
+        method=method,
+        phase=phase,
+        verbose=False,
+    )
+    x = torch.randn(2, 3, 512)
+    out = layer.to("mps")(x.to("mps"))
+    assert out.device.type == "mps"
+    torch.testing.assert_close(out.cpu(), layer.cpu()(x), rtol=1e-4, atol=1e-4)
+
+
 @pytest.mark.parametrize(
     "phase", ["linear", "zero", "zero-double", "minimum", "minimum-half"]
 )
