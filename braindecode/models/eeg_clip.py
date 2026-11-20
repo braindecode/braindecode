@@ -42,6 +42,7 @@ import torch.distributed as dist
 from torch import nn
 from torch.nn import functional as F
 
+from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
@@ -95,6 +96,11 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
     initial_temperature : float
         The logit scale starts at ``log(1 / initial_temperature)`` and, as in
         the authors' code, multiplies the similarities without ``exp``.
+    channel_strategy : str
+        How another montage reaches the encoder; see
+        :class:`~braindecode.models.base.EEGModuleMixin`.
+    channel_strategy_kwargs : dict or None
+        Options of ``channel_strategy``.
 
     Notes
     -----
@@ -152,6 +158,8 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
+        channel_strategy: str = "native",
+        channel_strategy_kwargs: dict | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -160,6 +168,8 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            channel_strategy=channel_strategy,
+            channel_strategy_kwargs=channel_strategy_kwargs,
         )
         if text_pooling not in ("cls", "mean"):
             raise ValueError("text_pooling must be 'cls' or 'mean'.")
@@ -200,6 +210,11 @@ class EEGCLIP(EEGModuleMixin, nn.Module, license="bsd-3-clause"):
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, X):
         """Return projected EEG embeddings, shape ``(batch, n_outputs)``."""
+        # Only a Deep4Net is known to be built for a number of channels. Eager mode
+        # only: TorchScript resolves Deep4Net just when a Deep4Net is a submodule.
+        if not torch.jit.is_scripting():
+            if isinstance(self.eeg_encoder, Deep4Net):
+                check_n_chans(X, self.eeg_encoder.n_chans, "EEGCLIP")
         features = self.eeg_encoder(X)
         if features.ndim == 2:
             features = features.unsqueeze(-1)

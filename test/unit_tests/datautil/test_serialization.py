@@ -15,7 +15,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets import BaseConcatDataset, MOABBDataset, RawDataset
+from braindecode.datasets import (
+    BaseConcatDataset,
+    EEGWindowsDataset,
+    MOABBDataset,
+    RawDataset,
+    WindowsDataset,
+)
 from braindecode.datautil.serialization import (
     _check_save_dir_empty,
     load_concat_dataset,
@@ -732,3 +738,55 @@ def test_load_concat_dataset_target_name_windows_raises(
     setup_concat_windows_dataset.save(tmp_path)
     with pytest.raises(ValueError, match="set_target"):
         load_concat_dataset(tmp_path, preload=False, target_name="subject")
+
+
+@pytest.mark.parametrize("kind", ["raw", "raw_windows", "epochs"])
+def test_save_load_dataset_without_description(tmp_path, kind):
+    info = mne.create_info(["C3", "target"], 100.0, ["eeg", "misc"])
+    data = np.arange(40, dtype=float).reshape(2, 20)
+    raw = mne.io.RawArray(data, info, verbose=False)
+    dataset = RawDataset(raw)
+    if kind != "raw":
+        metadata = pd.DataFrame(
+            {
+                "i_window_in_trial": [0, 1],
+                "i_start_in_trial": [0, 10],
+                "i_stop_in_trial": [10, 20],
+                "target": [12, 13],
+            }
+        )
+        kwargs = {"targets_from": "channels", "last_target_only": False}
+        if kind == "raw_windows":
+            dataset = EEGWindowsDataset(raw, metadata, **kwargs)
+        else:
+            epochs = mne.EpochsArray(
+                data.reshape(2, 2, 10).transpose(1, 0, 2),
+                info,
+                metadata=metadata,
+                verbose=False,
+            )
+            dataset = WindowsDataset(epochs, **kwargs)
+    concat = BaseConcatDataset([dataset])
+    concat.save(tmp_path)
+    loaded = load_concat_dataset(tmp_path, preload=False)
+    assert len(loaded) == len(concat)
+    assert loaded.datasets[0].description.empty
+    if kind == "raw":
+        np.testing.assert_array_equal(loaded.datasets[0].raw.get_data(), data)
+    else:
+        for i in range(2):
+            x, y, crop = loaded[i]
+            start, stop = i * 10, (i + 1) * 10
+            np.testing.assert_array_equal(x, data[:1, start:stop])
+            np.testing.assert_array_equal(y, data[1:, start:stop])
+            assert crop == [i, start, stop]
+
+        # Direct windows saved by older versions have no recorded constructor.
+        (tmp_path / "0" / "window_kwargs.json").unlink()
+        historical = load_concat_dataset(tmp_path, preload=False)
+        for i in range(2):
+            x, y, crop = historical[i]
+            start, stop = i * 10, (i + 1) * 10
+            np.testing.assert_array_equal(x, data[:, start:stop])
+            assert y == 12 + i
+            assert crop == [i, start, stop]

@@ -10,7 +10,11 @@ import numpy as np
 from skorch.helper import SliceDataset
 from skorch.utils import is_dataset
 
-from braindecode.datasets.base import BaseConcatDataset, WindowsDataset
+from braindecode.datasets.base import (
+    BaseConcatDataset,
+    EEGWindowsDataset,
+    WindowsDataset,
+)
 from braindecode.models.util import SigArgName
 
 log = logging.getLogger(__name__)
@@ -53,13 +57,24 @@ def samples_to_ms(n_samples, fs):
     return n_samples * 1000.0 / fs
 
 
-def _get_n_outputs(y, classes, mode):
+def _get_n_outputs(y, classes, mode, stored=None):
+    """Number of outputs for the targets ``y`` the model trains on.
+
+    Classification: ``len(classes)``, else the number of distinct values of ``y``,
+    whatever its shape (class probabilities need ``classes`` or ``n_outputs``).
+    ``classes`` names the labels as ``stored``, before any ``target_transform``.
+    """
     if mode == "classification":
-        classes_y = np.unique(y)
-        if classes is not None:
-            assert set(classes_y) <= set(classes)
-        else:
-            classes = classes_y
+        if classes is None:
+            return len(np.unique(y))
+        labels = np.asarray(y if stored is None else stored)
+        if labels.ndim == 1:  # class probabilities are not labels
+            missing = sorted(set(np.unique(labels).tolist()) - set(classes))
+            if missing:
+                raise ValueError(
+                    f"Labels {missing} are not in classes {list(classes)}. classes "
+                    "names the labels as stored, before any target_transform."
+                )
         return len(classes)
     elif mode == "regression":
         if y is None:
@@ -77,6 +92,7 @@ def infer_signal_properties(
     y=None,
     mode: Literal["classification", "regression"] = "classification",
     classes: list | None = None,
+    n_outputs: int | None = None,
 ) -> dict[SigArgName, Any]:
     """Infers signal properties from the data.
 
@@ -97,11 +113,17 @@ def infer_signal_properties(
     X : array-like or mne.BaseEpochs or Dataset
         Input data
     y : array-like or None
-        Targets
+        Targets of array-like ``X``, ignored for a dataset, which holds its own
+        (after its ``target_transform``). In classification they give one output
+        per distinct value: class probabilities need ``n_outputs`` or ``classes``.
     mode : "classification" or "regression"
         Mode of the task
     classes : list or None
-        List of classes for classification
+        List of classes for classification, as stored, before any
+        ``target_transform``. ``n_outputs`` is its length.
+    n_outputs : int or None
+        Number of outputs, if known: it is returned as is and the targets are
+        not read.
 
     Returns
     -------
@@ -118,7 +140,9 @@ def infer_signal_properties(
     ):
         if y is None:
             raise ValueError("y must be specified if X is array-like.")
-        signal_kwargs["n_outputs"] = _get_n_outputs(y, classes, mode)
+        signal_kwargs["n_outputs"] = (
+            n_outputs if n_outputs is not None else _get_n_outputs(y, classes, mode)
+        )
         if isinstance(X, mne.BaseEpochs):
             log.info("Using mne.Epochs to find signal-related parameters.")
             signal_kwargs["n_times"] = len(X.times)
@@ -134,20 +158,28 @@ def infer_signal_properties(
             signal_kwargs["n_times"] = X.shape[-1]
             signal_kwargs["n_chans"] = X.shape[-2]
     elif is_dataset(X):
-        log.info(f"Using Dataset {X!r} to find signal-related parameters.")
+        log.info("Using %s to find signal-related parameters.", type(X).__name__)
         X0 = X[0][0]
         Xshape = X0.shape
         signal_kwargs["n_times"] = Xshape[-1]
         signal_kwargs["n_chans"] = Xshape[-2]
-        if isinstance(X, BaseConcatDataset) and all(
-            ds.targets_from == "metadata" for ds in X.datasets
+        datasets = X.datasets if isinstance(X, BaseConcatDataset) else [X]
+        if n_outputs is not None:
+            signal_kwargs["n_outputs"] = n_outputs
+        elif all(
+            isinstance(ds, (EEGWindowsDataset, WindowsDataset))
+            and ds.targets_from == "metadata"
+            for ds in datasets
         ):
-            # an array: several targets per window give one column each
-            y_target = np.asarray(X.get_metadata().target.to_list())
-            signal_kwargs["n_outputs"] = _get_n_outputs(y_target, classes, mode)
-        elif isinstance(X, WindowsDataset) and X.targets_from == "metadata":
-            y_target = np.asarray(X.windows.metadata.target.to_list())
-            signal_kwargs["n_outputs"] = _get_n_outputs(y_target, classes, mode)
+            # One label per window, as stored (both window backends, lazy metadata
+            # included) and as the model receives it, after any target_transform.
+            stored = [ds.y[i] for ds in datasets for i in range(len(ds))]
+            targets = stored
+            if isinstance(X, BaseConcatDataset) and X.target_transform is not None:
+                targets = [X.target_transform(t) for t in stored]
+            signal_kwargs["n_outputs"] = _get_n_outputs(
+                np.asarray(targets), classes, mode, stored=np.asarray(stored)
+            )
     else:
         log.warning(
             f"Can only infer signal shape of array-like and Datasets, got {type(X)!r}."

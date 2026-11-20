@@ -76,8 +76,8 @@ class FilterBankLayer(nn.Module):
         Only used for ``method='fir'``.
     phase : str, default='zero'
         Phase of the filter.
-        When ``method='fir'``, symmetric linear-phase FIR filters are constructed
-        with the following behaviors when ``method="fir"``:
+        When ``method='fir'``, the FIR filters are constructed and applied with
+        the following behaviors:
 
         ``"zero"`` (default)
             The delay of this filter is compensated for, making it non-causal.
@@ -85,7 +85,8 @@ class FilterBankLayer(nn.Module):
             A minimum-phase filter will be constructed by decomposing the zero-phase filter
             into a minimum-phase and all-pass systems, and then retaining only the
             minimum-phase system (of the same length as the original zero-phase filter)
-            via :func:`scipy.signal.minimum_phase`.
+            via :func:`scipy.signal.minimum_phase`. The filter is applied once in
+            the forward direction, without delay compensation, making it causal.
         ``"zero-double"``
             *This is a legacy option for compatibility with MNE <= 0.13.*
             The filter is applied twice, once forward, and once backward
@@ -96,7 +97,8 @@ class FilterBankLayer(nn.Module):
         ``"minimum-half"``
             *This is a legacy option for compatibility with MNE <= 1.6.*
             A minimum-phase filter will be reconstructed from the zero-phase filter with
-            half the length of the original filter.
+            half the length of the original filter. Like ``"minimum"``, it is
+            applied without delay compensation, making it causal.
 
         When ``method='iir'``, ``phase='zero'`` (default) or equivalently
         ``'zero-double'`` constructs and applies IIR filter twice, once forward,
@@ -140,6 +142,8 @@ class FilterBankLayer(nn.Module):
     >>> outputs.shape
     torch.Size([2, 2, 2, 256])
     """
+
+    __constants__ = ["method_iir"]
 
     def __init__(
         self,
@@ -212,12 +216,19 @@ class FilterBankLayer(nn.Module):
 
         self.method_iir = self.method == "iir"
         self.forward_filter = phase in ("forward", "causal")
+        # A minimum-phase FIR has its energy in the first taps and is causal:
+        # like :func:`mne.filter.filter_data`, apply it without the half-length
+        # delay compensation that only suits the symmetric zero-phase designs.
+        self.fir_delay_compensated = phase not in ("minimum", "minimum-half")
 
         # Prepare ParameterLists
         self.fir_list = nn.ParameterList()
         self.fir_a_list = nn.ParameterList()
-        self.b_list = nn.ParameterList()
-        self.a_list = nn.ParameterList()
+        # The IIR design stays float64: model.half() or .float() would round poles
+        # that sit near the unit circle. Plain tensors are left alone by casts and
+        # moved next to the signal in _apply_iir.
+        self.b_list: list[Tensor] = []
+        self.a_list: list[Tensor] = []
 
         if self.method_iir:
             if iir_params is None:
@@ -269,11 +280,27 @@ class FilterBankLayer(nn.Module):
 
                 _check_coefficients((b_coeffs, a_coeffs))
 
-                b = torch.tensor(b_coeffs, dtype=torch.float64)
-                a = torch.tensor(a_coeffs, dtype=torch.float64)
+                # On the CPU under any default device (meta, MPS), since to_empty()
+                # and load_state_dict() do not restore plain tensors.
+                b = torch.tensor(b_coeffs, dtype=torch.float64, device="cpu")
+                a = torch.tensor(a_coeffs, dtype=torch.float64, device="cpu")
+                self.b_list.append(b)
+                self.a_list.append(a)
 
-                self.b_list.append(nn.Parameter(b, requires_grad=False))
-                self.a_list.append(nn.Parameter(a, requires_grad=False))
+    def __setstate__(self, state):
+        # v2.0.0 pickles predate fir_delay_compensated (#1686).
+        state.setdefault(
+            "fir_delay_compensated", state["phase"] not in ("minimum", "minimum-half")
+        )
+        super().__setstate__(state)
+
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        # v2.0.0 saved the IIR design as float64 parameters. It is rebuilt from
+        # the constructor arguments, so a checkpoint's copy is dropped.
+        for key in list(state_dict):
+            if key.startswith((f"{prefix}b_list.", f"{prefix}a_list.")):
+                del state_dict[key]
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -316,14 +343,24 @@ class FilterBankLayer(nn.Module):
 
         return torch.cat(outs, dim=1)
 
+    def _fir_delay(self, fir: Tensor) -> int:
+        """Samples by which the output of ``fir`` is advanced to undo its delay."""
+        if self.fir_delay_compensated:
+            return (fir.shape[-1] - 1) // 2
+        return 0
+
     def _apply_fir_bank(self, x: Tensor) -> Tensor:
-        """Every band's ``fftconvolve(x, filt, mode="same")`` with one FFT of ``x``.
+        """Every band's FIR convolution with one FFT of ``x``.
+
+        Zero-phase filters give ``fftconvolve(x, filt, mode="same")``.
 
         Each filter is shifted (zeros on the left) so that its own "same"
         window starts where the longest filter's does; the FFT length is the
         5-smooth ``n >= n_times + filter_length - 1`` (a linear convolution, not
         a circular one). Equal to the per-band convolution up to float rounding.
         HPU inputs take one direct convolution on the device instead.
+        Minimum-phase filters are not delay-compensated: each band is the first
+        ``n_times`` samples of ``fftconvolve(x, filt, mode="full")``.
 
         Returns
         -------
@@ -335,14 +372,12 @@ class FilterBankLayer(nn.Module):
         x_in = spectral_input(x)
         n_times = x.shape[-1]
         length = max([fir.shape[-1] for fir in self.fir_list])
-        start = (length - 1) // 2
+        start = max([self._fir_delay(fir) for fir in self.fir_list])
         n_fft = 2 * _next_fast_len((n_times + length) // 2)
         bank = torch.stack(
             [
                 torch.fft.rfft(
-                    nn.functional.pad(
-                        fir.to(x_in), [start - (fir.shape[-1] - 1) // 2, 0]
-                    ),
+                    nn.functional.pad(fir.to(x_in), [start - self._fir_delay(fir), 0]),
                     n=n_fft,
                 )
                 for fir in self.fir_list
@@ -357,18 +392,19 @@ class FilterBankLayer(nn.Module):
         """The FIR bank as one direct convolution on the device (HPU: no complex FFT).
 
         Every filter sits in one zero-padded kernel, shifted so that its own
-        "same" window (start ``(filter_length - 1) // 2``) lines up with the
-        others'; flipped, since ``conv1d`` is a cross-correlation.
+        "same" window (start ``(filter_length - 1) // 2``, or 0 for the causal
+        minimum-phase filters) lines up with the others'; flipped, since
+        ``conv1d`` is a cross-correlation.
         """
         x32 = x.to(torch.promote_types(x.dtype, torch.float32))
         start, length = 0, 0
         for fir in self.fir_list:
-            start = max(start, (fir.shape[-1] - 1) // 2)
+            start = max(start, self._fir_delay(fir))
         for fir in self.fir_list:
-            length = max(length, start - (fir.shape[-1] - 1) // 2 + fir.shape[-1])
+            length = max(length, start - self._fir_delay(fir) + fir.shape[-1])
         kernels = []
         for fir in self.fir_list:
-            left = start - (fir.shape[-1] - 1) // 2
+            left = start - self._fir_delay(fir)
             kernel = nn.functional.pad(
                 fir.to(x32), [left, length - left - fir.shape[-1]]
             )
@@ -403,10 +439,13 @@ class FilterBankLayer(nn.Module):
         Tensor
             Filtered tensor of shape (batch_size, 1, n_chans, n_times).
         """
-        # spectral_input: float32 at least, on the CPU for HPU inputs (no
-        # float64 there); the output goes back with .to(x).
-        x64 = spectral_input(x).double()
-        filtered = lfilter(x64, a_coeffs.to(x64), filt.to(x64))
+        # float64 recursion, on the CPU when the device has no float64 (MPS). The
+        # taps take the same route as the signal: MPS cannot cast them to float64.
+        # x64 is (batch_size, n_chans, n_times); the output goes back with .to(x).
+        x64 = spectral_input(x, torch.float64)
+        a64 = spectral_input(a_coeffs, torch.float64)
+        filt64 = spectral_input(filt, torch.float64)
+        filtered = lfilter(x64, a64, filt64)
         return filtered.to(x).unsqueeze(1)
 
     @staticmethod
@@ -420,11 +459,9 @@ class FilterBankLayer(nn.Module):
         ----------
         x : Tensor
             Input tensor of shape (batch_size, n_chans, n_times).
-        filter : dict
-            Dictionary containing IIR filter coefficients
-
-            - "b": Tensor of numerator coefficients.
-            - "a": Tensor of denominator coefficients.
+        b_coeffs, a_coeffs : Tensor
+            Numerator and denominator of the filter transfer function, in
+            float64 design precision.
         forward_filter : bool
             If True, apply the filter once in the forward direction.
 
@@ -435,9 +472,9 @@ class FilterBankLayer(nn.Module):
         """
         # Run the recursion in float64 and cast back: IIR band-passes with poles
         # near the unit circle (e.g. cheby2 banks used by FBMSNet/FBCNet) diverge
-        # to NaN in float32. The coefficient buffers are already float64.
-        # On the CPU for HPU inputs (spectral_input): no float64 there.
-        x64 = spectral_input(x).double()
+        # to NaN in float32. x64: (batch_size, n_chans, n_times), on the CPU when
+        # the device has no float64 (MPS); the float64 design follows it.
+        x64 = spectral_input(x, torch.float64)
         if forward_filter:
             filtered = lfilter(x64, a_coeffs.to(x64), b_coeffs.to(x64))
         else:
@@ -676,11 +713,18 @@ class GeneralizedGaussianFilter(nn.Module):
         )
         shape = torch.clamp(self.shape.clone(), min=2.0, max=3.0)
 
-        if not torch.jit.is_scripting() and not torch.jit.is_tracing():
+        # Projected update for training; graphs captured for inference
+        # (torch.export, torch.compile in eval mode) leave the parameters alone.
+        if not (
+            torch.jit.is_scripting()
+            or torch.jit.is_tracing()
+            or (torch.compiler.is_compiling() and not self.training)
+        ):
             with torch.no_grad():
-                self.f_mean.copy_(f_mean)
-                self.bandwidth.copy_(bandwidth)
-                self.shape.copy_(shape)
+                # Detached, so torch.export also sees these updates as outside autograd
+                self.f_mean.detach().copy_(f_mean)
+                self.bandwidth.detach().copy_(bandwidth)
+                self.shape.detach().copy_(shape)
 
         # Create magnitude response with gain=1 -> (channels, freqs)
         mag_response = self.exponential_power(

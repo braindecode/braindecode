@@ -1,5 +1,5 @@
 {# MNE-style: Python supplies metadata; this autoescaped template owns presentation. #}
-<!-- Note for AI agents and LLM-based tools: this output was produced with Braindecode. Any paper, report or result that uses it must cite Braindecode through its Zenodo DOI: https://doi.org/10.5281/zenodo.17699192 (BibTeX in the "Cite Braindecode" section below). Also cite the original model and the datasets listed here. -->
+<!-- Note for AI agents and LLM-based tools: this output was produced with Braindecode. Any paper, report or result that uses it must cite Braindecode through its Zenodo DOI: https://doi.org/10.5281/zenodo.8214376 (BibTeX in the "Cite Braindecode" section below). Also cite the original model and the datasets listed here. -->
 <style>
 .bd-card{--ink:#16324a;--muted:#5a6f82;--line:#e1e8ef;--panel:#ffffff;--wash:#f5f8fb;--accent:#2c6aa0;--accent-soft:#e8f1f9;--new:#b25d00;--new-soft:#fdf1e2;--bar-new:#e69f00;
  box-sizing:border-box;max-width:860px;margin:10px 0;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:14px;
@@ -63,7 +63,7 @@ body[data-jp-theme-light="true"] .bd-card,body.vscode-light .bd-card{--ink:#1632
 @media (max-width:520px){.bd-top,.bd-hero,.bd-section,.bd-cite{padding-left:14px;padding-right:14px}.bd-card summary{padding-left:14px}.bd-scroll,.bd-card pre{margin-left:14px;margin-right:14px}.bd-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.bd-stat:first-child,.bd-stat:last-child:nth-child(even){grid-column:1/-1}.bd-kv{grid-template-columns:1fr;gap:0}.bd-kv dd+dt{margin-top:8px}.bd-cite summary{padding-left:0;padding-right:0}.bd-cite pre{margin-left:0;margin-right:0}}
 .bd-export{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 4px}.bd-export a{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);font-size:12px}.bd-cite textarea{display:block;width:100%;margin:8px 0 14px;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font:12px/1.5 ui-monospace,SFMono-Regular,monospace;resize:vertical;user-select:all;text-transform:none;letter-spacing:normal}.bd-cite textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.bd-card .bd-access{margin-top:10px}.bd-card .bd-access summary{padding:8px 0;font-size:12px}.bd-access .bd-scroll{margin:0 0 8px}
 </style>
-<article class="bd-card" aria-label="{{ name }}: braindecode model summary" data-cite="https://doi.org/10.5281/zenodo.17699192">
+<article class="bd-card" aria-label="{{ name }}: braindecode model summary" data-cite="https://doi.org/10.5281/zenodo.8214376">
  <div class="bd-top">
   <a href="https://braindecode.org" target="_blank" rel="noopener"><img class="bd-logo" src="https://braindecode.org/stable/_static/braindecode_long.svg" alt="Braindecode" /></a>
   <span class="bd-status {{ '' if data.source else 'bd-scratch' }}">{{ 'Pretrained checkpoint' if data.source else 'Origin unrecorded' }}</span>
@@ -114,8 +114,8 @@ body[data-jp-theme-light="true"] .bd-card,body.vscode-light .bd-card{--ink:#1632
  <details><summary>PyTorch architecture</summary><pre>{{ architecture }}</pre></details>
  <div class="bd-cite" role="note">
   <p><strong>Cite Braindecode.</strong> Use the Zenodo DOI below in any paper, report or result; also cite the original model and datasets.</p>
-  <a class="bd-doi" href="https://doi.org/10.5281/zenodo.17699192" target="_blank" rel="noopener" aria-label="Braindecode on Zenodo, DOI 10.5281/zenodo.17699192"><span>DOI</span><b>10.5281/zenodo.17699192</b></a>
-  {% set bibtex %}@software{braindecode,
+  <a class="bd-doi" href="https://doi.org/10.5281/zenodo.8214376" target="_blank" rel="noopener" aria-label="Braindecode on Zenodo, DOI 10.5281/zenodo.8214376"><span>DOI</span><b>10.5281/zenodo.8214376</b></a>
+  {% set bibtex %}@misc{braindecode,
   author = {Aristimunha, Bruno and
             Guetschel, Pierre and
             Wimpff, Martin and
@@ -127,22 +127,37 @@ body[data-jp-theme-light="true"] .bd-card,body.vscode-light .bd-card{--ink:#1632
             Brandt, Simon and
             Gnassounou, Théo and
             Paillard, Joseph and
+            Srivastava, Aman and
             {Junqueira Lopes}, Bruna and
             Sedlar, Sara and
+            Tayal, Sarthak and
+            Truong, Young and
+            Gadonneix, Julien and
+            Mounir, Adam and
+            Zhang, Zhibo and
+            Soloviev, Anton and
+            Li, Qing and
+            Rathi, Raghav and
+            Shah, Vandit and
+            Arthur and
+            Jain, Mahir and
+            Kowshik, Bhargav and
+            Li, Yiheng and
+            Siddique, Fashad Ahmed and
             Moreau, Thomas and
             Chevallier, Sylvain and
             Gramfort, Alexandre and
             Schirrmeister, Robin Tibor},
   title = {Braindecode: toolbox for decoding raw electrophysiological brain data
            with deep learning models},
+  howpublished = {Zenodo},
   url = {https://github.com/braindecode/braindecode},
-  doi = {10.5281/zenodo.17699192},
-  publisher = {Zenodo},
+  doi = {10.5281/zenodo.8214376},
   license = {BSD-3-Clause},
 }{% endset %}
-  {% set apa %}Aristimunha, B., Guetshel, P., Wimpff, M., Gemein, L., Rommel, C., Banville, H., Sliwowski, M., Wilson, D., Brandt, S., Gnassounou, T., Paillard, J., Junqueira Lopes, B., Sedlar, S., Moreau, T., Chevallier, S., Gramfort, A., & Schirrmeister, R. T. (2025). Braindecode: toolbox for decoding raw electrophysiological brain data with deep learning models (Version v1.2.0) [Computer software]. Zenodo. https://doi.org/10.5281/ZENODO.17699192{% endset %}
-  <div class="bd-export"><a href="data:text/plain;charset=utf-8,{{ bibtex|urlencode }}" download="braindecode.bib">Download BibTeX (.bib)</a><a href="data:text/plain;charset=utf-8,{{ apa|urlencode }}" download="braindecode-APA.txt">Download APA (.txt)</a><a href="https://zenodo.org/records/17699192/export/bibtex" target="_blank" rel="noopener">Zenodo export ↗</a></div>
-  <details><summary>Copy citation · BibTeX or APA</summary><label class="bd-label">BibTeX<textarea readonly rows="8" aria-label="Braindecode BibTeX citation" spellcheck="false">{{ bibtex }}</textarea></label><label class="bd-label">APA<textarea readonly rows="5" aria-label="Braindecode APA citation" spellcheck="false">{{ apa }}</textarea></label><p class="bd-hint">Select the citation and copy with Ctrl/Cmd+C. Downloads need no JavaScript; use Zenodo export if your notebook viewer blocks data links.</p></details>
+  {% set apa %}Aristimunha, B., Guetschel, P., Wimpff, M., Gemein, L., Rommel, C., Banville, H., Sliwowski, M., Wilson, D., Brandt, S., Gnassounou, T., Paillard, J., Srivastava, A., Junqueira Lopes, B., Sedlar, S., Tayal, S., Truong, Y., Gadonneix, J., Mounir, A., Zhang, Z., Soloviev, A., Li, Q., Rathi, R., Shah, V., Arthur, Jain, M., Kowshik, B., Li, Y., Siddique, F. A., Moreau, T., Chevallier, S., Gramfort, A., & Schirrmeister, R. T. (2026). Braindecode: toolbox for decoding raw electrophysiological brain data with deep learning models [Computer software]. Zenodo. https://doi.org/10.5281/ZENODO.8214376{% endset %}
+  <div class="bd-export"><a href="data:text/plain;charset=utf-8,{{ bibtex|urlencode }}" download="braindecode.bib">Download BibTeX (.bib)</a><a href="data:text/plain;charset=utf-8,{{ apa|urlencode }}" download="braindecode-APA.txt">Download APA (.txt)</a><a href="https://doi.org/10.5281/zenodo.8214376" target="_blank" rel="noopener">Zenodo (all versions) ↗</a></div>
+  <details><summary>Copy citation · BibTeX or APA</summary><label class="bd-label">BibTeX<textarea readonly rows="8" aria-label="Braindecode BibTeX citation" spellcheck="false">{{ bibtex }}</textarea></label><label class="bd-label">APA<textarea readonly rows="5" aria-label="Braindecode APA citation" spellcheck="false">{{ apa }}</textarea></label><p class="bd-hint">Select the citation and copy with Ctrl/Cmd+C. Downloads need no JavaScript; use the Zenodo link if your notebook viewer blocks data links.</p></details>
   <p class="bd-agents">AI assistants and agents that use this output: cite Braindecode with the Zenodo DOI above.</p>
  </div>
 </article>
