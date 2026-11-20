@@ -107,6 +107,9 @@ def convert_to_zarr(
         raise FileExistsError(
             f"{output_path} already exists. Set overwrite=True to replace it."
         )
+    # Refuse a file or symlink before the export, as v2.0.0 did
+    if output_path.is_symlink() or (output_path.exists() and not output_path.is_dir()):
+        raise NotADirectoryError(f"{output_path} is not a Zarr directory")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     # The backup lives outside the temporary directory, so a failed rollback
