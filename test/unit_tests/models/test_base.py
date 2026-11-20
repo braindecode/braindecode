@@ -6,6 +6,7 @@
 import json
 import subprocess
 import sys
+import weakref
 from operator import attrgetter
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -15,7 +16,16 @@ import pytest
 import torch
 from torch import nn
 
-from braindecode.models import EEGCLIP, LUNA, PBT, AttnSleep, CBraMod, Deep4Net, EEGNet
+from braindecode.models import (
+    EEGCLIP,
+    LUNA,
+    PBT,
+    AttnSleep,
+    CBraMod,
+    Deep4Net,
+    EEGNet,
+    ShallowFBCSPNet,
+)
 from braindecode.models.base import EEGModuleMixin
 
 if TYPE_CHECKING:
@@ -352,6 +362,16 @@ def test__str__():
     patch_method_stats.assert_called_once()
     patch_stats.__str__.assert_called_once()
     assert result == str(patch_stats)
+
+
+def test_printing_a_model_does_not_keep_it_alive():
+    # No parametrization: torchinfo's records of a parametrized module form
+    # cycles that only the cycle collector frees.
+    model = ShallowFBCSPNet(n_chans=4, n_outputs=2, n_times=500)
+    str(model)
+    ref = weakref.ref(model)
+    del model
+    assert ref() is None
 
 
 def test_get_output_shape():
