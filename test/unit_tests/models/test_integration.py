@@ -387,6 +387,7 @@ def test_model_compiled(model):
 
     # assert_close also walks the tuple outputs (e.g. NeuroRVQTokenizer).
     torch.testing.assert_close(output_compiled, output, atol=1e-4, rtol=1e-5)
+    torch.compiler.reset()  # free this model's graphs before the next test
 
 
 def test_model_exported(model):
