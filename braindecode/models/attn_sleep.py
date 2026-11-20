@@ -507,6 +507,12 @@ class _ResidualLayerNormAttn(nn.Module):
         self.fn_attn = fn_attn
         self.norm_query = norm_query
 
+    def __setstate__(self, state):
+        # Full models pickled before the raw-query option normalized the
+        # query. Set the flag on the instance so TorchScript also sees it.
+        state.setdefault("norm_query", True)
+        super().__setstate__(state)
+
     def forward(
         self,
         x: torch.Tensor,
