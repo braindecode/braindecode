@@ -45,7 +45,7 @@ _MODELS = {
                         strides=(5, 1), n_layers=1, n_heads=2, head_dim=8, ffn_dim=16, head_hidden_dim=8),
              20, 20, 60, 70),
     "CSBrain": (CSBrain, dict(n_chans=3, n_outputs=2, n_layer=1, nhead=2), 200, 200, 400, 450),
-    # string key: test/conftest.py marks tests parametrized with the REVE class as network-only
+    # Keyed "REVE-overlap", not "REVE": conftest marks the "REVE" cases slow; this one is tiny.
     "REVE-overlap": (REVE, dict(chs_info=[{"ch_name": "Cz"}, {"ch_name": "Pz"}], n_outputs=2, embed_dim=32,
                                 depth=1, heads=2, head_dim=8, patch_size=20, patch_overlap=4), 20, 16, 68, 75),
 }
@@ -58,13 +58,6 @@ _LEGACY_CROP = [
     "SleepFMStager",
     "REVE-overlap",
 ]
-
-
-@pytest.fixture(autouse=True)
-def _reve_position_bank(tmp_path, monkeypatch):
-    bank = {"Cz": [0.0, 0.0, 0.09], "Pz": [0.0, -0.07, 0.06]}
-    (tmp_path / "reve_positions.json").write_text(json.dumps(bank))
-    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
 
 
 def _build(name, n_times, seed=0, **kwargs):

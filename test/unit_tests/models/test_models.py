@@ -6300,7 +6300,11 @@ def _cz():
             dict(chs_info=[{"ch_name": "Cz"}], n_times=100, on_non_divisible="crop"),
             "full patch",
         ),
-        ("REVE", dict(chs_info=[{"ch_name": "X1"}], n_times=1000), "position bank"),
+        (
+            "REVE",
+            dict(chs_info=[{"ch_name": "X1"}], n_times=1000),
+            "No position in the bank",
+        ),
         (
             "SincShallowNet",
             dict(n_chans=2, n_times=30, sfreq=128.0),
