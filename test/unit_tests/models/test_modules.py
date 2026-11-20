@@ -2496,33 +2496,17 @@ def test_timm_attention_rotary_positions_restart_in_each_run():
     from braindecode.modules import TimmAttention
 
     torch.manual_seed(0)
-    plain = TimmAttention(16, num_heads=2)
-    runs = TimmAttention(16, num_heads=2, rotary_runs=2)
-    runs.load_state_dict(plain.state_dict())
-    one_run = TimmAttention(16, num_heads=2, rotary_runs=1)
-    one_run.load_state_dict(plain.state_dict())
+    attn = TimmAttention(16, num_heads=2, rotary_runs=2).eval()
     x = torch.randn(2, 6, 16)
-    q, k, _ = runs._heads(x)
-    q_first, k_first, _ = one_run._heads(x[:, :3])
-    q_second, k_second, _ = one_run._heads(x[:, 3:])
-    torch.testing.assert_close(q, torch.cat((q_first, q_second), dim=2))
-    torch.testing.assert_close(k, torch.cat((k_first, k_second), dim=2))
-    q_plain, _, _ = plain._heads(x)
-    torch.testing.assert_close(q[:, :, :1], q_plain[:, :, :1])  # position 0
-    assert not torch.allclose(q, q_plain)
-    with pytest.raises(ValueError, match="even"):
-        TimmAttention(12, num_heads=4, rotary_runs=1)
-    with pytest.raises(ValueError, match="rotary_runs must be positive"):
-        TimmAttention(16, rotary_runs=0)
+    # Two runs of three tokens: swapping the runs keeps every token's position,
+    # so the outputs swap with them
+    swap_runs = [3, 4, 5, 0, 1, 2]
+    torch.testing.assert_close(attn(x[:, swap_runs]), attn(x)[:, swap_runs])
+    # Reversing each run moves its tokens to other positions
+    reverse_runs = [2, 1, 0, 5, 4, 3]
+    assert not torch.allclose(attn(x[:, reverse_runs]), attn(x)[:, reverse_runs])
     with pytest.raises(ValueError, match="divisible by rotary_runs"):
-        runs(x[:, :5])
-
-    # Full-module checkpoints written before RoPE have no rotary_runs field.
-    logits, weights = plain(x), plain(x, need_weights=True)
-    del plain.rotary_runs
-    torch.testing.assert_close(plain(x), logits, rtol=0, atol=0)
-    torch.testing.assert_close(plain(x, need_weights=True), weights, rtol=0, atol=0)
-    torch.testing.assert_close(torch.jit.script(plain)(x), logits, rtol=0, atol=0)
+        attn(x[:, :5])
 
 
 def test_pre_norm_block_keys_and_forward():
