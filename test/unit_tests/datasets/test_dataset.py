@@ -1363,4 +1363,3 @@ def test_channel_targets_follow_a_transform_returning_tensors(use_mne_epochs):
     X, y, _ = windows[1]
     torch.testing.assert_close(X, torch.as_tensor(data[:2, 5:10], dtype=torch.float32))
     torch.testing.assert_close(y, torch.tensor([data[2, 9]], dtype=torch.float32))
-
