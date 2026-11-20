@@ -360,13 +360,7 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         input_tensor: torch.Tensor,
         return_features: bool = False,
     ):
-        check_n_chans(
-            input_tensor,
-            self.num_channels,
-            "ZUNA",
-            "build the model with the chs_info of this montage, or use a "
-            "channel_strategy.",
-        )
+        check_n_chans(input_tensor, self.num_channels, "ZUNA")
         patch_tokens = self.patch_embedding(input_tensor)
         token_latents = self.encoder(patch_tokens)
         structured_latents = token_latents.reshape(

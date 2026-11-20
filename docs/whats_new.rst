@@ -28,29 +28,9 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
-- :class:`braindecode.models.AXON`, :class:`~braindecode.models.BENDR`,
-  :class:`~braindecode.models.BrainOmni`, :class:`~braindecode.models.BrainTokenizer`,
-  :class:`~braindecode.models.CBraMod`, :class:`~braindecode.models.CodeBrain`,
-  :class:`~braindecode.models.CSBrain`, :class:`~braindecode.models.DuIN`,
-  :class:`~braindecode.models.EEGCLIP`, :class:`~braindecode.models.EEGPT`,
-  :class:`~braindecode.models.JungMAE`, :class:`~braindecode.models.MEDFormer`,
-  :class:`~braindecode.models.MEGGPT`, :class:`~braindecode.models.MEGXL`,
-  :class:`~braindecode.models.MIRepNet`, :class:`~braindecode.models.PBT`,
-  :class:`~braindecode.models.REVE`, :class:`~braindecode.models.SignalJEPA`,
-  :class:`~braindecode.models.SignalJEPA_Contextual`,
-  :class:`~braindecode.models.SignalJEPA_PostLocal`,
-  :class:`~braindecode.models.SignalJEPA_PreLocal`,
-  :class:`~braindecode.models.SleepFMStager` and :class:`~braindecode.models.ZUNA`
-  raise a ``ValueError`` with both channel counts and how to run the model on
-  this input, through :func:`braindecode.functional.check_n_chans`, when the input
-  does not have the channels the model was built for; it was a shape error deep in
-  the network. REVE accepts a different montage when given ``pos`` with attention
-  pooling or feature extraction. CBraMod, CodeBrain, JungMAE and MEGGPT accept
-  fewer channels when returning features (JungMAE takes complete HbO/HbR pairs).
-  MEGGPT also checks its channel embedding capacity. CSBrain checks its
-  region order. Previously saved CBraMod, CSBrain and EEGCLIP modules recover the
-  channel-count behavior of their original heads and encoders
-  (:gh:`1605` by `Julien Gadonneix`_).
+- Foundation models raise a ``ValueError`` with both channel counts, through
+  :func:`braindecode.functional.check_n_chans`, when the input does not have the
+  channels they were built for (:gh:`1605` by `Julien Gadonneix`_).
 - :class:`braindecode.models.CSBrain`, :class:`~braindecode.models.EEGCLIP`,
   :class:`~braindecode.models.MEDFormer`, :class:`~braindecode.models.PBT`,
   :class:`~braindecode.models.TFMTokenizer`, :class:`~braindecode.models.NeuroRVQ`,
@@ -137,9 +117,9 @@ Enhancements
   emb_size)`` and zero for padded channels, like CBraMod and LaBraM; they could
   only be read with a forward hook on ``encoder.transformer``. Outputs and
   ``"features"`` are unchanged (:gh:`1570` by `Hamza Abdelhedi`_).
-- The :class:`braindecode.training.TimeSeriesLoss` documentation shows how to
-  train hand-pose models with :class:`braindecode.EEGRegressor` and align
-  per-joint predictions to continuous targets (:gh:`1619` by `Bruno Aristimunha`_).
+- The docstrings of :class:`braindecode.models.NeuroPose`,
+  :class:`~braindecode.models.VEMG2Pose` and :class:`~braindecode.models.SensingDynamics`
+  show how to train them with :class:`braindecode.EEGRegressor` (:gh:`1619` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` takes ``return_features=True``, like the other
   foundation models: it returns the normed encoder output before the head,
   ``(batch, n_patches, num_queries * embed_dim)``, as ``"features"`` (:gh:`1565` by `Hamza Abdelhedi`_).
@@ -210,6 +190,9 @@ Enhancements
 API and behavior changes
 ========================
 
+- :func:`braindecode.functional.scaled_dot_product_attention` emits a ``FutureWarning``
+  when ``fused_in_lazy`` is set: it has had no effect since :gh:`1581` and will be
+  removed in 2.2 (:gh:`1701` by `Bruno Aristimunha`_).
 - :class:`braindecode.datasets.CHBMIT` and :class:`braindecode.datasets.SIENA` now name
   each annotation after the ``eventType`` column of its ``events.tsv`` (``"sz"``,
   ``"bckg"``, ...). Rows with a missing ``eventType`` keep their BIDS ``trial_type``.
@@ -220,9 +203,9 @@ API and behavior changes
   MNE's montages (within 2e-8 m of the release) and ``RevePositionBank`` ignores ``url``, ``timeout``, ``cache_dir``;
   ``resolve_channel_positions`` takes an exact name, else the last entry equal ignoring case (:gh:`1687` by `Bruno Aristimunha`_).
 
-- Braindecode now requires MNE-Python 1.13.0 or later. This version centres
-  both montages on the fitted head origin for spherical-spline interpolation
-  (:gh:`1615` by `Bruno Aristimunha`_).
+- Braindecode now requires MNE-Python 1.13.0 or later, whose spherical-spline interpolation
+  centres both montages on the fitted head origin; ``standard_*`` montage names resolve to the
+  ``colin27_*`` names MNE 1.13 gives them (:gh:`1615` by `Bruno Aristimunha`_).
 
 - :class:`~braindecode.models.SleepFM` and :class:`~braindecode.models.SleepFMStager` take
   ``ch_mask`` by keyword, ``True`` for real channels; ``channel_mask`` is removed in 2.2.
@@ -269,6 +252,9 @@ Requirements
 Bug fixes
 ==========
 
+- Exported :class:`braindecode.models.EEGMiner` programs decompose without mutating
+  :class:`~braindecode.modules.GeneralizedGaussianFilter` parameters in inference graphs
+  (:gh:`1706` by `Bruno Aristimunha`_).
 - :class:`braindecode.datasets.EEGWindowsDataset` and :class:`~braindecode.datasets.WindowsDataset`
   with ``targets_from="channels"`` raise ``ValueError`` when no ``misc`` channel remains
   (:gh:`1708` by `Bruno Aristimunha`_).
@@ -282,41 +268,26 @@ Bug fixes
 - ``convert_to_zarr`` and ``load_from_zarr`` work with a local Zarr installation.
   Uploading or downloading a dataset also requires ``huggingface_hub``
   (:gh:`1684` by `Bruno Aristimunha`_).
-- :func:`braindecode.preprocessing.filterbank` keeps whole channel names: it cut
-  each name with its band suffix to its last 15 characters (``MEG0111_8.0-13.0``
-  became ``EG0111_8.0-13.0``), a limit MNE no longer has; long names also
-  round-trip through FIF. Filtered channels are therefore named
-  ``{name}_{l_freq}-{h_freq}`` in full, and with ``drop_original_signals=True`` a
-  filtered channel may reuse the name of a dropped source channel (:gh:`1680` by
-  `Bruno Aristimunha`_).
+- :func:`braindecode.preprocessing.filterbank` keeps whole channel names: it cut each name
+  with its band suffix to its last 15 characters (``MEG0111_8.0-13.0`` became
+  ``EG0111_8.0-13.0``), a limit MNE no longer has (:gh:`1680` by `Bruno Aristimunha`_).
 - Annotation preprocessors preserve existing event sample numbers in undated
   recordings with a nonzero first sample, including after cropping a recording
   (:gh:`1621` by `Bruno Aristimunha`_).
 - :func:`braindecode.preprocessing.filterbank` preserves channel positions and
   their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
 - :class:`braindecode.models.LUNA` keeps its default channel locations in a
-  non-persistent buffer, so ``model.to(device)`` moves them. Before, they stayed
-  on the CPU in a plain dict, and each forward without ``channel_locations``
-  copied them to the device of the input. When the channel count changes, LUNA
-  uses the corresponding measured positions or builds its fallback on the model
-  device. The positions are reconstructed during checkpoint loading, including
-  when loading weights into a model constructed on the meta device. Existing
-  state dictionaries and full-model pickles load (:gh:`1616` by
-  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+  non-persistent buffer, so ``model.to(device)`` moves them instead of leaving them
+  on the CPU (:gh:`1616` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.SSTDPN` can be exported with PyTorch 2.6.
   The exported model projects each class prototype to its maximum norm
   before computing the logits (:gh:`1681` by `Bruno Aristimunha`_).
-- ``load_state_dict`` of every braindecode model loads checkpoints saved before
-  the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
-  other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key
-  is mapped to ``parametrizations.weight.original``. Released checkpoints such as
-  the EEGNet weights of Guetschel and Tangermann load without renaming keys.
-  If a checkpoint supplies both names, the current weight takes precedence
-  and a strict load reports the obsolete key unless both names refer to the
-  same tensor storage and view. The module versions stored by
-  PyTorch are also preserved, so missing BatchNorm buffers are checked against
-  the checkpoint's version
-  (:gh:`1538`, :gh:`1639` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.EEGNet` loads the released weights of Guetschel and
+  Tangermann; ``load_state_dict`` checks missing BatchNorm buffers against the
+  checkpoint's PyTorch version (:gh:`1538`, :gh:`1639` by `Bruno Aristimunha`_).
+- ``from_pretrained`` warns, naming up to ten of them, when most parameters outside
+  ``final_layer`` are not loaded (a checkpoint in another format); it warned only when
+  none was (:gh:`1702` by `Bruno Aristimunha`_).
 - Overwriting a local Zarr store with ``convert_to_zarr`` keeps the old store if the
   export fails. Lazy loading then reads the new recordings, not the old memmap cache,
   which the overwrite deletes (:gh:`1627` by `Bruno Aristimunha`_).
@@ -339,14 +310,9 @@ Bug fixes
   are unchanged, so released weights still load (:gh:`1613` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
-- :meth:`braindecode.datasets.BaseConcatDataset.save` now saves a recording
-  created with the default ``description=None`` and writes an empty description
-  for it. Before, it raised an ``AttributeError`` after it had written the signal
-  file, which left a subdirectory that
-  :func:`braindecode.datautil.load_concat_dataset` could not read. Directly
-  constructed windows keep ``targets_from`` and ``last_target_only`` after
-  saving and loading. Older stores without these settings load with
-  ``targets_from="metadata"``, the constructor default (:gh:`1610` by
+- :meth:`braindecode.datasets.BaseConcatDataset.save` saves a recording with the default
+  ``description=None`` (it raised ``AttributeError``); windows keep ``targets_from`` and
+  ``last_target_only`` when saved and loaded (:gh:`1610` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :func:`braindecode.preprocessing.create_fixed_length_windows` with
   ``use_mne_epochs=True`` (also set by ``picks``, ``reject`` or ``flat``) passes
   ``targets_from`` and ``last_target_only`` to
@@ -445,13 +411,9 @@ Bug fixes
 - :class:`braindecode.modules.FilterBankLayer` keeps its float64 IIR design out of model
   casts and ``state_dict()`` (v2.0.0 checkpoints still load): no NaN in narrow-band
   :class:`braindecode.models.FBCNet` filters; IIR and causal FIR filters run on MPS (:gh:`1657`).
-- :class:`braindecode.models.CSBrain` no longer applies ``proj_out``, the
-  pretraining reconstruction layer, to its features and classification head, as
-  for :class:`braindecode.models.CBraMod`. The original fine-tuning code replaces
-  it by ``nn.Identity()``, so the head now reads the encoder output. ``proj_out``
-  stays in the model so the released weights still load; the first head layer takes
-  ``d_model`` instead of ``emb_dim`` inputs per token (the same with the defaults).
-  Outputs of existing CSBrain classifiers change (:gh:`1541`, :gh:`1572`).
+- :class:`braindecode.models.CSBrain` no longer applies ``proj_out``, the pretraining layer, to its
+  features and head: outputs of existing classifiers change, and the head takes ``d_model`` inputs per
+  token, not ``emb_dim`` (:gh:`1576` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.augmentation.FTSurrogate` with ``channel_indep=False``
   no longer raises ``repeat(): Not supported for complex yet!`` on Apple MPS:
   the shared phase perturbation is now broadcast across channels instead of
@@ -505,14 +467,9 @@ Bug fixes
 - :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` keeps window values over
   same-named description columns, output inference reads the window targets, and
   ``set_target`` checks all recordings first (:gh:`1646` by `Bruno Aristimunha`_).
-- :class:`braindecode.models.LUNA` raises when ``chs_info`` has positions for
-  some channels but not all (MNE stores ``NaN`` for the others). It gave every
-  channel a default position, evenly spaced along x, so one name missing from the
-  montage silently replaced the positions of all the others. A ``chs_info``
-  without any position keeps the default positions. LUNA and
-  :class:`braindecode.models.CORTEG` share this rule; CORTEG now also names a
-  channel whose position is ``NaN`` when it is built, where it took the montage
-  for one without positions (:gh:`1569` by `Hamza Abdelhedi`_).
+- :class:`braindecode.models.LUNA` raises when ``chs_info`` has positions for some channels
+  but not all (MNE stores ``NaN`` for the others), instead of replacing every position by
+  a default one. Without any position, the default positions are kept (:gh:`1569` by `Hamza Abdelhedi`_).
 - :func:`braindecode.functional.hilbert_freq` and :func:`braindecode.functional.plv_time`
   take an optional ``n_times`` with a precomputed spectrum, for odd lengths and the
   Nyquist bin; :class:`braindecode.models.EEGMiner` keeps its v2.0.0 features (:gh:`1663` by `Bruno Aristimunha`_).
@@ -598,13 +555,12 @@ Bug fixes
   ``10.5281/zenodo.8214376``, which resolves to the latest release; the DOI they
   gave, ``10.5281/zenodo.17699192``, is the 1.2.0 archive. The author list adds
   the contributors of 2.0.0 (:gh:`1571` by `Bruno Aristimunha`_).
-- :class:`braindecode.datasets.TUH` and :class:`braindecode.datasets.TUHAbnormal`
-  with ``add_physician_reports=True`` no longer take the ``_date.txt`` file that
-  braindecode writes next to each EDF file for a physician report: with one
-  recording in a directory the description held the date JSON instead of the
-  report, and with several recordings an ``AssertionError`` without message was
-  raised. In shared directories, reports are matched to the EDF or its session.
-  A missing or ambiguous report raises :class:`RuntimeError` (:gh:`1655` by `Axel Coiffard-Donaty`_).
+- :class:`braindecode.datasets.TUH` and :class:`braindecode.datasets.TUHAbnormal` with
+  ``add_physician_reports=True`` read the ``<subject>_<session>.txt`` report of the recording's
+  session, not the ``_date.txt`` file beside each EDF (:gh:`1655` by `Axel Coiffard-Donaty`_).
+- :class:`braindecode.datasets.TUHEvents` keeps the channel of each ``.rec`` row with its times
+  when sorting, merges overlapping events of one type over their full span, ignores the channel
+  index of global events and reads an empty ``.rec`` file (:gh:`1704` by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.FilterBankLayer` with ``method="fir"`` and
   ``phase="minimum"`` or ``"minimum-half"`` applied the minimum-phase filter with
   the delay compensation of a zero-phase filter, which made it anti-causal: the
@@ -616,12 +572,18 @@ Bug fixes
 Code health
 ============
 
+- Tests that spawned processes, built the 157M-parameter :class:`~braindecode.models.BENDR`
+  14 times, spied on SDPA calls or re-implemented the code they check are now in-process,
+  small or gone (:gh:`1701` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.Deep4Net`, :class:`~braindecode.models.ShallowFBCSPNet`,
   :class:`~braindecode.models.EEGNet`, :class:`~braindecode.models.EEGITNet` and the CTC models size
   their heads by arithmetic, not by a forward pass at construction (:gh:`1694` by `Bruno Aristimunha`_).
 - :class:`~braindecode.models.GCNsNet` fits its graph with the public ``fit_graph``,
   called once per fit by the estimators; it and :class:`~braindecode.models.DGCNN`
   share :class:`~braindecode.modules.ChebyshevGraphConv` (:gh:`1700` by `Bruno Aristimunha`_).
+- The :class:`braindecode.datasets.TUHEvents` test builds its corpus under ``tmp_path`` and
+  reads it with the public class; the private ``_TUHEventsMock`` and its table of synthetic
+  paths leave the package (:gh:`1704` by `Bruno Aristimunha`_).
 - Put the default three-channel test montage with the model fixtures, and
   share canonical channel conversion between the LaBraM and BENDR entries in
   ``models_mandatory_parameters`` (:gh:`1665` by `Bruno Aristimunha`_).

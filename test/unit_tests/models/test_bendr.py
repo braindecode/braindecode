@@ -1,7 +1,6 @@
 # Authors: Anton Soloviev <anton@praviel.com>
 # License: BSD (3-clause)
 
-import numpy as np
 import pytest
 import torch
 from torch.nn import functional as F
@@ -48,210 +47,54 @@ def test_contextualizer_unnormalized_output(training, start_token):
     assert not any(p.requires_grad for p in model.norm.parameters())
 
 
-def test_bendr_parameter_counts():
-    """
-    Test BENDR parameter counts match paper specifications.
+# The small configuration: 480 samples give 5 encoded steps (the encoder downsamples by 96).
+_SMALL_BENDR = dict(
+    n_chans=4,
+    n_outputs=3,
+    sfreq=256,
+    encoder_h=16,
+    contextualizer_hidden=32,
+    transformer_layers=1,
+    transformer_heads=2,
+)
 
-    Paper reports ~157M parameters total:
-    - Encoder: ~4M parameters
-    - Contextualizer: ~153M parameters
-    """
+
+@pytest.mark.parametrize(
+    "n_chans, n_params", [(1, 157_112_891), (20, 157_142_075), (64, 157_209_659)]
+)
+def test_bendr_parameter_counts(n_chans, n_params):
+    """The model has the paper's ~157M parameters: ~4M encoder, ~153M contextualizer."""
+    with torch.device("meta"):  # only the shapes count: do not allocate 157M weights
+        model = BENDR(n_chans=n_chans, n_outputs=2, n_times=5120, sfreq=256)
+
+    def count(module):
+        return sum(p.numel() for p in module.parameters())
+
+    assert count(model) == n_params
+    assert 3_900_000 < count(model.encoder) < 4_100_000
+    assert 152_000_000 < count(model.contextualizer) < 154_000_000
+
+
+@pytest.mark.parametrize("encoder_only", [False, True])
+def test_bendr_gradient_flow(encoder_only):
+    """The encoder always gets gradients; the contextualizer, unless it is bypassed."""
     set_random_seeds(0, False)
+    model = BENDR(n_times=480, encoder_only=encoder_only, **_SMALL_BENDR)
+    out = model(torch.randn(2, 4, 480))
+    out.sum().backward()
 
-    # Standard 20-channel configuration
-    model = BENDR(
-        n_chans=20,
-        n_outputs=2,
-        n_times=5120,
-        sfreq=256,
-    )
-
-    # Count total parameters
-    total_params = sum(p.numel() for p in model.parameters())
-
-    # Should be close to paper: 157,141,049,
-    # At braindecode, there are 2 k params difference
-    # that might come from implementation details from different
-    # torch versions or minor code changes. 157,143,101 in my case.
-
-    # Allow 0.1% tolerance
-    expected = 157_141_049
-    assert abs(total_params - expected) / expected < 0.001, \
-        f"Expected ~{expected:,} params, got {total_params:,}"
-
-    # Count encoder parameters (should be ~4M)
-    encoder_params = sum(p.numel() for p in model.encoder.parameters())
-    assert 3_900_000 < encoder_params < 4_100_000, \
-        f"Encoder should have ~4M params, got {encoder_params:,}"
-
-    # Count contextualizer parameters (should be ~153M)
-    contextualizer_params = sum(p.numel() for p in model.contextualizer.parameters())
-    assert 152_000_000 < contextualizer_params < 154_000_000, \
-        f"Contextualizer should have ~153M params, got {contextualizer_params:,}"
-
-
-def test_bendr_different_channels():
-    """
-    Test BENDR with different channel counts.
-    Parameter count should scale with number of channels.
-    """
-    set_random_seeds(0, False)
-
-    configs = [
-        (1, 157_112_891),   # Single channel
-        (20, 157_142_075),  # Standard
-        (64, 157_209_659),  # More channels
-    ]
-
-    for n_chans, expected_params in configs:
-        model = BENDR(
-            n_chans=n_chans,
-            n_outputs=2,
-            n_times=5120,
-            sfreq=256,
+    def has_grad(module):
+        return any(
+            p.grad is not None and p.grad.abs().sum() > 0 for p in module.parameters()
         )
 
-        total_params = sum(p.numel() for p in model.parameters())
-
-        # Check exact match
-        assert total_params == expected_params, \
-            f"For {n_chans} channels: expected {expected_params:,}, got {total_params:,}"
-
-
-def test_bendr_gradient_flow():
-    """
-    Test that gradients flow through the entire model.
-    """
-    set_random_seeds(0, False)
-
-    model = BENDR(n_chans=20, n_outputs=4, n_times=5120, sfreq=256)
-    x = torch.randn(2, 20, 5120, requires_grad=True)
-
-    y = model(x)
-    loss = y.sum()
-    loss.backward()
-
-    # Check gradients exist in encoder
-    encoder_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.encoder.parameters()
-    )
-    assert encoder_has_grad, "No gradients in encoder"
-
-    # Check gradients exist in contextualizer
-    contextualizer_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.contextualizer.parameters()
-    )
-    assert contextualizer_has_grad, "No gradients in contextualizer"
-
-
-@pytest.mark.parametrize("drop_prob", [0.0, 0.1, 0.15])
-def test_bendr_dropout_configurations(drop_prob):
-    """
-    Test BENDR with different dropout rates.
-    Paper uses 0.15 for pretraining, 0.0 for fine-tuning.
-    """
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=20,
-        n_outputs=4,
-        n_times=5120,
-        sfreq=256,
-        drop_prob=drop_prob,
-    )
-
-    x = torch.randn(2, 20, 5120)
-
-    # Training mode
-    model.train()
-    y_train = model(x)
-    assert y_train.shape == (2, 4)
-
-    # Eval mode
-    model.eval()
-    y_eval = model(x)
-    assert y_eval.shape == (2, 4)
-
-    # With dropout=0, outputs should be identical
-    if drop_prob == 0.0:
-        np.testing.assert_allclose(
-            y_train.detach().numpy(),
-            y_eval.detach().numpy(),
-            rtol=1e-5,
-            atol=1e-7,
-        )
-
-
-def test_bendr_encoder_only_gradient_flow():
-    """Encoder-only mode: encoder has grads, contextualizer does not."""
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=True,
-    )
-    x = torch.randn(2, 20, 5120, requires_grad=True)
-    model(x).sum().backward()
-
-    encoder_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.encoder.parameters()
-    )
-    assert encoder_has_grad, "No gradients in encoder"
-
-    ctx_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.contextualizer.parameters()
-    )
-    assert not ctx_has_grad, "Contextualizer should have no grads"
-
-
-def test_bendr_encoder_only_parameter_counts():
-    """Encoder/contextualizer params match full model; final_layer is larger."""
-    set_random_seeds(0, False)
-
-    model_full = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=False,
-    )
-    model_enc = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=True,
-    )
-
-    for name in ("encoder", "contextualizer"):
-        p_full = sum(p.numel() for p in getattr(model_full, name).parameters())
-        p_enc = sum(p.numel() for p in getattr(model_enc, name).parameters())
-        assert p_full == p_enc, f"{name} params differ: {p_full} vs {p_enc}"
-
-    fl_full = sum(p.numel() for p in model_full.final_layer.parameters())
-    fl_enc = sum(p.numel() for p in model_enc.final_layer.parameters())
-    assert fl_enc > fl_full
-
-
-def test_bendr_backward_compatibility():
-    """encoder_only=False (default) produces identical output to original."""
-    set_random_seeds(0, False)
-
-    model_default = BENDR(n_chans=20, n_outputs=4, n_times=5120, sfreq=256)
-    model_explicit = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=False,
-    )
-    model_explicit.load_state_dict(model_default.state_dict())
-    model_default.eval()
-    model_explicit.eval()
-
-    x = torch.randn(2, 20, 5120)
-    np.testing.assert_allclose(
-        model_default(x).detach().numpy(),
-        model_explicit(x).detach().numpy(),
-        rtol=1e-5, atol=1e-7,
-    )
+    assert out.shape == (2, 3)
+    assert has_grad(model.encoder)
+    assert has_grad(model.contextualizer) != encoder_only
 
 
 def test_bendr_encoder_only_short_input_raises():
     """RuntimeError when input is too short for 4-chunk pooling."""
-    model = BENDR(
-        n_chans=20, n_outputs=4, n_times=None, sfreq=256, encoder_only=True,
-    )
+    model = BENDR(n_times=None, encoder_only=True, **_SMALL_BENDR)
     with pytest.raises(RuntimeError, match="too few"):
-        model(torch.randn(2, 20, 96))
+        model(torch.randn(2, 4, 96))

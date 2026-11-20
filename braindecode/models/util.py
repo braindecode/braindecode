@@ -545,10 +545,7 @@ def _fnirs_chs_info(n_pairs: int, interleaved: bool = False) -> list[dict]:
     return chs
 
 
-# The published BaRISTA example starts at the 85th float64 draw from PCG64(12):
-# the first 84 draws (3 * 12 + 4 * 12) went to fixtures that no longer exist,
-# and skipping them keeps the BaRISTA locations unchanged.
-_barista_rng = np.random.Generator(np.random.PCG64(12).advance(84))
+_barista_rng = np.random.default_rng(12)
 
 # Braindecode exports these ordered triples. Config generation reads the name
 # and required signal arguments. The third field supplies example constructor
