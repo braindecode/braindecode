@@ -609,7 +609,7 @@ Code health
   :class:`braindecode.models.DANCE` directly along the time axis. A training
   test checks its per-token logits and the gradients of all three event heads
   (:gh:`1677` by `Bruno Aristimunha`_).
-- The accelerator contract checks weight-normalized convolutions through backward
+- The accelerator contract checks weight-normalized layers through backward
   for BBL, BDTCN, BENDR and TIDNet on PyTorch versions that lack the corresponding
   Meta kernel (:gh:`1682` by `Bruno Aristimunha`_).
 - Codacy runs Bandit from a root ``bandit.yml`` that skips B105, which flagged every ``"cls_token"`` key of the foundation-model feature dicts as a hardcoded password, and B101, the test ``assert`` statements (:gh:`1546` by `Bruno Aristimunha`_).

@@ -334,7 +334,9 @@ class _OpLog(TorchDispatchMode):
     """Record the aten ops run under it: name, (dtype, device, ndim, contiguous)
     of the tensor inputs and outputs and the other arguments; outputs of a 3-D
     ``permute`` are remembered by identity. With ``meta_to_cpu``, copies from
-    ``meta`` to the CPU return random values (meta tensors hold no data)."""
+    ``meta`` to the CPU return random values (meta tensors hold no data), and the
+    weight-norm backward, when torch has no Meta kernel for it, returns empty
+    gradients shaped like ``v`` and ``g``."""
 
     def __init__(self, meta_to_cpu=False):
         super().__init__()
