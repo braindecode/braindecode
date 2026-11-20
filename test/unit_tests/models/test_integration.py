@@ -443,6 +443,24 @@ def test_model_exported(model):
     assert isinstance(exported_prog, ExportedProgram)
 
 
+@pytest.mark.parametrize("method", ["mag", "corr", "plv"])
+def test_eegminer_exported_program_decomposes(method):
+    """Exported EEGMiner in eval mode matches eager output and decomposes."""
+    torch.manual_seed(0)
+    model = EEGMiner(
+        method=method, n_chans=4, n_outputs=2, n_times=200, sfreq=200.0
+    ).eval()
+    x = torch.randn(2, 4, 200)
+    with torch.no_grad():
+        eager = model(x)
+
+    ep = export(model, (x,), strict=False)
+    assert torch.equal(ep.module()(x), eager)
+
+    decomposed = ep.run_decompositions()
+    torch.testing.assert_close(decomposed.module()(x), eager)
+
+
 @pytest.mark.parametrize("model_name", list(_MODEL_CASES))
 def test_torch_script(model_name):
     """Models script directly and the scripted output equals the eager one.
