@@ -85,14 +85,9 @@ Enhancements
   calling ``raw.get_channel_types()`` (:gh:`1651` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
-- Add :class:`braindecode.models.TinyMyo` (Fasulo et al., IEEE TBME 2026), a
-  foundation model pretrained on surface EMG only. You can fine-tune its
-  3.6M-parameter encoder on a small EMG dataset instead of training from scratch,
-  and the model is small enough to run on GAP9, a low-power microcontroller for
-  wearables. ``from_pretrained`` loads the authors' ``PulpBio/TinyMyo`` files as
-  released, including their NinaPro DB5, EPN-612 and UCI EMG gesture classifiers.
-  With these files, the outputs and the classifier gradients match the authors' code
-  within 1e-5 (:gh:`1649` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- Add :class:`braindecode.models.TinyMyo` (Fasulo et al., IEEE TBME 2026), a small sEMG foundation
+  model; its encoder is on the Hugging Face Hub at ``braindecode/tinymyo-pretrained``, its gesture classifiers
+  at ``braindecode/tinymyo-db5``, ``-epn612`` and ``-uci-emg`` (:gh:`1649` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.modules.ChannelLayer` maps channels with one linear
   estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
   targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat
@@ -108,14 +103,11 @@ Enhancements
   the ``pos``/``ch_mask`` batches of :func:`~braindecode.datasets.pad_channels_collate`
   instead of refusing ``ch_mask`` (:gh:`1593` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.JungMAE`, the GeoNIRS authors' implementation of the
-  masked autoencoder of Jung et al. (IEEE BCI 2025), with a linear head;
-  ``load_state_dict`` takes the GeoNIRS benchmark's ``jung_mae.pt`` as released
-  (:gh:`1589` by `Bruno Aristimunha`_).
+  masked autoencoder of Jung et al. (IEEE BCI 2025); its encoder is on the Hugging Face
+  Hub at ``braindecode/jungmae-pretrained`` (:gh:`1589` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.MtReNIRS` (Chae et al., 2026), a montage-aware fNIRS
-  foundation model with a Fourier embedding of the 10-05 position and chromophore and
-  a QK-norm rotary transformer; ``load_state_dict`` takes ``mtrenirs_10s.pt`` as
-  released, and the docstring gives the 0.01-0.5 Hz band-pass its weights expect
-  (:gh:`1590` by `Bruno Aristimunha`_).
+  foundation model with a QK-norm rotary transformer; its encoder is on the Hugging Face
+  Hub at ``braindecode/mtrenirs-pretrained`` (:gh:`1590` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.GeoNIRS` (Li et al., 2026), an fNIRS foundation model
   that compresses paired HbO/HbR channels onto latent channels with a cross-attention
   conditioned on the source-detector geometry read from ``chs_info``;
