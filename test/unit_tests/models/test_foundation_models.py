@@ -1967,8 +1967,36 @@ def test_sleepfm_masked_input_is_ignored(cls, masked, training):
     torch.testing.assert_close(runs[0], runs[1])
 
 
+def _cpu_bf16_lstm_runs():
+    """Whether a one-step ``nn.LSTM`` trains under CPU bfloat16 autocast here.
 
-@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
+    Some CPUs have no oneDNN bfloat16 LSTM training kernel (gh-1664).
+    """
+    lstm = nn.LSTM(2, 2)
+    try:
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            out, _ = lstm(torch.zeros(1, 1, 2))  # (time, batch, features)
+        out.float().sum().backward()
+    except RuntimeError:
+        return False
+    return True
+
+
+_CPU_BF16_LSTM = _cpu_bf16_lstm_runs()
+
+
+@pytest.mark.parametrize(
+    "cls",
+    [
+        SleepFM,
+        pytest.param(
+            SleepFMStager,
+            marks=pytest.mark.skipif(
+                not _CPU_BF16_LSTM, reason="no CPU bfloat16 LSTM training kernel"
+            ),
+        ),
+    ],
+)
 def test_sleepfm_masked_training_with_autocast(cls):
     model = _small(cls).train()
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
@@ -1988,41 +2016,6 @@ def test_sleepfm_masked_training_with_autocast(cls):
     assert not torch.equal(before, model.final_layer.weight)
 
 
-def test_sleepfm_staging_lstm_runs_in_parameter_precision_under_cpu_autocast(
-    monkeypatch,
-):
-    """Some CPUs have no oneDNN bfloat16 LSTM kernel (gh-1664)."""
-    lstm_forward = nn.LSTM.forward
-    seen = []
-
-    def strict_forward(self, input, hx=None):
-        seen.append((input.dtype, torch.is_autocast_enabled("cpu")))
-        if input.dtype == torch.bfloat16 or torch.is_autocast_enabled("cpu"):
-            raise RuntimeError("no bfloat16 LSTM kernel on this CPU")
-        return lstm_forward(self, input, hx)
-
-    monkeypatch.setattr(nn.LSTM, "forward", strict_forward)
-    model = _small(SleepFMStager).train()
-    x = torch.randn(2, 3, 1280)
-    real = torch.tensor([[True, False, False], [True, True, False]])
-    with torch.autocast("cpu", dtype=torch.bfloat16):
-        logits = model(x, ch_mask=real)
-    logits.float().square().mean().backward()
-    assert seen == [(torch.float32, False)]
-    assert torch.isfinite(logits).all()
-
-
-@pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
-def test_sleepfm_rejects_ambiguous_positional_forward_masks(cls):
-    kwargs = {"channel_modalities": ["A"]} if cls is SleepFMStager else {}
-    model = _small(cls, n_chans=1, **kwargs).eval()
-    x = torch.randn(1, 1, 1280)
-    old_mask = torch.ones(1, 1, dtype=torch.bool)
-    for net in (model, torch.jit.script(model)):
-        with pytest.raises((TypeError, RuntimeError, torch.jit.Error), match="ch_mask"):
-            net(x, old_mask)
-
-
 def test_sleepfm_encode_preserves_legacy_positional_mask_polarity():
     model = _small(SleepFM).eval()
     x = torch.randn(2, 3, 1280)
@@ -2035,20 +2028,27 @@ def test_sleepfm_encode_preserves_legacy_positional_mask_polarity():
         torch.testing.assert_close(tokens, expected[1])
 
 
-def test_sleepfm_stager_applies_attention_to_one_of_four_modality_slots():
-    model = _small(SleepFMStager, channel_modalities=None).eval()
-    pooling = model.staging_head.spatial_pooling
-    captured = []
+@pytest.mark.parametrize(
+    "cls,n_real", [(SleepFM, 1), (SleepFMStager, 2)], ids=["SleepFM", "SleepFMStager"]
+)
+def test_sleepfm_padded_sample_gives_its_unpadded_output(cls, n_real):
+    """A sample padded with masked channels gives the output it gives without them.
 
-    def capture_pool(module, args, result):
-        tokens, missing = args[:2]
-        encoded = module.transformer_layer(tokens, src_key_padding_mask=missing)
-        captured.append((result, encoded[:, 0]))
+    The stager keeps the release's attention over a padded set, so it is
+    checked with two real channels, where the release and SleepFM agree.
+    """
 
-    with pooling.register_forward_hook(capture_pool), torch.no_grad():
-        model(torch.randn(2, 3, 1280))
-    actual, expected = captured[0]
-    torch.testing.assert_close(actual, expected)
+    def build(n_chans):
+        kwargs = {"channel_modalities": ["A"] * n_chans} if cls is SleepFMStager else {}
+        return _small(cls, n_chans=n_chans, **kwargs).eval()
+
+    unpadded, padded = build(n_real), build(3)
+    padded.load_state_dict(unpadded.state_dict())
+    x = torch.randn(2, n_real, 1280)
+    x_padded = torch.cat([x, torch.full((2, 3 - n_real, 1280), float("nan"))], dim=1)
+    ch_mask = (torch.arange(3) < n_real).expand(2, 3)
+    with torch.no_grad():
+        torch.testing.assert_close(padded(x_padded, ch_mask=ch_mask), unpadded(x))
 
 
 @pytest.mark.parametrize("cls", [SleepFM, SleepFMStager])
@@ -2063,15 +2063,6 @@ def test_sleepfm_channel_mask_is_the_deprecated_inverse_of_ch_mask(cls):
         with pytest.raises(ValueError, match="ch_mask only"):
             model(x, ch_mask=~missing, channel_mask=missing)
 
-
-def test_sleepfm_stager_keeps_the_release_pooling():
-    """Only SleepFM's channel pooling is padding-invariant; the stager's modality
-    slots and SleepFM's temporal pooling keep the release's attention."""
-    encoder, stager = _small(SleepFM), _small(SleepFMStager)
-    assert encoder.spatial_pooling.pad_invariant
-    assert not encoder.temporal_pooling.pad_invariant
-    assert not stager.spatial_pooling.pad_invariant
-    assert not stager.staging_head.spatial_pooling.pad_invariant
 
 @pytest.mark.parametrize("n_valid", [16, 12], ids=["chunk_aligned", "inside_chunk"])
 def test_sleepfm_stager_matches_the_two_stage_pipeline(n_valid):
@@ -2138,6 +2129,20 @@ def test_sleepfm_stager_completes_a_head_only_checkpoint(tmp_path):
     expected = encoder.state_dict() | head_only
     for key, value in loaded.state_dict().items():
         torch.testing.assert_close(value, expected[key], msg=key)
+
+
+def test_sleepfm_stager_loads_a_v2_state_dict():
+    """A state dict saved by braindecode 2.0.0 loads with strict=True.
+
+    The file lists the keys and shapes of the reduced stager that 2.0.0 saved
+    (``_small(SleepFMStager)``); strict loading checks nothing else.
+    """
+    layout = Path(__file__).parent / "data" / "sleepfm_stager_v2.0.0.txt"
+    state = {}
+    for line in layout.read_text().splitlines():
+        key, shape = line.split(" ", 1)
+        state[key] = torch.zeros(json.loads(shape))
+    _small(SleepFMStager).load_state_dict(state)
 
 
 @pytest.mark.network

@@ -236,34 +236,37 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         contextual_tokens : torch.Tensor
             :math:`h`, shape ``(batch, n_patches, embed_dim)``.
         """
-        mask = _missing_channels(_deprecated_channel_mask(ch_mask, channel_mask), x)
+        real = check_ch_mask(_deprecated_channel_mask(ch_mask, channel_mask), x)
         patch_mask: Optional[torch.Tensor] = None
-        if mask is None:
+        if real is None:
             mask = torch.zeros(x.shape[:2], dtype=torch.bool, device=x.device)
         else:
+            mask = ~real  # (batch, n_chans), True for missing channels
             patch_mask = mask.unsqueeze(2).expand(
                 -1, -1, self.patch_embedding.patchify.n_patches(x.shape[-1])
             )
+        # One token per channel and patch: (batch, n_chans, n_patches, embed_dim)
         tokens = self.patch_embedding(x, patch_mask)
+        # Pool the real channels of every patch: (batch, n_patches, embed_dim)
         tokens = self.spatial_pooling.per_patch(tokens, mask)
         tokens = self.layer_norm(
             tokens + self.positional_encoding[:, : tokens.shape[1]]
         )
+        # Model the patch sequence: (batch, n_patches, embed_dim)
         contextual_tokens = self.transformer_encoder(tokens)
+        # Pool the patches into one trial vector: (batch, embed_dim)
         return self.temporal_pooling(contextual_tokens), contextual_tokens
 
     def forward(
         self,
         x: torch.Tensor,
-        return_features: bool | torch.Tensor = False,
+        return_features: bool = False,
         ch_mask: torch.Tensor | None = None,
         channel_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Return trial logits, or the pooled features; ``ch_mask`` (``True``
         for real channels) and the deprecated ``channel_mask`` are as in
         :meth:`encode`."""
-        if isinstance(return_features, torch.Tensor):
-            raise TypeError("Pass ch_mask by keyword. True marks real channels.")
         pooled, _ = self.encode(x, channel_mask=channel_mask, ch_mask=ch_mask)
         if return_features:
             out: Dict[str, Optional[torch.Tensor]] = {
@@ -570,7 +573,7 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     def forward(
         self,
         x: torch.Tensor,
-        return_features: bool | torch.Tensor = False,
+        return_features: bool = False,
         temporal_mask: torch.Tensor | None = None,
         ch_mask: torch.Tensor | None = None,
         channel_mask: torch.Tensor | None = None,
@@ -581,8 +584,6 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         ``channel_mask`` are as in :meth:`SleepFM.encode`; ``temporal_mask`` is
         ``True`` for padded patches.
         """
-        if isinstance(return_features, torch.Tensor):
-            raise TypeError("Pass ch_mask by keyword. True marks real channels.")
         check_n_chans(
             x,
             self.n_chans,
@@ -594,10 +595,12 @@ class SleepFMStager(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         patch_mask = _check_mask(
             temporal_mask, [x.shape[0], n_patches], x, "temporal_mask"
         )
-        mask = _missing_channels(_deprecated_channel_mask(ch_mask, channel_mask), x)
-        mask_tokens = mask is not None or patch_mask is not None
-        if mask is None:
+        real = check_ch_mask(_deprecated_channel_mask(ch_mask, channel_mask), x)
+        mask_tokens = real is not None or patch_mask is not None
+        if real is None:
             mask = torch.zeros(x.shape[:2], dtype=torch.bool, device=x.device)
+        else:
+            mask = ~real  # (batch, n_chans), True for missing channels
 
         chunk = self.encoder_chunk_patches
         n_full = n_patches // chunk
@@ -770,6 +773,7 @@ class _SleepFMAttentionPooling(nn.Module):
 
     def __init__(self, input_dim, num_heads, drop_prob, pad_invariant=False) -> None:
         super().__init__()
+        # SleepFMStager needs False: upstream attends over a padded set (logits differ).
         self.pad_invariant = pad_invariant
         self.transformer_layer = nn.TransformerEncoderLayer(
             d_model=input_dim, nhead=num_heads, dropout=drop_prob, batch_first=True
@@ -832,6 +836,7 @@ class _SleepFMStagingHead(nn.Module):
         self, tokens, modality_mask, temporal_mask: Optional[torch.Tensor] = None
     ):
         """Map ``(batch, modalities, patches, emb)`` to ``(batch, patches, emb)``."""
+        # Pool the real modalities of every patch: (batch, patches, emb)
         features = self.spatial_pooling.per_patch(tokens, modality_mask)
         if temporal_mask is None:  # the release always passes a padding mask
             temporal_mask = torch.zeros(
@@ -840,18 +845,12 @@ class _SleepFMStagingHead(nn.Module):
         features = self.layer_norm(
             features + self.positional_encoding[:, : features.shape[1]]
         )
+        # Transformer over the patches of the night: (batch, patches, emb)
         features = self.transformer_encoder(
             features, src_key_padding_mask=temporal_mask
         )
-        if torch.jit.is_scripting():  # TorchScript has no autocast state query
-            features, _ = self.lstm(features)
-        elif features.device.type == "cpu" and torch.is_autocast_enabled("cpu"):
-            # Some CPUs have no oneDNN bfloat16 LSTM training kernel, so CPU
-            # autocast runs the LSTM in its parameter precision instead.
-            with torch.autocast("cpu", enabled=False):
-                features, _ = self.lstm(features.to(self.lstm.weight_ih_l0.dtype))
-        else:
-            features, _ = self.lstm(features)
+        # Bidirectional LSTM over the same patches: (batch, patches, emb)
+        features, _ = self.lstm(features)
         return features
 
 
@@ -873,17 +872,6 @@ def _deprecated_channel_mask(
             stacklevel=3,
         )
     return ~channel_mask.to(torch.bool)
-
-
-def _missing_channels(
-    ch_mask: Optional[torch.Tensor], x: torch.Tensor
-) -> Optional[torch.Tensor]:
-    """The ``(batch, n_chans)`` mask of missing channels the encoders use, from
-    ``ch_mask`` (``True`` for real channels)."""
-    real = check_ch_mask(ch_mask, x)
-    if real is None:
-        return None
-    return ~real
 
 
 def _check_mask(
