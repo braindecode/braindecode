@@ -16,6 +16,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules import GeneralizedGaussianFilter
 
+# The feature each ``method`` computes (see _EEGMinerFeatures below the class)
 _eeg_miner_methods = ["mag", "corr", "plv"]
 
 
@@ -193,7 +194,7 @@ class EEGMiner(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x):
         """x: (batch, electrodes, time)"""
-        # PLV filters each electrode on its own: (batch, electrodes, 1, time)
+        # PLV applies one filter bank to every electrode: (batch, electrodes, 1, time)
         x = self.ensure_dim(x)
         # Apply Gaussian filters in frequency domain
         # mag/corr: back in time, (batch, electrodes * filters, time)
@@ -215,10 +216,12 @@ class EEGMiner(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 class _EEGMinerFeatures(nn.Module):
     r"""Features of the filtered signals, one per electrode or electrode pair.
 
-    The input is the output of the generalized Gaussian filters. Depending on
-    ``method``, it computes:
+    The input is the output of the generalized Gaussian filters:
+    ``(batch, n_chans * n_filters, n_times)`` (filtered signals) for ``"mag"`` and
+    ``"corr"``, and ``(batch, n_chans, n_filters, n_times // 2 + 1, 2)`` (filtered
+    spectra) for ``"plv"``. Depending on ``method``, it computes:
 
-    - ``"mag"``: the band power (root mean square over time) of each
+    - ``"mag"``: the root mean square over time (band amplitude) of each
       electrode and filter, ``(batch, n_chans * n_filters)``;
     - ``"corr"``: the absolute correlation of each electrode pair within each
       filter, ``(batch, n_chans * (n_chans - 1) / 2, n_filters)``;
@@ -277,7 +280,8 @@ class _EEGMinerFeatures(nn.Module):
 
     def _phase_locking_value(self, x: torch.Tensor) -> torch.Tensor:
         # The filters stay in the frequency domain (real and imaginary parts)
-        # x: (batch, electrodes, filters, freqs, 2); swap electrodes and filters
+        # Swap electrodes and filters
+        # x: (batch, filters, electrodes, freqs, 2)
         x = x.transpose(-4, -3)
         # Phase locking value of every electrode pair within each filter
         # x: (batch, filters, electrodes, electrodes)
