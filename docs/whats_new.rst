@@ -618,11 +618,9 @@ Code health
   :func:`braindecode.datasets.pad_channels_collate`; a model may instead refuse
   ``ch_mask`` with a ``ValueError`` that names it
   (:gh:`1545`, :gh:`1548` by `Bruno Aristimunha`_).
-- The Hugging Face config and round-trip tests run on
-  :class:`braindecode.models.AttnSleep`, which they skipped. The round-trip test
-  no longer sets 3 input channels for
-  :class:`braindecode.models.SignalJEPA_Contextual`: its ``chs_info`` gives the
-  same count (:gh:`1614` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- The Hugging Face config and round-trip tests also run on
+  :class:`braindecode.models.AttnSleep`, which they skipped
+  (:gh:`1614` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - BENDR and MSCFormer regression tests now live with their respective
   model suites. Frequency-shift device and gradient cases run alongside
