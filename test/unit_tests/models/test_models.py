@@ -33,7 +33,6 @@ from einops.layers.torch import Rearrange
 from scipy.signal import stft
 from torch import nn
 
-from braindecode.functional import plv_time
 from braindecode.models import (
     BBL,
     BDTCN,
@@ -2601,22 +2600,6 @@ def test_eegminer_legacy_state_dict_compatibility(method):
 
     assert set(state_dict) == legacy_keys
     EEGMiner(**model_kwargs).load_state_dict(state_dict, strict=True)
-
-
-@pytest.mark.parametrize("n_times", [255, 256])
-def test_eegminer_plv_matches_plv_of_filtered_signal(n_times):
-    """PLV from the filtered spectrum is that of the filtered signal, for odd and even lengths."""
-    model = EEGMiner(method="plv", n_chans=3, n_outputs=2, n_times=n_times, sfreq=100.0)
-    spectrum = model.filter(torch.randn(2, 3, 1, n_times))  # (batch, chans, filters, freqs, 2)
-    signal = torch.fft.irfft(torch.view_as_complex(spectrum), n=n_times)
-    expected = plv_time(signal.transpose(1, 2))  # (batch, filters, chans, chans)
-    rows, cols = torch.triu_indices(3, 3, 1)
-    torch.testing.assert_close(
-        model.feature_layer(spectrum),  # (batch, chan pairs, filters)
-        expected.permute(0, 2, 3, 1)[:, rows, cols],
-        rtol=1e-4,
-        atol=1e-5,
-    )
 
 
 def test_eegminer_filter_clamping():

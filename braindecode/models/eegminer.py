@@ -44,7 +44,7 @@ class _EEGMinerFeatures(nn.Module):
             x = x.permute(0, 2, 3, 1).abs()
         else:
             x = x.transpose(-4, -3)
-            x = F.plv_time(x, forward_fourier=False, n_times=self.n_times)
+            x = F.plv_time(x, forward_fourier=False)
             x = x.permute(0, 2, 3, 1)
         return x[:, self.triu_row, self.triu_col, :]
 

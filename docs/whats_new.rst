@@ -558,8 +558,8 @@ Bug fixes
   channel whose position is ``NaN`` when it is built, where it took the montage
   for one without positions (:gh:`1569` by `Hamza Abdelhedi`_).
 - :func:`braindecode.functional.hilbert_freq` and :func:`braindecode.functional.plv_time`
-  take ``n_times`` with a precomputed spectrum, for odd lengths and the Nyquist bin.
-  :class:`braindecode.models.EEGMiner` passes it, changing its PLV (:gh:`1663` by `Bruno Aristimunha`_).
+  take an optional ``n_times`` with a precomputed spectrum, for odd lengths and the
+  Nyquist bin; :class:`braindecode.models.EEGMiner` keeps its v2.0.0 features (:gh:`1663` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` gives the phase of the DC bin, and of the
   Nyquist bin of an even ``patch_size``, as ``0`` or ``pi`` on every device.
   CUDA and MPS FFTs leave rounding noise of either sign in the imaginary part of
