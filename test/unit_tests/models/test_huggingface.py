@@ -513,6 +513,46 @@ def test_local_weights_selected_symlinks_and_native_modes(tmp_path, filename):
         torch.testing.assert_close(restored.state_dict()[key], value, rtol=0, atol=0)
 
 
+def test_local_binary_fallback_replaces_previous_weights(tmp_path):
+    model = EEGNet(n_chans=2, n_outputs=2, n_times=128).eval()
+    model.save_pretrained(tmp_path)
+    with torch.no_grad():
+        next(model.parameters()).add_(0.5)
+    # Overlapping views: safetensors refuses to save them, so the next save
+    # falls back to pytorch_model.bin.
+    storage = torch.zeros(3)
+    model.register_buffer("view_a", storage[:2])
+    model.register_buffer("view_b", storage[1:])
+    with pytest.warns(UserWarning, match="pytorch_model.bin"):
+        model.save_pretrained(tmp_path)
+    x = torch.randn(2, 2, 128)
+    for name in (None, "pytorch_model.bin"):
+        restored = EEGNet.from_pretrained(
+            tmp_path, filename=name, local_files_only=True
+        )
+        torch.testing.assert_close(restored(x), model(x))
+
+
+@pytest.mark.parametrize(
+    "geometry, override, expected",
+    [
+        ({"n_times": 256}, {"n_times": 384}, (384, 128)),
+        ({"sfreq": 128}, {"sfreq": 64}, (256, 64)),
+    ],
+)
+def test_override_preserves_the_inferred_saved_geometry(
+    tmp_path, geometry, override, expected
+):
+    model = EEGNet(
+        n_chans=2, n_outputs=2, final_conv_length=1, input_window_seconds=2, **geometry
+    )
+    model.save_pretrained(tmp_path)
+    restored = EEGNet.from_pretrained(
+        tmp_path, local_files_only=True, strict=True, **override
+    )
+    assert (restored.n_times, restored.sfreq) == expected
+
+
 @pytest.mark.parametrize("filename", [None, "missing.safetensors"])
 def test_custom_weights_missing_does_not_use_default_pickle_fallback(tmp_path, monkeypatch, filename):
     import huggingface_hub
