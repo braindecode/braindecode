@@ -33,6 +33,7 @@ from .channels import ChannelLayer, resolve_channel_positions
 from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
+    ChebyshevGraphConv,
     CombinedConv,
     Conv1dWithConstraint,
     Conv2dWithConstraint,
@@ -113,6 +114,7 @@ __all__ = [
     "TDSConvEncoder",
     "AvgPool2dWithConv",
     "CausalConv1d",
+    "ChebyshevGraphConv",
     "CombinedConv",
     "Conv1dWithConstraint",
     "Conv2dWithConstraint",

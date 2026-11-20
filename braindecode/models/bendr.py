@@ -12,7 +12,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from braindecode.functional import init_weights_
+from braindecode.functional import check_n_chans, init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules.channels import ChannelLayer
 
@@ -160,7 +160,7 @@ class BENDR(EEGModuleMixin, nn.Module):
                repo_id="username/my-bendr-model", commit_message="Upload trained BENDR model"
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     Notes
     -----
@@ -370,6 +370,7 @@ class BENDR(EEGModuleMixin, nn.Module):
     def forward(
         self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
+        check_n_chans(x, self.n_chans, "BENDR")
         if self.channel_tokenizer is not None:
             x = self.channel_tokenizer(x)[0]
         encoded = self.encoder(x)

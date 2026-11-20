@@ -300,8 +300,6 @@ class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
 
 
 # ----------------------------------------------------------------------------- #
-# Rotary positional embedding (verbatim port of the reference; see plan note on
-# the deliberate NeoX-cache / interleaved-rotate mismatch).
 def _build_rotary_cache(
     head_dim: int,
     seq_len: int,
@@ -310,14 +308,15 @@ def _build_rotary_cache(
 ) -> tuple[Tensor, Tensor]:
     """Return ``(cos, sin)`` each of shape ``(seq_len, head_dim)``.
 
-    Angles are computed in at least float32 for precision; the returned
-    cos/sin are cast to ``dtype`` (the token dtype) so attention stays in the
-    working precision under autocast.
+    TCFormer repeats the half-width angle table across the feature dimension
+    and rotates adjacent feature pairs in queries and keys. Angles use at
+    least float32 precision. The returned tables use the token ``dtype``.
+    The half-split table with pair rotation is intentional: it matches the
+    reference TCFormer and its pretrained weights.
     """
     work = torch.float32 if dtype is None else torch.promote_types(dtype, torch.float32)
     theta = rotary_frequencies(head_dim, device=device, dtype=work)
     seq_idx = torch.arange(seq_len, device=device, dtype=work)
-    # Half-split angle layout with pair rotation, as the reference.
     emb = rotary_angles(seq_idx, theta, interleaved=False)  # (seq_len, head_dim)
     cos, sin = emb.cos(), emb.sin()
     if dtype is not None:
