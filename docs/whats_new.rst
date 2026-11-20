@@ -302,6 +302,9 @@ Bug fixes
 - Overwriting a local Zarr store with ``convert_to_zarr`` keeps the old store if the
   export fails. Lazy loading then reads the new recordings, not the old memmap cache,
   which the overwrite deletes (:gh:`1627` by `Bruno Aristimunha`_).
+- ``convert_to_zarr`` keeps the first sample and annotations of continuous recordings and the
+  events and ``tmin`` of epochs (on the sample grid), and exports BIDS recordings, BIDS epochs
+  and recordings without a description (:gh:`1668` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw

@@ -7,6 +7,7 @@
 
 import inspect
 import json
+from datetime import datetime, timezone
 from unittest import mock
 
 import mne
@@ -1753,3 +1754,111 @@ def test_epochs_windows_channel_targets_zarr_round_trip(tmp_path, preload):
         start, stop = 4 * i, 4 * (i + 1)
         np.testing.assert_allclose(x, data[:2, start:stop])
         np.testing.assert_allclose(y, data[2:, start:stop])
+
+
+@pytest.mark.parametrize("dated", [False, True])
+@pytest.mark.parametrize("windowed", [False, True])
+def test_zarr_continuous_recording_keeps_first_sample_and_annotations(
+    tmp_path, dated, windowed
+):
+    """A reloaded recording keeps its sample clock and can be windowed again."""
+    pytest.importorskip("zarr")
+    raw = mne.io.RawArray(
+        np.arange(120).reshape(2, 60),
+        mne.create_info(["C3", "C4"], 10, "eeg"),
+        first_samp=25,
+    )
+    if dated:
+        raw.set_meas_date(datetime(2023, 6, 1, tzinfo=timezone.utc))
+    raw.set_annotations(
+        mne.Annotations(
+            [0.7, 2.4], [0.4, 0.4], ["left", "right"], ch_names=[["C4"], []]
+        )
+    )
+    options = dict(
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        window_size_samples=2,
+        window_stride_samples=2,
+        on_last_window="drop",
+        mapping={"left": 1, "right": 2},
+    )
+    source = BaseConcatDataset([RawDataset(raw)])  # no description
+    windows = create_windows_from_events(source, **options)
+    path = convert_to_zarr(windows if windowed else source, tmp_path / "raw.zarr")
+
+    for preload in (False, True):
+        loaded = load_from_zarr(path, preload=preload)
+        actual = loaded.datasets[0].raw
+        assert actual.first_samp == raw.first_samp
+        got, want = actual.annotations, raw.annotations
+        assert got.orig_time == want.orig_time
+        np.testing.assert_allclose(got.onset, want.onset)
+        np.testing.assert_allclose(got.duration, want.duration)
+        np.testing.assert_array_equal(got.description, want.description)
+        assert got.ch_names.tolist() == want.ch_names.tolist()
+        again = loaded if windowed else create_windows_from_events(loaded, **options)
+        for i in range(len(windows)):
+            np.testing.assert_array_equal(again[i][0], windows[i][0])
+            assert again[i][1:] == windows[i][1:]
+
+
+def test_zarr_epochs_keep_events_tmin_samples_and_channel_targets(tmp_path):
+    """Epochs come back with their events, tmin and unprojected samples."""
+    pytest.importorskip("zarr")
+    info = mne.create_info(["C3", "C4", "target"], 100, ["eeg", "eeg", "misc"])
+    raw = mne.io.RawArray(np.zeros((3, 100)), info)
+    raw.set_eeg_reference(projection=True)  # a projector that is not applied
+    signal = np.arange(60.0).reshape(2, 3, 10)
+    events = np.array([[15, 0, 1], [35, 0, 2]])
+    # Both windows start at 0 in their trial, like BIDS epochs; no "target" column.
+    metadata = pd.DataFrame(
+        dict(
+            i_window_in_trial=[0, 0], i_start_in_trial=[0, 0], i_stop_in_trial=[10, 10]
+        )
+    )
+    epochs = mne.EpochsArray(
+        signal,
+        raw.info,
+        events=events,
+        event_id={"left": 1, "right": 2},
+        tmin=-0.1,
+        metadata=metadata,
+        proj=False,
+    )
+    source = BaseConcatDataset(
+        [WindowsDataset(epochs, {"subject": "01"}, targets_from="channels")]
+    )
+    path = convert_to_zarr(source, tmp_path / "epochs.zarr")
+
+    for preload in (False, True):
+        loaded = load_from_zarr(path, preload=preload)
+        restored = loaded.datasets[0].windows
+        np.testing.assert_array_equal(restored.events, events)
+        assert restored.event_id == epochs.event_id
+        np.testing.assert_allclose(restored.times, epochs.times)
+        assert restored.info["projs"][0]["active"] is False
+        np.testing.assert_array_equal(restored.get_data(), signal)
+        x, y, _ = loaded[1]
+        np.testing.assert_array_equal(x, signal[1, :2])
+        np.testing.assert_array_equal(y, signal[1, 2:, -1])
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_zarr_store_without_mne_state_still_loads(tmp_path, ds_type):
+    """Stores written by v2.0.0 have no first sample, annotations or events."""
+    source, path = _make_zarr(tmp_path, ds_type)
+    group = zarr.open_group(path, mode="a")["recording_0"]
+    group.attrs.pop("mne", None)
+    if "events" in group:
+        del group["events"]
+
+    for preload in (False, True):
+        loaded = load_from_zarr(path, preload=preload)
+        recording = loaded.datasets[0]
+        if ds_type == "WindowsDataset":
+            starts = source.datasets[0].metadata["i_start_in_trial"]
+            np.testing.assert_array_equal(recording.windows.events[:, 0], starts)
+        else:
+            assert recording.raw.first_samp == 0
+        np.testing.assert_allclose(loaded[0][0], source[0][0], rtol=1e-6)

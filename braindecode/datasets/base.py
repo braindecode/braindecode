@@ -40,7 +40,7 @@ from typing_extensions import TypeVar
 
 from ._notebook_viewer import plot as _viewer_plot
 from .bids.hub import HubDatasetMixin
-from .bids.hub_io import _restore_nan_from_json
+from .bids.hub_io import _epochs_from_zarr, _raw_from_zarr, _restore_nan_from_json
 from .registry import register_dataset
 
 zarr = _soft_import("zarr", purpose="lazy loading from Zarr", strict=False)
@@ -623,6 +623,7 @@ class _ZarrMixin:
     """
 
     _zarr_data = None
+    _mne_state = None  # Older lazy pickles omit the stored recording state.
 
     def _open_zarr(self):
         npy_path = getattr(self, "_zarr_cache_path", None)
@@ -641,7 +642,9 @@ class _ZarrMixin:
         return mne.Info.from_json_dict(_restore_nan_from_json(self._info_dict))
 
     @classmethod
-    def _init_zarr_base(cls, zarr_path, group_name, description, info_dict, transform):
+    def _init_zarr_base(
+        cls, zarr_path, group_name, description, info_dict, transform, mne_state
+    ):
         """Shared ``_from_zarr`` preamble: create instance with zarr attrs."""
         if zarr is False:
             raise ImportError("zarr is required: pip install braindecode[hub]")
@@ -650,6 +653,7 @@ class _ZarrMixin:
         obj._zarr_path = Path(zarr_path)
         obj._group_name = group_name
         obj._info_dict = info_dict
+        obj._mne_state = mne_state
         return obj
 
     def __getstate__(self):
@@ -785,10 +789,11 @@ class RawDataset(_ZarrMixin, RecordDataset):
         info_dict,
         target_name=None,
         transform=None,
+        mne_state=None,
     ):
         """Create a lazy Zarr-backed RawDataset (internal API)."""
         obj = cls._init_zarr_base(
-            zarr_path, group_name, description, info_dict, transform
+            zarr_path, group_name, description, info_dict, transform, mne_state
         )
         obj.target_name = cls._target_name(obj, target_name)
         obj.raw_preproc_kwargs = []
@@ -798,7 +803,9 @@ class RawDataset(_ZarrMixin, RecordDataset):
     @property
     def raw(self):
         if self._raw is None and self._zarr_data is not None:
-            self.raw = mne.io.RawArray(self._zarr_data, self._make_mne_info())
+            self.raw = _raw_from_zarr(
+                self._zarr_data, self._make_mne_info(), self._mne_state or {}
+            )
         return self._raw
 
     @raw.setter
@@ -958,10 +965,11 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         targets_from="metadata",
         last_target_only=True,
         transform=None,
+        mne_state=None,
     ):
         """Create a lazy Zarr-backed EEGWindowsDataset (internal API)."""
         obj = cls._init_zarr_base(
-            zarr_path, group_name, description, info_dict, transform
+            zarr_path, group_name, description, info_dict, transform, mne_state
         )
         obj.metadata = metadata
         obj.last_target_only = last_target_only
@@ -978,7 +986,9 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
     @property
     def raw(self):
         if self._raw is None and self._zarr_data is not None:
-            self.raw = mne.io.RawArray(self._zarr_data, self._make_mne_info())
+            self.raw = _raw_from_zarr(
+                self._zarr_data, self._make_mne_info(), self._mne_state or {}
+            )
         return self._raw
 
     @raw.setter
@@ -1224,10 +1234,11 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         transform=None,
         targets_from="metadata",
         last_target_only=True,
+        mne_state=None,
     ):
         """Create a lazy Zarr-backed WindowsDataset (internal API)."""
         obj = cls._init_zarr_base(
-            zarr_path, group_name, description, info_dict, transform
+            zarr_path, group_name, description, info_dict, transform, mne_state
         )
         obj.target_name = target_name
         obj._fast_disk = False
@@ -1247,22 +1258,11 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
     @property
     def windows(self):
         if self._windows is None and self._zarr_data is not None:
-            info = self._make_mne_info()
-            targets = self.metadata["target"].values
-            event_ids = (
-                targets
-                if np.issubdtype(targets.dtype, np.integer)
-                else np.ones(len(self.metadata), dtype=int)
-            )
-            events = np.column_stack(
-                [
-                    self.metadata["i_start_in_trial"].values.astype(int),
-                    np.zeros(len(self.metadata), dtype=int),
-                    event_ids,
-                ]
-            )
-            self.windows = mne.EpochsArray(
-                self._zarr_data, info, events=events, metadata=self.metadata
+            self.windows = _epochs_from_zarr(
+                self._zarr_data,
+                self._make_mne_info(),
+                self.metadata,
+                self._mne_state or {},
             )
         return self._windows
 
