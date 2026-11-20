@@ -99,10 +99,13 @@ def resolve_channel_positions(chs_info, bank, montage=None, on_missing="error"):
     Each channel takes, in order: ``"<montage>_<name>"`` when ``montage`` is
     given (``"biosemi128"``), its name, its name ignoring case and an ``EEG``
     prefix or ``-REF`` suffix, its legacy alias (``T3`` -> ``T7``), or for a
-    bipolar ``A-B`` the midpoint of ``A`` and ``B``. Other channels follow
-    ``on_missing``: ``"error"`` raises, ``"drop"`` leaves them out, and
-    ``"nearest"`` takes the bank entry closest to the channel's ``loc`` (in the
-    bank's frame), or drops it when it has no ``loc``. No position is invented.
+    bipolar ``A-B`` the midpoint of ``A`` and ``B``. A name the bank holds
+    exactly takes that entry; one that matches only ignoring case takes the last
+    entry that matches (``cz`` in ``{"CZ": a, "Cz": b}`` gives ``b``). Other
+    channels follow ``on_missing``: ``"error"`` raises, ``"drop"`` leaves them
+    out, and ``"nearest"`` takes the bank entry closest to the channel's ``loc``
+    (in the bank's frame), or drops it when it has no ``loc``. No position is
+    invented.
 
     Returns
     -------
@@ -115,7 +118,7 @@ def resolve_channel_positions(chs_info, bank, montage=None, on_missing="error"):
         raise ValueError(
             f"on_missing must be error, drop or nearest; got {on_missing!r}"
         )
-    lower = {k.lower(): k for k in bank}
+    lower = {k.lower(): k for k in bank}  # entries differing only in case: the last
 
     def lookup(name):
         name = re.sub(r"^eeg\s+|-(ref|le|ar)$", "", name.strip(), flags=re.I)
@@ -124,8 +127,10 @@ def resolve_channel_positions(chs_info, bank, montage=None, on_missing="error"):
             name,
             _ALIASES.get(name.lower()),
         ):
-            if key is not None and key.lower() in lower:
-                return np.asarray(bank[lower[key.lower()]], float)
+            if key is not None and (key in bank or key.lower() in lower):
+                return np.asarray(
+                    bank[key if key in bank else lower[key.lower()]], float
+                )
         ends = name.split("-")
         if len(ends) == 2 and all(ends):
             a, b = lookup(ends[0]), lookup(ends[1])
