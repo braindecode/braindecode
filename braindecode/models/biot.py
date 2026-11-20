@@ -100,7 +100,7 @@ class BIOT(EEGModuleMixin, nn.Module):
                repo_id="username/my-biot-model", commit_message="Upload trained BIOT model"
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     .. versionadded:: 0.9
 
@@ -534,9 +534,8 @@ class _BIOTEncoder(nn.Module):
         # channel's (batch, freq, ts) block is contiguous
         spec = self.stft(x.transpose(0, 1).reshape(n_chans * batch_size, 1, n_times))
         spec = spec.unflatten(0, [n_chans, batch_size])
-        # Every channel token in one lookup of a 1-D index, then one row per
-        # channel. A 0-d index per channel would also trip Intel Gaudi, whose
-        # embedding backward sends a 0-d index's gradient to row 0.
+        # One lookup for the tokens of all channels, not one call per channel:
+        # (n_chans, emb_size)
         channel_tokens = self.channel_tokens(
             self.index[n_channel_offset : n_channel_offset + n_chans]
         )
@@ -550,16 +549,8 @@ class _BIOTEncoder(nn.Module):
             channel_spec_emb = self.patch_embedding(channel_spec_emb)
             batch_size, ts, _ = channel_spec_emb.shape
             # (batch_size, ts, emb)
-            # Step by step the following lines do the following operations:
-            #    - channel_tokens[i]:
-            #    The token of channel i + n_channel_offset, where
-            #    n_channel_offset adjusts which channel's embedding is used.
-            #    - .unsqueeze(0).unsqueeze(0):
-            #    Adds two singleton dimensions to the embedding tensor.
-            #    [emb_size] to [1, 1, emb_size] .
-            #    - Repeat(batch_size, ts, 1):
-            #    Replicates the embedding tensor to match the batch size and
-            #    time steps (ts),
+            # The token of channel i + n_channel_offset, repeated over the
+            # batch and the time steps.
             channel_token_emb = (
                 channel_tokens[i].unsqueeze(0).unsqueeze(0).repeat(batch_size, ts, 1)
             )

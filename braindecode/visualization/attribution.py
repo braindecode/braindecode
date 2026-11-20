@@ -70,18 +70,50 @@ def integrated_gradients(model, x, target, baseline=None, steps=50):
 
 
 def layer_grad_cam(model, x, target, layer):
-    """Layer GradCAM via captum: class-discriminative localization at ``layer``.
+    """Compute a class activation map at a convolutional layer with Captum.
 
-    Captum's :class:`captum.attr.LayerGradCam` returns the cam at the
-    layer's spatial dims; we then bilinear-resample to the input's last
-    two dimensions via :meth:`captum.attr.LayerAttribution.interpolate`.
+    A layer with a three-dimensional output ``(batch, features, length)``,
+    such as a temporal convolution, gives one map per trial of shape
+    ``(batch, n_times)``: its last axis, which must be time, is linearly
+    interpolated to ``n_times``. A layer with a four-dimensional output
+    ``(batch, features, channels, time)`` gives a map of shape
+    ``(batch, n_chans, n_times)``: its two last axes are bilinearly
+    interpolated to ``(n_chans, n_times)``. Its channel axis must hold
+    ``n_chans`` entries, or one once the layer has mixed the channels, and its
+    time axis more than one step; otherwise a :class:`ValueError` names the
+    layer. This rejects the layers of :class:`~braindecode.models.ShallowFBCSPNet`
+    and :class:`~braindecode.models.Deep4Net` after their ``dimshuffle``, which
+    hold time on the height axis. Token sequences of transformers hold tokens
+    on the features axis, so their maps are not maps over time.
+    Localization is limited by the resolution of the selected layer.
     """
     _require_captum()
     from captum.attr import LayerAttribution, LayerGradCam
 
     x_leaf = x.detach().clone().requires_grad_(True)
     cam = LayerGradCam(model, layer).attribute(x_leaf, target=target)
-    cam = LayerAttribution.interpolate(cam, x.shape[-2:], interpolate_mode="bilinear")
+    if cam.ndim == 3:
+        size, mode = x.shape[-1:], "linear"
+    elif cam.ndim == 4:
+        # cam: (batch, 1, height, width) of the layer. It is a channels x time
+        # map only if the height axis is the channels and the width axis time.
+        if cam.shape[-2] > x.shape[-2] or cam.shape[-1] == 1:
+            name = next(
+                (n for n, m in model.named_modules() if m is layer),
+                type(layer).__name__,
+            )
+            raise ValueError(
+                f"Grad-CAM at layer {name!r} needs an output (batch, features, "
+                f"channels, time) with {x.shape[-2]} or 1 channels and more than "
+                f"one time step, got {tuple(cam.shape[-2:])} on its last two axes."
+            )
+        size, mode = x.shape[-2:], "bilinear"
+    else:
+        raise ValueError(
+            f"Grad-CAM needs a layer with one or two spatial dimensions, "
+            f"got an activation map of shape {tuple(cam.shape)}."
+        )
+    cam = LayerAttribution.interpolate(cam, size, interpolate_mode=mode)
     return cam.squeeze(1).detach()
 
 

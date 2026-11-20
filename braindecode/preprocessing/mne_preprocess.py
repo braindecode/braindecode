@@ -71,7 +71,11 @@ def _wrap_annotation_return(func, also_bads=False):
         else:
             annot = result
             bads = []
-        raw.set_annotations(raw.annotations + annot)
+        existing = raw.annotations.copy()
+        if existing.orig_time is None:
+            # set_annotations interprets undated onsets relative to the first sample.
+            existing.onset -= raw.first_time
+        raw.set_annotations(existing + annot)
         if bads:
             raw.info["bads"] = list(set(raw.info["bads"] + bads))
         return raw

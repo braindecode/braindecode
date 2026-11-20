@@ -22,6 +22,7 @@ import torch.nn as nn
 from einops.layers.torch import Rearrange
 
 from braindecode.functional import (
+    check_n_chans,
     init_weights_,
     patch_count,
     sinusoidal_positional_encoding,
@@ -404,6 +405,7 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
                 f"DuIN was configured for {self.n_times} time samples, "
                 f"but received {x.shape[-1]}."
             )
+        check_n_chans(x, self.n_chans, "DuIN")
         # 0. pad, crop or reject a window that is not a multiple of patch_size
         x = self.patch_tokenizer.prepare_input(x)
         # 1. channels -> neural space: (batch, n_neural, n_patches * patch_size)

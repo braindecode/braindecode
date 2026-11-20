@@ -15,11 +15,13 @@ model means adding one entry. Cells the native path cannot serve run with a
 
 from __future__ import annotations
 
+import csv
 import inspect
 import json
 import math
 import re
 import warnings
+from pathlib import Path
 
 import mne
 import numpy as np
@@ -57,6 +59,7 @@ from braindecode.models import (
     MVPFormer,
     NeuroRVQ,
     PopulationTransformer,
+    Pratibha2,
     SignalJEPA,
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
@@ -72,7 +75,9 @@ from braindecode.models.eegpt import EEGPT_19_CHANNELS
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.mirepnet import MIREPNET_CHANNEL_ORDER
 from braindecode.models.neurorvq import NEURORVQ_CHANNELS
-from braindecode.models.util import models_dict
+from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.util import resolve_montage_name
+from test.unit_tests.models._fixtures import _get_signal_params
 
 TEN_TWENTY = "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
 
@@ -90,10 +95,7 @@ pytestmark = [
 
 
 def _montage(name):
-    try:
-        return mne.channels.make_standard_montage(name)
-    except ValueError:  # MNE >= 1.13 renamed the standard montages
-        return mne.channels.make_standard_montage(name.replace("standard", "colin27"))
+    return mne.channels.make_standard_montage(resolve_montage_name(name))
 
 
 def chs_from_montage(names, montage="standard_1005", kind="eeg"):
@@ -193,9 +195,7 @@ COMPAT = {
         channels="coords",
         coords_checked=False,
     ),
-    # Not keyed "REVE": test/conftest.py marks that literal as network-only.
-    # The position bank comes from a local file (``_reve_position_bank``).
-    "REVE-local-bank": dict(
+    "REVE": dict(
         cls=REVE,
         sfreq=200,
         n_times=800,
@@ -296,6 +296,14 @@ COMPAT = {
         canon=TEN_TWENTY,
         channels="coords",
         coords_checked=False,
+    ),
+    # Positions by channel name; loc is not read.
+    "Pratibha2": dict(
+        cls=Pratibha2,
+        sfreq=200,
+        n_times=1000,
+        canon=TEN_TWENTY,
+        channels="names",
     ),
     "MIRepNet": dict(
         cls=MIRepNet,
@@ -457,17 +465,6 @@ COMPAT = {
 STRATEGY_CELLS = {("Labram", "G2"), ("Labram", "G3"), ("Labram", "G3b")}
 
 
-@pytest.fixture(autouse=True)
-def _reve_position_bank(tmp_path, monkeypatch):
-    """Serve REVE's position bank from a local file instead of the Hub."""
-    pos = _montage("standard_1005").get_positions()["ch_pos"]
-    bank = {name: [float(v) for v in xyz] for name, xyz in pos.items()}
-    for ch in chs_coords_only(128):  # EGI-style E1..E128, as in the released bank
-        bank[ch["ch_name"]] = [float(v) for v in ch["loc"][:3]]
-    (tmp_path / "reve_positions.json").write_text(json.dumps(bank))
-    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
-
-
 def geometries(spec):
     sf, nt, kind = spec["sfreq"], spec["n_times"], spec.get("kind", "eeg")
     canon = spec["canon"]
@@ -557,22 +554,18 @@ def test_geometry_contract(name, gname, gkw):
         assert torch.is_tensor(y) and y.shape[0] == 1 and torch.isfinite(y).all()
 
 
-# Polysomnography (EEG, EOG, ECG, EMG, respiration) grouped by modality:
-# any channel count but no EEG montage, so ``native`` only.
+# ``native`` only, refused with a ValueError naming why: polysomnography
+# grouped by modality.
 NATIVE_ONLY = {"SleepFM", "SleepFMStager"}
 
-# No ``channel_strategy`` argument (not part of the #1241 channel layer).
+# Models that take no ``channel_strategy``, and why; kept exact by
+# test_no_strategy_lists_every_model_without_the_argument.
 NO_STRATEGY = {
-    "NeuroRVQ",
-    "MAPA",
-    "BrainOmni",
-    "BrainTokenizer",
-    "TFMTokenizer",
-    "MEGXL",
-    "BBL",
-    "CORTEG",
-    "MEGGPT",
-    "NICE",
+    "BBL": "MEG sensors",
+    "MEGGPT": "MEG source parcels",
+    "MEGXL": "MEG sensors",
+    "CORTEG": "a second per-channel input, x_hi, the channel layer does not map",
+    "NICE": "not a foundation model",
 }
 
 
@@ -585,7 +578,8 @@ NO_STRATEGY = {
         for n in COMPAT
         if n != "BIOT"
         and not n.startswith("SignalJEPA")
-        and n not in NATIVE_ONLY | NO_STRATEGY
+        and n not in NATIVE_ONLY
+        and n not in NO_STRATEGY
     ],
 )
 def test_native_checkpoint_loads_under_a_strategy(name):
@@ -622,13 +616,16 @@ def test_channel_strategy_smoke(name, strategy):
 
 
 @pytest.mark.parametrize(
-    "name", [n for n in COMPAT if n not in NATIVE_ONLY | NO_STRATEGY]
+    "name", [n for n in COMPAT if n not in NATIVE_ONLY and n not in NO_STRATEGY]
 )
 def test_channel_strategy_round_trip(name):
     """Under a strategy, ``model(x)`` equals ``model.forward(x)`` and the
     config keeps the input montage, so ``from_config`` rebuilds the same model."""
     spec = COMPAT[name]
-    chs = chs_from_montage(TEN_TWENTY[:8], kind=spec.get("kind", "eeg"))
+    names = TEN_TWENTY[:8]
+    if spec["channels"] == "contact_labels":  # MAPA: names ending in a number
+        names = [n for n in TEN_TWENTY if n[-1].isdigit()][:8]
+    chs = chs_from_montage(names, kind=spec.get("kind", "eeg"))
     kw = dict(n_outputs=2, chs_info=chs, sfreq=spec["sfreq"], n_times=spec["n_times"])
     x = torch.randn(1, len(chs), spec["n_times"])
     with warnings.catch_warnings():
@@ -642,7 +639,7 @@ def test_channel_strategy_round_trip(name):
             y = model(x)
             torch.testing.assert_close(model.forward(x), y)
             torch.testing.assert_close(rebuilt(x), y)
-    assert [c["ch_name"] for c in rebuilt.channel_layer.chs_info] == TEN_TWENTY[:8]
+    assert [c["ch_name"] for c in rebuilt.channel_layer.chs_info] == names
     assert rebuilt.get_config()["chs_info"] == config["chs_info"]
 
 
@@ -654,12 +651,104 @@ def test_native_only_models_refuse_a_strategy(name):
         spec["cls"](**kw, channel_strategy="spline")
 
 
+# Models that map EEG montages but not every input they take.
+@pytest.mark.parametrize(
+    "cls,kw",
+    [
+        (NeuroRVQ, dict(modality="ecg", chs_info=chs_names_no_loc(["i", "ii"]))),
+        (MAPA, dict(normalization="session", chs_info=chs_coords_only(4, "seeg"))),
+        (BrainOmni, dict(chs_info=chs_coords_only(4) + chs_coords_only(2, "mag"))),
+        (BrainTokenizer, dict(chs_info=chs_coords_only(2, "grad"))),
+    ],
+    ids=["NeuroRVQ-ecg", "MAPA-session", "BrainOmni-meg", "BrainTokenizer-meg"],
+)
+def test_strategy_refused_for_inputs_the_layer_cannot_map(cls, kw):
+    with pytest.raises(ValueError, match="native"):
+        cls(n_outputs=2, n_times=512, **kw, channel_strategy="spline")
+
+
+def test_mapa_refuses_sensor_indices_under_a_strategy():
+    chs = chs_coords_only(4, "seeg")
+    model = MAPA(n_outputs=2, n_times=512, chs_info=chs, channel_strategy="spline")
+    x = torch.randn(1, 4, 512)
+    with pytest.raises(ValueError, match="sensor_indices"):
+        model(x, sensor_indices=model.default_sensor_indices)
+
+
+_SUMMARY = Path(__file__).parents[3] / "braindecode" / "models" / "summary.csv"
+# Foundation models whose input is electrodes, the input the channel layer maps.
+ELECTRODE_FOUNDATION = [
+    row["Model"]
+    for row in csv.DictReader(_SUMMARY.read_text(encoding="utf-8-sig").splitlines())
+    if "Foundation" in row["Categorization"]
+    and {"EEG", "iEEG", "ECoG"} & {m.strip() for m in row["Modality"].split(",")}
+]
+FIXTURES = {name: sp for name, _, sp in models_mandatory_parameters}
+
+
+def _output_tensors(y):
+    if isinstance(y, dict):
+        return [v for v in y.values() if torch.is_tensor(v)]
+    return list(y) if isinstance(y, (tuple, list)) else [y]
+
+
+def _takes_strategy(cls):
+    return "channel_strategy" in inspect.signature(cls).parameters
+
+
+def test_no_strategy_lists_every_model_without_the_argument():
+    """A model of COMPAT or an electrode foundation model either takes
+    ``channel_strategy`` or is in NO_STRATEGY with its reason."""
+    lacking = {n for n, spec in COMPAT.items() if not _takes_strategy(spec["cls"])}
+    lacking |= {n for n in ELECTRODE_FOUNDATION if not _takes_strategy(models_dict[n])}
+    assert lacking == set(NO_STRATEGY)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [n for n in ELECTRODE_FOUNDATION if n not in NO_STRATEGY and n not in NATIVE_ONLY],
+)
+def test_foundation_model_maps_each_sample_under_a_strategy(name):
+    """A zero-padded batch of three recordings with different montages
+    (``ch_mask`` and one ``chs_info`` per sample) gives each recording its
+    output alone under a strategy."""
+    cls = models_dict[name]
+    sp = _get_signal_params(FIXTURES[name])
+    kw = {k: v for k, v in sp.items() if k not in ("chs_info", "n_chans")}
+    chs = sp["chs_info"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # zero-filled targets, sfreq checks
+        torch.manual_seed(0)
+        model = cls(**kw, chs_info=chs, channel_strategy="idw").eval()
+        n = len(chs)  # all channels, all but the first, every other one
+        subsets = [list(range(n)), list(range(1, n)), list(range(0, n, 2))]
+        mask = torch.zeros(len(subsets), n, dtype=torch.bool)
+        for i, s in enumerate(subsets):
+            mask[i, s] = True
+        x = torch.randn(len(subsets), n, kw.get("n_times") or model.n_times)
+        montages = [[chs[j] for j in s] for s in subsets]
+        with torch.no_grad():
+            padded = x.masked_fill(~mask[..., None], 0.0)
+            got = _output_tensors(model(padded, ch_mask=mask, chs_info=montages))
+            alone = [
+                _output_tensors(model(x[i : i + 1, s], chs_info=montages[i]))
+                for i, s in enumerate(subsets)
+            ]
+    for g, w in zip(got, [torch.cat(t) for t in zip(*alone)], strict=True):
+        # batch-size rounding grows with the output scale (CSBrain: ~200)
+        tol = 1e-4 * max(1.0, w.abs().max().item())
+        torch.testing.assert_close(g, w, rtol=1e-4, atol=tol)
+
+
 # Classes with released weights that are outside this EEG/iEEG contract.
 EXCLUDED = {
+    "GeoNIRS": "fNIRS channels placed by optode positions, no EEG geometry",
     "NeuroPose": "sEMG hand-pose regression, no EEG geometry",
     "VEMG2Pose": "sEMG hand-pose regression, no EEG geometry",
+    "TinyMyo": "sEMG channel slots, no EEG geometry",
     "NeuroRVQTokenizer": "returns (target, reconstruction); NeuroRVQ's channel contract",
     "MtReNIRS": "fNIRS HbO/HbR pairs with optode positions, no EEG geometry",
+    "JungMAE": "fNIRS channel patches, no EEG geometry",
 }
 _SHIPS_WEIGHTS = re.compile(
     r"hf_hub_download|from_pretrained\(|huggingface\.co/|Hugging Face Hub"
