@@ -30,7 +30,7 @@ except ImportError:
 
 
 def _loc_from_json(loc):
-    # MNE leaves unused location entries as NaN, serialized as JSON null.
+    # JSON list (null for MNE's NaN entries) -> float64 array: loc (12,)
     return np.asarray(loc, dtype=np.float64) if isinstance(loc, list) else loc
 
 
