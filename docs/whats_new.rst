@@ -280,9 +280,9 @@ Bug fixes
 - :class:`braindecode.models.EEGNet` loads the released weights of Guetschel and
   Tangermann; ``load_state_dict`` checks missing BatchNorm buffers against the
   checkpoint's PyTorch version (:gh:`1538`, :gh:`1639` by `Bruno Aristimunha`_).
-- ``from_pretrained`` warns, naming up to ten of them, when a parameter outside
-  ``final_layer`` is not loaded from the checkpoint; it warned only when none
-  was (:gh:`1702` by `Bruno Aristimunha`_).
+- ``from_pretrained`` warns, naming up to ten of them, when most parameters outside
+  ``final_layer`` are not loaded (a checkpoint in another format); it warned only when
+  none was (:gh:`1702` by `Bruno Aristimunha`_).
 - Overwriting a local Zarr store with ``convert_to_zarr`` keeps the old store if the
   export fails. Lazy loading then reads the new recordings, not the old memmap cache,
   which the overwrite deletes (:gh:`1627` by `Bruno Aristimunha`_).

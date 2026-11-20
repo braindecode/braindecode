@@ -1278,12 +1278,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 # Tied parameters may be saved under only one of their names.
                 loaded_ids = {id(p) for n, p in params if n in loaded}
                 # A new head is initialised here: only the rest must load.
+                body = [n for n, _ in params if not n.startswith("final_layer.")]
                 unloaded = [
                     n
                     for n, p in params
                     if id(p) not in loaded_ids and not n.startswith("final_layer.")
                 ]
-                if unloaded:
+                # Most of the body unloaded: the checkpoint is in another format.
+                # A few fresh layers (Labram's fc_norm, CORTEG's channel_adapter)
+                # are by design and stay silent.
+                if 2 * len(unloaded) > len(body):
                     more = ", ..." if len(unloaded) > 10 else ""
                     warnings.warn(
                         f"{len(unloaded)} of {len(params)} parameters of "

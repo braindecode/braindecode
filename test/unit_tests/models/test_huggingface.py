@@ -722,7 +722,12 @@ def test_from_pretrained_reports_loaded_parameters(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "dropped, warns", [("conv_temporal", True), ("final_layer", False)]
+    "dropped, warns",
+    [
+        (("bnorm", "conv_spatial", "conv_separable"), True),  # 9 of 10 body tensors
+        (("final_layer",), False),  # a new head
+        (("conv_temporal",), False),  # one fresh layer, as Labram's fc_norm
+    ],
 )
 def test_from_pretrained_warns_for_unloaded_parameters_outside_the_head(
     tmp_path, dropped, warns
@@ -740,7 +745,7 @@ def test_from_pretrained_warns_for_unloaded_parameters_outside_the_head(
         EEGNet.from_pretrained(tmp_path)
     messages = [str(w.message) for w in caught if "not loaded from" in str(w.message)]
     assert bool(messages) == warns
-    assert not warns or "conv_temporal.weight" in messages[0]
+    assert not warns or "bnorm_temporal.weight" in messages[0]
 
 
 def test_model_card_scalar_and_escaped_html(tmp_path):
