@@ -106,7 +106,8 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
         if self.predict_nonlinearity == "auto" and len(self._criteria) == 1:
             criterion = getattr(self, self._criteria[0] + "_")
             if isinstance(getattr(criterion, "_orig_mod", criterion), CrossEntropyLoss):
-                # CrossEntropyLoss expects classes on axis 1, including dense targets.
+                # CrossEntropyLoss reads the classes on axis 1, also for dense outputs
+                # (batch, classes, positions); skorch's softmax uses the last axis.
                 return partial(Tensor.softmax, dim=1)
         return nonlinearity
 
