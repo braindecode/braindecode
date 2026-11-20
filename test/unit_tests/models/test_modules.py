@@ -242,12 +242,25 @@ def test_avgpool2dwithconv_cache_requires_exact_device_identity():
         def size(self):
             return torch.Size(weight_shape)
 
+        def is_inference(self):
+            return False
+
     module._pool_weights = FakeTensor("cuda:0", torch.float32)
     same_device = FakeTensor("cuda:0", torch.float32)
     other_device = FakeTensor("cuda:1", torch.float32)
 
     assert module._pool_weights_match_input(same_device, weight_shape)
     assert not module._pool_weights_match_input(other_device, weight_shape)
+
+
+def test_avgpool2dwithconv_trains_after_an_inference_mode_forward():
+    module = AvgPool2dWithConv(kernel_size=(1, 4), stride=(1, 4))
+    with torch.inference_mode():
+        module(torch.randn(2, 3, 1, 16))
+
+    x = torch.randn(2, 3, 1, 16, requires_grad=True)
+    module(x).sum().backward()
+    assert x.grad is not None
 
 
 def test_time_distributed():

@@ -272,6 +272,11 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.EEGConformer`, :class:`~braindecode.models.TSception` and :class:`~braindecode.models.MSVTNet`
+  no longer run a training-mode forward pass at construction, which updated BatchNorm and drew
+  random numbers, so seeded weights change (:gh:`1694` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.Deep4Net` with ``mean`` pooling trains right after construction
+  and after ``get_output_shape()`` (:gh:`1694` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.EEGMiner` exports with
   ``torch.export.export(..., strict=False)`` on PyTorch 2.6 (:gh:`1690` by `Bruno Aristimunha`_).
 - ``convert_to_zarr`` and ``load_from_zarr`` work with a local Zarr installation.
@@ -623,6 +628,9 @@ Bug fixes
 Code health
 ============
 
+- :class:`braindecode.models.Deep4Net`, :class:`~braindecode.models.ShallowFBCSPNet`,
+  :class:`~braindecode.models.EEGNet`, :class:`~braindecode.models.EEGITNet` and the CTC models size
+  their heads by arithmetic, not by a forward pass at construction (:gh:`1694` by `Bruno Aristimunha`_).
 - :class:`~braindecode.models.GCNsNet` fits its graph with the public ``fit_graph``,
   called once per fit by the estimators; it and :class:`~braindecode.models.DGCNN`
   share :class:`~braindecode.modules.ChebyshevGraphConv` (:gh:`1700` by `Bruno Aristimunha`_).

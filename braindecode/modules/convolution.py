@@ -54,6 +54,7 @@ class AvgPool2dWithConv(nn.Module):
             and tuple(self._pool_weights.size()) == tuple(weight_shape)
             and self._pool_weights.device == x.device
             and self._pool_weights.dtype == x.dtype
+            and not self._pool_weights.is_inference()
         )
 
     def forward(self, x):
