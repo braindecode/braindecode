@@ -92,8 +92,6 @@ Enhancements
   ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
   ``chs_info``, stacked or in MNE's interleaved order (:gh:`1582` by
   `Bruno Aristimunha`_).
-- The documentation tests render the relative-positioning tutorial's PCA plot
-  and verify the five sleep stages span the full color map (:gh:`1675`).
 - The docstrings of :class:`braindecode.models.FNIRSNet`, :class:`~braindecode.models.FNIRS4D`,
   :class:`~braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT` describe
   each model from the papers: the architecture as named steps with module names and
@@ -577,6 +575,8 @@ Code health
 - Tests that spawned processes, built the 157M-parameter :class:`~braindecode.models.BENDR`
   14 times, spied on SDPA calls or re-implemented the code they check are now in-process,
   small or gone (:gh:`1701` by `Bruno Aristimunha`_).
+- The relative-positioning tutorial's sleep-stage colors are tested on its rendered
+  PCA figure instead of on a standalone colormap sample (:gh:`1675` by `Bruno Aristimunha`_).
 - :class:`~braindecode.models.AttnSleep` computes its MRCNN feature length by
   arithmetic instead of a dummy forward, raising ``ValueError`` for too-short windows
   (:gh:`1707` by `Bruno Aristimunha`_).
