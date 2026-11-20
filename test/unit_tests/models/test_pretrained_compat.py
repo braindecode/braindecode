@@ -742,11 +742,13 @@ def test_foundation_model_maps_each_sample_under_a_strategy(name):
 
 # Classes with released weights that are outside this EEG/iEEG contract.
 EXCLUDED = {
+    "GeoNIRS": "fNIRS channels placed by optode positions, no EEG geometry",
     "NeuroPose": "sEMG hand-pose regression, no EEG geometry",
     "VEMG2Pose": "sEMG hand-pose regression, no EEG geometry",
     "TinyMyo": "sEMG channel slots, no EEG geometry",
     "NeuroRVQTokenizer": "returns (target, reconstruction); NeuroRVQ's channel contract",
     "MtReNIRS": "fNIRS HbO/HbR pairs with optode positions, no EEG geometry",
+    "JungMAE": "fNIRS channel patches, no EEG geometry",
 }
 _SHIPS_WEIGHTS = re.compile(
     r"hf_hub_download|from_pretrained\(|huggingface\.co/|Hugging Face Hub"
