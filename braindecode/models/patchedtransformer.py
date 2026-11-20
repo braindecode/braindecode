@@ -317,12 +317,7 @@ class PBT(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output logits with shape (batch_size, n_outputs).
         """
-        check_n_chans(
-            X,
-            self.n_chans,
-            "PBT",
-            "build the model with the chs_info of this montage.",
-        )
+        check_n_chans(X, self.n_chans, "PBT")
         X, int_pos = self.patch_signal(X)
 
         tokens = self.patching_projection(X)

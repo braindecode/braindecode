@@ -526,12 +526,7 @@ class CSBrain(EEGModuleMixin, nn.Module):
             self.sorted_indices is not None
             or not (return_features or self._encoder_output)
         ):
-            check_n_chans(
-                x,
-                self._n_chans_for_jit,
-                "CSBrain",
-                "build the model with the chs_info of this montage.",
-            )
+            check_n_chans(x, self._n_chans_for_jit, "CSBrain")
         x = self.rearrange(x)
         if self.sorted_indices is not None:
             x = x[:, self.sorted_indices, :, :]

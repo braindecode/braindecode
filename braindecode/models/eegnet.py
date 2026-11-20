@@ -212,6 +212,9 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
         self.mapping = {
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
             "conv_classifier.bias": "final_layer.conv_classifier.bias",
+            # Released checkpoints saved before max-norm became a
+            # parametrization (PierreGtch/EEGNetv4) store the plain weight.
+            "conv_spatial.weight": "conv_spatial.parametrizations.weight.original",
         }
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]

@@ -273,13 +273,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     def forward(
         self, x: Tensor, return_features: Optional[bool] = None
     ) -> Union[Tensor, Dict[str, Optional[Tensor]]]:
-        check_n_chans(
-            x,
-            self.n_chans,
-            "MIRepNet",
-            "build the model with the chs_info of this montage, or use a "
-            "channel_strategy.",
-        )
+        check_n_chans(x, self.n_chans, "MIRepNet")
         tokens = self.transformer(self.embedding(x))
         features = tokens.mean(dim=1)
         if return_features is None:
