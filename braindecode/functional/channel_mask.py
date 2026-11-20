@@ -215,9 +215,8 @@ def masked_group_norm(
     -------
     torch.Tensor
         ``x`` normalized, same shape. Masked entries are zero, including after
-        the affine transform, and receive zero input gradients. Masked values
+        the affine transform, and receive zero input gradients. Their values
         (even NaN) affect neither the statistics nor the affine gradients.
-        A sample whose entries are all masked has zero output and gradients.
     """
     if mask is None:
         return F.group_norm(x, num_groups, weight, bias, eps)
@@ -242,7 +241,7 @@ def masked_group_norm(
     for size in x.shape[mask.dim() + 1 :]:
         per_position *= size
     count = (mask.reshape(mask.shape[0], -1).sum(1) * per_position).to(grouped.dtype)
-    count = count.reshape(stats_shape).clamp_min(1)
+    count = count.reshape(stats_shape)
     # Padded entries are zero, so plain sums are the masked sums.
     mean = grouped.sum(dims, keepdim=True) / count
     centred = (grouped - mean).masked_fill(padding.unsqueeze(1), 0.0)

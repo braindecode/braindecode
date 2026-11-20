@@ -27,7 +27,6 @@ from .blocks import (
     InceptionBlock,
     PatchTokenizer,
     TDSConvEncoder,
-    TemporalSpectralPatchEmbedding,
     TimmMlp,
 )
 from .channels import ChannelLayer, resolve_channel_positions
@@ -113,7 +112,6 @@ __all__ = [
     "InceptionBlock",
     "PatchTokenizer",
     "TDSConvEncoder",
-    "TemporalSpectralPatchEmbedding",
     "AvgPool2dWithConv",
     "CausalConv1d",
     "ChebyshevGraphConv",

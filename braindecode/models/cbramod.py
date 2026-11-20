@@ -10,20 +10,21 @@ import logging
 from functools import partial
 from typing import Dict, Optional, Sequence, Union
 
+import torch
 from torch import Tensor, nn
 
-from braindecode.functional import check_ch_mask, check_n_chans, init_weights_
-from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import (
-    CrissCrossTransformerEncoderLayer,
-    TemporalSpectralPatchEmbedding,
+from braindecode.functional import (
+    check_ch_mask,
+    check_n_chans,
+    init_weights_,
+    masked_group_norm,
+    spectral_input,
 )
+from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import CrissCrossTransformerEncoderLayer
 from braindecode.modules.blocks import PatchTokenizer
 
 logger = logging.getLogger(__name__)
-
-# Full-model pickles use the former class name in this module.
-_PatchEmbedding = TemporalSpectralPatchEmbedding
 
 
 class CBraMod(EEGModuleMixin, nn.Module):
@@ -211,7 +212,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
             on_non_divisible=on_non_divisible,
         )
         self._on_non_divisible = on_non_divisible
-        self.patch_embedding = TemporalSpectralPatchEmbedding(
+        self.patch_embedding = _PatchEmbedding(
             patch_size,
             channels_kernel_stride_padding_norm,
             drop_prob=drop_prob,
@@ -319,6 +320,8 @@ class CBraMod(EEGModuleMixin, nn.Module):
                     "ch_mask needs return_encoder_output=True: the flattened "
                     "head is tied to the channels."
                 )
+            # Padding may hold NaN, which the patch embedding would spread.
+            x = x.masked_fill(~ch_mask[:, :, None], 0.0)
             key_padding_mask = ~ch_mask
         x = self.rearrange(x)
         patch_emb = self.patch_embedding(x, mask, ch_mask)
@@ -337,6 +340,123 @@ class CBraMod(EEGModuleMixin, nn.Module):
             }
             return features
         return self.final_layer(out)
+
+
+class _PatchEmbedding(nn.Module):
+    def __init__(
+        self,
+        patch_size,
+        channels_kernel_stride_padding_norm,
+        drop_prob=0.1,
+    ):
+        super().__init__()
+        self.patch_size = patch_size
+        self.channels_kernel_stride_padding_norm = channels_kernel_stride_padding_norm
+        self.positional_encoding = nn.Sequential(
+            nn.Conv2d(
+                in_channels=self.d_model,
+                out_channels=self.d_model,
+                kernel_size=(19, 7),
+                stride=(1, 1),
+                padding=(9, 3),
+                groups=self.d_model,
+            ),
+        )
+        self.mask_encoding = nn.Parameter(torch.zeros(patch_size), requires_grad=False)
+
+        last_channels = 1
+        proj_in_layers = []
+        for (
+            channels,
+            kernel,
+            stride,
+            padding,
+            norm,
+        ) in channels_kernel_stride_padding_norm:
+            proj_in_layers.extend(
+                [
+                    nn.Conv2d(
+                        in_channels=last_channels,
+                        out_channels=channels,
+                        kernel_size=(1, kernel),
+                        stride=(1, stride),
+                        padding=(0, padding),
+                    ),
+                    nn.GroupNorm(*norm),
+                    nn.GELU(),
+                ]
+            )
+            last_channels = channels
+        self.proj_in = nn.Sequential(*proj_in_layers)
+        self.spectral_proj = nn.Sequential(
+            nn.Linear(patch_size // 2 + 1, self.d_model),
+            nn.Dropout(drop_prob),
+        )
+
+    @property
+    def d_model(self):
+        last_channels = self.channels_kernel_stride_padding_norm[-1][0]
+        patch_size = self.patch_size
+        for _, kernel, stride, padding, _ in self.channels_kernel_stride_padding_norm:
+            patch_size = int((patch_size + 2 * padding - kernel) / stride + 1)
+        return last_channels * patch_size
+
+    def forward(
+        self,
+        x: Tensor,
+        mask: Optional[Tensor] = None,
+        ch_mask: Optional[Tensor] = None,
+    ) -> Tensor:
+        bz, ch_num, patch_num, patch_size = x.shape
+        if mask is None:
+            mask_x = x
+        else:
+            mask_x = x.clone()
+            mask_x[mask == 1] = self.mask_encoding
+
+        mask_x = mask_x.reshape(bz, 1, ch_num * patch_num, patch_size)
+        if ch_mask is None:
+            patch_emb = self.proj_in(mask_x)  # (b, d, c * n, p2)
+        else:
+            # GroupNorm statistics over real rows only; rows are (c n).
+            row_mask = ch_mask.repeat_interleave(patch_num, dim=1)
+            patch_emb = mask_x
+            for layer in self.proj_in:
+                # Not isinstance: TorchScript misses renamed (mangled) module types.
+                if hasattr(layer, "num_groups"):
+                    patch_emb = masked_group_norm(
+                        patch_emb,
+                        layer.num_groups,
+                        row_mask,
+                        layer.weight,
+                        layer.bias,
+                        layer.eps,
+                    )
+                else:
+                    patch_emb = layer(patch_emb)
+        d, p2 = patch_emb.shape[1], patch_emb.shape[3]
+        patch_emb = (
+            patch_emb.reshape(bz, d, ch_num, patch_num, p2)
+            .permute(0, 2, 3, 1, 4)
+            .reshape(bz, ch_num, patch_num, d * p2)
+        )
+
+        mask_x = mask_x.reshape(-1, patch_size)
+        spectral = torch.fft.rfft(spectral_input(mask_x), dim=-1, norm="forward")
+        spectral = torch.abs(spectral).to(mask_x).reshape(bz, ch_num, patch_num, -1)
+        spectral_emb = self.spectral_proj(spectral)
+
+        patch_emb = patch_emb + spectral_emb
+        if ch_mask is not None:
+            # Zero rows, as the convolution's own padding past the last channel.
+            patch_emb = patch_emb.masked_fill(~ch_mask[:, :, None, None], 0.0)
+
+        positional_embedding = self.positional_encoding(patch_emb.permute(0, 3, 1, 2))
+        positional_embedding = positional_embedding.permute(0, 2, 3, 1)
+
+        patch_emb = patch_emb + positional_embedding
+
+        return patch_emb
 
 
 class _TransformerEncoder(nn.Module):

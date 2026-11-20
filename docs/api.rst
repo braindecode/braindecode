@@ -330,7 +330,6 @@ perceptrons (MLPs) and inception blocks.
     FeedForwardBlock
     InceptionBlock
     PatchTokenizer
-    TemporalSpectralPatchEmbedding
 
 Channels
 ========
