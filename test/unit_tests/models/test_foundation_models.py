@@ -343,6 +343,19 @@ def test_labram_neural_decoder_initialization(model_decoder):
     assert model_decoder.n_outputs == 4
 
 
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({}, "n_chans could not be inferred"),
+        ({"n_chans": 4, "conv_in_channels": 3}, "divisible by in_channels"),
+    ],
+)
+def test_labram_neural_decoder_rejects_bad_channels_at_construction(kwargs, match):
+    """The decoder averages n_chans / conv_in_channels channels into each token."""
+    with pytest.raises(ValueError, match=match):
+        Labram(n_times=800, n_outputs=2, neural_tokenizer=False, **kwargs)
+
+
 @pytest.mark.network
 @pytest.mark.huggingface
 def test_labram_can_load_pretrained_weights():
