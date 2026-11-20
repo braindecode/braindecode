@@ -1266,8 +1266,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             elif "n_chans" in kwargs:
                 kwargs.setdefault("chs_info", None)
             if "input_window_seconds" in kwargs:
-                # A new duration replaces the saved n_times, or the saved sfreq
-                # when the caller gives n_times.
+                # Keep a new duration from clashing with the saved n_times (or the
+                # saved sfreq, when the caller gives n_times); _from_pretrained
+                # completes the window from what the save holds.
                 kwargs.setdefault("sfreq" if "n_times" in kwargs else "n_times", None)
             elif "n_times" in kwargs or "sfreq" in kwargs:
                 kwargs.setdefault("input_window_seconds", None)
@@ -1369,7 +1370,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 pass  # config unavailable: keep the caller's geometry and head
 
             # A save spells its window with any two of these three quantities.
-            # The caller gave one: complete the pair from the save, preferring
+            # When only one is known, complete the pair from the save, preferring
             # its sample count.
             time_keys = ("n_times", "sfreq", "input_window_seconds")
             if sum(model_kwargs.get(k) is not None for k in time_keys) == 1:
