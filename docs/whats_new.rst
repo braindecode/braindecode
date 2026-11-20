@@ -562,6 +562,9 @@ Bug fixes
   signed references when positive and negative values sum to zero, and
   signed references with no positive value; only constant explanations or
   references are skipped now (:gh:`1635` by `Bruno Aristimunha`_).
+- Pydantic model configs accept ``info["chs"]`` as MNE gives it (integer
+  ``kind``, NaN ``loc``) and ``ch_type`` keys, and keep ``loc`` through JSON
+  with or without ``numpydantic`` (:gh:`1632` by `Bruno Aristimunha`_).
 - Fix the PyTorch forum and TensorFlow references of
   :class:`braindecode.modules.MaxNormLinear`: each URL was split across two
   docstring lines, so the rendered links pointed to a truncated forum URL (404)
