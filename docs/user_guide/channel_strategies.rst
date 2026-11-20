@@ -74,15 +74,6 @@ not exact from ``F3-R1`` and ``C3-R2``, nor ``F3`` from bipolar channels only. N
 channels raise unless ``channel_strategy_kwargs={"drop_non_eeg": True}``. The layer runs
 in eager mode; TorchScript works under ``native`` only.
 
-``spline``, ``wiener`` and a kernel passed as ``channel_strategy`` (any ``kernel(pos_a,
-pos_b)`` covariance, such as :func:`~braindecode.functional.spherical_spline_kernel`)
-are one estimate, :func:`~braindecode.functional.linear_channel_map`: inputs ``y = A
-v``, targets ``t = B v``, a prior covariance of the potentials ``v`` and a flat prior on
-the unknown recording reference. It also gives each target's posterior variance
-(``model.channel_layer.variance``); ``match_gain=True`` restores the amplitude the
-estimate shrinks. ``channel_strategy_kwargs={"reference": "average"}`` (or an electrode
-name) gives the backbone its pretraining reference.
-
 To reconstruct a bad EEG channel, keep the full montage as the target. Select the good
 EEG channels before extracting the signal and its input montage:
 

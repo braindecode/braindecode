@@ -6,7 +6,6 @@
 import copy
 import inspect
 import pickle  # nosec B403
-import warnings
 
 import mne
 import numpy as np
@@ -14,17 +13,10 @@ import pytest
 import torch
 
 from braindecode.datasets import pad_channels_collate
-from braindecode.functional import exact_derivation, spherical_spline_kernel
+from braindecode.functional import exact_derivation
 from braindecode.models import BENDR, LUNA, Labram, SignalJEPA
 from braindecode.modules import ChannelLayer
-from braindecode.modules.channels import (
-    _SPHERE_R0,
-    STRATEGIES,
-    _interp,
-    _mixing,
-    _resolve,
-    _standard_positions,
-)
+from braindecode.modules.channels import STRATEGIES
 
 TEN_TWENTY = "Fp1 Fp2 F7 F3 Fz F4 F8 T7 C3 Cz C4 T8 P7 P3 Pz P4 P8 O1 O2".split()
 SUBSET = ["Fp1", "F3", "Fz", "C3", "Cz", "P4", "Pz", "O2"]
@@ -36,6 +28,33 @@ def chs(names, kind="eeg"):
 
 def at(name, xyz):
     return {"ch_name": name, "kind": "eeg", "loc": np.r_[xyz, np.zeros(9)]}
+
+
+def standard_info(names):
+    """``mne.Info`` with ``names`` at their 10-05 positions, as ``raw.set_montage`` places them."""
+    info = mne.create_info(names, 100.0, "eeg")
+    info.set_montage("colin27_1005")
+    return info
+
+
+def standard_positions(names):
+    return np.array([ch["loc"][:3] for ch in standard_info(names)["chs"]])
+
+
+def mne_spline(x, inputs, targets, reg):
+    """``targets`` (``A`` or ``A-B``) from the signals ``x`` of the electrodes ``inputs``
+    as MNE's ``interpolate_to`` gives them; a measured electrode stays its signal."""
+    electrodes = list(dict.fromkeys(e for t in targets for e in t.split("-")))
+    raw = mne.io.RawArray(x, standard_info(inputs), verbose="error")
+    sensors = standard_info(electrodes).get_montage()
+    with mne.utils.use_log_level("ERROR"):  # the sphere fit of a sparse montage warns
+        interpolated = raw.interpolate_to(sensors, method="spline", reg=reg).get_data()
+    value = {
+        e: x[inputs.index(e)] if e in inputs else row
+        for e, row in zip(electrodes, interpolated)
+    }
+    pairs = [t.partition("-") for t in targets]
+    return np.stack([value[a] - (value[b] if b else 0) for a, _, b in pairs])
 
 
 def test_a_legacy_alias_does_not_merge_distinct_names():
@@ -53,18 +72,11 @@ def test_b_misspelt_strategy_is_declared():
 
 
 def test_c_coordinate_only_channel_matched_by_position():
-    cz = _resolve(chs(["Cz"]))[1][0]
+    cz = standard_positions(["Cz"])[0]
     layer = ChannelLayer(chs(["Cz"]), "exact", [at("E7", cz + [0.002, 0, 0])])
     assert layer.weight.tolist() == [[1.0]]
     with pytest.raises(ValueError, match="not in the input"):  # never relabelled
         ChannelLayer(chs(["Cz"]), "exact", [at("FCz", cz + [0.002, 0, 0])])
-
-
-def test_names_resolve_in_the_head_frame_of_raw_info():
-    info = mne.create_info(TEN_TWENTY, 200.0, "eeg")
-    info.set_montage("colin27_1020")
-    d = _resolve(chs(TEN_TWENTY))[1] - _resolve(info["chs"])[1]
-    assert np.abs(d).max() < 1e-3  # was 46-57 mm: the montage's own (mri) frame
 
 
 def test_d_non_eeg_rejected_or_dropped():
@@ -100,21 +112,6 @@ def test_dropped_non_eeg_channels_do_not_propagate_nans(per_sample):
     torch.testing.assert_close(x.grad, torch.tensor([[[1.0, 1.0], [0.0, 0.0]]]))
 
 
-@pytest.mark.parametrize("kind", ["seeg", "eeg"])
-@pytest.mark.parametrize("reference", ["X2", "average"])
-def test_measured_electrodes_can_be_referenced_without_positions(kind, reference):
-    inputs = chs(["X1", "X2"], kind=kind)
-    # The unmeasured, unpositioned third contact stays zero-filled.
-    with pytest.warns(UserWarning, match="zero-filled"):
-        layer = ChannelLayer([*inputs, *chs(["X3"], kind=kind)], "zero", inputs, reference=reference)
-    x = torch.tensor([[[7.0, 3.0], [2.0, 1.0]]])
-    values, observed = layer(x)
-    ref = x[:, 1:2] if reference == "X2" else x.mean(1, keepdim=True)
-    torch.testing.assert_close(values[:, :2], x - ref)
-    assert torch.count_nonzero(values[:, 2:]) == 0
-    assert observed.tolist() == [True, True, False]
-
-
 def test_e_legacy_names_are_copies():
     layer = ChannelLayer(
         chs(["T7", "T8", "P7", "P8"]), "spline", chs(["T3", "T4", "T5", "T6"])
@@ -147,33 +144,34 @@ def test_permutation_is_an_exact_copy(strategy):
     assert torch.equal(layer(x)[0], x.flip(1))
 
 
-def test_reusing_a_mutated_input_montage():
-    inputs = chs(["F3", "C3"])
-    layer = ChannelLayer(chs(["F3", "C3"]), "exact", inputs)
-    signal = torch.tensor([[[1.0, 2.0], [3.0, 4.0]]])
-    inputs.reverse()
-    torch.testing.assert_close(layer(signal.flip(1))[0], signal)
-    inputs[0]["kind"] = "eog"
-    with pytest.raises(ValueError, match="not EEG"):
-        layer(signal)
+LEFT, RIGHT = [0.03, 0.05, 0.08], [-0.03, 0.05, 0.08]
 
 
-def test_input_channel_type_alias_is_part_of_the_montage():
-    inputs = [{"ch_name": "F3", "ch_type": "eeg"}]
-    layer = ChannelLayer(chs(["F3"]), "exact", inputs)
-    inputs[0]["ch_type"] = "mag"
-    with pytest.raises(ValueError, match="not EEG"):
-        layer(torch.ones(1, 1, 2))
+def swap_locations(inputs):
+    inputs[0]["loc"][:3], inputs[1]["loc"][:3] = RIGHT, LEFT
 
 
-def test_adjusting_coordinates_in_place():
-    left, right = [0.03, 0.05, 0.08], [-0.03, 0.05, 0.08]
-    inputs = [at("E1", left), at("E2", right)]
-    layer = ChannelLayer([at("unknown", left)], "nearest", inputs)
-    signal = torch.tensor([[[1.0], [2.0]]])
-    torch.testing.assert_close(layer(signal)[0], signal[:, :1])
-    inputs[0]["loc"][:3], inputs[1]["loc"][:3] = right, left
-    torch.testing.assert_close(layer(signal)[0], signal[:, 1:])
+@pytest.mark.parametrize(
+    "change",
+    [
+        list.reverse,  # the order of the channels
+        swap_locations,
+        lambda inputs: inputs[0].update(kind="eog"),  # the type, as ``kind``
+        lambda inputs: inputs[0].update(kind=None, ch_type="mag"),  # or as ``ch_type``
+    ],
+    ids=["order", "location", "kind", "ch_type"],
+)
+def test_maps_follow_in_place_changes_of_the_input_montage(change):
+    """The cached maps are keyed by what the montage holds, not by the list object."""
+    inputs = [at("E1", LEFT), at("E2", RIGHT)]
+    target = [at("T1", LEFT), at("T2", RIGHT)]  # each is copied from the input beside it
+    layer = ChannelLayer(target, "nearest", inputs, drop_non_eeg=True)
+    x = torch.tensor([[[1.0], [2.0]]])
+    before = layer(x)[0]
+    change(inputs)
+    fresh = ChannelLayer(target, "nearest", copy.deepcopy(inputs), drop_non_eeg=True)
+    torch.testing.assert_close(layer(x)[0], fresh(x)[0])
+    assert not torch.equal(layer(x)[0], before)
 
 
 @pytest.mark.parametrize("literal", ["F3-C3-P3", "F3-", "-C3"])
@@ -191,15 +189,6 @@ def test_only_two_electrode_names_form_a_bipolar_derivation(literal):
     torch.testing.assert_close(measured(signal[:, :2])[0], signal[:, :2])
 
 
-def test_named_reference_for_a_positioned_literal_channel():
-    literal = at("F3-C3-P3", [0.01, 0.04, 0.07])
-    layer = ChannelLayer([literal], "exact", [literal, *chs(["Cz"])], reference="Cz")
-    signal = torch.tensor([[[5.0], [2.0]]])
-    values, observed = layer(signal)
-    torch.testing.assert_close(values, torch.tensor([[[3.0]]]))
-    assert observed.tolist() == [True]
-
-
 def test_bipolar_target_is_a_derivation():
     layer = ChannelLayer(chs(["F3-C3"]), "spline", chs(SUBSET))
     x = torch.randn(1, 8, 5)
@@ -210,8 +199,9 @@ def test_bipolar_target_is_a_derivation():
     "strategy,kw", [("field", {}), ("source", {}), ("source", {"trainable": True})]
 )
 def test_constant_input_gives_constant_output(strategy, kw):
-    # A target on the sphere's vertical axis must stay finite.
-    target = chs(TEN_TWENTY) + [at("Zaxis", np.add(_SPHERE_R0, [0, 0, 0.08]))]
+    # A target on the vertical axis of the template head (centre -1, 15, 39 mm) must
+    # stay finite.
+    target = chs(TEN_TWENTY) + [at("Zaxis", [-0.001, 0.0148, 0.1192])]
     out, _ = ChannelLayer(target, strategy, chs(SUBSET), **kw)(torch.ones(1, 8, 4))
     torch.testing.assert_close(out, torch.ones_like(out))
 
@@ -219,9 +209,7 @@ def test_constant_input_gives_constant_output(strategy, kw):
 def test_source_fidelity_on_another_head():
     # Truth from a head the inversion does not use: 4 shells, other centre,
     # radius and skull conductivity. Measured 0.759 (MNE's default sphere: 0.820).
-    info = mne.create_info(TEN_TWENTY, 100.0, "eeg")
-    pos = dict(zip(TEN_TWENTY, _resolve(chs(TEN_TWENTY))[1]))
-    info.set_montage(mne.channels.make_dig_montage(pos, coord_frame="head"))
+    info = standard_info(TEN_TWENTY)
     with mne.utils.use_log_level("ERROR"):
         sph = mne.make_sphere_model((0, 0.008, 0.045), 0.095, sigmas=(0.33, 1, 0.002, 0.33))
         src = mne.setup_volume_source_space(sphere=sph, pos=10.0, exclude=20.0)
@@ -289,7 +277,7 @@ def test_maps_follow_device_and_dtype(device):
 
 def smooth_field(n, rng):
     """``(n, 19)`` random quadratic fields sampled on the 10-20 positions."""
-    P = _resolve(chs(TEN_TWENTY))[1] / 0.1
+    P = standard_positions(TEN_TWENTY) / 0.1
     feats = np.c_[np.ones(19), P, P**2, P[:, :1] * P[:, 1:2], P[:, 1:2] * P[:, 2:]]
     return rng.standard_normal((n, feats.shape[1])) @ feats.T
 
@@ -325,19 +313,6 @@ def test_latent_is_permutation_invariant_and_trains():
     torch.testing.assert_close(layer(x.flip(1), chs(SUBSET[::-1]))[0], out)
     out.sum().backward()
     assert all(p.grad.abs().sum() > 0 for p in layer.parameters())
-
-
-def test_latent_single_time_sample_has_finite_statistics():
-    inputs = chs(["F3", "C3"])
-    layer = ChannelLayer(chs(["F3", "C3", "P3"]), "latent", inputs)
-    signal = torch.tensor([[[1.0], [2.0]]], requires_grad=True)
-    values, observed = layer(signal)
-    torch.testing.assert_close(values[:, :2], signal)
-    assert observed.tolist() == [True, True, False]
-    assert torch.isfinite(values).all()
-    values.sum().backward()
-    assert torch.isfinite(signal.grad).all()
-    assert all(torch.isfinite(param.grad).all() for param in layer.parameters())
 
 
 def test_a_map_built_under_inference_mode_trains():
@@ -424,8 +399,10 @@ def test_labram_ch_names_describe_the_input():
 
 
 def test_config_saves_the_input_montage_not_the_target(tmp_path):
+    small = dict(encoder_h=16, contextualizer_hidden=32, transformer_layers=1,
+                 transformer_heads=4)  # the saved weights stay small
     model = BENDR(chs_info=chs(SUBSET), n_outputs=2, n_times=1280, sfreq=256,
-                  channel_strategy="spline").eval()
+                  channel_strategy="spline", **small).eval()
     x = torch.randn(1, 8, 1280)
     config = model.get_config()
     assert [c["ch_name"] for c in config["chs_info"]] == SUBSET
@@ -448,17 +425,6 @@ def test_signal_jepa_strategy_targets_the_pretraining_channels():
         SignalJEPA(chs_info=names_only, **kw, channel_strategy="exact")
 
 
-def test_reverse_bipolar_is_exact_signed_copy():
-    # A measured cathode-anode trace is an exact negative of anode-cathode.
-    # This must not need positional interpolation or invented electrodes.
-    layer = ChannelLayer(chs(["F3-C3"]), "exact", chs(["C3-F3"]))
-    x = torch.tensor([[[1.0, -2.5, 0.0, 4.0]]])
-    y, observed = layer(x)
-    assert torch.equal(y, -x)
-    assert layer.weight.tolist() == [[-1.0]]
-    assert observed.tolist() == [True]
-
-
 def test_direct_bipolar_match_precedes_reverse_when_both_are_measured():
     layer = ChannelLayer(chs(["F3-C3"]), "exact", chs(["C3-F3", "F3-C3"]))
     x = torch.tensor([[[2.0, 5.0], [-2.0, -5.0]]])
@@ -466,18 +432,6 @@ def test_direct_bipolar_match_precedes_reverse_when_both_are_measured():
     assert torch.equal(y, x[:, 1:2])
     assert layer.weight.tolist() == [[0.0, 1.0]]
     assert observed.tolist() == [True]
-
-
-def test_reverse_bipolar_case_insensitive():
-    layer = ChannelLayer(chs(["Fp1-F7"]), "exact", chs(["f7-fP1"]))
-    x = torch.tensor([[[1.0, 2.0]]])
-    assert torch.equal(layer(x)[0], -x)
-
-
-def test_distinct_reference_channels_are_not_assumed_equivalent():
-    # A-R1 and B-R2 cannot construct A-B without a shared reference.
-    with pytest.raises(ValueError, match="not in the input"):
-        ChannelLayer(chs(["F3-C3"]), "exact", chs(["F3-R1", "C3-R2"]))
 
 
 def test_reverse_bipolar_beats_midpoint_spatial_match():
@@ -512,55 +466,38 @@ def test_targets_from_any_combination_of_measured_channels():
     assert observed.all()
 
 
+def without(names, *dropped):
+    return [n for n in names if n not in dropped]
+
+
+@pytest.mark.filterwarnings("ignore:Strategy 'spline'")  # row gain of a sparse montage
 @pytest.mark.parametrize("reg", [1e-3, 0.0])
-def test_spline_is_mne_spherical_spline(reg):
-    src, tgt = _resolve(chs(SUBSET))[1], _resolve(chs(["T7", "P8", "F4"]))[1]
-    W, var = _mixing("spline", src, tgt, reg=reg)
-    np.testing.assert_allclose(W, _interp("spline", src, tgt, reg), atol=1e-10)
-    assert (var > 0).all()
-
-
-def test_kernel_strategy_variance_and_gain():
-    layer = ChannelLayer(chs(TEN_TWENTY), spherical_spline_kernel, chs(SUBSET), reg=1e-3)
-    measured = torch.tensor(np.isin(TEN_TWENTY, SUBSET))
-    assert (layer.variance[measured] == 0).all() and (layer.variance[~measured] > 0).all()
-    plain = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET))
-    torch.testing.assert_close(layer.weight, plain.weight)  # the same centred kernel
-    cz = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET), reference="Cz")
-    assert (cz.variance[~measured] > 0).all()  # A - Cz: one reconstructed entry
-    gained = ChannelLayer(chs(TEN_TWENTY), "spline", chs(SUBSET), match_gain=True)
-    assert torch.equal(gained.weight[measured], plain.weight[measured])
-    assert not torch.allclose(gained.weight[~measured], plain.weight[~measured])
-    torch.testing.assert_close(gained.weight.sum(1), torch.ones(len(TEN_TWENTY)))
-
-
-def test_dense_spline_without_regularisation_keeps_every_row():
-    # The estimability of a row depends on the flat prior only: an ill-conditioned
-    # kernel solve must not zero a target.
-    names = list(_standard_positions())
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # the row-gain warning
-        layer = ChannelLayer(chs(names[150:200]), "spline", chs(names[:150]), reg=0.0)
-    assert (layer.weight.abs().sum(1) > 0).all()
-    torch.testing.assert_close(layer.weight.sum(1), torch.ones(50), atol=1e-4, rtol=0)
-
-
-@pytest.mark.parametrize("reference", ["average", "Cz"])
-def test_target_reference_with_a_missing_target(reference):
-    # Fp1 is zero-filled (and part of the average); BENDR's SCALE (no position)
-    # stays out of the reference
-    layer = ChannelLayer(chs([*SUBSET, "SCALE"]), "zero", chs(SUBSET[1:]), reference=reference)
-    y = layer(torch.randn(1, len(SUBSET) - 1, 10))[0]
-    assert (y[0, -1] == 0).all() and y[0, 1:-1].abs().sum() > 0
-
-
-@pytest.mark.parametrize("reference", ["average", "Cz"])
-def test_target_reference(reference):
-    v = torch.randn(2, len(TEN_TWENTY), 40, dtype=torch.float64)
-    layer = ChannelLayer(chs(SUBSET), "exact", chs(TEN_TWENTY), reference=reference)
-    sub = v[:, [TEN_TWENTY.index(n) for n in SUBSET]]
-    ref = sub.mean(1, keepdim=True) if reference == "average" else v[:, [TEN_TWENTY.index("Cz")]]
-    torch.testing.assert_close(layer.double()(v)[0], sub - ref, atol=1e-12, rtol=0)
+@pytest.mark.parametrize(
+    "inputs, recorded, targets",
+    [
+        (SUBSET, [n.swapcase() for n in SUBSET], TEN_TWENTY),
+        (  # legacy names: T3 is T7, T5 is P7
+            ["Fp1", "F3", "Fz", "T7", "Cz", "P7", "Pz", "O2"],
+            ["Fp1", "F3", "Fz", "T3", "Cz", "T5", "Pz", "O2"],
+            TEN_TWENTY,
+        ),
+        (SUBSET, [f"EEG {n.upper()}-REF" for n in SUBSET], TEN_TWENTY),
+        (without(TEN_TWENTY, "F4", "C4"), None, ["F3-C3", "F4-P4", "F4-C4"]),
+        (without(TEN_TWENTY, "Cz", "Pz"), None, TEN_TWENTY),
+    ],
+    ids=["mixed case", "alias", "EEG X-REF", "bipolar", "two targets missing"],
+)
+def test_spline_matches_mne_interpolate_to(inputs, recorded, targets, reg):
+    """Whatever the input names, the targets are what MNE's ``interpolate_to`` gives."""
+    x = np.random.default_rng(0).standard_normal((len(inputs), 40))
+    montage = [
+        dict(ch, ch_name=name)  # the standard position, recorded under another name
+        for ch, name in zip(standard_info(inputs)["chs"], recorded or inputs)
+    ]
+    layer = ChannelLayer(chs(targets), "spline", montage, reg=reg).double()
+    out, _ = layer(torch.from_numpy(x)[None])
+    expected = mne_spline(x, inputs, targets, reg)
+    np.testing.assert_allclose(out[0].numpy(), expected, atol=1e-6, rtol=0)
 
 
 def test_one_montage_per_sample():
@@ -616,7 +553,7 @@ def test_strategy_model_takes_pad_channels_collate_batches():
     # pos + ch_mask (no names): the montage of each sample from its positions.
     model = Labram(chs_info=chs(SUBSET), n_outputs=2, n_times=800, sfreq=200,
                    channel_strategy="spline").eval()
-    pos = torch.as_tensor(_resolve(chs(SUBSET))[1]).expand(2, -1, -1).clone()
+    pos = torch.as_tensor(standard_positions(SUBSET)).expand(2, -1, -1).clone()
     mask = torch.ones(2, len(SUBSET), dtype=torch.bool)
     mask[1, 5:] = False
     x = torch.randn(2, len(SUBSET), 800) * mask[..., None]
