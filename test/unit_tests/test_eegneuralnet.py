@@ -1150,6 +1150,13 @@ def _dense_logits():
             torch.int64,
         ),
         (torch.eye(3)[[0, 1, 2, 1]], [], _per_trial_logits, torch.float32),
+        # dense probabilities (batch, classes, time) have the shape of the logits
+        (
+            torch.arange(96.0).reshape(4, 3, 8).softmax(dim=1),
+            [],
+            _dense_logits,
+            torch.float32,
+        ),
         (
             torch.tensor([0, 1, 2, 1]),
             [LabelSmoothing(0.1, 3)],
@@ -1168,6 +1175,7 @@ def _dense_logits():
         "dense_float_indices",
         "float_indices_mixup",
         "one_hot",
+        "dense_probabilities",
         "smoothed",
         "smoothed_mixup",
     ],

@@ -2370,11 +2370,21 @@ def test_target_channels_windower_picks_by_channel_kind():
     np.testing.assert_array_equal(y, [1.0])
 
 
-def test_channel_targets_require_a_misc_channel(tmp_path):
-    info = mne.create_info(["Cz", "target"], 100, ["eeg", "misc"])
+@pytest.mark.parametrize(
+    "types, kwargs",
+    [
+        # picks drops the target channel before the Epochs are made
+        (["eeg", "misc"], dict(picks="eeg")),
+        # raw-backed windows take no picks: the recording has no target channel
+        (["eeg", "eeg"], dict(use_mne_epochs=False)),
+    ],
+    ids=["epochs", "raw"],
+)
+def test_channel_targets_require_a_misc_channel(tmp_path, types, kwargs):
+    info = mne.create_info(["Cz", "target"], 100, types)
     raw = mne.io.RawArray(np.zeros((2, 20)), info, verbose=False)
     concat = BaseConcatDataset([RawDataset(raw, {"label": 1}, target_name="label")])
-    kwargs = dict(window_size_samples=10, picks="eeg")
+    kwargs = dict(window_size_samples=10, **kwargs)
     with pytest.raises(ValueError, match="misc channel"):
         create_fixed_length_windows(concat, targets_from="channels", **kwargs)
     # A store saved without the misc channel whose history asks for channel targets.
