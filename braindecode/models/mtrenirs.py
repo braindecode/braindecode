@@ -243,14 +243,6 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         Dropout of attention weights, attention output and MLP.
     activation : type[nn.Module], default=nn.GELU
         Activation of the spatio-chromophore MLP and the feed-forward blocks.
-    channel_strategy : str, default="native"
-        Only ``"native"``: the input is fNIRS HbO/HbR channels, not electrodes
-        the channel layer can map. MtReNIRS reads any montage from the 10-05
-        position of each channel (``chs_info`` or ``coordinates``), and
-        ``ch_mask`` (``pool="channel_temporal_mean"``) pads montages of
-        different sizes. Any other value raises a ``ValueError``.
-    channel_strategy_kwargs : dict or None, default=None
-        Must be ``None``.
 
     Notes
     -----
@@ -329,17 +321,7 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         coordinate_scale: float = 0.09265176206827164,
         drop_prob: float = 0.1,
         activation: type[nn.Module] = nn.GELU,
-        channel_strategy: str = "native",
-        channel_strategy_kwargs: dict | None = None,
     ) -> None:
-        if channel_strategy != "native" or channel_strategy_kwargs:
-            raise ValueError(
-                f"{type(self).__name__} takes fNIRS HbO/HbR channels, not electrodes "
-                "the channel layer can map: only channel_strategy='native' is "
-                "supported. It reads any montage from the 10-05 position of each "
-                "channel (chs_info or coordinates), and ch_mask "
-                "(pool='channel_temporal_mean') pads montages of different sizes."
-            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,

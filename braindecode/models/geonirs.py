@@ -242,14 +242,6 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         its time points" (Appendix B.1.2).
     activation : type[nn.Module], default=nn.GELU
         Activation of the backbone; GELU in the reference.
-    channel_strategy : str, default="native"
-        Only ``"native"``: the input is fNIRS HbO/HbR channels, not electrodes
-        the channel layer can map. GeoNIRS reads any optode montage from its
-        source-detector geometry (``chs_info`` or ``geometry``), and
-        ``ch_mask`` pads montages of different sizes. Any other value raises
-        a ``ValueError``.
-    channel_strategy_kwargs : dict or None, default=None
-        Must be ``None``.
 
     Notes
     -----
@@ -315,17 +307,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         head_drop_prob: float = 0.1,
         minimum_patch_valid_fraction: float = 0.8,
         activation: type[nn.Module] = nn.GELU,
-        channel_strategy: str = "native",
-        channel_strategy_kwargs: dict | None = None,
     ) -> None:
-        if channel_strategy != "native" or channel_strategy_kwargs:
-            raise ValueError(
-                f"{type(self).__name__} takes fNIRS HbO/HbR channels, not electrodes "
-                "the channel layer can map: only channel_strategy='native' is "
-                "supported. It reads any optode montage from its source-detector "
-                "geometry (chs_info or geometry), and ch_mask pads montages of "
-                "different sizes."
-            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
