@@ -242,6 +242,7 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
             mask = torch.zeros(x.shape[:2], dtype=torch.bool, device=x.device)
         else:
             mask = ~real  # (batch, n_chans), True for missing channels
+            # Every patch of a missing channel: (batch, n_chans, n_patches)
             patch_mask = mask.unsqueeze(2).expand(
                 -1, -1, self.patch_embedding.patchify.n_patches(x.shape[-1])
             )
@@ -249,6 +250,7 @@ class SleepFM(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         tokens = self.patch_embedding(x, patch_mask)
         # Pool the real channels of every patch: (batch, n_patches, embed_dim)
         tokens = self.spatial_pooling.per_patch(tokens, mask)
+        # Add the patch positions, then normalise: (batch, n_patches, embed_dim)
         tokens = self.layer_norm(
             tokens + self.positional_encoding[:, : tokens.shape[1]]
         )
@@ -768,8 +770,12 @@ class _SleepFMAttentionPooling(nn.Module):
 
     A set of one item skips the attention, as in the release. A set padded to one
     real item runs it, as in the release, unless ``pad_invariant``: then it is
-    that item, so the padding does not change a sample's output.
+    that item, so the padding does not change a sample's output. Input
+    ``(batch, items, emb)``, ``True`` in the optional ``(batch, items)`` mask for
+    padding; output ``(batch, emb)``.
     """
+
+    pad_invariant = False  # braindecode 2.0.0 pickles predate the flag
 
     def __init__(self, input_dim, num_heads, drop_prob, pad_invariant=False) -> None:
         super().__init__()
@@ -808,7 +814,10 @@ class _SleepFMAttentionPooling(nn.Module):
 
 
 class _SleepFMStagingHead(nn.Module):
-    """Modality attention pooling, Transformer and bidirectional LSTM per patch."""
+    """Modality pooling, positions, Transformer and bidirectional LSTM per patch.
+
+    ``(batch, modalities, patches, emb)`` -> ``(batch, patches, emb)``.
+    """
 
     def __init__(
         self, embed_dim, num_heads, num_layers, pooling_heads, drop_prob, max_seq_length
@@ -842,6 +851,7 @@ class _SleepFMStagingHead(nn.Module):
             temporal_mask = torch.zeros(
                 features.shape[:2], dtype=torch.bool, device=features.device
             )
+        # Add the patch positions, then normalise: (batch, patches, emb)
         features = self.layer_norm(
             features + self.positional_encoding[:, : features.shape[1]]
         )

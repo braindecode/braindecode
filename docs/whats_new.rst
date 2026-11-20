@@ -249,8 +249,8 @@ API and behavior changes
   (:gh:`1615` by `Bruno Aristimunha`_).
 
 - :class:`~braindecode.models.SleepFM` and :class:`~braindecode.models.SleepFMStager` take
-  ``ch_mask`` by keyword, ``True`` for real channels; ``channel_mask`` is deprecated until
-  2.2. SleepFM no longer attends over a lone real channel (:gh:`1603` by `Julien Gadonneix`_).
+  ``ch_mask`` by keyword, ``True`` for real channels; ``channel_mask`` is removed in 2.2.
+  SleepFM no longer attends over a lone real channel (:gh:`1603` by `Julien Gadonneix`_).
 - On Intel Gaudi, :func:`braindecode.functional.scaled_dot_product_attention` and
   :class:`braindecode.models.Labram` no longer call the Gaudi bridge's ``FusedSDPA``
   themselves: they call torch's SDPA on every device, which Habana's attention setting
