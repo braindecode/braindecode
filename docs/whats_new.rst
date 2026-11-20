@@ -227,23 +227,9 @@ API and behavior changes
   both montages on the fitted head origin for spherical-spline interpolation
   (:gh:`1615` by `Bruno Aristimunha`_).
 
-- :class:`braindecode.models.SleepFM` and :class:`braindecode.models.SleepFMStager`
-  take ``ch_mask``, ``True`` for real channels as in every other model and
-  :func:`braindecode.datasets.pad_channels_collate`, so they train on padded batches
-  of different montages. ``channel_mask`` (``True`` for missing channels) is
-  deprecated and will be removed in 2.2. Its existing position in
-  :meth:`~braindecode.models.SleepFM.encode` still warns and is read as
-  ``ch_mask=~channel_mask``. Pass ``ch_mask`` by keyword in both ``encode``
-  and ``forward``. Both models support mixed-precision training with padded
-  input channels. Under CPU autocast, the staging LSTM runs in its parameter
-  precision, so mixed-precision training also works on CPUs without a bfloat16
-  LSTM kernel (:gh:`1664` by `Bruno Aristimunha`_).
-  In :class:`~braindecode.models.SleepFM`, a recording with one real
-  channel among padded ones now gets the output it gets alone: the channel pooling
-  returns that channel's token, as for a one-channel input, instead of running the
-  attention over it. :class:`~braindecode.models.SleepFMStager`, whose channels sit
-  in fixed modality slots, keeps the release's pooling, and its outputs do not
-  change (:gh:`1603` by `Julien Gadonneix`_).
+- :class:`~braindecode.models.SleepFM` and :class:`~braindecode.models.SleepFMStager` take
+  ``ch_mask`` by keyword, ``True`` for real channels; ``channel_mask`` is removed in 2.2.
+  SleepFM no longer attends over a lone real channel (:gh:`1603` by `Julien Gadonneix`_).
 - On Intel Gaudi, :func:`braindecode.functional.scaled_dot_product_attention` and
   :class:`braindecode.models.Labram` no longer call the Gaudi bridge's ``FusedSDPA``
   themselves: they call torch's SDPA on every device, which Habana's attention setting
