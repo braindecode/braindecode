@@ -112,11 +112,6 @@ Enhancements
   same outputs and gradients, 28-38% less time forward and backward at CBraMod and
   LaBraM shapes on CPU and Apple MPS, and 17-44% shorter training steps of these models
   on Intel Gaudi2 (:gh:`1575` by `Bruno Aristimunha`_).
-- :class:`~braindecode.models.SignalJEPA`, :class:`~braindecode.models.LUNA`,
-  :class:`~braindecode.models.NeuroRVQTokenizer` and
-  :class:`~braindecode.models.TFMTokenizer` share their Intel Gaudi group
-  normalization implementation. Existing state dictionaries retain their
-  parameter names and pickles still load through the original model modules (:gh:`1642`).
 - :class:`braindecode.models.BIOT` returns its transformer tokens under
   ``"tokens"`` with ``return_features=True``, ``(batch, n_chans, n_patches,
   emb_size)`` and zero for padded channels, like CBraMod and LaBraM; they could
@@ -623,6 +618,9 @@ Code health
 - :class:`~braindecode.models.GCNsNet` fits its graph with the public ``fit_graph``,
   called once per fit by the estimators; it and :class:`~braindecode.models.DGCNN`
   share :class:`~braindecode.modules.ChebyshevGraphConv` (:gh:`1700` by `Bruno Aristimunha`_).
+- :class:`~braindecode.models.SignalJEPA`, :class:`~braindecode.models.LUNA`, the NeuroRVQ
+  models and :class:`~braindecode.models.TFMTokenizer` use :class:`torch.nn.GroupNorm`
+  instead of two private copies (:gh:`1642` by `Bruno Aristimunha`_).
 - The :class:`braindecode.datasets.TUHEvents` test builds its corpus under ``tmp_path`` and
   reads it with the public class; the private ``_TUHEventsMock`` and its table of synthetic
   paths leave the package (:gh:`1704` by `Bruno Aristimunha`_).

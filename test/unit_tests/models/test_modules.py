@@ -18,7 +18,6 @@ from torch import nn
 from torch.nn.utils.parametrize import register_parametrization
 
 from braindecode.functional import _real_dft, drop_path
-from braindecode.functional.functions import _group_norm_mean_var
 from braindecode.models.ifnet import _SpatioTemporalFeatureBlock
 from braindecode.models.labram import _SegmentPatch
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
@@ -46,7 +45,6 @@ from braindecode.modules import (
     TDSConvEncoder,
     TimeDistributed,
 )
-from braindecode.modules.layers import GroupNorm
 from braindecode.modules.quantization import EMACodebook
 
 
@@ -327,43 +325,6 @@ def test_reset_parameters():
 
     assert bn.bias.size(0) == num_channels
     assert torch.allclose(bn.bias, torch.zeros(num_channels))
-
-
-@pytest.mark.parametrize("shape,groups", [((7, 64, 10), 16), ((5, 32, 4, 6), 8)])
-@pytest.mark.parametrize("affine", [True, False])
-@pytest.mark.parametrize("implementation", ["eager", "scripted", "mean_var"])
-def test_group_norm_matches_torch(shape, groups, affine, implementation):
-    torch.manual_seed(0)
-    reference = nn.GroupNorm(groups, shape[1], affine=affine).double()
-    if affine:
-        with torch.no_grad():
-            reference.weight.normal_()
-            reference.bias.normal_()
-    norm = GroupNorm(groups, shape[1], affine=affine).double()
-    norm.load_state_dict(reference.state_dict(), strict=True)
-    if implementation == "scripted":
-        norm = torch.jit.script(norm)
-
-    # A strided input exercises the reshape used by the Gaudi implementation.
-    x = torch.randn(*shape, 2, dtype=torch.float64)[..., 0].requires_grad_()
-    xr = x.detach().requires_grad_()
-    if implementation == "mean_var":
-        actual = _group_norm_mean_var(x, groups, norm.weight, norm.bias, norm.eps)
-    else:
-        actual = norm(x)
-    expected = reference(xr)
-    delta = torch.randn_like(expected)
-    actual.backward(delta)
-    expected.backward(delta)
-    torch.testing.assert_close(actual, expected, rtol=1e-12, atol=1e-12)
-    torch.testing.assert_close(x.grad, xr.grad, rtol=1e-12, atol=1e-12)
-    if affine:
-        torch.testing.assert_close(
-            norm.weight.grad, reference.weight.grad, rtol=1e-12, atol=1e-12
-        )
-        torch.testing.assert_close(
-            norm.bias.grad, reference.bias.grad, rtol=1e-12, atol=1e-12
-        )
 
 
 def test_dense_spatial_filter_forward_collapse_false():

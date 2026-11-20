@@ -20,7 +20,6 @@ from braindecode.functional import (
     sinusoidal_positional_encoding,
 )
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.layers import GroupNorm as _GroupNorm
 
 _DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.1875s, stride 1s
     (8, 32, 8),
@@ -1397,6 +1396,13 @@ class _ConvFeatureEncoder(nn.Sequential):
         is_group_norm=False,
         conv_bias=False,
     ):
+        """Convolution, dropout, optional normalisation and activation.
+
+        ``(batch * channels, in_channels, time)`` becomes
+        ``(batch * channels, out_channels, time_out)``. ``is_group_norm`` gives every
+        output channel its own group, so each is normalised over time;
+        ``is_layer_norm`` normalises over the channels at each time step.
+        """
         assert not (is_layer_norm and is_group_norm), (
             "layer norm and group norm are exclusive"
         )
@@ -1424,7 +1430,7 @@ class _ConvFeatureEncoder(nn.Sequential):
             return nn.Sequential(
                 conv,
                 nn.Dropout(p=drop_prob),
-                _GroupNorm(output_channels, output_channels, affine=True),
+                nn.GroupNorm(output_channels, output_channels, affine=True),
                 activation(),
             )
         else:
@@ -1432,6 +1438,10 @@ class _ConvFeatureEncoder(nn.Sequential):
 
     def n_times_out(self, n_times):
         return _n_times_out(self.conv_layers_spec, n_times)
+
+
+# Full-model pickles use the former class name in this module.
+_GroupNorm = nn.GroupNorm
 
 
 class _ChannelEmbedding(nn.Embedding):

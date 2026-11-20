@@ -10,13 +10,12 @@ import torch.nn.functional as F
 from torch import nn
 
 from braindecode.functional import spectral_input
-from braindecode.functional.functions import (
-    _group_norm_mean_var as _group_norm_mean_var,
-)
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.layers import GroupNorm as _GroupNorm
 from braindecode.modules.linear_attention import LinearAttentionTransformer
 from braindecode.modules.quantization import EMACodebook
+
+# Full-model pickles use the former class name in this module.
+_GroupNorm = nn.GroupNorm
 
 
 class TFMTokenizerOutput(NamedTuple):
@@ -233,16 +232,20 @@ class TFMTokenizer(EEGModuleMixin, nn.Module, license="mit"):
             )
 
         def conv_block(kernel_size, stride, out_dim):
+            # (batch, 1, length) -> (batch, out_dim, n_steps), with
+            # n_steps = (length - kernel_size) // stride + 1: a strided convolution,
+            # then two pointwise ones, each followed by an activation and a
+            # GroupNorm with ``embed_dim // 4`` groups.
             return nn.Sequential(
                 nn.Conv1d(1, embed_dim, kernel_size=kernel_size, stride=stride),
                 activation(),
-                _GroupNorm(embed_dim // 4, embed_dim),
+                nn.GroupNorm(embed_dim // 4, embed_dim),
                 nn.Conv1d(embed_dim, embed_dim, kernel_size=1),
                 activation(),
-                _GroupNorm(embed_dim // 4, embed_dim),
+                nn.GroupNorm(embed_dim // 4, embed_dim),
                 nn.Conv1d(embed_dim, out_dim, kernel_size=1),
                 activation(),
-                _GroupNorm(embed_dim // 4, out_dim),
+                nn.GroupNorm(embed_dim // 4, out_dim),
             )
 
         freq_width = embed_dim // (2 * n_freq_groups)

@@ -17,7 +17,6 @@ from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
 from braindecode.functional import drop_path, sinusoidal_positional_encoding
-from braindecode.functional.functions import _group_norm_mean_var
 
 
 class Ensure4d(nn.Module):
@@ -574,23 +573,6 @@ class ChannelMerger(nn.Module):
         weights = torch.softmax(scores, dim=2).nan_to_num().masked_fill(empty, 0.0)
         # (B, out, n_chans) @ (B, n_chans, T) -> (B, out, T)
         return weights @ x.masked_fill(excluded[:, :, None], 0.0)
-
-
-class GroupNorm(nn.GroupNorm):
-    """Group normalization with a mean/variance implementation for Intel Gaudi.
-
-    The native backward on Gaudi can recompile graphs on each invocation or
-    exceed the compiler's SRAM limit on large batches. On Gaudi this layer
-    computes each group's mean and biased variance with primitive operations.
-    CPU, CUDA and TorchScript use PyTorch's group normalization directly.
-    """
-
-    def forward(self, x: Tensor) -> Tensor:
-        if not torch.jit.is_scripting() and x.device.type == "hpu":
-            return _group_norm_mean_var(
-                x, self.num_groups, self.weight, self.bias, self.eps
-            )
-        return F.group_norm(x, self.num_groups, self.weight, self.bias, self.eps)
 
 
 @torch.jit.unused

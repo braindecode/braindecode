@@ -21,7 +21,6 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.labram import _Attention
 from braindecode.models.util import _in_model_resample
 from braindecode.modules import MLP, PatchTokenizer, PreNormBlock
-from braindecode.modules.layers import GroupNorm as _GroupNorm
 
 # Channel order used to train NeuroRVQ-EEG v1. Keep in sync with the released
 # inference module: https://github.com/KonstantinosBarmpas/NeuroRVQ
@@ -254,7 +253,13 @@ def _stack_scales(x: Tensor, dropout: bool) -> bool:
 
 
 class _MultiScaleTemporalConv(nn.Module):
-    """Released four-branch patch embedding; ``kernels`` = (first, second) rows."""
+    """Released four-branch patch embedding; ``kernels`` = (first, second) rows.
+
+    Each branch takes ``(batch, 1, n_chans * n_patches, patch_size)`` through two
+    stages: a 2D convolution, a GroupNorm with 4 groups, the activation and an
+    average pooling over time (by 2, then by 4). Every branch returns
+    ``(batch, n_chans * n_patches, time_out * out_chans)``.
+    """
 
     def __init__(self, out_chans: int, activation: type[nn.Module], kernels):
         super().__init__()
@@ -264,7 +269,7 @@ class _MultiScaleTemporalConv(nn.Module):
                 f"conv1_{i}",
                 nn.Conv2d(1, out_chans, (1, kernel), padding=(0, kernel // 2)),
             )
-            setattr(self, f"norm1_{i}", _GroupNorm(4, out_chans))
+            setattr(self, f"norm1_{i}", nn.GroupNorm(4, out_chans))
             setattr(self, f"pool1_{i}", nn.AvgPool2d((1, 2)))
         for i, kernel in enumerate(kernels[1], start=1):
             setattr(
@@ -272,7 +277,7 @@ class _MultiScaleTemporalConv(nn.Module):
                 f"conv2_{i}",
                 nn.Conv2d(out_chans, out_chans, (1, kernel), padding=(0, kernel // 2)),
             )
-            setattr(self, f"norm2_{i}", _GroupNorm(4, out_chans))
+            setattr(self, f"norm2_{i}", nn.GroupNorm(4, out_chans))
             setattr(self, f"pool2_{i}", nn.AvgPool2d((1, 4)))
         self.gelu1 = activation()
         self.gelu2 = activation()
