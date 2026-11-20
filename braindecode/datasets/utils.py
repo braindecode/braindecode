@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import numpy as np
 from mne.datasets import fetch_dataset
 
 from .bids import BIDSDataset
@@ -108,12 +107,10 @@ class _ZenodoBIDSDataset(BIDSDataset):
         dataset = super()._get_dataset(bids_path)
         # These events.tsv name each event in ``eventType``, not ``trial_type``:
         # mne-bids labels every event "n/a" and keeps ``eventType`` in the extras.
-        # Before mne 1.13, a list assigned here stays a list and breaks
-        # mne.events_from_annotations, so assign an array.
         annotations = dataset.raw.annotations
         names = []
         for description, extras in zip(annotations.description, annotations.extras):
             event_type = extras.get("eventType")
             names.append(description if event_type in (None, "", "n/a") else event_type)
-        annotations.description = np.asarray(names, dtype=str)
+        annotations.description = names
         return dataset

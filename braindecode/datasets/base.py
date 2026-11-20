@@ -225,7 +225,8 @@ def _split_channel_targets(X, info, last_target_only):
     The targets are the ``misc`` channels of ``info`` (an ``mne.Info`` or the stored
     one, so a lazy recording is not read): their last sample ``(n_misc,)`` if
     ``last_target_only``, else all of them ``(n_misc, n_times)``. The signal keeps
-    the other rows ``(n_chans - n_misc, n_times)``.
+    the other rows ``(n_chans - n_misc, n_times)``. Raises ``ValueError`` if
+    ``info`` has no ``misc`` channel.
 
     Returns
     -------
@@ -234,6 +235,11 @@ def _split_channel_targets(X, info, last_target_only):
     """
     misc_mask = _misc_mask(info)
     y = X[misc_mask, -1] if last_target_only else X[misc_mask]
+    if not len(y):
+        raise ValueError(
+            "targets_from='channels' needs a misc channel, but this window has "
+            "none (was it removed by preprocessing?)"
+        )
     return X[~misc_mask], y
 
 

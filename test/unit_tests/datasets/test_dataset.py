@@ -1363,20 +1363,3 @@ def test_channel_targets_follow_a_transform_returning_tensors(use_mne_epochs):
     X, y, _ = windows[1]
     torch.testing.assert_close(X, torch.as_tensor(data[:2, 5:10], dtype=torch.float32))
     torch.testing.assert_close(y, torch.tensor([data[2, 9]], dtype=torch.float32))
-
-
-def test_eeg_windows_preloaded_epochs_not_sliced_as_raw():
-    """A preloaded ``mne.Epochs`` is not cut as a 2-D raw array."""
-    info = mne.create_info(3, 100.0, "eeg")
-    epochs = mne.EpochsArray(np.zeros((5, 3, 100)), info, verbose=False)
-    metadata = pd.DataFrame(
-        {
-            "i_window_in_trial": range(5),
-            "i_start_in_trial": [0] * 5,
-            "i_stop_in_trial": [100] * 5,
-            "target": [0] * 5,
-        }
-    )
-    ds = EEGWindowsDataset(epochs, metadata)
-    with pytest.raises(TypeError):
-        ds[0]

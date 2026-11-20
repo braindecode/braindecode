@@ -230,7 +230,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self.encoder = _TransformerEncoder(encoder_layer, num_layers=n_layer)
         self.proj_out = nn.Sequential(nn.Linear(d_model, emb_dim))
 
-        self._d_model = d_model
         self._patch_size = patch_size
         self._encoder_output = return_encoder_output
         self._init_parameters()
@@ -262,7 +261,8 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self._encoder_output = False
         if self._knows_geometry():
             n_patch = self._n_patch()
-            flat_dim = self.n_chans * n_patch * self._d_model
+            # proj_out reads the encoder output, whose size is d_model.
+            flat_dim = self.n_chans * n_patch * self.proj_out[0].in_features
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.Linear(flat_dim, n_outputs)
             )
@@ -312,13 +312,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         if self._n_chans_for_jit is not None and not (
             return_features or self._encoder_output
         ):
-            check_n_chans(
-                x,
-                self._n_chans_for_jit,
-                "CBraMod",
-                "build the model with the chs_info of this montage, or use a "
-                "channel_strategy.",
-            )
+            check_n_chans(x, self._n_chans_for_jit, "CBraMod")
         key_padding_mask: Optional[Tensor] = None
         if ch_mask is not None:
             if not return_features and not self._encoder_output:

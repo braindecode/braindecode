@@ -314,12 +314,7 @@ class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
         torch.Tensor
             Output tensor of shape (batch_size, n_outputs).
         """
-        check_n_chans(
-            x,
-            self.n_chans,
-            "MEDFormer",
-            "build the model with the chs_info of this montage.",
-        )
+        check_n_chans(x, self.n_chans, "MEDFormer")
         # Embedding
         enc_out = self.enc_embedding(x)
         enc_out, _ = self.encoder(enc_out, attn_mask=None)

@@ -2394,3 +2394,18 @@ def test_channel_targets_require_a_misc_channel(tmp_path, types, kwargs):
     path.write_text(json.dumps([[name, {**settings, "targets_from": "channels"}]]))
     with pytest.raises(ValueError, match="misc channel"):
         load_concat_dataset(tmp_path, preload=False)
+
+
+@pytest.mark.parametrize("use_mne_epochs", [True, False])
+def test_channel_targets_raise_after_preprocessing_drops_misc(use_mne_epochs):
+    info = mne.create_info(["C3", "target"], 100, ["eeg", "misc"])
+    raw = mne.io.RawArray(np.zeros((2, 20)), info, verbose=False)
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw)]),
+        window_size_samples=5,
+        targets_from="channels",
+        use_mne_epochs=use_mne_epochs,
+    )
+    preprocess(windows, [Preprocessor("pick", picks="eeg", apply_on_array=False)])
+    with pytest.raises(ValueError, match="misc"):
+        _ = windows[0]
