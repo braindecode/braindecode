@@ -113,6 +113,17 @@ class VEMG2Pose(
     The rehosted weights reproduce the reference implementation exactly and
     remain under emg2pose's CC BY-NC-SA 4.0 license.
 
+    .. rubric:: Cropped regression with EEGRegressor
+
+    ``forward`` returns ``(batch, time - left_context, joints)``. Train it as
+    :class:`~braindecode.models.NeuroPose` does, with
+    ``nn.Sequential(VEMG2Pose(...), Rearrange("b t j -> b j t"))`` in an
+    :class:`~braindecode.EEGRegressor` with ``cropped=True`` and
+    :class:`~braindecode.training.TimeSeriesLoss`. The loss selects the matching
+    suffix of each window's targets. Use a window stride of at most
+    ``n_times - left_context``, so that consecutive predictions cover the trial
+    without gaps.
+
     .. versionadded:: 1.8
 
     Parameters
@@ -417,8 +428,9 @@ class VEMG2Pose(
         valid_seconds = (n_times - self.left_context) / self.input_sfreq
         # int(): TorchScript's round() returns a float, which interpolate rejects.
         n_steps = max(1, int(round(valid_seconds * self.rollout_rate)))
+        # align_corners=True as in emg2pose's pose_modules.py.
         features = F.interpolate(
-            features, size=n_steps, mode="linear", align_corners=False
+            features, size=n_steps, mode="linear", align_corners=True
         )
 
         # Steps taken as position before switching to velocity integration.

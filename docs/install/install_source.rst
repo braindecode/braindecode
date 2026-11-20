@@ -52,14 +52,14 @@ You could also install optional dependency, like to import datasets from MOABB.
 
 .. code-block:: bash
 
-    pip install -e .[moabb]
+    pip install -e ".[moabb]"
 
 There is also optional dependencies for unit testing and building documentation, you
 could install them if you want to contribute to Braindecode.
 
 .. code-block:: bash
 
-    pip install -e .[all]
+    pip install -e ".[all]"
 
 #########################################
  Testing if your installation is working
@@ -70,7 +70,7 @@ command:
 
 .. code-block:: console
 
-    python -m "import braindecode; braindecode.__version__"
+    python -c "import braindecode; print(braindecode.__version__)"
 
 For more information, please see the `contribution guide
 <braindecode-contribution-guide_>`_.

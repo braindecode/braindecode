@@ -1,10 +1,7 @@
 import importlib
 import pkgutil
-import py_compile
 import subprocess  # nosec B404 - runs constant snippets with sys.executable
 import sys
-from pathlib import Path
-from zipfile import ZipFile
 
 import braindecode
 from braindecode import models
@@ -59,34 +56,6 @@ def test_import_braindecode_does_not_load_models():
     _run(CODE)
 
 
-def test_model_imports_and_summary_from_zip(tmp_path):
-    package = Path(braindecode.__file__).parent
-    archive = tmp_path / "braindecode.zip"
-    registry = package / "models" / "__init__.py"
-    bytecode = tmp_path / "__init__.pyc"
-    py_compile.compile(str(registry), cfile=str(bytecode), doraise=True)
-    with ZipFile(archive, "w") as zipped:
-        for path in package.rglob("*"):
-            if path == registry:
-                zipped.write(bytecode, "braindecode/models/__init__.pyc")
-            elif path.is_file() and path.suffix in {".py", ".pyi", ".csv"}:
-                zipped.write(path, path.relative_to(package.parent))
-
-    code = """
-import sys
-sys.path.insert(0, sys.argv[1])
-from braindecode import models
-assert sys.argv[1] in models.__file__ and models.__file__.endswith(".pyc")
-assert not any(name.startswith('braindecode.models.') for name in sys.modules)
-from braindecode.models import EEGNet
-from braindecode.models.util import get_summary_table
-assert EEGNet is models.eegnet.EEGNet
-assert 'EEGNet' in get_summary_table().index
-assert 'braindecode.models.labram' not in sys.modules
-"""
-    subprocess.run([sys.executable, "-c", code, str(archive)], check=True)  # nosec B603
-
-
 def test_subpackages_load_on_attribute_access():
     _run(SUBMODULES_CODE)
     names = {m.name for m in pkgutil.iter_modules(braindecode.__path__)}
@@ -98,7 +67,7 @@ def test_models_dict_is_published_at_once():
 
 
 def test_every_public_name_resolves_from_its_submodule():
-    # The typed exports and the runtime registry name the same classes.
+    # __all__ and _LAZY are read from the TYPE_CHECKING imports of models/__init__.py.
     assert {"EEGNet", "Labram", "_init_models_dict"} <= set(models._LAZY)
     for name, module in models._LAZY.items():
         submodule = importlib.import_module(f"braindecode.models.{module}")

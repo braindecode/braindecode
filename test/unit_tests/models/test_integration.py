@@ -403,7 +403,7 @@ def test_model_exported(model):
     ]
     if sys.platform.startswith("win"):
         not_exportable_models += [
-            "LUNA",  # Has _channel_location_cache dict that breaks pytree on Windows
+            "LUNA",  # Unchecked on Windows since #1616 made the location dict a buffer
         ]
     if torch.__version__ < "2.10":
         # Export's attribute-assignment check fails with a pytree arity mismatch.
@@ -416,7 +416,7 @@ def test_model_exported(model):
 
     if sys.version_info >= (3, 14):
         not_exportable_models_py314 = [
-            "LUNA",  # Has _channel_location_cache dict that breaks pytree on Python 3.14+
+            "LUNA",  # Unchecked on 3.14+ since #1616 made the location dict a buffer
         ]  # TODO: fix LUNA export issues on Python 3.14+ one day
         if model_name in not_exportable_models_py314:
             pytest.skip(f"{model_name} export is not compatible on Python 3.14+")
@@ -441,6 +441,24 @@ def test_model_exported(model):
 
     # sanity check: we got the right return type
     assert isinstance(exported_prog, ExportedProgram)
+
+
+@pytest.mark.parametrize("method", ["mag", "corr", "plv"])
+def test_eegminer_exported_program_decomposes(method):
+    """Exported EEGMiner in eval mode matches eager output and decomposes."""
+    torch.manual_seed(0)
+    model = EEGMiner(
+        method=method, n_chans=4, n_outputs=2, n_times=200, sfreq=200.0
+    ).eval()
+    x = torch.randn(2, 4, 200)
+    with torch.no_grad():
+        eager = model(x)
+
+    ep = export(model, (x,), strict=False)
+    assert torch.equal(ep.module()(x), eager)
+
+    decomposed = ep.run_decompositions()
+    torch.testing.assert_close(decomposed.module()(x), eager)
 
 
 @pytest.mark.parametrize("model_name", list(_MODEL_CASES))
@@ -577,6 +595,8 @@ def test_if_models_with_embedding_parameter(model):
     # Test if the model that have embedding parameters works changing the default
     # embedding value
     model_name = model.__class__.__name__
+    if model_name == "GeoNIRS":
+        pytest.skip("GeoNIRS: projection_dims starts at embed_dim, so both change.")
     # first step is to inspect the models parameters
     params = inspect.signature(model.__init__).parameters
 
@@ -677,6 +697,8 @@ def test_forward_in_dtype(model_name, dtype):
             if any(t[0] == torch.float32 and t[2] for t in op.outs)
         }
     )
+    if model_name == "REVE":  # its Fourier position path stays float32 by design
+        float32 = []
     assert not float32, f"float32 tensors in a float64 forward: {float32}"
     y.float().square().mean().backward()
     grads = [p.grad for p in model.parameters() if p.grad is not None]

@@ -49,15 +49,12 @@ class _ConvBlock(nn.Module):
 
 
 class SimpleConv(nn.Module):
-    """Dilated conv front-end (Defossez lineage), parity-gated.
+    """Dilated temporal convolutional front end used by DANCE.
 
-    No BatchNorm, no input/conv dropout, no skip in the DANCE config
-    (verified from upstream ``_default_encoder_config``). ``activation``
-    defaults to ``nn.ReLU`` to match upstream. Owns an OPTIONAL nested
-    ``ChannelMerger`` (``self.merger``) applied first, mirroring
-    ``neuraltrain.models.simpleconv.SimpleConvModel`` so the call path and
-    state_dict keys (``merger.*``, ``initial_linear.*``, ``sequence.{k}.*``)
-    align with upstream for parity.
+    The optional :class:`~braindecode.modules.ChannelMerger` projects the
+    electrodes to virtual channels before the 1x1 input projections. The
+    temporal convolutions preserve the input length and apply the chosen
+    activation between blocks. DANCE uses :class:`~torch.nn.ReLU`.
     """
 
     def __init__(
@@ -77,8 +74,6 @@ class SimpleConv(nn.Module):
         super().__init__()
         if dilation_growth > 1 and kernel_size % 2 == 0:
             raise ValueError("Odd kernel required with dilation.")
-        # Optional nested merger; when present the conv blocks consume its
-        # out_channels (upstream sets in_channels = merger.n_virtual_channels).
         self.merger = merger
         conv_in = merger.heads.shape[0] if merger is not None else in_channels
         layers: list[nn.Module] = []
@@ -88,8 +83,7 @@ class SimpleConv(nn.Module):
         self.initial_linear = nn.Sequential(*layers)
         sizes = [initial_linear] + [hidden] * (depth - 1) + [out_channels]
         blocks = []
-        # Match ConvSequence: dilation starts at 1.0, int() per block, then
-        # multiply by dilation_growth AFTER each block (no dilation_period reset).
+        # Each block uses the integer part of the accumulated dilation.
         dilation = 1.0
         for i in range(depth):
             d = int(dilation)
@@ -99,9 +93,8 @@ class SimpleConv(nn.Module):
             )
             dilation = dilation * dilation_growth
         self.sequence = nn.ModuleList(blocks)
-        # Dilation of the LAST block, read from the built conv stack so it
-        # reflects the int-cumulative ConvSequence schedule (Global Constraint
-        # line 22) rather than the power-form ``int(growth ** (depth - 1))``.
+        # Dilation of the last block, read from the built stack so it follows
+        # the cumulative integer schedule rather than ``int(growth ** (depth - 1))``.
         self.max_dilation = self.sequence[-1].conv.dilation[0]
 
     def forward(
@@ -121,21 +114,6 @@ class SimpleConv(nn.Module):
         if x.shape[-1] < length:
             raise ValueError(f"Expected output time dim >= {length}, got {x.shape[-1]}")
         return x[..., :length]
-
-
-def _fourier_encode(x, max_freq: float, num_bands: int):
-    # Transcribed verbatim from dance/dance/models/perceiver.py:14-21
-    # (== perceiver_pytorch.fourier_encode). x: (...); returns
-    # (..., 2*num_bands + 1): [sin(num_bands), cos(num_bands), original_position].
-    x = x.unsqueeze(-1)
-    orig = x  # keep the raw position; appended as the final channel
-    scales = torch.linspace(
-        1.0, max_freq / 2, num_bands, device=x.device, dtype=x.dtype
-    )
-    scales = scales.reshape([1] * (x.dim() - 1) + [num_bands])
-    x = x * scales * math.pi
-    x = torch.cat([x.sin(), x.cos()], dim=-1)
-    return torch.cat((x, orig), dim=-1)
 
 
 class _FeedForward(nn.Module):
@@ -200,8 +178,9 @@ class _Attention(nn.Module):
 class Perceiver(nn.Module):
     """Perceiver cross-attention bottleneck to a fixed latent grid.
 
-    Re-implemented from ``perceiver_pytorch`` 0.9.0 (parity-gated). Latents are
-    sinusoidally initialized; inputs are fourier-encoded along the time axis.
+    Adapted from ``perceiver_pytorch`` 0.9.0. The learnable latents start
+    on a sinusoidal grid. At each layer they cross-attend to the signal
+    features and their Fourier-encoded time positions.
     """
 
     def __init__(
@@ -221,8 +200,8 @@ class Perceiver(nn.Module):
         super().__init__()
         self.max_freq = max_freq
         self.num_freq_bands = num_freq_bands
-        fourier_dim = num_freq_bands * 2 + 1  # = 13
-        context_dim = input_dim + fourier_dim  # = 141
+        fourier_dim = num_freq_bands * 2 + 1
+        context_dim = input_dim + fourier_dim
         self.latents = nn.Parameter(torch.randn(num_latents, latent_dim))
         with torch.no_grad():
             self.latents.copy_(sinusoidal_positional_encoding(num_latents, latent_dim))
@@ -264,19 +243,20 @@ class Perceiver(nn.Module):
         self.to_logits = nn.Identity()
 
     def forward(self, data: torch.Tensor) -> torch.Tensor:
-        # data: (B, T, input_dim). input_axis=1 -> single time axis.
-        # Transcribed from dance _Perceiver.forward (perceiver.py:50-79):
-        # meshgrid over the 1 axis, fourier-encode, rearrange "... n d -> ... (n d)".
         b, t, _ = data.shape
-        axis_pos = [
-            torch.linspace(-1.0, 1.0, steps=t, device=data.device, dtype=data.dtype)
-        ]
-        pos = torch.stack(torch.meshgrid(axis_pos, indexing="ij"), dim=-1)  # (T, 1)
-        enc_pos = _fourier_encode(pos, self.max_freq, self.num_freq_bands)  # (T,1,13)
-        enc_pos = enc_pos.flatten(-2)  # (T, 13)
-        enc_pos = enc_pos.unsqueeze(0).expand(b, -1, -1)  # (B, T, 13)
-        data = torch.cat((data, enc_pos), dim=-1)  # (B, T, 141)
-        data = data.reshape(b, -1, data.shape[-1])  # (B, T, 141)
+        time = torch.linspace(
+            -1.0, 1.0, steps=t, device=data.device, dtype=data.dtype
+        ).unsqueeze(-1)
+        bands = torch.linspace(
+            1.0,
+            self.max_freq / 2,
+            self.num_freq_bands,
+            device=data.device,
+            dtype=data.dtype,
+        )
+        angles = time * bands * math.pi
+        positions = torch.cat((angles.sin(), angles.cos(), time), dim=-1)
+        data = torch.cat((data, positions.expand(b, -1, -1)), dim=-1)
         x = self.latents.unsqueeze(0).expand(b, -1, -1)
         # Each layer is (cross_attn, cross_ff, [(self_attn, self_ff), ...]).
         for layer in self.layers:
@@ -312,12 +292,12 @@ class _DecoderLayer(nn.Module):
 class DanceDetrDecoder(nn.Module):
     """DETR cross-attention decoder emitting per-query event spans.
 
-    Re-implemented with inline pre-norm self-/cross-attention; bit-exact parity
-    with x_transformers' ScaleNorm/rotary/scale_residual block is NOT a goal
-    (see plan Global Constraints). ``center``/``duration`` heads are dropped.
-
-    Note: ``activation`` is accepted for interface symmetry but the feed-forward
-    hardwires GEGLU (see :class:`_FeedForward`); changing it has no effect.
+    The event queries attend to the sinusoidally encoded Perceiver memory.
+    Each layer uses pre-normalized self-attention, cross-attention and a
+    GEGLU feed-forward network. This adaptation predicts class logits and
+    independent sigmoid start and end coordinates. The published DANCE
+    decoder also predicts event centers and durations. The ``activation``
+    argument is retained for compatibility and the feed-forward layers use GEGLU.
     """
 
     def __init__(
