@@ -12,13 +12,13 @@ import pytest
 from braindecode.datasets.tuh import (
     _TUH_EEG_ABNORMAL_PATHS,
     _TUH_EEG_PATHS,
+    TUH,
     TUHAbnormal,
     TUHEvents,
     _create_description,
     _fake_raw,
     _get_header,
     _parse_description_from_file_path,
-    _read_physician_report,
     _sort_chronologically,
     _TUHAbnormalMock,
     _TUHMock,
@@ -412,27 +412,35 @@ def test_tuh_date_fif_cannot_store_stays_in_description(tmp_path, date, year):
     assert reloaded.datasets[0].raw.info["meas_date"] is None
 
 
+@pytest.mark.skipif(platform.system() == "Windows", reason="Not supported on Windows")
 @pytest.mark.parametrize(
     "files, report",
     [
         pytest.param(
-            {"aaaaaaav_s004.txt": "Session A, résumé".encode("latin-1")},
+            {"00000021_s004.txt": "Session A, résumé".encode("latin-1")},
             "Session A, résumé",
             id="session-file",
         ),
-        pytest.param({"aaaaaaav_s004_t000_date.txt": b"{}"}, None, id="only-date-file"),
+        pytest.param({"00000021_s004_t000_date.txt": b"{}"}, None, id="only-date-file"),
         pytest.param({}, None, id="none"),
     ],
 )
-def test_tuh_report_matches_session_name(tmp_path, files, report):
+def test_tuh_report_matches_session_name(tmp_path, monkeypatch, files, report):
     """A recording takes the report named after its session, not a `_date.txt`
     side file nor the report of another session in the same directory."""
-    (tmp_path / "aaaaaaaw_s001.txt").write_text("Session B")
+    session_dir = tmp_path / "v1.2.0/edf/01_tcp_ar/000/00000021/s004_2013_08_15"
+    session_dir.mkdir(parents=True)
+    # TUH reads age and gender from the first 88 bytes of the EDF header.
+    edf = session_dir / "00000021_s004_t000.edf"
+    edf.write_bytes(b"0       synthetic F 01-JAN-0000 sample Age:36".ljust(88))
+    (session_dir / "00000022_s001.txt").write_text("Session B")
     for name, content in files.items():
-        (tmp_path / name).write_bytes(content)
-    edf = tmp_path / "aaaaaaav_s004_t000.edf"
-    if report is None:
-        with pytest.raises(RuntimeError, match="Could not read physician report"):
-            _read_physician_report(edf)
-    else:
-        assert _read_physician_report(edf) == report
+        (session_dir / name).write_bytes(content)
+    monkeypatch.setattr("mne.io.read_raw_edf", _fake_raw)
+    with pytest.warns(UserWarning, match="Could not verify that the number of files"):
+        if report is None:
+            with pytest.raises(RuntimeError, match="Could not read physician report"):
+                TUH(str(tmp_path), version="v1.2.0", add_physician_reports=True)
+        else:
+            tuh = TUH(str(tmp_path), version="v1.2.0", add_physician_reports=True)
+            assert tuh.description["report"].tolist() == [report]

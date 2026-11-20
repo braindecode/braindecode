@@ -244,9 +244,9 @@ API and behavior changes
   Before, a seizure could have the same name as background (:gh:`1650` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
-- Braindecode now requires MNE-Python 1.13.0 or later: REVE's position bank uses MNE's
-  ``colin27_*`` montages, which MNE 1.13 renamed from ``standard_*``
-  (:gh:`1615` by `Bruno Aristimunha`_).
+- Braindecode now requires MNE-Python 1.13.0 or later, whose spherical-spline interpolation
+  centres both montages on the fitted head origin; ``standard_*`` montage names resolve to the
+  ``colin27_*`` names MNE 1.13 gives them (:gh:`1615` by `Bruno Aristimunha`_).
 
 - :class:`braindecode.models.SleepFM` and :class:`braindecode.models.SleepFMStager`
   take ``ch_mask``, ``True`` for real channels as in every other model and
