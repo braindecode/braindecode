@@ -672,6 +672,9 @@ Bug fixes
 Code health
 ============
 
+- :class:`braindecode.models.Deep4Net`, :class:`~braindecode.models.ShallowFBCSPNet`,
+  :class:`~braindecode.models.EEGNet`, :class:`~braindecode.models.EEGITNet` and the CTC models
+  size their heads by arithmetic, not by a forward pass at construction (:gh:`1694`).
 - Put the default three-channel test montage with the model fixtures, and
   share canonical channel conversion between the LaBraM and BENDR entries in
   ``models_mandatory_parameters`` (:gh:`1665` by `Bruno Aristimunha`_).
