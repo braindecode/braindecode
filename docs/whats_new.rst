@@ -525,10 +525,9 @@ Bug fixes
   Nonfinite values in excluded electrodes no longer leak into the merged signal
   (:gh:`1617` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.ZUNA` defaults to ``pos_bins=100``, the value ZUNA1.1 was trained with (paper Table II and Zyphra's configs); the old default ``50`` was ZUNA1's and gave the released encoder outputs up to 5.2 away from the original. The ``braindecode/ZUNA`` checkpoint now holds the ZUNA1.1 encoder in braindecode's parameter names (the earlier ZUNA1 file loaded no parameter into the class) and sets ``pos_bins`` in its config (:gh:`1557` by `Bruno Aristimunha`_).
-- :class:`~braindecode.models.STEEGFormer` keeps the saved montage's channel slots
-  on a local checkpoint reload, including when the channel vocabulary is offline.
-  Passing new ``chs_info`` to ``from_pretrained`` resolves the new montage.
-  Model configs also retain MNE's channel coordinate frame (:gh:`1631`).
+- Model configs keep each channel's MNE ``coord_frame``. A
+  :class:`~braindecode.models.STEEGFormer` built on channels outside the head frame
+  reloads with the slots it was built with (:gh:`1631` by `Bruno Aristimunha`_).
 - ``from_pretrained`` of :class:`braindecode.models.Brant` loads a checkpoint at
   a shorter ``n_times``: the learned temporal positions keep the checkpoint's
   leading ones instead of raising a size mismatch

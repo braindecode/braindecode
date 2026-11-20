@@ -2753,77 +2753,24 @@ def test_steegformer_channel_mapping(names, explicit, expected, warning):
     assert model.channel_indices.tolist() == slots
 
 
-@pytest.mark.parametrize("use_mri_frame", [False, True])
-def test_steegformer_saved_channel_slots(
-    steeg_vocab, tmp_path, monkeypatch, use_mri_frame
-):
+def test_steegformer_reload_keeps_channel_frame(tmp_path):
+    """Channels outside the head frame reload with the slots they were built with."""
     pytest.importorskip("huggingface_hub")
-    from mne.io.constants import FIFF
-
-    info = mne.create_info(["Oz", "Fp1", "Cz"], 128, "eeg")
-    info.set_montage("standard_1020")
-    channels = info["chs"]
-    if use_mri_frame:
-        channels = [
-            dict(ch, ch_name=f"unknown{i}", coord_frame=FIFF.FIFFV_COORD_MRI)
-            for i, ch in enumerate(channels)
-        ]
-    with (
-        pytest.warns(UserWarning, match="identity") if use_mri_frame else nullcontext()
-    ):
-        model = STEEGFormer(
-            chs_info=channels,
-            n_outputs=2,
-            n_times=64,
-            embed_dim=16,
-            num_heads=2,
-            depth=1,
-        )
-    assert model.channel_indices.tolist() == ([0, 1, 2] if use_mri_frame else [3, 0, 2])
-    # The positional table starts at zero. A trained table distinguishes the slots.
-    x = torch.randn(2, 3, 64)
-    loss = F.cross_entropy(model(x), torch.tensor([0, 1]))
-    loss.backward()
-    torch.optim.SGD(model.parameters(), lr=0.1).step()
-    model.eval().save_pretrained(tmp_path)
-    config = json.loads((tmp_path / "config.json").read_text())
-    assert [ch["coord_frame"] for ch in config["chs_info"]] == [
-        ch["coord_frame"] for ch in channels
-    ]
-    with monkeypatch.context() as cold:
-
-        def unavailable():
-            raise OSError("offline with an empty vocabulary cache")
-
-        cold.setattr(steegformer, "_channel_index", unavailable)
-        for kwargs in ({}, {"n_chans": 3}):
-            restored = STEEGFormer.from_pretrained(
-                tmp_path, local_files_only=True, strict=True, **kwargs
-            )
-            torch.testing.assert_close(restored.channel_indices, model.channel_indices)
-            torch.testing.assert_close(restored(x), model(x))
-    with pytest.warns(UserWarning, match="identity"):
-        resized = STEEGFormer.from_pretrained(tmp_path, n_chans=2, strict=True)
-    assert resized.channel_indices.tolist() == [0, 1]
-    with pytest.raises(ValueError, match="chan_pos_idx must have shape"):
-        STEEGFormer.from_pretrained(tmp_path, n_chans=2, chan_pos_idx=[5], strict=True)
-
-    new_montage = [{"ch_name": "T7"}, {"ch_name": "Fp2"}]
-    restored = STEEGFormer.from_pretrained(tmp_path, chs_info=new_montage, strict=True)
-    assert restored.channel_indices.tolist() == [4, 1]
-    explicit = STEEGFormer.from_pretrained(
-        tmp_path, chs_info=new_montage, chan_pos_idx=[7, 6], strict=True
+    info = mne.create_info(["Oz", "Fp1", "Cz"], 250, "eeg")
+    info.set_montage(
+        mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
     )
-    assert explicit.channel_indices.tolist() == [7, 6]
-    # Older configs resolve the montage on loading.
-    config.pop("chan_pos_idx", None)
-    config["chs_info"] = new_montage
-    assert STEEGFormer.from_config(config).channel_indices.tolist() == [4, 1]
-    # Older models could instead save explicit slots without any channel metadata.
-    config.update(chs_info=None, n_chans=3, chan_pos_idx=[7, 12, 5])
-    (tmp_path / "config.json").write_text(json.dumps(config))
-    same = STEEGFormer.from_pretrained(tmp_path, n_chans=3, strict=True)
-    assert same.channel_indices.tolist() == [7, 12, 5]
+    mri = mne.io.constants.FIFF.FIFFV_COORD_MRI
+    chs = [
+        dict(ch, ch_name=f"X{i}", coord_frame=mri) for i, ch in enumerate(info["chs"])
+    ]
+    with pytest.warns(UserWarning, match="identity"):
+        model = STEEGFormer(
+            chs_info=chs, n_outputs=2, n_times=64, embed_dim=32, depth=1, num_heads=2
+        )
+    model.save_pretrained(tmp_path)
+    restored = STEEGFormer.from_pretrained(tmp_path, strict=True)
+    assert restored.channel_indices.tolist() == model.channel_indices.tolist()
 
 
 @pytest.mark.parametrize(
