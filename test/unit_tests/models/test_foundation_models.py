@@ -2820,6 +2820,8 @@ def test_corteg_loads_a_steegformer_checkpoint_and_warm_starts_its_high_gamma_em
         n_chans=3, n_outputs=2, n_times=64, chan_pos_idx=[0, 1, 2], embed_dim=32,
         depth=2, num_heads=2,
     )
+    with torch.no_grad():  # a trained bias is not zero, as a fresh one is
+        steegformer.patch_embed.proj.bias.fill_(0.25)
     model = CORTEG(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
     lo, hi = model.patch_embed.proj, model.patch_embed_hi.proj
     torch.testing.assert_close(
@@ -2829,6 +2831,23 @@ def test_corteg_loads_a_steegformer_checkpoint_and_warm_starts_its_high_gamma_em
     missing, unexpected = model.load_state_dict(steegformer.state_dict(), strict=False)
     assert unexpected == []
     assert {key.split(".")[0] for key in missing} == {"channel_adapter", "patch_embed_hi"}
+    # The high-gamma kernel follows the backbone just loaded, not the initial one.
+    torch.testing.assert_close(
+        hi.weight,
+        F.interpolate(
+            steegformer.patch_embed.proj.weight[None], size=25, mode="linear"
+        )[0],
+    )
+    torch.testing.assert_close(hi.bias, steegformer.patch_embed.proj.bias)
+
+    # A trained CORTEG checkpoint supplies its own high-gamma projection.
+    with torch.no_grad():
+        hi.weight.fill_(0.125)
+        hi.bias.fill_(0.5)
+    restored = CORTEG(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
+    restored.load_state_dict(model.state_dict(), strict=True)
+    torch.testing.assert_close(restored.patch_embed_hi.proj.weight, hi.weight)
+    torch.testing.assert_close(restored.patch_embed_hi.proj.bias, hi.bias)
 
 
 @pytest.mark.parametrize("merge_strategy", ["average", "layerwise_gate"])

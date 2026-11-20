@@ -147,6 +147,9 @@ Enhancements
   ``CORTEG.from_pretrained("braindecode/corteg-small-pretrained", ...)`` loads
   ST-EEGFormer small with the high-gamma embedding warm-started; ``ch_mask`` takes
   padded batches (:gh:`1551` by `Julien Gadonneix`_).
+- :class:`braindecode.models.CORTEG` loads a bare :class:`~braindecode.models.STEEGFormer`
+  checkpoint with its high-gamma embedding warm-started from the loaded low-frequency one
+  (:gh:`1625` by `Bruno Aristimunha`_).
 - Adding :class:`braindecode.models.NICE`, the EEG/MEG encoder of the NICE image-decoding
   framework (Song et al., ICLR 2024): TSConv plus the projector into the CLIP image space,
   configured through ``n_chans``/``n_times`` for THINGS-EEG2 and THINGS-MEG; the authors'
