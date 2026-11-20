@@ -51,10 +51,14 @@ Enhancements
   region order. Previously saved CBraMod, CSBrain and EEGCLIP modules recover the
   channel-count behavior of their original heads and encoders
   (:gh:`1605` by `Julien Gadonneix`_).
-- CSBrain, EEGCLIP, MEDFormer, PBT, TFMTokenizer, NeuroRVQ, NeuroRVQTokenizer, MAPA,
-  BrainOmni and BrainTokenizer take ``channel_strategy`` and map EEG montages through
-  the :class:`~braindecode.modules.ChannelLayer`, one per sample in a padded batch
-  (:gh:`1608` by `Julien Gadonneix`_).
+- :class:`braindecode.models.CSBrain`, :class:`~braindecode.models.EEGCLIP`,
+  :class:`~braindecode.models.MEDFormer`, :class:`~braindecode.models.PBT`,
+  :class:`~braindecode.models.TFMTokenizer`, :class:`~braindecode.models.NeuroRVQ`,
+  :class:`~braindecode.models.NeuroRVQTokenizer`, :class:`~braindecode.models.MAPA`,
+  :class:`~braindecode.models.BrainOmni` and :class:`~braindecode.models.BrainTokenizer`
+  map other electrode montages with ``channel_strategy``, one per sample in a padded
+  batch; models that read their input natively take no ``channel_strategy`` (:gh:`1608`
+  by `Julien Gadonneix`_).
 - Extend :ref:`multiple-discrete-targets-TUH` with target switching, the relation
   between recording descriptions and window metadata, and recording-level subset
   selection (:gh:`1596` by `Daria Agafonova`_).

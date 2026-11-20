@@ -786,20 +786,29 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     @classmethod
     def _fill_legacy_defaults(cls, kwargs: dict) -> None:
-        """Rebuild configs saved before ``on_non_divisible`` existed as they were.
+        """Rebuild configs saved by earlier versions as they were.
 
         Models that used to crop a time axis not divisible by their patch size
         set ``_legacy_on_non_divisible = "crop"``. A saved config or checkpoint
         without the ``on_non_divisible`` key then loads with ``"crop"``, so its
         head and position tables keep their shapes; a new model defaults to
-        ``"pad"``.
+        ``"pad"``. A config saved while a model that reads its input natively
+        still took ``channel_strategy`` (2.1 development builds) loses its
+        ``"native"`` strategy keys.
         """
+        params = inspect.signature(cls.__init__).parameters
+        takes_any = any(p.kind is p.VAR_KEYWORD for p in params.values())
+        if not takes_any and "channel_strategy" not in params:
+            if kwargs.get("channel_strategy", "native") == "native" and not kwargs.get(
+                "channel_strategy_kwargs"
+            ):
+                kwargs.pop("channel_strategy", None)
+                kwargs.pop("channel_strategy_kwargs", None)
         legacy = getattr(cls, "_legacy_on_non_divisible", None)
         if legacy is None or "on_non_divisible" in kwargs:
             return
         # A subclass with its own signature may not take the argument.
-        params = inspect.signature(cls.__init__).parameters.values()
-        if any(p.name == "on_non_divisible" or p.kind is p.VAR_KEYWORD for p in params):
+        if takes_any or "on_non_divisible" in params:
             kwargs["on_non_divisible"] = legacy
 
     def _set_n_outputs(self, n_outputs: int) -> None:

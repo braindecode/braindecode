@@ -572,9 +572,15 @@ def test_geometry_contract(name, gname, gkw):
 # grouped by modality.
 NATIVE_ONLY = {"SleepFM", "SleepFMStager"}
 
-# No ``channel_strategy`` argument: MEG (BBL, MEGGPT, MEGXL), a second
-# per-channel input (CORTEG's x_hi), or not a foundation model (NICE).
-NO_STRATEGY = {"BBL", "CORTEG", "MEGGPT", "MEGXL", "NICE"}
+# Models that take no ``channel_strategy``, and why; kept exact by
+# test_no_strategy_lists_every_model_without_the_argument.
+NO_STRATEGY = {
+    "BBL": "MEG sensors",
+    "MEGGPT": "MEG source parcels",
+    "MEGXL": "MEG sensors",
+    "CORTEG": "a second per-channel input, x_hi, the channel layer does not map",
+    "NICE": "not a foundation model",
+}
 
 
 # BIOT's canonical input is bipolar; under a strategy it takes electrodes.
@@ -586,7 +592,8 @@ NO_STRATEGY = {"BBL", "CORTEG", "MEGGPT", "MEGXL", "NICE"}
         for n in COMPAT
         if n != "BIOT"
         and not n.startswith("SignalJEPA")
-        and n not in NATIVE_ONLY | NO_STRATEGY
+        and n not in NATIVE_ONLY
+        and n not in NO_STRATEGY
     ],
 )
 def test_native_checkpoint_loads_under_a_strategy(name):
@@ -623,7 +630,7 @@ def test_channel_strategy_smoke(name, strategy):
 
 
 @pytest.mark.parametrize(
-    "name", [n for n in COMPAT if n not in NATIVE_ONLY | NO_STRATEGY]
+    "name", [n for n in COMPAT if n not in NATIVE_ONLY and n not in NO_STRATEGY]
 )
 def test_channel_strategy_round_trip(name):
     """Under a strategy, ``model(x)`` equals ``model.forward(x)`` and the
@@ -683,11 +690,12 @@ def test_mapa_refuses_sensor_indices_under_a_strategy():
 
 
 _SUMMARY = Path(__file__).parents[3] / "braindecode" / "models" / "summary.csv"
-FOUNDATION = [
+# Foundation models whose input is electrodes, the input the channel layer maps.
+ELECTRODE_FOUNDATION = [
     row["Model"]
     for row in csv.DictReader(_SUMMARY.read_text(encoding="utf-8-sig").splitlines())
     if "Foundation" in row["Categorization"]
-    and "channel_strategy" in inspect.signature(models_dict[row["Model"]]).parameters
+    and {"EEG", "iEEG", "ECoG"} & {m.strip() for m in row["Modality"].split(",")}
 ]
 FIXTURES = {name: sp for name, _, sp in models_mandatory_parameters}
 
@@ -698,20 +706,30 @@ def _output_tensors(y):
     return list(y) if isinstance(y, (tuple, list)) else [y]
 
 
-@pytest.mark.parametrize("name", FOUNDATION)
+def _takes_strategy(cls):
+    return "channel_strategy" in inspect.signature(cls).parameters
+
+
+def test_no_strategy_lists_every_model_without_the_argument():
+    """A model of COMPAT or an electrode foundation model either takes
+    ``channel_strategy`` or is in NO_STRATEGY with its reason."""
+    lacking = {n for n, spec in COMPAT.items() if not _takes_strategy(spec["cls"])}
+    lacking |= {n for n in ELECTRODE_FOUNDATION if not _takes_strategy(models_dict[n])}
+    assert lacking == set(NO_STRATEGY)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [n for n in ELECTRODE_FOUNDATION if n not in NO_STRATEGY and n not in NATIVE_ONLY],
+)
 def test_foundation_model_maps_each_sample_under_a_strategy(name):
-    """A foundation model that takes ``channel_strategy`` refuses with a
-    ValueError naming ``"native"``, or a zero-padded batch of three recordings
-    with different montages (``ch_mask`` and one ``chs_info`` per sample) gives
-    each recording its output alone."""
+    """A zero-padded batch of three recordings with different montages
+    (``ch_mask`` and one ``chs_info`` per sample) gives each recording its
+    output alone under a strategy."""
     cls = models_dict[name]
     sp = _get_signal_params(FIXTURES[name])
     kw = {k: v for k, v in sp.items() if k not in ("chs_info", "n_chans")}
     chs = sp["chs_info"]
-    if name in NATIVE_ONLY:
-        with pytest.raises(ValueError, match="native"):
-            cls(**kw, chs_info=chs, channel_strategy="idw")
-        return
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # zero-filled targets, sfreq checks
         torch.manual_seed(0)
