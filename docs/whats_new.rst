@@ -342,11 +342,9 @@ Bug fixes
   PyTorch are also preserved, so missing BatchNorm buffers are checked against
   the checkpoint's version
   (:gh:`1538`, :gh:`1639` by `Bruno Aristimunha`_).
-- Replacing a local Zarr dataset keeps the previous store readable if the
-  export fails. Fresh lazy readers see the replacement recording, while open
-  readers and their workers retain the signal associated with their labels.
-  Stores on filesystems without file locks still load and overwrite
-  (:gh:`1627` by `Bruno Aristimunha`_).
+- Overwriting a local Zarr store with ``convert_to_zarr`` keeps the old store if the
+  export fails. Lazy loading then reads the new recordings, not the old memmap cache,
+  which the overwrite deletes (:gh:`1627` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
