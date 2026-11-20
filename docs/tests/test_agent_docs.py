@@ -196,14 +196,12 @@ def test_relative_positioning_uses_full_sleep_stage_palette():
     namespace = {"np": np, "plt": plt, "data": {"test": (np.eye(5), np.arange(5))}}
     exec(compile(plot, str(tutorial), "exec"), namespace)  # nosec B102
     fig = namespace["fig"]
-    try:
-        handles, labels = fig.axes[0].get_legend_handles_labels()
-        assert labels == ["W", "N1", "N2", "N3", "R"]
-        colors = [handle.get_facecolor()[0, :3] for handle in handles]
-        expected = colormaps["viridis"].resampled(5).colors
-        np.testing.assert_allclose(colors, np.asarray(expected)[:, :3])
-    finally:
-        plt.close(fig)
+    handles, labels = fig.axes[0].get_legend_handles_labels()
+    colors = [handle.get_facecolor()[0, :3] for handle in handles]
+    plt.close(fig)
+    assert labels == ["W", "N1", "N2", "N3", "R"]
+    expected = colormaps["viridis"].resampled(5).colors
+    np.testing.assert_allclose(colors, np.asarray(expected)[:, :3])
 
 
 def test_html_then_markdown_gallery_integration(tmp_path):
