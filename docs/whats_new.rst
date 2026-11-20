@@ -238,6 +238,9 @@ Enhancements
 API and behavior changes
 ========================
 
+- :func:`braindecode.functional.scaled_dot_product_attention` emits a ``FutureWarning``
+  when ``fused_in_lazy`` is set: it has had no effect since :gh:`1581` and will be
+  removed in a future release (:gh:`1701` by `Bruno Aristimunha`_).
 - :class:`braindecode.datasets.CHBMIT` and :class:`braindecode.datasets.SIENA` now name
   each annotation after the ``eventType`` column of its ``events.tsv`` (``"sz"``,
   ``"bckg"``, ...). Rows with a missing ``eventType`` keep their BIDS ``trial_type``.
@@ -669,6 +672,9 @@ Bug fixes
 Code health
 ============
 
+- Tests that spawned processes, built the 157M-parameter :class:`~braindecode.models.BENDR`
+  14 times, spied on SDPA calls or re-implemented the code they check are now in-process,
+  small or gone (:gh:`1701` by `Bruno Aristimunha`_).
 - Put the default three-channel test montage with the model fixtures, and
   share canonical channel conversion between the LaBraM and BENDR entries in
   ``models_mandatory_parameters`` (:gh:`1665` by `Bruno Aristimunha`_).
