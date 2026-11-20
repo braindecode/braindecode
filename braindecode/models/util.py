@@ -180,7 +180,16 @@ def track_model_init_kwargs(cls) -> None:
 
     @wraps(init)
     def wrapped(self, *args, **kwargs):
-        bound = init_signature.bind(self, *args, **kwargs)
+        try:
+            bound = init_signature.bind(self, *args, **kwargs)
+        except TypeError as error:
+            name = type(self).__name__
+            if "channel_strategy" in kwargs:
+                raise TypeError(
+                    f"{name} takes no channel_strategy: it reads its input "
+                    "natively (see the channel strategies page of the user guide)."
+                ) from None
+            raise TypeError(f"{name}: {error}") from None
         bound.apply_defaults()
 
         captured_kwargs = {}

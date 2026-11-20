@@ -5,18 +5,7 @@
 ####################################
 
 The pretrained EEG models take ``channel_strategy=`` to map your montage onto the
-channels their backbone was trained on. The models whose input the layer cannot map
-accept only ``"native"`` and say why in a ``ValueError``:
-:class:`~braindecode.models.SleepFM` and :class:`~braindecode.models.SleepFMStager`
-(polysomnography grouped by modality), :class:`~braindecode.models.MEGXL`,
-:class:`~braindecode.models.MEGGPT` and :class:`~braindecode.models.BBL` (MEG),
-:class:`~braindecode.models.GeoNIRS`, :class:`~braindecode.models.JungMAE` and
-:class:`~braindecode.models.MtReNIRS` (fNIRS), and :class:`~braindecode.models.CORTEG`
-(a second per-channel stream, ``x_hi``). The same holds, for some inputs only, for
-:class:`~braindecode.models.BrainOmni` and :class:`~braindecode.models.BrainTokenizer`
-with MEG sensors, :class:`~braindecode.models.NeuroRVQ` and
-:class:`~braindecode.models.NeuroRVQTokenizer` with a non-EEG ``modality``, and
-:class:`~braindecode.models.MAPA` with ``normalization="session"``:
+channels their backbone was trained on:
 
 .. code-block:: python
 
@@ -29,6 +18,20 @@ with MEG sensors, :class:`~braindecode.models.NeuroRVQ` and
     )
     y = model(x)  # x: (batch, len(chs_info), n_times)
     y = model(x_other, chs_info=other_chs)  # another montage, per call
+
+Models that read their input natively take no ``channel_strategy`` and say so in a
+``TypeError``: the MEG models (:class:`~braindecode.models.BBL`,
+:class:`~braindecode.models.MEGGPT`, :class:`~braindecode.models.MEGXL`), the fNIRS
+models (:class:`~braindecode.models.GeoNIRS`, :class:`~braindecode.models.JungMAE`,
+:class:`~braindecode.models.MtReNIRS`), :class:`~braindecode.models.TinyMyo` (sEMG) and
+:class:`~braindecode.models.CORTEG` (its second input, ``x_hi``).
+:class:`~braindecode.models.SleepFM` and :class:`~braindecode.models.SleepFMStager` take
+polysomnography grouped by modality, so they accept only ``"native"`` and say why in a
+``ValueError``. The same holds, for some inputs only, for
+:class:`~braindecode.models.BrainOmni` and :class:`~braindecode.models.BrainTokenizer`
+with MEG sensors, :class:`~braindecode.models.NeuroRVQ` and
+:class:`~braindecode.models.NeuroRVQTokenizer` with a non-EEG ``modality``, and
+:class:`~braindecode.models.MAPA` with ``normalization="session"``.
 
 ``"native"`` (the default) leaves the model as it is: the released checkpoints give the
 same outputs (max-abs difference 0.0) with the same ``state_dict``. Any other strategy
