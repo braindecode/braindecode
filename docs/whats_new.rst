@@ -28,29 +28,9 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
-- :class:`braindecode.models.AXON`, :class:`~braindecode.models.BENDR`,
-  :class:`~braindecode.models.BrainOmni`, :class:`~braindecode.models.BrainTokenizer`,
-  :class:`~braindecode.models.CBraMod`, :class:`~braindecode.models.CodeBrain`,
-  :class:`~braindecode.models.CSBrain`, :class:`~braindecode.models.DuIN`,
-  :class:`~braindecode.models.EEGCLIP`, :class:`~braindecode.models.EEGPT`,
-  :class:`~braindecode.models.JungMAE`, :class:`~braindecode.models.MEDFormer`,
-  :class:`~braindecode.models.MEGGPT`, :class:`~braindecode.models.MEGXL`,
-  :class:`~braindecode.models.MIRepNet`, :class:`~braindecode.models.PBT`,
-  :class:`~braindecode.models.REVE`, :class:`~braindecode.models.SignalJEPA`,
-  :class:`~braindecode.models.SignalJEPA_Contextual`,
-  :class:`~braindecode.models.SignalJEPA_PostLocal`,
-  :class:`~braindecode.models.SignalJEPA_PreLocal`,
-  :class:`~braindecode.models.SleepFMStager` and :class:`~braindecode.models.ZUNA`
-  raise a ``ValueError`` with both channel counts and how to run the model on
-  this input, through :func:`braindecode.functional.check_n_chans`, when the input
-  does not have the channels the model was built for; it was a shape error deep in
-  the network. REVE accepts a different montage when given ``pos`` with attention
-  pooling or feature extraction. CBraMod, CodeBrain, JungMAE and MEGGPT accept
-  fewer channels when returning features (JungMAE takes complete HbO/HbR pairs).
-  MEGGPT also checks its channel embedding capacity. CSBrain checks its
-  region order. Previously saved CBraMod, CSBrain and EEGCLIP modules recover the
-  channel-count behavior of their original heads and encoders
-  (:gh:`1605` by `Julien Gadonneix`_).
+- Foundation models raise a ``ValueError`` with both channel counts, through
+  :func:`braindecode.functional.check_n_chans`, when the input does not have the
+  channels they were built for (:gh:`1605` by `Julien Gadonneix`_).
 - :class:`braindecode.models.CSBrain`, :class:`~braindecode.models.EEGCLIP`,
   :class:`~braindecode.models.MEDFormer`, :class:`~braindecode.models.PBT`,
   :class:`~braindecode.models.TFMTokenizer`, :class:`~braindecode.models.NeuroRVQ`,
@@ -320,28 +300,14 @@ Bug fixes
 - :func:`braindecode.preprocessing.filterbank` preserves channel positions and
   their coordinate frame in the filtered channels (:gh:`1580` by `sixty-66`_).
 - :class:`braindecode.models.LUNA` keeps its default channel locations in a
-  non-persistent buffer, so ``model.to(device)`` moves them. Before, they stayed
-  on the CPU in a plain dict, and each forward without ``channel_locations``
-  copied them to the device of the input. When the channel count changes, LUNA
-  uses the corresponding measured positions or builds its fallback on the model
-  device. The positions are reconstructed during checkpoint loading, including
-  when loading weights into a model constructed on the meta device. Existing
-  state dictionaries and full-model pickles load (:gh:`1616` by
-  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+  non-persistent buffer, so ``model.to(device)`` moves them instead of leaving them
+  on the CPU (:gh:`1616` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.SSTDPN` can be exported with PyTorch 2.6.
   The exported model projects each class prototype to its maximum norm
   before computing the logits (:gh:`1681` by `Bruno Aristimunha`_).
-- ``load_state_dict`` of every braindecode model loads checkpoints saved before
-  the max-norm layers (:class:`braindecode.modules.Conv2dWithConstraint` and the
-  other ``*WithConstraint`` layers) became parametrizations: their ``weight`` key
-  is mapped to ``parametrizations.weight.original``. Released checkpoints such as
-  the EEGNet weights of Guetschel and Tangermann load without renaming keys.
-  If a checkpoint supplies both names, the current weight takes precedence
-  and a strict load reports the obsolete key unless both names refer to the
-  same tensor storage and view. The module versions stored by
-  PyTorch are also preserved, so missing BatchNorm buffers are checked against
-  the checkpoint's version
-  (:gh:`1538`, :gh:`1639` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.EEGNet` loads the released weights of Guetschel and
+  Tangermann; ``load_state_dict`` checks missing BatchNorm buffers against the
+  checkpoint's PyTorch version (:gh:`1538`, :gh:`1639` by `Bruno Aristimunha`_).
 - Replacing a local Zarr dataset keeps the previous store readable if the
   export fails. Fresh lazy readers see the replacement recording, while open
   readers and their workers retain the signal associated with their labels.

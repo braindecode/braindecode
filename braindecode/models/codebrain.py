@@ -274,13 +274,7 @@ class CodeBrain(EEGModuleMixin, nn.Module):
     ]:
         # The backbone takes any number of channels, the flattened head does not.
         if not (return_features or self.pretrain_mode):
-            check_n_chans(
-                inputs,
-                self.n_chans,
-                "CodeBrain",
-                "build the model with the chs_info of this montage, or use a "
-                "channel_strategy.",
-            )
+            check_n_chans(inputs, self.n_chans, "CodeBrain")
         # inputs: (batch, n_chans, n_times)
         batch, n_chans, n_times = inputs.shape
         patch_size = self.patch_size

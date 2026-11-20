@@ -255,13 +255,7 @@ class AXON(EEGModuleMixin, nn.Module, license="apache-2.0"):
         torch.Tensor
             Tokens of shape (batch, n_chans, n_patches, embed_dim).
         """
-        check_n_chans(
-            x,
-            self.n_chans,
-            "AXON",
-            "build the model with the chs_info of this montage, or use a "
-            "channel_strategy.",
-        )
+        check_n_chans(x, self.n_chans, "AXON")
         return self.encoder(x)
 
     def forward(self, x: torch.Tensor, return_features: bool = False):
