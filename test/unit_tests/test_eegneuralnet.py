@@ -246,6 +246,25 @@ def test_trialwise_predict_and_predict_proba(eegneuralnet_cls):
     np.testing.assert_allclose(preds, eegneuralnet.predict_proba(MockDataset()))
 
 
+@pytest.mark.parametrize("spatial_shape", [(2,), (2, 3)])
+def test_cross_entropy_predict_proba_normalizes_classes_at_each_position(spatial_shape):
+    rng = np.random.default_rng(1)
+    logits = rng.normal(size=(5, 4, *spatial_shape))
+    net = EEGClassifier(
+        MockModuleReturnMockedPreds,
+        module__preds=logits,
+        module__n_outputs=4,
+        module__n_chans=3,
+        module__n_times=10,
+    ).initialize()
+    np.testing.assert_allclose(
+        net.predict_proba(MockDataset()), softmax(logits, axis=1)
+    )
+    np.testing.assert_array_equal(net.predict(MockDataset()), logits.argmax(axis=1))
+    net.set_params(predict_nonlinearity=None)
+    np.testing.assert_array_equal(net.predict_proba(MockDataset()), logits)
+
+
 def test_cropped_predict_and_predict_proba(eegneuralnet_cls, preds):
     eegneuralnet = eegneuralnet_cls(
         MockModuleReturnMockedPreds,

@@ -302,6 +302,9 @@ Bug fixes
 - Overwriting a local Zarr store with ``convert_to_zarr`` keeps the old store if the
   export fails. Lazy loading then reads the new recordings, not the old memmap cache,
   which the overwrite deletes (:gh:`1627` by `Bruno Aristimunha`_).
+- ``convert_to_zarr`` keeps the first sample and annotations of continuous recordings and the
+  events and ``tmin`` of epochs (on the sample grid), and exports BIDS recordings, BIDS epochs
+  and recordings without a description (:gh:`1668` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
@@ -571,6 +574,9 @@ Bug fixes
 - Pydantic model configs accept ``info["chs"]`` as MNE gives it (integer
   ``kind``, NaN ``loc``) and ``ch_type`` keys, and keep ``loc`` through JSON
   with or without ``numpydantic`` (:gh:`1632` by `Bruno Aristimunha`_).
+- :meth:`braindecode.EEGClassifier.predict_proba` normalizes ``CrossEntropyLoss``
+  outputs over the classes (axis 1), not the last axis, which gave wrong ``predict``
+  labels for sequence outputs such as USleep's (:gh:`1669` by `Bruno Aristimunha`_).
 - Fix the PyTorch forum and TensorFlow references of
   :class:`braindecode.modules.MaxNormLinear`: each URL was split across two
   docstring lines, so the rendered links pointed to a truncated forum URL (404)
