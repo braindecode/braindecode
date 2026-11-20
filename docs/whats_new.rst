@@ -636,6 +636,9 @@ Bug fixes
 - :class:`braindecode.datasets.TUH` and :class:`braindecode.datasets.TUHAbnormal` with
   ``add_physician_reports=True`` read the ``<subject>_<session>.txt`` report of the recording's
   session, not the ``_date.txt`` file beside each EDF (:gh:`1655` by `Axel Coiffard-Donaty`_).
+- :class:`braindecode.datasets.TUHEvents` keeps the channel of each ``.rec`` row with its times
+  when sorting, merges overlapping events of one type over their full span, ignores the channel
+  index of global events and reads an empty ``.rec`` file (:gh:`1704` by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.FilterBankLayer` with ``method="fir"`` and
   ``phase="minimum"`` or ``"minimum-half"`` applied the minimum-phase filter with
   the delay compensation of a zero-phase filter, which made it anti-causal: the
@@ -647,6 +650,9 @@ Bug fixes
 Code health
 ============
 
+- The :class:`braindecode.datasets.TUHEvents` test builds its corpus under ``tmp_path`` and
+  reads it with the public class; the private ``_TUHEventsMock`` and its table of synthetic
+  paths leave the package (:gh:`1704` by `Bruno Aristimunha`_).
 - Put the default three-channel test montage with the model fixtures, and
   share canonical channel conversion between the LaBraM and BENDR entries in
   ``models_mandatory_parameters`` (:gh:`1665` by `Bruno Aristimunha`_).
