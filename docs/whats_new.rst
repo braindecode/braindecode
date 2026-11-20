@@ -343,11 +343,9 @@ Bug fixes
   PyTorch are also preserved, so missing BatchNorm buffers are checked against
   the checkpoint's version
   (:gh:`1538`, :gh:`1639` by `Bruno Aristimunha`_).
-- Replacing a local Zarr dataset keeps the previous store readable if the
-  export fails. Fresh lazy readers see the replacement recording, while open
-  readers and their workers retain the signal associated with their labels.
-  Stores on filesystems without file locks still load and overwrite
-  (:gh:`1627` by `Bruno Aristimunha`_).
+- Overwriting a local Zarr store with ``convert_to_zarr`` keeps the old store if the
+  export fails. Lazy loading then reads the new recordings, not the old memmap cache,
+  which the overwrite deletes (:gh:`1627` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.CodeBrain` with a ``mask`` no longer crashes when
   ``patch_size`` differs from the embedding size ``emb_dim``, for example
   ``patch_size=128`` (``emb_dim=150``). ``mask_encoding`` replaces the masked raw
@@ -478,10 +476,9 @@ Bug fixes
   weights still load; the head input size is ``d_model`` instead of ``emb_dim``
   (the same with the defaults). Outputs of existing CBraMod classifiers change
   (:gh:`1541`).
-- :class:`braindecode.modules.FilterBankLayer` preserves its float64 IIR
-  coefficients when casting a model. Narrow-band filters in
-  :class:`braindecode.models.FBCNet` could produce NaN predictions after
-  ``model.float()`` rounded the coefficients of a stable filter (:gh:`1657`).
+- :class:`braindecode.modules.FilterBankLayer` keeps its float64 IIR design out of model
+  casts and ``state_dict()`` (v2.0.0 checkpoints still load): no NaN in narrow-band
+  :class:`braindecode.models.FBCNet` filters; IIR and causal FIR filters run on MPS (:gh:`1657`).
 - :class:`braindecode.models.CSBrain` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head, as
   for :class:`braindecode.models.CBraMod`. The original fine-tuning code replaces
@@ -556,11 +553,9 @@ Bug fixes
   :class:`braindecode.models.CORTEG` share this rule; CORTEG now also names a
   channel whose position is ``NaN`` when it is built, where it took the montage
   for one without positions (:gh:`1569` by `Hamza Abdelhedi`_).
-- :func:`braindecode.functional.hilbert_freq` and
-  :func:`braindecode.functional.plv_time` accept ``n_times`` with a precomputed
-  one-sided spectrum. Supplying the original length reconstructs odd-length
-  signals and preserves the Nyquist amplitude for even lengths
-  (:gh:`1663` by `Bruno Aristimunha`_).
+- :func:`braindecode.functional.hilbert_freq` and :func:`braindecode.functional.plv_time`
+  take an optional ``n_times`` with a precomputed spectrum, for odd lengths and the
+  Nyquist bin; :class:`braindecode.models.EEGMiner` keeps its v2.0.0 features (:gh:`1663` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.LUNA` gives the phase of the DC bin, and of the
   Nyquist bin of an even ``patch_size``, as ``0`` or ``pi`` on every device.
   CUDA and MPS FFTs leave rounding noise of either sign in the imaginary part of
