@@ -631,11 +631,9 @@ Bug fixes
   a shorter ``n_times``: the learned temporal positions keep the checkpoint's
   leading ones instead of raising a size mismatch
   (:gh:`1537` by `Julien Gadonneix`_).
-- :class:`~braindecode.EEGClassifier` keeps the class probabilities produced by
-  :class:`~braindecode.augmentation.LabelSmoothing`, including when it precedes
-  Mixup. Dense class-probability targets also retain their class axis, and
-  :func:`~braindecode.training.mixup_criterion` weights each trial's dense predictions
-  (:gh:`1630` by `Bruno Aristimunha`_).
+- :class:`~braindecode.EEGClassifier` keeps float targets with more than one dimension
+  (smoothed labels) as floats, so dense class indices must be integers; ``mixup_criterion``
+  weights each trial's mean dense loss (:gh:`1630` by `Bruno Aristimunha`_).
 - :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor`
   route the batches of :func:`braindecode.datasets.pad_channels_collate` and
   ``set_return_ch_pos`` by the model's ``forward`` signature: the signal goes to

@@ -26,6 +26,7 @@ from torch import optim
 from torch.nn.functional import nll_loss
 
 from braindecode import EEGClassifier, EEGRegressor
+from braindecode.augmentation import AugmentedDataLoader, LabelSmoothing, Mixup
 from braindecode.datasets import BaseConcatDataset, RawDataset, WindowsDataset
 from braindecode.eegneuralnet import _EEGNeuralNet
 from braindecode.models.base import EEGModuleMixin
@@ -33,7 +34,7 @@ from braindecode.models.base import EEGModuleMixin
 # from braindecode.models.util import models_dict
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.preprocessing import create_fixed_length_windows
-from braindecode.training import CroppedLoss
+from braindecode.training import CroppedLoss, mixup_criterion
 from braindecode.training.scoring import CroppedTrialEpochScoring, predict_trials
 
 
@@ -1122,83 +1123,33 @@ def test_predict_trials_explicit_loader_kwargs(estimator):
         net.predict_trials(X, loader_kwargs={"batch_size": 2})
 
 
-@pytest.mark.parametrize("custom", [False, True])
-@pytest.mark.parametrize("probabilities", [False, True])
-def test_classifier_handles_dense_class_indices_and_probabilities(
-    custom, probabilities
-):
-    X = torch.randn(4, 2, 8)
-    model = torch.nn.Conv1d(2, 3, kernel_size=1)
-    if probabilities:
-        y = torch.randn(4, 3, 8).softmax(dim=1)
-        expected_target = y
-    else:
-        y = torch.randint(3, (4, 8)).float()
-        expected_target = y.long()
-    expected = torch.nn.functional.cross_entropy(model(X), expected_target).item()
-    criterion = torch.nn.CrossEntropyLoss
-    if custom:
+@pytest.mark.parametrize(
+    "y, transforms, dtype",
+    [
+        (torch.tensor([0.0, 1.0, 2.0, 1.0]), [], torch.int64),
+        (torch.eye(3)[[0, 1, 2, 1]], [], torch.float32),
+        (torch.tensor([0, 1, 2, 1]), [LabelSmoothing(0.1, 3)], torch.float32),
+        (torch.tensor([0, 1, 2, 1]), [LabelSmoothing(0.1, 3), Mixup(0.5)], torch.float32),
+    ],
+    ids=["float_indices", "one_hot", "smoothed", "smoothed_mixup"],
+)
+def test_classifier_target_dtypes(y, transforms, dtype):
+    received = []
 
-        def criterion():
-            return torch.nn.functional.cross_entropy
+    class RecordingLoss(torch.nn.Module):
+        def forward(self, logits, target):
+            # Mixup gives the targets of both mixed trials and their weights as a list.
+            received.append((target[0] if isinstance(target, list) else target).dtype)
+            return mixup_criterion(logits, target)
 
-    net = EEGClassifier(
-        model,
-        criterion=criterion,
+    EEGClassifier(
+        torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(16, 3)),
+        criterion=RecordingLoss,
+        iterator_train=AugmentedDataLoader,
+        iterator_train__transforms=transforms,
         train_split=None,
         max_epochs=1,
-        batch_size=len(X),
+        batch_size=len(y),
         verbose=0,
-    ).fit(X, y)
-    assert net.history[-1, "train_loss"] == pytest.approx(expected)
-
-
-class _SeqLinear(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = torch.nn.Linear(8, 3)
-
-    def forward(self, x):
-        return self.linear(x)
-
-
-class _ChannelsLastCrossEntropy(torch.nn.Module):
-    def forward(self, logits, target):
-        return torch.nn.functional.cross_entropy(logits.permute(0, 2, 1), target)
-
-
-class _SqueezeCrossEntropy(torch.nn.Module):
-    def forward(self, logits, target):
-        return torch.nn.functional.cross_entropy(logits, target.squeeze(1))
-
-
-class _SliceCrossEntropy(torch.nn.Module):
-    def forward(self, logits, target):
-        return torch.nn.functional.cross_entropy(logits, target[:, -logits.shape[-1] :])
-
-
-@pytest.mark.parametrize("layout", ["channels_last", "column", "sliced"])
-def test_classifier_casts_float_class_indices_with_extra_axes(layout):
-    # Float-stored class indices reach the criterion as long, as on master,
-    # whatever their layout relative to the logits.
-    torch.manual_seed(0)
-    if layout == "channels_last":
-        X, y = torch.randn(4, 5, 8), torch.randint(3, (4, 5)).float()
-        model, criterion = _SeqLinear(), _ChannelsLastCrossEntropy
-    elif layout == "column":
-        X, y = torch.randn(4, 2, 8), torch.randint(3, (4, 1)).float()
-        model = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(16, 3))
-        criterion = _SqueezeCrossEntropy
-    else:
-        X, y = torch.randn(4, 2, 8), torch.randint(3, (4, 8)).float()
-        model, criterion = torch.nn.Conv1d(2, 3, kernel_size=3), _SliceCrossEntropy
-    expected = criterion()(model(X), y.long()).item()
-    net = EEGClassifier(
-        model,
-        criterion=criterion,
-        train_split=None,
-        max_epochs=1,
-        batch_size=len(X),
-        verbose=0,
-    ).fit(X, y)
-    assert net.history[-1, "train_loss"] == pytest.approx(expected)
+    ).fit(torch.randn(len(y), 2, 8), y)
+    assert received == [dtype]

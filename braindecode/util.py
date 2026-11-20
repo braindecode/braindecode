@@ -432,6 +432,8 @@ class ThrowAwayIndexLoader(object):
         return {signal_name: signal, **extras}
 
     def _cast_target(self, target):
+        """Float32 for regression and class probabilities (floats with ``ndim > 1``),
+        int64 class indices otherwise; decided by dtype and shape, not values."""
         if self.is_regression or (target.is_floating_point() and target.ndim > 1):
             return target.float()
         return target.long()
