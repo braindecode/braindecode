@@ -116,5 +116,5 @@ def exact_derivation(
     T, electrodes = derivation_matrix(target, electrodes)
     R = torch.nn.functional.pad(R, (0, T.shape[1] - R.shape[1]))
     weight = (T @ torch.linalg.pinv(R)).round(decimals=12) + 0.0  # -1.0, not -0.99..
-    exact = (weight @ R - T).abs().amax(1) <= atol
+    exact = (weight @ R - T).abs().le(atol).all(1)
     return weight * exact[:, None], exact

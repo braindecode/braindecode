@@ -374,7 +374,7 @@ Bug fixes
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 - :func:`braindecode.functional.derivation_matrix` now normalizes explicitly
-  supplied electrode names without regard to case, which duplicated columns and
+  supplied electrode names without regard to case, preventing duplicated columns and
   misplaced weights (:gh:`1597` by `lindicaphxag-tech`_).
 
 - :meth:`braindecode.models.MetaNeuromotorHand.compute_output_lengths` returns

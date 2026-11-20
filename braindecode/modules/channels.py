@@ -292,10 +292,13 @@ def _mixing(
 
 @lru_cache(maxsize=32)  # bounded: augmentations that drop channels at random vary it
 def _montage_at(positions: bytes) -> list[dict]:
-    """Channels ``E0, E1, ...`` at ``positions``, an ``(n, 3)`` float64 array as bytes."""
+    """Channels ``#0, #1, ...`` at ``positions``, an ``(n, 3)`` float64 array as bytes.
+
+    No montage uses these names, so each channel is matched by position only.
+    """
     xyz = np.frombuffer(positions, dtype=np.float64).reshape(-1, 3)
     return [
-        {"ch_name": f"E{i}", "kind": "eeg", "loc": np.r_[p, np.zeros(9)]}
+        {"ch_name": f"#{i}", "kind": "eeg", "loc": np.r_[p, np.zeros(9)]}
         for i, p in enumerate(xyz)
     ]
 
@@ -591,14 +594,16 @@ class ChannelLayer(nn.Module):
         Returns
         -------
         list of list of dict
-            For each sample, its real channels named ``E0, E1, ...`` at their
+            For each sample, its real channels named ``#0, #1, ...`` at their
             positions, for :meth:`forward`. A montage is built once per set of
             positions (the last 32 are kept), so the maps of :meth:`forward` stay
             cached per montage.
         """
         # MNE builds the maps on the host; one small copy per forward.
         positions = pos.detach().cpu().double().numpy()
-        real = ch_mask.cpu().numpy().astype(bool, copy=False)
+        real = (
+            cast(Tensor, check_ch_mask(ch_mask, pos)).cpu().numpy()
+        )  # (batch, channels)
         return [_montage_at(p[m].tobytes()) for p, m in zip(positions, real)]
 
     def forward(

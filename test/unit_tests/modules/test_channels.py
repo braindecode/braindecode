@@ -568,3 +568,16 @@ def test_strategy_model_takes_pad_channels_collate_batches():
         # pos without ch_mask (set_return_ch_pos, no padding): the construction
         # montage maps x, the backbone never gets the input's positions
         torch.testing.assert_close(model(x[:1], pos=pos[:1]), model(x[:1]))
+
+
+def test_montages_match_by_position_only():
+    """Per-sample montages never match a target by name (EGI-style ``E1``...)."""
+    xyz = np.array([ch["loc"][:3] for ch in standard_info(TEN_TWENTY)["chs"]])
+    target = [
+        {"ch_name": f"E{i + 1}", "loc": np.r_[p, np.zeros(9)]} for i, p in enumerate(xyz)
+    ]
+    layer = ChannelLayer(target, "nearest")
+    pos = torch.as_tensor(xyz[None, 5:])
+    mask = torch.ones(1, len(xyz) - 5, dtype=torch.bool)
+    _, observed = layer(torch.zeros(1, len(xyz) - 5, 1), layer.montages(pos, mask), mask)
+    assert observed[0].tolist() == [False] * 5 + [True] * (len(xyz) - 5)
