@@ -252,6 +252,8 @@ Requirements
 Bug fixes
 ==========
 
+- ``braindecode.models`` and ``braindecode.models.util.get_summary_table`` work when
+  braindecode is imported from a zip archive (:gh:`1670` by `Bruno Aristimunha`_).
 - Exported :class:`braindecode.models.EEGMiner` programs decompose without mutating
   :class:`~braindecode.modules.GeneralizedGaussianFilter` parameters in inference graphs
   (:gh:`1706` by `Bruno Aristimunha`_).

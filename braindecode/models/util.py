@@ -942,6 +942,7 @@ models_mandatory_parameters: list[
 def get_summary_table(dir_name=None):
     import pandas as pd
 
+    # Package data rather than a file path, so a zip archive works too.
     root = files(__package__) if dir_name is None else Path(dir_name)
     with root.joinpath("summary.csv").open("rb") as table:
         return pd.read_csv(table, index_col="Model", skipinitialspace=True)
