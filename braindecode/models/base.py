@@ -21,7 +21,6 @@ from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from mne.utils import _soft_import
 from torchinfo import ModelStatistics, summary
 
-from braindecode.functional import check_ch_mask
 from braindecode.models.util import (
     _EEG_PARAMS,
     build_model_config,
@@ -543,7 +542,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ``chs_info``, default the model's) onto the target, then run the backbone."""
         # pad_channels_collate / set_return_ch_pos: pos and ch_mask describe the
         # input montage of each sample; the backbone gets the full target one.
-        # pos describes the input channels, never the backbone's mapped ones
         ch_mask, pos = kwargs.pop("ch_mask", None), kwargs.pop("pos", None)
         bound = inspect.signature(type(self).forward).bind_partial(
             self, *args, **kwargs
@@ -554,17 +552,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 "uses it to map each sample, the backbone never sees it."
             )
         if chs_info is None and pos is not None and ch_mask is not None:  # no names
-            mask = check_ch_mask(ch_mask, pos)
-            assert mask is not None
-            chs_info = [
-                [
-                    {"ch_name": f"E{i}", "kind": "eeg", "loc": np.r_[p, np.zeros(9)]}
-                    for i, p in enumerate(pb[mb])
-                ]
-                for pb, mb in zip(
-                    pos.detach().cpu().double().numpy(), mask.cpu().numpy()
-                )
-            ]
+            chs_info = self.channel_layer.montages(pos, ch_mask)
         elif ch_mask is not None and not (chs_info and isinstance(chs_info[0], list)):
             raise ValueError(
                 "ch_mask under a channel_strategy needs the montage of each sample: "
@@ -1258,13 +1246,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         config = build_model_config(self)
         config["braindecode_version"] = __version__
-        if callable(getattr(getattr(self, "channel_layer", None), "strategy", None)):
-            warnings.warn(
-                "The function channel_strategy is not saved: pass it again to "
-                "from_pretrained(..., channel_strategy=...).",
-                UserWarning,
-                stacklevel=2,
-            )
 
         # Save to config.json
         config_path = save_directory / "config.json"

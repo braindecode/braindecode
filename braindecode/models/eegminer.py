@@ -16,37 +16,8 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules import GeneralizedGaussianFilter
 
+# The feature each ``method`` computes (see _EEGMinerFeatures below the class)
 _eeg_miner_methods = ["mag", "corr", "plv"]
-
-
-class _EEGMinerFeatures(nn.Module):
-    def __init__(self, method, n_chans, n_filters, n_times):
-        super().__init__()
-        self.method = method
-        self.n_chans = n_chans
-        self.n_filters = n_filters
-        self.n_times = n_times
-        triu = torch.triu_indices(n_chans, n_chans, 1)
-        self.register_buffer("triu_row", triu[0], persistent=False)
-        self.register_buffer("triu_col", triu[1], persistent=False)
-
-    def forward(self, x):
-        if self.method == "mag":
-            return torch.sqrt((x * x).mean(dim=-1))
-        if self.method == "corr":
-            x = x.reshape(
-                x.shape[0], self.n_chans, self.n_filters, self.n_times
-            ).transpose(-3, -2)
-            x = (x - x.mean(dim=-1, keepdim=True)) / torch.sqrt(
-                x.var(dim=-1, keepdim=True) + 1e-6
-            )
-            x = torch.matmul(x, x.transpose(-2, -1)) / x.shape[-1]
-            x = x.permute(0, 2, 3, 1).abs()
-        else:
-            x = x.transpose(-4, -3)
-            x = F.plv_time(x, forward_fourier=False)
-            x = x.permute(0, 2, 3, 1)
-        return x[:, self.triu_row, self.triu_col, :]
 
 
 class EEGMiner(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
@@ -223,11 +194,14 @@ class EEGMiner(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x):
         """x: (batch, electrodes, time)"""
+        # PLV applies one filter bank to every electrode: (batch, electrodes, 1, time)
         x = self.ensure_dim(x)
         # Apply Gaussian filters in frequency domain
-        # x -> (batch, electrodes * filters, time)
+        # mag/corr: back in time, (batch, electrodes * filters, time)
+        # plv: kept in frequency, (batch, electrodes, filters, freqs, 2)
         x = self.filter(x)
 
+        # Band power or connectivity of the filtered signals (_EEGMinerFeatures)
         x = self.feature_layer(x)
         # Classifier
         # Note that the order of dimensions before flattening the feature vector is important
@@ -237,3 +211,84 @@ class EEGMiner(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         x = self.final_layer(x)
 
         return x
+
+
+class _EEGMinerFeatures(nn.Module):
+    r"""Features of the filtered signals, one per electrode or electrode pair.
+
+    The input is the output of the generalized Gaussian filters:
+    ``(batch, n_chans * n_filters, n_times)`` (filtered signals) for ``"mag"`` and
+    ``"corr"``, and ``(batch, n_chans, n_filters, n_times // 2 + 1, 2)`` (filtered
+    spectra) for ``"plv"``. Depending on ``method``, it computes:
+
+    - ``"mag"``: the root mean square over time (band amplitude) of each
+      electrode and filter, ``(batch, n_chans * n_filters)``;
+    - ``"corr"``: the absolute correlation of each electrode pair within each
+      filter, ``(batch, n_chans * (n_chans - 1) / 2, n_filters)``;
+    - ``"plv"``: the phase locking value of each electrode pair within each
+      filter, ``(batch, n_chans * (n_chans - 1) / 2, n_filters)``.
+
+    The connectivity matrices are symmetric, so only their upper triangle is
+    kept; its indices are computed once and stored as buffers.
+    """
+
+    def __init__(self, method, n_chans, n_filters, n_times):
+        super().__init__()
+        self.method = method
+        self.n_chans = n_chans
+        self.n_filters = n_filters
+        self.n_times = n_times
+        # Upper triangle (without the diagonal) of a (n_chans, n_chans) matrix
+        triu = torch.triu_indices(n_chans, n_chans, 1)
+        self.register_buffer("triu_row", triu[0], persistent=False)
+        self.register_buffer("triu_col", triu[1], persistent=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.method == "mag":
+            return self._magnitude(x)
+        if self.method == "corr":
+            return self._correlation(x)
+        return self._phase_locking_value(x)
+
+    def _magnitude(self, x: torch.Tensor) -> torch.Tensor:
+        # Signal magnitude: root mean square over time
+        # x: (batch, electrodes * filters, time) -> (batch, electrodes * filters)
+        x = x * x
+        x = x.mean(dim=-1)
+        x = torch.sqrt(x)
+        return x
+
+    def _correlation(self, x: torch.Tensor, epsilon: float = 1e-6) -> torch.Tensor:
+        # Separate electrodes and filters, then move the filters first
+        # x: (batch, electrodes * filters, time) -> (batch, filters, electrodes, time)
+        x = x.reshape(x.shape[0], self.n_chans, self.n_filters, self.n_times)
+        x = x.transpose(-3, -2)
+        # Standardize each filtered signal over time
+        x = (x - x.mean(dim=-1, keepdim=True)) / torch.sqrt(
+            x.var(dim=-1, keepdim=True) + epsilon
+        )
+        # Correlation of every electrode pair within each filter
+        # x: (batch, filters, electrodes, electrodes)
+        x = torch.matmul(x, x.transpose(-2, -1)) / x.shape[-1]
+        # Move the filters to the end and keep the correlation strength
+        # x: (batch, electrodes, electrodes, filters)
+        x = x.permute(0, 2, 3, 1)
+        x = x.abs()
+        # Get upper triu of symmetric connectivity matrix
+        # x: (batch, electrode pairs, filters)
+        return x[:, self.triu_row, self.triu_col, :]
+
+    def _phase_locking_value(self, x: torch.Tensor) -> torch.Tensor:
+        # The filters stay in the frequency domain (real and imaginary parts)
+        # Swap electrodes and filters
+        # x: (batch, filters, electrodes, freqs, 2)
+        x = x.transpose(-4, -3)
+        # Phase locking value of every electrode pair within each filter
+        # x: (batch, filters, electrodes, electrodes)
+        x = F.plv_time(x, forward_fourier=False)
+        # Move the filters to the end
+        # x: (batch, electrodes, electrodes, filters)
+        x = x.permute(0, 2, 3, 1)
+        # Get upper triu of symmetric connectivity matrix
+        # x: (batch, electrode pairs, filters)
+        return x[:, self.triu_row, self.triu_col, :]

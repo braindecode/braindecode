@@ -254,10 +254,7 @@ class BENDR(EEGModuleMixin, nn.Module):
         ``4 * product(enc_downsample)`` samples (384 with default downsampling of 96x).
     """
 
-    _channel_target = [
-        *BENDR_CHANNEL_ORDER[:-1],
-        {"ch_name": "SCALE", "kind": "misc"},
-    ]
+    _channel_target = BENDR_CHANNEL_ORDER
 
     def __init__(
         self,

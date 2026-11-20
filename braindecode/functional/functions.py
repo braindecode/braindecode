@@ -29,7 +29,7 @@ def identity(x):
     return x
 
 
-def spectral_input(x: torch.Tensor) -> torch.Tensor:
+def spectral_input(x: torch.Tensor, dtype: torch.dtype = torch.float32) -> torch.Tensor:
     """Prepare ``x`` for an FFT, STFT or eigendecomposition.
 
     PyTorch has no complex bfloat16 dtype: CPU and MPS FFTs reject
@@ -40,19 +40,27 @@ def spectral_input(x: torch.Tensor) -> torch.Tensor:
 
         spectrum = torch.fft.rfft(spectral_input(x), dim=-1).abs().to(x)
 
+    ``dtype=torch.float64`` asks for float64 instead, for recursions that need
+    it; MPS has none, so an MPS input is moved to the CPU.
+
     Parameters
     ----------
     x : torch.Tensor
         Real input of the spectral operation.
+    dtype : torch.dtype, default=torch.float32
+        Lowest precision of the result.
 
     Returns
     -------
     torch.Tensor
-        ``x`` in ``promote_types(x.dtype, float32)``, on the CPU for HPU inputs.
+        ``x`` in ``promote_types(x.dtype, dtype)``, on the CPU when its device
+        cannot hold it.
     """
+    if x.device.type == "mps" and dtype == torch.float64:
+        x = x.cpu()
     if x.device.type == "hpu":
         x = x.cpu()
-    return x.to(torch.promote_types(x.dtype, torch.float32))
+    return x.to(torch.promote_types(x.dtype, dtype))
 
 
 def fft_conv1d(

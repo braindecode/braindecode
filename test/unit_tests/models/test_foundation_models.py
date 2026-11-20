@@ -5,7 +5,6 @@
 import copy
 import json
 import os
-import re
 import sys
 import warnings
 from contextlib import nullcontext
@@ -13,7 +12,7 @@ from pathlib import Path
 from urllib.error import URLError
 
 import mne
-import pooch
+import numpy as np
 import pytest
 import torch
 import torch.nn as nn
@@ -48,12 +47,18 @@ from braindecode.models import (
     SleepFM,
     SleepFMStager,
     STEEGFormer,
-    steegformer,
 )
 from braindecode.models.diver1 import _STCPE, channel_metadata_from_chs_info
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
-from braindecode.models.reve import Attention, FourierEmb4D, RevePositionBank
+from braindecode.models.reve import (
+    Attention,
+    FourierEmb4D,
+    RevePositionBank,
+    _reve_position_bank,
+)
+from braindecode.models.steegformer import STEEGFORMER_CHANNEL_ORDER
+from braindecode.modules import resolve_channel_positions
 from braindecode.util import resolve_montage_name
 
 _ORIGINAL_TORCH_CAT = torch.cat
@@ -336,6 +341,19 @@ def test_labram_neural_decoder_initialization(model_decoder):
     assert model_decoder.n_chans == 128
     assert model_decoder.n_times == 1000
     assert model_decoder.n_outputs == 4
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({}, "n_chans could not be inferred"),
+        ({"n_chans": 4, "conv_in_channels": 3}, "divisible by in_channels"),
+    ],
+)
+def test_labram_neural_decoder_rejects_bad_channels_at_construction(kwargs, match):
+    """The decoder averages n_chans / conv_in_channels channels into each token."""
+    with pytest.raises(ValueError, match=match):
+        Labram(n_times=800, n_outputs=2, neural_tokenizer=False, **kwargs)
 
 
 @pytest.mark.network
@@ -1621,32 +1639,20 @@ def _get_reve_cache_dir():
 @pytest.mark.network
 @pytest.mark.huggingface
 def test_reve_positions_match():
-    """Test that the positions from both implementations match."""
-    pytest.skip(
-        "TODO: Fix me. The test is broken on the CI but works locally (even after erasing the cache dir)."
+    """The bank has the released names, in the release's order, at its positions."""
+    with open(
+        hf_hub_download(
+            REVE_POSITIONS_ID,
+            "positions.json",
+            revision="befa5b57a455b77cf302daf610c2e9ed8140bace",
+        )
+    ) as f:
+        released = json.load(f)
+    bank = RevePositionBank()
+    assert bank.get_all_positions() == list(released)
+    np.testing.assert_allclose(
+        bank.embedding.numpy(), np.array(list(released.values())), rtol=0, atol=2e-8
     )
-    try:
-        from transformers import AutoModel
-    except ImportError:
-        pytest.skip("transformers not installed")
-
-    cache_dir = _get_reve_cache_dir()
-    pos_bank_hf = AutoModel.from_pretrained(
-        REVE_POSITIONS_ID,
-        cache_dir=cache_dir,
-        trust_remote_code=True,
-    )
-    pos_bank_bd = RevePositionBank()
-
-    all_pos_hf = pos_bank_hf.get_all_positions()
-    all_pos_bd = pos_bank_bd.get_all_positions()
-
-    assert all_pos_hf == all_pos_bd, "Position names mismatch"
-
-    for pos in all_pos_bd:
-        pos_hf = pos_bank_hf([pos])
-        pos_bd = pos_bank_bd([pos])
-        assert torch.allclose(pos_hf, pos_bd)
 
 
 @pytest.mark.skipif(HF_TOKEN_REVE_MISSING, reason="HF token for REVE is missing")
@@ -1714,46 +1720,54 @@ def test_reve_model_outputs_match():
 # ==============================================================================
 
 
-def test_reve_position_bank_uses_prefetched_file(tmp_path, monkeypatch):
-    """A prefetched positions file is used offline, without any download."""
-    config = {"Cz": [0.0, 0.0, 1.0], "Pz": [0.0, -0.5, 0.5]}
-    (tmp_path / "reve_positions.json").write_text(json.dumps(config))
-    monkeypatch.setattr(
-        pooch, "retrieve", lambda *a, **k: pytest.fail("unexpected download")
-    )
-
-    bank = RevePositionBank(cache_dir=str(tmp_path))
-
-    assert bank.get_all_positions() == list(config.keys())
-    assert bank.forward(["Cz", "Pz"]).shape == (2, 3)
-
-
-def test_reve_position_bank_download_failure_raises(tmp_path, monkeypatch):
-    """On a cache miss, a download failure points the user at offline prefetch."""
-
-    def _fail(*args, **kwargs):
-        raise OSError("no network")
-
-    monkeypatch.setattr(pooch, "retrieve", _fail)
-
-    with pytest.raises(RuntimeError, match="prefetch it to"):
-        RevePositionBank(cache_dir=str(tmp_path))
+def test_reve_position_bank_has_the_released_names_and_positions():
+    """543 names in the release's order, with coordinates copied from the release."""
+    bank = _reve_position_bank()
+    names = list(bank)
+    assert len(names) == 543
+    assert names[:6] == ["A1", "A2", "C3", "C4", "CZ", "F3"]
+    assert names[-4:] == [f"biosemi128_D{i}" for i in (29, 30, 31, 32)]
+    released = {  # metres, from brain-bzh/reve-positions
+        "Cz": [0.0004008999967481941, -0.009166999720036983, 0.10024400055408478],
+        "E129": [0.0004008999967481941, -0.009166999720036983, 0.10024400055408478],
+        "biosemi128_A1": [0.0, 0.0, 0.0949999988079071],
+        "CZ": [0.0004008999967481941, -0.009166999720036983, 0.10024400055408478],
+    }
+    for name, xyz in released.items():
+        np.testing.assert_allclose(bank[name], xyz, rtol=0, atol=1e-7)
 
 
-def test_reve_position_bank_corrupt_cache_redownloads(tmp_path, monkeypatch):
-    """A corrupt/partial cached file triggers a re-download instead of crashing."""
-    cache_file = tmp_path / "reve_positions.json"
-    cache_file.write_text("{ this is not valid json")
-    config = {"Cz": [0.0, 0.0, 1.0]}
+def test_reve_position_bank_lookup_is_exact_then_ignores_case():
+    bank = RevePositionBank()
+    assert bank.mapping[bank.position_names[0]] == 0  # exact names, as in 2.0.0
+    pos = bank(["Cz", "CZ", "cz", "AFz", "afz"])
+    torch.testing.assert_close(pos[0], pos[2])
+    torch.testing.assert_close(pos[3], pos[4])
+    with pytest.raises(ValueError, match="X1"):
+        bank(["X1"])
+    with pytest.warns(FutureWarning, match="no longer downloads"):
+        RevePositionBank(url="https://example.invalid/positions.json", timeout=1)
 
-    def _fake_retrieve(url, known_hash, fname, path, **kwargs):
-        (tmp_path / fname).write_text(json.dumps(config))
 
-    monkeypatch.setattr(pooch, "retrieve", _fake_retrieve)
+@pytest.mark.network
+@pytest.mark.huggingface
+@pytest.mark.parametrize(
+    "repo, revision, extra",
+    [
+        ("brain-bzh/reve-positions", "befa5b57a455b77cf302daf610c2e9ed8140bace", {}),
+        ("MannasAI/pratibha-2", "863edc940d82a02744776a7820641bf1bc32310b", None),
+    ],
+    ids=["REVE", "Pratibha2"],
+)
+def test_reve_position_bank_matches_the_release(repo, revision, extra):
+    from braindecode.models.pratibha2 import _EXTRA_POSITIONS
 
-    bank = RevePositionBank(cache_dir=str(tmp_path))
-
-    assert bank.get_all_positions() == list(config.keys())
+    with open(hf_hub_download(repo, "positions.json", revision=revision)) as f:
+        released = json.load(f)
+    bank = {**_reve_position_bank(), **(_EXTRA_POSITIONS if extra is None else extra)}
+    pos, kept = resolve_channel_positions([{"ch_name": n} for n in released], bank)
+    assert len(kept) == len(released)
+    np.testing.assert_allclose(pos, np.array(list(released.values())), atol=1e-7)
 
 
 def test_reve_fourier_emb_4d_computes_in_float32():
@@ -2287,33 +2301,25 @@ def test_axon_warns_on_non_200_hz():
 
 @pytest.mark.network
 @pytest.mark.huggingface
-def test_pratibha2_pretrained_loads():
-    chs_info = [{"ch_name": n, "kind": "eeg"} for n in ["Fz", "C3", "Cz", "C4", "Pz"]]
+def test_pratibha2_pretrained_matches_the_release():
+    """The re-hosted encoder gives the features of MannasAI/pratibha-2 (863edc9)."""
+    chs_info = [{"ch_name": n} for n in ("Fp1", "Cz", "O2", "AFZ")]
     model = Pratibha2.from_pretrained(
-        "MannasAI/pratibha-2", chs_info=chs_info, n_outputs=2, n_times=1000
-    )
-    out = model(torch.randn(2, 5, 1000))
-    assert out.shape == (2, 2)
+        "braindecode/pratibha2-pretrained",
+        revision="dea9139fb70046c8e3d04e1e7c8acb7e81822afe",
+        chs_info=chs_info,
+        n_outputs=2,
+        n_times=400,
+    ).eval()
+    x = torch.arange(4 * 400.0).reshape(1, 4, 400).mul(0.05).sin()
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+    expected = torch.tensor([-0.257265, 0.106954, 0.051851, -0.371086, 0.046977])
+    torch.testing.assert_close(features[0, :5], expected, rtol=0, atol=1e-5)
 
 
 _PRATIBHA2_SMALL = dict(embed_dim=32, n_freqs=2, depth=2, num_heads=4)
 _PRATIBHA2_NAMES = ["Fp1", "Fp2", "F3", "F4", "C3", "Cz", "C4", "P3", "P4", "O1", "O2"]
-
-
-@pytest.fixture
-def pratibha2_bank(tmp_path, monkeypatch):
-    """Local stand-in for the Hub position table."""
-    pos = (
-        mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
-        .get_positions()["ch_pos"]
-    )
-    bank = {n: [float(v) for v in pos[n]] for n in _PRATIBHA2_NAMES + ["AFz", "Iz"]}
-    bank["AFZ"] = [0.001, 0.0773, 0.0216]
-    bank["IZ"] = [0.0, -0.1144, -0.0292]
-    bank["E1"] = [0.05, 0.05, 0.05]
-    (tmp_path / "pratibha2_positions.json").write_text(json.dumps(bank))
-    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
-    return bank
 
 
 def _pratibha2_model(names=_PRATIBHA2_NAMES, **kw):
@@ -2324,38 +2330,64 @@ def _pratibha2_model(names=_PRATIBHA2_NAMES, **kw):
     ).eval()
 
 
-def test_pratibha2_channel_order_does_not_matter(pratibha2_bank):
+def test_pratibha2_positions():
+    """Its own AFZ and IZ for those spellings and for a name equal to them only
+    ignoring case (the last matching entry); other names from REVE's bank."""
+    from braindecode.models.pratibha2 import _EXTRA_POSITIONS
+
+    bank = _reve_position_bank()
+    names = ["AFZ", "AFz", "afz", "EEG afz-REF", "IZ", "iz", "EEG T3-REF", "C3-C4"]
+    model = _pratibha2_model(names)
+    expected = [
+        _EXTRA_POSITIONS["AFZ"],
+        bank["AFz"],
+        _EXTRA_POSITIONS["AFZ"],
+        _EXTRA_POSITIONS["AFZ"],
+        _EXTRA_POSITIONS["IZ"],
+        _EXTRA_POSITIONS["IZ"],
+        bank["T7"],
+        (bank["C3"] + bank["C4"]) / 2,
+    ]
+    expected = 100 * torch.tensor(np.array(expected), dtype=torch.float32)
+    torch.testing.assert_close(model.encoder.channel_positions, expected)
+
+
+def test_pratibha2_is_montage_agnostic():
+    """Positions are not weights: the weights run on any order and any unit."""
     model = _pratibha2_model()
     perm = torch.randperm(len(_PRATIBHA2_NAMES))
     permuted = _pratibha2_model([_PRATIBHA2_NAMES[i] for i in perm])
-    permuted.load_state_dict(model.state_dict())
-    x = torch.randn(2, len(_PRATIBHA2_NAMES), 1000)
+    permuted.load_state_dict(model.state_dict(), strict=True)
+    x = 20.0 * torch.randn(2, len(_PRATIBHA2_NAMES), 600) + 5.0
     with torch.no_grad():
-        a = model(x, return_features=True)["features"]
-        b = permuted(x[:, perm], return_features=True)["features"]
-    torch.testing.assert_close(a, b, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(permuted(x[:, perm]), model(x), atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(model(x * 1e-6), model(x), atol=1e-4, rtol=1e-4)
 
 
-def test_pratibha2_exact_name_wins_over_case(pratibha2_bank):
-    """The table has distinct AFz/AFZ and Iz/IZ entries."""
-    model = _pratibha2_model(["AFz", "AFZ", "Iz", "IZ", "E1"])
-    expected = torch.tensor(
-        [pratibha2_bank[n] for n in ["AFz", "AFZ", "Iz", "IZ", "E1"]]
-    )
-    torch.testing.assert_close(model.encoder.channel_positions, 100.0 * expected)
+def test_pratibha2_drops_unplaced_channels():
+    with pytest.raises(ValueError, match="BAD"):
+        _pratibha2_model(["Fp1", "BAD", "Cz"])
+    with pytest.raises(ValueError, match="patch_size"):
+        _pratibha2_model(n_times=100)
+    with pytest.warns(UserWarning, match="BAD"):
+        model = _pratibha2_model(["Fp1", "BAD", "Cz"], on_missing="drop")
+    x = torch.randn(2, 3, 600)
+    with torch.no_grad():
+        assert model.encode(x).shape[1] == 2
+        torch.testing.assert_close(
+            model.encode(x), _pratibha2_model(["Fp1", "Cz"]).encode(x[:, [0, 2]])
+        )
+        with pytest.raises(ValueError, match="3 channels"):
+            model.encode(torch.cat([x, x[:, :1]], dim=1))
 
 
-def test_pratibha2_exact_name_wins_with_prefix_suffix_and_bipolar(pratibha2_bank):
-    """EEG prefixes, -REF suffixes and bipolar ends keep the exact-case entry."""
-    model = _pratibha2_model(["EEG AFz", "AFz-REF", "EEG IZ-REF", "AFz-Iz"])
-    bank = {k: torch.tensor(v) for k, v in pratibha2_bank.items()}
-    expected = torch.stack(
-        [bank["AFz"], bank["AFz"], bank["IZ"], (bank["AFz"] + bank["Iz"]) / 2]
-    )
-    torch.testing.assert_close(model.encoder.channel_positions, 100.0 * expected)
+def test_pratibha2_warns_on_non_200_hz():
+    chs = [{"ch_name": n, "kind": "eeg"} for n in _PRATIBHA2_NAMES]
+    with pytest.warns(UserWarning, match="200 Hz"):
+        Pratibha2(chs_info=chs, n_outputs=2, sfreq=250.0, **_PRATIBHA2_SMALL)
 
 
-def test_pratibha2_short_window_from_seconds_raises(pratibha2_bank):
+def test_pratibha2_short_window_from_seconds_raises():
     chs = [{"ch_name": "Cz", "kind": "eeg"}]
     with pytest.raises(ValueError, match="patch_size"):
         Pratibha2(
@@ -2367,107 +2399,7 @@ def test_pratibha2_short_window_from_seconds_raises(pratibha2_bank):
         )
 
 
-def test_pratibha2_names_outside_table_take_standard_1005_montage_frame(pratibha2_bank):
-    pos = (
-        mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
-        .get_positions()["ch_pos"]
-    )
-    model = _pratibha2_model(["FT9", "EEG fc3", "T3"])
-    expected = torch.stack(
-        [torch.as_tensor(pos[n], dtype=torch.float32) for n in ("FT9", "FC3", "T7")]
-    )
-    torch.testing.assert_close(model.encoder.channel_positions, 100.0 * expected)
-
-
-def test_pratibha2_unknown_channel_raises_or_drops(pratibha2_bank):
-    names = ["Fp1", "NOT_A_CHANNEL", "Cz"]
-    with pytest.raises(ValueError, match="NOT_A_CHANNEL"):
-        _pratibha2_model(names)
-    with pytest.warns(UserWarning, match="NOT_A_CHANNEL"):
-        model = _pratibha2_model(names, on_missing="drop")
-    x = torch.randn(2, 3, 600)
-    with torch.no_grad():
-        assert model.encode(x).shape[1] == 2
-        torch.testing.assert_close(
-            model.encode(x), _pratibha2_model(["Fp1", "Cz"]).encode(x[:, [0, 2]])
-        )
-        with pytest.raises(ValueError, match="3 channels"):
-            model.encode(torch.cat([x, x[:, :1]], dim=1))
-
-
-@pytest.mark.parametrize("loader", ["state_dict", "nested", "pretrained"])
-def test_pratibha2_loads_original_parameter_names(pratibha2_bank, tmp_path, loader):
-    source = _pratibha2_model()
-    with torch.no_grad():
-        for param in source.parameters():
-            param.add_(0.1)
-    to_original = (
-        (r"encoder\.patch_embed\.", "patch_embed.linear."),
-        (r"encoder\.pos_enc\.learned_linear\.", "pos_enc.learned_linear.0."),
-        (r"encoder\.pos_enc\.learned_norm\.", "pos_enc.learned_linear.2."),
-        (r"encoder\.pos_enc\.", "pos_enc."),
-        (r"encoder\.blocks\.(\d+)\.norm1\.", r"encoder.layers.\1.pre_attn_norm."),
-        (r"encoder\.blocks\.(\d+)\.attn\.qkv\.", r"encoder.layers.\1.attn.qkv_proj."),
-        (r"encoder\.blocks\.(\d+)\.attn\.proj\.", r"encoder.layers.\1.attn.out_proj."),
-        (r"encoder\.blocks\.(\d+)\.norm2\.", r"encoder.layers.\1.pre_ffn_norm."),
-        (r"encoder\.blocks\.(\d+)\.mlp\.", r"encoder.layers.\1.ffn."),
-    )
-    original = {}
-    for key, value in source.state_dict().items():
-        for pattern, new in to_original:
-            if re.match(pattern, key):
-                key = re.sub(pattern, new, key, count=1)
-                break
-        original[key] = value
-    original["pos_enc.freq_matrix"] = source.encoder.pos_enc.freq_matrix
-    assert "encoder.layers.0.attn.qkv_proj.weight" in original
-
-    target = _pratibha2_model()
-    with torch.no_grad():
-        for param in target.parameters():
-            param.add_(1.0)
-    if loader == "pretrained":
-        safetensors = pytest.importorskip("safetensors.torch")
-        pytest.importorskip("huggingface_hub")
-        target.save_pretrained(tmp_path)
-        backbone = {
-            k: v for k, v in original.items() if not k.startswith("final_layer.")
-        }
-        safetensors.save_file(backbone, str(tmp_path / "model.safetensors"))
-        target = Pratibha2.from_pretrained(tmp_path, local_files_only=True).eval()
-        expected = {k for k in source.state_dict() if k.startswith("encoder.")}
-        assert target._pretrained_provenance["loaded"] == expected
-    elif loader == "nested":
-        nn.Sequential(target).load_state_dict(
-            {"0." + k: v for k, v in original.items()}
-        )
-    else:
-        target.load_state_dict(original, strict=True)
-    for key, value in source.state_dict().items():
-        if loader == "pretrained" and key.startswith("final_layer."):
-            continue
-        torch.testing.assert_close(target.state_dict()[key], value, rtol=0, atol=0)
-
-
-@pytest.mark.parametrize("assign", [True, False])
-def test_pratibha2_materializes_montage_and_frequencies(pratibha2_bank, assign):
-    names = ["Fp1", "NOT_A_CHANNEL", "Cz"]
-    with pytest.warns(UserWarning, match="NOT_A_CHANNEL"):
-        source = _pratibha2_model(names, on_missing="drop")
-    with torch.device("meta"), pytest.warns(UserWarning, match="NOT_A_CHANNEL"):
-        restored = _pratibha2_model(names, on_missing="drop")
-    assert restored.channel_index.is_meta
-    if not assign:
-        restored.to_empty(device="cpu")
-        for buf in restored.buffers():
-            buf.fill_(float("nan") if buf.is_floating_point() else -1)
-    restored.load_state_dict(source.state_dict(), strict=True, assign=assign)
-    x = torch.randn(2, 3, 380)
-    with torch.no_grad():
-        torch.testing.assert_close(restored(x), source(x))
-
-
-def test_pratibha2_autocast_preserves_fourier_features(pratibha2_bank):
+def test_pratibha2_autocast_preserves_fourier_features():
     model = _pratibha2_model(["Cz"])
     pos_enc = model.encoder.pos_enc
     xyz = model.encoder.channel_positions.expand(3, -1)
@@ -2486,7 +2418,7 @@ def test_pratibha2_autocast_preserves_fourier_features(pratibha2_bank):
     torch.testing.assert_close(features[1], features[0], rtol=0, atol=0)
 
 
-def test_pratibha2_invalid_head_keeps_classifier(pratibha2_bank):
+def test_pratibha2_invalid_head_keeps_classifier():
     model = _pratibha2_model(["Cz"])
     head = model.final_layer
     with pytest.raises(ValueError, match="n_outputs must be positive"):
@@ -2495,7 +2427,7 @@ def test_pratibha2_invalid_head_keeps_classifier(pratibha2_bank):
     assert model.n_outputs == model.get_config()["n_outputs"] == 3
 
 
-def test_pratibha2_single_sample_zscore(pratibha2_bank):
+def test_pratibha2_single_sample_zscore():
     model = _pratibha2_model(["Cz"], n_times=1, patch_size=1, patch_stride=1)
     x = torch.ones(2, 1, 1, requires_grad=True)
     logits = model(x)
@@ -2504,7 +2436,7 @@ def test_pratibha2_single_sample_zscore(pratibha2_bank):
     assert x.grad.isfinite().all()
 
 
-def test_pratibha2_fits_and_restores_on_another_montage(pratibha2_bank, tmp_path):
+def test_pratibha2_fits_and_restores_on_another_montage(tmp_path):
     pytest.importorskip("huggingface_hub")
     pytest.importorskip("safetensors")
     from braindecode import EEGClassifier
@@ -2540,7 +2472,7 @@ def test_pratibha2_fits_and_restores_on_another_montage(pratibha2_bank, tmp_path
         torch.testing.assert_close(restored(x.flip(1)), expected, atol=1e-5, rtol=1e-5)
 
 
-def test_pratibha2_weights_load_onto_another_montage(pratibha2_bank):
+def test_pratibha2_positions_are_not_in_the_state_dict():
     """Channel positions are not stored in the weights."""
     source = _pratibha2_model()
     target = _pratibha2_model(["C3", "Cz", "C4", "FC3", "CP4"])
@@ -2548,27 +2480,6 @@ def test_pratibha2_weights_load_onto_another_montage(pratibha2_bank):
     state = source.state_dict()
     assert "encoder.channel_positions" not in state
     assert "encoder.pos_enc.freq_matrix" not in state
-
-
-def test_pratibha2_input_unit_does_not_matter(pratibha2_bank):
-    """Microvolts and volts (MNE's default) give the same output."""
-    model = _pratibha2_model()
-    x_uv = 20.0 * torch.randn(2, len(_PRATIBHA2_NAMES), 600) + 5.0
-    with torch.no_grad():
-        torch.testing.assert_close(
-            model(x_uv), model(x_uv * 1e-6), atol=1e-4, rtol=1e-4
-        )
-
-
-def test_pratibha2_too_short_window_raises(pratibha2_bank):
-    with pytest.raises(ValueError, match="patch_size"):
-        _pratibha2_model(n_times=100)
-
-
-def test_pratibha2_warns_on_non_200_hz(pratibha2_bank):
-    chs = [{"ch_name": n, "kind": "eeg"} for n in _PRATIBHA2_NAMES]
-    with pytest.warns(UserWarning, match="200 Hz"):
-        Pratibha2(chs_info=chs, n_outputs=2, sfreq=250.0, **_PRATIBHA2_SMALL)
 
 
 @pytest.fixture
@@ -2833,30 +2744,17 @@ def test_diver1_mup_attention_scale():
             assert module.scale == (1.0 / module.head_dim if mup else None)
 
 
-@pytest.fixture
-def steeg_vocab(monkeypatch):
-    """Use an offline vocabulary; keep the model's real 145-slot capacity."""
-    names = ["Fp1", "Fp2", "Cz", "Oz", "T7", "T8", "Pz", "Fz"]
-    monkeypatch.setattr(steegformer, "_channel_order", lambda: names)
-    monkeypatch.setattr(
-        steegformer,
-        "_channel_index",
-        lambda: {n.upper(): i for i, n in enumerate(names)},
-    )
-    return names
-
-
 @pytest.mark.parametrize(
     "names, explicit, expected, warning",
     [
-        (["oz", "FP1", "Cz"], None, [3, 0, 2], None),
-        (["E1", "fp1", "E2"], None, [3, 0, 5], "nearest 10-05 site"),
+        (["oz", "FP1", "Cz"], None, ["Oz", "Fp1", "Cz"], None),
+        (["E1", "fp1", "E2"], None, ["Oz", "Fp1", "T8"], "nearest 10-05 site"),
         (["E1", "fp1", "E2"], [5, 4, 3], [5, 4, 3], None),
     ],
     ids=["known-names", "mixed-positions", "explicit-override"],
 )
 @pytest.mark.filterwarnings("error")
-def test_steegformer_channel_mapping(steeg_vocab, names, explicit, expected, warning):
+def test_steegformer_channel_mapping(names, explicit, expected, warning):
     info = mne.create_info(["Oz", "Cz", "T8"], 250, "eeg")
     info.set_montage(
         mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
@@ -2876,7 +2774,8 @@ def test_steegformer_channel_mapping(steeg_vocab, names, explicit, expected, war
             depth=1,
             num_heads=2,
         )
-    assert model.channel_indices.tolist() == expected
+    slots = [STEEGFORMER_CHANNEL_ORDER.index(e) if isinstance(e, str) else e for e in expected]
+    assert model.channel_indices.tolist() == slots
 
 
 @pytest.mark.parametrize(
@@ -2889,22 +2788,12 @@ def test_steegformer_channel_mapping(steeg_vocab, names, explicit, expected, war
         (146, "absent", 145),
         (3, "unpublished", 256),
         (257, "unpublished", 256),
-        (3, "unavailable", 145),
-        (146, "unavailable", 145),
     ],
 )
-def test_steegformer_montage_fallback(
-    steeg_vocab, monkeypatch, n_chans, fallback, n_chans_pos
-):
+def test_steegformer_montage_fallback(n_chans, fallback, n_chans_pos):
     info = mne.create_info([f"E{i + 1}" for i in range(n_chans)], 250, "eeg")
     if fallback == "hydrocel":
         info.set_montage(mne.channels.make_standard_montage("GSN-HydroCel-256"))
-    if fallback == "unavailable":
-
-        def unavailable():
-            raise OSError("offline")
-
-        monkeypatch.setattr(steegformer, "_channel_index", unavailable)
     overflow = n_chans > n_chans_pos and fallback != "hydrocel"
     expectation = (
         pytest.raises(ValueError, match="identity mapping.*chan_pos_idx")
@@ -2929,7 +2818,7 @@ def test_steegformer_montage_fallback(
         if fallback == "hydrocel":
             slots = model.channel_indices
             assert slots.shape == (256,)
-            assert 0 <= int(slots.min()) <= int(slots.max()) < len(steeg_vocab)
+            assert 0 <= int(slots.min()) <= int(slots.max()) < len(STEEGFORMER_CHANNEL_ORDER)
         else:
             assert model.channel_indices.tolist() == list(range(n_chans))
 

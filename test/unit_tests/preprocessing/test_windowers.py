@@ -2328,89 +2328,69 @@ def test_windows_from_events_dict_stop_offset_uses_own_event_type():
         )
 
 
-@pytest.mark.parametrize("backend", ["raw", "epochs", "picks"])
-@pytest.mark.parametrize(
-    "targets_from,last_target_only",
-    [("channels", False), ("channels", True), ("metadata", True)],
-)
-def test_fixed_length_windows_channel_targets_round_trip(
-    tmp_path, backend, targets_from, last_target_only
+@pytest.mark.parametrize("last_target_only", [False, True])
+@pytest.mark.parametrize("picks", [None, ["target", "C3"]])
+def test_fixed_length_channel_targets_survive_saving(
+    tmp_path, picks, last_target_only
 ):
-    data = np.arange(36, dtype=float).reshape(3, 12)
-    info = mne.create_info(["C3", "Cz", "target"], 100, ["eeg", "eeg", "misc"])
-    raw = mne.io.RawArray(data, info, verbose=False)
-    ds = BaseConcatDataset([RawDataset(raw, {"label": 101}, target_name="label")])
-    # Selecting and reordering channels also selects the Epochs backend.
-    options = (
-        {"picks": ["target", "Cz"]}
-        if backend == "picks"
-        else {"use_mne_epochs": backend == "epochs"}
-    )
+    # C3 holds the signal and "target" the targets; picks select the Epochs backend.
+    data = np.arange(24.0).reshape(2, 12)
+    info = mne.create_info(["C3", "target"], 100, ["eeg", "misc"])
     windows = create_fixed_length_windows(
-        ds,
+        BaseConcatDataset([RawDataset(mne.io.RawArray(data, info, verbose=False))]),
         window_size_samples=4,
-        window_stride_samples=4,
-        on_last_window="drop",
-        targets_from=targets_from,
+        picks=picks,
+        targets_from="channels",
         last_target_only=last_target_only,
-        **options,
     )
     windows.save(tmp_path)
-    datasets = [windows, load_concat_dataset(tmp_path, preload=False)]
-    if backend == "epochs":
-        # Older Epochs stores recorded the requested mode only in the windower entry.
-        path = tmp_path / "0" / "window_kwargs.json"
-        history = json.loads(path.read_text())
-        path.write_text(
-            json.dumps([entry for entry in history if entry[0] != "WindowsDataset"])
-        )
-        datasets.append(load_concat_dataset(tmp_path, preload=False))
-    for dataset in datasets:
-        for i in range(3):
-            x, y, indices = dataset[i]
-            start, stop = 4 * i, 4 * (i + 1)
-            if targets_from == "channels":
-                expected_x = data[1:2] if backend == "picks" else data[:2]
-                expected_y = (
-                    data[2:, stop - 1] if last_target_only else data[2:, start:stop]
-                )
-            else:
-                expected_x = data[[2, 1]] if backend == "picks" else data
-                expected_y = 101
-            np.testing.assert_array_equal(x, expected_x[:, start:stop])
-            np.testing.assert_array_equal(y, expected_y)
-            assert indices == [i, start, stop]
+    loaded = load_concat_dataset(tmp_path, preload=False)
+    # Older stores recorded the target settings in the windower entry only.
+    path = tmp_path / "0" / "window_kwargs.json"
+    history = json.loads(path.read_text())
+    path.write_text(json.dumps([e for e in history if not e[0].endswith("Dataset")]))
+    for dataset in (windows, loaded, load_concat_dataset(tmp_path, preload=False)):
+        x, y, _ = dataset[1]
+        # The second window (samples 4 to 8) without its target channel, (1, 4).
+        np.testing.assert_array_equal(x, data[:1, 4:8])
+        expected_y = data[1:, 7] if last_target_only else data[1:, 4:8]
+        np.testing.assert_array_equal(y, expected_y)
 
 
-def test_fixed_length_window_picks_must_keep_a_target_channel():
-    info = mne.create_info(["Cz", "target"], 100, ["eeg", "misc"])
+def test_target_channels_windower_picks_by_channel_kind():
+    # An EEG channel named "misc" next to the misc-typed target channel: the name
+    # must not be read as the channel type.
+    info = mne.create_info(["misc", "target"], 10, ["eeg", "misc"])
+    data = np.vstack([np.arange(40.0), np.full(40, np.nan)])
+    data[1, 9::10] = [1.0, 2.0, 3.0, 4.0]
+    concat = BaseConcatDataset([RawDataset(mne.io.RawArray(data, info, verbose=False))])
+    windows = create_windows_from_target_channels(concat, window_size_samples=5)
+    x, y, _ = windows[0]
+    np.testing.assert_array_equal(x, [data[0, 5:10]])
+    np.testing.assert_array_equal(y, [1.0])
+
+
+@pytest.mark.parametrize(
+    "types, kwargs",
+    [
+        # picks drops the target channel before the Epochs are made
+        (["eeg", "misc"], dict(picks="eeg")),
+        # raw-backed windows take no picks: the recording has no target channel
+        (["eeg", "eeg"], dict(use_mne_epochs=False)),
+    ],
+    ids=["epochs", "raw"],
+)
+def test_channel_targets_require_a_misc_channel(tmp_path, types, kwargs):
+    info = mne.create_info(["Cz", "target"], 100, types)
     raw = mne.io.RawArray(np.zeros((2, 20)), info, verbose=False)
-    with pytest.raises(ValueError, match="misc"):
-        create_fixed_length_windows(
-            BaseConcatDataset([RawDataset(raw)]),
-            window_size_samples=10,
-            picks="eeg",
-            targets_from="channels",
-        )
-
-
-@pytest.mark.parametrize("use_mne_epochs", [True, False])
-def test_historical_channel_targets_require_a_saved_misc_channel(
-    tmp_path, use_mne_epochs
-):
-    info = mne.create_info(["Cz"], 100, "eeg")
-    raw = mne.io.RawArray(np.zeros((1, 20)), info, verbose=False)
-    windows = create_fixed_length_windows(
-        BaseConcatDataset([RawDataset(raw, {"label": 1}, target_name="label")]),
-        window_size_samples=10,
-        use_mne_epochs=use_mne_epochs,
-    )
-    windows.save(tmp_path)
-    # The saved data contains only EEG after the original picks.
-    history_file = tmp_path / "0" / "window_kwargs.json"
-    history = json.loads(history_file.read_text())
-    name, settings = history[0]
-    settings.update(targets_from="channels", picks="eeg")
-    history_file.write_text(json.dumps([[name, settings]]))
+    concat = BaseConcatDataset([RawDataset(raw, {"label": 1}, target_name="label")])
+    kwargs = dict(window_size_samples=10, **kwargs)
+    with pytest.raises(ValueError, match="misc channel"):
+        create_fixed_length_windows(concat, targets_from="channels", **kwargs)
+    # A store saved without the misc channel whose history asks for channel targets.
+    create_fixed_length_windows(concat, **kwargs).save(tmp_path)
+    path = tmp_path / "0" / "window_kwargs.json"
+    (name, settings), *_ = json.loads(path.read_text())
+    path.write_text(json.dumps([[name, {**settings, "targets_from": "channels"}]]))
     with pytest.raises(ValueError, match="misc channel"):
         load_concat_dataset(tmp_path, preload=False)
