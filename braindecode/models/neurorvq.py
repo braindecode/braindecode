@@ -255,10 +255,13 @@ def _stack_scales(x: Tensor, dropout: bool) -> bool:
 class _MultiScaleTemporalConv(nn.Module):
     """Released four-branch patch embedding; ``kernels`` = (first, second) rows.
 
-    Each branch takes ``(batch, 1, n_chans * n_patches, patch_size)`` through two
-    stages: a 2D convolution, a GroupNorm with 4 groups, the activation and an
-    average pooling over time (by 2, then by 4). Every branch returns
-    ``(batch, n_chans * n_patches, time_out * out_chans)``.
+    ``forward`` stacks the patches ``(batch, n_chans, n_patches, patch_size)`` as
+    ``(batch, 1, n_chans * n_patches, patch_size)``. Each branch applies two stages,
+    a 2D convolution, a GroupNorm with 4 groups, the activation and an average
+    pooling over time (by 2, then by 4), giving
+    ``(batch, out_chans, n_chans * n_patches, patch_size // 8)``. ``forward``
+    returns one ``(batch, n_chans * n_patches, patch_size // 8 * out_chans)``
+    tensor per branch.
     """
 
     def __init__(self, out_chans: int, activation: type[nn.Module], kernels):
