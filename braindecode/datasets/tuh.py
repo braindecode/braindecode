@@ -436,8 +436,12 @@ def _parse_description_from_file_path(
 
 
 def _read_physician_report(file_path):
-    # TUH names the report of a session `<subject>_<session>.txt` and its recordings
-    # `<subject>_<session>_<segment>.edf`; the `*_date.txt` side files never match.
+    """Return the text of the physician report of a recording's session.
+
+    TUH names the report of a session ``<subject>_<session>.txt`` and its
+    recordings ``<subject>_<session>_<segment>.edf``. The ``*_date.txt`` side
+    files, and the reports of other sessions in the directory, never match.
+    """
     recording = Path(file_path)
     session = re.sub(r"_t\d+$", "", recording.stem)
     reports = list(recording.parent.rglob(f"{session}.txt"))
@@ -704,7 +708,12 @@ class TUHEvents(TUH):
     def _set_annotations(
         file_path: str | Path, raw: mne.io.Raw, channel_events: bool, merge_events: bool
     ):
-        """Set annotations from the EDF recording's event sidecar."""
+        """Set ``raw.annotations`` from the ``.rec`` sidecar of an EDF recording.
+
+        Each row of the sidecar is ``channel_index,start,stop,event_code``, with
+        times in seconds. The rows become events that are merged by type
+        (``merge_events``) or, for global events, deduplicated, then sorted by onset.
+        """
         rec_path = Path(file_path).with_suffix(".rec")
         if not rec_path.exists():
             warnings.warn(
