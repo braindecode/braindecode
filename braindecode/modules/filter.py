@@ -721,9 +721,10 @@ class GeneralizedGaussianFilter(nn.Module):
             or (torch.compiler.is_compiling() and not self.training)
         ):
             with torch.no_grad():
-                self.f_mean.copy_(f_mean)
-                self.bandwidth.copy_(bandwidth)
-                self.shape.copy_(shape)
+                # Detached, so torch.export also sees these updates as outside autograd
+                self.f_mean.detach().copy_(f_mean)
+                self.bandwidth.detach().copy_(bandwidth)
+                self.shape.detach().copy_(shape)
 
         # Create magnitude response with gain=1 -> (channels, freqs)
         mag_response = self.exponential_power(

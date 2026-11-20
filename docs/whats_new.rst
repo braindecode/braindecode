@@ -270,7 +270,8 @@ Bug fixes
 ==========
 
 - Exported :class:`braindecode.models.EEGMiner` programs decompose without mutating
-  :class:`~braindecode.modules.GeneralizedGaussianFilter` parameters in inference graphs.
+  :class:`~braindecode.modules.GeneralizedGaussianFilter` parameters in inference graphs
+  (:gh:`1706` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.EEGConformer`, :class:`~braindecode.models.TSception` and :class:`~braindecode.models.MSVTNet`
   no longer run a training-mode forward pass at construction, which updated BatchNorm and drew
   random numbers, so seeded weights change (:gh:`1694` by `Bruno Aristimunha`_).
