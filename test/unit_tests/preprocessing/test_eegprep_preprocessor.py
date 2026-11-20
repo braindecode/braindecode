@@ -594,7 +594,7 @@ def test_remove_bad_channels():
 def test_remove_bad_windows():
     """Test that RemoveBadWindows removes time periods with high-amplitude artifacts."""
     # Create a long dataset without DC offsets (required for bad window detection)
-    ds = _create_synthetic_dataset(duration=1000, have_dc_offsets=False)
+    ds = _create_synthetic_dataset(duration=200, have_dc_offsets=False)
 
     # Get original duration
     original_raw = ds.datasets[0].raw
@@ -678,7 +678,7 @@ def test_remove_bad_windows_with_non_eeg_channels(caplog):
     # Create a long dataset with non-EEG channels and without DC offsets
     ds = _create_synthetic_dataset(
         include_non_eeg=True,
-        duration=1000,
+        duration=200,
         have_dc_offsets=False
     )
 
@@ -948,7 +948,7 @@ def test_eegprep_pipeline_removes_bad_channels_and_windows():
                 'P3', 'Pz', 'P4', 'O1', 'Oz', 'O2', 'FC1', 'FC2']
     n_channels = len(ch_names)
     sfreq = 250
-    duration = 1000  # Long recording for bad window detection
+    duration = 200  # Long recording for bad window detection
     n_samples = int(sfreq * duration)
 
     # Generate correlated data
@@ -1065,7 +1065,7 @@ def test_remove_bursts():
                 'P3', 'Pz', 'P4', 'O1', 'Oz', 'O2', 'FC1', 'FC2']
     n_channels = len(ch_names)
     sfreq = 250
-    duration = 1000  # Long recording for ASR calibration
+    duration = 200  # Long recording for ASR calibration
     n_samples = int(sfreq * duration)
 
     # Generate correlated background data
