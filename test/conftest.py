@@ -1,4 +1,27 @@
+import gc
+
 import pytest
+
+
+def pytest_collection_finish(session):
+    """Freeze what the imports and the collection allocated, so that the
+    collection after each test only walks the objects tests create."""
+    if gc.get_freeze_count() == 0:  # once: not again in a pytester session
+        gc.collect()
+        gc.freeze()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    """Free what a test leaves in reference cycles before the next test runs.
+
+    A model in a cycle (e.g. a bound method of itself kept as a hook or as
+    ``forward``) outlives its test until a full collection, which Python runs
+    rarely: 1.2 GB LUNA-Huge copies piled up in test_foundation_models.py.
+    Collected after the protocol, once pytest has dropped the fixture values.
+    """
+    yield
+    gc.collect()
 
 
 @pytest.fixture
