@@ -452,6 +452,9 @@ Bug fixes
 - :class:`braindecode.models.EEGTCNet` drops the ``activation`` after its temporal batch norm,
   as in the authors' code. Saved configurations keep it; with a bare state dict, pass
   ``act_after_temporal_bn=True`` (:gh:`1607` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- :class:`braindecode.models.EEGPT` raises at construction when a learned ``chan_proj_type`` gets an
+  ``n_chans_target`` other than 19: a width of 1 was broadcast over the 19 channel embeddings and
+  other widths failed in forward (:gh:`1624` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
   averages kept steps that lie after the end of the input. When the last
   segment held fewer real samples than its first kept step position, those

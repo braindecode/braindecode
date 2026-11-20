@@ -705,6 +705,23 @@ def test_eegpt_checkpoint_keeps_the_model_channel_ids(target_names):
     )
 
 
+@pytest.mark.parametrize("chan_proj_type", ["conv1d_constraint", "linear"])
+def test_eegpt_learned_projection_needs_the_19_channel_embeddings(chan_proj_type):
+    # A width of 1 used to be broadcast over the 19 channel embeddings.
+    kwargs = dict(
+        n_chans=5,
+        n_outputs=2,
+        n_times=128,
+        embed_dim=32,
+        depth=1,
+        num_heads=2,
+        chan_proj_type=chan_proj_type,
+    )
+    with pytest.raises(ValueError, match="n_chans_target=19"):
+        EEGPT(**kwargs, n_chans_target=1)
+    assert EEGPT(**kwargs).eval()(torch.randn(2, 5, 128)).shape == (2, 2)
+
+
 def test_eegpt_checkpoint_loads_with_channel_projection():
     # The default channel projection gives 19 channel IDs; the released
     # checkpoint was saved without a projection and stores 62.
