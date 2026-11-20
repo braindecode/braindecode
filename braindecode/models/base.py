@@ -1221,7 +1221,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         try:
             super()._save_pretrained(save_directory)
         except (ImportError, RuntimeError) as e:
-            # A previous save may have left older weights under the preferred name.
+            # Fall back to pytorch_model.bin, and drop the model.safetensors of a
+            # previous save, which would be loaded in its place.
             (save_directory / "model.safetensors").unlink(missing_ok=True)
             warnings.warn(
                 f"Could not save model in safetensors format: {e}. "
@@ -1265,12 +1266,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             elif "n_chans" in kwargs:
                 kwargs.setdefault("chs_info", None)
             if "input_window_seconds" in kwargs:
-                if "n_times" in kwargs:
-                    kwargs.setdefault("sfreq", None)
-                else:
-                    kwargs["n_times"] = None
+                # A new duration replaces the saved n_times, or the saved sfreq
+                # when the caller gives n_times.
+                kwargs.setdefault("sfreq" if "n_times" in kwargs else "n_times", None)
             elif "n_times" in kwargs or "sfreq" in kwargs:
-                kwargs["input_window_seconds"] = None
+                kwargs.setdefault("input_window_seconds", None)
             token = _RECORD_LOADED_KEYS.set(True)
             try:
                 model = super().from_pretrained(*args, **kwargs)
@@ -1346,6 +1346,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             cls._fill_legacy_defaults(model_kwargs)
             resolve_type_kwargs(cls, model_kwargs)
 
+            # config.json gives n_outputs (to detect a head swap) and the saved
+            # time geometry, for local directories and Hub repo IDs alike.
             is_local = Path(model_id).is_dir()
             saved_config = {}
             try:
@@ -1364,19 +1366,20 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 with open(config_file, "r") as f:
                     saved_config = json.load(f)
             except (OSError, json.JSONDecodeError, KeyError):
-                pass
+                pass  # config unavailable: keep the caller's geometry and head
 
-            # Equivalent saved geometries may spell out any two of these three
-            # quantities. With just one effective override, infer its complement.
-            time_keys = ("sfreq", "n_times", "input_window_seconds")
+            # A save spells its window with any two of these three quantities.
+            # The caller gave one: complete the pair from the save, preferring
+            # its sample count.
+            time_keys = ("n_times", "sfreq", "input_window_seconds")
             if sum(model_kwargs.get(k) is not None for k in time_keys) == 1:
-                rate, samples, duration = (saved_config.get(k) for k in time_keys)
+                samples, rate, duration = (saved_config.get(k) for k in time_keys)
                 if duration:
                     if samples is None and rate is not None:
                         samples = round(duration * rate)
                     elif rate is None and samples is not None:
                         rate = samples / duration
-                for key, value in zip(time_keys, (rate, samples, duration)):
+                for key, value in zip(time_keys, (samples, rate, duration)):
                     if model_kwargs.get(key) is None and value is not None:
                         model_kwargs[key] = value
                         break
@@ -1393,6 +1396,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             ):
                 model_kwargs["n_outputs"] = saved_n_outputs
 
+            # The parent loads only model.safetensors from a local directory; use
+            # the pytorch_model.bin that save_pretrained writes when there is none.
             if filename is None and is_local:
                 preferred = _local_weights_path(model_id, "model.safetensors")
                 if (
@@ -1435,17 +1440,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                         local_files_only=local_files_only,
                         **download_kwargs,
                     )
-                model = cls(**model_kwargs)
-                if is_local and Path(filename).name == "pytorch_model.bin":
-                    state = torch.load(
-                        model_file, map_location=map_location, weights_only=True
-                    )
-                    model.load_state_dict(state, strict=strict)
-                    model.eval()
-                else:
-                    model = cls._load_as_safetensor(
-                        model, model_file, map_location, strict
-                    )
+                # save_pretrained falls back to a pickle when safetensors fails.
+                is_pickle = is_local and filename == "pytorch_model.bin"
+                load = cls._load_as_pickle if is_pickle else cls._load_as_safetensor
+                model = load(cls(**model_kwargs), model_file, map_location, strict)
 
             if (
                 saved_n_outputs is not None

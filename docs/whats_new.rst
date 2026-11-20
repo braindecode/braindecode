@@ -510,11 +510,9 @@ Bug fixes
   ``forward`` stacked them, which needs equal widths. ``forward`` now
   concatenates them. Outputs and parameters are unchanged for equal widths
   (:gh:`1604` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
-- Local ``from_pretrained`` accepts a replacement window duration and loads
-  ``pytorch_model.bin`` when ``save_pretrained`` falls back to that format.
-  ``get_config`` also keeps subclass arguments, including the spatial-filter
-  count of :class:`~braindecode.models.SignalJEPA_Contextual`, without the Hub extra
-  (:gh:`1637`).
+- ``from_pretrained`` accepts a new ``input_window_seconds`` and loads the local ``pytorch_model.bin``
+  that ``save_pretrained`` falls back to; without the Hub, ``get_config`` keeps the arguments of the
+  SignalJEPA subclasses (:gh:`1637` by `Bruno Aristimunha`_).
 - :class:`~braindecode.models.GCNsNet` estimates its electrode graph from the
   training partition of array and MNE Epochs inputs. Fresh estimator fits
   recompute the graph, and constant channels have no edges. A passed GCNsNet

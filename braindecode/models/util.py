@@ -180,7 +180,8 @@ def track_model_init_kwargs(cls) -> None:
 
     @wraps(init)
     def wrapped(self, *args, **kwargs):
-        # A wrapped parent receives only the arguments the subclass forwards.
+        # Reached through super(): the subclass already captured its own kwargs,
+        # and this parent sees only the ones the subclass forwards.
         if type(self).__init__ is not wrapped:
             return init(self, *args, **kwargs)
         try:

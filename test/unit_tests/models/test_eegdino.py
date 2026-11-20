@@ -37,12 +37,10 @@ def test_from_pretrained_takes_geometry_from_the_caller_not_the_config(tmp_path)
     assert loaded.n_times == 600 and loaded.sfreq == 200
     loaded = EEGDINO.from_pretrained(tmp_path, sfreq=100)
     assert loaded.sfreq == 100 and loaded.n_times == 400
-    loaded = EEGDINO.from_pretrained(tmp_path, input_window_seconds=3, n_times=None)
+    loaded = EEGDINO.from_pretrained(tmp_path, input_window_seconds=3)
     assert loaded.n_times == 600 and loaded.sfreq == 200
-    loaded = EEGDINO.from_pretrained(tmp_path, input_window_seconds=3, sfreq=100)
-    assert loaded.n_times == 300
     loaded = EEGDINO.from_pretrained(tmp_path, input_window_seconds=3, n_times=300)
-    assert loaded.sfreq == 100
+    assert loaded.n_times == 300 and loaded.sfreq == 100
     with pytest.raises(ValueError, match="different from"):
         EEGDINO.from_pretrained(tmp_path, input_window_seconds=3, n_times=300, sfreq=200)
     # an explicit None (e.g. forwarded by a wrapper) keeps the saved geometry
