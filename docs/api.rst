@@ -1111,8 +1111,3 @@ Plotting
     :toctree: generated/
 
      plot_confusion_matrix
-
-.. toctree::
-    :hidden:
-
-    samba_pretrained
