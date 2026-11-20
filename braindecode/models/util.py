@@ -10,6 +10,7 @@ import warnings
 from collections.abc import Callable as CallableABC
 from copy import deepcopy
 from functools import lru_cache, wraps
+from importlib.resources import files
 from pathlib import Path
 from types import SimpleNamespace
 from typing import (
@@ -939,22 +940,12 @@ models_mandatory_parameters: list[
 
 
 def get_summary_table(dir_name=None):
-    if dir_name is None:
-        dir_path = Path(__file__).parent
-    else:
-        dir_path = Path(dir_name) if not isinstance(dir_name, Path) else dir_name
-
-    path = dir_path / "summary.csv"
-
     import pandas as pd
 
-    df = pd.read_csv(
-        path,
-        header=0,
-        index_col="Model",
-        skipinitialspace=True,
-    )
-    return df
+    # Package data rather than a file path, so a zip archive works too.
+    root = files(__package__) if dir_name is None else Path(dir_name)
+    with root.joinpath("summary.csv").open("rb") as table:
+        return pd.read_csv(table, index_col="Model", skipinitialspace=True)
 
 
 def extract_channel_locations_from_chs_info(

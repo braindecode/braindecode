@@ -124,9 +124,8 @@ if TYPE_CHECKING:
 else:  # hidden from checkers so misspelled names stay errors
 
     def _type_checking_imports():
-        # ponytail: needs this file's source, as get_summary_table needs summary.csv.
-        with open(__file__, "rb") as source:
-            tree = ast.parse(source.read())
+        # The loader reads this source from a directory or a zip archive.
+        tree = ast.parse(__spec__.loader.get_source(__name__))
         block = next(node for node in tree.body if isinstance(node, ast.If))
         return {alias.name: imp.module for imp in block.body for alias in imp.names}
 
