@@ -520,6 +520,7 @@ def _zarr_to_memmap(zarr_path, group_name):
     """
     zarr_p = Path(zarr_path).absolute()
     cache_dir = zarr_p.parent / f".{zarr_p.name}_memmap"
+    store_stat = zarr_p.stat()
     root = zarr.open(str(zarr_p), mode="r")
     store_id = root.attrs.get("store_id")
     if store_id is not None:
@@ -549,6 +550,11 @@ def _zarr_to_memmap(zarr_path, group_name):
             mm.flush()
         finally:
             del mm
+
+        # A writer may replace the store while the cache is filled; never publish
+        # a mixture of chunks under the previous store's ID.
+        if not os.path.samestat(store_stat, zarr_p.stat()):
+            raise OSError(f"Zarr store {zarr_p} changed while populating its cache.")
 
         # Atomic publication.  ``os.link`` never replaces an existing
         # destination, so the published inode is immutable for the

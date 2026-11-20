@@ -5,6 +5,8 @@
 """Simple tests for Zarr format converters."""
 
 import inspect
+import pickle
+from pathlib import Path
 
 import mne
 import numpy as np
@@ -262,7 +264,36 @@ def test_overwrite_keeps_one_cache_and_the_lazy_dataset_readable(tmp_path):
         convert_to_zarr(_windows(value), path, overwrite=True)
         assert _first_window(load_from_zarr(path, preload=False)) == (value, value)
     assert _first_window(lazy) == (1, 1)
+    with pytest.raises(FileNotFoundError, match="original Zarr store"):
+        pickle.loads(pickle.dumps(lazy))
     assert len({npy.parent for npy in tmp_path.rglob("*.npy")}) == 1
+
+
+def test_failed_publication_restores_the_old_store(tmp_path, monkeypatch):
+    """A rename that fails after the old store moved aside puts it back."""
+    pytest.importorskip("zarr")
+    path = convert_to_zarr(_windows(1), tmp_path / "windows.zarr")
+    rename = Path.rename
+
+    def fail_to_publish(source, destination):
+        if source.name == "store":  # the staged export, not the backup
+            raise OSError("cannot publish")
+        return rename(source, destination)
+
+    monkeypatch.setattr(Path, "rename", fail_to_publish)
+    with pytest.raises(OSError, match="cannot publish"):
+        convert_to_zarr(_windows(2), path, overwrite=True)
+    assert _first_window(load_from_zarr(path, preload=False)) == (1, 1)
+
+
+def test_overwrite_refuses_a_file_destination(tmp_path):
+    """Only a store directory is replaced; any other file is left untouched."""
+    pytest.importorskip("zarr")
+    destination = tmp_path / "windows.zarr"
+    destination.write_text("user data")
+    with pytest.raises(NotADirectoryError, match="not a Zarr directory"):
+        convert_to_zarr(_windows(1), destination, overwrite=True)
+    assert destination.read_text() == "user data"
 
 
 def test_no_lazy_imports_in_hub_formats():
