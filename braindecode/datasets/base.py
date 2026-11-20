@@ -206,16 +206,26 @@ def _channel_info(mne_obj):
     return n_ch, type_str, sfreq
 
 
+def _misc_mask(info):
+    """Boolean mask ``(n_chans,)`` of the ``misc`` channels, which hold the targets.
+
+    Reads the FIFF kind of each channel, ``FIFFV_MISC_CH`` being the only kind of
+    type ``misc``, from an ``mne.Info`` or from the JSON form of Info that lazy Zarr
+    stores hold (each kind a ``{"value": int, ...}`` dict), so no Info is built.
+    """
+    kinds = [ch["kind"] for ch in info["chs"]]
+    if not isinstance(info, mne.Info):
+        kinds = [kind["value"] for kind in kinds]
+    return np.asarray(kinds) == FIFF.FIFFV_MISC_CH
+
+
 def _check_window_targets(targets_from, info):
     if targets_from not in ("metadata", "channels"):
         raise ValueError("Wrong value for parameter `targets_from`.")
-    if targets_from == "channels":
-        if not isinstance(info, mne.Info):  # lazy Zarr stores hold serialized Info
-            info = mne.Info.from_json_dict(info)
-        if "misc" not in info.get_channel_types():
-            raise ValueError(
-                "targets_from='channels' requires a misc channel in the selected channels."
-            )
+    if targets_from == "channels" and not _misc_mask(info).any():
+        raise ValueError(
+            "targets_from='channels' requires a misc channel in the selected channels."
+        )
     return targets_from
 
 
@@ -1016,11 +1026,10 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            # The FIFF kind, as get_channel_types() == "misc" but fast per window; from
-            # the loaded or the stored info, so a lazy recording is not read.
-            info = self._raw.info if self._raw is not None else self._make_mne_info()
-            misc_mask = np.array(
-                [ch["kind"] == FIFF.FIFFV_MISC_CH for ch in info["chs"]]
+            # Target rows (n_chans,) from the loaded or the stored info, so a lazy
+            # recording is not read.
+            misc_mask = _misc_mask(
+                self._raw.info if self._raw is not None else self._info_dict
             )
             if self.last_target_only:
                 y = X[misc_mask, -1]
@@ -1312,12 +1321,11 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            info = (
-                self._windows.info
-                if self._windows is not None
-                else self._make_mne_info()
+            # Target rows (n_chans,) from the loaded or the stored info, so a lazy
+            # recording is not read.
+            misc_mask = _misc_mask(
+                self._windows.info if self._windows is not None else self._info_dict
             )
-            misc_mask = np.asarray(info.get_channel_types()) == "misc"
             if self.last_target_only:
                 y = X[misc_mask, -1]
             else:
