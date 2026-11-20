@@ -179,25 +179,21 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
     ``mtrenirs_10s.pt`` of `microsoft/MtReNIRS
     <https://github.com/microsoft/MtReNIRS>`_ (commit 16c3082, MIT), the
-    paper's epoch-95 checkpoint of the 10-s model, is mirrored unchanged at
-    `braindecode/mtrenirs-pretrained
-    <https://huggingface.co/braindecode/mtrenirs-pretrained>`_. It holds the
-    inference encoder only. :meth:`load_state_dict` takes this payload
-    strictly with the authors' key names; ``final_layer`` keeps its
-    initialization. It expects 10 Hz HbO/HbR, preprocessed as in Notes, in
+    paper's epoch-95 checkpoint of the 10-s model, holds the inference encoder
+    only. It is on the Hugging Face Hub at `braindecode/mtrenirs-pretrained
+    <https://huggingface.co/braindecode/mtrenirs-pretrained>`_; the head is not
+    pretrained. It expects 10 Hz HbO/HbR, preprocessed as in Notes, in
     100-sample windows, with positions on 10-05 slots:
 
     .. code-block:: python
 
-        path = hf_hub_download(
-            "braindecode/mtrenirs-pretrained",
-            "mtrenirs_10s.pt",
-            revision="bbc68ce5e00a4515081d900227fc06d111858e75",
-        )
-        payload = torch.load(path, map_location="cpu", weights_only=True)
         # raw: MNE Raw with the 10-05 slot positions in loc[:3]
-        model = MtReNIRS(chs_info=raw.info["chs"], n_outputs=3, n_times=100, sfreq=10.0)
-        model.load_state_dict(payload)
+        model = MtReNIRS.from_pretrained(
+            "braindecode/mtrenirs-pretrained",
+            chs_info=raw.info["chs"],
+            n_outputs=3,
+            n_times=100,
+        )
 
     .. versionadded:: 2.1
 
@@ -593,14 +589,6 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
         """Replace the classification head with a new one of ``n_outputs``."""
         self._set_n_outputs(n_outputs)
         self.final_layer = nn.Linear(self.feature_dim, n_outputs)
-
-    def load_state_dict(self, state_dict, strict: bool = True, assign: bool = False):
-        """Also takes the official checkpoint (``{"model": ...}``); a missing
-        head keeps its init."""
-        state_dict = dict(state_dict.get("model", state_dict))
-        if not any(k.startswith("final_layer.") for k in state_dict):
-            state_dict.update(self.final_layer.state_dict(prefix="final_layer."))
-        return super().load_state_dict(state_dict, strict=strict, assign=assign)
 
     def forward(
         self,
