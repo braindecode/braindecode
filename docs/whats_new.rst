@@ -479,9 +479,9 @@ Bug fixes
   weights still load; the head input size is ``d_model`` instead of ``emb_dim``
   (the same with the defaults). Outputs of existing CBraMod classifiers change
   (:gh:`1541`).
-- :class:`braindecode.modules.FilterBankLayer` keeps its float64 IIR design when a model
-  is cast, instead of giving NaN in narrow-band :class:`braindecode.models.FBCNet`
-  filters, and runs its IIR and causal FIR filters on MPS (:gh:`1657`).
+- :class:`braindecode.modules.FilterBankLayer` keeps its float64 IIR design out of model
+  casts and ``state_dict()`` (v2.0.0 checkpoints still load): no NaN in narrow-band
+  :class:`braindecode.models.FBCNet` filters; IIR and causal FIR filters run on MPS (:gh:`1657`).
 - :class:`braindecode.models.CSBrain` no longer applies ``proj_out``, the
   pretraining reconstruction layer, to its features and classification head, as
   for :class:`braindecode.models.CBraMod`. The original fine-tuning code replaces

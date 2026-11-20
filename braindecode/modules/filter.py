@@ -280,8 +280,19 @@ class FilterBankLayer(nn.Module):
 
                 _check_coefficients((b_coeffs, a_coeffs))
 
-                self.b_list.append(torch.tensor(b_coeffs, dtype=torch.float64))
-                self.a_list.append(torch.tensor(a_coeffs, dtype=torch.float64))
+                # On the CPU under any default device (meta, MPS), since to_empty()
+                # and load_state_dict() do not restore plain tensors.
+                b = torch.tensor(b_coeffs, dtype=torch.float64, device="cpu")
+                a = torch.tensor(a_coeffs, dtype=torch.float64, device="cpu")
+                self.b_list.append(b)
+                self.a_list.append(a)
+
+    def __setstate__(self, state):
+        # v2.0.0 pickles predate fir_delay_compensated (#1686).
+        state.setdefault(
+            "fir_delay_compensated", state["phase"] not in ("minimum", "minimum-half")
+        )
+        super().__setstate__(state)
 
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
         # v2.0.0 saved the IIR design as float64 parameters. It is rebuilt from

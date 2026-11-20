@@ -1223,7 +1223,7 @@ def test_filter_bank_layer_frequency_response():
     # Prepare plots
     # Iterate over each filter in the filter bank
     for idx, ((l_freq, h_freq), b_value) in enumerate(
-        zip(band_filters, filter_bank_layer.b_list)
+        zip(band_filters, filter_bank_layer.fir_list)
     ):
         # Extract filter coefficients
         b = b_value.detach().numpy()
@@ -2658,3 +2658,15 @@ def test_seanet_resblock_matches_encodec_padding(causal):
     conv = SEANetConv1d(4, 3, 4, 2, causal=True)
     expected = conv.conv(torch.nn.functional.pad(x, (2, 1), mode="reflect"))
     assert torch.equal(conv(x), expected)
+
+
+def test_iir_filter_bank_built_on_meta_device_runs_after_to_empty():
+    """A meta-device build (then ``to_empty``) keeps the IIR design: it is not a meta tensor."""
+    kwargs = dict(
+        n_chans=2, sfreq=128, band_filters=[(4, 8)], method="iir", verbose=False
+    )
+    x = torch.randn(1, 2, 256)
+    with torch.device("meta"):
+        layer = FilterBankLayer(**kwargs)
+    layer.to_empty(device="cpu")
+    torch.testing.assert_close(layer(x), FilterBankLayer(**kwargs)(x))
