@@ -25,6 +25,7 @@ except ImportError:
     zarr = None
 
 import copy
+import pickle
 
 from braindecode.datasets import (
     BNCI2014_001,
@@ -1604,7 +1605,7 @@ def test_lazy_zarr_preprocessing_survives_pickling(tmp_path, ds_type):
     assert sample.dtype == np.float32
     np.testing.assert_allclose(sample, -expected, rtol=1e-6)
     # A spawned DataLoader worker receives the dataset through this pickling.
-    restored = copy.deepcopy(loaded)
+    restored = pickle.loads(pickle.dumps(loaded))
     restored_sample, restored_label, *_ = restored[0]
     np.testing.assert_array_equal(restored_sample, sample)
     assert restored_label == label
@@ -1629,7 +1630,7 @@ def test_lazy_zarr_positions_survive_pickling(tmp_path, use_mne_epochs):
     # Inspecting the dataset before pickling must keep it on the memmap.
     assert "C4" in repr(loaded)
     assert loaded.datasets[0]._zarr_data is not None
-    restored = copy.deepcopy(loaded)
+    restored = pickle.loads(pickle.dumps(loaded))
     samples, labels, crops, positions, mask = pad_channels_collate(
         [restored[0], restored[1]]
     )

@@ -1824,10 +1824,17 @@ def test_sdpa_helper_fused_in_lazy_is_deprecated():
     q = torch.randn(1, 2, 3, 4)
     with catch_warnings():
         simplefilter("error")  # the default stays silent
-        scaled_dot_product_attention(q, q, q)
+        expected = scaled_dot_product_attention(q, q, q)
     for fused_in_lazy in (False, True):
-        with pytest.warns(FutureWarning, match="fused_in_lazy"):
-            scaled_dot_product_attention(q, q, q, fused_in_lazy=fused_in_lazy)
+        with pytest.warns(FutureWarning, match="removed in braindecode 2.2"):
+            out = scaled_dot_product_attention(q, q, q, fused_in_lazy=fused_in_lazy)
+        assert torch.equal(out, expected)
+    compiled = torch.compile(
+        lambda t: scaled_dot_product_attention(t, t, t, fused_in_lazy=True),
+        backend="eager",
+        fullgraph=True,
+    )
+    assert torch.equal(compiled(q), expected)
 
 
 def test_patch_tokenizer():

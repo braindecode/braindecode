@@ -3636,6 +3636,44 @@ def test_brainmodule_default_unchanged():
     assert m.use_merger is False
 
 
+def test_dance_perceiver_fourier_features_match_reference():
+    """Perceiver context keeps the perceiver_pytorch Fourier encoding."""
+    from braindecode.modules import Perceiver
+
+    torch.manual_seed(0)
+    max_freq, num_bands, input_dim, t = 10.0, 6, 4, 7
+    perceiver = Perceiver(
+        input_dim=input_dim,
+        depth=1,
+        num_latents=3,
+        latent_dim=8,
+        cross_dim_head=4,
+        latent_dim_head=4,
+        max_freq=max_freq,
+        num_freq_bands=num_bands,
+    )
+    captured = {}
+
+    def _hook(module, args, kwargs):
+        captured["context"] = kwargs["context"]
+
+    perceiver.layers[0][0].register_forward_pre_hook(_hook, with_kwargs=True)
+    data = torch.randn(2, t, input_dim)
+    perceiver(data)
+
+    # Reference: perceiver_pytorch.fourier_encode on a linspace(-1, 1) grid.
+    pos = torch.linspace(-1.0, 1.0, t).unsqueeze(-1)
+    scales = torch.linspace(1.0, max_freq / 2, num_bands)
+    angles = pos * scales * math.pi
+    expected = torch.cat((angles.sin(), angles.cos(), pos), dim=-1)
+
+    context = captured["context"]
+    assert context.shape == (2, t, input_dim + 2 * num_bands + 1)
+    torch.testing.assert_close(context[..., :input_dim], data, rtol=0, atol=0)
+    for b in range(2):
+        torch.testing.assert_close(context[b, :, input_dim:], expected)
+
+
 @pytest.mark.parametrize(
     "no_inter_attn,single_channel,output_attention",
     [

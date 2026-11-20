@@ -240,7 +240,7 @@ API and behavior changes
 
 - :func:`braindecode.functional.scaled_dot_product_attention` emits a ``FutureWarning``
   when ``fused_in_lazy`` is set: it has had no effect since :gh:`1581` and will be
-  removed in a future release (:gh:`1701` by `Bruno Aristimunha`_).
+  removed in 2.2 (:gh:`1701` by `Bruno Aristimunha`_).
 - :class:`braindecode.datasets.CHBMIT` and :class:`braindecode.datasets.SIENA` now name
   each annotation after the ``eventType`` column of its ``events.tsv`` (``"sz"``,
   ``"bckg"``, ...). Rows with a missing ``eventType`` keep their BIDS ``trial_type``.

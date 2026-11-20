@@ -58,8 +58,7 @@ def scaled_dot_product_attention(
         No effect; kept so that existing calls still work.
 
         .. deprecated:: 2.1
-            Setting it emits a ``FutureWarning``, and it will be removed in a
-            future release.
+            Setting it emits a ``FutureWarning``, and it will be removed in 2.2.
     exact : bool, default=False
         Run the textbook op order instead of torch's kernels:
         ``softmax((q @ k^T) / sqrt(d)) @ v``, or ``softmax((q @ k^T) * scale) @ v``
@@ -80,9 +79,13 @@ def scaled_dot_product_attention(
     mask (:ref:`install_gaudi`), dropout included. On CPU, dropout on float32
     or float64 inputs without a mask keeps torch's math path.
     """
-    if not torch.jit.is_scripting() and fused_in_lazy is not None:
+    if (
+        fused_in_lazy is not None
+        and not torch.jit.is_scripting()
+        and not torch.compiler.is_compiling()
+    ):
         warnings.warn(
-            "`fused_in_lazy` has no effect and will be removed in a future release.",
+            "`fused_in_lazy` has no effect and will be removed in braindecode 2.2.",
             FutureWarning,
             stacklevel=2,
         )

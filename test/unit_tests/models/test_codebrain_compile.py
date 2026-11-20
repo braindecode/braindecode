@@ -15,6 +15,14 @@ def test_codebrain_compiles_without_graph_breaks():
     torch.testing.assert_close(compiled(x), model(x))
 
 
+def test_codebrain_trains_compiled_without_graph_breaks():
+    torch.manual_seed(0)
+    model, x = _model().train(), torch.randn(2, 4, 400)
+    compiled = torch.compile(model, backend="eager", fullgraph=True)
+    for _ in range(2):  # the first step computes the kernel norm, the second reuses it
+        compiled(x).sum().backward()
+
+
 def test_codebrain_load_round_trip():
     """A checkpoint saved before or after the first forward reloads to the same output."""
     torch.manual_seed(0)

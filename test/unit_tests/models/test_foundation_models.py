@@ -1225,7 +1225,9 @@ def test_luna_mapping_includes_temperature_typo():
 @pytest.mark.parametrize(
     "patch_size, embed_dim, message",
     [
+        (0, 16, "patch_size must be a positive multiple of 4"),
         (34, 16, "patch_size must be a positive multiple of 4"),
+        (40, 0, "embed_dim must be a positive multiple of 16"),
         (40, 18, "embed_dim must be a positive multiple of 16"),
     ],
 )
