@@ -336,6 +336,12 @@ class Labram(EEGModuleMixin, nn.Module):
                     on_non_divisible=on_non_divisible,
                 ),
             )
+            # Each token averages n_chans / conv_in_channels channels.
+            if self.n_chans % conv_in_channels:
+                raise ValueError(
+                    f"The input channel dimension ({self.n_chans}) must be "
+                    f"divisible by in_channels ({conv_in_channels})."
+                )
 
         # Token width: the temporal convolution's flattened output in the
         # Neural Tokenizer mode, embed_dim in the Neural Decoder mode.
@@ -1457,14 +1463,14 @@ class _TemporalConv(nn.Module):
     In this module we apply the following steps three times
     to the input tensor, reducing the temporal dimension only in the first.
     - Apply a 2D convolution.
-    - Apply a GELU activation function.
-    - Apply a GroupNorm with 4 groups.
+    - Apply a GroupNorm with ``num_groups`` groups.
+    - Apply the activation (GELU by default).
 
     Parameters
     ----------
-    in_chans: int (default=1)
+    in_channels: int (default=1)
         Number of input channels.
-    out_chans: int (default=8)
+    out_channels: int (default=8)
         Number of output channels.
     num_groups: int (default=4)
         Number of groups for GroupNorm.
@@ -1485,7 +1491,7 @@ class _TemporalConv(nn.Module):
     Returns
     -------
     x: torch.Tensor
-        Output tensor of shape (Batch, NA, Temporal Channel).
+        Output tensor of shape (batch, n_chans * n_patches, out_features(patch_size)).
     """
 
     def __init__(
@@ -1501,11 +1507,6 @@ class _TemporalConv(nn.Module):
         activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__()
-        self.out_channels = out_channels
-        # Only the first convolution changes the temporal length
-        self.kernel_size_1 = kernel_size_1
-        self.stride_1 = stride_1
-        self.padding_1 = padding_1
 
         # Here, we use the Rearrange layer from einops to flatten the input
         # tensor to a 2D tensor, so we can apply 2D convolutions.
@@ -1546,22 +1547,20 @@ class _TemporalConv(nn.Module):
     def out_features(self, patch_size: int) -> int:
         """Width of each output token for patches of ``patch_size`` samples.
 
-        The first convolution keeps
-        ``(patch_size + 2 * padding - kernel) // stride + 1`` samples (the
-        second and third keep the length), and the ``out_channels`` maps of
-        those samples are flattened into one token.
+        Each convolution keeps ``(n + 2 * padding - kernel) // stride + 1`` of
+        its ``n`` input samples, and the ``out_channels`` maps of the last one
+        are flattened into one token.
         """
-        kernel, stride, padding = (
-            self.kernel_size_1[1],
-            self.stride_1[1],
-            self.padding_1[1],
-        )
-        return self.out_channels * ((patch_size + 2 * padding - kernel) // stride + 1)
+        n_samples = patch_size
+        for conv in (self.conv1, self.conv2, self.conv3):
+            n_samples = (
+                n_samples + 2 * conv.padding[1] - conv.kernel_size[1]
+            ) // conv.stride[1] + 1
+        return self.conv3.out_channels * n_samples
 
     def forward(self, x, ch_mask: Optional[torch.Tensor] = None):
         """
-        Apply 3 steps of 2D convolution, GELU activation function,
-        and GroupNorm.
+        Apply 3 steps of 2D convolution, GroupNorm and activation.
 
         Parameters
         ----------
@@ -1574,7 +1573,7 @@ class _TemporalConv(nn.Module):
         Returns
         -------
         x: torch.Tensor
-            Output tensor of shape (Batch, NA, Temporal Channel).
+            Output tensor of shape (batch, n_chans * n_patches, out_features(patch_size)).
         """
         row_mask: Optional[torch.Tensor] = None
         if ch_mask is not None:
@@ -1614,11 +1613,12 @@ class _TemporalConv(nn.Module):
 
 
 # -----------------------------------------------------------------------------
-# Standard 10-20 system electrode positions used by LaBraM for position embeddings.
-# This defines the canonical channel order that the pretrained LaBraM model expects.
-# Channels from input data will be automatically reordered to match this order.
+# LaBraM's 128 pretraining channels as (name, (x, y, z)) pairs, in the order of
+# the rows of ``position_embedding`` (channel i owns row i + 1; row 0 is the cls
+# token). forward(ch_names=...) looks each input channel up by name; without
+# ch_names the input must hold exactly these channels, in this order.
 # Reference: https://github.com/935963004/LaBraM/blob/c431221e6cfd23dbfa9950e0180682fb322b0548/utils.py#L42-L57
-# We just commented the last 8 channels to match the 128 in the pretrained weights here
+# (its last 8 bipolar pairs, listed after the table, have no row in the weights).
 #
 # Positions are in metres. They come from several sources, all in the head frame that
 # ``raw.set_montage`` gives (one fiducial transform of the montages' own frame):
@@ -1638,9 +1638,8 @@ class _TemporalConv(nn.Module):
 #   - CCP7/CCP8 → midpoint(T7, TP7) / midpoint(T8, TP8)
 #   - FTT9h/TTP7h/TPP9h/FTT10h/TPP8h/TPP10h → standard_1005 (h-suffix entries)
 #
-# The `loc` values are only used to build an MNE interpolation matrix
-# for the channel layer. They are NOT used by Labram itself, which
-# relies on learned position embeddings indexed by channel name.
+# Labram itself uses only the names; the positions build the ChannelLayer's
+# interpolation matrix under a channel_strategy.
 # -----------------------------------------------------------------------------
 
 # fmt: off
@@ -1790,6 +1789,7 @@ LABRAM_CHANNEL_ORDER = [ch for ch, _ in _LABRAM_TARGET_CHS_TUPLES]
 #: ``modeling_finetune.py``), whatever the window length. A window of P patches
 #: uses slots 0..P-1, and the released weights hold all 16 of them.
 _LABRAM_N_TIME_SLOTS = 16
+# Upper-case name -> index in LABRAM_CHANNEL_ORDER (position_embedding row - 1).
 _LABRAM_CANONICAL_INDEX = {n.upper(): i for i, n in enumerate(LABRAM_CHANNEL_ORDER)}
 
 # Under a channel_strategy the backbone consumes this montage.
