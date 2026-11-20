@@ -74,14 +74,9 @@ Enhancements
   calling ``raw.get_channel_types()`` (:gh:`1651` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
-- Add :class:`braindecode.models.TinyMyo` (Fasulo et al., IEEE TBME 2026), a
-  foundation model pretrained on surface EMG only. You can fine-tune its
-  3.6M-parameter encoder on a small EMG dataset instead of training from scratch,
-  and the model is small enough to run on GAP9, a low-power microcontroller for
-  wearables. ``from_pretrained`` loads the authors' ``PulpBio/TinyMyo`` files as
-  released, including their NinaPro DB5, EPN-612 and UCI EMG gesture classifiers.
-  With these files, the outputs and the classifier gradients match the authors' code
-  within 1e-5 (:gh:`1649` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- Add :class:`braindecode.models.TinyMyo` (Fasulo et al., IEEE TBME 2026), a small sEMG foundation
+  model; its encoder is on the Hugging Face Hub at ``braindecode/tinymyo-pretrained``, its gesture classifiers
+  at ``braindecode/tinymyo-db5``, ``-epn612`` and ``-uci-emg`` (:gh:`1649` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.modules.ChannelLayer` maps channels with one linear
   estimate, :func:`braindecode.functional.linear_channel_map`: inputs ``A v``,
   targets ``B v``, a prior covariance of the electrode potentials ``v`` and a flat
@@ -97,20 +92,14 @@ Enhancements
   the ``pos``/``ch_mask`` batches of :func:`~braindecode.datasets.pad_channels_collate`
   instead of refusing ``ch_mask`` (:gh:`1593` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.JungMAE`, the GeoNIRS authors' implementation of the
-  masked autoencoder of Jung et al. (IEEE BCI 2025), with a linear head;
-  ``load_state_dict`` takes the GeoNIRS benchmark's ``jung_mae.pt`` as released
-  (:gh:`1589` by `Bruno Aristimunha`_).
+  masked autoencoder of Jung et al. (IEEE BCI 2025); its encoder is on the Hugging Face
+  Hub at ``braindecode/jungmae-pretrained`` (:gh:`1589` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.MtReNIRS` (Chae et al., 2026), a montage-aware fNIRS
-  foundation model with a Fourier embedding of the 10-05 position and chromophore and
-  a QK-norm rotary transformer; ``load_state_dict`` takes ``mtrenirs_10s.pt`` as
-  released, and the docstring gives the 0.01-0.5 Hz band-pass its weights expect
-  (:gh:`1590` by `Bruno Aristimunha`_).
+  foundation model with a QK-norm rotary transformer; its encoder is on the Hugging Face
+  Hub at ``braindecode/mtrenirs-pretrained`` (:gh:`1590` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.GeoNIRS` (Li et al., 2026), an fNIRS foundation model
-  that compresses paired HbO/HbR channels onto latent channels with a cross-attention
-  conditioned on the source-detector geometry read from ``chs_info``;
-  ``load_state_dict`` takes ``geonirs_base.pt`` and ``geonirs_large.pt`` as released,
-  and ``ch_mask`` handles montages of different sizes (:gh:`1591` by
-  `Bruno Aristimunha`_).
+  conditioned on the source-detector geometry; its encoders are on the Hugging Face Hub at
+  ``braindecode/geonirs-base-pretrained`` and ``-large-pretrained`` (:gh:`1591` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan
   et al. (Neurophotonics 2018) as the GeoNIRS benchmark (Li et al., 2026)
   implements it: two temporal convolutions with GroupNorm and GELU, a time
@@ -173,9 +162,7 @@ Enhancements
 - Add :class:`braindecode.models.Pratibha2` (PRATIBHA-2, formerly MANAS-2), a
   dense-attention EEG foundation model pretrained with raw-band hybrid masked
   autoencoding and constrained reconstruction, with pretrained weights on the
-  Hugging Face Hub; ``RevePositionBank`` takes the
-  cached file name, ``fname``, so other models can keep their position table
-  next to REVE's (:gh:`1654` by `Mahir Jain`_).
+  Hugging Face Hub (:gh:`1654` by `Mahir Jain`_).
 - Add :class:`braindecode.models.MEGXL`, the MEG-XL brain-to-text foundation model (Jayalath and Parker Jones, ICML 2026): a frozen BioCodec tokenizer and a criss-cross transformer pretrained on 150 s MEG windows; the released ``meg-xl-med-v2.ckpt``, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/megxl-pretrained`` and matches the authors' code on CPU. Its ``forward`` refuses ``ch_mask`` with a ``ValueError`` (the head flattens ``n_chans * latent_dim`` features and the sensor geometry is the ``chs_info`` montage), and ``return_features`` gives the pooled ``"features"`` only, no ``"tokens"``. The opt-in ``encode``/``encode_codes`` mask replaces projected code content before sensor metadata and attention, returning real temporal hidden states for caller-owned masked-RVQ-code prediction; it adds no default parameters and expects equal valid-length full-montage windows (:gh:`1554` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.SEANetEncoder` and :class:`~braindecode.modules.SEANetDecoder` (EnCodec's SEANet, with :class:`~braindecode.modules.SEANetConv1d`, :class:`~braindecode.modules.SEANetConvTranspose1d`, :class:`~braindecode.modules.SEANetLSTM` and :class:`~braindecode.modules.SEANetResBlock`), moved from :class:`braindecode.models.BrainOmni`, whose parameters and outputs are unchanged. They take ``in_channels``/``out_channels``, ``n_residual_layers``, ``dilation_base``, ``compress``, ``true_skip`` and ``causal`` (:gh:`1553` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.TCCNet`, a causal temporal-convolution model
@@ -243,6 +230,10 @@ API and behavior changes
   ``"bckg"``, ...). Rows with a missing ``eventType`` keep their BIDS ``trial_type``.
   Before, a seizure could have the same name as background (:gh:`1650` by
   `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+
+- :class:`~braindecode.models.REVE`, Pratibha2 and ST-EEGFormer build offline: REVE's 543 positions come from
+  MNE's montages (within 2e-8 m of the release) and ``RevePositionBank`` ignores ``url``, ``timeout``, ``cache_dir``;
+  ``resolve_channel_positions`` takes an exact name, else the last entry equal ignoring case (:gh:`1687` by `Bruno Aristimunha`_).
 
 - Braindecode now requires MNE-Python 1.13.0 or later. This version centres
   both montages on the fitted head origin for spherical-spline interpolation
