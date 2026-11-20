@@ -524,6 +524,9 @@ Bug fixes
   ``forward`` stacked them, which needs equal widths. ``forward`` now
   concatenates them. Outputs and parameters are unchanged for equal widths
   (:gh:`1604` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- ``from_pretrained`` takes a new ``n_times``, ``sfreq`` or ``input_window_seconds`` over the saved
+  pair, and loads the local ``pytorch_model.bin`` that ``save_pretrained`` falls back to; without
+  the Hub, ``get_config`` keeps the SignalJEPA arguments (:gh:`1637` by `Bruno Aristimunha`_).
 - :class:`~braindecode.models.GCNsNet` estimates its electrode graph from the
   training partition of array and MNE Epochs inputs. Fresh estimator fits
   recompute the graph, and constant channels have no edges. A passed GCNsNet

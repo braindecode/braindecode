@@ -659,6 +659,25 @@ def test_init_kwargs_tracked_for_subclass():
     assert kwargs["n_times"] == 100
 
 
+def test_signal_jepa_subclass_config_without_hub():
+    """A subclass keeps its own constructor arguments in ``get_config`` without the Hub."""
+    code = """
+import sys
+sys.modules["huggingface_hub"] = None
+import mne
+from braindecode.models import SignalJEPA_Contextual
+from braindecode.models.base import HAS_HF_HUB
+assert not HAS_HF_HUB
+info = mne.create_info(["Cz", "Pz"], 128, "eeg").set_montage("standard_1020")
+model = SignalJEPA_Contextual(chs_info=info["chs"], n_times=256, sfreq=128,
+                             n_outputs=2, n_spat_filters=2,
+                             transformer__num_encoder_layers=1,
+                             transformer__num_decoder_layers=1)
+assert model.get_config()["n_spat_filters"] == 2
+"""
+    subprocess.run([sys.executable, "-c", code], check=True)  # nosec B603 - fixed test
+
+
 def test_hub_method_install_hint_no_hf():
     """Stubs raise ImportError with install hint when huggingface_hub is absent."""
     from braindecode.models.base import _BaseHubMixinStub
