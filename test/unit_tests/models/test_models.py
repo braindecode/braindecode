@@ -8291,23 +8291,28 @@ def test_geonirs_released_checkpoints_match_the_authors_code(file, kwargs, expec
 
 @pytest.mark.network
 @pytest.mark.huggingface
-def test_mtrenirs_pretrained_matches_the_release():
+@pytest.mark.parametrize(
+    "n_times, expected",
+    [
+        (100, [0.248106, -1.594136, 0.505165, 0.201188, -0.050248]),  # one window
+        (300, [0.387405, -0.084270, 1.213972, -0.281512, -1.097081]),  # rotary positions 0-2
+    ],
+)
+def test_mtrenirs_pretrained_matches_the_release(n_times, expected):
     """The re-hosted encoder gives the features of ``mtrenirs_10s.pt``
     (microsoft/MtReNIRS@16c3082)."""
     pytest.importorskip("huggingface_hub")
-    chs_info = _fnirs_chs_info(4)
     model = MtReNIRS.from_pretrained(
         "braindecode/mtrenirs-pretrained",
         revision="7c5e60535c3822dcac3ddcd2d19098504d57d38c",
-        chs_info=chs_info,
+        chs_info=_fnirs_chs_info(4),
         n_outputs=3,
-        n_times=100,
+        n_times=n_times,
     ).eval()
-    x = torch.arange(8 * 100.0).reshape(1, 8, 100).mul(0.05).sin()
+    x = torch.arange(8.0 * n_times).reshape(1, 8, n_times).mul(0.05).sin()
     with torch.no_grad():
         features = model(x, return_features=True)["features"]
-    expected = torch.tensor([0.248106, -1.594136, 0.505165, 0.201188, -0.050248])
-    torch.testing.assert_close(features[0, :5], expected, rtol=0, atol=1e-5)
+    torch.testing.assert_close(features[0, :5], torch.tensor(expected), rtol=0, atol=1e-5)
 
 
 def _tccnet_reference(model, x, mask_value):

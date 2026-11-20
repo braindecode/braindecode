@@ -2507,6 +2507,15 @@ def test_timm_attention_rotary_positions_restart_in_each_run():
     assert not torch.allclose(attn(x[:, reverse_runs]), attn(x)[:, reverse_runs])
     with pytest.raises(ValueError, match="divisible by rotary_runs"):
         attn(x[:, :5])
+    with pytest.raises(ValueError, match="even"):
+        TimmAttention(12, num_heads=4, rotary_runs=1)
+    with pytest.raises(ValueError, match="rotary_runs must be positive"):
+        TimmAttention(16, rotary_runs=0)
+    # A v2.0.0 full-module pickle has no rotary_runs attribute
+    plain = TimmAttention(16, num_heads=2).eval()
+    expected = plain(x)
+    del plain.rotary_runs
+    torch.testing.assert_close(plain(x), expected, rtol=0, atol=0)
 
 
 def test_pre_norm_block_keys_and_forward():
