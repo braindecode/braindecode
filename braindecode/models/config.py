@@ -21,6 +21,7 @@ try:
 
     _loc_type = NDArray[Shape["12"], np.float64]
 except ImportError:
+    # Without numpydantic, loc (12,) is a plain ndarray written to JSON as floats
     _loc_type = Annotated[
         np.ndarray,
         pydantic.PlainSerializer(
