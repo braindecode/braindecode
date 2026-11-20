@@ -315,6 +315,8 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.EEGMiner` exports with :func:`torch.export.export` on
+  PyTorch 2.6 (:gh:`1690` by `Bruno Aristimunha`_).
 - ``convert_to_zarr`` and ``load_from_zarr`` work with a local Zarr installation.
   Uploading or downloading a dataset also requires ``huggingface_hub``
   (:gh:`1684` by `Bruno Aristimunha`_).
