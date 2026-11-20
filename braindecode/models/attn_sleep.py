@@ -381,12 +381,6 @@ def _branch_output_length(
 ) -> int:
     """Propagate temporal length through one MRCNN branch of Conv1d/MaxPool1d specs."""
     length = int(n_times)
-    if length <= 0:
-        raise ValueError(
-            "Input window has too small `n_times`/`input_window_seconds` for "
-            "AttnSleep's feature extractor: expected at least 1 sample, got "
-            f"input shape (1, 1, {n_times})."
-        )
     for kernel_size, stride, padding, dilation in specs:
         length = _conv1d_output_length(length, kernel_size, stride, padding, dilation)
         if length <= 0:
