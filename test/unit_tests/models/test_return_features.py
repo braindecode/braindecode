@@ -238,6 +238,7 @@ _MODELS = [
             "depth": 1,
             "num_heads": 4,
             "embed_dim": 64,
+            "projection_dims": (64, 64),
             "chs_info": _fnirs_chs_info(2),
         },
         False,
