@@ -9,7 +9,7 @@ from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
-from braindecode.models.base import EEGModuleMixin, _too_short_input_error
+from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import (
     FeedForwardBlock,
     MultiHeadAttention,
@@ -355,14 +355,14 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         return x
 
     def get_fc_size(self):
-        try:
-            out = self.patch_embedding(torch.ones((1, 1, self.n_chans, self.n_times)))
-        except RuntimeError as exc:
-            raise _too_short_input_error(exc, self.input_shape) or exc
-        size_embedding_1 = out.cpu().data.numpy().shape[1]
-        size_embedding_2 = out.cpu().data.numpy().shape[2]
-
-        return size_embedding_1 * size_embedding_2
+        """Flattened size of the token sequence, ``n_tokens * n_filters_time``."""
+        n_tokens = self.patch_embedding.n_tokens(self.n_times)
+        if n_tokens < 1:
+            raise ValueError(
+                "The temporal convolution and pooling leave no token: too small "
+                f"`n_times`/`input_window_seconds` for the input {self.input_shape}."
+            )
+        return n_tokens * self.patch_embedding.n_filters_time
 
 
 class _PatchEmbedding(nn.Module):
@@ -403,6 +403,11 @@ class _PatchEmbedding(nn.Module):
         activation: type[nn.Module] = nn.ELU,
     ):
         super().__init__()
+        self.n_filters_time = n_filters_time
+        # The temporal convolution and the pooling set the number of tokens
+        self.filter_time_length = filter_time_length
+        self.pool_time_length = pool_time_length
+        self.stride_avg_pool = stride_avg_pool
 
         self.shallownet = nn.Sequential(
             nn.Conv2d(1, n_filters_time, (1, filter_time_length), (1, 1)),
@@ -423,6 +428,16 @@ class _PatchEmbedding(nn.Module):
             ),  # transpose, conv could enhance fiting ability slightly
             Rearrange("b d_model 1 seq -> b seq d_model"),
         )
+
+    def n_tokens(self, n_times: int) -> int:
+        """Tokens for ``n_times`` samples.
+
+        The temporal convolution keeps ``n_times - filter_time_length + 1``
+        samples (the spatial convolution keeps the length), and the average
+        pooling windows them by ``pool_time_length``, ``stride_avg_pool`` apart.
+        """
+        n_samples = n_times - self.filter_time_length + 1
+        return (n_samples - self.pool_time_length) // self.stride_avg_pool + 1
 
     def forward(self, x: Tensor) -> Tensor:
         # Nothing runs between the temporal and the spatial convolution, so
