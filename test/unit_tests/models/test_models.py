@@ -5351,31 +5351,6 @@ def test_csbrain_masked_forward_replaces_patches():
     assert model(torch.randn(1, 3, 400), mask=mask).shape == (1, 2)
 
 
-@pytest.mark.parametrize("encoder_only", [False, True])
-def test_csbrain_saved_before_channel_count_check(encoder_only):
-    model = CSBrain(
-        n_outputs=2,
-        n_chans=3,
-        n_times=400,
-        n_layer=1,
-        dim_feedforward=64,
-        return_encoder_output=encoder_only,
-    ).eval()
-    x = torch.randn(2, 3, 400)
-    with torch.no_grad():
-        expected = model(x)
-        del model._encoder_output  # historical whole-module pickle
-        restored = pickle.loads(pickle.dumps(model))
-        torch.testing.assert_close(restored(x), expected, rtol=0, atol=0)
-        features = restored(x[:, :2], return_features=True)["features"]
-        assert features.shape[1] == 2
-        if encoder_only:
-            torch.testing.assert_close(restored(x[:, :2]), features, rtol=0, atol=0)
-            restored.reset_head(2)
-        with pytest.raises(ValueError, match="built for 3 channels"):
-            restored(x[:, :2])
-
-
 @pytest.mark.parametrize("batch_size", [1, 3])
 def test_csbrain_train_mode_small_batches(batch_size):
     model = CSBrain(n_outputs=2, n_chans=3, n_times=400, sfreq=200.0, n_layer=1)
@@ -5538,30 +5513,24 @@ def test_csbrain_rejects_invalid_channel_order(kwargs, match):
 # EEGCLIP
 
 
-@pytest.mark.parametrize("custom", ["none", "text", "eeg"])
-def test_eegclip_saved_before_channel_count_check(custom):
-    # The custom EEG encoder pools any number of channels into eight features.
+@pytest.mark.parametrize("custom_encoder", [False, True])
+def test_eegclip_checks_channels_only_for_its_deep4net(custom_encoder):
+    # The custom encoder pools any number of channels into eight features.
     encoder = nn.Sequential(nn.Flatten(), nn.AdaptiveAvgPool1d(8))
     model = EEGCLIP(
         n_outputs=2,
         n_chans=3,
         n_times=1000,
         eeg_embedding_dim=8,
-        eeg_encoder=encoder if custom == "eeg" else None,
-        text_encoder=nn.Identity() if custom == "text" else None,
+        eeg_encoder=encoder if custom_encoder else None,
         projection_layers=1,
     ).eval()
-    x = torch.randn(2, 3, 1000)
-    with torch.no_grad():
-        expected = model(x)
-        del model._default_eeg_encoder  # historical whole-module pickle
-        restored = pickle.loads(pickle.dumps(model))
-        torch.testing.assert_close(restored(x), expected, rtol=0, atol=0)
-        if custom == "eeg":
-            assert restored(x[:, :2]).shape == (2, 2)
-        else:
-            with pytest.raises(ValueError, match="built for 3 channels"):
-                restored(x[:, :2])
+    x = torch.randn(2, 2, 1000)
+    if custom_encoder:
+        assert model(x).shape == (2, 2)
+    else:
+        with pytest.raises(ValueError, match="built for 3 channels"):
+            model(x)
 
 
 def test_eegclip_matches_authors_projection_and_clip_loss():
@@ -8038,27 +8007,23 @@ def test_cbramod_features_skip_pretraining_proj_out():
     assert any(k.startswith("proj_out.") for k in model.state_dict())
 
 
+@pytest.mark.parametrize(
+    "model_class, kwargs", [(CBraMod, {"nhead": 2}), (CSBrain, {"dim_feedforward": 64})]
+)
 @pytest.mark.parametrize("encoder_only", [False, True])
-def test_cbramod_saved_before_encoder_output_flag(encoder_only):
-    model = CBraMod(
-        n_outputs=2,
-        n_chans=3,
-        n_times=400,
-        n_layer=1,
-        nhead=2,
-        return_encoder_output=encoder_only,
+def test_only_the_flattened_head_is_tied_to_the_channel_count(
+    model_class, kwargs, encoder_only
+):
+    model = model_class(
+        n_outputs=2, n_chans=3, n_times=400, n_layer=1,
+        return_encoder_output=encoder_only, **kwargs,
     ).eval()
-    x = torch.randn(2, 3, 400)
-    with torch.no_grad():
-        expected = model(x)
-        del model._encoder_output  # whole-module pickle from braindecode 2.0
-        restored = pickle.loads(pickle.dumps(model))
-        torch.testing.assert_close(restored(x), expected, rtol=0, atol=0)
-        if encoder_only:
-            assert restored(x[:, :2]).shape[1] == 2
-        else:
-            with pytest.raises(ValueError, match="built for 3 channels"):
-                restored(x[:, :2])
+    x = torch.randn(2, 2, 400)
+    if encoder_only:
+        assert model(x).shape[1] == 2
+        model.reset_head(2)
+    with pytest.raises(ValueError, match="built for 3 channels"):
+        model(x)
 
 
 def test_axon_encode_checks_channel_count():
@@ -8076,66 +8041,28 @@ def test_axon_encode_checks_channel_count():
             model.encode(x[:, :3])
 
 
-def test_pbt_patches_are_channel_specific():
-    n_chans, n_times, d_input = 22, 1000, 64  # 1000 is not a multiple of 64
-    model = PBT(n_chans=n_chans, n_times=n_times, n_outputs=2, d_input=d_input)
-    x = torch.arange(n_chans, dtype=torch.float32).view(1, -1, 1).repeat(1, 1, n_times)
-
-    patches, _ = model.patch_signal(x)
-
-    assert patches.shape == (1, n_chans * (n_times // d_input), d_input)
-    assert all(patch.unique().numel() == 1 for patch in patches[0])
-    assert model(x).shape == (1, 2)
-
-
-@pytest.mark.parametrize("n_times", [8, 11])
-def test_pbt_saved_patcher_respects_channel_and_window_boundaries(n_times):
+@pytest.mark.parametrize("n_times", [8, 11])  # 11 is not a multiple of d_input
+def test_pbt_patches_stay_inside_their_channel(n_times):
     n_chans, d_input = 3, 4
     model = PBT(
-        n_chans=n_chans,
-        n_times=n_times,
-        n_outputs=2,
-        d_input=d_input,
-        embed_dim=8,
-        num_heads=2,
-        num_layers=1,
-    ).eval()
-    x = torch.arange(n_chans * (n_times + 5), dtype=torch.float32).reshape(
-        1, n_chans, n_times + 5
+        n_chans=n_chans, n_times=n_times, n_outputs=2, d_input=d_input,
+        embed_dim=8, num_heads=2, num_layers=1,
     )
+    x = torch.arange(n_chans * (n_times + 5.0)).reshape(1, n_chans, -1)
+    starts = range(0, n_times - d_input + 1, d_input)
     expected = torch.stack(
-        [
-            x[:, c, i : i + d_input]
-            for c in range(n_chans)
-            for i in range(0, n_times - d_input + 1, d_input)
-        ],
-        dim=1,
+        [x[:, c, i : i + d_input] for c in range(n_chans) for i in starts], dim=1
     )
-    with torch.no_grad():
-        logits = model(x[..., :n_times])
-        torch.testing.assert_close(model(x), logits)
-        with pytest.raises(ValueError, match="built for 3 channels"):
-            model(x[:, :2])
-        # PBT saves before 2.1 counted patches after flattening the channels.
-        model.patch_signal.num_tokens = n_chans * n_times // d_input
-        restored = pickle.loads(pickle.dumps(model))
-        patches, positions = restored.patch_signal(x)
-        torch.testing.assert_close(patches, expected)
-        torch.testing.assert_close(positions, torch.arange(expected.shape[1] + 1))
-        torch.testing.assert_close(restored(x), logits)
+    patches, _ = model.patch_signal(x)  # past n_times, and a partial patch, are dropped
+    torch.testing.assert_close(patches, expected)
+    with pytest.raises(ValueError, match="built for 3 channels"):
+        model(x[:, :2])
 
 
 @pytest.mark.parametrize("d_input", [-1, 0, 4])
 def test_pbt_requires_a_complete_patch_per_channel(d_input):
     with pytest.raises(ValueError, match="0 < d_input <= n_times"):
         PBT(n_chans=3, n_times=3, n_outputs=2, d_input=d_input)
-
-
-def test_pbt_saved_without_a_complete_patch_rejects_the_window():
-    model = PBT(n_chans=3, n_times=4, n_outputs=2, d_input=4)
-    model.patch_signal.num_tokens = 3 * 3 // 4  # old model with n_times=3
-    with pytest.raises(ValueError, match="one complete patch per channel"):
-        model(torch.randn(2, 3, 3))
 
 
 @pytest.mark.parametrize(

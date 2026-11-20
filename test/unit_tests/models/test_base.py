@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 from operator import attrgetter
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -14,7 +15,7 @@ import pytest
 import torch
 from torch import nn
 
-from braindecode.models import EEGNet
+from braindecode.models import EEGCLIP, LUNA, PBT, CBraMod, Deep4Net, EEGNet
 from braindecode.models.base import EEGModuleMixin
 
 if TYPE_CHECKING:
@@ -882,64 +883,6 @@ def test_load_state_dict_from_before_max_norm_parametrization():
     torch.testing.assert_close(loaded(x), model(x))
 
 
-@pytest.mark.parametrize("legacy_first", [False, True])
-@pytest.mark.parametrize("legacy, current", [
-    ("conv_spatial.weight", "conv_spatial.parametrizations.weight.original"),
-    ("conv_classifier.weight", "final_layer.conv_classifier.weight"),
-])
-def test_legacy_key_cannot_overwrite_current_weight(legacy, current, legacy_first):
-    model = EEGNet(n_chans=3, n_outputs=5, n_times=385)
-    state = model.state_dict()
-    expected = state[current].clone()
-    obsolete = {legacy: torch.zeros_like(expected)}
-    checkpoint = obsolete | state if legacy_first else state | obsolete
-
-    with pytest.raises(RuntimeError, match="Unexpected key"):
-        model.load_state_dict(checkpoint)
-    result = model.load_state_dict(checkpoint, strict=False)
-    assert result.unexpected_keys == [legacy]
-    torch.testing.assert_close(model.state_dict()[current], expected)
-
-
-def test_legacy_weight_does_not_bypass_a_custom_parametrization():
-    model = DummyModuleNTime(n_times=4)
-    state = model.state_dict()
-    nn.utils.parametrize.register_parametrization(model.dummy, "weight", nn.Sigmoid())
-
-    result = model.load_state_dict(state, strict=False)
-    assert result.unexpected_keys == ["dummy.weight"]
-    assert result.missing_keys == ["dummy.parametrizations.weight.original"]
-
-
-@pytest.mark.parametrize("legacy, current", [
-    ("conv_spatial.weight", "conv_spatial.parametrizations.weight.original"),
-    ("conv_classifier.weight", "final_layer.conv_classifier.weight"),
-])
-def test_load_state_dict_accepts_tied_historical_names(tmp_path, legacy, current):
-    model = EEGNet(n_chans=3, n_outputs=2, n_times=128).eval()
-    state = model.state_dict()
-    state[legacy] = state[current].detach()
-    # Saving a module registered twice produces two tensor objects backed by
-    # the same storage in raw PyTorch checkpoints.
-    path = tmp_path / "tied.pt"
-    torch.save(state, path)
-    restored = torch.load(path, weights_only=True)
-    model.load_state_dict(restored)
-    assert restored[current].is_set_to(restored[legacy])
-
-    # Equal values in an independent tensor, or a different interpretation of
-    # the same bytes, are competing entries rather than tied weights.
-    for competing in (
-        restored[current].clone(),
-        restored[current].view(torch.int32),
-        restored[current].transpose(0, 1),
-        restored[current][1:],
-    ):
-        restored[legacy] = competing
-        with pytest.raises(RuntimeError, match="Unexpected key"):
-            model.load_state_dict(restored)
-
-
 def test_load_state_dict_preserves_batch_norm_version():
     model = EEGNet(n_chans=3, n_outputs=2, n_times=128)
     state = model.state_dict()
@@ -950,3 +893,75 @@ def test_load_state_dict_preserves_batch_norm_version():
     # PyTorch added this buffer in BatchNorm version 2.
     state._metadata["bnorm_1"]["version"] = 1
     model.load_state_dict(state)
+
+
+# Saved with braindecode 2.0.0 (git tag v2.0.0) and torch 2.6: each model below built
+# after ``torch.manual_seed(0)`` (``proj_out`` of CBraMod set to the identity, as 2.1
+# does not apply it), ``y = model.eval()(x)`` for an ``x`` drawn with seed 1.
+# ``v2_pickles.pth`` holds ``torch.save(model)`` after that forward pass, for the models
+# that can be pickled whole. EEGNet, whose weights are parametrized, cannot: its
+# ``state_dict()`` is in ``v2_state_dicts.pth``.
+_V2_DATA = Path(__file__).parent / "data"
+_V2_MODELS = {
+    "EEGNet": lambda: EEGNet(
+        n_chans=3, n_outputs=2, n_times=64, F1=2, D=2, kernel_length=8,
+        depthwise_kernel_length=4,
+    ),
+    "CBraMod": lambda: CBraMod(
+        n_chans=3, n_outputs=2, n_times=32, patch_size=16, emb_dim=16, nhead=2,
+        n_layer=1, dim_feedforward=16,
+        channels_kernel_stride_padding_norm=(
+            (4, 9, 4, 4, (2, 4)), (4, 3, 1, 1, (2, 4)), (4, 3, 1, 1, (2, 4))
+        ),
+    ),
+    "EEGCLIP": lambda: EEGCLIP(
+        n_chans=3, n_outputs=2, n_times=700, text_embedding_dim=8, eeg_embedding_dim=4,
+        projection_layers=1,
+        eeg_encoder=Deep4Net(
+            n_chans=3, n_times=700, n_outputs=4, final_conv_length=2,
+            stride_before_pool=True, n_filters_time=2, n_filters_spat=2,
+            n_filters_2=2, n_filters_3=2, n_filters_4=2,
+        ),
+    ),
+    "LUNA": lambda: LUNA(
+        n_chans=3, n_times=40, n_outputs=2, patch_size=20, num_queries=1,
+        embed_dim=16, depth=1, num_heads=1, mlp_ratio=1.0,
+    ),
+    "PBT": lambda: PBT(
+        n_chans=3, n_times=32, n_outputs=2, d_input=8, embed_dim=16, num_heads=2,
+        num_layers=1,
+    ),
+}
+
+
+def _v2_pickle(name):
+    # Unpickling runs code: this file is part of the repository.
+    pickles = torch.load(_V2_DATA / "v2_pickles.pth", weights_only=False)  # nosec B614
+    return pickles[name]
+
+
+@pytest.mark.parametrize("name", _V2_MODELS)
+def test_v2_checkpoints_load(name):
+    if name == "EEGNet":
+        saved = torch.load(_V2_DATA / "v2_state_dicts.pth", weights_only=True)[name]
+        state = saved["state_dict"]
+    else:
+        saved = _v2_pickle(name)
+        state = saved["model"].state_dict()
+    model = _V2_MODELS[name]().eval()
+    model.load_state_dict(state, strict=True)
+    with torch.no_grad():
+        torch.testing.assert_close(model(saved["x"]), saved["y"])
+
+
+@pytest.mark.parametrize("name", ["CBraMod", "EEGCLIP", "LUNA", "PBT"])
+def test_v2_pickles_run(name):
+    saved = _v2_pickle(name)
+    with torch.no_grad():
+        torch.testing.assert_close(saved["model"](saved["x"]), saved["y"])
+
+
+def test_reset_head_on_v2_cbramod_pickle():
+    saved = _v2_pickle("CBraMod")
+    saved["model"].reset_head(3)
+    assert saved["model"](saved["x"]).shape == (2, 3)

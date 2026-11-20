@@ -405,13 +405,7 @@ class DuIN(EEGModuleMixin, nn.Module, license="mit"):
                 f"DuIN was configured for {self.n_times} time samples, "
                 f"but received {x.shape[-1]}."
             )
-        check_n_chans(
-            x,
-            self.n_chans,
-            "DuIN",
-            "build the model with the chs_info of this montage, or use a "
-            "channel_strategy.",
-        )
+        check_n_chans(x, self.n_chans, "DuIN")
         # 0. pad, crop or reject a window that is not a multiple of patch_size
         x = self.patch_tokenizer.prepare_input(x)
         # 1. channels -> neural space: (batch, n_neural, n_patches * patch_size)
