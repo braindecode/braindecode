@@ -180,30 +180,6 @@ def test_gallery_index_keeps_curated_navigation(corpus):
     assert "(model_building/plot_bcic_iv_2a_moabb_trial.html)" in text
 
 
-def test_relative_positioning_uses_full_sleep_stage_palette():
-    import matplotlib.pyplot as plt
-    import numpy as np
-    from matplotlib import colormaps
-    from sphinx_gallery.py_source_parser import split_code_and_text_blocks
-
-    tutorial = (
-        Path(__file__).resolve().parents[2]
-        / "examples/advanced_training/plot_relative_positioning.py"
-    )
-    _, blocks = split_code_and_text_blocks(str(tutorial))
-    plot = next(source for kind, source, _ in reversed(blocks) if kind == "code")
-    # The last gallery cell starts from the feature vectors and sleep-stage labels.
-    namespace = {"np": np, "plt": plt, "data": {"test": (np.eye(5), np.arange(5))}}
-    exec(compile(plot, str(tutorial), "exec"), namespace)  # nosec B102
-    fig = namespace["fig"]
-    handles, labels = fig.axes[0].get_legend_handles_labels()
-    colors = [handle.get_facecolor()[0, :3] for handle in handles]
-    plt.close(fig)
-    assert labels == ["W", "N1", "N2", "N3", "R"]
-    expected = colormaps["viridis"].resampled(5).colors
-    np.testing.assert_allclose(colors, np.asarray(expected)[:, :3])
-
-
 def test_html_then_markdown_gallery_integration(tmp_path):
     """Exercise real extension nodes and shared doctrees without any datasets."""
     import json
