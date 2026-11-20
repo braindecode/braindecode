@@ -52,7 +52,13 @@ def check_ch_mask(
     return ch_mask
 
 
-def check_n_chans(x: torch.Tensor, n_chans: int, model: str, hint: str) -> None:
+def check_n_chans(
+    x: torch.Tensor,
+    n_chans: int,
+    model: str,
+    hint: str = "build the model with the chs_info of this montage, or use a "
+    "channel_strategy.",
+) -> None:
     """Check that the input has the channels a model was built for.
 
     Parameters
@@ -64,7 +70,8 @@ def check_n_chans(x: torch.Tensor, n_chans: int, model: str, hint: str) -> None:
     model : str
         Name of the model, for the error message.
     hint : str
-        How to run the model on this input, ending the error message.
+        How to run the model on this input, ending the error message. The
+        default is for models that take a ``channel_strategy``.
 
     Raises
     ------

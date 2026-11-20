@@ -674,19 +674,6 @@ def filterbank(
             }
         )
         all_filtered.append(filtered)
-
-    # A filtered channel can reuse an original name. MNE checks for duplicates
-    # before we can drop the originals.
-    temporary_suffix = ""
-    if drop_original_signals and set(original_ch_names).intersection(
-        name for filtered in all_filtered for name in filtered.ch_names
-    ):
-        temporary_suffix = "_"
-        while any(name.endswith(temporary_suffix) for name in original_ch_names):
-            temporary_suffix += "_"
-        for filtered in all_filtered:
-            filtered.rename_channels(lambda name: name + temporary_suffix)
-
     raw.add_channels(all_filtered)
     if not order_by_frequency_band:
         # order channels by name and not by frequency band:
@@ -698,5 +685,3 @@ def filterbank(
         raw.reorder_channels(chs_by_freq_band)
     if drop_original_signals:
         raw.drop_channels(original_ch_names)
-        if temporary_suffix:
-            raw.rename_channels(lambda name: name.removesuffix(temporary_suffix))
