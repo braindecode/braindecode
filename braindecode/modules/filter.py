@@ -713,12 +713,17 @@ class GeneralizedGaussianFilter(nn.Module):
         )
         shape = torch.clamp(self.shape.clone(), min=2.0, max=3.0)
 
-        if not torch.jit.is_scripting() and not torch.jit.is_tracing():
+        # Projected update for training; graphs captured for inference
+        # (torch.export, torch.compile in eval mode) leave the parameters alone.
+        if not (
+            torch.jit.is_scripting()
+            or torch.jit.is_tracing()
+            or (torch.compiler.is_compiling() and not self.training)
+        ):
             with torch.no_grad():
-                # Detached, so torch.export also sees these updates as outside autograd
-                self.f_mean.detach().copy_(f_mean)
-                self.bandwidth.detach().copy_(bandwidth)
-                self.shape.detach().copy_(shape)
+                self.f_mean.copy_(f_mean)
+                self.bandwidth.copy_(bandwidth)
+                self.shape.copy_(shape)
 
         # Create magnitude response with gain=1 -> (channels, freqs)
         mag_response = self.exponential_power(
