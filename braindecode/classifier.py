@@ -8,6 +8,7 @@
 # License: BSD (3-clause)
 
 import warnings
+from functools import partial
 
 from skorch import NeuralNet
 from skorch.callbacks import EpochScoring
@@ -99,6 +100,16 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
             return ThrowAwayIndexLoader(self, iterator, is_regression=False)
         else:
             return iterator
+
+    def _get_predict_nonlinearity(self):
+        nonlinearity = super()._get_predict_nonlinearity()
+        if self.predict_nonlinearity == "auto" and len(self._criteria) == 1:
+            criterion = getattr(self, self._criteria[0] + "_")
+            if isinstance(getattr(criterion, "_orig_mod", criterion), CrossEntropyLoss):
+                # CrossEntropyLoss reads the classes on axis 1, also for dense outputs
+                # (batch, classes, positions); skorch's softmax uses the last axis.
+                return partial(Tensor.softmax, dim=1)
+        return nonlinearity
 
     def predict_proba(self, X):
         """Return the output of the module's forward method as a numpy.
