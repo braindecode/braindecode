@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from .brainmodule import BrainModule
     from .brainomni import BrainOmni, BrainTokenizer
     from .brant import Brant
+    from .caresleepnet import CareSleepNet
     from .cbramod import CBraMod
     from .codebrain import CodeBrain
     from .contrawr import ContraWR
@@ -82,6 +83,7 @@ if TYPE_CHECKING:
     from .nice import NICE
     from .patchedtransformer import PBT
     from .popt import PopulationTransformer
+    from .pratibha2 import Pratibha2
     from .reve import REVE
     from .sccnet import SCCNet
     from .seizure_transformer import SeizureTransformer
@@ -106,6 +108,7 @@ if TYPE_CHECKING:
     from .tcn import BDTCN, TCN
     from .tfm_tokenizer import TFMTokenizer, TFMTokenizerOutput
     from .tidnet import TIDNet
+    from .tinymyo import TinyMyo
     from .tmsanet import TMSANet
     from .tsinception import TSception
     from .usleep import USleep
@@ -121,9 +124,8 @@ if TYPE_CHECKING:
 else:  # hidden from checkers so misspelled names stay errors
 
     def _type_checking_imports():
-        # ponytail: needs this file's source, as get_summary_table needs summary.csv.
-        with open(__file__, "rb") as source:
-            tree = ast.parse(source.read())
+        # The loader reads this source from a directory or a zip archive.
+        tree = ast.parse(__spec__.loader.get_source(__name__))
         block = next(node for node in tree.body if isinstance(node, ast.If))
         return {alias.name: imp.module for imp in block.body for alias in imp.names}
 

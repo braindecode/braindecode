@@ -6,7 +6,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import masked_group_norm, spectral_input
-from braindecode.functional.patches import _check_on_non_divisible, patch_count
+from braindecode.functional.patches import pad_or_crop_to_patches, patch_count
 
 
 class PatchTokenizer(nn.Module):
@@ -43,8 +43,9 @@ class PatchTokenizer(nn.Module):
     patch_size : int
         Number of time samples per patch.
     n_times : int
-        Number of time samples of the input, used to set up the right-padding
-        when ``n_times`` is not a multiple of ``patch_size``.
+        Nominal number of time samples of the input. It is only used to
+        validate the patch geometry and warn about padding at construction;
+        padding or cropping follows the actual input length at ``forward``.
     emb_dim : int, optional
         Output features per patch in learnable mode. Defaults to ``patch_size``.
         Ignored when ``learnable=False``.
@@ -82,7 +83,9 @@ class PatchTokenizer(nn.Module):
         output_order="channel_patch",
     ):
         super().__init__()
-        _check_on_non_divisible(on_non_divisible)
+        # A crop tokenizer may receive a longer signal than its nominal length.
+        nominal_policy = "pad" if on_non_divisible == "crop" else on_non_divisible
+        patch_count(n_times, patch_size, nominal_policy)
         if projection not in ("conv", "linear"):
             raise ValueError(
                 f"projection must be 'conv' or 'linear', got {projection!r}."
@@ -98,18 +101,12 @@ class PatchTokenizer(nn.Module):
         self.projection = projection
         self.output_order = output_order
         self.emb_dim = (emb_dim or patch_size) if learnable else patch_size
-        if n_times % patch_size:
-            if on_non_divisible == "pad":
-                warn(
-                    f"Time dimension ({n_times}) is not divisible by patch_size "
-                    f"({patch_size}). Input will be padded.",
-                    UserWarning,
-                )
-            elif on_non_divisible == "error":
-                raise ValueError(
-                    f"Time dimension ({n_times}) is not divisible by patch_size "
-                    f"({patch_size})."
-                )
+        if on_non_divisible == "pad" and n_times % patch_size:
+            warn(
+                f"Time dimension ({n_times}) is not divisible by patch_size "
+                f"({patch_size}). Input will be padded.",
+                UserWarning,
+            )
         # Padding/cropping for a non-divisible time axis is applied at runtime in
         # prepare_input (which works for any input length, not just the
         # construction-time n_times), so no padding submodule is stored here.
@@ -139,7 +136,7 @@ class PatchTokenizer(nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Input of shape ``(..., n_times)``; any ``n_times`` is accepted.
+            Input of shape ``(..., n_times)`` with a nonempty time axis.
 
         Returns
         -------
@@ -147,24 +144,7 @@ class PatchTokenizer(nn.Module):
             ``x`` with a time axis that is a multiple of ``patch_size``,
             handled as set by ``on_non_divisible``.
         """
-        n_times = x.shape[-1]
-        remainder = n_times % self.patch_size
-        if remainder == 0:
-            return x
-        if self.on_non_divisible == "pad":
-            return nn.functional.pad(x, (0, self.patch_size - remainder))
-        if self.on_non_divisible == "crop":
-            cropped_n_times = n_times - remainder
-            if cropped_n_times < self.patch_size:
-                raise ValueError(
-                    f"Need at least one full patch of {self.patch_size} samples, "
-                    f"got {n_times}."
-                )
-            return x[..., :cropped_n_times]
-        raise ValueError(
-            f"Time dimension ({n_times}) is not divisible by patch_size "
-            f"({self.patch_size})."
-        )
+        return pad_or_crop_to_patches(x, self.patch_size, self.on_non_divisible)
 
     def forward(self, x):
         x = self.prepare_input(x)

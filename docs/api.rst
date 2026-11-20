@@ -56,7 +56,7 @@ interface for all EEG models and can derive variable names when needed.
 
     ::
 
-        pip install braindecode[hug]
+        pip install "braindecode[hub]"
 
     **Available pre-trained models:**
 
@@ -79,6 +79,7 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`Labram` - Large Brain Model with pre-trained weights
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
+    - :class:`TinyMyo` - Small sEMG foundation model with pre-trained weights
     - :class:`MAPA` - Masked autoencoder for intracranial EEG with anatomical priors
     - :class:`MIRepNet` - Motor-imagery pre-trained model
     - :class:`NeuroRVQ` - Multi-scale biosignal tokenizer foundation model
@@ -160,6 +161,7 @@ interface for all EEG models and can derive variable names when needed.
      BrainOmni
      BrainTokenizer
      Brant
+     CareSleepNet
      CBraMod
      CodeBrain
      ContraWR
@@ -218,6 +220,7 @@ interface for all EEG models and can derive variable names when needed.
      NICE
      PBT
     PopulationTransformer
+     Pratibha2
      REVE
      SCCNet
      SeizureTransformer
@@ -241,6 +244,7 @@ interface for all EEG models and can derive variable names when needed.
      TFMTokenizerOutput
      TCFormer
      TIDNet
+     TinyMyo
      TMSANet
      TSception
      USleep
@@ -252,7 +256,9 @@ DIVER-1 recording metadata
 
 .. autofunction:: braindecode.models.diver1.channel_metadata_from_chs_info
 
-Modules
+*********
+ Modules
+*********
 
 :py:mod:`braindecode.modules`:
 
@@ -363,6 +369,7 @@ constraints and pooling layers.
 
     AvgPool2dWithConv
     CausalConv1d
+    ChebyshevGraphConv
     CombinedConv
     Conv2dWithConstraint
     DepthwiseConv2d
@@ -538,6 +545,7 @@ The functional module contains various functions that can be used like functiona
     :recursive:
 
      check_ch_mask
+     check_n_chans
      derivation_matrix
      drop_path
      exact_derivation
@@ -545,7 +553,6 @@ The functional module contains various functions that can be used like functiona
      glorot_weight_zero_bias
      hilbert_freq
      identity
-     linear_channel_map
      masked_group_norm
      masked_mean
      pack_channels
@@ -564,7 +571,6 @@ The functional module contains various functions that can be used like functiona
      scaled_dot_product_attention
      sinusoidal_positional_encoding
      spectral_input
-     spherical_spline_kernel
      square
      unpack_channels
 
@@ -609,6 +615,14 @@ Common Datasets
      TUH
      TUHAbnormal
      TUHEvents
+
+Batch collation
+===============
+
+.. autosummary::
+    :toctree: generated/
+
+     pad_channels_collate
 
 Dataset Builders Functions
 ==========================
@@ -996,10 +1010,12 @@ which methods are trustworthy on your data. See the :ref:`interpretability tutor
 Time-domain attribution
 =======================
 
-Per-trial attribution maps in the input domain. Each function takes ``(model, x,
-target)`` and returns a tensor with the same spatial shape as ``x``; all are thin
-wrappers around `captum <https://captum.ai/>`_ (a soft dependency installed via ``pip
-install braindecode[viz]``) and raise :class:`ImportError` without it.
+These `Captum <https://captum.ai/>`_ wrappers compute one attribution map per trial.
+Install the optional dependency with ``pip install braindecode[viz]``. Input-space
+methods return a tensor with the spatial shape of ``x``. :func:`layer_grad_cam` returns
+``(batch, n_times)`` for a layer with one spatial axis, such as a one-dimensional
+convolution, and ``(batch, n_chans, n_times)`` for a layer with two; see its docstring
+for the axis order this assumes.
 
 .. autosummary::
     :toctree: generated/

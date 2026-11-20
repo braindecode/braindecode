@@ -1,7 +1,5 @@
-"""GeoNIRS without the checkpoint: the validity masks and mean_std read-out,
-and a seeded small model and the chs_info geometry against values computed
-with the authors' code (GeoNIRS@81f8995, ``Ours`` with a strict load and
-``scripts/build_fair_input.py``)."""
+"""GeoNIRS: the validity of patches, the mean_std read-out and the released
+weights."""
 
 import pytest
 import torch
@@ -9,156 +7,79 @@ import torch
 from braindecode.models import GeoNIRS
 from braindecode.models.util import _fnirs_chs_info
 
-SMALL = dict(chs_info=_fnirs_chs_info(3), n_outputs=2, embed_dim=32, num_heads=4,
-             depth=1, n_latent_channels=4, feature_dim=8)
+SMALL = dict(chs_info=_fnirs_chs_info(2), n_outputs=2, embed_dim=32, num_heads=4,
+             depth=1, n_latent_channels=4, feature_dim=8, projection_dims=(32, 16, 8))
 NAN = float("nan")
 
 
-def test_geonirs_missing_patch_is_a_shorter_window():
-    """A patch with no measured sample is left out of the attention: the
-    other patches equal those of the window without it, and its tokens are 0."""
+def test_geonirs_missing_samples_and_padding():
+    """A patch needs 80 % of its samples measured, padding counting as
+    missing. An invalid patch has zero tokens and leaves the other patches as
+    in the window without it."""
     torch.manual_seed(0)
-    long = GeoNIRS(n_times=60, **SMALL).eval()
-    short = GeoNIRS(n_times=50, **SMALL).eval()
-    backbone = {
-        k: v for k, v in long.state_dict().items() if not k.startswith("final_layer.")
-    }
-    short.load_state_dict(backbone)
-    x = torch.randn(2, 6, 60)
-    x[..., 50:] = NAN
+    padded = GeoNIRS(n_times=55, on_non_divisible="pad", **SMALL).eval()
+    short = GeoNIRS(n_times=40, **SMALL).eval()
+    encoder = {k: v for k, v in padded.state_dict().items()
+               if not k.startswith("final_layer.")}
+    short.load_state_dict(encoder, strict=False)  # the heads differ in width
+    x = torch.randn(2, 4, 55)
+    x[..., 30:32] = NAN  # patch 3: 8 of 10 samples, valid
+    x[..., 40:43] = NAN  # patch 4: 7 of 10, invalid; patch 5: 5 and padding
     with torch.no_grad():
-        full = long.encode(x)
-        cut = short.encode(x[..., :50])
-    torch.testing.assert_close(full["foundation"][..., :5, :], cut["foundation"])
-    assert not full["foundation"][..., 5, :].any()
-    assert not full["valid"][..., 5].any()
+        full, cut = padded.encode(x), short.encode(x[..., :40])
+    assert full["valid"][..., :4].all() and not full["valid"][..., 4:].any()
+    assert not full["foundation"][..., 4:, :].any()
+    torch.testing.assert_close(full["foundation"][..., :4, :], cut["foundation"])
 
 
-@pytest.mark.parametrize("fraction, measured, valid", [
-    (0.8, 8, True), (0.8, 7, False), (0.75, 8, True), (0.75, 7, False),
-])
-def test_geonirs_patch_validity_threshold(fraction, measured, valid):
-    """"at least 80% of its time points" (B.1.2): the boundary count is valid."""
-    model = GeoNIRS(n_times=20, minimum_patch_valid_fraction=fraction, **SMALL).eval()
-    x = torch.randn(1, 6, 20)
-    x[..., 10 + measured:] = NAN
-    with torch.no_grad():
-        got = model.encode(x)["valid"][0, 0].tolist()
-    assert got == [True, valid]
-
-
-def test_geonirs_mean_std_is_the_population_std_over_valid_patches():
+def test_geonirs_mean_std_over_valid_patches():
+    """``pool="mean_std"``: the mean and population std over the valid
+    patches, zero without one, and finite gradients with a single one."""
+    torch.manual_seed(0)
     model = GeoNIRS(n_times=60, pool="mean_std", **SMALL).eval()
-    x = torch.randn(2, 6, 60)
-    x[1, :, 40:] = NAN  # window 1: 4 valid patches of 6
+    x = torch.randn(4, 4, 60)
+    x[1, :, 40:] = NAN  # 4 valid patches of 6
+    x[2, :, 10:] = NAN  # 1 valid patch
+    x[3] = NAN  # none
+    features = model(x, return_features=True)["features"]
+    features.sum().backward()
+    assert all(p.grad.isfinite().all() for p in model.parameters() if p.grad is not None)
     with torch.no_grad():
-        features = model(x, return_features=True)["features"].reshape(2, 4, 2, 16)
         foundation = model.encode(x)["foundation"]
-    joint = torch.cat([foundation[:, 0], foundation[:, 1]], dim=-1)  # (2, M, P, 2F)
-    for b, n_valid in [(0, 6), (1, 4)]:
+    joint = torch.cat([foundation[:, 0], foundation[:, 1]], dim=-1)  # (4, M, P, 2F)
+    features = features.detach().reshape(4, 4, 2, 16)  # (4, M, [mean, std], 2F)
+    for b, n_valid in [(0, 6), (1, 4), (2, 1)]:
         z = joint[b, :, :n_valid]
         torch.testing.assert_close(features[b, :, 0], z.mean(dim=1))
         torch.testing.assert_close(features[b, :, 1], z.std(dim=1, unbiased=False))
+    assert not features[3].any()
 
 
-# The authors' Ours writes its projection widths, 192 -> 128 -> 96 -> 64, by
-# hand, so the small model keeps D = 192 and F = 64 and is small elsewhere
-REFERENCE_SIZE = dict(
-    embed_dim=192, num_heads=4, depth=1, n_latent_channels=4, feature_dim=64
+# features[0, :5] (HbO tokens) and features[0, -5:] (HbR tokens) of the authors'
+# geonirs_base.pt and geonirs_large.pt
+# (GeoNIRS@81f8995) on the input of the test, loaded as released
+@pytest.mark.network
+@pytest.mark.huggingface
+@pytest.mark.parametrize(
+    "repo_id, revision, expected, expected_hbr",
+    [
+        ("braindecode/geonirs-base-pretrained", "a483f904180dce2c0fdc6dd48917b95498913d9a",
+         [0.067987166, -0.007574921, -0.350337952, 0.147298455, -0.141785607],
+         [-0.119261660, 0.040913288, -0.013012240, -0.140069067, 0.107298315]),
+        ("braindecode/geonirs-large-pretrained", "f51061d599032f726ba6732083bce2dbc7c3fcd1",
+         [-3.116364002, -2.744976997, -0.223239779, -1.097928047, -0.808620572],
+         [2.245513439, -1.460690856, 0.737670124, 2.605016947, -0.031923484]),
+    ],
+    ids=["base", "large"],
 )
-
-# encode(x)["foundation"].flatten(1)[:, ::203] of the authors' Ours on
-# _window(): 8 HbO and 8 HbR values, over the 4 latent channels and the 6
-# patches (patch 4 of window 1 has no valid channel, so its values are 0)
-EXPECTED_FOUNDATION = [
-    [
-        0.6963703036308289, 0.5677199959754944, -1.0788012742996216,
-        -0.04356303811073303, 0.15072523057460785, -0.749310314655304,
-        0.5727516412734985, 2.4500386714935303, -1.132354497909546,
-        -0.4393085241317749, -1.230041742324829, 1.4032108783721924,
-        -1.348412036895752, 0.4464509189128876, -0.4862309992313385,
-        0.3426509499549866,
-    ],
-    [
-        0.6604654788970947, 0.5148303508758545, -1.1532312631607056,
-        -0.0242752805352211, 0.07708635181188583, -0.7201430201530457,
-        0.6330594420433044, 0.0, -1.1344952583312988,
-        0.0, -1.2298455238342285, 0.0,
-        -1.3693218231201172, 0.4532400369644165, -0.4585363566875458,
-        0.3352893590927124,
-    ],
-]
-
-# The authors' dataset_geometry for the optodes of _fnirs_chs_info(2):
-# [midpoint, detector - source] of each pair, centred, in units of 25.46 mm
-EXPECTED_GEOMETRY = [
-    [
-        0.7222108244895935, -1.3219980001449585, 0.0,
-        1.178291916847229, 0.0, 0.0,
-    ],
-    [
-        -0.7222108244895935, 1.3219980001449585, 0.0,
-        1.178291916847229, 0.0, 0.0,
-    ],
-]
-
-
-def _seeded_small_geonirs():
-    """GeoNIRS of depth 1 on 3 pairs and 12 s at 5 Hz (6 patches), whose
-    tensors are drawn from one seeded generator in the order of the sorted
-    state-dict keys, so that they do not depend on the order the layers are
-    built in."""
-    model = GeoNIRS(
-        chs_info=_fnirs_chs_info(3),
-        n_outputs=2,
-        n_times=60,
-        sfreq=5.0,
-        **REFERENCE_SIZE,
+def test_geonirs_pretrained_matches_the_release(repo_id, revision, expected, expected_hbr):
+    pytest.importorskip("huggingface_hub")
+    model = GeoNIRS.from_pretrained(
+        repo_id, revision=revision, chs_info=_fnirs_chs_info(4), n_outputs=3, n_times=150
     ).eval()
-    generator = torch.Generator().manual_seed(0)
+    x = torch.arange(8 * 150.0).reshape(1, 8, 150).mul(0.05).sin()
     with torch.no_grad():
-        for _, tensor in sorted(model.state_dict().items()):
-            # 1 / sqrt(fan-in) for the matrices, 0.5 for the vectors
-            std = tensor.shape[-1] ** -0.5 if tensor.dim() > 1 else 0.5
-            tensor.copy_(std * torch.randn(tensor.shape, generator=generator))
-    return model
-
-
-def _window():
-    """Two windows with missing samples. Window 0: HbO of pair 1 misses 7 of
-    the 10 samples of patch 0 (that patch of the pair is invalid), HbR of pair
-    2 one sample. Window 1: pair 0 has no data, and patch 4 has no valid
-    channel."""
-    generator = torch.Generator().manual_seed(1)
-    x = torch.randn(2, 6, 60, generator=generator)
-    x[0, 1, 2:9] = NAN
-    x[0, 5, 33] = NAN
-    x[1, [0, 3]] = NAN
-    x[1, :, 40:50] = NAN
-    return x
-
-
-def test_geonirs_small_model_matches_the_authors_code():
-    """The latent tokens equal those of the authors' ``Ours``
-    (``model/ours.py``, GeoNIRS@81f8995) loaded strictly with the same state
-    dict and fed the authors' input: zero-filled ``hbo`` and ``hbr``, the
-    sample and channel validity masks, and the geometry of
-    ``scripts/build_fair_input.py`` (GeoNIRS@81f8995)."""
-    model = _seeded_small_geonirs()
-    with torch.no_grad():
-        encoded = model.encode(_window())
-    got = encoded["foundation"].flatten(1)[:, ::203]
-    expected = torch.tensor(EXPECTED_FOUNDATION)
-    torch.testing.assert_close(got, expected, rtol=1e-5, atol=1e-5)
-    assert not encoded["valid"][1, :, 4].any()
-    assert encoded["valid"][1, :, [0, 1, 2, 3, 5]].all()
-
-
-def test_geonirs_default_geometry_is_the_authors_geometry():
-    """``default_geometry`` of ``_fnirs_chs_info(2)`` equals, exactly, what
-    ``dataset_geometry`` of the authors' ``scripts/build_fair_input.py``
-    (GeoNIRS@81f8995) gives for the same optodes: centred on the mean optode,
-    divided by 25.46 mm, ``[midpoint, detector - source]``."""
-    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=150)
-    expected = torch.tensor(EXPECTED_GEOMETRY)
-    torch.testing.assert_close(model.default_geometry, expected, rtol=0, atol=0)
+        features = model(x, return_features=True)["features"]
+    torch.testing.assert_close(features[0, :5], torch.tensor(expected), rtol=0, atol=1e-5)
+    # the last features are HbR tokens, the only ones hbr_projection writes
+    torch.testing.assert_close(features[0, -5:], torch.tensor(expected_hbr), rtol=0, atol=1e-5)

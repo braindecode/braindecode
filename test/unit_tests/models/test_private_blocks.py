@@ -47,6 +47,7 @@ _KNOWN_PRIVATE_BLOCKS = {
     ("brainomni", "_SpatialTemporalBlock"),
     ("brainomni", "_RotaryPositionalEmbedding"),
     ("brainomni", "_MultiHeadAttentionRoPE"),
+    ("caresleepnet", "_CrossModalBlock"),  # queries from the other signal
     ("cbramod", "_TransformerEncoder"),
     ("codebrain", "_RMSNorm"),
     ("codebrain", "_ResidualBlock"),
@@ -118,6 +119,7 @@ _KNOWN_PRIVATE_BLOCKS = {
     ("patchedtransformer", "_TransformerEncoderLayer"),
     ("patchedtransformer", "_TransformerEncoder"),
     ("popt", "_PopTSpatialPositionalEncoding"),
+    ("pratibha2", "_Pratibha2PositionalEncoding"),
     ("seizure_transformer", "_ConvBlock"),
     ("seizure_transformer", "_ResidualConvBlock"),
     ("sensingdynamics", "_ConvBlock"),
