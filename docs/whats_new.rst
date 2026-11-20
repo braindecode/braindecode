@@ -306,7 +306,7 @@ Bug fixes
 
 - :class:`braindecode.models.EEGConformer` and :class:`~braindecode.models.TSception` compute
   their feature size by arithmetic instead of a forward pass at construction, which fed a
-  batch of ones to their BatchNorm statistics (:gh:`PRNUM` by `Bruno Aristimunha`_).
+  batch of ones to their BatchNorm statistics (:gh:`1694` by `Bruno Aristimunha`_).
 - ``convert_to_zarr`` and ``load_from_zarr`` work with a local Zarr installation.
   Uploading or downloading a dataset also requires ``huggingface_hub``
   (:gh:`1684` by `Bruno Aristimunha`_).
