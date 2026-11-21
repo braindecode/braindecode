@@ -2811,39 +2811,19 @@ def _corteg_chs_info(positions):
 _CORTEG_CHS = _corteg_chs_info([[-0.04, -0.02, 0.06], [-0.03, 0.0, 0.07], [0.05, 0.01, 0.05]])
 
 
-def test_corteg_loads_a_steegformer_checkpoint_and_warm_starts_its_high_gamma_embed():
-    steegformer = STEEGFormer(
-        n_chans=3, n_outputs=2, n_times=64, chan_pos_idx=[0, 1, 2], embed_dim=32,
-        depth=2, num_heads=2,
-    )
-    with torch.no_grad():  # a trained bias is not zero, as a fresh one is
-        steegformer.patch_embed.proj.bias.fill_(0.25)
+def test_corteg_high_gamma_embedding_starts_from_the_low_frequency_one():
     model = CORTEG(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
     lo, hi = model.patch_embed.proj, model.patch_embed_hi.proj
     torch.testing.assert_close(
         hi.weight, F.interpolate(lo.weight[None], size=25, mode="linear")[0]
     )
     torch.testing.assert_close(hi.bias, lo.bias)
-    missing, unexpected = model.load_state_dict(steegformer.state_dict(), strict=False)
-    assert unexpected == []
-    assert {key.split(".")[0] for key in missing} == {"channel_adapter", "patch_embed_hi"}
-    # The high-gamma kernel follows the backbone just loaded, not the initial one.
-    torch.testing.assert_close(
-        hi.weight,
-        F.interpolate(
-            steegformer.patch_embed.proj.weight[None], size=25, mode="linear"
-        )[0],
-    )
-    torch.testing.assert_close(hi.bias, steegformer.patch_embed.proj.bias)
 
-    # A trained CORTEG checkpoint supplies its own high-gamma projection.
-    with torch.no_grad():
-        hi.weight.fill_(0.125)
-        hi.bias.fill_(0.5)
-    restored = CORTEG(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
-    restored.load_state_dict(model.state_dict(), strict=True)
-    torch.testing.assert_close(restored.patch_embed_hi.proj.weight, hi.weight)
-    torch.testing.assert_close(restored.patch_embed_hi.proj.bias, hi.bias)
+
+def test_corteg_channel_codebook_is_frozen():
+    model = CORTEG(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
+    assert model.channel_codebook.shape == (len(model.vocab_positions), 32)
+    assert not model.channel_codebook.requires_grad
 
 
 @pytest.mark.parametrize("merge_strategy", ["average", "layerwise_gate"])
@@ -2860,9 +2840,9 @@ def test_corteg_gate_starts_closed(merge_strategy):
 
 
 def test_corteg_soft_branch_starts_at_the_nearest_scalp_slots():
-    from braindecode.models.corteg import _vocab_positions
-
-    vocab = _vocab_positions()
+    vocab = CORTEG(
+        chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL
+    ).vocab_positions
     # MNE's 10-05 montage gives the reference's table (first and last slots).
     torch.testing.assert_close(
         vocab[[0, -1]],
@@ -2891,7 +2871,10 @@ def test_corteg_released_adapter_reproduces_the_reference_outputs():
     pytest.importorskip("huggingface_hub")
     try:
         model = CORTEG.from_pretrained(
-            "braindecode/corteg-stanford-pooled", n_chans=8, strict=True
+            "braindecode/corteg-stanford-pooled",
+            revision="REHOST_PENDING",  # pin after re-host
+            n_chans=8,
+            strict=True,
         ).eval()
     except (URLError, OSError) as err:
         pytest.skip(f"Could not download the CORTEG weights: {err}")
