@@ -181,7 +181,6 @@ class EEGMiner(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
         self.feature_layer = _EEGMinerFeatures(
             self.method, self.n_chans, self.n_filters, self.n_times
         )
-        self.flatten_layer = nn.Flatten()
         # Classifier
         self.batch_layer = nn.BatchNorm1d(self.n_features, affine=False)
         self.final_layer = nn.Linear(self.n_features, self.n_outputs)
@@ -246,9 +245,18 @@ class _EEGMinerFeatures(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.method == "mag":
             return self._magnitude(x)
+        # Connectivity of every electrode pair within each filter
+        # x: (batch, filters, electrodes, electrodes)
         if self.method == "corr":
-            return self._correlation(x)
-        return self._phase_locking_value(x)
+            x = self._correlation(x)
+        else:
+            x = self._phase_locking_value(x)
+        # Move the filters to the end
+        # x: (batch, electrodes, electrodes, filters)
+        x = x.permute(0, 2, 3, 1)
+        # Get upper triu of symmetric connectivity matrix
+        # x: (batch, electrode pairs, filters)
+        return x[:, self.triu_row, self.triu_col, :]
 
     def _magnitude(self, x: torch.Tensor) -> torch.Tensor:
         # Signal magnitude: root mean square over time
@@ -267,16 +275,10 @@ class _EEGMinerFeatures(nn.Module):
         x = (x - x.mean(dim=-1, keepdim=True)) / torch.sqrt(
             x.var(dim=-1, keepdim=True) + epsilon
         )
-        # Correlation of every electrode pair within each filter
+        # Correlation strength of every electrode pair within each filter
         # x: (batch, filters, electrodes, electrodes)
         x = torch.matmul(x, x.transpose(-2, -1)) / x.shape[-1]
-        # Move the filters to the end and keep the correlation strength
-        # x: (batch, electrodes, electrodes, filters)
-        x = x.permute(0, 2, 3, 1)
-        x = x.abs()
-        # Get upper triu of symmetric connectivity matrix
-        # x: (batch, electrode pairs, filters)
-        return x[:, self.triu_row, self.triu_col, :]
+        return x.abs()
 
     def _phase_locking_value(self, x: torch.Tensor) -> torch.Tensor:
         # The filters stay in the frequency domain (real and imaginary parts)
@@ -285,10 +287,4 @@ class _EEGMinerFeatures(nn.Module):
         x = x.transpose(-4, -3)
         # Phase locking value of every electrode pair within each filter
         # x: (batch, filters, electrodes, electrodes)
-        x = F.plv_time(x, forward_fourier=False)
-        # Move the filters to the end
-        # x: (batch, electrodes, electrodes, filters)
-        x = x.permute(0, 2, 3, 1)
-        # Get upper triu of symmetric connectivity matrix
-        # x: (batch, electrode pairs, filters)
-        return x[:, self.triu_row, self.triu_col, :]
+        return F.plv_time(x, forward_fourier=False)
