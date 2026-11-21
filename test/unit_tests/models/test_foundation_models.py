@@ -2348,6 +2348,8 @@ def test_pratibha2_is_montage_agnostic():
 def test_pratibha2_drops_unplaced_channels():
     with pytest.raises(ValueError, match="BAD"):
         _pratibha2_model(["Fp1", "BAD", "Cz"])
+    with pytest.raises(ValueError, match="patch_size"):
+        _pratibha2_model(n_times=100)
     with pytest.warns(UserWarning, match="BAD"):
         model = _pratibha2_model(["Fp1", "BAD", "Cz"], on_missing="drop")
     x = torch.randn(2, 3, 600)
@@ -2364,6 +2366,18 @@ def test_pratibha2_warns_on_non_200_hz():
     chs = [{"ch_name": n, "kind": "eeg"} for n in _PRATIBHA2_NAMES]
     with pytest.warns(UserWarning, match="200 Hz"):
         Pratibha2(chs_info=chs, n_outputs=2, sfreq=250.0, **_PRATIBHA2_SMALL)
+
+
+def test_pratibha2_short_window_from_seconds_raises():
+    chs = [{"ch_name": "Cz", "kind": "eeg"}]
+    with pytest.raises(ValueError, match="patch_size"):
+        Pratibha2(
+            chs_info=chs,
+            n_outputs=2,
+            input_window_seconds=0.5,
+            sfreq=200.0,
+            **_PRATIBHA2_SMALL,
+        )
 
 
 def test_pratibha2_autocast_preserves_fourier_features():
