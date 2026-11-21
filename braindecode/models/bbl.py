@@ -6,7 +6,6 @@
 # Adapted from https://github.com/neural-processing-lab/the-brains-bitter-lesson (MIT).
 from __future__ import annotations
 
-from math import prod
 from typing import Dict, Optional, Union
 
 import torch
@@ -49,9 +48,7 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
 
     ``BBL.subject_embedding``
         **Operations.** ``Embedding(n_subjects, subject_dim)`` concatenated to
-        the pooled features. Without ``subject_index``, the mean embedding of
-        the rows flagged in the ``trained_subjects`` buffer (the paper's
-        novel-subject fallback).
+        the pooled features.
 
     ``BBL.final_layer``
         **Operations.** ``Linear(model_dim + subject_dim, n_outputs)``, the
@@ -63,24 +60,27 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
     - **Spatial:** the projector mixes all (zero-padded) sensors.
     - **Spectral:** learned by the band and phase pretext tasks.
 
+    .. rubric:: Additional Mechanisms
+
+    - **Dataset gate:** ``dataset_index`` picks one projector slice (slot 0 by
+      default). ``subject_index`` is offset per dataset slot: subject ``s`` of
+      slot ``d`` uses row ``d * 1024 + s``.
+    - **Subject fallback:** without ``subject_index``, the mean embedding of
+      the rows flagged in the ``trained_subjects`` buffer (the paper's
+      novel-subject fallback). Only CamCAN's rows are trained and flagged in the
+      release; set the buffer to the rows of your own training before relying on it.
+    - **Temporal mask:** ``temporal_mask`` hides raw time samples before any
+      convolution or LSTM, and ``return_features`` adds ``temporal_features``,
+      the encoder output before pooling.
+
     .. important::
 
-        The released checkpoint was pretrained on CamCAN (dataset slot 0),
-        band-passed 0.1-125 Hz with 50 and 100 Hz notches, then resampled to
-        250 Hz, on 0.5 s windows (125 samples). Each window is scaled per
-        channel by the median and interquartile range fitted on its recording,
-        clipped to ``[-5, 5]`` and has its first 0.5 s mean subtracted, so
-        inputs are dimensionless (authors' ``data/preprocess.py`` and
-        ``data/utils.py``; ``forward`` only does the zero-padding to 306
-        sensors). Its projector expects CamCAN's 306 Elekta ``MEG*``
-        channels in FIF order. ``subject_index`` is offset per dataset slot:
-        subject ``s`` of slot ``d`` uses row ``d * 1024 + s``. Only CamCAN
-        subject rows of ``subject_embedding`` are trained, and
-        ``trained_subjects`` flags them; the head is not pretrained. Set
-        ``trained_subjects`` to the rows your own training used before relying
-        on the mean-subject fallback. The converted checkpoint is on the
-        Hugging Face Hub at ``braindecode/bbl-pretrained`` (revision
-        ``5a19a369``)::
+        The released CamCAN checkpoint (slot 0) takes its 306 Elekta ``MEG*``
+        channels in FIF order, 0.5 s windows at 250 Hz, band-passed 0.1-125 Hz
+        with 50 and 100 Hz notches, scaled per channel by the recording's median
+        and IQR, clipped to ``[-5, 5]``, first 0.5 s mean-subtracted (authors'
+        ``data/preprocess.py``). Weights: ``braindecode/bbl-pretrained``
+        (revision ``5a19a369``); the head is not pretrained::
 
             from braindecode.models import BBL
             model = BBL.from_pretrained("braindecode/bbl-pretrained", n_outputs=2)
@@ -123,6 +123,7 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
 
     def __init__(
         self,
+        # braindecode parameters
         n_outputs=None,
         n_chans=None,
         chs_info=None,
@@ -130,6 +131,7 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         input_window_seconds=None,
         sfreq=None,
         *,
+        # model-specific parameters
         n_sensors: int = 306,
         n_datasets: int = 4,
         n_subjects: int = 4096,
@@ -158,7 +160,6 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         self.n_sensors = n_sensors
         self.n_datasets = n_datasets
         self.features_dim = model_dim + subject_dim
-        self.temporal_stride = 2 * prod(ratios)
 
         self.projector = nn.Sequential(
             nn.Conv1d(n_sensors, n_datasets * model_dim, 3, padding=1),
@@ -189,7 +190,6 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         return_features: bool = False,
         ch_mask: Optional[torch.Tensor] = None,
         temporal_mask: Optional[torch.Tensor] = None,
-        return_temporal_features: bool = False,
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """Classify ``x`` of shape ``(batch, n_chans, n_times)``.
 
@@ -203,38 +203,31 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
         per-channel ``tokens``. Shorter recordings occupy the first sensor
         slots; interior missing sensors must retain their original slots.
 
-        ``temporal_mask`` is an optional ``(batch, n_times)`` mask: **True
-        hides** a raw time sample on every channel, unlike ``ch_mask`` where
-        True means real. Hidden samples (including NaNs) become zero before
-        any convolution or LSTM and receive no input gradient. All-hidden
-        windows are allowed. Keep clean targets and mask sampling downstream;
-        this is input corruption, not the paper's band/amp/phase objectives.
+        ``temporal_mask`` is an optional boolean ``(batch, n_times)`` mask:
+        **True hides** a raw time sample on every channel, unlike ``ch_mask``
+        where True means real. Hidden samples (including NaNs) become zero
+        before any convolution or LSTM and receive no input gradient.
+        All-hidden windows are allowed. Keep clean targets and mask sampling
+        downstream; this is input corruption, not the paper's band/amp/phase
+        objectives.
 
-        With both ``return_features`` and ``return_temporal_features`` True,
-        the dictionary also contains ``temporal_features``, the actual encoder
-        output before pooling, ``(batch, model_dim, n_steps)``. Here
-        ``n_steps = ceil(n_times / temporal_stride)`` and ``temporal_stride``
-        is a scalar integer tensor, ``2 * prod(ratios)``. ``temporal_bounds``
-        is ``(n_steps, 2)``: raw-time alignment bins ``[start, stop)`` clipped
-        to ``n_times``. ``temporal_valid`` is ``(batch, n_steps)`` and all True:
-        no temporal padding/variable lengths are accepted, and the final
-        partial bin is valid. These bins are not independent receptive fields:
-        the LSTM carries prefix context and the noncausal/reflect convolutions
-        mix neighboring/boundary samples. ``temporal_context_bounds``,
-        ``(n_steps, 2)``, conservatively bounds each feature's raw-input
-        receptive field by ``[0, n_times)``. It is not a reconstruction target
-        alignment or an exact per-position attribution.
+        ``return_features=True`` returns ``"features"``
+        ``(batch, model_dim + subject_dim)``, ``"cls_token"`` (None) and
+        ``"temporal_features"``, the encoder output before pooling,
+        ``(batch, model_dim, n_steps)`` with
+        ``n_steps = ceil(n_times / (2 * prod(ratios)))``. The steps are not
+        independent receptive fields: the LSTM carries prefix context and the
+        noncausal/reflect convolutions mix neighboring samples.
         """
-        if return_temporal_features and not return_features:
-            raise ValueError("return_temporal_features needs return_features=True.")
         ch_mask = check_ch_mask(ch_mask, x)
         batch, n_times = x.shape[0], x.shape[-1]
         if temporal_mask is not None:
-            if list(temporal_mask.shape) != [batch, n_times]:
-                raise ValueError("temporal_mask must have shape (batch, n_times).")
-            temporal_mask = temporal_mask.to(
-                device=x.device, dtype=torch.bool
-            )  # (batch, n_times)
+            shape = [batch, n_times]
+            if temporal_mask.dtype != torch.bool or list(temporal_mask.shape) != shape:
+                raise ValueError(
+                    "temporal_mask must be boolean with shape (batch, n_times)."
+                )
+            temporal_mask = temporal_mask.to(device=x.device)  # (batch, n_times)
             # (batch, n_chans, n_times), hidden raw samples zeroed BEFORE context
             x = x.masked_fill(temporal_mask[:, None, :], 0.0)
         if ch_mask is not None:
@@ -273,38 +266,12 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
             out: Dict[str, Optional[torch.Tensor]] = {
                 "features": feat,
                 "cls_token": None,  # nosec B105
+                "temporal_features": temporal_features,
             }
-            if return_temporal_features:
-                out["temporal_features"] = (
-                    temporal_features  # (batch, model_dim, n_steps)
-                )
-                # (n_steps,), raw-time strided bin starts (not receptive fields)
-                starts = (
-                    torch.arange(temporal_features.shape[-1], device=x.device)
-                    * self.temporal_stride
-                )
-                stops = (starts + self.temporal_stride).clamp(max=n_times)  # (n_steps,)
-                out["temporal_bounds"] = torch.stack(
-                    [starts, stops], dim=-1
-                )  # (n_steps, 2)
-                out["temporal_context_bounds"] = torch.stack(
-                    [torch.zeros_like(starts), torch.full_like(starts, n_times)], dim=-1
-                )  # (n_steps, 2)
-                out["temporal_stride"] = torch.tensor(
-                    self.temporal_stride, device=x.device
-                )  # scalar
-                out["temporal_valid"] = torch.ones(
-                    (batch, temporal_features.shape[-1]),
-                    dtype=torch.bool,
-                    device=x.device,
-                )  # (batch, n_steps)
             return out
         return self.final_layer(feat)  # (batch, n_outputs)
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the linear probe for ``n_outputs`` classes."""
         self._set_n_outputs(n_outputs)
-        reference = self.final_layer.weight
-        self.final_layer = nn.Linear(self.features_dim, n_outputs).to(
-            device=reference.device, dtype=reference.dtype
-        )
+        self.final_layer = nn.Linear(self.features_dim, n_outputs)
