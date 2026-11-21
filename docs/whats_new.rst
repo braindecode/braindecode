@@ -84,11 +84,7 @@ Enhancements
   model of braindecode, with delayed-hemodynamic-response and depthwise-separable convolutions;
   ``fNIRS`` joins the modality vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRS4D` (Wang et al., IEEE TIM 2026), a diagonal
-  state-space (S4D) backbone with the authors' LOSO-CV or KFold-CV
-  mean-hemoglobin branch (``mean_branch``); its ``mapping`` loads the authors' state
-  dict. The helpers ``fnirs_chromophores_from_chs_info``, ``fnirs_channel_order`` and
-  ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
-  ``chs_info``, stacked or in MNE's interleaved order (:gh:`1582` by
+  state-space (S4D) fNIRS model, with ``fnirs_*`` helpers for HbO/HbR ``chs_info`` in ``braindecode.models.util`` (:gh:`1582` by
   `Bruno Aristimunha`_).
 - The docstrings of :class:`braindecode.models.FNIRSNet`, :class:`~braindecode.models.FNIRS4D`,
   :class:`~braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT` describe
