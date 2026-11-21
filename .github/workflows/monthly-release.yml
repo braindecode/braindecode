@@ -131,8 +131,8 @@ jobs:
           set -euo pipefail
           # ``finalize`` does not take ``--bump``: the release version is
           # derived from the current dev seed and is independent of bump kind.
-          python scripts/monthly_release.py finalize
-          git add braindecode/version.py docs/whats_new.rst
+          python scripts/monthly_release.py finalize --next-dev-version "${{ steps.ver.outputs.next_dev_version }}"
+          git add braindecode/version.py docs/whats_new.rst docs/_static/versions.json
           git commit -m "release: ${{ steps.ver.outputs.release_tag }}"
           # Annotated tag on the finalized commit. The commit lives only at the
           # tag (it is never pushed to master); the version-bump PR carries the
@@ -190,7 +190,8 @@ jobs:
           git checkout -B "$BRANCH" origin/master
           python scripts/monthly_release.py finalize
           python scripts/monthly_release.py next-dev --bump "$BUMP"
-          git add braindecode/version.py docs/whats_new.rst
+          git restore --source "${{ steps.ver.outputs.release_tag }}" -- docs/_static/versions.json
+          git add braindecode/version.py docs/whats_new.rst docs/_static/versions.json
           git commit -m "chore: bump version to ${{ steps.ver.outputs.next_dev_version }} after ${{ steps.ver.outputs.release_tag }}"
           git push -u origin "$BRANCH" --force-with-lease
           # Body via a quoted heredoc so backticks stay literal and newlines
@@ -202,6 +203,7 @@ jobs:
 
           - Date the `Current ${{ steps.ver.outputs.release_version }} (GitHub)` changelog heading.
           - Seed the next development cycle: `version.py` -> `${{ steps.ver.outputs.next_dev_version }}` plus a fresh `Current ${{ steps.ver.outputs.next_dev_base }} (GitHub)` section.
+          - Carry `docs/_static/versions.json` from `${{ steps.ver.outputs.release_tag }}`, the version switcher that release ships.
 
           Note: opened by GITHUB_TOKEN, so PR CI does not auto-run. Push an empty commit to trigger it, or merge directly (no status check is required by the ruleset).
           BODY

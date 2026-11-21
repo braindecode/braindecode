@@ -10,45 +10,26 @@ from __future__ import annotations
 from functools import partial
 from typing import Dict, Optional, Union
 
-import mne
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mne.io.constants import FIFF
 from torch.nn import RMSNorm
 
-from braindecode.functional import (
-    apply_rotary,
-    check_n_chans,
-    init_weights_,
-    rotary_frequencies,
-)
+from braindecode.functional import check_n_chans, init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
-    extract_channel_locations_from_chs_info,
+    geometry_from_chs_info,
+    sensor_type_of,
     warn_if_sfreq_differs,
 )
-from braindecode.modules import FeedForwardBlock, SEANetDecoder, SEANetEncoder
+from braindecode.modules import (
+    FeedForwardBlock,
+    SEANetDecoder,
+    SEANetEncoder,
+    SpatialTemporalBlock,
+)
 from braindecode.modules.quantization import ResidualVectorQuantizer
-
-
-class _SELU(nn.SELU):
-    """``nn.SELU`` as ``ELU(x, alpha * scale)`` times ``scale`` where ``x > 0``:
-    same values and gradients, and trainable on Gaudi, whose ELU backward only
-    supports ``scale == 1``."""
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        alpha, scale = (
-            1.6732632423543772848170429916717,
-            1.0507009873554804934193349852946,
-        )
-        # ELU is x on the positive side, so this equals the where(x > 0, x * scale,
-        # elu) form bit for bit, without its zero-filled where backward. The
-        # factor is at least float32, like the scalar multiply's compute type.
-        one = x.new_ones((), dtype=torch.promote_types(x.dtype, torch.float32))
-        factor = torch.where(x > 0, one * scale, one)
-        return (F.elu(x, alpha * scale) * factor).to(x.dtype)
+from braindecode.modules.spatial_temporal import _attend
 
 
 class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
@@ -209,7 +190,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
                 f"tokenizer_num_heads ({tokenizer_num_heads})."
             )
         # Derived from chs_info, so not saved: one checkpoint serves any montage.
-        pos, sensor_type = _geometry_from_chs_info(self.chs_info)
+        pos, sensor_type = geometry_from_chs_info(self.chs_info)
         self.register_buffer("pos", torch.from_numpy(pos), persistent=False)
         self.register_buffer(
             "sensor_type", torch.from_numpy(sensor_type), persistent=False
@@ -510,7 +491,7 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
             nn.Linear(emb_dim, lm_dim) if emb_dim != lm_dim else nn.Identity()
         )
         self.blocks = nn.ModuleList(
-            [_SpatialTemporalBlock(lm_dim, num_heads, drop_prob) for _ in range(depth)]
+            [SpatialTemporalBlock(lm_dim, num_heads, drop_prob) for _ in range(depth)]
         )
         self._init_parameters()
         self.final_layer = self._make_head(self.n_outputs)  # default init, as released
@@ -527,8 +508,7 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         return nn.Sequential(
             nn.Dropout(0.1),
             nn.Linear(self.n_neuro * self.lm_dim, self.lm_dim),
-            # nn.SELU (the released config) as _SELU, which trains on Gaudi
-            (_SELU if self.activation is nn.SELU else self.activation)(),
+            self.activation(),
             nn.Linear(self.lm_dim, n_outputs),
         )
 
@@ -586,36 +566,6 @@ _init_weights = partial(
 )
 
 
-_SENSOR_CODE = {"eeg": 0, "mag": 1, "grad": 2}
-# FIFF coil names by value, so plain-int coil types (serialized chs_info) resolve.
-_COIL_NAMES = {
-    int(value): name for name, value in FIFF.items() if name.startswith("FIFFV_COIL_")
-}
-
-
-def _coil_name(ch) -> str:
-    return _COIL_NAMES.get(int(ch.get("coil_type", 0)), "")
-
-
-def _sensor_type_of(chs_info, index: int) -> str:
-    """EEG, MAG or GRAD as released: an MEG coil is MAG iff its name has "MAG".
-
-    So CTF/KIT axial gradiometers are GRAD although MNE types them ``mag``.
-    """
-    ch = chs_info[index]
-    kind = ch.get("kind")
-    if kind is not None and not isinstance(kind, str):
-        if int(kind) == FIFF.FIFFV_EEG_CH:
-            return "eeg"
-        if int(kind) == FIFF.FIFFV_MEG_CH and "coil_type" in ch:
-            return "mag" if "MAG" in _coil_name(ch) else "grad"
-        return mne.channel_type({"chs": chs_info}, index)
-    resolved_type = ch.get("ch_type", kind)
-    if resolved_type is None:
-        resolved_type = mne.channel_type({"chs": chs_info}, index)
-    return str(resolved_type).lower()
-
-
 def _check_channel_strategy(model, chs_info, channel_strategy):
     """The channel layer maps electrodes only: a montage with MEG stays native."""
     if channel_strategy == "native" or not chs_info:
@@ -623,7 +573,7 @@ def _check_channel_strategy(model, chs_info, channel_strategy):
     other = [
         ch["ch_name"]
         for index, ch in enumerate(chs_info)
-        if _sensor_type_of(chs_info, index) != "eeg"
+        if sensor_type_of(chs_info, index) != "eeg"
     ]
     if other:
         raise ValueError(
@@ -633,170 +583,6 @@ def _check_channel_strategy(model, chs_info, channel_strategy):
             f"{type(model).__name__} builds on any EEG/MEG montage from the sensor "
             f"geometry of chs_info."
         )
-
-
-def _geometry_from_chs_info(chs_info):
-    """``(pos (n_chans, 6) float32, sensor_type (n_chans,) int64)``, as released.
-
-    Positions are centred and scaled per modality (EEG, MEG); the orientation
-    is the coil x-axis for planar gradiometers, the coil normal for other MEG
-    coils and zero for EEG.
-    """
-    types = [_sensor_type_of(chs_info, index) for index in range(len(chs_info))]
-    xyz = extract_channel_locations_from_chs_info(chs_info)
-    if xyz is None or len(xyz) != len(chs_info) or not np.isfinite(xyz).all():
-        raise ValueError(
-            "chs_info lacks finite sensor positions; call raw.set_montage(...)."
-        )
-    unsupported = set(types) - set(_SENSOR_CODE)
-    if unsupported:
-        raise ValueError(
-            f"Unsupported channel type(s) {sorted(unsupported)}; pass only EEG/MEG."
-        )
-    sensor_type = np.array([_SENSOR_CODE[t] for t in types], dtype=np.int64)
-
-    ori = np.zeros((len(chs_info), 3))
-    for index in np.flatnonzero(sensor_type > 0):
-        planar = "PLANAR" in _coil_name(chs_info[index])
-        axis = np.asarray(chs_info[index]["loc"], dtype=np.float64)
-        axis = axis[3:6] if sensor_type[index] == 2 and planar else axis[9:12]
-        if axis.shape != (3,) or not np.isfinite(axis).all():
-            raise ValueError("chs_info lacks a finite MEG coil orientation.")
-        ori[index] = axis
-
-    pos = np.concatenate([xyz, ori], axis=1).astype(np.float32)
-    for mask in (sensor_type == 0, sensor_type > 0):
-        if mask.any():
-            centred = pos[mask, :3] - pos[mask, :3].mean(axis=0, keepdims=True)
-            scale = np.sqrt(3 * np.mean(np.sum(centred**2, axis=1)))
-            pos[mask, :3] = centred / (scale if scale > 0 else 1.0)
-    return pos, sensor_type
-
-
-def _attend(q, k, v, n_head: int, dropout_p: float) -> torch.Tensor:
-    """SDPA over ``(batch, seq, n_head * head_dim)`` inputs."""
-    q = q.unflatten(-1, (n_head, -1))
-    k = k.unflatten(-1, (n_head, -1))
-    v = v.unflatten(-1, (n_head, -1))
-    out = F.scaled_dot_product_attention(
-        q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), dropout_p=dropout_p
-    )
-    return out.transpose(1, 2).flatten(2)
-
-
-class _SpatialTemporalBlock(nn.Module):
-    """Temporal attention (RoPE) on one feature half, spatial on the other."""
-
-    def __init__(self, n_dim, n_head, dropout, rope_positions=240):
-        super().__init__()
-        self.pre_attn_norm = RMSNorm(n_dim, eps=1e-6)
-        self.time_attn = _MultiHeadAttentionRoPE(
-            n_dim // 2, n_head // 2, dropout, True, rope_positions
-        )
-        self.spatial_attn = _MultiHeadAttentionRoPE(
-            n_dim // 2, n_head // 2, dropout, False
-        )
-        self.pre_ff_norm = RMSNorm(n_dim, eps=1e-6)
-        # Released FeedForward: Linear -> SELU -> Linear -> Dropout.
-        self.ff = FeedForwardBlock(n_dim, 4, 0.0, _SELU, output_drop_p=dropout)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch, chans, times, dim = x.shape
-        h = self.pre_attn_norm(x)
-        # (b, c, t, d) -> (b * t, c, d) and (b * c, t, d), and back
-        xs = h[..., dim // 2 :].permute(0, 2, 1, 3).reshape(batch * times, chans, -1)
-        xt = h[..., : dim // 2].reshape(batch * chans, times, -1)
-        xs = self.spatial_attn(xs).reshape(batch, times, chans, -1).permute(0, 2, 1, 3)
-        xt = self.time_attn(xt).reshape(batch, chans, times, -1)
-        # Spatial half first: the halves swap, as released.
-        x = x + torch.cat([xs, xt], dim=-1)
-        return x + self.ff(self.pre_ff_norm(x))
-
-
-class _RotaryPositionalEmbedding(nn.Module):
-    """RoPE of the released BrainOmni and MEG-XL.
-
-    ``rotate`` caches ``n_positions`` positions as ``(cos, sin)`` pairs (240
-    for BrainOmni, whose released checkpoints hold cosines only, zero sine;
-    625 for MEG-XL). A longer sequence rebuilds the cache from ``freqs`` and
-    later calls keep it (not saved). The caches stay float32 under a dtype
-    cast, ``freqs`` follows it.
-    """
-
-    # TorchScript types the ``rebuilt`` buffer from this; a postponed string
-    # annotation would not resolve.
-    __annotations__ = {"rebuilt": Optional[torch.Tensor]}
-
-    def __init__(self, n_dim, base=10000, n_positions=240):
-        super().__init__()
-        self.n_dim = n_dim
-        self.register_buffer("freqs", rotary_frequencies(n_dim, base))
-        self.register_buffer("rotate", self._polar(n_positions))
-        self.register_buffer("rebuilt", None, persistent=False)
-
-    def _polar(self, seq: int) -> torch.Tensor:
-        positions = torch.arange(seq, device=self.freqs.device).type_as(self.freqs)
-        angles = torch.outer(positions, self.freqs).float()
-        return torch.stack((angles.cos(), angles.sin()), dim=-1)
-
-    def _apply(self, fn, recurse=True):
-        before = {name: self._buffers[name] for name in ("rotate", "rebuilt")}
-        super()._apply(fn, recurse)
-        for name, buffer in before.items():
-            moved = self._buffers[name]
-            if buffer is not None and moved is not None and moved.dtype != buffer.dtype:
-                self._buffers[name] = buffer.to(device=moved.device)
-        return self
-
-    def _load_from_state_dict(self, *args, **kwargs):
-        self.rebuilt = None
-        super()._load_from_state_dict(*args, **kwargs)
-
-    def forward(self, q, k):
-        """Rotate ``q`` and ``k`` of shape ``(batch, seq, n_heads, head_dim)``."""
-        _, seq, heads, _ = q.shape
-        rebuilt = self.rebuilt
-        rotate = self.rotate if rebuilt is None else rebuilt
-        if seq > rotate.shape[0]:
-            rotate = self._polar(seq)
-            self.rebuilt = rotate
-        # In at least float32 (the cache's dtype), float64 for float64 inputs.
-        work = torch.promote_types(q.dtype, torch.float32)
-        rotate = rotate.to(work)[:seq].repeat_interleave(2, dim=1)
-        rotate = rotate.unflatten(1, (heads, -1))  # (seq, heads, head_dim, 2)
-        cos, sin = rotate[..., 0], rotate[..., 1]
-        q_float, k_float = q.to(work), k.to(work)
-        q_out = apply_rotary(q_float, cos, sin)
-        k_out = apply_rotary(k_float, cos, sin)
-        return q_out.type_as(q), k_out.type_as(k)
-
-
-class _MultiHeadAttentionRoPE(nn.Module):
-    """Self-attention with a fused ``qkv`` projection and optional RoPE."""
-
-    def __init__(self, n_dim, n_head, dropout, rope, rope_positions=240):
-        super().__init__()
-        self.dropout = dropout
-        self.n_dim = n_dim
-        self.n_head = n_head
-        self.qkv = nn.Linear(n_dim, 3 * n_dim)
-        self.proj = nn.Linear(n_dim, n_dim)
-        self.rope_embedding_layer = (
-            _RotaryPositionalEmbedding(n_dim, n_positions=rope_positions)
-            if rope
-            else None
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        q, k, v = torch.split(self.qkv(x), self.n_dim, dim=-1)
-        dropout_p = self.dropout if self.training else 0.0
-        if self.rope_embedding_layer is not None:  # on (batch, seq, heads, head_dim)
-            q, k = self.rope_embedding_layer(
-                q.unflatten(-1, (self.n_head, -1)), k.unflatten(-1, (self.n_head, -1))
-            )
-            q, k = q.flatten(2), k.flatten(2)
-        out = _attend(q, k, v, self.n_head, dropout_p)
-        return self.proj(out)
 
 
 class _ForwardSolution(nn.Module):
@@ -838,9 +624,9 @@ class _SensorEmbedding(nn.Module):
         super().__init__()
         self.sensor_embedding_layer = nn.Embedding(3, n_dim)
         self.pos_embedding_layer = nn.Sequential(
-            nn.Linear(6, n_dim // 2), _SELU(), nn.Linear(n_dim // 2, n_dim)
+            nn.Linear(6, n_dim // 2), nn.SELU(), nn.Linear(n_dim // 2, n_dim)
         )
-        self.aggregate_mlp = FeedForwardBlock(n_dim, 4, 0.0, _SELU)
+        self.aggregate_mlp = FeedForwardBlock(n_dim, 4, 0.0, nn.SELU)
         self.norm = RMSNorm(n_dim, eps=1e-6)
 
     def forward(self, pos: torch.Tensor, sensor_type: torch.Tensor) -> torch.Tensor:

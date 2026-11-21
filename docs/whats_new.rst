@@ -28,6 +28,9 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.SAMBA` (Hong et al., NeurReps 2026), an EEG
+  foundation model that reads electrode positions through a coordinate-driven
+  spatial embedding and models time with Mamba-2 (:gh:`1689` by `Jiazhen Hong`_).
 - Foundation models raise a ``ValueError`` with both channel counts, through
   :func:`braindecode.functional.check_n_chans`, when the input does not have the
   channels they were built for (:gh:`1605` by `Julien Gadonneix`_).
@@ -56,7 +59,7 @@ Enhancements
 
 - Add :class:`braindecode.models.TinyMyo` (Fasulo et al., IEEE TBME 2026), a small sEMG foundation
   model; its encoder is on the Hugging Face Hub at ``braindecode/tinymyo-pretrained``, its gesture classifiers
-  at ``braindecode/tinymyo-db5``, ``-epn612`` and ``-uci-emg`` (:gh:`1649` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+  at ``braindecode/tinymyo-db5``, ``-epn612`` and ``-uci-emg`` (:gh:`1649` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_, :gh:`1717` by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.ChannelLayer` takes one montage per sample: a model
   with a ``channel_strategy`` now takes the ``pos``/``ch_mask`` batches of
   :func:`~braindecode.datasets.pad_channels_collate` (:gh:`1593` by `Bruno Aristimunha`_).
@@ -69,25 +72,16 @@ Enhancements
 - Add :class:`braindecode.models.GeoNIRS` (Li et al., 2026), an fNIRS foundation model
   conditioned on the source-detector geometry; its encoders are on the Hugging Face Hub at
   ``braindecode/geonirs-base-pretrained`` and ``-large-pretrained`` (:gh:`1591` by `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan
-  et al. (Neurophotonics 2018) as the GeoNIRS benchmark (Li et al., 2026)
-  implements it: two temporal convolutions with GroupNorm and GELU, a time
-  average and a linear head. Its ``mapping`` loads the
-  authors' state dict (:gh:`1592` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan et al.
+  (Neurophotonics 2018) as the GeoNIRS benchmark implements it (:gh:`1592` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (Wang et al., IEEE JBHI 2022); :class:`~braindecode.modules.MultiHeadAttention` gains ``qkv_bias`` (:gh:`1584` by
   `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023), the first
-  fNIRS model of braindecode: a delayed-hemodynamic-response convolution and a
-  depthwise-separable convolution over ``(batch, n_chans, n_times)`` HbO/HbR windows.
-  Its ``mapping`` loads the authors' state dict, and ``fNIRS`` joins the modality
-  vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023), the first fNIRS
+  model of braindecode, with delayed-hemodynamic-response and depthwise-separable convolutions;
+  ``fNIRS`` joins the modality vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRS4D` (Wang et al., IEEE TIM 2026), a diagonal
-  state-space (S4D) backbone with the authors' LOSO-CV or KFold-CV
-  mean-hemoglobin branch (``mean_branch``); its ``mapping`` loads the authors' state
-  dict. The helpers ``fnirs_chromophores_from_chs_info``, ``fnirs_channel_order`` and
-  ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
-  ``chs_info``, stacked or in MNE's interleaved order (:gh:`1582` by
+  state-space (S4D) fNIRS model, with ``fnirs_*`` helpers for HbO/HbR ``chs_info`` in ``braindecode.models.util`` (:gh:`1582` by
   `Bruno Aristimunha`_).
 - The docstrings of :class:`braindecode.models.FNIRSNet`, :class:`~braindecode.models.FNIRS4D`,
   :class:`~braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT` describe
@@ -123,19 +117,26 @@ Enhancements
 - :class:`braindecode.models.LUNA` implements ``reset_head``, so
   ``from_pretrained`` can load it with a new ``n_outputs``; a reconstruction
   model (``n_outputs=0``) becomes a classifier (:gh:`1568` by `Hamza Abdelhedi`_).
-- Add :class:`braindecode.models.BBL`, the MEG encoder of *The Brain's Bitter Lesson* (Jayalath et al., ICML 2025): a dataset-conditional convolutional projector, a :class:`~braindecode.modules.SEANetEncoder` and a subject embedding, with optional ``subject_index``/``dataset_index`` and the paper's mean-subject-embedding fallback. It accepts ``ch_mask``: padded channels become the zero sensor slots of the reference collator, so each recording of a padded batch gives its output alone; as the projector mixes all sensors, ``return_features`` has no per-channel ``tokens``. Opt-in ``temporal_mask`` hides raw time samples before any convolution/context, while ``return_temporal_features=True`` with ``return_features=True`` exposes the actual pre-pool sequence and stride/valid-time/context metadata for downstream SSL objectives (no pretraining task heads). The released CamCAN checkpoint, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/bbl-pretrained`` and gives the authors' features, logits and gradients bit for bit on CPU in float32 (:gh:`1553` by `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.MEGGPT` (MEG-GPT, Huang et al., Imaging Neuroscience 2026), a source-space MEG foundation model: the EphysTokenizer encoder turns each parcel into discrete tokens and a causal time-attention GPT with patched keys and values embeds them; the released Cam-CAN checkpoint, converted without the session embedding the paper discards for downstream use, is on the Hugging Face Hub at ``braindecode/meggpt-pretrained``; ``return_features=True`` also returns the per-channel ``"tokens"`` ``(batch, n_chans, n_segments * n_last_steps, embed_dim)`` and takes a ``ch_mask`` of padded channels, whose features and tokens are zero (the flattened head is tied to ``n_chans``, so logits refuse ``ch_mask``); optional ``token_mask`` hides clean token embeddings before the causal decoder, and ``encode_tokens`` supplies cached-ID encoding with shifted next-token targets, retained-tail indices and valid/selected loss masks for a separate vocabulary head (:gh:`1555` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.BBL`, the MEG encoder of *The Brain's Bitter Lesson* (Jayalath et al.,
+  ICML 2025), with ``ch_mask``, ``temporal_mask`` and the CamCAN weights at
+  ``braindecode/bbl-pretrained`` (:gh:`1553` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.MEGGPT` (MEG-GPT, Huang et al., Imaging Neuroscience 2026), a
+  source-space MEG foundation model with a frozen EphysTokenizer and a causal time-attention GPT, with
+  ``ch_mask``, ``token_mask`` and the weights at ``braindecode/meggpt-pretrained`` (:gh:`1555` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Pratibha2` (PRATIBHA-2, formerly MANAS-2), a dense-attention
   EEG foundation model; its encoder, converted from ``MannasAI/pratibha-2``, is on the Hugging
   Face Hub at ``braindecode/pratibha2-pretrained`` (:gh:`1654` by `Mahir Jain`_).
 - Add :class:`braindecode.models.MEGXL`, the MEG-XL brain-to-text foundation model (Jayalath and Parker Jones, ICML 2026): a frozen BioCodec tokenizer and a criss-cross transformer pretrained on 150 s MEG windows; the released ``meg-xl-med-v2.ckpt``, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/megxl-pretrained`` and matches the authors' code on CPU. Its ``forward`` refuses ``ch_mask`` with a ``ValueError`` (the head flattens ``n_chans * latent_dim`` features and the sensor geometry is the ``chs_info`` montage), and ``return_features`` gives the pooled ``"features"`` only, no ``"tokens"``. The opt-in ``encode``/``encode_codes`` mask replaces projected code content before sensor metadata and attention, returning real temporal hidden states for caller-owned masked-RVQ-code prediction; it adds no default parameters and expects equal valid-length full-montage windows (:gh:`1554` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.SEANetEncoder` and :class:`~braindecode.modules.SEANetDecoder` (EnCodec's SEANet, with :class:`~braindecode.modules.SEANetConv1d`, :class:`~braindecode.modules.SEANetConvTranspose1d`, :class:`~braindecode.modules.SEANetLSTM` and :class:`~braindecode.modules.SEANetResBlock`), moved from :class:`braindecode.models.BrainOmni`, whose parameters and outputs are unchanged. They take ``in_channels``/``out_channels``, ``n_residual_layers``, ``dilation_base``, ``compress``, ``true_skip`` and ``causal`` (:gh:`1553` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.modules.SpatialTemporalBlock`, moved from BrainOmni, and give
+  :class:`~braindecode.modules.PreNormTransformerBlock` the ``eps``, ``drop_path`` and ``attn_mask`` of
+  STEEGFormer's encoder block, which it replaces; no weight changes (:gh:`1720` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.TCCNet`, a causal temporal-convolution model
   for sEMG gesture recognition with average-over-time and context-attention
-  classification heads (:gh:`1562` by `Arslan Shafique`_).
+  classification heads (:gh:`1562` by `Arslan Shafique`_, :gh:`1714` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.CareSleepNet` (Wang et al., IEEE JBHI 2024), a sleep stager
   that labels a sequence of consecutive epochs of EEG and EOG in one pass, one prediction per
-  epoch, ``(batch, n_outputs, n_epochs)`` (:gh:`1653` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+  epoch, ``(batch, n_outputs, n_epochs)`` (:gh:`1653` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_, :gh:`1717` by `Bruno Aristimunha`_).
 - A model loaded with :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` shows where its weights come from: in a notebook (``model`` as the last line of a cell) a panel lists the input geometry, the Hub repository and commit, the licence, the base model and the datasets of the model card (linked to NEMAR, OpenNeuro or the Hub), and a module table with each block marked as loaded from the checkpoint or initialised here, e.g. a head rebuilt for a new ``n_outputs``; ``print(model)`` adds the same facts below the torchinfo table. Both ask users, and AI agents reading the output, to cite Braindecode with its `Zenodo DOI <https://doi.org/10.5281/zenodo.8214376>`__. The card offers BibTeX/APA downloads and selectable citation text, and links training datasets to NEMAR, EEGDash catalogue searches and documented braindecode readers. ``from_pretrained`` now warns when no parameter of the model was loaded from the checkpoint, which happened silently when the checkpoint's keys did not match the model (:gh:`1558` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.CORTEG`, an ST-EEGFormer adapted to
   intracranial ECoG: a spatial adapter places each electrode by its 3D position
@@ -147,14 +148,9 @@ Enhancements
 - :class:`braindecode.models.CORTEG` loads a bare :class:`~braindecode.models.STEEGFormer`
   checkpoint with its high-gamma embedding warm-started from the loaded low-frequency one
   (:gh:`1625` by `Bruno Aristimunha`_).
-- Adding :class:`braindecode.models.NICE`, the EEG/MEG encoder of the NICE image-decoding
-  framework (Song et al., ICLR 2024): TSConv plus the projector into the CLIP image space,
-  configured through ``n_chans``/``n_times`` for THINGS-EEG2 and THINGS-MEG; the authors'
-  checkpoint keys load through ``mapping``. An optional boolean input-time ``mask``
-  (True hides a sample) replaces raw samples before convolution, for downstream SSL
-  losses; ``return_features`` adds the temporal ``"tokens"`` before the global
-  projector. Its spatial convolution is sized to ``n_chans``, so it refuses
-  ``ch_mask`` with a ``ValueError`` (:gh:`1556` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.NICE`, the EEG/MEG encoder of the NICE image-decoding framework
+  (Song et al., ICLR 2024): TSConv plus a projector into the CLIP image space, with an optional
+  input-time ``mask`` for downstream SSL losses (:gh:`1556` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.MAPA` accepts ``ch_mask`` with per-sample
   ``sensor_indices``, ``(batch, n_chans, 3)``, so a batch can mix recordings with
   different montages and channel counts; ``return_features`` also returns the
@@ -255,6 +251,9 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.models.Pratibha2` returns the feature dict, not the logits, when it
+  is compiled with ``torch.jit.script`` and called with ``return_features=True``
+  (:gh:`1710` by `Bruno Aristimunha`_).
 - ``braindecode.models`` and ``braindecode.models.util.get_summary_table`` work when
   braindecode is imported from a zip archive (:gh:`1670` by `Bruno Aristimunha`_).
 - Exported :class:`braindecode.models.EEGMiner` programs decompose without mutating
@@ -464,13 +463,6 @@ Bug fixes
 - :class:`braindecode.models.EEGPT` raises at construction when a learned ``chan_proj_type`` gets an
   ``n_chans_target`` other than 19: a width of 1 was broadcast over the 19 channel embeddings and
   other widths failed in forward (:gh:`1624` by `Bruno Aristimunha`_).
-- :class:`braindecode.models.MEGGPT` with ``on_non_divisible="pad"`` no longer
-  averages kept steps that lie after the end of the input. When the last
-  segment held fewer real samples than its first kept step position, those
-  steps were outputs on zero padding and entered the ``"features"`` mean; the
-  mean now covers the real steps only. Windows that are a multiple of the
-  segment length, and ``"crop"``, are unchanged (:gh:`1561` by
-  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.LUNA` checks its temporal encoder geometry at
   construction. Patch sizes must be positive multiples of 4 and embedding
   widths positive multiples of 16. Incompatible settings previously failed
@@ -615,6 +607,9 @@ Code health
 - :class:`~braindecode.models.GCNsNet` fits its graph with the public ``fit_graph``,
   called once per fit by the estimators; it and :class:`~braindecode.models.DGCNN`
   share :class:`~braindecode.modules.ChebyshevGraphConv` (:gh:`1700` by `Bruno Aristimunha`_).
+- :class:`~braindecode.models.SignalJEPA`, :class:`~braindecode.models.LUNA`, the NeuroRVQ
+  models and :class:`~braindecode.models.TFMTokenizer` use :class:`torch.nn.GroupNorm`
+  instead of two private copies (:gh:`1642` by `Bruno Aristimunha`_).
 - The :class:`braindecode.datasets.TUHEvents` test builds its corpus under ``tmp_path`` and
   reads it with the public class; the private ``_TUHEventsMock`` and its table of synthetic
   paths leave the package (:gh:`1704` by `Bruno Aristimunha`_).
@@ -652,6 +647,9 @@ Code health
   :func:`braindecode.datasets.pad_channels_collate`; a model may instead refuse
   ``ch_mask`` with a ``ValueError`` that names it
   (:gh:`1545`, :gh:`1548` by `Bruno Aristimunha`_).
+- The ``ch_mask`` training test enforces :class:`~braindecode.models.PopulationTransformer`,
+  :class:`~braindecode.models.Labram` and :class:`~braindecode.models.MAPA`, which it expected to fail:
+  each is fit with its channel metadata and raises without it (:gh:`1662` by `Bruno Aristimunha`_).
 - The Hugging Face config and round-trip tests also run on
   :class:`braindecode.models.AttnSleep`, which they skipped
   (:gh:`1614` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
@@ -660,8 +658,14 @@ Code health
   model suites. Frequency-shift device and gradient cases run alongside
   the transform's numerical tests (:gh:`1656` by `Bruno Aristimunha`_).
 
+- The monthly release updates the documentation version switcher: the stable
+  and development entries take the released and next series, and the previous
+  stable series stays linked (:gh:`1666` by `Bruno Aristimunha`_).
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).
+- Development builds reach PyPI only after the ``tests`` run of their master
+  commit succeeds, and follow commit order, so ``pip install --pre`` finds the
+  newest one (:gh:`1661` by `Bruno Aristimunha`_).
 - Trial-prediction tests import their shared synthetic windows and historical
   reconstruction reference from a helper module instead of from other collected
   test modules (:gh:`1672` by `Bruno Aristimunha`_).
@@ -3516,3 +3520,4 @@ Authors
 .. _Hamza Abdelhedi: https://github.com/BabaSanfour
 .. _sixty-66: https://github.com/sixty-66
 .. _Axel Coiffard-Donaty: https://github.com/AxelNoun
+.. _Jiazhen Hong: https://github.com/Jiazhen-Hong

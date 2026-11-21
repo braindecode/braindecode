@@ -26,6 +26,7 @@ from braindecode.models import (
     MAPA,
     MEGXL,
     REVE,
+    SAMBA,
     SSTDPN,
     ZUNA,
     BrainTokenizer,
@@ -240,6 +241,7 @@ def test_model_has_activation_parameter(model_class):
     named 'activation' or any parameter that starts with 'activation'.
     """
     if model_class in [
+        SAMBA,  # released encoder uses fixed ReLU/SiLU activations
         Brant,
         BrainTokenizer,  # the released SEANet codec has fixed ELU activations
         MEGXL,  # fixed BioCodec ELUs and BrainOmni's SELU block, as released
@@ -303,6 +305,7 @@ def test_model_has_drop_prob_parameter(model_class):
     """
 
     if model_class in [
+        SAMBA,  # released encoder and linear downstream head have no dropout
         BBL,
         SyncNet,
         EEGSimpleConv,
