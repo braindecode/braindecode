@@ -6662,6 +6662,19 @@ def test_fnirs4d_smallest_valid_configurations_build():
 
 
 @pytest.mark.parametrize(
+    "kwargs", [{"a_real_init": 2.0}, {"dt_min": 0.01}, {"dt_max": 0.05}]
+)
+def test_fnirs4d_s4d_initialization_parameters_reach_the_kernels(kwargs):
+    """Each S4D initialization parameter, alone, changes the seeded model."""
+    x = torch.randn(2, 8, 30)
+    outputs = []
+    for extra in ({}, kwargs):
+        torch.manual_seed(0)
+        outputs.append(FNIRS4D(n_chans=8, n_outputs=2, n_times=30, **extra).eval()(x))
+    assert not torch.equal(*outputs)
+
+
+@pytest.mark.parametrize(
     "kwargs, match",
     [
         ({"mean_branch": "kfold"}, "mean_branch"),
@@ -6754,10 +6767,17 @@ def test_fnirst_read_out_of_the_two_levels(model_cls, pool):
     torch.testing.assert_close(out["features"], expected)
 
 
-def test_fnirspret_preprocessing_module():
-    """``pre`` smooths each plane with moving averages of 5, 13 and 7 samples
-    ("same" zero padding), then applies that plane's own LayerNorm over time."""
-    pre = FNIRSPreT(n_chans=10, n_outputs=2, n_times=60, depth=1).pre
+@pytest.mark.parametrize("kernel_sizes", [(5, 13, 7), (3, 9)])
+def test_fnirspret_preprocessing_module(kernel_sizes):
+    """``pre`` smooths each plane with one moving average per entry of
+    ``preprocessing_kernel_sizes`` ("same" zero padding), then applies that
+    plane's own LayerNorm over time."""
+    model = FNIRSPreT(
+        n_chans=10, n_outputs=2, n_times=60, depth=1,
+        preprocessing_kernel_sizes=kernel_sizes,
+    ).eval()
+    pre = model.pre
+    assert model(torch.randn(3, 10, 60)).shape == (3, 2)
     with torch.no_grad():
         for norm in pre.norms:  # a different affine map per plane
             norm.weight.uniform_(0.5, 2.0)
@@ -6765,7 +6785,7 @@ def test_fnirspret_preprocessing_module():
         x = torch.randn(3, 2, 5, 60)
         expected = []
         for plane, norm in zip(x.unbind(1), pre.norms):
-            for k in (5, 13, 7):
+            for k in kernel_sizes:
                 plane = nn.functional.avg_pool1d(plane, k, stride=1, padding=k // 2)
             expected.append(
                 nn.functional.layer_norm(plane, (60,), norm.weight, norm.bias)
@@ -6802,9 +6822,14 @@ def test_fnirs_features_feed_head_and_reset(model_cls):
 
 
 def test_fnirspret_forwards_every_argument_to_fnirst():
-    """FNIRSPreT is FNIRST plus the preprocessing module: same signature, and the
-    same layers and outputs once that module is removed."""
-    assert inspect.signature(FNIRSPreT.__init__) == inspect.signature(FNIRST.__init__)
+    """FNIRSPreT is FNIRST plus the preprocessing module: the signature of
+    FNIRST and ``preprocessing_kernel_sizes``, and the same layers and outputs
+    once that module is removed."""
+    pret_parameters = dict(inspect.signature(FNIRSPreT.__init__).parameters)
+    pret_parameters.pop("preprocessing_kernel_sizes")
+    assert list(pret_parameters.values()) == list(
+        inspect.signature(FNIRST.__init__).parameters.values()
+    )
     kwargs = dict(
         n_chans=10, n_outputs=3, n_times=60, embed_dim=32, depth=2, num_heads=2,
         mlp_dim=32, pool="mean", head_dim=16, n_conv_filters=4, spatial_kernel_size=3,
@@ -6819,6 +6844,16 @@ def test_fnirspret_forwards_every_argument_to_fnirst():
     x = torch.randn(2, 10, 60)
     with torch.no_grad():
         assert torch.equal(pret(x), plain(x))
+
+
+def test_fnirspret_even_preprocessing_kernel_raises():
+    """The padding ``k // 2`` of an even kernel adds a sample, which the
+    LayerNorms over ``n_times`` cannot read."""
+    with pytest.raises(ValueError, match="preprocessing_kernel_sizes must be odd"):
+        FNIRSPreT(
+            n_chans=10, n_outputs=2, n_times=60, depth=1,
+            preprocessing_kernel_sizes=(5, 4),
+        )
 
 
 @pytest.mark.parametrize("model_cls", [GeoNIRS, JungMAE])
