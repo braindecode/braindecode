@@ -35,14 +35,14 @@ outputs (max-abs difference 0.0) with the same ``state_dict``. The config saves
 
 .. note::
 
-    **When to attach an external strategy vs. keep "native".**
-    Across five pretrained EEG foundation models and five downstream tasks,
-    :footcite:t:`kokate2026channel` report a regime-dependent trade-off:
-    rigid-montage models (such as :class:`~braindecode.models.BENDR`) require an
-    external adapter on mismatched caps, whereas montage-flexible models (such as
-    :class:`~braindecode.models.EEGPT` and :class:`~braindecode.models.CBraMod`)
-    benefit from external interpolation under frozen-encoder linear probing but match
-    or exceed it under ``"native"`` during full fine-tuning.
+    **When to attach an external strategy vs. keep "native".** Across five pretrained
+    EEG foundation models and five downstream tasks, :footcite:t:`kokate2026channel`
+    report a regime-dependent trade-off: rigid-montage models (such as
+    :class:`~braindecode.models.BENDR`) require an external adapter on mismatched caps,
+    whereas montage-flexible models (such as :class:`~braindecode.models.EEGPT` and
+    :class:`~braindecode.models.CBraMod`) benefit from external interpolation under
+    frozen-encoder linear probing but match or exceed it under ``"native"`` during full
+    fine-tuning.
 
 ****************
  The strategies

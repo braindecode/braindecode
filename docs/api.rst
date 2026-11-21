@@ -12,9 +12,9 @@
  Models
 ********
 
-All architectures in Braindecode are implemented as PyTorch
-:py:class:`torch.nn.Module` classes for classification, regression, sleep staging,
-seizure detection, and representation learning across EEG, iEEG, MEG, fNIRS, and sEMG.
+All architectures in Braindecode are implemented as PyTorch :py:class:`torch.nn.Module`
+classes for classification, regression, sleep staging, seizure detection, and
+representation learning across EEG, iEEG, MEG, fNIRS, and sEMG.
 
 Every model uses standardized signal-geometry parameters:
 

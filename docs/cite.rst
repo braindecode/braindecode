@@ -6,7 +6,7 @@
 
 Please cite Braindecode whenever you use the library in any context, including journal
 articles, conference papers, preprints, clinical studies, benchmark suites, master's or
-PhD theses, competition entries, and grant proposals.
+PhD dissertations, competition entries, and grant proposals.
 
 Use the **Zenodo software DOI** (`10.5281/zenodo.8214376
 <https://doi.org/10.5281/zenodo.8214376>`_) first as your primary citation. That concept
@@ -17,40 +17,40 @@ papers used in your experiments.
 
 .. raw:: html
 
-   <div class="bd-cite-hub" role="region" aria-label="One-click citation export">
-     <div class="bd-cite-hub__header">
-       <div class="bd-cite-hub__meta">
-         <span class="bd-cite-hub__eyebrow">PRIMARY SOFTWARE CITATION · ZENODO CONCEPT DOI</span>
-         <a class="bd-cite-hub__doi" href="https://doi.org/10.5281/zenodo.8214376" target="_blank" rel="noopener">
-           https://doi.org/10.5281/zenodo.8214376
-         </a>
-       </div>
-       <a class="bd-cite-hub__badge" href="https://doi.org/10.5281/zenodo.8214376" target="_blank" rel="noopener">
-         <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.8214376.svg" alt="Zenodo DOI 10.5281/zenodo.8214376"/>
-       </a>
-     </div>
-     <div class="bd-cite-hub__toolbar">
-       <button type="button" class="bd-cite-hub-btn bd-cite-hub-btn--primary" data-bd-cite-copy="zenodo-bibtex">
-         Copy Zenodo BibTeX (Primary)
-       </button>
-       <button type="button" class="bd-cite-hub-btn" data-bd-cite-copy="both-bibtex">
-         Copy Both BibTeX (Zenodo + HBM 2017)
-       </button>
-       <button type="button" class="bd-cite-hub-btn" data-bd-cite-copy="zenodo-apa">
-         Copy APA
-       </button>
-       <button type="button" class="bd-cite-hub-btn" data-bd-cite-copy="zenodo-ris">
-         Copy RIS (Zotero / EndNote / Mendeley)
-       </button>
-       <a class="bd-cite-hub-btn bd-cite-hub-btn--download" href="_static/braindecode.bib" download="braindecode.bib">
-         Download braindecode.bib ↓
-       </a>
-     </div>
-   </div>
+    <div class="bd-cite-hub" role="region" aria-label="One-click citation export">
+      <div class="bd-cite-hub__header">
+        <div class="bd-cite-hub__meta">
+          <span class="bd-cite-hub__eyebrow">PRIMARY SOFTWARE CITATION · ZENODO CONCEPT DOI</span>
+          <a class="bd-cite-hub__doi" href="https://doi.org/10.5281/zenodo.8214376" target="_blank" rel="noopener">
+            https://doi.org/10.5281/zenodo.8214376
+          </a>
+        </div>
+        <a class="bd-cite-hub__badge" href="https://doi.org/10.5281/zenodo.8214376" target="_blank" rel="noopener">
+          <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.8214376.svg" alt="Zenodo DOI 10.5281/zenodo.8214376"/>
+        </a>
+      </div>
+      <div class="bd-cite-hub__toolbar">
+        <button type="button" class="bd-cite-hub-btn bd-cite-hub-btn--primary" data-bd-cite-copy="zenodo-bibtex">
+          Copy Zenodo BibTeX (Primary)
+        </button>
+        <button type="button" class="bd-cite-hub-btn" data-bd-cite-copy="both-bibtex">
+          Copy Both BibTeX (Zenodo + HBM 2017)
+        </button>
+        <button type="button" class="bd-cite-hub-btn" data-bd-cite-copy="zenodo-apa">
+          Copy APA
+        </button>
+        <button type="button" class="bd-cite-hub-btn" data-bd-cite-copy="zenodo-ris">
+          Copy RIS (Zotero / EndNote / Mendeley)
+        </button>
+        <a class="bd-cite-hub-btn bd-cite-hub-btn--download" href="_static/braindecode.bib" download="braindecode.bib">
+          Download braindecode.bib ↓
+        </a>
+      </div>
+    </div>
 
-***************************************************
+****************************************************
  1. Cite the Braindecode software (Zenodo, primary)
-***************************************************
+****************************************************
 
 Citing the Zenodo software archive directly tracks open-source software impact and
 credits all contributors who build and maintain Braindecode across releases:
@@ -128,10 +128,10 @@ for raw EEG:
 
 .. raw:: html
 
-   <div class="bd-cite-inline-actions">
-     <button type="button" class="bd-cite-hub-btn" data-bd-cite-copy="hbm-bibtex">Copy HBM 2017 BibTeX</button>
-     <button type="button" class="bd-cite-hub-btn" data-bd-cite-copy="hbm-apa">Copy HBM 2017 APA</button>
-   </div>
+    <div class="bd-cite-inline-actions">
+      <button type="button" class="bd-cite-hub-btn" data-bd-cite-copy="hbm-bibtex">Copy HBM 2017 BibTeX</button>
+      <button type="button" class="bd-cite-hub-btn" data-bd-cite-copy="hbm-apa">Copy HBM 2017 APA</button>
+    </div>
 
 .. code-block:: bibtex
 
@@ -150,9 +150,9 @@ for raw EEG:
       keywords = {electroencephalography, EEG analysis, machine learning, end-to-end learning, brain-machine interface, brain-computer interface, model interpretability, brain mapping}
     }
 
-********************************************************
+*******************************************************
  3. Cite individual model architectures and MNE-Python
-********************************************************
+*******************************************************
 
 **Model and dataset papers.** When you train, benchmark, or fine-tune specific neural
 architectures or foundation models from :mod:`braindecode.models`, please also cite the

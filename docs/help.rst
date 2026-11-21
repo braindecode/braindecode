@@ -16,7 +16,8 @@ See :doc:`cite`.
  Help! I can't get Python and Braindecode working!
 ***************************************************
 
-Check whether you are running the most recent version of Braindecode (see :doc:`install/install`).
+Check whether you are running the most recent version of Braindecode (see
+:doc:`install/install`).
 
 *******************************
  I still can't get it to work!

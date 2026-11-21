@@ -581,7 +581,7 @@
         <div class="section-head-stack is-center">
           <span class="section-eyebrow">USED BY THE COMMUNITY</span>
           <h2 class="section-title">What labs and students build with Braindecode</h2>
-          <p class="section-sub">From first master's theses to hospital cohorts and NeurIPS competitions, researchers use Braindecode to run checkable experiments and share their models back.</p>
+          <p class="section-sub">From student thesis projects to hospital cohorts and NeurIPS competitions, researchers use Braindecode to run checkable experiments and share their models back.</p>
         </div>
       </div>
 
@@ -659,7 +659,7 @@
           </svg>
           <div class="venue-brand-head">
             <img class="venue-logo is-compact dark-light" src="_static/venue_logos/nature-white.svg" alt="Nature Portfolio" width="128" height="32" loading="lazy" decoding="async"/>
-            <span class="venue-subtag bd-mono">COMMUN. BIOLOGY</span>
+            <span class="venue-subtag bd-mono">COMMUNICATIONS BIOLOGY</span>
           </div>
           <div class="venue-body">
             <p class="venue-quote">Multiverse analysis across 2,592 preprocessing paths and seven ERP CORE paradigms using Braindecode to measure how filtering and artifact removal shape decoding.</p>

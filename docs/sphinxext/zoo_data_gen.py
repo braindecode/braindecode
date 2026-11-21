@@ -214,7 +214,7 @@ MODALITY_PREVIEWS: dict[str, tuple[str, str]] = {
     ),
     "eeg": (
         "Scalp EEG & Sleep PSG · 77 models",
-        'from braindecode.models import EEGNeX\nmodel = EEGNeX(n_chans=22, n_outputs=4, n_times=1000)',
+        "from braindecode.models import EEGNeX\nmodel = EEGNeX(n_chans=22, n_outputs=4, n_times=1000)",
     ),
     "ieeg": (
         "Intracranial iEEG / sEEG / ECoG · 9 models",
@@ -245,11 +245,11 @@ CATEGORY_PREVIEWS: dict[str, tuple[str, str]] = {
     ),
     "convolution": (
         "Spatial-Temporal Convolutions · 69 models",
-        'from braindecode.models import ShallowFBCSPNet\nmodel = ShallowFBCSPNet(n_chans=22, n_outputs=4, n_times=1000)',
+        "from braindecode.models import ShallowFBCSPNet\nmodel = ShallowFBCSPNet(n_chans=22, n_outputs=4, n_times=1000)",
     ),
     "attention": (
         "Attention & Patch Transformers · 50 models",
-        'from braindecode.models import EEGConformer\nmodel = EEGConformer(n_chans=22, n_outputs=4, n_times=1000)',
+        "from braindecode.models import EEGConformer\nmodel = EEGConformer(n_chans=22, n_outputs=4, n_times=1000)",
     ),
     "channel": (
         "Channel & 3D Montage-Aware · 23 models",
@@ -257,19 +257,19 @@ CATEGORY_PREVIEWS: dict[str, tuple[str, str]] = {
     ),
     "recurrent": (
         "Recurrent & State-Space · 13 models",
-        'from braindecode.models import SAMBA\nmodel = SAMBA(n_chans=19, n_outputs=2, n_times=256)',
+        "from braindecode.models import SAMBA\nmodel = SAMBA(n_chans=19, n_outputs=2, n_times=256)",
     ),
     "filterbank": (
         "Multi-Band Filterbank Networks · 4 models",
-        'from braindecode.models import FBCNet\nmodel = FBCNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)',
+        "from braindecode.models import FBCNet\nmodel = FBCNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)",
     ),
     "interpretable": (
         "Interpretable Spectral & Spatial Nets · 3 models",
-        'from braindecode.models import SincShallowNet\nmodel = SincShallowNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)',
+        "from braindecode.models import SincShallowNet\nmodel = SincShallowNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)",
     ),
     "graph": (
         "Electrode Graph Neural Networks · 2 models",
-        'from braindecode.models import DGCNN\nmodel = DGCNN(n_chans=62, n_outputs=3, n_times=200)',
+        "from braindecode.models import DGCNN\nmodel = DGCNN(n_chans=62, n_outputs=3, n_times=200)",
     ),
 }
 
@@ -318,7 +318,9 @@ def _load_init_signatures(models_dir: str) -> dict[str, str]:
                     if not args:
                         args = [a.arg for a in item.args.kwonlyargs]
                     keep = [a for a in args if not a.startswith("_")][:4]
-                    sigs[node.name] = ", ".join(keep) if keep else "n_chans, n_outputs, n_times"
+                    sigs[node.name] = (
+                        ", ".join(keep) if keep else "n_chans, n_outputs, n_times"
+                    )
     return sigs
 
 

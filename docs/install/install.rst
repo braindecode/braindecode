@@ -9,8 +9,8 @@ on Linux (``x86_64``), Windows (``AMD64``), or macOS with Apple Silicon (``arm64
 Intel Macs are unsupported because `PyTorch ended macOS x86_64 builds after 2.2
 <https://dev-discuss.pytorch.org/t/pytorch-macos-x86-builds-deprecation-starting-january-2024/1690>`_).
 
-Packages are published on `PyPI <braindecode-pypi_>`_ and developed openly on
-`GitHub <braindecode-github_>`_.
+Packages are published on `PyPI <braindecode-pypi_>`_ and developed openly on `GitHub
+<braindecode-github_>`_.
 
 ***************
  Quick install

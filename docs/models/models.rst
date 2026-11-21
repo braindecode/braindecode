@@ -10,10 +10,10 @@
 
 All models in Braindecode address a shared supervised or self-supervised problem: given
 multichannel time-series recordings :math:`X \in \mathbb{R}^{C \times T}` and targets
-:math:`y \in \mathcal{Y}`, :mod:`braindecode.models` implements neural networks :math:`f`
-that **decode** brain activity by applying a sequence of transformation layers (such as
-:class:`~torch.nn.Conv2d`, :class:`~torch.nn.Linear`, and :class:`~torch.nn.ELU`) to
-filter signals and extract task-relevant representations:
+:math:`y \in \mathcal{Y}`, :mod:`braindecode.models` implements neural networks
+:math:`f` that **decode** brain activity by applying a sequence of transformation layers
+(such as :class:`~torch.nn.Conv2d`, :class:`~torch.nn.Linear`, and
+:class:`~torch.nn.ELU`) to filter signals and extract task-relevant representations:
 
 .. math::
 
@@ -62,7 +62,8 @@ Across the pages in this section, you will find:
 1. The problem formulation above;
 2. :doc:`Architecture categorization by core building blocks <models_categorization>`;
 3. :doc:`Interactive models summary table <models_table>`;
-4. :doc:`Channel and montage adaptation strategies for pretrained models <channel_strategies>`;
+4. :doc:`Channel and montage adaptation strategies for pretrained models
+   <channel_strategies>`;
 5. :doc:`Comparative visualizations across model families <models_visualization>`.
 
 .. button-ref:: models_table
