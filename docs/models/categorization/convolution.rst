@@ -25,12 +25,14 @@
     <https://app.litmaps.com/shared/7b301d7d-ade1-4134-9407-9fad80e009db>`__ **of
     convolutional only braindecode EEG architectures, last updated 26/08/2025.** Each
     node is a paper; rightward means more recently published, upward more cited, and
-    links show amount of citation with logaritm scale. The map traces the line from
+    links show amount of citation with logarithm scale. The map traces the line from
     early :class:`ShallowFBCSPNet`/:class:`Deep4Net` and :class:`EEGNet`\ —to later
     convolutional variants such as :class:`EEGTCNet`, :class:`EEGInceptionMI`,
     :class:`EEGInceptionERP`, and :class:`EEGITNet`, with recent additions like
-    :class:`EEGNeX` and :class:`EEGSimpleConv`. TO-DO: discuss the USleep, Chambon,
-    DeepSleepNet.
+    :class:`EEGNeX` and :class:`EEGSimpleConv`. For sleep staging,
+    :class:`~braindecode.models.USleep` applies multi-scale U-Net encoder-decoder
+    temporal convolutions with skip connections to segment whole-night recordings into
+    epoch-level stage predictions.
 
 .. include:: ../../links.inc
 
