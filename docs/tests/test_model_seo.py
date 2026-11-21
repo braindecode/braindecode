@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
-import xml.etree.ElementTree as ET
 from io import StringIO
 from pathlib import Path
 
@@ -300,9 +299,13 @@ def test_origin_root_seo_assets_and_agent_specs():
         assert f"User-agent: {bot}" in robots
 
     sitemap_xml = (DOCS_DIR / "_root" / "sitemap.xml").read_text(encoding="utf-8")
-    root = ET.fromstring(sitemap_xml)
-    assert root.tag.endswith("sitemapindex")
-    locs = [el.text for el in root.iter() if el.tag.endswith("loc")]
+    assert sitemap_xml.startswith('<?xml version="1.0" encoding="UTF-8"?>')
+    assert (
+        '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        in sitemap_xml
+    )
+    assert "</sitemapindex>" in sitemap_xml
+    locs = re.findall(r"<loc>([^<]+)</loc>", sitemap_xml)
     assert locs == ["https://braindecode.org/stable/sitemap.xml"]
 
     root_index = (DOCS_DIR / "_root" / "index.html").read_text(encoding="utf-8")
