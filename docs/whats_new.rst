@@ -72,28 +72,16 @@ Enhancements
 - Add :class:`braindecode.models.GeoNIRS` (Li et al., 2026), an fNIRS foundation model
   conditioned on the source-detector geometry; its encoders are on the Hugging Face Hub at
   ``braindecode/geonirs-base-pretrained`` and ``-large-pretrained`` (:gh:`1591` by `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan
-  et al. (Neurophotonics 2018) as the GeoNIRS benchmark (Li et al., 2026)
-  implements it: two temporal convolutions with GroupNorm and GELU, a time
-  average and a linear head. Its ``mapping`` loads the
-  authors' state dict (:gh:`1592` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan et al.
+  (Neurophotonics 2018) as the GeoNIRS benchmark implements it (:gh:`1592` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
-  (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
-  transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
-  samples. :class:`~braindecode.modules.MultiHeadAttention` gains ``qkv_bias``
-  (default ``True``, unchanged) for fNIRS-T's bias-free q/k/v (:gh:`1584` by
+  (Wang et al., IEEE JBHI 2022); :class:`~braindecode.modules.MultiHeadAttention` gains ``qkv_bias`` (:gh:`1584` by
   `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023), the first
-  fNIRS model of braindecode: a delayed-hemodynamic-response convolution and a
-  depthwise-separable convolution over ``(batch, n_chans, n_times)`` HbO/HbR windows.
-  Its ``mapping`` loads the authors' state dict, and ``fNIRS`` joins the modality
-  vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023), the first fNIRS
+  model of braindecode, with delayed-hemodynamic-response and depthwise-separable convolutions;
+  ``fNIRS`` joins the modality vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRS4D` (Wang et al., IEEE TIM 2026), a diagonal
-  state-space (S4D) backbone with the authors' LOSO-CV or KFold-CV
-  mean-hemoglobin branch (``mean_branch``); its ``mapping`` loads the authors' state
-  dict. The helpers ``fnirs_chromophores_from_chs_info``, ``fnirs_channel_order`` and
-  ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
-  ``chs_info``, stacked or in MNE's interleaved order (:gh:`1582` by
+  state-space (S4D) fNIRS model, with ``fnirs_*`` helpers for HbO/HbR ``chs_info`` in ``braindecode.models.util`` (:gh:`1582` by
   `Bruno Aristimunha`_).
 - The docstrings of :class:`braindecode.models.FNIRSNet`, :class:`~braindecode.models.FNIRS4D`,
   :class:`~braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT` describe
@@ -137,7 +125,7 @@ Enhancements
   ``ch_mask``, ``token_mask`` and the weights at ``braindecode/meggpt-pretrained`` (:gh:`1555` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Pratibha2` (PRATIBHA-2, formerly MANAS-2), a dense-attention
   EEG foundation model; its encoder, converted from ``MannasAI/pratibha-2``, is on the Hugging
-  Face Hub at ``braindecode/pratibha2-pretrained`` (:gh:`1654` by `Mahir Jain`_).
+  Face Hub at ``braindecode/pratibha2-pretrained`` (:gh:`1654` by `Mahir Jain`_, :gh:`1723` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.MEGXL`, the MEG-XL brain-to-text foundation model (Jayalath and Parker Jones, ICML 2026): a frozen BioCodec tokenizer and a criss-cross transformer pretrained on 150 s MEG windows; the released ``meg-xl-med-v2.ckpt``, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/megxl-pretrained`` and matches the authors' code on CPU. Its ``forward`` refuses ``ch_mask`` with a ``ValueError`` (the head flattens ``n_chans * latent_dim`` features and the sensor geometry is the ``chs_info`` montage), and ``return_features`` gives the pooled ``"features"`` only, no ``"tokens"``. The opt-in ``encode``/``encode_codes`` mask replaces projected code content before sensor metadata and attention, returning real temporal hidden states for caller-owned masked-RVQ-code prediction; it adds no default parameters and expects equal valid-length full-montage windows (:gh:`1554` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.SEANetEncoder` and :class:`~braindecode.modules.SEANetDecoder` (EnCodec's SEANet, with :class:`~braindecode.modules.SEANetConv1d`, :class:`~braindecode.modules.SEANetConvTranspose1d`, :class:`~braindecode.modules.SEANetLSTM` and :class:`~braindecode.modules.SEANetResBlock`), moved from :class:`braindecode.models.BrainOmni`, whose parameters and outputs are unchanged. They take ``in_channels``/``out_channels``, ``n_residual_layers``, ``dilation_base``, ``compress``, ``true_skip`` and ``causal`` (:gh:`1553` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.SpatialTemporalBlock`, moved from BrainOmni, and give
