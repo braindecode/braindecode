@@ -21,10 +21,14 @@ from braindecode.models.steegformer import (
     _ChannelPositionalEmbed,
     _init_weights,
     _TemporalPositionalEncoding,
-    _TransformerEncoderBlock,
 )
 from braindecode.models.util import chs_info_positions
-from braindecode.modules import PatchTokenizer
+from braindecode.modules import (
+    FeedForwardBlock,
+    MultiHeadAttention,
+    PatchTokenizer,
+    PreNormTransformerBlock,
+)
 from braindecode.util import resolve_montage_name
 
 
@@ -281,8 +285,18 @@ class CORTEG(EEGModuleMixin, nn.Module):
         dpr = torch.linspace(0, drop_path, depth).tolist()
         self.encoder = nn.Sequential(
             *[
-                _TransformerEncoderBlock(
-                    embed_dim, num_heads, drop_prob, int(mlp_ratio), dpr[i], activation
+                PreNormTransformerBlock(
+                    embed_dim,
+                    MultiHeadAttention(embed_dim, num_heads, drop_prob),
+                    FeedForwardBlock(
+                        embed_dim,
+                        expansion=int(mlp_ratio),
+                        drop_p=drop_prob,
+                        activation=activation,
+                    ),
+                    drop_prob,
+                    eps=1e-6,
+                    drop_path=dpr[i],
                 )
                 for i in range(depth)
             ]

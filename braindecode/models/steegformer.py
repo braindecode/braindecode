@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import warnings
 from functools import partial
-from typing import Dict, Optional, Union
+from typing import Dict, Union
 
 import torch
 from einops.layers.torch import Rearrange
@@ -23,7 +23,7 @@ from braindecode.modules import (
     FeedForwardBlock,
     MultiHeadAttention,
     PatchTokenizer,
-    Residual,
+    PreNormTransformerBlock,
 )
 
 # Weight initialization of the reference implementation.
@@ -353,8 +353,18 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         dpr = torch.linspace(0, drop_path, depth).tolist()
         self.encoder = nn.Sequential(
             *[
-                _TransformerEncoderBlock(
-                    embed_dim, num_heads, drop_prob, int(mlp_ratio), dpr[i], activation
+                PreNormTransformerBlock(
+                    embed_dim,
+                    MultiHeadAttention(embed_dim, num_heads, drop_prob),
+                    FeedForwardBlock(
+                        embed_dim,
+                        expansion=int(mlp_ratio),
+                        drop_p=drop_prob,
+                        activation=activation,
+                    ),
+                    drop_prob,
+                    eps=1e-6,
+                    drop_path=dpr[i],
                 )
                 for i in range(depth)
             ]
@@ -618,56 +628,3 @@ class _ChannelPositionalEmbed(nn.Module):
         emb = self.embedding(channel_indices)  # (n_chans, embed_dim)
         # -> (1, 1, n_chans, embed_dim) to broadcast over batch and patches.
         return emb[None, None]
-
-
-class _TransformerEncoderBlock(nn.Sequential):
-    """Pre-norm Transformer encoder block (ViT-style).
-
-    Same layout as the block of :class:`~braindecode.models.EEGConformer`: a
-    residual multi-head self-attention sub-block followed by a residual
-    feed-forward sub-block, each with pre-LayerNorm. Reuses braindecode's
-    :class:`~braindecode.modules.MultiHeadAttention` and
-    :class:`~braindecode.modules.FeedForwardBlock`.
-    """
-
-    def __init__(
-        self,
-        embed_dim: int,
-        num_heads: int,
-        drop_prob: float,
-        mlp_ratio: int,
-        drop_path: float = 0.0,
-        activation: type[nn.Module] = nn.GELU,
-    ):
-        super().__init__(
-            Residual(
-                nn.Sequential(
-                    nn.LayerNorm(embed_dim, eps=1e-6),
-                    MultiHeadAttention(embed_dim, num_heads, drop_prob),
-                    nn.Dropout(drop_prob),
-                ),
-                drop_path,
-            ),
-            Residual(
-                nn.Sequential(
-                    nn.LayerNorm(embed_dim, eps=1e-6),
-                    FeedForwardBlock(
-                        embed_dim,
-                        expansion=mlp_ratio,
-                        drop_p=drop_prob,
-                        activation=activation,
-                    ),
-                    nn.Dropout(drop_prob),
-                ),
-                drop_path,
-            ),
-        )
-
-    def forward(
-        self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
-        """``attn_mask`` as in :class:`~braindecode.modules.MultiHeadAttention`."""
-        attention = self[0]
-        sublayer = attention.fn
-        x = x + attention.drop_path(sublayer[2](sublayer[1](sublayer[0](x), attn_mask)))
-        return self[1](x)

@@ -353,25 +353,59 @@ class PreNormTransformerBlock(nn.Sequential):
     ``Residual(LayerNorm -> attn -> Dropout)`` then
     ``Residual(LayerNorm -> ffn -> Dropout)``; the children are indexed
     (``0.fn.0``, ``0.fn.1``, ...), as in EEGConformer's released layout.
-    EEGConformer and MIRepNet use it.
+    EEGConformer, MIRepNet, fNIRS-T, STEEGFormer and CORTEG use it.
 
     Parameters
     ----------
     dim : int
         Token width, normalized before each sub-layer.
     attn : torch.nn.Module
-        Token-mixing sub-layer, ``(batch, seq, dim) -> (batch, seq, dim)``.
+        Token-mixing sub-layer, ``(batch, seq, dim) -> (batch, seq, dim)``. To
+        call the block with an ``attn_mask`` it takes the mask as a second
+        argument, like :class:`~braindecode.modules.MultiHeadAttention`.
     ffn : torch.nn.Module
         Feed-forward sub-layer, same shape.
     drop_prob : float
         Dropout after each sub-layer.
+    eps : float, default=1e-5
+        Epsilon of the two layer norms.
+    drop_path : float, default=0.0
+        Stochastic depth rate of each residual branch (:class:`DropPath`).
     """
 
-    def __init__(self, dim: int, attn: nn.Module, ffn: nn.Module, drop_prob: float):
+    def __init__(
+        self,
+        dim: int,
+        attn: nn.Module,
+        ffn: nn.Module,
+        drop_prob: float,
+        *,
+        eps: float = 1e-5,
+        drop_path: float = 0.0,
+    ):
         super().__init__(
-            Residual(nn.Sequential(nn.LayerNorm(dim), attn, nn.Dropout(drop_prob))),
-            Residual(nn.Sequential(nn.LayerNorm(dim), ffn, nn.Dropout(drop_prob))),
+            Residual(
+                nn.Sequential(nn.LayerNorm(dim, eps=eps), attn, nn.Dropout(drop_prob)),
+                drop_path,
+            ),
+            Residual(
+                nn.Sequential(nn.LayerNorm(dim, eps=eps), ffn, nn.Dropout(drop_prob)),
+                drop_path,
+            ),
         )
+
+    def forward(self, x: Tensor, attn_mask: Optional[Tensor] = None) -> Tensor:
+        """``(batch, seq, dim) -> (batch, seq, dim)``.
+
+        ``attn_mask`` is passed to the attention sub-layer, see
+        :class:`~braindecode.modules.MultiHeadAttention`.
+        """
+        if attn_mask is None:
+            return self[1](self[0](x))
+        attention = self[0]
+        sublayer = attention.fn  # LayerNorm, attn, Dropout
+        x = x + attention.drop_path(sublayer[2](sublayer[1](sublayer[0](x), attn_mask)))
+        return self[1](x)
 
 
 class PostNormTransformerBlock(nn.Module):
