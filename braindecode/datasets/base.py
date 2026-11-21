@@ -2062,7 +2062,13 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             for ds, value_ in zip(self.datasets, value):
                 ds.set_description({key: value_}, overwrite=overwrite)
 
-    def save(self, path: str, overwrite: bool = False, offset: int = 0):
+    def save(
+        self,
+        path: str,
+        overwrite: bool = False,
+        offset: int = 0,
+        _check_subdirs: bool = True,
+    ):
         """Save datasets to files by creating one subdirectory for each dataset::
 
             path/
@@ -2114,10 +2120,10 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         # Create path if it doesn't exist
         os.makedirs(path, exist_ok=True)
 
-        # With an offset the caller fills one directory piece by piece (preprocess
-        # saves each recording at its index), so the other entries are expected:
-        # skip the scan that would stat them all on every call and list them in a warning.
-        path_contents = os.listdir(path) if offset == 0 else []
+        # With an offset (or when preprocess() writes each recording at its index)
+        # the caller fills one directory piece by piece, so sibling entries are
+        # expected: skip scanning them or warning about concurrent worker writes.
+        path_contents = os.listdir(path) if (offset == 0 and _check_subdirs) else []
         n_sub_dirs = len(
             [e for e in path_contents if os.path.isdir(os.path.join(path, e))]
         )
@@ -2194,9 +2200,25 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     @staticmethod
     def _save_description(sub_dir, description):
         description_file_path = os.path.join(sub_dir, "description.json")
-        if description is None:
-            description = pd.Series(dtype=object)
-        description.to_json(description_file_path, default_handler=str)
+        if description is None or description.empty:
+            data = {}
+        else:
+            data = {}
+            for k, v in description.items():
+                if isinstance(v, np.generic):
+                    v = v.item()
+                if (
+                    v is None
+                    or v is pd.NA
+                    or v is pd.NaT
+                    or (isinstance(v, float) and (np.isnan(v) or np.isinf(v)))
+                ):
+                    v = None
+                elif isinstance(v, np.ndarray):
+                    v = v.tolist()
+                data[str(k)] = v
+        with open(description_file_path, "w") as f:
+            json.dump(data, f, default=str)
 
     @staticmethod
     def _save_kwargs(sub_dir, ds):

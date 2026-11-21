@@ -86,7 +86,7 @@ def _raw_dataset():
         "n_runs": 1,
         "n_subjects": 1,
         "paradigm": "imagery",
-        "duration": 386,
+        "duration": 30,
         "sfreq": 250,
         "event_list": ("left", "right"),
         "channels": ("C4", "Cz", "FC3", "Pz", "P2", "P1", "POz"),
@@ -344,9 +344,7 @@ def test_set_preproc_kwargs_wrong_type(base_concat_ds):
 @pytest.mark.parametrize("overwrite", [True, False])
 # None and 1 take the same sequential path, -1 and 2 the same joblib one.
 @pytest.mark.parametrize("n_jobs", [None, 2])
-def test_preprocess_save_dir(
-    base_concat_ds, windows_concat_ds, tmp_path, kind, save, overwrite, n_jobs
-):
+def test_preprocess_save_dir(request, tmp_path, kind, save, overwrite, n_jobs):
     preproc_kwargs = [
         {
             "__class_path__": "braindecode.preprocessing.mne_preprocess.Crop",
@@ -360,10 +358,8 @@ def test_preprocess_save_dir(
     # also for windows it is called raw_preproc_kwargs
     # as underlying data is always raw
     preproc_kwargs_name = "raw_preproc_kwargs"
-    if kind == "raw":
-        concat_ds = base_concat_ds
-    elif kind == "windows":
-        concat_ds = windows_concat_ds
+    fixture = {"raw": "base_concat_ds", "windows": "windows_concat_ds"}[kind]
+    concat_ds = request.getfixturevalue(fixture)
 
     concat_ds = preprocess(
         concat_ds, preprocessors, save_dir, overwrite=overwrite, n_jobs=n_jobs
@@ -398,7 +394,7 @@ def test_mne_preprocessor(base_concat_ds):
         Preprocessor(exponential_moving_standardize),
     ]
 
-    preprocess(base_concat_ds, preprocessors, n_jobs=-1)
+    preprocess(base_concat_ds, preprocessors, n_jobs=2)
 
 
 def test_new_eegref(base_concat_ds):

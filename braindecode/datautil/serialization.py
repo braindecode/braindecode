@@ -117,7 +117,7 @@ def _load_signals_and_description(path, preload, is_raw, ids_to_load=None):
     all_signals = []
     file_name = "{}-raw.fif" if is_raw else "{}-epo.fif"
     description_df = pd.read_json(
-        path / "description.json", typ="series", convert_dates=False
+        path / "description.json", typ="series", **_NO_DATE_CONVERSION
     )
 
     if "timestamp" in description_df.index:
@@ -257,7 +257,10 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None, n_job
             "target_name can only be given for datasets of raws; for windowed "
             "datasets, use BaseConcatDataset.set_target after loading."
         )
-    datasets = Parallel(n_jobs)(
+    # Header-only reloads (preload=False) perform small file reads and avoid
+    # process startup and IPC pickling overhead when dispatched across threads.
+    prefer = "threads" if not preload else None
+    datasets = Parallel(n_jobs, prefer=prefer)(
         delayed(_load_parallel)(path, i, preload, is_raw, has_stored_windows)
         for i in ids_to_load
     )
@@ -280,11 +283,19 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
     signals = _load_signals(fif_file_path, preload, is_raw)
 
     description_file_path = sub_dir / "description.json"
-    # dtype=False: keep strings such as subject "01" as strings
-    description = pd.read_json(
-        description_file_path, typ="series", dtype=False, **_NO_DATE_CONVERSION
-    )
-    description[description.isna()] = np.nan  # JSON null was read as NaN
+    with open(description_file_path) as f:
+        raw_desc = json.load(f)
+    # Keep strings such as subject "01" or ISO dates as strings, without
+    # invoking pandas' JSON parser per recording.
+    if not raw_desc:
+        description = pd.Series(dtype=object)
+    elif any(v is None for v in raw_desc.values()):
+        description = pd.Series(
+            {k: (np.nan if v is None else v) for k, v in raw_desc.items()},
+            dtype=object,
+        )
+    else:
+        description = pd.Series(raw_desc)
 
     # if 'timestamp' in description.index:
     #     timestamp_numeric = pd.to_numeric(description['timestamp'])
@@ -345,34 +356,39 @@ def _load_kwargs_json(kwargs_name, sub_dir):
             return json.load(f)
 
 
+_OUTDATED_ROOT_ENTRIES = frozenset(
+    {
+        "description.json",
+        "0-raw.fif",
+        "0-epo.fif",
+        "raw_preproc_kwargs",
+        "window_kwargs",
+        "window_preproc_kwargs",
+    }
+)
+
+
 def _is_outdated_saved(path):
     """Data was saved in the old way if there are 'description.json', '-raw.fif'.
 
     or '-epo.fif' in path (no subdirectories) OR if there are more 'fif' files
     than 'description.json' files.
     """
-    description_files = glob(os.path.join(path, "**/description.json"))
-    fif_files = glob(os.path.join(path, "**/*-raw.fif")) + glob(
-        os.path.join(path, "**/*-epo.fif")
-    )
-    multiple = len(description_files) != len(fif_files)
-    kwargs_in_path = any(
-        [
-            os.path.exists(os.path.join(path, kwarg_name))
-            for kwarg_name in [
-                "raw_preproc_kwargs",
-                "window_kwargs",
-                "window_preproc_kwargs",
-            ]
-        ]
-    )
-    return (
-        os.path.exists(os.path.join(path, "description.json"))
-        or os.path.exists(os.path.join(path, "0-raw.fif"))
-        or os.path.exists(os.path.join(path, "0-epo.fif"))
-        or multiple
-        or kwargs_in_path
-    )
+    n_desc = 0
+    n_fif = 0
+    with os.scandir(path) as root_it:
+        for entry in root_it:
+            if entry.name in _OUTDATED_ROOT_ENTRIES:
+                return True
+            if entry.is_dir():
+                with os.scandir(entry.path) as sub_it:
+                    for sub in sub_it:
+                        name = sub.name
+                        if name == "description.json":
+                            n_desc += 1
+                        elif name.endswith(("-raw.fif", "-epo.fif")):
+                            n_fif += 1
+    return n_desc != n_fif
 
 
 def _check_save_dir_empty(save_dir):

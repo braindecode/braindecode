@@ -132,7 +132,7 @@ preprocessors = [
 ]
 
 # Transform the data
-preprocess(dataset, preprocessors, n_jobs=-1)
+preprocess(dataset, preprocessors, n_jobs=2)
 
 ######################################################################
 # Besides using the end-to-end pipeline as a whole, you can also
@@ -284,7 +284,7 @@ lr = 1e-3
 weight_decay = 0
 
 batch_size = 64
-n_epochs = 4
+n_epochs = 2
 
 clf = EEGClassifier(
     model,
@@ -293,6 +293,7 @@ clf = EEGClassifier(
     train_split=predefined_split(valid_set),  # using valid_set for validation
     optimizer__lr=lr,
     optimizer__weight_decay=weight_decay,
+    optimizer__foreach=False,
     batch_size=batch_size,
     callbacks=[
         "accuracy",
@@ -310,7 +311,7 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 # Training for longer
 # -------------------
 #
-# The gallery build above uses only ``n_epochs = 4``. When trained
+# The gallery build above uses only ``n_epochs = 2``. When trained
 # offline for up to 100 epochs with early stopping, the model reaches
 # **81.9 % accuracy on the held-out session (chance = 25 %)**.
 #

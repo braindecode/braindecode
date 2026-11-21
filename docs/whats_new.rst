@@ -28,6 +28,13 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Speed up serialized dataset saving and lazy reloading in
+  :func:`braindecode.datautil.serialization.load_concat_dataset` and
+  :meth:`braindecode.datasets.BaseConcatDataset.save` by dispatching
+  ``preload=False`` header reads across threads, serializing ``description.json``
+  directly with ``json``, scanning directory layouts in one ``os.scandir`` pass,
+  and streamlining the preprocessing, SAE/REVE, EEGPrep, and temporal
+  generalization gallery examples (:gh:`1756` by `Bruno Aristimunha`_).
 - Add ``scripts/ci_plan.py`` and ``pytest --select-models`` to select affected tests and
   models from pull-request diffs, shard full runs across four workers, and schedule the
   cross-OS, Python, and ``torch.compile`` matrix daily (:gh:`1753` by `Bruno Aristimunha`_).
@@ -253,6 +260,9 @@ Requirements
 Bug fixes
 ==========
 
+- Suppress spurious directory-mismatch warnings when :func:`~braindecode.preprocessing.preprocess`
+  saves recordings to ``save_dir`` and replace ``memory_profiler`` process spawning in
+  :ref:`benchmark-preprocess-parallel-serial` so ``spawn`` and parallel gallery workers succeed (:gh:`1756` by `Bruno Aristimunha`_).
 - Speed up documentation builds (``make html-noplot`` no longer hangs with ``-j auto`` on macOS),
   fix the duplicate ``Parameters`` section in :class:`braindecode.datasets.BNCI2014_001`, and
   cache unchanged Sphinx-Gallery outputs in CI (:gh:`1752` by `Bruno Aristimunha`_).
