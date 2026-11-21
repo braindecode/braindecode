@@ -335,8 +335,7 @@ perceptrons (MLPs) and inception blocks.
 Channels
 ========
 
-The channel layer behind ``channel_strategy=`` (see
-:doc:`user_guide/channel_strategies`).
+The channel layer behind ``channel_strategy=`` (see :ref:`channel-strategies`).
 
 :py:mod:`braindecode.modules.channels`:
 
@@ -986,7 +985,8 @@ models and evaluate their performance.
      f1_event
      szcore_event_scores
 
-See :ref:`cropped-inference` for memory bounds, lifecycle and loader settings.
+The section :ref:`cropped-inference` of the cropped decoding tutorial runs the trial
+functions on a trained model.
 
 *******
  Utils

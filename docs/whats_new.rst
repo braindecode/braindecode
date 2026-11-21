@@ -703,6 +703,9 @@ Code health
 - The numpydoc header test now covers every registered model, not nine. The
   parameter headers of 13 models read ``name: type`` and are now ``name : type``,
   so numpydoc parses the name (:gh:`1728` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- The cropped inference page is now the :ref:`cropped-inference` section of the cropped
+  decoding tutorial and the docstrings of its functions; :ref:`channel-strategies` moves
+  to the Models section, with tables (:gh:`1745` by `Bruno Aristimunha`_).
 
 
 Current 2.0.0 (2026-11-02)
@@ -763,8 +766,8 @@ Enhancements
 ============
 
 - The MOABB benchmark example no longer advises ``n_jobs=1`` on a GPU: with NVIDIA's Multi-Process Service running, ``n_jobs=18`` trained BNCI2014_001's 18 cross-session folds 2x faster than ``n_jobs=1`` for EEGNet, ShallowFBCSPNet and ATCNet, with the same score on every fold, and it notes that ``setup_seed`` does not reach the worker processes (:gh:`1500` by `Bhargav Kowshik`_).
-- Add a :ref:`CPU/Gloo distributed-window evaluation recipe
-  <distributed-window-evaluation>` with identity checks, chronological trial
+- Add a CPU/Gloo distributed-window evaluation recipe,
+  ``benchmarks/bench_distributed_windows.py``, with identity checks, chronological trial
   reconstruction and global metrics; it is a recipe, not an estimator backend
   (by `Bruno Aristimunha`_).
 - :class:`braindecode.datasets.BaseConcatDataset` takes the opt-in,
@@ -1038,7 +1041,7 @@ Enhancements
   bit-identical with the same ``state_dict``. It replaces the unreleased
   ``ChannelTokenizer``; BENDR adapts a non-canonical montage with an MNE spline and
   SignalJEPA no longer returns ``NaN`` for names without coordinates. See
-  :doc:`user_guide/channel_strategies` (:gh:`1227`, :gh:`1241` by `Bruno Aristimunha`_).
+  :ref:`channel-strategies` (:gh:`1227`, :gh:`1241` by `Bruno Aristimunha`_).
 
 - Add registry-wide model contract tests that automatically cover every registered
   model, checking eval-mode input/state purity, finite batched outputs,
@@ -1286,7 +1289,7 @@ API and behavior changes
   Parameters and state-dict keys. ``_orig_mod.`` keys from skorch's wrapper are
   **not** rewritten on load, and a pickled or copied estimator runs eagerly until
   ``initialize()``;
-  see :ref:`compile-checkpoint-migration` (by `Bruno Aristimunha`_).
+  see ``compile`` in :class:`braindecode.EEGClassifier` (by `Bruno Aristimunha`_).
 - :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` returns an ``i_dataset`` column with the position of the dataset each window comes from, and raises a :class:`ValueError` if a description or the window metadata already has that key. The samplers in :mod:`braindecode.samplers` take each dataset as one recording; pass the metadata without ``i_dataset`` to group the one-trial datasets of :func:`braindecode.datasets.create_from_X_y` or :func:`braindecode.datasets.create_from_mne_epochs` by subject, session and run as before. The samplers' ``info`` gets a ``recording`` index level after subject, session and run (:gh:`1369` by `Raghav Rathi`_).
 - :class:`braindecode.models.Labram`, :class:`braindecode.models.CBraMod` and
   :class:`braindecode.models.LUNA` tokenize the time axis with the shared

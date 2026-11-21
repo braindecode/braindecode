@@ -585,3 +585,13 @@ def test_eegpt_channel_building_raises_no_future_warning():
 
         channels = _get_eegpt_channels()
     assert len(channels) > 0
+
+
+@pytest.mark.parametrize("name", ["EEGClassifier", "EEGRegressor"])
+def test_estimator_docstring_replaces_skorch_callbacks_and_compile(name):
+    import braindecode
+
+    doc = getattr(braindecode, name).__doc__
+    # braindecode documents these two itself; skorch's entries are dropped
+    assert doc.count("\n    callbacks:") == doc.count("\n    compile:") == 1
+    assert "in place" in doc and "should run faster" not in doc
