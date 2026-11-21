@@ -1,5 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
+# License: BSD (3-clause)
+#
 # Adapted from https://github.com/GeoNIRS/GeoNIRS (81f8995; paper arXiv:2610.17845).
 
 from __future__ import annotations
@@ -18,7 +20,6 @@ from braindecode.functional import (
     patch_count,
     scaled_dot_product_attention,
 )
-from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import fnirs_channel_order, fnirs_split_hbo_hbr
 
@@ -28,6 +29,8 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
 
     :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
+    .. versionadded:: 2.1
+
     GeoNIRS is an fNIRS foundation model pretrained on unlabelled recordings
     made with different probe layouts :footcite:`li2026geonirs`. A channel
     index means a different cortical location in each layout, so a channel is
@@ -35,8 +38,8 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
     channels is compressed into a fixed number of latent channels. Slow
     hemodynamic signals let a model fill a masked span of one signal by
     interpolation, so GeoNIRS is pretrained to rebuild one chromophore from
-    the other. This class is the pretrained encoder with a linear head; the
-    pretraining decoders are not part of it.
+    the other. This class is the pretrained encoder of Figure 1 of the paper
+    with the paper's linear head; the pretraining decoders are not part of it.
 
     .. rubric:: Architecture Overview
 
@@ -58,6 +61,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
     .. rubric:: Macro Components
 
     - ``GeoNIRS.hbo_encoder``, ``GeoNIRS.hbr_encoder`` **Temporal encoders**
+      (§2.2)
 
       *Operations.* Each patch of :math:`S` samples becomes a normalised
       :math:`D`-dimensional token plus a learnable embedding of its index; a
@@ -66,7 +70,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
       *Role.* :math:`H^O` and :math:`H^R`, one encoder per chromophore. The
       channels share the weights, so any number of channels is accepted.
 
-    - ``GeoNIRS.geometry_encoder`` **Geometry encoder**
+    - ``GeoNIRS.geometry_encoder`` **Geometry encoder** (Appendix B.2)
 
       *Operations.* Channel :math:`c` is described by the midpoint and the
       offset of its source :math:`s_c` and detector :math:`d_c`,
@@ -83,6 +87,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
       embedding.
 
     - ``GeoNIRS.channel_compressor`` **Geometry-aware channel compressor**
+      (§2.3)
 
       *Operations.* At each patch :math:`p`, :math:`M` learnable latent
       queries :math:`L` attend over the channels. The keys hold the mean of
@@ -105,7 +110,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
       attention map for HbO and HbR.
 
     - ``GeoNIRS.hbo_projection``, ``GeoNIRS.hbr_projection``
-      **Chromophore projections**
+      **Chromophore projections** (§2.4)
 
       *Operations.* Residual blocks that change the width of each token along
       ``projection_dims``, from :math:`D` to :math:`F`, without mixing latent
@@ -113,12 +118,17 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
 
       *Role.* :math:`Z^O` and :math:`Z^R`, the tokens of the read-out.
 
-    - ``GeoNIRS.final_layer`` **Head**
+    - ``GeoNIRS.final_layer`` **Head** (§2.5, Appendix B.5.2)
 
-      ``pool="flatten"`` flattens the tokens of both chromophores, the head of
-      the paper without its standardization by training-set statistics;
-      ``pool="mean_std"`` takes their mean and standard deviation over the
-      valid patches. Dropout and a linear layer follow.
+      *Operations.* ``pool="flatten"`` flattens the tokens of both
+      chromophores, the head of the paper without its standardization by
+      training-set statistics; ``pool="mean_std"`` takes their mean and
+      standard deviation over the valid patches, the features of the
+      reference's ``mean_std_linear`` head. Dropout and a linear layer follow.
+
+      *Role.* The paper's linear head on the tokens. The feature size of
+      ``"flatten"`` grows with the window length; that of ``"mean_std"`` does
+      not.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
@@ -128,20 +138,29 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
       the patch axis.
     - **Spatial.** A channel is known only through :math:`g_c`, in the keys of
       the compressor, so any number of channels in any layout maps to the same
-      :math:`M` latent channels.
-    - **Spectral.** No frequency decomposition: the rows are HbO and HbR
-      concentration changes, each with its own encoder and projection.
+      :math:`M` latent channels. Zeroing or shuffling the geometry at
+      inference lowers the task-averaged balanced accuracy by 2.34 and 3.24
+      points (Table 3).
+    - **Spectral.** No frequency decomposition.
+    - **Chromophores.** The rows are HbO and HbR concentration changes (no
+      HbT), each with its own temporal encoder and projection.
 
     .. rubric:: Additional Mechanisms
 
     - **Input.** One ``(batch, 2C, n_times)`` tensor of HbO/HbR pairs, stacked
-      or interleaved (the MNE order), see ``channel_order``. The geometry
-      comes from ``chs_info`` (``loc[3:9]``; a pair without positions gets
-      zeros) or from ``forward(geometry=...)``.
-    - **Validity masks.** A NaN marks a missing sample. A patch needs
+      or interleaved (the MNE order), see ``channel_order``, instead of the
+      reference's batch of ``hbo``, ``hbr``, validity masks and ``geometry``.
+      The geometry comes from ``chs_info`` (``loc[3:9]``, centred and scaled as
+      the reference's ``scripts/build_fair_input.py``; a pair without positions
+      gets zeros) or from ``forward(geometry=...)``.
+    - **Validity masks.** A non-finite sample (NaN or inf) is missing, where
+      the reference zero-fills and flags it. A patch needs
       ``minimum_patch_valid_fraction`` of its samples; invalid patches and
       channels are masked out of the attention and give zero tokens.
-      ``ch_mask`` marks the real pairs of a batch padded with channels.
+      ``ch_mask``, an addition, marks the real pairs of a batch padded with
+      channels.
+    - **Scope.** ``on_non_divisible="pad"``/``"crop"`` are additions; the
+      decoders, the temporal masking and LoRA are not part of the class.
 
     .. rubric:: Pretrained Weights
 
@@ -152,10 +171,20 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
     ``braindecode/geonirs-base-pretrained`` (the defaults) and
     ``braindecode/geonirs-large-pretrained`` (``embed_dim=384``, ``depth=6``,
     ``num_heads=12``, ``feature_dim=128`` and
-    ``projection_dims=(384, 192, 96, 128)``). They hold the encoder, so
-    ``from_pretrained`` builds the head for your ``n_times`` and
-    ``n_outputs``. The weights expect HbO and HbR at 5 Hz, each standardized
-    per recording, in windows of at most 150 samples.
+    ``projection_dims=(384, 192, 96, 128)``). GeoNIRS-Base was pretrained on 8
+    datasets (383.30 h) and has 4,443,462 parameters without the head;
+    GeoNIRS-Large on 22 datasets (827.04 h), with 24,394,310. Both
+    repositories hold the encoder, so ``from_pretrained`` builds the head for
+    your ``n_times`` and ``n_outputs``. The weights expect HbO and HbR
+    concentration changes (modified Beer-Lambert law, no band-pass filter,
+    Appendix B.1) at 5 Hz, each standardized per recording, in windows of at
+    most 150 samples. On the paper's windows (1628 for DS42, 1190 for DS19)
+    this class gives the authors' encoder features (max-abs difference 0.0,
+    Base and Large, eval mode). A linear probe of the frozen GeoNIRS-Base (a
+    re-implementation of the authors' probe, with the paper's folds and seeds)
+    gives macro-F1 0.7039 and 0.5304 on DS42 and DS19, against 0.7018 and
+    0.5598 in the paper and 0.7000 and 0.5599 for the authors' pipeline at
+    ``81f8995`` (:gh:`1591`).
 
     .. code-block:: python
 
@@ -168,8 +197,6 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
             n_times=60,
         )
 
-    .. versionadded:: 2.1
-
     Parameters
     ----------
     patch_size : int, default=10
@@ -178,18 +205,19 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         Rows of the temporal positional embedding: the 15 patches of a 30 s
         pretraining window, raised to the patch count of ``n_times``.
     on_non_divisible : {"error", "pad", "crop"}, default="error"
-        ``n_times`` not a multiple of ``patch_size``: refuse; pad with
-        missing samples, to which the validity rule applies; or crop.
+        ``n_times`` not a multiple of ``patch_size``: refuse (as the
+        reference); pad with missing samples, to which the validity rule
+        applies; or crop.
     embed_dim : int, default=192
-        Token width, :math:`D`.
+        Token width, :math:`D` ("Embedding width", Table 6).
     num_heads : int, default=8
-        Heads of the temporal Transformers.
+        Heads of the temporal Transformers (Table 6).
     depth : int, default=4
-        Layers of each temporal Transformer.
+        Layers of each temporal Transformer (Table 6).
     mlp_ratio : float, default=4.0
         Feed-forward width of the temporal Transformers, over ``embed_dim``.
     geometry_hidden_dim : int or None, default=None
-        Hidden width of the geometry MLP; ``None`` is ``embed_dim``.
+        Hidden width of the geometry MLP; ``None`` is ``embed_dim`` (Table 6).
     geometry_heads : int or None, default=None
         Heads of the geometry Transformer layer; ``None`` is ``num_heads``.
     n_latent_channels : int, default=16
@@ -197,14 +225,14 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
     compressor_heads : int or None, default=None
         Heads of the compressor's attention; ``None`` is ``num_heads``.
     feature_dim : int, default=64
-        Token width after the projections, :math:`F`.
+        Token width after the projections, :math:`F` (Table 6).
     projection_dims : tuple of int, default=(192, 128, 96, 64)
         Token widths of the chromophore projections, from ``embed_dim`` to
         ``feature_dim``, one residual block per step (Table 6 of the paper).
         GeoNIRS-Large uses ``(384, 192, 96, 128)``.
     use_channel_geometry : bool, default=True
         Add the geometry :math:`G` to the keys of the compressor. ``False``
-        builds no geometry encoder, the geometry ablation of the paper.
+        builds no geometry encoder: the "w/o Geometry" variant of Table 4.
     pool : {"flatten", "mean_std"}, default="flatten"
         Read-out of the ``(batch, 2, M, P, F)`` tokens: all of them flattened,
         or their mean and standard deviation over the valid patches.
@@ -212,13 +240,14 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         ``[HbO_1..HbO_C, HbR_1..HbR_C]`` or ``[HbO_1, HbR_1, ...]``; ``None``
         reads it from ``chs_info`` (stacked without it).
     drop_prob : float, default=0.1
-        Dropout in the backbone.
+        Dropout in the backbone, 0.1 in both checkpoints.
     head_drop_prob : float, default=0.1
-        Dropout before ``final_layer``.
+        Dropout before ``final_layer``, :math:`p = 0.1` in Appendix B.5.2.
     minimum_patch_valid_fraction : float, default=0.8
-        Share of measured samples a patch needs to be valid.
+        Share of measured samples a patch needs to be valid, 80 % in
+        Appendix B.1.2.
     activation : type[nn.Module], default=nn.GELU
-        Activation of the backbone.
+        Activation of the backbone; GELU in the reference.
 
     References
     ----------
@@ -318,9 +347,8 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         # Where the HbO and HbR rows are; raises when chs_info does not list
         # HbO/HbR pairs
         self.channel_order = fnirs_channel_order(self._chs_info, channel_order)
-        _check_on_non_divisible(on_non_divisible)
-        # P, the patches of one window; raises for a window the patches do not
-        # tile when on_non_divisible="error"
+        # P, the patches of one window; raises for a bad on_non_divisible, and
+        # for a window the patches do not tile when it is "error"
         self.n_patches = patch_count(self.n_times, patch_size, on_non_divisible)
 
         # Layers
@@ -1100,6 +1128,8 @@ class _ChannelCompressorAttention(nn.Module):
 
         # Patches leave the batch axis, latent channels before patches
         # (batch * P, M, D) -> (batch, P, M, D) -> (batch, M, P, D)
+        # A dense copy, as the reference's compressor returns it
+        # (GeoNIRS@81f8995, model/ours.py): the next layers round as there
         hbo = hbo.unflatten(0, [batch_size, n_patches])
         hbo = self.latents_first(hbo)
         hbo = hbo.contiguous()

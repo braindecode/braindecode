@@ -1377,14 +1377,12 @@ def channel_types_from_chs_info(
 def fnirs_chromophores_from_chs_info(chs_info: Sequence[Dict[str, Any]]) -> list[str]:
     """``"hbo"``, ``"hbr"`` or ``"unknown"`` per channel, from MNE's
     ``coil_type`` (``FIFFV_COIL_FNIRS_HBO`` / ``_HBR``), else from the
-    ``" hbo"`` / ``" hbr"`` suffix of its name (MNE names them ``"S1_D1 hbo"``)
-    or its ``"kind"``."""
+    ``" hbo"`` / ``" hbr"`` suffix of its name (MNE names them ``"S1_D1 hbo"``)."""
     coils = {FIFF.FIFFV_COIL_FNIRS_HBO: "hbo", FIFF.FIFFV_COIL_FNIRS_HBR: "hbr"}
     out = []
     for ch in chs_info:
         suffix = str(ch.get("ch_name", "")).lower().rsplit(" ", 1)[-1]
-        kind = str(ch.get("kind", "")).lower()
-        by_name = next((k for k in (suffix, kind) if k in ("hbo", "hbr")), "unknown")
+        by_name = suffix if suffix in ("hbo", "hbr") else "unknown"
         out.append(coils.get(int(ch.get("coil_type") or 0), by_name))
     return out
 

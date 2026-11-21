@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 
+from braindecode.util import _warn_orphaned_api
+
 
 class Expression(nn.Module):
     """Compute given expression on forward pass.
@@ -47,6 +49,9 @@ class IntermediateOutputWrapper(nn.Module):
     """Wraps network model such that outputs of intermediate layers can be returned.
     forward() returns list of intermediate activations in a network during forward pass.
 
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
+
     Parameters
     ----------
     to_select : list
@@ -69,6 +74,7 @@ class IntermediateOutputWrapper(nn.Module):
     """
 
     def __init__(self, to_select, model):
+        _warn_orphaned_api("IntermediateOutputWrapper")
         if not len(list(model.children())) == len(list(model.named_children())):
             raise Exception("All modules in model need to have names!")
 

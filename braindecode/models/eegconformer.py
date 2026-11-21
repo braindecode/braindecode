@@ -156,30 +156,30 @@ class EEGConformer(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_filters_time: int
+    n_filters_time : int
         Number of temporal filters, defines also embedding size.
-    filter_time_length: int
+    filter_time_length : int
         Length of the temporal filter.
-    pool_time_length: int
+    pool_time_length : int
         Length of temporal pooling filter.
-    pool_time_stride: int
+    pool_time_stride : int
         Length of stride between temporal pooling filters.
-    drop_prob: float
+    drop_prob : float
         Dropout rate of the convolutional layer.
-    num_layers: int
+    num_layers : int
         Number of self-attention layers.
-    num_heads: int
+    num_heads : int
         Number of attention heads.
-    att_drop_prob: float
+    att_drop_prob : float
         Dropout rate of the self-attention layer.
-    final_fc_length: int | str
+    final_fc_length : int | str
         The dimension of the fully connected layer.
-    return_features: bool
+    return_features : bool
         If True, the forward method returns the features before the
         last classification layer. Defaults to False.
-    activation: nn.Module
+    activation : nn.Module
         Activation function as parameter. Default is nn.ELU
-    activation_transfor: nn.Module
+    activation_transfor : nn.Module
         Activation function as parameter, applied at the FeedForwardBlock module
         inside the transformer. Default is nn.GeLU
     activation_checkpointing : bool, default=False
@@ -237,11 +237,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        self.mapping = {
-            "classification_head.fc.6.weight": "final_layer.final_layer.0.weight",
-            "classification_head.fc.6.bias": "final_layer.final_layer.0.bias",
-        }
-
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if not (self.n_chans <= 64):
             warnings.warn(
