@@ -2227,6 +2227,45 @@ def test_fixed_length_no_size_policy_is_moot(
     assert deprecated_dataset.window_kwargs == replacement_dataset.window_kwargs
 
 
+@pytest.mark.parametrize(
+    "on_last_window, lazy_metadata, use_mne_epochs",
+    [
+        ("overlap", False, False),
+        ("overlap", False, True),
+        ("drop", False, False),
+        ("drop", False, True),
+        ("drop", True, False),
+    ],
+)
+@pytest.mark.parametrize(
+    "start_offset_samples, stop_offset_samples",
+    [(0, 100), (400, 500), (950, None)],
+)
+def test_fixed_length_window_larger_than_offset_interval(
+    start_offset_samples,
+    stop_offset_samples,
+    on_last_window,
+    lazy_metadata,
+    use_mne_epochs,
+):
+    # the window (200) fits into the recording (1000 samples) but not into the
+    # 100 or 50 samples left between the two offsets
+    info = mne.create_info(["C3", "C4"], sfreq=100.0, ch_types="eeg")
+    raw = mne.io.RawArray(np.zeros((2, 1000)), info, verbose=False)
+    concat_ds = BaseConcatDataset([RawDataset(raw, pd.Series({"subject": 1}))])
+    with pytest.raises(ValueError, match="Window size 200 exceeds"):
+        create_fixed_length_windows(
+            concat_ds,
+            start_offset_samples=start_offset_samples,
+            stop_offset_samples=stop_offset_samples,
+            window_size_samples=200,
+            window_stride_samples=200,
+            on_last_window=on_last_window,
+            lazy_metadata=lazy_metadata,
+            use_mne_epochs=use_mne_epochs,
+        )
+
+
 def test_windows_from_events_infer_mapping_n_jobs(tmpdir_factory):
     # every recording sees a different subset of the event types
     descriptions = [5 * ["T0", "T1"], 5 * ["T1", "T2"], 10 * ["T2"]]

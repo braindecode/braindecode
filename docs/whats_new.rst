@@ -630,6 +630,9 @@ Bug fixes
   8-13 Hz band at 250 Hz) and depended on future samples only. These phases are
   now applied causally, as in :func:`mne.filter.filter_data`; the other phases
   are unchanged (:gh:`1686` by `Axel Coiffard-Donaty`_).
+- :func:`braindecode.preprocessing.create_fixed_length_windows` raises a ``ValueError`` when
+  the window does not fit between ``start_offset_samples`` and ``stop_offset_samples``,
+  instead of an ``IndexError`` or an empty dataset (:gh:`XXXX` by `Axel Coiffard-Donaty`_).
 
 Code health
 ============
