@@ -31,31 +31,14 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
        :alt: fNIRS-T and fNIRS-PreT architecture
 
        Figure of the authors' repository (``fig/model.png``,
-       wzhlearning/fNIRS-Transformer at ``6ebe987f``, MIT): the
-       :math:`H \times W \times C` input (channels, samples, HbO/HbR) feeds a
-       "Spatial-level" and a "Channel-level" branch, each a "Transformer
-       Encoder" with a CLS token. Bottom: fNIRS-T takes filtered,
-       baseline-corrected segments; fNIRS-PreT replaces those steps by a
-       "Preprocessing Module" (:class:`FNIRSPreT`). The paper (IEEE JBHI
-       2022) is not open access; its caption is not reproduced.
+       wzhlearning/fNIRS-Transformer at ``6ebe987f``, MIT).
 
-    From the abstract :footcite:`wang2022fnirst`: "Inspired by the success of
-    Transformer based on self-attention mechanism in the fields of natural
-    language processing and computer vision, we propose an fNIRS
-    classification network based on Transformer, named fNIRS-T. We explore
-    the spatial-level and channel-level representation of fNIRS signals to
-    improve data utilization and network representation capacity." On the
-    three-class finger- and foot-tapping task (30 subjects), "fNIRS-T, CNN,
-    and LSTM obtain 75.49%, 72.89%, and 61.94% on test sets".
-
-    In the authors' code the two levels read the same signals at two
-    spatial scales: a convolution turns the time course of each fNIRS
-    channel (channel level) or of a group of consecutive channels (spatial
-    level) into one token, and a transformer lets these tokens attend to
-    each other; time never becomes a token axis. Only the abstract, the
-    README, the figure and the code (``model.py``, ``KFold_Train.py``,
-    ``LOSO_Train.py``) are public, and the description below comes from
-    them.
+    fNIRS-T :footcite:`wang2022fnirst` classifies fNIRS windows with a
+    Transformer over two levels of tokens. A convolution turns the time course
+    of each fNIRS channel (channel level) or of a group of consecutive
+    channels (spatial level) into one token, and a Transformer lets these
+    tokens attend to each other; time never becomes a token axis.
+    :class:`FNIRSPreT` adds a learned preprocessing module in front.
 
     .. rubric:: Architecture Overview
 
@@ -77,144 +60,79 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
 
     .. rubric:: Macro Components
 
-    - ``to_chromophore_planes`` **Input.** The authors' input is "[B, 2,
-      fNIRS channels, sampling points]", where '"2" means two chromophores:
-      HbO and HbR' (``model.py``, README). The rows of ``x`` are split into
-      these two planes, from the stacked or MNE's interleaved order.
-    - ``to_patch_embedding`` **Spatial level ("fNIRS Spatial
-      Embedding").** :math:`\mathrm{Conv}_S` maps the two planes to
-      :math:`C_S` = ``n_conv_filters`` maps with a :math:`k_s \times k_t`
-      kernel and stride :math:`1 \times s_t` (the authors: 8 maps,
-      :math:`5 \times 30`, stride :math:`1 \times 4`), so each token covers
-      :math:`k_s` consecutive channels in the dataset's order. The
-      :math:`C_S \times W_S` responses of a token are flattened, projected
-      to :math:`D` and layer-normalized.
-    - ``to_channel_embedding`` **Channel level ("fNIRS Channel
-      Embedding").** The same with a :math:`1 \times k_t` kernel
-      (:math:`\mathrm{Conv}_C`): one token per fNIRS channel.
+    - ``to_chromophore_planes`` **Input.** The rows of ``x`` are split into
+      the HbO and the HbR plane, from the stacked or MNE's interleaved order.
+    - ``to_patch_embedding`` **Spatial level.** :math:`\mathrm{Conv}_S` maps
+      the two planes to :math:`C_S` = ``n_conv_filters`` maps with a
+      :math:`k_s \times k_t` kernel and stride :math:`1 \times s_t`, so each
+      token covers :math:`k_s` consecutive channels in the dataset's order.
+      The :math:`C_S \times W_S` responses of a token are flattened,
+      projected to :math:`D` and layer-normalized.
+    - ``to_channel_embedding`` **Channel level.** The same with a
+      :math:`1 \times k_t` kernel (:math:`\mathrm{Conv}_C`): one token per
+      fNIRS channel.
     - ``cls_token_*``, ``pos_embedding_*``, ``transformer_*`` **Transformer
       Encoder.** Each level prepends a learned class token, adds a learned
       positional embedding (one row per token, the token's only identity),
       applies dropout and runs ``depth`` pre-norm blocks of multi-head
-      self-attention and a GELU feed-forward layer of width ``mlp_dim``. The
-      queries, keys and values come from bias-free linear maps, and each of
-      the ``num_heads`` heads of width :math:`d_h` = ``head_dim`` computes,
-      as in the authors' ``Attention``,
-
-      .. math::
-
-         \mathrm{Attention}(Q, K, V) = \mathrm{softmax}\left(
-         \frac{Q K^{\top}}{\sqrt{d_h}} \right) V .
-
+      self-attention, with bias-free query, key and value maps, and a
+      feed-forward layer of width ``mlp_dim``.
     - ``final_norm``, ``final_layer`` **Head.** The class token of each
-      level (or, with ``pool="mean"``, the mean of its tokens) is taken, the
-      two vectors are concatenated ("Concat"), layer-normalized and
-      classified by a linear layer (the authors' ``mlp_head``).
+      level (or, with ``pool="mean"``, the mean of its tokens) is taken, and
+      the two vectors are concatenated, layer-normalized and classified by a
+      linear layer. The figure draws a head per level before the
+      concatenation; the authors' code, followed here, concatenates first.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
-    - *Temporal:* the convolutions slide a :math:`k_t`-sample kernel with
-      stride :math:`s_t` along time, and the resulting values become
-      features of a token. The README's segments are 140 samples (dataset
-      A), 200 (B) and 256 (C). Kernels count samples, so ``sfreq`` is
-      unused.
-    - *Spatial:* channels or groups of :math:`k_s` consecutive channels,
-      identified by their position in the token sequence; no montage or
-      optode geometry. The channel order must be the one used in training.
-    - *Chromophores:* HbO and HbR are the two input planes, mixed by both
-      convolutions from the first layer.
-    - *Spectral:* none in the model; fNIRS-T expects band-pass filtered,
+    - **Temporal.** The convolutions slide a :math:`k_t`-sample kernel with
+      stride :math:`s_t` along time, and the resulting values become the
+      features of a token. Kernels count samples, so ``sfreq`` is unused.
+    - **Spatial.** Channels, or groups of :math:`k_s` consecutive channels,
+      identified by their position in the token sequence: no montage or
+      optode geometry, so the channels keep the order of training. HbO and
+      HbR are the two input planes, mixed by both convolutions.
+    - **Spectral.** None in the model: fNIRS-T expects band-pass filtered,
       baseline-corrected segments, and :class:`FNIRSPreT` learns that step.
-
-    .. rubric:: Pretrained Weights
-
-    None: the authors release code, not weights.
-
-    .. rubric:: Differences from the reference implementation
-
-    ``x`` is ``(batch, n_chans, n_times)``, ``n_chans = 2 H``, HbO rows then
-    HbR rows, or MNE's interleaved order read from ``chs_info``. The figure
-    draws an "MLP Head" per level before "Concat"; the authors' code, which
-    this module follows, concatenates first and applies one head, and the
-    output is logits. The positional tables have one row per token (the
-    authors allocate 101 rows and slice), so an authors' ``state_dict``
-    loads after a conversion rather than a ``mapping`` (``to_qkv`` split
-    into ``queries``/``keys``/``values``, tables cut, ``mlp_head.{0,1}`` to
-    ``final_norm``/``final_layer``); the port then matches the authors'
-    model to float32 rounding (max-abs below 1e-6 on their dataset A, B and
-    C configurations). The attention always projects its output (the
-    authors skip it when ``num_heads=1`` and ``head_dim=embed_dim``).
-    ``mask`` is an addition of the port; ``ch_mask`` is refused, as the
-    spatial kernel and the positional tables span the whole montage.
-
-    Parameters
-    ----------
-    embed_dim : int, default=64
-        :math:`D`, the authors' ``dim``, "last dimension of output tensor
-        after linear transformation"; 64 for their datasets A and B, 128 for
-        C.
-    depth : int, default=6
-        Authors' ``depth``, "number of Transformer blocks" per level.
-    num_heads : int, default=8
-        Authors' ``heads``, "number of the multi-head self-attention".
-    mlp_dim : int, default=64
-        Authors' ``mlp_dim``, "dimension of the MLP layer".
-    pool : {"cls", "mean"}, default="cls"
-        Read-out of each level (authors' ``pool``): ``"cls"``, its class
-        token; ``"mean"``, the mean over its tokens (class token included).
-    head_dim : int, default=64
-        :math:`d_h`, the authors' ``dim_head``: width of each attention head.
-    n_conv_filters : int, default=8
-        :math:`C_S = C_C`, feature maps of both convolutions (authors: 8).
-    spatial_kernel_size : int, default=5
-        :math:`k_s`, height of :math:`\mathrm{Conv}_S` in HbO/HbR pairs
-        (authors: 5); at most the number of pairs, ``n_chans // 2``.
-    temporal_kernel_size : int, default=30
-        :math:`k_t`, temporal kernel of both convolutions, in samples
-        (authors: 30); ``n_times`` must be at least this.
-    temporal_stride : int, default=4
-        :math:`s_t`, temporal stride of both convolutions, in samples
-        (authors: 4).
-    channel_order : {"stacked", "interleaved"} or None, default=None
-        ``[HbO_1..HbO_H, HbR_1..HbR_H]`` or MNE's ``[HbO_1, HbR_1, ...]``;
-        ``None`` reads it from ``chs_info``.
-    drop_prob : float, default=0.0
-        Authors' ``dropout`` in the attention and feed-forward sub-layers.
-    embed_drop_prob : float, default=0.0
-        Authors' ``emb_dropout``, "dropout for patch embeddings".
-    activation : type[nn.Module], default=nn.GELU
-        Activation of the feed-forward sub-layers (authors: GELU).
-
-    Notes
-    -----
-    The authors' code uses three datasets: A (mental arithmetic vs rest, 8
-    subjects, 52 channels, 140 samples), B (Shin et al. 2017, same task, 29
-    subjects, 36 channels, 200 samples) and C (Bak et al. 2019, finger and
-    foot tapping, 3 classes, 30 subjects, 20 channels, 256 samples). The
-    fNIRS-T inputs are band-passed (0.01-0.1 Hz on B and C),
-    baseline-corrected and z-scored per window. Training is 5 x 5-fold
-    cross-validation over pooled trials or leave-one-subject-out, 120
-    epochs, batch 128, AdamW with cosine annealing (``T_max=30``) and label
-    smoothing 0.1 in both loops, and the best test-fold accuracy is kept.
-    On B and C the loss is "flooded" (``loss = (loss - b).abs() + b``) with
-    a level :math:`b` the README decays "at the specified epoch to obtain
-    continuous regularization": 0.45, 0.40 and 0.35 from the zero-based
-    epochs 0, 30 and 50.
-
-    Replication on dataset C with the authors' ``KFold_Train.py`` (mean of
-    the 25 runs of each seed, averaged over seeds 0-2; macro-F1 at the kept
-    epoch):
-
-    ==========  =================  ================  ================
-    Model       Paper (abstract)   Port (acc / F1)   Authors' code
-    ==========  =================  ================  ================
-    fNIRS-T     75.49 %            75.03 % / 0.7498  74.73 % / 0.7469
-    fNIRS-PreT  "competitive"      72.50 % / 0.7244  72.50 % / 0.7245
-    ==========  =================  ================  ================
 
     .. versionadded:: 2.1
 
     `License <https://github.com/wzhlearning/fNIRS-Transformer/blob/6ebe987faacc5587e11e8bd0d1177b40ec3ccd8d/LICENSE>`_
+
+    Parameters
+    ----------
+    embed_dim : int, default=64
+        :math:`D`, the width of the tokens (128 in the authors' 3-class task).
+    depth : int, default=6
+        Transformer blocks per level.
+    num_heads : int, default=8
+        Attention heads.
+    mlp_dim : int, default=64
+        Hidden width of the feed-forward layers.
+    pool : {"cls", "mean"}, default="cls"
+        Read-out of each level: its class token, or the mean over its tokens
+        (class token included).
+    head_dim : int, default=64
+        :math:`d_h`, the width of each attention head.
+    n_conv_filters : int, default=8
+        :math:`C_S = C_C`, feature maps of both convolutions.
+    spatial_kernel_size : int, default=5
+        :math:`k_s`, height of :math:`\mathrm{Conv}_S` in HbO/HbR pairs, at
+        most ``n_chans // 2``.
+    temporal_kernel_size : int, default=30
+        :math:`k_t`, temporal kernel of both convolutions, in samples, at most
+        ``n_times``.
+    temporal_stride : int, default=4
+        :math:`s_t`, temporal stride of both convolutions, in samples.
+    channel_order : {"stacked", "interleaved"} or None, default=None
+        ``[HbO_1..HbO_H, HbR_1..HbR_H]`` or MNE's ``[HbO_1, HbR_1, ...]``;
+        ``None`` reads it from ``chs_info``.
+    drop_prob : float, default=0.0
+        Dropout in the attention and feed-forward sub-layers.
+    embed_drop_prob : float, default=0.0
+        Dropout of the token embeddings.
+    activation : type[nn.Module], default=nn.GELU
+        Activation of the feed-forward sub-layers.
 
     References
     ----------
@@ -259,9 +177,6 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
 
         # Parameters
         self.pool = pool
-        # Name in the errors of forward, as the other fNIRS models do (a scripted
-        # forward cannot read type(self).__name__)
-        self._class_name = type(self).__name__
         # H in the authors' figure: fNIRS channels, each an HbO/HbR pair of rows
         n_pairs = self.n_chans // 2
         # W_S = W_C: positions of the temporal kernel along the window; they
@@ -399,8 +314,6 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         self,
         x: torch.Tensor,
         return_features: bool = False,
-        ch_mask: torch.Tensor | None = None,
-        mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Forward pass of the fNIRS-T (and fNIRS-PreT) model.
 
@@ -411,12 +324,6 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         return_features : bool, default=False
             If True, return the normalized pooled features and the class
             tokens of the two levels.
-        ch_mask : torch.Tensor or None
-            Not supported: the spatial kernel and the positional tables span
-            every channel.
-        mask : torch.Tensor or None
-            Boolean tensor with the shape of ``x``; True samples are set to
-            zero before the model reads them.
 
         Returns
         -------
@@ -425,22 +332,8 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
             ``return_features=True`` the dict ``{"features", "cls_token"}``,
             both of shape ``(batch_size, 2 * embed_dim)``.
         """
-        # A token is identified only by its row of the positional table, and
-        # Conv_S groups neighbouring channels: a subset of them is another
-        # layout
-        if ch_mask is not None:
-            raise ValueError(
-                self._class_name + " does not accept ch_mask: the spatial kernel "
-                "and the positional tables span every channel."
-            )
-
         # Below, H = n_chans // 2 fNIRS channels, W = n_times, D = embed_dim,
         # H_S = H - spatial_kernel_size + 1 groups of channels
-
-        # Hidden samples are set to zero (an addition of the port)
-        # (batch, 2 H, W)
-        if mask is not None:
-            x = x.masked_fill(mask, 0.0)
 
         # Input: the rows are split into the HbO and the HbR plane
         # (batch, 2 H, W) -> (batch, 2, H, W)
@@ -460,8 +353,8 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         cls_patch = self.cls_token_patch.expand(batch_size, -1, -1)
         # (batch, H_S, D) -> (batch, H_S + 1, D)
         patch = torch.cat((cls_patch, patch), dim=1)
-        # Learned positional embedding, which tells the groups apart; shape
-        # unchanged
+        # Learned positional embedding, which tells the groups apart
+        # (batch, H_S + 1, D)
         patch = patch + self.pos_embedding_patch
         patch = self.dropout_patch(patch)
         # Transformer Encoder: the groups attend to each other
@@ -477,8 +370,8 @@ class FNIRST(EEGModuleMixin, nn.Module, license="mit"):
         cls_channel = self.cls_token_channel.expand(batch_size, -1, -1)
         # (batch, H, D) -> (batch, H + 1, D)
         channel = torch.cat((cls_channel, channel), dim=1)
-        # Learned positional embedding, which tells the channels apart; shape
-        # unchanged
+        # Learned positional embedding, which tells the channels apart
+        # (batch, H + 1, D)
         channel = channel + self.pos_embedding_channel
         channel = self.dropout_channel(channel)
         # Transformer Encoder: the channels attend to each other
@@ -526,32 +419,19 @@ class FNIRSPreT(FNIRST, license="mit"):  # the kwarg is not inherited
        :alt: fNIRS-T and fNIRS-PreT architecture
 
        The figure of the authors' repository (``fig/model.png`` of
-       wzhlearning/fNIRS-Transformer at ``6ebe987f``, MIT). fNIRS-PreT is the
-       right-hand input path: "Modified Beer-Lambert law", "Segmentation",
-       then the "Preprocessing Module", then the two branches of fNIRS-T. The
-       paper (IEEE JBHI 2022) is not open access; its caption is not
-       reproduced.
+       wzhlearning/fNIRS-Transformer at ``6ebe987f``, MIT); fNIRS-PreT is its
+       right-hand input path.
 
     fNIRS-T expects signals that were band-pass filtered and
-    baseline-corrected by hand. From the abstract :footcite:`wang2022fnirst`:
-    "a preprocessing module, which consists of one-dimensional average
-    pooling and layer normalization, is designed to replace filtering and
-    baseline correction of data preprocessing. It makes fNIRS-T an
-    end-to-end network, called fNIRS-PreT." The abstract adds that
-    "fNIRS-PreT using raw data also achieves competitive performance to
-    fNIRS-T", without a number.
-
-    The authors' ``PreBlock`` (``model.py``) is that module: "Preprocessing
-    module. It is designed to replace filtering and baseline correction."
-    Only the abstract, the README, the figure and the code are public, and
-    the description below comes from them.
+    baseline-corrected by hand. fNIRS-PreT :footcite:`wang2022fnirst`
+    replaces these steps by a preprocessing module of one-dimensional average
+    pooling and layer normalization, which makes the network end-to-end.
 
     .. rubric:: Architecture Overview
 
     This is :class:`~braindecode.models.FNIRST` with the preprocessing module
-    (``pre``) first, as the authors' ``fNIRS_PreT`` (``PreBlock``, then
-    ``fNIRS_T``). With :math:`H` = ``n_chans // 2`` channels and :math:`W` =
-    ``n_times`` samples::
+    (``pre``) first. With :math:`H` = ``n_chans // 2`` channels and
+    :math:`W` = ``n_times`` samples::
 
         input: H HbO rows and H HbR rows             (batch, 2 H, W)
         to_chromophore_planes                        (batch, 2, H, W)
@@ -561,19 +441,12 @@ class FNIRSPreT(FNIRST, license="mit"):  # the kwarg is not inherited
     .. rubric:: Macro Components
 
     - ``pre.average_pooling`` **Average pooling.** Three moving averages
-      along time, ``AvgPool1d`` with kernels :math:`k` = 5, 13 and 7, stride
-      1 and "same" zero padding (the authors' ``pool1``, ``pool2``,
-      ``pool3``), shared by HbO and HbR. With :math:`k = 2r + 1`, each is
-
-      .. math::
-
-         m_k(x)[t] = \frac{1}{k} \sum_{j=-r}^{r} x[t + j] .
-
+      along time, ``AvgPool1d`` with kernels 5, 13 and 7, stride 1 and "same"
+      zero padding, shared by HbO and HbR.
     - ``pre.norms`` **Layer normalization.** One ``LayerNorm`` over the
-      :math:`W` samples per chromophore (the authors' ``ln_0``, ``ln_1``):
-      each channel row is centred and scaled over the window, then given a
-      learned scale and shift per sample, so the weights are tied to
-      ``n_times``.
+      :math:`W` samples per chromophore: each channel row is centred and
+      scaled over the window, then given a learned scale and shift per
+      sample, so the weights are tied to ``n_times``.
     - Every other module is that of :class:`~braindecode.models.FNIRST`.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
@@ -584,37 +457,6 @@ class FNIRSPreT(FNIRST, license="mit"):  # the kwarg is not inherited
     the filtering and baseline correction, so the inputs are raw segmented
     concentration changes. The rest is as in
     :class:`~braindecode.models.FNIRST`.
-
-    .. rubric:: Pretrained Weights
-
-    None: the authors release code, not weights.
-
-    .. rubric:: Differences from the reference implementation
-
-    ``pre.ln_i`` is ``pre.norms.i`` and the authors' ``fNIRS_T.`` prefix is
-    removed: an authors' ``fNIRS_PreT`` ``state_dict`` loads after FNIRST's
-    conversion with these two renames, and the port and the authors' model
-    then agree to float32 rounding (max-abs below 1e-6 on the dataset A, B
-    and C configurations). The port indexes each chromophore plane, where
-    the authors' ``PreBlock`` calls ``squeeze()``, which also drops the
-    batch axis for a batch of one. The input layout, the opt-in ``mask``,
-    the logits and the parameters are those of
-    :class:`~braindecode.models.FNIRST`.
-
-    Notes
-    -----
-    The protocol of the authors' released code is that of
-    :class:`~braindecode.models.FNIRST`, on raw data: their README asks to
-    disable the filtering and baseline correction of ``B_mat2xls.m`` and
-    ``C_mat2xls.m`` by hand for fNIRS-PreT, and ``Load_Dataset_A`` skips the
-    dataset A filters for ``model='fNIRS-PreT'``. The flooding levels are
-    those of fNIRS-T except on dataset B (0.40, 0.38 and 0.35 from the
-    zero-based epochs 0, 30 and 50).
-
-    The dataset C replication is the fNIRS-PreT row of the table of
-    :class:`~braindecode.models.FNIRST`. Both sides received the band-pass
-    filtered, baseline-corrected windows of fNIRS-T there, as the released
-    ``Load_Dataset_C`` has no raw-data path.
 
     .. versionadded:: 2.1
 
@@ -741,6 +583,12 @@ class _TransformerEncoder(nn.Sequential):
         )
 
 
+# Kernels of the three moving averages of the preprocessing module, from
+# ``PreBlock`` in model.py of wzhlearning/fNIRS-Transformer (6ebe987f). Each is
+# padded by k // 2 on both sides, which keeps the number of samples (k is odd).
+_PREPROCESSING_KERNELS = (5, 13, 7)
+
+
 class _PreprocessingModule(nn.Module):
     """Preprocessing Module of fNIRS-PreT (the authors' ``PreBlock``).
 
@@ -755,12 +603,13 @@ class _PreprocessingModule(nn.Module):
 
     def __init__(self, n_times: int) -> None:
         super().__init__()
-        # Moving averages of 5, 13 and 7 samples (the authors' values), a
-        # low-pass smoothing; the padding keeps the number of samples
+        # Moving averages, a low-pass smoothing; the padding keeps the number
+        # of samples
         self.average_pooling = nn.Sequential(
-            nn.AvgPool1d(kernel_size=5, stride=1, padding=2),
-            nn.AvgPool1d(kernel_size=13, stride=1, padding=6),
-            nn.AvgPool1d(kernel_size=7, stride=1, padding=3),
+            *[
+                nn.AvgPool1d(kernel_size=k, stride=1, padding=k // 2)
+                for k in _PREPROCESSING_KERNELS
+            ]
         )
         # One normalization over time per chromophore, with its own scale
         # and offset per sample
@@ -774,9 +623,12 @@ class _PreprocessingModule(nn.Module):
         for chromophore, norm in enumerate(self.norms):
             # (batch, 2, n_pairs, n_times) -> (batch, n_pairs, n_times)
             plane = x[:, chromophore]
-            # Cascade of moving averages along time; shape unchanged
+            # Cascade of moving averages along time: a low-pass smoothing
+            # (batch, n_pairs, n_times)
             plane = self.average_pooling(plane)
-            # LayerNorm over the samples of each channel; shape unchanged
+            # LayerNorm over the samples of each channel: centres and scales
+            # every row
+            # (batch, n_pairs, n_times)
             plane = norm(plane)
             planes.append(plane)
         # The two planes are stacked back

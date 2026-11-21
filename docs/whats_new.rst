@@ -75,20 +75,13 @@ Enhancements
 - Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan et al.
   (Neurophotonics 2018) as the GeoNIRS benchmark implements it (:gh:`1592` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
-  (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
-  transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
-  samples. :class:`~braindecode.modules.MultiHeadAttention` gains ``qkv_bias``
-  (default ``True``, unchanged) for fNIRS-T's bias-free q/k/v (:gh:`1584` by
+  (Wang et al., IEEE JBHI 2022); :class:`~braindecode.modules.MultiHeadAttention` gains ``qkv_bias`` (:gh:`1584` by
   `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023), the first fNIRS
   model of braindecode, with delayed-hemodynamic-response and depthwise-separable convolutions;
   ``fNIRS`` joins the modality vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRS4D` (Wang et al., IEEE TIM 2026), a diagonal
-  state-space (S4D) backbone with the authors' LOSO-CV or KFold-CV
-  mean-hemoglobin branch (``mean_branch``); its ``mapping`` loads the authors' state
-  dict. The helpers ``fnirs_chromophores_from_chs_info``, ``fnirs_channel_order`` and
-  ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
-  ``chs_info``, stacked or in MNE's interleaved order (:gh:`1582` by
+  state-space (S4D) fNIRS model, with ``fnirs_*`` helpers for HbO/HbR ``chs_info`` in ``braindecode.models.util`` (:gh:`1582` by
   `Bruno Aristimunha`_).
 - The docstrings of :class:`braindecode.models.FNIRSNet`, :class:`~braindecode.models.FNIRS4D`,
   :class:`~braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT` describe
@@ -132,7 +125,7 @@ Enhancements
   ``ch_mask``, ``token_mask`` and the weights at ``braindecode/meggpt-pretrained`` (:gh:`1555` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.Pratibha2` (PRATIBHA-2, formerly MANAS-2), a dense-attention
   EEG foundation model; its encoder, converted from ``MannasAI/pratibha-2``, is on the Hugging
-  Face Hub at ``braindecode/pratibha2-pretrained`` (:gh:`1654` by `Mahir Jain`_).
+  Face Hub at ``braindecode/pratibha2-pretrained`` (:gh:`1654` by `Mahir Jain`_, :gh:`1723` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.MEGXL`, the MEG-XL brain-to-text foundation model (Jayalath and Parker
   Jones, ICML 2026): a frozen BioCodec tokenizer and a criss-cross transformer pretrained on 150 s MEG
   windows, with the weights at ``braindecode/megxl-pretrained`` (:gh:`1554` by `Bruno Aristimunha`_).

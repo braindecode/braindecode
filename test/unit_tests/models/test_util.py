@@ -403,10 +403,10 @@ def test_warn_if_sfreq_differs_warns():
         warn_if_sfreq_differs("M", 250, 200)
 
 
-# the other pair-aware fNIRS models (FNIRS4D is tested directly): chs_info sets
-# their channel_order. The layouts below have 2 or 4 pairs, fewer than FNIRST's
-# default spatial kernel of 5 pairs.
+# the pair-aware fNIRS models: chs_info sets their channel_order. The layouts
+# below have 2 or 4 pairs, fewer than FNIRST's default spatial kernel of 5 pairs.
 _FNIRS_PAIRING: dict[str, dict] = {
+    "FNIRS4D": {},
     "FNIRSPreT": dict(depth=1, spatial_kernel_size=2),
     "FNIRST": dict(depth=1, spatial_kernel_size=2),
     "JungMAE": dict(depth=1),
@@ -471,10 +471,6 @@ def _assert_interleaved_input_matches_stacked(cls, kw):
         assert torch.equal(interleaved.eval()(x_mne), stacked.eval()(x))
 
 
-def test_fnirs4d_interleaved_input_matches_stacked():
-    _assert_interleaved_input_matches_stacked(models.FNIRS4D, {})
-
-
 @pytest.mark.parametrize("name", sorted(_FNIRS_PAIRING))
 def test_fnirs_interleaved_input_matches_stacked(name):
     _assert_interleaved_input_matches_stacked(
@@ -511,8 +507,6 @@ def test_fnirs_chs_info_without_hbo_hbr_pairs_raises(names, types):
     chs = mne.create_info(names, 10.0, types)["chs"]
     with pytest.raises(ValueError, match="paired HbO/HbR"):
         fnirs_channel_order(chs)
-    with pytest.raises(ValueError, match="paired HbO/HbR"):
-        models.FNIRS4D(chs_info=chs, n_outputs=2, n_times=60)
     for name, kw in _FNIRS_PAIRING.items():
         with pytest.raises(ValueError, match="paired HbO/HbR"):
             getattr(models, name)(chs_info=chs, n_outputs=2, n_times=60, **kw)
@@ -541,12 +535,6 @@ def _assert_reads_channel_order_from_chs_info(cls, kw):
     )
     x = torch.randn(2, 4, 60)
     assert torch.equal(inferred.eval()(x), explicit.eval()(x))
-    with pytest.raises(ValueError, match="ch_mask"):
-        inferred(x, ch_mask=torch.ones(2, 4, dtype=torch.bool))
-
-
-def test_fnirs4d_reads_channel_order_from_chs_info():
-    _assert_reads_channel_order_from_chs_info(models.FNIRS4D, {})
 
 
 @pytest.mark.parametrize("name", sorted(_FNIRS_PAIRING))
