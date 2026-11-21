@@ -270,6 +270,9 @@ Bug fixes
 - :class:`braindecode.datasets.EEGWindowsDataset` and :class:`~braindecode.datasets.WindowsDataset`
   with ``targets_from="channels"`` raise ``ValueError`` when no ``misc`` channel remains
   (:gh:`1708` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.GCNsNet` gives isolated nodes (the fake nodes of the coarsening, flat
+  channels) a rescaled Laplacian diagonal of 0, as in EEG-DL, not -1. Newly fitted graphs change, for
+  example with 22 channels; saved models keep their stored graph (:gh:`1729` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.EEGConformer`, :class:`~braindecode.models.TSception` and :class:`~braindecode.models.MSVTNet`
   no longer run a training-mode forward pass at construction, which updated BatchNorm and drew
   random numbers, so seeded weights change (:gh:`1694` by `Bruno Aristimunha`_).
