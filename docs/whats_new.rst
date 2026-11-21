@@ -179,6 +179,9 @@ Enhancements
 API and behavior changes
 ========================
 
+- :class:`braindecode.models.USleep` crops the upsampled tensor at the start before each skip connection,
+  like U-Time's ``CropToMatch``, so at an odd level each residual sample meets its own pooled pair. A USleep
+  trained with 2.0 loads but gives different predictions (:gh:`1730` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :func:`braindecode.functional.scaled_dot_product_attention` emits a ``FutureWarning``
   when ``fused_in_lazy`` is set: it has had no effect since :gh:`1581` and will be
   removed in 2.2 (:gh:`1701` by `Bruno Aristimunha`_).
