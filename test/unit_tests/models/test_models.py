@@ -7866,11 +7866,11 @@ def test_mtrenirs_pretrained_matches_the_release(n_times, expected):
 
 
 # Logits, and the gradient of ``logits @ [0.7, -0.3]`` with respect to every second
-# real step of channel 0, for each (classification_head, mask_value). They come
-# from the Keras layers of DSIP-UPatras/ICASSP2019_TCN @cd28909 (``Masking``,
-# ``CausalConv1D``, ``MeanOverTime``, ``AttentionWithContext``) on the weights and
-# input of the test below: a NumPy transcription of them agreed with the port to
-# 1e-11 on the logits and, by central differences, on the gradients.
+# real step of channel 0, for each (classification_head, mask_value), on the
+# weights and input of the test below. Computed once with a NumPy transcription of
+# the Keras layers of DSIP-UPatras/ICASSP2019_TCN @cd28909 (``Masking``,
+# ``CausalConv1D``, ``MeanOverTime``, ``AttentionWithContext``), which agreed with
+# the port to 1e-11 on the logits and, by central differences, on the gradients.
 _TCCNET_KERAS = {
     ("aot", None): (
         [6.6280743e-02, 5.7017024e-01],
