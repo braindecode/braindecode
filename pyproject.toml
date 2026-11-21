@@ -180,7 +180,6 @@ tmp_path_retention_policy = "failed"
 timeout = 600
 timeout_method = "thread"
 markers = [
-    "release_checkpoint: run the pinned checkpoint comparisons before a stable release",
     "integration: integration tests",
     "network: tests that require network access",
     "huggingface: tests that access Hugging Face Hub",

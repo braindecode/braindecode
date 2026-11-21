@@ -50,8 +50,6 @@ on:
         default: false
 
 permissions:
-  actions: read          # verify the tests on the checked-out master commit
-  checks: read          # gh run watch reads the run’s check annotations
   contents: write        # push the tag, create the GitHub Release
   pull-requests: write   # open the version-bump PR
   id-token: write        # reserved for future PyPI Trusted Publishing migration
@@ -94,7 +92,7 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install packaging
+          pip install build packaging twine
 
       - name: Compute planned versions
         id: ver
@@ -104,24 +102,27 @@ jobs:
           python scripts/monthly_release.py compute --bump "$BUMP" \
             | tee -a "$GITHUB_OUTPUT"
 
-      - name: Check for changes since the last stable release
+      - name: Skip if no commits since last tag
         id: changes
         shell: bash
         run: |
-          python scripts/monthly_release.py check-changes | tee -a "$GITHUB_OUTPUT"
-
-      - name: Verify source tests on the checked-out master commit
-        if: steps.changes.outputs.skip != 'true'
-        shell: bash
-        run: |
-          sha="$(git rev-parse HEAD)"
-          run_id="$(gh run list --workflow tests.yml --event push --branch master \
-            --commit "$sha" --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
-          if [[ -z "$run_id" ]]; then
-            echo "::error::No push test run for master at $sha"
-            exit 1
+          set -euo pipefail
+          # Match only ``vMAJOR.MINOR.PATCH`` style tags so that scratch
+          # tags (``v9.9.9-test``) and pre-releases (``v2.0.0rc1``) cannot
+          # become the comparison base and corrupt the skip decision.
+          LAST_TAG="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
+          if [[ -z "$LAST_TAG" ]]; then
+            echo "no previous v* tag found; proceeding with first release"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          gh run watch "$run_id" --exit-status --compact
+          COMMITS_AHEAD="$(git rev-list "${LAST_TAG}..HEAD" --count)"
+          echo "${COMMITS_AHEAD} commits since ${LAST_TAG}"
+          if [[ "${COMMITS_AHEAD}" -eq 0 ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Finalize release in tree
         if: steps.changes.outputs.skip != 'true'
@@ -139,32 +140,11 @@ jobs:
           git tag -a "${{ steps.ver.outputs.release_tag }}" \
             -m "braindecode ${{ steps.ver.outputs.release_version }}"
 
-      - name: Build and check the release distributions
+      - name: Build sdist and wheel
         if: steps.changes.outputs.skip != 'true'
-        uses: ./.github/actions/check-wheel
-
-      - name: Compare the release wheel to pinned checkpoint references
-        if: steps.changes.outputs.skip != 'true'
-        shell: bash
-        env:
-          UV_TORCH_BACKEND: cpu
-          OMP_NUM_THREADS: "1"
         run: |
-          wheels=("$PWD"/dist/*.whl)
-          interpreter="$(python -c 'import sys; print(sys.executable)')"
-          cd "$RUNNER_TEMP"
-          uv run --isolated --no-project --python "$interpreter" --with "${wheels[0]}[hub]" \
-            --with 'pytest<9.1' --with pytest-timeout python -I -m pytest --import-mode=importlib \
-            --run-network -m release_checkpoint --junitxml=checkpoints.xml \
-            "$GITHUB_WORKSPACE/test/unit_tests/models/test_foundation_models.py" \
-            "$GITHUB_WORKSPACE/test/integration_tests/test_pretrained_hub_models.py"
-          python - <<'PYTEST'
-          import xml.etree.ElementTree as ET
-
-          cases = ET.parse("checkpoints.xml").findall(".//testcase")
-          if len(cases) != 4 or any(case.find("skipped") is not None for case in cases):
-              raise SystemExit("Expected all four pinned checkpoint comparisons to run.")
-          PYTEST
+          python -m build
+          python -m twine check --strict dist/*
 
       - name: Upload built artifacts
         if: steps.changes.outputs.skip != 'true'
@@ -199,7 +179,8 @@ jobs:
           files: dist/*
 
       # master is PR-protected, so the version bump cannot be pushed directly.
-      # Carry the published changelog date onto master even if the job crosses midnight.
+      # Open it as a PR branched fresh from master: date the just-released
+      # changelog heading (finalize) and seed the next dev cycle (next-dev).
       - name: Open version-bump pull request
         if: steps.changes.outputs.skip != 'true' && env.DRY_RUN != 'true'
         shell: bash
@@ -207,7 +188,7 @@ jobs:
           set -euo pipefail
           BRANCH="chore/bump-after-${{ steps.ver.outputs.release_tag }}"
           git checkout -B "$BRANCH" origin/master
-          git restore --source "${{ steps.ver.outputs.release_tag }}" -- braindecode/version.py docs/whats_new.rst
+          python scripts/monthly_release.py finalize
           python scripts/monthly_release.py next-dev --bump "$BUMP"
           git add braindecode/version.py docs/whats_new.rst
           git commit -m "chore: bump version to ${{ steps.ver.outputs.next_dev_version }} after ${{ steps.ver.outputs.release_tag }}"

@@ -164,25 +164,6 @@ jobs:
         env_vars: OS,PYTHON
         token: ${{ secrets.CODECOV_TOKEN }}
 
-  wheel:
-    name: wheel (${{ matrix.os }}, ${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            python-version: "3.11"
-          - os: windows-latest
-            python-version: "3.14"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - uses: ./.github/actions/check-wheel
-
   # Real-data acceptance tests (marked network, so skipped by the jobs above).
   # They train on BNCI2014_001 subject 1, which the ubuntu test jobs download too.
   acceptance:

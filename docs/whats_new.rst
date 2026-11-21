@@ -665,11 +665,9 @@ Code health
 
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).
-- Release builds install the wheel built from the source distribution and
-  exercise a spawned data loader, model summary and local checkpoint before
-  publication. The monthly build also checks the tested master commit and
-  four pinned pretrained checkpoints. Development versions follow master
-  commit order, and stable tag selection excludes prereleases and scratch tags.
+- Development builds reach PyPI only after the ``tests`` run of their master
+  commit succeeds, and follow commit order, so ``pip install --pre`` finds the
+  newest one (:gh:`1661` by `Bruno Aristimunha`_).
 - Trial-prediction tests import their shared synthetic windows and historical
   reconstruction reference from a helper module instead of from other collected
   test modules (:gh:`1672` by `Bruno Aristimunha`_).
