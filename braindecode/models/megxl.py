@@ -17,9 +17,12 @@ from einops.layers.torch import Rearrange
 
 from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.brainomni import _geometry_from_chs_info, _SpatialTemporalBlock
-from braindecode.models.util import warn_if_sfreq_differs
-from braindecode.modules import ResidualVectorQuantizer, SEANetEncoder
+from braindecode.models.util import geometry_from_chs_info, warn_if_sfreq_differs
+from braindecode.modules import (
+    ResidualVectorQuantizer,
+    SEANetEncoder,
+    SpatialTemporalBlock,
+)
 
 
 class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
@@ -187,7 +190,7 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
             )
         self.latent_dim = latent_dim
         # Derived from chs_info, so not saved: one checkpoint serves any montage.
-        pos, sensor_type = _geometry_from_chs_info(self.chs_info)
+        pos, sensor_type = geometry_from_chs_info(self.chs_info)
         pos = torch.from_numpy(pos)
         self.register_buffer("sensor_xyz", pos[:, :3], persistent=False)
         self.register_buffer("sensor_abc", pos[:, 3:], persistent=False)
@@ -231,7 +234,7 @@ class MEGXL(EEGModuleMixin, nn.Module, license="mit"):
         # RoPE table of the 150 s pretraining window (625 tokens at 50 Hz).
         self.blocks = nn.ModuleList(
             [
-                _SpatialTemporalBlock(latent_dim, num_heads, drop_prob, 625)
+                SpatialTemporalBlock(latent_dim, num_heads, drop_prob, 625)
                 for _ in range(num_layers)
             ]
         )

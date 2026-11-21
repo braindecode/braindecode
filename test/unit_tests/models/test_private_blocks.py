@@ -44,9 +44,6 @@ _KNOWN_PRIVATE_BLOCKS = {
     ("barista", "_TransformerEncoderLayer"),
     ("barista", "_RotarySelfAttention"),
     ("bendr", "_TFixupEncoderLayer"),
-    ("brainomni", "_SpatialTemporalBlock"),
-    ("brainomni", "_RotaryPositionalEmbedding"),
-    ("brainomni", "_MultiHeadAttentionRoPE"),
     ("caresleepnet", "_CrossModalBlock"),  # queries from the other signal
     ("cbramod", "_PatchEmbedding"),
     ("cbramod", "_TransformerEncoder"),
@@ -130,7 +127,6 @@ _KNOWN_PRIVATE_BLOCKS = {
     ("sparcnet", "_DenseBlock"),
     ("sstdpn", "_SpatSpectralAttn"),
     ("steegformer", "_TemporalPositionalEncoding"),
-    ("steegformer", "_TransformerEncoderBlock"),
     ("tcformer", "_GroupedQueryAttention"),
     ("tcformer", "_TransformerBlock"),
     ("tcformer", "_ChannelGroupAttention"),
