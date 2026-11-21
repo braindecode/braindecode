@@ -984,6 +984,7 @@ models and evaluate their performance.
      iter_trial_prediction_chunks
      TrialPredictionChunk
      f1_event
+     szcore_event_scores
 
 See :ref:`cropped-inference` for memory bounds, lifecycle and loader settings.
 

@@ -177,6 +177,11 @@ Enhancements
   elements in different shapes (:class:`braindecode.models.AXON`), and no gradient for a
   learnable ``attn_mask`` (:class:`braindecode.models.DIVER1`)
   (:gh:`1599` by `Bruno Aristimunha`_).
+- Add :func:`braindecode.training.szcore_event_scores`, the SzCORE event-based seizure scoring
+  (Dan et al., Epilepsia 2025). It counts any overlap with a 30 s pre-ictal and 60 s post-ictal
+  tolerance as a detection, merges events less than 90 s apart and splits events longer than
+  5 min. It returns sensitivity, precision, F1 and false alarms per hour and per day, and
+  matches timescoring 0.0.7 (:gh:`XXXX` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 API and behavior changes
 ========================
