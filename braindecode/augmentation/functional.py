@@ -189,9 +189,7 @@ def ft_surrogate(
        preprint arXiv:1806.08675.
     """
     assert (
-        isinstance(
-            phase_noise_magnitude, (Real, torch.FloatTensor, torch.cuda.FloatTensor)
-        )
+        isinstance(phase_noise_magnitude, (Real, torch.Tensor))
         and 0 <= phase_noise_magnitude <= 1
     ), f"eps must be a float between 0 and 1. Got {phase_noise_magnitude}."
 
@@ -270,7 +268,9 @@ def channels_dropout(
 
 
 def _make_channel_permutation(
-    X: torch.Tensor, mask: torch.Tensor, random_state: int | np.random.Generator | None
+    X: torch.Tensor,
+    mask: torch.Tensor,
+    random_state: int | np.random.RandomState | None,
 ) -> torch.Tensor:
     """Per-sample channel permutation that shuffles only the masked channels.
 
@@ -909,7 +909,7 @@ def _torch_make_interpolation_matrix(
 
     try:
         C_inv = torch.linalg.inv(C)
-    except torch._C._LinAlgError:
+    except torch.linalg.LinAlgError:
         # There is a stability issue with pinv since torch v1.8.0
         # see https://github.com/pytorch/pytorch/issues/75494
         C_inv = torch.linalg.pinv(C.cpu()).to(device)
@@ -1054,7 +1054,7 @@ def sensors_rotation(
 
 def mixup(
     X: torch.Tensor, y: torch.Tensor, lam: torch.Tensor, idx_perm: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
     """Mixes two channels of EEG data.
 
     See [1]_ for details.
@@ -1108,7 +1108,7 @@ def cutmix(
     idx_perm: torch.Tensor,
     cut_t_start: torch.Tensor,
     cut_t_len: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
     """Paste a time region of shuffled examples into the original examples.
 
     See [1]_ for details.
@@ -1243,12 +1243,12 @@ def label_smoothing(
 
 def segmentation_reconstruction(
     X: torch.Tensor,
-    y: torch.Tensor,
+    y: torch.Tensor | None,
     n_segments: int,
     data_classes: list[tuple[int, torch.Tensor]],
     rand_indices: npt.ArrayLike,
     idx_shuffle: npt.ArrayLike,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Segment and reconstruct EEG data from [1]_.
 
     See [1]_ for details.

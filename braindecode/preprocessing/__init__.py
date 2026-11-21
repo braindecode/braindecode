@@ -130,7 +130,7 @@ from .eegprep_preprocess import (
     RemoveFlatChannels,
     Resampling,
 )
-from .mne_preprocess import (  # type: ignore[attr-defined]
+from .mne_preprocess import (
     AddChannels,
     AddEvents,
     AddProj,

@@ -23,7 +23,7 @@ def create_from_X_y(
     y: ArrayLike,
     drop_last_window: bool,
     sfreq: float,
-    ch_names: ArrayLike = None,
+    ch_names: ArrayLike | None = None,
     window_size_samples: int | None = None,
     window_stride_samples: int | None = None,
 ) -> BaseConcatDataset:
