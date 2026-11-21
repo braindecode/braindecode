@@ -3,7 +3,7 @@
 This file is for every person and coding agent that changes braindecode.
 [CONTRIBUTING.md](CONTRIBUTING.md) explains the setup, the test commands, pre-commit and
 the pull-request flow. This file adds the rules that review found missing from those
-steps. Each of the ten rules comes with the check that catches it, and each red flag at
+steps. Each of the eleven rules comes with the check that catches it, and each red flag at
 the end cites the pull requests where the mistake happened.
 
 ## How to use this file
@@ -20,7 +20,7 @@ the end cites the pull requests where the mistake happened.
 4. **Read the red flags** at the end. If you catch yourself thinking one of them, stop and
    run the check of the rule in its last column.
 
-## Ten rules and their checks
+## Eleven rules and their checks
 
 | # | Rule | Check |
 |---|---|---|
@@ -28,12 +28,13 @@ the end cites the pull requests where the mistake happened.
 | 2 | Trim docstrings, comments and changelog entries by the KEEP and CUT lists, with no line-count target. | Diff the old and new text line by line; every removed KEEP line reappears (section 5). |
 | 3 | A number that configures a model or a block is a keyword-only `__init__` parameter, passed to the block without a default. | In the lines your diff adds, no module-level numeric constant and no numeric default in a private block's `__init__` (section 3). |
 | 4 | A guard you remove keeps its error, and a parameter you add is validated at construction. | Master's triggering input still raises the same error class; the smallest invalid value (0, empty, even, non-divisor) raises `ValueError` when the model is built. |
-| 5 | Run the model gates on every change that touches a model, and again on the tree merged with `master`. | The four commands of section 1 each exit 0 with a non-zero test count, and the PR body lists every skip that `-rs` prints for the model. |
+| 5 | Run the model gates on every change that touches a model, and again on the tree merged with `master`. | The four commands of section 1 each exit 0 with a non-zero test count, and the PR body lists every skip that `-rfEs` prints for the model. |
 | 6 | Everything v2.0.0 shipped keeps loading, and its outputs change only in a behavior change that the changelog announces. | Save on the `v2.0.0` tag (`state_dict`, `torch.save(model)`, `get_config()`), load on your branch with `strict=True`, compare outputs bitwise. The committed form is `test_v2_checkpoints_load` and `test_v2_pickles_run` in `test/unit_tests/models/test_base.py`: add the model you touch when it shipped in v2.0.0 (section 7). |
 | 7 | An issue, audit item or plan step is a hypothesis. | Reproduce it: the input that reaches the "unreachable" branch, the pickle an "unnecessary" shim serves, the test that "covers" the one you delete. |
 | 8 | Every behavioral sentence you publish is backed by a probe you ran. | The PR body maps each claim in the body, changelog, docstring, code comment, model card or tutorial to its command or test. |
 | 9 | Merge only the head that was reviewed, on a green run. | `gh pr view <n> --json headRefOid` equals the reviewed SHA; `git merge-tree --write-tree origin/master <head>` exits 0; `gh pr checks <n>` is green; a red run is read before anyone re-runs it. |
 | 10 | Released weights move together with the code that reads them. | A maintainer uploads to a Hub branch; verify each file by hash, pin that commit in the test, merge, then a maintainer moves `main`. The pinned test sees every tensor group (section 8). |
+| 11 | A PR does one thing, with the smallest diff that does it. | Every file and hunk of `git diff --stat origin/master...HEAD` serves the PR's one purpose: no drive-by renames, reformatting or refactors. Before adding code, check whether it needs to exist, then whether torch, MNE, numpy or `braindecode.modules` already does it. Problems in code the PR does not need to touch go to their own PR. Smallest never drops a KEEP line (rule 2), a mutation-checked test (rule 1), a construction check (rule 4) or a parameter that rule 3 requires. |
 
 ## 1. The model contract
 
@@ -41,17 +42,18 @@ CI enforces the tests below. Run these four commands on every change that touche
 model (`<Model>` is the class name):
 
 ```
-pytest -rs test/unit_tests/models/ --select-models=<Model> -k "<Model> or completeness or summary_csv or categorization"
-pytest -rs test/unit_tests/models/test_model_contract.py --select-models=<Model> -k <Model>
-pytest -rs test/unit_tests/models/test_pretrained_compat.py --select-models=<Model> -k "<Model> or covers_every or no_strategy"
-pytest -rs <the model's own test file, e.g. test/unit_tests/models/test_<model>.py>
+pytest -rfEs test/unit_tests/models/ --select-models=<Model> -k "<Model> or completeness or summary_csv or categorization"
+pytest -rfEs test/unit_tests/models/test_model_contract.py --select-models=<Model> -k <Model>
+pytest -rfEs test/unit_tests/models/test_pretrained_compat.py --select-models=<Model> -k "<Model> or covers_every or no_strategy"
+pytest -rfEs <the model's own test file, e.g. test/unit_tests/models/test_<model>.py>
 ```
 
 - `--select-models=<Model>` does for your model what CI does on a pull request: CI passes
   it the models your diff reaches. Without it, `test_model_compiled` skips every model
   outside the seven of `_COMPILE_ON_PR` in `test_integration.py`, so a `torch.compile`
-  failure shows up only in CI. `-rs` prints the reason of each skip: list the skips in the
-  PR body.
+  failure shows up only in CI. `-rfEs` prints the reason of each skip and keeps the FAILED
+  and ERROR lines in the summary (`-r` replaces pytest's default `fE`, so `-rs` alone drops
+  them). List the skips in the PR body.
 - The first line already runs the model's contract tests. The second line is the quick
   loop while you work on the contract. The third line adds the two coverage gates,
   `test_compat_covers_every_pretrained_model` and
@@ -63,7 +65,11 @@ pytest -rs <the model's own test file, e.g. test/unit_tests/models/test_<model>.
   `--select-models`. If the plan says `"full_suite": true`, CI runs the whole suite for
   your PR, and its `reason` says why.
 - A selection of 0 tests (pytest exit code 5) counts as a failure: check the class name
-  and the path.
+  and the path. `--select-models` matches the class name exactly, because
+  `test/conftest.py` looks it up in a set. With `--select-models=LaBraM` for the class
+  `Labram`, the tests parametrized over the model are deselected, and the first gate still
+  exits 0 on the tests that are not. A non-zero count does not show that your model ran:
+  its test ids contain `[<Model>]` (`--collect-only -q` lists them).
 - `-k` also matches marker names. A bare substring of a marker, such as `filter` (which
   matches `filterwarnings`), selects hundreds of heavy tests: 807 instead of 225 over
   `test/unit_tests/`.
@@ -340,7 +346,7 @@ precision. There is no line-count target.
   checks this.
 - **Torch floor.** CI installs the newest torch, and no job runs the floor (`torch>=2.6` in
   `pyproject.toml`). When you touch export or TorchScript code, run
-  `pytest -rs test/unit_tests/models/test_integration.py --select-models=<Model> -k "<Model> and (exported or torch_script)"`
+  `pytest -rfEs test/unit_tests/models/test_integration.py --select-models=<Model> -k "<Model> and (exported or torch_script)"`
   with `torch==2.6.*`. The first head of #1706 undid #1690's export fix on torch 2.6 while
   CI stayed green.
 - **Meta device.** `test_registered_model_follows_device` moves each registered model to
@@ -358,7 +364,7 @@ precision. There is no line-count target.
   with `FIX`, `REF`, `TEST`, `DOC`, `MAINT`, `API`, `ENH`, `PERF` or `CI`; a new model's PR
   is titled `[models] Add <ModelName>`.
 - **PR body.** What changed and why, the evidence (bitwise results, mutation checks), each
-  gate command with its counts and the skips that `-rs` prints, and the old-to-new key
+  gate command with its counts and the skips that `-rfEs` prints, and the old-to-new key
   table when weights move.
 - **Branches.** Do not force-push a branch under review; merge `master` into it with
   `git merge origin/master`. Reviewers compare each new head with the commit they reviewed
