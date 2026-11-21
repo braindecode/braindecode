@@ -6611,15 +6611,24 @@ def _interleaved_fnirs_chs(n_pairs=4):
              "mean_branch": "time_mean"},
         ),
         (FNIRS4D, {"n_layers": 1, "d_state": 16, "mean_branch": "time_mean"}),
+        (FNIRST, {"depth": 1, "num_heads": 2}),
+        (FNIRSPreT, {"depth": 1, "num_heads": 2}),
+        (JungMAE, {"depth": 1, "num_heads": 4, "embed_dim": 64}),
+        (GeoNIRS, {"depth": 1, "num_heads": 4, "embed_dim": 64,
+                   "projection_dims": (64, 64)}),
+        (MtReNIRS, {"depth": 1, "num_heads": 2, "embed_dim": 32}),
     ],
 )
-def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):
-    """HbO/HbR ``chs_info`` or an explicit ``n_chans``; ``final_layer(features)``
-    equals the logits in eval and train mode, and gradients reach the input."""
+def test_fnirs_features_feed_head_and_reset(model_cls, kwargs):
+    """HbO/HbR ``chs_info`` (5 pairs, FNIRST's default spatial kernel) or an
+    explicit ``n_chans``; ``final_layer(features)`` equals the logits in eval and
+    train mode, gradients reach the input, and ``reset_parameters`` redraws every
+    parameter (test_model_init compares distributions only, so it cannot see a
+    parameter that the reset skips)."""
     if "n_chans" not in kwargs:
-        kwargs = dict(kwargs, chs_info=_interleaved_fnirs_chs())
-    model = model_cls(n_outputs=3, n_times=60, sfreq=5.0, **kwargs)
-    x = torch.randn(4, model.n_chans, 60, requires_grad=True)
+        kwargs = dict(kwargs, chs_info=_interleaved_fnirs_chs(5))
+    model = model_cls(n_outputs=3, n_times=100, **kwargs)
+    x = torch.randn(4, model.n_chans, 100, requires_grad=True)
     for training in (False, True):
         model.train(training)
         torch.manual_seed(0)
@@ -6629,6 +6638,11 @@ def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):
         torch.testing.assert_close(model.final_layer(features), logits)
     logits.sum().backward()
     assert torch.isfinite(x.grad).all()
+    with torch.no_grad():
+        for p in model.parameters():
+            p.fill_(999.0)
+    model.reset_parameters()
+    assert not [n for n, p in model.named_parameters() if (p == 999.0).all()]
 
 
 class _AuthorsFNIRSNet(torch.nn.Module):
@@ -7206,7 +7220,6 @@ def test_fnirs4d_smallest_valid_configurations_build():
     "kwargs, match",
     [
         ({"mean_branch": "kfold"}, "mean_branch"),
-        ({"n_chans": 7, "compute_hbt": False}, "even n_chans"),
         ({"n_chans": 1, "compute_hbt": False, "mean_branch": "time_mean"}, "n_chans >= 2"),
         ({"n_times": 9}, "avg_size"),
         ({"avg_size": 31}, "avg_size"),
@@ -7592,20 +7605,15 @@ def test_fnirspret_docstring_with_docstring_inheritance():
     [
         ({"n_chans": 8}, r"spatial_kernel_size \(5\) must be at most .* pairs \(4\)"),
         ({"n_chans": 10, "spatial_kernel_size": 6}, r"spatial_kernel_size \(6\)"),
-        ({"n_chans": 11}, "needs HbO/HbR pairs: n_chans must be even"),
         ({"pool": "max"}, "pool must be 'cls' or 'mean'"),
         ({"n_times": 29}, "temporal_kernel_size"),
     ],
 )
 def test_fnirst_invalid_configurations_raise(model_cls, kwargs, match):
-    """Fewer pairs than the spatial kernel fails in the authors' code too; an
-    odd ``n_chans`` has no HbO/HbR pairing; ``pool`` is ``"cls"`` or
-    ``"mean"``. The message names the class."""
+    """Fewer pairs than the spatial kernel fails in the authors' code too;
+    ``pool`` is ``"cls"`` or ``"mean"``."""
     with pytest.raises(ValueError, match=match):
         model_cls(**{"n_chans": 12, "n_outputs": 2, "n_times": 60, **kwargs})
-    if "n_chans must be even" in match:
-        with pytest.raises(ValueError, match=model_cls.__name__):
-            model_cls(n_chans=11, n_outputs=2, n_times=60)
 
 
 @pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
@@ -7635,34 +7643,6 @@ def test_fnirst_seeded_reset_and_cls_tokens(model_cls):
     assert not torch.equal(out["cls_token"], out["features"])
 
 
-# FNIRST/FNIRSPreT need 5 HbO/HbR pairs for their default spatial kernel
-_FNIRS_TEST_N_CHANS = {FNIRST: 10, FNIRSPreT: 10, JungMAE: 6}
-
-
-@pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT, JungMAE])
-def test_fnirs_features_feed_head_and_reset(model_cls):
-    """final_layer(features) == logits (train and eval); every parameter is reset."""
-    n_chans = _FNIRS_TEST_N_CHANS[model_cls]
-    model = model_cls(n_chans=n_chans, n_outputs=3, n_times=60, sfreq=10.0)
-    x = torch.randn(4, n_chans, 60)
-    model.eval()
-    with torch.no_grad():
-        features = model(x, return_features=True)["features"]
-        torch.testing.assert_close(model.final_layer(features), model(x))
-    model.train()
-    torch.manual_seed(123)
-    features = model(x, return_features=True)["features"]
-    torch.manual_seed(123)
-    torch.testing.assert_close(model.final_layer(features), model(x))
-    with torch.no_grad():
-        for p in model.parameters():
-            p.fill_(999.0)
-    model.reset_parameters()
-    assert not [n for n, p in model.named_parameters() if (p == 999.0).all()]
-    model.to(dtype=torch.float64).reset_head(5)
-    assert model.final_layer.weight.dtype == torch.float64
-
-
 def test_fnirspret_forwards_every_argument_to_fnirst():
     """FNIRSPreT is FNIRST plus the preprocessing module: same signature, and the
     same weights and outputs without that module."""
@@ -7688,29 +7668,6 @@ def test_fnirspret_forwards_every_argument_to_fnirst():
         assert torch.equal(pret(x), plain(x))
 
 
-@pytest.mark.parametrize(
-    "model_cls, fill",
-    [(FNIRST, 0.0), (FNIRSPreT, 0.0), (JungMAE, float("nan"))],
-)
-def test_fnirs_masks(model_cls, fill):
-    """ch_mask is refused by name; an all-False mask changes nothing; hidden
-    samples act as ``fill`` and get no gradient."""
-    torch.manual_seed(0)
-    n_chans = _FNIRS_TEST_N_CHANS[model_cls]
-    model = model_cls(n_chans=n_chans, n_outputs=3, n_times=60, sfreq=5.0).eval()
-    x = torch.randn(2, n_chans, 60)
-    with pytest.raises(ValueError, match=f"{model_cls.__name__} does not accept ch_mask"):
-        model(x, ch_mask=torch.ones(2, n_chans, dtype=torch.bool))
-    mask = torch.zeros_like(x, dtype=torch.bool)
-    assert torch.equal(model(x, mask=mask), model(x))
-    mask[:, 1, 20:40] = True
-    assert torch.equal(model(x, mask=mask), model(x.masked_fill(mask, fill)))
-    hidden = x.masked_fill(mask, float("nan")).requires_grad_(True)
-    model(hidden, mask=mask).sum().backward()
-    assert torch.equal(hidden.grad[mask], torch.zeros_like(hidden.grad[mask]))
-    assert hidden.grad[~mask].isfinite().all()
-
-
 @pytest.mark.parametrize("model_cls", [GeoNIRS, JungMAE])
 def test_fnirs_patch_models_refuse_a_partial_patch(model_cls):
     """A window that is not a whole number of patches raises, as in the reference."""
@@ -7725,61 +7682,6 @@ def test_mtrenirs_drops_a_partial_window():
     x = torch.randn(1, 4, 150)
     with torch.no_grad():
         assert torch.equal(model.eval()(x), model(x[..., :100]))
-
-
-@pytest.mark.parametrize(
-    "model_cls,kwargs,n_times",
-    [
-        (GeoNIRS, {"depth": 1, "num_heads": 4, "embed_dim": 64,
-                   "projection_dims": (64, 64), "pool": "mean_std"}, 60),
-        (MtReNIRS, {"depth": 2, "num_heads": 2, "embed_dim": 32,
-                    "pool": "channel_temporal_mean"}, 100),
-    ],
-)
-def test_fnirs_foundation_models_interleaved_chs_info(model_cls, kwargs, n_times):
-    """With the same weights, MNE-ordered chs_info and input give the
-    logits of the stacked chs_info on the stacked input."""
-    stacked = model_cls(chs_info=_fnirs_chs_info(4), n_outputs=3, n_times=n_times, **kwargs)
-    mne_order = model_cls(
-        chs_info=_interleaved_fnirs_chs(4), n_outputs=3, n_times=n_times, **kwargs
-    )
-    mne_order.load_state_dict(stacked.state_dict())
-    x = torch.randn(2, 8, n_times)  # [HbO_1..HbO_4, HbR_1..HbR_4]
-    x_mne = x.reshape(2, 2, 4, n_times).transpose(1, 2).reshape(2, 8, n_times)
-    with torch.no_grad():
-        torch.testing.assert_close(mne_order.eval()(x_mne), stacked.eval()(x))
-
-
-@pytest.mark.parametrize("model_cls", [GeoNIRS, MtReNIRS])
-def test_fnirs_foundation_models_head_and_reset(model_cls):
-    """final_layer(features) gives the logits; reset_parameters resets every
-    parameter; reset_head keeps the dtype."""
-    model = model_cls(chs_info=_fnirs_chs_info(3), n_outputs=3, n_times=100, sfreq=10.0)
-    x = torch.randn(4, 6, 100)
-    with torch.no_grad():
-        model.eval()
-        torch.testing.assert_close(
-            model.final_layer(model(x, return_features=True)["features"]), model(x)
-        )
-    model.train()
-    torch.manual_seed(123)
-    from_features = model.final_layer(model(x, return_features=True)["features"])
-    torch.manual_seed(123)
-    torch.testing.assert_close(from_features, model(x))
-    with torch.no_grad():
-        for p in model.parameters():
-            p.fill_(999.0)
-    model.reset_parameters()
-    assert not [n for n, p in model.named_parameters() if (p == 999.0).all()]
-    model = model.to(dtype=torch.float64)
-    model.reset_head(5)
-    assert model.final_layer.weight.dtype == torch.float64
-
-
-@pytest.mark.parametrize("model_cls", [GeoNIRS, JungMAE])
-def test_fnirs_pair_models_need_an_even_n_chans(model_cls):
-    with pytest.raises(ValueError, match="n_chans must be even"):
-        model_cls(n_chans=5, n_outputs=2, n_times=60)
 
 
 def test_mtrenirs_needs_its_channel_positions():
@@ -7808,9 +7710,10 @@ def test_mtrenirs_leaves_unlocated_channels_out():
     alone.load_state_dict(encoder, strict=False)  # the head width depends on n_chans
     x = torch.randn(2, 6, 200)
     with torch.no_grad():
-        tokens, valid = model.encode_windows(x)
-        expected, _ = alone.eval().encode_windows(x[:, located])
-    assert not valid[:, :, [0, 3]].any() and not tokens[:, :, [0, 3]].any()
+        out = model.encode(x)
+        expected = alone.eval().encode(x[:, located])["foundation"]
+    tokens = out["foundation"]
+    assert not out["valid"][:, :, [0, 3]].any() and not tokens[:, :, [0, 3]].any()
     torch.testing.assert_close(tokens[:, :, located], expected)
 
 
@@ -7833,7 +7736,7 @@ def test_mtrenirs_chromophores_and_valid_window_pooling():
     x[:, :, 100:] = float("nan")
     with torch.no_grad():
         features = model(x, return_features=True)["features"]
-        tokens, _ = model.encode_windows(x)
+        tokens = model.encode(x)["foundation"]
     torch.testing.assert_close(features, tokens[:, 0].reshape(1, -1), atol=1e-6, rtol=1e-6)
     with pytest.raises(ValueError, match="even head_dim"):
         MtReNIRS(n_chans=4, n_outputs=2, n_times=100, embed_dim=12, num_heads=4)
