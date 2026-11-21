@@ -251,6 +251,11 @@ Requirements
 Bug fixes
 ==========
 
+- :class:`braindecode.augmentation.SegmentationReconstruction` with ``n_segments=None`` no longer
+  stores the segment count it derived from the first batch in ``self.n_segments``. A later batch
+  with a shorter window used to raise ``ValueError``, and ``repr`` and ``get_params`` changed after the
+  first call. The count is now derived for each batch (:gh:`1727` by
+  `Aayushya Patel <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.models.Pratibha2` returns the feature dict, not the logits, when it
   is compiled with ``torch.jit.script`` and called with ``return_features=True``
   (:gh:`1710` by `Bruno Aristimunha`_).
