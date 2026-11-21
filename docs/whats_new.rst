@@ -588,6 +588,8 @@ Bug fixes
 Code health
 ============
 
+- :class:`braindecode.models.EEGMiner` takes the upper triangle of its connectivity
+  matrices in one place again and drops an unused flatten layer (:gh:`1737` by `Bruno Aristimunha`_).
 - Tests that spawned processes, built the 157M-parameter :class:`~braindecode.models.BENDR`
   14 times, spied on SDPA calls or re-implemented the code they check are now in-process,
   small or gone (:gh:`1701` by `Bruno Aristimunha`_).
