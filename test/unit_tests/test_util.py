@@ -429,22 +429,25 @@ def test_throwaway_index_loader_backward_compat():
 
 
 @pytest.mark.parametrize(
-    "is_regression,target_dtype,container",
+    "is_regression,dtype,target_dtype,container",
     [
-        (False, torch.int64, tuple),
-        (False, torch.int64, list),
-        (True, torch.float32, tuple),
-        (True, torch.float32, list),
+        (False, torch.int32, torch.int64, tuple),
+        (False, torch.int32, torch.int64, list),
+        # floats stay floats: EEGClassifier.get_loss reads them by shape
+        (False, torch.float64, torch.float32, tuple),
+        (False, torch.float64, torch.float32, list),
+        (True, torch.float64, torch.float32, tuple),
+        (True, torch.float64, torch.float32, list),
     ],
 )
 def test_throwaway_index_loader_casts_mixup_target(
-    is_regression, target_dtype, container
+    is_regression, dtype, target_dtype, container
 ):
     """Mixed targets follow the same dtype contract as plain targets."""
     B, C, T = 4, 10, 200
     X = torch.randn(B, C, T)
-    y_a = torch.zeros(B, dtype=torch.float64)
-    y_b = torch.ones(B, dtype=torch.float64)
+    y_a = torch.zeros(B, dtype=dtype)
+    y_b = torch.ones(B, dtype=dtype)
     lam = torch.full((B,), 0.3, dtype=torch.float64)
 
     x, yy, _ = _route(
@@ -538,11 +541,15 @@ def test_resolve_montage_name():
     renamed = {
         "standard_1005": "colin27_1005",
         "standard_1020": "colin27_1020",
+        "standard_alphabetic": "colin27_alphabetic",
+        "standard_postfixed": "colin27_postfixed",
+        "standard_prefixed": "colin27_prefixed",
+        "standard_primed": "colin27_primed",
     }
     for legacy, new in renamed.items():
-        resolved = resolve_montage_name(legacy)
-        assert resolved in (legacy, new)
-        assert resolved in mne.channels.get_builtin_montages()
+        assert resolve_montage_name(legacy) == new
+        assert resolve_montage_name(new) == new
+        assert new in mne.channels.get_builtin_montages()
 
     # names that were not renamed pass through untouched
     assert resolve_montage_name("biosemi64") == "biosemi64"
@@ -552,7 +559,14 @@ def test_resolve_montage_name():
 def test_resolve_montage_name_raises_no_future_warning():
     with warnings.catch_warnings():
         warnings.simplefilter("error", FutureWarning)
-        for name in ("standard_1005", "standard_1020"):
+        for name in (
+            "standard_1005",
+            "standard_1020",
+            "standard_alphabetic",
+            "standard_postfixed",
+            "standard_prefixed",
+            "standard_primed",
+        ):
             montage = mne.channels.make_standard_montage(resolve_montage_name(name))
             assert isinstance(montage, mne.channels.DigMontage)
 

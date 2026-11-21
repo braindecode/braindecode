@@ -10,7 +10,7 @@ import mne
 import torch
 from torch import nn
 
-from braindecode.functional import init_weights_
+from braindecode.functional import check_n_chans, init_weights_
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PreNormBlock, TimmAttention, TimmMlp
 from braindecode.modules.convolution import Conv1dWithConstraint
@@ -144,7 +144,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
                repo_id="username/my-eegpt-model", commit_message="Upload trained EEGPT model"
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     .. rubric:: Usage
 
@@ -201,6 +201,10 @@ class EEGPT(EEGModuleMixin, nn.Module):
         Normalization layer. If None, defaults to ``nn.LayerNorm`` with epsilon ``layer_norm_eps``.
     layer_norm_eps : float, default=1e-6
         Epsilon value for the normalization layer.
+    n_chans_target : int, default=19
+        Output channels of the learned channel projection. It must be 19, the
+        electrodes of EEGPT's original linear probe (``EEGPT_19_CHANNELS``).
+        Ignored with ``chan_proj_type="none"``.
 
     References
     ----------
@@ -301,8 +305,15 @@ class EEGPT(EEGModuleMixin, nn.Module):
         self.chan_proj_type = chan_proj_type
         self.n_chans_target = n_chans_target
 
-        # Build channel projection (before encoder)
+        # The learned projection maps x onto the 19 electrodes of EEGPT_19_CHANNELS,
+        # whose embeddings chans_id indexes: x (batch, 19, n_times).
         if chan_proj_type != "none":
+            if n_chans_target != len(EEGPT_19_CHANNELS):
+                raise ValueError(
+                    "A learned chan_proj_type needs "
+                    f"n_chans_target={len(EEGPT_19_CHANNELS)}, got {n_chans_target}; "
+                    "use chan_proj_type='none' to encode the input montage directly."
+                )
             self.chan_proj = _ChannelProjection(
                 in_channels=self.n_chans,
                 out_channels=n_chans_target,
@@ -425,6 +436,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         torch.Tensor or dict
             Model output. Shape depends on `n_outputs` and `return_encoder_output`.
         """
+        check_n_chans(x, self.n_chans, "EEGPT")
         # Channel projection (if configured)
         x = self.chan_proj(x)
 
@@ -449,7 +461,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
 # These channels correspond to a subset of the standard 10-20 system.
 # The order matches the pre-trained weights and corresponds to
-# mne.channels.make_standard_montage("standard_1020") (filtered).
+# mne.channels.make_standard_montage("colin27_1020") (filtered).
 _ALLOWED_CHANNELS = {
     "FP1",
     "FPZ",

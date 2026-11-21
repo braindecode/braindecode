@@ -17,7 +17,7 @@ from torch.nn import functional as F
 from braindecode.functional import check_ch_mask, masked_mean
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.steegformer import (
-    _channel_order,
+    STEEGFORMER_CHANNEL_ORDER,
     _ChannelPositionalEmbed,
     _init_weights,
     _TemporalPositionalEncoding,
@@ -36,7 +36,7 @@ def _vocab_positions() -> torch.Tensor:
     """
     montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
     ch_pos = montage.get_positions()["ch_pos"]
-    positions = np.stack([ch_pos[name] for name in _channel_order()])
+    positions = np.stack([ch_pos[name] for name in STEEGFORMER_CHANNEL_ORDER])
     return torch.as_tensor(positions, dtype=torch.float32)
 
 
@@ -124,6 +124,11 @@ class CORTEG(EEGModuleMixin, nn.Module):
             "braindecode/corteg-small-pretrained", n_outputs=5, n_times=128,
             chs_info=chs_info,
         )
+
+    A bare :class:`~braindecode.models.STEEGFormer` checkpoint, such as
+    ``braindecode/STEEGFormer-small``, has no high-gamma embedding. Loading it
+    derives that embedding from the loaded low-frequency one, and so overwrites
+    a trained high-gamma embedding.
 
     The authors' Stanford model (finger flexion, nine patients pooled) is
     re-hosted with its LoRA factors folded in::
@@ -310,24 +315,50 @@ class CORTEG(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
 
         self._init_parameters()
+        # Loading a bare ST-EEGFormer checkpoint warm-starts the high-gamma embedding.
+        self.register_load_state_dict_post_hook(self._warm_start_high_gamma)
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""
         for module in (self.patch_embed, self.encoder, self.norm, self.final_layer):
             module.apply(_init_weights)
         nn.init.normal_(self.cls_token, std=0.02)
-        with torch.no_grad():
-            lo, hi = self.patch_embed.proj, self.patch_embed_hi.proj
-            assert lo is not None and hi is not None
-            size = self.patch_embed_hi.patch_size
-            hi.weight.copy_(F.interpolate(lo.weight[None], size=size, mode="linear")[0])
-            hi.bias.copy_(lo.bias)
+        self._init_high_gamma_from_low()
         prior = None
         if self.default_pos is not None:
             prior = _knn_log_prior(self.default_pos, self.vocab_positions, self.knn_k)
         self.channel_adapter.init_parameters(prior)
         if self.layerwise_gate is not None:
             self.layerwise_gate.init_parameters()
+
+    @torch.no_grad()
+    def _init_high_gamma_from_low(self):
+        """Set the high-gamma patch embedding from the low-frequency one.
+
+        The kernel ``patch_embed.proj.weight``, ``(embed_dim, patch_size)``, is
+        resized along its patch axis to ``(embed_dim, hi_patch_size)``; the bias,
+        ``(embed_dim,)``, is copied.
+        """
+        lo, hi = self.patch_embed.proj, self.patch_embed_hi.proj
+        # Linear resize of the kernel viewed as one (embed_dim, patch_size) signal:
+        # (1, embed_dim, patch_size) -> (1, embed_dim, hi_patch_size).
+        resized = F.interpolate(lo.weight[None], size=hi.in_features, mode="linear")
+        hi.weight.copy_(resized[0])
+        hi.bias.copy_(lo.bias)
+
+    def _warm_start_high_gamma(self, _module, incompatible_keys):
+        """Post-load hook: warm-start the high-gamma embedding a checkpoint lacks.
+
+        A bare ST-EEGFormer checkpoint loads ``patch_embed`` but has no
+        ``patch_embed_hi``, which torch reports as missing; a CORTEG checkpoint
+        has both and keeps its own.
+        """
+        missing = incompatible_keys.missing_keys
+        if (
+            "patch_embed_hi.proj.weight" in missing
+            and "patch_embed.proj.weight" not in missing
+        ):
+            self._init_high_gamma_from_low()
 
     def reset_head(self, n_outputs):
         """Replace the linear head for a new ``n_outputs``."""

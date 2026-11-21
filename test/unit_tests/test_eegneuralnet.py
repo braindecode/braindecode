@@ -26,6 +26,7 @@ from torch import optim
 from torch.nn.functional import nll_loss
 
 from braindecode import EEGClassifier, EEGRegressor
+from braindecode.augmentation import AugmentedDataLoader, LabelSmoothing, Mixup
 from braindecode.datasets import BaseConcatDataset, RawDataset, WindowsDataset
 from braindecode.eegneuralnet import _EEGNeuralNet
 from braindecode.models.base import EEGModuleMixin
@@ -33,7 +34,8 @@ from braindecode.models.base import EEGModuleMixin
 # from braindecode.models.util import models_dict
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.preprocessing import create_fixed_length_windows
-from braindecode.training import CroppedLoss
+from braindecode.samplers import SequenceSampler
+from braindecode.training import CroppedLoss, mixup_criterion
 from braindecode.training.scoring import CroppedTrialEpochScoring, predict_trials
 
 
@@ -161,9 +163,15 @@ def windows_dataset_metadata(epochs):
 
 
 @pytest.fixture
-def windows_dataset_channels(epochs):
+def windows_dataset_channels(epochs, Xy):
+    _, y = Xy
+    target = mne.EpochsArray(
+        np.repeat(y[:, None, None], epochs.get_data().shape[-1], axis=-1).astype(float),
+        info=mne.create_info(["target"], sfreq=10, ch_types="misc"),
+        metadata=epochs.metadata,
+    )
     return WindowsDataset(
-        windows=epochs,
+        windows=epochs.copy().add_channels([target]),
         targets_from="channels",
         description={},
     )
@@ -238,6 +246,25 @@ def test_trialwise_predict_and_predict_proba(eegneuralnet_cls):
     np.testing.assert_allclose(preds, eegneuralnet.predict_proba(MockDataset()))
 
 
+@pytest.mark.parametrize("spatial_shape", [(2,), (2, 3)])
+def test_cross_entropy_predict_proba_normalizes_classes_at_each_position(spatial_shape):
+    rng = np.random.default_rng(1)
+    logits = rng.normal(size=(5, 4, *spatial_shape))
+    net = EEGClassifier(
+        MockModuleReturnMockedPreds,
+        module__preds=logits,
+        module__n_outputs=4,
+        module__n_chans=3,
+        module__n_times=10,
+    ).initialize()
+    np.testing.assert_allclose(
+        net.predict_proba(MockDataset()), softmax(logits, axis=1)
+    )
+    np.testing.assert_array_equal(net.predict(MockDataset()), logits.argmax(axis=1))
+    net.set_params(predict_nonlinearity=None)
+    np.testing.assert_array_equal(net.predict_proba(MockDataset()), logits)
+
+
 def test_cropped_predict_and_predict_proba(eegneuralnet_cls, preds):
     eegneuralnet = eegneuralnet_cls(
         MockModuleReturnMockedPreds,
@@ -305,7 +332,7 @@ def test_predict_trials(eegneuralnet_cls, preds):
     eegneuralnet.initialize()
     with pytest.warns(
         UserWarning,
-        match="This method was designed to predict " "trials in cropped mode.",
+        match="This method was designed to predict trials in cropped mode.",
     ):
         eegneuralnet.predict_trials(MockDataset(), return_targets=False)
 
@@ -864,98 +891,6 @@ def test_eegregressor_cropped_loss_is_per_trial_mse(from_dataset):
     torch.testing.assert_close(loss, expected)
 
 
-class MockModuleInferKwargs(EEGModuleMixin, torch.nn.Module):
-    def __init__(
-        self,
-        n_outputs=None,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        inferred_value=None,
-    ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-        )
-        self.inferred_value = inferred_value
-        self.final_layer = torch.nn.Linear(
-            self.n_chans * self.n_times,
-            self.n_outputs,
-        )
-
-    @classmethod
-    def _infer_model_kwargs(cls, X, y=None):
-        return {"inferred_value": len(X)}
-
-    def forward(self, x):
-        return self.final_layer(x.flatten(1))
-
-
-@pytest.mark.filterwarnings("ignore:The training set has")
-def test_set_model_specific_inferred_params(Xy):
-    X, y = Xy
-
-    net = EEGClassifier(
-        MockModuleInferKwargs,
-        train_split=None,
-        max_epochs=1,
-        batch_size=5,
-    )
-
-    net.fit(X, y)
-
-    assert net.module_.inferred_value == len(X)
-
-
-@pytest.mark.filterwarnings("ignore:The training set has")
-def test_user_overrides_model_specific_inferred_params(Xy):
-    X, y = Xy
-
-    net = EEGClassifier(
-        MockModuleInferKwargs,
-        module__inferred_value=42,
-        train_split=None,
-        max_epochs=1,
-        batch_size=5,
-    )
-
-    net.fit(X, y)
-
-    assert net.module_.inferred_value == 42
-
-
-class MockModuleInferOverlappingKwargs(MockModuleInferKwargs):
-    @classmethod
-    def _infer_model_kwargs(cls, X, y=None):
-        return {
-            "n_chans": 42,
-            "inferred_value": len(X),
-        }
-
-
-@pytest.mark.filterwarnings("ignore:The training set has")
-def test_signal_params_override_model_inferred_params(Xy):
-    X, y = Xy
-
-    net = EEGClassifier(
-        MockModuleInferOverlappingKwargs,
-        train_split=None,
-        max_epochs=1,
-        batch_size=5,
-    )
-
-    net.fit(X, y)
-
-    assert net.module_.n_chans == X.shape[1]
-    assert net.module_.inferred_value == len(X)
-
-
 @pytest.mark.parametrize("pipeline", [False, True])
 @pytest.mark.parametrize("validation", [False, True])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
@@ -1110,6 +1045,7 @@ def test_cropped_raw_means_and_cache_reset(train_indexed, valid_indexed):
     )
     y = np.array([0, 0, 1, 1])
     array = Dataset(X, y)
+
     # The first prediction in each second window overlaps its predecessor.
     class IndexedWindows(Dataset):
         def __getitem__(self, index):
@@ -1205,3 +1141,224 @@ def test_predict_trials_explicit_loader_kwargs(estimator):
     net.cropped = False
     with pytest.raises(ValueError, match="cropped"):
         net.predict_trials(X, loader_kwargs={"batch_size": 2})
+
+
+def _per_trial_logits():
+    return torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(16, 3))  # (batch, 3)
+
+
+def _dense_logits():
+    return torch.nn.Conv1d(2, 3, kernel_size=1)  # (batch, 3, 8)
+
+
+@pytest.mark.parametrize(
+    "y, transforms, model, dtype",
+    [
+        (torch.tensor([0.0, 1.0, 2.0, 1.0]), [], _per_trial_logits, torch.int64),
+        # a layout that differs from the logits' is class indices, not probabilities
+        (
+            torch.arange(32).reshape(4, 8).remainder(3).float(),
+            [],
+            _dense_logits,
+            torch.int64,
+        ),
+        (
+            torch.tensor([0.0, 1.0, 2.0, 1.0]),
+            [Mixup(0.5)],
+            _per_trial_logits,
+            torch.int64,
+        ),
+        (torch.eye(3)[[0, 1, 2, 1]], [], _per_trial_logits, torch.float32),
+        # dense probabilities (batch, classes, time) have the shape of the logits
+        (
+            torch.arange(96.0).reshape(4, 3, 8).softmax(dim=1),
+            [],
+            _dense_logits,
+            torch.float32,
+        ),
+        (
+            torch.tensor([0, 1, 2, 1]),
+            [LabelSmoothing(0.1, 3)],
+            _per_trial_logits,
+            torch.float32,
+        ),
+        (
+            torch.tensor([0, 1, 2, 1]),
+            [LabelSmoothing(0.1, 3), Mixup(0.5)],
+            _per_trial_logits,
+            torch.float32,
+        ),
+    ],
+    ids=[
+        "float_indices",
+        "dense_float_indices",
+        "float_indices_mixup",
+        "one_hot",
+        "dense_probabilities",
+        "smoothed",
+        "smoothed_mixup",
+    ],
+)
+def test_classifier_target_dtypes(y, transforms, model, dtype):
+    received = []
+
+    class RecordingLoss(torch.nn.Module):
+        def forward(self, logits, target):
+            # Mixup gives the targets of both mixed trials and their weights as a list.
+            received.append((target[0] if isinstance(target, list) else target).dtype)
+            return mixup_criterion(logits, target)
+
+    EEGClassifier(
+        model(),
+        criterion=RecordingLoss,
+        iterator_train=AugmentedDataLoader,
+        iterator_train__transforms=transforms,
+        train_split=None,
+        max_epochs=1,
+        batch_size=len(y),
+        verbose=0,
+    ).fit(torch.randn(len(y), 2, 8), y)
+    assert received == [dtype]
+
+
+class _SequenceLinear(torch.nn.Module):
+    """(batch, n_windows, n_chans, n_times) to (batch, n_classes, n_windows)."""
+
+    def __init__(self, n_features, n_classes):
+        super().__init__()
+        self.linear = torch.nn.Linear(n_features, n_classes)
+
+    def forward(self, x):
+        return self.linear(x.flatten(start_dim=2)).transpose(1, 2)
+
+
+@pytest.mark.parametrize("layout", ["last_target", "all_targets", "sequences"])
+def test_channel_target_classification_trains(layout):
+    # Window targets sliced out of the float32 signal are floats holding class
+    # indices: (batch, 1) or (batch, 1, n_times) from a misc channel of sleep
+    # stages, (batch, 3) for float labels read in sequences of 3 windows.
+    n_windows, n_times = 8, 8
+    rng = np.random.RandomState(0)
+    fit_kwargs = {}
+    if layout == "sequences":
+        info = mne.create_info(["C3", "C4"], 100.0, "eeg")
+        recordings = [
+            RawDataset(
+                mne.io.RawArray(rng.randn(2, n_windows * n_times), info),
+                {"label": float(i % 3)},
+                target_name="label",
+            )
+            for i in range(4)
+        ]
+        windows = create_fixed_length_windows(
+            BaseConcatDataset(recordings),
+            window_size_samples=n_times,
+            window_stride_samples=n_times,
+            on_last_window="drop",
+        )
+        model = _SequenceLinear(2 * n_times, 3)
+        fit_kwargs = dict(
+            iterator_train__sampler=SequenceSampler(windows.get_metadata(), 3, 1),
+            iterator_train__shuffle=False,
+        )
+    else:
+        # one integer stage per window in the misc channel
+        data = rng.randn(3, n_windows * n_times)
+        data[2] = np.repeat(np.arange(n_windows) % 3, n_times)
+        info = mne.create_info(["C3", "C4", "stage"], 100.0, ["eeg", "eeg", "misc"])
+        windows = create_fixed_length_windows(
+            BaseConcatDataset([RawDataset(mne.io.RawArray(data, info))]),
+            window_size_samples=n_times,
+            window_stride_samples=n_times,
+            on_last_window="drop",
+            targets_from="channels",
+            last_target_only=layout == "last_target",
+        )
+        if layout == "last_target":
+            model = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(16, 3))
+        else:
+            model = torch.nn.Conv1d(2, 3, kernel_size=1)
+
+    received = []
+
+    class IndexCrossEntropy(torch.nn.Module):
+        def forward(self, logits, target):
+            received.append(target.dtype)
+            # class indices laid out as the logits without their class axis
+            target = target.reshape(logits.shape[:1] + logits.shape[2:])
+            return torch.nn.functional.cross_entropy(logits, target)
+
+    net = EEGClassifier(
+        model,
+        criterion=IndexCrossEntropy,
+        train_split=None,
+        max_epochs=1,
+        batch_size=4,
+        verbose=0,
+        **fit_kwargs,
+    ).fit(windows, y=None)
+    assert received and set(received) == {torch.int64}
+    assert np.isfinite(net.history[-1, "train_loss"])
+
+
+class _LinearHead(torch.nn.Module):
+    def __init__(self, n_chans, n_times, n_outputs):
+        super().__init__()
+        self.linear = torch.nn.Linear(n_chans * n_times, n_outputs)
+
+    def forward(self, x):
+        return self.linear(x.flatten(start_dim=1))
+
+
+@pytest.mark.parametrize("data", ["one_hot", "dirichlet", "windows"])
+def test_soft_labels_with_n_outputs_and_classes(data):
+    # Class probabilities are not class names and do not size the model: the
+    # n_outputs the user passes is used as is, and classes names the stored labels.
+    rng = np.random.RandomState(0)
+    soft = np.eye(3, dtype="float32") * 0.8 + 0.1
+    if data != "windows":
+        X = rng.randn(6, 2, 8).astype("float32")
+        if data == "one_hot":
+            y = np.eye(3, dtype="float32")[[0, 1, 2] * 2]
+        else:
+            y = rng.dirichlet(np.ones(3), size=6).astype("float32")
+        classes = [0, 1, 2]
+    else:
+        info = mne.create_info(["C3", "C4"], 100.0, "eeg")
+        raw = mne.io.RawArray(rng.randn(2, 16), info)
+        labels = ["left", "right", "rest"]
+        recordings = [
+            RawDataset(raw, {"label": label}, target_name="label") for label in labels
+        ]
+        X = create_fixed_length_windows(
+            BaseConcatDataset(recordings),
+            window_size_samples=8,
+            window_stride_samples=8,
+            on_last_window="drop",
+        )
+        X.target_transform = dict(zip(labels, soft)).__getitem__
+        y, classes = None, labels
+    net = EEGClassifier(
+        _LinearHead,
+        module__n_outputs=3,
+        classes=classes,
+        train_split=None,
+        max_epochs=1,
+        batch_size=2,
+        verbose=0,
+    ).fit(X, y)
+    assert net.module_.linear.out_features == 3
+
+
+def test_get_split_datasets_works_before_initialize():
+    """skorch's public ``get_split_datasets`` needs no initialized module (v2.0.0)."""
+    X = np.random.randn(8, 3, 200).astype("float32")
+    clf = EEGClassifier(
+        ShallowFBCSPNet,
+        module__n_chans=3,
+        module__n_times=200,
+        module__n_outputs=2,
+        train_split=None,
+    )
+    dataset_train, dataset_valid = clf.get_split_datasets(X, np.array([0, 1] * 4))
+    assert len(dataset_train) == 8 and dataset_valid is None

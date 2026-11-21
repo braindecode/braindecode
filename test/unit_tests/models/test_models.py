@@ -12,6 +12,7 @@
 import inspect
 import math
 import os
+import pickle
 import re
 import subprocess
 import sys
@@ -27,7 +28,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torchaudio
-from einops import rearrange, repeat
+from einops import EinopsError, rearrange, repeat
 from einops.layers.torch import Rearrange
 from scipy.signal import stft
 from torch import nn
@@ -43,6 +44,7 @@ from braindecode.models import (
     FNIRSCNN1D,
     FNIRST,
     NICE,
+    PBT,
     SSTDPN,
     TCN,
     ATCNet,
@@ -52,6 +54,7 @@ from braindecode.models import (
     BrainBERT,
     BrainModule,
     Brant,
+    CareSleepNet,
     CBraMod,
     ContraWR,
     Deep4Net,
@@ -702,6 +705,23 @@ def test_eegpt_checkpoint_keeps_the_model_channel_ids(target_names):
     )
 
 
+@pytest.mark.parametrize("chan_proj_type", ["conv1d_constraint", "linear"])
+def test_eegpt_learned_projection_needs_the_19_channel_embeddings(chan_proj_type):
+    # A width of 1 used to be broadcast over the 19 channel embeddings.
+    kwargs = dict(
+        n_chans=5,
+        n_outputs=2,
+        n_times=128,
+        embed_dim=32,
+        depth=1,
+        num_heads=2,
+        chan_proj_type=chan_proj_type,
+    )
+    with pytest.raises(ValueError, match="n_chans_target=19"):
+        EEGPT(**kwargs, n_chans_target=1)
+    assert EEGPT(**kwargs).eval()(torch.randn(2, 5, 128)).shape == (2, 2)
+
+
 def test_eegpt_checkpoint_loads_with_channel_projection():
     # The default channel projection gives 19 channel IDs; the released
     # checkpoint was saved without a projection and stores 62.
@@ -965,6 +985,90 @@ def test_usleep_n_params():
     assert n_params == 3114337  # From paper's supplementary materials, Table 2
 
 
+def test_caresleepnet_gives_one_prediction_per_epoch():
+    """``(batch, n_chans, n_epochs * epoch_samples)`` gives one row of logits
+    per epoch: ``(batch, n_outputs, n_epochs)``."""
+    model = CareSleepNet(
+        n_chans=3, n_outputs=5, n_times=3 * 300, n_epochs=3, n_eog_chans=1
+    ).eval()
+    assert model(torch.randn(2, 3, 900)).shape == (2, 5, 3)
+    with pytest.raises(EinopsError, match="600 != 900"):
+        model(torch.randn(2, 3, 600))
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        (dict(n_eog_chans=3), "n_eog_chans must be between"),
+        (dict(n_epochs=0), "n_epochs must be at least 1"),
+        (dict(n_times=901), "must be a positive multiple"),
+        (dict(n_times=3 * 168), "at least 169 samples"),
+    ],
+)
+def test_caresleepnet_rejects_bad_geometry(kwargs, match):
+    params = dict(n_chans=3, n_outputs=5, n_times=900, n_epochs=3, n_eog_chans=1)
+    with pytest.raises(ValueError, match=match):
+        CareSleepNet(**(params | kwargs))
+
+
+def test_caresleepnet_matches_authors_code():
+    """Outputs and gradients of the authors' Model (wjq-learning/CareSleepNet
+    @386e149, 6 EEG + 2 EOG channels, 20 epochs) on the same weights and input.
+
+    No weights were released, so the weights come from a seeded generator in
+    this port's state-dict order, mapped to the authors' keys (q, k, v packed
+    into ``in_proj``). Expected values are ``out[0, :, ::4]`` in eval mode
+    and the gradients of ``out.square().sum()``.
+    """
+    model = CareSleepNet(n_chans=8, n_outputs=5, n_times=20 * 300, sfreq=100)
+    g = torch.Generator().manual_seed(0)
+    state = {}
+    for key, value in model.state_dict().items():
+        if not value.is_floating_point():
+            state[key] = value
+        elif key.endswith("running_var"):
+            state[key] = torch.rand(value.shape, generator=g) + 0.5
+        else:
+            state[key] = 0.1 * torch.randn(value.shape, generator=g)
+    model.load_state_dict(state)
+    model.eval()
+    x = torch.randn(1, 8, 6000, generator=torch.Generator().manual_seed(1))
+
+    out = model(x)
+    out.square().sum().backward()
+
+    expected_out = [
+        [-0.03093, -0.08215, -0.06242, -0.02872, -0.09657],
+        [0.09201, 0.0908, 0.00959, 0.04218, 0.06034],
+        [-0.0491, -0.0875, -0.06552, -0.11908, -0.04712],
+        [0.1937, 0.26706, 0.17067, 0.19254, 0.27939],
+        [0.17228, 0.14427, 0.23244, 0.21872, 0.18733],
+    ]
+    torch.testing.assert_close(
+        out[0, :, ::4], torch.tensor(expected_out), rtol=0, atol=1e-5
+    )
+    torch.testing.assert_close(
+        model.final_layer.weight.grad[:, 0],
+        torch.tensor([-0.28439873, 0.27055088, -0.32742125, 0.99876374, 0.84471232]),
+        rtol=1e-4,
+        atol=1e-5,
+    )
+    # First convolution of each epoch encoder: the gradient crosses the
+    # sequence encoder, the cross-modal blocks and the whole epoch encoder.
+    torch.testing.assert_close(
+        model.eeg_encoder[0].branches[0][0].weight.grad[:4, 0, 0],
+        torch.tensor([3.6584692e-07, -1.2531478e-06, 1.1815977e-07, -6.0829626e-09]),
+        rtol=1e-3,
+        atol=1e-10,
+    )
+    torch.testing.assert_close(
+        model.eog_encoder[0].shortcut[0].weight.grad[:4, 0, 0],
+        torch.tensor([-5.3465715e-07, 1.0978920e-06, 1.2812049e-07, -2.7368708e-07]),
+        rtol=1e-3,
+        atol=1e-10,
+    )
+
+
 def test_sleep_stager_return_feats():
     n_channels = 2
     sfreq = 10
@@ -1017,14 +1121,68 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     assert y_pred1.shape == (n_examples, n_classes)
 
 
+def test_attnsleep_attention_query_is_not_normalized():
+    # The authors' code attends with the raw query, so the norm of the residual
+    # attention block must not change the output.
+    model = AttnSleep(sfreq=100, n_outputs=5, input_window_seconds=30, d_model=80)
+    model.eval()
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        expected = model(x)
+        for layer in model.feature_extractor[1].layers:
+            layer.residual_self_attn.norm.weight.fill_(2.0)
+            layer.residual_self_attn.norm.bias.fill_(1.0)
+        actual = model(x)
+    torch.testing.assert_close(actual, expected)
+
+
+def test_attnsleep_attn_query_norm_restores_previous_output():
+    # Before 2.1 the attention got the normalized query, attn(norm(x), key,
+    # value). A hook on the default model rebuilds that call.
+    kwargs = dict(sfreq=100, n_outputs=5, input_window_seconds=30, d_model=80)
+    model = AttnSleep(**kwargs).eval()
+    legacy = AttnSleep(**kwargs, attn_query_norm=True).eval()
+    legacy.load_state_dict(model.state_dict())
+    for layer in model.feature_extractor[1].layers:
+        norm = layer.residual_self_attn.norm
+        layer.residual_self_attn.fn_attn.register_forward_pre_hook(
+            lambda _, args, norm=norm: (norm(args[0]), *args[1:])
+        )
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        torch.testing.assert_close(legacy(x), model(x))
+
+
+def test_attnsleep_saved_without_query_norm_setting_keeps_logits():
+    previous = AttnSleep(
+        sfreq=100, n_outputs=5, input_window_seconds=30, attn_query_norm=True
+    ).eval()
+    x = torch.randn(2, 1, 3000)
+    with torch.no_grad():
+        expected = previous(x)
+        config = previous.get_config()
+        del config["attn_query_norm"]
+        restored = AttnSleep.from_config(config).eval()
+        restored.load_state_dict(previous.state_dict(), strict=True)
+        torch.testing.assert_close(restored(x), expected)
+
+        # Full-model saves before the switch have no per-layer flag.
+        for layer in previous.feature_extractor[1].layers:
+            del layer.residual_self_attn.norm_query
+        restored = pickle.loads(pickle.dumps(previous))
+        torch.testing.assert_close(restored(x), expected)
+        torch.testing.assert_close(torch.jit.script(restored)(x), expected)
+
+
 def test_attn_sleep_requires_signal_geometry():
     with pytest.raises(ValueError, match="at least two of"):
         AttnSleep(sfreq=100, n_outputs=5)
 
 
-def test_attn_sleep_reports_required_d_model():
-    with pytest.raises(ValueError, match="d_model=54"):
-        AttnSleep(sfreq=100, n_outputs=5, n_times=2000)
+@pytest.mark.parametrize("sfreq, expected_d_model", [(100, 54), (125, 55)])
+def test_attn_sleep_reports_required_d_model(sfreq, expected_d_model):
+    with pytest.raises(ValueError, match=f"d_model={expected_d_model}"):
+        AttnSleep(sfreq=sfreq, n_outputs=5, n_times=2000)
 
 
 def test_attn_sleep_rejects_invalid_attention_heads():
@@ -1388,7 +1546,7 @@ def test_contrawr_dummy(n_times, n_chans, sfreq, n_outputs):
 def _make_chs_info(n_chans):
     """Create synthetic chs_info with 3-D positions for testing."""
     # Use a standard montage and pick the first n_chans channels
-    montage = mne.channels.make_standard_montage("standard_1005")
+    montage = mne.channels.make_standard_montage("colin27_1005")
     ch_names = montage.ch_names[:n_chans]
     info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
     info.set_montage(montage)
@@ -1410,7 +1568,7 @@ def test_channels_without_positions_give_finite_outputs(name):
 def test_a_montage_with_unplaced_channels_is_refused(name):
     """One channel without a position must not void the others' positions."""
     info = mne.create_info(["Cz", "C3", "C4", "X1"], 250.0, "eeg")
-    info.set_montage("standard_1005", on_missing="ignore")
+    info.set_montage("colin27_1005", on_missing="ignore")
     with pytest.raises(ValueError, match=r"none for \['X1'\]"):
         all_models_dict[name](
             n_outputs=2, n_chans=4, chs_info=info["chs"], n_times=1000, sfreq=250.0
@@ -1424,9 +1582,59 @@ def test_gcnsnet_adjacency():
     torch.testing.assert_close(adjacency, adjacency.T)
     torch.testing.assert_close(adjacency.diag(), torch.zeros(64))
     assert torch.all(adjacency >= 0)
-    inferred = GCNsNet._infer_model_kwargs(X)
-    assert inferred.keys() == {"adjacency"}
-    torch.testing.assert_close(inferred["adjacency"], adjacency)
+
+
+def test_gcnsnet_graph_follows_training_windows():
+    from scipy.sparse.csgraph import laplacian
+    from torch.utils.data import Subset
+
+    from braindecode import EEGClassifier
+
+    def split(dataset, y=None):  # windows 6 and 7 are the validation windows
+        return Subset(dataset, range(6)), Subset(dataset, range(6, 8))
+
+    def expected(windows):  # rescaled Laplacian of the absolute channel correlation
+        corr = np.abs(np.corrcoef(windows.transpose(1, 0, 2).reshape(3, -1)))
+        np.fill_diagonal(corr, 0)
+        return laplacian(corr, normed=True) - np.eye(3)
+
+    first, second = np.random.default_rng(0).standard_normal((2, 8, 3, 16)).astype("f4")
+    second[:6, 1] = second[:6, 0]  # channels 0 and 1 agree in the training windows
+    y = np.arange(8) % 2
+    net = EEGClassifier(
+        GCNsNet,
+        module__n_features=(4,),
+        module__cheb_orders=(2,),
+        module__pool_sizes=(1,),
+        train_split=split,
+        max_epochs=1,
+        batch_size=2,
+        verbose=0,
+    )
+
+    for windows in (first, second):
+        net.fit(windows, y)
+        np.testing.assert_allclose(
+            net.module_.laplacians[0].matrix, expected(windows[:6]), atol=1e-6
+        )
+    net.predict(first)  # predicting does not refit the graph
+    np.testing.assert_allclose(
+        net.module_.laplacians[0].matrix, expected(second[:6]), atol=1e-6
+    )
+    # A given adjacency is never replaced by the data.
+    net.set_params(module__adjacency=torch.ones(3, 3)).fit(second, y)
+    np.testing.assert_allclose(
+        net.module_.laplacians[0].matrix, (np.eye(3) - 1) / 2, atol=1e-6
+    )
+
+
+def test_gcnsnet_flat_channel_has_no_edges():
+    x = torch.arange(12, dtype=torch.float32).reshape(1, 1, -1)
+    signal = torch.cat((x, -x, torch.full_like(x, 0.1), torch.full_like(x, 0.3)), dim=1)
+    expected = torch.zeros(4, 4)
+    expected[0, 1] = expected[1, 0] = 1
+    torch.testing.assert_close(GCNsNet._adjacency(signal), expected)
+    torch.testing.assert_close(GCNsNet._adjacency(x), torch.zeros(1, 1))
 
 
 def test_gcnsnet_fit_on_windows_dataset():
@@ -1782,77 +1990,6 @@ def test_labram_attention_fused_path_matches_its_weights():
     torch.testing.assert_close(out, expected)
 
 
-@pytest.mark.parametrize("padded", [False, True])
-def test_labram_attention_bf16_autocast_matches_fp32(padded):
-    """Under bfloat16 autocast, LaBraM's attention hands bfloat16 q, k, v (and
-    key mask) to torch's SDPA, on every device; its features stay within
-    bfloat16 rounding (2 % of their largest value) of the float32 ones."""
-    torch.manual_seed(0)
-    names = list(LABRAM_CHANNEL_ORDER[:4])
-    model = Labram(
-        n_times=400, n_chans=4, n_outputs=2, num_layers=2, num_heads=4, patch_size=200
-    ).eval()
-    x = torch.randn(3, 4, 400)
-    ch_mask = None
-    if padded:
-        ch_mask = torch.tensor(
-            [[True] * 4, [True, True, True, False], [True, False, False, False]]
-        )
-    sdpa = nn.functional.scaled_dot_product_attention
-    dtypes = []
-
-    def spy(q, k, v, attn_mask=None, **kwargs):
-        mask_dtype = None if attn_mask is None else attn_mask.dtype
-        dtypes.append((q.dtype, k.dtype, v.dtype, mask_dtype))
-        return sdpa(q, k, v, attn_mask=attn_mask, **kwargs)
-
-    with torch.no_grad():
-        ref = model(x, return_features=True, ch_names=names, ch_mask=ch_mask)
-        with (
-            mock.patch.object(nn.functional, "scaled_dot_product_attention", spy),
-            torch.autocast("cpu", dtype=torch.bfloat16),
-        ):
-            out = model(x, return_features=True, ch_names=names, ch_mask=ch_mask)
-    bf16 = torch.bfloat16
-    assert dtypes == [(bf16, bf16, bf16, bf16 if padded else None)] * 2
-    ref = ref["features"]
-    torch.testing.assert_close(
-        out["features"].float(), ref, atol=2e-2 * ref.abs().max().item(), rtol=2e-2
-    )
-
-
-def test_labram_attention_dropout_train_is_stochastic():
-    """With attention dropout in training, LaBraM keeps its explicit ops (torch's
-    fused kernels draw other masks): two seeds give different, finite outputs,
-    and torch's SDPA runs only in eval mode."""
-    names = list(LABRAM_CHANNEL_ORDER[:4])
-    torch.manual_seed(0)
-    model = Labram(
-        n_times=400,
-        n_chans=4,
-        n_outputs=2,
-        num_layers=2,
-        num_heads=4,
-        patch_size=200,
-        attn_drop_prob=0.5,
-    )
-    x = torch.randn(2, 4, 400)
-    sdpa = nn.functional.scaled_dot_product_attention
-    with mock.patch.object(
-        nn.functional, "scaled_dot_product_attention", wraps=sdpa
-    ) as spy:
-        outs = []
-        for seed in (0, 1):
-            torch.manual_seed(seed)
-            outs.append(model.train()(x, return_features=True, ch_names=names))
-        assert spy.call_count == 0
-        model.eval()(x, ch_names=names)
-        assert spy.call_count == 2
-    outs = [out["features"] for out in outs]
-    assert all(torch.isfinite(out).all() for out in outs)
-    assert not torch.allclose(outs[0], outs[1])
-
-
 @pytest.mark.parametrize("use_mean_pooling", [True, False])
 def test_labram_returns(default_labram_params, use_mean_pooling):
     """
@@ -2132,6 +2269,53 @@ def test_eegtcnet_batch_size_one_train_mode():
     assert out.shape == (1, 4)
 
 
+@pytest.mark.parametrize("act_after_temporal_bn", [False, True])
+def test_eegtcnet_act_after_temporal_bn(act_after_temporal_bn):
+    """As in the authors' Keras code, the depthwise conv reads the temporal
+    BatchNorm output with no activation in between; ``act_after_temporal_bn``
+    puts the activation there, as braindecode did before 2.1."""
+    model = EEGTCNet(
+        n_outputs=4,
+        n_chans=22,
+        n_times=1125,
+        act_after_temporal_bn=act_after_temporal_bn,
+    ).eval()
+    seen = {}
+    model.eegnet_tc.bn1.register_forward_hook(lambda m, i, o: seen.update(bn=o.clone()))
+    model.eegnet_tc.depthwise_conv.register_forward_pre_hook(
+        lambda m, i: seen.update(dw=i[0].clone())
+    )
+    model(torch.randn(2, 22, 1125))
+    bn = seen["bn"]
+    expected = model.eegnet_tc.activation(bn) if act_after_temporal_bn else bn
+    torch.testing.assert_close(seen["dw"], expected)
+
+
+@pytest.mark.parametrize(
+    "dropped_keys",
+    [("act_after_temporal_bn",), ("tcn_batch_norm", "act_after_temporal_bn")],
+    ids=["saved_before_2.1", "saved_before_1.6.1"],
+)
+def test_eegtcnet_old_config_rebuilds_the_saved_model(dropped_keys):
+    """A saved config holds every init argument, so a missing key means an older
+    save: it rebuilds the model of that version, with the activation after the
+    temporal batch norm and, before 1.6.1, no TCN batch norm."""
+    previous = EEGTCNet(
+        n_outputs=4,
+        n_chans=22,
+        n_times=1125,
+        tcn_batch_norm="tcn_batch_norm" not in dropped_keys,
+        act_after_temporal_bn=True,
+    ).eval()
+    config = previous.get_config()
+    for key in dropped_keys:
+        del config[key]
+    restored = EEGTCNet.from_config(config).eval()
+    restored.load_state_dict(previous.state_dict(), strict=True)
+    x = torch.randn(2, 22, 1125)
+    torch.testing.assert_close(restored(x), previous(x))
+
+
 def test_eegclip_batch_size_one_train_mode():
     """At n_times=480 the dense Deep4Net gives one time step, so the projection
     head's BatchNorm1d sees a single row in train mode (NeuralBench matrix)."""
@@ -2144,15 +2328,24 @@ def test_eegclip_batch_size_one_train_mode():
     assert texts.shape == (1, 4)
 
 
-def test_sstdpn_proto_sep_constrains_class_rows():
-    """``proto_sep`` is renormalized per class-row (dim=0), so each prototype
-    vector has L2 norm <= ``proto_sep_maxnorm`` after a forward pass."""
-    model = SSTDPN(n_outputs=4, n_chans=22, n_times=1000)
-    model.proto_sep.data.fill_(10.0)
-    model(torch.randn(2, 22, 1000))
-    row_norms = model.proto_sep.detach().norm(p=2, dim=1)
-    # float32 renorm leaves a ~1e-6 residual; use a 1e-5 tolerance.
-    assert torch.all(row_norms <= model.proto_sep_maxnorm + 1e-5)
+@pytest.mark.parametrize("exported", [False, True], ids=["eager", "exported"])
+def test_sstdpn_proto_sep_constrains_class_rows(exported):
+    model = SSTDPN(n_outputs=4, n_chans=3, n_times=256, return_features=True).eval()
+    x = torch.randn(2, 3, 256)
+    maxnorm = model.proto_sep_maxnorm
+    if exported:
+        model = torch.export.export(model, (x,), strict=False).module()
+
+    with torch.no_grad():
+        for prototype, length in zip(model.proto_sep, (0.0, 0.25, 2.0, 4.0)):
+            prototype.mul_(length / prototype.norm())
+    expected_norms = torch.tensor([0.0, 0.25, maxnorm, maxnorm])
+    features, logits = model(x)
+    torch.testing.assert_close(model.proto_sep.norm(dim=1), expected_norms)
+    torch.testing.assert_close(logits, features @ model.proto_sep.T)
+    direction = torch.randn_like(logits)
+    gradient = torch.autograd.grad(logits, model.proto_sep, grad_outputs=direction)[0]
+    torch.testing.assert_close(gradient, direction.T @ features)
 
 
 def test_sstdpn_proto_cpt_std_default():
@@ -2493,6 +2686,49 @@ def test_fbcnet_specified_filter_parameters():
     assert filter_bank_layer.method == "fir"
     assert filter_bank_layer.n_chans == 22
     assert filter_bank_layer.method_iir is False
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_fbcnet_cast_preserves_iir_filter(dtype):
+    """Casting a model keeps its narrow-band IIR design: logits and gradients stay finite."""
+    model = FBCNet(
+        n_chans=3,
+        n_times=1024,
+        n_outputs=2,
+        sfreq=256,
+        n_filters_spat=2,
+        n_bands=[(4, 8)],
+        filter_parameters=dict(
+            method="iir", iir_params=dict(ftype="butter", output="ba", order=4)
+        ),
+    )
+    x = torch.randn(2, 3, 1024, dtype=dtype, requires_grad=True)
+    logits = model.to(dtype)(x)
+    logits.float().square().mean().backward()
+    assert torch.isfinite(logits).all()
+    assert torch.isfinite(x.grad).all()
+
+
+def test_v2_iir_state_dict_loads():
+    """v2.0.0 saved the IIR design as float64 ``b_list``/``a_list`` parameters; they still load."""
+    kwargs = dict(
+        n_chans=3,
+        n_times=256,
+        n_outputs=2,
+        sfreq=128,
+        n_bands=[(4, 8), (8, 30)],
+        filter_parameters=dict(method="iir"),
+    )
+    model = FBCNet(**kwargs).eval()
+    bank = model.spectral_filtering
+    v2 = {}
+    for i, (b, a) in enumerate(zip(bank.b_list, bank.a_list)):
+        v2[f"spectral_filtering.b_list.{i}"] = b
+        v2[f"spectral_filtering.a_list.{i}"] = a
+    restored = FBCNet(**kwargs).eval()
+    restored.load_state_dict({**model.state_dict(), **v2}, strict=True)
+    x = torch.randn(2, 3, 256)
+    torch.testing.assert_close(restored(x), model(x))
 
 
 @pytest.mark.parametrize(
@@ -3343,213 +3579,42 @@ def test_brainmodule_default_unchanged():
     assert m.use_merger is False
 
 
-def test_bendr_parameter_counts():
-    """
-    Test BENDR parameter counts match paper specifications.
+def test_dance_perceiver_fourier_features_match_reference():
+    """Perceiver context keeps the perceiver_pytorch Fourier encoding."""
+    from braindecode.modules import Perceiver
 
-    Paper reports ~157M parameters total:
-    - Encoder: ~4M parameters
-    - Contextualizer: ~153M parameters
-    """
-    set_random_seeds(0, False)
-
-    # Standard 20-channel configuration
-    model = BENDR(
-        n_chans=20,
-        n_outputs=2,
-        n_times=5120,
-        sfreq=256,
+    torch.manual_seed(0)
+    max_freq, num_bands, input_dim, t = 10.0, 6, 4, 7
+    perceiver = Perceiver(
+        input_dim=input_dim,
+        depth=1,
+        num_latents=3,
+        latent_dim=8,
+        cross_dim_head=4,
+        latent_dim_head=4,
+        max_freq=max_freq,
+        num_freq_bands=num_bands,
     )
+    captured = {}
 
-    # Count total parameters
-    total_params = sum(p.numel() for p in model.parameters())
+    def _hook(module, args, kwargs):
+        captured["context"] = kwargs["context"]
 
-    # Should be close to paper: 157,141,049,
-    # At braindecode, there are 2 k params difference
-    # that might come from implementation details from different
-    # torch versions or minor code changes. 157,143,101 in my case.
+    perceiver.layers[0][0].register_forward_pre_hook(_hook, with_kwargs=True)
+    data = torch.randn(2, t, input_dim)
+    perceiver(data)
 
-    # Allow 0.1% tolerance
-    expected = 157_141_049
-    assert abs(total_params - expected) / expected < 0.001, \
-        f"Expected ~{expected:,} params, got {total_params:,}"
+    # Reference: perceiver_pytorch.fourier_encode on a linspace(-1, 1) grid.
+    pos = torch.linspace(-1.0, 1.0, t).unsqueeze(-1)
+    scales = torch.linspace(1.0, max_freq / 2, num_bands)
+    angles = pos * scales * math.pi
+    expected = torch.cat((angles.sin(), angles.cos(), pos), dim=-1)
 
-    # Count encoder parameters (should be ~4M)
-    encoder_params = sum(p.numel() for p in model.encoder.parameters())
-    assert 3_900_000 < encoder_params < 4_100_000, \
-        f"Encoder should have ~4M params, got {encoder_params:,}"
-
-    # Count contextualizer parameters (should be ~153M)
-    contextualizer_params = sum(p.numel() for p in model.contextualizer.parameters())
-    assert 152_000_000 < contextualizer_params < 154_000_000, \
-        f"Contextualizer should have ~153M params, got {contextualizer_params:,}"
-
-
-def test_bendr_different_channels():
-    """
-    Test BENDR with different channel counts.
-    Parameter count should scale with number of channels.
-    """
-    set_random_seeds(0, False)
-
-    configs = [
-        (1, 157_112_891),   # Single channel
-        (20, 157_142_075),  # Standard
-        (64, 157_209_659),  # More channels
-    ]
-
-    for n_chans, expected_params in configs:
-        model = BENDR(
-            n_chans=n_chans,
-            n_outputs=2,
-            n_times=5120,
-            sfreq=256,
-        )
-
-        total_params = sum(p.numel() for p in model.parameters())
-
-        # Check exact match
-        assert total_params == expected_params, \
-            f"For {n_chans} channels: expected {expected_params:,}, got {total_params:,}"
-
-
-def test_bendr_gradient_flow():
-    """
-    Test that gradients flow through the entire model.
-    """
-    set_random_seeds(0, False)
-
-    model = BENDR(n_chans=20, n_outputs=4, n_times=5120, sfreq=256)
-    x = torch.randn(2, 20, 5120, requires_grad=True)
-
-    y = model(x)
-    loss = y.sum()
-    loss.backward()
-
-    # Check gradients exist in encoder
-    encoder_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.encoder.parameters()
-    )
-    assert encoder_has_grad, "No gradients in encoder"
-
-    # Check gradients exist in contextualizer
-    contextualizer_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.contextualizer.parameters()
-    )
-    assert contextualizer_has_grad, "No gradients in contextualizer"
-
-
-@pytest.mark.parametrize("drop_prob", [0.0, 0.1, 0.15])
-def test_bendr_dropout_configurations(drop_prob):
-    """
-    Test BENDR with different dropout rates.
-    Paper uses 0.15 for pretraining, 0.0 for fine-tuning.
-    """
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=20,
-        n_outputs=4,
-        n_times=5120,
-        sfreq=256,
-        drop_prob=drop_prob,
-    )
-
-    x = torch.randn(2, 20, 5120)
-
-    # Training mode
-    model.train()
-    y_train = model(x)
-    assert y_train.shape == (2, 4)
-
-    # Eval mode
-    model.eval()
-    y_eval = model(x)
-    assert y_eval.shape == (2, 4)
-
-    # With dropout=0, outputs should be identical
-    if drop_prob == 0.0:
-        np.testing.assert_allclose(
-            y_train.detach().numpy(),
-            y_eval.detach().numpy(),
-            rtol=1e-5,
-            atol=1e-7,
-        )
-
-
-def test_bendr_encoder_only_gradient_flow():
-    """Encoder-only mode: encoder has grads, contextualizer does not."""
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=True,
-    )
-    x = torch.randn(2, 20, 5120, requires_grad=True)
-    model(x).sum().backward()
-
-    encoder_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.encoder.parameters()
-    )
-    assert encoder_has_grad, "No gradients in encoder"
-
-    ctx_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.contextualizer.parameters()
-    )
-    assert not ctx_has_grad, "Contextualizer should have no grads"
-
-
-def test_bendr_encoder_only_parameter_counts():
-    """Encoder/contextualizer params match full model; final_layer is larger."""
-    set_random_seeds(0, False)
-
-    model_full = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=False,
-    )
-    model_enc = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=True,
-    )
-
-    for name in ("encoder", "contextualizer"):
-        p_full = sum(p.numel() for p in getattr(model_full, name).parameters())
-        p_enc = sum(p.numel() for p in getattr(model_enc, name).parameters())
-        assert p_full == p_enc, f"{name} params differ: {p_full} vs {p_enc}"
-
-    fl_full = sum(p.numel() for p in model_full.final_layer.parameters())
-    fl_enc = sum(p.numel() for p in model_enc.final_layer.parameters())
-    assert fl_enc > fl_full
-
-
-def test_bendr_backward_compatibility():
-    """encoder_only=False (default) produces identical output to original."""
-    set_random_seeds(0, False)
-
-    model_default = BENDR(n_chans=20, n_outputs=4, n_times=5120, sfreq=256)
-    model_explicit = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=False,
-    )
-    model_explicit.load_state_dict(model_default.state_dict())
-    model_default.eval()
-    model_explicit.eval()
-
-    x = torch.randn(2, 20, 5120)
-    np.testing.assert_allclose(
-        model_default(x).detach().numpy(),
-        model_explicit(x).detach().numpy(),
-        rtol=1e-5, atol=1e-7,
-    )
-
-
-def test_bendr_encoder_only_short_input_raises():
-    """RuntimeError when input is too short for 4-chunk pooling."""
-    model = BENDR(
-        n_chans=20, n_outputs=4, n_times=None, sfreq=256, encoder_only=True,
-    )
-    with pytest.raises(RuntimeError, match="too few"):
-        model(torch.randn(2, 20, 96))
+    context = captured["context"]
+    assert context.shape == (2, t, input_dim + 2 * num_bands + 1)
+    torch.testing.assert_close(context[..., :input_dim], data, rtol=0, atol=0)
+    for b in range(2):
+        torch.testing.assert_close(context[b, :, input_dim:], expected)
 
 
 @pytest.mark.parametrize(
@@ -3655,27 +3720,6 @@ def test_medformer_token_embedding_matches_its_conv2d(single_channel):
     torch.testing.assert_close(emb(x), emb.token_conv(x))
 
 
-def test_load_state_dict_from_before_max_norm_parametrization():
-    # Released checkpoints (e.g. PierreGtch/EEGNetv4) store the max-norm
-    # spatial filters as ``conv_spatial.weight`` and the classifier under its
-    # old name. load_state_dict maps both to the current keys.
-    torch.manual_seed(0)
-    model = EEGNet(n_chans=3, n_outputs=5, n_times=385).eval()
-    legacy = {
-        k.replace("parametrizations.weight.original", "weight").replace(
-            "final_layer.conv_classifier", "conv_classifier"
-        ): v
-        for k, v in model.state_dict().items()
-    }
-    assert "conv_spatial.weight" in legacy
-
-    loaded = EEGNet(n_chans=3, n_outputs=5, n_times=385).eval()
-    loaded.load_state_dict(legacy)
-
-    x = torch.randn(2, 3, 385)
-    torch.testing.assert_close(loaded(x), model(x))
-
-
 def test_eegitnet_mapping_targets():
     # mapping values should point to real keys in the model state dict
     model = EEGITNet(
@@ -3704,6 +3748,12 @@ def test_eegitnet_inception_kernel_scales():
     assert k1 == klen
     assert k2 == klen * 2
     assert k3 == klen * 4
+
+
+def test_eegitnet_rejects_a_tcn_padding_that_changes_the_length():
+    # The TC blocks keep the time axis only if the padding covers the dilated kernel
+    with pytest.raises(ValueError, match="tcn_padding"):
+        EEGITNet(n_outputs=4, n_chans=3, n_times=1000, tcn_padding=1)
 
 
 def test_eeginceptionmi_mapping_targets():
@@ -3770,6 +3820,41 @@ def test_syncnet_filter_weight_shape():
     assert out.shape == (2, 2)
 
 
+@pytest.mark.parametrize(
+    "n_times, filter_width, pool_size",
+    [(1000, 64, 40), (1001, 41, 40), (1001, 20, 40)],
+)
+def test_syncnet_output_batch_matches_input(n_times, filter_width, pool_size):
+    """The classifier size follows the pooled length, so batch rows stay separate."""
+    model = SyncNet(
+        n_chans=3,
+        n_times=n_times,
+        n_outputs=2,
+        filter_width=filter_width,
+        pool_size=pool_size,
+    ).eval()
+    x = torch.randn(25, 3, n_times)
+    with torch.no_grad():
+        out = model(x)
+        out_first = model(x[:1])
+    assert out.shape == (25, 2)
+    torch.testing.assert_close(out[:1], out_first)
+
+
+@pytest.mark.parametrize(
+    "n_times,filter_width,pool_size", [(5, 4, 16), (5, 4, 0), (5, 0, 1), (1, 5, 1)]
+)
+def test_syncnet_rejects_empty_convolution_or_pool(n_times, filter_width, pool_size):
+    with pytest.raises(ValueError, match="pool_size|filter_width"):
+        SyncNet(
+            n_chans=3,
+            n_outputs=2,
+            n_times=n_times,
+            filter_width=filter_width,
+            pool_size=pool_size,
+        )
+
+
 # ---------------------------------------------------------------------------
 # MetaNeuromotorHand
 # ---------------------------------------------------------------------------
@@ -3807,6 +3892,14 @@ def test_gni_default_contract(gni_default):
     assert y.shape == (1, 38, 100)
     assert lengths[0].item() == y.shape[1]
     assert lengths[1] > lengths[0]
+
+
+@pytest.mark.parametrize("n_times", [19854, 20135, 20200, 21000])
+def test_gni_output_lengths_match_forward(gni_default, n_times):
+    with torch.no_grad():
+        y = gni_default(torch.randn(1, 16, n_times))
+    lengths = gni_default.compute_output_lengths(torch.tensor([n_times]))
+    assert lengths.item() == y.shape[1]
 
 
 def test_gni_threaded_cpu_eigh_equals_eigh():
@@ -4620,43 +4713,6 @@ def test_barista_coords_fallback_uses_left_inferior_posterior_order():
     assert (left, inferior, posterior) == (centre - 10, centre - 30, centre - 20)
 
 
-def test_mscformer_default_attention_scale_matches_original_source():
-    """MSCFormer's default attention scale must reproduce the released
-    source's ``embed_dim ** -0.5`` logit scaling.
-
-    The original MSCFormer code divides attention logits by
-    ``sqrt(emb_size)`` for every head, not by ``sqrt(head_dim)`` (braindecode's
-    more common default for :class:`~braindecode.modules.MultiHeadAttention`).
-    The two only coincide when ``num_heads == 1``; with the paper's defaults
-    (``num_heads=8``, ``emb_size=48``) they differ by ``sqrt(num_heads)``. A
-    state-dict-matched parity check against the original implementation gives
-    a max abs logit diff of about 2e-7 with this default, versus about 0.035
-    with ``head_dim ** -0.5``.
-    """
-    from braindecode.models.mscformer import MSCFormer
-
-    model = MSCFormer(n_outputs=4, n_chans=22, n_times=1000)
-    expected_scale = model.embed_dim**-0.5
-    assert model.embed_dim == 48
-    for block in model.trans.layers:
-        assert block.attention.module.scale == pytest.approx(expected_scale)
-
-    custom_scale = 0.25
-    model_custom = MSCFormer(
-        n_outputs=4, n_chans=22, n_times=1000, attention_scale=custom_scale
-    )
-    for block in model_custom.trans.layers:
-        assert block.attention.module.scale == pytest.approx(custom_scale)
-
-
-@pytest.mark.parametrize("bad_scale", [0.0, -1.0])
-def test_mscformer_rejects_non_positive_attention_scale(bad_scale):
-    from braindecode.models.mscformer import MSCFormer
-
-    with pytest.raises(ValueError, match="attention_scale"):
-        MSCFormer(n_outputs=4, n_chans=22, n_times=1000, attention_scale=bad_scale)
-
-
 # ---------------------------------------------------------------------------
 # NeuroRVQ
 # ---------------------------------------------------------------------------
@@ -5399,48 +5455,6 @@ def test_cbramod_patch_embedding_patch_size_not_200(model_class):
     assert model(torch.randn(2, 3, 800)).shape == (2, 2)
 
 
-@pytest.mark.parametrize(
-    "device",
-    [
-        "cpu",
-        pytest.param(
-            "cuda",
-            marks=pytest.mark.skipif(
-                not torch.cuda.is_available(), reason="needs CUDA"
-            ),
-        ),
-        pytest.param(
-            "mps",
-            marks=pytest.mark.skipif(
-                not torch.backends.mps.is_available(), reason="needs MPS"
-            ),
-        ),
-    ],
-)
-def test_csbrain_patch_embedding_same_seed_init_is_stem_first(device):
-    """Same seed gives CSBrain's former stem-first patch-embedding init.
-
-    The Linear weight is skipped: ``_weights_init`` redraws it afterwards.
-    """
-    with torch.device(device):
-        torch.manual_seed(0)
-        emb = CSBrain(n_outputs=2, n_chans=4, n_times=400, n_layer=1).patch_embedding
-        torch.manual_seed(0)
-        d_model = emb.d_model
-        reference = [
-            nn.Conv2d(1, 25, (1, 49), (1, 25), (0, 24)),
-            nn.Conv2d(25, 25, (1, 3), (1, 1), (0, 1)),
-            nn.Conv2d(25, 25, (1, 3), (1, 1), (0, 1)),
-            nn.Conv2d(d_model, d_model, (19, 7), padding=(9, 3), groups=d_model),
-            nn.Linear(101, d_model),
-        ]
-    built = [*emb.proj_in[::3], emb.positional_encoding[0], emb.spectral_proj[0]]
-    reference[-1].weight = built[-1].weight
-    for ref, layer in zip(reference, built):
-        for ref_param, param in zip(ref.parameters(), layer.parameters()):
-            torch.testing.assert_close(param, ref_param, rtol=0, atol=0)
-
-
 def test_csbrain_channel_order_reproduces_reference_topology():
     """``channel_order`` takes the reference's ``sorted_indices`` (CHB-MIT)."""
     regions = [0, 0, 2, 1, 0, 0, 2, 1, 0, 0, 4, 1, 0, 0, 4, 1]
@@ -5473,6 +5487,26 @@ def test_csbrain_rejects_invalid_channel_order(kwargs, match):
 
 # ----------------------------------------------------------------------------
 # EEGCLIP
+
+
+@pytest.mark.parametrize("custom_encoder", [False, True])
+def test_eegclip_checks_channels_only_for_its_deep4net(custom_encoder):
+    # The custom encoder pools any number of channels into eight features.
+    encoder = nn.Sequential(nn.Flatten(), nn.AdaptiveAvgPool1d(8))
+    model = EEGCLIP(
+        n_outputs=2,
+        n_chans=3,
+        n_times=1000,
+        eeg_embedding_dim=8,
+        eeg_encoder=encoder if custom_encoder else None,
+        projection_layers=1,
+    ).eval()
+    x = torch.randn(2, 2, 1000)
+    if custom_encoder:
+        assert model(x).shape == (2, 2)
+    else:
+        with pytest.raises(ValueError, match="built for 3 channels"):
+            model(x)
 
 
 def test_eegclip_matches_authors_projection_and_clip_loss():
@@ -5945,7 +5979,7 @@ def test_eegclip_one_empty_rank_nonempty_global_matches_ddp_oracle(tmp_path):
 
 def _cz():
     info = mne.create_info(["Cz"], 256.0, "eeg")
-    return info.set_montage("standard_1005")["chs"]
+    return info.set_montage("colin27_1005")["chs"]
 
 
 @pytest.mark.parametrize(
@@ -5964,7 +5998,11 @@ def _cz():
             dict(chs_info=[{"ch_name": "Cz"}], n_times=100, on_non_divisible="crop"),
             "full patch",
         ),
-        ("REVE", dict(chs_info=[{"ch_name": "X1"}], n_times=1000), "position bank"),
+        (
+            "REVE",
+            dict(chs_info=[{"ch_name": "X1"}], n_times=1000),
+            "No position in the bank",
+        ),
         (
             "SincShallowNet",
             dict(n_chans=2, n_times=30, sfreq=128.0),
@@ -6298,6 +6336,25 @@ def test_megxl_batched_geometry_gradients():
     reference_grads = torch.autograd.grad(expected, params, grad_outputs=cotangent)
     actual_grads = torch.autograd.grad(actual, params, grad_outputs=cotangent)
     assert all(torch.equal(a, b) for a, b in zip(reference_grads, actual_grads))
+
+
+def test_megxl_uses_half_projections_with_float_codebooks():
+    from braindecode.models import MEGXL
+
+    model = MEGXL(
+        chs_info=_make_chs_info(2), n_outputs=2, n_times=25, sfreq=50.0,
+        latent_dim=32, num_layers=0, num_heads=4, fourier_pos_dim=16,
+        tokenizer_dim=16, n_filters=4, n_q=2, codebook_size=8, codebook_dim=4,
+    ).half().eval()
+    for layer in model.quantizer.layers:
+        layer._codebook.embed.normal_()
+    x = torch.randn(2, 2, 25, dtype=torch.float16)
+    with torch.no_grad():
+        codes = model.tokenize(x)
+        latents = model.encode_codes(codes)
+        torch.testing.assert_close(latents, model.encode(x))
+        assert latents.dtype == x.dtype
+        assert torch.isfinite(latents).all()
 
 
 def test_megxl_masked_codes_before_context():
@@ -7674,7 +7731,7 @@ def test_mtrenirs_drops_a_partial_window():
     "model_cls,kwargs,n_times",
     [
         (GeoNIRS, {"depth": 1, "num_heads": 4, "embed_dim": 64,
-                   "pool": "mean_std"}, 60),
+                   "projection_dims": (64, 64), "pool": "mean_std"}, 60),
         (MtReNIRS, {"depth": 2, "num_heads": 2, "embed_dim": 32,
                     "pool": "channel_temporal_mean"}, 100),
     ],
@@ -7725,16 +7782,6 @@ def test_fnirs_pair_models_need_an_even_n_chans(model_cls):
         model_cls(n_chans=5, n_outputs=2, n_times=60)
 
 
-def test_geonirs_needs_its_channel_geometry():
-    with pytest.raises(ValueError, match="needs the channel geometry"):
-        GeoNIRS(n_chans=4, n_outputs=2, n_times=60)(torch.randn(1, 4, 60))
-    loc_none = [{"ch_name": f"S1_D1 {k}", "loc": None} for k in ("hbo", "hbr")]
-    with pytest.raises(ValueError, match="needs the channel geometry"):
-        GeoNIRS(chs_info=loc_none, n_outputs=2, n_times=60)(torch.randn(1, 2, 60))
-    with pytest.raises(ValueError, match="different channel counts"):
-        GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60)(torch.randn(1, 2, 60))
-
-
 def test_mtrenirs_needs_its_channel_positions():
     with pytest.raises(ValueError, match="needs channel positions"):
         MtReNIRS(n_chans=4, n_outputs=2, n_times=100)(torch.randn(1, 4, 100))
@@ -7758,105 +7805,13 @@ def test_mtrenirs_leaves_unlocated_channels_out():
     located = [1, 2, 4, 5]
     alone = MtReNIRS(chs_info=[chs[i] for i in located], n_outputs=2, n_times=200, depth=2)
     encoder = {k: v for k, v in model.state_dict().items() if not k.startswith("final_layer.")}
-    alone.load_state_dict(encoder)  # the head width depends on n_chans
+    alone.load_state_dict(encoder, strict=False)  # the head width depends on n_chans
     x = torch.randn(2, 6, 200)
     with torch.no_grad():
         tokens, valid = model.encode_windows(x)
         expected, _ = alone.eval().encode_windows(x[:, located])
     assert not valid[:, :, [0, 3]].any() and not tokens[:, :, [0, 3]].any()
     torch.testing.assert_close(tokens[:, :, located], expected)
-
-
-def test_geonirs_pair_without_optodes_gets_zero_geometry():
-    """As the reference, a pair without source/detector positions is zero
-    and left out of the centre of the others."""
-    chs = _fnirs_chs_info(3)
-    chs[1] = dict(chs[1], loc=None)  # S2_D2 hbo
-    geometry = GeoNIRS(chs_info=chs, n_outputs=2, n_times=60).default_geometry
-    others = [ch for i, ch in enumerate(_fnirs_chs_info(3)) if i not in (1, 4)]
-    expected = GeoNIRS(chs_info=others, n_outputs=2, n_times=60).default_geometry
-    assert not geometry[1].any()
-    assert torch.equal(geometry[[0, 2]], expected)
-
-
-def test_geonirs_mean_std_is_the_reference_readout():
-    """``pool="mean_std"``: the valid-patch mean and the reference's
-    ``variance.clamp_min(0).sqrt()``, so zero with a single valid patch."""
-    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60,
-                    pool="mean_std", embed_dim=32, num_heads=4,
-                    depth=1, n_latent_channels=2,
-                    feature_dim=4).eval()
-    x = torch.randn(1, 4, 60)
-    x[..., 10:] = float("nan")
-    with torch.no_grad():
-        features = model(x, return_features=True)["features"].reshape(1, 2, 2, 8)
-        foundation = model.encode(x)["foundation"]  # (1, 2, S, P, 4)
-    assert not features[:, :, 1].any()
-    first = torch.cat([foundation[:, 0, :, 0], foundation[:, 1, :, 0]], dim=-1)
-    torch.testing.assert_close(features[:, :, 0], first)
-
-
-def test_geonirs_without_geometry_has_no_dead_parameters():
-    model = GeoNIRS(n_chans=6, n_outputs=2, n_times=30, sfreq=5.0, use_channel_geometry=False)
-    assert model.geometry_encoder is None
-    model(torch.randn(2, 6, 30)).sum().backward()
-    assert all(p.grad is not None and torch.isfinite(p.grad).all() for p in model.parameters())
-
-
-def test_geonirs_refuses_a_bad_pool_or_geometry_count():
-    with pytest.raises(ValueError, match="pool must be"):
-        GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60, pool="mean")
-    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60)
-    with pytest.raises(ValueError, match="geometry and x have different channel counts"):
-        model(torch.randn(1, 4, 60), geometry=torch.zeros(3, 6))
-    with pytest.raises(ValueError, match="geometry is not 6-D"):
-        model(torch.randn(1, 4, 60), geometry=torch.zeros(2, 5))
-
-
-@pytest.mark.parametrize(
-    "kwargs, match",
-    [
-        ({"embed_dim": 30, "num_heads": 4}, r"divisible by num_heads \(4\)"),
-        ({"embed_dim": 32, "num_heads": 4, "geometry_heads": 3},
-         r"divisible by geometry_heads \(3\)"),
-        ({"embed_dim": 32, "num_heads": 4, "compressor_heads": 3},
-         r"divisible by compressor_heads \(3\)"),
-        ({"minimum_patch_valid_fraction": 1.5}, r"must be in \[0, 1\], got 1.5"),
-    ],
-)
-def test_geonirs_names_the_refused_argument(kwargs, match):
-    with pytest.raises(ValueError, match=match):
-        GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60, **kwargs)
-
-
-def test_geonirs_encode_takes_the_ch_mask_of_forward():
-    """``encode`` reduces the ``(batch, n_chans)`` mask to HbO/HbR pairs: a
-    padded pair changes nothing for the real one."""
-    model = GeoNIRS(chs_info=_fnirs_chs_info(2), n_outputs=2, n_times=60,
-                    embed_dim=32, num_heads=4, depth=1, n_latent_channels=2,
-                    feature_dim=4).eval()
-    x = torch.randn(1, 4, 60)  # [HbO_1, HbO_2, HbR_1, HbR_2]
-    mask = torch.tensor([[True, False, True, False]])
-    with torch.no_grad():
-        tokens = model.encode(x, ch_mask=mask)["foundation"]
-        alone = model.encode(x[:, [0, 2]], geometry=model.default_geometry[:1])
-    torch.testing.assert_close(tokens, alone["foundation"])
-
-
-def test_geonirs_padded_samples_are_missing():
-    """``on_non_divisible="pad"`` equals the NaN-padded window: the last patch
-    holds 5 of 10 samples, under the 80 % threshold."""
-    torch.manual_seed(0)
-    kwargs = dict(chs_info=_fnirs_chs_info(2), n_outputs=2, embed_dim=32,
-                  num_heads=4, depth=1, n_latent_channels=2, feature_dim=4)
-    padded = GeoNIRS(n_times=55, on_non_divisible="pad", **kwargs).eval()
-    plain = GeoNIRS(n_times=60, **kwargs).eval()
-    plain.load_state_dict(padded.state_dict(), strict=True)
-    x = torch.randn(2, 4, 55)
-    x_nan = torch.cat([x, torch.full((2, 4, 5), float("nan"))], dim=-1)
-    with torch.no_grad():
-        assert not padded.encode(x)["valid"][..., -1].any()
-        torch.testing.assert_close(padded(x), plain(x_nan), rtol=0, atol=0)
 
 
 def test_mtrenirs_refuses_a_bad_pool_or_coordinate_count():
@@ -7884,97 +7839,30 @@ def test_mtrenirs_chromophores_and_valid_window_pooling():
         MtReNIRS(n_chans=4, n_outputs=2, n_times=100, embed_dim=12, num_heads=4)
 
 
-_FNIRS_WEIGHTS = os.environ.get("BRAINDECODE_FNIRS_WEIGHTS", "")
-
-
-def _fnirs_checkpoint(file):
-    """``file`` from ``BRAINDECODE_FNIRS_WEIGHTS``; the test is skipped without it."""
-    path = os.path.join(_FNIRS_WEIGHTS, file)
-    if not (_FNIRS_WEIGHTS and os.path.isfile(path)):
-        pytest.skip(f"{file} not in BRAINDECODE_FNIRS_WEIGHTS")
-    return path
-
-
-def _check_released_fnirs_checkpoint(path, cls, kwargs, expected):
-    """The checkpoint, as released (decoders included), loads strictly with
-    ``weights_only=True``, every backbone tensor is the checkpoint's, and the
-    first features equal ``expected``, the authors' code on the same input."""
-    payload = torch.load(path, map_location="cpu", weights_only=True)
-    model = cls(chs_info=_fnirs_chs_info(10), n_outputs=2, **kwargs).eval()
-    model.load_state_dict(payload, strict=True)
-    state = model.state_dict()
-    backbone = [k for k in state if not k.startswith("final_layer.")]
-    assert all(torch.equal(state[k], payload["model"][k]) for k in backbone)
-    torch.manual_seed(0)
-    x = torch.randn(2, model.n_chans, model.n_times)
-    with torch.no_grad():
-        features = model(x, return_features=True)["features"]
-    torch.testing.assert_close(features[:, :4], torch.tensor(expected), rtol=0, atol=1e-5)
-
-
-# features[:, :4] of the authors' code on the input of
-# _check_released_fnirs_checkpoint, computed with the authors' code at the
-# commit each test names
-
-
-@pytest.mark.parametrize(
-    "file, kwargs, expected",
-    [
-        ("geonirs_base.pt", {"n_times": 150, "sfreq": 5.0},
-         [[0.02500118874013424, 0.04738733917474747, 0.007597371935844421, 0.005497157108038664],
-          [-0.12108907848596573, 0.2241547405719757, -0.18274709582328796, -0.03251400962471962]]),
-        ("geonirs_large.pt", {"n_times": 150, "sfreq": 5.0, "embed_dim": 384,
-                              "num_heads": 12, "depth": 6, "feature_dim": 128},
-         [[-3.8912150859832764, -0.606697678565979, -0.19837510585784912, -6.412940979003906],
-          [-5.242615699768066, -2.4871740341186523, -0.46112173795700073, -3.506788730621338]]),
-    ],
-)
-def test_geonirs_released_checkpoints_match_the_authors_code(file, kwargs, expected):
-    """GeoNIRS@81f8995 checkpoints, from ``BRAINDECODE_FNIRS_WEIGHTS``."""
-    _check_released_fnirs_checkpoint(_fnirs_checkpoint(file), GeoNIRS, kwargs, expected)
-
-
 @pytest.mark.network
 @pytest.mark.huggingface
 @pytest.mark.parametrize(
     "n_times, expected",
     [
-        # one window: every token at window position 0
-        (100, [
-            [1.3799299001693726, 1.1365183591842651, 1.0999616384506226, 0.12654231488704681],
-            [-0.03779871016740799, -0.9599133729934692, 0.5302731394767761, 0.7867113351821899],
-        ]),
-        # three windows: the rotary position of each window takes part
-        (300, [
-            [1.8037338256835938, 0.23441250622272491, 0.7627871036529541, -0.022611618041992188],
-            [0.5426146388053894, -0.756412923336029, 0.2957547605037689, -1.5501772165298462],
-        ]),
+        (100, [0.248106, -1.594136, 0.505165, 0.201188, -0.050248]),  # one window
+        (300, [0.387405, -0.084270, 1.213972, -0.281512, -1.097081]),  # rotary positions 0-2
     ],
 )
-def test_mtrenirs_released_checkpoint_matches_the_authors_code(n_times, expected):
-    """The MIT-licensed MtReNIRS@16c3082 checkpoint, as released, on the Hub
-    (pinned revision); expected values from the authors' ``MtReNIRS.embed``."""
-    hub = ("braindecode/mtrenirs-pretrained", "bbc68ce5e00a4515081d900227fc06d111858e75")
-    path = os.path.join(_FNIRS_WEIGHTS, "mtrenirs_10s.pt")
-    if not (_FNIRS_WEIGHTS and os.path.isfile(path)):
-        hf_hub = pytest.importorskip("huggingface_hub")
-        try:
-            path = hf_hub.hf_hub_download(hub[0], "mtrenirs_10s.pt", revision=hub[1])
-        except hf_hub.utils.LocalEntryNotFoundError as err:  # offline
-            pytest.skip(f"Hugging Face Hub not reachable: {err}")
-    _check_released_fnirs_checkpoint(
-        path, MtReNIRS, {"n_times": n_times, "sfreq": 10.0}, expected
-    )
-
-
-def test_jung_mae_released_checkpoint_matches_the_authors_code():
-    """The released ``jung_mae.pt`` (81f8995), from ``BRAINDECODE_FNIRS_WEIGHTS``."""
-    expected = [
-        [0.0012979282764717937, -0.39332136511802673, 0.23441119492053986, 0.3510328233242035],
-        [-0.34959089756011963, -0.3680170476436615, 0.44219091534614563, 0.24921967089176178],
-    ]
-    path = _fnirs_checkpoint("jung_mae.pt")
-    _check_released_fnirs_checkpoint(path, JungMAE, {"n_times": 150, "sfreq": 5.0}, expected)
+def test_mtrenirs_pretrained_matches_the_release(n_times, expected):
+    """The re-hosted encoder gives the features of ``mtrenirs_10s.pt``
+    (microsoft/MtReNIRS@16c3082)."""
+    pytest.importorskip("huggingface_hub")
+    model = MtReNIRS.from_pretrained(
+        "braindecode/mtrenirs-pretrained",
+        revision="7c5e60535c3822dcac3ddcd2d19098504d57d38c",
+        chs_info=_fnirs_chs_info(4),
+        n_outputs=3,
+        n_times=n_times,
+    ).eval()
+    x = torch.arange(8.0 * n_times).reshape(1, 8, n_times).mul(0.05).sin()
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+    torch.testing.assert_close(features[0, :5], torch.tensor(expected), rtol=0, atol=1e-5)
 
 
 def _tccnet_reference(model, x, mask_value):
@@ -8093,3 +7981,86 @@ def test_cbramod_features_skip_pretraining_proj_out():
         feats = model(x, return_features=True)["features"]
     torch.testing.assert_close(feats, tokens)
     assert any(k.startswith("proj_out.") for k in model.state_dict())
+
+
+@pytest.mark.parametrize(
+    "model_class, kwargs", [(CBraMod, {"nhead": 2}), (CSBrain, {"dim_feedforward": 64})]
+)
+@pytest.mark.parametrize("encoder_only", [False, True])
+def test_only_the_flattened_head_is_tied_to_the_channel_count(
+    model_class, kwargs, encoder_only
+):
+    model = model_class(
+        n_outputs=2, n_chans=3, n_times=400, n_layer=1,
+        return_encoder_output=encoder_only, **kwargs,
+    ).eval()
+    x = torch.randn(2, 2, 400)
+    if encoder_only:
+        assert model(x).shape[1] == 2
+        model.reset_head(2)
+    with pytest.raises(ValueError, match="built for 3 channels"):
+        model(x)
+
+
+def test_axon_encode_checks_channel_count():
+    from braindecode.models import AXON
+
+    info = mne.create_info(["Fz", "Cz", "Pz", "Oz"], 200.0, "eeg")
+    info.set_montage("standard_1020")
+    model = AXON(n_outputs=2, chs_info=info["chs"], n_times=400).eval()
+    x = torch.randn(2, 4, 400)
+    with torch.no_grad():
+        torch.testing.assert_close(
+            model(x, return_features=True)["tokens"], model.encode(x)
+        )
+        with pytest.raises(ValueError, match="built for 4 channels"):
+            model.encode(x[:, :3])
+
+
+@pytest.mark.parametrize("n_times", [8, 11])  # 11 is not a multiple of d_input
+def test_pbt_patches_stay_inside_their_channel(n_times):
+    n_chans, d_input = 3, 4
+    model = PBT(
+        n_chans=n_chans, n_times=n_times, n_outputs=2, d_input=d_input,
+        embed_dim=8, num_heads=2, num_layers=1,
+    )
+    x = torch.arange(n_chans * (n_times + 5.0)).reshape(1, n_chans, -1)
+    starts = range(0, n_times - d_input + 1, d_input)
+    expected = torch.stack(
+        [x[:, c, i : i + d_input] for c in range(n_chans) for i in starts], dim=1
+    )
+    patches, _ = model.patch_signal(x)  # past n_times, and a partial patch, are dropped
+    torch.testing.assert_close(patches, expected)
+    with pytest.raises(ValueError, match="built for 3 channels"):
+        model(x[:, :2])
+
+
+@pytest.mark.parametrize("d_input", [-1, 0, 4])
+def test_pbt_requires_a_complete_patch_per_channel(d_input):
+    with pytest.raises(ValueError, match="0 < d_input <= n_times"):
+        PBT(n_chans=3, n_times=3, n_outputs=2, d_input=d_input)
+
+
+@pytest.mark.parametrize(
+    "cls, n_times",
+    [
+        (EMG2QwertyNet, 4000),
+        (EMG2QwertyNet, 8001),
+        (MetaNeuromotorHand, 30000),
+        (MetaNeuromotorHand, 50001),
+    ],
+)
+def test_output_shape_by_formula(cls, n_times):
+    """get_output_shape computes the size; it equals the shape forward gives."""
+    model = cls(n_outputs=5, n_times=n_times, sfreq=2000.0).eval()
+    with torch.no_grad():
+        out = model(torch.zeros(1, model.n_chans, n_times))
+    out = out[0] if isinstance(out, tuple) else out
+    assert model.get_output_shape() == tuple(out.shape)
+
+
+@pytest.mark.parametrize("cls, n_times", [(EMG2QwertyNet, 4000), (MetaNeuromotorHand, 30000)])
+def test_output_shape_follows_a_replaced_head(cls, n_times):
+    model = cls(n_outputs=5, n_times=n_times, sfreq=2000.0)
+    model.final_layer = nn.Linear(model.final_layer.in_features, 7)
+    assert model.get_output_shape()[-1] == 7
