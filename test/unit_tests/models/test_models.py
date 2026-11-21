@@ -7274,14 +7274,42 @@ def test_fnirst_smallest_valid_configurations_build(model_cls):
     assert model.eval()(torch.randn(3, 4, 30)).shape == (3, 2)
 
 
+@pytest.mark.parametrize("pool", ["cls", "mean"])
 @pytest.mark.parametrize("model_cls", [FNIRST, FNIRSPreT])
-def test_fnirst_cls_token_is_the_two_class_tokens(model_cls):
-    """``cls_token`` holds the class tokens of the two levels, not the features."""
-    model = model_cls(n_chans=10, n_outputs=2, n_times=60, depth=1, num_heads=2).eval()
+def test_fnirst_read_out_of_the_two_levels(model_cls, pool):
+    """``cls_token`` is the class tokens of the two levels; ``features`` is the
+    LayerNorm of the class tokens (``pool="cls"``) or of the token means."""
+    model = model_cls(
+        n_chans=10, n_outputs=2, n_times=60, depth=1, num_heads=2, pool=pool
+    ).eval()
+    tokens = []
+    for level in (model.transformer_patch, model.transformer_channel):
+        level.register_forward_hook(lambda module, args, out: tokens.append(out))
     with torch.no_grad():
         out = model(torch.randn(2, 10, 60), return_features=True)
-    assert out["cls_token"].shape == out["features"].shape == (2, 128)
-    assert not torch.equal(out["cls_token"], out["features"])
+        read = [t.mean(dim=1) if pool == "mean" else t[:, 0] for t in tokens]
+        expected = model.final_norm(torch.cat(read, dim=1))
+    assert torch.equal(out["cls_token"], torch.cat([t[:, 0] for t in tokens], dim=1))
+    torch.testing.assert_close(out["features"], expected)
+
+
+def test_fnirspret_preprocessing_module():
+    """``pre`` smooths each plane with moving averages of 5, 13 and 7 samples
+    ("same" zero padding), then applies that plane's own LayerNorm over time."""
+    pre = FNIRSPreT(n_chans=10, n_outputs=2, n_times=60, depth=1).pre
+    with torch.no_grad():
+        for norm in pre.norms:  # a different affine map per plane
+            norm.weight.uniform_(0.5, 2.0)
+            norm.bias.uniform_(-1.0, 1.0)
+        x = torch.randn(3, 2, 5, 60)
+        expected = []
+        for plane, norm in zip(x.unbind(1), pre.norms):
+            for k in (5, 13, 7):
+                plane = nn.functional.avg_pool1d(plane, k, stride=1, padding=k // 2)
+            expected.append(
+                nn.functional.layer_norm(plane, (60,), norm.weight, norm.bias)
+            )
+        torch.testing.assert_close(pre(x), torch.stack(expected, dim=1), rtol=0, atol=0)
 
 
 # FNIRST/FNIRSPreT need 5 HbO/HbR pairs for their default spatial kernel
