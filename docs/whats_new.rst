@@ -35,6 +35,9 @@ Enhancements
   directly with ``json``, scanning directory layouts in one ``os.scandir`` pass,
   and streamlining the preprocessing, SAE/REVE, EEGPrep, and temporal
   generalization gallery examples (:gh:`1756` by `Bruno Aristimunha`_).
+- Add ``scripts/ci_plan.py`` and ``pytest --select-models`` to select affected tests and
+  models from pull-request diffs, shard full runs across four workers, and schedule the
+  cross-OS, Python, and ``torch.compile`` matrix daily (:gh:`1753` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.SAMBA` (Hong et al., NeurReps 2026), an EEG
   foundation model that reads electrode positions through a coordinate-driven
   spatial embedding and models time with Mamba-2 (:gh:`1689` by `Jiazhen Hong`_).
@@ -260,6 +263,9 @@ Bug fixes
 - Suppress spurious directory-mismatch warnings when :func:`~braindecode.preprocessing.preprocess`
   saves recordings to ``save_dir`` and replace ``memory_profiler`` process spawning in
   :ref:`benchmark-preprocess-parallel-serial` so ``spawn`` and parallel gallery workers succeed (:gh:`1756` by `Bruno Aristimunha`_).
+- Speed up documentation builds (``make html-noplot`` no longer hangs with ``-j auto`` on macOS),
+  fix the duplicate ``Parameters`` section in :class:`braindecode.datasets.BNCI2014_001`, and
+  cache unchanged Sphinx-Gallery outputs in CI (:gh:`1752` by `Bruno Aristimunha`_).
 - Documentation: list all pre-trained models under ``braindecode[hub]`` in the API
   reference, deduplicate the DataTables assets and apply an accessible light/dark
   category palette on the models summary table, drop the render-blocking Google Fonts

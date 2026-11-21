@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import math
-from collections import OrderedDict
 from typing import List, Literal, Optional
 
 import numpy as np
@@ -78,8 +77,8 @@ class MtReNIRS(EEGModuleMixin, nn.Module, license="mit"):
 
     - **Token embedding** (``embed``, ``_TokenEmbedding``).
 
-      - **Operations.** ``embed.signal.proj``, ``nn.Linear(100, 128)``,
-        projects each window :math:`x_{c,t}`. ``embed.spatial.mlp``,
+      - **Operations.** ``embed.signal_proj``, ``nn.Linear(100, 128)``,
+        projects each window :math:`x_{c,t}`. ``embed.spatial_mlp``,
         ``nn.Linear(48, 128)``, GELU, ``nn.Linear(128, 128)``, embeds the
         Fourier features :footcite:`tancik2020fourier` of :math:`u_c = [q_c^\top,
         b_c]^\top`, the canonical coordinate :math:`q_c` of the S-D pair and
@@ -649,11 +648,8 @@ class _TokenEmbedding(nn.Module):
         fourier_dim = n_coordinates * n_fourier_bands * n_sin_cos
 
         # Layers
-        # Signal embedding: a linear projection of the raw window x_{c,t}.
-        # ``signal.proj`` is the checkpoint's key path.
-        self.signal = nn.Sequential(
-            OrderedDict(proj=nn.Linear(window_samples, embed_dim))
-        )
+        # Signal embedding: a linear projection of the raw window x_{c,t}
+        self.signal_proj = nn.Linear(window_samples, embed_dim)
 
         # Fourier frequencies 2^k pi, k = 0, ..., n_fourier_bands - 1: octave
         # bands let the MLP resolve both coarse and fine optode distances.
@@ -662,14 +658,12 @@ class _TokenEmbedding(nn.Module):
 
         # Spatio-chromophore embedding: an MLP of the Fourier features
         # phi(u_c), so the position and the chromophore of a channel are an
-        # input and not a learned per-channel table. ``spatial.mlp`` is the
-        # checkpoint's key path.
-        mlp = nn.Sequential(
+        # input and not a learned per-channel table
+        self.spatial_mlp = nn.Sequential(
             nn.Linear(fourier_dim, spatial_hidden_dim),
             activation(),
             nn.Linear(spatial_hidden_dim, embed_dim),
         )
-        self.spatial = nn.Sequential(OrderedDict(mlp=mlp))
 
         # Shape layer of the Fourier features
         self.merge_bands = Rearrange(
@@ -703,7 +697,7 @@ class _TokenEmbedding(nn.Module):
 
         # Signal embedding of the window x_{c,t}
         # (batch, n_tokens, window_samples) -> (batch, n_tokens, embed_dim)
-        signal_embedding = self.signal(signal)
+        signal_embedding = self.signal_proj(signal)
 
         # Fourier features phi(u_c): all sines, then all cosines
         # -> (batch, n_tokens, 2 * n_coordinates * n_fourier_bands)
@@ -713,7 +707,7 @@ class _TokenEmbedding(nn.Module):
 
         # Spatio-chromophore embedding: MLP of phi(u_c)
         # -> (batch, n_tokens, embed_dim)
-        spatial_embedding = self.spatial(fourier)
+        spatial_embedding = self.spatial_mlp(fourier)
 
         # Token z_{c,t}: the two embeddings are summed
         # -> (batch, n_tokens, embed_dim)

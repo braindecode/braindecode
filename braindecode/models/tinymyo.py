@@ -24,17 +24,17 @@ from braindecode.modules import PatchTokenizer, PreNormBlock, TimmAttention, Tim
 
 
 class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
-    r"""TinyMyo from Fasulo et al. (2026) [fasulo2026tinymyo]_.
+    r"""TinyMyo from Fasulo et al. (2026) :footcite:`fasulo2026tinymyo`.
 
     :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model`
 
     .. versionadded:: 2.1
 
     TinyMyo is a 3.6M-parameter Transformer encoder for surface EMG (sEMG).
-    The authors pretrained it with masked patch reconstruction on NinaPro DB6,
-    NinaPro DB7 and emg2pose (2000 Hz, up to 16 channels, 0.5 s windows), and
-    fine-tune it for gesture classification, hand-kinematics regression and
-    silent-speech decoding.
+    The authors run it on the GAP9 microcontroller. They pretrained it with
+    masked patch reconstruction on NinaPro DB6, NinaPro DB7 and emg2pose
+    (2000 Hz, up to 16 channels, 0.5 s windows), and fine-tune it for gesture
+    classification, hand-kinematics regression and silent-speech decoding.
 
     .. rubric:: Architecture Overview
 
@@ -124,6 +124,12 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
     min-max normalized per channel. In fine-tuning they band-pass at 20-90
     Hz and z-score each channel.
 
+    With the released weights (float32, CPU), the outputs match the reference
+    (``models/TinyMyo.py`` of BioFoundation at ``d4484fe``) within 1e-5, and
+    so do the gradients of the released classifiers (:gh:`1649`); the
+    re-hosted files reproduce the originals (``PulpBio/TinyMyo`` at
+    ``bc14906``).
+
     .. rubric:: Differences from the Reference Implementation
 
     - This class ports the classification head only. The reference also has
@@ -174,10 +180,7 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     References
     ----------
-    .. [fasulo2026tinymyo] Fasulo, M., Spacone, G., Ingolfsson, T. M., Li, Y.,
-       Benini, L., & Cossettini, A. (2026). TinyMyo: a Tiny Foundation Model for
-       Flexible EMG Signal Processing at the Edge. IEEE Transactions on
-       Biomedical Engineering. https://doi.org/10.1109/TBME.2026.3736157
+    .. footbibliography::
     """
 
     def __init__(

@@ -1,7 +1,55 @@
 import gc
+import inspect
 import os
 
 import pytest
+
+# Alias map for test registries whose parameter ID/key differs from cls.__name__
+_MODEL_PARAM_ALIASES = {
+    "PopT": "PopulationTransformer",
+}
+
+
+def _known_model_names() -> frozenset[str]:
+    try:
+        from braindecode import models
+
+        return frozenset(models._LAZY) | frozenset(_MODEL_PARAM_ALIASES)
+    except Exception:
+        return frozenset(_MODEL_PARAM_ALIASES)
+
+
+def _extract_item_model_name(item, known_models: frozenset[str]) -> str | None:
+    """Return canonical model class name if ``item`` is parametrized over a model."""
+    callspec = getattr(item, "callspec", None)
+    if callspec is None:
+        return None
+    for val in callspec.params.values():
+        cand = None
+        if isinstance(val, str) and val in known_models:
+            cand = val
+        elif isinstance(val, tuple) and len(val) >= 1:
+            first = val[0]
+            if isinstance(first, str) and first in known_models:
+                cand = first
+            elif inspect.isclass(first) and first.__name__ in known_models:
+                cand = first.__name__
+        elif inspect.isclass(val) and val.__name__ in known_models:
+            cand = val.__name__
+        if cand is not None:
+            return _MODEL_PARAM_ALIASES.get(cand, cand)
+    return None
+
+
+def selected_models_set(config) -> frozenset[str] | None:
+    """Return selected model names (+ ``EEGNet`` canary) when ``--select-models`` is set."""
+    raw = config.getoption("--select-models", default="") or os.environ.get(
+        "BRAINDECODE_SELECT_MODELS", ""
+    )
+    names = {m.strip() for m in raw.split(",") if m.strip()}
+    if not names:
+        return None
+    return frozenset(names | {"EEGNet"})
 
 
 def pytest_collection_finish(session):
@@ -66,6 +114,24 @@ def pytest_addoption(parser):
         default=False,
         help="run tests that require network access",
     )
+    parser.addoption(
+        "--select-models",
+        action="store",
+        default="",
+        help=(
+            "comma-separated model class names to select in parametrized model tests "
+            "(always includes EEGNet as a baseline canary and enables "
+            "test_model_compiled for the selected models)"
+        ),
+    )
+
+
+def pytest_configure(config):
+    raw_opt = config.getoption("--select-models", default="")
+    if raw_opt:
+        selected = selected_models_set(config)
+        if selected is not None:
+            os.environ["BRAINDECODE_SELECT_MODELS"] = ",".join(sorted(selected))
 
 
 def pytest_collection_modifyitems(config, items):
@@ -74,8 +140,16 @@ def pytest_collection_modifyitems(config, items):
     )
     run_network = config.getoption("--run-network")
     run_slow = config.getoption("--run-slow") or "slow" in config.option.markexpr
+    selected_models = selected_models_set(config)
+    known_models = _known_model_names() if selected_models is not None else frozenset()
+
     deselected = []
     for item in items:
+        if selected_models is not None:
+            item_model = _extract_item_model_name(item, known_models)
+            if item_model is not None and item_model not in selected_models:
+                deselected.append(item)
+                continue
         # Network tests, even slow ones (the Hub module), follow --run-network alone.
         if "network" in item.keywords:
             if not run_network:
@@ -83,4 +157,5 @@ def pytest_collection_modifyitems(config, items):
         elif "slow" in item.keywords and not run_slow:
             deselected.append(item)
     config.hook.pytest_deselected(items=deselected)
-    items[:] = [item for item in items if item not in deselected]
+    deselected_set = set(deselected)
+    items[:] = [item for item in items if item not in deselected_set]

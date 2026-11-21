@@ -1,7 +1,7 @@
 name: tests
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.number }}-${{ github.event.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   TEST_EXTRAS: tests,moabb,hub,eegprep,typing,viz
 on:
@@ -11,218 +11,361 @@ on:
   pull_request:
     branches:
       - '*' # all branches, including forks
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60  # a green run takes ~20 min; a stuck worker used to hold the job 6 h
-    env:
-      # torch/OpenMP/MKL threads x xdist workers (-n auto) = vCPUs: macOS 3 x 1,
-      # Linux/Windows 2 x 2. Unpinned, each worker used every core; 4 workers x 1
-      # thread stopped both 16 GB Linux runners mid-suite.
-      OMP_NUM_THREADS: ${{ matrix.os == 'macos-latest' && '1' || '2' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # TEMPORARY: Ubuntu / Python 3.12 only, to cut CI usage. Restore
-        # os: ["ubuntu-latest", "macos-latest", "windows-latest"] and
-        # python-version: ["3.12", "3.13"] afterwards.
-        os: ["ubuntu-latest"]
-        python-version: ["3.12"]
-        include:
-          - os: ubuntu-latest
-            python-version: "3.12"
-            run-coverage: true
-    steps:
-    ## Install Braindecode
-    - name: Checking Out Repository
-      uses: actions/checkout@v4
-    # Cache MNE Data
-    # The cache key separates MNE data by runner OS and Python version.
-    - name: Create/Restore MNE Data Cache
-      id: cache-mne_data
-      uses: actions/cache@v4
-      with:
-        path: ~/mne_data
-        key: test-2-${{ runner.os }}-${{ matrix.python-version }}
-        restore-keys: |
-          test-2-${{ runner.os }}-${{ matrix.python-version }}-
-          test-2-${{ runner.os }}-
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install uv
-      uses: astral-sh/setup-uv@v7
-      with:
-        version: latest
-        enable-cache: true
-        cache-dependency-glob: "**/pyproject.toml"
-
-    - name: Show Python Version
-      run: python --version
-    - name: Install Braindecode from Current Checkout
-      env:
-        # CI runners have no GPU; pull the CPU-only torch wheels instead of the
-        # ~1.8 GiB CUDA stack. Avoids disk exhaustion and speeds up install.
-        UV_TORCH_BACKEND: cpu
-      run: uv pip install --system -e ".[${{ env.TEST_EXTRAS }}]"
-    # Show Braindecode Version
-    - run: python -c "import braindecode; print(braindecode.__version__)"
-
-    # xdist collects modules concurrently; finish NEMAR downloads and legacy-file materialization first.
-    - name: Materialize MOABB test data before xdist
-      run: python -c "from moabb.datasets import BNCI2014_001; BNCI2014_001().get_data([1, 2, 4])"
-
-    - name: Compute TorchInductor Cache Key
-      id: compiler-cache-key
-      if: ${{ matrix.run-coverage }}
-      shell: bash
-      run: |
-        deps_hash="$(uv pip freeze --system | sha256sum | cut -d' ' -f1)"
-        torch_hash="$(python - <<'PY' | sha256sum | cut -d' ' -f1
-        import platform
-        import sys
-        import torch
-
-        print(sys.version)
-        print(platform.machine())
-        print(torch.__version__)
-        print(torch.version.git_version)
-        print(torch.backends.cpu.get_cpu_capability())
-        print(torch.__config__.show())
-        PY
-        )"
-        compiler_hash="$(c++ --version | sha256sum | cut -d' ' -f1)"
-        image="${ImageOS:-unknown}-${ImageVersion:-unknown}"
-        prefix="torchinductor-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.python-version }}-${image}-${deps_hash}-${torch_hash}-${compiler_hash}"
-        source_hash="${{ hashFiles('pyproject.toml', 'uv.lock', 'braindecode/**/*.py', 'test/unit_tests/models/test_integration.py', '.github/workflows/tests.yml') }}"
-        echo "key=${prefix}-${source_hash}" >> "$GITHUB_OUTPUT"
-        echo "restore-prefix=${prefix}-" >> "$GITHUB_OUTPUT"
-
-    - name: Restore TorchInductor Cache
-      id: restore-compiler-cache
-      if: ${{ matrix.run-coverage && github.event_name == 'pull_request' }}
-      uses: actions/cache/restore@v4
-      # Master intentionally runs cold, then seeds this cache for pull requests.
-      with:
-        path: ${{ runner.temp }}/torchinductor
-        key: ${{ steps.compiler-cache-key.outputs.key }}
-        restore-keys: ${{ steps.compiler-cache-key.outputs.restore-prefix }}
-
-    ## Run Tests
-    - name: Run Full Test Suite with Coverage # See https://stackoverflow.com/a/59959080/1469195 for the cov-report logic
-      if: ${{ matrix.run-coverage }}
-      env:
-        HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
-        TORCHINDUCTOR_CACHE_DIR: ${{ runner.temp }}/torchinductor
-        TORCHINDUCTOR_FX_GRAPH_CACHE: "1"
-        # PRs compile one model per family; master compiles every model.
-        BRAINDECODE_COMPILE_ALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
-      shell: bash
-      # Two xdist workers keep what their heaviest file needed, so one call over
-      # the whole suite outgrew the 16 GB runner. Each heavy model file gets its
-      # own call, whose workers exit (freeing that memory) before the next one.
-      # Coverage is appended across the calls; the slow tier below reports it.
-      run: |
-        models=test/unit_tests/models
-        heavy=($models/test_{models,foundation_models,pretrained_compat,model_contract,return_features,huggingface,model_init,config}.py)
-        suite() {
-          python .github/scripts/with_memory_log.py pytest -vv --durations=0 -n auto \
-            --dist worksteal --max-worker-restart=2 --cov=braindecode --cov-append \
-            --cov-report= "$@"
-        }
-        status=0
-        suite test/ --ignore=$models/test_integration.py "${heavy[@]/#/--ignore=}" || status=1
-        suite $models/test_integration.py -k "not test_model_compiled" || status=1
-        suite $models/test_integration.py -k test_model_compiled || status=1
-        for file in "${heavy[@]}"; do suite "$file" || status=1; done
-        exit $status
-
-    - name: Run Full Test Suite
-      if: ${{ !matrix.run-coverage }}
-      env:
-        HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
-      # test_model_compiled runs only in the coverage job above, which restores
-      # the TorchInductor cache; elsewhere it recompiled every model cold.
-      run: python .github/scripts/with_memory_log.py pytest -vv --durations=0 -n auto --dist worksteal --max-worker-restart=2 test/ -k "not test_model_compiled"
-
-    # Tests marked slow, deselected above (test/conftest.py), run after the
-    # default suite warmed the TorchInductor cache; serially, since the
-    # distributed tests start their own process groups.
-    - name: Run Slow Test Tier with Coverage
-      if: ${{ matrix.run-coverage }}
-      env:
-        TORCHINDUCTOR_CACHE_DIR: ${{ runner.temp }}/torchinductor
-        TORCHINDUCTOR_FX_GRAPH_CACHE: "1"
-      run: pytest -vv --durations=0 -m slow --cov=braindecode --cov-append test/ --cov-report term --cov-report xml:coverage.xml
-
-    # A runner lost mid-suite ("lost communication", "shutdown signal") leaves the
-    # memory log above; a finished job reports the kernel's and systemd-oomd's kills.
-    - name: Memory pressure events
-      if: ${{ always() && runner.os == 'Linux' }}
-      run: |
-        echo "systemd-oomd: $(systemctl is-active systemd-oomd 2>/dev/null || true)"
-        sudo dmesg | grep -iE "out of memory|oom-kill|killed process" | tail -20 || true
-        journalctl -u systemd-oomd --no-pager 2>/dev/null | tail -20 || true
-
-    - name: Save TorchInductor Cache
-      if: ${{ matrix.run-coverage && success() && steps.restore-compiler-cache.outputs.cache-hit != 'true' }}
-      uses: actions/cache/save@v4
-      with:
-        path: ${{ runner.temp }}/torchinductor
-        key: ${{ steps.compiler-cache-key.outputs.key }}
-
-    - name: Upload Coverage to Codecov
-      uses: codecov/codecov-action@v4
-      continue-on-error: true
-      if: ${{ matrix.run-coverage }}
-      with:
-        file: ./coverage.xml
-        env_vars: OS,PYTHON
-        token: ${{ secrets.CODECOV_TOKEN }}
-
-  # Real-data acceptance tests (marked network, so skipped by the jobs above).
-  # They train on BNCI2014_001 subject 1, which the ubuntu test jobs download too.
-  acceptance:
-    name: acceptance (ubuntu-latest, ${{ matrix.python-version }})
+  plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      full_suite: ${{ steps.plan.outputs.full_suite }}
+      run_tests: ${{ steps.plan.outputs.run_tests }}
+      shard_count: ${{ steps.plan.outputs.shard_count }}
+      shards: ${{ steps.plan.outputs.shards }}
+      select_models: ${{ steps.plan.outputs.select_models }}
+      run_acceptance: ${{ steps.plan.outputs.run_acceptance }}
+      run_docs: ${{ steps.plan.outputs.run_docs }}
+      plan_json: ${{ steps.plan.outputs.plan_json }}
+    steps:
+      - name: Checking Out Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
+          filter: blob:none
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compute Deterministic 2D Test Plan
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" && -n "$PR_BASE_SHA" ]]; then
+            if ! git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags --filter=blob:none origin "$PR_BASE_SHA" || true
+            fi
+            python scripts/ci_plan.py \
+              --base "$PR_BASE_SHA" \
+              --head HEAD \
+              --pretty \
+              --github-output "$GITHUB_OUTPUT" > plan_pretty.json
+          else
+            python scripts/ci_plan.py \
+              --full \
+              --pretty \
+              --github-output "$GITHUB_OUTPUT" > plan_pretty.json
+          fi
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+
+          p = json.loads(Path("plan_pretty.json").read_text(encoding="utf-8"))
+          n_files = sum(len(v) for v in p["shard_files"].values())
+          n_slow = sum(len(v) for v in p["slow_files_by_shard"].values())
+          print("### CI Test Plan")
+          print(f"- **Reason**: {p['reason']}")
+          print(f"- **Shards**: `{p['shard_count']}` (`{n_files}` default + `{n_slow}` slow files)")
+          print(f"- **Selected models**: `{p['select_models'] or '(all)'}`")
+          print(f"- **Acceptance**: `{p['run_acceptance']}` | **Docs**: `{p['run_docs']}`")
+          PY
+
+  test:
+    name: test (ubuntu-latest, 3.12, shard ${{ matrix.shard }})
+    needs: plan
+    if: ${{ needs.plan.outputs.run_tests == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # 2 OpenMP/MKL threads x 2 xdist workers = 4 vCPUs on ubuntu-latest without
+      # exceeding the 16 GB runner memory ceiling.
+      OMP_NUM_THREADS: "2"
     strategy:
       fail-fast: false
       matrix:
-        # TEMPORARY: 3.12 only, to cut CI usage. Restore ["3.12", "3.13"].
-        python-version: ["3.12"]
+        shard: ${{ fromJson(needs.plan.outputs.shards) }}
+    steps:
+      - name: Checking Out Repository
+        uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - name: Extract Shard Targets
+        id: targets
+        env:
+          PLAN_JSON: ${{ needs.plan.outputs.plan_json }}
+          SHARD: ${{ matrix.shard }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          plan = json.loads(os.environ["PLAN_JSON"])
+          s = os.environ["SHARD"]
+          files = plan["shard_files"].get(s, [])
+          slow = plan["slow_files_by_shard"].get(s, [])
+          needs_moabb = any(
+              any(
+                  seg in f
+                  for seg in (
+                      "/datasets/",
+                      "/datautil/",
+                      "/preprocessing/",
+                      "/samplers/",
+                      "test_scoring.py",
+                  )
+              )
+              for f in files + slow
+          )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8", newline="\n") as fh:
+              fh.write(f"files={' '.join(files)}\n")
+              fh.write(f"slow_files={' '.join(slow)}\n")
+              fh.write(f"has_files={'true' if files else 'false'}\n")
+              fh.write(f"has_slow={'true' if slow else 'false'}\n")
+              fh.write(f"needs_moabb={'true' if needs_moabb else 'false'}\n")
+          PY
+
+      - name: Restore MNE Data Cache
+        id: cache-mne_data
+        if: ${{ steps.targets.outputs.needs_moabb == 'true' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/mne_data
+          key: test-2-${{ runner.os }}-3.12
+          restore-keys: |
+            test-2-${{ runner.os }}-3.12-
+            test-2-${{ runner.os }}-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Show Python Version
+        run: python --version
+
+      - name: Install Braindecode from Current Checkout
+        env:
+          # CI runners have no GPU; pull CPU-only torch wheels instead of CUDA.
+          UV_TORCH_BACKEND: cpu
+        run: uv pip install --system -e ".[${{ env.TEST_EXTRAS }}]"
+
+      - run: python -c "import braindecode; print(braindecode.__version__)"
+
+      # xdist collects modules concurrently; finish NEMAR downloads and legacy-file materialization first.
+      - name: Materialize MOABB test data before xdist
+        if: ${{ steps.targets.outputs.needs_moabb == 'true' }}
+        run: python -c "from moabb.datasets import BNCI2014_001; BNCI2014_001().get_data([1, 2, 4])"
+
+      - name: Save MNE Data Cache on Non-PR Runs
+        if: ${{ github.event_name != 'pull_request' && steps.targets.outputs.needs_moabb == 'true' && steps.cache-mne_data.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ~/mne_data
+          key: test-2-${{ runner.os }}-3.12
+
+      - name: Compute TorchInductor Cache Key
+        id: compiler-cache-key
+        shell: bash
+        run: |
+          deps_hash="$(uv pip freeze --system | grep -vE '^-e |^braindecode(@|==|[[:space:]]|$)' | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
+          torch_hash="$(python - <<'PY' | sha256sum | cut -d' ' -f1
+          import platform
+          import sys
+          import torch
+
+          print(sys.version_info[:2])
+          print(platform.machine())
+          print(torch.__version__)
+          print(torch.version.git_version)
+          print(torch.backends.cpu.get_cpu_capability())
+          PY
+          )"
+          compiler_hash="$(c++ --version | head -n1 | sha256sum | cut -d' ' -f1)"
+          image="${ImageOS:-unknown}-${ImageVersion:-unknown}"
+          prefix="torchinductor-v2-${{ runner.os }}-${{ runner.arch }}-3.12-${image}-${deps_hash}-${torch_hash}-${compiler_hash}"
+          source_hash="${{ hashFiles('braindecode/models/**/*.py', 'braindecode/modules/**/*.py', 'braindecode/functional/**/*.py') }}"
+          echo "key=${prefix}-${source_hash}" >> "$GITHUB_OUTPUT"
+          echo "restore-prefix=${prefix}-" >> "$GITHUB_OUTPUT"
+
+      - name: Restore TorchInductor Cache
+        id: restore-compiler-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/torchinductor
+          key: ${{ steps.compiler-cache-key.outputs.key }}
+          restore-keys: ${{ steps.compiler-cache-key.outputs.restore-prefix }}
+
+      - name: Run Shard Default Test Tier
+        if: ${{ steps.targets.outputs.has_files == 'true' }}
+        env:
+          HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
+          TORCHINDUCTOR_CACHE_DIR: ${{ runner.temp }}/torchinductor
+          TORCHINDUCTOR_FX_GRAPH_CACHE: "1"
+          BRAINDECODE_COMPILE_ALL: "0"
+          BRAINDECODE_SELECT_MODELS: ${{ needs.plan.outputs.select_models }}
+          COVERAGE_CORE: sysmon
+          COVERAGE_FILE: coverage.shard-${{ matrix.shard }}
+          SHARD_FILES_STR: ${{ steps.targets.outputs.files }}
+          FULL_SUITE: ${{ needs.plan.outputs.full_suite }}
+          SELECT_MODELS: ${{ needs.plan.outputs.select_models }}
+        shell: bash
+        run: |
+          read -r -a files <<< "$SHARD_FILES_STR"
+          cov_args=()
+          if [[ "$FULL_SUITE" == "true" ]]; then
+            cov_args=(--cov=braindecode --cov-report=)
+          fi
+          model_args=()
+          if [[ -n "$SELECT_MODELS" ]]; then
+            model_args=("--select-models=$SELECT_MODELS")
+          fi
+          python .github/scripts/with_memory_log.py pytest -vv --durations=25 \
+            -n 2 --dist worksteal --max-worker-restart=2 \
+            "${cov_args[@]}" "${model_args[@]}" "${files[@]}"
+
+      - name: Run Shard Slow Test Tier
+        if: ${{ steps.targets.outputs.has_slow == 'true' }}
+        env:
+          TORCHINDUCTOR_CACHE_DIR: ${{ runner.temp }}/torchinductor
+          TORCHINDUCTOR_FX_GRAPH_CACHE: "1"
+          COVERAGE_CORE: sysmon
+          COVERAGE_FILE: coverage.shard-${{ matrix.shard }}
+          SLOW_FILES_STR: ${{ steps.targets.outputs.slow_files }}
+          FULL_SUITE: ${{ needs.plan.outputs.full_suite }}
+        shell: bash
+        run: |
+          read -r -a slow_files <<< "$SLOW_FILES_STR"
+          cov_args=()
+          if [[ "$FULL_SUITE" == "true" ]]; then
+            cov_args=(--cov=braindecode --cov-append --cov-report=)
+          fi
+          pytest -vv --durations=25 -m slow "${cov_args[@]}" "${slow_files[@]}"
+
+      - name: Memory pressure events
+        if: ${{ always() && runner.os == 'Linux' }}
+        run: |
+          echo "systemd-oomd: $(systemctl is-active systemd-oomd 2>/dev/null || true)"
+          sudo dmesg | grep -iE "out of memory|oom-kill|killed process" | tail -20 || true
+          journalctl -u systemd-oomd --no-pager 2>/dev/null | tail -20 || true
+
+      - name: Save TorchInductor Cache (Non-PR Shard 0 Only)
+        if: ${{ github.event_name != 'pull_request' && matrix.shard == 0 && success() && steps.restore-compiler-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/torchinductor
+          key: ${{ steps.compiler-cache-key.outputs.key }}
+
+      - name: Upload Shard Coverage Data
+        if: ${{ needs.plan.outputs.full_suite == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: coverage.shard-${{ matrix.shard }}
+          if-no-files-found: error
+          retention-days: 1
+
+  coverage:
+    needs: [plan, test]
+    if: ${{ needs.plan.outputs.full_suite == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checking Out Repository
+        uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: latest
+
+      - name: Download Shard Coverage Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-shard-*
+          merge-multiple: true
+
+      - name: Combine Coverage and Generate XML
+        run: |
+          uv pip install --system "coverage[toml]"
+          coverage combine coverage.shard-*
+          coverage report
+          coverage xml -o coverage.xml
+
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v4
+        continue-on-error: true
+        with:
+          file: ./coverage.xml
+          env_vars: OS,PYTHON
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # Real-data acceptance tests (marked network, so skipped by the unit shards above).
+  acceptance:
+    name: acceptance (ubuntu-latest, 3.12)
+    needs: plan
+    if: ${{ needs.plan.outputs.run_acceptance == 'true' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       OMP_NUM_THREADS: "1"
     steps:
-    - name: Checking Out Repository
-      uses: actions/checkout@v4
-    # Restore-only: reuse the ubuntu test job's MNE data without saving a
-    # smaller cache under its key.
-    - name: Restore MNE Data Cache
-      uses: actions/cache/restore@v4
-      with:
-        path: ~/mne_data
-        key: test-2-${{ runner.os }}-${{ matrix.python-version }}
-        restore-keys: |
-          test-2-${{ runner.os }}-${{ matrix.python-version }}-
-          test-2-${{ runner.os }}-
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install uv
-      uses: astral-sh/setup-uv@v7
-      with:
-        version: latest
-        enable-cache: true
-        cache-dependency-glob: "**/pyproject.toml"
-    - name: Install Braindecode from Current Checkout
-      env:
-        UV_TORCH_BACKEND: cpu
-      run: uv pip install --system -e ".[${{ env.TEST_EXTRAS }}]"
-    - name: Show Library Versions
-      run: python -c "import braindecode, moabb, mne, numpy, torch; print(braindecode.__version__, moabb.__version__, mne.__version__, numpy.__version__, torch.__version__)"
-    - name: Materialize acceptance test data
-      run: python -c "from moabb.datasets import BNCI2014_001; BNCI2014_001().get_data([1])"
-    - name: Run Acceptance Tests
-      run: pytest test/acceptance_tests --run-network -n 0 -vv -rP --durations=0
+      - name: Checking Out Repository
+        uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - name: Restore MNE Data Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/mne_data
+          key: test-2-${{ runner.os }}-3.12
+          restore-keys: |
+            test-2-${{ runner.os }}-3.12-
+            test-2-${{ runner.os }}-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Install Braindecode from Current Checkout
+        env:
+          UV_TORCH_BACKEND: cpu
+        run: uv pip install --system -e ".[${{ env.TEST_EXTRAS }}]"
+
+      - name: Show Library Versions
+        run: python -c "import braindecode, moabb, mne, numpy, torch; print(braindecode.__version__, moabb.__version__, mne.__version__, numpy.__version__, torch.__version__)"
+
+      - name: Materialize acceptance test data
+        run: python -c "from moabb.datasets import BNCI2014_001; BNCI2014_001().get_data([1])"
+
+      - name: Run Acceptance Tests
+        run: pytest test/acceptance_tests --run-network -n 0 -vv -rP --durations=0

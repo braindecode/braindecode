@@ -313,13 +313,13 @@ print(f"{len(train_samples)} train windows, {len(test_samples)} test windows")
 
 train_loader = DataLoader(
     train_samples,
-    batch_size=len(train_samples),
+    batch_size=16,
     shuffle=True,
     collate_fn=dance_collate,
 )
 test_loader = DataLoader(
     test_samples,
-    batch_size=len(test_samples),
+    batch_size=16,
     collate_fn=dance_collate,
 )
 
