@@ -175,16 +175,16 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
     datasets (383.30 h) and has 4,443,462 parameters without the head;
     GeoNIRS-Large on 22 datasets (827.04 h), with 24,394,310. Both
     repositories hold the encoder, so ``from_pretrained`` builds the head for
-    your ``n_times`` and ``n_outputs``. The weights expect HbO and HbR concentration changes
-    (modified Beer-Lambert law, no band-pass filter, Appendix B.1) at 5 Hz,
-    each standardized per recording, in windows of at most 150 samples. On the
-    paper's windows (1628 for DS42, 1190 for DS19) this class gives the
-    authors' encoder features (max-abs difference 0.0, Base and Large, eval
-    mode). A linear probe of the frozen GeoNIRS-Base (a re-implementation of
-    the authors' probe, with the paper's folds and seeds) gives macro-F1
-    0.7039 and 0.5304 on DS42 and DS19, against 0.7018 and 0.5598 in the paper
-    and 0.7000 and 0.5599 for the authors' pipeline at ``81f8995``
-    (:gh:`1591`).
+    your ``n_times`` and ``n_outputs``. The weights expect HbO and HbR
+    concentration changes (modified Beer-Lambert law, no band-pass filter,
+    Appendix B.1) at 5 Hz, each standardized per recording, in windows of at
+    most 150 samples. On the paper's windows (1628 for DS42, 1190 for DS19)
+    this class gives the authors' encoder features (max-abs difference 0.0,
+    Base and Large, eval mode). A linear probe of the frozen GeoNIRS-Base (a
+    re-implementation of the authors' probe, with the paper's folds and seeds)
+    gives macro-F1 0.7039 and 0.5304 on DS42 and DS19, against 0.7018 and
+    0.5598 in the paper and 0.7000 and 0.5599 for the authors' pipeline at
+    ``81f8995`` (:gh:`1591`).
 
     .. code-block:: python
 
