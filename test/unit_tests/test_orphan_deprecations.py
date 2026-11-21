@@ -6,8 +6,7 @@ import torch
 
 from braindecode.datasets.bbci import load_bbci_sets_from_folder
 from braindecode.datasets.registry import is_registered_dataset
-from braindecode.modules import IntermediateOutputWrapper, StatLayer
-from braindecode.modules.stats import LogVarLayer, MeanLayer
+from braindecode.modules import IntermediateOutputWrapper
 from braindecode.training.callbacks import MaxNormConstraintCallback
 from braindecode.util import corr, cov, get_balanced_batches, read_all_file_names
 
@@ -41,11 +40,6 @@ def _read_all_file_names(tmp_path):
             [],
         ),
         (
-            "StatLayer",
-            lambda tmp: StatLayer(torch.mean, dim=-1)(torch.ones(2, 3)).shape,
-            (2, 1),
-        ),
-        (
             "IntermediateOutputWrapper",
             lambda tmp: _intermediate_output_wrapper(),
             (2, 3),
@@ -58,7 +52,7 @@ def _read_all_file_names(tmp_path):
     ],
 )
 def test_orphaned_api_warns_and_still_works(name, call, expected, tmp_path):
-    with pytest.warns(DeprecationWarning, match=f"{name} is deprecated") as record:
+    with pytest.warns(FutureWarning, match=f"{name} is deprecated") as record:
         result = call(tmp_path)
     assert len([w for w in record if name in str(w.message)]) == 1
     assert record[0].filename == __file__
@@ -66,9 +60,3 @@ def test_orphaned_api_warns_and_still_works(name, call, expected, tmp_path):
         assert [p.endswith("a.txt") for p in result] == [True]
     elif expected is not None:
         assert result == expected
-
-
-def test_stat_layers_in_use_do_not_warn(recwarn):
-    MeanLayer(dim=-1)(torch.ones(2, 3))
-    LogVarLayer(dim=-1)(torch.ones(2, 3))
-    assert not [w for w in recwarn if issubclass(w.category, DeprecationWarning)]

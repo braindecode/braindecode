@@ -21,7 +21,7 @@ def _warn_orphaned_api(name):
     warn(
         f"{name} is deprecated and will be removed in braindecode 2.2. It has "
         "no user in braindecode: copy it into your code if you need it.",
-        DeprecationWarning,
+        FutureWarning,
         stacklevel=3,
     )
 
@@ -118,6 +118,9 @@ def corr(a, b):
     """
     Computes correlation only between terms of a and terms of b, not within.
 
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
+
     a and b.
 
     Parameters
@@ -127,9 +130,6 @@ def corr(a, b):
     Returns
     -------
     Correlation between features in x and features in y
-
-    .. deprecated:: 2.1
-        It has no user in braindecode and will be removed in 2.2.
     """
     _warn_orphaned_api("corr")
     # Difference to numpy:
@@ -143,6 +143,9 @@ def cov(a, b):
     """
     Computes covariance only between terms of a and terms of b, not within.
 
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
+
     a and b.
 
     Parameters
@@ -152,9 +155,6 @@ def cov(a, b):
     Returns
     -------
     Covariance between features in x and features in y
-
-    .. deprecated:: 2.1
-        It has no user in braindecode and will be removed in 2.2.
     """
     _warn_orphaned_api("cov")
     return _cov(a, b)
@@ -228,6 +228,9 @@ def wrap_reshape_apply_fn(stat_fn, a, b, axis_a, axis_b):
 def get_balanced_batches(n_trials, rng, shuffle, n_batches=None, batch_size=None):
     """Create indices for batches balanced in size.
 
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
+
     (batches will have maximum size difference of 1).
     Supply either batch size or number of batches. Resulting batches
     will not have the given batch size but rather the next largest batch size
@@ -247,9 +250,6 @@ def get_balanced_batches(n_trials, rng, shuffle, n_batches=None, batch_size=None
     -------
     batches : list of list of int
         Indices for each batch.
-
-    .. deprecated:: 2.1
-        It has no user in braindecode and will be removed in 2.2.
     """
     _warn_orphaned_api("get_balanced_batches")
     assert batch_size is not None or n_batches is not None
@@ -564,6 +564,9 @@ def _update_moabb_docstring(base_class, docstring):
 def read_all_file_names(directory, extension):
     """Read all files with specified extension from given path and sorts them.
 
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
+
     based on a given sorting key.
 
     Parameters
@@ -577,9 +580,6 @@ def read_all_file_names(directory, extension):
     -------
     file_paths : list(str)
         List of all files found in (sub)directories of path.
-
-    .. deprecated:: 2.1
-        It has no user in braindecode and will be removed in 2.2.
     """
     _warn_orphaned_api("read_all_file_names")
     assert extension.startswith(".")

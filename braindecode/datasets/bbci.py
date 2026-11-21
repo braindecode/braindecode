@@ -665,6 +665,9 @@ def load_bbci_sets_from_folder(
     """
     Load bbci datasets from files in given folder.
 
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
+
     Parameters
     ----------
     folder : str
@@ -676,9 +679,6 @@ def load_bbci_sets_from_folder(
 
     Returns
     -------
-
-    .. deprecated:: 2.1
-        It has no user in braindecode and will be removed in 2.2.
     """
     _warn_orphaned_api("load_bbci_sets_from_folder")
     bbci_mat_files = sorted(glob(os.path.join(folder, "*.BBCI.mat")))

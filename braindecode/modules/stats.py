@@ -6,10 +6,8 @@ from typing import Callable, Optional
 import torch
 from torch import nn
 
-from braindecode.util import _warn_orphaned_api
 
-
-class _StatLayer(nn.Module):
+class StatLayer(nn.Module):
     """
     Generic layer to compute a statistical function along a specified dimension.
     Parameters
@@ -28,8 +26,8 @@ class _StatLayer(nn.Module):
     Examples
     --------
     >>> import torch
-    >>> from braindecode.modules.stats import MeanLayer
-    >>> module = MeanLayer(dim=-1, keepdim=True)
+    >>> from braindecode.modules import StatLayer
+    >>> module = StatLayer(stat_fn=torch.mean, dim=-1, keepdim=True)
     >>> inputs = torch.randn(2, 3, 10)
     >>> outputs = module(inputs)
     >>> outputs.shape
@@ -65,20 +63,6 @@ class _StatLayer(nn.Module):
         return out.to(dtype)
 
 
-class StatLayer(_StatLayer):
-    """Deprecated public name of the statistic layer behind ``MeanLayer`` and co.
-
-    .. deprecated:: 2.1
-        It has no user in braindecode and will be removed in 2.2. Use
-        ``MeanLayer``, ``MaxLayer``, ``VarLayer``, ``StdLayer``, ``LogVarLayer``
-        or ``LogPowerLayer`` instead.
-    """
-
-    def __init__(self, *args, **kwargs) -> None:
-        _warn_orphaned_api("StatLayer")
-        super().__init__(*args, **kwargs)
-
-
 # make things more simple
 def _max_fn(x: torch.Tensor, dim: int, keepdim: bool) -> torch.Tensor:
     return x.max(dim=dim, keepdim=keepdim)[0]
@@ -89,19 +73,19 @@ def _power_fn(x: torch.Tensor, dim: int, keepdim: bool) -> torch.Tensor:
     return torch.mean(x**2, dim=dim, keepdim=keepdim)
 
 
-MeanLayer: Callable[[int, bool], _StatLayer] = partial(_StatLayer, torch.mean)
-MaxLayer: Callable[[int, bool], _StatLayer] = partial(_StatLayer, _max_fn)
-VarLayer: Callable[[int, bool], _StatLayer] = partial(_StatLayer, torch.var)
-StdLayer: Callable[[int, bool], _StatLayer] = partial(_StatLayer, torch.std)
-LogVarLayer: Callable[[int, bool], _StatLayer] = partial(
-    _StatLayer,
+MeanLayer: Callable[[int, bool], StatLayer] = partial(StatLayer, torch.mean)
+MaxLayer: Callable[[int, bool], StatLayer] = partial(StatLayer, _max_fn)
+VarLayer: Callable[[int, bool], StatLayer] = partial(StatLayer, torch.var)
+StdLayer: Callable[[int, bool], StatLayer] = partial(StatLayer, torch.std)
+LogVarLayer: Callable[[int, bool], StatLayer] = partial(
+    StatLayer,
     torch.var,
     clamp_range=(1e-6, 1e6),
     apply_log=True,
 )
 
-LogPowerLayer: Callable[[int, bool], _StatLayer] = partial(
-    _StatLayer,
+LogPowerLayer: Callable[[int, bool], StatLayer] = partial(
+    StatLayer,
     _power_fn,
     clamp_range=(1e-4, 1e4),
     apply_log=True,

@@ -49,6 +49,9 @@ class IntermediateOutputWrapper(nn.Module):
     """Wraps network model such that outputs of intermediate layers can be returned.
     forward() returns list of intermediate activations in a network during forward pass.
 
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
+
     Parameters
     ----------
     to_select : list
@@ -68,9 +71,6 @@ class IntermediateOutputWrapper(nn.Module):
     >>> outputs = wrapped(torch.randn(4, 10))
     >>> len(outputs)
     2
-
-    .. deprecated:: 2.1
-        It has no user in braindecode and will be removed in 2.2.
     """
 
     def __init__(self, to_select, model):

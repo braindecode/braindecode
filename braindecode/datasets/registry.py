@@ -103,6 +103,9 @@ def is_registered_dataset(obj: Any, class_name: str) -> bool:
     """
     Check if an object is an instance of a registered dataset class.
 
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
+
     Parameters
     ----------
     obj : Any
@@ -114,9 +117,6 @@ def is_registered_dataset(obj: Any, class_name: str) -> bool:
     -------
     bool
         True if obj is an instance of the named class, False otherwise.
-
-    .. deprecated:: 2.1
-        It has no user in braindecode and will be removed in 2.2.
     """
     _warn_orphaned_api("is_registered_dataset")
     try:
