@@ -69,22 +69,17 @@ Enhancements
 - Add :class:`braindecode.models.GeoNIRS` (Li et al., 2026), an fNIRS foundation model
   conditioned on the source-detector geometry; its encoders are on the Hugging Face Hub at
   ``braindecode/geonirs-base-pretrained`` and ``-large-pretrained`` (:gh:`1591` by `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan
-  et al. (Neurophotonics 2018) as the GeoNIRS benchmark (Li et al., 2026)
-  implements it: two temporal convolutions with GroupNorm and GELU, a time
-  average and a linear head. Its ``mapping`` loads the
-  authors' state dict (:gh:`1592` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan et al.
+  (Neurophotonics 2018) as the GeoNIRS benchmark implements it (:gh:`1592` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
   (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
   transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
   samples. :class:`~braindecode.modules.MultiHeadAttention` gains ``qkv_bias``
   (default ``True``, unchanged) for fNIRS-T's bias-free q/k/v (:gh:`1584` by
   `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023), the first
-  fNIRS model of braindecode: a delayed-hemodynamic-response convolution and a
-  depthwise-separable convolution over ``(batch, n_chans, n_times)`` HbO/HbR windows.
-  Its ``mapping`` loads the authors' state dict, and ``fNIRS`` joins the modality
-  vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023), the first fNIRS
+  model of braindecode, with delayed-hemodynamic-response and depthwise-separable convolutions;
+  ``fNIRS`` joins the modality vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRS4D` (Wang et al., IEEE TIM 2026), a diagonal
   state-space (S4D) backbone with the authors' LOSO-CV or KFold-CV
   mean-hemoglobin branch (``mean_branch``); its ``mapping`` loads the authors' state
