@@ -789,6 +789,7 @@ models_mandatory_parameters: list[
             ],
         },
     ),
+    ("SAMBA", ["chs_info", "n_outputs"], {"n_times": 128, "sfreq": 128.0}),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("MEGGPT", ["n_chans", "n_outputs"], None),
     ("MIRepNet", ["n_chans", "n_outputs"], None),
