@@ -20,18 +20,33 @@ from braindecode.modules import SEANetEncoder
 
 
 class BBL(EEGModuleMixin, nn.Module, license="mit"):
-    r"""BBL, the MEG encoder of *The Brain's Bitter Lesson* from Jayalath et al. (2025) [bbl]_.
+    r"""BBL from Jayalath et al. (2025) [bbl]_.
 
     :bdg-danger:`Foundation Model` :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
+
+    .. versionadded:: 2.1
+
+    BBL is the MEG encoder of *The Brain's Bitter Lesson*, a self-supervised
+    representation for speech decoding from MEG. It is pretrained on CamCAN with
+    three pretext tasks (band, phase and amplitude). The implementation follows
+    the authors' code, ``neural-processing-lab/the-brains-bitter-lesson`` at
+    commit ``3965a2be``.
 
     .. rubric:: Architecture Overview
 
     A dataset-conditional convolutional projector, an EnCodec SEANet encoder
-    averaged over time, and a learned subject embedding feed a linear head::
+    averaged over time, and a learned subject embedding feed a linear head. With
+    ``B`` the batch, ``C = n_chans``, ``T = n_times``,
+    ``T' = ceil(T / downsample_stride)`` and ``T'' = ceil(T' / prod(ratios))``::
 
-        (batch, n_chans, n_times) -> zero-pad to n_sensors -> projector ->
-        dataset gate -> SEANetEncoder -> mean over time -> concat subject
-        embedding -> (batch, n_outputs)
+        x (B, C, T)
+        -> zero-pad to n_sensors         (B, n_sensors, T)
+        -> projector                     (B, n_datasets * model_dim, T')
+        -> dataset gate                  (B, model_dim, T')
+        -> SEANetEncoder                 (B, model_dim, T'')
+        -> mean over time                (B, model_dim)
+        -> concat subject embedding      (B, model_dim + subject_dim)
+        -> final_layer                   (B, n_outputs)
 
     .. rubric:: Macro Components
 
@@ -49,11 +64,14 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
 
     ``BBL.subject_embedding``
         **Operations.** ``Embedding(n_subjects, subject_dim)`` concatenated to
-        the pooled features.
+        the pooled features. **Role.** Subject conditioning: one learned vector
+        per subject, so that the head can account for what varies between
+        subjects (Section 3.1 of the paper).
 
     ``BBL.final_layer``
         **Operations.** ``Linear(model_dim + subject_dim, n_outputs)``, the
-        paper's linear probe.
+        paper's linear probe. **Role.** The task head, as in the authors'
+        ``Prober``; it is not pretrained.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
@@ -74,51 +92,56 @@ class BBL(EEGModuleMixin, nn.Module, license="mit"):
       convolution or LSTM, and ``return_features`` adds ``temporal_features``,
       the encoder output before pooling.
 
-    .. important::
+    .. rubric:: Pretrained Weights
 
-        The released CamCAN checkpoint (slot 0) takes its 306 Elekta ``MEG*``
-        channels in FIF order, 0.5 s windows at 250 Hz, band-passed 0.1-125 Hz
-        with 50 and 100 Hz notches, scaled per channel by the recording's median
-        and IQR, clipped to ``[-5, 5]``, first 0.5 s mean-subtracted (authors'
-        ``data/preprocess.py``). Weights: ``braindecode/bbl-pretrained``
-        (revision ``5a19a369``); the head is not pretrained::
+    ``braindecode/bbl-pretrained`` (revision ``5a19a369``) holds the authors'
+    CamCAN checkpoint (slot 0); the head is not pretrained::
 
-            from braindecode.models import BBL
-            model = BBL.from_pretrained("braindecode/bbl-pretrained", n_outputs=2)
+        from braindecode.models import BBL
+        model = BBL.from_pretrained("braindecode/bbl-pretrained", n_outputs=2)
 
-    .. versionadded:: 2.1
+    The checkpoint takes its 306 Elekta ``MEG*`` channels in FIF order,
+    band-passed 0.1-125 Hz with 50 and 100 Hz notches, then resampled to 250 Hz
+    (Section 4.1 of the paper), on 0.5 s windows (125 samples). Each window is
+    scaled per channel by the recording's median and IQR, clipped to
+    ``[-5, 5]`` and first 0.5 s mean-subtracted, so inputs are dimensionless
+    (authors' ``data/preprocess.py`` and ``data/utils.py``; ``forward`` only
+    does the zero-padding to 306 sensors). The paper's bad-channel interpolation
+    is not in the authors' code. On the same inputs, the features and the
+    gradients equal those of the authors' ``Backbone`` with these weights; the
+    mean-subject fallback differs by float32 rounding only (:gh:`1553`).
 
     Parameters
     ----------
-    n_sensors : int
+    n_sensors : int, default=306
         Sensor slots of the projector; inputs with fewer channels are
         zero-padded, as the reference collator does (306: Elekta MEG).
-    n_datasets : int
+    n_datasets : int, default=4
         Dataset slots of the projector gate.
-    n_subjects : int
+    n_subjects : int, default=4096
         Rows of the subject embedding (the release: 1024 per dataset slot).
-    subject_dim : int
+    subject_dim : int, default=16
         Subject embedding dimension.
-    model_dim : int
+    model_dim : int, default=512
         Projector and encoder output dimension.
-    sensor_kernel_size : int
+    sensor_kernel_size : int, default=3
         Kernel size of the projector's first convolution (3 in the release); odd,
         so that its padding ``sensor_kernel_size // 2`` keeps the length.
-    downsample_kernel_size : int
+    downsample_kernel_size : int, default=3
         Kernel size of the projector's strided convolution (3 in the release);
         odd, padded by ``downsample_kernel_size // 2``.
-    downsample_stride : int
+    downsample_stride : int, default=2
         Stride of that convolution, so the projector outputs
         ``ceil(n_times / downsample_stride)`` steps (2 in the release).
-    n_filters : int
+    n_filters : int, default=128
         Channels after the first SEANet convolution.
-    ratios : tuple of int
+    ratios : tuple of int, default=(4, 2, 2)
         SEANet downsampling ratios.
-    kernel_size : int
+    kernel_size : int, default=7
         Kernel size of the first SEANet convolution.
-    last_kernel_size : int
+    last_kernel_size : int, default=7
         Kernel size of the last SEANet convolution.
-    activation : type[nn.Module]
+    activation : type[nn.Module], default=nn.GELU
         Activation of the projector (the SEANet keeps EnCodec's ELU).
 
     References

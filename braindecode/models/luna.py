@@ -225,13 +225,13 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.freq_embed = _FrequencyFeatureEmbedder(
             embed_dim=self.embed_dim, patch_size=self.patch_size
         )
-        # For weight loading, we omit the normalization here to match parameter count
         self.channel_location_embedder = TimmMlp(
             in_features=int(self.patch_embed_size),
             out_features=int(self.patch_embed_size),
             hidden_features=int(self.patch_embed_size * 2),
             act_layer=self.activation,
             drop=self.drop_prob_chan,
+            norm_layer=norm_layer,
         )
         self.mask_token = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
         self.cross_attn = _CrossAttentionBlock(
@@ -240,6 +240,7 @@ class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             output_embed_dim=self.embed_dim,
             num_heads=self.num_heads,
             ff_dim=int(self.mlp_ratio * self.embed_dim),
+            norm_layer=norm_layer,
         )
         self.blocks = nn.ModuleList(
             [
@@ -907,6 +908,7 @@ class _CrossAttentionBlock(nn.Module):
         num_heads: int,
         dropout_p: float = 0.1,
         ff_dim: int = 2048,
+        norm_layer: type[nn.Module] = nn.LayerNorm,
     ) -> None:
         super().__init__()
         self.num_queries = num_queries
@@ -928,6 +930,7 @@ class _CrossAttentionBlock(nn.Module):
             output_embed_dim,
             act_layer=nn.GELU,
             drop=dropout_p,
+            norm_layer=norm_layer,
         )
         self.keys_norm = nn.LayerNorm(input_embed_dim)
         self.values_norm = nn.LayerNorm(input_embed_dim)

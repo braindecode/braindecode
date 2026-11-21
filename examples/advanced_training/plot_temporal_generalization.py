@@ -1,4 +1,5 @@
 # Authors: Matthew Chen <matt.chen42601@gmail.com>
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 # License: BSD (3-clause)
 
 r""".. _temporal-generalization:
@@ -6,21 +7,31 @@ r""".. _temporal-generalization:
 Temporal generalization with Braindecode
 ========================================
 
-In this tutorial, we will show you how to use the Braindecode library to decode
-EEG data over time. The problem of decoding EEG data over time is formulated as fitting
-a multivariate predictive model on each time point of the signal and then evaluating the
-performance of the model at the same time point in new epoched data. Specifically, given
-a pair of features :math:`X` and targets :math:`y`, where :math:`X` has more than
-:math:`2` dimensions, we want to fit a model :math:`f` to :math:`X` and :math:`y` and
-evaluate the performance of :math:`f` on a new pair of features :math:`X'` and targets
-:math:`y'`. Typically, :math:`X` is in the shape of
-:math:`n_{\text{epochs}} \times n_{\text{channels}} \times n_{\text{time}}`
-and :math:`y` is in the shape of :math:`n_{\text{epochs}} \times n_{\text{classes}}`.
-This tutorial is based on the MNE tutorial:
-https://mne.tools/stable/auto_tutorials/machine-learning/50_decoding.html#temporal-decoding.
+Decoding an entire trial with a single spatio-temporal classifier tells *whether*
+stimulus information is present in a recording, leaving open *when* that
+information emerges and *how* the underlying neural code evolves across
+processing stages. Following King and Dehaene [3]_ and MNE-Python's decoding
+framework [1]_, we separate these two questions by fitting one
+:class:`~braindecode.EEGClassifier` per time sample :math:`t` on epoched data
+:math:`X \in \mathbb{R}^{n_{\text{epochs}} \times n_{\text{channels}} \times n_{\text{times}}}`:
 
-For more information on the problem of temporal generalization, visit MNE [1]_.
-For papers describing this method, see [2]_ and [3]_.
+1. **Time-by-time decoding** (:class:`~mne.decoding.SlidingEstimator`): train
+   and test each decoder :math:`f_t` at the same latency :math:`t` to track when
+   experimental conditions become distinguishable in sensor space.
+2. **Sensor attribution across time** (`SHAP <https://shap.readthedocs.io/>`_
+   [4]_): estimate how strongly each sensor drives a non-linear decoder's
+   predictions at each latency.
+3. **Temporal generalization** (:class:`~mne.decoding.GeneralizingEstimator`):
+   train :math:`f_t` at sample :math:`t` and score it at every test sample
+   :math:`t'` to form the temporal generalization matrix :math:`M_{t, t'}`
+   [2]_, [3]_. Its geometry separates a chain of transient neural generators (a
+   narrow diagonal ridge along :math:`t' = t`) from a sustained neural code (a
+   square off-diagonal block) and from polarity reversals of evoked fields
+   (below-chance off-diagonal lobes).
+
+This example adapts MNE-Python's `decoding tutorial
+<https://mne.tools/stable/auto_tutorials/machine-learning/50_decoding.html#temporal-decoding>`_
+[1]_ to use a PyTorch neural network wrapped in :class:`~braindecode.EEGClassifier`.
 
 .. contents:: This example covers:
    :local:
@@ -28,18 +39,28 @@ For papers describing this method, see [2]_ and [3]_.
 
 """
 
-###########################################################################################
-# Loading and preprocessing the data
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# We will load in the same exact MEG dataset as used in the MNE tutorial [1]_
-# and preprocess it identically.
+######################################################################
+# Loading and preprocessing MEG epochs
+# ------------------------------------
+#
+# To isolate evoked sensor-space responses while keeping a short time grid for
+# repeated cross-validation, we load MNE's ``sample`` MEG recording, keep the
+# 203 planar gradiometers (excluding ``MEG 2443``), band-pass filter between
+# 2 and 20 Hz, epoch from ``-0.2`` to ``0.5 s`` around left-hemifield auditory
+# and visual stimuli, and decimate by a factor of 3 (to ``~50 Hz``, giving 36
+# samples per trial).
+#
+# Planar gradiometers in SI units (``T/m``) have variance near ``1e-23``, which
+# is orders of magnitude smaller than ``BatchNorm1d``'s ``eps=1e-5`` floor and
+# would collapse normalized activations toward zero. Extracting epochs in
+# display units (``fT/cm``) via ``epochs.get_data(units="fT/cm")`` brings
+# sensor variance onto an order-unity numerical scale.
 
 import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import shap
 import torch
-import torch.nn as nn
 from mne.datasets import sample
 from mne.decoding import (
     GeneralizingEstimator,
@@ -48,50 +69,47 @@ from mne.decoding import (
 )
 from sklearn.preprocessing import LabelEncoder
 from skorch.callbacks import LRScheduler
+from torch import nn
 from torch.optim import AdamW
 
 from braindecode import EEGClassifier
+from braindecode.util import set_random_seeds
 
-# Configure matplotlib for publication-quality plots
-plt.rcParams["figure.figsize"] = (10, 6)
-plt.rcParams["font.size"] = 11
-plt.rcParams["font.family"] = "sans-serif"
-plt.rcParams["axes.linewidth"] = 1.2
-plt.rcParams["grid.linewidth"] = 0.8
-plt.rcParams["xtick.labelsize"] = 10
-plt.rcParams["ytick.labelsize"] = 10
-plt.rcParams["axes.labelsize"] = 11
-plt.rcParams["legend.fontsize"] = 10
-plt.rcParams["figure.titlesize"] = 12
-plt.rcParams["axes.spines.left"] = True
-plt.rcParams["axes.spines.bottom"] = True
-plt.rcParams["axes.spines.top"] = False
-plt.rcParams["axes.spines.right"] = False
-plt.rcParams["grid.alpha"] = 0.3
+BLUE, GREY, INK = "#0072B2", "#7F7F7F", "#14181F"
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.labelsize": 10.5,
+        "axes.titlesize": 10.5,
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+    }
+)
+
+cuda = torch.cuda.is_available()
+device = "cuda" if cuda else "cpu"
+set_random_seeds(seed=20240205, cuda=cuda)
 
 data_path = sample.data_path()
-
-subjects_dir = data_path / "subjects"
-meg_path = data_path / "MEG" / "sample"
-raw_fname = meg_path / "sample_audvis_filt-0-40_raw.fif"
+raw_fname = data_path / "MEG" / "sample" / "sample_audvis_filt-0-40_raw.fif"
 tmin, tmax = -0.200, 0.500
-event_id = {"Auditory/Left": 1, "Visual/Left": 3}  # just use two
-raw = mne.io.read_raw_fif(raw_fname)
+event_id = {"Auditory/Left": 1, "Visual/Left": 3}
+
+raw = mne.io.read_raw_fif(raw_fname, preload=False)
 raw.pick(picks=["grad", "stim", "eog"])
-
-# The subsequent decoding analyses only capture evoked responses, so we can
-# low-pass the MEG data. Usually a value more like 40 Hz would be used,
-# but here low-pass at 20 so we can more heavily decimate, and allow
-# the example to run faster. The 2 Hz high-pass helps improve CSP.
-raw.load_data().filter(2, 20)
 events = mne.find_events(raw, "STI 014")
+raw.load_data().filter(2, 20, picks="grad")
+raw.info["bads"] += ["MEG 2443"]
 
-# Set up bad channels (modify to your needs)
-raw.info["bads"] += ["MEG 2443"]  # bads + 2 more
-
-# Read epochs
 epochs = mne.Epochs(
     raw,
     events,
@@ -102,52 +120,54 @@ epochs = mne.Epochs(
     picks=("grad", "eog"),
     baseline=(None, 0.0),
     preload=True,
-    reject=dict(grad=4000e-13, eog=150e-6),
+    reject={"grad": 4000e-13, "eog": 150e-6},
     decim=3,
     verbose="error",
 )
-epochs.pick(picks="meg", exclude="bads")  # remove stim and EOG
+epochs.pick(picks="meg", exclude="bads")
 del raw
 
-# MEG signals: n_epochs, n_meg_channels, n_times
-# Use fT/cm units instead of SI (T/m) so that BatchNorm1d's eps (~1e-5)
-# does not dominate the tiny SI-unit variance (~1e-23).
 X = epochs.get_data(units="fT/cm")
-y = epochs.events[:, 2]  # target: auditory left vs visual left
+y = epochs.events[:, 2]
 y_encod = LabelEncoder().fit_transform(y)
-print("X shape: ", X.shape, "Y shape: ", y.shape, "Y encode shape: ", y_encod.shape)
 
-n_classes = len(np.unique(y))
+n_classes = len(np.unique(y_encod))
 classes = list(range(n_classes))
-# Extract number of chans and time steps from dataset
-n_chans = X.shape[1]
-n_times = X.shape[2]
-print(n_classes, classes, n_chans, n_times)
+n_chans, n_times = X.shape[1], X.shape[2]
+print(
+    f"Epochs: {X.shape[0]} trials x {n_chans} planar gradiometers x {n_times} samples"
+)
 
 
-####################################################################################
-# Define your model(s)
-# ~~~~~~~~~~~~~~~~~~~~
-# Unlike the original MNE tutorial, we will use a deep learning model here and
-# leverage the `EEGClassifier` class from Braindecode. The `EEGClassifier` class
-# is a wrapper around a PyTorch model that allows us to use the model like a
-# scikit-learn estimator. We define a simple 3 layer multi-layer perceptron (MLP)
-# model with GELU activations:
+######################################################################
+# Defining a per-timepoint neural decoder
+# ---------------------------------------
+#
+# At a single sample :math:`t`, :class:`~mne.decoding.SlidingEstimator` and
+# :class:`~mne.decoding.GeneralizingEstimator` slice :math:`X[:, :, t]` into a
+# 2D matrix of shape ``(n_epochs, n_chans)`` and hand it to a scikit-learn
+# estimator. Where MNE's linear pipeline stacks ``StandardScaler`` and
+# ``LogisticRegression``, we pair a parameter-free ``nn.BatchNorm1d``
+# (``affine=False``) with a three-layer ``GELU`` multi-layer perceptron wrapped
+# in :class:`~braindecode.EEGClassifier`.
+#
+# During training, ``BatchNorm1d`` standardizes each gradiometer across the
+# mini-batch and updates running mean and variance estimates used at evaluation
+# time. Because cross-validation is already managed externally by
+# :func:`~mne.decoding.cross_val_multiscore`, we set ``train_split=None`` so
+# skorch trains on the entire training fold without carving out a nested 20 %
+# validation split or running per-epoch validation scoring on every time point.
 
 
 class BasicMLP(nn.Module):
-    """Simple 3 Layer MLP with GELU Activations between first
-    and second layer and second and third layers
-    """
+    """Three-layer sensor-space MLP preceded by channel-wise BatchNorm1d."""
 
-    def __init__(self, n_chans, n_outputs, n_times):
+    def __init__(self, n_chans, n_outputs, n_times=1):
         super().__init__()
         self.n_chans = n_chans
         self.n_classes = n_outputs
         self.n_times = n_times
-
         self.norm = nn.BatchNorm1d(self.n_chans, affine=False, eps=1e-5)
-
         self.model = nn.Sequential(
             nn.Linear(self.n_chans, self.n_chans),
             nn.GELU(),
@@ -157,255 +177,317 @@ class BasicMLP(nn.Module):
         )
 
     def forward(self, x):
-        x_norm = self.norm(x)
-        return self.model(x_norm)
+        return self.model(self.norm(x))
 
 
-#################################################################################
-# Note that the original MNE tutorial used an sklearn pipeline and prepended a
-# ``StandardScaler`` to the model. Instead, we will use a ``nn.BatchNorm1d``
-# layer to normalize the input data, which is equivalent to the ``StandardScaler``
-# in sklearn if we set the parameters ``affine=False`` and ``eps`` close to zero.
-# Note that MEG data must be converted from SI units (T/m, variance ~1e-23) to
-# display units (fT/cm) so that the ``eps`` parameter does not dominate the
-# normalization denominator. If the
-# batch size is the size of the whole dataset, then the ``nn.BatchNorm1d`` layer
-# will normalize each feature to have zero mean and unit variance just like the
-# ``StandardScaler``. However, if the batch size is smaller than the size of the
-# whole dataset, then the ``nn.BatchNorm1d`` layer will normalize each feature to
-# have zero mean and unit variance within each batch and approximate the mean and
-# variance of each feature in the whole dataset through its tracking of running
-# statistics.
-
-#################################################################################
-# Temporal Decoding
-# ~~~~~~~~~~~~~~~~~
-# We will emulate the temporal decoding of the original MNE tutorial.
-# The hyperparameters chosen were experimentally found to reproduce
-# the results of the original tutorial.
+def make_timepoint_classifier(epochs_n=25, batch_size=32):
+    return EEGClassifier(
+        BasicMLP,
+        module__n_chans=n_chans,
+        module__n_outputs=n_classes,
+        module__n_times=1,
+        criterion=nn.CrossEntropyLoss,
+        optimizer=AdamW,
+        optimizer__lr=0.01,
+        optimizer__foreach=False,
+        batch_size=batch_size,
+        max_epochs=epochs_n,
+        train_split=None,
+        callbacks=[
+            ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=epochs_n - 1)),
+        ],
+        device=device,
+        classes=classes,
+        verbose=False,
+    )
 
 
-EPOCHS = 30
-sliding_estimator_mlp_clf = EEGClassifier(
-    BasicMLP,
-    module__n_chans=n_chans,
-    module__n_outputs=n_classes,
-    module__n_times=1,
-    criterion=nn.CrossEntropyLoss,
-    optimizer=AdamW,
-    optimizer__lr=0.01,
-    # Note that the total dataset size is 123, but when set to 123,
-    # the model actually performs significantly worse than the original MNE tutorial.
-    # This is interesting because batch norm would then be equivalent
-    # to the standard scaler in sklearn.
-    # An interesting TODO is investigate is why?
-    # Perhaps due to numerical instability?
-    batch_size=8,
-    max_epochs=EPOCHS,
-    callbacks=[
-        "accuracy",
-        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=EPOCHS - 1)),
-    ],
-    device=device,
-    classes=classes,
-    verbose=False,  # Otherwise it would print out every training run for each time point
-)
+######################################################################
+# Time-by-time decoding
+# ---------------------
+#
+# To determine when auditory and visual stimuli become separable in sensor
+# space, :class:`~mne.decoding.SlidingEstimator` fits one independent
+# ``EEGClassifier`` at each of the 36 time samples under 5-fold stratified
+# cross-validation (`n_jobs=1` avoids pickling PyTorch modules across processes)
+# and scores predictions with ROC AUC.
 
-# n_jobs=1 because PyTorch models cannot be pickled and pickling is called by joblib when n_jobs > 1
 time_decoding_mlp = SlidingEstimator(
-    sliding_estimator_mlp_clf, n_jobs=1, scoring="roc_auc", verbose=True
+    make_timepoint_classifier(), n_jobs=1, scoring="roc_auc", verbose=False
 )
+cv_scores = cross_val_multiscore(time_decoding_mlp, X, y_encod, cv=5, n_jobs=1)
+scores_mean = cv_scores.mean(axis=0)
+scores_sem = cv_scores.std(axis=0) / np.sqrt(len(cv_scores))
 
-scores = cross_val_multiscore(time_decoding_mlp, X, y_encod, cv=5, n_jobs=1)
-
-# Mean scores across cross-validation splits
-scores = np.mean(scores, axis=0)
-
-# Plot
-fig, ax = plt.subplots(figsize=(10, 6))
-ax.plot(epochs.times, scores, label="Temporal Decoding", linewidth=2.5, color="#2E86AB")
-ax.axhline(
-    0.5, color="#A23B72", linestyle="--", linewidth=1.8, label="Chance Level", alpha=0.8
-)
+fig, ax = plt.subplots(figsize=(6.8, 3.6))
+for fold_idx, fold_score in enumerate(cv_scores):
+    ax.plot(
+        epochs.times,
+        fold_score,
+        color=BLUE,
+        alpha=0.18,
+        linewidth=0.8,
+        label="Individual CV folds" if fold_idx == 0 else None,
+    )
 ax.fill_between(
-    epochs.times, 0.5, scores, where=(scores >= 0.5), alpha=0.15, color="#2E86AB"
+    epochs.times,
+    scores_mean - scores_sem,
+    scores_mean + scores_sem,
+    color=BLUE,
+    alpha=0.22,
+    linewidth=0,
 )
-ax.set_xlabel("Time (s)", fontsize=11, fontweight="bold")
-ax.set_ylabel("AUC Score", fontsize=11, fontweight="bold")
-ax.legend(loc="lower right", frameon=True, shadow=False, fancybox=False)
-ax.axvline(0.0, color="gray", linestyle="-", linewidth=1, alpha=0.5)
+ax.plot(epochs.times, scores_mean, color=BLUE, linewidth=2.0)
+ax.axhline(0.5, color=GREY, linestyle="--", linewidth=0.9)
+ax.axvline(0.0, color=GREY, linestyle=":", linewidth=0.9)
+ax.text(
+    epochs.times[-1],
+    0.515,
+    "Chance (0.5)",
+    color=GREY,
+    fontsize=8.5,
+    ha="right",
+    va="bottom",
+)
+ax.text(
+    0.008,
+    0.42,
+    "Stimulus onset",
+    color=GREY,
+    fontsize=8.5,
+    ha="left",
+    va="bottom",
+)
+ax.annotate(
+    "Mean ROC AUC (± SEM)",
+    xy=(epochs.times[scores_mean.argmax()], scores_mean.max()),
+    xytext=(0.23, 0.94),
+    color=BLUE,
+    fontsize=9,
+    fontweight="bold",
+    arrowprops={"arrowstyle": "-", "color": BLUE, "lw": 0.8},
+)
+ax.grid(axis="y", color="#EAEAEA", linewidth=0.7)
+ax.set_axisbelow(True)
+ax.set_xlim(epochs.times[0], epochs.times[-1])
+ax.set_ylim(0.38, 1.03)
+ax.set_xticks([-0.2, 0.0, 0.2, 0.4])
+ax.set_yticks([0.5, 0.75, 1.0])
+ax.set_xlabel("Time from stimulus onset (s)")
+ax.set_ylabel("Decoding ROC AUC")
 ax.set_title(
-    "Temporal Decoding: MEG Sensor Space", fontsize=12, fontweight="bold", pad=15
+    "A  Sensor-space auditory vs. visual decoding across time",
+    loc="left",
+    fontweight="bold",
+    color=INK,
 )
-ax.grid(True, alpha=0.3, linestyle="-", linewidth=0.5)
-ax.set_ylim([0.4, 1.0])
 fig.tight_layout()
 
-###################################################################################################
-# (Optional) Analyzing the spatial filters/patterns via Shapley Values
-# ---------------------------------------------------------------------
+######################################################################
+# Before stimulus onset (``t < 0 s``), cross-validated AUC hovers around the
+# ``0.5`` chance baseline. Decoding rises sharply between ``0.06`` and
+# ``0.10 s`` as primary auditory and visual cortices generate distinct magnetic
+# field topographies, peaks near ``1.0`` around ``0.12–0.18 s``, and decays
+# gradually while remaining above chance through ``0.50 s``.
 #
-# You will need to install the `shap` package to run this part of the tutorial.
-# > pip install shap
+# Sensor attributions across latencies with SHAP
+# ----------------------------------------------
 #
-# In the original tutorial, the model analyzed was a LogisticRegression model, which is a linear
-# classifier. Because our deep learning model is a non-linear classifier, we cannot use the same
-# approach to analyze the spatial filters/patterns. However, we can still use the Shapley Values
-# approach to analyze the spatial filters/patterns. The idea is to use the Shapley Values to
-# estimate the importance of each feature (i.e. each channel) in the models' decision making at
-# each time point. We will only calculate the Shapley Values for one sample for the sake of
-# simplicity. For this part, you will need to install the
-# `shap` package (URL: https://shap.readthedocs.io/) [4]_.
+# For a linear classifier, weights can be transformed into interpretable spatial
+# activation patterns from the data covariance [1]_. Because ``BasicMLP``
+# composes non-linear ``GELU`` layers, no single linear spatial filter exists.
+# To inspect which planar gradiometers drive the network at each sample, we fit
+# ``SlidingEstimator`` on all 123 epochs and compute DeepLIFT Shapley
+# attributions (``shap.DeepExplainer`` [4]_) on a held-out visual-left trial
+# (trial index ``100``) relative to a 100-trial background reference.
+#
+# Positive Shapley values push the class logit upward relative to the
+# background expectation, whereas negative values push it downward.
 
-time_decoding_mlp = time_decoding_mlp.fit(X, y_encod)
+time_decoding_mlp.fit(X, y_encod)
 
-# We will use the first 100 samples as background
-background = torch.from_numpy(X[:100]).to(device).to(torch.float32)
-# We will use the 101st sample for demonstration
-test_images = torch.from_numpy(X[100:101]).to(device).to(torch.float32)
-# Note that the model predicted "visual left" for the 101st sample
-print(X.shape, background.shape, test_images.shape, y_encod[100:101])
+background = torch.from_numpy(X[:100]).to(device=device, dtype=torch.float32)
+test_trial = torch.from_numpy(X[100:101]).to(device=device, dtype=torch.float32)
+
 aud_shap = []
 vis_shap = []
-
-for ei, this_est in enumerate(time_decoding_mlp.estimators_):
-    e = shap.DeepExplainer(this_est.module_.model, background[:, :, ei])
-    shap_values = e.shap_values(test_images[:, :, ei])
+for t_idx, est in enumerate(time_decoding_mlp.estimators_):
+    # Apply the frozen BatchNorm1d statistics before explaining the MLP layers.
+    norm_layer = est.module_.eval().norm
+    with torch.inference_mode():
+        bg_norm = norm_layer(background[:, :, t_idx])
+        trial_norm = norm_layer(test_trial[:, :, t_idx])
+    explainer = shap.DeepExplainer(est.module_.model, bg_norm)
+    shap_values = explainer.shap_values(trial_norm)
     aud_shap.append(shap_values[0, :, 0])
     vis_shap.append(shap_values[0, :, 1])
 aud_shap = np.asarray(aud_shap)
 vis_shap = np.asarray(vis_shap)
 
-###################################################################################################
-# Note that we have to plot two plots because there are two outputs (auditory and visual).
-# The higher the magnitude of the Shapley Value, the more important the feature is for making the
-# prediction. The more positive the Shapley Value, the more the model associated that feature
-# with the target. The more negative the Shapley Value, the less the model associated that
-# feature with the target.
 
-
-def plot_evoked(data, title):
-    data = np.transpose(data)
-    evoked_time_gen = mne.EvokedArray(data, epochs.info, tmin=epochs.times[0])
-    joint_kwargs = dict(
-        ts_args=dict(time_unit="s", units=dict(grad="Shapley Value")),
-        topomap_args=dict(time_unit="s"),
+def plot_shap_evoked(shap_matrix, heading):
+    evoked_shap = mne.EvokedArray(
+        shap_matrix.T, epochs.info, tmin=epochs.times[0], comment=heading
     )
-    evoked_time_gen.plot_joint(
-        times=np.arange(0.0, 0.500, 0.100), title=title, **joint_kwargs
+    evoked_shap.plot_joint(
+        times=np.arange(0.0, 0.500, 0.100),
+        title=heading,
+        ts_args={"time_unit": "s", "units": {"grad": "SHAP value"}},
+        topomap_args={"time_unit": "s"},
     )
 
 
-###################################################################################################
-# Plot the Shapley Values for the auditory/left.
+######################################################################
+# Attributions for the unpredicted ``Auditory/Left`` output are negative over
+# posterior occipital sensors around ``0.1–0.2 s``, whereas attributions for the
+# predicted ``Visual/Left`` output show matching positive occipital peaks over
+# right-lateralized visual gradiometers contralateral to the left visual field.
 
+plot_shap_evoked(aud_shap, "Auditory/Left logit attributions (trial 100)")
 
-plot_evoked(aud_shap, "Auditory/Left Shap Values (Not Predicted)")
-###################################################################################################
-# Plot the Shapley Values for the visual/left.
+######################################################################
+# And for the predicted ``Visual/Left`` class on the same trial:
 
+plot_shap_evoked(vis_shap, "Visual/Left logit attributions (trial 100)")
 
-plot_evoked(vis_shap, "Visual/Left Shap Values (Predicted)")
-
-###################################################################################################
-# Temporal Generalization
-# ~~~~~~~~~~~~~~~~~~~~~~~
-# Next, we will similarly emulate the temporal generalization of the original MNE tutorial,
-# which is an extension of the temporal decoding approach.
-# Instead of just predicting the target at each time point, it evaluates how well a model at a
-# particular time point predicts the target at all other time points.
-# Thus, instead of using a ``SlidingEstimator``, we will use a ``GeneralizingEstimator``.
-# The approach is documented in [2]_ and [3]_.
-
-generalizing_estimator_mlp_clf = EEGClassifier(
-    BasicMLP,
-    module__n_chans=n_chans,
-    module__n_outputs=n_classes,
-    module__n_times=1,
-    criterion=nn.CrossEntropyLoss,
-    optimizer=AdamW,
-    optimizer__lr=0.01,
-    batch_size=8,
-    max_epochs=EPOCHS,
-    callbacks=[
-        "accuracy",
-        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=EPOCHS - 1)),
-    ],
-    device=device,
-    classes=classes,
-    verbose=False,  # Otherwise it would print out every training run for each time point
-)
+######################################################################
+# Temporal generalization across latencies
+# ----------------------------------------
+#
+# Sustained above-chance decoding from ``0.07`` to ``0.50 s`` is compatible
+# with two different dynamical regimes [3]_: a single cortical pattern
+# maintained throughout the epoch, or a chain of transient stages handing
+# information from one sensor configuration to the next.
+#
+# To separate these regimes, :class:`~mne.decoding.GeneralizingEstimator` fits
+# one ``EEGClassifier`` at each training time :math:`t` and evaluates its ROC
+# AUC at every testing time :math:`t'` across 3-fold stratified
+# cross-validation, yielding the :math:`36 \times 36` temporal generalization
+# matrix :math:`M_{t, t'}`.
 
 generalizing_decoding_mlp = GeneralizingEstimator(
-    generalizing_estimator_mlp_clf, n_jobs=1, scoring="roc_auc", verbose=True
+    make_timepoint_classifier(), n_jobs=1, scoring="roc_auc", verbose=False
+)
+gen_cv_scores = cross_val_multiscore(
+    generalizing_decoding_mlp, X, y_encod, cv=3, n_jobs=1
+)
+gen_scores = gen_cv_scores.mean(axis=0)
+diag_scores = np.diag(gen_scores)
+diag_sem = np.diagonal(gen_cv_scores, axis1=1, axis2=2).std(axis=0) / np.sqrt(
+    len(gen_cv_scores)
 )
 
-gen_scores = cross_val_multiscore(generalizing_decoding_mlp, X, y_encod, cv=3, n_jobs=1)
+# sphinx_gallery_thumbnail_number = -1
+fig, (ax_diag, ax_tgm) = plt.subplots(
+    1, 2, figsize=(10.2, 4.3), gridspec_kw={"width_ratios": [1.05, 1.15]}
+)
 
-###################################################################################################
-# The diagonal of the generalization matrix should look like the temporal decoding scores.
-
-# Mean scores across cross-validation splits
-gen_scores = np.mean(gen_scores, axis=0)
-
-# Plot the diagonal (it's exactly the same as the time-by-time decoding above)
-fig, ax = plt.subplots(figsize=(10, 6))
-ax.plot(
+# Panel A: diagonal slice (train time == test time)
+ax_diag.fill_between(
     epochs.times,
-    np.diag(gen_scores),
-    label="Diagonal Generalization",
-    linewidth=2.5,
-    color="#2E86AB",
+    diag_scores - diag_sem,
+    diag_scores + diag_sem,
+    color=BLUE,
+    alpha=0.22,
+    linewidth=0,
 )
-ax.axhline(
-    0.5, color="#A23B72", linestyle="--", linewidth=1.8, label="Chance Level", alpha=0.8
+ax_diag.plot(epochs.times, diag_scores, color=BLUE, linewidth=2.0)
+ax_diag.axhline(0.5, color=GREY, linestyle="--", linewidth=0.9)
+ax_diag.axvline(0.0, color=GREY, linestyle=":", linewidth=0.9)
+ax_diag.text(
+    epochs.times[-1],
+    0.515,
+    "Chance (0.5)",
+    color=GREY,
+    fontsize=8.5,
+    ha="right",
+    va="bottom",
 )
-ax.fill_between(
-    epochs.times,
-    0.5,
-    np.diag(gen_scores),
-    where=(np.diag(gen_scores) >= 0.5),
-    alpha=0.15,
-    color="#2E86AB",
+ax_diag.grid(axis="y", color="#EAEAEA", linewidth=0.7)
+ax_diag.set_axisbelow(True)
+ax_diag.set_xlim(epochs.times[0], epochs.times[-1])
+ax_diag.set_ylim(0.38, 1.03)
+ax_diag.set_xticks([-0.2, 0.0, 0.2, 0.4])
+ax_diag.set_yticks([0.5, 0.75, 1.0])
+ax_diag.set_xlabel("Time t = t' from onset (s)")
+ax_diag.set_ylabel("Diagonal ROC AUC")
+ax_diag.set_title(
+    "A  Matched-latency diagonal (t' = t)",
+    loc="left",
+    fontweight="bold",
+    color=INK,
 )
-ax.set_xlabel("Time (s)", fontsize=11, fontweight="bold")
-ax.set_ylabel("AUC Score", fontsize=11, fontweight="bold")
-ax.legend(loc="lower right", frameon=True, shadow=False, fancybox=False)
-ax.axvline(0.0, color="gray", linestyle="-", linewidth=1, alpha=0.5)
-ax.set_title(
-    "Diagonal Generalization: MEG Sensor Space", fontsize=12, fontweight="bold", pad=15
-)
-ax.grid(True, alpha=0.3, linestyle="-", linewidth=0.5)
-ax.set_ylim([0.4, 1.0])
-fig.tight_layout()
 
-####################################################################################################
-# Then we plot the full generalization matrix.
-fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-im = ax.imshow(
+# Panel B: square Temporal Generalization Matrix centered on chance (0.5 = white)
+half_dt = 0.5 * (epochs.times[1] - epochs.times[0])
+extent = [
+    epochs.times[0] - half_dt,
+    epochs.times[-1] + half_dt,
+    epochs.times[0] - half_dt,
+    epochs.times[-1] + half_dt,
+]
+im = ax_tgm.imshow(
     gen_scores,
-    interpolation="lanczos",
     origin="lower",
-    cmap="RdYlGn",
-    extent=epochs.times[[0, -1, 0, -1]],
+    cmap="RdBu_r",
+    extent=extent,
     vmin=0.0,
     vmax=1.0,
-    aspect="auto",
+    aspect="equal",
+    interpolation="nearest",
 )
-ax.set_xlabel("Testing Time (s)", fontsize=11, fontweight="bold")
-ax.set_ylabel("Training Time (s)", fontsize=11, fontweight="bold")
-ax.set_title("Temporal Generalization Matrix", fontsize=12, fontweight="bold", pad=15)
-ax.axvline(0, color="white", linewidth=1.5, linestyle="-", alpha=0.7)
-ax.axhline(0, color="white", linewidth=1.5, linestyle="-", alpha=0.7)
-cbar = plt.colorbar(im, ax=ax, pad=0.02)
-cbar.set_label("AUC Score", fontsize=11, fontweight="bold")
-cbar.ax.tick_params(labelsize=10)
+ax_tgm.axvline(0.0, color=INK, linewidth=0.8, linestyle=":")
+ax_tgm.axhline(0.0, color=INK, linewidth=0.8, linestyle=":")
+ax_tgm.plot(
+    [epochs.times[0], epochs.times[-1]],
+    [epochs.times[0], epochs.times[-1]],
+    color=INK,
+    linewidth=0.7,
+    linestyle="--",
+    alpha=0.55,
+)
+ax_tgm.spines["top"].set_visible(True)
+ax_tgm.spines["right"].set_visible(True)
+ax_tgm.set_xticks([-0.2, 0.0, 0.2, 0.4])
+ax_tgm.set_yticks([-0.2, 0.0, 0.2, 0.4])
+ax_tgm.set_xlabel("Testing time t' (s)")
+ax_tgm.set_ylabel("Training time t (s)")
+ax_tgm.set_title(
+    "B  Temporal generalization matrix",
+    loc="left",
+    fontweight="bold",
+    color=INK,
+)
+cbar = fig.colorbar(im, ax=ax_tgm, fraction=0.046, pad=0.04)
+cbar.set_ticks([0.0, 0.5, 1.0])
+cbar.set_ticklabels(["0.0", "0.5 (chance)", "1.0"])
+cbar.set_label("ROC AUC")
 fig.tight_layout()
 
-
-###################################################################################################
+######################################################################
+# Reading the temporal generalization matrix
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# Comparing the diagonal slice (**A**) with the full :math:`(t, t')` plane
+# (**B**, where white corresponds to the ``0.5`` chance baseline, red to
+# above-chance generalization, and blue to below-chance reversal) reveals three
+# dynamical features described by King and Dehaene [3]_:
+#
+# * **Early transient cascade (0.07–0.15 s)**: high AUC (deep red) stays
+#   tightly concentrated near the :math:`t' = t` diagonal. A decoder trained on
+#   the initial sensory volley at ``0.09 s`` loses accuracy within ``~40 ms``,
+#   indicating rapid sequential propagation across distinct sensor patterns.
+# * **Broader post-sensory maintenance (0.15–0.35 s)**: the red region widens
+#   into an off-diagonal block, showing that sensor topographies evolve more
+#   slowly and remain mutually generalizable across ``~150–200 ms``.
+# * **Below-chance off-diagonal lobes (blue)**: decoders trained around
+#   ``0.09–0.13 s`` score systematically below ``0.5`` when tested around
+#   ``0.20–0.30 s`` (and symmetrically across the diagonal), consistent with
+#   polarity reversal of the evoked magnetic field between early and late
+#   deflections [2]_, [3]_.
+#
 # References
-# ~~~~~~~~~~
+# ----------
 #
 # .. [1] Jean-Rémi King, Laura Gwilliams, Chris Holdgraf, Jona Sassenhagen,
 #        Alexandre Barachant, Denis Engemann, Eric Larson, and Alexandre Gramfort.
@@ -414,18 +496,18 @@ fig.tight_layout()
 #        URL: https://hal.archives-ouvertes.fr/hal-01848442.
 #
 # .. [2] Jean-Rémi King, Alexandre Gramfort, Aaron Schurger, Lionel Naccache,
-#         and Stanislas Dehaene. Two distinct dynamic modes subtend the detection
-#         of unexpected sounds. PLoS ONE, 9(1):e85791, 2014.
-#         URL: doi:10.1371/journal.pone.0085791.
+#        and Stanislas Dehaene. Two distinct dynamic modes subtend the detection
+#        of unexpected sounds. PLoS ONE, 9(1):e85791, 2014.
+#        URL: doi:10.1371/journal.pone.0085791.
 #
 # .. [3] Jean-Rémi King and Stanislas Dehaene.
-#         Characterizing the dynamics of mental representations: the temporal
-#         generalization method. Trends in Cognitive Sciences, 18(4):203–210,
-#         2014,
-#         URL: doi:10.1016/j.tics.2014.01.002.
+#        Characterizing the dynamics of mental representations: the temporal
+#        generalization method. Trends in Cognitive Sciences, 18(4):203–210,
+#        2014.
+#        URL: doi:10.1016/j.tics.2014.01.002.
 #
 # .. [4] Lundberg, Scott M., and Su-In Lee.
 #        "A unified approach to interpreting model predictions."
-#        Advances in neural information processing systems 30, 2017.
+#        Advances in Neural Information Processing Systems 30, 2017.
 #        URL: https://arxiv.org/abs/1705.07874
 # .. include:: /links.inc

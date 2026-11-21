@@ -1,10 +1,12 @@
 name: docs
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.number }}-${{ github.event.ref }}
-  cancel-in-progress: true
-# Pull requests execute only the gallery examples they change (none: no
-# execution). Master pushes, tags, release/* branches, the weekly schedule and
-# manual runs execute the full gallery.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Pull requests skip docs builds when no docs/examples/public docstrings changed,
+# build no-plot HTML when only RST/docstrings changed, and execute only modified
+# gallery scripts otherwise. Master pushes reuse cached Sphinx-Gallery outputs
+# with module-aware invalidation; weekly schedule and release tags run cold.
 on:
   push:
     branches:
@@ -19,68 +21,98 @@ on:
   workflow_dispatch:
 
 jobs:
-  build_docs:
+  plan:
     runs-on: ubuntu-latest
-    env:
-      # `sae` (SAE Lens) lets the optional SAE tutorials execute. It is a
-      # docs-build install only: not a core dependency and not in `all`.
-      DOCS_EXTRAS: docs,moabb,hub,eegprep,typing,viz,sae
-      HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+      run_examples: ${{ steps.check.outputs.run_examples }}
+      gallery_arg: ${{ steps.check.outputs.gallery_arg }}
+      extras: ${{ steps.check.outputs.extras }}
+      use_gallery_cache: ${{ steps.check.outputs.use_gallery_cache }}
     steps:
-      ## Install Braindecode
       - name: Checking Out Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2  # the PR merge commit and its base, to list changed examples
-      # Install python
+          fetch-depth: 50
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      # Cache MNE Data and HuggingFace Hub weights.
-      # Both caches are content-addressed (filenames + checksums for MNE,
-      # commit-pinned safetensors for HF), so they only need to rotate when the
-      # set of examples/docs inputs changes. That preserves reuse across normal
-      # CI runs instead of forcing a brand-new multi-GB cache upload every time.
-      # Only non-PR runs save them: per-PR copies (2-4 GB each) filled the 10 GB
-      # repository quota and evicted master's, so every run started cold.
+      - name: Plan Documentation Build
+        id: check
+        run: python .github/scripts/plan_docs.py --github-output "$GITHUB_OUTPUT"
+
+  build_docs:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      BRAINDECODE_DOCS_JOBS: "4"
+    steps:
+      - name: Checking Out Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Restore multi-GB MNE and HuggingFace caches ONLY when gallery scripts execute.
       - name: Restore MNE Data Cache
+        if: needs.plan.outputs.run_examples != ''
         id: cache-mne_data
         uses: actions/cache/restore@v4
         with:
           path: ~/mne_data
-          key: docs-mne-data-v2-${{ hashFiles('examples/**/*.py', 'docs/**/*.rst', 'docs/**/*.py', 'docs/conf.py') }}
+          key: docs-mne-data-v2-${{ hashFiles('examples/**/*.py') }}
           restore-keys: |
             docs-mne-data-v2-
             docs-mne-data-
       - name: Restore HuggingFace Cache
+        if: needs.plan.outputs.run_examples != ''
         id: cache-hf
         uses: actions/cache/restore@v4
         with:
           path: ~/.cache/huggingface/hub
-          key: docs-hf-hub-v2-${{ hashFiles('examples/**/*.py', 'docs/**/*.rst', 'docs/**/*.py', 'docs/conf.py') }}
+          key: docs-hf-hub-v2-${{ hashFiles('examples/**/*.py') }}
           restore-keys: |
             docs-hf-hub-v2-
             docs-hf-hub-
-      # Install uv
+
+      # Restore built Sphinx-Gallery outputs on master pushes (schedule/tags run cold).
+      - name: Restore Sphinx-Gallery Cache
+        if: needs.plan.outputs.use_gallery_cache == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            docs/auto_examples
+            docs/generated
+          key: docs-sg-gallery-v1-${{ github.sha }}
+          restore-keys: |
+            docs-sg-gallery-v1-
+
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
           version: latest
           enable-cache: true
           cache-dependency-glob: "**/pyproject.toml"
-      # Install with all dependencies for doc build to go through
       - name: Install with doc dependencies
         env:
           # CI runners have no GPU; pull the CPU-only torch wheels instead of the
           # ~1.8 GiB CUDA stack. Avoids disk exhaustion and speeds up install.
           UV_TORCH_BACKEND: cpu
-        run: uv pip install --system -e ".[${{ env.DOCS_EXTRAS }}]"
-      # Show Braindecode Version
+          DOCS_EXTRAS: ${{ needs.plan.outputs.extras }}
+        run: uv pip install --system -e ".[${DOCS_EXTRAS}]"
       - run: python -c "import braindecode; print(braindecode.__version__)"
-      # Persist HF token to disk so sphinx-gallery examples can access gated repos
+
       - name: Login to Hugging Face Hub
-        if: ${{ env.HF_TOKEN != '' }}
+        if: ${{ needs.plan.outputs.run_examples != '' && env.HF_TOKEN != '' }}
         run: python -c "import os; from huggingface_hub import login; login(token=os.environ['HF_TOKEN'])"
+
       - name: Select the documentation URL
         # Release tags are published as /stable/ (and /X.Y/); everything else is /dev/.
         run: |
@@ -90,39 +122,36 @@ jobs:
             echo "BRAINDECODE_DOCS_URL=https://braindecode.org/dev/" >> "$GITHUB_ENV"
           fi
 
+      - name: Prepare Sphinx-Gallery Cache
+        if: needs.plan.outputs.use_gallery_cache == 'true'
+        run: python .github/scripts/sync_gallery_cache.py prepare --docs-dir docs --head-sha "$GITHUB_SHA"
+
       - name: Create Docs
         env:
-          # DANCE alone peaks near 8.5 GB; do not use auto gallery workers.
-          BRAINDECODE_DOCS_JOBS: "2"
-          PARTIAL: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }}
+          RUN_EXAMPLES: ${{ needs.plan.outputs.run_examples }}
+          GALLERY_ARG: ${{ needs.plan.outputs.gallery_arg }}
+          BRAINDECODE_BUILD_SITEMAP: ${{ github.event_name != 'pull_request' && '1' || '0' }}
         run: |
-          # Configure MNE before workers can race on first-use config creation.
-          mkdir -p ~/mne_data
-          python -c "import os, mne; mne.set_config('MNE_DATA', os.path.expanduser('~/mne_data'))"
-          RUN=all GALLERY=""
-          if [ "$PARTIAL" = true ]; then
-            RUN=$(git diff --name-only --diff-filter=d HEAD^1 HEAD -- examples | sed -n 's|.*/\(plot_[^/]*\)\.py$|\1|p' | paste -sd'|' -)
-            GALLERY="-D 'sphinx_gallery_conf.filename_pattern=/($RUN)\.py'"
-            if [ -z "$RUN" ]; then GALLERY="-D plot_gallery=0"; fi
-          fi
-          echo "Gallery examples to execute: ${RUN:-none}"
-          if [ -n "$RUN" ]; then
-            # Gallery workers can import MOABB examples concurrently; finish NEMAR downloads and legacy-file materialization first.
+          echo "Gallery examples to execute: ${RUN_EXAMPLES:-none}"
+          if [ -n "$RUN_EXAMPLES" ]; then
+            # Configure MNE and finish shared BNCI2014_001 downloads before workers fork.
+            mkdir -p ~/mne_data
+            python -c "import os, mne; mne.set_config('MNE_DATA', os.path.expanduser('~/mne_data'))"
             python -c "from moabb.datasets import BNCI2014_001; BNCI2014_001().get_data([1, 2, 3])"
           fi
           cd docs
-          # memory_profiler cannot start its monitor inside a loky worker.
-          # The full pass reuses this example's same-build gallery result.
-          if [[ "$RUN" == all || "$RUN" == *plot_benchmark_preprocessing* ]]; then
-            BRAINDECODE_DOCS_JOBS=1 make html SPHINXOPTS="-j auto -D sphinx_gallery_conf.filename_pattern=plot_benchmark_preprocessing.py"
-          fi
-          make html SPHINXOPTS="-j auto $GALLERY"
+          make html SPHINXOPTS="-j auto $GALLERY_ARG"
+
+      - name: Stamp Sphinx-Gallery Cache
+        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') || github.event_name == 'schedule' }}
+        run: python .github/scripts/sync_gallery_cache.py stamp --docs-dir docs --head-sha "$GITHUB_SHA"
 
       - name: Build version-scoped agent documentation
         run: |
           python -m pytest -q docs/tests/test_agent_docs.py
-          # Reuse the completed HTML doctrees; never re-run gallery examples.
-          sphinx-build -b markdown -d docs/_build/doctrees -D plot_gallery=0 docs docs/_build/markdown
+          # Render only the curated CRITICAL_PAGES from existing HTML doctrees.
+          mapfile -t PAGES < <(python -c 'import sys; sys.path.insert(0, "docs"); from build_agent_docs import CRITICAL_PAGES; print("\n".join(f"docs/{p}.rst" for p in CRITICAL_PAGES))')
+          sphinx-build -j auto -b markdown -d docs/_build/doctrees -D plot_gallery=0 docs docs/_build/markdown "${PAGES[@]}"
           python docs/build_agent_docs.py \
             --markdown-root docs/_build/markdown \
             --html-root docs/_build/html \
@@ -137,28 +166,37 @@ jobs:
             docs/auto_examples/ docs/_build/html/auto_examples/_notebooks/
 
       - name: Save MNE Data Cache
-        if: ${{ github.event_name != 'pull_request' && steps.cache-mne_data.outputs.cache-hit != 'true' }}
+        if: ${{ github.event_name != 'pull_request' && needs.plan.outputs.run_examples != '' && steps.cache-mne_data.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: ~/mne_data
           key: ${{ steps.cache-mne_data.outputs.cache-primary-key }}
 
       - name: Save HuggingFace Cache
-        if: ${{ github.event_name != 'pull_request' && steps.cache-hf.outputs.cache-hit != 'true' }}
+        if: ${{ github.event_name != 'pull_request' && needs.plan.outputs.run_examples != '' && steps.cache-hf.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: ~/.cache/huggingface/hub
           key: ${{ steps.cache-hf.outputs.cache-primary-key }}
 
+      - name: Save Sphinx-Gallery Cache
+        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') || github.event_name == 'schedule' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            docs/auto_examples
+            docs/generated
+          key: docs-sg-gallery-v1-${{ github.sha }}
+
       - name: Upload HTML Docs as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: HTML-Docs
-          path: ./docs/_build/
+          path: ./docs/_build/html
 
       - name: Deploy to Github Pages if on Master
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
           external_repository: braindecode/braindecode.github.io
@@ -166,3 +204,123 @@ jobs:
           publish_branch: master
           publish_dir: ./docs/_build/html
           cname: braindecode.org
+
+      - name: Deploy /stable/, /X.Y/, and root discovery files on release tag
+        id: tag_deploy
+        if: ${{ github.repository == 'braindecode/braindecode' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          DEPLOY_KEY: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+          INDEXNOW_KEY: ${{ secrets.INDEXNOW_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v([0-9]+\.[0-9]+)(\.[0-9]+)?$ ]]; then
+            echo "Skipping stable docs deploy for non-final release tag: $GITHUB_REF_NAME"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          XY="${BASH_REMATCH[1]}"
+          if [[ -z "$DEPLOY_KEY" ]]; then
+            echo "::error::ACTIONS_DEPLOY_KEY secret is required to deploy release docs"
+            exit 1
+          fi
+
+          install -d -m 700 ~/.ssh
+          KEY_FILE="$(mktemp ~/.ssh/deploy_key.XXXXXX)"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts 2>/dev/null
+
+          export GIT_SSH_COMMAND="ssh -i ${KEY_FILE} -o IdentitiesOnly=yes"
+          rm -rf /tmp/gh-pages
+          git clone --depth 1 --branch master \
+            git@github.com:braindecode/braindecode.github.io.git /tmp/gh-pages
+
+          rm -rf /tmp/gh-pages/stable "/tmp/gh-pages/${XY}"
+          cp -a ./docs/_build/html /tmp/gh-pages/stable
+          cp -a ./docs/_build/html "/tmp/gh-pages/${XY}"
+
+          cp ./docs/_root/robots.txt /tmp/gh-pages/robots.txt
+          cp ./docs/_root/sitemap.xml /tmp/gh-pages/sitemap.xml
+          cp ./docs/_root/index.html /tmp/gh-pages/index.html
+          cp ./docs/_build/html/llms.txt /tmp/gh-pages/llms.txt
+          printf 'braindecode.org\n' > /tmp/gh-pages/CNAME
+          touch /tmp/gh-pages/.nojekyll
+
+          CLEAN_KEY="${INDEXNOW_KEY//[[:space:]]/}"
+          if [[ -n "$CLEAN_KEY" ]]; then
+            if [[ ! "$CLEAN_KEY" =~ ^[A-Za-z0-9-]{8,128}$ ]]; then
+              echo "::error::INDEXNOW_KEY contains invalid characters"
+              exit 1
+            fi
+            printf '%s' "$CLEAN_KEY" > "/tmp/gh-pages/${CLEAN_KEY}.txt"
+            echo "has_indexnow=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_indexnow=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          cd /tmp/gh-pages
+          git add -A
+          {
+            git diff --cached --name-only -- stable/ \
+              | grep -E '^stable/.*\.(html|md)$|^stable/(llms\.txt|sitemap\.xml)$' \
+              | sed 's|^|https://braindecode.org/|' || true
+            echo "https://braindecode.org/"
+            echo "https://braindecode.org/sitemap.xml"
+            echo "https://braindecode.org/llms.txt"
+            echo "https://braindecode.org/stable/index.html"
+            echo "https://braindecode.org/stable/sitemap.xml"
+          } | sort -u > /tmp/indexnow_urls.txt
+
+          if git diff --cached --quiet; then
+            echo "No documentation changes to publish for $GITHUB_REF_NAME"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "deploy(stable): ${GITHUB_REF_NAME} (${GITHUB_SHA::7})"
+            git pull --rebase origin master
+            git push origin master
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify IndexNow (Bing, ChatGPT Search, Copilot, Yandex, Naver, Seznam)
+        if: ${{ steps.tag_deploy.outputs.pushed == 'true' && steps.tag_deploy.outputs.has_indexnow == 'true' }}
+        env:
+          INDEXNOW_KEY: ${{ secrets.INDEXNOW_KEY }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          key = "".join(os.environ["INDEXNOW_KEY"].split())
+          with open("/tmp/indexnow_urls.txt", encoding="utf-8") as fh:
+              urls = [line.strip() for line in fh if line.strip()][:10000]
+          if not urls:
+              raise SystemExit(0)
+
+          payload = {
+              "host": "braindecode.org",
+              "key": key,
+              "keyLocation": f"https://braindecode.org/{key}.txt",
+              "urlList": urls,
+          }
+          req = urllib.request.Request(
+              "https://api.indexnow.org/indexnow",
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json; charset=utf-8"},
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=20) as resp:
+                  print(f"IndexNow submitted {len(urls)} URLs -> HTTP {resp.status}")
+                  if resp.status not in (200, 202):
+                      raise RuntimeError(f"Unexpected IndexNow HTTP {resp.status}")
+          except urllib.error.HTTPError as exc:
+              body = exc.read().decode("utf-8", errors="replace")
+              raise RuntimeError(
+                  f"IndexNow POST failed with HTTP {exc.code}: {body}"
+              ) from exc
+          PY

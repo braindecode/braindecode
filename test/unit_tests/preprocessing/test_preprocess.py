@@ -40,7 +40,13 @@ from braindecode.preprocessing.windowers import (
 # running it, and frees them when the module's tests are done.
 @pytest.fixture(scope="module")
 def _datasets():
+    # Keep two 80 s runs (one per session): preserves all 4 motor-imagery
+    # classes in each run, multi-recording parallel dispatch, >10 s crops, and
+    # 22 EEG + 3 EOG + 1 stim channels without copying 241 MB per test.
     raw_ds = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[1])
+    raw_ds = raw_ds.split([[0, 6]])["0"]
+    for ds in raw_ds.datasets:
+        ds.raw.crop(tmax=80, include_tmax=False)
     windows_ds = create_fixed_length_windows(
         raw_ds,
         start_offset_samples=100,
@@ -781,9 +787,18 @@ def test_preprocess_save_dir(request, tmp_path, kind, save, overwrite, n_jobs):
     fixture = {"raw": "base_concat_ds", "windows": "windows_concat_ds"}[kind]
     concat_ds = request.getfixturevalue(fixture)
 
-    concat_ds = preprocess(
-        concat_ds, preprocessors, save_dir, overwrite=overwrite, n_jobs=n_jobs
-    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        concat_ds = preprocess(
+            concat_ds, preprocessors, save_dir, overwrite=overwrite, n_jobs=n_jobs
+        )
+    spurious = [
+        w
+        for w in caught
+        if "does not match the number of existing subdirectories" in str(w.message)
+        or "Chosen directory" in str(w.message)
+    ]
+    assert not spurious, [str(w.message) for w in spurious]
 
     assert all(hasattr(ds, preproc_kwargs_name) for ds in concat_ds.datasets)
     assert all(

@@ -21,6 +21,7 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
+import functools
 import inspect
 import os
 import os.path as op
@@ -40,33 +41,44 @@ from datetime import datetime, timezone
 
 import sphinx_gallery  # noqa
 from numpydoc import docscrape, numpydoc  # noqa
-from sphinx_gallery.sorting import ExplicitOrder, FileNameSortKey
+from sphinx_gallery.sorting import ExplicitOrder
 
-# Merge MNE-Python references during build
+# pybtex scans importlib.metadata.entry_points() on every :footcite:/:cite: role
+# without memoizing, opening ~190k dist-info files across model docstrings.
 try:
-    import logging
-    import sys
-    from pathlib import Path
+    import pybtex.plugin
 
-    # Add current directory to path so we can import download_mne_references
-    docs_dir = Path(__file__).parent.absolute()
-    if str(docs_dir) not in sys.path:
-        sys.path.insert(0, str(docs_dir))
+    pybtex.plugin._load_entry_point = functools.cache(pybtex.plugin._load_entry_point)
+except ImportError:
+    pass
 
-    logger = logging.getLogger(__name__)
-    from download_mne_references import update_references
+# Merge MNE-Python references only when explicitly requested, avoiding live
+# network fetches and in-place edits to tracked docs/references.bib on local builds.
+if os.environ.get("BRAINDECODE_UPDATE_MNE_REFS") == "1":
+    try:
+        import logging
+        from pathlib import Path
 
-    logger.info("Attempting to merge MNE-Python references...")
-    result = update_references()
-    if result:
-        logger.info("MNE-Python references merged successfully or skipped gracefully")
-    else:
-        logger.warning("MNE references update returned False")
-except ImportError as e:
-    warnings.warn(f"Could not import download_mne_references module: {e}")
-except Exception as e:
-    # Don't fail the build if updating references fails; emit a warning
-    warnings.warn(f"MNE references update encountered an issue: {e}")
+        docs_dir = Path(__file__).parent.absolute()
+        if str(docs_dir) not in sys.path:
+            sys.path.insert(0, str(docs_dir))
+
+        logger = logging.getLogger(__name__)
+        from download_mne_references import update_references
+
+        logger.info("Attempting to merge MNE-Python references...")
+        result = update_references()
+        if result:
+            logger.info(
+                "MNE-Python references merged successfully or skipped gracefully"
+            )
+        else:
+            logger.warning("MNE references update returned False")
+    except ImportError as e:
+        warnings.warn(f"Could not import download_mne_references module: {e}")
+    except Exception as e:
+        # Don't fail the build if updating references fails; emit a warning
+        warnings.warn(f"MNE references update encountered an issue: {e}")
 
 # -- General configuration ------------------------------------------------
 
@@ -102,13 +114,18 @@ extensions = [
     "sphinx_autodoc_typehints",
     "sphinx_gallery.gen_gallery",
     "sphinx.ext.linkcode",
-    "sphinx_sitemap",
     "sphinx_design",
     "sphinxext.opengraph",
     "numpydoc",
     "gh_substitutions",
     "zoo_data_gen",
+    "model_seo",
 ]
+
+# sphinx_sitemap spawns multiprocessing.Manager().Queue(), which deadlocks
+# fork-based `sphinx-build -j auto` workers on macOS; enable only on deploys.
+if os.environ.get("BRAINDECODE_BUILD_SITEMAP") == "1":
+    extensions.append("sphinx_sitemap")
 
 
 def linkcode_resolve(domain, info):
@@ -230,8 +247,8 @@ td = datetime.now(tz=timezone.utc)
 # (Sphinx looks at variable changes and rewrites all files if some change)
 copyright = (
     f'2012–{td.year}, Braindecode Developers. Last updated <time datetime="{td.isoformat()}" class="localized">{td.strftime("%Y-%m-%d %H:%M %Z")}</time>\n'  # noqa: E501
-    '<script type="text/javascript">$(function () { $("time.localized").each(function () { var el = $(this); el.text(new Date(el.attr("datetime")).toLocaleString([], {dateStyle: "medium", timeStyle: "long"})); }); } )</script>'
-)  # noqa: E501
+    '<script>document.addEventListener("DOMContentLoaded", function () { document.querySelectorAll("time.localized").forEach(function (el) { var dt = el.getAttribute("datetime"); if (dt) { el.textContent = new Date(dt).toLocaleString([], {dateStyle: "medium", timeStyle: "long"}); } }); });</script>'  # noqa: E501
+)
 if os.getenv("BRAINDECODE_FULL_DATE", "false").lower() != "true":
     copyright = f"2018–{td.year}, Braindecode Developers."
 
@@ -258,7 +275,7 @@ version = ".".join(release.split(".")[:2])
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This patterns also effect to html_static_path and html_extra_path
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "_templates", "_root", "Thumbs.db", ".DS_Store"]
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = "sphinx"
@@ -320,7 +337,7 @@ sphinx_gallery_conf = {
             "../examples/applied_examples",
         ]
     ),
-    "within_subsection_order": FileNameSortKey,
+    "within_subsection_order": "FileNameSortKey",
 }
 
 # -- Options for HTML output ----------------------------------------------
@@ -372,22 +389,17 @@ html_theme_options = {
         ],
     },
     "footer_start": ["copyright"],
+    "show_version_warning_banner": True,
     # 'pygment_light_style': 'default',
     # Analytics intentionally NOT configured here — the project uses GTM
     # (GTM-NWDKLVNR) injected from _templates/layout.html as the single
     # entry point. Adding theme analytics on top would double-count.
 }
 
-# The name of an image file (relative to this directory) to place at the top
-# of the sidebar.
-html_logo = "_static/braindecode_small.svg"
-
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
-# Files copied verbatim into the build root (robots.txt, etc.)
-html_extra_path = ["_extra"]
 html_css_files = [
     "style.css",
 ]
@@ -422,7 +434,7 @@ xxl = "20"
 
 html_context = {
     "build_dev_html": bool(int(os.environ.get("BUILD_DEV_HTML", False))),
-    "default_mode": "light",
+    "default_mode": "auto",
     "pygment_light_style": "tango",
     "pygment_dark_style": "native",
     "doc_version": switcher_version_match,
@@ -466,6 +478,7 @@ html_sidebars = {
     "help": [],
     "whats_new": [],
     "api": [],
+    "generated/**": [],
 }
 
 # -- Options for LaTeX output ---------------------------------------------
@@ -504,28 +517,46 @@ latex_documents = [
     ),
 ]
 # Master/dev builds publish under /dev/ on GitHub Pages (see
-# .github/workflows/docs.yml `destination_dir: dev`). The baseurl,
-# OG canonical, and the sitemap location must match the actual deploy
-# path or crawlers will end up on 404s.
-# Tag builds are published as /stable/ (docs.yml sets BRAINDECODE_DOCS_URL).
-_docs_url = os.environ.get("BRAINDECODE_DOCS_URL") or "https://braindecode.org/dev/"
-_docs_url = _docs_url.rstrip("/") + "/"
-html_baseurl = _docs_url
-html_context["docs_url"] = _docs_url  # JSON-LD in _templates/layout.html
+# .github/workflows/docs.yml `destination_dir: dev`), while release tags
+# publish under /stable/ and /X.Y/. Canonical URLs and sitemap entries
+# always point to /stable/ so search engines consolidate link equity there.
+_deploy_url = (
+    os.environ.get("BRAINDECODE_DOCS_URL") or "https://braindecode.org/dev/"
+).rstrip("/") + "/"
+_canonical_base = "https://braindecode.org/stable/"
+html_baseurl = _canonical_base
+html_context["docs_url"] = _deploy_url  # JSON-LD in _templates/layout.html
+html_context["canonical_base_url"] = _canonical_base
+html_context["is_stable_build"] = _deploy_url == _canonical_base
 sitemap_filename = "sitemap.xml"
 # Flat URLs (no /en/{version}/) — same pattern as MOABB.
 sitemap_url_scheme = "{link}"
+sitemap_excludes = [
+    "search.html",
+    "genindex.html",
+    "py-modindex.html",
+    "sg_execution_times.html",
+    "*/sg_execution_times.html",
+]
 
 # --- Open Graph / Twitter Card / meta description ---
-ogp_site_url = _docs_url
+ogp_site_url = _deploy_url
+ogp_canonical_url = _canonical_base
 ogp_site_name = "Braindecode"
-ogp_image = f"{_docs_url}_static/braindecode_long.svg"
+ogp_image = f"{_deploy_url}_static/braindecode.png"
 ogp_image_alt = (
-    "Braindecode — open-source PyTorch toolbox for decoding raw EEG, ECoG and MEG"
+    "Braindecode — Open-source PyTorch library for decoding raw EEG, MEG, "
+    "iEEG, fNIRS, and sEMG"
 )
 ogp_description_length = 200
 ogp_enable_meta_description = True
 ogp_type = "website"
+ogp_social_cards = {
+    "enable": True,
+    "image": "_static/braindecode.png",
+    "line_color": "#3a6c97",
+    "site_url": "braindecode.org",
+}
 ogp_custom_meta_tags = [
     '<meta name="twitter:card" content="summary_large_image" />',
     '<meta name="twitter:site" content="@braindecode" />',

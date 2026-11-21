@@ -52,9 +52,11 @@ data-free example executes only once:
  Deployment scope
 ******************
 
-The existing master-push workflow deploys only ``dev/``. A development checkout can
-contain a release-looking package version; the URL scope and source commit are therefore
-essential provenance. This change does not create a root index, retarget ``stable/`` or
-rebuild any historical version. A future release build must use its own source checkout,
-matching HTML and explicit version URL; do not copy development Markdown into stable
-documentation.
+Master pushes deploy ``dev/`` with
+``BRAINDECODE_DOCS_URL=https://braindecode.org/dev/``, while ``v*`` release tags build
+from the tagged commit with ``BRAINDECODE_DOCS_URL=https://braindecode.org/stable/``,
+publish ``stable/`` and ``X.Y/``, and sync the origin-root ``llms.txt`` from that stable
+build. Because a development checkout can contain a release-looking package version, the
+URL scope and source commit remain essential provenance; never copy ``dev/`` Markdown
+into ``stable/`` documentation. Each exported HTML page also advertises its Markdown
+sibling with ``<link rel="alternate" type="text/markdown">``.

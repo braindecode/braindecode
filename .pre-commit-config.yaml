@@ -33,44 +33,9 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.9
     hooks:
+      - id: ruff-check
+        args: [--fix]
       - id: ruff-format
-        name: ruff format code
-        files: ^(braindecode|docs|examples)/
-      - id: ruff
-        name: ruff lint docs & examples
-        args:
-          [
-            "--fix",
-            "--select=E,W,F,I,D",
-            "--ignore=E402,E501,F401,D103,D400,D100,D101,D102,D105,D107,D415,D417,D205",
-          ]
-        files: ^(docs|examples)/
-      - id: ruff
-        name: ruff — remove unused imports
-        args:
-          - --fix
-          - --select=F401,I
-          - --exit-non-zero-on-fix
-        types: [python]
-      - id: ruff
-        name: ruff lint braindecode preview
-        args:
-          [
-            "--fix",
-            "--preview",
-            "--select=NPY201",
-            "--ignore=D100,D101,D102,D105,D107,D415,D417,D205",
-          ]
-        files: ^braindecode/
-      - id: ruff
-        name: ruff lint docs & examples
-        args:
-          [
-            "--fix",
-            "--select=D",
-            "--ignore=D103,D400,E402,D100,D101,D102,D105,D107,D415,D417,D205",
-          ]
-        files: ^(docs|examples)/
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
@@ -90,7 +55,7 @@ repos:
         exclude: ^.github|CONTRIBUTING.md
 
   # -----------------------------
-  # NEW: Sphinx/RST formatting + lint
+  # Sphinx/RST formatting + lint
   # -----------------------------
 
   - repo: https://github.com/LilSpazJoekp/docstrfmt
@@ -100,7 +65,7 @@ repos:
         name: docstrfmt (rst only; do not touch numpy docstrings)
         language_version: python3
         files: \.(rst|txt)$
-        exclude: ^docs/_templates/|^docs/whats_new\.rst$
+        exclude: ^docs/_templates/|^docs/whats_new\.rst$|^docs/_root/
 
   - repo: https://github.com/sphinx-contrib/sphinx-lint
     rev: v1.0.2
@@ -127,20 +92,11 @@ repos:
         files: ^braindecode/
         stages: [manual]
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
-    hooks:
-      - id: mypy
-        files: braindecode/.*.py|test/.*.py|examples/.*.py
-        additional_dependencies:
-          [
-            types-PyYAML,
-            types-requests,
-          ]
-        verbose: true
-
-  - repo: https://github.com/PyCQA/isort
-    rev: 7.0.0
-    hooks:
-      - id: isort
-        exclude: ^\.gitignore
+      - id: ty
+        name: ty check
+        entry: ty check
+        language: python
+        types_or: [python, pyi, toml]
+        pass_filenames: false
+        require_serial: true
+        additional_dependencies: ["ty==0.0.107"]

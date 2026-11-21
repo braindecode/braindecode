@@ -552,9 +552,10 @@ def _update_moabb_docstring(base_class, docstring):
     base_doc = base_class.__doc__
     if base_doc is None:
         return docstring
-    base_doc = _clean_docstring_sections(
-        base_doc, remove_sections=("References", "Notes")
-    )
+    sections = ["References", "Notes"]
+    if "Parameters" in docstring:
+        sections.extend(["Parameters", "See Also", "Examples"])
+    base_doc = _clean_docstring_sections(base_doc, remove_sections=tuple(sections))
     # Strip dangling citation references (e.g. ``[1]_``) whose definitions
     # were in the removed References section.
     base_doc = re.sub(r"\s*\[\d+\]_", "", base_doc)

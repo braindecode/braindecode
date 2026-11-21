@@ -754,6 +754,31 @@ def test_cropped_trial_epoch_scoring(net):
     assert valid_scoring.name == "valid_accuracy"
 
 
+def test_concrete_eegneuralnet_get_iterator_accepts_drop_index():
+    sub_net = ConcreteEEGNeuralNet(
+        module=MockModuleFinalLayer(
+            np.zeros((2, 2), dtype=np.float32),
+            n_outputs=2,
+            n_chans=2,
+            n_times=10,
+        ),
+        criterion=torch.nn.CrossEntropyLoss,
+        max_epochs=1,
+        batch_size=2,
+        train_split=None,
+    )
+    sub_net.initialize()
+    ds = torch.utils.data.TensorDataset(
+        torch.zeros(4, 2, 10), torch.zeros(4, dtype=torch.long)
+    )
+    loader = sub_net.get_iterator(ds, training=False, drop_index=False)
+    batches = list(loader)
+    assert len(batches) == 2
+    res = sub_net.predict_with_window_inds_and_ys(ds)
+    assert res["preds"].shape == (4, 2)
+    assert res["i_window_in_trials"] is None
+
+
 @pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_slice_dataset(eegneuralnet_cls, preds, slice_dataset):
     if eegneuralnet_cls != EEGClassifier:

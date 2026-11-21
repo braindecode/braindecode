@@ -31,6 +31,8 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel`
 
+    .. versionadded:: 2.1
+
     .. rubric:: Architecture Overview
 
     A transformer encoder pretrained with masked autoencoding on clinical and
@@ -47,12 +49,16 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     ``Pratibha2.patch_embed``
         **Operations.** ``Linear(patch_size, embed_dim)`` on each patch.
+        **Role.** One token per electrode and patch; the same weights serve
+        every electrode.
 
     ``Pratibha2.pos_enc``
         **Operations.** Sines and cosines of ``n_freqs ** 4`` frequency
         combinations of the token's 4D position (electrode position in cm,
         patch index), projected to ``embed_dim``, plus a learned gated branch;
         the sum is RMS-normalized and added to the patch embedding.
+        **Role.** Tells the attention each token's electrode and patch; this
+        is how the montage enters the encoder.
 
     ``Pratibha2.blocks``
         **Operations.** ``depth`` pre-norm blocks (RMSNorm) of multi-head
@@ -62,10 +68,13 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     ``Pratibha2.final_norm``
         **Operations.** RMSNorm of every token, the last step of :meth:`encode`.
+        **Role.** Normalizes the tokens that :meth:`encode` returns and the
+        head pools.
 
     ``Pratibha2.final_layer``
         **Operations.** ``Linear -> head_activation -> Dropout -> Linear`` on
-        the token mean. Not pretrained.
+        the token mean. Not pretrained. **Role.** The classification head;
+        train it for your task.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
@@ -77,7 +86,8 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     .. rubric:: Additional Mechanisms
 
-    - **Channel positions.** The pretraining electrode table, REVE's bank plus
+    - **Channel positions.** The pretraining electrode table, REVE's bank (part
+      of the 10-05 family, all of BioSemi-128 and of GSN-HydroCel-129) plus
       PRATIBHA-2's own ``AFZ`` and ``IZ``, looked up by name (exact spelling
       first, then ignoring case, ``EEG``/``-REF``, ``T3``-style aliases, or the
       midpoint of a bipolar ``A-B``; see
@@ -86,22 +96,24 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
       the table's 10-05 entries. Channel ``loc`` values are not used: they are in
       MNE's head frame, a few centimetres from the pretraining frame.
     - **Input scale.** With ``normalize_input=True`` each channel is z-scored
-      within each window, so volts and microvolts give the same output.
+      within each window, with a floor on the standard deviation
+      (``std_floor``), so volts and microvolts give the same output; on
+      microvolt data it matches the preprocessing of the release's example,
+      ``(x - mean) / (std + 1e-6)``.
 
     .. important::
 
         Resample to **200 Hz**; windows need at least ``patch_size`` samples.
-        The released encoder, converted to these parameter names, is on the
-        Hugging Face Hub at ``braindecode/pratibha2-pretrained``; the head is not
-        pretrained::
+        The released 92.8M-parameter encoder (``MannasAI/pratibha-2``,
+        Apache-2.0, release ``863edc9``), converted to these parameter names,
+        is on the Hugging Face Hub at ``braindecode/pratibha2-pretrained``; the
+        head is not pretrained::
 
             from braindecode.models import Pratibha2
             model = Pratibha2.from_pretrained(
                 "braindecode/pratibha2-pretrained",
                 chs_info=raw.info["chs"], n_outputs=4, n_times=1000,
             )
-
-    .. versionadded:: 2.1
 
     Parameters
     ----------
@@ -141,7 +153,8 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
     on_missing : str
         Channels the position table cannot place: ``"error"`` raises,
         ``"drop"`` leaves them out of the input, ``"nearest"`` takes the table
-        entry closest to the channel's ``loc``.
+        entry closest to the channel's ``loc`` (approximate: ``loc`` is in a
+        different frame).
     channel_strategy : str
         How another montage reaches the encoder; see
         :class:`~braindecode.models.base.EEGModuleMixin`. PRATIBHA-2 reads any

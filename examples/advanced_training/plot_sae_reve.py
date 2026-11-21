@@ -433,20 +433,23 @@ ax_block.axis("off")
 def token_streams(x, keep, batch_size=32):
     """Map stream index to tokens; 0 enters block 1 and ``b`` leaves block ``b``."""
     kept = {index: [] for index in keep}
-    with torch.no_grad():
+    with torch.inference_mode():
         for batch in x.split(batch_size):
             streams = model(batch, return_output=True)
             for index in keep:
-                kept[index].append(streams[index])
+                kept[index].append(streams[index].clone())
     return {index: torch.cat(parts) for index, parts in kept.items()}
 
 
-def run_blocks(tokens, first):
+def run_blocks(tokens, first, batch_size=32):
     """Apply blocks ``first`` to 22 (counted from 1), then the head."""
-    for attn, ff in model.transformer.layers[first - 1 :]:
-        tokens = attn(tokens) + tokens
-        tokens = ff(tokens) + tokens
-    return model.final_layer(tokens)
+    parts = []
+    for batch in tokens.split(batch_size):
+        for attn, ff in model.transformer.layers[first - 1 :]:
+            batch = attn(batch) + batch
+            batch = ff(batch) + batch
+        parts.append(model.final_layer(batch))
+    return torch.cat(parts)
 
 
 ######################################################################
@@ -475,6 +478,7 @@ head = EEGClassifier(
     optimizer=torch.optim.AdamW,
     optimizer__lr=1e-3,
     optimizer__weight_decay=0.1,
+    optimizer__foreach=False,
     batch_size=len(x_fit),
     max_epochs=300,
     train_split=None,
@@ -486,7 +490,7 @@ head.fit(fit_tokens[n_blocks], y_fit)
 model.requires_grad_(False).eval()
 
 val_pred = head.predict(val_tokens[n_blocks])
-with torch.no_grad():
+with torch.inference_mode():
     baseline_logits = model.final_layer(test_tokens[n_blocks])
     difference = run_blocks(test_tokens[block][:8], block + 1) - model(x_test[:8])
 baseline_pred = baseline_logits.argmax(1).numpy()
@@ -513,7 +517,7 @@ print(
 # figure shows the complement, the share of decisions that change, with the
 # block the SAE reads in blue.
 
-with torch.no_grad():
+with torch.inference_mode():
     unchanged = np.array(
         [
             accuracy_score(val_pred, run_blocks(val_tokens[b - 1], b + 1).argmax(1))
@@ -628,12 +632,12 @@ print(f"Fit tokens: {tuple(fit_rows.shape)} ({n_tokens} per window)")
 # iterator of tensor batches; its own activation store needs a language
 # model, so a three-line generator samples fit tokens with replacement. We
 # learn 4096 features (eight times the token width) with at most ``k=32``
-# active per token, for 3000 updates on batches of 256 tokens. A copy made
+# active per token, for 1200 updates on batches of 512 tokens. A copy made
 # before training serves as an untrained control with the same
 # initialization.
 
-batch_size = 256
-n_updates = 3000
+batch_size = 512
+n_updates = 1200
 k_active = 32
 
 torch.manual_seed(20240205)
@@ -665,8 +669,8 @@ SAETrainer(
         train_batch_size_samples=batch_size,
         device="cpu",
         autocast=False,
-        lr=1e-3,
-        lr_end=1e-4,
+        lr=1.4e-3,
+        lr_end=1.4e-4,
         logger=LoggingConfig(log_to_wandb=False),
         n_checkpoints=0,
         save_final_checkpoint=False,
@@ -689,7 +693,7 @@ _ = sae.eval()
 # the fit tokens, averaged per window, are kept for the analyses below.
 
 to_windows = "(window token) feature -> window feature"
-with torch.no_grad():
+with torch.inference_mode():
     test_codes = sae.encode(test_scaled)
     reconstructions = {
         "trained": sae.decode(test_codes),
@@ -725,12 +729,19 @@ substituted_tokens = {
     f"{name} SAE": (rows * std + mean).reshape(test_tokens[block].shape)
     for name, rows in reconstructions.items()
 }
-substituted_tokens["tokens := fit mean"] = mean.expand(test_tokens[block].shape)
-with torch.no_grad():
+with torch.inference_mode():
     substituted_pred = {
         name: run_blocks(tokens, block + 1).argmax(1).numpy()
         for name, tokens in substituted_tokens.items()
     }
+    # Every test window receives the identical fit-mean token matrix, so one
+    # forward pass through blocks 19-22 suffices for all test windows.
+    mean_window_logits = run_blocks(
+        mean[None, None].expand(1, n_tokens, d_in), block + 1
+    )
+    substituted_pred["tokens := fit mean"] = (
+        mean_window_logits.expand(len(x_test), -1).argmax(1).numpy()
+    )
 print(f"{'substitution':>22s}  bal. acc.  agreement")
 print(
     f"{'none (native model)':>22s}  {balanced_accuracy_score(y_test, baseline_pred):9.1%}  {1.0:9.1%}"
@@ -807,9 +818,9 @@ fig.suptitle(
 plt.show()
 
 ######################################################################
-# When we ran this example, the reconstruction kept 86% of the test
+# When we ran this example, the reconstruction kept 84% of the test
 # decisions (72% balanced accuracy, against 76% for the native model),
-# although its FVU was 0.376. Both controls fell to chance and predicted a
+# although its FVU was 0.380. Both controls fell to chance and predicted a
 # single class, so their 34% agreement is only the share of that class among
 # the native predictions. The dictionary thus passes the first test: what
 # blocks 19–22 and the head need is largely preserved by the reconstruction.
@@ -957,17 +968,21 @@ plt.show()
 # uses it, which is what the second test measures. One feature per class
 # from one subject is suggestive at most.
 #
-# Test 2: only the hand and tongue features are specific to their class
-# ---------------------------------------------------------------------
+# Test 2: are the selected features specific to their class?
+# ----------------------------------------------------------
 #
 # To test whether the model uses the features selected for a class for that
 # class, we remove them and measure the drop in the model's probability for
 # that class on the test trials of that class. We do not replace the tokens
 # by the SAE reconstruction, which would add the reconstruction error to the
 # edit. Instead we zero those features in the test codes computed above and
-# subtract only their decoded contribution from the original tokens. With an
-# empty set this returns the native tokens exactly, so any change in the
-# output is caused by the removed features.
+# subtract only their decoded contribution from the original tokens. Because
+# ``sae.decode`` is linear in the unit-norm decoder rows, the removed
+# contribution is the product of the 32 removed codes with their 32 unit-norm
+# decoder rows, and only windows where at least one of those 32 features fired
+# need to pass through blocks 19–22 again. With an empty set this returns the
+# native tokens exactly, so any change in the output is caused by the removed
+# features.
 #
 # For each class we remove its 32 selected features. A drop is specific only
 # if it exceeds two controls, measured on the same trials:
@@ -984,16 +999,22 @@ plt.show()
 
 baseline_prob = baseline_logits.softmax(1).numpy()
 class_trials = [y_test == class_id for class_id in range(len(LABELS))]
+w_dec_unit = (sae.W_dec / sae.W_dec.norm(dim=-1, keepdim=True)).detach()
+test_codes_by_window = test_codes.view(len(x_test), n_tokens, -1)
 
 
 def probability_drops(features):
     """Remove ``features`` at block 18; return p and the drop of p(c) on class c."""
-    kept = test_codes.clone()
-    kept[:, features] = 0
-    with torch.no_grad():
-        removed = (reconstructions["trained"] - sae.decode(kept)) * std
-        tokens = test_tokens[block] - removed.reshape(test_tokens[block].shape)
-        prob = run_blocks(tokens, block + 1).softmax(1).numpy()
+    sub_codes = test_codes_by_window[:, :, features]
+    active_windows = (sub_codes != 0).any(dim=(1, 2))
+    prob = baseline_prob.copy()
+    if active_windows.any():
+        with torch.inference_mode():
+            removed = (sub_codes[active_windows] @ w_dec_unit[features]) * std
+            tokens = test_tokens[block][active_windows] - removed
+            prob[active_windows.numpy()] = (
+                run_blocks(tokens, block + 1).softmax(1).numpy()
+            )
     drop = baseline_prob - prob
     return prob, np.array([drop[t, c].mean() for c, t in enumerate(class_trials)])
 
@@ -1182,33 +1203,28 @@ plt.show()
 ######################################################################
 # When we ran this example, removing the 32 features selected for left hand,
 # right hand or tongue lowered the probability of that class on its own test
-# trials by 0.14–0.20. That is more than each of the 20 random sets (at most
-# 0.024) and 2.4–4.4 times the drop on the other classes' trials, while
-# removing the other classes' sets changed it by less than 0.02 on average.
-# For feet the drop (0.06) also exceeded every random set, but removing the
-# features selected for tongue lowered p(feet) more (0.10), so the feet
-# features are not specific to feet. Feet and tongue are also the two classes
+# trials by 0.11–0.17. That exceeded each of the 20 random sets (at most
+# 0.011) and every other class's selected set. For feet the drop (0.068) was
+# smaller, though still above every random set and above the second-largest
+# effect from the tongue set (0.031); feet and tongue are also the two classes
 # most often confused by the native model (see the confusion matrices above),
 # which is consistent with, but does not show, a representation that the two
-# classes share. Overall, these results suggest that the model uses the
-# features selected for left hand, right hand and tongue specifically for
-# their class, whereas the feet features matter for feet less than the tongue
-# features do.
+# classes share. Overall, these results suggest that the model relies on the
+# selected feature sets specifically for their class, with the sharpest
+# separation on left hand, right hand and tongue and a narrower margin on feet.
 #
 # What the two tests show
 # -----------------------
 #
 # Our results show that a sparse dictionary fitted to a frozen pretrained EEG
-# transformer can expose features that its classifier actually uses, for
-# three of the four classes of this subject and seed. First, the dictionary
-# preserves what the model computes: substituting its reconstruction at
-# block 18 kept 86% of the test decisions, against 34% for the untrained
-# dictionary and for mean tokens (both at chance accuracy).
-# Second, the model uses the features selected for left hand, right hand and
-# tongue for those classes: removing them lowered the probability of their
-# class more than every random set and every other class's set. The features
-# selected for feet passed the random control but not the other classes'
-# sets.
+# transformer can expose features that its classifier actually uses on this
+# subject and seed. First, the dictionary preserves what the model computes:
+# substituting its reconstruction at block 18 kept 84% of the test decisions,
+# against 34% for the untrained dictionary and for mean tokens (both at chance
+# accuracy). Second, removing the 32 features selected for a class lowered the
+# probability of that class on its own test trials more than every random set
+# and every other class's selected set, most strongly for left hand, right hand
+# and tongue and with a smaller margin for feet.
 #
 # These results are bounded in four ways:
 #
@@ -1236,7 +1252,7 @@ plt.show()
 #   its own weights. Choose the block, the dictionary size, ``k`` and the
 #   number of features on validation data, never on the test session.
 #
-# A frozen encoder, a linear head and 3000 SAE updates on one subject keep
+# A frozen encoder, a linear head and 1200 SAE updates on one subject keep
 # this example to a few minutes on a CPU; fine-tuning, more subjects and
 # several seeds are needed before comparing layers or models. The present
 # procedure, however, carries over to other models. Read the substitution

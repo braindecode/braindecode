@@ -171,7 +171,6 @@ interface for all EEG models and can derive variable names when needed.
 
 .. autosummary::
     :toctree: generated/
-    :recursive:
 
      EEGModuleMixin
 
@@ -181,7 +180,6 @@ interface for all EEG models and can derive variable names when needed.
 
 .. autosummary::
     :toctree: generated/
-    :recursive:
 
      ATCNet
      AXON
@@ -316,7 +314,6 @@ stability.
 .. autosummary::
     :toctree: generated/activation
     :template: class_in_subdir
-    :recursive:
 
     GatedLinearUnit
     LogActivation
@@ -333,7 +330,6 @@ squeeze and excitation layers.
 .. autosummary::
     :toctree: generated/attention
     :template: class_in_subdir
-    :recursive:
 
     CAT
     CBAM
@@ -359,7 +355,6 @@ perceptrons (MLPs) and inception blocks.
 .. autosummary::
     :toctree: generated/blocks
     :template: class_in_subdir
-    :recursive:
 
     MLP
     TimmAttention
@@ -378,7 +373,6 @@ The channel layer behind ``channel_strategy=`` (see :ref:`channel-strategies`).
 .. autosummary::
     :toctree: generated/channels
     :template: class_in_subdir
-    :recursive:
 
     ChannelLayer
 
@@ -400,7 +394,6 @@ constraints and pooling layers.
 .. autosummary::
     :toctree: generated/convolution
     :template: class_in_subdir
-    :recursive:
 
     AvgPool2dWithConv
     CausalConv1d
@@ -419,7 +412,6 @@ These modules implement Filter Bank as Layer and generalizer Gaussian layer.
 .. autosummary::
     :toctree: generated/filter
     :template: class_in_subdir
-    :recursive:
 
     FilterBankLayer
     GeneralizedGaussianFilter
@@ -436,7 +428,6 @@ input shapes and dimensions.
 .. autosummary::
     :toctree: generated/layers
     :template: class_in_subdir
-    :recursive:
 
     ChannelMerger
     Chomp1d
@@ -465,7 +456,6 @@ initializations.
 .. autosummary::
     :toctree: generated/linear
     :template: class_in_subdir
-    :recursive:
 
     LinearWithConstraint
     MaxNormLinear
@@ -481,7 +471,6 @@ These modules implement the vector quantizers of the tokenizer models, such as
 .. autosummary::
     :toctree: generated/quantization
     :template: class_in_subdir
-    :recursive:
 
     EMACodebook
     VectorQuantizer
@@ -498,7 +487,6 @@ codec models (BrainOmni, BBL).
 .. autosummary::
     :toctree: generated/seanet
     :template: class_in_subdir
-    :recursive:
 
     SEANetConv1d
     SEANetConvTranspose1d
@@ -518,7 +506,6 @@ features and over the channels on the other, shared by BrainOmni and MEGXL.
 .. autosummary::
     :toctree: generated/spatial_temporal
     :template: class_in_subdir
-    :recursive:
 
     SpatialTemporalBlock
 
@@ -534,13 +521,11 @@ the log power and log variance of input data. Mostly used on FilterBank models.
 .. autosummary::
     :toctree: generated/stats
     :template: class_in_subdir
-    :recursive:
 
     StatLayer
 
 .. autosummary::
     :toctree: generated/stats
-    :recursive:
 
     LogPowerLayer
     LogVarLayer
@@ -560,7 +545,6 @@ model.
 .. autosummary::
     :toctree: generated/util
     :template: function_in_subdir
-    :recursive:
 
     aggregate_probas
 
@@ -575,7 +559,6 @@ models with multiple outputs and wrappers for models with intermediate outputs.
 .. autosummary::
     :toctree: generated/wrapper
     :template: class_in_subdir
-    :recursive:
 
     Expression
     IntermediateOutputWrapper
@@ -592,7 +575,6 @@ The functional module contains various functions that can be used like functiona
 
 .. autosummary::
     :toctree: generated
-    :recursive:
 
      check_ch_mask
      check_n_chans

@@ -6666,7 +6666,7 @@ def _interleaved_fnirs_chs(n_pairs=4):
         (FNIRSPreT, {"depth": 1, "num_heads": 2}),
         (JungMAE, {"depth": 1, "num_heads": 4, "embed_dim": 64}),
         (GeoNIRS, {"depth": 1, "num_heads": 4, "embed_dim": 64,
-                   "projection_dims": (64, 64)}),
+                   "projection_dims": ()}),
         (MtReNIRS, {"depth": 1, "num_heads": 2, "embed_dim": 32}),
     ],
 )
@@ -7072,7 +7072,7 @@ def test_mtrenirs_pretrained_matches_the_release(n_times, expected):
     pytest.importorskip("huggingface_hub")
     model = MtReNIRS.from_pretrained(
         "braindecode/mtrenirs-pretrained",
-        revision="7c5e60535c3822dcac3ddcd2d19098504d57d38c",
+        revision="708cffe1c30c6bc2698b3025671ed70b220f4ea3",
         chs_info=_fnirs_chs_info(4),
         n_outputs=3,
         n_times=n_times,

@@ -28,10 +28,21 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
-- Redesign the documentation landing page with an interactive signal-to-prediction
-  stage, a five-modality overview bento, a pretrained foundation-model quickstart,
-  three end-to-end decoding workflows, and a pre-rendered native-CSS model zoo
-  explorer covering all 103 architectures (by `Bruno Aristimunha`_).
+- Redesign the documentation landing page, unify the top navigation bar and
+  sub-page palette, add a one-click Zenodo software citation hub
+  (``10.5281/zenodo.8214376``), and pre-render the native-CSS model zoo explorer
+  with API hover previews across all 103 architectures (:gh:`1750` by
+  `Bruno Aristimunha`_).
+- Speed up serialized dataset saving and lazy reloading in
+  :func:`braindecode.datautil.serialization.load_concat_dataset` and
+  :meth:`braindecode.datasets.BaseConcatDataset.save` by dispatching
+  ``preload=False`` header reads across threads, serializing ``description.json``
+  directly with ``json``, scanning directory layouts in one ``os.scandir`` pass,
+  and streamlining the preprocessing, SAE/REVE, EEGPrep, and temporal
+  generalization gallery examples (:gh:`1756` by `Bruno Aristimunha`_).
+- Add ``scripts/ci_plan.py`` and ``pytest --select-models`` to select affected tests and
+  models from pull-request diffs, shard full runs across four workers, and schedule the
+  cross-OS, Python, and ``torch.compile`` matrix daily (:gh:`1753` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.SAMBA` (Hong et al., NeurReps 2026), an EEG
   foundation model that reads electrode positions through a coordinate-driven
   spatial embedding and models time with Mamba-2 (:gh:`1689` by `Jiazhen Hong`_).
@@ -183,6 +194,9 @@ Enhancements
 API and behavior changes
 ========================
 
+- :class:`braindecode.models.LUNA` restores the hidden ``norm_layer`` in
+  ``channel_location_embedder`` and ``cross_attn.ffn`` via :class:`braindecode.modules.TimmMlp`
+  so released ``PulpBio/LUNA`` checkpoints load strictly (:gh:`1758` by `@aloneangel45 <https://github.com/aloneangel45>`_).
 - :class:`braindecode.models.USleep` crops the upsampled tensor at the start before each skip connection,
   like U-Time's ``CropToMatch``, so at an odd level each residual sample meets its own pooled pair. A USleep
   trained with 2.0 loads but gives different predictions (:gh:`1730` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
@@ -254,6 +268,15 @@ Requirements
 Bug fixes
 ==========
 
+- Suppress spurious directory-mismatch warnings when :func:`~braindecode.preprocessing.preprocess`
+  saves recordings to ``save_dir`` and replace ``memory_profiler`` process spawning in
+  :ref:`benchmark-preprocess-parallel-serial` so ``spawn`` and parallel gallery workers succeed (:gh:`1756` by `Bruno Aristimunha`_).
+- Speed up documentation builds (``make html-noplot`` no longer hangs with ``-j auto`` on macOS),
+  fix the duplicate ``Parameters`` section in :class:`braindecode.datasets.BNCI2014_001`, and
+  cache unchanged Sphinx-Gallery outputs in CI (:gh:`1752` by `Bruno Aristimunha`_).
+- Fix ``SincShallowNet(activation=None)``, dense ``TIDNet`` layer registration,
+  ``_EEGNeuralNet.get_iterator(drop_index=...)``, ``ft_surrogate`` tensor dtypes,
+  ``SleepPhysionetChallenge2018`` ``urllib.request``, and ``BBCIDataset`` init (:gh:`1751` by `Bruno Aristimunha`_).
 - Documentation: list all pre-trained models under ``braindecode[hub]`` in the API
   reference, deduplicate the DataTables assets and apply an accessible light/dark
   category palette on the models summary table, drop the render-blocking Google Fonts
@@ -616,6 +639,9 @@ Bug fixes
 Code health
 ============
 
+- Replace ``mypy`` and ``isort`` with Astral ``ty`` and consolidated ``ruff`` hooks,
+  enable ``sys.monitoring`` coverage, drop dead ``setup.cfg`` sections, and preserve
+  class types through ``@register_dataset`` and :class:`~braindecode.models.EEGModuleMixin` (:gh:`1751` by `Bruno Aristimunha`_).
 - The test suite peaks lower: smaller inputs where no assertion depends on size,
   shared read-only data, freed TorchScript, compile and reference-cycle memory
   (:gh:`1713` by `Bruno Aristimunha`_).
@@ -712,6 +738,13 @@ Code health
 - The numpydoc header test now covers every registered model, not nine. The
   parameter headers of 13 models read ``name: type`` and are now ``name : type``,
   so numpydoc parses the name (:gh:`1728` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- Every documentation build emits ``https://braindecode.org/stable/`` canonical and
+  sitemap URLs (with ``noindex, follow`` on non-stable builds), raster PNG OpenGraph
+  cards, and ``model_seo`` descriptions, ``.md`` alternate links, and ``BreadcrumbList``,
+  ``SoftwareSourceCode``, and ``TechArticle`` JSON-LD; ``v*`` tag builds deploy
+  ``/stable/``, ``/X.Y/``, and origin-root ``robots.txt``, ``sitemap.xml``, ``index.html``,
+  and ``llms.txt`` to ``braindecode.github.io`` and submit changed URLs to IndexNow
+  (:gh:`1747` by `Bruno Aristimunha`_).
 - The cropped inference page is now the :ref:`cropped-inference` section of the cropped
   decoding tutorial and the docstrings of its functions; :ref:`channel-strategies` moves
   to the Models section, with tables (:gh:`1745` by `Bruno Aristimunha`_).

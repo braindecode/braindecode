@@ -26,6 +26,8 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
     :bdg-info:`Attention/Transformer`
 
+    .. versionadded:: 2.1
+
     .. figure:: https://braindecode.org/dev/_static/model/tccnet.png
        :align: center
        :alt: TCCNet architecture
@@ -36,6 +38,8 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
        logits, without the softmax.
 
     A temporal convolutional network that classifies a whole sEMG gesture.
+    The reference trains one model per subject of NinaPro DB1 (27 subjects,
+    10 sEMG channels at 100 Hz, 53 classes including rest).
 
     .. rubric:: Architecture Overview
 
@@ -50,7 +54,11 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
     The defaults build the best model of the paper: the attention head and a
     receptive field of 255 samples (2550 ms at 100 Hz). Pass
     ``classification_head="aot"`` and/or ``filters=((32, 64), (64, 128))``
-    (31 samples, 310 ms) for its other three models.
+    (31 samples, 310 ms) for its other three models. With 10 channels and 53
+    classes the four models have 60,117 (AoT, 310 ms), 72,245 (AoT, 2550 ms),
+    76,629 (Att, 310 ms) and 88,757 (Att, 2550 ms) parameters; the authors'
+    poster lists them as 60K, 70K, 75K and 85K, and names the receptive fields
+    300 and 2500 ms.
 
     .. rubric:: Macro Components
 
@@ -91,6 +99,19 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
       out, as the reference's Keras ``Masking`` layer does. As in its
       ``CausalConv1D``, a convolution adds its bias only where its output is
       non-zero.
+    - **Attention.** The softmax over the scores ``s`` is the reference's
+      ``exp(s) / (sum(exp(s)) + eps)``, computed as
+      ``exp(s - m) / (sum(exp(s - m)) + eps * exp(-m))`` with ``m`` the row
+      maximum, at least 0 so that a fully padded gesture stays finite. The
+      values are the same, without the reference's overflow to NaN once the
+      context vector grows large.
+    - **Reference parity.** The reference sums every time step, padded ones
+      included, and divides by the number of valid steps; this port leaves
+      padded steps out. The two agree for pre-padding with an activation that
+      maps 0 to 0, such as the reference's ReLU. The bias rule changes the
+      result only where a convolution gives exactly zero at a valid step.
+      Initialisation follows Keras 2.2.4: truncated Glorot normal kernels,
+      zero biases, Glorot uniform attention weights.
 
     .. important::
 
@@ -98,9 +119,8 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
         at 1 Hz (first-order Butterworth, ``filtfilt``) and pre-pads the
         gestures of a batch with ``-10``. The masked average over time equals
         its average for that padding only; a fully padded gesture gives NaN
-        with ``"aot"``, as there.
-
-    .. versionadded:: 2.1
+        with ``"aot"``, as there. The min-max normalisation of the reference's
+        generator is off in its released configurations.
 
     `License <https://github.com/DSIP-UPatras/ICASSP2019_TCN/blob/cd28909ccf3696b835446cbec2f15eb60610a2af/LICENSE>`_
 

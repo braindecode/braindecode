@@ -33,22 +33,32 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
     :bdg-secondary:`Recurrent`
 
+    .. versionadded:: 2.1
+
     .. rubric:: Architecture Overview
+
+    With ``B`` the batch, ``C = n_chans``, ``D = embed_dim`` and ``S`` the number
+    of segments (``n_times``, padded or cropped to a multiple of the segment
+    length, divided by it):
 
     1. The EphysTokenizer encoder [ephystokenizer]_ turns each channel into a
        stream of discrete tokens, one per sample: a GRU runs over the channel,
        a linear layer and a layer norm give one logit per codebook entry, and
        the argmax is remapped to a token id through the released vocabulary.
+       ``x (B, C, T) -> token ids (B, C, S * 100)``.
     2. The token stream is cut into segments of ``n_patches[0] * patch_lens[0]``
        tokens (100, i.e. 0.4 s at 250 Hz). Token, time and channel embeddings
-       are summed.
+       are summed. ``-> (B * S, 100, C, D)``.
     3. A stack of causal time-attention layers runs on every channel. In layer
        ``i`` the keys and values are pooled into ``n_patches[i]`` patches of
        ``patch_lens[i]`` steps and the output keeps the last steps only, so the
        sequence shrinks to ``n_last_steps`` outputs per segment.
+       ``-> (B * S, n_last_steps, C, D)``, merged to
+       ``(B, S * n_last_steps, C, D)``.
     4. The outputs are averaged over time and segments into
        ``(batch, n_chans, embed_dim)`` features (Section 2.4 of the paper),
        flattened and classified by a linear layer.
+       ``-> (B, C, D) -> (B, C * D) -> (B, n_outputs)``.
 
     .. rubric:: Macro Components
 
@@ -86,29 +96,46 @@ class MEGGPT(EEGModuleMixin, nn.Module, license="mit"):
     .. rubric:: Additional Mechanisms
 
     - **Input:** the 52 parcels of the Glasser 52 parcellation in the released
-      order, sign-flip aligned (Section 2.5.3), at 250 Hz and z-scored over the
-      recording; the model neither normalises nor checks ``sfreq``. With
-      ``on_non_divisible="pad"``, the feature mean skips the kept steps after
-      the end of the input.
-    - **Channel mask:** with ``return_features=True``, ``ch_mask`` (real channels
-      first) gives each recording the features of its real parcels run alone,
-      and zeros for padded channels. The flattened head is tied to
-      ``n_chans``, so without ``return_features`` it raises a ``ValueError``.
+      order, since the channel embedding is indexed by position, sign-flip
+      aligned (Section 2.5.3), at 250 Hz and z-scored over the recording
+      (``tokenize_session(standardize=True)`` in the reference); the model
+      neither normalises nor checks ``sfreq``. With ``on_non_divisible="pad"``,
+      the feature mean skips the kept steps after the end of the input.
+    - **Channel mask:** with ``return_features=True``, ``ch_mask`` (the mask of
+      :func:`~braindecode.datasets.pad_channels_collate`, real channels first)
+      gives each recording the features of its real parcels run alone, and
+      zeros for padded channels. The flattened head is tied to ``n_chans``, so
+      without ``return_features`` it raises a ``ValueError``.
     - **Token mask:** ``token_mask`` (True=hide) zeroes selected clean token
-      embeddings before the causal decoder, and :meth:`encode_tokens` returns
-      next-token targets for a downstream vocabulary head.
+      embeddings before the causal decoder, without changing the frozen
+      tokenizer or the attention masks; it is neither the released pretraining
+      method nor a bidirectional masked-sample reconstruction objective.
+      :meth:`encode_tokens` returns next-token targets for a downstream
+      vocabulary head; the encoder installs none.
     - **Session embedding:** the released model adds one for its 621 Cam-CAN
       sessions; the paper discards it downstream (Section 2.5.4), so the class
-      has none and the converted weights drop it.
-    - **Weights:** the released Cam-CAN MEG-GPT and EphysTokenizer weights,
-      converted to this class's keys without the next-token head and the
-      tokenizer's signal decoder, are at ``braindecode/meggpt-pretrained``
-      (revision ``5c49e27c``); the head is randomly initialized::
+      has none, the converted weights drop it, and the forward equals the
+      released model called without session labels.
+    - **Not ported:** only the released configuration, time attention with
+      patching. The reference's optional channel and cross attention, unpatched
+      keys, rotary or sinusoidal positions and batch/group norms are not
+      implemented.
 
-          from braindecode.models import MEGGPT
-          model = MEGGPT.from_pretrained("braindecode/meggpt-pretrained", n_outputs=4)
+    .. rubric:: Pretrained Weights
 
-    .. versionadded:: 2.1
+    The released Cam-CAN MEG-GPT and EphysTokenizer weights, converted to this
+    class's keys without the next-token head and the tokenizer's signal
+    decoder, are at ``braindecode/meggpt-pretrained`` (revision ``5c49e27c``);
+    the head is randomly initialized::
+
+        from braindecode.models import MEGGPT
+        model = MEGGPT.from_pretrained("braindecode/meggpt-pretrained", n_outputs=4)
+
+    They expect the input described above: source-space MEG at 250 Hz, the 52
+    parcels in the released order, sign-flip aligned and z-scored over the
+    recording (Section 2.5.3). On the same token ids, the decoder outputs and
+    the features equal those of the authors' model called without session
+    labels (:gh:`1555`).
 
     Parameters
     ----------

@@ -44,7 +44,9 @@ class BBCIDataset(object):
         load_sensor_names: list[str] | None = None,
         check_class_names: bool = False,
     ):
-        self.__dict__.update(locals())
+        self.filename = filename
+        self.load_sensor_names = load_sensor_names
+        self.check_class_names = check_class_names
 
     def load(self) -> mne.io.RawArray:
         cnt = self._load_continuous_signal()
@@ -313,7 +315,7 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
         event_classes[left_mask] = 2
         event_classes[rest_mask] = 3
         event_classes[feet_mask] = 4
-        log.warn(
+        log.warning(
             "Swapped  class names {:s}... might cause problems...".format(
                 all_class_names
             )
@@ -656,7 +658,7 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
         pass
     else:
         # remove this whole if else stuffs?
-        log.warn("Unknown class names {:s}".format(all_class_names))
+        log.warning("Unknown class names {:s}".format(all_class_names))
 
 
 def load_bbci_sets_from_folder(

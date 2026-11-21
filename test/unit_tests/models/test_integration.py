@@ -366,11 +366,21 @@ def test_model_compiled(model):
     Verifies that all models can be torch compiled without issue
     and if the outputs are the same.
     """
+    selected_models = {
+        m.strip()
+        for m in os.environ.get("BRAINDECODE_SELECT_MODELS", "").split(",")
+        if m.strip()
+    }
+    model_name = model.__class__.__name__
     if (
         os.environ.get("BRAINDECODE_COMPILE_ALL") != "1"
-        and model.__class__.__name__ not in _COMPILE_ON_PR
+        and model_name not in _COMPILE_ON_PR
+        and model_name not in selected_models
     ):
-        pytest.skip("compiled on master only (set BRAINDECODE_COMPILE_ALL=1)")
+        pytest.skip(
+            "compiled on scheduled CI or when selected via --select-models "
+            "(set BRAINDECODE_COMPILE_ALL=1)"
+        )
     # This assumes the model has attributes n_chans and n_times
     try:
         n_chans = model.n_chans
@@ -618,8 +628,6 @@ def test_if_models_with_embedding_parameter(model):
     # Test if the model that have embedding parameters works changing the default
     # embedding value
     model_name = model.__class__.__name__
-    if model_name == "GeoNIRS":
-        pytest.skip("GeoNIRS: projection_dims starts at embed_dim, so both change.")
     # first step is to inspect the models parameters
     params = inspect.signature(model.__init__).parameters
 
