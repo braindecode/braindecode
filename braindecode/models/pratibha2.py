@@ -191,6 +191,14 @@ class Pratibha2(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})."
             )
         warn_if_sfreq_differs("Pratibha2", self._sfreq, 200.0)
+        # A window holds at least one patch; checked when its length is known.
+        n_times_known = self._n_times is not None or (
+            self._input_window_seconds is not None and self._sfreq is not None
+        )
+        if n_times_known and self.n_times < patch_size:
+            raise ValueError(
+                f"n_times ({self.n_times}) must be at least patch_size ({patch_size})."
+            )
 
         self.embed_dim = embed_dim
         self.head_hidden_dim = head_hidden_dim
