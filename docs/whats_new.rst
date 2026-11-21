@@ -183,6 +183,9 @@ Enhancements
 - Add :func:`braindecode.training.szcore_event_scores`, SzCORE event-based seizure scoring
   (Dan et al., Epilepsia 2025) with its default rules; it matches timescoring 0.0.7
   (:gh:`1735` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- Add the :ref:`seizure-alarm-chbmit` tutorial. A seizure detector trained on two CHB-MIT
+  patients is tested on a third, and :func:`braindecode.training.szcore_event_scores`
+  scores its alarms (:gh:`1736` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 API and behavior changes
 ========================
