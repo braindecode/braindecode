@@ -65,7 +65,8 @@ With this, in this model's sub-pages, we provide:
     - 2. :doc:`The categorization of the neural networks based on what is inside them
          <models_categorization>`;
     - 3. :doc:`A table overview to understand what is inside the models <models_table>`;
-    - 4. :doc:`A visualization of the common important information from the models
+    - 4. :doc:`How to run a pretrained model on another montage <channel_strategies>`;
+    - 5. :doc:`A visualization of the common important information from the models
          <models_visualization>`.
 
 .. button-ref:: models_table
@@ -84,6 +85,7 @@ With this, in this model's sub-pages, we provide:
 
     models_categorization
     models_table
+    channel_strategies
     models_visualization
 
 .. include:: /links.inc

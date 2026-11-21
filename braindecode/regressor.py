@@ -57,6 +57,28 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
         Whether to average cropped predictions to obtain window predictions. Used only in the
         cropped mode.
 
+    compile: bool (default=False)
+        If True, compile the module and the criterion in place with
+        :meth:`torch.nn.Module.compile`, passing the ``compile__*`` options
+        (e.g. ``compile__dynamic=True``). Compilation is not guaranteed to be
+        faster. The module keeps its Parameters, supplied and shared ones
+        included, and its state-dict keys, so ``save_params`` checkpoints load
+        into eager models and back.
+
+        Checkpoints saved through skorch's ``torch.compile`` wrapper (with
+        ``compile=True`` before braindecode 2.0) have keys that start with
+        ``_orig_mod.``, and loading does not strip this prefix. Export
+        ``_orig_mod.state_dict()`` from the wrapped module where it was saved,
+        or remove only that verified prefix, then load the result strictly.
+
+        A pickled, joblib-loaded or deep-copied estimator runs eagerly, and warm
+        start and ``partial_fit`` do not compile again. ``initialize()``
+        compiles again but also re-initializes the module, so call
+        ``load_params`` after it to continue training. An estimator replaces or
+        clears only a compiled call it installed itself. Call
+        ``set_params(compile=False)`` on that estimator before reusing its
+        module eagerly elsewhere.
+
     """  # noqa: E501
     __doc__ = update_estimator_docstring(NeuralNetRegressor, doc)
 
@@ -166,6 +188,14 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             dimension: ``(n_trials,)`` for scalar targets, with further
             dimensions for multi-value or equal-length sequence targets. If
             trial lengths differ, a list with one target array per trial.
+
+        Notes
+        -----
+        In cropped mode, this calls :func:`braindecode.training.predict_trials`
+        on ``module_`` with the estimator's ``batch_size`` and the
+        ``num_workers`` of its evaluation loader. Other loader settings, such
+        as those of the training loader, are not copied; pass them in
+        ``loader_kwargs``.
         """
         if not self.cropped:
             if loader_kwargs is not None:

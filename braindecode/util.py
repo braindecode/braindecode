@@ -504,11 +504,12 @@ class ThrowAwayIndexLoader(object):
 
 
 def update_estimator_docstring(base_class, docstring):
-    base_doc = base_class.__doc__.replace(" : ", ": ")
-    idx = base_doc.find("callbacks:")
-    idx_end = idx + base_doc[idx:].find("\n\n")
-    # remove callback descripiton already included in braindecode docstring
-    filtered_doc = base_doc[:idx] + base_doc[idx_end + 6 :]
+    filtered_doc = base_class.__doc__.replace(" : ", ": ")
+    # remove the descriptions that the braindecode docstring gives instead
+    for name in ("callbacks:", "compile:"):
+        idx = filtered_doc.find(name)
+        idx_end = idx + filtered_doc[idx:].find("\n\n")
+        filtered_doc = filtered_doc[:idx] + filtered_doc[idx_end + 6 :]
     splitted = docstring.split("Parameters\n    ----------\n    ")
     out_docstring = (
         splitted[0]
