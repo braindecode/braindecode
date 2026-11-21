@@ -212,6 +212,12 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
             raise ValueError(
                 f"TinyMyo needs 1 to {_MAX_CHANS} channel slots, got n_chans={self.n_chans}."
             )
+        # TimmAttention checks num_heads >= 1 and an even head width, but
+        # builds a narrower attention when the heads do not split embed_dim.
+        if num_heads >= 1 and embed_dim % num_heads:
+            raise ValueError(
+                f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})."
+            )
 
         self.patch_embed = PatchTokenizer(
             patch_size=patch_size,
