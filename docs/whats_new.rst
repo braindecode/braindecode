@@ -258,7 +258,7 @@ Bug fixes
   :class:`~braindecode.models.EEGConformer` and ``HybridNet`` points at keys that exist.
   Before, a ``state_dict`` saved under the old ATCNet or EEGConformer names did not load
   with ``strict=True``. A contract test checks that every registered model's ``mapping``
-  targets are ``state_dict`` keys (:gh:`0000` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+  targets are ``state_dict`` keys (:gh:`1732` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - ``braindecode.models`` and ``braindecode.models.util.get_summary_table`` work when
   braindecode is imported from a zip archive (:gh:`1670` by `Bruno Aristimunha`_).
 - Exported :class:`braindecode.models.EEGMiner` programs decompose without mutating
