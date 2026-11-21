@@ -110,14 +110,14 @@ const ZENODO_RIS = [
   "ER  - ",
 ].join("\n");
 
-const CITE_PAYLOADS = {
-  "zenodo-bibtex": ZENODO_BIBTEX,
-  "zenodo-apa": ZENODO_APA,
-  "hbm-bibtex": HBM_BIBTEX,
-  "hbm-apa": HBM_APA,
-  "both-bibtex": ZENODO_BIBTEX + "\n\n" + HBM_BIBTEX,
-  "zenodo-ris": ZENODO_RIS,
-};
+const CITE_PAYLOADS = new Map([
+  ["zenodo-bibtex", ZENODO_BIBTEX],
+  ["zenodo-apa", ZENODO_APA],
+  ["hbm-bibtex", HBM_BIBTEX],
+  ["hbm-apa", HBM_APA],
+  ["both-bibtex", ZENODO_BIBTEX + "\n\n" + HBM_BIBTEX],
+  ["zenodo-ris", ZENODO_RIS],
+]);
 
 function fallbackCopy(text) {
   const ta = document.createElement("textarea");
@@ -161,7 +161,7 @@ function handleCiteClick(event) {
   if (!btn) {
     return;
   }
-  const text = CITE_PAYLOADS[btn.getAttribute("data-bd-cite-copy")];
+  const text = CITE_PAYLOADS.get(btn.getAttribute("data-bd-cite-copy"));
   if (!text) {
     return;
   }

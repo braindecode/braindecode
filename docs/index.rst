@@ -1294,7 +1294,7 @@
             <p class="eco-desc">Modular Python suite (<code>NeuralSet</code>, <code>NeuralFetch</code>, <code>NeuralTrain</code>, <code>NeuralBench</code>) for large-scale neurophysiology training.</p>
           </a>
 
-          <a class="eco-card" href="https://ai.meta.com/research/brain-ai/" target="_blank" rel="noopener">
+          <a class="eco-card" href="https://neural-interfaces26.github.io/" target="_blank" rel="noopener">
             <div class="eco-top">
               <img class="eco-logo only-light" src="_static/ecosystem_logos/meta-brainai-light.png" alt="Meta Brain &amp; AI" width="142" height="30" loading="lazy" decoding="async"/>
               <img class="eco-logo only-dark" src="_static/ecosystem_logos/meta-brainai-dark.png" alt="Meta Brain &amp; AI" width="142" height="30" loading="lazy" decoding="async"/>

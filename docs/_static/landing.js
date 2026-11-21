@@ -203,7 +203,7 @@ function setActiveVenueDot(dots, activeIdx) {
 }
 
 function scrollTrackToIndex(track, cards, idx) {
-  const target = cards[idx];
+  const target = cards.at(idx);
   if (!target) {
     return;
   }
@@ -404,7 +404,7 @@ function setTextIfPresent(el, text) {
 }
 
 function applyActiveCap(stage, cards, modEl, exprEl, activeIdx) {
-  const card = cards[activeIdx];
+  const card = cards.at(activeIdx);
   if (!card) {
     return;
   }
