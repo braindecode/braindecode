@@ -86,20 +86,18 @@ class TCCNet(EEGModuleMixin, nn.Module, license="mit"):
     .. rubric:: Additional Mechanisms
 
     - **Masking.** A time step where every channel equals ``mask_value`` is
-      padding: the input of every convolution is zeroed there and the pooling
-      leaves the step out, as the reference's Keras ``Masking`` layer does. As
-      in the reference ``CausalConv1D``, the bias of a convolution is added
-      only where its output is non-zero.
+      padding: every convolution reads it as zero and the pooling leaves it
+      out, as the reference's Keras ``Masking`` layer does. As in its
+      ``CausalConv1D``, a convolution adds its bias only where its output is
+      non-zero.
 
     .. important::
 
-        The reference code [tccnetcode]_ rectifies each channel, low-pass
-        filters it with a first-order 1 Hz Butterworth filter applied forward
-        and backward (``filtfilt``) and pre-pads the gestures of a batch with
-        ``-10`` to the longest one. Its average over time sums the padded steps
-        too, which are zero after pre-padding, so the masked average equals it
-        for that padding only. A fully padded gesture gives NaN with
-        ``"aot"``, as in the reference.
+        The reference code [tccnetcode]_ rectifies each channel, low-passes it
+        at 1 Hz (first-order Butterworth, ``filtfilt``) and pre-pads the
+        gestures of a batch with ``-10``. The masked average over time equals
+        its average for that padding only; a fully padded gesture gives NaN
+        with ``"aot"``, as there.
 
     .. versionadded:: 2.1
 
