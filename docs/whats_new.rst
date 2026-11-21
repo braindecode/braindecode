@@ -31,6 +31,9 @@ Enhancements
 - Add :class:`braindecode.models.SAMBA` (Hong et al., NeurReps 2026), an EEG
   foundation model that reads electrode positions through a coordinate-driven
   spatial embedding and models time with Mamba-2 (:gh:`1689` by `Jiazhen Hong`_).
+- The encoders of :class:`braindecode.models.SAMBA` are on the Hugging Face Hub at
+  ``braindecode/samba-2s-pretrained`` and ``braindecode/samba-100s-pretrained``
+  (:gh:`1739` by `Bruno Aristimunha`_).
 - Foundation models raise a ``ValueError`` with both channel counts, through
   :func:`braindecode.functional.check_n_chans`, when the input does not have the
   channels they were built for (:gh:`1605` by `Julien Gadonneix`_).
@@ -126,7 +129,9 @@ Enhancements
 - Add :class:`braindecode.models.Pratibha2` (PRATIBHA-2, formerly MANAS-2), a dense-attention
   EEG foundation model; its encoder, converted from ``MannasAI/pratibha-2``, is on the Hugging
   Face Hub at ``braindecode/pratibha2-pretrained`` (:gh:`1654` by `Mahir Jain`_, :gh:`1723` by `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.MEGXL`, the MEG-XL brain-to-text foundation model (Jayalath and Parker Jones, ICML 2026): a frozen BioCodec tokenizer and a criss-cross transformer pretrained on 150 s MEG windows; the released ``meg-xl-med-v2.ckpt``, converted to the port's keys, is on the Hugging Face Hub at ``braindecode/megxl-pretrained`` and matches the authors' code on CPU. Its ``forward`` refuses ``ch_mask`` with a ``ValueError`` (the head flattens ``n_chans * latent_dim`` features and the sensor geometry is the ``chs_info`` montage), and ``return_features`` gives the pooled ``"features"`` only, no ``"tokens"``. The opt-in ``encode``/``encode_codes`` mask replaces projected code content before sensor metadata and attention, returning real temporal hidden states for caller-owned masked-RVQ-code prediction; it adds no default parameters and expects equal valid-length full-montage windows (:gh:`1554` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.MEGXL`, the MEG-XL brain-to-text foundation model (Jayalath and Parker
+  Jones, ICML 2026): a frozen BioCodec tokenizer and a criss-cross transformer pretrained on 150 s MEG
+  windows, with the weights at ``braindecode/megxl-pretrained`` (:gh:`1554` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.SEANetEncoder` and :class:`~braindecode.modules.SEANetDecoder` (EnCodec's SEANet, with :class:`~braindecode.modules.SEANetConv1d`, :class:`~braindecode.modules.SEANetConvTranspose1d`, :class:`~braindecode.modules.SEANetLSTM` and :class:`~braindecode.modules.SEANetResBlock`), moved from :class:`braindecode.models.BrainOmni`, whose parameters and outputs are unchanged. They take ``in_channels``/``out_channels``, ``n_residual_layers``, ``dilation_base``, ``compress``, ``true_skip`` and ``causal`` (:gh:`1553` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.modules.SpatialTemporalBlock`, moved from BrainOmni, and give
   :class:`~braindecode.modules.PreNormTransformerBlock` the ``eps``, ``drop_path`` and ``attn_mask`` of
@@ -138,16 +143,9 @@ Enhancements
   that labels a sequence of consecutive epochs of EEG and EOG in one pass, one prediction per
   epoch, ``(batch, n_outputs, n_epochs)`` (:gh:`1653` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_, :gh:`1717` by `Bruno Aristimunha`_).
 - A model loaded with :meth:`~braindecode.models.EEGModuleMixin.from_pretrained` shows where its weights come from: in a notebook (``model`` as the last line of a cell) a panel lists the input geometry, the Hub repository and commit, the licence, the base model and the datasets of the model card (linked to NEMAR, OpenNeuro or the Hub), and a module table with each block marked as loaded from the checkpoint or initialised here, e.g. a head rebuilt for a new ``n_outputs``; ``print(model)`` adds the same facts below the torchinfo table. Both ask users, and AI agents reading the output, to cite Braindecode with its `Zenodo DOI <https://doi.org/10.5281/zenodo.8214376>`__. The card offers BibTeX/APA downloads and selectable citation text, and links training datasets to NEMAR, EEGDash catalogue searches and documented braindecode readers. ``from_pretrained`` now warns when no parameter of the model was loaded from the checkpoint, which happened silently when the checkpoint's keys did not match the model (:gh:`1558` by `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.CORTEG`, an ST-EEGFormer adapted to
-  intracranial ECoG: a spatial adapter places each electrode by its 3D position
-  in the frozen pretrained channel codebook, and a high-gamma token stream joins
-  the low-frequency one before the last blocks (mean or layer-wise gate).
-  ``CORTEG.from_pretrained("braindecode/corteg-small-pretrained", ...)`` loads
-  ST-EEGFormer small with the high-gamma embedding warm-started; ``ch_mask`` takes
-  padded batches (:gh:`1551` by `Julien Gadonneix`_).
-- :class:`braindecode.models.CORTEG` loads a bare :class:`~braindecode.models.STEEGFormer`
-  checkpoint with its high-gamma embedding warm-started from the loaded low-frequency one
-  (:gh:`1625` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.CORTEG` (Yang et al., NeurIPS 2026), an ST-EEGFormer adapted to
+  intracranial ECoG by electrode position, with a high-gamma token stream and ``ch_mask``;
+  the weights are at ``braindecode/corteg-small-pretrained`` (:gh:`1551` by `Julien Gadonneix`_).
 - Add :class:`braindecode.models.NICE`, the EEG/MEG encoder of the NICE image-decoding framework
   (Song et al., ICLR 2024): TSConv plus a projector into the CLIP image space, with an optional
   input-time ``mask`` for downstream SSL losses (:gh:`1556` by `Bruno Aristimunha`_).
@@ -182,6 +180,9 @@ Enhancements
   elements in different shapes (:class:`braindecode.models.AXON`), and no gradient for a
   learnable ``attn_mask`` (:class:`braindecode.models.DIVER1`)
   (:gh:`1599` by `Bruno Aristimunha`_).
+- Add :func:`braindecode.training.szcore_event_scores`, SzCORE event-based seizure scoring
+  (Dan et al., Epilepsia 2025) with its default rules; it matches timescoring 0.0.7
+  (:gh:`1735` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 API and behavior changes
 ========================
@@ -189,6 +190,9 @@ API and behavior changes
 - :func:`braindecode.functional.scaled_dot_product_attention` emits a ``FutureWarning``
   when ``fused_in_lazy`` is set: it has had no effect since :gh:`1581` and will be
   removed in 2.2 (:gh:`1701` by `Bruno Aristimunha`_).
+- Eight public names with no user in braindecode, listed in :gh:`1442`, emit a
+  ``FutureWarning`` and will be removed in 2.2, e.g. ``braindecode.util.corr``
+  (:gh:`1734` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.datasets.CHBMIT` and :class:`braindecode.datasets.SIENA` now name
   each annotation after the ``eventType`` column of its ``events.tsv`` (``"sz"``,
   ``"bckg"``, ...). Rows with a missing ``eventType`` keep their BIDS ``trial_type``.
@@ -251,6 +255,9 @@ Requirements
 Bug fixes
 ==========
 
+- :func:`braindecode.preprocessing.create_windows_from_events` rounds event durations to
+  samples instead of truncating them, so trials, and windows inferred from them, can be
+  one sample longer (:gh:`1727` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.augmentation.SensorsRotation` and its X, Y, Z variants document
   ``max_degrees``, and :class:`braindecode.datasets.EEGWindowsDataset` documents ``raw``
   (:gh:`1731` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).
@@ -596,6 +603,15 @@ Bug fixes
 Code health
 ============
 
+- The test suite peaks lower: smaller inputs where no assertion depends on size,
+  shared read-only data, freed TorchScript, compile and reference-cycle memory
+  (:gh:`1713` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.LUNA` is freed as soon as it is deleted: its state-dict
+  hook no longer holds a reference to the model (:gh:`1713` by `Bruno Aristimunha`_).
+- Printing a model no longer keeps it alive: torchinfo's module-level summary
+  cache held the last printed instance of each class (:gh:`1713` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.EEGMiner` takes the upper triangle of its connectivity
+  matrices in one place again and drops an unused flatten layer (:gh:`1737` by `Bruno Aristimunha`_).
 - Tests that spawned processes, built the 157M-parameter :class:`~braindecode.models.BENDR`
   14 times, spied on SDPA calls or re-implemented the code they check are now in-process,
   small or gone (:gh:`1701` by `Bruno Aristimunha`_).
@@ -630,10 +646,6 @@ Code health
   :class:`braindecode.models.Labram` and :class:`braindecode.models.CodeBrain`,
   which it skipped; it still skips SyncNet and NeuroRVQTokenizer
   (:gh:`1598` by `Bruno Aristimunha`_).
-- The :class:`braindecode.models.JungMAE` tests compare the forward with the
-  reference encoder at ``atol=1e-5``: the reference packs the valid tokens and
-  the model masks the invalid ones, so float32 rounding depends on the machine
-  (:gh:`1594` by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.Perceiver` builds the Fourier features for
   :class:`braindecode.models.DANCE` directly along the time axis. A training
   test checks its per-token logits and the gradients of all three event heads
@@ -684,6 +696,9 @@ Code health
   Published development notebooks install the build's commit, and the
   Exca tutorial installs the optional packages it imports (:gh:`1640` by
   `Bruno Aristimunha`_).
+- The numpydoc header test now covers every registered model, not nine. The
+  parameter headers of 13 models read ``name: type`` and are now ``name : type``,
+  so numpydoc parses the name (:gh:`1728` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 
 Current 2.0.0 (2026-11-02)

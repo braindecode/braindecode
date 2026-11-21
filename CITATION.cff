@@ -107,6 +107,10 @@ authors:
     alias: Fashad-Ahmed
     affiliation: "Alma Mater Studiorum - Università di Bologna, Bologna, Italy"  # codespell:ignore mater
     orcid: "https://orcid.org/0009-0008-1262-3586"
+  - given-names: Aayushya
+    family-names: Patel
+    alias: ptlnextdoor
+    orcid: "https://orcid.org/0009-0008-0515-9447"
   - given-names: Thomas
     family-names: Moreau
     affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"

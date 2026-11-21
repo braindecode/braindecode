@@ -55,7 +55,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         modules. Each convolutional layer in such modules have kernels of
         increasing size, odd multiples of this value (e.g. 0.1, 0.3, 0.5, 0.7,
         0.9 here for ``n_convs=5``). Defaults to 0.1 s.
-    activation: nn.Module
+    activation : nn.Module
         Activation function. Defaults to ReLU activation.
     fft_conv : bool | None, optional
         Compute the temporal convolutions of the inception modules with an FFT
