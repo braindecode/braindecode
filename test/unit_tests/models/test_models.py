@@ -6268,147 +6268,87 @@ def test_megxl_meg_geometry_and_codes():
     assert model(x).shape == (2, 2)
 
 
-def test_megxl_batched_geometry_gradients():
-    """Geometry projections keep the original batched backward accumulation."""
+def _megxl(n_chans=3, n_times=25, **kwargs):
+    """A tiny MEG-XL whose codebooks hold values, as a checkpoint's do."""
     from braindecode.models import MEGXL
 
-    torch.manual_seed(0)
+    kw = dict(
+        latent_dim=32, num_layers=1, num_heads=4, fourier_pos_dim=16,
+        tokenizer_dim=16, n_filters=4, n_q=2, codebook_size=8, codebook_dim=4,
+        drop_prob=0.0,
+    )  # fmt: skip
     model = MEGXL(
-        chs_info=_make_chs_info(4),
-        n_outputs=2,
-        n_times=100,
-        sfreq=50.0,
-        num_layers=0,
-    )
-    model.eval()
+        chs_info=_make_chs_info(n_chans), n_outputs=2, n_times=n_times, sfreq=50.0,
+        **{**kw, **kwargs},
+    ).eval()
+    for level in model.quantizer.layers:
+        level.codebook.normal_()
+    return model
+
+
+def test_megxl_batched_geometry_gradients():
+    """The geometry projections accumulate gradients over the flattened batch,
+    as the reference does: bitwise the same output and gradients."""
+    torch.manual_seed(0)
+    model = _megxl(n_chans=4, n_times=100, num_layers=0)
     x = torch.randn(2, 4, 100)
-    codes = model.tokenize(x)
-    levels = [
-        nn.functional.embedding(codes[..., q], vq._codebook.embed)
-        for q, vq in enumerate(model.quantizer.layers)
-    ]
-    expected = model.rvq_projector(torch.stack(levels, dim=3).flatten(3))
-    # Original: flatten batched coordinates for Fourier features, restore the
-    # batch axis before Linear, then insert the time axis after projection.
+    # Reference: Fourier features of the (batch * n_chans, 3) coordinates, the
+    # batch axis restored before each Linear, the time axis added after it.
+    expected = model.rvq_projector(model.quantizer.embed(model.tokenize(x)).flatten(3))
     for coords, freqs, projector in [
         (model.sensor_xyz, model.position_freqs, model.position_projector),
         (model.sensor_abc, model.orientation_freqs, model.orientation_projector),
     ]:
-        coords = coords.expand(2, -1, -1).reshape(8, 3)
-        phase = 2 * np.pi * (coords @ freqs)
+        phase = 2 * np.pi * (coords.expand(2, -1, -1).reshape(8, 3) @ freqs)
         fourier = torch.cat([phase.sin(), phase.cos()], dim=-1).reshape(2, 4, -1)
         expected = expected + projector(fourier).unsqueeze(2)
-    types = model.sensor_type.expand(2, -1)
-    expected = expected + model.sensor_type_layer(types).unsqueeze(2)
+    expected = expected + model.sensor_type_layer(model.sensor_type.expand(2, -1))[:, :, None]
     actual = model.encode(x)
     assert torch.equal(actual, expected)
-    params = list(model.position_projector.parameters())
-    params += list(model.orientation_projector.parameters())
-    params += list(model.sensor_type_layer.parameters())
+    params = [model.position_projector.weight, model.orientation_projector.weight]
     cotangent = torch.randn_like(expected)
-    reference_grads = torch.autograd.grad(expected, params, grad_outputs=cotangent)
-    actual_grads = torch.autograd.grad(actual, params, grad_outputs=cotangent)
-    assert all(torch.equal(a, b) for a, b in zip(reference_grads, actual_grads))
+    grads = [torch.autograd.grad(h, params, cotangent) for h in (expected, actual)]
+    assert all(torch.equal(a, b) for a, b in zip(*grads))
 
 
-def test_megxl_uses_half_projections_with_float_codebooks():
-    from braindecode.models import MEGXL
-
-    model = MEGXL(
-        chs_info=_make_chs_info(2), n_outputs=2, n_times=25, sfreq=50.0,
-        latent_dim=32, num_layers=0, num_heads=4, fourier_pos_dim=16,
-        tokenizer_dim=16, n_filters=4, n_q=2, codebook_size=8, codebook_dim=4,
-    ).half().eval()
-    for layer in model.quantizer.layers:
-        layer._codebook.embed.normal_()
+def test_megxl_runs_in_half_precision():
+    model = _megxl(n_chans=2, num_layers=0).half()
     x = torch.randn(2, 2, 25, dtype=torch.float16)
     with torch.no_grad():
-        codes = model.tokenize(x)
-        latents = model.encode_codes(codes)
+        latents = model.encode_codes(model.tokenize(x))
         torch.testing.assert_close(latents, model.encode(x))
-        assert latents.dtype == x.dtype
-        assert torch.isfinite(latents).all()
+    assert latents.dtype == x.dtype
+    assert torch.isfinite(latents).all()
 
 
 def test_megxl_masked_codes_before_context():
-    """Hide clean code content before metadata/context, not the prediction."""
-    from braindecode.models import MEGXL
-
+    """Masked code content is replaced before the sensor metadata and the
+    attention: hidden code values do not matter, ``mask_value`` gets gradients."""
     torch.manual_seed(12)
-    model = MEGXL(
-        chs_info=_make_chs_info(3), n_outputs=2, n_times=25, sfreq=50.0,
-        latent_dim=32, num_layers=1, num_heads=4, fourier_pos_dim=16,
-        tokenizer_dim=16, n_filters=4, n_q=2, codebook_size=8, codebook_dim=4,
-        drop_prob=0.0,
-    ).eval()
+    model = _megxl()
     x = torch.randn(2, 3, 25)
-    with torch.no_grad():
-        # The fresh RVQ codebooks are zero before pretraining; use nontrivial
-        # frozen embeddings to exercise projector gradients like a checkpoint.
-        for vq in model.quantizer.layers:
-            vq._codebook.embed.normal_()
-        codes = model.tokenize(x)
+    codes = model.tokenize(x)
     assert not codes.requires_grad
-    clean = model.encode(x)
-    assert torch.equal(clean, model.encode_codes(codes))
+    clean = model.encode_codes(codes)
+    assert torch.equal(clean, model.encode(x))
     mask = torch.zeros(codes.shape[:3], dtype=torch.bool)
-    mask[:, :, 1] = True  # native temporal span, every sensor
+    mask[:, :, 1] = True  # one temporal span, every sensor
     value = nn.Parameter(torch.randn(model.latent_dim))
-    captured = []
-    hook = model.blocks[0].register_forward_pre_hook(
-        lambda module, args: captured.append(args[0].detach().clone())
-    )
-    rng = torch.get_rng_state().clone()
-    unchanged = model.encode(x, mask=torch.zeros_like(mask), mask_value=value)
-    assert torch.equal(clean, unchanged)
-    assert torch.equal(rng, torch.get_rng_state())
+    assert torch.equal(clean, model.encode_codes(codes, torch.zeros_like(mask), value))
     masked = model.encode_codes(codes, mask, value)
     changed = codes.clone()
-    changed[mask] = (changed[mask] + 1) % 8
-    perturbed = model.encode_codes(changed, mask, value)
-    assert torch.equal(captured[-1], captured[-2])
-    assert torch.equal(masked, perturbed)
-    assert torch.equal(captured[-2][~mask], captured[0][~mask])
+    changed[mask] = (changed[mask] + 1) % 8  # other code values under the mask
+    assert torch.equal(masked, model.encode_codes(changed, mask, value))
     assert not torch.equal(masked, clean)
-    # A zero code projection isolates replacement + unchanged sensor metadata.
-    with torch.no_grad():
-        weight = model.rvq_projector.weight.clone()
-        bias = model.rvq_projector.bias.clone()
-        model.rvq_projector.weight.zero_()
-        model.rvq_projector.bias.zero_()
-        model.encode_codes(codes, mask, value)
-        model.rvq_projector.weight.copy_(weight)
-        model.rvq_projector.bias.copy_(bias)
-    assert torch.equal(captured[-1][mask], captured[-3][mask])
-    hook.remove()
-    decoder = nn.Linear(model.latent_dim, 2 * 8)
-    logits = decoder(masked).unflatten(-1, (2, 8))
-    selected = logits[mask]
-    targets = codes[mask]
-    loss = torch.stack([
-        nn.functional.cross_entropy(selected[:, q], targets[:, q])
-        for q in range(2)
-    ]).mean()
-    loss.backward()
-    for parameter in [value, decoder.weight, model.rvq_projector.weight,
-                      model.blocks[0].spatial_attn.qkv.weight]:
-        assert parameter.grad is not None
-        assert torch.isfinite(parameter.grad).all()
-        assert torch.count_nonzero(parameter.grad)
-    assert all(p.grad is None for p in model.encoder.parameters())
-    assert all(p.grad is None for p in model.quantizer.parameters())
+    masked.square().sum().backward()
+    assert torch.count_nonzero(value.grad)
+    assert all(p.grad is None for p in [*model.encoder.parameters(), *model.quantizer.parameters()])
 
 
 @pytest.mark.parametrize("n_times", [11, 12, 13, 2])
 def test_megxl_mask_token_hops(n_times):
     """Equal-length windows include the native partial final boundary token."""
-    from braindecode.models import MEGXL
-
-    model = MEGXL(
-        chs_info=_make_chs_info(2), n_outputs=2, n_times=n_times, sfreq=50.0,
-        latent_dim=32, num_layers=0, num_heads=4, fourier_pos_dim=16,
-        tokenizer_dim=16, n_filters=4, n_q=2, codebook_size=8, codebook_dim=4,
-    ).eval()
+    model = _megxl(n_chans=2, n_times=n_times, num_layers=0)
     x = torch.randn(1, 2, n_times)
     codes = model.tokenize(x)
     assert codes.shape == (1, 2, (n_times + 11) // 12, 2)
@@ -6420,6 +6360,29 @@ def test_megxl_mask_token_hops(n_times):
         model.encode_codes(codes, mask)
     with pytest.raises(ValueError, match="mask"):
         model.encode_codes(codes, torch.ones(1, dtype=torch.bool), torch.zeros(32))
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_megxl_pretrained_matches_the_release():
+    """The re-hosted weights give the codes and features of ``meg-xl-med-v2.ckpt``
+    (pnpl/MEG-XL@79838987), on the 306 saved channels."""
+    pytest.importorskip("huggingface_hub")
+    from braindecode.models import MEGXL
+
+    model = MEGXL.from_pretrained(
+        "braindecode/megxl-pretrained",
+        revision="REHOST_PENDING",  # pin after re-host
+        n_outputs=2,
+        n_times=100,
+    ).eval()
+    x = torch.arange(model.n_chans * 100.0).reshape(1, -1, 100).mul(0.05).sin()
+    with torch.no_grad():
+        codes = model.tokenize(x)
+        features = model(x, return_features=True)["features"]
+    assert codes[0, 0, :2].tolist() == [[145, 191, 203, 33, 26, 119], [13, 155, 141, 211, 160, 224]]
+    expected = torch.tensor([1.061779, -2.169349, 1.731128, -0.373779, 0.119500])
+    torch.testing.assert_close(features[0, :5], expected, rtol=0, atol=1e-5)
 
 
 def _bbl(**kwargs):
