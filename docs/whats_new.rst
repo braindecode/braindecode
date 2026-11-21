@@ -138,7 +138,7 @@ Enhancements
   STEEGFormer's encoder block, which it replaces; no weight changes (:gh:`1720` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.TCCNet`, a causal temporal-convolution model
   for sEMG gesture recognition with average-over-time and context-attention
-  classification heads (:gh:`1562` by `Arslan Shafique`_).
+  classification heads (:gh:`1562` by `Arslan Shafique`_, :gh:`1714` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.CareSleepNet` (Wang et al., IEEE JBHI 2024), a sleep stager
   that labels a sequence of consecutive epochs of EEG and EOG in one pass, one prediction per
   epoch, ``(batch, n_outputs, n_epochs)`` (:gh:`1653` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).

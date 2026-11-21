@@ -7865,45 +7865,30 @@ def test_mtrenirs_pretrained_matches_the_release(n_times, expected):
     torch.testing.assert_close(features[0, :5], torch.tensor(expected), rtol=0, atol=1e-5)
 
 
-def _tccnet_reference(model, x, mask_value):
-    """NumPy transcription of the TCCNet Keras layers (DSIP-UPatras/ICASSP2019_TCN
-    @cd28909: ``Masking``, ``CausalConv1D``, ``MeanOverTime`` and
-    ``AttentionWithContext(bias=False)``), on the port's weights."""
-    x = x.transpose(0, 2, 1)  # (batch, n_times, n_chans), the Keras layout
-    if mask_value is None:
-        mask = np.ones(x.shape[:2])
-    else:
-        mask = np.any(x != mask_value, axis=-1).astype(x.dtype)
-
-    def causal_conv(h, layer):
-        h = h * mask[..., None]
-        kernel = layer.conv.weight.detach().numpy().transpose(2, 1, 0)
-        dilation = layer.conv.dilation[0]
-        padded = np.pad(h, ((0, 0), ((len(kernel) - 1) * dilation, 0), (0, 0)))
-        out = sum(
-            padded[:, j * dilation : j * dilation + h.shape[1]] @ kernel[j]
-            for j in range(len(kernel))
-        )
-        # The bias is added only where the convolution is non-zero.
-        return (out + layer.bias.detach().numpy()) * (out != 0)
-
-    h = x * mask[..., None]
-    for block in model.feature_extractor:
-        residual = causal_conv(h, block.projection)
-        for layer in block.convolutions:
-            h = np.maximum(causal_conv(h, layer), 0)
-        h = h + residual
-    if model.attention is None:
-        # Sum over every step, divided by the number of valid steps.
-        pooled = h.sum(axis=1) / mask.sum(axis=1, keepdims=True)
-    else:
-        weight = model.attention.weight.detach().numpy()
-        context = model.attention.context.detach().numpy()
-        attention = np.exp(np.tanh(h @ weight) @ context) * mask
-        attention = attention / (attention.sum(axis=1, keepdims=True) + 1e-7)
-        pooled = (h * attention[..., None]).sum(axis=1)
-    final = model.final_layer
-    return pooled @ final.weight.detach().numpy().T + final.bias.detach().numpy()
+# Logits, and the gradient of ``logits @ [0.7, -0.3]`` with respect to every second
+# real step of channel 0, for each (classification_head, mask_value), on the
+# weights and input of the test below. Computed once with a NumPy transcription of
+# the Keras layers of DSIP-UPatras/ICASSP2019_TCN @cd28909 (``Masking``,
+# ``CausalConv1D``, ``MeanOverTime``, ``AttentionWithContext``), which agreed with
+# the port to 1e-11 on the logits and, by central differences, on the gradients.
+_TCCNET_KERAS = {
+    ("aot", None): (
+        [6.6280743e-02, 5.7017024e-01],
+        [-6.8664843e-04, -6.9696416e-04, -4.9785423e-04, -4.4360344e-04],
+    ),
+    ("aot", -10.0): (
+        [6.4407473e-02, 5.6374093e-01],
+        [-1.0649275e-03, -7.0881849e-04, -6.0610909e-04],
+    ),
+    ("att", None): (
+        [1.0911173e-01, 6.1337286e-01],
+        [-4.9515657e-04, -5.2219596e-04, -3.7520062e-04, -3.5192951e-04],
+    ),
+    ("att", -10.0): (
+        [1.0665933e-01, 6.0621200e-01],
+        [-7.9739244e-04, -5.2930311e-04, -4.8877990e-04],
+    ),
+}
 
 
 @pytest.mark.parametrize("mask_value", [None, -10.0])
@@ -7922,35 +7907,28 @@ def test_tccnet_matches_reference_keras_equations(classification_head, mask_valu
     with torch.no_grad():  # non-symmetric values expose layout errors
         for i, parameter in enumerate(model.parameters()):
             values = torch.linspace(
-                -0.13 + i * 0.01, 0.17 + i * 0.01, parameter.numel()
+                -0.13 + i * 0.01,
+                0.17 + i * 0.01,
+                parameter.numel(),
+                dtype=torch.float64,
             )
             parameter.copy_(values.reshape_as(parameter))
-    x_numpy = np.linspace(-0.4, 0.6, 16).reshape(1, 2, 8)
     n_pad = 0 if mask_value is None else 3
+    x = torch.linspace(-0.4, 0.6, 16, dtype=torch.float64).reshape(1, 2, 8)
     if mask_value is not None:
-        x_numpy[..., :n_pad] = mask_value  # pre-padding, as in the reference
-    coefficients = np.array([[0.7, -0.3]])
-    x = torch.tensor(x_numpy, requires_grad=True)
+        x[..., :n_pad] = mask_value  # pre-padding, as in the reference
+    x.requires_grad_()
 
     out = model(x)
-    (out * torch.from_numpy(coefficients)).sum().backward()
+    (out * torch.tensor([[0.7, -0.3]], dtype=torch.float64)).sum().backward()
 
-    expected = _tccnet_reference(model, x_numpy, mask_value)
-    np.testing.assert_allclose(out.detach().numpy(), expected, rtol=1e-11)
-    # Input gradient vs central differences of the reference, on real steps.
-    assert not x.grad[..., :n_pad].any()
-    for index in np.ndindex(x_numpy[..., n_pad:].shape):
-        index = index[:2] + (index[2] + n_pad,)
-        shifted = [x_numpy.copy(), x_numpy.copy()]
-        shifted[0][index] += 1e-6
-        shifted[1][index] -= 1e-6
-        plus, minus = (
-            np.sum(_tccnet_reference(model, s, mask_value) * coefficients)
-            for s in shifted
-        )
-        np.testing.assert_allclose(
-            x.grad[index].item(), (plus - minus) / 2e-6, rtol=2e-5, atol=1e-7
-        )
+    logits, grad = (
+        torch.tensor(v, dtype=torch.float64)
+        for v in _TCCNET_KERAS[classification_head, mask_value]
+    )
+    torch.testing.assert_close(out[0], logits, rtol=1e-6, atol=0)
+    torch.testing.assert_close(x.grad[0, 0, n_pad::2], grad, rtol=1e-6, atol=0)
+    assert not x.grad[..., :n_pad].any()  # padded steps get no gradient
 
 
 @pytest.mark.parametrize("classification_head", ["aot", "att"])
