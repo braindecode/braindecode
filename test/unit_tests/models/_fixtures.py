@@ -103,43 +103,39 @@ def _get_signal_params(
     return sp
 
 
-def _get_possible_signal_params(
+def _get_all_possible_signal_params(
     signal_params: dict[SigArgName, Any], required_params: list[SigArgName]
-):
+) -> list[dict[str, Any]]:
+    """Return the full Cartesian product (up to 42 combinations) of valid signal kwargs.
+
+    Used on lightweight dummy modules in ``test_base.py`` and ``test_config.py`` to
+    exhaustively test ``EEGModuleMixin`` and Pydantic signal-parameter inference.
+    """
     sp = signal_params
 
-    # List possible model kwargs:
-    output_kwargs = []
-    output_kwargs.append(dict(n_outputs=sp["n_outputs"]))
-
+    output_kwargs: list[dict[str, Any]] = [dict(n_outputs=sp["n_outputs"])]
     if "n_outputs" not in required_params:
         output_kwargs.append(dict(n_outputs=None))
 
-    channel_kwargs = []
-    channel_kwargs.append(dict(chs_info=sp["chs_info"], n_chans=None))
+    channel_kwargs: list[dict[str, Any]] = [dict(chs_info=sp["chs_info"], n_chans=None)]
     if "chs_info" not in required_params:
         channel_kwargs.append(dict(n_chans=sp["n_chans"], chs_info=None))
     if "n_chans" not in required_params and "chs_info" not in required_params:
         channel_kwargs.append(dict(n_chans=None, chs_info=None))
 
-    time_kwargs = []
-    time_kwargs.append(
-        dict(n_times=sp["n_times"], sfreq=sp["sfreq"], input_window_seconds=None)
-    )
-    time_kwargs.append(
+    time_kwargs: list[dict[str, Any]] = [
+        dict(n_times=sp["n_times"], sfreq=sp["sfreq"], input_window_seconds=None),
         dict(
             n_times=None,
             sfreq=sp["sfreq"],
             input_window_seconds=sp["input_window_seconds"],
-        )
-    )
-    time_kwargs.append(
+        ),
         dict(
             n_times=sp["n_times"],
             sfreq=None,
             input_window_seconds=sp["input_window_seconds"],
-        )
-    )
+        ),
+    ]
     if "n_times" not in required_params and "sfreq" not in required_params:
         time_kwargs.append(
             dict(
@@ -166,14 +162,115 @@ def _get_possible_signal_params(
     ):
         time_kwargs.append(dict(n_times=None, sfreq=None, input_window_seconds=None))
 
-    # Architecture arguments of the registry entry (small test instances).
-    extra = {k: v for k, v in sp.items() if k not in default_signal_params}
+    extra: dict[str, Any] = {
+        str(k): v for k, v in sp.items() if k not in default_signal_params
+    }
     return [
-        dict(**o, **c, **t, **extra)
+        {**o, **c, **t, **extra}
         for o in output_kwargs
         for c in channel_kwargs
         for t in time_kwargs
     ]
+
+
+def _get_possible_signal_params(
+    signal_params: dict[SigArgName, Any], required_params: list[SigArgName]
+) -> list[dict[str, Any]]:
+    """Return 2-3 minimal 1-wise covering combinations of valid signal kwargs.
+
+    Covers:
+    1. Index ``[0]``: ``chs_info`` given (``n_chans=None`` inferred),
+       ``(n_times, sfreq)`` given (``input_window_seconds=None`` inferred),
+       and ``n_outputs`` given.
+    2. Minimal required-only combination: sets every non-required signal
+       parameter to ``None`` simultaneously so any undeclared dependency in
+       ``required_params`` raises ``ValueError``.
+    3. Alternative inference combination: exercises ``n_chans`` with
+       ``chs_info=None`` (when ``chs_info`` is not required) and infers a
+       required ``n_times`` or ``sfreq`` from the complementary pair so
+       models reading private ``self._n_times`` / ``self._sfreq`` fail.
+    """
+    sp = signal_params
+    req = set(required_params)
+    extra: dict[str, Any] = {
+        str(k): v for k, v in sp.items() if k not in default_signal_params
+    }
+
+    c0_out: dict[str, Any] = {"n_outputs": sp["n_outputs"]}
+    c0_ch: dict[str, Any] = {"chs_info": sp["chs_info"], "n_chans": None}
+    c0_time: dict[str, Any] = {
+        "n_times": sp["n_times"],
+        "sfreq": sp["sfreq"],
+        "input_window_seconds": None,
+    }
+    combo_0: dict[str, Any] = {**c0_out, **c0_ch, **c0_time, **extra}
+
+    min_out: dict[str, Any] = {
+        "n_outputs": sp["n_outputs"] if "n_outputs" in req else None
+    }
+    if "chs_info" in req:
+        min_ch: dict[str, Any] = {"chs_info": sp["chs_info"], "n_chans": None}
+        scalar_ch: dict[str, Any] = min_ch
+    elif "n_chans" in req:
+        min_ch = {"n_chans": sp["n_chans"], "chs_info": None}
+        scalar_ch = min_ch
+    else:
+        min_ch = {"n_chans": None, "chs_info": None}
+        scalar_ch = {"n_chans": sp["n_chans"], "chs_info": None}
+
+    req_time = req & {"n_times", "sfreq", "input_window_seconds"}
+    t_infer_ntimes: dict[str, Any] = {
+        "n_times": None,
+        "sfreq": sp["sfreq"],
+        "input_window_seconds": sp["input_window_seconds"],
+    }
+    t_infer_sfreq: dict[str, Any] = {
+        "n_times": sp["n_times"],
+        "sfreq": None,
+        "input_window_seconds": sp["input_window_seconds"],
+    }
+
+    combos = [combo_0]
+    if len(req_time) >= 2:
+        combos.append({**c0_out, **scalar_ch, **t_infer_ntimes, **extra})
+        combos.append({**min_out, **min_ch, **t_infer_sfreq, **extra})
+    elif req_time == {"n_times"}:
+        combos.append({**c0_out, **scalar_ch, **t_infer_ntimes, **extra})
+        min_time: dict[str, Any] = {
+            "n_times": sp["n_times"],
+            "sfreq": None,
+            "input_window_seconds": None,
+        }
+        combos.append({**min_out, **min_ch, **min_time, **extra})
+    elif req_time == {"sfreq"}:
+        combos.append({**c0_out, **scalar_ch, **t_infer_sfreq, **extra})
+        min_time = {"n_times": None, "sfreq": sp["sfreq"], "input_window_seconds": None}
+        combos.append({**min_out, **min_ch, **min_time, **extra})
+    elif req_time == {"input_window_seconds"}:
+        min_time = {
+            "n_times": None,
+            "sfreq": None,
+            "input_window_seconds": sp["input_window_seconds"],
+        }
+        combos.append({**min_out, **min_ch, **min_time, **extra})
+    else:
+        min_time = {"n_times": None, "sfreq": None, "input_window_seconds": None}
+        if scalar_ch != min_ch:
+            combos.append({**c0_out, **scalar_ch, **t_infer_ntimes, **extra})
+        combos.append({**min_out, **min_ch, **min_time, **extra})
+
+    unique: list[dict[str, Any]] = []
+    for c in combos:
+        if not any(
+            all(
+                (a is b if isinstance(a, list) else a == b)
+                for k in c
+                for a, b in [(c[k], u[k])]
+            )
+            for u in unique
+        ):
+            unique.append(c)
+    return unique
 
 
 def _architecture_kwargs(model_name: str) -> dict[str, Any]:
