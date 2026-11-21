@@ -220,7 +220,7 @@ jobs:
           BRAINDECODE_COMPILE_ALL: "0"
           BRAINDECODE_SELECT_MODELS: ${{ needs.plan.outputs.select_models }}
           COVERAGE_CORE: sysmon
-          COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
+          COVERAGE_FILE: coverage.shard-${{ matrix.shard }}
           SHARD_FILES_STR: ${{ steps.targets.outputs.files }}
           FULL_SUITE: ${{ needs.plan.outputs.full_suite }}
           SELECT_MODELS: ${{ needs.plan.outputs.select_models }}
@@ -245,7 +245,7 @@ jobs:
           TORCHINDUCTOR_CACHE_DIR: ${{ runner.temp }}/torchinductor
           TORCHINDUCTOR_FX_GRAPH_CACHE: "1"
           COVERAGE_CORE: sysmon
-          COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
+          COVERAGE_FILE: coverage.shard-${{ matrix.shard }}
           SLOW_FILES_STR: ${{ steps.targets.outputs.slow_files }}
           FULL_SUITE: ${{ needs.plan.outputs.full_suite }}
         shell: bash
@@ -276,7 +276,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-shard-${{ matrix.shard }}
-          path: .coverage.shard-${{ matrix.shard }}
+          path: coverage.shard-${{ matrix.shard }}
+          if-no-files-found: error
           retention-days: 1
 
   coverage:
@@ -308,7 +309,7 @@ jobs:
       - name: Combine Coverage and Generate XML
         run: |
           uv pip install --system "coverage[toml]"
-          coverage combine .coverage.shard-*
+          coverage combine coverage.shard-*
           coverage report
           coverage xml -o coverage.xml
 
