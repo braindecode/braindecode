@@ -233,7 +233,7 @@ def test_channels_shuffle_transform(rng_seed, ch_aranged_batch, p_shuffle):
 @pytest.mark.parametrize("probability", [1.0, 0.5])
 @pytest.mark.parametrize("diff", [False, True])
 def test_gaussian_noise_transform(rng_seed, probability, diff):
-    ones_batch = ones_and_zeros_batch(shape=(1000, 1000))
+    ones_batch = ones_and_zeros_batch()
     X, y = ones_batch
     std = 2.0
 

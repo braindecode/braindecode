@@ -588,6 +588,13 @@ Bug fixes
 Code health
 ============
 
+- The test suite peaks lower: smaller inputs where no assertion depends on size,
+  shared read-only data, freed TorchScript, compile and reference-cycle memory
+  (:gh:`1713` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.LUNA` is freed as soon as it is deleted: its state-dict
+  hook no longer holds a reference to the model (:gh:`1713` by `Bruno Aristimunha`_).
+- Printing a model no longer keeps it alive: torchinfo's module-level summary
+  cache held the last printed instance of each class (:gh:`1713` by `Bruno Aristimunha`_).
 - :class:`braindecode.models.EEGMiner` takes the upper triangle of its connectivity
   matrices in one place again and drops an unused flatten layer (:gh:`1737` by `Bruno Aristimunha`_).
 - Tests that spawned processes, built the 157M-parameter :class:`~braindecode.models.BENDR`
