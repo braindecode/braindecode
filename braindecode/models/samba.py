@@ -23,6 +23,8 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
+    .. versionadded:: 2.1
+
     .. rubric:: Architecture Overview
 
     The encoder of SAMBA, a U-shaped Mamba autoencoder pretrained to rebuild
@@ -65,6 +67,9 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         **Operations.** After a ``Linear``, a residual Mamba-2 block:
         input-dependent step sizes, a causal depthwise convolution, a scan over
         the time axis in chunks of ``chunk_size`` steps and a gated RMS norm.
+        The scan is a pure PyTorch recurrence, with no CUDA dependency; its
+        results need not be bitwise identical to the authors' fused CUDA
+        kernels.
         **Role.** Models the signal at the input rate.
 
     ``SAMBA.encoder.encoder2``, ``SAMBA.encoder.encoder3``
@@ -84,8 +89,9 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         ``1 / pool_size ** 3`` of the input rate (one eighth by default).
 
     ``SAMBA.final_layer``
-        **Operations.** ``Linear`` on the mean and the standard deviation of the
-        encoder output over time. Not pretrained.
+        **Operations.** ``Linear`` on the mean and the population standard
+        deviation (``correction=0``) of the encoder output over time. Not
+        pretrained.
         **Role.** The task head; :meth:`reset_head` replaces it.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
@@ -103,9 +109,10 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     - **Coordinates.** Positions are read from ``chs_info[i]["loc"][:3]``, in
       metres, and must be in the frame of ``target_positions``. The target
       montage of the authors' released weights is in the frame of the
-      ``standard_1005`` template of MNE (``mne.channels.make_standard_montage``),
-      not in the head frame that ``raw.set_montage`` writes into ``chs_info``,
-      which is a few centimetres away.
+      ``colin27_1005`` template of MNE (``mne.channels.make_standard_montage``;
+      ``standard_1005`` in older versions, deprecated in MNE 1.13), not in the
+      head frame that ``raw.set_montage`` writes into ``chs_info``, which is a
+      few centimetres away.
     - **Input scale.** The model does not normalise its input. The authors'
       recipe uses EEG at 128 Hz and divides each channel of each window by the
       95th percentile of its absolute value.
@@ -115,39 +122,61 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     - **Mamba-2 defaults.** ``encoder1_head_dim``, ``dt_min``, ``dt_max``,
       ``dt_init_floor``, ``a_init_range`` and ``norm_eps`` default to the values
       of the reference ``Mamba2`` of state-spaces/mamba.
-    - **Weights.** The encoders of the authors' SAMBA-2s and SAMBA-100s
-      (pretrained on 2 s and 100 s windows) are on the Hugging Face Hub at
-      ``braindecode/samba-2s-pretrained`` and
-      ``braindecode/samba-100s-pretrained``. ``SAMBA.from_pretrained(repo_id)``
-      uses their 94 target electrodes as ``chs_info`` unless you pass yours.
-      The head is not pretrained.
 
-    .. versionadded:: 2.1
+    .. rubric:: Pretrained Weights
+
+    The encoders of the authors' SAMBA-2s and SAMBA-100s are on the Hugging
+    Face Hub at ``braindecode/samba-2s-pretrained`` and
+    ``braindecode/samba-100s-pretrained``, with the authors' values (their files
+    are `Dcode-AI/SAMBA-2s <https://huggingface.co/Dcode-AI/SAMBA-2s>`_ at
+    ``e553287`` and `Dcode-AI/SAMBA-100s
+    <https://huggingface.co/Dcode-AI/SAMBA-100s>`_ at ``3a235a1``). The authors
+    retrained both after the checkpoints of the paper were lost, so they are
+    not the paper's SAMBA-E and SAMBA-T. SAMBA-2s was pretrained on 2 s windows
+    (256 samples) of Emotiv, HBN, Muse and DICE recordings, SAMBA-100s on 100 s
+    windows (12,800 samples) of TUAB, so a TUAB task does not test transfer for
+    it. Both expect EEG at 128 Hz, each channel of each window divided by the
+    95th percentile of its absolute value, with positions in metres in the
+    frame of the ``colin27_1005`` template (see Coordinates and Input scale).
+    The head is not pretrained: ``from_pretrained`` builds it for your
+    ``n_outputs`` and takes the 94 target electrodes of the weights as
+    ``chs_info`` unless you pass yours. On a fixed input, the first and last
+    five features of both encoders match those of the authors' files, loaded
+    with the port of :gh:`1689`, to within 1e-5 (:gh:`1739`); they were not
+    compared with the authors' fused CUDA kernels.
+
+    .. code-block:: python
+
+        from braindecode.models import SAMBA
+
+        model = SAMBA.from_pretrained("braindecode/samba-2s-pretrained", n_outputs=2)
+        # x: (batch, 94, n_times) -> features: (batch, 256)
+        features = model(x, return_features=True)["features"]
 
     Parameters
     ----------
-    target_positions : list of list of float or None
+    target_positions : list of list of float or None, default=None
         Positions ``(n_targets, 3)``, in metres, of the montage onto which the
         CDSE projects the electrodes. ``None`` takes the positions of
         ``chs_info``; the saved config records them, so the trained model
         loads on another montage.
-    base_channels : int
+    base_channels : int, default=64
         Width of the multi-branch embedding and of the first Mamba-2 stage.
-    bottleneck_channels : int
+    bottleneck_channels : int, default=128
         Width of the differential Mamba-2 bottleneck; the head reads twice this
         many features.
-    d_state : int
+    d_state : int, default=16
         State size of every Mamba-2 block.
-    d_conv : int
+    d_conv : int, default=2
         Kernel size of the causal depthwise convolution of every Mamba-2 block.
-    expand : int
+    expand : int, default=8
         Inner width of every Mamba-2 block, as a multiple of its input width; it
         is split into heads. ``base_channels * expand`` must be divisible by
         ``encoder1_head_dim``.
-    head_dim : int
+    head_dim : int, default=16
         Channels per head of the differential bottleneck; divides
         ``bottleneck_channels``.
-    cdse_hidden_dim : int
+    cdse_hidden_dim : int, default=32
         Hidden width of the MLP of the CDSE.
     branch_kernel_sizes : tuple of int, default=(1, 3, 7)
         Kernel size of each branch of the multi-branch embedding, as in the
@@ -176,12 +205,12 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         the Mamba-2 blocks (``A_init_range`` in the reference ``Mamba2``).
     norm_eps : float, default=1e-5
         Epsilon of the RMS norm that follows the gate of every Mamba-2 block.
-    channel_strategy : str
+    channel_strategy : str, default="native"
         How another montage reaches the encoder; see
         :class:`~braindecode.models.base.EEGModuleMixin`. The model reads the
         montage of ``chs_info`` natively, so the default ``"native"`` is usually
         what you want.
-    channel_strategy_kwargs : dict or None
+    channel_strategy_kwargs : dict or None, default=None
         Options of ``channel_strategy``.
 
     References
