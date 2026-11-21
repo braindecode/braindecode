@@ -135,7 +135,7 @@ Enhancements
 - Add :class:`braindecode.modules.SEANetEncoder` and :class:`~braindecode.modules.SEANetDecoder` (EnCodec's SEANet, with :class:`~braindecode.modules.SEANetConv1d`, :class:`~braindecode.modules.SEANetConvTranspose1d`, :class:`~braindecode.modules.SEANetLSTM` and :class:`~braindecode.modules.SEANetResBlock`), moved from :class:`braindecode.models.BrainOmni`, whose parameters and outputs are unchanged. They take ``in_channels``/``out_channels``, ``n_residual_layers``, ``dilation_base``, ``compress``, ``true_skip`` and ``causal`` (:gh:`1553` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.TCCNet`, a causal temporal-convolution model
   for sEMG gesture recognition with average-over-time and context-attention
-  classification heads (:gh:`1562` by `Arslan Shafique`_).
+  classification heads (:gh:`1562` by `Arslan Shafique`_, :gh:`1714` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.CareSleepNet` (Wang et al., IEEE JBHI 2024), a sleep stager
   that labels a sequence of consecutive epochs of EEG and EOG in one pass, one prediction per
   epoch, ``(batch, n_outputs, n_epochs)`` (:gh:`1653` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
