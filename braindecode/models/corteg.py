@@ -479,7 +479,8 @@ class CORTEG(EEGModuleMixin, nn.Module):
             if hi is not None and gates is None and i == self.merge_at:
                 # "average" fusion: the CLS token is kept, the others averaged.
                 z = torch.cat([z[:, :1], 0.5 * (z[:, 1:] + hi)], dim=1)  # (B, 1 + N, D)
-            z = block(z, attn_mask)  # (B, 1 + N, D)
+            # (B, 1 + N, D); padded channels are keys no token attends to
+            z = block(z) if attn_mask is None else block.forward_masked(z, attn_mask)
             if hi is not None and gates is not None:
                 # "layerwise_gate" fusion: hi added after each block, not to CLS;
                 # (B, 1 + N, D)

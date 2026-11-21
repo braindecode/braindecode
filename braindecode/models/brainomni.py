@@ -29,7 +29,7 @@ from braindecode.modules import (
     SpatialTemporalBlock,
 )
 from braindecode.modules.quantization import ResidualVectorQuantizer
-from braindecode.modules.spatial_temporal import _SELU, _attend
+from braindecode.modules.spatial_temporal import _attend
 
 
 class BrainTokenizer(EEGModuleMixin, nn.Module, license="mit"):
@@ -508,8 +508,7 @@ class BrainOmni(EEGModuleMixin, nn.Module, license="mit"):
         return nn.Sequential(
             nn.Dropout(0.1),
             nn.Linear(self.n_neuro * self.lm_dim, self.lm_dim),
-            # nn.SELU (the released config) as _SELU, which trains on Gaudi
-            (_SELU if self.activation is nn.SELU else self.activation)(),
+            self.activation(),
             nn.Linear(self.lm_dim, n_outputs),
         )
 
@@ -625,9 +624,9 @@ class _SensorEmbedding(nn.Module):
         super().__init__()
         self.sensor_embedding_layer = nn.Embedding(3, n_dim)
         self.pos_embedding_layer = nn.Sequential(
-            nn.Linear(6, n_dim // 2), _SELU(), nn.Linear(n_dim // 2, n_dim)
+            nn.Linear(6, n_dim // 2), nn.SELU(), nn.Linear(n_dim // 2, n_dim)
         )
-        self.aggregate_mlp = FeedForwardBlock(n_dim, 4, 0.0, _SELU)
+        self.aggregate_mlp = FeedForwardBlock(n_dim, 4, 0.0, nn.SELU)
         self.norm = RMSNorm(n_dim, eps=1e-6)
 
     def forward(self, pos: torch.Tensor, sensor_type: torch.Tensor) -> torch.Tensor:

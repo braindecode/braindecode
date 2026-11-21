@@ -18,24 +18,6 @@ from braindecode.functional import apply_rotary, rotary_frequencies
 from braindecode.modules.blocks import FeedForwardBlock
 
 
-class _SELU(nn.SELU):
-    """``nn.SELU`` as ``ELU(x, alpha * scale)`` times ``scale`` where ``x > 0``:
-    same values and gradients, and trainable on Gaudi, whose ELU backward only
-    supports ``scale == 1``."""
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        alpha, scale = (
-            1.6732632423543772848170429916717,
-            1.0507009873554804934193349852946,
-        )
-        # ELU is x on the positive side, so this equals the where(x > 0, x * scale,
-        # elu) form bit for bit, without its zero-filled where backward. The
-        # factor is at least float32, like the scalar multiply's compute type.
-        one = x.new_ones((), dtype=torch.promote_types(x.dtype, torch.float32))
-        factor = torch.where(x > 0, one * scale, one)
-        return (F.elu(x, alpha * scale) * factor).to(x.dtype)
-
-
 def _attend(q, k, v, n_head: int, dropout_p: float) -> torch.Tensor:
     """SDPA over ``(batch, seq, n_head * head_dim)`` inputs."""
     q = q.unflatten(-1, (n_head, -1))
@@ -81,7 +63,7 @@ class SpatialTemporalBlock(nn.Module):
         )
         self.pre_ff_norm = RMSNorm(n_dim, eps=1e-6)
         # Released FeedForward: Linear -> SELU -> Linear -> Dropout.
-        self.ff = FeedForwardBlock(n_dim, 4, 0.0, _SELU, output_drop_p=dropout)
+        self.ff = FeedForwardBlock(n_dim, 4, 0.0, nn.SELU, output_drop_p=dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch, chans, times, dim = x.shape

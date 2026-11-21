@@ -2671,11 +2671,13 @@ def test_prenorm_transformer_block_takes_eps_drop_path_and_an_attention_mask():
     # A key hidden by the mask is a key dropped: the other tokens do not see it.
     mask = torch.ones(2, 1, 1, 5, dtype=torch.bool)
     mask[..., -1] = False
-    torch.testing.assert_close(full(x, mask)[:, :4], full(x[:, :4]))
-    torch.testing.assert_close(torch.jit.script(full)(x, mask), full(x, mask))
+    torch.testing.assert_close(full.forward_masked(x, mask)[:, :4], full(x[:, :4]))
+    # forward stays the sequential call: a one-argument token mixer still scripts.
+    plain = PreNormTransformerBlock(16, nn.Identity(), FeedForwardBlock(16, 2, 0.0), 0.0)
+    torch.testing.assert_close(torch.jit.script(plain)(x), plain(x))
     # Stochastic depth drops whole residual branches: with drop_path=1, x is left.
     dropped = block(drop_path=1.0).train()
-    assert torch.equal(dropped(x), x) and torch.equal(dropped(x, mask), x)
+    assert torch.equal(dropped(x), x) and torch.equal(dropped.forward_masked(x, mask), x)
 
 
 def test_squeeze_and_excitation_forward():
