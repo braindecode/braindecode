@@ -7703,9 +7703,10 @@ def test_mtrenirs_leaves_unlocated_channels_out():
     alone.load_state_dict(encoder, strict=False)  # the head width depends on n_chans
     x = torch.randn(2, 6, 200)
     with torch.no_grad():
-        tokens, valid = model.encode_windows(x)
-        expected, _ = alone.eval().encode_windows(x[:, located])
-    assert not valid[:, :, [0, 3]].any() and not tokens[:, :, [0, 3]].any()
+        out = model.encode(x)
+        expected = alone.eval().encode(x[:, located])["foundation"]
+    tokens = out["foundation"]
+    assert not out["valid"][:, :, [0, 3]].any() and not tokens[:, :, [0, 3]].any()
     torch.testing.assert_close(tokens[:, :, located], expected)
 
 
@@ -7728,7 +7729,7 @@ def test_mtrenirs_chromophores_and_valid_window_pooling():
     x[:, :, 100:] = float("nan")
     with torch.no_grad():
         features = model(x, return_features=True)["features"]
-        tokens, _ = model.encode_windows(x)
+        tokens = model.encode(x)["foundation"]
     torch.testing.assert_close(features, tokens[:, 0].reshape(1, -1), atol=1e-6, rtol=1e-6)
     with pytest.raises(ValueError, match="even head_dim"):
         MtReNIRS(n_chans=4, n_outputs=2, n_times=100, embed_dim=12, num_heads=4)

@@ -1,5 +1,6 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
+# License: BSD (3-clause)
 # Adapted from https://github.com/GeoNIRS/GeoNIRS (81f8995; paper arXiv:2610.17845).
 
 from __future__ import annotations
@@ -18,7 +19,6 @@ from braindecode.functional import (
     patch_count,
     scaled_dot_product_attention,
 )
-from braindecode.functional.patches import _check_on_non_divisible
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import fnirs_channel_order, fnirs_split_hbo_hbr
 
@@ -318,9 +318,8 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         # Where the HbO and HbR rows are; raises when chs_info does not list
         # HbO/HbR pairs
         self.channel_order = fnirs_channel_order(self._chs_info, channel_order)
-        _check_on_non_divisible(on_non_divisible)
-        # P, the patches of one window; raises for a window the patches do not
-        # tile when on_non_divisible="error"
+        # P, the patches of one window; raises for a bad on_non_divisible, and
+        # for a window the patches do not tile when it is "error"
         self.n_patches = patch_count(self.n_times, patch_size, on_non_divisible)
 
         # Layers
@@ -1100,6 +1099,8 @@ class _ChannelCompressorAttention(nn.Module):
 
         # Patches leave the batch axis, latent channels before patches
         # (batch * P, M, D) -> (batch, P, M, D) -> (batch, M, P, D)
+        # Dense copies: the next layers round differently on the permuted view
+        # (float32, up to 4e-7)
         hbo = hbo.unflatten(0, [batch_size, n_patches])
         hbo = self.latents_first(hbo)
         hbo = hbo.contiguous()
