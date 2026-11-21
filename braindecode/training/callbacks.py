@@ -5,8 +5,20 @@
 import torch
 from skorch.callbacks import Callback
 
+from braindecode.util import _warn_orphaned_api
+
 
 class MaxNormConstraintCallback(Callback):
+    """Constrain the weight norms of the top-level layers after each batch.
+
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
+    """
+
+    def __init__(self):
+        super().__init__()
+        _warn_orphaned_api("MaxNormConstraintCallback")
+
     def on_batch_end(self, net, training, *args, **kwargs):
         if training:
             model = net.module_

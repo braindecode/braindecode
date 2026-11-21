@@ -112,17 +112,17 @@ class BIOT(EEGModuleMixin, nn.Module):
         The number of attention heads, by default 8
     num_layers : int, optional
         The number of transformer layers, by default 4
-    activation: nn.Module, default=nn.ELU
+    activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
-    return_feature: bool, optional
+    return_feature : bool, optional
         Changing the output for the neural network. Default is single tensor
         when return_feature is True, return embedding space too.
         Default is False.
-    hop_length: int, optional
+    hop_length : int, optional
         The hop length for the torch.stft transformation in the
         encoder. The default is 100.
-    sfreq: int, optional
+    sfreq : int, optional
         The sfreq parameter for the encoder. The default is 200, unless
         ``n_times`` and ``input_window_seconds`` are both given, in which
         case it is inferred from them.
