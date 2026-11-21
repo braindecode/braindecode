@@ -2,36 +2,6 @@
 
 .. currentmodule:: braindecode.models
 
-.. raw:: html
-
-    <style>
-    /* ==== Badges ========================================================== */
-    .tag, a.tag {
-      display:inline-block; padding:4px 10px; margin:2px;
-      border-radius:9999px; font-size:.85em; font-weight:600; line-height:1;
-      text-decoration:none; border:1px solid transparent;
-      background:#eef2f7; color:#334155;
-    }
-    /* Palette (force override against theme/link styles) */
-    .tag.tag-conv      { background:#22c55e!important; color:#fff!important; border-color:#16a34a!important; }
-    .tag.tag-recurrent { background:#8b5cf6!important; color:#fff!important; border-color:#7c3aed!important; }
-    .tag.tag-smallattn { background:#3b82f6!important; color:#fff!important; border-color:#2563eb!important; }
-    .tag.tag-filterbank{ background:#06b6d4!important; color:#073042!important; border-color:#0891b2!important; }
-    .tag.tag-interp    { background:#f59e0b!important; color:#1f2937!important; border-color:#d97706!important; }
-    .tag.tag-spd       { background:#111827!important; color:#fff!important;  border-color:#0b1220!important; }
-    .tag.tag-lbm       { background:#e11d48!important; color:#fff!important;  border-color:#be123c!important; }
-    .tag.tag-gnn       { background:#475569!important; color:#fff!important;  border-color:#334155!important; }
-    .tag.tag-channel   { background:#64748b!important; color:#fff!important;  border-color:#475569!important; }
-
-    /* Optional polish */
-    .tag { box-shadow:0 0 0 0 rgba(0,0,0,0); transition:box-shadow .15s, transform .15s; }
-    .tag:hover { box-shadow:0 2px 8px rgba(0,0,0,.08); transform:translateY(-1px); }
-    </style>
-
-    <!-- jQuery + DataTables core CSS -->
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.datatables.net/v/bm/dt-1.13.4/datatables.min.css"/>
-
 ################
  Models Summary
 ################
@@ -81,8 +51,8 @@ those reported in the original publications due to variations in specific archit
 details, input dimensions used in the paper, or calculation methods.
 
 We are continually expanding this collection and welcome contributions! If you have
-implemented a model relevant to EEG, EcoG, or MEG analysis, consider adding it to
-Braindecode.
+implemented a model relevant to EEG, ECoG, MEG, fNIRS, or sEMG analysis, consider adding
+it to Braindecode.
 
 .. button-ref:: models_visualization
     :ref-type: doc
@@ -94,23 +64,119 @@ Braindecode.
 .. raw:: html
 
     <style>
-    /* === Tag palette (unchanged, with stronger specificity) ============== */
-    .tag, a.tag {
-      display:inline-block; padding:4px 10px; margin:2px; border-radius:9999px;
-      font-size:.85em; font-weight:600; line-height:1; text-decoration:none;
-      border:1px solid transparent; background:#eef2f7; color:#334155;
+    /* === Tabular numerals on numeric columns & SearchPanes counts ========= */
+    .sortable td:nth-child(6),
+    .sortable td:nth-child(7),
+    .sortable th:nth-child(6),
+    .sortable th:nth-child(7),
+    .dtsp-pill {
+      font-variant-numeric: tabular-nums;
     }
-    .tag.tag-conv      { background:#22c55e!important; color:#fff!important;  border-color:#16a34a!important; }
-    .tag.tag-recurrent { background:#8b5cf6!important; color:#fff!important;  border-color:#7c3aed!important; }
-    .tag.tag-smallattn { background:#3b82f6!important; color:#fff!important;  border-color:#2563eb!important; }
-    .tag.tag-filterbank{ background:#06b6d4!important; color:#073042!important; border-color:#0891b2!important; }
-    .tag.tag-interp    { background:#f59e0b!important; color:#1f2937!important; border-color:#d97706!important; }
-    .tag.tag-spd       { background:#111827!important; color:#fff!important;  border-color:#0b1220!important; }
-    .tag.tag-lbm       { background:#e11d48!important; color:#fff!important;  border-color:#be123c!important; }
-    .tag.tag-gnn       { background:#475569!important; color:#fff!important;  border-color:#334155!important; }
-    .tag.tag-channel   { background:#64748b!important; color:#fff!important;  border-color:#475569!important; }
-    .tag { box-shadow:0 0 0 0 rgba(0,0,0,0); transition:box-shadow .15s, transform .15s; }
-    .tag:hover { box-shadow:0 2px 8px rgba(0,0,0,.08); transform:translateY(-1px); }
+
+    /* === Accessible semantic tag palette (light & dark) =================== */
+    .tag,
+    a.tag,
+    html[data-theme="light"] .tag,
+    html[data-theme="light"] a.tag {
+      display: inline-block;
+      padding: 4px 10px;
+      margin: 2px;
+      border-radius: 9999px;
+      font-size: 0.85em;
+      font-weight: 600;
+      line-height: 1;
+      text-decoration: none;
+      border: 1px solid #d6dbe1;
+      background: #f1f3f5;
+      color: #2a323d;
+      box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+      transition: box-shadow 0.15s ease;
+    }
+    html[data-theme="dark"] .tag,
+    html[data-theme="dark"] a.tag {
+      background: #252b36;
+      color: #dfd9cc;
+      border-color: #3a4150;
+    }
+
+    /* Foundation Model — warm copper */
+    .tag.tag-lbm,
+    html[data-theme="light"] .tag.tag-lbm {
+      background: #f9efe6 !important;
+      color: #8f511e !important;
+      border-color: #ebcfb5 !important;
+    }
+    html[data-theme="dark"] .tag.tag-lbm {
+      background: #3a2a1a !important;
+      color: #f5b982 !important;
+      border-color: #5c4025 !important;
+    }
+
+    /* Convolution & Attention — steel cerulean */
+    .tag.tag-conv,
+    .tag.tag-smallattn,
+    html[data-theme="light"] .tag.tag-conv,
+    html[data-theme="light"] .tag.tag-smallattn {
+      background: #eef3f8 !important;
+      color: #234b70 !important;
+      border-color: #cfdeec !important;
+    }
+    html[data-theme="dark"] .tag.tag-conv,
+    html[data-theme="dark"] .tag.tag-smallattn {
+      background: #1d2c3a !important;
+      color: #96cbef !important;
+      border-color: #2e475e !important;
+    }
+
+    /* Filterbank & Graph Neural Network — clinical sage */
+    .tag.tag-filterbank,
+    .tag.tag-gnn,
+    html[data-theme="light"] .tag.tag-filterbank,
+    html[data-theme="light"] .tag.tag-gnn {
+      background: #e7f2ea !important;
+      color: #2f633d !important;
+      border-color: #c3decb !important;
+    }
+    html[data-theme="dark"] .tag.tag-filterbank,
+    html[data-theme="dark"] .tag.tag-gnn {
+      background: #1b3122 !important;
+      color: #9adba8 !important;
+      border-color: #2c5038 !important;
+    }
+
+    /* Recurrent, Channel, Interpretability, SPD — crisp slate */
+    .tag.tag-recurrent,
+    .tag.tag-channel,
+    .tag.tag-interp,
+    .tag.tag-spd,
+    html[data-theme="light"] .tag.tag-recurrent,
+    html[data-theme="light"] .tag.tag-channel,
+    html[data-theme="light"] .tag.tag-interp,
+    html[data-theme="light"] .tag.tag-spd {
+      background: #f1f3f5 !important;
+      color: #2a323d !important;
+      border-color: #d6dbe1 !important;
+    }
+    html[data-theme="dark"] .tag.tag-recurrent,
+    html[data-theme="dark"] .tag.tag-channel,
+    html[data-theme="dark"] .tag.tag-interp,
+    html[data-theme="dark"] .tag.tag-spd {
+      background: #252b36 !important;
+      color: #dfd9cc !important;
+      border-color: #3a4150 !important;
+    }
+
+    .tag:hover {
+      box-shadow: 0 2px 8px rgba(20, 24, 31, 0.08);
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .tag {
+        transition: box-shadow 0.15s ease, transform 0.15s ease;
+      }
+      .tag:hover {
+        transform: translateY(-1px);
+      }
+    }
     </style>
 
     <!-- jQuery + DataTables core -->
