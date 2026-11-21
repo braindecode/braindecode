@@ -6949,7 +6949,7 @@ def test_mtrenirs_pretrained_matches_the_release(n_times, expected):
     pytest.importorskip("huggingface_hub")
     model = MtReNIRS.from_pretrained(
         "braindecode/mtrenirs-pretrained",
-        revision="REHOST_PENDING",  # pin after re-host
+        revision="708cffe1c30c6bc2698b3025671ed70b220f4ea3",
         chs_info=_fnirs_chs_info(4),
         n_outputs=3,
         n_times=n_times,

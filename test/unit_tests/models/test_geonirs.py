@@ -96,10 +96,10 @@ def test_geonirs_refuses_a_non_positive_geometry_scale(scale):
 @pytest.mark.parametrize(
     "repo_id, revision, expected, expected_hbr",
     [
-        ("braindecode/geonirs-base-pretrained", "REHOST_PENDING",  # pin after re-host
+        ("braindecode/geonirs-base-pretrained", "dd1bc1acd841058be9f0c2b3c6daf36b7c3fa564",
          [0.067987166, -0.007574921, -0.350337952, 0.147298455, -0.141785607],
          [-0.119261660, 0.040913288, -0.013012240, -0.140069067, 0.107298315]),
-        ("braindecode/geonirs-large-pretrained", "REHOST_PENDING",  # pin after re-host
+        ("braindecode/geonirs-large-pretrained", "95905fbdee59ddab7a71825a10faeca08c707975",
          [-3.116364002, -2.744976997, -0.223239779, -1.097928047, -0.808620572],
          [2.245513439, -1.460690856, 0.737670124, 2.605016947, -0.031923484]),
     ],
