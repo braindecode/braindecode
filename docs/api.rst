@@ -468,6 +468,8 @@ codec models (BrainOmni, BBL).
     SEANetConvTranspose1d
     SEANetDecoder
     SEANetEncoder
+    SEANetLSTM
+    SEANetResBlock
 
 Spatial-temporal
 ================
@@ -483,8 +485,6 @@ features and over the channels on the other, shared by BrainOmni and MEGXL.
     :recursive:
 
     SpatialTemporalBlock
-    SEANetLSTM
-    SEANetResBlock
 
 Stats
 =====

@@ -394,14 +394,12 @@ class PreNormTransformerBlock(nn.Sequential):
             ),
         )
 
-    def forward(self, x: Tensor, attn_mask: Optional[Tensor] = None) -> Tensor:
-        """``(batch, seq, dim) -> (batch, seq, dim)``.
-
-        ``attn_mask`` is passed to the attention sub-layer, see
-        :class:`~braindecode.modules.MultiHeadAttention`.
+    def forward_masked(self, x: Tensor, attn_mask: Tensor) -> Tensor:
+        """``forward`` with ``attn_mask`` passed to the attention sub-layer, see
+        :class:`~braindecode.modules.MultiHeadAttention`; ``(batch, seq, dim)`` in
+        and out. ``forward`` stays the plain sequential call, so any one-argument
+        ``attn`` still scripts.
         """
-        if attn_mask is None:
-            return self[1](self[0](x))
         attention = self[0]
         sublayer = attention.fn  # LayerNorm, attn, Dropout
         x = x + attention.drop_path(sublayer[2](sublayer[1](sublayer[0](x), attn_mask)))

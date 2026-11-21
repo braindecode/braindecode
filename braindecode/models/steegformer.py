@@ -26,6 +26,9 @@ from braindecode.modules import (
     PreNormTransformerBlock,
 )
 
+# Full-model pickles of v2.0.0 use the former class name in this module.
+_TransformerEncoderBlock = PreNormTransformerBlock
+
 # Weight initialization of the reference implementation.
 _init_weights = partial(init_weights_, weights={nn.Linear: nn.init.xavier_uniform_})
 
