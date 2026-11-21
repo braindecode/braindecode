@@ -145,8 +145,8 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Number of Transformer blocks (``n_layer`` in the reference). The
         smaller TinyssimoMyo checkpoint has 4.
     num_heads : int, default=3
-        Attention heads per block. ``embed_dim // num_heads`` must be even
-        for RoPE.
+        Attention heads per block. They must divide ``embed_dim``, into heads
+        of even width for RoPE.
     mlp_ratio : float, default=4.0
         Hidden width of the MLP over ``embed_dim``.
     qkv_bias : bool, default=True
