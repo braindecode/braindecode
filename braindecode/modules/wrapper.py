@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 
+from braindecode.util import _warn_orphaned_api
+
 
 class Expression(nn.Module):
     """Compute given expression on forward pass.
@@ -66,9 +68,13 @@ class IntermediateOutputWrapper(nn.Module):
     >>> outputs = wrapped(torch.randn(4, 10))
     >>> len(outputs)
     2
+
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
     """
 
     def __init__(self, to_select, model):
+        _warn_orphaned_api("IntermediateOutputWrapper")
         if not len(list(model.children())) == len(list(model.named_children())):
             raise Exception("All modules in model need to have names!")
 

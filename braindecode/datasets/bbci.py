@@ -14,6 +14,8 @@ import h5py
 import mne
 import numpy as np
 
+from braindecode.util import _warn_orphaned_api
+
 log = logging.getLogger(__name__)
 
 
@@ -674,7 +676,11 @@ def load_bbci_sets_from_folder(
 
     Returns
     -------
+
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
     """
+    _warn_orphaned_api("load_bbci_sets_from_folder")
     bbci_mat_files = sorted(glob(os.path.join(folder, "*.BBCI.mat")))
     if runs != "all":
         assert isinstance(runs, list), "runs should be list[int] or 'all'"
