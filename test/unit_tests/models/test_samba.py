@@ -153,13 +153,13 @@ def test_reset_parameters_draws_every_parameter_again():
     [
         (
             "braindecode/samba-2s-pretrained",
-            "REHOST_PENDING",  # pin after re-host
+            "a1ccb6c09eb1fe82f18aca6198c3c4a1cf2d676c",
             [-0.430467904, 0.292152464, 0.329552829, 0.073628992, -0.769551814],
             [0.125874534, 0.189685628, 0.611500859, 0.472888798, 0.666319072],
         ),
         (
             "braindecode/samba-100s-pretrained",
-            "REHOST_PENDING",  # pin after re-host
+            "af77956623ef6cbb6eae7816dec3b57329deb730",
             [-0.082055420, -0.087322578, 0.000102654, 0.025375422, 0.025857089],
             [0.032365620, 0.073571838, 0.031242646, 0.063421756, 0.089154541],
         ),
