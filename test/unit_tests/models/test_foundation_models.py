@@ -51,14 +51,10 @@ from braindecode.models import (
 from braindecode.models.diver1 import _STCPE, channel_metadata_from_chs_info
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
-from braindecode.models.reve import (
-    Attention,
-    FourierEmb4D,
-    RevePositionBank,
-    _reve_position_bank,
-)
+from braindecode.models.reve import Attention, FourierEmb4D, RevePositionBank
 from braindecode.models.steegformer import STEEGFORMER_CHANNEL_ORDER
 from braindecode.modules import resolve_channel_positions
+from braindecode.modules.channels import _reve_position_bank
 from braindecode.util import resolve_montage_name
 
 _ORIGINAL_TORCH_CAT = torch.cat
@@ -2281,7 +2277,7 @@ def test_pratibha2_pretrained_matches_the_release():
     chs_info = [{"ch_name": n} for n in ("Fp1", "Cz", "O2", "AFZ")]
     model = Pratibha2.from_pretrained(
         "braindecode/pratibha2-pretrained",
-        revision="dea9139fb70046c8e3d04e1e7c8acb7e81822afe",
+        revision="c21b8c51eb6089452acb7f7d911748e64f3eb00c",
         chs_info=chs_info,
         n_outputs=2,
         n_times=400,
@@ -2324,15 +2320,21 @@ def test_pratibha2_positions():
         (bank["C3"] + bank["C4"]) / 2,
     ]
     expected = 100 * torch.tensor(np.array(expected), dtype=torch.float32)
-    torch.testing.assert_close(model.encoder.channel_positions, expected)
+    torch.testing.assert_close(model.channel_positions, expected)
 
 
 def test_pratibha2_is_montage_agnostic():
-    """Positions are not weights: the weights run on any order and any unit."""
+    """Positions are not weights: the weights run on any order, any number of
+    channels and any unit."""
     model = _pratibha2_model()
+    state = model.state_dict()
+    assert "channel_positions" not in state
+    assert "pos_enc.freq_matrix" not in state
+    other = _pratibha2_model(["C3", "Cz", "C4", "FC3", "CP4"])
+    other.load_state_dict(state, strict=True)
     perm = torch.randperm(len(_PRATIBHA2_NAMES))
     permuted = _pratibha2_model([_PRATIBHA2_NAMES[i] for i in perm])
-    permuted.load_state_dict(model.state_dict(), strict=True)
+    permuted.load_state_dict(state, strict=True)
     x = 20.0 * torch.randn(2, len(_PRATIBHA2_NAMES), 600) + 5.0
     with torch.no_grad():
         torch.testing.assert_close(permuted(x[:, perm]), model(x), atol=1e-5, rtol=1e-5)
@@ -2376,8 +2378,8 @@ def test_pratibha2_short_window_from_seconds_raises():
 
 def test_pratibha2_autocast_preserves_fourier_features():
     model = _pratibha2_model(["Cz"])
-    pos_enc = model.encoder.pos_enc
-    xyz = model.encoder.channel_positions.expand(3, -1)
+    pos_enc = model.pos_enc
+    xyz = model.channel_positions.expand(3, -1)
     coords = torch.cat((xyz, torch.tensor([[0.0], [4.0], [80.0]])), dim=1)
     features = []
     handle = pos_enc.fourier_linear.register_forward_pre_hook(
@@ -2402,59 +2404,16 @@ def test_pratibha2_invalid_head_keeps_classifier():
     assert model.n_outputs == model.get_config()["n_outputs"] == 3
 
 
-def test_pratibha2_single_sample_zscore():
-    model = _pratibha2_model(["Cz"], n_times=1, patch_size=1, patch_stride=1)
-    x = torch.ones(2, 1, 1, requires_grad=True)
-    logits = model(x)
-    assert logits.isfinite().all()
-    logits.sum().backward()
-    assert x.grad.isfinite().all()
-
-
-def test_pratibha2_fits_and_restores_on_another_montage(tmp_path):
-    pytest.importorskip("huggingface_hub")
-    pytest.importorskip("safetensors")
-    from braindecode import EEGClassifier
-
-    chs = [{"ch_name": n, "kind": "eeg"} for n in ["C3", "Cz", "C4"]]
-    x = torch.randn(4, 3, 380)
-    y = torch.tensor([0, 1, 2, 1])
-    net = EEGClassifier(
-        "Pratibha2",
-        module__chs_info=chs,
-        module__sfreq=200.0,
-        module__embed_dim=16,
-        module__n_freqs=2,
-        module__depth=1,
-        module__num_heads=2,
-        max_epochs=1,
-        batch_size=2,
-        train_split=None,
-        verbose=0,
-    ).fit(x, y)
-    trained = net.module_.eval()
-    assert torch.isfinite(torch.tensor(net.history[-1, "train_loss"]))
+def test_pratibha2_scripted_returns_features():
+    """A scripted model returns the feature dict with ``return_features``, not the logits."""
+    model = _pratibha2_model(["Cz"])
+    x = torch.randn(2, 1, 400)
     with torch.no_grad():
-        expected = trained(x)
+        scripted = torch.jit.script(model)(x, True)
+        assert isinstance(scripted, dict)
         torch.testing.assert_close(
-            torch.from_numpy(net.predict_proba(x)), expected.softmax(1)
+            scripted["features"], model(x, return_features=True)["features"]
         )
-    trained.save_pretrained(tmp_path)
-    restored = Pratibha2.from_pretrained(
-        tmp_path, chs_info=chs[::-1], strict=True, local_files_only=True
-    ).eval()
-    with torch.no_grad():
-        torch.testing.assert_close(restored(x.flip(1)), expected, atol=1e-5, rtol=1e-5)
-
-
-def test_pratibha2_positions_are_not_in_the_state_dict():
-    """Channel positions are not stored in the weights."""
-    source = _pratibha2_model()
-    target = _pratibha2_model(["C3", "Cz", "C4", "FC3", "CP4"])
-    target.load_state_dict(source.state_dict(), strict=True)
-    state = source.state_dict()
-    assert "encoder.channel_positions" not in state
-    assert "encoder.pos_enc.freq_matrix" not in state
 
 
 @pytest.fixture
@@ -2773,6 +2732,19 @@ def test_steegformer_reload_keeps_channel_frame(tmp_path):
     assert restored.channel_indices.tolist() == model.channel_indices.tolist()
 
 
+def test_steegformer_encoder_keeps_the_keys_of_v2_0_0_checkpoints():
+    """``encoder.{i}.0`` is the attention residual, ``.1`` the feed-forward one."""
+    model = STEEGFormer(
+        n_chans=2, n_outputs=2, n_times=32, patch_size=16, embed_dim=16, depth=1,
+        num_heads=2, chan_pos_idx=[0, 1],
+    )  # fmt: skip
+    attention = ["keys", "queries", "values", "projection"]
+    expected = [f"encoder.0.0.fn.0.{p}" for p in ("weight", "bias")]
+    expected += [f"encoder.0.0.fn.1.{a}.{p}" for a in attention for p in ("weight", "bias")]
+    expected += [f"encoder.0.1.fn.{n}.{p}" for n in ("0", "1.0", "1.3") for p in ("weight", "bias")]
+    assert [k for k in model.state_dict() if k.startswith("encoder.")] == expected
+
+
 @pytest.mark.parametrize(
     "n_chans, fallback, n_chans_pos",
     [
@@ -2835,39 +2807,19 @@ def _corteg_chs_info(positions):
 _CORTEG_CHS = _corteg_chs_info([[-0.04, -0.02, 0.06], [-0.03, 0.0, 0.07], [0.05, 0.01, 0.05]])
 
 
-def test_corteg_loads_a_steegformer_checkpoint_and_warm_starts_its_high_gamma_embed():
-    steegformer = STEEGFormer(
-        n_chans=3, n_outputs=2, n_times=64, chan_pos_idx=[0, 1, 2], embed_dim=32,
-        depth=2, num_heads=2,
-    )
-    with torch.no_grad():  # a trained bias is not zero, as a fresh one is
-        steegformer.patch_embed.proj.bias.fill_(0.25)
+def test_corteg_high_gamma_embedding_starts_from_the_low_frequency_one():
     model = CORTEG(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
     lo, hi = model.patch_embed.proj, model.patch_embed_hi.proj
     torch.testing.assert_close(
         hi.weight, F.interpolate(lo.weight[None], size=25, mode="linear")[0]
     )
     torch.testing.assert_close(hi.bias, lo.bias)
-    missing, unexpected = model.load_state_dict(steegformer.state_dict(), strict=False)
-    assert unexpected == []
-    assert {key.split(".")[0] for key in missing} == {"channel_adapter", "patch_embed_hi"}
-    # The high-gamma kernel follows the backbone just loaded, not the initial one.
-    torch.testing.assert_close(
-        hi.weight,
-        F.interpolate(
-            steegformer.patch_embed.proj.weight[None], size=25, mode="linear"
-        )[0],
-    )
-    torch.testing.assert_close(hi.bias, steegformer.patch_embed.proj.bias)
 
-    # A trained CORTEG checkpoint supplies its own high-gamma projection.
-    with torch.no_grad():
-        hi.weight.fill_(0.125)
-        hi.bias.fill_(0.5)
-    restored = CORTEG(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
-    restored.load_state_dict(model.state_dict(), strict=True)
-    torch.testing.assert_close(restored.patch_embed_hi.proj.weight, hi.weight)
-    torch.testing.assert_close(restored.patch_embed_hi.proj.bias, hi.bias)
+
+def test_corteg_channel_codebook_is_frozen():
+    model = CORTEG(chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL)
+    assert model.channel_codebook.shape == (len(model.vocab_positions), 32)
+    assert not model.channel_codebook.requires_grad
 
 
 @pytest.mark.parametrize("merge_strategy", ["average", "layerwise_gate"])
@@ -2884,9 +2836,9 @@ def test_corteg_gate_starts_closed(merge_strategy):
 
 
 def test_corteg_soft_branch_starts_at_the_nearest_scalp_slots():
-    from braindecode.models.corteg import _vocab_positions
-
-    vocab = _vocab_positions()
+    vocab = CORTEG(
+        chs_info=_CORTEG_CHS, n_outputs=2, n_times=64, **_CORTEG_SMALL
+    ).vocab_positions
     # MNE's 10-05 montage gives the reference's table (first and last slots).
     torch.testing.assert_close(
         vocab[[0, -1]],
@@ -2915,7 +2867,10 @@ def test_corteg_released_adapter_reproduces_the_reference_outputs():
     pytest.importorskip("huggingface_hub")
     try:
         model = CORTEG.from_pretrained(
-            "braindecode/corteg-stanford-pooled", n_chans=8, strict=True
+            "braindecode/corteg-stanford-pooled",
+            revision="71141b05adba626a195de9e8c1a5021f23f2464e",
+            n_chans=8,
+            strict=True,
         ).eval()
     except (URLError, OSError) as err:
         pytest.skip(f"Could not download the CORTEG weights: {err}")

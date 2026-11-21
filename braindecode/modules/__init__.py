@@ -69,6 +69,7 @@ from .seanet import (
     SEANetLSTM,
     SEANetResBlock,
 )
+from .spatial_temporal import SpatialTemporalBlock
 from .stats import (
     LogPowerLayer,
     LogVarLayer,
@@ -148,6 +149,7 @@ __all__ = [
     "SEANetEncoder",
     "SEANetLSTM",
     "SEANetResBlock",
+    "SpatialTemporalBlock",
     "LogPowerLayer",
     "LogVarLayer",
     "MaxLayer",

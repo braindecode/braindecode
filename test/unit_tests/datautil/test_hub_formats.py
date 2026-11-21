@@ -27,15 +27,20 @@ from braindecode.preprocessing import (
 )
 
 
+@pytest.fixture(scope="module")
+def bnci_recording():
+    """The first BNCI2014_001 recording, loaded once: the tests only read it."""
+    return BNCI2014_001(subject_ids=[1]).datasets[0]
+
+
 @pytest.fixture()
-def setup_concat_windows_dataset():
+def setup_concat_windows_dataset(bnci_recording):
     """Create a small WindowsDataset (mne.Epochs) for testing.
 
     Uses BNCI2014_001 dataset with real EEG data.
     """
-    dataset = BNCI2014_001(subject_ids=[1])
     return create_windows_from_events(
-        concat_ds=BaseConcatDataset([dataset.datasets[0]]),
+        concat_ds=BaseConcatDataset([bnci_recording]),
         trial_start_offset_samples=0,
         trial_stop_offset_samples=0,
         use_mne_epochs=True,  # Creates WindowsDataset
@@ -43,14 +48,13 @@ def setup_concat_windows_dataset():
 
 
 @pytest.fixture()
-def setup_concat_eegwindows_dataset():
+def setup_concat_eegwindows_dataset(bnci_recording):
     """Create a small EEGWindowsDataset (mne.Raw) for testing.
 
     Uses BNCI2014_001 dataset with real EEG data.
     """
-    dataset = BNCI2014_001(subject_ids=[1])
     return create_windows_from_events(
-        concat_ds=BaseConcatDataset([dataset.datasets[0]]),
+        concat_ds=BaseConcatDataset([bnci_recording]),
         trial_start_offset_samples=0,
         trial_stop_offset_samples=0,
         use_mne_epochs=False,  # Creates EEGWindowsDataset

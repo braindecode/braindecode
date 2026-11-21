@@ -26,6 +26,7 @@ from braindecode.models import (
     MAPA,
     MEGXL,
     REVE,
+    SAMBA,
     SSTDPN,
     ZUNA,
     BrainTokenizer,
@@ -240,6 +241,7 @@ def test_model_has_activation_parameter(model_class):
     named 'activation' or any parameter that starts with 'activation'.
     """
     if model_class in [
+        SAMBA,  # released encoder uses fixed ReLU/SiLU activations
         Brant,
         BrainTokenizer,  # the released SEANet codec has fixed ELU activations
         MEGXL,  # fixed BioCodec ELUs and BrainOmni's SELU block, as released
@@ -303,6 +305,7 @@ def test_model_has_drop_prob_parameter(model_class):
     """
 
     if model_class in [
+        SAMBA,  # released encoder and linear downstream head have no dropout
         BBL,
         SyncNet,
         EEGSimpleConv,
@@ -387,6 +390,7 @@ def test_model_compiled(model):
 
     # assert_close also walks the tuple outputs (e.g. NeuroRVQTokenizer).
     torch.testing.assert_close(output_compiled, output, atol=1e-4, rtol=1e-5)
+    torch.compiler.reset()  # free this model's graphs before the next test
 
 
 def test_model_exported(model):
@@ -461,6 +465,25 @@ def test_eegminer_exported_program_decomposes(method):
     torch.testing.assert_close(decomposed.module()(x), eager)
 
 
+@pytest.fixture
+def _drop_torchscript_types():
+    """Forget the module types ``torch.jit.script`` compiled, as PyTorch's own
+    ``JitTestCase.tearDown`` does (``clear_class_registry`` in
+    ``torch/testing/_internal/jit_utils.py``): the process-wide registry keeps
+    them otherwise, about 2 GB after scripting every registered model in one
+    worker. Private torch calls: a no-op if a torch release renames one."""
+    yield
+    if (
+        hasattr(torch._C, "_jit_clear_class_registry")
+        and hasattr(torch.jit._recursive, "ConcreteTypeStore")
+        and hasattr(torch.jit._state, "_clear_class_state")
+    ):
+        torch._C._jit_clear_class_registry()
+        torch.jit._recursive.concrete_type_store = torch.jit._recursive.ConcreteTypeStore()
+        torch.jit._state._clear_class_state()
+
+
+@pytest.mark.usefixtures("_drop_torchscript_types")
 @pytest.mark.parametrize("model_name", list(_MODEL_CASES))
 def test_torch_script(model_name):
     """Models script directly and the scripted output equals the eager one.

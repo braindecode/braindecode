@@ -5,7 +5,10 @@
 # Copyright (c) 2026 Liuyin Yang
 """CORTEG: an ST-EEGFormer adapted to intracranial recordings."""
 
+from __future__ import annotations
+
 import math
+from functools import partial
 from typing import Dict, Optional, Union
 
 import mne
@@ -14,33 +17,24 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from braindecode.functional import check_ch_mask, masked_mean
-from braindecode.models.base import EEGModuleMixin
-from braindecode.models.steegformer import (
-    STEEGFORMER_CHANNEL_ORDER,
-    _ChannelPositionalEmbed,
-    _init_weights,
-    _TemporalPositionalEncoding,
-    _TransformerEncoderBlock,
+from braindecode.functional import (
+    check_ch_mask,
+    init_weights_,
+    masked_mean,
+    sinusoidal_positional_encoding,
 )
+from braindecode.models.base import EEGModuleMixin
+from braindecode.models.steegformer import STEEGFORMER_CHANNEL_ORDER
 from braindecode.models.util import chs_info_positions
-from braindecode.modules import PatchTokenizer
-from braindecode.util import resolve_montage_name
+from braindecode.modules import (
+    FeedForwardBlock,
+    MultiHeadAttention,
+    PatchTokenizer,
+    PreNormTransformerBlock,
+)
 
 
-def _vocab_positions() -> torch.Tensor:
-    """``(142, 3)`` positions (m) of ST-EEGFormer's positioned vocabulary slots.
-
-    The slot names come from STEEGFormer's channel vocabulary, their positions
-    from MNE's Colin27 10-05 montage (the reference's table, to 6 decimals).
-    """
-    montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
-    ch_pos = montage.get_positions()["ch_pos"]
-    positions = np.stack([ch_pos[name] for name in STEEGFORMER_CHANNEL_ORDER])
-    return torch.as_tensor(positions, dtype=torch.float32)
-
-
-class CORTEG(EEGModuleMixin, nn.Module):
+class CORTEG(EEGModuleMixin, nn.Module, license="mit"):
     r"""CORTEG from Yang et al. (2026) [Yang2026b]_.
 
     :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`
@@ -63,8 +57,9 @@ class CORTEG(EEGModuleMixin, nn.Module):
     scalp model was never trained on. The paper trains only the spatial
     adapter, the high-gamma patch embedding, LoRA on the last
     ``n_merge_blocks`` blocks with their LayerNorms, and the head (about 297 K
-    parameters for the small backbone); this module builds the network, and
-    LoRA and freezing are left to the training code.
+    parameters for the small backbone); this module builds the network and
+    freezes the channel codebook, and leaves LoRA and the freezing of the other
+    parameters to the training code.
 
     .. rubric:: Macro Components
 
@@ -78,7 +73,7 @@ class CORTEG(EEGModuleMixin, nn.Module):
     - **KNNSoftFourier spatial adapter** (``CORTEG.channel_adapter``).
       *Operations:* a soft branch maps each electrode position to softmax
       weights over the 142 positioned slots of the pretrained channel
-      embedding (``CORTEG.channel_pos``, kept frozen) and returns their
+      codebook (``CORTEG.channel_codebook``, frozen) and returns their
       weighted sum; the last bias starts from a Gaussian ``knn_k``-nearest-
       neighbour kernel over the slots' scalp positions, so the soft branch
       starts as a nearest-electrode interpolation. A Fourier residual
@@ -97,50 +92,48 @@ class CORTEG(EEGModuleMixin, nn.Module):
     - **Read-out** (``CORTEG.norm``, ``CORTEG.final_layer``). *Operations:*
       layer norm, mean over all tokens (CLS included), linear head.
 
-    .. rubric:: Inputs
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
 
-    The paper decomposes the raw signal into two streams, both z-scored per
-    channel with training-set statistics:
+    - **Temporal:** patches of ``patch_size`` samples (16 at 128 Hz, 125 ms),
+      each tagged with the fixed sinusoidal encoding of its position; the CLS
+      token takes position 0.
+    - **Spatial:** the 3D position of each electrode, in metres (the paper's
+      MNI coordinates), passed as ``pos`` or read from ``chs_info``, becomes a
+      channel embedding through the spatial adapter.
+    - **Spectral:** the second stream, ``x_hi``, carries the high-gamma
+      envelope that the scalp model never saw.
 
-    - ``x``: the low-frequency stream, resampled to 128 Hz (the 16-sample
-      patches of the pretrained model then span 125 ms);
-    - ``x_hi``: the 70-200 Hz Hilbert envelope at 200 Hz, so that its
-      25-sample patches line up with those of ``x``.
+    .. rubric:: Additional Mechanisms
 
-    With MNE, ``raw.copy().filter(70, 200).apply_hilbert(envelope=True)
-    .resample(200)`` gives ``x_hi``. Without ``x_hi`` the model reads ``x``
-    alone, as the paper's low-frequency-only ablation.
+    - **Input streams:** the paper decomposes the raw signal into two streams,
+      both z-scored per channel with training-set statistics. ``x`` is the
+      low-frequency stream, resampled to 128 Hz; ``x_hi`` is the 70-200 Hz
+      Hilbert envelope at 200 Hz, so that its 25-sample patches line up with
+      those of ``x``. With MNE, ``raw.copy().filter(70, 200)
+      .apply_hilbert(envelope=True).resample(200)`` gives ``x_hi``. Without
+      ``x_hi`` the model reads ``x`` alone, as the paper's low-frequency-only
+      ablation.
+    - **Channel padding:** ``ch_mask`` is an addition to the reference, which
+      batches one patient at a time: padded channels take part in no
+      attention and no pooling.
 
-    Electrode positions are 3D coordinates in metres (the paper's MNI
-    coordinates), passed as ``pos`` or read from ``chs_info``.
+    .. important::
 
-    .. rubric:: Pre-trained weights
+        The ST-EEGFormer small backbone, with the high-gamma embedding
+        warm-started from its low-frequency one, loads from the re-hosted
+        checkpoint; the adapter, gate and head keep their initialization::
 
-    The ST-EEGFormer small backbone, with the high-gamma embedding
-    warm-started from its low-frequency one, loads from the re-hosted
-    checkpoint; the adapter, gate and head keep their initialization::
+            model = CORTEG.from_pretrained(
+                "braindecode/corteg-small-pretrained", n_outputs=5, n_times=128,
+                chs_info=chs_info,
+            )
 
-        model = CORTEG.from_pretrained(
-            "braindecode/corteg-small-pretrained", n_outputs=5, n_times=128,
-            chs_info=chs_info,
-        )
+        The authors' Stanford model (finger flexion, nine patients pooled) is
+        re-hosted with its LoRA factors folded in::
 
-    A bare :class:`~braindecode.models.STEEGFormer` checkpoint, such as
-    ``braindecode/STEEGFormer-small``, has no high-gamma embedding. Loading it
-    derives that embedding from the loaded low-frequency one, and so overwrites
-    a trained high-gamma embedding.
-
-    The authors' Stanford model (finger flexion, nine patients pooled) is
-    re-hosted with its LoRA factors folded in::
-
-        model = CORTEG.from_pretrained(
-            "braindecode/corteg-stanford-pooled", chs_info=chs_info
-        )
-
-    .. note::
-        The outputs match the reference implementation for the same weights
-        and inputs, for both merge strategies. ``ch_mask`` is an addition:
-        the reference batches one patient at a time.
+            model = CORTEG.from_pretrained(
+                "braindecode/corteg-stanford-pooled", chs_info=chs_info
+            )
 
     Parameters
     ----------
@@ -164,8 +157,6 @@ class CORTEG(EEGModuleMixin, nn.Module):
     activation : type[nn.Module]
         Activation layer class of the feed-forward blocks and of the MLPs of
         the spatial adapter and the gate.
-    n_chans_pos : int
-        Size of the pretrained channel vocabulary (145 for small/base/large).
     merge_strategy : {"average", "layerwise_gate"}
         Fusion of the high-gamma stream: the paper's default mean before the
         last ``n_merge_blocks`` blocks (the released Stanford adapter), or the
@@ -197,14 +188,15 @@ class CORTEG(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        # --- signal-related (handled by EEGModuleMixin) ---
+        # braindecode parameters
         n_outputs=None,
         n_chans=None,
         chs_info=None,
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
-        # --- model hyperparameters (defaults: small backbone) ---
+        *,
+        # model-specific parameters (defaults: small backbone)
         patch_size: int = 16,
         hi_patch_size: int = 25,
         embed_dim: int = 512,
@@ -214,7 +206,6 @@ class CORTEG(EEGModuleMixin, nn.Module):
         drop_prob: float = 0.0,
         drop_path: float = 0.1,
         activation: type[nn.Module] = nn.GELU,
-        n_chans_pos: int = 145,
         merge_strategy: str = "average",
         n_merge_blocks: int = 4,
         knn_k: int = 8,
@@ -245,13 +236,7 @@ class CORTEG(EEGModuleMixin, nn.Module):
             )
         vocab_positions = _vocab_positions()  # (n_slots, 3)
         n_slots = len(vocab_positions)
-        if n_chans_pos < n_slots:
-            raise ValueError(
-                f"n_chans_pos must be at least {n_slots}, the "
-                f"positioned slots of the vocabulary, got {n_chans_pos}."
-            )
         self.embed_dim = embed_dim
-        self.depth = depth
         self.merge_strategy = merge_strategy
         self.merge_at = depth - n_merge_blocks
         self.knn_k = knn_k
@@ -261,8 +246,8 @@ class CORTEG(EEGModuleMixin, nn.Module):
         self.register_buffer("default_pos", default_pos, persistent=False)
         self.register_buffer("vocab_positions", vocab_positions, persistent=False)
 
-        # The ST-EEGFormer backbone, under the names of STEEGFormer's modules
-        # so that its checkpoints load as they are.
+        # The ST-EEGFormer backbone; its weights keep STEEGFormer's names, except
+        # the channel codebook.
         self.patch_embed = PatchTokenizer(
             patch_size=patch_size,
             n_times=self.n_times,
@@ -272,22 +257,40 @@ class CORTEG(EEGModuleMixin, nn.Module):
             projection="linear",
             output_order="patch_channel",
         )
-        self.temporal_pos = _TemporalPositionalEncoding(embed_dim)
-        self.channel_pos = _ChannelPositionalEmbed(n_chans_pos, embed_dim)
-        # The soft branch's codebook, frozen as in the paper.
-        self.channel_pos.embedding.weight.requires_grad_(False)
+        # Fixed sinusoidal encoding of the patch positions: (n_positions, D),
+        # position 0 for the CLS token and 1.. for the time patches.
+        self.register_buffer(
+            "temporal_encoding",
+            sinusoidal_positional_encoding(_N_TEMPORAL_POSITIONS, embed_dim),
+            persistent=False,
+        )
+        # The pretrained channel embedding of the vocabulary's slots, (n_slots, D):
+        # the soft branch's codebook, frozen as in the paper and filled by a checkpoint.
+        self.channel_codebook = nn.Parameter(
+            torch.empty(n_slots, embed_dim), requires_grad=False
+        )
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_drop = nn.Dropout(drop_prob)
         dpr = torch.linspace(0, drop_path, depth).tolist()
         self.encoder = nn.Sequential(
             *[
-                _TransformerEncoderBlock(
-                    embed_dim, num_heads, drop_prob, int(mlp_ratio), dpr[i], activation
+                PreNormTransformerBlock(
+                    embed_dim,
+                    MultiHeadAttention(embed_dim, num_heads, drop_prob),
+                    FeedForwardBlock(
+                        embed_dim,
+                        expansion=mlp_ratio,
+                        drop_p=drop_prob,
+                        activation=activation,
+                    ),
+                    drop_prob,
+                    eps=_LAYER_NORM_EPS,
+                    drop_path=dpr[i],
                 )
                 for i in range(depth)
             ]
         )
-        self.norm = nn.LayerNorm(embed_dim, eps=1e-6)
+        self.norm = nn.LayerNorm(embed_dim, eps=_LAYER_NORM_EPS)
 
         # x_hi of this length gives one high-gamma token per low-frequency token.
         self.patch_embed_hi = PatchTokenizer(
@@ -315,14 +318,14 @@ class CORTEG(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
 
         self._init_parameters()
-        # Loading a bare ST-EEGFormer checkpoint warm-starts the high-gamma embedding.
-        self.register_load_state_dict_post_hook(self._warm_start_high_gamma)
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""
         for module in (self.patch_embed, self.encoder, self.norm, self.final_layer):
             module.apply(_init_weights)
         nn.init.normal_(self.cls_token, std=0.02)
+        # Zero, as if there were no channel embedding, until a checkpoint fills it.
+        nn.init.zeros_(self.channel_codebook)
         self._init_high_gamma_from_low()
         prior = None
         if self.default_pos is not None:
@@ -346,24 +349,9 @@ class CORTEG(EEGModuleMixin, nn.Module):
         hi.weight.copy_(resized[0])
         hi.bias.copy_(lo.bias)
 
-    def _warm_start_high_gamma(self, _module, incompatible_keys):
-        """Post-load hook: warm-start the high-gamma embedding a checkpoint lacks.
-
-        A bare ST-EEGFormer checkpoint loads ``patch_embed`` but has no
-        ``patch_embed_hi``, which torch reports as missing; a CORTEG checkpoint
-        has both and keeps its own.
-        """
-        missing = incompatible_keys.missing_keys
-        if (
-            "patch_embed_hi.proj.weight" in missing
-            and "patch_embed.proj.weight" not in missing
-        ):
-            self._init_high_gamma_from_low()
-
-    def reset_head(self, n_outputs):
+    def reset_head(self, n_outputs: int) -> None:
         """Replace the linear head for a new ``n_outputs``."""
-        self._n_outputs = n_outputs
-        self._update_init_kwargs(n_outputs=n_outputs)
+        self._set_n_outputs(n_outputs)
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
         _init_weights(self.final_layer)
 
@@ -428,19 +416,21 @@ class CORTEG(EEGModuleMixin, nn.Module):
             )
         if mask is not None:
             # Padding may hold NaN, which the embeddings would spread.
-            x = x.masked_fill(~mask[:, :, None], 0.0)
-            pos = pos.masked_fill(~mask[:, :, None], 0.0)
+            x = x.masked_fill(~mask[:, :, None], 0.0)  # (B, C, T)
+            pos = pos.masked_fill(~mask[:, :, None], 0.0)  # (B, C, 3)
             if x_hi is not None:
-                x_hi = x_hi.masked_fill(~mask[:, :, None], 0.0)
+                x_hi = x_hi.masked_fill(~mask[:, :, None], 0.0)  # (B, C, T_hi)
             # (B, N), patch-major like the tokens
             token_mask = mask.repeat(1, n_patches)
             key_mask = F.pad(token_mask, (1, 0), value=True)  # (B, 1 + N), CLS first
             attn_mask = key_mask[:, None, None, :]  # (B, 1, 1, 1 + N)
 
-        codebook = self.channel_pos.embedding.weight[: self.vocab_positions.shape[0]]
-        channel_emb = self.channel_adapter(pos, codebook)  # (B or 1, C, D)
-        # (B or 1, P, C, D)
-        embedding = self.temporal_pos(n_patches) + channel_emb[:, None]
+        # Each electrode's embedding, from its position and the pretrained codebook.
+        channel_emb = self.channel_adapter(pos, self.channel_codebook)  # (B or 1, C, D)
+        # Positions 1..P of the temporal encoding, (1, P, 1, D), plus the channel
+        # embedding (B or 1, 1, C, D) -> (B or 1, P, C, D)
+        temporal_emb = self.temporal_encoding[1 : n_patches + 1][None, :, None]
+        embedding = temporal_emb + channel_emb[:, None]
         tokens = self.patch_embed(x)  # (B, P, C, D)
         lo = (tokens + embedding).flatten(1, 2)  # (B, N, D)
         if x_hi is not None:
@@ -454,7 +444,8 @@ class CORTEG(EEGModuleMixin, nn.Module):
                 ).permute(0, 3, 1, 2)  # (B, P, C, D)
             hi = (hi_tokens + embedding).flatten(1, 2)  # (B, N, D)
 
-        cls = self.cls_token + self.temporal_pos.cls_token_encoding()  # (1, 1, D)
+        # CLS token at position 0 of the temporal encoding: (1, 1, D)
+        cls = self.cls_token + self.temporal_encoding[0]
         z = torch.cat([cls.expand(batch_size, -1, -1), lo], dim=1)  # (B, 1 + N, D)
         z = self.pos_drop(z)
         if hi is not None and self.layerwise_gate is not None:
@@ -465,7 +456,8 @@ class CORTEG(EEGModuleMixin, nn.Module):
             if hi is not None and gates is None and i == self.merge_at:
                 # "average" fusion: the CLS token is kept, the others averaged.
                 z = torch.cat([z[:, :1], 0.5 * (z[:, 1:] + hi)], dim=1)  # (B, 1 + N, D)
-            z = block(z, attn_mask)  # (B, 1 + N, D)
+            # (B, 1 + N, D); padded channels are keys no token attends to
+            z = block(z) if attn_mask is None else block.forward_masked(z, attn_mask)
             if hi is not None and gates is not None:
                 # "layerwise_gate" fusion: hi added after each block, not to CLS;
                 # (B, 1 + N, D)
@@ -483,28 +475,79 @@ class CORTEG(EEGModuleMixin, nn.Module):
         return self.final_layer(masked_mean(z, key_mask, [1]))  # (B, n_outputs)
 
 
+# Constants and helpers, below the model class.
+
+# LayerNorm epsilon of STEEGFormer's blocks and final norm.
+_LAYER_NORM_EPS = 1e-6
+# Positions of the fixed temporal encoding, CLS token included, as in STEEGFormer.
+_N_TEMPORAL_POSITIONS = 2048
+# Numerical floors of the soft branch's k-NN prior: the smallest kernel bandwidth
+# (m), and the floor that keeps the normalization and the logarithm of the kernel
+# weights finite.
+_MIN_BANDWIDTH = 1e-6
+_WEIGHT_EPSILON = 1e-8
+# Weight initialization of the ST-EEGFormer reference: Xavier-uniform linear
+# layers with zero bias, unit LayerNorms.
+_init_weights = partial(init_weights_, weights={nn.Linear: nn.init.xavier_uniform_})
+
+
+def _vocab_positions() -> torch.Tensor:
+    """``(142, 3)`` positions (m) of ST-EEGFormer's positioned vocabulary slots.
+
+    The slot names come from ``STEEGFORMER_CHANNEL_ORDER``, the channel
+    vocabulary of the released ST-EEGFormer checkpoints; their positions from
+    MNE's Colin27 10-05 montage, which gives the reference's table to 6
+    decimals.
+    """
+    montage = mne.channels.make_standard_montage("colin27_1005")
+    ch_pos = montage.get_positions()["ch_pos"]
+    positions = np.stack([ch_pos[name] for name in STEEGFORMER_CHANNEL_ORDER])
+    return torch.as_tensor(positions, dtype=torch.float32)
+
+
 def _knn_log_prior(
     positions: torch.Tensor, vocab_positions: torch.Tensor, k: int
 ) -> torch.Tensor:
     """Log Gaussian k-NN weight of each vocabulary slot, averaged over ``positions``.
 
-    The bandwidth is the median distance of the ``k`` nearest slots.
+    Steps:
+
+    1. Take the ``k`` nearest slots of each electrode.
+    2. Weight them with a Gaussian kernel whose bandwidth is the median of
+       their distances, normalized per electrode.
+    3. Scatter the weights over all slots, take the log and average over the
+       electrodes.
+
+    ``positions`` is ``(n_chans, 3)`` and ``vocab_positions`` ``(n_slots, 3)``,
+    both in metres; the result is ``(n_slots,)``.
     """
+    # (n_chans, n_slots) -> (n_chans, k) distances and slot indices
     distances, slots = torch.cdist(positions, vocab_positions).topk(
         k, dim=-1, largest=False
     )
-    sigma = distances.median().clamp(min=1e-6)
-    weights = torch.exp(-0.5 * (distances / sigma) ** 2)
-    weights = weights / weights.sum(dim=-1, keepdim=True).clamp(min=1e-8)
+    sigma = distances.median().clamp(min=_MIN_BANDWIDTH)  # scalar
+    weights = torch.exp(-0.5 * (distances / sigma) ** 2)  # (n_chans, k)
+    weights = weights / weights.sum(dim=-1, keepdim=True).clamp(min=_WEIGHT_EPSILON)
+    # (n_chans, n_slots), zero outside the k nearest slots
     dense = torch.zeros(len(positions), len(vocab_positions)).scatter_(
         1, slots, weights
     )
-    return torch.log(dense + 1e-8).mean(dim=0)
+    return torch.log(dense + _WEIGHT_EPSILON).mean(dim=0)  # (n_slots,)
 
 
 class _KNNSoftFourierAdapter(nn.Module):
-    """Channel embedding of a 3D position: a soft branch over the pretrained
-    codebook plus a Fourier-feature residual."""
+    """Channel embedding of a 3D electrode position (the paper's KNNSoftFourier).
+
+    Steps:
+
+    1. ``soft``: the position selects a softmax-weighted sum of the pretrained
+       codebook slots (:class:`_SoftCodebookBranch`).
+    2. ``residual``: a Fourier-feature MLP adds a position-specific correction
+       (:class:`_FourierBranch`), zero at initialization.
+
+    ``forward(pos, codebook)`` maps ``pos`` ``(batch or 1, n_chans, 3)`` and
+    ``codebook`` ``(n_slots, embed_dim)`` to ``(batch or 1, n_chans, embed_dim)``.
+    """
 
     def __init__(
         self,
@@ -523,22 +566,33 @@ class _KNNSoftFourierAdapter(nn.Module):
         """Start the soft branch at ``prior`` (uniform if ``None``) and the
         residual at zero."""
         with torch.no_grad():
-            bias = self.soft.net[-1].bias
+            bias = self.soft.net[-1].bias  # (n_slots,)
             bias.copy_(torch.zeros_like(bias) if prior is None else prior)
             self.soft.scale.fill_(1.0)
         nn.init.zeros_(self.residual.net[-1].weight)
 
     def forward(self, pos: torch.Tensor, codebook: torch.Tensor) -> torch.Tensor:
+        # (B or 1, C, 3) -> (B or 1, C, D), the two branches summed
         return self.soft(pos, codebook) + self.residual(pos)
 
 
 class _SoftCodebookBranch(nn.Module):
-    """Softmax attention of a position over the codebook slots."""
+    """Softmax attention of a position over the codebook slots.
+
+    Steps:
+
+    1. An MLP maps the 3D position to one logit per slot.
+    2. The softmax of the logits weights the slots of the codebook; the weighted
+       sum is multiplied by a learned scalar ``scale``.
+
+    ``forward(pos, codebook)`` maps ``pos`` ``(batch or 1, n_chans, 3)`` and
+    ``codebook`` ``(n_slots, embed_dim)`` to ``(batch or 1, n_chans, embed_dim)``.
+    """
 
     def __init__(self, n_slots: int, hidden: int, activation: type[nn.Module]):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(3, hidden),
+            nn.Linear(3, hidden),  # 3: x, y, z of the electrode
             activation(),
             nn.Linear(hidden, hidden),
             activation(),
@@ -547,13 +601,25 @@ class _SoftCodebookBranch(nn.Module):
         self.scale = nn.Parameter(torch.ones(1))
 
     def forward(self, pos: torch.Tensor, codebook: torch.Tensor) -> torch.Tensor:
-        return self.scale * torch.matmul(self.net(pos).softmax(dim=-1), codebook)
+        # (B or 1, C, 3) -> (B or 1, C, n_slots) weights over the slots
+        weights = self.net(pos).softmax(dim=-1)
+        # (B or 1, C, n_slots) @ (n_slots, D) -> (B or 1, C, D)
+        return self.scale * torch.matmul(weights, codebook)
 
 
 class _FourierBranch(nn.Module):
-    """MLP on sinusoidal features of a position, at log-spaced frequencies."""
+    """MLP on sinusoidal features of a position, at log-spaced frequencies.
 
-    freqs: torch.Tensor
+    Steps:
+
+    1. Multiply each of the 3 coordinates by the ``n_freqs`` frequencies, log-spaced
+       from 1 to ``max_freq`` radians per metre.
+    2. Concatenate the sine and the cosine of the angles.
+    3. Apply an MLP to the ``6 * n_freqs`` features.
+
+    ``forward(pos)`` maps ``pos`` ``(batch or 1, n_chans, 3)`` to
+    ``(batch or 1, n_chans, embed_dim)``.
+    """
 
     def __init__(
         self,
@@ -564,6 +630,7 @@ class _FourierBranch(nn.Module):
         activation: type[nn.Module],
     ):
         super().__init__()
+        self.freqs: torch.Tensor
         self.register_buffer(
             "freqs", torch.logspace(0, math.log10(max_freq), n_freqs), persistent=False
         )
@@ -577,12 +644,24 @@ class _FourierBranch(nn.Module):
         )
 
     def forward(self, pos: torch.Tensor) -> torch.Tensor:
+        # (B or 1, C, 3, 1) * (n_freqs,) -> (B or 1, C, 3 * n_freqs) angles
         angles = (pos[..., None] * self.freqs).flatten(-2)
+        # (B or 1, C, 6 * n_freqs) -> (B or 1, C, D)
         return self.net(torch.cat([angles.sin(), angles.cos()], dim=-1))
 
 
 class _LayerwiseGate(nn.Module):
-    """One tanh gate per block and sample, from the mean low and high tokens."""
+    """One tanh gate per block and sample, from the mean low and high tokens.
+
+    Steps:
+
+    1. Concatenate the mean low-frequency and high-gamma tokens of the sample.
+    2. Apply a LayerNorm and a bottleneck MLP with one output per block.
+    3. Squash the outputs with a tanh into gates in ``(-1, 1)``.
+
+    ``forward(lo, hi)`` maps two ``(batch, embed_dim)`` means to the gates
+    ``(batch, depth)``.
+    """
 
     def __init__(
         self, embed_dim: int, depth: int, bottleneck: int, activation: type[nn.Module]
@@ -601,4 +680,5 @@ class _LayerwiseGate(nn.Module):
         nn.init.zeros_(self.net[-1].bias)
 
     def forward(self, lo: torch.Tensor, hi: torch.Tensor) -> torch.Tensor:
+        # (B, D) and (B, D) -> (B, 2 * D) -> (B, depth) gates in (-1, 1)
         return torch.tanh(self.net(torch.cat([lo, hi], dim=-1)))
