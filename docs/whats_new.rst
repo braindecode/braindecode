@@ -190,7 +190,7 @@ API and behavior changes
   before each skip connection, like U-Time's ``CropToMatch``. The encoder pads an odd level at
   the start, so each residual sample was paired with the neighbouring pooled pair. Outputs change
   whenever a level has an odd length, as with the default 30 s window at 100 Hz; the parameters do
-  not change, so released weights still load (:gh:`1` by
+  not change, so released weights still load (:gh:`1730` by
   `Aayushya Patel <https://github.com/ptlnextdoor>`_).
 - :func:`braindecode.functional.scaled_dot_product_attention` emits a ``FutureWarning``
   when ``fused_in_lazy`` is set: it has had no effect since :gh:`1581` and will be
