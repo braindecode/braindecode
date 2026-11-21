@@ -635,10 +635,6 @@ Code health
   :class:`braindecode.models.Labram` and :class:`braindecode.models.CodeBrain`,
   which it skipped; it still skips SyncNet and NeuroRVQTokenizer
   (:gh:`1598` by `Bruno Aristimunha`_).
-- The :class:`braindecode.models.JungMAE` tests compare the forward with the
-  reference encoder at ``atol=1e-5``: the reference packs the valid tokens and
-  the model masks the invalid ones, so float32 rounding depends on the machine
-  (:gh:`1594` by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.Perceiver` builds the Fourier features for
   :class:`braindecode.models.DANCE` directly along the time axis. A training
   test checks its per-token logits and the gradients of all three event heads

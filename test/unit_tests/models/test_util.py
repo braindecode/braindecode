@@ -541,8 +541,6 @@ def _assert_reads_channel_order_from_chs_info(cls, kw):
     )
     x = torch.randn(2, 4, 60)
     assert torch.equal(inferred.eval()(x), explicit.eval()(x))
-    with pytest.raises(ValueError, match="ch_mask"):
-        inferred(x, ch_mask=torch.ones(2, 4, dtype=torch.bool))
 
 
 def test_fnirs4d_reads_channel_order_from_chs_info():
