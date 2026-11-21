@@ -1,4 +1,5 @@
-"""SAMBA: the scan over time, the coordinate-driven input and the initialization."""
+"""SAMBA: the scan over time, the coordinate-driven input, the initialization and the
+released weights."""
 
 import numpy as np
 import pytest
@@ -140,3 +141,42 @@ def test_reset_parameters_draws_every_parameter_again():
             parameter.fill_(float("nan"))
     model.reset_parameters()
     assert all(parameter.isfinite().all() for parameter in model.parameters())
+
+
+# features[0, :5] (mean over time) and features[0, -5:] (std over time) of the encoders
+# of Dcode-AI/SAMBA-2s@e553287 and Dcode-AI/SAMBA-100s@3a235a1 on the input of the
+# test, loaded as released, with the 94 target electrodes of the weights as chs_info
+@pytest.mark.network
+@pytest.mark.huggingface
+@pytest.mark.parametrize(
+    "repo_id, revision, expected_mean, expected_std",
+    [
+        (
+            "braindecode/samba-2s-pretrained",
+            "REHOST_PENDING",  # pin after re-host
+            [-0.430467904, 0.292152464, 0.329552829, 0.073628992, -0.769551814],
+            [0.125874534, 0.189685628, 0.611500859, 0.472888798, 0.666319072],
+        ),
+        (
+            "braindecode/samba-100s-pretrained",
+            "REHOST_PENDING",  # pin after re-host
+            [-0.082055420, -0.087322578, 0.000102654, 0.025375422, 0.025857089],
+            [0.032365620, 0.073571838, 0.031242646, 0.063421756, 0.089154541],
+        ),
+    ],
+    ids=["2s", "100s"],
+)
+def test_samba_pretrained_matches_the_release(
+    repo_id, revision, expected_mean, expected_std
+):
+    pytest.importorskip("huggingface_hub")
+    model = SAMBA.from_pretrained(repo_id, revision=revision, n_outputs=3).eval()
+    x = torch.arange(94 * 256.0).reshape(1, 94, 256).mul(0.05).sin()
+    with torch.no_grad():
+        features = model(x, return_features=True)["features"]
+    torch.testing.assert_close(
+        features[0, :5], torch.tensor(expected_mean), rtol=0, atol=1e-5
+    )
+    torch.testing.assert_close(
+        features[0, -5:], torch.tensor(expected_std), rtol=0, atol=1e-5
+    )
