@@ -2736,6 +2736,19 @@ def test_steegformer_reload_keeps_channel_frame(tmp_path):
     assert restored.channel_indices.tolist() == model.channel_indices.tolist()
 
 
+def test_steegformer_encoder_keeps_the_keys_of_v2_0_0_checkpoints():
+    """``encoder.{i}.0`` is the attention residual, ``.1`` the feed-forward one."""
+    model = STEEGFormer(
+        n_chans=2, n_outputs=2, n_times=32, patch_size=16, embed_dim=16, depth=1,
+        num_heads=2, chan_pos_idx=[0, 1],
+    )  # fmt: skip
+    attention = ["keys", "queries", "values", "projection"]
+    expected = [f"encoder.0.0.fn.0.{p}" for p in ("weight", "bias")]
+    expected += [f"encoder.0.0.fn.1.{a}.{p}" for a in attention for p in ("weight", "bias")]
+    expected += [f"encoder.0.1.fn.{n}.{p}" for n in ("0", "1.0", "1.3") for p in ("weight", "bias")]
+    assert [k for k in model.state_dict() if k.startswith("encoder.")] == expected
+
+
 @pytest.mark.parametrize(
     "n_chans, fallback, n_chans_pos",
     [
