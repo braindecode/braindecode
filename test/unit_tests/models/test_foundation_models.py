@@ -860,6 +860,44 @@ def test_luna_rotary_embedding_is_native_and_checkpoint_compatible():
     torch.testing.assert_close(attention.rotary_emb.freqs, expected)
 
 
+def test_luna_hidden_layernorm_keys_and_checkpoint_loading():
+    """LUNA keeps hidden LayerNorm in channel_location_embedder and cross_attn.ffn."""
+    model = LUNA(n_outputs=2, n_chans=4, n_times=256, sfreq=256).eval()
+    sd = model.state_dict()
+
+    for key in (
+        "channel_location_embedder.norm.weight",
+        "channel_location_embedder.norm.bias",
+        "cross_attn.ffn.norm.weight",
+        "cross_attn.ffn.norm.bias",
+    ):
+        assert key in sd
+
+    # Simulate an upstream BioFoundation / PulpBio checkpoint using Sequential indices
+    # on channel_location_embedder.0.* and the legacy typo cross_attn.temparature.
+    upstream = {}
+    reverse_mapping = {v: k for k, v in model.mapping.items()}
+    for key, value in sd.items():
+        upstream[reverse_mapping.get(key, key)] = value.clone()
+    upstream["channel_location_embedder.0.norm.weight"] = torch.full_like(
+        sd["channel_location_embedder.norm.weight"], 2.0
+    )
+    upstream["cross_attn.ffn.norm.weight"] = torch.full_like(
+        sd["cross_attn.ffn.norm.weight"], 3.0
+    )
+
+    reloaded = LUNA(n_outputs=2, n_chans=4, n_times=256, sfreq=256).eval()
+    reloaded.load_state_dict(upstream, strict=True)
+    torch.testing.assert_close(
+        reloaded.channel_location_embedder.norm.weight,
+        upstream["channel_location_embedder.0.norm.weight"],
+    )
+    torch.testing.assert_close(
+        reloaded.cross_attn.ffn.norm.weight,
+        upstream["cross_attn.ffn.norm.weight"],
+    )
+
+
 @pytest.mark.parametrize("axis_dim", [2, 4, 8])
 def test_zuna_builds_rotary_frequency_table_natively(axis_dim):
     """ZUNA's native table matches rotary-embedding-torch semantics."""

@@ -289,10 +289,11 @@ class MLP(nn.Sequential):
 
 
 class TimmMlp(nn.Module):
-    """Two-layer MLP with timm's parameter names (``fc1``, ``act``, ``fc2``,
-    ``drop``), as in ViT/MAE checkpoints: dropout after the activation and after
-    the second layer. EEGPT and LUNA use it, so their released weights load
-    with the same keys.
+    """Two-layer MLP with timm's parameter names (``fc1``, ``act``, ``norm``,
+    ``fc2``, ``drop``), as in ViT/MAE checkpoints: dropout after the
+    activation, optional normalization before the second linear layer, and
+    dropout after the second layer. EEGPT and LUNA use it, so their released
+    weights load with the same keys.
 
     Parameters
     ----------
@@ -305,6 +306,9 @@ class TimmMlp(nn.Module):
         Activation class. Default: ``nn.GELU``.
     drop : float
         Dropout rate. Default: ``0.0``.
+    norm_layer : type of torch.nn.Module, optional
+        Normalization layer class applied between the first dropout and
+        ``fc2``. Default: ``None`` (``nn.Identity()``).
     """
 
     def __init__(
@@ -314,17 +318,25 @@ class TimmMlp(nn.Module):
         out_features=None,
         act_layer=nn.GELU,
         drop=0.0,
+        norm_layer=None,
     ):
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
         self.fc1 = nn.Linear(in_features, hidden_features)
         self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
         self.drop = nn.Dropout(drop)
+        self.norm = (
+            norm_layer(hidden_features) if norm_layer is not None else nn.Identity()
+        )
+        self.fc2 = nn.Linear(hidden_features, out_features)
 
     def forward(self, x):
         x = self.drop(self.act(self.fc1(x)))
+        # Keep v2 whole-model pickles without ``norm`` runnable.
+        norm = getattr(self, "norm", None)
+        if norm is not None:
+            x = norm(x)
         return self.drop(self.fc2(x))
 
 

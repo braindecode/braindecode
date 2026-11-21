@@ -771,10 +771,6 @@ def test_foundation_model_fewer_channels_contract(
 _MAPPING_TARGET_EXCEPTIONS = {
     "Deep4Net": {"conv_time_spat.conv_spat.bias"},  # only with batch_norm=False
     "ShallowFBCSPNet": {"conv_time_spat.conv_spat.bias"},  # only with batch_norm=False
-    "LUNA": {
-        "channel_location_embedder.norm.weight",
-        "channel_location_embedder.norm.bias",
-    },  # issue #1588
 }
 
 

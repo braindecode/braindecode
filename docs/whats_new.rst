@@ -189,6 +189,12 @@ Enhancements
 API and behavior changes
 ========================
 
+- :class:`braindecode.modules.TimmMlp` accepts an optional ``norm_layer`` between
+  the first dropout and ``fc2`` (default ``None``, keeping ``EEGPT`` and the LUNA
+  decoders unchanged), and :class:`braindecode.models.LUNA` passes ``norm_layer``
+  (``nn.LayerNorm``) to ``channel_location_embedder`` and ``cross_attn.ffn`` so
+  released ``PulpBio/LUNA`` checkpoints load with matching hidden normalization
+  (:gh:`1588` by `@aloneangel45 <https://github.com/aloneangel45>`_).
 - :class:`braindecode.models.USleep` crops the upsampled tensor at the start before each skip connection,
   like U-Time's ``CropToMatch``, so at an odd level each residual sample meets its own pooled pair. A USleep
   trained with 2.0 loads but gives different predictions (:gh:`1730` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).

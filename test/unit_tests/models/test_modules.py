@@ -2522,6 +2522,18 @@ def test_timm_mlp_keys_and_forward():
     x = torch.randn(2, 3, 4)
     torch.testing.assert_close(mlp(x), mlp.fc2(torch.nn.functional.gelu(mlp.fc1(x))))
 
+    mlp_norm = TimmMlp(4, hidden_features=8, norm_layer=nn.LayerNorm).eval()
+    assert list(mlp_norm.state_dict()) == [
+        "fc1.weight",
+        "fc1.bias",
+        "norm.weight",
+        "norm.bias",
+        "fc2.weight",
+        "fc2.bias",
+    ]
+    expected = mlp_norm.fc2(mlp_norm.norm(torch.nn.functional.gelu(mlp_norm.fc1(x))))
+    torch.testing.assert_close(mlp_norm(x), expected)
+
 
 def test_timm_attention_keys_and_weights():
     import math

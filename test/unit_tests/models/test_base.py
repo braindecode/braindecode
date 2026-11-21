@@ -1064,6 +1064,19 @@ def test_v2_checkpoints_load(name):
         saved = _v2_pickle(name)
         state = saved["model"].state_dict()
     model = _V2_MODELS[name]().eval()
+    if name == "LUNA":
+        # v2.0.0 omitted hidden LayerNorm in TimmMlp (#1588); verify those are the only
+        # missing keys against the 2.0.0 snapshot and that Identity preserves outputs.
+        incompatible = model.load_state_dict(state, strict=False)
+        assert not incompatible.unexpected_keys
+        assert set(incompatible.missing_keys) == {
+            "channel_location_embedder.norm.weight",
+            "channel_location_embedder.norm.bias",
+            "cross_attn.ffn.norm.weight",
+            "cross_attn.ffn.norm.bias",
+        }
+        model.channel_location_embedder.norm = nn.Identity()
+        model.cross_attn.ffn.norm = nn.Identity()
     model.load_state_dict(state, strict=True)
     with torch.no_grad():
         torch.testing.assert_close(model(saved["x"]), saved["y"])
