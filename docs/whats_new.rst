@@ -28,6 +28,10 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add ``scripts/ci_plan.py`` and ``pytest --select-models`` to select affected test files
+  and model parametrizations from pull-request diffs, shard full test runs across four
+  workers, and run the full OS, Python, and ``torch.compile`` matrix on a daily schedule
+  (by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.SAMBA` (Hong et al., NeurReps 2026), an EEG
   foundation model that reads electrode positions through a coordinate-driven
   spatial embedding and models time with Mamba-2 (:gh:`1689` by `Jiazhen Hong`_).

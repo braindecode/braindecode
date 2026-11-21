@@ -1,0 +1,283 @@
+name: scheduled-ci
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  TEST_EXTRAS: tests,moabb,hub,eegprep,typing,viz
+on:
+  schedule:
+    # Daily 03:00 UTC full OS x Python qualification + all-model torch.compile
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      plan_json: ${{ steps.plan.outputs.plan_json }}
+    steps:
+      - name: Checking Out Repository
+        uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compute 4-Shard Full Test Plan
+        id: plan
+        run: python scripts/ci_plan.py --full --pretty --github-output "$GITHUB_OUTPUT"
+
+  matrix-test:
+    name: matrix (${{ matrix.os }}, py${{ matrix.python-version }}, shard ${{ matrix.shard }})
+    needs: plan
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      OMP_NUM_THREADS: ${{ matrix.os == 'macos-latest' && '1' || '2' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: ubuntu-latest
+            python-version: "3.14"
+          - os: macos-latest
+            python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.12"
+          - os: windows-latest
+            python-version: "3.13"
+    steps:
+      - name: Checking Out Repository
+        uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - name: Extract Shard Targets
+        id: targets
+        env:
+          PLAN_JSON: ${{ needs.plan.outputs.plan_json }}
+          SHARD: ${{ matrix.shard }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          plan = json.loads(os.environ["PLAN_JSON"])
+          s = os.environ["SHARD"]
+          files = plan["shard_files"].get(s, [])
+          slow = plan["slow_files_by_shard"].get(s, [])
+          needs_moabb = any(
+              any(
+                  seg in f
+                  for seg in (
+                      "/datasets/",
+                      "/datautil/",
+                      "/preprocessing/",
+                      "/samplers/",
+                      "test_scoring.py",
+                  )
+              )
+              for f in files + slow
+          )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8", newline="\n") as fh:
+              fh.write(f"files={' '.join(files)}\n")
+              fh.write(f"slow_files={' '.join(slow)}\n")
+              fh.write(f"has_files={'true' if files else 'false'}\n")
+              fh.write(f"has_slow={'true' if slow else 'false'}\n")
+              fh.write(f"needs_moabb={'true' if needs_moabb else 'false'}\n")
+          PY
+
+      - name: Restore/Save MNE Data Cache
+        if: ${{ steps.targets.outputs.needs_moabb == 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/mne_data
+          key: test-2-${{ runner.os }}-${{ matrix.python-version }}
+          restore-keys: |
+            test-2-${{ runner.os }}-${{ matrix.python-version }}-
+            test-2-${{ runner.os }}-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Install Braindecode
+        env:
+          UV_TORCH_BACKEND: cpu
+        shell: bash
+        run: uv pip install --system -e ".[${{ env.TEST_EXTRAS }}]"
+
+      - name: Materialize MOABB Data
+        if: ${{ steps.targets.outputs.needs_moabb == 'true' }}
+        shell: bash
+        run: python -c "from moabb.datasets import BNCI2014_001; BNCI2014_001().get_data([1, 2, 4])"
+
+      - name: Run Shard Default Suite
+        if: ${{ steps.targets.outputs.has_files == 'true' }}
+        env:
+          HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
+          SHARD_FILES_STR: ${{ steps.targets.outputs.files }}
+        shell: bash
+        run: |
+          read -r -a files <<< "$SHARD_FILES_STR"
+          pytest -vv --durations=25 -n auto --dist worksteal --max-worker-restart=2 \
+            -k "not test_model_compiled" "${files[@]}"
+
+      - name: Run Shard Slow Tier
+        if: ${{ steps.targets.outputs.has_slow == 'true' && matrix.os == 'ubuntu-latest' }}
+        env:
+          SLOW_FILES_STR: ${{ steps.targets.outputs.slow_files }}
+        shell: bash
+        run: |
+          read -r -a slow_files <<< "$SLOW_FILES_STR"
+          pytest -vv --durations=25 -m slow "${slow_files[@]}"
+
+  compile-all:
+    name: compile-all (ubuntu-latest, py3.12, BRAINDECODE_COMPILE_ALL=1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      OMP_NUM_THREADS: "2"
+      BRAINDECODE_COMPILE_ALL: "1"
+    steps:
+      - name: Checking Out Repository
+        uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Install Braindecode
+        env:
+          UV_TORCH_BACKEND: cpu
+        run: uv pip install --system -e ".[${{ env.TEST_EXTRAS }}]"
+
+      - name: Compute TorchInductor Cache Key
+        id: compiler-cache-key
+        shell: bash
+        run: |
+          deps_hash="$(uv pip freeze --system | grep -vE '^-e |^braindecode(@|==|[[:space:]]|$)' | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
+          torch_hash="$(python - <<'PY' | sha256sum | cut -d' ' -f1
+          import platform
+          import sys
+          import torch
+
+          print(sys.version_info[:2])
+          print(platform.machine())
+          print(torch.__version__)
+          print(torch.version.git_version)
+          print(torch.backends.cpu.get_cpu_capability())
+          PY
+          )"
+          compiler_hash="$(c++ --version | head -n1 | sha256sum | cut -d' ' -f1)"
+          image="${ImageOS:-unknown}-${ImageVersion:-unknown}"
+          prefix="torchinductor-v2-${{ runner.os }}-${{ runner.arch }}-3.12-${image}-${deps_hash}-${torch_hash}-${compiler_hash}"
+          source_hash="${{ hashFiles('braindecode/models/**/*.py', 'braindecode/modules/**/*.py', 'braindecode/functional/**/*.py') }}"
+          echo "key=${prefix}-${source_hash}-compile-all" >> "$GITHUB_OUTPUT"
+          echo "restore-prefix=${prefix}-" >> "$GITHUB_OUTPUT"
+
+      - name: Restore TorchInductor Cache
+        id: restore-compiler-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/torchinductor
+          key: ${{ steps.compiler-cache-key.outputs.key }}
+          restore-keys: ${{ steps.compiler-cache-key.outputs.restore-prefix }}
+
+      - name: Compile All Registered Models
+        env:
+          TORCHINDUCTOR_CACHE_DIR: ${{ runner.temp }}/torchinductor
+          TORCHINDUCTOR_FX_GRAPH_CACHE: "1"
+        run: |
+          python .github/scripts/with_memory_log.py pytest -vv --durations=0 \
+            -n 2 --dist worksteal --max-worker-restart=2 \
+            test/unit_tests/models/test_integration.py -k test_model_compiled \
+            test/unit_tests/models/test_codebrain_compile.py
+          pytest -vv --durations=0 -m slow test/unit_tests/test_compile_estimator.py
+
+      - name: Save Warm TorchInductor Cache
+        if: ${{ success() && steps.restore-compiler-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/torchinductor
+          key: ${{ steps.compiler-cache-key.outputs.key }}
+
+  acceptance-matrix:
+    name: acceptance (ubuntu-latest, py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OMP_NUM_THREADS: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - name: Checking Out Repository
+        uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - name: Restore MNE Data Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/mne_data
+          key: test-2-${{ runner.os }}-${{ matrix.python-version }}
+          restore-keys: |
+            test-2-${{ runner.os }}-${{ matrix.python-version }}-
+            test-2-${{ runner.os }}-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Install Braindecode
+        env:
+          UV_TORCH_BACKEND: cpu
+        run: uv pip install --system -e ".[${{ env.TEST_EXTRAS }}]"
+
+      - name: Materialize acceptance test data
+        run: python -c "from moabb.datasets import BNCI2014_001; BNCI2014_001().get_data([1])"
+
+      - name: Run Acceptance Tests
+        run: pytest test/acceptance_tests --run-network -n 0 -vv -rP --durations=0
