@@ -1075,8 +1075,8 @@ def test_v2_checkpoints_load(name):
             "cross_attn.ffn.norm.weight",
             "cross_attn.ffn.norm.bias",
         }
-        model.channel_location_embedder.norm = nn.Identity()
-        model.cross_attn.ffn.norm = nn.Identity()
+        model.channel_location_embedder.norm = None
+        model.cross_attn.ffn.norm = None
     model.load_state_dict(state, strict=True)
     with torch.no_grad():
         torch.testing.assert_close(model(saved["x"]), saved["y"])

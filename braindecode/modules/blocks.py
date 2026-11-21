@@ -307,8 +307,7 @@ class TimmMlp(nn.Module):
     drop : float
         Dropout rate. Default: ``0.0``.
     norm_layer : type of torch.nn.Module, optional
-        Normalization layer class applied between the first dropout and
-        ``fc2``. Default: ``None`` (``nn.Identity()``).
+        Normalization layer class before ``fc2``. Default: ``None``.
     """
 
     def __init__(
@@ -326,16 +325,13 @@ class TimmMlp(nn.Module):
         self.fc1 = nn.Linear(in_features, hidden_features)
         self.act = act_layer()
         self.drop = nn.Dropout(drop)
-        self.norm = (
-            norm_layer(hidden_features) if norm_layer is not None else nn.Identity()
-        )
+        self.norm = norm_layer(hidden_features) if norm_layer is not None else None
         self.fc2 = nn.Linear(hidden_features, out_features)
 
     def forward(self, x):
         x = self.drop(self.act(self.fc1(x)))
-        # Keep v2 whole-model pickles without ``norm`` runnable.
-        norm = getattr(self, "norm", None)
-        if norm is not None:
+        # getattr keeps v2.0 whole-model pickles (saved before ``norm`` existed) runnable.
+        if (norm := getattr(self, "norm", None)) is not None:
             x = norm(x)
         return self.drop(self.fc2(x))
 
