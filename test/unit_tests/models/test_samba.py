@@ -100,6 +100,15 @@ def test_loaded_weights_bring_their_targets_and_keep_the_electrodes():
         torch.testing.assert_close(loaded(x), expected(x))
 
 
+def test_config_keeps_the_targets_for_another_montage():
+    """A model trained from scratch rebuilds from its config, and takes its
+    weights, on a montage with another number of electrodes."""
+    model = _samba(_chs_info(3))
+    other = SAMBA.from_config({**model.get_config(), "chs_info": _chs_info(5, seed=1)})
+    other.load_state_dict(model.state_dict())
+    assert other(torch.randn(2, 5, N_TIMES)).shape == (2, 3)
+
+
 @pytest.mark.parametrize(
     "kwargs, match",
     [

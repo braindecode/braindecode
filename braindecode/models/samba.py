@@ -58,6 +58,7 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     ``SAMBA.encoder.input_embedding``
         **Operations.** Three ``Conv1d`` with kernel size 1, 3 and 7 over the
         target channels, concatenated and fused by a pointwise convolution.
+        **Role.** Temporal features at three scales on the target montage.
 
     ``SAMBA.encoder.encoder1_mamba``
         **Operations.** After a ``Linear``, a residual Mamba-2 block:
@@ -68,6 +69,8 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     ``SAMBA.encoder.encoder2``, ``SAMBA.encoder.encoder3``
         **Operations.** ``Conv1d`` of kernel size 3 behind a max-pooling by 2
         each, with no activation in between, as in the authors' code.
+        **Role.** Halve the time axis and widen the features to
+        ``bottleneck_channels``.
 
     ``SAMBA.encoder.bottleneck_mamba``
         **Operations.** The channels are split into heads of ``head_dim``. Two
@@ -81,6 +84,7 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     ``SAMBA.final_layer``
         **Operations.** ``Linear`` on the mean and the standard deviation of the
         encoder output over time. Not pretrained.
+        **Role.** The task head; :meth:`reset_head` replaces it.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
@@ -116,7 +120,8 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     target_positions : list of list of float or None
         Positions ``(n_targets, 3)``, in metres, of the montage onto which the
         CDSE projects the electrodes. ``None`` takes the positions of
-        ``chs_info``, which trains from scratch on one montage.
+        ``chs_info``; the saved config records them, so the trained model
+        loads on another montage.
     base_channels : int
         Width of the multi-branch embedding and of the first Mamba-2 stage.
     bottleneck_channels : int
@@ -215,6 +220,8 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 "target_positions must be finite with shape (n_targets, 3), got "
                 f"shape {tuple(targets.shape)}."
             )
+        # Saved configs rebuild these targets, whatever montage loads the model
+        self._update_init_kwargs(target_positions=targets.tolist())
 
         # Every Mamba-2 head takes a whole number of channels: the first stage
         # reads base_channels * expand of them in heads of _MAMBA_HEAD_DIM, the
@@ -414,6 +421,7 @@ class _SambaEncoder(nn.Module):
         # First stage: the sequence layers take (batch, n_times, features)
         # (batch, base_channels, n_times) -> (batch, n_times, base_channels)
         x = x.transpose(1, 2)
+        # Pointwise mixing of the features; shape unchanged
         x = self.encoder1_linear(x)
         # Residual Mamba-2 block; shape unchanged
         x = x + self.encoder1_mamba(x)
@@ -428,9 +436,11 @@ class _SambaEncoder(nn.Module):
         # Bottleneck: half the steps again, back to (batch, steps, features)
         # (batch, bottleneck, n_times // 4) -> (batch, n_times // 8, bottleneck)
         x = self.pool(x).transpose(1, 2)
+        # Pointwise mixing into the bottleneck; shape unchanged
         x = self.bottleneck_in(x)
         # Differential Mamba-2 with its residual; shape unchanged
         x = self.bottleneck_mamba(x)
+        # Pointwise mixing out of the bottleneck; shape unchanged
         return self.bottleneck_out(x)
 
 
