@@ -185,7 +185,7 @@ _CHILD_SCRIPT = textwrap.dedent(
         save_dir = tmp_dir.name if tmp_dir is not None else None
         try:
             concat_ds = SleepPhysionet(
-                subject_ids=range(n_recs),
+                subject_ids=list(range(n_recs)),
                 recording_ids=[1],
                 crop_wake_mins=30,
                 preload=False,
@@ -274,7 +274,10 @@ all_n_jobs = [1, 2]  # Number of parallel processes
 
 # Ensure the SleepPhysionet files are cached once before timing subprocesses.
 _ = SleepPhysionet(
-    subject_ids=range(all_n_recs), recording_ids=[1], crop_wake_mins=30, preload=False
+    subject_ids=list(range(all_n_recs)),
+    recording_ids=[1],
+    crop_wake_mins=30,
+    preload=False,
 )
 gc.collect()
 
@@ -367,7 +370,7 @@ plt.show()
 # faster than simple sequential processing (blue circles), however it uses more
 # memory because multiple workers hold and return preprocessed data at once.
 #
-# Combining parallel preprocessing and serialization (vermillion squares)
+# Combining parallel preprocessing and serialization (vermilion squares)
 # lowers peak memory overhead because each worker writes its preprocessed
 # recording directly to disk and the main process reloads headers lazily
 # (``preload=False``), at the cost of extra disk I/O time. Depending on
