@@ -6487,6 +6487,7 @@ def test_bbl_temporal_mask_hides_samples_before_context(hide_all):
     scripted = torch.jit.script(model)
     with torch.no_grad():
         scripted_out = scripted(corrupt, ch_mask=real, temporal_mask=mask)
+        assert scripted(x, return_features=True)["temporal_features"].shape == (2, 8, 2)
     torch.testing.assert_close(scripted_out, actual.detach())
     for bad in (torch.zeros(2, 3, 39, dtype=torch.bool), torch.zeros(2, 39)):
         with pytest.raises(ValueError, match="temporal_mask"):
