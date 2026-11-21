@@ -154,6 +154,12 @@ _CASES = {
         640,
         None,
     ),
+    "MtReNIRS": lambda: (
+        MtReNIRS(n_chans=3, n_outputs=3, n_times=100, window_samples=50, embed_dim=32,
+                 depth=1, num_heads=2, mlp_dim=64, pool="channel_temporal_mean"),
+        100,
+        ("coordinates", lambda i, n: torch.rand((n, 4), generator=torch.Generator().manual_seed(i)), True),
+    ),
 }
 
 

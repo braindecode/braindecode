@@ -651,10 +651,9 @@ class _TokenEmbedding(nn.Module):
         # (n_fourier_bands,)
         freqs = self.freqs.to(device=coordinates.device, dtype=coordinates.dtype)
 
-        # Angles 2^k pi u_{c,j} of every coordinate j and band k
-        # (batch, n_tokens, n_coordinates) -> (batch, n_tokens, n_coordinates, 1)
+        # Angles 2^k pi u_{c,j} of every coordinate j and band k:
+        # (batch, n_tokens, n_coordinates, n_fourier_bands)
         angles = coordinates[..., None] * freqs
-        # -> (batch, n_tokens, n_coordinates, n_fourier_bands)
         # -> (batch, n_tokens, n_coordinates * n_fourier_bands)
         angles = self.merge_bands(angles)
 

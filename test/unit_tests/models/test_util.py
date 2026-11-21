@@ -480,7 +480,10 @@ def test_fnirs_interleaved_chs_info_matches_stacked(name, kw):
     x = torch.randn(2, 8, 100)  # [HbO_1..HbO_4, HbR_1..HbR_4]
     x_mne = x.reshape(2, 2, 4, 100).transpose(1, 2).reshape(2, 8, 100)
     with torch.no_grad():
-        torch.testing.assert_close(mne_order.eval()(x_mne), stacked.eval()(x))
+        atol = 1e-6 if name == "MtReNIRS" else 0.0  # its tokens follow the row order
+        torch.testing.assert_close(
+            mne_order.eval()(x_mne), stacked.eval()(x), rtol=0, atol=atol
+        )
 
 
 def test_fnirs4d_hbt_is_hbo_plus_hbr():

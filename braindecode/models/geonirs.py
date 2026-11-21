@@ -1,6 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
+#
 # Adapted from https://github.com/GeoNIRS/GeoNIRS (81f8995; paper arXiv:2610.17845).
 
 from __future__ import annotations
@@ -1099,8 +1100,8 @@ class _ChannelCompressorAttention(nn.Module):
 
         # Patches leave the batch axis, latent channels before patches
         # (batch * P, M, D) -> (batch, P, M, D) -> (batch, M, P, D)
-        # Dense copies: the next layers round differently on the permuted view
-        # (float32, up to 4e-7)
+        # A dense copy, as the reference's compressor returns it
+        # (GeoNIRS@81f8995, model/ours.py): the next layers round as there
         hbo = hbo.unflatten(0, [batch_size, n_patches])
         hbo = self.latents_first(hbo)
         hbo = hbo.contiguous()
