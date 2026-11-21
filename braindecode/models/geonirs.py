@@ -225,6 +225,9 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
     geometry_mlp_ratio : float, default=2.0
         Feed-forward width of the geometry Transformer layer, over
         ``embed_dim`` (fixed at 2 in the reference).
+    geometry_depth : int, default=1
+        Layers of the geometry Transformer (``geometry_spatial_layers`` in the
+        reference; the released weights have one).
     geometry_scale : float, default=0.02546058255683924
         Scale, in metres, that divides the centred source and detector
         coordinates of ``chs_info``: 25.46 mm, the ``GEOMETRY_SCALE_M`` of the
@@ -299,6 +302,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
         geometry_hidden_dim: int | None = None,
         geometry_heads: int | None = None,
         geometry_mlp_ratio: float = 2.0,
+        geometry_depth: int = 1,
         geometry_scale: float = 0.02546058255683924,
         n_latent_channels: int = 16,
         compressor_heads: int | None = None,
@@ -411,6 +415,7 @@ class GeoNIRS(EEGModuleMixin, nn.Module):
                 mlp_ratio=geometry_mlp_ratio,
                 drop_prob=drop_prob,
                 activation=activation,
+                depth=geometry_depth,
             )
 
         # Channel compressor: the pairs of each patch onto M latent channels
@@ -857,12 +862,12 @@ class _GeometryEncoder(nn.Module):
         Feed-forward width of the Transformer, over ``embed_dim``.
     drop_prob : float
         Dropout of the Transformer.
+    depth : int
+        Layers of the Transformer.
     activation : type[nn.Module], default=nn.GELU
         Activation of the MLP and of the Transformer.
     geometry_dim : int, default=6
         Size of :math:`g_c`: three midpoint and three offset coordinates.
-    depth : int, default=1
-        Layers of the Transformer.
     """
 
     def __init__(
@@ -872,9 +877,9 @@ class _GeometryEncoder(nn.Module):
         num_heads: int,
         mlp_ratio: float,
         drop_prob: float,
+        depth: int,
         activation: type[nn.Module] = nn.GELU,
         geometry_dim: int = 6,
-        depth: int = 1,
     ):
         super().__init__()
 

@@ -59,6 +59,7 @@ def test_geonirs_mean_std_over_valid_patches():
     "kwargs",
     [
         {"geometry_mlp_ratio": 4.0},
+        {"geometry_depth": 2},
         {"geometry_scale": 0.05},
         {"compressor_mlp_ratio": 4.0},
         {"time_embedding_init_std": 0.2},
