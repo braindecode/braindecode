@@ -265,7 +265,6 @@ def test_windows_from_events_duration_float_error():
         trial_stop_offset_samples=0,
         window_size_samples=230,
         window_stride_samples=230,
-        drop_last_window=False,
         preload=True,
     )
 
