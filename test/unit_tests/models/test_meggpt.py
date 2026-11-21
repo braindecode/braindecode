@@ -118,6 +118,12 @@ def test_token_mask_zeroes_embeddings_and_leaves_the_targets_clean():
     for bad in (hide[:, :1], hide.float()):
         with pytest.raises(ValueError, match="token_mask"):
             model.encode_tokens(ids, bad)
+    # Hiding zeroes the token embedding before the time and channel embeddings:
+    # it equals an id whose embedding row is zero.
+    with torch.no_grad():
+        model.token_embedding.weight[0] = 0.0
+    zeroed = model.encode_tokens(ids.masked_fill(hide, 0))["tokens"]
+    assert torch.equal(model.encode_tokens(ids, hide)["tokens"], zeroed)
 
 
 def test_ch_mask_features_match_each_recording_alone():
