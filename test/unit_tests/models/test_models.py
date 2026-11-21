@@ -1580,6 +1580,15 @@ def test_gcnsnet_adjacency():
     assert torch.all(adjacency >= 0)
 
 
+def test_gcnsnet_fake_nodes_have_zero_laplacian_rows():
+    model = GCNsNet(n_chans=22, n_outputs=4, n_times=128)
+    model.fit_graph(torch.randn(8, 22, 128))
+    matrices = [laplacian_module.matrix for laplacian_module in model.laplacians]
+    # 22 channels are padded with fake nodes, which have an all-zero row.
+    assert any((~matrix.bool().any(dim=1)).any() for matrix in matrices)
+    assert all(matrix.diagonal().min() >= -1e-6 for matrix in matrices)
+
+
 def test_gcnsnet_graph_follows_training_windows():
     from scipy.sparse.csgraph import laplacian
     from torch.utils.data import Subset
