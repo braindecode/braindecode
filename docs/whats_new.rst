@@ -264,6 +264,9 @@ Bug fixes
 - :class:`braindecode.models.Pratibha2` returns the feature dict, not the logits, when it
   is compiled with ``torch.jit.script`` and called with ``return_features=True``
   (:gh:`1710` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.ATCNet`, :class:`~braindecode.models.EEGConformer` and ``HybridNet`` drop their
+  legacy-key ``mapping``: it named keys no release wrote and pointed at missing keys. A contract test checks
+  that every ``mapping`` value is a distinct ``state_dict`` key (:gh:`1732` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - ``braindecode.models`` and ``braindecode.models.util.get_summary_table`` work when
   braindecode is imported from a zip archive (:gh:`1670` by `Bruno Aristimunha`_).
 - Exported :class:`braindecode.models.EEGMiner` programs decompose without mutating
