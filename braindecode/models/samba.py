@@ -110,8 +110,12 @@ class SAMBA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     - **Not causal.** The convolutions and the GroupNorm look at the whole
       window, so the encoder is not a streaming model. The Mamba-2 blocks alone
       are causal.
-    - **Weights.** The authors' checkpoints are not distributed with
-      braindecode.
+    - **Weights.** The encoders of the authors' SAMBA-2s and SAMBA-100s
+      (pretrained on 2 s and 100 s windows) are on the Hugging Face Hub at
+      ``braindecode/samba-2s-pretrained`` and
+      ``braindecode/samba-100s-pretrained``. ``SAMBA.from_pretrained(repo_id)``
+      uses their 94 target electrodes as ``chs_info`` unless you pass yours.
+      The head is not pretrained.
 
     .. versionadded:: 2.1
 

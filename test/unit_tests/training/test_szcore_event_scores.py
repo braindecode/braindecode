@@ -99,13 +99,18 @@ def test_matches_timescoring():
 
 
 @pytest.mark.parametrize(
-    "reference, duration",
-    [([(10, 5)], 3600), ([(1, 2, 3)], 3600), ([(10, 20)], 0)],
-    ids=["offset_before_onset", "three_columns", "zero_duration"],
+    "reference, duration, params",
+    [
+        ([(10, 5)], 3600, {}),
+        ([(1, 2, 3)], 3600, {}),
+        ([(10, 20)], 0, {}),
+        ([(10, 20)], 3600, {"max_event_duration": 0}),
+    ],
+    ids=["offset_before_onset", "three_columns", "zero_duration", "zero_max_duration"],
 )
-def test_rejects_bad_input(reference, duration):
+def test_rejects_bad_input(reference, duration, params):
     with pytest.raises(ValueError):
-        szcore_event_scores(reference, [], duration)
+        szcore_event_scores(reference, [], duration, **params)
 
 
 def test_reference_past_recording_end_is_missed():

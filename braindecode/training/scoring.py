@@ -806,8 +806,9 @@ def szcore_event_scores(
     hypothesis : array-like of shape (n_events, 2)
         Predicted seizures as ``(onset, offset)`` in seconds. May be empty.
     recording_duration : float
-        Length of the recording in seconds. The function clips events to it
-        and uses it as the time base of the false-alarm rates.
+        Length of the recording in seconds, the time base of the false-alarm
+        rates. Events are clipped to it; a hypothesis event that starts after
+        it still counts as a false positive, as in ``timescoring``.
     tolerance_start : float
         Seconds before a reference event in which a detection still counts.
     tolerance_end : float
@@ -827,8 +828,9 @@ def szcore_event_scores(
         ``fp_per_day``. ``sensitivity`` is NaN without reference events,
         ``precision`` is NaN without any hypothesis event or detection, and
         ``f1`` is NaN when there is neither a reference event nor a false
-        positive. To pool several recordings, sum ``tp``, ``n_ref_events``,
-        ``fp`` and the durations.
+        positive. To score a subject, sum ``tp``, ``n_ref_events``, ``fp`` and
+        the durations of its recordings; SzCORE reports a dataset as the mean
+        of its subjects' scores.
 
     Examples
     --------
@@ -848,7 +850,11 @@ def szcore_event_scores(
         raise ValueError(
             f"recording_duration must be positive, got {recording_duration}."
         )
-    fs = 10
+    if max_event_duration <= 0:
+        raise ValueError(
+            f"max_event_duration must be positive, got {max_event_duration}."
+        )
+    fs = 10  # timescoring's time grid, in Hz
     n = round(recording_duration * fs)
     ref = _szcore_events(
         reference, "reference", max_event_duration, min_duration_between_events
@@ -872,6 +878,7 @@ def szcore_event_scores(
         window = span(onset, offset)
         covered = hyp_mask[window].sum() / fs
         # An empty window (event past the recording end) cannot be detected.
+        # The 1e-6 margin is timescoring's: min_overlap=0 needs a covered sample.
         if offset > onset and covered / (offset - onset) > min_overlap + 1e-6:
             tp += 1
             detected[window] = True

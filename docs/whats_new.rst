@@ -31,6 +31,9 @@ Enhancements
 - Add :class:`braindecode.models.SAMBA` (Hong et al., NeurReps 2026), an EEG
   foundation model that reads electrode positions through a coordinate-driven
   spatial embedding and models time with Mamba-2 (:gh:`1689` by `Jiazhen Hong`_).
+- The encoders of :class:`braindecode.models.SAMBA` are on the Hugging Face Hub at
+  ``braindecode/samba-2s-pretrained`` and ``braindecode/samba-100s-pretrained``
+  (:gh:`1739` by `Bruno Aristimunha`_).
 - Foundation models raise a ``ValueError`` with both channel counts, through
   :func:`braindecode.functional.check_n_chans`, when the input does not have the
   channels they were built for (:gh:`1605` by `Julien Gadonneix`_).
@@ -177,11 +180,9 @@ Enhancements
   elements in different shapes (:class:`braindecode.models.AXON`), and no gradient for a
   learnable ``attn_mask`` (:class:`braindecode.models.DIVER1`)
   (:gh:`1599` by `Bruno Aristimunha`_).
-- Add :func:`braindecode.training.szcore_event_scores`, the SzCORE event-based seizure scoring
-  (Dan et al., Epilepsia 2025). It counts any overlap with a 30 s pre-ictal and 60 s post-ictal
-  tolerance as a detection, merges events less than 90 s apart and splits events longer than
-  5 min. It returns sensitivity, precision, F1 and false alarms per hour and per day, and
-  matches timescoring 0.0.7 (:gh:`1735` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
+- Add :func:`braindecode.training.szcore_event_scores`, SzCORE event-based seizure scoring
+  (Dan et al., Epilepsia 2025) with its default rules; it matches timescoring 0.0.7
+  (:gh:`1735` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - Add the :ref:`seizure-alarm-chbmit` tutorial. A seizure detector trained on two CHB-MIT
   patients is tested on a third, and :func:`braindecode.training.szcore_event_scores`
   scores its alarms (:gh:`1736` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
@@ -596,6 +597,15 @@ Bug fixes
 Code health
 ============
 
+- The test suite peaks lower: smaller inputs where no assertion depends on size,
+  shared read-only data, freed TorchScript, compile and reference-cycle memory
+  (:gh:`1713` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.LUNA` is freed as soon as it is deleted: its state-dict
+  hook no longer holds a reference to the model (:gh:`1713` by `Bruno Aristimunha`_).
+- Printing a model no longer keeps it alive: torchinfo's module-level summary
+  cache held the last printed instance of each class (:gh:`1713` by `Bruno Aristimunha`_).
+- :class:`braindecode.models.EEGMiner` takes the upper triangle of its connectivity
+  matrices in one place again and drops an unused flatten layer (:gh:`1737` by `Bruno Aristimunha`_).
 - Tests that spawned processes, built the 157M-parameter :class:`~braindecode.models.BENDR`
   14 times, spied on SDPA calls or re-implemented the code they check are now in-process,
   small or gone (:gh:`1701` by `Bruno Aristimunha`_).
@@ -630,10 +640,6 @@ Code health
   :class:`braindecode.models.Labram` and :class:`braindecode.models.CodeBrain`,
   which it skipped; it still skips SyncNet and NeuroRVQTokenizer
   (:gh:`1598` by `Bruno Aristimunha`_).
-- The :class:`braindecode.models.JungMAE` tests compare the forward with the
-  reference encoder at ``atol=1e-5``: the reference packs the valid tokens and
-  the model masks the invalid ones, so float32 rounding depends on the machine
-  (:gh:`1594` by `Bruno Aristimunha`_).
 - :class:`braindecode.modules.Perceiver` builds the Fourier features for
   :class:`braindecode.models.DANCE` directly along the time axis. A training
   test checks its per-token logits and the gradients of all three event heads
@@ -684,6 +690,9 @@ Code health
   Published development notebooks install the build's commit, and the
   Exca tutorial installs the optional packages it imports (:gh:`1640` by
   `Bruno Aristimunha`_).
+- The numpydoc header test now covers every registered model, not nine. The
+  parameter headers of 13 models read ``name: type`` and are now ``name : type``,
+  so numpydoc parses the name (:gh:`1728` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 
 Current 2.0.0 (2026-11-02)

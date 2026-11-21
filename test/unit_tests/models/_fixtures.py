@@ -6,7 +6,11 @@ from typing import Any
 
 import numpy as np
 
-from braindecode.models.util import SigArgName, _draw_chs_info
+from braindecode.models.util import (
+    SigArgName,
+    _draw_chs_info,
+    models_mandatory_parameters,
+)
 
 non_classification_models = [
     # Returns reconstructed patches and discrete codes, not class logits.
@@ -170,3 +174,14 @@ def _get_possible_signal_params(
         for c in channel_kwargs
         for t in time_kwargs
     ]
+
+
+def _architecture_kwargs(model_name: str) -> dict[str, Any]:
+    """Architecture arguments of a model's registry entry, without its signal
+    arguments: the small instance of the largest models that every generic
+    test builds (see ``models_mandatory_parameters``)."""
+    signal_params = next(
+        sp for name, _, sp in models_mandatory_parameters if name == model_name
+    )
+    sp = _get_signal_params(signal_params)
+    return {k: v for k, v in sp.items() if k not in default_signal_params}

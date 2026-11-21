@@ -6,6 +6,7 @@
 import json
 import subprocess
 import sys
+import weakref
 from operator import attrgetter
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -15,8 +16,19 @@ import pytest
 import torch
 from torch import nn
 
-from braindecode.models import EEGCLIP, LUNA, PBT, AttnSleep, CBraMod, Deep4Net, EEGNet
+from braindecode.models import (
+    EEGCLIP,
+    LUNA,
+    PBT,
+    AttnSleep,
+    CBraMod,
+    Deep4Net,
+    EEGNet,
+    ShallowFBCSPNet,
+)
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import models_dict, models_mandatory_parameters
+from test.unit_tests.models._fixtures import _get_signal_params
 
 if TYPE_CHECKING:
     from typing import Any as RuntimeOnlyMetadata
@@ -352,6 +364,29 @@ def test__str__():
     patch_method_stats.assert_called_once()
     patch_stats.__str__.assert_called_once()
     assert result == str(patch_stats)
+
+
+def test_printing_a_model_does_not_keep_it_alive():
+    # No parametrization: torchinfo's records of a parametrized module form
+    # cycles that only the cycle collector frees.
+    model = ShallowFBCSPNet(n_chans=4, n_outputs=2, n_times=500)
+    str(model)
+    ref = weakref.ref(model)
+    del model
+    assert ref() is None
+
+
+# GCNsNet is not listed: it keeps the bound-method hook of v2.0.0, which the
+# whole-model pickles of v2.0.0 store by name.
+@pytest.mark.parametrize("name", ["LUNA"])
+def test_model_with_a_load_hook_is_freed_by_reference_counting(name):
+    required, signal_params = next(
+        (r, s) for n, r, s in models_mandatory_parameters if n == name
+    )
+    model = models_dict[name](**_get_signal_params(signal_params, required))
+    ref = weakref.ref(model)
+    del model
+    assert ref() is None
 
 
 def test_get_output_shape():
