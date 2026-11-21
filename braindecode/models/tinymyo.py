@@ -165,6 +165,12 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
     on_non_divisible : {"pad", "crop", "error"}, default="pad"
         How :class:`~braindecode.modules.PatchTokenizer` treats a time axis
         that is not a multiple of ``patch_size``.
+    n_channel_slots : int, default=16
+        Number of channel slots (rows of ``channel_embed``), which is the
+        largest ``n_chans`` the model accepts. The released checkpoints have 16.
+    init_std : float, default=0.02
+        Std of the truncated normal that initializes ``channel_embed``,
+        truncated at ``+-init_std``.
 
     References
     ----------
@@ -197,6 +203,8 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
         activation: type[nn.Module] = nn.GELU,
         norm_layer: type[nn.Module] = nn.LayerNorm,
         on_non_divisible: Literal["pad", "crop", "error"] = "pad",
+        n_channel_slots: int = 16,
+        init_std: float = 0.02,
     ) -> None:
         super().__init__(
             n_outputs=n_outputs,
@@ -208,9 +216,9 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        if not 1 <= self.n_chans <= _MAX_CHANS:
+        if not 1 <= self.n_chans <= n_channel_slots:
             raise ValueError(
-                f"TinyMyo needs 1 to {_MAX_CHANS} channel slots, got n_chans={self.n_chans}."
+                f"TinyMyo needs 1 to {n_channel_slots} channel slots, got n_chans={self.n_chans}."
             )
         # TimmAttention checks num_heads >= 1 and an even head width, but
         # builds a narrower attention when the heads do not split embed_dim.
@@ -227,7 +235,9 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
             on_non_divisible=on_non_divisible,
             projection="linear",
         )
-        self.channel_embed = nn.Parameter(torch.zeros(1, _MAX_CHANS, 1, embed_dim))
+        # Read by _init_parameters, which reset_parameters calls again.
+        self.init_std = init_std
+        self.channel_embed = nn.Parameter(torch.zeros(1, n_channel_slots, 1, embed_dim))
         self.blocks = nn.ModuleList(
             [
                 PreNormBlock(
@@ -259,7 +269,12 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     def _init_parameters(self) -> None:
         """Initialization of the reference."""
-        nn.init.trunc_normal_(self.channel_embed, std=0.02, a=-0.02, b=0.02)
+        nn.init.trunc_normal_(
+            self.channel_embed,
+            std=self.init_std,
+            a=-self.init_std,
+            b=self.init_std,
+        )
         # The reference reinitializes the patch convolution weight and keeps
         # the bias drawn by Conv2d, whose fan-in equals that of this Linear.
         nn.init.xavier_uniform_(self.patch_embed.proj.weight)
@@ -323,9 +338,6 @@ class TinyMyo(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.final_layer = nn.Linear(self.final_layer.in_features, n_outputs)
         _init_weights(self.final_layer)
 
-
-# Number of channel slots (channel_embed rows) of the released checkpoints
-_MAX_CHANS = 16
 
 # Xavier-uniform Linear weights and zero biases, the initialization of the
 # reference (models/TinyMyo.py of pulp-bio/BioFoundation)
