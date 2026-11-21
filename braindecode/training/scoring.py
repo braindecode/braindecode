@@ -4,6 +4,7 @@
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Mohammed Fattouh <mo.fattouh@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
+#          Aayushya Patel <67443596+ptlnextdoor@users.noreply.github.com>
 #
 # License: BSD-3
 
@@ -748,3 +749,149 @@ def f1_event(pred_events, gt_events, iou_threshold: float = 0.5) -> float:
     precision = tp / (tp + fp)
     recall = tp / (tp + fn)
     return 2 * precision * recall / (precision + recall)
+
+
+def _szcore_events(events, name, max_event_duration, min_gap):
+    """Validate ``(onset, offset)`` rows, merge close events, split long ones."""
+    events = np.asarray(events, dtype=float)
+    if events.size == 0:
+        events = events.reshape(0, 2)
+    if events.ndim != 2 or events.shape[1] != 2:
+        raise ValueError(f"{name} must have shape (n_events, 2), got {events.shape}.")
+    if (events[:, 1] < events[:, 0]).any():
+        raise ValueError(f"{name} has an event whose offset is before its onset.")
+    merged = []
+    for onset, offset in sorted(events.tolist()):
+        if merged and onset - merged[-1][1] < min_gap:
+            merged[-1][1] = max(merged[-1][1], offset)
+        else:
+            merged.append([onset, offset])
+    split = []
+    for onset, offset in merged:
+        while offset - onset > max_event_duration:
+            split.append((onset, onset + max_event_duration))
+            onset += max_event_duration
+        split.append((onset, offset))
+    return split
+
+
+def szcore_event_scores(
+    reference,
+    hypothesis,
+    recording_duration: float,
+    *,
+    tolerance_start: float = 30.0,
+    tolerance_end: float = 60.0,
+    min_overlap: float = 0.0,
+    max_event_duration: float = 300.0,
+    min_duration_between_events: float = 90.0,
+) -> dict[str, float]:
+    """SzCORE event-based seizure scoring of one recording.
+
+    Events closer than ``min_duration_between_events`` are merged, then events
+    longer than ``max_event_duration`` are split into pieces that count as
+    separate events. A reference event is detected (true positive) when the
+    hypothesis overlaps it, extended by ``tolerance_start`` seconds before and
+    ``tolerance_end`` seconds after, by more than ``min_overlap`` of that
+    window. A hypothesis event that touches no detected window is a false
+    positive. The defaults are those of the SzCORE framework
+    :footcite:`Dan2025`, and the result matches ``timescoring`` 0.0.7, its
+    reference implementation, for sorted, non-overlapping events. Time is
+    sampled at 10 Hz.
+
+    Parameters
+    ----------
+    reference : array-like of shape (n_events, 2)
+        Annotated seizures as ``(onset, offset)`` in seconds. May be empty.
+    hypothesis : array-like of shape (n_events, 2)
+        Predicted seizures as ``(onset, offset)`` in seconds. May be empty.
+    recording_duration : float
+        Length of the recording in seconds, the time base of the false-alarm
+        rates. Events are clipped to it; a hypothesis event that starts after
+        it still counts as a false positive, as in ``timescoring``.
+    tolerance_start : float
+        Seconds before a reference event in which a detection still counts.
+    tolerance_end : float
+        Seconds after a reference event in which a detection still counts.
+    min_overlap : float
+        Fraction of the tolerance window the hypothesis must cover, in [0, 1).
+    max_event_duration : float
+        Events longer than this many seconds are split.
+    min_duration_between_events : float
+        Events less than this many seconds apart are merged.
+
+    Returns
+    -------
+    dict
+        ``n_ref_events``, ``tp`` and ``fp`` (integers, after merging and
+        splitting), ``sensitivity``, ``precision``, ``f1``, ``fp_per_hour`` and
+        ``fp_per_day``. ``sensitivity`` is NaN without reference events,
+        ``precision`` is NaN without any hypothesis event or detection, and
+        ``f1`` is NaN when there is neither a reference event nor a false
+        positive. To score a subject, sum ``tp``, ``n_ref_events``, ``fp`` and
+        the durations of its recordings; SzCORE reports a dataset as the mean
+        of its subjects' scores.
+
+    Examples
+    --------
+    Convert :class:`mne.Annotations` to events with
+    ``np.c_[ann.onset, ann.onset + ann.duration]``.
+
+    >>> from braindecode.training import szcore_event_scores
+    >>> scores = szcore_event_scores([(1800, 1860)], [(1790, 1800)], 3600)
+    >>> scores["tp"], scores["fp"]
+    (1, 0)
+
+    References
+    ----------
+    .. footbibliography::
+    """
+    if recording_duration <= 0:
+        raise ValueError(
+            f"recording_duration must be positive, got {recording_duration}."
+        )
+    if max_event_duration <= 0:
+        raise ValueError(
+            f"max_event_duration must be positive, got {max_event_duration}."
+        )
+    fs = 10  # timescoring's time grid, in Hz
+    n = round(recording_duration * fs)
+    ref = _szcore_events(
+        reference, "reference", max_event_duration, min_duration_between_events
+    )
+    hyp = _szcore_events(
+        hypothesis, "hypothesis", max_event_duration, min_duration_between_events
+    )
+
+    def span(onset, offset):
+        return slice(max(0, round(onset * fs)), round(offset * fs))
+
+    # Merged gaps stay in the mask: a gap inside a tolerance window is a detection.
+    hyp_mask = np.zeros(n, dtype=bool)
+    for onset, offset in hyp:
+        hyp_mask[span(onset, offset)] = True
+    detected = np.zeros(n, dtype=bool)
+    tp = 0
+    for onset, offset in ref:
+        onset = max(0.0, onset - tolerance_start)
+        offset = min(n / fs, offset + tolerance_end)
+        window = span(onset, offset)
+        covered = hyp_mask[window].sum() / fs
+        # An empty window (event past the recording end) cannot be detected.
+        # The 1e-6 margin is timescoring's: min_overlap=0 needs a covered sample.
+        if offset > onset and covered / (offset - onset) > min_overlap + 1e-6:
+            tp += 1
+            detected[window] = True
+    fp = sum(not detected[span(onset, offset)].any() for onset, offset in hyp)
+    n_ref = len(ref)
+    nan = float("nan")
+    return {
+        "n_ref_events": n_ref,
+        "tp": tp,
+        "fp": fp,
+        "sensitivity": tp / n_ref if n_ref else nan,
+        "precision": tp / (tp + fp) if tp + fp else nan,
+        "f1": 2 * tp / (n_ref + tp + fp) if n_ref + fp else nan,
+        "fp_per_hour": fp / (n / fs / 3600),
+        "fp_per_day": fp / (n / fs / 86400),
+    }

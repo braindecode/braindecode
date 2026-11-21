@@ -180,6 +180,9 @@ Enhancements
   elements in different shapes (:class:`braindecode.models.AXON`), and no gradient for a
   learnable ``attn_mask`` (:class:`braindecode.models.DIVER1`)
   (:gh:`1599` by `Bruno Aristimunha`_).
+- Add :func:`braindecode.training.szcore_event_scores`, SzCORE event-based seizure scoring
+  (Dan et al., Epilepsia 2025) with its default rules; it matches timescoring 0.0.7
+  (:gh:`1735` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 
 API and behavior changes
 ========================
