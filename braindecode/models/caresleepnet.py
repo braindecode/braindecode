@@ -262,8 +262,8 @@ class CareSleepNet(EEGModuleMixin, nn.Module, license="mit"):
 _MIN_EPOCH_SAMPLES = 169
 # Epsilon of the layer norms outside the BERT layers (``eps=1e-6`` in the reference).
 _LAYER_NORM_EPS = 1e-6
-# Epsilon of the layer norms of the BERT layers (the default of the reference's own
-# ``LayerNorm``).
+# Epsilon of the layer norms of the BERT layers (``BertLayerNorm(..., eps=1e-12)``
+# in the reference).
 _BERT_LAYER_NORM_EPS = 1e-12
 
 
