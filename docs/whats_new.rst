@@ -661,6 +661,9 @@ Code health
   model suites. Frequency-shift device and gradient cases run alongside
   the transform's numerical tests (:gh:`1656` by `Bruno Aristimunha`_).
 
+- The monthly release updates the documentation version switcher: the stable
+  and development entries take the released and next series, and the previous
+  stable series stays linked (:gh:`1666` by `Bruno Aristimunha`_).
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).
 - Trial-prediction tests import their shared synthetic windows and historical

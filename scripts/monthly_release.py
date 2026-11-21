@@ -13,6 +13,8 @@ Three subcommands, used by ``.github/workflows/monthly-release.yml``:
     ``.devN`` / ``devN`` suffix) and flip the matching
     ``Current X.Y.Z (GitHub)`` heading in ``docs/whats_new.rst`` to
     ``Current X.Y.Z (YYYY-MM-DD)``.
+    With ``--next-dev-version`` it also relabels the documentation version
+    switcher, ``docs/_static/versions.json``.
 
 ``next-dev``
     Rewrite ``braindecode/version.py`` to the next dev seed (e.g.
@@ -28,6 +30,7 @@ Bumping rules (``--bump``)
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from datetime import datetime, timezone
@@ -155,6 +158,33 @@ def compute_versions(current: str, bump: str) -> dict[str, str]:
     }
 
 
+def update_version_switcher(path: Path, release: str, next_dev: str) -> None:
+    """Relabel the documentation version switcher for a stable release.
+
+    ``path`` holds ``[dev, stable, *archives]``. The dev entry is named after the
+    series of ``next_dev`` and the stable entry after that of ``release``. When
+    the series changes, the previous stable series becomes the first archive,
+    served from ``/X.Y/`` instead of ``/stable/``.
+    """
+    dev, stable, *archives = json.loads(path.read_text(encoding="utf-8"))
+    series = ".".join(release.split(".")[:2])
+    previous = stable["version"]
+    if previous != series and all(entry["version"] != previous for entry in archives):
+        archives.insert(
+            0,
+            {
+                "name": previous,
+                "version": previous,
+                "url": stable["url"].removesuffix("stable/") + f"{previous}/",
+            },
+        )
+    dev["name"] = ".".join(next_dev.split(".")[:2]) + " (dev)"
+    stable.update(name=f"{series} (stable)", version=series)
+    path.write_text(
+        json.dumps([dev, stable, *archives], indent=4) + "\n", encoding="utf-8"
+    )
+
+
 def _find_github_heading(text: str, version: str) -> re.Match[str] | None:
     pat = re.compile(
         GITHUB_HEADING_RE_TEMPLATE.format(version=re.escape(version)),
@@ -248,6 +278,12 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         )
     write_version(args.init_file, release_version)
     finalize_changelog(args.changelog, release_version)
+    if args.next_dev_version:
+        update_version_switcher(
+            args.changelog.parent / "_static" / "versions.json",
+            release_version,
+            args.next_dev_version,
+        )
     print(f"{args.init_file} -> {release_version}")
     return 0
 
@@ -297,10 +333,14 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[paths, bump],
         help="Print the planned versions as key=value lines.",
     )
-    sub.add_parser(
+    finalize = sub.add_parser(
         "finalize",
         parents=[paths],
         help="Write the release version to version.py and date the changelog heading.",
+    )
+    finalize.add_argument(
+        "--next-dev-version",
+        help="Also update the documentation version switcher for this development cycle.",
     )
     sub.add_parser(
         "next-dev",
