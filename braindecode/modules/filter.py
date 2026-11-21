@@ -17,21 +17,6 @@ from braindecode.functional._lfilter import filtfilt, lfilter
 from braindecode.functional.functions import _next_fast_len
 
 
-class _IIRCoefficients(nn.ParameterList):
-    """Frozen transfer-function coefficients whose poles depend on float64 precision."""
-
-    def _apply(self, fn, recurse=True):
-        def move(coefficient):
-            # Module.to() keeps integers intact during a dtype conversion.
-            data = coefficient.view(torch.uint8)
-            moved = fn(data)
-            if moved.dtype != data.dtype:  # Module.type() also converts integers.
-                moved = data.to(device=moved.device)
-            return moved.view(coefficient.dtype)
-
-        return super()._apply(move, recurse)
-
-
 class FilterBankLayer(nn.Module):
     """Apply multiple band-pass filters to generate multiview signal representation.
 
@@ -239,8 +224,11 @@ class FilterBankLayer(nn.Module):
         # Prepare ParameterLists
         self.fir_list = nn.ParameterList()
         self.fir_a_list = nn.ParameterList()
-        self.b_list = _IIRCoefficients()
-        self.a_list = _IIRCoefficients()
+        # The IIR design stays float64: model.half() or .float() would round poles
+        # that sit near the unit circle. Plain tensors are left alone by casts and
+        # moved next to the signal in _apply_iir.
+        self.b_list: list[Tensor] = []
+        self.a_list: list[Tensor] = []
 
         if self.method_iir:
             if iir_params is None:
@@ -292,11 +280,27 @@ class FilterBankLayer(nn.Module):
 
                 _check_coefficients((b_coeffs, a_coeffs))
 
-                b = torch.tensor(b_coeffs, dtype=torch.float64)
-                a = torch.tensor(a_coeffs, dtype=torch.float64)
+                # On the CPU under any default device (meta, MPS), since to_empty()
+                # and load_state_dict() do not restore plain tensors.
+                b = torch.tensor(b_coeffs, dtype=torch.float64, device="cpu")
+                a = torch.tensor(a_coeffs, dtype=torch.float64, device="cpu")
+                self.b_list.append(b)
+                self.a_list.append(a)
 
-                self.b_list.append(nn.Parameter(b, requires_grad=False))
-                self.a_list.append(nn.Parameter(a, requires_grad=False))
+    def __setstate__(self, state):
+        # v2.0.0 pickles predate fir_delay_compensated (#1686).
+        state.setdefault(
+            "fir_delay_compensated", state["phase"] not in ("minimum", "minimum-half")
+        )
+        super().__setstate__(state)
+
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        # v2.0.0 saved the IIR design as float64 parameters. It is rebuilt from
+        # the constructor arguments, so a checkpoint's copy is dropped.
+        for key in list(state_dict):
+            if key.startswith((f"{prefix}b_list.", f"{prefix}a_list.")):
+                del state_dict[key]
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -435,10 +439,13 @@ class FilterBankLayer(nn.Module):
         Tensor
             Filtered tensor of shape (batch_size, 1, n_chans, n_times).
         """
-        # spectral_input: float32 at least, on the CPU for HPU inputs (no
-        # float64 there); the output goes back with .to(x).
-        x64 = spectral_input(x).double()
-        filtered = lfilter(x64, a_coeffs.to(x64), filt.to(x64))
+        # float64 recursion, on the CPU when the device has no float64 (MPS). The
+        # taps take the same route as the signal: MPS cannot cast them to float64.
+        # x64 is (batch_size, n_chans, n_times); the output goes back with .to(x).
+        x64 = spectral_input(x, torch.float64)
+        a64 = spectral_input(a_coeffs, torch.float64)
+        filt64 = spectral_input(filt, torch.float64)
+        filtered = lfilter(x64, a64, filt64)
         return filtered.to(x).unsqueeze(1)
 
     @staticmethod
@@ -465,15 +472,15 @@ class FilterBankLayer(nn.Module):
         """
         # Run the recursion in float64 and cast back: IIR band-passes with poles
         # near the unit circle (e.g. cheby2 banks used by FBMSNet/FBCNet) diverge
-        # to NaN in float32. The coefficient buffers are already float64.
-        # MPS and HPU run the float64 recurrence on the CPU.
-        x64 = x.cpu().double() if x.device.type in ("hpu", "mps") else x.double()
+        # to NaN in float32. x64: (batch_size, n_chans, n_times), on the CPU when
+        # the device has no float64 (MPS); the float64 design follows it.
+        x64 = spectral_input(x, torch.float64)
         if forward_filter:
             filtered = lfilter(x64, a_coeffs.to(x64), b_coeffs.to(x64))
         else:
             filtered = filtfilt(x64, a_coeffs.to(x64), b_coeffs.to(x64))
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
-        return filtered.to(dtype=x.dtype).to(device=x.device).unsqueeze(1)
+        return filtered.to(x).unsqueeze(1)
 
 
 class GeneralizedGaussianFilter(nn.Module):
@@ -706,11 +713,18 @@ class GeneralizedGaussianFilter(nn.Module):
         )
         shape = torch.clamp(self.shape.clone(), min=2.0, max=3.0)
 
-        if not torch.jit.is_scripting() and not torch.jit.is_tracing():
+        # Projected update for training; graphs captured for inference
+        # (torch.export, torch.compile in eval mode) leave the parameters alone.
+        if not (
+            torch.jit.is_scripting()
+            or torch.jit.is_tracing()
+            or (torch.compiler.is_compiling() and not self.training)
+        ):
             with torch.no_grad():
-                self.f_mean.copy_(f_mean)
-                self.bandwidth.copy_(bandwidth)
-                self.shape.copy_(shape)
+                # Detached, so torch.export also sees these updates as outside autograd
+                self.f_mean.detach().copy_(f_mean)
+                self.bandwidth.detach().copy_(bandwidth)
+                self.shape.detach().copy_(shape)
 
         # Create magnitude response with gain=1 -> (channels, freqs)
         mag_response = self.exponential_power(

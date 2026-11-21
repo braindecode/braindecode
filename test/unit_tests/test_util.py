@@ -429,22 +429,25 @@ def test_throwaway_index_loader_backward_compat():
 
 
 @pytest.mark.parametrize(
-    "is_regression,target_dtype,container",
+    "is_regression,dtype,target_dtype,container",
     [
-        (False, torch.int64, tuple),
-        (False, torch.int64, list),
-        (True, torch.float32, tuple),
-        (True, torch.float32, list),
+        (False, torch.int32, torch.int64, tuple),
+        (False, torch.int32, torch.int64, list),
+        # floats stay floats: EEGClassifier.get_loss reads them by shape
+        (False, torch.float64, torch.float32, tuple),
+        (False, torch.float64, torch.float32, list),
+        (True, torch.float64, torch.float32, tuple),
+        (True, torch.float64, torch.float32, list),
     ],
 )
 def test_throwaway_index_loader_casts_mixup_target(
-    is_regression, target_dtype, container
+    is_regression, dtype, target_dtype, container
 ):
     """Mixed targets follow the same dtype contract as plain targets."""
     B, C, T = 4, 10, 200
     X = torch.randn(B, C, T)
-    y_a = torch.zeros(B, dtype=torch.float64)
-    y_b = torch.ones(B, dtype=torch.float64)
+    y_a = torch.zeros(B, dtype=dtype)
+    y_b = torch.ones(B, dtype=dtype)
     lam = torch.full((B,), 0.3, dtype=torch.float64)
 
     x, yy, _ = _route(

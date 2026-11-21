@@ -28,6 +28,7 @@ from braindecode.modules import (
     AvgPool2dWithConv,
     CausalConv1d,
     ChannelMerger,
+    ChebyshevGraphConv,
     Chomp1d,
     CombinedConv,
     DropPath,
@@ -45,6 +46,22 @@ from braindecode.modules import (
     TimeDistributed,
 )
 from braindecode.modules.quantization import EMACodebook
+
+
+@pytest.mark.parametrize("order", [1, 2, 4])
+def test_chebyshev_graph_convolution_filters_each_laplacian_eigenmode(order):
+    layer = ChebyshevGraphConv(2, 3, order).double()
+    x = torch.randn(2, 3, 2, dtype=torch.float64)
+    basis, _ = torch.linalg.qr(torch.randn(3, 3, dtype=torch.float64))
+    values = torch.tensor([-0.8, 0.2, 0.9], dtype=torch.float64)
+    laplacian = (basis * values) @ basis.T
+    # Each eigenmode of the kth term is scaled by T_k(s) = cos(k arccos(s)).
+    filtered = [
+        (basis * (k * values.acos()).cos()) @ basis.T @ x for k in range(order)
+    ]
+    torch.testing.assert_close(
+        layer(x, laplacian), layer.projection(torch.cat(filtered, dim=-1))
+    )
 
 
 def test_channel_merger_excludes_nonfinite_padded_channels():
@@ -225,12 +242,25 @@ def test_avgpool2dwithconv_cache_requires_exact_device_identity():
         def size(self):
             return torch.Size(weight_shape)
 
+        def is_inference(self):
+            return False
+
     module._pool_weights = FakeTensor("cuda:0", torch.float32)
     same_device = FakeTensor("cuda:0", torch.float32)
     other_device = FakeTensor("cuda:1", torch.float32)
 
     assert module._pool_weights_match_input(same_device, weight_shape)
     assert not module._pool_weights_match_input(other_device, weight_shape)
+
+
+def test_avgpool2dwithconv_trains_after_an_inference_mode_forward():
+    module = AvgPool2dWithConv(kernel_size=(1, 4), stride=(1, 4))
+    with torch.inference_mode():
+        module(torch.randn(2, 3, 1, 16))
+
+    x = torch.randn(2, 3, 1, 16, requires_grad=True)
+    module(x).sum().backward()
+    assert x.grad is not None
 
 
 def test_time_distributed():
@@ -906,6 +936,36 @@ def test_filter_bank_layer_scripts(phase, method):
         torch.testing.assert_close(scripted(x), expected)
 
 
+def test_iir_filterbank_half_matches_float64_design():
+    """``.half()`` keeps the float64 IIR design: the output is the float64 one to float16 precision."""
+    kwargs = dict(
+        n_chans=2, sfreq=256, band_filters=[(4, 8), (8, 12)], method="iir", verbose=False
+    )
+    x = torch.randn(2, 2, 1024).half()
+    expected = FilterBankLayer(**kwargs)(x.double())
+    out = FilterBankLayer(**kwargs).half()(x)
+    assert out.dtype == torch.float16
+    torch.testing.assert_close(out.double(), expected, rtol=1e-3, atol=1e-3)
+
+
+@pytest.mark.skipif(not torch.backends.mps.is_available(), reason="requires MPS")
+@pytest.mark.parametrize("method,phase", [("iir", "zero"), ("fir", "forward")])
+def test_filter_bank_layer_float64_filtering_runs_on_mps(method, phase):
+    """MPS has no float64: the filters recurse on the CPU and the bands come back on MPS."""
+    layer = FilterBankLayer(
+        n_chans=3,
+        sfreq=128,
+        band_filters=[(4, 8), (8, 30)],
+        method=method,
+        phase=phase,
+        verbose=False,
+    )
+    x = torch.randn(2, 3, 512)
+    out = layer.to("mps")(x.to("mps"))
+    assert out.device.type == "mps"
+    torch.testing.assert_close(out.cpu(), layer.cpu()(x), rtol=1e-4, atol=1e-4)
+
+
 @pytest.mark.parametrize(
     "phase", ["linear", "zero", "zero-double", "minimum", "minimum-half"]
 )
@@ -1193,7 +1253,7 @@ def test_filter_bank_layer_frequency_response():
     # Prepare plots
     # Iterate over each filter in the filter bank
     for idx, ((l_freq, h_freq), b_value) in enumerate(
-        zip(band_filters, filter_bank_layer.b_list)
+        zip(band_filters, filter_bank_layer.fir_list)
     ):
         # Extract filter coefficients
         b = b_value.detach().numpy()
@@ -1817,23 +1877,24 @@ def test_multi_head_attention_qkv_bias():
     assert no_bias(torch.randn(2, 3, 8)).shape == (2, 3, 8)
 
 
-def test_sdpa_helper_fused_in_lazy_has_no_effect():
-    """``fused_in_lazy`` stays in the signature for existing calls, and changes
-    nothing: Habana's attention setting picks Gaudi's fused kernel."""
+def test_sdpa_helper_fused_in_lazy_is_deprecated():
+    """``fused_in_lazy`` shipped in 2.0.0 and has no effect: setting it warns."""
     from braindecode.functional import scaled_dot_product_attention
 
-    qkv = torch.randn(2, 5, 3, 4, 8).permute(2, 0, 3, 1, 4)  # heads split off
-    mask = torch.arange(5) < torch.tensor([5, 3])[:, None, None, None]
-    for kwargs in ({}, {"attn_mask": mask}, {"dropout_p": 0.3}):
-        outs = []
-        for fused_in_lazy in (False, True):
-            torch.manual_seed(0)
-            outs.append(
-                scaled_dot_product_attention(
-                    *qkv.unbind(0), fused_in_lazy=fused_in_lazy, **kwargs
-                )
-            )
-        assert torch.equal(outs[0], outs[1])
+    q = torch.randn(1, 2, 3, 4)
+    with catch_warnings():
+        simplefilter("error")  # the default stays silent
+        expected = scaled_dot_product_attention(q, q, q)
+    for fused_in_lazy in (False, True):
+        with pytest.warns(FutureWarning, match="removed in braindecode 2.2"):
+            out = scaled_dot_product_attention(q, q, q, fused_in_lazy=fused_in_lazy)
+        assert torch.equal(out, expected)
+    compiled = torch.compile(
+        lambda t: scaled_dot_product_attention(t, t, t, fused_in_lazy=True),
+        backend="eager",
+        fullgraph=True,
+    )
+    assert torch.equal(compiled(q), expected)
 
 
 def test_patch_tokenizer():
@@ -2496,33 +2557,26 @@ def test_timm_attention_rotary_positions_restart_in_each_run():
     from braindecode.modules import TimmAttention
 
     torch.manual_seed(0)
-    plain = TimmAttention(16, num_heads=2)
-    runs = TimmAttention(16, num_heads=2, rotary_runs=2)
-    runs.load_state_dict(plain.state_dict())
-    one_run = TimmAttention(16, num_heads=2, rotary_runs=1)
-    one_run.load_state_dict(plain.state_dict())
+    attn = TimmAttention(16, num_heads=2, rotary_runs=2).eval()
     x = torch.randn(2, 6, 16)
-    q, k, _ = runs._heads(x)
-    q_first, k_first, _ = one_run._heads(x[:, :3])
-    q_second, k_second, _ = one_run._heads(x[:, 3:])
-    torch.testing.assert_close(q, torch.cat((q_first, q_second), dim=2))
-    torch.testing.assert_close(k, torch.cat((k_first, k_second), dim=2))
-    q_plain, _, _ = plain._heads(x)
-    torch.testing.assert_close(q[:, :, :1], q_plain[:, :, :1])  # position 0
-    assert not torch.allclose(q, q_plain)
+    # Two runs of three tokens: swapping the runs keeps every token's position,
+    # so the outputs swap with them
+    swap_runs = [3, 4, 5, 0, 1, 2]
+    torch.testing.assert_close(attn(x[:, swap_runs]), attn(x)[:, swap_runs])
+    # Reversing each run moves its tokens to other positions
+    reverse_runs = [2, 1, 0, 5, 4, 3]
+    assert not torch.allclose(attn(x[:, reverse_runs]), attn(x)[:, reverse_runs])
+    with pytest.raises(ValueError, match="divisible by rotary_runs"):
+        attn(x[:, :5])
     with pytest.raises(ValueError, match="even"):
         TimmAttention(12, num_heads=4, rotary_runs=1)
     with pytest.raises(ValueError, match="rotary_runs must be positive"):
         TimmAttention(16, rotary_runs=0)
-    with pytest.raises(ValueError, match="divisible by rotary_runs"):
-        runs(x[:, :5])
-
-    # Full-module checkpoints written before RoPE have no rotary_runs field.
-    logits, weights = plain(x), plain(x, need_weights=True)
+    # A v2.0.0 full-module pickle has no rotary_runs attribute
+    plain = TimmAttention(16, num_heads=2).eval()
+    expected = plain(x)
     del plain.rotary_runs
-    torch.testing.assert_close(plain(x), logits, rtol=0, atol=0)
-    torch.testing.assert_close(plain(x, need_weights=True), weights, rtol=0, atol=0)
-    torch.testing.assert_close(torch.jit.script(plain)(x), logits, rtol=0, atol=0)
+    torch.testing.assert_close(plain(x), expected, rtol=0, atol=0)
 
 
 def test_pre_norm_block_keys_and_forward():
@@ -2598,6 +2652,34 @@ def test_transformer_block_modules_match_their_layouts():
     assert torch.jit.script(post)(x).shape == x.shape
 
 
+def test_prenorm_transformer_block_takes_eps_drop_path_and_an_attention_mask():
+    from braindecode.modules import (
+        FeedForwardBlock,
+        MultiHeadAttention,
+        PreNormTransformerBlock,
+    )
+
+    def block(**kwargs):
+        attn, ffn = MultiHeadAttention(16, 4, 0.0), FeedForwardBlock(16, 2, 0.0)
+        return PreNormTransformerBlock(16, attn, ffn, 0.0, **kwargs)
+
+    torch.manual_seed(0)
+    x = torch.randn(2, 5, 16)
+    full = block(eps=1e-6, drop_path=0.5).eval()
+    assert list(full.state_dict()) == list(block().state_dict())  # same layout
+    assert full[0].fn[0].eps == full[1].fn[0].eps == 1e-6
+    # A key hidden by the mask is a key dropped: the other tokens do not see it.
+    mask = torch.ones(2, 1, 1, 5, dtype=torch.bool)
+    mask[..., -1] = False
+    torch.testing.assert_close(full.forward_masked(x, mask)[:, :4], full(x[:, :4]))
+    # forward stays the sequential call: a one-argument token mixer still scripts.
+    plain = PreNormTransformerBlock(16, nn.Identity(), FeedForwardBlock(16, 2, 0.0), 0.0)
+    torch.testing.assert_close(torch.jit.script(plain)(x), plain(x))
+    # Stochastic depth drops whole residual branches: with drop_path=1, x is left.
+    dropped = block(drop_path=1.0).train()
+    assert torch.equal(dropped(x), x) and torch.equal(dropped.forward_masked(x, mask), x)
+
+
 def test_squeeze_and_excitation_forward():
     module = SqueezeAndExcitation(in_channels=32, reduction_rate=4)
     inputs = torch.rand(2, 32, 1, 64)
@@ -2628,3 +2710,15 @@ def test_seanet_resblock_matches_encodec_padding(causal):
     conv = SEANetConv1d(4, 3, 4, 2, causal=True)
     expected = conv.conv(torch.nn.functional.pad(x, (2, 1), mode="reflect"))
     assert torch.equal(conv(x), expected)
+
+
+def test_iir_filter_bank_built_on_meta_device_runs_after_to_empty():
+    """A meta-device build (then ``to_empty``) keeps the IIR design: it is not a meta tensor."""
+    kwargs = dict(
+        n_chans=2, sfreq=128, band_filters=[(4, 8)], method="iir", verbose=False
+    )
+    x = torch.randn(1, 2, 256)
+    with torch.device("meta"):
+        layer = FilterBankLayer(**kwargs)
+    layer.to_empty(device="cpu")
+    torch.testing.assert_close(layer(x), FilterBankLayer(**kwargs)(x))

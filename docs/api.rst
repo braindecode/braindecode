@@ -369,6 +369,7 @@ constraints and pooling layers.
 
     AvgPool2dWithConv
     CausalConv1d
+    ChebyshevGraphConv
     CombinedConv
     Conv2dWithConstraint
     DepthwiseConv2d
@@ -471,6 +472,21 @@ codec models (BrainOmni, BBL).
     SEANetLSTM
     SEANetResBlock
 
+Spatial-temporal
+================
+
+The attention block that works over time with rotary positions on one half of the
+features and over the channels on the other, shared by BrainOmni and MEGXL.
+
+:py:mod:`braindecode.modules.spatial_temporal`:
+
+.. autosummary::
+    :toctree: generated/spatial_temporal
+    :template: class_in_subdir
+    :recursive:
+
+    SpatialTemporalBlock
+
 Stats
 =====
 
@@ -552,7 +568,6 @@ The functional module contains various functions that can be used like functiona
      glorot_weight_zero_bias
      hilbert_freq
      identity
-     linear_channel_map
      masked_group_norm
      masked_mean
      pack_channels
@@ -571,7 +586,6 @@ The functional module contains various functions that can be used like functiona
      scaled_dot_product_attention
      sinusoidal_positional_encoding
      spectral_input
-     spherical_spline_kernel
      square
      unpack_channels
 

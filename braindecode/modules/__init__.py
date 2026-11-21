@@ -33,6 +33,7 @@ from .channels import ChannelLayer, resolve_channel_positions
 from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
+    ChebyshevGraphConv,
     CombinedConv,
     Conv1dWithConstraint,
     Conv2dWithConstraint,
@@ -68,6 +69,7 @@ from .seanet import (
     SEANetLSTM,
     SEANetResBlock,
 )
+from .spatial_temporal import SpatialTemporalBlock
 from .stats import (
     LogPowerLayer,
     LogVarLayer,
@@ -113,6 +115,7 @@ __all__ = [
     "TDSConvEncoder",
     "AvgPool2dWithConv",
     "CausalConv1d",
+    "ChebyshevGraphConv",
     "CombinedConv",
     "Conv1dWithConstraint",
     "Conv2dWithConstraint",
@@ -146,6 +149,7 @@ __all__ = [
     "SEANetEncoder",
     "SEANetLSTM",
     "SEANetResBlock",
+    "SpatialTemporalBlock",
     "LogPowerLayer",
     "LogVarLayer",
     "MaxLayer",

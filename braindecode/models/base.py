@@ -21,7 +21,6 @@ from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from mne.utils import _soft_import
 from torchinfo import ModelStatistics, summary
 
-from braindecode.functional import check_ch_mask
 from braindecode.models.util import (
     _EEG_PARAMS,
     build_model_config,
@@ -30,11 +29,7 @@ from braindecode.models.util import (
     track_model_init_kwargs,
 )
 from braindecode.modules.channels import ChannelLayer
-from braindecode.modules.parametrization import (
-    MaxNorm,
-    MaxNormParametrize,
-    make_parametrizations_scriptable,
-)
+from braindecode.modules.parametrization import make_parametrizations_scriptable
 from braindecode.version import __version__
 
 huggingface_hub = _soft_import(
@@ -543,7 +538,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         ``chs_info``, default the model's) onto the target, then run the backbone."""
         # pad_channels_collate / set_return_ch_pos: pos and ch_mask describe the
         # input montage of each sample; the backbone gets the full target one.
-        # pos describes the input channels, never the backbone's mapped ones
         ch_mask, pos = kwargs.pop("ch_mask", None), kwargs.pop("pos", None)
         bound = inspect.signature(type(self).forward).bind_partial(
             self, *args, **kwargs
@@ -554,17 +548,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 "uses it to map each sample, the backbone never sees it."
             )
         if chs_info is None and pos is not None and ch_mask is not None:  # no names
-            mask = check_ch_mask(ch_mask, pos)
-            assert mask is not None
-            chs_info = [
-                [
-                    {"ch_name": f"E{i}", "kind": "eeg", "loc": np.r_[p, np.zeros(9)]}
-                    for i, p in enumerate(pb[mb])
-                ]
-                for pb, mb in zip(
-                    pos.detach().cpu().double().numpy(), mask.cpu().numpy()
-                )
-            ]
+            chs_info = self.channel_layer.montages(pos, ch_mask)
         elif ch_mask is not None and not (chs_info and isinstance(chs_info[0], list)):
             raise ValueError(
                 "ch_mask under a channel_strategy needs the montage of each sample: "
@@ -786,20 +770,29 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     @classmethod
     def _fill_legacy_defaults(cls, kwargs: dict) -> None:
-        """Rebuild configs saved before ``on_non_divisible`` existed as they were.
+        """Rebuild configs saved by earlier versions as they were.
 
         Models that used to crop a time axis not divisible by their patch size
         set ``_legacy_on_non_divisible = "crop"``. A saved config or checkpoint
         without the ``on_non_divisible`` key then loads with ``"crop"``, so its
         head and position tables keep their shapes; a new model defaults to
-        ``"pad"``.
+        ``"pad"``. A config saved while a model that reads its input natively
+        still took ``channel_strategy`` (2.1 development builds) loses its
+        ``"native"`` strategy keys.
         """
+        params = inspect.signature(cls.__init__).parameters
+        takes_any = any(p.kind is p.VAR_KEYWORD for p in params.values())
+        if not takes_any and "channel_strategy" not in params:
+            if kwargs.get("channel_strategy", "native") == "native" and not kwargs.get(
+                "channel_strategy_kwargs"
+            ):
+                kwargs.pop("channel_strategy", None)
+                kwargs.pop("channel_strategy_kwargs", None)
         legacy = getattr(cls, "_legacy_on_non_divisible", None)
         if legacy is None or "on_non_divisible" in kwargs:
             return
         # A subclass with its own signature may not take the argument.
-        params = inspect.signature(cls.__init__).parameters.values()
-        if any(p.name == "on_non_divisible" or p.kind is p.VAR_KEYWORD for p in params):
+        if takes_any or "on_non_divisible" in params:
             kwargs["on_non_divisible"] = legacy
 
     def _set_n_outputs(self, n_outputs: int) -> None:
@@ -921,48 +914,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     def load_state_dict(self, state_dict, *args, **kwargs):
         own = super().state_dict()
         new_state_dict = OrderedDict(state_dict)
+        # An old name never replaces a current one: strict loads report it.
+        for old, current in (self.mapping or {}).items():
+            if old in new_state_dict and current not in new_state_dict:
+                new_state_dict[current] = new_state_dict.pop(old)
+        # Keep the module versions saved in the checkpoint (BatchNorm's, for one).
         if hasattr(state_dict, "_metadata"):
             new_state_dict._metadata = state_dict._metadata
-
-        def rename(old, current):
-            if current not in new_state_dict:
-                new_state_dict[current] = new_state_dict.pop(old)
-                return
-            # Old modules registered under two names can save two views of
-            # exactly the same tensor in a raw PyTorch checkpoint.
-            previous, canonical = new_state_dict[old], new_state_dict[current]
-            if previous is canonical or (
-                isinstance(previous, torch.Tensor)
-                and isinstance(canonical, torch.Tensor)
-                and previous.layout == canonical.layout == torch.strided
-                and previous.device == canonical.device
-                and not previous.is_meta
-                and previous.dtype == canonical.dtype
-                and not torch.nn.parameter.is_lazy(previous)
-                and not torch.nn.parameter.is_lazy(canonical)
-                and previous.is_conj() == canonical.is_conj()
-                and previous.is_neg() == canonical.is_neg()
-                and previous.is_set_to(canonical)
-            ):
-                del new_state_dict[old]
-
-        for old, current in (self.mapping or {}).items():
-            if old in state_dict and old != current:
-                rename(old, current)
-        # Older max-norm layers saved their weight directly. Leave conflicting
-        # aliases in the dictionary so PyTorch reports them as unexpected.
-        for key in new_state_dict.keys() - own.keys():
-            module, _, name = key.rpartition(".")
-            if name != "weight":
-                continue
-            original = key.removesuffix("weight") + "parametrizations.weight.original"
-            if original not in own:
-                continue
-            transforms = self.get_submodule(module).parametrizations.weight
-            if len(transforms) == 1 and isinstance(
-                transforms[0], (MaxNorm, MaxNormParametrize)
-            ):
-                rename(key, original)
         # A backbone checkpoint has no weights for a trainable channel layer.
         # Load hooks may expand tensors with locally initialized values. Only
         # attribute whole tensors whose checkpoint shape already matches.
@@ -1193,7 +1151,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         """Serialize MNE channel info (``info["chs"]``) to JSON-compatible dicts."""
         if chs_info is None:
             return None
-        _INT_FIELDS = ("kind", "coil_type", "unit")
+        _INT_FIELDS = ("kind", "coil_type", "unit", "coord_frame")
         _FLOAT_FIELDS = ("cal", "range")
         serialized = []
         for ch in chs_info:
@@ -1249,13 +1207,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         config = build_model_config(self)
         config["braindecode_version"] = __version__
-        if callable(getattr(getattr(self, "channel_layer", None), "strategy", None)):
-            warnings.warn(
-                "The function channel_strategy is not saved: pass it again to "
-                "from_pretrained(..., channel_strategy=...).",
-                UserWarning,
-                stacklevel=2,
-            )
 
         # Save to config.json
         config_path = save_directory / "config.json"
@@ -1270,7 +1221,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         try:
             super()._save_pretrained(save_directory)
         except (ImportError, RuntimeError) as e:
-            # Fallback to pytorch_model.bin if safetensors saving fails
+            # Fall back to pytorch_model.bin, and drop the model.safetensors of a
+            # previous save, which would be loaded in its place.
+            (save_directory / "model.safetensors").unlink(missing_ok=True)
             warnings.warn(
                 f"Could not save model in safetensors format: {e}. "
                 "Model weights saved in pytorch_model.bin instead.",
@@ -1312,7 +1265,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 kwargs.setdefault("n_chans", len(kwargs["chs_info"]))
             elif "n_chans" in kwargs:
                 kwargs.setdefault("chs_info", None)
-            if "n_times" in kwargs or "sfreq" in kwargs:
+            if "input_window_seconds" in kwargs:
+                # Keep a new duration from clashing with the saved n_times (or the
+                # saved sfreq, when the caller gives n_times); _from_pretrained
+                # completes the window from what the save holds.
+                kwargs.setdefault("sfreq" if "n_times" in kwargs else "n_times", None)
+            elif "n_times" in kwargs or "sfreq" in kwargs:
                 kwargs.setdefault("input_window_seconds", None)
             token = _RECORD_LOADED_KEYS.set(True)
             try:
@@ -1322,14 +1280,27 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             if isinstance(model, torch.nn.Module):
                 provenance = model.__dict__.setdefault("_pretrained_provenance", {})
                 provenance.update(_checkpoint_source(*args, **kwargs))
-                params = {
-                    name for name, _ in model.named_parameters(remove_duplicate=False)
-                }
-                if params and not params & (provenance.get("loaded") or set()):
+                params = list(model.named_parameters(remove_duplicate=False))
+                loaded = provenance.get("loaded") or set()
+                # Tied parameters may be saved under only one of their names.
+                loaded_ids = {id(p) for n, p in params if n in loaded}
+                # A new head is initialised here: only the rest must load.
+                body = [n for n, _ in params if not n.startswith("final_layer.")]
+                unloaded = [
+                    n
+                    for n, p in params
+                    if id(p) not in loaded_ids and not n.startswith("final_layer.")
+                ]
+                # Most of the body unloaded: the checkpoint is in another format.
+                # A few fresh layers (Labram's fc_norm, CORTEG's channel_adapter)
+                # are by design and stay silent.
+                if 2 * len(unloaded) > len(body):
+                    more = ", ..." if len(unloaded) > 10 else ""
                     warnings.warn(
-                        f"no parameter of {cls.__name__} was loaded from "
-                        f"{provenance['repo_id']}; the checkpoint keys do not "
-                        "match the model",
+                        f"{len(unloaded)} of {len(params)} parameters of "
+                        f"{cls.__name__} were not loaded from "
+                        f"{provenance['repo_id']} (the checkpoint keys do not "
+                        f"match the model): {', '.join(unloaded[:10])}{more}",
                         UserWarning,
                         stacklevel=2,
                     )
@@ -1376,12 +1347,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             cls._fill_legacy_defaults(model_kwargs)
             resolve_type_kwargs(cls, model_kwargs)
 
-            # Read saved n_outputs from config.json to detect when the
-            # user wants a different number of outputs.  Works for both
-            # local directories and Hub repo IDs.
-            saved_n_outputs = None
+            # config.json gives n_outputs (to detect a head swap) and the saved
+            # time geometry, for local directories and Hub repo IDs alike.
+            is_local = Path(model_id).is_dir()
+            saved_config = {}
             try:
-                if Path(model_id).is_dir():
+                if is_local:
                     config_file = Path(model_id) / "config.json"
                 else:
                     config_file = huggingface_hub.hf_hub_download(
@@ -1394,10 +1365,27 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                         local_files_only=local_files_only,
                     )
                 with open(config_file, "r") as f:
-                    saved_n_outputs = json.load(f).get("n_outputs")
+                    saved_config = json.load(f)
             except (OSError, json.JSONDecodeError, KeyError):
-                pass  # config unavailable; skip reset_head logic
+                pass  # config unavailable: keep the caller's geometry and head
 
+            # A save spells its window with any two of these three quantities.
+            # When only one is known, complete the pair from the save, preferring
+            # its sample count.
+            time_keys = ("n_times", "sfreq", "input_window_seconds")
+            if sum(model_kwargs.get(k) is not None for k in time_keys) == 1:
+                samples, rate, duration = (saved_config.get(k) for k in time_keys)
+                if duration:
+                    if samples is None and rate is not None:
+                        samples = round(duration * rate)
+                    elif rate is None and samples is not None:
+                        rate = samples / duration
+                for key, value in zip(time_keys, (samples, rate, duration)):
+                    if model_kwargs.get(key) is None and value is not None:
+                        model_kwargs[key] = value
+                        break
+
+            saved_n_outputs = saved_config.get("n_outputs")
             requested_n_outputs = model_kwargs.get("n_outputs")
 
             # If the user requests different n_outputs, load with the
@@ -1409,11 +1397,17 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             ):
                 model_kwargs["n_outputs"] = saved_n_outputs
 
+            # The parent loads only model.safetensors from a local directory; use
+            # the pytorch_model.bin that save_pretrained writes when there is none.
+            if filename is None and is_local:
+                preferred = _local_weights_path(model_id, "model.safetensors")
+                if (
+                    not preferred.exists()
+                    and (Path(model_id) / "pytorch_model.bin").is_file()
+                ):
+                    filename = "pytorch_model.bin"
+
             if filename is None:
-                # The parent selects only safetensors for local directories;
-                # its legacy pickle fallback is remote-only.
-                if Path(model_id).is_dir():
-                    _local_weights_path(model_id, "model.safetensors")
                 model = super()._from_pretrained(  # type: ignore
                     model_id=model_id,
                     revision=revision,
@@ -1434,7 +1428,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                     for key in ("proxies", "resume_download")
                     if key in model_kwargs
                 }
-                if Path(model_id).is_dir():
+                if is_local:
                     model_file = str(_local_weights_path(model_id, filename))
                 else:
                     model_file = huggingface_hub.hf_hub_download(
@@ -1447,9 +1441,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                         local_files_only=local_files_only,
                         **download_kwargs,
                     )
-                model = cls._load_as_safetensor(
-                    cls(**model_kwargs), model_file, map_location, strict
-                )
+                # save_pretrained falls back to a pickle when safetensors fails.
+                is_pickle = is_local and filename == "pytorch_model.bin"
+                load = cls._load_as_pickle if is_pickle else cls._load_as_safetensor
+                model = load(cls(**model_kwargs), model_file, map_location, strict)
 
             if (
                 saved_n_outputs is not None

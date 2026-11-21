@@ -21,16 +21,28 @@ try:
 
     _loc_type = NDArray[Shape["12"], np.float64]
 except ImportError:
-    _loc_type = np.ndarray  # type: ignore[misc]
+    # Without numpydantic, loc (12,) is a plain ndarray written to JSON as floats
+    _loc_type = Annotated[
+        np.ndarray,
+        pydantic.PlainSerializer(
+            np.ndarray.tolist, return_type=list[float], when_used="json"
+        ),
+    ]
+
+
+def _loc_from_json(loc):
+    # JSON list (null for MNE's NaN entries) -> float64 array: loc (12,)
+    return np.asarray(loc, dtype=np.float64) if isinstance(loc, list) else loc
 
 
 class ChsInfoType(TypedDict, total=False, closed=True):  # type: ignore[call-arg]
     cal: float
     ch_name: str
+    ch_type: str
     coil_type: int
     coord_frame: int
-    kind: str
-    loc: _loc_type  # type: ignore[valid-type,misc]
+    kind: str | int
+    loc: Annotated[_loc_type, pydantic.BeforeValidator(_loc_from_json)]  # type: ignore[valid-type,misc]
     logno: int
     range: float
     scanno: int

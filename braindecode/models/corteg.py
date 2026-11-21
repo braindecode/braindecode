@@ -17,14 +17,18 @@ from torch.nn import functional as F
 from braindecode.functional import check_ch_mask, masked_mean
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.steegformer import (
-    _channel_order,
+    STEEGFORMER_CHANNEL_ORDER,
     _ChannelPositionalEmbed,
     _init_weights,
     _TemporalPositionalEncoding,
-    _TransformerEncoderBlock,
 )
 from braindecode.models.util import chs_info_positions
-from braindecode.modules import PatchTokenizer
+from braindecode.modules import (
+    FeedForwardBlock,
+    MultiHeadAttention,
+    PatchTokenizer,
+    PreNormTransformerBlock,
+)
 from braindecode.util import resolve_montage_name
 
 
@@ -36,7 +40,7 @@ def _vocab_positions() -> torch.Tensor:
     """
     montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
     ch_pos = montage.get_positions()["ch_pos"]
-    positions = np.stack([ch_pos[name] for name in _channel_order()])
+    positions = np.stack([ch_pos[name] for name in STEEGFORMER_CHANNEL_ORDER])
     return torch.as_tensor(positions, dtype=torch.float32)
 
 
@@ -125,6 +129,11 @@ class CORTEG(EEGModuleMixin, nn.Module):
             chs_info=chs_info,
         )
 
+    A bare :class:`~braindecode.models.STEEGFormer` checkpoint, such as
+    ``braindecode/STEEGFormer-small``, has no high-gamma embedding. Loading it
+    derives that embedding from the loaded low-frequency one, and so overwrites
+    a trained high-gamma embedding.
+
     The authors' Stanford model (finger flexion, nine patients pooled) is
     re-hosted with its LoRA factors folded in::
 
@@ -180,14 +189,6 @@ class CORTEG(EEGModuleMixin, nn.Module):
     on_non_divisible : {"pad", "crop", "error"}
         How a stream whose length is not a multiple of its patch size is
         handled (right zero-pad, crop, or raise); the reference crops.
-    channel_strategy : str, default="native"
-        Only ``"native"``: ``forward`` takes a second per-channel stream,
-        ``x_hi``, that the channel layer would not map. CORTEG places any
-        montage by its electrode positions (``chs_info`` or ``pos``), and
-        ``ch_mask`` pads recordings of different sizes in one batch. Any other
-        value raises a ``ValueError``.
-    channel_strategy_kwargs : dict or None, default=None
-        Must be ``None``.
 
     References
     ----------
@@ -226,17 +227,7 @@ class CORTEG(EEGModuleMixin, nn.Module):
         fourier_max_freq: float = 50.0,
         gate_bottleneck: int = 16,
         on_non_divisible: str = "pad",
-        channel_strategy: str = "native",
-        channel_strategy_kwargs: dict | None = None,
     ):
-        if channel_strategy != "native" or channel_strategy_kwargs:
-            raise ValueError(
-                f"{type(self).__name__}.forward takes a second per-channel stream, "
-                "x_hi, that the channel layer would not map: only "
-                "channel_strategy='native' is supported. CORTEG places any montage by "
-                "its electrode positions (chs_info or pos), and ch_mask pads "
-                "recordings of different sizes in one batch."
-            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -294,8 +285,18 @@ class CORTEG(EEGModuleMixin, nn.Module):
         dpr = torch.linspace(0, drop_path, depth).tolist()
         self.encoder = nn.Sequential(
             *[
-                _TransformerEncoderBlock(
-                    embed_dim, num_heads, drop_prob, int(mlp_ratio), dpr[i], activation
+                PreNormTransformerBlock(
+                    embed_dim,
+                    MultiHeadAttention(embed_dim, num_heads, drop_prob),
+                    FeedForwardBlock(
+                        embed_dim,
+                        expansion=int(mlp_ratio),
+                        drop_p=drop_prob,
+                        activation=activation,
+                    ),
+                    drop_prob,
+                    eps=1e-6,
+                    drop_path=dpr[i],
                 )
                 for i in range(depth)
             ]
@@ -328,24 +329,50 @@ class CORTEG(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
 
         self._init_parameters()
+        # Loading a bare ST-EEGFormer checkpoint warm-starts the high-gamma embedding.
+        self.register_load_state_dict_post_hook(self._warm_start_high_gamma)
 
     def _init_parameters(self) -> None:
         """Model-specific initialization (see ``reset_parameters``)."""
         for module in (self.patch_embed, self.encoder, self.norm, self.final_layer):
             module.apply(_init_weights)
         nn.init.normal_(self.cls_token, std=0.02)
-        with torch.no_grad():
-            lo, hi = self.patch_embed.proj, self.patch_embed_hi.proj
-            assert lo is not None and hi is not None
-            size = self.patch_embed_hi.patch_size
-            hi.weight.copy_(F.interpolate(lo.weight[None], size=size, mode="linear")[0])
-            hi.bias.copy_(lo.bias)
+        self._init_high_gamma_from_low()
         prior = None
         if self.default_pos is not None:
             prior = _knn_log_prior(self.default_pos, self.vocab_positions, self.knn_k)
         self.channel_adapter.init_parameters(prior)
         if self.layerwise_gate is not None:
             self.layerwise_gate.init_parameters()
+
+    @torch.no_grad()
+    def _init_high_gamma_from_low(self):
+        """Set the high-gamma patch embedding from the low-frequency one.
+
+        The kernel ``patch_embed.proj.weight``, ``(embed_dim, patch_size)``, is
+        resized along its patch axis to ``(embed_dim, hi_patch_size)``; the bias,
+        ``(embed_dim,)``, is copied.
+        """
+        lo, hi = self.patch_embed.proj, self.patch_embed_hi.proj
+        # Linear resize of the kernel viewed as one (embed_dim, patch_size) signal:
+        # (1, embed_dim, patch_size) -> (1, embed_dim, hi_patch_size).
+        resized = F.interpolate(lo.weight[None], size=hi.in_features, mode="linear")
+        hi.weight.copy_(resized[0])
+        hi.bias.copy_(lo.bias)
+
+    def _warm_start_high_gamma(self, _module, incompatible_keys):
+        """Post-load hook: warm-start the high-gamma embedding a checkpoint lacks.
+
+        A bare ST-EEGFormer checkpoint loads ``patch_embed`` but has no
+        ``patch_embed_hi``, which torch reports as missing; a CORTEG checkpoint
+        has both and keeps its own.
+        """
+        missing = incompatible_keys.missing_keys
+        if (
+            "patch_embed_hi.proj.weight" in missing
+            and "patch_embed.proj.weight" not in missing
+        ):
+            self._init_high_gamma_from_low()
 
     def reset_head(self, n_outputs):
         """Replace the linear head for a new ``n_outputs``."""
@@ -452,7 +479,8 @@ class CORTEG(EEGModuleMixin, nn.Module):
             if hi is not None and gates is None and i == self.merge_at:
                 # "average" fusion: the CLS token is kept, the others averaged.
                 z = torch.cat([z[:, :1], 0.5 * (z[:, 1:] + hi)], dim=1)  # (B, 1 + N, D)
-            z = block(z, attn_mask)  # (B, 1 + N, D)
+            # (B, 1 + N, D); padded channels are keys no token attends to
+            z = block(z) if attn_mask is None else block.forward_masked(z, attn_mask)
             if hi is not None and gates is not None:
                 # "layerwise_gate" fusion: hi added after each block, not to CLS;
                 # (B, 1 + N, D)

@@ -10,6 +10,7 @@ import warnings
 from collections.abc import Callable as CallableABC
 from copy import deepcopy
 from functools import lru_cache, wraps
+from importlib.resources import files
 from pathlib import Path
 from types import SimpleNamespace
 from typing import (
@@ -180,7 +181,20 @@ def track_model_init_kwargs(cls) -> None:
 
     @wraps(init)
     def wrapped(self, *args, **kwargs):
-        bound = init_signature.bind(self, *args, **kwargs)
+        # Reached through super(): the subclass already captured its own kwargs,
+        # and this parent sees only the ones the subclass forwards.
+        if type(self).__init__ is not wrapped:
+            return init(self, *args, **kwargs)
+        try:
+            bound = init_signature.bind(self, *args, **kwargs)
+        except TypeError as error:
+            name = type(self).__name__
+            if "channel_strategy" in kwargs:
+                raise TypeError(
+                    f"{name} takes no channel_strategy: it reads its input "
+                    "natively (see the channel strategies page of the user guide)."
+                ) from None
+            raise TypeError(f"{name}: {error}") from None
         bound.apply_defaults()
 
         captured_kwargs = {}
@@ -536,10 +550,7 @@ def _fnirs_chs_info(n_pairs: int, interleaved: bool = False) -> list[dict]:
     return chs
 
 
-# The published BaRISTA example starts at the 85th float64 draw from PCG64(12):
-# the first 84 draws (3 * 12 + 4 * 12) went to fixtures that no longer exist,
-# and skipping them keeps the BaRISTA locations unchanged.
-_barista_rng = np.random.Generator(np.random.PCG64(12).advance(84))
+_barista_rng = np.random.default_rng(12)
 
 # Braindecode exports these ordered triples. Config generation reads the name
 # and required signal arguments. The third field supplies example constructor
@@ -934,22 +945,12 @@ models_mandatory_parameters: list[
 
 
 def get_summary_table(dir_name=None):
-    if dir_name is None:
-        dir_path = Path(__file__).parent
-    else:
-        dir_path = Path(dir_name) if not isinstance(dir_name, Path) else dir_name
-
-    path = dir_path / "summary.csv"
-
     import pandas as pd
 
-    df = pd.read_csv(
-        path,
-        header=0,
-        index_col="Model",
-        skipinitialspace=True,
-    )
-    return df
+    # Package data rather than a file path, so a zip archive works too.
+    root = files(__package__) if dir_name is None else Path(dir_name)
+    with root.joinpath("summary.csv").open("rb") as table:
+        return pd.read_csv(table, index_col="Model", skipinitialspace=True)
 
 
 def extract_channel_locations_from_chs_info(
@@ -1430,3 +1431,71 @@ def fnirs_split_hbo_hbr(
         n_pairs = x.shape[1] // 2
         return x[:, :n_pairs], x[:, n_pairs:]
     raise ValueError("channel_order must be 'stacked' or 'interleaved'.")
+
+
+_SENSOR_CODE = {"eeg": 0, "mag": 1, "grad": 2}
+# FIFF coil names by value, so plain-int coil types (serialized chs_info) resolve.
+_COIL_NAMES = {
+    int(value): name for name, value in FIFF.items() if name.startswith("FIFFV_COIL_")
+}
+
+
+def _coil_name(ch) -> str:
+    return _COIL_NAMES.get(int(ch.get("coil_type", 0)), "")
+
+
+def sensor_type_of(chs_info, index: int) -> str:
+    """EEG, MAG or GRAD as released: an MEG coil is MAG iff its name has "MAG".
+
+    So CTF/KIT axial gradiometers are GRAD although MNE types them ``mag``.
+    """
+    ch = chs_info[index]
+    kind = ch.get("kind")
+    if kind is not None and not isinstance(kind, str):
+        if int(kind) == FIFF.FIFFV_EEG_CH:
+            return "eeg"
+        if int(kind) == FIFF.FIFFV_MEG_CH and "coil_type" in ch:
+            return "mag" if "MAG" in _coil_name(ch) else "grad"
+        return mne.channel_type({"chs": chs_info}, index)
+    resolved_type = ch.get("ch_type", kind)
+    if resolved_type is None:
+        resolved_type = mne.channel_type({"chs": chs_info}, index)
+    return str(resolved_type).lower()
+
+
+def geometry_from_chs_info(chs_info):
+    """``(pos (n_chans, 6) float32, sensor_type (n_chans,) int64)``, as released.
+
+    Positions are centred and scaled per modality (EEG, MEG); the orientation
+    is the coil x-axis for planar gradiometers, the coil normal for other MEG
+    coils and zero for EEG.
+    """
+    types = [sensor_type_of(chs_info, index) for index in range(len(chs_info))]
+    xyz = extract_channel_locations_from_chs_info(chs_info)
+    if xyz is None or len(xyz) != len(chs_info) or not np.isfinite(xyz).all():
+        raise ValueError(
+            "chs_info lacks finite sensor positions; call raw.set_montage(...)."
+        )
+    unsupported = set(types) - set(_SENSOR_CODE)
+    if unsupported:
+        raise ValueError(
+            f"Unsupported channel type(s) {sorted(unsupported)}; pass only EEG/MEG."
+        )
+    sensor_type = np.array([_SENSOR_CODE[t] for t in types], dtype=np.int64)
+
+    ori = np.zeros((len(chs_info), 3))
+    for index in np.flatnonzero(sensor_type > 0):
+        planar = "PLANAR" in _coil_name(chs_info[index])
+        axis = np.asarray(chs_info[index]["loc"], dtype=np.float64)
+        axis = axis[3:6] if sensor_type[index] == 2 and planar else axis[9:12]
+        if axis.shape != (3,) or not np.isfinite(axis).all():
+            raise ValueError("chs_info lacks a finite MEG coil orientation.")
+        ori[index] = axis
+
+    pos = np.concatenate([xyz, ori], axis=1).astype(np.float32)
+    for mask in (sensor_type == 0, sensor_type > 0):
+        if mask.any():
+            centred = pos[mask, :3] - pos[mask, :3].mean(axis=0, keepdims=True)
+            scale = np.sqrt(3 * np.mean(np.sum(centred**2, axis=1)))
+            pos[mask, :3] = centred / (scale if scale > 0 else 1.0)
+    return pos, sensor_type

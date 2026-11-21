@@ -254,10 +254,7 @@ class BENDR(EEGModuleMixin, nn.Module):
         ``4 * product(enc_downsample)`` samples (384 with default downsampling of 96x).
     """
 
-    _channel_target = [
-        *BENDR_CHANNEL_ORDER[:-1],
-        {"ch_name": "SCALE", "kind": "misc"},
-    ]
+    _channel_target = BENDR_CHANNEL_ORDER
 
     def __init__(
         self,
@@ -373,13 +370,7 @@ class BENDR(EEGModuleMixin, nn.Module):
     def forward(
         self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
-        check_n_chans(
-            x,
-            self.n_chans,
-            "BENDR",
-            "build the model with the chs_info of this montage, or use a "
-            "channel_strategy.",
-        )
+        check_n_chans(x, self.n_chans, "BENDR")
         if self.channel_tokenizer is not None:
             x = self.channel_tokenizer(x)[0]
         encoded = self.encoder(x)

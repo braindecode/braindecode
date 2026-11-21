@@ -10,13 +10,11 @@ Test for samplers.
 
 import bisect
 import platform
-from datetime import timedelta
 
 import mne
 import numpy as np
 import pandas as pd
 import pytest
-import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.utils.data.distributed import DistributedSampler
@@ -294,29 +292,23 @@ def test_distributed_relative_positioning_sampler(windows_ds, same_rec_neg, tmp_
     )
 
 
-def _check_pair_budget(rank, rendezvous):
-    dist.init_process_group(
-        "gloo",
-        init_method=rendezvous,
-        rank=rank,
-        world_size=2,
-        timeout=timedelta(seconds=60),
+def test_distributed_relative_positioning_pair_budget():
+    data = pd.DataFrame(
+        {
+            "i_dataset": np.repeat(np.arange(3), 8),
+            "i_start_in_trial": np.tile(np.arange(8), 3),
+        }
     )
-    try:
-        data = pd.DataFrame(
-            {
-                "i_dataset": np.repeat(np.arange(3), 8),
-                "i_start_in_trial": np.tile(np.arange(8), 3),
-            }
-        )
-        for requested, drop_last, per_rank in [
-            (60, False, 30),
-            (60, True, 30),
-            (61, False, 31),
-            (61, True, 30),
-            (1, False, 1),
-            (1, True, 0),
-        ]:
+    for requested, drop_last, per_rank in [
+        (60, False, 30),
+        (60, True, 30),
+        (61, False, 31),
+        (61, True, 30),
+        (1, False, 1),
+        (1, True, 0),
+    ]:
+        counts = []
+        for rank in range(2):
             sampler = DistributedRelativePositioningSampler(
                 data,
                 tau_pos=2,
@@ -324,25 +316,13 @@ def _check_pair_budget(rank, rendezvous):
                 n_examples=requested,
                 drop_last=drop_last,
                 random_state=33,
+                rank=rank,
+                num_replicas=2,
             )
-            count = sum(1 for pair in sampler)
-            assert count == len(sampler)
-            total = torch.tensor(count)
-            dist.all_reduce(total)
-            assert total.item() == 2 * per_rank
-            assert count == per_rank
-    finally:
-        dist.destroy_process_group()
-
-
-@pytest.mark.skipif(not dist.is_gloo_available(), reason="Gloo unavailable")
-def test_distributed_relative_positioning_pair_budget(tmp_path):
-    mp.spawn(
-        _check_pair_budget,
-        args=((tmp_path / "rendezvous").as_uri(),),
-        nprocs=2,
-        join=True,
-    )
+            counts.append(sum(1 for pair in sampler))
+            assert counts[-1] == len(sampler)
+        # Every rank yields the same number of pairs, 2 * per_rank in all.
+        assert counts == [per_rank, per_rank]
 
 
 @pytest.mark.parametrize("same_rec_neg", [True, False])
