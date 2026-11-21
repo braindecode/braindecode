@@ -1415,7 +1415,7 @@ def test_model_creation(model):
     ],
 )
 def test_atcnet_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 2
+    batch_size = 3  # not 2 = n_outputs, so a (n_outputs, batch) output fails
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -1440,7 +1440,7 @@ def test_atcnet_dummy(n_times, n_chans, sfreq, n_outputs):
     ],
 )
 def test_tsception_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 2
+    batch_size = 3  # not 2 = n_outputs, so a (n_outputs, batch) output fails
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -1488,7 +1488,7 @@ def test_tmsanet_released_configurations(
     ],
 )
 def test_sccnet_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 2
+    batch_size = 3  # not 2 = n_outputs, so a (n_outputs, batch) output fails
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -1529,7 +1529,7 @@ def test_sccnet_dummy(n_times, n_chans, sfreq, n_outputs):
     ],
 )
 def test_contrawr_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 2
+    batch_size = 5  # no case has 5 outputs, so a (n_outputs, batch) output fails
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -1786,7 +1786,7 @@ def test_gcnsnet_state_dict_round_trip():
     ],
 )
 def test_biot_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 2
+    batch_size = 3  # not 2 = n_outputs, so a (n_outputs, batch) output fails
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
@@ -1811,7 +1811,7 @@ def test_biot_dummy(n_times, n_chans, sfreq, n_outputs):
     ],
 )
 def test_attentionbasenet_dummy(n_times, n_chans, sfreq, n_outputs):
-    batch_size = 2
+    batch_size = 3  # not 2 = n_outputs, so a (n_outputs, batch) output fails
     input_sizes = dict(
         n_channels=n_chans,
         n_in_times=n_times,
