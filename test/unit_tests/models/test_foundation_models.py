@@ -2281,7 +2281,7 @@ def test_pratibha2_pretrained_matches_the_release():
     chs_info = [{"ch_name": n} for n in ("Fp1", "Cz", "O2", "AFZ")]
     model = Pratibha2.from_pretrained(
         "braindecode/pratibha2-pretrained",
-        revision="dea9139fb70046c8e3d04e1e7c8acb7e81822afe",
+        revision="REHOST_PENDING",  # pin after re-host
         chs_info=chs_info,
         n_outputs=2,
         n_times=400,
@@ -2324,7 +2324,7 @@ def test_pratibha2_positions():
         (bank["C3"] + bank["C4"]) / 2,
     ]
     expected = 100 * torch.tensor(np.array(expected), dtype=torch.float32)
-    torch.testing.assert_close(model.encoder.channel_positions, expected)
+    torch.testing.assert_close(model.channel_positions, expected)
 
 
 def test_pratibha2_is_montage_agnostic():
@@ -2332,8 +2332,8 @@ def test_pratibha2_is_montage_agnostic():
     channels and any unit."""
     model = _pratibha2_model()
     state = model.state_dict()
-    assert "encoder.channel_positions" not in state
-    assert "encoder.pos_enc.freq_matrix" not in state
+    assert "channel_positions" not in state
+    assert "pos_enc.freq_matrix" not in state
     other = _pratibha2_model(["C3", "Cz", "C4", "FC3", "CP4"])
     other.load_state_dict(state, strict=True)
     perm = torch.randperm(len(_PRATIBHA2_NAMES))
@@ -2382,8 +2382,8 @@ def test_pratibha2_short_window_from_seconds_raises():
 
 def test_pratibha2_autocast_preserves_fourier_features():
     model = _pratibha2_model(["Cz"])
-    pos_enc = model.encoder.pos_enc
-    xyz = model.encoder.channel_positions.expand(3, -1)
+    pos_enc = model.pos_enc
+    xyz = model.channel_positions.expand(3, -1)
     coords = torch.cat((xyz, torch.tensor([[0.0], [4.0], [80.0]])), dim=1)
     features = []
     handle = pos_enc.fourier_linear.register_forward_pre_hook(
