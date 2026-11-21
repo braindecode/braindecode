@@ -250,6 +250,11 @@ Requirements
 Bug fixes
 ==========
 
+- Documentation: list all pre-trained models under ``braindecode[hub]`` in the API
+  reference, deduplicate the DataTables assets and apply an accessible light/dark
+  category palette on the models summary table, drop the render-blocking Google Fonts
+  ``@import`` from ``style.css``, and strip unreferenced ``<clipPath>`` definitions
+  from the logo SVGs (by `Bruno Aristimunha`_).
 - :func:`braindecode.preprocessing.create_windows_from_events` rounds event durations to
   samples instead of truncating them, so trials, and windows inferred from them, can be
   one sample longer (:gh:`1727` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).

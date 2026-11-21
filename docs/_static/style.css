@@ -1,15 +1,17 @@
-@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap");
-
 :root {
-    --text-align: justify;
+    --text-align: left;
     --pst-font-size-base: 16px;
     --pst-font-size-milli: 13px;
-    --pst-font-family-base: 'Source Sans Pro', var(--pst-font-family-base-system);
-    --pst-font-family-heading: var(--pst-font-family-base);
-    --pst-font-family-monospace: 'Source Code Pro', var(--pst-font-family-monospace-system);
+    --pst-font-family-base: "Inter", "Source Sans Pro", var(--pst-font-family-base-system);
+    --pst-font-family-heading: "Fraunces", "Inter", var(--pst-font-family-base-system);
+    --pst-font-family-monospace: "JetBrains Mono", "Source Code Pro", var(--pst-font-family-monospace-system);
 }
 .bd-content p,
-.bd-content li { text-align: justify; }
+.bd-content li {
+    text-align: left;
+    text-wrap: pretty;
+    line-height: 1.65;
+}
 
 html[data-theme="light"] {
     --braindecode-color-github: #000;
@@ -298,47 +300,18 @@ figure.unavailable::after {
 .bd-sidebar nav .nav-link.active,
 .bd-sidebar nav .active > .nav-link { border-left-width: 2px; }
 
-/* ********************************************************** Homepage Hero */
-
-.braindecode-hero {
-    text-align: center;
-    margin: 0 0 1.25rem;
-}
-
-.braindecode-hero__title {
-    display: block;
-    text-align: center;
-    font-family: "Montserrat", var(--pst-font-family-base, system-ui), sans-serif;
-    font-weight: 800;
-    font-size: clamp(3.6rem, 9vw, 5.9rem);
-    line-height: 1.08;
-    margin: 0 0 .85rem;
-    color: var(--pst-color-text, #111827);
-    letter-spacing: .01em;
-}
-
-html[data-theme="light"] .braindecode-hero__title {
-    color: #3a6790ff;
-}
-
-html[data-theme="dark"] .braindecode-hero__title {
-    color: #3a6790ff;
-    text-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
-}
-
-.braindecode-hero img.logo.mainlogo {
-    display: block;
-    margin: 0 auto;
-    max-width: 500px;
-    width: 100%;
-}
-
 /* ********************************************************** Announcement banner */
 
 .bd-header-announcement {
-  background-color: #DAEBF1 !important;  /* Your chosen background */
-  color: #002B5C !important;            /* A strong contrasting text colour */
-  border-left: 5px solid #007CBA !important; /* A refined accent colour */
+  background-color: #eef3f8 !important;
+  color: #14181f !important;
+  border-left: 3px solid #3a6c97 !important;
+}
+
+html[data-theme="dark"] .bd-header-announcement {
+  background-color: #162130 !important;
+  color: #f1ece1 !important;
+  border-left-color: #3a6c97 !important;
 }
 
 .bd-header-announcement__content {
@@ -360,19 +333,28 @@ html[data-theme="dark"] .braindecode-hero__title {
 }
 
 .bd-header-announcement__content a.braindecode-announcement-cta {
-  background-color: #007CBA;
+  background-color: #2a527a;
   color: #ffffff !important;
   text-decoration: none;
   padding: 0.35rem 0.85rem;
   border-radius: 999px;
-  font-weight: 800;
-  box-shadow: 0 10px 22px rgba(0, 124, 186, 0.25);
-  transition: background-color 200ms ease, transform 200ms ease;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(42, 82, 122, 0.22);
+  transition: background-color 200ms ease;
 }
 
 .bd-header-announcement__content a.braindecode-announcement-cta:hover {
-  background-color: #005a8c;
-  transform: translateY(-1px);
+  background-color: #1e3d5c;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .bd-header-announcement__content a.braindecode-announcement-cta {
+    transition: background-color 200ms ease, transform 200ms ease;
+  }
+
+  .bd-header-announcement__content a.braindecode-announcement-cta:hover {
+    transform: translateY(-1px);
+  }
 }
 
 .braindecode-announcement-secondary {
