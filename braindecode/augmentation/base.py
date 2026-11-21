@@ -39,9 +39,6 @@ class Transform(torch.nn.Module):
 
     Parameters
     ----------
-    operation : callable
-        A function taking arrays X, y (inputs and targets resp.) and
-        other required arguments, and returning the transformed X and y.
     probability : float, optional
         Float between 0 and 1 defining the uniform probability of applying the
         operation. Set to 1.0 by default (e.g always apply the operation).
@@ -49,6 +46,13 @@ class Transform(torch.nn.Module):
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
+
+    Attributes
+    ----------
+    operation : callable
+        A function taking arrays X, y (inputs and targets resp.) and
+        other required arguments, and returning the transformed X and y.
+        Set by each subclass.
     """
 
     operation: Operation
