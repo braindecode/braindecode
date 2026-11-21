@@ -1000,12 +1000,38 @@ def test_caresleepnet_gives_one_prediction_per_epoch():
         (dict(n_epochs=0), "n_epochs must be at least 1"),
         (dict(n_times=901), "must be a positive multiple"),
         (dict(n_times=3 * 168), "at least 169 samples"),
+        (dict(encoder_strides=(12, 1, 1)), "one entry per stage"),
+        (dict(encoder_kernel_sizes=(48, 9, 9, 9)), "must be odd"),
     ],
 )
 def test_caresleepnet_rejects_bad_geometry(kwargs, match):
     params = dict(n_chans=3, n_outputs=5, n_times=900, n_epochs=3, n_eog_chans=1)
     with pytest.raises(ValueError, match=match):
         CareSleepNet(**(params | kwargs))
+
+
+def test_caresleepnet_runs_a_three_stage_encoder_at_its_shortest_epoch():
+    """A non-default epoch encoder, three stages, builds and runs on the shortest
+    epoch its strides and poolings leave one time step for (25 samples here). Its
+    two head counts differ: 8 heads divide the 24-wide fusion blocks, but not the
+    12-wide transformer layer, which takes 3."""
+    params = dict(
+        n_chans=3,
+        n_outputs=5,
+        n_epochs=3,
+        n_eog_chans=1,
+        n_heads=8,
+        encoder_widths=(8, 12, 24),
+        encoder_kernel_sizes=(9, 5, 5),
+        encoder_strides=(4, 1, 1),
+        encoder_pool_kernel_sizes=(3, 2, 2),
+        encoder_pool_strides=(2, 2, 2),
+        transformer_n_heads=3,
+    )
+    model = CareSleepNet(n_times=3 * 25, **params).eval()
+    assert model(torch.randn(2, 3, 75)).shape == (2, 5, 3)
+    with pytest.raises(ValueError, match="at least 25 samples"):
+        CareSleepNet(n_times=3 * 24, **params)
 
 
 def test_caresleepnet_matches_authors_code():

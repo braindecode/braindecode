@@ -11,6 +11,7 @@ from braindecode.models import TinyMyo
         {"num_heads": 0},
         {"embed_dim": 0},
         {"embed_dim": 14, "num_heads": 3},
+        {"n_chans": 5, "n_channel_slots": 4},
     ],
 )
 def test_tinymyo_requires_positive_geometry(kwargs):
