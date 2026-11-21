@@ -14,7 +14,6 @@ from torch import nn
 
 from braindecode.functional import check_n_chans
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.reve import _reve_position_bank
 from braindecode.models.util import warn_if_sfreq_differs
 from braindecode.modules import (
     FeedForwardBlock,
@@ -22,6 +21,7 @@ from braindecode.modules import (
     TimmAttention,
     resolve_channel_positions,
 )
+from braindecode.modules.channels import _reve_position_bank
 from braindecode.modules.layers import RMSNorm
 from braindecode.util import resolve_montage_name
 

@@ -51,14 +51,10 @@ from braindecode.models import (
 from braindecode.models.diver1 import _STCPE, channel_metadata_from_chs_info
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
-from braindecode.models.reve import (
-    Attention,
-    FourierEmb4D,
-    RevePositionBank,
-    _reve_position_bank,
-)
+from braindecode.models.reve import Attention, FourierEmb4D, RevePositionBank
 from braindecode.models.steegformer import STEEGFORMER_CHANNEL_ORDER
 from braindecode.modules import resolve_channel_positions
+from braindecode.modules.channels import _reve_position_bank
 from braindecode.util import resolve_montage_name
 
 _ORIGINAL_TORCH_CAT = torch.cat

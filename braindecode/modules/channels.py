@@ -26,6 +26,7 @@ from typing import cast
 import mne
 import numpy as np
 import torch
+from mne.channels import make_standard_montage
 from mne.io.constants import FIFF
 from scipy.cluster.vq import kmeans2
 from scipy.linalg import solve
@@ -691,3 +692,107 @@ class ChannelLayer(nn.Module):
             attn = logits.masked_fill(~self.lat_mask, float("-inf")).softmax(-1)
             out = out + self.lat_D @ (attn @ x)
         return out, self.observed
+
+
+@lru_cache(maxsize=1)
+def _reve_position_bank() -> dict[str, np.ndarray]:
+    """REVE's electrode positions (m) by name, rebuilt from MNE's montages.
+
+    The released bank (``brain-bzh/reve-positions``) holds MNE positions in the
+    montage frame: the 10-05 family and BioSemi-128, the EGI HydroCel-129 net
+    moved so that its vertex reference (``E129``) sits on 10-05 ``Cz``, and every
+    BioSemi-128 channel again under a ``biosemi128_`` prefix. The montages below
+    hold more names than the release; only those of ``_REVE_POSITION_NAMES`` are
+    kept, each at the position of the MNE name it equals ignoring case (the
+    first montage wins a clash).
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Release names, in the release's order and spellings, to ``(3,)`` positions.
+    """
+
+    def positions(kind):
+        return make_standard_montage(kind).get_positions()["ch_pos"]
+
+    groups = [
+        positions(kind)
+        for kind in (
+            "colin27_1005",
+            "colin27_1020",
+            "colin27_postfixed",
+            "colin27_primed",
+            "biosemi128",
+        )
+    ]
+    egi = positions("GSN-HydroCel-129")
+    shift = groups[0]["Cz"] - egi["Cz"]
+    groups.append(
+        {("E129" if ch == "Cz" else ch): xyz + shift for ch, xyz in egi.items()}
+    )
+    groups += [positions(kind) for kind in ("colin27_alphabetic", "colin27_prefixed")]
+    groups.append(
+        {f"biosemi128_{ch}": xyz for ch, xyz in positions("biosemi128").items()}
+    )
+    by_upper: dict[str, np.ndarray] = {}
+    for group in groups:
+        for ch, xyz in group.items():
+            by_upper.setdefault(ch.upper(), xyz)
+    return {name: by_upper[name.upper()] for name in _REVE_POSITION_NAMES}
+
+
+# The 543 electrode names of REVE's released position bank (``positions.json`` of
+# https://huggingface.co/brain-bzh/reve-positions), in the release's order and
+# spellings: both ``Cz`` and ``CZ``, ``Cp1`` as well as ``CP1`` (18 pairs differ
+# only in case). ``_reve_position_bank`` places each on MNE's montages.
+_REVE_POSITION_NAMES = """
+    A1 A2 C3 C4 CZ F3 F4 F7 F8 FP1 FP2 FZ O1 O2 P3 P4 PZ T3 T4 T5 T6 OZ Cz Fpz
+    Fz P7 P8 Pz T7 T8 C1 C2 C5 C6 CP1 CP2 CP3 CP4 CPz FC1 FC2 FC3 FC4 FCz P1 P2
+    POz AFz P5 P6 PO3 PO4 AF3 AF4 AF7 AF8 CP5 CP6 F1 F2 F5 F6 FC5 FC6 FT7 FT8
+    Fp1 Fp2 Iz Oz P10 P9 PO7 PO8 TP7 TP8 F10 F9 FT10 FT9 FTT10h FTT9h PO10 PO9
+    TP10 TP9 TPP10h TPP8h TPP9h TTP7h CCP1h CCP2h CCP3h CCP4h CCP5h CCP6h CPP1h
+    CPP2h CPP3h CPP4h CPP5h CPP6h FCC1h FCC2h FCC3h FCC4h FCC5h FCC6h FFC1h
+    FFC2h FFC3h FFC4h FFC5h FFC6h FTT7h FTT8h PPO1h PPO2h TTP8h T10 T9 AFF1h
+    AFF2h AFF5h AFF6h AFp1 AFp2 POO1 POO2 PO5 PO6 AFF1 AFF2 AFp3h AFp4h FFT7h
+    FFT8h I1 I2 M1 M2 OI1h OI2h POO10h POO3h POO4h POO9h PPO1 PPO10h PPO2 PPO5h
+    PPO6h PPO9h TPP7h A3 A4 A5 A6 A7 A8 A9 A10 A11 A12 A13 A14 A15 A16 A17 A18
+    A19 A20 A21 A22 A23 A24 A25 A26 A27 A28 A29 A30 A31 A32 B1 B2 B3 B4 B5 B6 B7
+    B8 B9 B10 B11 B12 B13 B14 B15 B16 B17 B18 B19 B20 B21 B22 B23 B24 B25 B26
+    B27 B28 B29 B30 B31 B32 C7 C8 C9 C10 C11 C12 C13 C14 C15 C16 C17 C18 C19 C20
+    C21 C22 C23 C24 C25 C26 C27 C28 C29 C30 C31 C32 D1 D2 D3 D4 D5 D6 D7 D8 D9
+    D10 D11 D12 D13 D14 D15 D16 D17 D18 D19 D20 D21 D22 D23 D24 D25 D26 D27 D28
+    D29 D30 D31 D32 CPZ FCZ FPZ POZ E1 E10 E100 E101 E102 E103 E104 E105 E106
+    E107 E108 E109 E11 E110 E111 E112 E113 E114 E115 E116 E117 E118 E119 E12
+    E120 E121 E122 E123 E124 E125 E126 E127 E128 E13 E14 E15 E16 E17 E18 E19 E2
+    E20 E21 E22 E23 E24 E25 E26 E27 E28 E29 E3 E30 E31 E32 E33 E34 E35 E36 E37
+    E38 E39 E4 E40 E41 E42 E43 E44 E45 E46 E47 E48 E49 E5 E50 E51 E52 E53 E54
+    E55 E56 E57 E58 E59 E6 E60 E61 E62 E63 E64 E65 E66 E67 E68 E69 E7 E70 E71
+    E72 E73 E74 E75 E76 E77 E78 E79 E8 E80 E81 E82 E83 E84 E85 E86 E87 E88 E89
+    E9 E90 E91 E92 E93 E94 E95 E96 E97 E98 E99 E129 Cp1 Cp2 Cp5 Cp6 Fc1 Fc2 Fc5
+    Fc6 biosemi128_A1 biosemi128_A2 biosemi128_A3 biosemi128_A4 biosemi128_A5
+    biosemi128_A6 biosemi128_A7 biosemi128_A8 biosemi128_A9 biosemi128_A10
+    biosemi128_A11 biosemi128_A12 biosemi128_A13 biosemi128_A14 biosemi128_A15
+    biosemi128_A16 biosemi128_A17 biosemi128_A18 biosemi128_A19 biosemi128_A20
+    biosemi128_A21 biosemi128_A22 biosemi128_A23 biosemi128_A24 biosemi128_A25
+    biosemi128_A26 biosemi128_A27 biosemi128_A28 biosemi128_A29 biosemi128_A30
+    biosemi128_A31 biosemi128_A32 biosemi128_B1 biosemi128_B2 biosemi128_B3
+    biosemi128_B4 biosemi128_B5 biosemi128_B6 biosemi128_B7 biosemi128_B8
+    biosemi128_B9 biosemi128_B10 biosemi128_B11 biosemi128_B12 biosemi128_B13
+    biosemi128_B14 biosemi128_B15 biosemi128_B16 biosemi128_B17 biosemi128_B18
+    biosemi128_B19 biosemi128_B20 biosemi128_B21 biosemi128_B22 biosemi128_B23
+    biosemi128_B24 biosemi128_B25 biosemi128_B26 biosemi128_B27 biosemi128_B28
+    biosemi128_B29 biosemi128_B30 biosemi128_B31 biosemi128_B32 biosemi128_C1
+    biosemi128_C2 biosemi128_C3 biosemi128_C4 biosemi128_C5 biosemi128_C6
+    biosemi128_C7 biosemi128_C8 biosemi128_C9 biosemi128_C10 biosemi128_C11
+    biosemi128_C12 biosemi128_C13 biosemi128_C14 biosemi128_C15 biosemi128_C16
+    biosemi128_C17 biosemi128_C18 biosemi128_C19 biosemi128_C20 biosemi128_C21
+    biosemi128_C22 biosemi128_C23 biosemi128_C24 biosemi128_C25 biosemi128_C26
+    biosemi128_C27 biosemi128_C28 biosemi128_C29 biosemi128_C30 biosemi128_C31
+    biosemi128_C32 biosemi128_D1 biosemi128_D2 biosemi128_D3 biosemi128_D4
+    biosemi128_D5 biosemi128_D6 biosemi128_D7 biosemi128_D8 biosemi128_D9
+    biosemi128_D10 biosemi128_D11 biosemi128_D12 biosemi128_D13 biosemi128_D14
+    biosemi128_D15 biosemi128_D16 biosemi128_D17 biosemi128_D18 biosemi128_D19
+    biosemi128_D20 biosemi128_D21 biosemi128_D22 biosemi128_D23 biosemi128_D24
+    biosemi128_D25 biosemi128_D26 biosemi128_D27 biosemi128_D28 biosemi128_D29
+    biosemi128_D30 biosemi128_D31 biosemi128_D32
+""".split()
