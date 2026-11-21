@@ -96,7 +96,12 @@ The following components are licensed under the Apache License 2.0:
 - `braindecode/models/mscformer.py`
 - `braindecode/models/fnirsnet.py`
 - `braindecode/models/fnirs4d.py`
+- `braindecode/models/samba.py`
 - `docs/_static/model/fnirs4d.png` (wzhlearning/fNIRS4D `fig/fig2.png`, resized)
+
+The `samba.py` file adapts the encoder of `Jiazhen-Hong/SAMBA` and rewrites in
+PyTorch the `Mamba2` block of `state-spaces/mamba` (Apache-2.0, Copyright 2023
+Tri Dao, Albert Gu).
 
 ### CC BY 4.0 Licensed Files
 

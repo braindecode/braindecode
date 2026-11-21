@@ -13,11 +13,14 @@ import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import ConcatDataset, StackDataset
 
 from braindecode import EEGClassifier
 from braindecode.datasets import BaseConcatDataset, RawDataset, pad_channels_collate
 from braindecode.models import BIOT, ShallowFBCSPNet
 from braindecode.models.biot import BIOT_CHANNEL_ORDER
+from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import models_mandatory_parameters
 from braindecode.preprocessing import create_fixed_length_windows
 from test.unit_tests.models._fixtures import non_classification_models
@@ -35,7 +38,9 @@ def _windows(channel_sets, n_times, n_windows=3, pos=False):
         names = montage.ch_names[:channels] if isinstance(channels, int) else channels
         info = mne.create_info(names, 100.0, "eeg")
         data = rng.standard_normal((len(names), n_windows * n_times))
-        raw = mne.io.RawArray(data, info, verbose="error").set_montage(montage)
+        raw = mne.io.RawArray(data, info, verbose="error")
+        if pos:  # LaBraM's names are not all in the montage
+            raw.set_montage(montage)
         recordings.append(RawDataset(raw, description={"label": target}))
     windows = create_fixed_length_windows(
         BaseConcatDataset(recordings), window_size_samples=n_times,
@@ -46,36 +51,48 @@ def _windows(channel_sets, n_times, n_windows=3, pos=False):
     return windows
 
 
-def _net(module, **kwargs):
+def _net(module, collate_fn=pad_channels_collate, **kwargs):
     return EEGClassifier(
         module, max_epochs=1, batch_size=4, train_split=None,
         iterator_train__shuffle=False, iterator_train__drop_last=False,
-        iterator_train__collate_fn=pad_channels_collate,
-        iterator_valid__collate_fn=pad_channels_collate, **kwargs,
+        iterator_train__collate_fn=collate_fn,
+        iterator_valid__collate_fn=collate_fn, **kwargs,
     )
 
 
-# Known misses, not fixed here.
-_FIT_XFAIL = {
-    "PopulationTransformer": "the loader routes no per-recording coords, which "
-    "PopulationTransformer needs on fewer channels than it was built with",
-    "Labram": "the loader routes no ch_names, which Labram needs on fewer than "
-    "its 128 channels",
-    "MAPA": "the loader routes no per-sample sensor_indices, which MAPA needs with "
-    "ch_mask",
+# Backbones that need metadata of each recording to run on fewer channels than
+# they were built with, and the error they raise without it.
+_MISSING_METADATA = {
+    "PopulationTransformer": "pass `coords`",
+    "Labram": "ch_names is None",
+    "MAPA": "ch_mask needs per-sample sensor_indices",
 }
+
+
+def _collate_native_metadata(batch):
+    """Pad ``(window, metadata)`` pairs like ``pad_channels_collate`` and route the
+    metadata of each recording to the forward: its ``(n_chans, 3)`` coordinates or
+    sensor indices, padded like the signals. skorch turns every batch entry into a
+    tensor, which cannot hold LaBraM's ``ch_names``: its signals fill the canonical
+    channels instead, as the recordings are prefixes of them."""
+    windows, metadata = zip(*batch)
+    x, y, crop, mask = pad_channels_collate(windows)  # x: (batch, max_chans, n_times)
+    (key,) = metadata[0]
+    values = [entry[key] for entry in metadata]
+    if key == "ch_names":
+        assert all(names == LABRAM_CHANNEL_ORDER[: len(names)] for names in values)
+        extra = len(LABRAM_CHANNEL_ORDER) - x.shape[1]
+        x, mask = F.pad(x, (0, 0, 0, extra)), F.pad(mask, (0, extra))
+        return {"x": x, "ch_mask": mask}, y, crop
+    # (n_chans, 3) per recording -> (batch, max_chans, 3), zero-padded like x
+    channels = pad_sequence([value.squeeze(0) for value in values], batch_first=True)
+    return {"x": x, "ch_mask": mask, key: channels}, y, crop
 
 
 @pytest.mark.parametrize(
     "model_name,required_params,signal_params",
     [
-        pytest.param(
-            *case,
-            marks=[pytest.mark.xfail(reason=_FIT_XFAIL[case[0]], strict=True)]
-            if case[0] in _FIT_XFAIL
-            else [],
-            id=case[0],
-        )
+        pytest.param(*case, id=case[0])
         for case in models_mandatory_parameters
         if case[0] not in non_classification_models
     ],
@@ -84,13 +101,18 @@ def test_registered_model_ch_mask_training(model_name, required_params, signal_p
     """One cross-entropy step on the padded batch of ``_ch_mask_case`` has the
     gradients of the per-recording losses, and a fit through
     :class:`braindecode.EEGClassifier` predicts on the mixed set what it predicts
-    on each recording alone. A model that refuses ``ch_mask`` passes."""
+    on each recording alone. A model that refuses ``ch_mask`` passes; one of
+    ``_MISSING_METADATA`` does not refuse it, and raises on a recording without
+    its metadata."""
     model, x, mask, xs, batch_kwargs, alone_kwargs = _ch_mask_case(
         model_name, required_params, signal_params
     )
-    logits = _forward_or_refuse(model, x, mask, batch_kwargs)
-    if logits is None:
-        return
+    if model_name in _MISSING_METADATA:  # they take ch_mask: refusing is a failure
+        logits = model(x, ch_mask=mask, **batch_kwargs)
+    else:
+        logits = _forward_or_refuse(model, x, mask, batch_kwargs)
+        if logits is None:
+            return
     # In eval mode (no dropout), so both losses see the same network.
     params = [p for p in model.parameters() if p.requires_grad]
     y = torch.arange(len(xs)) % logits.shape[1]
@@ -105,17 +127,33 @@ def test_registered_model_ch_mask_training(model_name, required_params, signal_p
 
     n_chans = x.shape[1]
     pos = "pos" in inspect.signature(type(model).forward).parameters
-    windows = _windows([n_chans - 1, n_chans], x.shape[2], pos=pos)
+    channel_sets = [n_chans - 1, n_chans]
+    if model_name == "Labram":
+        channel_sets = [LABRAM_CHANNEL_ORDER[:n] for n in channel_sets]
+    windows = _windows(channel_sets, x.shape[2], pos=pos)
+    parts = list(windows.split([[0], [1]]).values())
+    net = _net(model)
+    if model_name in _MISSING_METADATA:
+        # Without its metadata the shorter recording is refused, even unpadded.
+        with pytest.raises(ValueError, match=_MISSING_METADATA[model_name]):
+            net.initialize().predict_proba(parts[0])
+        # Each window carries the metadata of its recording.
+        parts = [
+            StackDataset(part, [metadata] * len(part))
+            for part, metadata in zip(parts, alone_kwargs)
+        ]
+        windows = ConcatDataset(parts)
+        net = _net(model, collate_fn=_collate_native_metadata)
     seen = []
     model.register_forward_pre_hook(
         lambda m, args, kwargs: seen.append(kwargs["ch_mask"].sum(1).tolist()),
         with_kwargs=True,
     )
-    net = _net(model).fit(windows, y=None)
+    net.fit(windows, y=None)
     # 3 windows of each recording; the first batch pads the first recording's.
     assert seen == [[n_chans - 1] * 3 + [n_chans], [n_chans] * 2]
     mixed = net.predict_proba(windows)
-    alone = [net.predict_proba(part) for part in windows.split([[0], [1]]).values()]
+    alone = [net.predict_proba(part) for part in parts]
     np.testing.assert_allclose(mixed, np.concatenate(alone), rtol=1e-5, atol=1e-6)
 
 

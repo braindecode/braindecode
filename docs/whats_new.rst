@@ -28,6 +28,9 @@ Current 2.1.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.SAMBA` (Hong et al., NeurReps 2026), an EEG
+  foundation model that reads electrode positions through a coordinate-driven
+  spatial embedding and models time with Mamba-2 (:gh:`1689` by `Jiazhen Hong`_).
 - Foundation models raise a ``ValueError`` with both channel counts, through
   :func:`braindecode.functional.check_n_chans`, when the input does not have the
   channels they were built for (:gh:`1605` by `Julien Gadonneix`_).
@@ -69,28 +72,16 @@ Enhancements
 - Add :class:`braindecode.models.GeoNIRS` (Li et al., 2026), an fNIRS foundation model
   conditioned on the source-detector geometry; its encoders are on the Hugging Face Hub at
   ``braindecode/geonirs-base-pretrained`` and ``-large-pretrained`` (:gh:`1591` by `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan
-  et al. (Neurophotonics 2018) as the GeoNIRS benchmark (Li et al., 2026)
-  implements it: two temporal convolutions with GroupNorm and GELU, a time
-  average and a linear head. Its ``mapping`` loads the
-  authors' state dict (:gh:`1592` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRSCNN1D`, the 1D-CNN of Trakoolwilaiwan et al.
+  (Neurophotonics 2018) as the GeoNIRS benchmark implements it (:gh:`1592` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT`
-  (fNIRS-T and fNIRS-PreT, Wang et al., IEEE JBHI 2022), spatial and channel-level
-  transformer branches over HbO/HbR windows, with an opt-in ``mask`` of hidden
-  samples. :class:`~braindecode.modules.MultiHeadAttention` gains ``qkv_bias``
-  (default ``True``, unchanged) for fNIRS-T's bias-free q/k/v (:gh:`1584` by
+  (Wang et al., IEEE JBHI 2022); :class:`~braindecode.modules.MultiHeadAttention` gains ``qkv_bias`` (:gh:`1584` by
   `Bruno Aristimunha`_).
-- Add :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023), the first
-  fNIRS model of braindecode: a delayed-hemodynamic-response convolution and a
-  depthwise-separable convolution over ``(batch, n_chans, n_times)`` HbO/HbR windows.
-  Its ``mapping`` loads the authors' state dict, and ``fNIRS`` joins the modality
-  vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
+- Add :class:`braindecode.models.FNIRSNet` (Wang et al., IEEE TNSRE 2023), the first fNIRS
+  model of braindecode, with delayed-hemodynamic-response and depthwise-separable convolutions;
+  ``fNIRS`` joins the modality vocabulary of the models table (:gh:`1579` by `Bruno Aristimunha`_).
 - Add :class:`braindecode.models.FNIRS4D` (Wang et al., IEEE TIM 2026), a diagonal
-  state-space (S4D) backbone with the authors' LOSO-CV or KFold-CV
-  mean-hemoglobin branch (``mean_branch``); its ``mapping`` loads the authors' state
-  dict. The helpers ``fnirs_chromophores_from_chs_info``, ``fnirs_channel_order`` and
-  ``fnirs_split_hbo_hbr`` of ``braindecode.models.util`` read HbO/HbR pairs from
-  ``chs_info``, stacked or in MNE's interleaved order (:gh:`1582` by
+  state-space (S4D) fNIRS model, with ``fnirs_*`` helpers for HbO/HbR ``chs_info`` in ``braindecode.models.util`` (:gh:`1582` by
   `Bruno Aristimunha`_).
 - The docstrings of :class:`braindecode.models.FNIRSNet`, :class:`~braindecode.models.FNIRS4D`,
   :class:`~braindecode.models.FNIRST` and :class:`~braindecode.models.FNIRSPreT` describe
@@ -616,6 +607,9 @@ Code health
 - :class:`~braindecode.models.GCNsNet` fits its graph with the public ``fit_graph``,
   called once per fit by the estimators; it and :class:`~braindecode.models.DGCNN`
   share :class:`~braindecode.modules.ChebyshevGraphConv` (:gh:`1700` by `Bruno Aristimunha`_).
+- :class:`~braindecode.models.SignalJEPA`, :class:`~braindecode.models.LUNA`, the NeuroRVQ
+  models and :class:`~braindecode.models.TFMTokenizer` use :class:`torch.nn.GroupNorm`
+  instead of two private copies (:gh:`1642` by `Bruno Aristimunha`_).
 - The :class:`braindecode.datasets.TUHEvents` test builds its corpus under ``tmp_path`` and
   reads it with the public class; the private ``_TUHEventsMock`` and its table of synthetic
   paths leave the package (:gh:`1704` by `Bruno Aristimunha`_).
@@ -653,6 +647,9 @@ Code health
   :func:`braindecode.datasets.pad_channels_collate`; a model may instead refuse
   ``ch_mask`` with a ``ValueError`` that names it
   (:gh:`1545`, :gh:`1548` by `Bruno Aristimunha`_).
+- The ``ch_mask`` training test enforces :class:`~braindecode.models.PopulationTransformer`,
+  :class:`~braindecode.models.Labram` and :class:`~braindecode.models.MAPA`, which it expected to fail:
+  each is fit with its channel metadata and raises without it (:gh:`1662` by `Bruno Aristimunha`_).
 - The Hugging Face config and round-trip tests also run on
   :class:`braindecode.models.AttnSleep`, which they skipped
   (:gh:`1614` by `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
@@ -661,8 +658,14 @@ Code health
   model suites. Frequency-shift device and gradient cases run alongside
   the transform's numerical tests (:gh:`1656` by `Bruno Aristimunha`_).
 
+- The monthly release updates the documentation version switcher: the stable
+  and development entries take the released and next series, and the previous
+  stable series stays linked (:gh:`1666` by `Bruno Aristimunha`_).
 - ``test/unit_tests/test_version.py`` accepts release versions, so the tests
   shipped in a release sdist pass (:gh:`1534` by `Bruno Aristimunha`_).
+- Development builds reach PyPI only after the ``tests`` run of their master
+  commit succeeds, and follow commit order, so ``pip install --pre`` finds the
+  newest one (:gh:`1661` by `Bruno Aristimunha`_).
 - Trial-prediction tests import their shared synthetic windows and historical
   reconstruction reference from a helper module instead of from other collected
   test modules (:gh:`1672` by `Bruno Aristimunha`_).
@@ -3517,3 +3520,4 @@ Authors
 .. _Hamza Abdelhedi: https://github.com/BabaSanfour
 .. _sixty-66: https://github.com/sixty-66
 .. _Axel Coiffard-Donaty: https://github.com/AxelNoun
+.. _Jiazhen Hong: https://github.com/Jiazhen-Hong

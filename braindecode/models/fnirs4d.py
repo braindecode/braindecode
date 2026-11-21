@@ -33,41 +33,25 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
        :alt: fNIRS4D architecture
 
        ``fig/fig2.png`` of wzhlearning/fNIRS4D (``eb13e5e``, Apache-2.0),
-       resized: preprocessing, "fNIRS4D for Signal Classification" with its
-       "Selectable Branches" MAMHB (inter-subject) and MHB (intra-subject),
-       and the three task paradigms. The paper (IEEE TIM 2026) is not open
-       access; its caption is not reproduced.
+       resized.
 
-    From the abstract :footcite:`wang2026fnirs4d`: "many studies focus
-    solely on deep neural networks (DNNs) but neglect the importance of
-    fNIRS domain knowledge. We refine domain knowledge into neuroscientific
-    knowledge and expert prior. This article aims to integrate domain
-    knowledge into DNNs, including activation patterns, hemodynamic
-    responses, and feature engineering."
-
-    The backbone is a state space model: "Diagonally structured state space
-    sequence model (S4D), simple and efficient diagonal versions of SSMs,
-    are introduced to the fNIRS domain. We incorporate domain knowledge into
-    an S4D-based lightweight fNIRS classification model named fNIRS4D." The
-    S4D layer is that of Gu et al. :footcite:`gu2022s4d`. The repository's
-    ``fig/fig1.png`` ties each kind of knowledge to a block: activation
-    patterns to the "Mixed Hemoglobin" input, hemodynamic responses to
-    Knowledge Embedding (KE), feature engineering to the selectable mean
-    hemoglobin branches, with Knowledge Aggregation (KA) over all of them.
-    Only the abstract, README, figures and code are public, and the text
-    below comes from them.
+    fNIRS4D :footcite:`wang2026fnirs4d` builds fNIRS domain knowledge into a
+    lightweight network of diagonal state space layers (S4D,
+    :footcite:`gu2022s4d`): activation patterns give its mixed hemoglobin
+    input, hemodynamic responses its knowledge embedding (KE) and feature
+    engineering its selectable mean hemoglobin branch, and knowledge
+    aggregation (KA) runs S4D blocks over them.
 
     .. rubric:: Architecture Overview
 
-    With :math:`H` = ``n_chans`` rows (``d_model`` in the authors' S4D),
-    :math:`T` = ``n_times`` samples, :math:`N` = ``n_layers`` and the
-    figure's names::
+    With :math:`H` = ``n_chans`` rows, :math:`T` = ``n_times`` samples and
+    :math:`N` = ``n_layers``::
 
         input: HbO and HbR rows                      (batch, H, T)
         Mixed Hemoglobin [HbO, HbT], to_fnirs_tensor (batch, 1, H, T)
         Selectable branch (mean_hemoglobin_branch):
           MHB or MAMHB                               (batch, H)
-        Knowledge Embedding (fNIRS_knowledge_embedding):
+        Knowledge Embedding (knowledge_embedding):
           Conv_1 (1 x T), IN, Conv_1x1, Rearrange    (batch, H, H)
         Knowledge Aggregation:
           N x (S4D, dropout, residual, LN)           (batch, H, H)
@@ -77,23 +61,20 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
     .. rubric:: Macro Components
 
     - ``compute_hbt`` **Mixed Hemoglobin.** The rows become HbO and total
-      hemoglobin, :math:`\mathrm{HbT} = \mathrm{HbO} + \mathrm{HbR}`, as in
-      the authors' ``dataloader.py``; HbO/HbR pairs come from
-      ``channel_order`` or ``chs_info``.
-    - ``fNIRS_knowledge_embedding`` **Knowledge Embedding (KE).** A
-      convolution with :math:`H` filters of :math:`1 \times T`, so each
-      filter reads the whole window of one row (the kernel shape of
-      :class:`~braindecode.models.FNIRSNet`'s DHRConv), instance
-      normalization and a :math:`1 \times 1` convolution. The result is
-      rearranged so that each row becomes a sequence of :math:`H` filter
-      responses, the sequence the S4D layers read.
+      hemoglobin, :math:`\mathrm{HbT} = \mathrm{HbO} + \mathrm{HbR}`; the pairs
+      come from ``channel_order`` or ``chs_info``.
+    - ``knowledge_embedding`` **Knowledge Embedding (KE).** :math:`H` filters
+      of :math:`1 \times T`, so each reads the whole window of one row (the
+      kernel shape of :class:`~braindecode.models.FNIRSNet`'s DHRConv),
+      instance normalization and a :math:`1 \times 1` convolution. Each row
+      becomes a sequence of :math:`H` filter responses, which the S4D layers
+      read.
     - ``s4d_layers``, ``norms`` **Knowledge Aggregation (KA).** :math:`N`
-      S4D blocks, each S4D, dropout, a residual sum and a LayerNorm over the
-      rows (post-norm, or before the layer with ``prenorm=True``), then the
-      mean over the sequence (:math:`\mathrm{AP}_4`). Each S4D layer runs one
-      diagonal state space model per row. Gu et al. start from the
-      continuous system (their Eq. (1)), discretize it with the zero-order
-      hold (Section 3.1),
+      blocks of S4D, dropout, a residual sum and a LayerNorm over the rows
+      (post-norm, or before the layer with ``prenorm=True``), then the mean
+      over the sequence (:math:`\mathrm{AP}_4`). An S4D layer runs one
+      diagonal state space model per row: the continuous system is
+      discretized with the zero-order hold (Gu et al., Section 3.1),
 
       .. math::
 
@@ -101,7 +82,7 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
          \bar{A} = e^{\Delta A}, \quad
          \bar{B} = (\Delta A)^{-1} (e^{\Delta A} - I) \, \Delta B,
 
-      and apply it as a convolution with a Vandermonde kernel
+      and applied as a convolution with a Vandermonde kernel
       (Eqs. (6)-(7)):
 
       .. math::
@@ -112,124 +93,62 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
       :math:`A` is diagonal and complex, initialized with S4D-Lin,
       :math:`A_n = -\tfrac{1}{2} + i \pi n` (Eq. (9)); the step
       :math:`\Delta` is learned per row from a log-uniform start in
-      [0.001, 0.1]. As in the authors' ``S4DKernel``, :math:`B = 1`, the sum
-      keeps ``d_state // 2`` entries and the kernel is twice its real part
-      ("same as adding conjugate pairs", Listing 1 of Gu et al.). The layer
-      adds a skip term :math:`D u`, then GELU, dropout, and a
-      :math:`1 \times 1` convolution with a GLU.
-    - ``mean_hemoglobin_branch`` **MHB and MAMHB.** The intra-subject Mean
-      Hemoglobin Branch (``mean_branch="time_mean"``) is the mean of each
-      row over time (:math:`\mathrm{AP}_1`). The inter-subject Multi-scale
-      Aggregated Mean Hemoglobin Branch (``"multiscale"``) averages all rows
-      into one signal (:math:`\mathrm{AP}_2`, ``avg_1``) and reads it twice,
-      directly and after an ``avg_size``-sample moving average
-      (:math:`\mathrm{AP}_3`, ``avg_2``), each time with a full-window
-      convolution of :math:`H/2` filters, BN and ELU (``conv_1``/``bn_1``,
-      ``conv_2``/``bn_2``); the two halves are concatenated.
+      [0.001, 0.1]. :math:`B = 1`, the sum keeps ``d_state // 2`` entries and
+      the kernel is twice its real part (conjugate pairs). The layer adds a
+      skip term :math:`D u`, then GELU, dropout and a :math:`1 \times 1`
+      convolution with a GLU.
+    - ``mean_hemoglobin_branch`` **MHB and MAMHB.** The mean hemoglobin
+      branch (``mean_branch="time_mean"``) is the mean of each row over time
+      (:math:`\mathrm{AP}_1`). The multi-scale aggregated one
+      (``"multiscale"``) averages all rows into one signal
+      (:math:`\mathrm{AP}_2`) and reads it, and its ``avg_size``-sample moving
+      average (:math:`\mathrm{AP}_3`), with full-window convolutions of
+      :math:`H/2` filters, BN and ELU; the two halves are concatenated.
     - ``final_layer`` **FC.** One linear layer on the :math:`H` KA features
       and the :math:`H` branch features.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
-    - *Temporal:* one 3 s window (40 samples on UFFT, 30 on MA and WG in
-      the authors' scripts). KE reads all samples of a row at once, so the
-      S4D layers run along the KE filters, not along time; the branches
-      summarize time by means and full-window convolutions. Kernels count
-      samples, so there is no sampling-rate argument.
-    - *Spatial:* no montage or optode geometry. Each row is one S4D channel,
-      LayerNorm normalizes across rows and MAMHB averages them; the row
-      order must be the one used in training.
-    - *Chromophores:* HbO and HbT; ``compute_hbt=False`` takes the rows as
-      given.
-    - *Spectral:* none in the model; the authors band-pass (UFFT, MA) or
-      low-pass (WG) the signals first.
-
-    .. rubric:: Pretrained Weights
-
-    None: the authors release code, not weights.
-
-    .. rubric:: Differences from the reference implementation
-
-    ``x`` is ``(batch, n_chans, n_times)``; ``to_fnirs_tensor`` adds the
-    authors' singleton axis, and HbT is formed inside the model (the authors
-    sum before their z-score; to reproduce it, pass their [HbO, HbT] arrays
-    with ``compute_hbt=False``). The S4D kernel is applied as a causal
-    convolution in real arithmetic instead of a complex FFT, equal up to
-    float32 rounding and free of complex tensors, so ``torch.jit.script``
-    and ``torch.export`` run on it; ``nn.Dropout1d`` replaces the authors'
-    ``DropoutNd``, and their unused ``_optim`` weight-decay hints are not
-    set. Names are the authors'; ``mapping`` renames ``fc.0.*``, so their
-    ``state_dict`` loads with ``strict=True``. ``mean_branch`` is their
-    ``mode``, and ``avg_size``, ``d_state`` and the activations expose
-    values their code fixes. A training batch of one sample runs the BN
-    layers on their running statistics, and ``ch_mask`` raises a
-    ``ValueError``.
-
-    Parameters
-    ----------
-    n_layers : int, default=4
-        Number of S4D blocks, the figure's :math:`N`; the authors use 4,
-        and 1 for WG subject-independent.
-    d_state : int, default=64
-        State size of each S4D kernel (the authors' ``d_state``), even: the
-        kernel keeps ``d_state // 2`` conjugate pairs.
-    avg_size : int, default=10
-        Width of the :math:`\mathrm{AP}_3` moving average of the
-        ``"multiscale"`` branch (the authors' ``avg_size_2``), at most
-        ``n_times``.
-    drop_prob : float, default=0.5
-        Dropout in and after each S4D layer (the authors' ``dropout``).
-    prenorm : bool, default=False
-        LayerNorm before each S4D layer instead of after the residual (the
-        authors' default is post-norm).
-    compute_hbt : bool, default=True
-        Replace HbR by HbT = HbO + HbR (even ``n_chans``).
-    channel_order : {"stacked", "interleaved"} or None, default=None
-        ``[HbO..., HbR...]`` (the authors') or ``[HbO_1, HbR_1, ...]`` (MNE);
-        ``None`` reads ``chs_info``, else assumes ``"stacked"``. Ignored when
-        ``compute_hbt=False``.
-    mean_branch : {"multiscale", "time_mean"}, default="multiscale"
-        The selectable branch (the authors' ``mode``): MAMHB for
-        ``"LOSO-CV"`` (needs an even ``n_chans``) or MHB for ``"KFold-CV"``.
-    activation : type[nn.Module], default=nn.GELU
-        Activation inside each S4D layer.
-    branch_activation : type[nn.Module], default=nn.ELU
-        Activation of the ``"multiscale"`` branch.
-
-    Notes
-    -----
-    The authors' code trains on UFFT :footcite:`bak2019ufft` (``n_chans`` =
-    ``n_times`` = 40), MA :footcite:`shin2017openaccess` and WG
-    :footcite:`shin2018simultaneous` (72 rows, 30 samples), with their BBCI
-    preprocessing, 3 s windows with a 1 s step, HbT per window and a z-score
-    from the training set. Subject-specific runs (MHB) use 5-fold CV over
-    trial blocks, 120 epochs, AdamW (lr 0.001 on UFFT, 0.0005 on MA and WG)
-    decayed by 0.2 at epochs 20, 40 and 60; subject-independent runs (MAMHB)
-    leave one subject out, batch 512, cosine lr over 30 epochs. Last-epoch
-    test accuracy.
-
-    In the authors' training loops, on the same UFFT and WG arrays, splits
-    and seeds (0-2), the port matches the authors' code: accuracy in %,
-    paired difference in points with its 95 % interval, all including zero.
-
-    ==========  =========  =============  ====================
-    Cell        This port  Authors' code  Paired diff [95% CI]
-    ==========  =========  =============  ====================
-    UFFT KFold  71.98      72.00          -0.01 [-0.49, +0.46]
-    UFFT LOSO   65.81      65.85          -0.04 [-0.32, +0.24]
-    WG KFold    61.54      61.33          +0.21 [-0.50, +0.91]
-    WG LOSO     61.92      62.00          -0.07 [-0.54, +0.39]
-    ==========  =========  =============  ====================
-
-    In the GeoNIRS benchmark :footcite:`li2026geonirs` (macro-F1 in %, 12 s
-    windows, subject-level 5-fold CV, seeds 810 and 811, ``"multiscale"``),
-    the port gives 67.89 on DS42 action mode and 49.86 on DS19 pain
-    intensity, against 68.98 and 50.79 in GeoNIRS Table 14 and 69.03 and
-    50.60 for the GeoNIRS copy of fNIRS4D in the same loop.
+    - **Temporal.** One 3 s window of :math:`T` samples (40 at 13.3 Hz, 30 at
+      10 Hz). KE reads all samples of a row at once, so the S4D layers run
+      along the KE filters, not along time. Kernels count samples, so there
+      is no sampling-rate argument.
+    - **Spatial.** No montage or optode geometry. Each row is one S4D channel,
+      so the rows keep the order of training: HbO and HbT, or as given with
+      ``compute_hbt=False``.
+    - **Spectral.** None in the model; the signals are filtered beforehand.
 
     .. versionadded:: 2.1
 
     `License <https://github.com/wzhlearning/fNIRS4D/blob/eb13e5e5b47043ad408d8a50b3ec9fe079926c12/LICENSE>`_
+
+    Parameters
+    ----------
+    n_layers : int, default=4
+        Number of S4D blocks, :math:`N`.
+    d_state : int, default=64
+        State size of each S4D kernel, even: it keeps ``d_state // 2``
+        conjugate pairs.
+    avg_size : int, default=10
+        Width of the :math:`\mathrm{AP}_3` moving average of the
+        ``"multiscale"`` branch, at most ``n_times``.
+    drop_prob : float, default=0.5
+        Dropout in and after each S4D layer.
+    prenorm : bool, default=False
+        LayerNorm before each S4D layer instead of after the residual.
+    compute_hbt : bool, default=True
+        Replace HbR by HbT = HbO + HbR (even ``n_chans``).
+    channel_order : {"stacked", "interleaved"} or None, default=None
+        ``[HbO..., HbR...]`` or ``[HbO_1, HbR_1, ...]`` (MNE); ``None`` reads
+        ``chs_info``, else assumes ``"stacked"``. Ignored when
+        ``compute_hbt=False``.
+    mean_branch : {"multiscale", "time_mean"}, default="multiscale"
+        MAMHB (the authors' ``"LOSO-CV"``, needs an even ``n_chans``) or MHB
+        (``"KFold-CV"``).
+    activation : type[nn.Module], default=nn.GELU
+        Activation inside each S4D layer.
+    branch_activation : type[nn.Module], default=nn.ELU
+        Activation of the ``"multiscale"`` branch.
 
     References
     ----------
@@ -267,10 +186,6 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-
-        # The authors' head is ``fc = Sequential(Linear)``: their state_dict
-        # loads as is
-        self.mapping = {f"fc.0.{k}": f"final_layer.{k}" for k in ("weight", "bias")}
 
         # Parameters
         self.prenorm = prenorm
@@ -333,7 +248,7 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 Rearrange("batch 1 chans 1 -> batch chans"),
             )
         # Knowledge Embedding (KE): hemodynamic responses as domain knowledge
-        self.fNIRS_knowledge_embedding = nn.Sequential(
+        self.knowledge_embedding = nn.Sequential(
             # Conv_1: H filters of 1 x T, each reads the whole response of
             # one row (the kernel shape of fNIRSNet's DHRConv)
             nn.Conv2d(
@@ -390,7 +305,6 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self,
         x: torch.Tensor,
         return_features: bool = False,
-        ch_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Forward pass of the fNIRS4D model.
 
@@ -401,8 +315,6 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
             and HbR rows, or the rows as given with ``compute_hbt=False``.
         return_features : bool, default=False
             If True, return the features that feed the FC layer.
-        ch_mask : torch.Tensor or None
-            Not supported: every layer is sized by ``n_chans``.
 
         Returns
         -------
@@ -412,11 +324,6 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
             ``features`` of shape ``(batch_size, 2 * n_chans)`` and
             ``cls_token`` None.
         """
-        # The rows are the S4D channels and the LayerNorm axis: a subset of
-        # them is another model
-        if ch_mask is not None:
-            raise ValueError("FNIRS4D does not accept ch_mask: layers span n_chans.")
-
         # Below, H = n_chans and T = n_times
 
         # Mixed Hemoglobin (activation patterns as domain knowledge): the
@@ -441,7 +348,7 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # Knowledge Embedding (KE): Conv_1 over the whole window of each
         # row, IN, Conv_1x1; each row is then a sequence of H filter responses
         # (batch, 1, H, T) -> (batch, H, H) = (batch, rows, filters)
-        x = self.fNIRS_knowledge_embedding(x)
+        x = self.knowledge_embedding(x)
 
         # Knowledge Aggregation (KA): N x (S4D, dropout, residual, LN)
         for layer, norm in zip(self.s4d_layers, self.norms):
@@ -455,11 +362,11 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 # (batch, filters, rows) -> (batch, rows, filters)
                 layer_input = self.channels_first(layer_input)
             # S4D: one diagonal state space model per row, run along its
-            # sequence of filter responses; shape unchanged
+            # sequence of filter responses
             layer_output = layer(layer_input)
-            # Whole S4D channels are dropped; shape unchanged
+            # Drops whole S4D channels, as a regularizer
             layer_output = self.dropout(layer_output)
-            # Residual sum; shape unchanged
+            # Residual connection around the S4D layer
             x = x + layer_output
             # Post-norm (the authors' default): LN over the rows after the sum
             if not self.prenorm:
@@ -471,9 +378,7 @@ class FNIRS4D(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
         # (batch, rows, filters) -> (batch, filters, rows)
         x = self.channels_last(x)
-        # AP_4: mean over the sequence. Tensor.mean and not a Reduce layer,
-        # which permutes first and changes the float32 rounding of the
-        # gradients
+        # AP_4: mean over the sequence
         # (batch, H, H) -> (batch, H)
         x = x.mean(dim=1)
 
@@ -534,12 +439,13 @@ class _MultiscaleMeanHemoglobinBranch(nn.Module):
             in_channels=1, out_channels=n_filters, kernel_size=(1, n_times)
         )
         self.bn_1 = nn.BatchNorm2d(n_filters)
+        self.act_1 = activation()
         # Second scale: full-window convolution of the smoothed signal
         self.conv_2 = nn.Conv2d(
             in_channels=1, out_channels=n_filters, kernel_size=(1, n_times_avg)
         )
         self.bn_2 = nn.BatchNorm2d(n_filters)
-        self.activation = activation()
+        self.act_2 = activation()
         self.flatten = Rearrange("batch filters 1 1 -> batch filters")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -557,16 +463,16 @@ class _MultiscaleMeanHemoglobinBranch(nn.Module):
         # First scale: H / 2 filters read the whole mean signal
         # (batch, 1, 1, T) -> (batch, H / 2, 1, 1)
         full = self.conv_1(mean)
-        # Batch normalization and activation (ELU by default); shape unchanged
+        # Normalize, then the nonlinearity of the branch (ELU by default)
         full = self.bn_1(full)
-        full = self.activation(full)
+        full = self.act_1(full)
 
         # Second scale: H / 2 filters read the whole smoothed signal
         # (batch, 1, 1, T') -> (batch, H / 2, 1, 1)
         short = self.conv_2(short)
-        # Batch normalization and activation (ELU by default); shape unchanged
+        # Same normalization and nonlinearity as the first scale
         short = self.bn_2(short)
-        short = self.activation(short)
+        short = self.act_2(short)
 
         # Multi-scale aggregation: the two scales are concatenated
         # 2 x (batch, H / 2, 1, 1) -> (batch, H, 1, 1)
@@ -574,6 +480,14 @@ class _MultiscaleMeanHemoglobinBranch(nn.Module):
         # (batch, H, 1, 1) -> (batch, H)
         features = self.flatten(features)
         return features
+
+
+# Initial values of the S4D-Lin kernel, as in Gu et al. (2022) and the S4D code
+# of state-spaces/s4: the step dt is log-uniform in [dt_min, dt_max] and the
+# real part of A is -1 / 2 (Eq. (9) of the paper).
+_DT_MIN = 0.001
+_DT_MAX = 0.1
+_A_REAL_INIT = 0.5
 
 
 class _S4DKernel(nn.Module):
@@ -608,10 +522,10 @@ class _S4DKernel(nn.Module):
     def reset_parameters(self) -> None:
         # C ~ complex N(0, 1): each part has variance 1 / 2
         nn.init.normal_(self.C, 0.0, math.sqrt(0.5))
-        # dt log-uniform in [0.001, 0.1], as in the reference S4D
-        nn.init.uniform_(self.log_dt, math.log(0.001), math.log(0.1))
+        # dt log-uniform in [dt_min, dt_max]
+        nn.init.uniform_(self.log_dt, math.log(_DT_MIN), math.log(_DT_MAX))
         # S4D-Lin (Gu et al., Eq. (9)): A_n = -1 / 2 + i pi n
-        nn.init.constant_(self.log_A_real, math.log(0.5))
+        nn.init.constant_(self.log_A_real, math.log(_A_REAL_INIT))
         with torch.no_grad():
             self.A_imag.copy_(
                 math.pi * torch.arange(self.A_imag.shape[1]).to(self.A_imag)
@@ -699,7 +613,7 @@ class _S4DLayer(nn.Module):
     ) -> None:
         super().__init__()
         # Skip term D of the state space model, y = C x + D u, one per channel
-        self.D = nn.Parameter(torch.empty(d_model))
+        self.D = nn.Parameter(torch.randn(d_model))
         # Impulse response of the state space model, as a convolution kernel
         self.kernel = _S4DKernel(d_model=d_model, d_state=d_state)
         self.activation = activation()
@@ -712,14 +626,10 @@ class _S4DLayer(nn.Module):
         )
         # Weight layout of a depthwise conv1d: (out_channels, 1, length)
         self.to_conv_weight = Rearrange("d_model length -> d_model 1 length")
-        # Draws D, then the kernel a second time (its __init__ drew it once):
-        # the seeded weights of the replications in FNIRS4D's docstring follow
-        # this order
-        self.reset_parameters()
 
     def reset_parameters(self) -> None:
+        # D only: the kernel is a submodule, and the model resets it itself
         nn.init.normal_(self.D)
-        self.kernel.reset_parameters()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Output ``(batch, d_model, length)`` of ``x`` of the same shape."""
@@ -750,8 +660,7 @@ class _S4DLayer(nn.Module):
         skip = x * skip
         y = y + skip
 
-        # Activation (GELU by default) and dropout of whole channels; shape
-        # unchanged
+        # Nonlinearity (GELU by default), then dropout of whole channels
         y = self.activation(y)
         y = self.dropout(y)
 
