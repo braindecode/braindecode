@@ -298,27 +298,29 @@ class TimmMlp(nn.Module):
     Parameters
     ----------
     in_features : int
-    hidden_features : int, optional
-        Defaults to ``in_features``.
-    out_features : int, optional
-        Defaults to ``in_features``.
-    act_layer : type of torch.nn.Module
-        Activation class. Default: ``nn.GELU``.
-    drop : float
-        Dropout rate. Default: ``0.0``.
-    norm_layer : type of torch.nn.Module, optional
-        Normalization layer class before ``fc2``. Default: ``None``.
+        Input feature dimension.
+    hidden_features : int | None, optional
+        Hidden dimension. Defaults to ``in_features``.
+    out_features : int | None, optional
+        Output feature dimension. Defaults to ``in_features``.
+    act_layer : type[nn.Module], default=nn.GELU
+        Activation class.
+    drop : float, default=0.0
+        Dropout probability.
+    norm_layer : type[nn.Module] | None, optional
+        Normalization layer class before ``fc2``. Defaults to ``None``
+        (``nn.Identity()``).
     """
 
     def __init__(
         self,
-        in_features,
-        hidden_features=None,
-        out_features=None,
-        act_layer=nn.GELU,
-        drop=0.0,
-        norm_layer=None,
-    ):
+        in_features: int,
+        hidden_features: int | None = None,
+        out_features: int | None = None,
+        act_layer: type[nn.Module] = nn.GELU,
+        drop: float = 0.0,
+        norm_layer: type[nn.Module] | None = None,
+    ) -> None:
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
@@ -330,12 +332,11 @@ class TimmMlp(nn.Module):
         )
         self.fc2 = nn.Linear(hidden_features, out_features)
 
-    def __setstate__(self, state):
-        super().__setstate__(state)
-        self._modules.setdefault("norm", nn.Identity())
-
-    def forward(self, x):
-        return self.drop(self.fc2(self.norm(self.drop(self.act(self.fc1(x))))))
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.drop(self.act(self.fc1(x)))
+        if hasattr(self, "norm"):
+            x = self.norm(x)
+        return self.drop(self.fc2(x))
 
 
 class FeedForwardBlock(nn.Sequential):

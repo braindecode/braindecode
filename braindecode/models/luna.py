@@ -908,7 +908,7 @@ class _CrossAttentionBlock(nn.Module):
         num_heads: int,
         dropout_p: float = 0.1,
         ff_dim: int = 2048,
-        norm_layer: Type[nn.Module] = nn.LayerNorm,
+        norm_layer: type[nn.Module] = nn.LayerNorm,
     ) -> None:
         super().__init__()
         self.num_queries = num_queries
