@@ -250,6 +250,9 @@ Requirements
 Bug fixes
 ==========
 
+- Speed up documentation builds (``make html-noplot`` no longer hangs with ``-j auto`` on macOS),
+  fix the duplicate ``Parameters`` section in :class:`braindecode.datasets.BNCI2014_001`, and
+  cache unchanged Sphinx-Gallery outputs in CI (`Bruno Aristimunha`_).
 - :func:`braindecode.preprocessing.create_windows_from_events` rounds event durations to
   samples instead of truncating them, so trials, and windows inferred from them, can be
   one sample longer (:gh:`1727` by `Aayushya Patel <https://github.com/ptlnextdoor>`_).

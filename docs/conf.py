@@ -21,6 +21,7 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
+import functools
 import inspect
 import os
 import os.path as op
@@ -40,33 +41,44 @@ from datetime import datetime, timezone
 
 import sphinx_gallery  # noqa
 from numpydoc import docscrape, numpydoc  # noqa
-from sphinx_gallery.sorting import ExplicitOrder, FileNameSortKey
+from sphinx_gallery.sorting import ExplicitOrder
 
-# Merge MNE-Python references during build
+# pybtex scans importlib.metadata.entry_points() on every :footcite:/:cite: role
+# without memoizing, opening ~190k dist-info files across model docstrings.
 try:
-    import logging
-    import sys
-    from pathlib import Path
+    import pybtex.plugin
 
-    # Add current directory to path so we can import download_mne_references
-    docs_dir = Path(__file__).parent.absolute()
-    if str(docs_dir) not in sys.path:
-        sys.path.insert(0, str(docs_dir))
+    pybtex.plugin._load_entry_point = functools.cache(pybtex.plugin._load_entry_point)
+except ImportError:
+    pass
 
-    logger = logging.getLogger(__name__)
-    from download_mne_references import update_references
+# Merge MNE-Python references only when explicitly requested, avoiding live
+# network fetches and in-place edits to tracked docs/references.bib on local builds.
+if os.environ.get("BRAINDECODE_UPDATE_MNE_REFS") == "1":
+    try:
+        import logging
+        from pathlib import Path
 
-    logger.info("Attempting to merge MNE-Python references...")
-    result = update_references()
-    if result:
-        logger.info("MNE-Python references merged successfully or skipped gracefully")
-    else:
-        logger.warning("MNE references update returned False")
-except ImportError as e:
-    warnings.warn(f"Could not import download_mne_references module: {e}")
-except Exception as e:
-    # Don't fail the build if updating references fails; emit a warning
-    warnings.warn(f"MNE references update encountered an issue: {e}")
+        docs_dir = Path(__file__).parent.absolute()
+        if str(docs_dir) not in sys.path:
+            sys.path.insert(0, str(docs_dir))
+
+        logger = logging.getLogger(__name__)
+        from download_mne_references import update_references
+
+        logger.info("Attempting to merge MNE-Python references...")
+        result = update_references()
+        if result:
+            logger.info(
+                "MNE-Python references merged successfully or skipped gracefully"
+            )
+        else:
+            logger.warning("MNE references update returned False")
+    except ImportError as e:
+        warnings.warn(f"Could not import download_mne_references module: {e}")
+    except Exception as e:
+        # Don't fail the build if updating references fails; emit a warning
+        warnings.warn(f"MNE references update encountered an issue: {e}")
 
 # -- General configuration ------------------------------------------------
 
@@ -102,13 +114,17 @@ extensions = [
     "sphinx_autodoc_typehints",
     "sphinx_gallery.gen_gallery",
     "sphinx.ext.linkcode",
-    "sphinx_sitemap",
     "sphinx_design",
     "sphinxext.opengraph",
     "numpydoc",
     "gh_substitutions",
     "zoo_data_gen",
 ]
+
+# sphinx_sitemap spawns multiprocessing.Manager().Queue(), which deadlocks
+# fork-based `sphinx-build -j auto` workers on macOS; enable only on deploys.
+if os.environ.get("BRAINDECODE_BUILD_SITEMAP") == "1":
+    extensions.append("sphinx_sitemap")
 
 
 def linkcode_resolve(domain, info):
@@ -320,7 +336,7 @@ sphinx_gallery_conf = {
             "../examples/applied_examples",
         ]
     ),
-    "within_subsection_order": FileNameSortKey,
+    "within_subsection_order": "FileNameSortKey",
 }
 
 # -- Options for HTML output ----------------------------------------------
@@ -466,6 +482,7 @@ html_sidebars = {
     "help": [],
     "whats_new": [],
     "api": [],
+    "generated/**": [],
 }
 
 # -- Options for LaTeX output ---------------------------------------------

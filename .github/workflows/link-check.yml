@@ -1,4 +1,7 @@
 name: Link Check
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 on:
   push:
@@ -6,12 +9,14 @@ on:
     paths:
       - "**.md"
       - "docs/**"
+      - "!docs/whats_new.rst"
       - ".github/workflows/link-check.yml"
   pull_request:
-    branches: [main]
+    branches: [main, master]
     paths:
       - "**.md"
       - "docs/**"
+      - "!docs/whats_new.rst"
       - ".github/workflows/link-check.yml"
   schedule:
     - cron: "0 0 * * 1"
@@ -23,11 +28,30 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Select target files
+        id: targets
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]] && ! git diff --name-only HEAD^1 HEAD | grep -qx '\.github/workflows/link-check\.yml'; then
+            mapfile -t FILES < <(git diff --name-only --diff-filter=d HEAD^1 HEAD -- '*.md' '*.rst')
+            if [[ ${#FILES[@]} -eq 0 ]]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            printf '%s\n' "${FILES[@]}" > .lychee-targets.txt
+            echo "mode=changed" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=all" >> "$GITHUB_OUTPUT"
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       # https://github.com/qinxwew: a past contributor's GitHub account no longer
       # exists (404, and their pull requests are hidden). The changelog keeps the
       # attribution and its link target unchanged, so the link is excluded here.
       - name: Check links in Markdown and RST files
+        if: steps.targets.outputs.skip != 'true'
         uses: lycheeverse/lychee-action@v2
         with:
           args: >-
@@ -55,14 +79,13 @@ jobs:
             --exclude "^https://doi\\.org/10\\.1002/hbm"
             --exclude "^https://dl\\.acm\\.org/doi"
             --exclude "^https://github\\.com/qinxwew$"
-            "./**/*.md"
-            "./**/*.rst"
+            ${{ steps.targets.outputs.mode == 'changed' && '$(tr "\n" " " < .lychee-targets.txt)' || '"./**/*.md" "./**/*.rst"' }}
           fail: true
           output: ./lychee-report.md
 
       - name: Upload link check report
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.targets.outputs.skip != 'true'
         with:
           name: link-check-report
           path: ./lychee-report.md

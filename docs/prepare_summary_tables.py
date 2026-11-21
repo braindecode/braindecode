@@ -1,18 +1,59 @@
-import glob
-from argparse import ArgumentParser
-from pathlib import Path
+"""Generate ``models_summary_table.html`` and ``models_analysis.html`` from CSV.
 
-import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+Uses only the Python standard library (``csv``, ``json``, ``html``) with an
+mtime fast-path so incremental Sphinx builds skip regeneration when inputs are
+unchanged and do not require ``pandas`` or ``plotly`` at build time.
+"""
+
+from __future__ import annotations
+
+import csv
+import html
+import json
+from argparse import ArgumentParser
+from collections import Counter
+from pathlib import Path
+from typing import Any, Iterable
+
+_DOCS_DIR = Path(__file__).resolve().parent
+_DEFAULT_OUT_HTML = "_static/model/models_analysis.html"
+_PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.35.2.min.js"
+_FONT_FAMILY = (
+    "Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
+)
+
+_TABLE_COLUMNS = (
+    "Model",
+    "Application",
+    "Modality",
+    "Type",
+    "Categorization",
+    "Sampling Frequency (Hz)",
+    "#Parameters",
+    "Hyperparameters",
+)
+
+
+def _is_missing(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, float) and value != value:  # NaN check without math/pandas
+        return True
+    return str(value).strip() == ""
+
+
+def _coerce_rows(rows_or_df: Any) -> list[dict[str, Any]]:
+    if hasattr(rows_or_df, "to_dict"):
+        return list(rows_or_df.to_dict("records"))
+    return [dict(row) for row in rows_or_df]
 
 
 def gen_models_visualization(
-    df: pd.DataFrame,
-    out_html: str = "_static/model/models_analysis.html",
+    rows_or_df: Iterable[dict[str, Any]],
+    out_html: str = _DEFAULT_OUT_HTML,
     bar_color: str = "#3B82F6",
-):
-    d = df.copy()
+) -> str:
+    rows = _coerce_rows(rows_or_df)
 
     replace_pipeline = {
         "EEGNet": "EEGNet",
@@ -27,179 +68,209 @@ def gen_models_visualization(
         "SignalJEPA_PreLocal": "sJEPA<sub>pre</sub>",
         "SignalJEPA_Contextual": "sJEPA<sub>con</sub>",
     }
-    d["Model"] = d["Model"].replace(replace_pipeline)
 
-    # Left: #Parameters per model (log x)
-    d_params = (
-        d[["Model", "#Parameters"]]
-        .assign(**{"#Parameters": pd.to_numeric(d["#Parameters"], errors="coerce")})
-        .dropna(subset=["#Parameters"])
-        .sort_values("#Parameters", ascending=True)
+    param_pairs: list[tuple[int | float, str]] = []
+    app_counter: Counter[str] = Counter()
+
+    for row in rows:
+        raw_model = str(row.get("Model") or "").strip()
+        model_label = replace_pipeline.get(raw_model, raw_model)
+
+        raw_params = row.get("#Parameters")
+        if not _is_missing(raw_params):
+            try:
+                num_val = float(str(raw_params).strip().replace(",", ""))
+                param_val: int | float = (
+                    int(num_val) if num_val.is_integer() else num_val
+                )
+                param_pairs.append((param_val, model_label))
+            except ValueError:
+                pass
+
+        raw_app = row.get("Application")
+        if not _is_missing(raw_app):
+            for token in str(raw_app).split(","):
+                cleaned = token.strip()
+                if cleaned:
+                    app_counter[cleaned] += 1
+
+    param_pairs.sort(key=lambda item: item[0])
+    param_x = [item[0] for item in param_pairs]
+    param_y = [item[1] for item in param_pairs]
+
+    sorted_apps = sorted(app_counter.items(), key=lambda kv: kv[1])
+    app_y = [item[0] for item in sorted_apps]
+    app_x = [item[1] for item in sorted_apps]
+    par_alias = {p: p.replace(" ", "<br>") for p in app_y}
+
+    row_px_left = 26
+    row_px_right = 28
+    dynamic_h = max(
+        520, 120 + max(len(param_pairs) * row_px_left, len(sorted_apps) * row_px_right)
     )
 
-    # Right: models per Application
-    def _split(s):
-        if pd.isna(s):
-            return []
-        return [t.strip() for t in str(s).split(",") if t.strip()]
-
-    d_par = d.assign(Application=d["Application"].apply(_split)).explode("Application")
-    counts = d_par["Application"].value_counts().sort_values(ascending=True)
-
-    # ---- dynamic height based on the tallest panel ----
-    row_px_left = 26  # pixels per bar on left
-    row_px_right = 28  # pixels per bar on right
-    n_left = len(d_params)
-    n_right = len(counts)
-    dynamic_h = max(520, 120 + max(n_left * row_px_left, n_right * row_px_right))
-
-    fig = make_subplots(
-        rows=1,
-        cols=2,
-        column_widths=[0.76, 0.24],
-        horizontal_spacing=0.10,
-        subplot_titles=(
-            "Model Complexity (log₁₀ #Parameters)",
-            "Models per Application",
-        ),
-    )
-
-    # bars: left
-    fig.add_trace(
-        go.Bar(
-            x=d_params["#Parameters"],
-            y=d_params["Model"],
-            orientation="h",
-            marker=dict(color=bar_color, line=dict(color="#2b4ea1", width=0.8)),
-            hovertemplate="<b>%{y}</b><br>#Params: %{x:,}<extra></extra>",
-        ),
-        row=1,
-        col=1,
-    )
-    fig.update_yaxes(labelalias=label_map, row=1, col=1)
-
-    # bars: right
-    fig.add_trace(
-        go.Bar(
-            x=counts.values,
-            y=counts.index.tolist(),
-            orientation="h",
-            text=counts.values,
-            textposition="auto",
-            marker=dict(color=bar_color, line=dict(color="#2b4ea1", width=0.8)),
-            hovertemplate="%{y}: %{x}<extra></extra>",
-        ),
-        row=1,
-        col=2,
-    )
-    # make "Motor Imagery" -> "Motor<br>Imagery", etc.
-    par_alias = {p: p.replace(" ", "<br>") for p in counts.index}
-    fig.update_yaxes(labelalias=par_alias, row=1, col=2)
-
-    # Axes & grids
-    fig.update_xaxes(
-        type="log",
-        title_text="#Parameters (log scale)",
-        showgrid=True,
-        gridcolor="rgba(0,0,0,0.18)",
-        gridwidth=1,  # major grid thickness
-        # all digits 2–9 per decade as minor gridlines
-        minor=dict(
-            showgrid=True,
-            dtick="D1",  # use "D2" to show only 2 and 5
-            gridcolor="rgba(0,0,0,0.10)",
-            griddash="dot",
-            gridwidth=0.5,  # minor grid thinner
-        ),
-        tickformat="~s",
-        ticks="outside",
-        ticklen=6,
-        row=1,
-        col=1,
-    )
-
-    fig.update_yaxes(
-        title_text="Model",
-        categoryorder="array",
-        categoryarray=d_params["Model"].tolist(),
-        automargin=True,  # let labels push margins
-        row=1,
-        col=1,
-    )
-
-    fig.update_xaxes(
-        title_text="Count",
-        showgrid=True,
-        gridcolor="rgba(0,0,0,0.12)",
-        ticks="outside",
-        ticklen=6,
-        row=1,
-        col=2,
-    )
-
-    # Layout: bigger left margin for long model names + dynamic height
-    fig.update_layout(
-        height=dynamic_h,
-        bargap=0.32,
-        margin=dict(l=140, r=30, t=60, b=50),
-        template="plotly_white",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        showlegend=False,
-        font=dict(
-            family="Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
-            size=14,
-        ),
-        uniformtext_minsize=10,
-        uniformtext_mode="hide",
-    )
-
-    # tidy subplot titles
-    for ann in fig.layout.annotations or []:
-        ann.font = dict(
-            size=16,
-            color="#111",
-            family="Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
-        )
-
-    out_path = Path(out_html)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.write_html(
-        str(out_path),
-        full_html=False,
-        include_plotlyjs="cdn",
-        div_id="models-analysis",
-        config={
-            "responsive": True,
-            "displaylogo": False,
-            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+    traces = [
+        {
+            "type": "bar",
+            "x": param_x,
+            "y": param_y,
+            "orientation": "h",
+            "marker": {"color": bar_color, "line": {"color": "#2b4ea1", "width": 0.8}},
+            "hovertemplate": "<b>%{y}</b><br>#Params: %{x:,}<extra></extra>",
+            "xaxis": "x",
+            "yaxis": "y",
         },
+        {
+            "type": "bar",
+            "x": app_x,
+            "y": app_y,
+            "orientation": "h",
+            "text": app_x,
+            "textposition": "auto",
+            "marker": {"color": bar_color, "line": {"color": "#2b4ea1", "width": 0.8}},
+            "hovertemplate": "%{y}: %{x}<extra></extra>",
+            "xaxis": "x2",
+            "yaxis": "y2",
+        },
+    ]
+
+    # Match make_subplots(rows=1, cols=2, column_widths=[0.76, 0.24], horizontal_spacing=0.10):
+    # usable width = 0.90 -> col 1 = [0.0, 0.684], col 2 = [0.784, 1.0].
+    layout = {
+        "height": dynamic_h,
+        "bargap": 0.32,
+        "margin": {"l": 140, "r": 30, "t": 60, "b": 50},
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "rgba(0,0,0,0)",
+        "showlegend": False,
+        "font": {"family": _FONT_FAMILY, "size": 14},
+        "uniformtext": {"minsize": 10, "mode": "hide"},
+        "xaxis": {
+            "domain": [0.0, 0.684],
+            "anchor": "y",
+            "type": "log",
+            "title": {"text": "#Parameters (log scale)"},
+            "showgrid": True,
+            "gridcolor": "rgba(0,0,0,0.18)",
+            "gridwidth": 1,
+            "minor": {
+                "showgrid": True,
+                "dtick": "D1",
+                "gridcolor": "rgba(0,0,0,0.10)",
+                "griddash": "dot",
+                "gridwidth": 0.5,
+            },
+            "tickformat": "~s",
+            "ticks": "outside",
+            "ticklen": 6,
+        },
+        "yaxis": {
+            "domain": [0.0, 1.0],
+            "anchor": "x",
+            "title": {"text": "Model"},
+            "categoryorder": "array",
+            "categoryarray": param_y,
+            "labelalias": label_map,
+            "automargin": True,
+        },
+        "xaxis2": {
+            "domain": [0.784, 1.0],
+            "anchor": "y2",
+            "title": {"text": "Count"},
+            "showgrid": True,
+            "gridcolor": "rgba(0,0,0,0.12)",
+            "ticks": "outside",
+            "ticklen": 6,
+        },
+        "yaxis2": {
+            "domain": [0.0, 1.0],
+            "anchor": "x2",
+            "labelalias": par_alias,
+            "automargin": True,
+        },
+        "annotations": [
+            {
+                "text": "Model Complexity (log₁₀ #Parameters)",
+                "x": 0.342,
+                "y": 1.0,
+                "xref": "paper",
+                "yref": "paper",
+                "xanchor": "center",
+                "yanchor": "bottom",
+                "showarrow": False,
+                "font": {"size": 16, "color": "#111", "family": _FONT_FAMILY},
+            },
+            {
+                "text": "Models per Application",
+                "x": 0.892,
+                "y": 1.0,
+                "xref": "paper",
+                "yref": "paper",
+                "xanchor": "center",
+                "yanchor": "bottom",
+                "showarrow": False,
+                "font": {"size": 16, "color": "#111", "family": _FONT_FAMILY},
+            },
+        ],
+    }
+
+    config = {
+        "responsive": True,
+        "displaylogo": False,
+        "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+    }
+
+    if out_html == _DEFAULT_OUT_HTML:
+        out_path = _DOCS_DIR / out_html
+    else:
+        out_path = Path(out_html)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    snippet = (
+        "<div>"
+        '<script type="text/javascript">'
+        "window.PlotlyConfig = {MathJaxConfig: 'local'};"
+        "</script>"
+        f'<script charset="utf-8" src="{_PLOTLY_CDN}"></script>'
+        f'<div id="models-analysis" class="plotly-graph-div" '
+        f'style="height:{dynamic_h}px; width:100%;"></div>'
+        '<script type="text/javascript">'
+        "window.PLOTLYENV=window.PLOTLYENV || {};"
+        'if (document.getElementById("models-analysis")) {'
+        "Plotly.newPlot("
+        '"models-analysis", '
+        f"{json.dumps(traces, ensure_ascii=False)}, "
+        f"{json.dumps(layout, ensure_ascii=False)}, "
+        f"{json.dumps(config)}"
+        ");}"
+        "</script>"
+        "</div>\n"
     )
+    out_path.write_text(snippet, encoding="utf-8")
     return str(out_path)
 
 
-def wrap_tags(paradigm_cell: str):
-    if pd.isna(paradigm_cell):
+def wrap_tags(paradigm_cell: Any) -> str:
+    if _is_missing(paradigm_cell):
         return ""
     paradigms = [
-        f'<span class="tag">{p.strip()}</span>' for p in paradigm_cell.split(", ")
+        f'<span class="tag">{html.escape(p.strip())}</span>'
+        for p in str(paradigm_cell).split(",")
+        if p.strip()
     ]
     return " ".join(paradigms)
 
 
-def wrap_model_name(name: str):
-    # Remove any surrounding whitespace
-    name = name.strip()
-    # Construct the URL based on the model name
-    url = f"../generated/braindecode.models.{name}.html"
-    return f'<a href="{url}">{name}</a>'
+def wrap_model_name(name: str) -> str:
+    clean = str(name).strip()
+    escaped = html.escape(clean)
+    url = f"../generated/braindecode.models.{escaped}.html"
+    return f'<a href="{url}">{escaped}</a>'
 
 
 def wrap_hyperparameters(spec: str) -> str:
-    """Turn 'n_chans, n_outputs, n_times,sfreq' into HTML with Font Awesome icons,
-    one per line. Use with DataFrame.to_html(escape=False).
-    """
-    if not spec:
+    """Turn 'n_chans, n_outputs, n_times,sfreq' into HTML with Font Awesome icons."""
+    if _is_missing(spec):
         return ""
 
     icons = {
@@ -213,9 +284,10 @@ def wrap_hyperparameters(spec: str) -> str:
     def fa(icon: str) -> str:
         return f'<span class="fa-solid fa-{icon}" aria-hidden="true"></span>'
 
-    tokens = [t.strip() for t in spec.split(",") if t.strip()]
+    tokens = [t.strip() for t in str(spec).split(",") if t.strip()]
 
-    seen, lines = set(), []
+    seen: set[str] = set()
+    lines: list[str] = []
     for t in tokens:
         if t in seen:
             continue
@@ -224,18 +296,15 @@ def wrap_hyperparameters(spec: str) -> str:
             icon, label = icons[t]
             lines.append(f"{fa(icon)}&nbsp;<strong>{label}</strong>")
         else:
-            lines.append(f"<strong>{t}</strong>")  # fallback
+            lines.append(f"<strong>{html.escape(t)}</strong>")
 
     return "<br/>".join(lines)
 
 
 def wrap_categorization(spec: str, sep: str = "<br/>") -> str:
-    """Render 'Convolution, Recurrent, Attention/Transformer' as colored <span class="tag ..."> pills.
-    Use with DataFrame.to_html(escape=False).
-    """
-    if not spec:
+    """Render 'Convolution, Recurrent, Attention/Transformer' as colored pills."""
+    if _is_missing(spec):
         return ""
-    # label -> tone (choose any names you like)
     palette = {
         "Convolution": "success",
         "Recurrent": "secondary",
@@ -245,64 +314,101 @@ def wrap_categorization(spec: str, sep: str = "<br/>") -> str:
         "SPD": "dark",
         "Foundation Model": "danger",
         "Graph Neural Network": "light",
-        "Channel": "dark-line",  # outline
+        "Channel": "dark-line",
     }
 
-    tokens = [t.strip() for t in spec.split(",") if t.strip()]
-    seen, out = set(), []
+    tokens = [t.strip() for t in str(spec).split(",") if t.strip()]
+    seen: set[str] = set()
+    out: list[str] = []
     for t in tokens:
         if t in seen:
             continue
         seen.add(t)
         tone = palette.get(t, "secondary")
-        out.append(f'<span class="tag tag-{tone}">{t}</span>')
+        out.append(f'<span class="tag tag-{tone}">{html.escape(t)}</span>')
     return sep.join(out)
 
 
-def main(source_dir: str, target_dir: str):
-    target_dir = Path(target_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    files = glob.glob(str(Path(source_dir) / "*.csv"))
-    for f in files:
-        target_file = target_dir / Path(f).name
-        print(f"Processing {f} -> {target_file}")
-        df = pd.read_csv(f, index_col=False, header=0, skipinitialspace=True)
-        df.drop(columns="get_#Parameters", inplace=True)
-        gen_models_visualization(df)
-        df["Model"] = df["Model"].apply(wrap_model_name)
-        df["Application"] = df["Application"].apply(wrap_tags)
-        df["Hyperparameters"] = df["Hyperparameters"].apply(wrap_hyperparameters)
-        df["Categorization"] = df["Categorization"].str.replace(",", ", ")
-        df["Categorization"] = df["Categorization"].apply(wrap_tags)
-        df["Type"] = df["Type"].apply(wrap_tags)
-        df["Modality"] = df["Modality"].apply(wrap_tags)
-
-        df = df[
-            [
-                "Model",
-                "Application",
-                "Modality",
-                "Type",
-                "Categorization",
-                "Sampling Frequency (Hz)",
-                "#Parameters",
-                "Hyperparameters",
-            ]
+def _render_summary_table(rows: list[dict[str, str]]) -> str:
+    header_cells = "".join(
+        f"      <th>{html.escape(col)}</th>\n" for col in _TABLE_COLUMNS
+    )
+    body_rows: list[str] = []
+    for row in rows:
+        cells = [
+            wrap_model_name(row.get("Model", "")),
+            wrap_tags(row.get("Application", "")),
+            wrap_tags(row.get("Modality", "")),
+            wrap_tags(row.get("Type", "")),
+            wrap_tags(row.get("Categorization", "")),
+            html.escape(str(row.get("Sampling Frequency (Hz)") or "").strip()),
+            html.escape(str(row.get("#Parameters") or "").strip()),
+            wrap_hyperparameters(row.get("Hyperparameters", "")),
         ]
+        rendered_cells = "".join(f"      <td>{cell}</td>\n" for cell in cells)
+        body_rows.append(f"    <tr>\n{rendered_cells}    </tr>\n")
 
-        html_table = df.to_html(
-            classes=["sd-table", "sortable"], index=False, escape=False
+    return (
+        '<table border="1" class="dataframe sd-table sortable">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        f"{header_cells}"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        f"{''.join(body_rows)}"
+        "  </tbody>\n"
+        "</table>"
+    )
+
+
+def main(
+    source_dir: str,
+    target_dir: str,
+    out_html: str = _DEFAULT_OUT_HTML,
+    force: bool = False,
+) -> None:
+    target_path = Path(target_dir)
+    target_path.mkdir(parents=True, exist_ok=True)
+    csv_files = sorted(Path(source_dir).glob("*.csv"))
+    if not csv_files:
+        return
+
+    table_path = target_path / "models_summary_table.html"
+    analysis_path = (
+        _DOCS_DIR / out_html if out_html == _DEFAULT_OUT_HTML else Path(out_html)
+    )
+
+    if not force and table_path.is_file() and analysis_path.is_file():
+        newest_input = max(
+            *(f.stat().st_mtime for f in csv_files),
+            Path(__file__).stat().st_mtime,
         )
-        with open(
-            f"{target_dir}/models_summary_table.html", "w", encoding="utf-8"
-        ) as f:
-            f.write(html_table)
+        oldest_output = min(table_path.stat().st_mtime, analysis_path.stat().st_mtime)
+        if oldest_output >= newest_input:
+            return
+
+    for csv_path in csv_files:
+        print(f"Processing {csv_path} -> {table_path}")
+        with csv_path.open("r", encoding="utf-8-sig", newline="") as fh:
+            reader = csv.DictReader(fh, skipinitialspace=True)
+            rows = [
+                {
+                    k: (v.strip() if isinstance(v, str) else "")
+                    for k, v in row.items()
+                    if k
+                }
+                for row in reader
+            ]
+        gen_models_visualization(rows, out_html=str(analysis_path))
+        table_path.write_text(_render_summary_table(rows), encoding="utf-8")
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("source_dir", type=str)
     parser.add_argument("target_dir", type=str)
+    parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    main(args.source_dir, args.target_dir)
+    main(args.source_dir, args.target_dir, force=args.force)
     print(args.target_dir)
