@@ -16,6 +16,16 @@ import torch
 from torch import Tensor
 
 
+def _warn_orphaned_api(name):
+    """Warn that the public ``name`` has no user in braindecode."""
+    warn(
+        f"{name} is deprecated and will be removed in braindecode 2.2. It has "
+        "no user in braindecode: copy it into your code if you need it.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
+
 def set_random_seeds(seed, cuda, cudnn_benchmark=None):
     """Set seeds for python random module numpy.random and torch.
 
@@ -117,11 +127,15 @@ def corr(a, b):
     Returns
     -------
     Correlation between features in x and features in y
+
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
     """
+    _warn_orphaned_api("corr")
     # Difference to numpy:
     # Correlation only between terms of x and y
     # not between x and x or y and y
-    this_cov = cov(a, b)
+    this_cov = _cov(a, b)
     return _cov_to_corr(this_cov, a, b)
 
 
@@ -138,11 +152,18 @@ def cov(a, b):
     Returns
     -------
     Covariance between features in x and features in y
+
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
     """
+    _warn_orphaned_api("cov")
+    return _cov(a, b)
+
+
+def _cov(a, b):
     demeaned_a = a - np.mean(a, axis=1, keepdims=True)
     demeaned_b = b - np.mean(b, axis=1, keepdims=True)
-    this_cov = np.dot(demeaned_a, demeaned_b.T) / (b.shape[1] - 1)
-    return this_cov
+    return np.dot(demeaned_a, demeaned_b.T) / (b.shape[1] - 1)
 
 
 def _cov_to_corr(this_cov, a, b):
@@ -226,7 +247,11 @@ def get_balanced_batches(n_trials, rng, shuffle, n_batches=None, batch_size=None
     -------
     batches : list of list of int
         Indices for each batch.
+
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
     """
+    _warn_orphaned_api("get_balanced_batches")
     assert batch_size is not None or n_batches is not None
     if n_batches is None:
         n_batches = int(np.round(n_trials / float(batch_size)))
@@ -552,7 +577,11 @@ def read_all_file_names(directory, extension):
     -------
     file_paths : list(str)
         List of all files found in (sub)directories of path.
+
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
     """
+    _warn_orphaned_api("read_all_file_names")
     assert extension.startswith(".")
     file_paths = glob.glob(directory + "**/*" + extension, recursive=True)
     assert len(file_paths) > 0, (

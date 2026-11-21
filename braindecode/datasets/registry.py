@@ -11,6 +11,8 @@ without direct imports (avoiding circular dependencies).
 
 from typing import Any, Dict, Type
 
+from braindecode.util import _warn_orphaned_api
+
 # Global registry mapping dataset class names to classes
 _DATASET_REGISTRY: Dict[str, Type] = {}
 
@@ -112,7 +114,11 @@ def is_registered_dataset(obj: Any, class_name: str) -> bool:
     -------
     bool
         True if obj is an instance of the named class, False otherwise.
+
+    .. deprecated:: 2.1
+        It has no user in braindecode and will be removed in 2.2.
     """
+    _warn_orphaned_api("is_registered_dataset")
     try:
         cls = get_dataset_class(class_name)
     except KeyError:

@@ -189,6 +189,15 @@ API and behavior changes
 - :func:`braindecode.functional.scaled_dot_product_attention` emits a ``FutureWarning``
   when ``fused_in_lazy`` is set: it has had no effect since :gh:`1581` and will be
   removed in 2.2 (:gh:`1701` by `Bruno Aristimunha`_).
+- Deprecate the public API without a user in braindecode, listed in :gh:`1442`:
+  :class:`~braindecode.training.callbacks.MaxNormConstraintCallback`,
+  :func:`~braindecode.datasets.bbci.load_bbci_sets_from_folder`,
+  :func:`~braindecode.datasets.registry.is_registered_dataset`,
+  :class:`~braindecode.modules.IntermediateOutputWrapper`,
+  :class:`~braindecode.modules.StatLayer` and the functions ``get_balanced_batches``,
+  ``read_all_file_names``, ``corr`` and ``cov`` of ``braindecode.util``. Each emits a
+  ``DeprecationWarning`` and will be removed in 2.2 (:gh:`0000` by
+  `@ptlnextdoor <https://github.com/ptlnextdoor>`_).
 - :class:`braindecode.datasets.CHBMIT` and :class:`braindecode.datasets.SIENA` now name
   each annotation after the ``eventType`` column of its ``events.tsv`` (``"sz"``,
   ``"bckg"``, ...). Rows with a missing ``eventType`` keep their BIDS ``trial_type``.
