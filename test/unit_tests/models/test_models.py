@@ -6628,6 +6628,7 @@ def test_fnirs_task_models_options_and_features_feed_head(model_cls, kwargs):
         torch.testing.assert_close(model.final_layer(features), logits)
     logits.sum().backward()
     assert torch.isfinite(x.grad).all()
+    assert all(p.grad is not None for p in model.parameters())
 
 
 class _AuthorsFNIRSNet(torch.nn.Module):
@@ -6868,6 +6869,9 @@ def test_s4d_real_arithmetic_matches_complex_fft():
     x = torch.randn(3, d_model, length)
     k = layer.kernel
     a_val = -torch.exp(k.log_A_real) + 1j * k.A_imag
+    # S4D-Lin initialization (Gu et al., Eq. (9)): A_n = -1/2 + i pi n
+    n = torch.arange(k.A_imag.shape[1], dtype=torch.float32)
+    torch.testing.assert_close(a_val, (-0.5 + 1j * math.pi * n).expand_as(a_val))
     dt_a = a_val * torch.exp(k.log_dt).unsqueeze(-1)
     c_tilde = torch.view_as_complex(k.C) * torch.expm1(dt_a) / a_val
     exponents = dt_a.unsqueeze(-1) * torch.arange(length)
